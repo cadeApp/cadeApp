@@ -1,0 +1,20 @@
+{
+  "agentId": "finance",
+  "verdict": "conditional",
+  "confidence": 0.95,
+  "summary": "Dictamen de Finanzas: CONDICIONAL (0.95). Verificacion oficial de precios de Google Maps Platform (vigente desde el 1 de marzo de 2025): se retiro el credito general de $200 USD y rige el modelo por SKU mensual. Dynamic Maps (categoria Essentials) otorga 10.000 llamadas gratuitas al mes. En el piloto de Aguilares (~20 comercios, ~30 pedidos/dia = ~900 pedidos/mes), el consumo estimado es de ~1.820 cargas de mapa/mes (~18% del cupo gratuito). Costo estimado del piloto: $0 USD/mes. Se rechaza el uso de Routes API para calculo de distancias (evitando cargos variables) y se aprueba Haversine en SQL. Condicionado a fijar presupuesto con alerta al 75% en Google Cloud Billing y limite de cuota (quota cap) de 9.500 llamadas/mes para evitar cualquier cobro imprevisto.",
+  "findings": [
+    {
+      "statement": "Riesgo de facturacion imprevista si se excede el cupo mensual gratuito de 10.000 cargas.",
+      "severity": "high",
+      "impact": "Sin un tope de cuotas configurado en Google Cloud, un bucle de recargas o ataque de scraping podria superar las 10.000 cargas y generar cargos en USD con recargos fiscales argentinos.",
+      "evidence": [
+        "Google Maps Platform Pricing marzo 2025: $7 USD por cada 1.000 cargas excedentes."
+      ],
+      "correction": "Fijar un Quota Cap estricto en Google Cloud Console de 300 cargas diarias / 9.000 mensuales, y una alerta de presupuesto de $1 USD en Google Cloud Billing.",
+      "assumptions": [
+        "Google Cloud bloquea las peticiones adicionales cuando se alcanza el quota cap diario/mensual sin emitir factura."
+      ]
+    }
+  ]
+}

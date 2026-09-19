@@ -1,0 +1,306 @@
+{
+  "rounds": 1,
+  "entries": [
+    {
+      "party": "backend",
+      "conflict_id": "baas-choice",
+      "summary": "Mantengo la recomendación de Supabase, ajustando la justificación. Incorporo el costo real de implementar Web Push manual con VAPID que señala frontend.review.3 frente al soporte nativo de FCM: es un costo aceptable y acotado (librería web-push estándar), no una razón de peso para cambiar de proveedor. También bajo el peso de PostGIS como argumento decisivo, dado que pm.review.3 y el conflicto courier-location-tradeoff empujan a un modelo de disponibilidad por zona declarada en vez de geolocalización en vivo. El argumento que sostiene la recomendación sigue siendo el más fuerte: transacciones ACID e integridad relacional para 'una sola oferta aceptada' y el piso server-side de ARS 1.000 (backend.review.0 y backend.review.1), que Firestore solo puede emular con más código y más superficie de error.",
+      "position": "adjust"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "state-machine-scope",
+      "summary": "Retiro el encuadre de conflicto con PM: pm.review.0 propone de forma independiente una FSM explícita con severidad crítica (DRAFT→PUBLISHED→MATCHED→IN_TRANSIT→DELIVERED, CANCELLED/EXPIRED con timeout de 30 minutos), más detallada que backend.review.2. No hay desacuerdo de alcance, hay convergencia total en que la FSM es indispensable antes de construir. Adopto la nomenclatura de estados de PM y ajusto mi corrección original: el timeout de expiración debe ser una constante de configuración, con 30 minutos como valor por defecto sugerido por PM.",
+      "position": "withdraw"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "subscription-payment-gateway",
+      "summary": "Mantengo la posición y la refino con los aportes de finance y security. Finance (finance.review.0) confirma la necesidad de una pasarela con soporte de recurrencia en Argentina y sugiere el mismo proveedor que backend.review.4 (Mercado Pago Subscriptions). Adopto sin reservas el requisito de security.review.3: validar la firma del webhook antes de procesar cualquier evento y hacer el endpoint idempotente (registrar el id de evento procesado), de modo que subscription_status solo cambie a partir de eventos verificados del proveedor, nunca desde el cliente. Señalo que el diseño final de ese campo depende de una decisión de negocio pendiente (particulares excluidos vs. cupo gratuito), elevada por PM y finance al checkpoint humano, que no me corresponde resolver.",
+      "position": "adjust"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "devops-baas-backup-criteria",
+      "summary": "Acepto el criterio de DevOps: backup/PITR y su costo deben ser parte explícita de la justificación de BaaS, no un tema aparte. No cambia la recomendación de Supabase, porque Postgres tiene herramientas de backup maduras y disponibles incluso en plan gratuito (pg_dump programado), con PITR nativo como add-on pago en el plan Pro; Firestore necesitaría exportaciones programadas vía Cloud Scheduler para un resultado equivalente. Me comprometo a incluir esa sección de costo/backup en el documento final de elección de BaaS y a coordinar con DevOps una prueba de restauración completa antes de aprobar el primer repartidor real, dado que ahí se guarda DNI y selfie (devops.review.1).",
+      "position": "adjust"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "courier-location-tradeoff",
+      "summary": "Aclaro que backend nunca defendió tracking en vivo ni rastreo en segundo plano; solo señalé que Supabase resuelve bien consultas de cercanía. Ante la convergencia de seguridad (minimizar precisión, sin historial persistente), PM (pm.review.3, disponibilidad binaria por zona) y la limitación técnica de frontend.review.1 (las PWA no sostienen rastreo confiable en segundo plano), adopto explícitamente el modelo de ubicación declarada: una sola columna de posición actual por repartidor, sobrescrita al marcarse disponible o abrir la app, sin tabla de historial. Es también la implementación más simple en Postgres (un índice espacial sobre un único punto, sin series de tiempo). Queda abierta la posibilidad de tracking más fino a futuro sin requerir cambio de BaaS, pero no es necesaria para el MVP.",
+      "position": "adjust"
+    },
+    {
+      "party": "devops",
+      "conflict_id": "devops-baas-backup-criteria",
+      "summary": "Ajusto mi postura, no la retiro: no objeto la recomendación de Supabase de backend, sus criterios (relacional, PostGIS, ACID, RLS, menor lock-in) son sólidos y no chocan con el requisito de backup. Pero ninguno de los dos dictámenes leídos (backend ni security) deja registrado qué nivel de backup/PITR ofrece el plan de Supabase elegido ni su costo, que era exactamente el punto que pedía incorporar como criterio explícito de la decisión. Mantengo que antes de aprobar el primer repartidor real (que implica guardar DNI y selfie reales) el plan debe documentar el tier de Supabase contratado, su ventana de backup/PITR y el costo asociado, no asumirlo implícito por haber elegido Postgres.",
+      "position": "adjust"
+    },
+    {
+      "party": "devops",
+      "conflict_id": "devops-backup-vs-pii-retention",
+      "summary": "Declaro este conflicto nuevo porque no estaba cubierto antes: security.review.0 exige poder borrar DNI/selfie a los N días, pero un backup periódico del BaaS retiene esos mismos archivos dentro de su propia ventana aunque se borren en la base activa. Backup y borrado programado de PII son objetivos en tensión que hay que resolver juntos (por ejemplo, excluir el bucket de documentos de identidad del backup general y aplicar su propio ciclo de expiración, o acortar la ventana de backup a algo compatible con la política de retención de security) antes de fijar la política de backup del punto anterior.",
+      "position": "maintain"
+    },
+    {
+      "party": "frontend",
+      "conflict_id": "baas-choice",
+      "summary": "Ajusto mi postura. Mi hallazgo sobre Web Push/FCM (frontend.review.3) era explícitamente un insumo de costo para la decisión, no una objeción a Supabase, y lo confirmo ahora: los argumentos de backend para Supabase —transacciones ACID para evitar doble aceptación de oferta, PostGIS con índices espaciales nativos para 'repartidor más cercano', RLS auditable por rol— resuelven problemas de integridad y correctitud de datos que pesan más que la conveniencia de tener push de primera parte, y son ortogonales a mi otro hallazgo sobre geolocalización en segundo plano (PostGIS optimiza la consulta sobre la ubicación disponible; no cambia el límite de tracking en background de las PWA, que aplica igual con cualquier BaaS). La ausencia de push nativo en Supabase es una brecha real pero solucionable con el protocolo Web Push estándar (VAPID), independiente del proveedor de BaaS elegido —no requiere Firebase—, mediante una tabla de subscriptions en Postgres y una función serverless (API route de Next.js o Supabase Edge Function) que dispare los envíos. No sostengo que ese costo deba inclinar la elección hacia Firebase; sí declaro un conflicto nuevo para que ese trabajo quede escopeado explícitamente, porque hoy no figura en los hallazgos de backend (backend.review.0-5) ni en el plan.",
+      "position": "adjust"
+    },
+    {
+      "party": "legal",
+      "conflict_id": "subscription-payment-gateway",
+      "position": "maintain",
+      "summary": "Legal mantiene el conflicto: la integración técnica de la pasarela de cobro recurrente de suscripciones debe supeditarse a la revisión conjunta de los términos de adhesión contractual, la garantía del botón de baja y derecho de revocación bajo la Ley 24.240 de Defensa del Consumidor y el encuadre fiscal formulado por Finanzas."
+    },
+    {
+      "party": "marketing",
+      "conflict_id": "conflict-subscription-paywall-vs-trial",
+      "position": "adjust",
+      "summary": "Marketing ajusta su posición para converger con Finanzas y PM: en lugar de un período de prueba irrestricto que complique la previsibilidad financiera y la integración de débitos recurrentes, propone acotar el beneficio a un cupo de bienvenida estricto (los primeros 10 envíos bonificados por comercio o 14 días de gracia para el grupo inicial de 5 a 8 comercios ancla en Aguilares). Esto resuelve la barrera crítica de adopción y el arranque en frío (chicken-and-egg) sin alterar el modelo de suscripción mensual posterior, ratificando que la decisión final debe ser elevada al checkpoint humano de Lautaro por tratarse de una definición de negocio no técnica e irreversible."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "baas-choice",
+      "position": "adjust",
+      "summary": "PM ajusta su postura y respalda formalmente la adopción de Supabase (Postgres + PostGIS, ACID, RLS) sobre Firebase, priorizando la integridad relacional de solicitudes/ofertas y la atomicidad requerida para la aceptación de una única oferta."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "state-machine-scope",
+      "position": "adjust",
+      "summary": "PM concuerda plenamente con Backend y QA: una máquina de estados finita formal con transiciones server-side no es negociable para el MVP y debe especificarse previo al desarrollo para evitar estados inconsistentes y pedidos huérfanos."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "conflict-monetizacion-particulares-pricing",
+      "position": "maintain",
+      "summary": "PM mantiene que la definición económica y tarifaria para particulares excede el mandato del rol y debe elevarse al checkpoint humano de Lautaro para definir si se excluyen del MVP o cuentan con cupo bonificado."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "conflict-subscription-paywall-vs-trial",
+      "position": "adjust",
+      "summary": "PM ajusta postura en apoyo a la propuesta de Marketing de incorporar un período de prueba gratuito (trial de 14 días o cupo inicial bonificado) para comercios a fin de mitigar el problema de arranque en frío en Aguilares, elevándolo a confirmación en el checkpoint de Lautaro."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "conflict-particulars-monetization-scope",
+      "position": "maintain",
+      "summary": "PM mantiene el señalamiento de inconsistencia de alcance entre particulares como solicitantes y suscripción exclusiva para comercios, recomendando a Lautaro optar entre la exclusión en el MVP o un cupo de prueba gratuito mensual."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "qa-scope-vs-speed",
+      "position": "adjust",
+      "summary": "PM ajusta su postura convergiendo con QA: se prioriza la FSM server-side y pruebas de integración sobre el camino crítico transaccional para el lanzamiento en Aguilares, postergando suites exhaustivas de pruebas E2E automatizadas para etapas posteriores."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "courier-location-tradeoff",
+      "position": "adjust",
+      "summary": "PM ajusta postura convergiendo con Seguridad y Frontend: se descarta el tracking continuo en segundo plano por limitaciones de PWA (iOS Safari / Android Doze) y privacidad, adoptando ubicación estática o fix puntual al ponerse 'Disponible'."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "recipient-pii-visibility-timing",
+      "position": "adjust",
+      "summary": "PM ajusta postura a favor de Seguridad y UX/UI: se implementa revelación progresiva, mostrando únicamente barrio/zona y distancia antes de ofertar, y revelando la dirección exacta y teléfono del destinatario exclusivamente al repartidor cuya oferta resulte aceptada."
+    },
+    {
+      "party": "qa",
+      "conflict_id": "qa-scope-vs-speed",
+      "summary": "Ajusto el conflicto: el propio PM marcó como crítico el mismo vacío que yo señalé (pm.review.0: falta de máquina de estados finita, con una FSM propuesta DRAFT→PUBLISHED→MATCHED→IN_TRANSIT→DELIVERED, terminales CANCELLED/EXPIRED y timeout automático de 30 min sin ofertas). Eso corrobora mis hallazgos qa.review.0 y qa.review.4 en vez de contradecirlos: no hay evidencia de que PM quiera tratar la FSM como iteración post-MVP, así que la premisa original del conflicto (QA exhaustivo vs. PM apurado en este punto) no se sostiene tal como estaba planteada. La FSM de PM cubre gran parte de la expiración de solicitudes (qa.review.4), pero deja sin resolver dos puntos que sostengo como críticos: (a) qué mecanismo garantiza que la transición a MATCHED sea atómica y exclusiva bajo aceptaciones concurrentes (qa.review.0) -el timeout de 30 min no dice nada sobre exclusión mutua en el 'accept'-; (b) el chequeo server-side del estado de aprobación del repartidor en cada oferta, incluida revocación (qa.review.1), que PM no menciona en su FSM ni en pm.review.4 (que solo cubre el panel de aprobación, no la verificación en tiempo de oferta). Pido que ambos puntos se incorporen como parte del detalle de implementación de la FSM que propone PM, no como ítems aparte, y que las transiciones CANCELLED especifiquen quién puede dispararlas y desde qué estado. El resto de mis hallazgos no abordados por PM (oferta mínima ambigua qa.review.3, suscripción vencida qa.review.5, push sin respaldo qa.review.6, ausencia total de estrategia de pruebas qa.review.2) los mantengo sin cambios: PM no los contradice ni los cubre.",
+      "position": "adjust"
+    },
+    {
+      "party": "security",
+      "conflict_id": "devops-baas-backup-criteria",
+      "position": "maintain",
+      "summary": "Security coincide con que backup/PITR y el costo del plan que lo habilita deben ser criterio explícito al elegir entre Supabase y Firebase, junto a los ejes que ya usó backend (relacional, PostGIS, RLS). No es solo un tema de continuidad operativa: los backups van a contener DNI y selfies, así que la elección del proveedor y su plan pago debe permitir además acotar o purgar esos backups según la política de retención de security.review.0. Se declara un conflicto nuevo (backup-retention-vs-pii-deletion) porque un backup 'para siempre' de los documentos de identidad no es compatible con borrarlos tras la aprobación/baja del repartidor; pide que la recomendación final de BaaS documente explícitamente cómo se acota la retención de PII dentro de los propios backups, no solo su existencia."
+    },
+    {
+      "party": "security",
+      "conflict_id": "courier-location-tradeoff",
+      "position": "adjust",
+      "summary": "Security ajusta su postura a favor de la propuesta de PM (pm.review.3): disponibilidad binaria 'Disponible/No disponible' con selección de zona, sin geolocalización en segundo plano, en lugar de la alternativa más débil que security había planteado ('ubicación declarada al marcarse disponible'). La propuesta de PM cumple el objetivo de minimización de datos de forma más simple, porque no captura coordenadas GPS en ningún momento, solo una zona autodeclarada. Security da soporte a esa opción con una condición técnica: la granularidad de zona debe ser barrial/amplia, no un punto o dirección fija, para que no funcione como proxy del domicilio del repartidor, y no debe implementarse ningún listener de ubicación en segundo plano aunque sea solo para calcular una distancia aproximada. Con esa condición, security considera este conflicto resuelto."
+    },
+    {
+      "party": "security",
+      "conflict_id": "recipient-pii-visibility-timing",
+      "position": "maintain",
+      "summary": "Security mantiene su posición. PM (pm.review.2) y UX/UI (ux-ui.review.1) llegaron de forma independiente a la misma corrección: mostrar solo zona/distancia y características del paquete a los repartidores que ofertan, y revelar dirección exacta, nombre y teléfono del destinatario recién al repartidor cuya oferta fue aceptada. Con tres roles convergiendo en el mismo diseño, security pide tratar esto como decisión de producto ya adoptada y no como conflicto abierto. Agrega una condición técnica para que la convergencia sea consistente con courier-location-tradeoff: si se muestra una 'distancia aproximada' antes de la aceptación, ese cálculo debe hacerse del lado del servidor a partir de las coordenadas de retiro/entrega, sin exponer nunca la dirección exacta al cliente del repartidor que todavía no ganó la oferta."
+    },
+    {
+      "party": "ux-ui",
+      "conflict_id": "recipient-pii-visibility-timing",
+      "position": "adjust",
+      "summary": "UX/UI ajusta y formaliza su postura en pleno consenso con Seguridad y PM: se adopta el patrón de revelación progresiva (progressive disclosure). En el feed público de solicitudes es suficiente mostrar zona/barrio y distancia aproximada para estimar la tarifa; el teléfono y domicilio exacto del destinatario se revelan exclusivamente al repartidor cuya oferta haya sido aceptada (estado MATCHED)."
+    }
+  ],
+  "remaining": [
+    {
+      "id": "baas-choice",
+      "class": "technical",
+      "reversible": false,
+      "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+      "parties": [
+        "backend",
+        "pm",
+        "frontend"
+      ]
+    },
+    {
+      "id": "state-machine-scope",
+      "class": "product",
+      "reversible": true,
+      "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+      "parties": [
+        "backend",
+        "pm"
+      ]
+    },
+    {
+      "id": "subscription-payment-gateway",
+      "class": "money",
+      "reversible": false,
+      "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+      "parties": [
+        "backend",
+        "finance",
+        "legal"
+      ]
+    },
+    {
+      "id": "devops-baas-backup-criteria",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "El plan deja la elección entre Supabase y Firebase abierta para que el Consejo la recomiende, con criterios como modelo de datos, consultas geográficas y tiempo real. DevOps necesita que esa misma decisión incorpore explícitamente capacidad de backup/point-in-time recovery y costo del plan pago que la habilita, criterio que backend o seguridad podrían no priorizar de la misma forma al justificar la elección.",
+      "parties": [
+        "devops",
+        "backend",
+        "security"
+      ],
+      "normalized_from": "technical"
+    },
+    {
+      "class": "money",
+      "id": "conflict-monetizacion-particulares-pricing",
+      "parties": [
+        "finance",
+        "pm"
+      ],
+      "reversible": false,
+      "summary": "Falta de definición económica sobre si los particulares deben quedar excluidos, tener envíos de prueba gratuitos o contar con una modalidad de pase diario/por envío, elevando la decisión al checkpoint humano de Lautaro."
+    },
+    {
+      "class": "business",
+      "id": "conflict-subscription-paywall-vs-trial",
+      "parties": [
+        "marketing",
+        "pm",
+        "finance"
+      ],
+      "reversible": false,
+      "summary": "Tensión entre la decisión de cobrar abono mensual a comercios desde el primer día y la necesidad de marketing de ofrecer un período de prueba gratuito (trial) o cupo inicial bonificado para superar la barrera de adopción en Aguilares."
+    },
+    {
+      "class": "product",
+      "id": "conflict-particulars-monetization-scope",
+      "parties": [
+        "pm"
+      ],
+      "reversible": true,
+      "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual."
+    },
+    {
+      "id": "qa-scope-vs-speed",
+      "class": "product",
+      "reversible": true,
+      "summary": "QA sostiene que el plan de MVP no puede darse por completo hasta definir una máquina de estados completa, reglas de autorización server-side y una estrategia de pruebas explícita; esto puede chocar con la prioridad de PM de lanzar rápido en Aguilares y tratar estos puntos como iteraciones post-MVP.",
+      "parties": [
+        "qa",
+        "pm"
+      ]
+    },
+    {
+      "id": "courier-location-tradeoff",
+      "class": "product",
+      "reversible": false,
+      "summary": "El plan quiere ordenar solicitudes mostrando primero a los repartidores 'disponibles y más cercanos', lo que empuja hacia tracking de ubicación con buena precisión y frecuencia. Desde seguridad, eso debería minimizarse (ubicación declarada al marcarse disponible, sin historial persistente) porque un repartidor no es un empleado con consentimiento laboral pleno de ser rastreado. La decisión final de precisión/frecuencia de ubicación es de producto, no solo técnica.",
+      "parties": [
+        "security",
+        "pm",
+        "backend"
+      ]
+    },
+    {
+      "id": "recipient-pii-visibility-timing",
+      "class": "product",
+      "reversible": false,
+      "summary": "El plan no dice si el teléfono y la dirección de entrega del destinatario se muestran a todos los repartidores que ofertan o solo al elegido. Mostrarlos antes ayuda a que el repartidor calcule mejor su oferta (necesidad de producto/UX), pero expone datos de un tercero sin consentimiento a oferentes que nunca ganan la solicitud (postura de seguridad). Es una decisión de producto que security recomienda resolver a favor de revelar recién al aceptar la oferta.",
+      "parties": [
+        "security",
+        "pm",
+        "ux-ui"
+      ]
+    },
+    {
+      "id": "devops-backup-vs-pii-retention",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Security (security.review.0) pide borrar DNI/selfie a los N días de la aprobación o baja del repartidor. Un esquema de backups periódicos del BaaS conserva esos documentos dentro de su propia ventana de retención (snapshots diarios/semanales) aunque se borren del registro activo, lo que puede incumplir en la práctica el compromiso de borrado si no se define explícitamente cómo se purgan o expiran los backups que contienen esos archivos.",
+      "parties": [
+        "devops",
+        "security",
+        "legal"
+      ],
+      "declared_by": "devops",
+      "origin": "rebuttal"
+    },
+    {
+      "id": "push-notification-implementation-scope",
+      "class": "technical",
+      "reversible": true,
+      "summary": "Si se confirma Supabase (sin servicio de push propio), ni el plan ni los hallazgos de backend escopean todavía el trabajo de implementar Web Push estándar (tabla de subscriptions, función serverless/Edge Function para enviar con claves VAPID, manejo de expiración/renovación de tokens); sin asignarlo explícitamente como tarea, el esfuerzo de notificaciones push del MVP quedará subestimado.",
+      "parties": [
+        "frontend",
+        "backend"
+      ],
+      "declared_by": "frontend",
+      "origin": "rebuttal"
+    },
+    {
+      "id": "backup-retention-vs-pii-deletion",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "DevOps pide una cadencia de backup/point-in-time recovery probada para el MVP (devops.review.1), incluyendo los documentos de DNI y selfie de los repartidores. Security exige en security.review.0 una política de retención/borrado explícita para esos mismos archivos (borrar a los N días de la aprobación o al dar de baja al repartidor). Ambas cosas chocan si no se diseñan juntas: un backup completo del bucket de storage puede conservar indefinidamente un DNI/selfie que ya fue 'borrado' en la base viva, vaciando de sentido la política de retención y extendiendo la superficie de una eventual filtración. Falta definir si los backups tienen su propia ventana de expiración/purga para datos sensibles o si se excluyen del backup general y se manejan aparte.",
+      "parties": [
+        "security",
+        "devops",
+        "legal"
+      ],
+      "declared_by": "security",
+      "origin": "rebuttal"
+    }
+  ],
+  "judge": [
+    "push-notification-implementation-scope"
+  ],
+  "human": [
+    "baas-choice",
+    "state-machine-scope",
+    "subscription-payment-gateway",
+    "devops-baas-backup-criteria",
+    "conflict-monetizacion-particulares-pricing",
+    "conflict-subscription-paywall-vs-trial",
+    "conflict-particulars-monetization-scope",
+    "qa-scope-vs-speed",
+    "courier-location-tradeoff",
+    "recipient-pii-visibility-timing",
+    "devops-backup-vs-pii-retention",
+    "backup-retention-vs-pii-deletion"
+  ]
+}

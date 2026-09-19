@@ -1,0 +1,106 @@
+{
+  "agentId": "legal",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "assumptions": [
+        "El MVP aún no define bases de datos inscriptas ante la Agencia de Acceso a la Información Pública (AAIP) ni cláusulas de consentimiento para recolección de datos identificatorios y biométricos."
+      ],
+      "correction": "Redactar e implementar una Política de Privacidad con consentimiento explícito previo a la carga; aplicar cifrado en reposo para imágenes de DNI y selfies en el BaaS elegido; y definir un plazo de retención con eliminación o anonimización una vez validada la identidad.",
+      "evidence": [
+        "Contexto Sección 2: 'Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.'",
+        "Contexto Sección 8, pregunta 6: 'Privacidad: cuándo ve el repartidor el teléfono y la dirección del destinatario, y cómo se guardan y protegen el DNI y la selfie.'"
+      ],
+      "impact": "Riesgo de sanciones administrativas y multas de la AAIP por infracción a la Ley 25.326, sumado a responsabilidad civil por eventuales filtraciones de imágenes de DNI y biometría facial.",
+      "severity": "high",
+      "statement": "Tratamiento y almacenamiento de datos personales y biométricos (DNI y selfie) sin política de privacidad ni consentimiento informado previo bajo la Ley 25.326."
+    },
+    {
+      "assumptions": [
+        "Existe doctrina y precedentes jurisprudenciales en fueros laborales argentinos que interpretan el control de ingreso, la tarifación mínima y el ordenamiento algorítmico como indicios de subordinación técnica o económica."
+      ],
+      "correction": "Instrumentar un Contrato Marco de Prestador Independiente aceptado al registrarse; aclarar que la tarifa mínima es una referencia operativa fijada por oferta y demanda; garantizar libertad total de horarios, rechazo de viajes sin penalizaciones y permitir el ejercicio simultáneo en otras actividades.",
+      "evidence": [
+        "Contexto Sección 2: 'un administrador lo aprueba a mano antes de que pueda ofertar.'",
+        "Contexto Sección 5: 'la solicitud queda visible para los repartidores habilitados, primero los disponibles y más cercanos'",
+        "Contexto Sección 6: 'Oferta mínima de referencia: ARS 1.000.'"
+      ],
+      "impact": "Reclamos judiciales individuales o colectivos exigiendo indemnizaciones laborales, aportes a la seguridad social y multas de las Leyes 20.744 y 24.013.",
+      "severity": "high",
+      "statement": "Riesgo de encuadre en presunción de relación laboral o dependencia encubierta (art. 23 Ley 20.744) derivado de la admisión discrecional y fijación de tarifa mínima."
+    },
+    {
+      "assumptions": [
+        "El destinatario final no interactúa con la aplicación ni presta conformidad para la cesión de su teléfono y domicilio al repartidor que gana la oferta."
+      ],
+      "correction": "Obligar contractualmente al solicitante/comercio a declarar que cuenta con la autorización del destinatario para la logística; revelar el teléfono y la dirección exacta únicamente al repartidor seleccionado tras la confirmación formal del envío; e incorporar prohibición expresa de contactar al destinatario fuera del propósito del envío.",
+      "evidence": [
+        "Contexto Sección 3: 'Destinatario: recibe el pedido. No es usuario; solo figuran su nombre y teléfono.'",
+        "Contexto Sección 4: 'Nombre y teléfono de quien recibe. Dirección de entrega.'"
+      ],
+      "impact": "Reclamos por tratamiento ilegítimo de datos personales de terceros no usuarios según el art. 5 de la Ley 25.326; riesgo de acoso, contacto no deseado o uso indebido de los números telefónicos por parte de repartidores.",
+      "severity": "high",
+      "statement": "Tratamiento de datos personales de terceros no registrados (destinatarios) sin consentimiento directo ni política de minimización de datos."
+    },
+    {
+      "assumptions": [
+        "Los repartidores utilizarán motocicletas, bicicletas o automóviles en la vía pública de Aguilares sin que el flujo actual exija constancia de seguro obligatorio vigente contra terceros."
+      ],
+      "correction": "Requerir en el onboarding del repartidor la carga de licencia de conducir vigente y comprobante de póliza de seguro de responsabilidad civil al día; el administrador no debe habilitar a ningún repartidor que no acredite seguro vigente.",
+      "evidence": [
+        "Contexto Sección 2: 'carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano'",
+        "Contexto Sección 8, pregunta 7: 'siniestros viales y relación laboral con los repartidores'"
+      ],
+      "impact": "Riesgo de demandas por responsabilidad civil solidaria o refleja (arts. 1757 y 1758 del Código Civil y Comercial de la Nación) y contravenciones a la Ley Nacional de Tránsito 24.449 en caso de siniestros viales durante la ejecución de un viaje.",
+      "severity": "medium",
+      "statement": "Ausencia de verificación de seguro de responsabilidad civil obligatorio y licencia habilitante para los rodados de los repartidores."
+    },
+    {
+      "assumptions": [
+        "Usuarios podrían utilizar el marketplace para transportar sustancias ilícitas, inflamables, dinero en efectivo o elementos de alto valor sin delimitación de responsabilidad."
+      ],
+      "correction": "Establecer en los Términos y Condiciones una lista exhaustiva de mercaderías prohibidas (estupefacientes, armas, dinero, mercancías peligrosas); disponer que cadeApp es exclusivamente un intermediario tecnológico que no asume custodia de la carga; y fijar el protocolo de resolución directa y denuncia policial obligatoria ante siniestros o ilícitos.",
+      "evidence": [
+        "Contexto Sección 1: 'No es una empresa de delivery y no cobra ni administra el dinero del envío. Solo es el punto de encuentro'",
+        "Contexto Sección 4: 'Tipo de producto o paquete.'",
+        "Contexto Sección 8, pregunta 7: 'la plataforma como intermediaria frente a pérdida, daño o robo del paquete'"
+      ],
+      "impact": "Imputaciones penales o contravencionales a la plataforma como partícipe secundario o facilitador, y reclamos de indemnización bajo la Ley 24.240 de Defensa del Consumidor por pérdida o daño de paquetes.",
+      "severity": "medium",
+      "statement": "Falta de deslinde contractual y exclusión de mercaderías prohibidas o peligrosas en el paquete."
+    }
+  ],
+  "helperRequests": [],
+  "jurisdiction": "Aguilares, Provincia de Tucumán, República Argentina",
+  "legalConclusion": "El modelo de negocio de cadeApp es legalmente viable en la jurisdicción de Aguilares (Tucumán, Argentina) bajo la figura de intermediación y locación de servicios de software, a condición de que se establezcan Términos y Condiciones precisos, un Contrato Marco de Prestador Independiente para repartidores que preserve su autonomía real, una Política de Privacidad con consentimiento expreso para la recolección de DNI/selfies, y el requerimiento formal de seguro obligatorio de responsabilidad civil antes de habilitar al repartidor.",
+  "sources": [
+    {
+      "retrieved_at": "2026-09-17",
+      "title": "Ley Nacional 25.326 - Protección de los Datos Personales (InfoLEG)",
+      "url": "http://servicios.infoleg.gob.ar/infolegInternet/anexos/60000-64999/64790/norma.htm"
+    },
+    {
+      "retrieved_at": "2026-09-17",
+      "title": "Ley Nacional 20.744 - Régimen de Contrato de Trabajo (InfoLEG)",
+      "url": "http://servicios.infoleg.gob.ar/infolegInternet/anexos/25000-29999/25552/texact.htm"
+    },
+    {
+      "retrieved_at": "2026-09-17",
+      "title": "Código Civil y Comercial de la Nación - Ley 26.994 (InfoLEG)",
+      "url": "http://servicios.infoleg.gob.ar/infolegInternet/anexos/235000-239999/235975/norma.htm"
+    },
+    {
+      "retrieved_at": "2026-09-17",
+      "title": "Ley Nacional 24.240 - Defensa del Consumidor (InfoLEG)",
+      "url": "http://servicios.infoleg.gob.ar/infolegInternet/anexos/0-4999/19/texact.htm"
+    },
+    {
+      "retrieved_at": "2026-09-17",
+      "title": "Ley Nacional 24.449 - Tránsito y Seguridad Vial (InfoLEG)",
+      "url": "http://servicios.infoleg.gob.ar/infolegInternet/anexos/15000-19999/15189/norma.htm"
+    }
+  ],
+  "summary": "Dictamen legal condicional para el MVP de cadeApp en Aguilares (Tucumán). La plataforma puede operar como intermediario tecnológico sin intermediación financiera del envío, siempre que se subsanen cinco riesgos clave: mitigación de presunción laboral con repartidores (Ley 20.744), tratamiento y custodia de datos biométricos y personales (Ley 25.326), protección de datos de destinatarios no registrados, seguro obligatorio para vehículos de reparto (Ley 24.449 y CCyCN), y deslinde contractual de responsabilidad y bienes prohibidos.",
+  "verdict": "conditional"
+}

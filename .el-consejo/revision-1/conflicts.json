@@ -1,0 +1,137 @@
+{
+  "conflicts": [
+    {
+      "id": "baas-choice",
+      "class": "technical",
+      "reversible": false,
+      "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+      "parties": [
+        "backend",
+        "pm",
+        "frontend"
+      ]
+    },
+    {
+      "id": "state-machine-scope",
+      "class": "product",
+      "reversible": true,
+      "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+      "parties": [
+        "backend",
+        "pm"
+      ]
+    },
+    {
+      "id": "subscription-payment-gateway",
+      "class": "money",
+      "reversible": false,
+      "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+      "parties": [
+        "backend",
+        "finance",
+        "legal"
+      ]
+    },
+    {
+      "id": "devops-baas-backup-criteria",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "El plan deja la elección entre Supabase y Firebase abierta para que el Consejo la recomiende, con criterios como modelo de datos, consultas geográficas y tiempo real. DevOps necesita que esa misma decisión incorpore explícitamente capacidad de backup/point-in-time recovery y costo del plan pago que la habilita, criterio que backend o seguridad podrían no priorizar de la misma forma al justificar la elección.",
+      "parties": [
+        "devops",
+        "backend",
+        "security"
+      ],
+      "normalized_from": "technical"
+    },
+    {
+      "class": "money",
+      "id": "conflict-monetizacion-particulares-pricing",
+      "parties": [
+        "finance",
+        "pm"
+      ],
+      "reversible": false,
+      "summary": "Falta de definición económica sobre si los particulares deben quedar excluidos, tener envíos de prueba gratuitos o contar con una modalidad de pase diario/por envío, elevando la decisión al checkpoint humano de Lautaro."
+    },
+    {
+      "class": "business",
+      "id": "conflict-subscription-paywall-vs-trial",
+      "parties": [
+        "marketing",
+        "pm",
+        "finance"
+      ],
+      "reversible": false,
+      "summary": "Tensión entre la decisión de cobrar abono mensual a comercios desde el primer día y la necesidad de marketing de ofrecer un período de prueba gratuito (trial) o cupo inicial bonificado para superar la barrera de adopción en Aguilares."
+    },
+    {
+      "class": "product",
+      "id": "conflict-particulars-monetization-scope",
+      "parties": [
+        "pm"
+      ],
+      "reversible": true,
+      "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual."
+    },
+    {
+      "id": "qa-scope-vs-speed",
+      "class": "product",
+      "reversible": true,
+      "summary": "QA sostiene que el plan de MVP no puede darse por completo hasta definir una máquina de estados completa, reglas de autorización server-side y una estrategia de pruebas explícita; esto puede chocar con la prioridad de PM de lanzar rápido en Aguilares y tratar estos puntos como iteraciones post-MVP.",
+      "parties": [
+        "qa",
+        "pm"
+      ]
+    },
+    {
+      "id": "courier-location-tradeoff",
+      "class": "product",
+      "reversible": false,
+      "summary": "El plan quiere ordenar solicitudes mostrando primero a los repartidores 'disponibles y más cercanos', lo que empuja hacia tracking de ubicación con buena precisión y frecuencia. Desde seguridad, eso debería minimizarse (ubicación declarada al marcarse disponible, sin historial persistente) porque un repartidor no es un empleado con consentimiento laboral pleno de ser rastreado. La decisión final de precisión/frecuencia de ubicación es de producto, no solo técnica.",
+      "parties": [
+        "security",
+        "pm",
+        "backend"
+      ]
+    },
+    {
+      "id": "recipient-pii-visibility-timing",
+      "class": "product",
+      "reversible": false,
+      "summary": "El plan no dice si el teléfono y la dirección de entrega del destinatario se muestran a todos los repartidores que ofertan o solo al elegido. Mostrarlos antes ayuda a que el repartidor calcule mejor su oferta (necesidad de producto/UX), pero expone datos de un tercero sin consentimiento a oferentes que nunca ganan la solicitud (postura de seguridad). Es una decisión de producto que security recomienda resolver a favor de revelar recién al aceptar la oferta.",
+      "parties": [
+        "security",
+        "pm",
+        "ux-ui"
+      ]
+    }
+  ],
+  "partyNormalization": [
+    {
+      "conflict": "conflict-monetizacion-particulares-pricing",
+      "raw": "finanzas",
+      "mappedTo": "finance"
+    },
+    {
+      "conflict": "conflict-monetizacion-particulares-pricing",
+      "raw": "fundador",
+      "mappedTo": null
+    },
+    {
+      "conflict": "conflict-subscription-paywall-vs-trial",
+      "raw": "PM",
+      "mappedTo": "pm"
+    },
+    {
+      "conflict": "conflict-subscription-paywall-vs-trial",
+      "raw": "Finanzas",
+      "mappedTo": "finance"
+    },
+    {
+      "conflict": "conflict-particulars-monetization-scope",
+      "raw": "human_checkpoint",
+      "mappedTo": null
+    }
+  ]
+}

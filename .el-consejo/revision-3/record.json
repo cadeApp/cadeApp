@@ -1,0 +1,46 @@
+{
+  "id": "revision-3",
+  "mode": "review",
+  "state": "DONE",
+  "status": "APROBADO_CON_CONDICIONES",
+  "date": "2026-09-18",
+  "subject": "Incorporación de selección de pin en mapa para alta de comercio y creación de solicitud, distancia calculada en servidor y visualización de recorrido post-aceptación (Decisión D15)",
+  "execution": "El Consejo v1 deliberativo; roles requeridos: pm, ux-ui, frontend, backend, security, legal, finance, qa; juez para adjudicación técnica",
+  "participants": {
+    "reviewers": [
+      "pm",
+      "ux-ui",
+      "frontend",
+      "backend",
+      "security",
+      "legal",
+      "finance",
+      "qa"
+    ],
+    "adjudicator": "judge",
+    "humanLead": "Lautaro073"
+  },
+  "verdicts": {
+    "approve": 0,
+    "conditional": 8,
+    "block": 0,
+    "not_applicable": 0
+  },
+  "findings": {
+    "critical": 5,
+    "total": 16
+  },
+  "conflicts": 5,
+  "adjudications": [
+    "adjudication/conf-proveedor-mapas.json",
+    "adjudication/conf-calculo-distancia.json"
+  ],
+  "checkpoint": "checkpoint.json",
+  "deliverables": {
+    "masterPlanUpdated": "docs/master-plan.md (D15 mapa y geolocalización, §4, §6.5, §7, §9, §11, §13, §16, §17, §18)",
+    "implementationPlanUpdated": "docs/implementation-plan.md (tareas T-106, T-116, T-117, T-314, tableros §7, matriz §10, decisiones §11, diseño §12)",
+    "rule25Updated": "docs/agy-kit/.agents/rules/25-stack-y-patrones.md (@vis.gl/react-google-maps y dynamic import)",
+    "rule30Updated": "docs/agy-kit/.agents/rules/30-supabase.md (RLS de coordenadas y función de distancia)",
+    "stitchUpdated": "docs/design/stitch/ (00-sistema-de-diseno, README, 02-comercio, 03-repartidor, 05-transversales)"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "agentId": "qa",
+  "verdict": "conditional",
+  "confidence": 0.75,
+  "summary": "El plan original es una transcripción fiel del intake y dejó explícitamente las decisiones de estados, excepciones y pruebas para el Consejo, por lo que gran parte de lo que necesita QA para verificar el MVP (máquina de estados de solicitud/oferta, control de concurrencia en la aceptación, aplicación server-side de la oferta mínima y de la aprobación de repartidores, comportamiento ante suscripción vencida, y una estrategia de pruebas) todavía no está definido. Ninguno de estos vacíos es intratable, pero sin resolverlos el plan corregido no sería verificable ni testeable de punta a punta. Se marcan dos hallazgos críticos (concurrencia en la aceptación de ofertas y falta de control de autorización server-side para repartidores no aprobados) por su impacto directo en la integridad del flujo central y en la garantía de seguridad que sostiene la confianza del producto.",
+  "findings": [
+    {
+      "severity": "critical",
+      "statement": "El flujo de selección de ofertas (pasos 4-5) no define ningún mecanismo de exclusión mutua ni transición atómica de estado, por lo que dos aceptaciones casi simultáneas (doble tap, dos pestañas, reintento de red) podrían confirmarse ambas como oferta ganadora.",
+      "evidence": [
+        "original.md:38-39 — 'Selección: el solicitante compara las ofertas y elige la que prefiera... Confirmación: al aceptar, ambas partes reciben los datos para coordinar retiro y entrega.' no menciona bloqueo, transacción ni verificación de estado previo.",
+        "original.md:64 — 'Estados y excepciones' figura como pregunta abierta #4, sin resolver en el resto del documento."
+      ],
+      "impact": "Sin control de concurrencia, dos repartidores podrían recibir la confirmación de la misma solicitud, generando doble presentación en el punto de retiro, disputas entre partes y daño reputacional; además el caso no es testeable porque no hay estado ni contrato definido para 'aceptar'.",
+      "correction": "Definir la aceptación como transición de estado atómica y exclusiva (transacción/constraint en base de datos que solo permite 'solicitud.estado: publicada -> aceptada' una vez, rechazando cualquier intento posterior con un código de error explícito 'ya_aceptada'); documentar la máquina de estados completa de solicitud y oferta en el plan corregido.",
+      "reproducibleSteps": [
+        "Diseñar prueba de concurrencia: disparar dos solicitudes de aceptación simultáneas sobre la misma solicitud publicada (con dos ofertas distintas) y verificar que solo una transiciona a 'aceptada' y la otra recibe un error controlado.",
+        "Diseñar prueba de reintento: simular reintento de red del mismo request de aceptación y verificar idempotencia (no debe duplicar el efecto)."
+      ]
+    },
+    {
+      "severity": "critical",
+      "statement": "El plan describe la aprobación manual del repartidor (DNI, selfie, vehículo) como paso previo a ofertar, pero no especifica ningún control de autorización server-side que impida ofertar a un repartidor pendiente, rechazado o luego suspendido por el admin.",
+      "evidence": [
+        "original.md:15 — 'Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.'",
+        "original.md:20 — 'Repartidor independiente: se registra, un admin lo aprueba, ve solicitudes y oferta.' no define qué ve o puede hacer un repartidor no aprobado ni qué pasa si se revoca la aprobación."
+      ],
+      "impact": "Sin una verificación de estado de aprobación en cada intento de ofertar (y no solo en el registro), un repartidor no vetado -o uno cuya aprobación fue revocada tras un incidente- podría seguir ofertando, anulando el control de seguridad que es la principal garantía de confianza del producto y generando exposición ante un incidente con un repartidor no vetado.",
+      "correction": "Especificar en el plan un chequeo de autorización obligatorio en el backend en el momento de crear/editar una oferta (no solo al ver la lista), que valide 'repartidor.estado_aprobacion == aprobado' contra la base, incluyendo el caso de revocación posterior por el admin con efecto inmediato.",
+      "reproducibleSteps": [
+        "Diseñar prueba: repartidor con estado 'pendiente' intenta crear una oferta directamente vía API/formulario; debe rechazarse aunque el frontend no muestre el botón.",
+        "Diseñar prueba: admin revoca la aprobación de un repartidor con ofertas activas y verificar que no puede seguir ofertando ni ser seleccionado en nuevas solicitudes."
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "El plan original no incluye ninguna estrategia de pruebas (unitarias, integración, end-to-end, entornos de staging o datos de prueba), pese a que el alcance pedido por el usuario la requiere explícitamente.",
+      "evidence": [
+        "Búsqueda en original.md: no aparece ninguna sección de QA, pruebas automatizadas, staging ni CI; la única mención cercana es 'período de prueba' de la suscripción (original.md:65), que es un beneficio comercial, no una estrategia de testing.",
+        "Pedido del motor, input.scope — 'estrategia de pruebas' figura como parte explícita del alcance del plan de MVP."
+      ],
+      "impact": "Sin una estrategia de pruebas definida, el equipo puede lanzar el MVP sin cobertura sobre los flujos críticos y dinero-adyacentes (ofertas, aceptación, aprobación de repartidores), aumentando el riesgo de regresiones silenciosas en producción.",
+      "correction": "Agregar al plan corregido una sección de estrategia de pruebas: pruebas unitarias sobre reglas de negocio (oferta mínima, transiciones de estado), pruebas de integración contra el BaaS elegido, pruebas end-to-end de los flujos críticos (publicar, ofertar, aceptar, coordinar) y un entorno de staging aislado de producción para validar antes de cada release."
+    },
+    {
+      "severity": "high",
+      "statement": "La regla de oferta mínima se describe como 'de referencia' (ARS 1.000) sin especificar si la validación es obligatoria y server-side o solo una sugerencia de UI, dejando ambiguo si una oferta por debajo del mínimo debe rechazarse.",
+      "evidence": [
+        "original.md:46 — '- Oferta mínima de referencia: ARS 1.000.'",
+        "original.md:37 — 'Ofertas: cada repartidor interesado dice cuánto cobraría. Ninguna oferta puede ser menor a ARS 1.000.' contradice parcialmente el uso de 'de referencia' en la sección 6."
+      ],
+      "impact": "La ambigüedad entre 'mínimo obligatorio' (sección 5) y 'de referencia' (sección 6) hace que la regla no sea testeable tal como está escrita: un caso de prueba con oferta de ARS 999 podría considerarse válido o inválido según qué interpretación se implemente.",
+      "correction": "Resolver la contradicción en el plan corregido: declarar explícitamente que ARS 1.000 es un piso obligatorio validado en el servidor (no solo en el cliente), definir manejo de decimales/redondeo, y documentar el código de error para ofertas por debajo del mínimo.",
+      "reproducibleSteps": [
+        "Diseñar casos de prueba de frontera: oferta de ARS 999.99, 1000.00 y 1000.01 contra el endpoint de creación de oferta, verificando que solo las dos últimas se acepten."
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "La expiración de solicitudes sin ofertas y las reglas de cancelación por cualquiera de las partes figuran solo como preguntas abiertas sin resolver, sin plazos, sin transiciones de estado ni reglas de quién puede cancelar y en qué momento.",
+      "evidence": [
+        "original.md:64 — '4. Estados y excepciones: expiración de solicitudes sin ofertas, retiro o cambio de ofertas, cancelación por cualquiera de las partes, repartidor que no se presenta, confirmación de entrega y calificaciones.' listado como pregunta abierta, sin resolución en el resto del documento."
+      ],
+      "impact": "Sin una máquina de estados completa (creada, publicada, ofertada, aceptada, en curso, entregada, cancelada, expirada) con reglas explícitas por actor, no es posible diseñar casos de prueba de regresión para cancelaciones tardías, solicitudes que quedan abiertas indefinidamente o repartidores que no se presentan; el comportamiento queda librado a la implementación de cada desarrollador.",
+      "correction": "Definir en el plan corregido: (a) tiempo de expiración de solicitudes sin ofertas con transición automática a 'expirada'; (b) qué transiciones de cancelación están permitidas por actor y en qué estado (antes vs. después de aceptar); (c) protocolo para repartidor que no se presenta.",
+      "reproducibleSteps": [
+        "Diseñar prueba: solicitud sin ofertas tras el plazo definido transiciona automáticamente a 'expirada' y deja de ser visible para nuevos repartidores.",
+        "Diseñar prueba: intento de cancelación en un estado no permitido (p. ej. después de 'entregada') debe rechazarse."
+      ]
+    },
+    {
+      "severity": "medium",
+      "statement": "El plan no define qué sucede cuando la suscripción de un comercio o emprendimiento vence: si se bloquea la publicación de nuevas solicitudes, si hay período de gracia, ni cómo se calcula el corte respecto a la fecha de facturación.",
+      "evidence": [
+        "original.md:13 — 'Ingresos: suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis.' no especifica consecuencias del vencimiento.",
+        "original.md:65 — pregunta abierta #5 sobre suscripción menciona período de prueba y facturación pero no el comportamiento tras el vencimiento, y queda sin resolver en el documento."
+      ],
+      "impact": "Sin una regla de bloqueo definida y testeable, un comercio con suscripción vencida podría seguir publicando solicitudes gratis, erosionando silenciosamente el único modelo de ingresos del producto sin que ningún test lo detecte como regresión.",
+      "correction": "Definir en el plan corregido el comportamiento exacto al vencer la suscripción (bloqueo inmediato o período de gracia de N días, con qué acciones se permiten/bloquean) y agregar un caso de prueba de frontera sobre la fecha de vencimiento."
+    },
+    {
+      "severity": "medium",
+      "statement": "La confiabilidad de las notificaciones push en la PWA y el comportamiento cuando no llegan queda como pregunta abierta sin ninguna estrategia de respaldo (polling, actualización al abrir la app, indicador in-app) definida.",
+      "evidence": [
+        "original.md:63 — '3. Notificaciones de nuevas solicitudes y ofertas en una PWA (Android, iOS), y qué pasa si no llegan.' queda como pregunta abierta sin respuesta en el resto del plan."
+      ],
+      "impact": "Las push notifications en PWA son poco confiables en iOS y dependen de permisos del sistema operativo; sin una estrategia de respaldo documentada, un repartidor o solicitante puede perder una oferta o solicitud crítica sin ningún mecanismo que lo capture, afectando el flujo core del negocio.",
+      "correction": "Definir en el plan corregido una estrategia de respaldo explícita para cuando la push falla o no está soportada (polling al abrir/foco de la app, badge de pendientes visible en la UI) y casos de prueba para: permiso de notificación denegado, app cerrada/en background, y reconexión tras estar offline."
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "qa-scope-vs-speed",
+      "class": "product",
+      "reversible": true,
+      "summary": "QA sostiene que el plan de MVP no puede darse por completo hasta definir una máquina de estados completa, reglas de autorización server-side y una estrategia de pruebas explícita; esto puede chocar con la prioridad de PM de lanzar rápido en Aguilares y tratar estos puntos como iteraciones post-MVP.",
+      "parties": ["qa", "pm"]
+    }
+  ],
+  "helperRequests": []
+}

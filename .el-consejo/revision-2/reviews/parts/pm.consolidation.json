@@ -1,0 +1,44 @@
+{
+  "choice": {
+    "confidence": 0.86,
+    "conflicts": [
+      {
+        "class": "product",
+        "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+        "parties": [
+          "pm",
+          "backend"
+        ],
+        "reversible": true,
+        "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14."
+      },
+      {
+        "class": "technical",
+        "id": "conf-auth-scope-p2-p3",
+        "parties": [
+          "pm",
+          "frontend",
+          "backend"
+        ],
+        "reversible": true,
+        "summary": "Solapamiento de alcance entre T-111 (P2) y T-121 (P3) respecto al flujo unificado de autenticación y registro de repartidores."
+      }
+    ],
+    "keep": [
+      "p1.0",
+      "p3.0",
+      "p3.1",
+      "p5.0",
+      "p5.1"
+    ],
+    "summary": "Dictamen final consolidado de PM: CONDICIONAL (confianza: 0.86). El plan de implementación de cadeApp está bien estructurado para guiar a 3 desarrolladores con agy, pero requiere corregir cinco aspectos críticos de producto y coordinación antes de su ejecución: 1) Definir el ownership formal del módulo troncal 'auth' en la matriz de responsabilidades; 2) Establecer un protocolo operativo en la skill tomar-tarea y prompt de arranque para retomar tareas asincrónicamente entre distintas sesiones; 3) Eliminar la regla de resolución contractual que da preeminencia a la base de datos sobre el dominio sin checkpoint humano; 4) Especificar Criterios de Aceptación y DoD completos para las tareas E2E de Fase 3 (T-305 a T-309); y 5) Rebalancear la distribución de carga en Fase 3 para garantizar un paralelismo equitativo entre las 3 pistas de trabajo.",
+    "verdict": "conditional"
+  },
+  "keptRefs": [
+    "p1.0",
+    "p3.0",
+    "p3.1",
+    "p5.0",
+    "p5.1"
+  ]
+}

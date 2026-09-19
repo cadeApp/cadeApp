@@ -1,0 +1,11 @@
+{
+  "mode": "review",
+  "source": "cadeApp — idea de producto de Lautaro (2026-09-17), plan original en .el-consejo/revision-1/original.md",
+  "goal": "Obtener un plan de MVP corregido, completo y ejecutable para cadeApp: marketplace local que conecta solicitantes de envíos con repartidores independientes mediante ofertas, sin intermediar el pago del envío, incluyendo una recomendación justificada entre Supabase y Firebase.",
+  "audience": "Lautaro (fundador y desarrollador); comercios, emprendedores y particulares de Aguilares (Tucumán) que necesitan enviar; repartidores independientes de Aguilares.",
+  "scope": "Plan de MVP: producto y alcance, flujo y estados, modelo de datos, arquitectura Next.js + TypeScript strict con backend en el mismo proyecto, PWA y notificaciones, elección de BaaS, seguridad y privacidad, marco legal local, suscripción para comercios, despliegue y operación, lanzamiento en Aguilares y estrategia de pruebas. Fuera de alcance: diseño visual (se define después) y escritura de código.",
+  "constraints": "Next.js con TypeScript strict; backend dentro del mismo Next.js; PWA; Supabase o Firebase; nombre cadeApp; la plataforma no cobra ni custodia el dinero del envío; oferta mínima ARS 1.000; lanzamiento solo en Aguilares, Tucumán, Argentina; repartidores aprobados manualmente por un admin (DNI, selfie, vehículo); ingresos por suscripción mensual a comercios y emprendedores, repartidores gratis.",
+  "acceptanceCriteria": "El plan corregido permite construir y lanzar el MVP de cadeApp en Aguilares con el flujo solicitud → ofertas (mínimo ARS 1.000) → elección → coordinación directa, con repartidores aprobados manualmente, suscripción para comercios, sin custodiar el dinero del envío y con la elección de BaaS justificada.",
+  "affectedDomains": ["product", "frontend", "web", "backend", "api", "data", "integration", "security", "privacy", "auth", "legal", "compliance", "finance", "pricing", "revenue", "taxes", "ux", "usability", "marketing", "growth", "quality", "testing", "documentation", "deployment", "infrastructure", "backups", "observability"],
+  "stacks": ["nextjs", "typescript", "pwa", "supabase", "firebase"]
+}

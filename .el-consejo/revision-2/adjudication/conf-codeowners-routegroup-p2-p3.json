@@ -1,0 +1,42 @@
+{
+  "status": "CONDICIONAL",
+  "class": "technical",
+  "reversible": true,
+  "positions": [
+    {
+      "agentId": "frontend",
+      "position": "Mantiene su posición. El choque entre CODEOWNERS (por grupo de ruta completo) y Archivos permitidos (por subruta) no se limita a auth: T-111 escribe en (public)/login, que es de P3, y T-121 en (courier)/onboarding, que es de P2, y va a volver a pasar. Pide resolverlo con una regla general y ofrece dos opciones: (A) que CODEOWNERS sea tan detallado como Archivos permitidos; (B) documentar que Archivos permitidos puede cruzar el patrón general de CODEOWNERS, y que el revisor obligatorio sea el dueño de la subruta según CODEOWNERS y no la pista que escribió."
+    },
+    {
+      "agentId": "pm",
+      "position": "No presentó réplica sobre este conflicto. Su postura relacionada (conf-auth-scope-p2-p3, pm.review.0) exige asignar la propiedad formalmente en la tabla de responsabilidades para evitar choques entre P2 y P3."
+    },
+    {
+      "agentId": "backend",
+      "position": "No presentó réplica sobre este conflicto. Su postura relacionada (conf-auth-scope-p2-p3) pide un solo módulo de alta y login con dueño único, para que dos pistas no toquen sesión o JWT a la vez sin coordinarse."
+    }
+  ],
+  "facts": [
+    "original.md L313: CODEOWNERS asigna src/app/(merchant|courier)/ y src/ui/ a P2, y src/app/(admin|public)/ a P3, por grupo de ruta.",
+    "original.md L347: T-111 (P2) puede escribir en src/app/(public)/login/**. L352: T-121 (P3) puede escribir en src/app/(courier)/onboarding/**. Las dos rutas están en grupos que CODEOWNERS asigna a la otra pista.",
+    "original.md L373, L374 y L377: T-303, T-304 y T-307 (P2) escriben en e2e/specs, que es de P3 (L24 y L313). Es la misma divergencia, fuera de src/app.",
+    "original.md L193 y L312: la protección de ramas exige 1 aprobación de otra persona; el plan no activa 'Require review from Code Owners'. Activarlo se discute en agent-permission-enforcement (checkpoint humano).",
+    "original.md L438 (§10.2): cada PR lo aprueba alguien de otra pista, que verifica que el diff respete Archivos permitidos. L100 y L124: el agente toca solo Archivos permitidos y no modifica .github/** salvo que la tarea lo indique. CODEOWNERS está en .github/ y lo crea T-001 (L328).",
+    "original.md L22-24: cada pista es una sola persona."
+  ],
+  "assumptions": [
+    "No verificado en esta corrida (verificar en T-001 con la vista de errores de CODEOWNERS de GitHub): se asume que CODEOWNERS usa patrones estilo gitignore, sin alternativas (a|b) ni expansión {a,b}, y que manda la última línea que coincide. Si es así, L313 es una abreviatura y hay que escribir una línea por ruta.",
+    "Mismo supuesto sobre GitHub que en codeowners-spof-p1: el autor no puede aprobar su propio PR. Con 'Require review from Code Owners' activo y un solo dueño por línea, el PR de una persona sobre sus propias rutas queda bloqueado.",
+    "Se asume que los cruces de subruta van a ser pocos y previsibles (auth, onboarding, specs E2E). Si se vuelven frecuentes, la división por grupos de ruta está mal pensada."
+  ],
+  "resolution": "Se adopta la opción B de Frontend con reglas explícitas y se descarta la A. 1) Qué significa cada cosa (a escribir en 50-git-y-ambientes.md y en §2): los Archivos permitidos de la ficha dicen qué escribe la tarea; CODEOWNERS dice quién es dueño de una ruta y la revisa. No tienen que coincidir. Una ficha puede incluir rutas de otra pista solo nombrando la subruta concreta, nunca el grupo entero (por ejemplo src/app/(public)/login/** y no src/app/(public)/**). En ese caso el PR necesita la aprobación del dueño de esa ruta según CODEOWNERS; como es de otra pista, esa aprobación cumple también §10.2. Si un PR toca rutas de dos pistas ajenas, aprueban los dos dueños. 2) Plantilla de PR (T-001): una sección 'Rutas de otra pista' con cada ruta ajena y su dueño; el revisor comprueba que coincida con la ficha. 3) CODEOWNERS (T-001): L313 se escribe con una línea por ruta. No se agregan excepciones por subruta para cada ficha. Solo se agrega una línea de subruta cuando una carpeta cambia de dueño de forma permanente, como src/features/auth/ para P2 (conf-auth-scope-p2-p3). Las rutas src/app/(public)/login/, la de registro y src/app/(courier)/onboarding/ quedan con el dueño de su grupo: P3 revisa lo que P2 escribe en (public) y P2 revisa lo que P3 escribe en (courier), que es donde las páginas dependen de los layouts y guardas de cada grupo. DoD de T-001: GitHub no marca errores en CODEOWNERS y un PR de prueba que toca (public)/login pide revisión a P3. 4) Se descarta la opción A: habría que editar .github/CODEOWNERS (de P3, y vedado a los agentes salvo que la ficha lo indique, L124) por cada ficha que cruce una subruta. Además, con una persona por pista, hacer coincidir dueño y autor elimina la revisión cruzada y, si la revisión de code owners es obligatoria, bloquea el PR (supuesto 2). 5) Depende del checkpoint agent-permission-enforcement. Si decide activar 'Require review from Code Owners', cada línea necesita un segundo dueño, que sea otra persona, para los PR del dueño sobre sus propias rutas. Para las rutas de P1 lo resuelve codeowners-spof-p1; para las de P2 y P3, la identidad la define el checkpoint humano, igual que el respaldo de P1. GitHub no puede exigir cuál de los dueños listados aprueba, así que la regla del punto 1 se controla en la revisión humana. Si no se activa, CODEOWNERS solo pide revisores y la regla del punto 1 también se controla en la revisión. 6) Este mismo mecanismo cubre los specs de P2 en e2e/** y los de P1 en T-305 y T-306 (rebalance-fase3-p1-e2e).",
+  "dissent": [
+    "En conf-auth-scope-p2-p3, Frontend propuso mover el onboarding a (public)/onboarding/courier o agregar a CODEOWNERS una excepción para esa subruta. Las dos opciones se descartan en ese fallo y en este. PM y Backend no presentaron réplica sobre este conflicto."
+  ],
+  "confidence": 0.72,
+  "reopenCondition": "Reabrir si pasa alguna de estas cosas: (a) T-001 verifica que CODEOWNERS no funciona como dicen los supuestos 1 o 2; (b) agent-permission-enforcement decide un esquema de revisión obligatoria que no se puede expresar con dueños por ruta más la regla de revisión; (c) más de tres fichas de una misma fase cruzan subrutas de otra pista, o la misma subruta se revisa cruzada de forma sostenida entre el mismo par de pistas, lo que indicaría que conviene rearmar los grupos de ruta o cambiar el dueño de la carpeta; (d) aparece un PR mergeado que tocó una ruta ajena sin la aprobación de su dueño.",
+  "rationale": "Escribir y revisar son responsabilidades distintas. Con una persona por pista, obligarlas a coincidir elimina la revisión cruzada. Separarlas mantiene CODEOWNERS estable y deja a la vista cada cruce.",
+  "resolvedFindings": [
+    "conf-codeowners-routegroup-p2-p3"
+  ]
+}

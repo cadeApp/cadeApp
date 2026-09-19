@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp - Tu envío al precio que elijas</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface-variant": "#3c4949",
+            "primary-container": "#09babd",
+            "surface-container": "#e7eeff",
+            "surface-container-low": "#f0f3ff",
+            "secondary-container": "#d9defa",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-container": "#5c6279",
+            "primary-fixed": "#6df6f9",
+            "on-tertiary-fixed": "#002021",
+            "tertiary-container": "#5cb5b8",
+            "surface-container-highest": "#dae3f7",
+            "inverse-surface": "#12182c",
+            "on-primary-fixed": "#002020",
+            "inverse-primary": "#4adadd",
+            "on-secondary-fixed": "#151b2f",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-background": "#12182c",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-high": "#dfe8fd",
+            "outline": "#6c7a7a",
+            "error-container": "#ffdad6",
+            "background": "#fdfcfb",
+            "primary": "#00696b",
+            "surface-tint": "#00696b",
+            "primary-fixed-dim": "#4adadd",
+            "secondary-fixed": "#dce1fd",
+            "on-secondary-fixed-variant": "#40465c",
+            "on-error-container": "#93000a",
+            "on-surface": "#12182c",
+            "on-error": "#ffffff",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#12182c",
+            "outline-variant": "#e4e7ec",
+            "on-tertiary-fixed-variant": "#004f51",
+            "secondary": "#585d75",
+            "on-secondary": "#ffffff",
+            "tertiary": "#00696c",
+            "on-tertiary-container": "#004446",
+            "tertiary-fixed": "#99f1f4",
+            "on-tertiary": "#ffffff",
+            "surface": "#ffffff",
+            "secondary-fixed-dim": "#c0c5e0",
+            "error": "#ba1a1a",
+            "surface-dim": "#d1daee",
+            "surface-variant": "#dae3f7",
+            "surface-bright": "#f9f9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "0.5rem",
+            "space-xs": "0.25rem",
+            "margin": "1rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "price-display": ["Montserrat", "sans-serif"],
+            "headline-xl": ["Montserrat", "sans-serif"],
+            "body-medium": ["Inter", "sans-serif"],
+            "headline-lg": ["Montserrat", "sans-serif"],
+            "label-md": ["Inter", "sans-serif"],
+            "price-sm": ["Montserrat", "sans-serif"],
+            "body-lg": ["Inter", "sans-serif"],
+            "label-sm": ["Inter", "sans-serif"],
+            "body-md": ["Inter", "sans-serif"],
+            "headline-md": ["Montserrat", "sans-serif"]
+          },
+          "fontSize": {
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      background-color: #fdfcfb;
+      color: #12182c;
+      -webkit-font-smoothing: antialiased;
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    /* Subtle brand wave accent motif */
+    .wavy-accent {
+      background-image: url("data:image/svg+xml,%3Csvg width='40' height='8' viewBox='0 0 40 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 4C5 4 5 1 10 1C15 1 15 7 20 7C25 7 25 1 30 1C35 1 35 7 40 7' stroke='%2309BABD' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: repeat-x;
+      height: 8px;
+      width: 48px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center bg-background text-on-surface">
+<!-- Top Navigation Shell (Mandated by Shared Components JSON) -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface border-b border-outline-variant/30">
+<div class="flex items-center gap-2">
+<!-- Integrated Brand mark referencing the courier icon -->
+<img alt="cadeApp logo" class="w-8 h-8 rounded object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDFTOHskeHviVNgBA0V6CNqygm8toLd4XXsRtYBB1zZWxazRz1Zk6tWDb2UWvlJu485OuQvCmE6fcV_zBZrGq4QUoGRX9GX-em4PCpQgJgauhFsy0HxeosB96-ARsKFWkNWP6whDxQ151ML-iVxCE9EyBmd6L5CDjx2FhpQpAP75nh8hAggrcmUeX044FZAU8_PnLpZHbVewXZP0RnU2QWuWMDjUCtiR2AJ7v8hbfuiStQv9EWjgeWFnqsLiA6KC1UBNA"/>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<button class="text-primary-container font-semibold font-label-md text-label-md hover:opacity-90 transition-opacity duration-150 active:scale-95" type="button">
+      Ingresar
+    </button>
+</header>
+<!-- PWA Main Container (Designed strictly at 390px baseline) -->
+<main class="w-full max-w-[390px] pt-20 pb-8 px-4 flex flex-col gap-6">
+<!-- Hero Section -->
+<section class="flex flex-col gap-4">
+<!-- Pilot Badge -->
+<div>
+<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-container/40 text-primary font-label-sm text-label-sm border border-outline-variant/60 font-medium">
+<span class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></span>
+          Piloto gratis en Aguilares
+        </span>
+</div>
+<!-- Headline & Subtitle -->
+<div class="flex flex-col gap-2">
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">
+          Tu envío, al precio que elijas
+        </h1>
+<p class="font-body-lg text-body-lg text-secondary">
+          Publicá lo que necesitás mandar y los repartidores de Aguilares te ofertan en vivo. Vos elegís con quién.
+        </p>
+</div>
+<!-- Hero Actions (Stacked 48px Touch CTAs) -->
+<div class="flex flex-col gap-3 pt-2">
+<button class="h-12 w-full rounded-[10px] bg-primary-container text-on-primary-container font-label-md text-label-md font-bold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.99] transition-all shadow-none" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="storefront">storefront</span>
+          Tengo un comercio
+        </button>
+<button class="h-12 w-full rounded-[10px] bg-surface border border-outline-variant text-on-surface font-label-md text-label-md font-semibold flex items-center justify-center gap-2 hover:bg-surface-container-low active:scale-[0.99] transition-all" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="two_wheeler">two_wheeler</span>
+          Quiero repartir
+        </button>
+</div>
+</section>
+<!-- Subtle Brand Divider Motifs -->
+<div class="py-1">
+<div class="wavy-accent opacity-80"></div>
+</div>
+<!-- Section: Cómo funciona -->
+<section class="flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<h2 class="font-headline-lg text-headline-lg text-on-surface">
+          Cómo funciona
+        </h2>
+</div>
+<!-- 3 Steps Stacked Bento / Shadcn-style Cards -->
+<div class="flex flex-col gap-3">
+<!-- Step 1 -->
+<div class="bg-surface border border-outline-variant rounded-[12px] p-4 flex items-start gap-3.5">
+<div class="w-8 h-8 rounded-full bg-primary-container/20 text-primary font-headline-md text-headline-md flex items-center justify-center shrink-0">
+            1
+          </div>
+<div class="flex flex-col gap-0.5 pt-0.5">
+<h3 class="font-label-md text-label-md font-bold text-on-surface">
+              Publicás la entrega
+            </h3>
+<p class="font-body-md text-body-md text-secondary">
+              Barrio de retiro, barrio de entrega y tipo de paquete.
+            </p>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="bg-surface border border-outline-variant rounded-[12px] p-4 flex items-start gap-3.5">
+<div class="w-8 h-8 rounded-full bg-primary-container/20 text-primary font-headline-md text-headline-md flex items-center justify-center shrink-0">
+            2
+          </div>
+<div class="flex flex-col gap-0.5 pt-0.5">
+<h3 class="font-label-md text-label-md font-bold text-on-surface">
+              Recibís ofertas
+            </h3>
+<p class="font-body-md text-body-md text-secondary">
+              Los repartidores te dicen cuánto cobran.
+            </p>
+</div>
+</div>
+<!-- Step 3 -->
+<div class="bg-surface border border-outline-variant rounded-[12px] p-4 flex items-start gap-3.5">
+<div class="w-8 h-8 rounded-full bg-primary-container/20 text-primary font-headline-md text-headline-md flex items-center justify-center shrink-0">
+            3
+          </div>
+<div class="flex flex-col gap-0.5 pt-0.5">
+<h3 class="font-label-md text-label-md font-bold text-on-surface">
+              Elegís y coordinás
+            </h3>
+<p class="font-body-md text-body-md text-secondary">
+              Hablás por WhatsApp con el repartidor elegido.
+            </p>
+</div>
+</div>
+</div>
+</section>
+<!-- Info Card: ¿Quién paga el envío? -->
+<section>
+<div class="bg-surface border border-outline-variant rounded-[12px] p-4 flex gap-3.5 items-start">
+<div class="w-10 h-10 rounded-[10px] bg-surface-container-low flex items-center justify-center text-primary shrink-0 border border-outline-variant/60">
+<span class="material-symbols-outlined text-[24px]" data-icon="account_balance_wallet">account_balance_wallet</span>
+</div>
+<div class="flex flex-col gap-1">
+<h3 class="font-headline-md text-headline-md text-on-surface">
+            ¿Quién paga el envío?
+          </h3>
+<p class="font-body-md text-body-md text-secondary">
+            Lo paga quien recibe, al momento de la entrega. cadeApp no cobra ni maneja ese dinero.
+          </p>
+</div>
+</div>
+</section>
+<!-- Courier CTA Card: ¿Tenés moto, bici o auto? -->
+<section>
+<div class="bg-surface border border-outline-variant rounded-[12px] p-4 flex flex-col gap-3.5">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-primary text-[24px]" data-icon="electric_moped">electric_moped</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">
+            ¿Tenés moto, bici o auto?
+          </h3>
+</div>
+<p class="font-body-md text-body-md text-secondary">
+          Sumate como repartidor independiente. Cargás tu DNI y una selfie, y te aprobamos.
+        </p>
+<button class="h-12 w-full rounded-[10px] bg-surface border border-outline-variant text-on-surface font-label-md text-label-md font-semibold flex items-center justify-center gap-2 hover:bg-surface-container-low active:scale-[0.99] transition-all" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="badge">badge</span>
+          Quiero repartir
+        </button>
+</div>
+</section>
+</main>
+<!-- Footer (Preserving Shared Component Identity & Structural commands) -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center border-t border-outline-variant/40 bg-surface-container-lowest mt-auto">
+<div class="flex flex-wrap items-center justify-center gap-2 text-secondary font-body-md text-body-md">
+<a class="hover:text-primary transition-colors duration-150" href="#">Términos</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150" href="#">Términos del piloto</a>
+</div>
+<div class="flex flex-col gap-1 items-center">
+<span class="font-label-sm text-label-sm text-secondary font-medium">Hecho en Aguilares, Tucumán</span>
+<p class="font-body-md text-body-md text-secondary/80">
+        © 2024 cadeApp. Envíos locales y logística inteligente.
+      </p>
+</div>
+</footer>
+</body></html>

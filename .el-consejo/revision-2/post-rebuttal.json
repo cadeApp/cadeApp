@@ -1,0 +1,195 @@
+{
+  "rounds": 1,
+  "entries": [
+    {
+      "party": "backend",
+      "conflict_id": "codeowners-spof-p1",
+      "summary": "Mantengo el hallazgo. DevOps lo corrobora de forma independiente y lo hace más concreto: migrate.yml no serializa despliegues por ambiente (falta `concurrency:` group) y no hay plan de respaldo documentado para cuando P1 no está disponible (devops.review.1), exactamente el mismo cuello de botella y punto único de fallo que señalé desde CODEOWNERS. Sumo un matiz de Security: security.review.2 pide activar 'Require review from Code Owners' para que P1 apruebe obligatoriamente cualquier cambio a supabase/**, lo cual, tomado solo, profundizaría el problema en vez de resolverlo. Ajusto la corrección para conciliar ambos: agregar una segunda persona como CODEOWNER de supabase/**, src/server/** y src/app/api/**, pero que esa persona esté efectivamente entrenada en RLS/Postgres/SECURITY DEFINER antes de asumir el rol (no cualquiera de las 3), de modo que 'Require review from Code Owners' se pueda activar sin crear un cuello de botella de una sola persona. Sostengo también partir alguna tarea P1 de Fase 1 para permitir dos personas escribiendo RPC en paralelo una vez congelado el esquema.",
+      "position": "maintain"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "summary": "Ajusto mi posición. El principio 5 del plan ('la base es la autoridad': estados, piso, aceptación y autorización se validan en RPC/RLS, la UI nunca es la única barrera) es una garantía de seguridad legítima que backend no puede resignar: si domain 'gana' sobre la RPC en el sentido de que un chequeo de servidor se quita o se debilita para que coincida con lo que domain supone, se reabre exactamente el tipo de hallazgo crítico que el master plan ya corrigió (D2). Dicho esto, coincido con PM en que §10.3 tal como está redactado ('gana la base') resuelve automáticamente, sin checkpoint, una categoría de conflicto que puede ser de producto (p. ej. si una RPC termina rechazando una transición que domain consideraba válida, eso puede ser un cambio de comportamiento funcional, no solo técnico). Propongo separar las dos cosas: (1) el principio de que RPC/RLS son el mecanismo de enforcement en runtime se mantiene sin excepción; (2) cuando domain (src/domain/rpc-contracts.ts, mantenido por P2) y la implementación real de una RPC (P1) difieren, se abre contract-change y NO se resuelve por defecto a favor de P1: lo valida P2 como dueño de domain, y si el cambio toca una garantía de las decisiones D1-D14 del master plan, se escala a checkpoint humano antes de mergear, igual que pide PM.",
+      "position": "adjust"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "conf-auth-scope-p2-p3",
+      "summary": "Ajusto y sumo un dato técnico que PM y Frontend no tenían: la creación del registro base (auth.users + profiles con role) ya es responsabilidad de P1 vía el trigger de T-004 ('Se crea con un trigger al registrarse. role solo lo cambia el admin.', master-plan §7), así que la ambigüedad no está en quién crea la cuenta a nivel de base, sino en qué track posee el flujo de UI de alta (formulario de registro, verificación) para cada rol. Coincido con PM en que src/features/auth/** necesita un dueño único en §2, y agrego la corrección concreta que falta: declarar T-111 como Dependencia explícita de T-121 (hoy T-121 solo depende de T-005), de modo que exista un único módulo de alta/login genérico construido una vez (recomiendo P2, ya dueño de auth/** por CODEOWNERS) y que T-121 lo reutilice para el registro del repartidor en lugar de que P3 reimplemente su propio flujo de auth contra Supabase Auth. Esto evita además que dos tracks toquen lógica de sesión/JWT en paralelo sin coordinarse.",
+      "position": "adjust"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "agent-permission-enforcement",
+      "summary": "Ajusto: distingo entre los pedidos de Seguridad por costo/certeza de implementación. El chequeo de CI que falla si una tabla queda sin RLS habilitada o sin policies (security.review.2) es barato, concreto y directamente verificable con una consulta a pg_policies/pg_tables después de `supabase db reset`; lo apoyo sin reservas y no compite de forma relevante con la velocidad de arranque — puede sumarse al mismo job de test:db que ya existe en ci.yml. Lo mismo para que las credenciales de producción nunca vivan en una laptop y que `db push` a producción solo corra vía CI con el secreto del Environment (security.review.0, segunda mitad): es coherente con lo que el plan ya dice sobre migrate.yml y no agrega trabajo nuevo, solo lo hace explícito. En cambio, el 'sandboxing de agy' (allowlist/denylist de comandos a nivel del propio agente) depende de una capacidad de agy 1.2.4 que el plan nunca confirma que exista — el propio master plan lo marca como supuesto abierto (S10: 'verificar si cambian con una actualización'). No me opongo al pedido, pero pido secuenciarlo: verificar primero qué controles de permisos expone agy 1.2.4 realmente (tarea corta, no bloqueante) antes de comprometer el Fase 0 a un mecanismo que puede no existir tal como Seguridad lo describe.",
+      "position": "adjust"
+    },
+    {
+      "party": "backend",
+      "conflict_id": "rebalance-fase3-p1-e2e",
+      "summary": "Conflicto nuevo. Coincido con el diagnóstico de PM (P1 queda con poca carga relativa en Fase 3) pero no con el mecanismo propuesto de transferir T-305/T-306 o T-311 completas a P1: esas tareas dependen de convenciones y carpetas (e2e/AGENTS.md, CODEOWNERS de e2e/** y de legal/** en P3) ajenas a la pista de P1, y no reducen el verdadero cuello de botella, que es la cadena secuencial T-101→T-102→T-103→T-104→T-203→T-310 de Fase 1 (mismo conflicto que codeowners-spof-p1). Propongo en su lugar: (a) usar la capacidad libre de P1 en Fase 3 para el trabajo que sí es de su dominio y que Seguridad y DevOps ya pidieron —el chequeo de CI de cobertura de RLS, el hardening de rate_limits, ser la segunda persona entrenada como backup de CODEOWNERS— y (b) si PM insiste en balancear con E2E, que P1 aporte las aserciones/casos de autorización de T-305/T-306 (conoce mejor las reglas de RPC) en modo de pareja con quien escribe el spec de Playwright, sin transferirle la propiedad del archivo ni la carpeta e2e/**.",
+      "position": "adjust"
+    },
+    {
+      "party": "devops",
+      "conflict_id": "codeowners-spof-p1",
+      "position": "adjust",
+      "summary": "Coincido con Backend: P1 como único CODEOWNER de supabase/**, src/server/** y src/app/api/**, sumado a que mergea en solitario y de forma secuencial las migraciones, crea a la vez cuello de botella de throughput y punto único de fallo para continuar el trabajo. Pero la corrección no puede ser 'abrir' esas rutas a revisión simétrica: Seguridad pide (security.review.2) que 'Require review from Code Owners' quede activo y que P1 apruebe obligatoriamente cualquier PR que toque supabase/**, precisamente porque ahí viven RLS y funciones SECURITY DEFINER. Ambos pedidos se concilian así: P1 sigue siendo aprobador por defecto y obligatorio en el día a día (mantiene el control de seguridad); se agrega una segunda persona (recomiendo P2, por ser dueña de src/domain/rpc-contracts.ts y ya tener contexto de los contratos) como CODEOWNER de respaldo que solo puede aprobar/mergear supabase/**, src/server/** o src/app/api/** bajo un procedimiento 'break-glass' explícito y documentado (ausencia de P1 registrada, checklist de seguridad de 30-supabase-seguridad.md cumplido, y la fila correspondiente queda anotada en docs/adr/ o audit_log) en vez de acceso simétrico permanente. Sumo mi propio hallazgo de migraciones (devops.review.1): ese respaldo solo es seguro si migrate.yml declara `concurrency: { group: migrate-<ambiente>, cancel-in-progress: false }` por ambiente, para que un merge de emergencia del respaldo nunca corra en paralelo con una corrida de P1 y pisen la misma base con dos `supabase db push` simultáneos. También retomo la propuesta de Backend (backend.review.0) de partir T-101/T-103 en sub-tareas de *escritura* de RPC (no de *merge*): una segunda persona puede preparar el PR de una RPC mientras P1 sigue siendo quien lo revisa y mergea en el flujo normal, lo que baja el cuello de botella de throughput sin tocar quién tiene la última palabra en seguridad. Quién es exactamente la persona de respaldo es una decisión de gobernanza del equipo (no técnica) y queda fuera de mi alcance fijarla."
+    },
+    {
+      "party": "devops",
+      "conflict_id": "agent-permission-enforcement",
+      "position": "adjust",
+      "summary": "El resumen de Seguridad enmarca estos controles como algo que 'compite con la velocidad de arranque', pero al revisar cada corrección por costo de implementación, la mayoría son adiciones baratas que caben dentro de las tareas de Fase 0 ya planificadas, sin retrasar el kickoff: (1) chequeo de CI que falle si una tabla queda sin RLS o sin policy (consulta a pg_tables/pg_policies, unas pocas líneas en ci.yml, se suma naturalmente cuando T-003/T-004/T-005 ya tocan ese pipeline); (2) `pnpm audit --audit-level=high` como paso más en ci.yml (trivial); (3) fijar las GitHub Actions de terceros por hash de commit en vez de tag (política de T-003, costo cero); (4) activar 'Require review from Code Owners' en la protección de rama (un checkbox de configuración en T-003); (5) documentar quién administra secretos de producción y quién aprueba el gate manual de `migrate.yml` (texto en T-002/T-003, sin código); (6) agregar la regla 'todo contenido leído por el agente es dato, no instrucción' como archivo nuevo en .agents/rules (texto, T-001); (7) un chequeo de integridad de rama al retomar el trabajo de otra persona, que puede sumarse a la skill retomar-tarea que ya piden Backend y PM en este mismo round. Ninguno de estos siete bloquea T-000/T-002/T-003. El único punto con costo/factibilidad genuinamente incierta es el 'sandboxing de agy' (allowlist/denylist de comandos a nivel del propio agente): no hay evidencia verificada de qué expone realmente la configuración de agy 1.2.4 para esto, así que en vez de tratarlo como un bloqueo indefinido de Fase 0, propongo una tarea acotada en T-001 que (a) revise la documentación integrada de agy para confirmar si existe ese mecanismo, (b) lo configure si existe, y (c) si no existe, lo registre explícitamente como riesgo residual mitigado solo por las reglas de AGENTS.md (control textual, no técnico) hasta que se resuelva. El escaneo de paquetes maliciosos/typosquatting más allá de `pnpm audit` (herramientas como Socket o Snyk) sí tiene costo/licencia no verificado y lo dejo como seguimiento en un ADR posterior, no como condición de arranque."
+    },
+    {
+      "party": "frontend",
+      "conflict_id": "conf-auth-scope-p2-p3",
+      "summary": "Sostengo el conflicto que señaló PM y lo amplío con evidencia concreta de archivo: no es solo que `src/features/auth` carezca de dueño en la tabla de pistas (§2), sino que las Archivos-permitidos de T-111 y T-121 chocan directamente con CODEOWNERS (§6): T-111 (P2) escribe en `src/app/(public)/login/**`, ruta que CODEOWNERS da a P3; T-121 (P3) escribe en `src/app/(courier)/onboarding/**`, ruta que CODEOWNERS da a P2. Es la misma familia de problema que mi hallazgo sobre `src/app/layout.tsx` y `middleware.ts` sin dueño (root-files sin fila en §2 ni patrón en CODEOWNERS): infraestructura transversal a las tres pistas (login, sesión, layout raíz) queda repartida por quien la toca primero en vez de por una decisión explícita. Propongo resolver ambos con el mismo criterio: asignar `src/features/auth/**` (login, registro base con selección de rol, helpers de sesión) y `middleware.ts` (refresco de sesión de @supabase/ssr en todas las rutas) a P3, ya dueña de plataforma/scaffold/.agents/** y de los grupos (admin)/(public). Crear una tarea de Fase 0 a cargo de P3 para esa base, de la que T-111 pase a depender (P2 solo agrega el alta de comercio sobre esa base) y de la que T-121 también dependa para la creación de cuenta del repartidor (P3 solo agrega documentación/consentimientos sobre esa base). Así ninguna pista construye su propia versión de 'crear cuenta', y de paso se resuelve la contradicción con CODEOWNERS: si además se mueven las rutas de onboarding pre-aprobación de `(courier)/onboarding` a `(public)/onboarding/courier` (o se documenta una excepción explícita en CODEOWNERS para esa subruta), el patrón de dueños por grupo de ruta vuelve a ser consistente con quién escribe cada archivo.",
+      "position": "adjust"
+    },
+    {
+      "party": "frontend",
+      "conflict_id": "conf-codeowners-routegroup-p2-p3",
+      "summary": "Agrego este conflicto porque el choque entre CODEOWNERS (por grupo de ruta completo) y 'Archivos permitidos' (por subruta específica) no es exclusivo de auth: aparece en T-111 (login dentro de (public)) y en T-121 (onboarding dentro de (courier)), y cualquier tarea futura que necesite una subruta de un grupo 'ajeno' a su pista lo va a repetir. Pido que se resuelva a nivel de mecanismo y no caso por caso: o CODEOWNERS pasa a declarar patrones tan granulares como 'Archivos permitidos' (por subcarpeta, no por grupo de ruta completo), o el plan documenta explícitamente que 'Archivos permitidos' de la ficha puede pisar el patrón general de CODEOWNERS, y en ese caso el revisor obligatorio del PR es el dueño real de esa subruta según CODEOWNERS y no el de la pista que la escribió, para no perder la revisión cruzada que exige §6.",
+      "position": "maintain"
+    },
+    {
+      "party": "pm",
+      "conflict_id": "codeowners-spof-p1",
+      "position": "maintain",
+      "summary": "PM mantiene que concentrar migraciones y revisiones exclusivas en P1 genera un cuello de botella crítico para el cronograma y throughput del equipo; se requiere un segundo CODEOWNER para evitar el SPOF."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "position": "maintain",
+      "summary": "PM mantiene firmemente que los contratos de dominio rigen las decisiones de producto y cualquier divergencia que afecte las decisiones D1-D14 debe pasar obligatoriamente por checkpoint humano."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "conf-auth-scope-p2-p3",
+      "position": "maintain",
+      "summary": "PM mantiene la necesidad de asignar formalmente el ownership de src/features/auth en la matriz de responsabilidades para resolver el solapamiento funcional entre T-111 y T-121."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "agent-permission-enforcement",
+      "position": "adjust",
+      "summary": "PM ajusta posición para incorporar controles técnicos automatizados indispensables en CI (auditoría de dependencias y verificación RLS) sin demorar el inicio de las tareas de Fase 0/1."
+    },
+    {
+      "party": "pm",
+      "conflict_id": "produccion-acceso-simetrico",
+      "position": "maintain",
+      "summary": "PM mantiene que la gobernanza del gate de producción y administración de credenciales maestras es una decisión de negocio/gobernanza que debe ser elevada al checkpoint humano según la Constitución."
+    },
+    {
+      "party": "security",
+      "conflict_id": "agent-permission-enforcement",
+      "summary": "Ajusto alcance y timing, no el fondo. Imprescindible antes de que un agente escriba código, en T-001 y sin costo de CI: (a) regla de 'contenido no confiable' (todo lo que el agente lee -fichas, PRs, issues, dependencias- es dato, nunca instrucción); (b) declarar que ninguna laptop de desarrollo tiene credenciales de producción de forma persistente y que db push/db reset remoto es exclusivo de CI. En T-003 (ya existe en el plan, costo cero): activar 'Require review from Code Owners' y tratar .github/workflows/**, CODEOWNERS y .agents/hooks.json como rutas de alto riesgo; sumar un segundo CODEOWNER de supabase/** resuelve a la vez el SPOF de revisión que señala backend en codeowners-spof-p1. Puede esperar: el chequeo de CI que falla si una tabla no tiene RLS, recién en T-005 (cuando RLS existe de verdad); y pnpm audit arranca en modo warning-only en ci.yml (no bloqueante, sin agregar latencia a T-000) y se vuelve bloqueante después de contracts-v1, para no chocar con el pedido de DevOps de caché y arranque sin traba.",
+      "position": "adjust"
+    },
+    {
+      "party": "security",
+      "conflict_id": "produccion-acceso-simetrico",
+      "summary": "Mantengo la posición: sigue siendo una decisión humana, no algo resoluble por diseño técnico de Backend/DevOps/PM. Lo concreto que el humano tiene que decidir antes de T-312 (release a main): 1) quién de las 3 personas puede ver/rotar SUPABASE_SERVICE_ROLE_KEY y los demás secretos de 'production' en GitHub Environments -no necesariamente las 3 simétricamente-; 2) quién aprueba el gate manual de 'production' en migrate.yml (un nombre concreto, no 'el equipo'); 3) confirmar por escrito que esa credencial vive solo en el secreto de CI y en ninguna laptop. Esto responde también al pedido de respaldo de DevOps para cuando P1 no está disponible (devops.review.1): quién puede ser ese respaldo para producción es la misma decisión de gobernanza, y conviene que el humano la tome una sola vez, dejando explícito que es una excepción vigilada y no una apertura general de acceso a producción.",
+      "position": "maintain"
+    }
+  ],
+  "remaining": [
+    {
+      "id": "codeowners-spof-p1",
+      "class": "technical",
+      "reversible": true,
+      "summary": "Asignar a P1 como único CODEOWNER de supabase/**, src/server/** y src/app/api/**, sumado a que P1 concentra todas las migraciones/RLS/RPC de forma secuencial, crea un único punto de fallo para el review obligatorio y un cuello de botella de throughput que afecta la planificación (PM) y la configuración de protección de ramas (DevOps), no solo el diseño de backend.",
+      "parties": [
+        "backend",
+        "pm",
+        "devops"
+      ]
+    },
+    {
+      "class": "product",
+      "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "parties": [
+        "pm",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14."
+    },
+    {
+      "class": "technical",
+      "id": "conf-auth-scope-p2-p3",
+      "parties": [
+        "pm",
+        "frontend",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "Solapamiento de alcance entre T-111 (P2) y T-121 (P3) respecto al flujo unificado de autenticación y registro de repartidores."
+    },
+    {
+      "id": "agent-permission-enforcement",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Seguridad pide controles técnicos (sandboxing de agy, CI que valide RLS automáticamente, escaneo de dependencias, rutas de alto riesgo con revisión reforzada) además de las reglas en Markdown; implementarlos requiere trabajo de devops/backend que compite con la velocidad de arranque que busca el plan.",
+      "parties": [
+        "security",
+        "devops",
+        "backend",
+        "pm"
+      ],
+      "normalized_from": "technical"
+    },
+    {
+      "id": "produccion-acceso-simetrico",
+      "class": "business",
+      "reversible": false,
+      "summary": "Seguridad pide restringir quién de las 3 personas administra secretos y aprueba el gate de producción; esto es una decisión de gobernanza del equipo, no puramente técnica, y le corresponde definirla al humano dueño del proyecto.",
+      "parties": [
+        "security",
+        "pm",
+        "devops"
+      ]
+    },
+    {
+      "id": "rebalance-fase3-p1-e2e",
+      "class": "technical",
+      "reversible": true,
+      "summary": "PM propone, para equilibrar la carga de Fase 3, reasignar a P1 las E2E de autorización/suscripción (T-305, T-306) o las páginas legales (T-311). Backend coincide en que P1 queda liviano en Fase 3, pero T-305/T-306 dependen del arnés y las convenciones de e2e/** (CODEOWNERS y AGENTS.md de esa carpeta son de P3) y T-311 es contenido de UI/legal sin relación con datos de servidor: transferir la propiedad completa de esas tareas a P1 no ataca el cuello de botella real (la cadena secuencial de Fase 1 T-101→T-102→T-103→T-104→T-203→T-310) y puede generar fricción de ownership con CODEOWNERS y con las reglas de e2e/AGENTS.md ('selectores accesibles', 'page objects') que P1 no maneja hoy.",
+      "parties": [
+        "backend",
+        "pm"
+      ],
+      "declared_by": "backend",
+      "origin": "rebuttal"
+    },
+    {
+      "id": "conf-codeowners-routegroup-p2-p3",
+      "class": "technical",
+      "reversible": true,
+      "summary": "CODEOWNERS (original.md:313) asigna grupos de ruta completos: `src/app/(merchant|courier)/` y `src/ui/` → P2; `src/app/(admin|public)/` → P3. Pero las 'Archivos permitidos' de la Fase 1 contradicen ese patrón: T-111 (dueña P2) tiene permitido escribir en `src/app/(public)/login/**`, ruta que CODEOWNERS asigna a P3; T-121 (dueña P3) tiene permitido escribir en `src/app/(courier)/onboarding/**`, ruta que CODEOWNERS asigna a P2. No es un caso aislado de auth: cualquier tarea futura que necesite una subruta dentro de un grupo 'ajeno' repite el problema, porque CODEOWNERS es granular por grupo de ruta y 'Archivos permitidos' es granular por subcarpeta, y las dos tablas no están sincronizadas.",
+      "parties": [
+        "frontend",
+        "pm",
+        "backend"
+      ],
+      "declared_by": "frontend",
+      "origin": "rebuttal"
+    }
+  ],
+  "judge": [
+    "codeowners-spof-p1",
+    "conf-auth-scope-p2-p3",
+    "rebalance-fase3-p1-e2e",
+    "conf-codeowners-routegroup-p2-p3"
+  ],
+  "human": [
+    "conflicto-jerarquia-contratos-p1-vs-dominio",
+    "agent-permission-enforcement",
+    "produccion-acceso-simetrico"
+  ]
+}

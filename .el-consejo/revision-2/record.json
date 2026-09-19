@@ -1,0 +1,43 @@
+{
+  "id": "revision-2",
+  "mode": "review",
+  "state": "DONE",
+  "status": "CONDICIONAL",
+  "date": "2026-09-17",
+  "subject": "docs/implementation-plan.md (plan para 3 personas con agy)",
+  "execution": "hybrid-manual; roles necesarios por pedido del usuario; ver evidence.md",
+  "participants": {
+    "reviewers": ["backend", "documentation", "frontend", "pm", "qa", "security"],
+    "adjudicator": "judge",
+    "advisors": ["devops"],
+    "notActivatedByUser": ["design", "ux-ui", "marketing", "persona", "legal", "finance"]
+  },
+  "providers": {
+    "claude-subagents": ["frontend", "backend", "qa", "security", "devops", "judge"],
+    "agy-in-parts": ["pm", "documentation"],
+    "assembly": "orchestrator (Claude Code)"
+  },
+  "verdicts": { "approve": 0, "conditional": 7, "block": 0, "not_applicable": 0 },
+  "findings": { "critical": 4, "total": 38 },
+  "rebuttal": { "rounds": 1, "conflictsInitial": 5, "conflictsAfter": 7 },
+  "adjudications": [
+    "adjudication/codeowners-spof-p1.json",
+    "adjudication/conf-auth-scope-p2-p3.json",
+    "adjudication/rebalance-fase3-p1-e2e.json",
+    "adjudication/conf-codeowners-routegroup-p2-p3.json"
+  ],
+  "checkpoint": "checkpoint.json",
+  "deliverables": {
+    "correctedPlan": "../../docs/implementation-plan.md",
+    "agyKit": "../../docs/agy-kit/",
+    "masterPlanUpdated": "../../docs/master-plan.md (D14, producción, T-313)"
+  },
+  "dissents": [
+    "Punto único de revisión en Lautaro073 (backend, devops, pm)",
+    "Alcance del respaldo de P1 (backend vs devops; fallo intermedio)",
+    "auth para P3 y onboarding en (public) descartados (frontend)",
+    "T-121 dependiente de T-111 descartado (backend)",
+    "E2E de P1 sin traspasar el spec (backend)",
+    "Hook de agy desactivable localmente (security; mitigado sin credenciales remotas)"
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "agentId": "pm",
+  "verdict": "conditional",
+  "confidence": 0.86,
+  "summary": "Dictamen final consolidado de PM: CONDICIONAL (confianza: 0.86). El plan de implementación de cadeApp está bien estructurado para guiar a 3 desarrolladores con agy, pero requiere corregir cinco aspectos críticos de producto y coordinación antes de su ejecución: 1) Definir el ownership formal del módulo troncal 'auth' en la matriz de responsabilidades; 2) Establecer un protocolo operativo en la skill tomar-tarea y prompt de arranque para retomar tareas asincrónicamente entre distintas sesiones; 3) Eliminar la regla de resolución contractual que da preeminencia a la base de datos sobre el dominio sin checkpoint humano; 4) Especificar Criterios de Aceptación y DoD completos para las tareas E2E de Fase 3 (T-305 a T-309); y 5) Rebalancear la distribución de carga en Fase 3 para garantizar un paralelismo equitativo entre las 3 pistas de trabajo.",
+  "findings": [
+    {
+      "correction": "Asignar formalmente 'src/features/auth/**' a una pista en §2 (recomendado: P3 dentro de plataforma/scaffold/onboarding o P1 por vinculación con Supabase Auth), publicando su contrato público en 'src/features/auth/index.ts' antes del inicio de las features dependientes.",
+      "evidence": [
+        "§2: P1 posee 'supabase/**', 'src/server/**', 'src/app/api/**', 'docs/adr/**'; P2 posee 'src/features/{merchants,requests,offers,trips,availability}/**'; P3 posee 'src/features/{courier-onboarding,admin,incidents,notifications,legal}/**'.",
+        "§3: 'Módulos de src/features: auth, merchants, requests, offers, trips, availability, courier-onboarding, admin, incidents, notifications, legal'."
+      ],
+      "impact": "Al no tener asignación explícita en ninguna pista, el desarrollo de autenticación (prerrequisito para el acceso de comercios, repartidores y administradores) provocará colisiones de código entre P2 y P3 o parálisis de tareas en Fase 1, violando el principio de trabajo paralelo sin pisarse.",
+      "severity": "high",
+      "statement": "El módulo troncal 'src/features/auth' está definido en la arquitectura modular (§3) pero no tiene dueño asignado en la matriz de responsabilidades (§2)."
+    },
+    {
+      "assumptions": [
+        "Si un desarrollador deja una tarea incompleta y otro la retoma con una nueva sesión de agy, el agente recreará la rama desde develop o generará conflictos al reescribir tests ya existentes si sigue el procedimiento estándar."
+      ],
+      "correction": "Incorporar en la skill tomar-tarea (o crear una skill complementaria retomar-tarea) una bifurcación para tareas en estado 'en curso' que descargue la rama remota existente y verifique el diff previo; incorporar en §8 una sección '## Bitácora / Handoff' en la plantilla de tarea y adaptar el prompt de arranque de §9 para contemplar la continuidad de tareas.",
+      "evidence": [
+        "§5 tomar-tarea/SKILL.md pasos 3 y 5: 'git switch develop && git pull && git switch -c feat/T-xxx-<slug>' y 'Escribir primero las pruebas del DoD y confirmar que fallan'.",
+        "§8 docs/tasks/_plantilla.md: Carece de campos para registrar el progreso actual, rama activa o notas de traspaso (handoff).",
+        "§9 Prompt de arranque: Asume inicio desde cero con 'Tomá la tarea T-xxx de cadeApp usando la skill tomar-tarea.'"
+      ],
+      "impact": "Pérdida de avance de trabajo en curso, colisiones de ramas en Git y bloqueo del objetivo de que cualquiera de las 3 personas pueda continuar el trabajo de otra en momentos diferentes.",
+      "severity": "high",
+      "statement": "La skill tomar-tarea (§5) y el prompt de arranque (§9) no contemplan el flujo para retomar tareas en curso ni el traspaso asincrónico entre distintas personas o sesiones de agy."
+    },
+    {
+      "assumptions": [
+        "P1 podría ajustar una función RPC o esquema por conveniencia técnica de base de datos, forzando a que las pistas de producto (P2) modifiquen las entidades y casos de uso de dominio, contraviniendo especificaciones funcionales del master plan."
+      ],
+      "correction": "Modificar §10.3 para establecer que los contratos de dominio (src/domain/) definen la verdad funcional del producto; si la RPC y domain difieren, la base de datos no se impone automáticamente: se abre un contract-change que debe ser validado por la pista funcional afectada o elevado a checkpoint humano si altera decisiones del producto.",
+      "evidence": [
+        "§10.3: 'Conflictos de contrato: gana la base (P1). Si domain y la RPC difieren, se abre una contract-change y se detienen las tareas afectadas.'"
+      ],
+      "impact": "Alteración silenciosa de reglas de negocio y flujos funcionales del MVP acordados en el master plan (D1 a D14) para acomodar conveniencias o limitaciones técnicas de persistencia sin evaluación de producto.",
+      "severity": "high",
+      "statement": "La regla de resolución de conflictos de contrato (§10.3) donde 'gana la base (P1)' subordina las decisiones y contratos de producto/dominio a restricciones de base de datos sin supervisión humana."
+    },
+    {
+      "correction": "Completar la columna 'DoD / pruebas' para T-305 a T-309 definiendo aserciones mínimas obligatorias (p. ej., T-305: bloqueo de oferta a repartidor pending y 403 en ruta protegida; T-306: bloqueo de publicación ante paid_until vencido y toggle de piloto; T-307: degradación graceful con push denegado y recuperación tras reconexión; T-308: suspensión cautelar inmediata de oferta activa; T-309: timeout controlado y carga exitosa en red 3G simulada con 0 violaciones axe).",
+      "evidence": [
+        "Tabla §7 Fase 3, filas T-305 a T-309, columna 'DoD / pruebas': figura '—' sin criterios verificables ni aserciones requeridas."
+      ],
+      "impact": "Los desarrolladores y agentes de agy no disponen de especificación clara de qué flujos, aserciones o condiciones de borde deben validar para considerar completadas estas suites críticas, lo que arriesga cobertura superficial o desalineación con el alcance del MVP.",
+      "severity": "high",
+      "statement": "Cinco tareas de pruebas E2E en Fase 3 (T-305, T-306, T-307, T-308 y T-309) carecen de Criterios de Aceptación y Definition of Done (DoD), figurando con guion vacío ('—')."
+    },
+    {
+      "correction": "Redistribuir tareas de Fase 3 reasignando a P1 las pruebas E2E de backend/autorización y suscripciones (T-305 y T-306) o la implementación de páginas legales (T-311), nivelando el esfuerzo del equipo.",
+      "evidence": [
+        "§7 Fases 2 y 3 y Paralelismo sugerido: P3 tiene asignadas T-201, T-202, T-301, T-302, T-305, T-306, T-308, T-309 y T-311 (9 tareas); P1 solo T-203 y T-310 (2 tareas); P2 tiene 5 tareas."
+      ],
+      "impact": "P3 se convierte en el cuello de botella del equipo retrasando el cierre del MVP, mientras P1 queda ocioso tras completar T-310, contraviniendo el objetivo de paralelismo eficiente entre 3 personas.",
+      "severity": "high",
+      "statement": "Desbalance severo de carga de trabajo entre pistas en Fases 2 y 3: P3 asume 9 tareas incluyendo el arnés E2E completo y 5 suites de pruebas, mientras P1 solo tiene 2 tareas."
+    }
+  ],
+  "conflicts": [
+    {
+      "class": "product",
+      "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "parties": [
+        "pm",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14."
+    },
+    {
+      "class": "technical",
+      "id": "conf-auth-scope-p2-p3",
+      "parties": [
+        "pm",
+        "frontend",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "Solapamiento de alcance entre T-111 (P2) y T-121 (P3) respecto al flujo unificado de autenticación y registro de repartidores."
+    }
+  ],
+  "helperRequests": []
+}

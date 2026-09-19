@@ -1,0 +1,32 @@
+{
+  "agentId": "qa",
+  "verdict": "conditional",
+  "confidence": 0.94,
+  "summary": "Dictamen de QA: CONDICIONAL (0.94). La estrategia de pruebas debe verificar de punta a punta la integridad funcional, de accesibilidad y de seguridad de la nueva funcionalidad: 1) Pruebas unitarias en Vitest para la formula de Haversine con factor 1.30, redondeo a 0.5 km y validacion de bounding box de Aguilares; 2) Pruebas pgTAP en Supabase para validar que la RLS no filtra coordenadas a usuarios no autorizados; 3) Pruebas E2E en Playwright con mock estricto de la API de Google Maps (evitando consumo de cuota y fallos por red externa en CI); 4) Validacion de degradacion graceful cuando Maps no carga; 5) Creacion de tarea T-314 dedicada a E2E de mapas y privacidad.",
+  "findings": [
+    {
+      "statement": "Las pruebas automatizadas en CI no deben consumir cuota de Google Maps ni depender de la red de Google.",
+      "severity": "critical",
+      "impact": "Si los tests de Playwright o Vitest llamaran a los servidores de Google Maps, consumirian el cupo gratuito, ralentizarian CI y fallarian ante microcortes de red externa.",
+      "evidence": [
+        "Restriccion no negociable: Playwright no llama a Google (mock del mapa)."
+      ],
+      "correction": "Crear fixture de Playwright que intercepte y devuelva mocks locales de mapas; usar componente src/ui/map.tsx con modo de prueba controlable.",
+      "assumptions": [
+        "El mock de Playwright cubre eventos de click para seleccion de pin y renderizado de marcadores."
+      ]
+    },
+    {
+      "statement": "Nueva tarea requerida: T-314 para suite E2E de mapas, geolocalizacion y privacidad.",
+      "severity": "high",
+      "impact": "Sin una tarea E2E especifica, los flujos de seleccion de pin, validacion de limites urbanos y revelacion progresiva quedarian sin verificacion automatizada en staging.",
+      "evidence": [
+        "docs/implementation-plan.md §7 y §8 (Fase 3 E2E)."
+      ],
+      "correction": "Incorporar T-314 en Fase 3 asignada a P3 (e2e/specs/map-privacy.spec.ts) con DoD completo.",
+      "assumptions": [
+        "P3 dispone de capacidad en Fase 3 para incorporar T-314 junto con el arnes E2E."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "status": "CONDICIONAL",
+  "class": "technical",
+  "reversible": true,
+  "positions": [
+    {
+      "agentId": "backend",
+      "position": "Mantiene su hallazgo (backend.review.0). P1 es el único CODEOWNER de supabase/**, src/server/** y src/app/api/**, y además el único que escribe y mergea, en serie, migraciones, RLS y RPC. Eso junta un cuello de botella de avance con un punto único de fallo en la revisión. En la réplica ajusta la corrección: sumar una segunda persona como CODEOWNER de esas rutas, pero formada antes en RLS, Postgres y SECURITY DEFINER. Así se podría activar 'Require review from Code Owners' sin que todo dependa de una persona. También pide partir alguna tarea de P1 de Fase 1 para que dos personas escriban RPC en paralelo después del congelamiento."
+    },
+    {
+      "agentId": "pm",
+      "position": "Mantiene que concentrar en P1 las migraciones y las revisiones exclusivas frena el cronograma y el avance del equipo. Pide un segundo CODEOWNER para eliminar el punto único de fallo."
+    },
+    {
+      "agentId": "devops",
+      "position": "Ajusta su hallazgo (devops.review.1). Coincide con el diagnóstico, pero no quiere abrir esas rutas a una revisión simétrica. P1 sigue siendo el aprobador por defecto. Se suma un CODEOWNER de respaldo que solo aprueba o mergea con un procedimiento de emergencia (break-glass) documentado: ausencia de P1 registrada, checklist de 30-supabase-seguridad.md cumplido y constancia escrita. Exige control de concurrencia por ambiente en migrate.yml (group migrate-<ambiente>, cancel-in-progress: false). Propone partir T-101 y T-103 en subtareas de escritura, no de merge. Aclara que quién es el respaldo es una decisión de gobernanza y no le corresponde."
+    }
+  ],
+  "facts": [
+    "original.md L22 y L313: la tabla de pistas y CODEOWNERS dan a P1 como único dueño de supabase/, src/server/ y src/app/api/.",
+    "original.md L26, L218 (supabase/AGENTS.md) y L440 (§10.4): solo P1 mergea migraciones y regenera database.types.ts. Ninguna sección define un respaldo.",
+    "original.md L193 y L312: develop, staging y main exigen PR, 1 aprobación de otra persona y checks verdes. El plan no activa 'Require review from Code Owners'. Según las réplicas de Backend y DevOps, security.review.2 pide activarlo, y ese punto es parte del conflicto agent-permission-enforcement (checkpoint humano).",
+    "original.md L438 (§10.2): cada PR lo aprueba alguien de otra pista. L22-24: cada pista es una sola persona.",
+    "original.md L343-346, L363 y L380: según la columna Dep, T-101 y T-103 dependen solo de contracts-v1 y no entre sí. T-102 depende de T-101; T-104 y T-203 dependen de T-103; T-310 depende de T-104 y T-007. La secuencia T-101→T-102→T-103→T-104→T-203→T-310 de L389 es el orden en que trabaja una persona, no una cadena de dependencias.",
+    "original.md L315: migrate.yml aplica supabase db push al mergear en cada ambiente y no declara control de concurrencia.",
+    "original.md L395: mientras la RPC real no está en develop, P2 y P3 construyen la UI contra rpc-contracts.ts con un adaptador simulado. Eso reduce la espera, pero no evita esperar las RPC reales para los E2E, T-104 y T-203.",
+    "original.md L343-345: T-101, T-102 y T-103 escriben todas en el mismo archivo, src/server/rpc.ts."
+  ],
+  "assumptions": [
+    "Comportamiento de GitHub no verificado en esta corrida (verificar en T-003): el autor de un PR no puede aprobarlo, y con 'Require review from Code Owners' activo hace falta la aprobación de un code owner. Si el único code owner de una ruta es el autor, el PR queda bloqueado salvo que un administrador lo saltee. Si se confirma, un solo dueño por línea es incompatible con ese ajuste en un equipo de una persona por pista.",
+    "Con cancel-in-progress: false, GitHub Actions deja terminar la corrida en curso y puede reemplazar una corrida pendiente por otra más nueva del mismo grupo. Se asume que no se pierden migraciones porque supabase db push aplica todas las pendientes del commit más reciente. Verificar en T-003.",
+    "Se asume que revisar los PR de esquema y RLS de P1 (T-004 y T-005) alcanza como formación para que otra persona apruebe cambios en supabase/** cuando P1 no está. No hay evidencia del nivel previo de cada persona.",
+    "La cantidad de tareas no mide esfuerzo: T-103 agrupa ocho RPC más expiración y distancia, y probablemente es la tarea más larga de P1."
+  ],
+  "resolution": "Se adopta un respaldo acotado, no simétrico. 1) CODEOWNERS (T-001): las líneas de supabase/, src/server/ y src/app/api/ listan a P1 y a una segunda persona de respaldo. Quién es esa persona lo decide el checkpoint humano (produccion-acceso-simetrico); este fallo solo fija los requisitos técnicos. 2) Revisión, compatible con §10.2: P1 revisa los PR de P2 o P3 que toquen esas rutas, y el respaldo revisa los PR de P1. Así el respaldo aprende revisando T-004 y T-005, y los PR de P1 tienen un revisor con contexto de base. 3) Procedimiento de emergencia (break-glass) para mergear migraciones sin P1, escrito en 50-git-y-ambientes.md y supabase/AGENTS.md. Se habilita recién cuando el respaldo revisó T-004 y T-005. Requiere: ausencia de P1 anunciada o sin respuesta dentro del plazo que fije el equipo; PR ya revisado; CI verde, incluidos test:db, la matriz RLS y db:types sin diferencias; checklist de 30-supabase-seguridad.md marcado en el PR; etiqueta break-glass en el PR y nota en la ficha. Cuando P1 vuelve, revisa lo mergeado. Cubre solo el merge a develop. El paso a staging y main sigue el flujo normal, y quién aprueba el gate de production queda en produccion-acceso-simetrico. Nadie aplica migraciones a mano: solo migrate.yml. 4) migrate.yml (T-003): concurrency: { group: migrate-<ambiente>, cancel-in-progress: false }, verificando el supuesto sobre corridas pendientes. 5) Avance: corregir L389 para que muestre que T-101 y T-103 pueden ir en paralelo. Se permite, sin hacerlo obligatorio, partir T-103 (o T-101) en fichas que escriba el respaldo, con P1 como revisor y responsable del merge normal. Si se usa, src/server/rpc.ts se divide por dominio (por ejemplo src/server/rpc/offers.ts y src/server/rpc/requests.ts) para que las fichas no choquen, y cada PR de migración se rebasea antes del merge según §10.4. Si eso sobrecarga en Fase 1 a quien se elija, lo pondera el checkpoint. 6) Si agent-permission-enforcement decide activar 'Require review from Code Owners', el punto 1 deja de ser recomendado y pasa a ser requisito previo.",
+  "dissent": [
+    "Backend pidió que el respaldo sea CODEOWNER pleno una vez formado; DevOps, que solo apruebe en emergencia. El fallo queda en un punto intermedio: el respaldo figura como code owner y revisa habitualmente los PR de P1, pero solo mergea migraciones sin P1 con el procedimiento de emergencia. Ninguna de las dos partes lo aceptó explícitamente.",
+    "DevOps propuso registrar las emergencias en docs/adr/ o en audit_log. Se descarta audit_log porque es una tabla de la aplicación (master-plan L169), no del proceso del repositorio; se usa la etiqueta del PR más una nota en la ficha.",
+    "PM pidió un segundo CODEOWNER sin condiciones; el fallo lo condiciona a la formación previa y al procedimiento de emergencia."
+  ],
+  "confidence": 0.74,
+  "reopenCondition": "Reabrir si pasa alguna de estas cosas: (a) el checkpoint produccion-acceso-simetrico decide que no habrá respaldo con acceso a esas rutas; (b) T-003 verifica que GitHub deja al único code owner aprobar o mergear su propio PR con 'Require review from Code Owners' activo, o que la concurrencia de migrate.yml descarta migraciones; (c) en Fase 1 los PR de P1 esperan revisión más de 1 día hábil en promedio pese al respaldo, o el procedimiento de emergencia se usa más de dos veces por fase. Esto último indicaría que hace falta repartir la pista, no solo tener respaldo.",
+  "rationale": "El punto único de fallo en la revisión depende de un ajuste de GitHub que todavía no está decidido. El problema de avance, en cambio, viene del orden en que trabaja P1 y no de las dependencias. Por eso se separan tres palancas reversibles: revisar, mergear en emergencia y escribir. Ninguna debilita la garantía de seguridad que justifica que P1 tenga la exclusividad.",
+  "resolvedFindings": [
+    "codeowners-spof-p1",
+    "backend.review.0",
+    "devops.review.1"
+  ]
+}

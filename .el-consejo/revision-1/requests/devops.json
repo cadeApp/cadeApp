@@ -1,0 +1,106 @@
+{
+  "phase": "INDEPENDENT_REVIEW",
+  "mode": "review",
+  "agentId": "devops",
+  "outputContract": {
+    "contract": "role-review.schema.json",
+    "mode": "review",
+    "required": [
+      "agentId",
+      "verdict",
+      "confidence",
+      "findings",
+      "findings[].severity",
+      "findings[].statement",
+      "findings[].impact",
+      "findings[].correction"
+    ],
+    "optional": [
+      "findings[].evidence",
+      "findings[].assumptions",
+      "summary",
+      "conflicts",
+      "helperRequests",
+      "findings[].reproducibleSteps"
+    ],
+    "engineAssigned": [
+      "findings[].id",
+      "findings[].agentId"
+    ],
+    "types": {
+      "agentId": "texto (máx 128 caracteres)",
+      "verdict": "uno de: approve | conditional | block | not_applicable",
+      "confidence": "número entre 0 y 1",
+      "findings": "array de objeto con severity, statement, evidence, assumptions, impact, correction, reproducibleSteps",
+      "findings[].severity": "uno de: critical | high | medium | low",
+      "findings[].statement": "texto (máx 2000 caracteres)",
+      "findings[].impact": "texto (máx 2000 caracteres)",
+      "findings[].correction": "texto (máx 2000 caracteres)",
+      "findings[].evidence": "array de texto (máx 1000 caracteres)",
+      "findings[].assumptions": "array de texto (máx 1000 caracteres)",
+      "summary": "texto (máx 2000 caracteres)",
+      "conflicts": "array de objeto con id, class, reversible, summary, parties",
+      "helperRequests": "array de objeto con question, evidence, summary, references",
+      "findings[].reproducibleSteps": "array de texto (máx 1000 caracteres)"
+    },
+    "itemShapes": {
+      "findings[]": {
+        "severity": "uno de: critical | high | medium | low — obligatorio",
+        "statement": "texto (máx 2000 caracteres) — obligatorio",
+        "evidence": "array de texto (máx 1000 caracteres)",
+        "assumptions": "array de texto (máx 1000 caracteres)",
+        "impact": "texto (máx 2000 caracteres) — obligatorio",
+        "correction": "texto (máx 2000 caracteres) — obligatorio",
+        "reproducibleSteps": "array de texto (máx 1000 caracteres)"
+      },
+      "conflicts[]": {
+        "id": "texto — obligatorio",
+        "class": "uno de: technical | product | business | contract | money | high_risk | taste — obligatorio",
+        "reversible": "booleano — obligatorio",
+        "summary": "texto (máx 2000 caracteres) — obligatorio",
+        "parties": "array de texto (máx 128 caracteres), al menos 1 — obligatorio"
+      },
+      "helperRequests[]": {
+        "question": "texto (máx 500 caracteres) — obligatorio",
+        "evidence": "array de texto (máx 500 caracteres) — obligatorio",
+        "summary": "texto (máx 1000 caracteres) — obligatorio",
+        "references": "array de texto (máx 500 caracteres) — obligatorio"
+      }
+    },
+    "invariants": [
+      "Cada hallazgo lleva evidence o assumptions con al menos un elemento no vacío: sin respaldo es una opinión sin rótulo.",
+      "Como máximo 5 hallazgos no críticos; los críticos no tienen límite y nunca se ocultan.",
+      "findings[].id y findings[].agentId los asigna el motor al consolidar: no los envíes."
+    ],
+    "example": {
+      "agentId": "devops",
+      "verdict": "conditional",
+      "confidence": 0.7,
+      "findings": [
+        {
+          "severity": "medium",
+          "statement": "<qué está mal, en una frase>",
+          "impact": "<consecuencia concreta si no se atiende>",
+          "correction": "<corrección concreta propuesta>",
+          "evidence": [
+            "<ruta:línea, comando o cita que lo respalda>"
+          ]
+        }
+      ]
+    }
+  },
+  "input": {
+    "source": "cadeApp — idea de producto de Lautaro (2026-09-17), plan original en .el-consejo/revision-1/original.md",
+    "goal": "Obtener un plan de MVP corregido, completo y ejecutable para cadeApp: marketplace local que conecta solicitantes de envíos con repartidores independientes mediante ofertas, sin intermediar el pago del envío, incluyendo una recomendación justificada entre Supabase y Firebase.",
+    "audience": "Lautaro (fundador y desarrollador); comercios, emprendedores y particulares de Aguilares (Tucumán) que necesitan enviar; repartidores independientes de Aguilares.",
+    "scope": "Plan de MVP: producto y alcance, flujo y estados, modelo de datos, arquitectura Next.js + TypeScript strict con backend en el mismo proyecto, PWA y notificaciones, elección de BaaS, seguridad y privacidad, marco legal local, suscripción para comercios, despliegue y operación, lanzamiento en Aguilares y estrategia de pruebas. Fuera de alcance: diseño visual (se define después) y escritura de código.",
+    "constraints": "Next.js con TypeScript strict; backend dentro del mismo Next.js; PWA; Supabase o Firebase; nombre cadeApp; la plataforma no cobra ni custodia el dinero del envío; oferta mínima ARS 1.000; lanzamiento solo en Aguilares, Tucumán, Argentina; repartidores aprobados manualmente por un admin (DNI, selfie, vehículo); ingresos por suscripción mensual a comercios y emprendedores, repartidores gratis.",
+    "acceptanceCriteria": "El plan corregido permite construir y lanzar el MVP de cadeApp en Aguilares con el flujo solicitud → ofertas (mínimo ARS 1.000) → elección → coordinación directa, con repartidores aprobados manualmente, suscripción para comercios, sin custodiar el dinero del envío y con la elección de BaaS justificada."
+  },
+  "optionalSkills": [],
+  "helperPolicy": {
+    "limit": 1,
+    "maxDepth": 1,
+    "modelTier": "económico"
+  }
+}

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp - Error</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-error-container": "#93000a",
+            "on-tertiary": "#ffffff",
+            "surface-dim": "#d1daee",
+            "on-primary-fixed": "#002020",
+            "on-surface": "#131c2a",
+            "error-container": "#ffdad6",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-bright": "#f9f9ff",
+            "surface-container-highest": "#dae3f7",
+            "secondary-fixed-dim": "#c0c5e0",
+            "surface-container": "#e7eeff",
+            "on-primary-container": "#004446",
+            "on-surface-variant": "#3c4949",
+            "secondary-fixed": "#dce1fd",
+            "on-tertiary-container": "#004446",
+            "primary-fixed": "#6df6f9",
+            "on-secondary-fixed": "#151b2f",
+            "surface-tint": "#00696b",
+            "tertiary-fixed": "#99f1f4",
+            "error": "#ba1a1a",
+            "on-tertiary-fixed": "#002021",
+            "on-primary": "#ffffff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "inverse-primary": "#4adadd",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "secondary-container": "#d9defa",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-secondary": "#ffffff",
+            "secondary": "#585d75",
+            "primary-container": "#09babd",
+            "outline": "#6c7a7a",
+            "inverse-surface": "#283140",
+            "surface": "#f9f9ff",
+            "outline-variant": "#bbc9c9",
+            "surface-container-high": "#dfe8fd",
+            "tertiary-container": "#5cb5b8",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-container-low": "#f0f3ff",
+            "tertiary": "#00696c",
+            "on-secondary-container": "#5c6279",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed-variant": "#004f51",
+            "primary": "#00696b",
+            "primary-fixed-dim": "#4adadd"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "margin": "1rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-md": ["Montserrat"],
+            "price-sm": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "body-md": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "body-lg": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-sm": ["Inter"],
+            "label-md": ["Inter"]
+          },
+          "fontSize": {
+            "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+            "price-sm": ["16px", {"lineHeight": "20px", "fontWeight": "700"}],
+            "headline-xl": ["28px", {"lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "headline-lg": ["22px", {"lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700"}],
+            "price-display": ["24px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+            "body-medium": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+            "label-sm": ["14px", {"lineHeight": "16px", "fontWeight": "500"}],
+            "label-md": ["14px", {"lineHeight": "18px", "fontWeight": "600"}]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col justify-between items-center antialiased selection:bg-primary-container selection:text-on-primary-container">
+<!-- Top App Bar (Task/Error contextual back header with CadeApp branding) -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface border-b border-outline-variant/30">
+<button aria-label="Volver" class="w-10 h-10 flex items-center justify-center rounded-lg text-surface hover:opacity-90 active:scale-95 transition-all" onclick="window.history.back()">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<div class="flex items-center gap-2">
+<img alt="cadeApp logo" class="w-7 h-7 object-contain rounded-md" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA48jdZlksNI3FluJ4IzIuew4NSSajtPnhgAqb9HiROPszhtszswEEjn3vnHa1Odui5GPFnmdfPlColwA90Aa3X0NmQdO3yB_3_Inl5ToroiJtg920dB3YLcwDkfNJejgz0Mi6rHhTNwcy14snc4nu5irC-Gg4tTYE7UwoZzTyIBsuWpqufxiX1ljhrotuiQAfJFyWlgu6Wk2XBk2R6lGx5tXPn_aidH97mBQekDU_NQP9spoWMDquNB7ZR0zK_Vj6Efw"/>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<button aria-label="Recargar" class="w-10 h-10 flex items-center justify-center rounded-lg text-primary-container hover:opacity-90 active:scale-95 transition-all" onclick="window.location.reload()">
+<span class="material-symbols-outlined text-[22px]">refresh</span>
+</button>
+</header>
+<!-- Main Canvas (PWA 390px Mobile Boundary) -->
+<main class="w-full max-w-[390px] mx-auto pt-20 pb-8 px-4 flex-1 flex flex-col justify-center items-center">
+<!-- Broken Route Visual Graphic (Flat, high-contrast, cadista theme) -->
+<div class="w-full max-w-[320px] bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
+<!-- Background Ambient Grid/Road Texture -->
+<div class="absolute inset-0 opacity-15 pointer-events-none flex items-center justify-center">
+<svg fill="none" height="160" viewbox="0 0 280 160" width="280">
+<circle cx="40" cy="40" fill="#3c4949" r="1.5"></circle>
+<circle cx="80" cy="40" fill="#3c4949" r="1.5"></circle>
+<circle cx="120" cy="40" fill="#3c4949" r="1.5"></circle>
+<circle cx="160" cy="40" fill="#3c4949" r="1.5"></circle>
+<circle cx="200" cy="40" fill="#3c4949" r="1.5"></circle>
+<circle cx="240" cy="40" fill="#3c4949" r="1.5"></circle>
+<circle cx="40" cy="80" fill="#3c4949" r="1.5"></circle>
+<circle cx="80" cy="80" fill="#3c4949" r="1.5"></circle>
+<circle cx="120" cy="80" fill="#3c4949" r="1.5"></circle>
+<circle cx="160" cy="80" fill="#3c4949" r="1.5"></circle>
+<circle cx="200" cy="80" fill="#3c4949" r="1.5"></circle>
+<circle cx="240" cy="80" fill="#3c4949" r="1.5"></circle>
+<circle cx="40" cy="120" fill="#3c4949" r="1.5"></circle>
+<circle cx="80" cy="120" fill="#3c4949" r="1.5"></circle>
+<circle cx="120" cy="120" fill="#3c4949" r="1.5"></circle>
+<circle cx="160" cy="120" fill="#3c4949" r="1.5"></circle>
+<circle cx="200" cy="120" fill="#3c4949" r="1.5"></circle>
+<circle cx="240" cy="120" fill="#3c4949" r="1.5"></circle>
+</svg>
+</div>
+<!-- Broken Path & Signal Lost Graphic -->
+<div class="relative z-10 w-44 h-36 flex items-center justify-center">
+<svg class="w-full h-full" fill="none" viewbox="0 0 180 140">
+<!-- Wavy courier road - Left segment -->
+<path d="M 15 95 C 35 95, 45 45, 70 50" stroke="#09babd" stroke-linecap="round" stroke-width="4.5"></path>
+<circle cx="15" cy="95" fill="#09babd" r="4.5"></circle>
+<!-- Courier Parcel Icon Box Shape -->
+<rect class="opacity-95" fill="#09babd" height="24" rx="4" width="26" x="52" y="32"></rect>
+<path d="M 52 44 Q 65 38 78 44" fill="none" stroke="#ffffff" stroke-width="2"></path>
+<circle cx="65" cy="40" fill="#ffffff" r="2.5"></circle>
+<!-- Gap / Disconnection Spark -->
+<line stroke="#ba1a1a" stroke-linecap="round" stroke-width="2.5" x1="83" x2="89" y1="48" y2="44"></line>
+<line stroke="#ba1a1a" stroke-linecap="round" stroke-width="2.5" x1="88" x2="96" y1="58" y2="58"></line>
+<line stroke="#ba1a1a" stroke-linecap="round" stroke-width="2.5" x1="82" x2="90" y1="67" y2="72"></line>
+<!-- Disconnected Road segment - Right part -->
+<path d="M 106 72 C 122 84, 134 105, 165 95" stroke="#bbc9c9" stroke-dasharray="6 6" stroke-linecap="round" stroke-width="4"></path>
+<circle cx="165" cy="95" fill="#bbc9c9" r="4.5"></circle>
+<!-- Central Alert Badge Icon floating over interruption -->
+<g transform="translate(74, 52)">
+<rect fill="#ffdad6" height="32" rx="8" stroke="#ba1a1a" stroke-width="1.5" width="32" x="0" y="0"></rect>
+<text fill="#ba1a1a" font-family="Montserrat" font-size="16" font-weight="700" text-anchor="middle" x="16" y="22">!</text>
+</g>
+</svg>
+</div>
+<!-- Network status badge -->
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFF4E0] text-[#B45309] mt-3">
+<span class="w-2 h-2 rounded-full bg-[#B45309] animate-ping"></span>
+<span class="font-label-sm text-label-sm font-medium">Conexión interrumpida</span>
+</div>
+</div>
+<!-- Error Copy Grouping -->
+<div class="w-full text-center mt-6">
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">
+        Algo salió mal
+      </h1>
+<p class="font-body-md text-body-md text-secondary mt-2 px-3 leading-relaxed">
+        No es tu culpa. Probá de nuevo en unos segundos.
+      </p>
+</div>
+<!-- Interactive Actions Stack -->
+<div class="w-full mt-7 flex flex-col gap-3">
+<!-- Primary Action CTA (>= 48px height, full-width) -->
+<button class="w-full h-12 bg-primary-container text-on-primary-container font-headline-md text-headline-md rounded-[10px] flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all" onclick="window.location.reload()">
+<span class="material-symbols-outlined text-[20px]">refresh</span>
+<span>Reintentar</span>
+</button>
+<!-- Ghost / Outline Return Button -->
+<a class="w-full h-12 bg-surface-container-lowest border border-outline-variant/50 text-inverse-surface font-body-medium text-body-medium rounded-[10px] flex items-center justify-center gap-2 hover:bg-surface-container-low active:scale-[0.98] transition-all" href="/">
+<span class="material-symbols-outlined text-[18px] text-secondary">home</span>
+<span>Ir al inicio</span>
+</a>
+</div>
+<!-- Support Diagnostic Info Box -->
+<div class="mt-8 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/30">
+<span class="material-symbols-outlined text-secondary text-[16px]">info</span>
+<span class="font-mono text-xs text-secondary tracking-wider">Código: 5F2A</span>
+<span class="text-secondary/40 text-xs">•</span>
+<span class="text-xs text-secondary">ID de sesión cadista</span>
+</div>
+</main>
+<!-- Footer Component from Shared Spec -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center border-t border-outline-variant/40 bg-surface-container-lowest">
+<nav class="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150 active:opacity-80" href="#terminos">
+        Términos y condiciones
+      </a>
+<span class="text-outline-variant/50 text-xs">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150 active:opacity-80" href="#privacidad">
+        Privacidad
+      </a>
+<span class="text-outline-variant/50 text-xs">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150 active:opacity-80" href="#ayuda">
+        Ayuda y contacto
+      </a>
+</nav>
+<p class="font-body-md text-body-md text-secondary text-xs">
+      © 2024 cadeApp. Envíos locales y logística inteligente.
+    </p>
+</footer>
+</body></html>

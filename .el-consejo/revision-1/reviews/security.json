@@ -1,0 +1,87 @@
+{
+  "agentId": "security",
+  "verdict": "conditional",
+  "confidence": 0.75,
+  "summary": "El plan resuelve bien el modelo de negocio y el flujo, pero deja sin definir justamente los puntos que más riesgo de seguridad y privacidad implican: manejo de DNI y selfie de repartidores, exposición de datos del destinatario y ubicación de repartidores, seguridad del panel admin, validación del webhook de cobro de suscripción, autorización a nivel de fila por rol y mecanismos ante abuso o incidentes físicos. El propio documento marca varios de estos temas como 'preguntas abiertas', por lo que son correcciones esperables antes de construir, no fallas de ejecución.",
+  "findings": [
+    {
+      "severity": "critical",
+      "statement": "El plan exige que los repartidores carguen DNI y selfie para la aprobación manual, pero no define cómo se almacenan, cifran, controlan los accesos, ni por cuánto tiempo se retienen o cuándo se borran esos datos.",
+      "evidence": [
+        "original.md §2: 'Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.'",
+        "original.md §8 pregunta 6: 'cómo se guardan y protegen el DNI y la selfie' queda listada como pregunta abierta sin resolver en el resto del documento."
+      ],
+      "impact": "Sin cifrado en reposo, acceso restringido solo al rol admin y una política de retención/borrado, una filtración expone documentos de identidad y fotos de rostro de cada repartidor, habilitando robo de identidad y exponiendo a cadeApp a sanciones bajo la Ley 25.326 de Protección de Datos Personales de Argentina.",
+      "correction": "Definir en el plan: almacenamiento en bucket privado (no público) con cifrado en reposo, acceso restringido solo al rol admin vía reglas de seguridad/RLS, URLs firmadas de corta duración para visualizar el documento, y una política explícita de retención (por ejemplo, borrar selfie/DNI a los N días de la aprobación o al dar de baja al repartidor, conservando solo el resultado de la verificación)."
+    },
+    {
+      "severity": "high",
+      "statement": "El panel de administración que aprueba repartidores (con acceso a DNI y selfies) y gestiona la suscripción de comercios no tiene ningún control de seguridad definido: no se especifica autenticación reforzada, control de acceso ni registro de auditoría.",
+      "evidence": [
+        "original.md §2 y §3: el admin 'aprueba repartidores' y 'gestiona la plataforma'.",
+        "original.md §8 no incluye ninguna pregunta dedicada a la seguridad del panel admin."
+      ],
+      "impact": "Una cuenta admin comprometida (credencial débil o filtrada) permite ver todos los DNI/selfies cargados, aprobar repartidores falsos o manipular el estado de suscripciones pagas, sin dejar rastro verificable de quién hizo qué.",
+      "correction": "Agregar al plan: autenticación multifactor obligatoria para cuentas admin, rol admin separado del resto de usuarios con permisos mínimos necesarios, y registro de auditoría (quién aprobó/rechazó a qué repartidor y cuándo, quién accedió a un DNI/selfie o modificó una suscripción)."
+    },
+    {
+      "severity": "high",
+      "statement": "El plan no define cuándo el repartidor ve el teléfono y la dirección del destinatario (un tercero que no es usuario y no dio consentimiento directo), ni qué precisión y retención tiene la ubicación de los repartidores usada para ordenar solicitudes por cercanía.",
+      "evidence": [
+        "original.md §4: los datos de una solicitud incluyen 'Nombre y teléfono de quien recibe' y direcciones de retiro/entrega.",
+        "original.md §2: 'la solicitud queda visible para los repartidores habilitados, primero los disponibles y más cercanos al punto de retiro'.",
+        "original.md §8 preguntas 2 y 6 dejan ambos temas explícitamente abiertos."
+      ],
+      "impact": "Si todos los repartidores que ofertan (no solo el elegido) ven el teléfono y la dirección completa del destinatario antes de ser seleccionados, se expone innecesariamente a un tercero sin protagonismo en la decisión, habilitando scraping de direcciones o contacto no deseado. Si la ubicación de los repartidores se registra con precisión GPS constante y se retiene indefinidamente, se habilita el seguimiento de sus movimientos y la inferencia de sus domicilios.",
+      "correction": "Especificar en el plan: mostrar dirección de entrega exacta y datos del destinatario (nombre, teléfono, dirección) solo al repartidor cuya oferta fue aceptada; a los demás oferentes mostrarles zona aproximada/distancia. Para el ranking por cercanía, usar la ubicación declarada al marcarse disponible (no tracking en vivo continuo) o, si se usa ubicación en vivo, truncar precisión y no persistir el historial más allá de lo operativamente necesario."
+    },
+    {
+      "severity": "high",
+      "statement": "El modelo de ingresos depende de una suscripción mensual cobrada a comercios, pero el plan no menciona qué proveedor de pago se usará ni cómo se valida el webhook que actualiza el estado de la suscripción.",
+      "evidence": [
+        "original.md §2: 'Ingresos: suscripción mensual para comercios y emprendedores.'",
+        "original.md §8 pregunta 5 deja abierto 'cómo se cobra el abono' sin mencionar validación del webhook de cobro."
+      ],
+      "impact": "Un webhook de cobro sin verificación de firma, sin control de idempotencia y sin protección contra reintentos/replay puede ser falsificado para activar suscripciones sin pago real, o reproducido para duplicar efectos, causando pérdida de ingresos y estados de cuenta inconsistentes.",
+      "correction": "Definir en el plan: validación obligatoria de la firma del webhook del proveedor de pago elegido antes de procesar cualquier evento, endpoint idempotente (registrar el id de evento procesado para no repetir efectos), y que el estado de suscripción solo cambie a partir de eventos verificados del proveedor, nunca desde una llamada del cliente."
+    },
+    {
+      "severity": "high",
+      "statement": "El plan no define el modelo de autorización a nivel de fila por rol (qué puede leer/escribir cada solicitante, repartidor y admin) ni controles básicos contra abuso: cuentas falsas, repartidores rechazados que se vuelven a registrar, ofertas spam o scraping masivo de direcciones publicadas.",
+      "evidence": [
+        "original.md §3 define los actores pero no sus permisos de acceso a datos.",
+        "original.md §7: 'Base de datos, autenticación y tiempo real: Supabase o Firebase... El Consejo tiene que recomendar uno y justificarlo' sin mencionar reglas de acceso por fila.",
+        "original.md §8 no incluye ninguna pregunta dedicada a abuso o antifraude."
+      ],
+      "impact": "Sin reglas de acceso a nivel de fila explícitas, un error de configuración en Supabase/Firebase puede dejar visibles solicitudes, ofertas o datos de otros usuarios a cualquier usuario autenticado. Sin controles antiabuso, un repartidor rechazado puede volver a registrarse con otro email, o un script puede crear cuentas falsas para scrapear direcciones publicadas o manipular ofertas.",
+      "correction": "Agregar al plan: reglas de acceso a nivel de fila explícitas por tabla y rol (el solicitante ve solo sus propias solicitudes y las ofertas que recibió, el repartidor ve solo solicitudes abiertas y sus propias ofertas, el admin ve todo con auditoría); deduplicación de repartidores rechazados por número de DNI; límites de tasa en creación de solicitudes, ofertas y registro de cuentas."
+    },
+    {
+      "severity": "medium",
+      "statement": "El flujo conecta desconocidos para un encuentro físico (retiro y entrega) y no incluye ningún mecanismo de seguridad física: no hay forma de reportar un incidente, ni de verificar en el momento del encuentro que la persona que se presenta es el repartidor aprobado.",
+      "evidence": [
+        "original.md §5 pasos 5-6: 'ambas partes reciben los datos para coordinar retiro y entrega' y 'el repartidor hace el viaje y el pago se arregla entre las partes'.",
+        "original.md §8 pregunta 4 menciona calificaciones pero no reporte de incidentes de seguridad ni verificación en el encuentro."
+      ],
+      "impact": "Ante un robo, agresión o suplantación de repartidor en el momento del encuentro, ni el solicitante ni el destinatario tienen una vía definida dentro de la app para reportarlo o para verificar que la persona presente es el repartidor aprobado, lo que aumenta el riesgo físico y la exposición legal de cadeApp como intermediario.",
+      "correction": "Agregar al plan: mostrar al solicitante y al destinatario una foto y nombre del repartidor asignado antes del encuentro (ya capturados en la aprobación), un botón de reporte de incidente accesible desde la entrega activa, y un procedimiento documentado de qué hace el admin ante un reporte (suspensión cautelar del repartidor)."
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "courier-location-tradeoff",
+      "class": "product",
+      "reversible": true,
+      "summary": "El plan quiere ordenar solicitudes mostrando primero a los repartidores 'disponibles y más cercanos', lo que empuja hacia tracking de ubicación con buena precisión y frecuencia. Desde seguridad, eso debería minimizarse (ubicación declarada al marcarse disponible, sin historial persistente) porque un repartidor no es un empleado con consentimiento laboral pleno de ser rastreado. La decisión final de precisión/frecuencia de ubicación es de producto, no solo técnica.",
+      "parties": ["security", "pm", "backend"]
+    },
+    {
+      "id": "recipient-pii-visibility-timing",
+      "class": "product",
+      "reversible": true,
+      "summary": "El plan no dice si el teléfono y la dirección de entrega del destinatario se muestran a todos los repartidores que ofertan o solo al elegido. Mostrarlos antes ayuda a que el repartidor calcule mejor su oferta (necesidad de producto/UX), pero expone datos de un tercero sin consentimiento a oferentes que nunca ganan la solicitud (postura de seguridad). Es una decisión de producto que security recomienda resolver a favor de revelar recién al aceptar la oferta.",
+      "parties": ["security", "pm", "ux-ui"]
+    }
+  ],
+  "helperRequests": []
+}

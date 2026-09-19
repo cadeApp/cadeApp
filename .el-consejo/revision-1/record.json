@@ -1,0 +1,30 @@
+{
+  "id": "revision-1",
+  "mode": "review",
+  "state": "DONE",
+  "status": "CONDICIONAL",
+  "date": "2026-09-17",
+  "execution": "hybrid-manual (decisión del usuario); ver evidence.md",
+  "participants": {
+    "reviewers": ["backend", "design", "documentation", "finance", "frontend", "legal", "marketing", "persona", "pm", "qa", "security", "ux-ui"],
+    "adjudicator": "judge",
+    "advisors": ["devops"]
+  },
+  "providers": {
+    "claude-subagents": ["frontend", "backend", "qa", "security", "devops", "judge"],
+    "agy": ["pm", "design", "ux-ui", "marketing", "persona", "documentation", "legal", "finance"],
+    "assembly": "orchestrator (Claude Code)"
+  },
+  "verdicts": { "approve": 0, "conditional": 13, "block": 0, "not_applicable": 0 },
+  "findings": { "critical": 6, "total": 69 },
+  "rebuttal": { "rounds": 1, "conflictsInitial": 10, "conflictsAfter": 13 },
+  "adjudications": ["adjudication/push-notification-implementation-scope.json"],
+  "checkpoint": "checkpoint.json",
+  "statusRationale": "Todos los dictámenes son conditional; los 6 críticos y los conflictos irreversibles o de alto riesgo se resolvieron por override humano, que lleva el resultado como máximo a CONDICIONAL.",
+  "deliverables": {
+    "correctedPlan": "../../docs/master-plan.md",
+    "implementationPlan": "../../docs/implementation-plan.md",
+    "implementationPlanReviewed": false
+  },
+  "dissents": ["X1 marketing: piloto corto", "X2 legal: licencia y seguro RC obligatorios", "X3 finance+legal: operar sin facturación", "X4 security: retención de DNI/selfie mientras activo", "X5 legal: indicios de subordinación", "X6 judge: backend no confirmó dueño de push", "X7 legal+finance: fuentes sin verificar", "X8 finance: réplica vacía"]
+}

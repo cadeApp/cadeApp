@@ -1,0 +1,11 @@
+pm: nivel 0 excede la línea de comandos (82845); compacto
+marketing: nivel 0 excede la línea de comandos (33629); compacto
+ux-ui: nivel 0 excede la línea de comandos (34427); compacto
+pm: nivel 1 excede la línea de comandos (49636); compacto
+pm: nivel 2 excede la línea de comandos (40128); compacto
+pm: nivel 3 excede la línea de comandos (35203); compacto
+marketing: réplica ok (compactación 1, 65 s)
+legal: nivel 0 excede la línea de comandos (37376); compacto
+pm: réplica ok (compactación 4, 88 s)
+ux-ui: réplica ok (compactación 1, 90 s)
+legal: réplica ok (compactación 1, 60 s)

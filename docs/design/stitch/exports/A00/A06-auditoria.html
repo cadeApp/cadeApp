@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Auditoría | CadeApp Admin</title>
+<!-- Google Fonts & Material Symbols -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-surface": "#283140",
+            "on-tertiary": "#ffffff",
+            "tertiary-container": "#5cb5b8",
+            "primary": "#00696b",
+            "on-primary-container": "#004446",
+            "outline": "#6c7a7a",
+            "inverse-primary": "#4adadd",
+            "on-surface-variant": "#3c4949",
+            "inverse-on-surface": "#ebf1ff",
+            "on-primary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "surface-container-highest": "#dae3f7",
+            "primary-container": "#09babd",
+            "surface-tint": "#00696b",
+            "on-tertiary-fixed": "#002021",
+            "error": "#ba1a1a",
+            "surface-dim": "#d1daee",
+            "error-container": "#ffdad6",
+            "background": "#f9f9ff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "primary-fixed": "#6df6f9",
+            "outline-variant": "#bbc9c9",
+            "on-background": "#131c2a",
+            "on-surface": "#131c2a",
+            "tertiary": "#00696c",
+            "on-secondary-fixed-variant": "#40465c",
+            "secondary-fixed-dim": "#c0c5e0",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-primary-fixed": "#002020",
+            "primary-fixed-dim": "#4adadd",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed": "#151b2f",
+            "on-secondary": "#ffffff",
+            "on-error-container": "#93000a",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-tertiary-container": "#004446",
+            "surface-container-high": "#dfe8fd",
+            "surface-bright": "#f9f9ff",
+            "surface-container": "#e7eeff",
+            "on-primary": "#ffffff",
+            "surface-container-low": "#f0f3ff",
+            "secondary": "#585d75",
+            "secondary-fixed": "#dce1fd",
+            "secondary-container": "#d9defa",
+            "surface": "#f9f9ff",
+            "on-error": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "headline-lg": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"]
+          },
+          "fontSize": {
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+      font-size: 20px;
+      line-height: 1;
+      display: inline-block;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body class="bg-[#FDFCFB] text-on-surface antialiased min-h-screen selection:bg-primary-container selection:text-on-primary-container font-body-md text-body-md">
+<!-- Application Shell Wrapper -->
+<div class="flex w-full min-h-screen">
+<!-- SideNavBar (Shared Component JSON) -->
+<aside class="h-screen w-64 fixed left-0 top-0 flex flex-col shrink-0 bg-inverse-surface border-r border-outline z-40">
+<div class="w-64 h-full flex flex-col justify-between p-4 z-40">
+<!-- Brand & Context -->
+<div class="space-y-6">
+<div class="flex items-center gap-3 px-2 pt-2">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center shrink-0 shadow-none">
+<span class="material-symbols-outlined text-on-primary-container text-2xl" data-icon="two_wheeler">two_wheeler</span>
+</div>
+<div>
+<span class="text-headline-md font-headline-md font-bold text-inverse-on-surface tracking-tight block leading-tight">CadeApp</span>
+<span class="text-[11px] font-medium text-outline-variant uppercase tracking-wider block">Panel de Administración</span>
+</div>
+</div>
+<!-- Quick Action CTA -->
+<div class="px-1">
+<button class="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-primary hover:bg-on-primary-fixed-variant text-on-primary font-label-md text-label-md transition-colors duration-150 active:scale-[0.99]">
+<span class="material-symbols-outlined text-base" data-icon="add_circle">add_circle</span>
+<span>Nueva Gestión</span>
+</button>
+</div>
+<!-- Main Navigation Links -->
+<nav class="space-y-1">
+<!-- Postulantes -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="person_search">person_search</span>
+<span class="font-body-md text-body-md">Postulantes</span>
+</a>
+<!-- Comercios -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="storefront">storefront</span>
+<span class="font-body-md text-body-md">Comercios</span>
+</a>
+<!-- Incidentes -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="report_problem">report_problem</span>
+<span class="font-body-md text-body-md">Incidentes</span>
+</a>
+<!-- Parámetros -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="tune">tune</span>
+<span class="font-body-md text-body-md">Parámetros</span>
+</a>
+<!-- Auditoría (ACTIVE as per mandate) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary-container text-on-primary-container font-medium" href="#">
+<span class="material-symbols-outlined font-bold" data-icon="history">history</span>
+<span class="font-label-md text-label-md">Auditoría</span>
+</a>
+</nav>
+</div>
+<!-- Footer Navigation Group -->
+<div class="space-y-1 pt-4 border-t border-outline/30">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-body-md text-body-md">Configuración</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span class="font-body-md text-body-md">Soporte</span>
+</a>
+<div class="px-3 pt-3 flex items-center justify-between text-[11px] text-outline-variant">
+<span>Versión 2.4.1</span>
+<span class="inline-flex items-center gap-1 text-[#09BABD]">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+              En vivo
+            </span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Container with TopNavBar (pl-64 structural offset) -->
+<div class="flex-1 flex flex-col pl-64 min-w-0">
+<!-- TopNavBar (Shared Component JSON) -->
+<header class="docked full-width top-0 bg-surface-container-lowest border-b border-outline-variant h-16 sticky z-30 flex items-center">
+<div class="flex justify-between items-center h-16 px-6 w-full max-w-full">
+<!-- Left: Brand / Section Title and Search -->
+<div class="flex items-center gap-6">
+<span class="text-headline-md font-headline-md font-bold text-on-surface">CadeApp Admin</span>
+<!-- Quick search in Top Bar -->
+<div class="relative w-64">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-secondary text-base" data-icon="search">search</span>
+<input class="w-full h-9 pl-9 pr-3 rounded-lg border border-[#E4E7EC] bg-[#FDFCFB] text-sm focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container" placeholder="Buscar en panel..." type="search"/>
+</div>
+<!-- Top Nav Secondary Links -->
+<nav class="hidden lg:flex items-center gap-6 text-sm ml-2">
+<a class="text-secondary hover:text-on-surface transition-colors pb-1" href="#">Operaciones</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1" href="#">Monitoreo</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1" href="#">Liquidaciones</a>
+</nav>
+</div>
+<!-- Right: Status, Alerts & Admin Profile -->
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container-low transition-colors duration-150 relative" title="Notificaciones">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span>
+</button>
+<button class="p-2 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container-low transition-colors duration-150" title="Centro de Seguridad">
+<span class="material-symbols-outlined" data-icon="shield_person">shield_person</span>
+</button>
+<div class="h-6 w-px bg-[#E4E7EC]"></div>
+<div class="flex items-center gap-3 pl-1">
+<div class="w-8 h-8 rounded-full bg-[#12182C] text-[#FFFFFF] flex items-center justify-center font-headline-md font-bold text-xs" title="Foto de perfil del Administrador central">
+                LA
+              </div>
+<div class="hidden xl:flex flex-col text-left">
+<span class="text-xs font-semibold leading-tight text-[#12182C]">Lautaro Admin</span>
+<span class="text-[11px] text-[#5B6475] leading-tight">Superadministrador</span>
+</div>
+</div>
+<button class="text-xs font-medium text-error hover:text-[#93000a] transition-colors duration-150 ml-2 px-2 py-1 rounded">
+              Cerrar sesión
+            </button>
+</div>
+</div>
+</header>
+<!-- Main Canvas Viewport (1280px optimized, pure flat light mode) -->
+<main class="flex-1 p-8 max-w-[1280px] w-full mx-auto">
+<!-- Page Header & Road Accent Motif -->
+<div class="mb-6">
+<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+<div>
+<div class="flex items-center gap-3">
+<h1 class="text-headline-xl font-headline-xl text-[#12182C] tracking-tight">Auditoría</h1>
+<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-surface-container text-secondary border border-[#bbc9c9]/50">
+                  Modo Sólo Lectura
+                </span>
+</div>
+<p class="text-sm font-body-md text-[#5B6475] mt-1">
+                Trazabilidad integral de interacciones sensibles, verificaciones de identidad y cambios de estado.
+              </p>
+</div>
+<!-- Header Quick Export / Sync status -->
+<div class="flex items-center gap-2 self-start md:self-auto">
+<button class="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border border-[#E4E7EC] bg-[#FFFFFF] text-xs font-medium text-[#12182C] hover:bg-[#f0f3ff] transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="file_download">file_download</span>
+<span>Descargar CSV cifrado</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-2 rounded-[10px] border border-[#E4E7EC] bg-[#FFFFFF] text-xs font-medium text-[#12182C] hover:bg-[#f0f3ff] transition-colors" title="Actualizar registros">
+<span class="material-symbols-outlined text-sm" data-icon="refresh">refresh</span>
+<span>Refrescar</span>
+</button>
+</div>
+</div>
+<!-- Brand motif: Subtle undulating road accent rule -->
+<div class="mt-4 flex items-center gap-2 overflow-hidden text-primary-container">
+<svg class="h-2 w-48 text-[#09BABD]" fill="none" viewbox="0 0 192 8" xmlns="http://www.w3.org/2000/svg">
+<path d="M1 4C25 1 35 7 59 4C83 1 95 7 119 4C143 1 155 7 179 4C187 3 191 3.5 191 4" stroke="currentColor" stroke-linecap="round" stroke-width="2"></path>
+</svg>
+<div class="h-px bg-[#E4E7EC] flex-1"></div>
+</div>
+</div>
+<!-- Muted Security Note (Mandated banner) -->
+<div class="mb-6 rounded-[12px] bg-[#FFFFFF] border border-[#E4E7EC] p-4 flex items-center gap-3">
+<div class="w-9 h-9 rounded-lg bg-[#E6F8F8] flex items-center justify-center shrink-0 text-[#0B7A7D]">
+<span class="material-symbols-outlined" data-icon="verified_user">verified_user</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold uppercase tracking-wider text-[#0B7A7D]">Garantía de Integridad Normativa</span>
+<span class="text-xs text-[#5B6475]">• Regla Ley 25.326 de Protección de Datos</span>
+</div>
+<p class="text-sm font-body-md text-[#5B6475]">
+<strong class="font-semibold text-[#12182C]">Este registro es inmutable: no se puede editar ni borrar por ningún usuario.</strong> Toda visualización de DNI, selfies biométricas o alteraciones de tarifas queda estampada criptográficamente con IP y timestamp.
+            </p>
+</div>
+<div class="hidden sm:flex items-center shrink-0">
+<span class="inline-flex items-center gap-1.5 text-xs text-[#177A4B] font-medium bg-[#E8F5EE] px-2.5 py-1 rounded-full">
+<span class="material-symbols-outlined text-xs" data-icon="lock">lock</span>
+              WORM Activo
+            </span>
+</div>
+</div>
+<!-- Filters Horizontal Row (Dense) -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-[12px] p-4 mb-5">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 items-end">
+<!-- Select Acción -->
+<div class="lg:col-span-3 space-y-1">
+<label class="block text-xs font-semibold text-[#5B6475] tracking-wide">Acción</label>
+<div class="relative">
+<select class="w-full h-10 pl-3 pr-8 rounded-[10px] bg-[#FFFFFF] border border-[#E4E7EC] text-sm text-[#12182C] font-normal focus:outline-none focus:ring-1 focus:ring-[#09BABD] focus:border-[#09BABD] cursor-pointer appearance-none">
+<option selected="" value="todas">Todas</option>
+<option value="vio_documento">Vio documento</option>
+<option value="aprobo">Aprobó</option>
+<option value="rechazo">Rechazó</option>
+<option value="suspendio">Suspendió</option>
+<option value="cambio_parametro">Cambió parámetro</option>
+<option value="cambio_plan">Cambió plan</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-2.5 text-secondary pointer-events-none text-lg" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</div>
+</div>
+<!-- Select Persona -->
+<div class="lg:col-span-3 space-y-1">
+<label class="block text-xs font-semibold text-[#5B6475] tracking-wide">Persona</label>
+<div class="relative">
+<select class="w-full h-10 pl-3 pr-8 rounded-[10px] bg-[#FFFFFF] border border-[#E4E7EC] text-sm text-[#12182C] font-normal focus:outline-none focus:ring-1 focus:ring-[#09BABD] focus:border-[#09BABD] cursor-pointer appearance-none">
+<option selected="" value="todos">Todos los administradores</option>
+<option value="lautaro">Lautaro</option>
+<option value="sofia">Sofía</option>
+<option value="sistema">Sistema</option>
+</select>
+<span class="material-symbols-outlined absolute right-2.5 top-2.5 text-secondary pointer-events-none text-lg" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</div>
+</div>
+<!-- Date Range Input -->
+<div class="lg:col-span-3 space-y-1">
+<label class="block text-xs font-semibold text-[#5B6475] tracking-wide">Desde / Hasta</label>
+<div class="relative">
+<input class="w-full h-10 pl-9 pr-3 rounded-[10px] bg-[#FFFFFF] border border-[#E4E7EC] text-sm text-[#12182C] font-normal focus:outline-none focus:ring-1 focus:ring-[#09BABD] focus:border-[#09BABD]" type="text" value="01/10/2024 - 14/10/2024"/>
+<span class="material-symbols-outlined absolute left-2.5 top-2.5 text-[#5B6475] text-base" data-icon="calendar_today">calendar_today</span>
+</div>
+</div>
+<!-- Search Details or Entities -->
+<div class="lg:col-span-3 space-y-1">
+<label class="block text-xs font-semibold text-[#5B6475] tracking-wide">Búsqueda rápida</label>
+<div class="relative">
+<input class="w-full h-10 pl-9 pr-3 rounded-[10px] bg-[#FFFFFF] border border-[#E4E7EC] text-sm text-[#12182C] placeholder:text-[#5B6475]/60 focus:outline-none focus:ring-1 focus:ring-[#09BABD] focus:border-[#09BABD]" placeholder="Detalles, entidades o IP..." type="search"/>
+<span class="material-symbols-outlined absolute left-2.5 top-2.5 text-[#5B6475] text-base" data-icon="search">search</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Audit Table (Flat, Dense, Readable) -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-[12px] overflow-hidden">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-[#E4E7EC] bg-[#FDFCFB] text-[11px] font-semibold uppercase tracking-wider text-[#5B6475]">
+<th class="py-3 px-4 w-36" scope="col">Fecha y hora</th>
+<th class="py-3 px-4 w-44" scope="col">Quién</th>
+<th class="py-3 px-4 w-44" scope="col">Acción</th>
+<th class="py-3 px-4 w-44" scope="col">Sobre</th>
+<th class="py-3 px-4" scope="col">Detalle</th>
+<th class="py-3 px-4 w-36 text-right" scope="col">IP / Origen</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-[#E4E7EC] text-sm">
+<!-- Row 1: Vio documento (Teal outline) -->
+<tr class="hover:bg-[#FDFCFB] transition-colors duration-100">
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<span class="tabular-nums">14/10 18:02</span>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475] text-sm" data-icon="person">person</span>
+<span class="font-medium text-[#12182C]">Lautaro (Admin)</span>
+</div>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<!-- Badge Info Teal Outline -->
+<span class="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-xs font-medium border border-[#09BABD] text-[#0B7A7D] bg-[#E6F8F8]/50">
+<span class="material-symbols-outlined text-xs" data-icon="visibility">visibility</span>
+                      Vio documento
+                    </span>
+</td>
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#09BABD]"></span>
+<span>Diego S.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-[#12182C]">
+<div class="flex items-center gap-2">
+<span>DNI frente</span>
+<span class="text-xs px-2 py-0.5 rounded bg-[#f0f3ff] text-[#585d75] font-mono border border-[#E4E7EC]">Sesión AUD-9824</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-right whitespace-nowrap">
+<span class="font-mono text-xs text-[#5B6475]">190.191.24.50</span>
+</td>
+</tr>
+<!-- Row 2: Aprobó (Success) -->
+<tr class="hover:bg-[#FDFCFB] transition-colors duration-100">
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<span class="tabular-nums">14/10 17:45</span>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475] text-sm" data-icon="person">person</span>
+<span class="font-medium text-[#12182C]">Lautaro (Admin)</span>
+</div>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<!-- Badge Success -->
+<span class="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-xs font-medium bg-[#E8F5EE] text-[#177A4B]">
+<span class="material-symbols-outlined text-xs" data-icon="check_circle">check_circle</span>
+                      Aprobó
+                    </span>
+</td>
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#177A4B]"></span>
+<span>Micaela T.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-[#12182C]">
+<span>Habilitada para repartir en Bici</span>
+</td>
+<td class="py-3.5 px-4 text-right whitespace-nowrap">
+<span class="font-mono text-xs text-[#5B6475]">190.191.24.50</span>
+</td>
+</tr>
+<!-- Row 3: Rechazó (Danger) -->
+<tr class="hover:bg-[#FDFCFB] transition-colors duration-100">
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<span class="tabular-nums">13/10 12:30</span>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475] text-sm" data-icon="person">person</span>
+<span class="font-medium text-[#12182C]">Sofía (Admin)</span>
+</div>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<!-- Badge Danger -->
+<span class="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-xs font-medium bg-[#ffdad6] text-[#ba1a1a]">
+<span class="material-symbols-outlined text-xs" data-icon="cancel">cancel</span>
+                      Rechazó
+                    </span>
+</td>
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-[#ba1a1a]"></span>
+<span>Cristian F.</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-[#12182C]">
+<span class="text-[#ba1a1a] font-medium">DNI ilegible</span>
+<span class="text-xs text-[#5B6475] ml-1">(Solicitud rechazada con aviso por SMS)</span>
+</td>
+<td class="py-3.5 px-4 text-right whitespace-nowrap">
+<span class="font-mono text-xs text-[#5B6475]">181.44.112.9</span>
+</td>
+</tr>
+<!-- Row 4: Cambió parámetro (Warning) -->
+<tr class="hover:bg-[#FDFCFB] transition-colors duration-100">
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<span class="tabular-nums">12/10 18:20</span>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475] text-sm" data-icon="person">person</span>
+<span class="font-medium text-[#12182C]">Lautaro (Admin)</span>
+</div>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<!-- Badge Warning -->
+<span class="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-xs font-medium bg-[#FFF4E0] text-[#B45309]">
+<span class="material-symbols-outlined text-xs" data-icon="tune">tune</span>
+                      Cambió parámetro
+                    </span>
+</td>
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs text-[#5B6475]" data-icon="hub">hub</span>
+<span>Plataforma</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-[#12182C]">
+<div class="flex items-center gap-2">
+<span>Oferta mínima:</span>
+<span class="font-price-sm font-bold line-through text-[#5B6475] text-xs">$ 800</span>
+<span class="text-xs text-[#5B6475]">→</span>
+<span class="font-price-sm font-bold text-[#12182C] bg-[#FFF4E0] px-1.5 py-0.5 rounded text-xs">$ 1.000</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-right whitespace-nowrap">
+<span class="font-mono text-xs text-[#5B6475]">190.191.24.50</span>
+</td>
+</tr>
+<!-- Row 5: Cambió plan (Primary) -->
+<tr class="hover:bg-[#FDFCFB] transition-colors duration-100">
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<span class="tabular-nums">11/10 16:15</span>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475] text-sm" data-icon="person">person</span>
+<span class="font-medium text-[#12182C]">Lautaro (Admin)</span>
+</div>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<!-- Badge Primary -->
+<span class="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-xs font-medium bg-[#E6F8F8] text-[#0B7A7D]">
+<span class="material-symbols-outlined text-xs" data-icon="loyalty">loyalty</span>
+                      Cambió plan
+                    </span>
+</td>
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs text-[#5B6475]" data-icon="store">store</span>
+<span>Panadería La Espiga</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-[#12182C]">
+<div class="flex items-center gap-2">
+<span class="text-[#5B6475]">Piloto</span>
+<span>→</span>
+<span class="font-semibold text-[#0B7A7D]">Activo</span>
+<span class="text-xs text-[#5B6475]">(hasta 30/11/2026)</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-right whitespace-nowrap">
+<span class="font-mono text-xs text-[#5B6475]">190.191.24.50</span>
+</td>
+</tr>
+<!-- Row 6: Venció solicitud (Muted / System) -->
+<tr class="hover:bg-[#FDFCFB] transition-colors duration-100">
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<span class="tabular-nums">10/10 09:12</span>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-xs text-[#5B6475]" data-icon="smart_toy">smart_toy</span>
+<span class="font-medium text-[#5B6475]">Sistema</span>
+</div>
+</td>
+<td class="py-3.5 px-4 whitespace-nowrap">
+<!-- Badge Muted -->
+<span class="inline-flex items-center gap-1 h-6 px-2.5 rounded-full text-xs font-medium bg-[#F2F4F7] text-[#585d75]">
+<span class="material-symbols-outlined text-xs" data-icon="timer_off">timer_off</span>
+                      Venció solicitud
+                    </span>
+</td>
+<td class="py-3.5 px-4 font-medium text-[#12182C] whitespace-nowrap">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs text-[#5B6475]" data-icon="package_2">package_2</span>
+<span>Envío #4102</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-[#5B6475]">
+<span>Expiró ventana de 30 min sin ofertas</span>
+</td>
+<td class="py-3.5 px-4 text-right whitespace-nowrap">
+<span class="inline-flex items-center gap-1 text-xs text-[#5B6475] bg-[#F2F4F7] px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-xs" data-icon="bolt">bolt</span>
+                      Automático
+                    </span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Pagination Container -->
+<div class="p-4 border-t border-[#E4E7EC] bg-[#FFFFFF] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+<!-- Information text -->
+<div class="text-xs text-[#5B6475] flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-[#177A4B]"></span>
+<span>Página 1 de 14 (138 registros)</span>
+</div>
+<!-- Page Navigation Buttons -->
+<div class="flex items-center gap-2">
+<button class="flex items-center gap-1 h-9 px-3.5 rounded-[10px] border border-[#E4E7EC] bg-[#FFFFFF] text-xs font-semibold text-[#5B6475] cursor-not-allowed opacity-60" disabled="">
+<span class="material-symbols-outlined text-sm" data-icon="chevron_left">chevron_left</span>
+<span>Anterior</span>
+</button>
+<div class="hidden sm:flex items-center gap-1 px-1">
+<button class="h-9 w-9 rounded-[10px] bg-[#12182C] text-[#FFFFFF] text-xs font-bold">1</button>
+<button class="h-9 w-9 rounded-[10px] hover:bg-[#F2F4F7] text-[#12182C] text-xs font-medium transition-colors">2</button>
+<button class="h-9 w-9 rounded-[10px] hover:bg-[#F2F4F7] text-[#12182C] text-xs font-medium transition-colors">3</button>
+<span class="text-xs text-[#5B6475] px-1">...</span>
+<button class="h-9 w-9 rounded-[10px] hover:bg-[#F2F4F7] text-[#12182C] text-xs font-medium transition-colors">14</button>
+</div>
+<button class="flex items-center gap-1 h-9 px-3.5 rounded-[10px] border border-[#E4E7EC] bg-[#FFFFFF] text-xs font-semibold text-[#12182C] hover:bg-[#F2F4F7] transition-colors">
+<span>Siguiente</span>
+<span class="material-symbols-outlined text-sm" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Additional Operational Audit Context Card (Bento Style) -->
+<div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="p-4 rounded-[12px] bg-[#FFFFFF] border border-[#E4E7EC] flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Acceso a Identidades</span>
+<span class="material-symbols-outlined text-[#0B7A7D]" data-icon="badge">badge</span>
+</div>
+<p class="font-headline-lg font-headline-lg text-[#12182C] mt-2">24 consultas</p>
+<p class="text-xs text-[#5B6475] mt-1">DNI y selfies auditadas en las últimas 48 hs.</p>
+</div>
+<div class="mt-3 pt-3 border-t border-[#E4E7EC] flex items-center justify-between text-xs">
+<span class="text-[#0B7A7D] font-medium">100% asociadas a sesión</span>
+<span class="text-[#5B6475]">Auditado</span>
+</div>
+</div>
+<div class="p-4 rounded-[12px] bg-[#FFFFFF] border border-[#E4E7EC] flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Cambios de Tarifas</span>
+<span class="material-symbols-outlined text-[#B45309]" data-icon="price_change">price_change</span>
+</div>
+<p class="font-headline-lg font-headline-lg text-[#12182C] mt-2">3 modificaciones</p>
+<p class="text-xs text-[#5B6475] mt-1">Ajuste de base por kilómetro y oferta mínima.</p>
+</div>
+<div class="mt-3 pt-3 border-t border-[#E4E7EC] flex items-center justify-between text-xs">
+<span class="text-[#5B6475]">Último por: <strong class="text-[#12182C]">Lautaro (Admin)</strong></span>
+<span class="text-[#177A4B] font-medium">Aplicado</span>
+</div>
+</div>
+<div class="p-4 rounded-[12px] bg-[#FFFFFF] border border-[#E4E7EC] flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Tasa de Aprobación</span>
+<span class="material-symbols-outlined text-[#177A4B]" data-icon="domain_verification">domain_verification</span>
+</div>
+<p class="font-headline-lg font-headline-lg text-[#12182C] mt-2">88,2%</p>
+<p class="text-xs text-[#5B6475] mt-1">Postulantes que pasaron validación legal este mes.</p>
+</div>
+<div class="mt-3 pt-3 border-t border-[#E4E7EC] flex items-center justify-between text-xs">
+<span class="text-[#5B6475]">Rechazos con causa: 11,8%</span>
+<span class="text-[#0B7A7D] font-medium">Normal</span>
+</div>
+</div>
+</div>
+</main>
+</div>
+</div>
+</body></html>

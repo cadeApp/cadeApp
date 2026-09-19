@@ -1,0 +1,89 @@
+{
+  "conflicts": [
+    {
+      "class": "technical",
+      "id": "codeowners-spof-p1",
+      "parties": [
+        "backend",
+        "pm",
+        "devops"
+      ],
+      "reversible": true,
+      "summary": "Asignar a P1 como único CODEOWNER de supabase/**, src/server/** y src/app/api/**, sumado a que P1 concentra todas las migraciones/RLS/RPC de forma secuencial, crea un único punto de fallo para el review obligatorio y un cuello de botella de throughput que afecta la planificación (PM) y la configuración de protección de ramas (DevOps), no solo el diseño de backend."
+    },
+    {
+      "class": "product",
+      "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "parties": [
+        "pm",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14."
+    },
+    {
+      "class": "technical",
+      "id": "conf-auth-scope-p2-p3",
+      "parties": [
+        "pm",
+        "frontend",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "Solapamiento de alcance entre T-111 (P2) y T-121 (P3) respecto al flujo unificado de autenticación y registro de repartidores."
+    },
+    {
+      "class": "high_risk",
+      "id": "agent-permission-enforcement",
+      "parties": [
+        "security",
+        "devops",
+        "backend",
+        "pm"
+      ],
+      "reversible": false,
+      "summary": "Seguridad pide controles técnicos (sandboxing de agy, CI que valide RLS automáticamente, escaneo de dependencias, rutas de alto riesgo con revisión reforzada) además de las reglas en Markdown; implementarlos requiere trabajo de devops/backend que compite con la velocidad de arranque que busca el plan."
+    },
+    {
+      "class": "business",
+      "id": "produccion-acceso-simetrico",
+      "parties": [
+        "security",
+        "pm"
+      ],
+      "reversible": false,
+      "summary": "Seguridad pide restringir quién de las 3 personas administra secretos y aprueba el gate de producción; esto es una decisión de gobernanza del equipo, no puramente técnica, y le corresponde definirla al humano dueño del proyecto."
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "codeowners-spof-p1",
+      "position": "maintain",
+      "summary": "PM mantiene que concentrar migraciones y revisiones exclusivas en P1 genera un cuello de botella crítico para el cronograma y throughput del equipo; se requiere un segundo CODEOWNER para evitar el SPOF."
+    },
+    {
+      "conflict_id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "position": "maintain",
+      "summary": "PM mantiene firmemente que los contratos de dominio rigen las decisiones de producto y cualquier divergencia que afecte las decisiones D1-D14 debe pasar obligatoriamente por checkpoint humano."
+    },
+    {
+      "conflict_id": "conf-auth-scope-p2-p3",
+      "position": "maintain",
+      "summary": "PM mantiene la necesidad de asignar formalmente el ownership de src/features/auth en la matriz de responsabilidades para resolver el solapamiento funcional entre T-111 y T-121."
+    },
+    {
+      "conflict_id": "agent-permission-enforcement",
+      "position": "adjust",
+      "summary": "PM ajusta posición para incorporar controles técnicos automatizados indispensables en CI (auditoría de dependencias y verificación RLS) sin demorar el inicio de las tareas de Fase 0/1."
+    },
+    {
+      "conflict_id": "produccion-acceso-simetrico",
+      "position": "maintain",
+      "summary": "PM mantiene que la gobernanza del gate de producción y administración de credenciales maestras es una decisión de negocio/gobernanza que debe ser elevada al checkpoint humano según la Constitución."
+    }
+  ],
+  "_transport": {
+    "provider": "agy",
+    "compaction": 3
+  }
+}

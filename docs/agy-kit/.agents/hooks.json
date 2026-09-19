@@ -1,0 +1,17 @@
+{
+  "cadeapp-guard": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/agent-guard.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

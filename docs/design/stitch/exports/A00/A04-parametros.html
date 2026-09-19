@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CadeApp Admin - Parámetros</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-surface": "#283140",
+            "on-tertiary": "#ffffff",
+            "tertiary-container": "#5cb5b8",
+            "primary": "#00696b",
+            "on-primary-container": "#004446",
+            "outline": "#6c7a7a",
+            "inverse-primary": "#4adadd",
+            "on-surface-variant": "#3c4949",
+            "inverse-on-surface": "#ebf1ff",
+            "on-primary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "surface-container-highest": "#dae3f7",
+            "primary-container": "#09babd",
+            "surface-tint": "#00696b",
+            "on-tertiary-fixed": "#002021",
+            "error": "#ba1a1a",
+            "surface-dim": "#d1daee",
+            "error-container": "#ffdad6",
+            "background": "#f9f9ff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "primary-fixed": "#6df6f9",
+            "outline-variant": "#bbc9c9",
+            "on-background": "#131c2a",
+            "on-surface": "#131c2a",
+            "tertiary": "#00696c",
+            "on-secondary-fixed-variant": "#40465c",
+            "secondary-fixed-dim": "#c0c5e0",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-primary-fixed": "#002020",
+            "primary-fixed-dim": "#4adadd",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed": "#151b2f",
+            "on-secondary": "#ffffff",
+            "on-error-container": "#93000a",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-tertiary-container": "#004446",
+            "surface-container-high": "#dfe8fd",
+            "surface-bright": "#f9f9ff",
+            "surface-container": "#e7eeff",
+            "on-primary": "#ffffff",
+            "surface-container-low": "#f0f3ff",
+            "secondary": "#585d75",
+            "secondary-fixed": "#dce1fd",
+            "secondary-container": "#d9defa",
+            "surface": "#f9f9ff",
+            "on-error": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "headline-lg": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"]
+          },
+          "fontSize": {
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body class="bg-[#FDFCFB] text-on-surface font-body-md antialiased min-h-screen">
+<!-- Side Navigation Bar (Anchored Component) -->
+<aside class="h-screen w-64 fixed left-0 top-0 flex flex-col shrink-0 border-r border-outline dark:border-outline bg-inverse-surface z-40">
+<div class="w-64 h-full flex flex-col justify-between p-4 z-40">
+<!-- Brand & Header -->
+<div class="flex flex-col gap-6">
+<div class="flex items-center gap-3 px-2 pt-2">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined text-[24px]">electric_scooter</span>
+</div>
+<div class="flex flex-col">
+<span class="text-headline-md font-headline-md font-bold text-inverse-on-surface tracking-tight leading-none">CadeApp</span>
+<span class="text-label-sm font-label-sm text-outline-variant mt-1 leading-none">Panel de Administración</span>
+</div>
+</div>
+<!-- CTA Action -->
+<button class="w-full flex items-center justify-center gap-2 bg-primary-container text-on-primary-container h-10 px-4 rounded-lg font-label-md text-label-md transition-all duration-150 cursor-pointer active:scale-[0.99] hover:opacity-90" type="button">
+<span class="material-symbols-outlined text-[18px]">add_circle</span>
+<span>Nueva Gestión</span>
+</button>
+<!-- Navigation Tabs -->
+<nav aria-label="Navegación principal" class="flex flex-col gap-1.5">
+<!-- Postulantes (Inactive) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined text-[20px]">person_search</span>
+<span class="text-label-md font-label-md">Postulantes</span>
+</a>
+<!-- Comercios (Inactive) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined text-[20px]">storefront</span>
+<span class="text-label-md font-label-md">Comercios</span>
+</a>
+<!-- Incidentes (Inactive) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined text-[20px]">report_problem</span>
+<span class="text-label-md font-label-md">Incidentes</span>
+</a>
+<!-- Parámetros (ACTIVE per context & prompt) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary-container text-on-primary-container font-medium cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined text-[20px]">tune</span>
+<span class="text-label-md font-label-md">Parámetros</span>
+</a>
+<!-- Auditoría (Inactive) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+<span class="text-label-md font-label-md">Auditoría</span>
+</a>
+</nav>
+</div>
+<!-- Footer navigation links -->
+<div class="flex flex-col gap-1 pt-4 border-t border-on-primary-fixed-variant">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors text-label-md font-label-md" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+<span>Configuración</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors text-label-md font-label-md" href="#">
+<span class="material-symbols-outlined text-[18px]">help</span>
+<span>Soporte</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Top Navigation Bar (Anchored Component) -->
+<header class="docked full-width top-0 pl-64 border-b border-outline-variant dark:border-outline-variant bg-surface-container-lowest sticky z-30">
+<div class="flex justify-between items-center h-16 px-6 w-full max-w-full">
+<!-- Left side: search & top-level categories -->
+<div class="flex items-center gap-8">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-secondary text-[20px]">search</span>
+<input class="h-10 pl-9 pr-4 w-72 rounded-lg border border-[#E4E7EC] text-body-md font-body-md focus:border-primary-container focus:ring-0 focus:outline-none placeholder-secondary bg-[#FDFCFB]" placeholder="Buscar parámetros o entidades..." type="text"/>
+</div>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-secondary hover:text-on-surface transition-colors pb-1 text-label-md font-label-md" href="#">Operaciones</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1 text-label-md font-label-md" href="#">Monitoreo</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1 text-label-md font-label-md" href="#">Liquidaciones</a>
+</nav>
+</div>
+<!-- Right side actions -->
+<div class="flex items-center gap-4">
+<button aria-label="Notificaciones" class="p-2 text-secondary hover:text-on-surface rounded-lg hover:bg-surface-container-low transition-colors duration-150" type="button">
+<span class="material-symbols-outlined text-[22px]">notifications</span>
+</button>
+<button aria-label="Permisos de Administrador" class="p-2 text-secondary hover:text-on-surface rounded-lg hover:bg-surface-container-low transition-colors duration-150" type="button">
+<span class="material-symbols-outlined text-[22px]">shield_person</span>
+</button>
+<div class="h-6 w-px bg-[#E4E7EC] mx-1"></div>
+<div class="flex items-center gap-3">
+<div class="flex flex-col items-end">
+<span class="text-label-md font-label-md text-on-surface leading-tight">Admin Central</span>
+<span class="text-[12px] text-secondary font-body-md">Mendoza, AR</span>
+</div>
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-on-secondary-container font-headline-md text-label-md">
+            AC
+          </div>
+</div>
+<button class="ml-2 text-label-md font-label-md text-secondary hover:text-error transition-colors px-2 py-1" type="button">
+          Cerrar sesión
+        </button>
+</div>
+</div>
+</header>
+<!-- Main Canvas Container (Desktop 1280px Grid) -->
+<main class="pl-64 min-h-[calc(100vh-64px)] pb-16">
+<div class="max-w-[1024px] mx-auto px-8 pt-8">
+<!-- Section Header -->
+<div class="flex flex-col gap-2 mb-6">
+<div class="flex items-center justify-between">
+<div>
+<h1 class="text-headline-xl font-headline-xl text-[#12182C] tracking-tight">Parámetros</h1>
+<p class="text-body-md font-body-md text-[#5B6475] mt-1">Configuraciones operativas y variables globales de la red de entregas.</p>
+</div>
+<!-- Subtle Brand Road Vector Motif -->
+<div class="hidden sm:flex items-center gap-1 opacity-70">
+<svg fill="none" height="12" viewbox="0 0 72 12" width="72" xmlns="http://www.w3.org/2000/svg">
+<path d="M1 6C8 1 14 11 22 6C30 1 36 11 44 6C52 1 58 11 66 6C68 4.7 70 3.5 71 3" stroke="#09BABD" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+</div>
+</div>
+<!-- Warning Alert Card at the top -->
+<div class="mt-4 flex items-start gap-3.5 p-4 rounded-xl border border-[#B45309] bg-[#FFF4E0] text-[#B45309]">
+<span class="material-symbols-outlined text-[24px] shrink-0 text-[#B45309]">shield</span>
+<div class="flex flex-col">
+<span class="text-label-md font-label-md leading-snug font-bold">Atención operativa crítica</span>
+<p class="text-body-md font-body-md text-[#B45309] mt-0.5">
+              Los cambios aplican al instante para todos y quedan en la auditoría. Modificá los valores con responsabilidad.
+            </p>
+</div>
+</div>
+</div>
+<!-- Two-Column Main Layout (65% / 35%) -->
+<div class="grid grid-cols-12 gap-8 items-start">
+<!-- Left Column (65% -> col-span-8 approx 66.6%) -->
+<div class="col-span-12 lg:col-span-8 flex flex-col gap-4">
+<!-- Card 1: Oferta mínima -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex flex-col flex-1 pr-2">
+<label class="text-label-md font-label-md text-[#12182C]" for="input-oferta-minima">Oferta mínima</label>
+<p class="text-body-md font-body-md text-[#5B6475] mt-1">Las ofertas por debajo se rechazan.</p>
+</div>
+<div class="flex items-center gap-3 shrink-0">
+<div class="relative w-36">
+<span class="absolute left-3.5 top-1/2 -translate-y-1/2 font-price-display text-price-sm text-[#12182C]">$</span>
+<input class="w-full h-12 pl-8 pr-3 bg-[#FFFFFF] border border-[#E4E7EC] rounded-[10px] font-price-display text-price-sm text-[#12182C] focus:border-[#09BABD] focus:ring-0 focus:outline-none" id="input-oferta-minima" type="text" value="1.000"/>
+</div>
+<button class="h-12 px-5 bg-[#09BABD] text-[#12182C] font-headline-md text-label-md rounded-[10px] hover:opacity-90 active:scale-[0.98] transition-all" onclick="openConfirmModal('Oferta mínima', '$ 1.000')" type="button">
+                Guardar
+              </button>
+</div>
+</div>
+<!-- Card 2: Vencimiento de solicitudes -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex flex-col flex-1 pr-2">
+<label class="text-label-md font-label-md text-[#12182C]" for="input-vencimiento">Vencimiento de solicitudes</label>
+<p class="text-body-md font-body-md text-[#5B6475] mt-1">Tiempo máximo para que un repartidor tome la orden.</p>
+</div>
+<div class="flex items-center gap-3 shrink-0">
+<div class="relative w-36">
+<input class="w-full h-12 pl-3 pr-14 bg-[#FFFFFF] border border-[#E4E7EC] rounded-[10px] font-headline-md text-body-lg text-[#12182C] focus:border-[#09BABD] focus:ring-0 focus:outline-none" id="input-vencimiento" type="number" value="30"/>
+<span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-body-md font-body-md text-[#5B6475]">min</span>
+</div>
+<button class="h-12 px-5 bg-[#09BABD] text-[#12182C] font-headline-md text-label-md rounded-[10px] hover:opacity-90 active:scale-[0.98] transition-all" onclick="openConfirmModal('Vencimiento de solicitudes', '30 minutos')" type="button">
+                Guardar
+              </button>
+</div>
+</div>
+<!-- Card 3: Piloto activo -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex flex-col flex-1 pr-2">
+<div class="flex items-center gap-2">
+<span class="text-label-md font-label-md text-[#12182C]">Piloto activo</span>
+<span class="inline-flex items-center rounded-full bg-[#E6F8F8] text-[#0B7A7D] px-2 py-0.5 text-xs font-semibold">Vigente</span>
+</div>
+<p class="text-body-md font-body-md text-[#5B6475] mt-1">Mientras esté activo, todos los comercios publican gratis.</p>
+</div>
+<div class="flex items-center gap-4 shrink-0">
+<!-- Switch toggle -->
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" id="switch-piloto" type="checkbox"/>
+<div class="w-12 h-7 bg-[#E4E7EC] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-[#09BABD]"></div>
+</label>
+<button class="h-12 px-5 bg-[#09BABD] text-[#12182C] font-headline-md text-label-md rounded-[10px] hover:opacity-90 active:scale-[0.98] transition-all" onclick="openConfirmModal('Piloto activo', 'Activado')" type="button">
+                Guardar
+              </button>
+</div>
+</div>
+<!-- Card 4: Días de gracia del abono -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex flex-col flex-1 pr-2">
+<label class="text-label-md font-label-md text-[#12182C]" for="input-dias-gracia">Días de gracia del abono</label>
+<p class="text-body-md font-body-md text-[#5B6475] mt-1">Días posteriores al vencimiento antes de bloquear nuevas solicitudes.</p>
+</div>
+<div class="flex items-center gap-3 shrink-0">
+<div class="relative w-36">
+<input class="w-full h-12 px-3 bg-[#FFFFFF] border border-[#E4E7EC] rounded-[10px] font-headline-md text-body-lg text-[#12182C] focus:border-[#09BABD] focus:ring-0 focus:outline-none" id="input-dias-gracia" type="number" value="0"/>
+<span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-body-md font-body-md text-[#5B6475]">días</span>
+</div>
+<button class="h-12 px-5 bg-[#09BABD] text-[#12182C] font-headline-md text-label-md rounded-[10px] hover:opacity-90 active:scale-[0.98] transition-all" onclick="openConfirmModal('Días de gracia del abono', '0 días')" type="button">
+                Guardar
+              </button>
+</div>
+</div>
+<!-- Card 5: Versión de términos del piloto -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex flex-col flex-1 pr-2">
+<label class="text-label-md font-label-md text-[#12182C]" for="input-terminos-ver">Versión de términos del piloto</label>
+<p class="text-body-md font-body-md text-[#5B6475] mt-1">Incrementar obliga a los usuarios a volver a aceptar.</p>
+</div>
+<div class="flex items-center gap-3 shrink-0">
+<div class="relative w-36">
+<input class="w-full h-12 px-3 bg-[#FFFFFF] border border-[#E4E7EC] rounded-[10px] font-headline-md text-body-lg text-[#12182C] focus:border-[#09BABD] focus:ring-0 focus:outline-none" id="input-terminos-ver" type="number" value="1"/>
+<span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-body-md font-body-md text-[#5B6475]">v</span>
+</div>
+<button class="h-12 px-5 bg-[#09BABD] text-[#12182C] font-headline-md text-label-md rounded-[10px] hover:opacity-90 active:scale-[0.98] transition-all" onclick="openConfirmModal('Versión de términos del piloto', 'Versión 1')" type="button">
+                Guardar
+              </button>
+</div>
+</div>
+</div>
+<!-- Right Column (35% -> col-span-4) -->
+<div class="col-span-12 lg:col-span-4">
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl p-5 flex flex-col">
+<div class="flex items-center justify-between pb-4 border-b border-[#E4E7EC]">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[20px] text-[#0B7A7D]">history_toggle_off</span>
+<h2 class="text-headline-md font-headline-md text-[#12182C]">Últimos cambios</h2>
+</div>
+<span class="inline-block w-2 h-2 rounded-full bg-primary-container"></span>
+</div>
+<!-- Audit Trail List -->
+<div class="flex flex-col divide-y divide-[#E4E7EC] my-1">
+<!-- Modification 1 -->
+<div class="py-3.5 flex flex-col gap-1">
+<div class="flex items-start justify-between">
+<span class="text-label-md font-label-md text-[#12182C]">Oferta mínima</span>
+<span class="text-xs text-[#5B6475] font-body-md">12/10 18:20</span>
+</div>
+<div class="text-body-md font-body-md text-[#12182C] flex items-center gap-1.5 font-medium">
+<span class="line-through text-[#5B6475]">$ 800</span>
+<span class="text-secondary text-xs">→</span>
+<span class="text-[#0B7A7D] font-headline-md font-bold">$ 1.000</span>
+</div>
+<div class="flex items-center gap-1.5 mt-0.5 text-xs text-[#5B6475]">
+<span class="material-symbols-outlined text-[14px]">person</span>
+<span>Lautaro</span>
+</div>
+</div>
+<!-- Modification 2 -->
+<div class="py-3.5 flex flex-col gap-1">
+<div class="flex items-start justify-between">
+<span class="text-label-md font-label-md text-[#12182C]">Vencimiento de solicitudes</span>
+<span class="text-xs text-[#5B6475] font-body-md">10/10 11:15</span>
+</div>
+<div class="text-body-md font-body-md text-[#12182C] flex items-center gap-1.5 font-medium">
+<span class="line-through text-[#5B6475]">45 min</span>
+<span class="text-secondary text-xs">→</span>
+<span class="text-[#12182C] font-semibold">30 min</span>
+</div>
+<div class="flex items-center gap-1.5 mt-0.5 text-xs text-[#5B6475]">
+<span class="material-symbols-outlined text-[14px]">person</span>
+<span>Lautaro</span>
+</div>
+</div>
+<!-- Modification 3 -->
+<div class="py-3.5 flex flex-col gap-1">
+<div class="flex items-start justify-between">
+<span class="text-label-md font-label-md text-[#12182C]">Piloto activo</span>
+<span class="text-xs text-[#5B6475] font-body-md">01/10 09:00</span>
+</div>
+<div class="text-body-md font-body-md text-[#12182C]">
+<span class="inline-flex items-center rounded-full bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 text-xs font-semibold">Activado</span>
+</div>
+<div class="flex items-center gap-1.5 mt-0.5 text-xs text-[#5B6475]">
+<span class="material-symbols-outlined text-[14px]">person</span>
+<span>Sofía</span>
+</div>
+</div>
+<!-- Modification 4 -->
+<div class="py-3.5 flex flex-col gap-1">
+<div class="flex items-start justify-between">
+<span class="text-label-md font-label-md text-[#12182C]">Versión de términos</span>
+<span class="text-xs text-[#5B6475] font-body-md">01/10 00:00</span>
+</div>
+<div class="text-body-md font-body-md text-[#12182C] font-semibold">
+                  Versión 1
+                </div>
+<div class="flex items-center gap-1.5 mt-0.5 text-xs text-[#5B6475]">
+<span class="material-symbols-outlined text-[14px]">smart_toy</span>
+<span>Sistema</span>
+</div>
+</div>
+</div>
+<!-- Footer Link -->
+<div class="pt-4 mt-1 border-t border-[#E4E7EC]">
+<a class="inline-flex items-center gap-1 text-label-md font-label-md text-[#5B6475] hover:text-[#09BABD] transition-colors group" href="#">
+<span>Ver registro completo en Auditoría</span>
+<span class="transition-transform group-hover:translate-x-0.5">→</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Mandatory Confirmation & Reason Modal (Regla del sistema: Confirmación y Motivo) -->
+<div class="fixed inset-0 z-50 hidden flex items-center justify-center bg-[#12182C]/40 backdrop-blur-none p-4" id="confirmModal">
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+<div class="flex items-center gap-3 text-[#B45309] mb-4">
+<div class="w-10 h-10 rounded-full bg-[#FFF4E0] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">warning</span>
+</div>
+<div>
+<h3 class="text-headline-md font-headline-md text-[#12182C]">Confirmar cambio de parámetro</h3>
+<p class="text-xs text-[#5B6475]">Acción sensible sujeta a auditoría legal</p>
+</div>
+</div>
+<div class="mb-4 bg-[#FDFCFB] p-3 rounded-lg border border-[#E4E7EC]">
+<p class="text-body-md font-body-md text-[#12182C]">
+          Vas a modificar: <span class="font-bold text-[#12182C]" id="modalParamName"></span> con el valor <span class="font-bold text-[#0B7A7D]" id="modalParamValue"></span>.
+        </p>
+</div>
+<div class="flex flex-col gap-1.5 mb-5">
+<label class="text-label-md font-label-md text-[#12182C]" for="changeReason">Motivo del cambio <span class="text-error">*</span></label>
+<textarea class="w-full p-3 bg-[#FFFFFF] border border-[#E4E7EC] rounded-[10px] text-body-md font-body-md focus:border-[#09BABD] focus:ring-0 focus:outline-none" id="changeReason" placeholder="Ej: Ajuste por inflación mensual acordado con las cámaras locales..." rows="3"></textarea>
+</div>
+<div class="flex items-center justify-end gap-3">
+<button class="h-12 px-5 bg-[#FFFFFF] border border-[#E4E7EC] text-[#12182C] font-label-md text-label-md rounded-[10px] hover:bg-slate-50 transition-colors" onclick="closeConfirmModal()" type="button">
+          Cancelar
+        </button>
+<button class="h-12 px-5 bg-[#12182C] text-[#FFFFFF] font-headline-md text-label-md rounded-[10px] hover:opacity-95 transition-opacity" onclick="submitChange()" type="button">
+          Confirmar y registrar
+        </button>
+</div>
+</div>
+</div>
+<script>
+    function openConfirmModal(paramName, paramVal) {
+      document.getElementById('modalParamName').innerText = paramName;
+      document.getElementById('modalParamValue').innerText = paramVal;
+      document.getElementById('changeReason').value = '';
+      document.getElementById('confirmModal').classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+      document.getElementById('confirmModal').classList.add('hidden');
+    }
+
+    function submitChange() {
+      const reason = document.getElementById('changeReason').value.trim();
+      if (!reason) {
+        alert('Por favor ingresá un motivo antes de confirmar.');
+        return;
+      }
+      closeConfirmModal();
+      alert('Parámetro actualizado con éxito y registrado en Auditoría.');
+    }
+  </script>
+</body></html>

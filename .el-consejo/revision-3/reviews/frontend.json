@@ -1,0 +1,32 @@
+{
+  "agentId": "frontend",
+  "verdict": "conditional",
+  "confidence": 0.93,
+  "summary": "Dictamen de Frontend: CONDICIONAL (0.93). Aprobacion del wrapper @vis.gl/react-google-maps sujeto a carga estrictamente dinamica (next/dynamic con ssr: false y Skeleton placeholder) para no romper el presupuesto de 180 KB de First-Load JS. Se define el componente modular src/ui/map.tsx. En pantallas publicas y lista de repartidor (R04, R05), no se importa ni se ejecuta codigo de mapa. En viaje activo (R07), se genera la URL universal https://www.google.com/maps/dir/?api=1&origin=lat,lng&destination=lat,lng para abrir la app nativa.",
+  "findings": [
+    {
+      "statement": "Presupuesto de 180 KB First-Load JS en peligro si el SDK de mapas se incluye estaticamente.",
+      "severity": "critical",
+      "impact": "El SDK de Google Maps supera los 100 KB de script externo; si se importa en el bundle inicial de la PWA, violaria la regla 25 y degradaria la performance en redes 3G.",
+      "evidence": [
+        "docs/agy-kit/.agents/rules/25-stack-y-patrones.md §1 y §6 (presupuesto 180 KB gzip)."
+      ],
+      "correction": "Importar src/ui/map.tsx exclusivamente mediante next/dynamic({ ssr: false, loading: () => <MapSkeleton /> }) en C01, C03, C06 y R07. Nunca en layout.tsx, providers.tsx ni R04.",
+      "assumptions": [
+        "@vis.gl/react-google-maps tiene un peso de bundle compilado inferior a 15 KB gzip cuando se aislan sus componentes."
+      ]
+    },
+    {
+      "statement": "Manejo seguro de variables de entorno publicas NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.",
+      "severity": "high",
+      "impact": "La falta de validacion de Zod en src/lib/env.public.ts podria causar fallos silenciosos en tiempo de ejecucion.",
+      "evidence": [
+        "docs/agy-kit/.agents/rules/25-stack-y-patrones.md §5 (Zod parsea env vars)."
+      ],
+      "correction": "Agregar NEXT_PUBLIC_GOOGLE_MAPS_API_KEY en src/lib/env.public.ts con schema z.string().min(1) y fallback controlado si no esta configurada.",
+      "assumptions": [
+        "La clave publica tiene restricciones de HTTP Referrer en la consola de Google Cloud."
+      ]
+    }
+  ]
+}

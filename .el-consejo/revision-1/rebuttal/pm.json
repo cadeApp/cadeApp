@@ -1,0 +1,133 @@
+{
+  "conflicts": [
+    {
+      "class": "technical",
+      "id": "baas-choice",
+      "parties": [
+        "backend",
+        "pm",
+        "frontend"
+      ],
+      "reversible": false,
+      "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase."
+    },
+    {
+      "class": "product",
+      "id": "state-machine-scope",
+      "parties": [
+        "backend",
+        "pm"
+      ],
+      "reversible": true,
+      "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM concuerda en que la FSM es crítica para evitar estados inconsistentes en el MVP."
+    },
+    {
+      "class": "money",
+      "id": "conflict-monetizacion-particulares-pricing",
+      "parties": [
+        "finance",
+        "pm"
+      ],
+      "reversible": false,
+      "summary": "Falta de definición económica sobre si los particulares deben quedar excluidos, tener envíos de prueba gratuitos o contar con una modalidad de pase diario/por envío, elevando la decisión al checkpoint humano de Lautaro."
+    },
+    {
+      "class": "business",
+      "id": "conflict-subscription-paywall-vs-trial",
+      "parties": [
+        "marketing",
+        "pm",
+        "finance"
+      ],
+      "reversible": false,
+      "summary": "Tensión entre la decisión de cobrar abono mensual a comercios desde el primer día y la necesidad de marketing de ofrecer un período de prueba gratuito (trial) o cupo inicial bonificado para superar la barrera de adopción en Aguilares."
+    },
+    {
+      "class": "product",
+      "id": "conflict-particulars-monetization-scope",
+      "parties": [
+        "pm"
+      ],
+      "reversible": true,
+      "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual."
+    },
+    {
+      "class": "product",
+      "id": "qa-scope-vs-speed",
+      "parties": [
+        "qa",
+        "pm"
+      ],
+      "reversible": true,
+      "summary": "QA sostiene que el plan de MVP no puede darse por completo hasta definir una máquina de estados completa, reglas de autorización server-side y una estrategia de pruebas explícita; PM acuerda priorizar la FSM y pruebas del camino crítico transaccional."
+    },
+    {
+      "class": "product",
+      "id": "courier-location-tradeoff",
+      "parties": [
+        "security",
+        "pm",
+        "backend"
+      ],
+      "reversible": false,
+      "summary": "El plan busca ordenar solicitudes mostrando primero a repartidores disponibles y más cercanos. Se concuerda en minimizar tracking continuo en PWA y utilizar ubicación puntual declarada o fix único al ponerse disponible."
+    },
+    {
+      "class": "product",
+      "id": "recipient-pii-visibility-timing",
+      "parties": [
+        "security",
+        "pm",
+        "ux-ui"
+      ],
+      "reversible": false,
+      "summary": "Momento de revelación de teléfono y dirección exacta del destinatario. Se adopta revelación progresiva: zona y distancia al ofertar; datos de contacto exactos solo tras la aceptación de la oferta."
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "baas-choice",
+      "position": "adjust",
+      "summary": "PM ajusta su postura y respalda formalmente la adopción de Supabase (Postgres + PostGIS, ACID, RLS) sobre Firebase, priorizando la integridad relacional de solicitudes/ofertas y la atomicidad requerida para la aceptación de una única oferta."
+    },
+    {
+      "conflict_id": "state-machine-scope",
+      "position": "adjust",
+      "summary": "PM concuerda plenamente con Backend y QA: una máquina de estados finita formal con transiciones server-side no es negociable para el MVP y debe especificarse previo al desarrollo para evitar estados inconsistentes y pedidos huérfanos."
+    },
+    {
+      "conflict_id": "conflict-monetizacion-particulares-pricing",
+      "position": "maintain",
+      "summary": "PM mantiene que la definición económica y tarifaria para particulares excede el mandato del rol y debe elevarse al checkpoint humano de Lautaro para definir si se excluyen del MVP o cuentan con cupo bonificado."
+    },
+    {
+      "conflict_id": "conflict-subscription-paywall-vs-trial",
+      "position": "adjust",
+      "summary": "PM ajusta postura en apoyo a la propuesta de Marketing de incorporar un período de prueba gratuito (trial de 14 días o cupo inicial bonificado) para comercios a fin de mitigar el problema de arranque en frío en Aguilares, elevándolo a confirmación en el checkpoint de Lautaro."
+    },
+    {
+      "conflict_id": "conflict-particulars-monetization-scope",
+      "position": "maintain",
+      "summary": "PM mantiene el señalamiento de inconsistencia de alcance entre particulares como solicitantes y suscripción exclusiva para comercios, recomendando a Lautaro optar entre la exclusión en el MVP o un cupo de prueba gratuito mensual."
+    },
+    {
+      "conflict_id": "qa-scope-vs-speed",
+      "position": "adjust",
+      "summary": "PM ajusta su postura convergiendo con QA: se prioriza la FSM server-side y pruebas de integración sobre el camino crítico transaccional para el lanzamiento en Aguilares, postergando suites exhaustivas de pruebas E2E automatizadas para etapas posteriores."
+    },
+    {
+      "conflict_id": "courier-location-tradeoff",
+      "position": "adjust",
+      "summary": "PM ajusta postura convergiendo con Seguridad y Frontend: se descarta el tracking continuo en segundo plano por limitaciones de PWA (iOS Safari / Android Doze) y privacidad, adoptando ubicación estática o fix puntual al ponerse 'Disponible'."
+    },
+    {
+      "conflict_id": "recipient-pii-visibility-timing",
+      "position": "adjust",
+      "summary": "PM ajusta postura a favor de Seguridad y UX/UI: se implementa revelación progresiva, mostrando únicamente barrio/zona y distancia antes de ofertar, y revelando la dirección exacta y teléfono del destinatario exclusivamente al repartidor cuya oferta resulte aceptada."
+    }
+  ],
+  "_transport": {
+    "provider": "agy",
+    "compaction": 4
+  }
+}

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp — Contanos de tu negocio</title>
+<!-- Google Fonts: Montserrat & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-container": "#5cb5b8",
+            "error": "#ba1a1a",
+            "on-primary-fixed": "#002020",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "inverse-primary": "#4adadd",
+            "secondary-fixed-dim": "#c0c5e0",
+            "primary-fixed": "#6df6f9",
+            "surface-dim": "#d1daee",
+            "secondary-container": "#d9defa",
+            "secondary": "#585d75",
+            "surface-container-low": "#f0f3ff",
+            "tertiary-fixed": "#99f1f4",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-highest": "#dae3f7",
+            "on-secondary": "#ffffff",
+            "surface-container": "#e7eeff",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-tint": "#00696b",
+            "on-tertiary-container": "#004446",
+            "primary-container": "#09babd",
+            "surface-variant": "#dae3f7",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-tertiary": "#ffffff",
+            "on-surface": "#131c2a",
+            "secondary-fixed": "#dce1fd",
+            "on-surface-variant": "#3c4949",
+            "on-secondary-fixed": "#151b2f",
+            "primary": "#00696b",
+            "on-primary": "#ffffff",
+            "inverse-surface": "#283140",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed": "#002021",
+            "error-container": "#ffdad6",
+            "tertiary": "#00696c",
+            "on-primary-fixed-variant": "#004f51",
+            "on-error-container": "#93000a",
+            "surface-container-high": "#dfe8fd",
+            "surface-container-lowest": "#ffffff",
+            "primary-fixed-dim": "#4adadd",
+            "on-primary-container": "#004446",
+            "outline-variant": "#bbc9c9",
+            "on-secondary-container": "#5c6279",
+            "outline": "#6c7a7a",
+            "surface": "#f9f9ff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "surface-bright": "#f9f9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-sm": "0.5rem",
+            "space-md": "1rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "gutter": "0.5rem"
+          },
+          "fontFamily": {
+            "price-sm": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "label-md": ["Inter"],
+            "body-medium": ["Inter"],
+            "headline-md": ["Montserrat"],
+            "headline-lg": ["Montserrat"]
+          },
+          "fontSize": {
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    /* Clean vector map street canvas */
+    .map-grid-pattern {
+      background-color: #f4f6fa;
+      background-image: 
+        radial-gradient(#d1daee 1.5px, transparent 1.5px),
+        linear-gradient(to right, #e7eeff 1px, transparent 1px),
+        linear-gradient(to bottom, #e7eeff 1px, transparent 1px);
+      background-size: 24px 24px, 48px 48px, 48px 48px;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased min-h-screen flex flex-col items-center selection:bg-primary-container selection:text-on-primary-container">
+<!-- Shared Component: TopAppBar -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface border-b border-outline-variant/30 text-surface">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[24px]" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="text-surface/80 hover:text-surface active:scale-95 transition-transform duration-100 font-label-md text-label-md px-2 py-1" type="button">
+        Ingresar
+      </button>
+</div>
+</header>
+<!-- Mobile Container Wrapper: 390px Baseline -->
+<main class="w-full max-w-[390px] min-h-screen bg-surface-container-lowest flex flex-col pt-14 pb-28 border-x border-outline-variant/20 shadow-sm relative">
+<!-- Secondary Task Top Bar: Step Navigation & Back Action -->
+<div class="px-margin pt-4 pb-2 flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-lowest">
+<button aria-label="Volver al paso anterior" class="flex items-center gap-1 text-on-surface hover:opacity-80 active:scale-95 transition" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="arrow_back">arrow_back</span>
+<span class="font-label-md text-label-md">Volver</span>
+</button>
+<div class="flex items-center gap-2">
+<span class="font-label-sm text-label-sm font-semibold text-secondary">Paso 2 de 2</span>
+</div>
+</div>
+<!-- Linear Step Progress Bar -->
+<div class="w-full h-1.5 bg-surface-container">
+<div class="h-full bg-primary-container w-full rounded-r-full transition-all duration-300"></div>
+</div>
+<!-- Content Area: Single Column Stack with 16px Padding -->
+<div class="px-margin pt-6 flex flex-col gap-6">
+<!-- Section Title & Motifs -->
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center justify-between">
+<h1 class="font-headline-xl text-headline-xl text-on-surface">Contanos de tu negocio</h1>
+<span class="px-2.5 py-0.5 rounded-full bg-[#E6F8F8] text-[#0B7A7D] font-label-sm text-label-sm font-semibold">
+            Paso 2
+          </span>
+</div>
+<p class="font-body-md text-body-md text-secondary">
+          Completá los datos clave de despacho para que los cadetes retiren tus pedidos al instante.
+        </p>
+<!-- Undulating courier road motif vector divider -->
+<svg class="w-20 h-2 text-primary-container mt-1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5" viewbox="0 0 80 8">
+<path d="M2 4C14 4 16 1.5 28 1.5C40 1.5 42 6.5 54 6.5C66 6.5 68 4 78 4"></path>
+</svg>
+</div>
+<!-- Merchant Registration Form Stack -->
+<form class="flex flex-col gap-5" onsubmit="event.preventDefault();">
+<!-- Field: Nombre del negocio -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface flex items-center justify-between" for="business-name">
+<span>Nombre del negocio</span>
+<span class="font-label-sm text-label-sm text-secondary font-normal">Obligatorio</span>
+</label>
+<div class="relative">
+<input class="w-full h-12 px-4 rounded-[10px] bg-surface-container-lowest border border-outline-variant/60 font-body-lg text-body-lg text-on-surface focus:border-primary-container focus:ring-2 focus:ring-primary-container focus:outline-none transition" id="business-name" placeholder="Ej. Panadería La Espiga" type="text" value="Panadería La Espiga"/>
+</div>
+</div>
+<!-- Field: Teléfono de contacto -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="phone-contact">
+            Teléfono de contacto
+          </label>
+<div class="relative flex items-center">
+<span class="absolute left-4 font-label-md text-label-md text-secondary select-none font-semibold">AR +54</span>
+<input class="w-full h-12 pl-20 pr-4 rounded-[10px] bg-surface-container-lowest border border-outline-variant/60 font-body-lg text-body-lg text-on-surface focus:border-primary-container focus:ring-2 focus:ring-primary-container focus:outline-none transition" id="phone-contact" placeholder="381 555-0123" type="tel" value="381 555-0123"/>
+</div>
+<div class="flex items-center gap-1.5 text-secondary pt-0.5">
+<span class="material-symbols-outlined text-[16px] text-secondary" data-icon="lock">lock</span>
+<p class="font-body-md text-body-md text-secondary text-xs">Lo ve solo el repartidor que elijas.</p>
+</div>
+</div>
+<!-- Field: Barrio de retiro habitual (Select) -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="pickup-neighborhood">
+            Barrio de retiro habitual
+          </label>
+<div class="relative">
+<select class="w-full h-12 px-4 appearance-none rounded-[10px] bg-surface-container-lowest border border-outline-variant/60 font-body-lg text-body-lg text-on-surface focus:border-primary-container focus:ring-2 focus:ring-primary-container focus:outline-none transition pr-10" id="pickup-neighborhood">
+<option selected="" value="Centro">Centro</option>
+<option value="Barrio San Martín">Barrio San Martín</option>
+<option value="Barrio Belgrano">Barrio Belgrano</option>
+<option value="Villa Nueva">Villa Nueva</option>
+<option value="Barrio Cooperativa">Barrio Cooperativa</option>
+<option value="Zona Estación">Zona Estación</option>
+</select>
+<div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-secondary">
+<span class="material-symbols-outlined text-[20px]" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Field: Dirección de retiro habitual -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="pickup-address">
+            Dirección de retiro habitual
+          </label>
+<div class="relative">
+<input class="w-full h-12 px-4 rounded-[10px] bg-surface-container-lowest border border-outline-variant/60 font-body-lg text-body-lg text-on-surface focus:border-primary-container focus:ring-2 focus:ring-primary-container focus:outline-none transition" id="pickup-address" placeholder="Calle y altura" type="text" value="San Martín 450"/>
+</div>
+<p class="font-body-md text-body-md text-secondary text-xs">Se completa sola en cada solicitud. Podés cambiarla.</p>
+</div>
+<!-- Map Card: Ubicación del local en el mapa -->
+<div class="flex flex-col gap-2 pt-1">
+<label class="font-label-md text-label-md text-on-surface flex items-center gap-1.5">
+<span>Ubicación del local en el mapa</span>
+<span class="material-symbols-outlined text-[16px] text-tertiary" data-icon="pin_drop">pin_drop</span>
+</label>
+<div class="rounded-[12px] border border-outline-variant/60 bg-surface-container-lowest overflow-hidden flex flex-col">
+<!-- Map Viewport -->
+<div class="relative w-full h-52 map-grid-pattern overflow-hidden cursor-grab active:cursor-grabbing select-none border-b border-outline-variant/40" data-location="Aguilares" style="">
+<!-- Clean flat vector street mock of Aguilares -->
+<svg class="absolute inset-0 w-full h-full text-outline-variant/40" xmlns="http://www.w3.org/2000/svg">
+<!-- Street Grid Lines -->
+<line stroke="#dae3f7" stroke-width="12" x1="0" x2="390" y1="45" y2="45"></line>
+<line stroke="#dae3f7" stroke-width="16" x1="0" x2="390" y1="120" y2="120"></line>
+<line stroke="#dae3f7" stroke-width="10" x1="0" x2="390" y1="175" y2="175"></line>
+<line stroke="#dae3f7" stroke-width="14" x1="75" x2="75" y1="0" y2="208"></line>
+<line stroke="#dae3f7" stroke-width="20" x1="195" x2="195" y1="0" y2="208"></line>
+<line stroke="#dae3f7" stroke-width="12" x1="310" x2="310" y1="0" y2="208"></line>
+<!-- City Blocks (Aguilares) -->
+<rect fill="#f0f3ff" height="55" rx="4" width="100" x="85" y="55"></rect>
+<rect fill="#f0f3ff" height="55" rx="4" width="95" x="205" y="55"></rect>
+<rect fill="#e7eeff" height="40" rx="4" width="100" x="85" y="130"></rect>
+<rect fill="#f0f3ff" height="40" rx="4" width="95" x="205" y="130"></rect>
+<!-- Street Labels -->
+<text fill="#585d75" font-family="Inter" font-size="9" font-weight="600" x="12" y="115">Av. Sarmiento</text>
+<text fill="#585d75" font-family="Inter" font-size="9" font-weight="600" x="145" y="24">San Martín</text>
+<text fill="#177A4B" font-family="Inter" font-size="9" font-weight="600" x="210" y="75">Plaza 25 de Mayo</text>
+</svg>
+<!-- Central Crosshair Ring -->
+<div class="absolute inset-0 m-auto w-16 h-16 pointer-events-none flex items-center justify-center">
+<div class="w-16 h-16 rounded-full border border-primary-container/40 bg-primary-container/10 flex items-center justify-center animate-pulse">
+<div class="w-2 h-2 rounded-full bg-primary-container"></div>
+</div>
+</div>
+<!-- Fixed Brand Pin on Aguilares Location -->
+<div class="absolute inset-0 m-auto flex flex-col items-center justify-center pointer-events-none -translate-y-4">
+<div class="bg-inverse-surface text-primary-container p-2 rounded-full shadow-md border-2 border-surface-container-lowest flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]" data-icon="storefront" style="font-variation-settings: 'FILL' 1;">storefront</span>
+</div>
+<div class="w-1.5 h-3 bg-inverse-surface"></div>
+<div class="w-3 h-1 bg-on-surface/30 rounded-full blur-[1px]"></div>
+</div>
+<!-- Map Badge Overlay -->
+<div class="absolute top-2.5 left-2.5 bg-inverse-surface/90 text-surface px-2 py-1 rounded-md text-[11px] font-label-sm flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[13px] text-primary-container" data-icon="location_on">location_on</span>
+<span>Aguilares, Tucumán</span>
+</div>
+<!-- Drag Guidance Indicator -->
+<div class="absolute bottom-2.5 right-2.5 bg-surface-container-lowest/90 border border-outline-variant/50 text-on-surface px-2 py-0.5 rounded text-[11px] font-label-sm shadow-sm">
+                Arrastrá para ajustar
+              </div>
+</div>
+<!-- Map Instructions & Action -->
+<div class="p-3.5 flex flex-col gap-3 bg-surface-container-lowest">
+<p class="font-body-md text-body-md text-secondary text-xs leading-snug">
+                Mové el mapa para marcar la puerta de tu negocio. Muy útil si tu calle no tiene número.
+              </p>
+<!-- 48px Outline Button with Crosshair Icon -->
+<button class="w-full h-12 rounded-[10px] bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md text-label-md font-semibold flex items-center justify-center gap-2 hover:bg-surface-container-low active:scale-[0.99] transition duration-150" type="button">
+<span class="material-symbols-outlined text-[20px] text-tertiary" data-icon="my_location">my_location</span>
+<span>Usar mi ubicación actual</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Teal-tinted pilot info card -->
+<div class="rounded-[12px] p-4 bg-[#E6F8F8] border border-primary-container/80 flex items-start gap-3">
+<span class="material-symbols-outlined text-[#0B7A7D] text-[22px] shrink-0 mt-0.5" data-icon="verified_user">verified_user</span>
+<div class="flex flex-col gap-0.5">
+<span class="font-label-md text-label-md text-[#0B7A7D] font-bold">Piloto bonificado</span>
+<p class="font-body-md text-body-md text-[#0B7A7D] leading-relaxed">
+              Estás en el piloto gratis. Cuando termine te vamos a avisar cómo seguir.
+            </p>
+</div>
+</div>
+<!-- Terms and Conditions Checkbox -->
+<div class="flex items-center gap-3 pt-1">
+<input checked="" class="w-5 h-5 rounded-[4px] border-outline-variant text-primary-container focus:ring-primary-container focus:ring-offset-0 transition cursor-pointer" id="terms-pilot" type="checkbox"/>
+<label class="font-body-md text-body-md text-on-surface cursor-pointer select-none" for="terms-pilot">
+            Acepto los <a class="text-[#0B7A7D] font-semibold underline underline-offset-2 hover:opacity-80" href="#">Términos del piloto</a>
+</label>
+</div>
+</form>
+</div>
+<!-- Sticky Bottom Bar with Primary Action -->
+<div class="fixed bottom-0 left-0 w-full z-40 bg-surface-container-lowest/95 backdrop-blur-sm border-t border-outline-variant/30 py-3 px-4 flex justify-center">
+<div class="w-full max-w-[390px]">
+<button class="w-full h-12 rounded-[10px] bg-primary-container text-inverse-surface font-headline-md text-headline-md font-bold flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98] transition shadow-none" type="button">
+<span>Empezar</span>
+<span class="material-symbols-outlined text-[20px]" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Shared Component: Footer -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center mt-6 border-t border-outline-variant/40 bg-surface-container-lowest">
+<div class="flex flex-wrap justify-center gap-x-4 gap-y-2">
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface transition-colors duration-150" href="#">Términos y condiciones</a>
+<span class="text-outline-variant">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface transition-colors duration-150" href="#">Privacidad</a>
+<span class="text-outline-variant">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+<p class="font-body-md text-body-md text-secondary/80 text-xs">
+        © 2024 cadeApp. Envíos locales y logística inteligente.
+      </p>
+</footer>
+</main>
+</body></html>

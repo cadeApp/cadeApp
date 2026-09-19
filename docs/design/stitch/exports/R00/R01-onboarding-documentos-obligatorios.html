@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>cadeApp - Tu identidad (Paso 2 de 4)</title>
+<!-- Material Symbols Outlined Font -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts: Montserrat and Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 with Forms Plugin -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-lowest": "#ffffff",
+            "surface-bright": "#f9f9ff",
+            "primary-fixed": "#6df6f9",
+            "error-container": "#ffdad6",
+            "inverse-on-surface": "#ebf1ff",
+            "tertiary-container": "#5cb5b8",
+            "on-surface": "#131c2a",
+            "background": "#f9f9ff",
+            "on-primary-container": "#004446",
+            "secondary-fixed": "#dce1fd",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-secondary-fixed": "#151b2f",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container": "#e7eeff",
+            "surface-container-highest": "#dae3f7",
+            "on-surface-variant": "#3c4949",
+            "secondary": "#585d75",
+            "secondary-fixed-dim": "#c0c5e0",
+            "inverse-surface": "#283140",
+            "on-tertiary-container": "#004446",
+            "on-error": "#ffffff",
+            "on-tertiary-fixed": "#002021",
+            "tertiary": "#00696c",
+            "on-error-container": "#93000a",
+            "on-primary-fixed": "#002020",
+            "outline-variant": "#bbc9c9",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface": "#f9f9ff",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "outline": "#6c7a7a",
+            "error": "#ba1a1a",
+            "on-primary": "#ffffff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "surface-container-low": "#f0f3ff",
+            "surface-tint": "#00696b",
+            "inverse-primary": "#4adadd",
+            "secondary-container": "#d9defa",
+            "primary-fixed-dim": "#4adadd",
+            "surface-dim": "#d1daee",
+            "surface-container-high": "#dfe8fd",
+            "primary": "#00696b",
+            "primary-container": "#09babd",
+            "on-tertiary": "#ffffff",
+            "on-secondary": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-lg": "1.5rem",
+            "space-sm": "0.5rem",
+            "space-xs": "0.25rem",
+            "margin": "1rem",
+            "space-md": "1rem",
+            "gutter": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "label-md": ["Inter"],
+            "price-display": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "price-sm": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-lg": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "body-md": ["Inter"],
+            "body-medium": ["Inter"]
+          },
+          "fontSize": {
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      display: inline-block;
+      text-transform: none;
+      letter-spacing: normal;
+      word-wrap: normal;
+      white-space: nowrap;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Touch device optimizations & prevent text drag */
+    body {
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col justify-between items-center selection:bg-primary-container selection:text-on-primary-container">
+<!-- Main Mobile Frame Baseline (390px PWA) -->
+<div class="w-full max-w-[390px] min-h-screen flex flex-col bg-surface-container-lowest relative border-x border-outline-variant/30 pb-28">
+<!-- Top App Bar Navigation -->
+<header class="sticky top-0 z-40 w-full h-14 bg-inverse-surface flex items-center justify-between px-4">
+<div class="flex items-center gap-2">
+<button aria-label="Volver" class="w-9 h-9 -ml-1.5 flex items-center justify-center rounded-lg text-surface hover:bg-surface/10 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<span class="font-headline-md text-headline-md text-surface font-bold tracking-tight">Tu identidad</span>
+</div>
+<!-- Brand icon indicator from TopAppBar anchor -->
+<div class="flex items-center text-primary-container font-headline-md text-headline-md">
+<span class="material-symbols-outlined text-[22px]" data-icon="two_wheeler">two_wheeler</span>
+</div>
+</header>
+<!-- Linear Step Progress Bar -->
+<section class="bg-surface-container-lowest border-b border-outline-variant/30 px-4 pt-3 pb-3">
+<div class="flex items-center justify-between gap-2 mb-2">
+<!-- Step 1: Datos (Done) -->
+<div class="flex-1 flex flex-col gap-1">
+<div class="h-1.5 w-full bg-tertiary rounded-full"></div>
+<span class="font-label-sm text-[12px] text-tertiary font-semibold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[14px]">check</span> Datos
+          </span>
+</div>
+<!-- Step 2: Identidad (Active) -->
+<div class="flex-1 flex flex-col gap-1">
+<div class="h-1.5 w-full bg-primary-container rounded-full"></div>
+<span class="font-label-sm text-[12px] text-on-surface font-semibold">Identidad</span>
+</div>
+<!-- Step 3: Vehículo (Upcoming) -->
+<div class="flex-1 flex flex-col gap-1">
+<div class="h-1.5 w-full bg-surface-container-highest rounded-full"></div>
+<span class="font-label-sm text-[12px] text-secondary font-medium">Vehículo</span>
+</div>
+<!-- Step 4: Listo (Upcoming) -->
+<div class="flex-1 flex flex-col gap-1">
+<div class="h-1.5 w-full bg-surface-container-highest rounded-full"></div>
+<span class="font-label-sm text-[12px] text-secondary font-medium">Listo</span>
+</div>
+</div>
+</section>
+<!-- Main Content Canvas -->
+<main class="flex-1 px-4 pt-4 flex flex-col gap-5">
+<!-- Informative Trust Callout with undulating road motif accent -->
+<div class="bg-surface-container-low border border-outline-variant/40 rounded-xl p-3.5 flex items-start gap-3 relative overflow-hidden">
+<div class="w-8 h-8 rounded-lg bg-tertiary/10 text-tertiary flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-[20px]" data-icon="verified_user">verified_user</span>
+</div>
+<div class="flex-1">
+<h2 class="font-label-md text-label-md text-on-surface mb-0.5">Verificación de seguridad</h2>
+<p class="font-body-md text-body-md text-secondary leading-snug">
+            Lo revisa una persona de cadeApp. Tus documentos se guardan privados y solo los ve el equipo que aprueba.
+          </p>
+</div>
+<!-- Brand undulating road motif (subtle accent line) -->
+<svg class="absolute bottom-0 right-0 w-24 h-5 text-primary-container/20 pointer-events-none" fill="none" viewbox="0 0 100 20" xmlns="http://www.w3.org/2000/svg">
+<path d="M0 12C30 12 40 4 70 4C85 4 95 10 100 12" stroke="currentColor" stroke-linecap="round" stroke-width="3"></path>
+</svg>
+</div>
+<!-- DNI Input Stack -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="dni-input">
+          Número de DNI <span class="text-tertiary">*</span>
+</label>
+<div class="relative">
+<input class="w-full h-12 px-4 bg-surface-container-lowest border border-outline-variant rounded-[10px] text-on-surface font-body-medium text-body-medium focus:ring-2 focus:ring-primary-container focus:border-primary-container focus:outline-none transition-all placeholder:text-secondary/60" id="dni-input" inputmode="numeric" pattern="[0-9]*" placeholder="Ej.: 38.123.456" type="text" value="38.412.903"/>
+<span class="absolute right-3.5 top-1/2 -translate-y-1/2 text-tertiary flex items-center pointer-events-none">
+<span class="material-symbols-outlined text-[20px]" data-icon="badge">badge</span>
+</span>
+</div>
+<span class="font-body-md text-[13px] text-secondary">Asegurate de que coincida con el documento a subir.</span>
+</div>
+<!-- Section: Documentos Requeridos -->
+<section class="flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-headline-md text-on-surface">Documentación personal</h3>
+<span class="font-label-sm text-[12px] text-secondary font-medium">1 de 3 cargados</span>
+</div>
+<!-- 1. DNI Frente Tile (Uploaded / Success state) -->
+<article class="bg-surface-container-lowest border border-outline-variant rounded-xl p-3.5 flex items-center justify-between gap-3 transition-colors hover:border-outline">
+<div class="flex items-center gap-3 min-w-0">
+<!-- Thumbnail of uploaded ID card -->
+<div class="relative w-14 h-11 rounded-lg overflow-hidden shrink-0 border border-outline-variant/60 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="A clean top-down flat lay photograph of an Argentine national identity document card on a crisp neutral work surface. Crisp geometric shadows and balanced soft daylight highlight the clear portrait and official typography. Styled with a minimalist, high-contrast utilitarian design palette." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBNXkCwLfYgkKGJUts8Yd2n-NapjEXLgzL-zdYpnQ3uRgdXBF7Dkkcr4zDStDh04VYra3meYVhlO13V-XEi7EojncnMvas_IRWrNPrKX1vCjHf1Cgq2-4nVPjzIL_48AoQjWBxIUdTDwTtoq9QbyoJsGoGEfg79CsdTn8gTDn1OBixVJPTZnPvXwkR1ZX9uZtvZjyvV-c3tJoF_kYML91Nl5TwyYtQnHofbFFylgYYpTQ6ei2EjIp3x"/>
+<div class="absolute inset-0 bg-on-surface/10"></div>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-label-md text-on-surface truncate">DNI frente</span>
+<span class="font-body-md text-[13px] text-secondary truncate">dni_frente_scan.jpg</span>
+</div>
+</div>
+<div class="flex items-center gap-2 shrink-0">
+<!-- Pill badge: Success Cargado -->
+<span class="inline-flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2.5 py-1 rounded-full text-[13px] font-label-sm">
+<span class="material-symbols-outlined text-[15px]" data-icon="check_circle">check_circle</span>
+              Cargado
+            </span>
+<!-- Ghost action button -->
+<button class="text-tertiary hover:text-on-primary-container font-label-sm text-[13px] px-1 py-1 hover:underline transition-all" type="button">
+              Cambiar
+            </button>
+</div>
+</article>
+<!-- 2. DNI Dorso Tile (Empty state - Dashed Teal Border) -->
+<article class="bg-surface-container-lowest border-2 border-dashed border-primary-container rounded-xl p-4 flex items-center justify-between gap-3 active:scale-[0.99] transition-transform cursor-pointer hover:bg-primary-container/5">
+<div class="flex items-center gap-3.5">
+<div class="w-11 h-11 rounded-lg bg-primary-container/15 text-tertiary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[24px]" data-icon="photo_camera">photo_camera</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface">DNI dorso</span>
+<span class="font-body-md text-[13px] text-secondary">Sacá una foto</span>
+<span class="font-body-md text-[12px] text-secondary/80">Con buena luz y sin reflejos</span>
+</div>
+</div>
+<button class="h-9 px-3 rounded-lg bg-inverse-surface text-surface text-[13px] font-label-md flex items-center gap-1 shrink-0 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">add_a_photo</span>
+            Subir
+          </button>
+</article>
+<!-- 3. Selfie Tile (Empty state - Dashed Border) -->
+<article class="bg-surface-container-lowest border-2 border-dashed border-primary-container rounded-xl p-4 flex items-center justify-between gap-3 active:scale-[0.99] transition-transform cursor-pointer hover:bg-primary-container/5">
+<div class="flex items-center gap-3.5">
+<div class="w-11 h-11 rounded-lg bg-primary-container/15 text-tertiary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[24px]" data-icon="face">face</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface">Selfie de validación</span>
+<span class="font-body-md text-[13px] text-secondary">Sacate una selfie</span>
+<span class="font-body-md text-[12px] text-secondary/80">Sin anteojos de sol ni gorra</span>
+</div>
+</div>
+<button class="h-9 px-3 rounded-lg bg-inverse-surface text-surface text-[13px] font-label-md flex items-center gap-1 shrink-0 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-[16px]">camera_front</span>
+            Tomar
+          </button>
+</article>
+</section>
+<!-- Section: Foto de perfil pública -->
+<section class="flex flex-col gap-2 pt-1">
+<h3 class="font-headline-md text-headline-md text-on-surface">Presencia en el comercio</h3>
+<!-- Foto de perfil tile -->
+<article class="bg-surface-container-lowest border-2 border-dashed border-outline-variant hover:border-primary-container rounded-xl p-4 flex items-center justify-between gap-3 transition-colors cursor-pointer">
+<div class="flex items-center gap-3.5">
+<div class="w-11 h-11 rounded-full bg-surface-container-high text-secondary flex items-center justify-center shrink-0 border border-outline-variant">
+<span class="material-symbols-outlined text-[22px]" data-icon="account_circle">account_circle</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface">Foto de perfil</span>
+<span class="font-body-md text-[13px] text-secondary">La van a ver los comercios y clientes</span>
+</div>
+</div>
+<button class="h-9 px-3 rounded-lg border border-outline-variant text-on-surface bg-surface-container-lowest hover:bg-surface text-[13px] font-label-md flex items-center gap-1 shrink-0" type="button">
+            Elegir
+          </button>
+</article>
+</section>
+<!-- Quick tips note -->
+<div class="flex items-center gap-2 p-3 bg-surface-container rounded-lg text-secondary">
+<span class="material-symbols-outlined text-[18px] text-tertiary shrink-0">info</span>
+<p class="font-body-md text-[12px] leading-tight">
+          Formatos aceptados: JPG o PNG legibles. Peso máximo 10MB por archivo.
+        </p>
+</div>
+</main>
+<!-- Sticky Bottom Bar Anchor (Mobile Form Confirmation Flow) -->
+<div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] bg-surface-container-lowest border-t border-outline-variant/40 px-4 py-3 z-30 shadow-[0_-4px_16px_rgba(18,24,44,0.06)] flex flex-col items-center gap-1.5">
+<!-- Primary Action CTA Button: Min height 48px, Full Width, Disabled state -->
+<button class="w-full h-12 rounded-[10px] bg-primary-container/40 text-on-surface/40 font-headline-md text-[15px] font-bold tracking-normal flex items-center justify-center gap-2 cursor-not-allowed transition-all" disabled="" type="button">
+<span>Continuar</span>
+<span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+</button>
+<!-- Step Counter Caption -->
+<span class="font-body-md text-[12px] text-secondary">Paso 2 de 4</span>
+</div>
+<!-- Footer from Shared Components JSON -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center border-t border-outline-variant/40 bg-surface-container-lowest mt-6">
+<div class="flex flex-wrap justify-center gap-x-4 gap-y-2">
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Términos y condiciones</a>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+<p class="font-body-md text-body-md text-secondary">© 2024 cadeApp. Envíos locales y logística inteligente.</p>
+</footer>
+</div>
+</body></html>

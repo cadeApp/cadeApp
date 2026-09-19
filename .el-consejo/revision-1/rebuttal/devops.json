@@ -1,0 +1,30 @@
+{
+  "conflicts": [
+    {
+      "id": "devops-baas-backup-criteria",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Backend justifica Supabase por modelo relacional, PostGIS y transacciones ACID (backend.review, resumen), criterios válidos que DevOps no objeta; de hecho, Postgres estándar y self-hostable facilita más el backup/restore que el modelo propietario de Firestore, lo que apoya indirectamente el requisito de DevOps. Pero ni el dictamen de backend ni el de security documentan explícitamente qué capacidad de backup/point-in-time recovery ofrece el plan elegido (gratuito vs. pago) ni su costo, que es justo el criterio pedido. La elección de proveedor pasa a ser prácticamente irreversible una vez construido el MVP, por eso se mantiene como high_risk.",
+      "parties": ["devops", "backend", "security"]
+    },
+    {
+      "id": "devops-backup-vs-pii-retention",
+      "class": "high_risk",
+      "reversible": true,
+      "summary": "Security (security.review.0) pide borrar DNI/selfie a los N días de la aprobación o baja del repartidor. Un esquema de backups periódicos del BaaS conserva esos documentos dentro de su propia ventana de retención (snapshots diarios/semanales) aunque se borren del registro activo, lo que puede incumplir en la práctica el compromiso de borrado si no se define explícitamente cómo se purgan o expiran los backups que contienen esos archivos.",
+      "parties": ["devops", "security", "legal"]
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "devops-baas-backup-criteria",
+      "summary": "Ajusto mi postura, no la retiro: no objeto la recomendación de Supabase de backend, sus criterios (relacional, PostGIS, ACID, RLS, menor lock-in) son sólidos y no chocan con el requisito de backup. Pero ninguno de los dos dictámenes leídos (backend ni security) deja registrado qué nivel de backup/PITR ofrece el plan de Supabase elegido ni su costo, que era exactamente el punto que pedía incorporar como criterio explícito de la decisión. Mantengo que antes de aprobar el primer repartidor real (que implica guardar DNI y selfie reales) el plan debe documentar el tier de Supabase contratado, su ventana de backup/PITR y el costo asociado, no asumirlo implícito por haber elegido Postgres.",
+      "position": "adjust"
+    },
+    {
+      "conflict_id": "devops-backup-vs-pii-retention",
+      "summary": "Declaro este conflicto nuevo porque no estaba cubierto antes: security.review.0 exige poder borrar DNI/selfie a los N días, pero un backup periódico del BaaS retiene esos mismos archivos dentro de su propia ventana aunque se borren en la base activa. Backup y borrado programado de PII son objetivos en tensión que hay que resolver juntos (por ejemplo, excluir el bucket de documentos de identidad del backup general y aplicar su propio ciclo de expiración, o acortar la ventana de backup a algo compatible con la política de retención de security) antes de fijar la política de backup del punto anterior.",
+      "position": "maintain"
+    }
+  ]
+}

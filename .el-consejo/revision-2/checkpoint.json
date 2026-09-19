@@ -1,0 +1,228 @@
+{
+  "state": "RESOLVED",
+  "items": [
+    {
+      "class": "product",
+      "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "parties": [
+        "pm",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14.",
+      "scope": "conflict:conflicto-jerarquia-contratos-p1-vs-dominio",
+      "override_required": false
+    },
+    {
+      "id": "agent-permission-enforcement",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Seguridad pide controles técnicos (sandboxing de agy, CI que valide RLS automáticamente, escaneo de dependencias, rutas de alto riesgo con revisión reforzada) además de las reglas en Markdown; implementarlos requiere trabajo de devops/backend que compite con la velocidad de arranque que busca el plan.",
+      "parties": [
+        "security",
+        "devops",
+        "backend",
+        "pm"
+      ],
+      "normalized_from": "technical",
+      "scope": "conflict:agent-permission-enforcement",
+      "override_required": true
+    },
+    {
+      "id": "produccion-acceso-simetrico",
+      "class": "business",
+      "reversible": false,
+      "summary": "Seguridad pide restringir quién de las 3 personas administra secretos y aprueba el gate de producción; esto es una decisión de gobernanza del equipo, no puramente técnica, y le corresponde definirla al humano dueño del proyecto.",
+      "parties": [
+        "security",
+        "pm",
+        "devops"
+      ],
+      "scope": "conflict:produccion-acceso-simetrico",
+      "override_required": true
+    }
+  ],
+  "derived": [
+    {
+      "id": "finding:qa.review.0",
+      "scope": "finding:qa.review.0",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "El plan define en detalle cómo tomar una tarea nueva (skill tomar-tarea) pero no define ningún procedimiento para retomar una tarea 'en curso' que dejó otra persona, o la misma persona en otro momento: no hay paso que obligue a re-ejecutar typecheck/lint/test/test:db sobre la rama existente antes de continuar, ni un campo en la ficha para registrar qué se hizo y qué evidencia hay, ni una regla que obligue a pushear el trabajo en curso para que no quede solo en el disco de quien lo empezó.",
+      "parties": [
+        "qa"
+      ],
+      "emitted_by": "qa"
+    },
+    {
+      "id": "finding:qa.review.1",
+      "scope": "finding:qa.review.1",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "La matriz de E2E de la Fase 3 (T-301 a T-309) no incluye ningún spec para el registro/alta de comercio ni para el registro de la versión de consentimiento aceptada (T-111), pese a que el master plan lo lista como el primer flujo obligatorio de la estrategia de pruebas (§13.3) bajo la decisión cerrada D10 ('E2E de todos los flujos').",
+      "parties": [
+        "qa"
+      ],
+      "emitted_by": "qa"
+    },
+    {
+      "id": "finding:security.review.0",
+      "scope": "finding:security.review.0",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "Las 'reglas de seguridad operativa del agente' (no leer .env, no correr comandos contra Supabase remoto, no agregar dependencias fuera de ficha) son solo texto en AGENTS.md/.agents/rules que el agente puede no cumplir; el plan no define ningún control técnico (allowlist/denylist de comandos de agy, aislamiento de red, o prohibición explícita de credenciales de producción en la laptop de un desarrollador) que impida a un agente con terminal ejecutar comandos destructivos contra Supabase de producción o filtrar secretos, aun sin intención maliciosa.",
+      "parties": [
+        "security"
+      ],
+      "emitted_by": "security"
+    },
+    {
+      "id": "finding:security.review.1",
+      "scope": "finding:security.review.1",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "El plan no incluye ninguna regla que trate el contenido leído por el agente (fichas de tarea, PRs, issues, READMEs de dependencias, archivos de seed/fixtures) como dato no confiable; solo restringe las acciones que el agente puede tomar por sí mismo, no cómo debe reaccionar si ese contenido intenta redirigir su comportamiento.",
+      "parties": [
+        "security"
+      ],
+      "emitted_by": "security"
+    }
+  ],
+  "approved": [
+    {
+      "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "scope": "conflict:conflicto-jerarquia-contratos-p1-vs-dominio",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Contratos: \"Contract-change y escalar (Recomendado)\"."
+      ]
+    }
+  ],
+  "overrides": [
+    {
+      "id": "agent-permission-enforcement",
+      "scope": "conflict:agent-permission-enforcement",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Acuerdos: aprobó \"Controles técnicos en agy y GitHub\" (hook PreToolUse de agy verificado, sin credenciales de producción en laptops, Code Owners obligatorio, rutas de alto riesgo, Actions por hash, pnpm audit, chequeo de RLS en CI)."
+      ]
+    },
+    {
+      "id": "produccion-acceso-simetrico",
+      "scope": "conflict:produccion-acceso-simetrico",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Producción: \"una sola, que seria el dueño del repo o Lautaro073 en github\".",
+        "Checkpoint revision-2/Respaldos (tras explicación): \"Lautaro073 aprueba todo\"."
+      ]
+    },
+    {
+      "id": "finding:qa.review.0",
+      "scope": "finding:qa.review.0",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Acuerdos: aprobó \"Protocolo para retomar tareas\"."
+      ]
+    },
+    {
+      "id": "finding:qa.review.1",
+      "scope": "finding:qa.review.1",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Acuerdos: aprobó \"E2E del registro de comercio\"."
+      ]
+    },
+    {
+      "id": "finding:security.review.0",
+      "scope": "finding:security.review.0",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Acuerdos: aprobó \"Controles técnicos en agy y GitHub\" (hook PreToolUse de agy verificado, sin credenciales de producción en laptops, Code Owners obligatorio, rutas de alto riesgo, Actions por hash, pnpm audit, chequeo de RLS en CI)."
+      ]
+    },
+    {
+      "id": "finding:security.review.1",
+      "scope": "finding:security.review.1",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Acuerdos: aprobó \"Lo que lee el agente es dato\"."
+      ]
+    }
+  ],
+  "additionalDecisions": [
+    {
+      "id": "respaldos-codeowners",
+      "scope": "adjudication:codeowners-spof-p1",
+      "kind": "identidad del respaldo delegada al checkpoint por el Juez",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Checkpoint revision-2/Respaldos (tras explicación): \"Lautaro073 aprueba todo\".",
+        "Opción aceptada: si Lautaro también es una de las 3 personas, para su propia zona aprueba otra persona."
+      ]
+    },
+    {
+      "id": "D14-pago-envio",
+      "scope": "master-plan:D14",
+      "kind": "decisión de producto posterior a revision-1",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Mensaje del usuario: \"el envio lo paga quien lo recibe, tipo el emprendedor cobra lo suyo y le dice al cliente el delivery saldra x cantidad.\""
+      ]
+    },
+    {
+      "id": "seleccion-roles-y-reparto",
+      "scope": "run:revision-2",
+      "kind": "ejecución",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:10:15Z",
+      "evidence": [
+        "Mensaje del usuario: \"pasalo por el consejo solo activando los necesarios\"",
+        "Intake revision-2: \"agy con el plan en partes\""
+      ]
+    },
+    {
+      "id": "equipo-real",
+      "scope": "implementation-plan:§2",
+      "kind": "composición del equipo (posterior al checkpoint)",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:52:07Z",
+      "evidence": [
+        "Mensaje del usuario: \"pequeña correcion, somos 3 incluyendome (Lautaro073)\"",
+        "Respuesta: \"yo acepto lo mio, pq soy el unico de los 3 con mas conocimientos, los otros solo me colaboraran con sus tokens de agy plus\""
+      ]
+    },
+    {
+      "id": "colaboracion-cuentas",
+      "scope": "implementation-plan:§2",
+      "kind": "modo de colaboración",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:52:07Z",
+      "evidence": [
+        "Respuesta: \"Corren agy en sus máquinas (Recomendado)\""
+      ]
+    },
+    {
+      "id": "zona-lautaro",
+      "scope": "implementation-plan:§7.1",
+      "kind": "reparto de zonas",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T15:52:07Z",
+      "evidence": [
+        "Respuesta: \"Yo: base de datos + arranque (Recomendado)\""
+      ]
+    }
+  ]
+}

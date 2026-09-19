@@ -1,0 +1,76 @@
+{
+  "agentId": "documentation",
+  "confidence": 0.92,
+  "findings": [
+    {
+      "assumptions": [
+        "Los agentes de agy requieren aserciones explícitas y condiciones de salida verificables en el DoD de cada tarea para evitar dar por concluidos tests vacíos o superficiales."
+      ],
+      "correction": "Completar la columna 'DoD / pruebas' con las condiciones de verificación mínimas obligatorias: T-305 (aserciones de bloqueo HTTP 403 / redirección ante courier pending o rol inválido), T-306 (bloqueo efectivo de publicación si paid_until está vencido y toggle de piloto), T-308 (aserciones de suspensión cautelar inmediata y retención de ofertas activas), y T-309 (aserciones de timeout graceful ante 3G lento y reporte axe AA sin violaciones).",
+      "evidence": [
+        "Tabla Fase 3, fila T-305: DoD / pruebas figura como '—'.",
+        "Tabla Fase 3, fila T-306: DoD / pruebas figura como '—'.",
+        "Tabla Fase 3, fila T-308: DoD / pruebas figura como '—'.",
+        "Tabla Fase 3, fila T-309: DoD / pruebas figura como '—'."
+      ],
+      "impact": "Los desarrolladores y agentes de IA no cuentan con una pauta verificable de aserciones mínimas para validar la suite E2E, lo que arriesga suites de prueba incompletas o desalineadas con las reglas de negocio críticas.",
+      "severity": "high",
+      "statement": "Las tareas E2E T-305, T-306, T-308 y T-309 carecen de criterios de aceptación y definición de pruebas en la columna 'DoD / pruebas' (consignadas con guion '—')."
+    },
+    {
+      "assumptions": [
+        "La tabla §5.1 hace referencia a la máquina de estados de solicitudes detallada en docs/master-plan.md y no a la sección 5 del implementation plan."
+      ],
+      "correction": "Explicitar la ruta del documento en el DoD de T-304: 'Cubre cada fila de la tabla docs/master-plan.md §5.1 (Matriz de estados y transiciones)'.",
+      "evidence": [
+        "Tabla Fase 3, fila T-304: DoD / pruebas indica 'Cubre cada fila de la tabla §5.1'.",
+        "Índice del plan en el contexto: '5. Skills para agy (.agents/skills/) | 7. Fases y tareas'."
+      ],
+      "impact": "Pérdida de trazabilidad: un agente agy o programador intentará localizar la definición de estados en la sección de skills del plan de implementación en lugar de consultar la especificación canónica en el master plan.",
+      "severity": "medium",
+      "statement": "La tarea T-304 referencia la 'tabla §5.1' sin especificar el documento de origen, colisionando con el índice del plan donde §5 corresponde a 'Skills para agy'."
+    },
+    {
+      "assumptions": [
+        "Al ejecutarse T-202 y T-203 en pistas paralelas por distintos desarrolladores (P3 y P1), el payload mínimo y los eventos push exigen un contrato tipado único para evitar inconsistencias al integrarse."
+      ],
+      "correction": "Establecer un archivo de contrato explícito (ej. 'src/domain/push-contracts.ts' o sección dedicada dentro de 'src/domain/rpc-contracts.ts') e incluirlo dentro de los archivos permitidos de ambas tareas (T-202 y T-203).",
+      "evidence": [
+        "Tabla Fase 2, T-202: Archivos permitidos son 'src/features/notifications/**'.",
+        "Tabla Fase 2, T-203: Archivos permitidos son 'src/server/push/**', 'src/app/api/push/**', 'supabase/migrations/**'.",
+        "Ninguna de las dos tareas incluye un archivo de dominio común como 'src/domain/push-contracts.ts' o 'src/domain/rpc-contracts.ts'."
+      ],
+      "impact": "Riesgo de divergencia de esquemas entre los datos enviados por la API de push y lo procesado por los handlers push/notificationclick en el service worker, obligando a correcciones no planificadas durante la Fase 3.",
+      "severity": "medium",
+      "statement": "Falta de definición de un contrato tipado compartido en 'Archivos permitidos' para el payload de notificaciones push entre T-202 (cliente) y T-203 (emisor/API)."
+    },
+    {
+      "assumptions": [
+        "Si el endpoint /api/health ya fue creado en Fase 0 o Fase 1, falta referenciar su tarea y contrato de respuesta; si debe ser creado o modificado en T-310, los archivos permitidos no lo contemplan."
+      ],
+      "correction": "Aclarar en la descripción de T-310 si /api/health es un endpoint existente (referenciando la tarea de creación y su contrato) o agregar 'src/app/api/health/**' a los archivos permitidos de T-310 si su implementación corresponde a esta tarea.",
+      "evidence": [
+        "Tabla Fase 3, T-310: Tarea indica 'uptime de /api/health y alertas', pero Archivos permitidos lista únicamente 'docs/adr/**', 'docs/runbooks/**', 'src/server/observability/**'."
+      ],
+      "impact": "Ambigüedad operativa para el agente ejecutor, que no puede determinar si debe codificar el endpoint de salud, cuáles son las respuestas HTTP esperadas, o si su labor es estrictamente de configuración externa.",
+      "severity": "medium",
+      "statement": "La tarea T-310 exige monitoreo y uptime de '/api/health', pero no especifica la tarea previa que la crea ni incluye 'src/app/api/health/**' en sus archivos permitidos."
+    },
+    {
+      "assumptions": [
+        "El dictamen y los borradores del abogado se gestionan en formato documental (Markdown/texto plano) antes de transcribirse a componentes web, requiriendo trazabilidad de versión independiente del código."
+      ],
+      "correction": "Agregar 'docs/legal/**' a los archivos permitidos de T-311 para almacenar los documentos canónicos aprobados por el abogado junto con su número de versión.",
+      "evidence": [
+        "Tabla Fase 3, T-311: Archivos permitidos son 'src/features/legal/**', 'src/app/(public)/legal/**'.",
+        "DoD / pruebas: 'Textos revisados por un abogado (bloqueante externo); se registra la versión aceptada'."
+      ],
+      "impact": "Dificultad para auditar versiones: al almacenar los textos directamente en componentes .tsx o archivos de features, se mezclan modificaciones de interfaz con cambios legales de fondo.",
+      "severity": "low",
+      "statement": "T-311 no contempla un directorio documental en el repositorio para almacenar y versionar los textos legales aprobados antes de su implementación en código."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión documental, claridad y trazabilidad de las Fases 2 y 3 (§7). Se identifican vacíos en la definición de terminado (DoD) de cuatro tareas E2E, referencias ambiguas a tablas de especificación externas sin documentar su origen, ausencia de un contrato de datos formal compartido para eventos push en los archivos permitidos, e indefinición sobre la ubicación y trazabilidad de los textos legales y endpoints de monitoreo.",
+  "verdict": "conditional"
+}

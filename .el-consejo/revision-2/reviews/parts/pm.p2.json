@@ -1,0 +1,56 @@
+{
+  "agentId": "pm",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "correction": "Flexibilizar la gobernanza de supabase/ para trabajo asincrónico: permitir que cualquier integrante proponga y cree migraciones con sus tests pgTAP respectivos, estableciendo un protocolo de aprobación técnica por PR que pueda ejecutar un suplente designado en caso de ausencia de P1.",
+      "evidence": [
+        "supabase/AGENTS.md: '- Solo P1 mergea acá. Cada migración: un propósito, reversible con otra migración, con test pgTAP.'"
+      ],
+      "impact": "Si P1 no está disponible en su franja horaria, P2 y P3 quedan bloqueados para avanzar o integrar tareas que requieran migraciones de esquema, afectando la continuidad y autonomía de las 3 personas.",
+      "severity": "medium",
+      "statement": "La regla en supabase/AGENTS.md restringe los merges exclusivamente a P1 ('Solo P1 mergea acá'), entrando en conflicto con el objetivo de permitir trabajo simultáneo y asincrónico donde cualquiera de los 3 desarrolladores pueda continuar o destrabar tareas."
+    },
+    {
+      "correction": "Agregar en AGENTS.md (§ Calidad) la regla: 'Verificá uno por uno el cumplimiento de los criterios de aceptación especificados en docs/tasks/T-xxx.md y documentá su validación en la descripción del PR'.",
+      "evidence": [
+        "AGENTS.md § 'Antes de escribir código': '1. Leé la ficha de tu tarea en docs/tasks/T-xxx.md. Si no hay ficha, no empieces: pedila.'",
+        "AGENTS.md § 'Calidad': 'Antes de abrir PR: pnpm typecheck && pnpm lint && pnpm test && pnpm test:db (si tocaste supabase/).'"
+      ],
+      "impact": "El agente puede limitarse a que compilen los tipos y pasen los tests técnicos automáticos, pero omitir requisitos de negocio o flujos funcionales descritos en la ficha de la tarea.",
+      "severity": "medium",
+      "statement": "Falta en AGENTS.md una directiva explícita que instruya al agente a contrastar y validar los criterios de aceptación de la ficha de tarea (docs/tasks/T-xxx.md) antes de dar por concluida la implementación."
+    },
+    {
+      "assumptions": [
+        "El equipo de 3 personas trabaja en horarios desfasados y requiere retomar ramas y tareas iniciadas por otros sin pérdida de contexto ni duplicación de esfuerzo."
+      ],
+      "correction": "Incluir en AGENTS.md una convención de traspaso: 'Al pausar o entregar una tarea en progreso, registrar en la ficha docs/tasks/T-xxx.md o en el último commit (chore: WIP checkpoint) el estado exacto, tareas completadas, pruebas pendientes y bloqueos detectados'.",
+      "impact": "Al retomar una tarea a medio hacer, el nuevo agente o desarrollador carece de un registro estandarizado de avance, archivos pendientes o decisiones preliminares, aumentando el riesgo de inconsistencias y retrasos.",
+      "severity": "medium",
+      "statement": "Las reglas para agy no definen pautas operativas para pausar y traspasar tareas inconclusas cuando otra persona o agente deba retomarlas en momentos distintos."
+    },
+    {
+      "correction": "Precisar la condición de negocio en 20-arquitectura.md: 'Datos de contacto del destinatario únicamente se exponen al comercio creador y al repartidor cuya oferta haya sido formalmente aceptada por el comercio (estado in_transit o accepted)'.",
+      "evidence": [
+        "20-arquitectura.md: 'Nunca devuelven filas con datos de contacto a quien no corresponde.'"
+      ],
+      "impact": "El agente podría interpretar de forma ambigua cuándo corresponde o no entregar datos de contacto, pudiendo bloquear accesos legítimos al repartidor asignado o filtrar información antes de que la oferta sea aceptada.",
+      "severity": "low",
+      "statement": "La regla de seguridad en 20-arquitectura.md sobre datos de contacto no explicita la condición de dominio que habilita su exposición, dejando la regla sujeta a interpretación del agente."
+    },
+    {
+      "correction": "Aclarar en la regla: 'La aceptación de una oferta de repartidor por parte del comercio requiere confirmación explícita (diálogo o swipe/confirmación en 2 pasos) debido a su impacto de asignación exclusiva e irreversibilidad operativa'.",
+      "evidence": [
+        "60-ui-accesibilidad.md: 'Acciones irreversibles (aceptar, cancelar, suspender): confirmación en dos pasos.'"
+      ],
+      "impact": "Podría generarse fricción excesiva en el flujo rápido del comercio si no se especifica el mecanismo adecuado de confirmación, o por el contrario, omitirse una confirmación crítica en una asignación vinculante.",
+      "severity": "low",
+      "statement": "La regla 60-ui-accesibilidad.md estipula confirmación en dos pasos para 'aceptar, cancelar, suspender' sin clarificar si la aceptación de ofertas por el comercio requiere modal o confirmación adicional."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión de PM para la §4 (Reglas para agy). Las reglas cubren con solidez estándares técnicos, fronteras arquitectónicas y seguridad. Se emite dictamen condicional debido a que la exclusividad de merges en supabase para P1 genera un cuello de botella para el trabajo asincrónico del equipo de 3 personas, falta un protocolo explícito en las reglas para el traspaso de tareas entre turnos, y se requiere que el agente valide formalmente los criterios de aceptación de cada ficha de tarea.",
+  "verdict": "conditional"
+}

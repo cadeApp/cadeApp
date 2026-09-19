@@ -1,0 +1,55 @@
+{
+  "agentId": "documentation",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "correction": "Asignar explícitamente src/features/auth/** a una pista (ej. P3 junto a onboarding y admin, o P1 por la integración con Supabase Auth) y definir la pertenencia de src/lib/** en la tabla de §2.",
+      "evidence": [
+        "§2 tabla de pistas omite src/features/auth y src/lib/**, mientras que §3 lista auth como módulo de features y detalla src/lib/ en el árbol."
+      ],
+      "impact": "Quiebra el principio fundamental de 'una tarea = un dueño = una carpeta delimitada'. Los agentes que trabajen en autenticación o utilidades transversales no tendrán pista asignada, generando colisiones de edición y PRs sin revisor claro.",
+      "severity": "high",
+      "statement": "Los módulos src/features/auth y src/lib/** no tienen asignación explícita de dueño en la tabla de responsabilidades de pistas (§2)."
+    },
+    {
+      "correction": "Especificar en §2 si los contratos RPC dentro de src/domain/ son mantenidos por P1 o delimitar un subdirectorio específico (por ejemplo src/domain/contracts/) bajo la propiedad de P1.",
+      "evidence": [
+        "§2 asigna src/domain/** a P2 y supabase/** a P1; §3 especifica que src/domain/ contiene contratos RPC y errores congelados en Fase 0."
+      ],
+      "impact": "P1 es responsable de migraciones y funciones RPC en Postgres, pero P2 es dueña exclusiva de src/domain/** donde residen los contratos y errores RPC en TypeScript. Si P1 no puede editar contratos en TypeScript por regla de carpetas, se producen bloqueos innecesarios o desfasajes entre backend y dominio.",
+      "severity": "medium",
+      "statement": "Ambigüedad documental en la propiedad y sincronización de contratos RPC entre P1 (supabase/**) y P2 (src/domain/**)."
+    },
+    {
+      "correction": "Agregar en §1.4 o §3 la directiva de que todo export en index.ts debe contar con firmas tipadas estrictas y bloques TSDoc que detallen comportamiento, precondiciones y errores esperados.",
+      "evidence": [
+        "§1.4 y §3 definen fronteras duras vía index.ts pero no establecen directrices de documentación de API interna para las exportaciones públicas."
+      ],
+      "impact": "Al interactuar 3 personas y múltiples agentes asincrónicamente mediante features/y/index.ts, la falta de especificación documental de parámetros, tipos de retorno y excepciones dificulta el consumo entre features y aumenta el riesgo de asunciones erróneas.",
+      "severity": "medium",
+      "statement": "Falta de especificación sobre el estándar de documentación interna (TSDoc) en las fronteras públicas index.ts de cada módulo de feature."
+    },
+    {
+      "correction": "Agregar ├─ hooks.json # hooks de ciclo de vida agy dentro de .agents/ en el árbol de estructura del repositorio en §3.",
+      "evidence": [
+        "El encabezado declara a .agents/hooks.json como parte de la especificación agy 1.2.4 pero en el árbol de §3 solo figuran rules/ y skills/ dentro de .agents/."
+      ],
+      "impact": "Los agentes que utilicen el árbol de §3 como guía para el andamiaje del repositorio pueden omitir la configuración de hooks de ciclo de vida de agy.",
+      "severity": "low",
+      "statement": "Inconsistencia entre el encabezado y el árbol estructural de §3 respecto a .agents/hooks.json."
+    },
+    {
+      "correction": "Indicar explícitamente en §1.2 que todo cambio de contrato posterior a la Fase 0 debe dejar constancia documental mediante un ADR breve en docs/adr/.",
+      "evidence": [
+        "§1.1 y §1.2 mencionan congelar contratos y tareas contract-change sin vincularlas formalmente con el mantenimiento de docs/adr/** asignado a P1."
+      ],
+      "impact": "En §1.1 y §1.2 se estipula el congelamiento de contratos y el procedimiento de tareas contract-change, pero no se formaliza que una modificación sustancial requiera asentar su justificación en docs/adr/, arriesgando pérdida de trazabilidad histórica.",
+      "severity": "low",
+      "statement": "Ausencia de vinculación documental entre tareas de cambio de contrato y el registro de decisiones arquitectónicas (docs/adr/)."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión documental de la Parte 1 (§1-§3) de cadeApp. Se identifican vacíos de trazabilidad y propiedad sobre módulos críticos (src/features/auth y src/lib/**), ambigüedad en el mantenimiento de contratos RPC entre P1 y P2, omisión de .agents/hooks.json en el árbol de directorios frente al encabezado, y falta de estándares documentales explícitos (TSDoc) para las APIs públicas index.ts.",
+  "verdict": "conditional"
+}

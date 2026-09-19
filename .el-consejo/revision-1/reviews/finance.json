@@ -1,0 +1,111 @@
+{
+  "agentId": "finance",
+  "assumptions": [
+    "El volumen inicial de comercios en Aguilares para el MVP oscilará entre 10 y 30 establecimientos en los primeros tres meses.",
+    "Los consumos de cómputo, base de datos y storage permanecerán dentro del tier gratuito de Supabase o Firebase durante el MVP si se optimiza el peso de los adjuntos.",
+    "La pasarela de cobros local retendrá entre un 3,5% y 6,5% + IVA por cada transacción de cobro de suscripción recurrente.",
+    "Lautaro operará bajo el régimen de Monotributo en categoría inicial de servicios emitiendo comprobantes C.",
+    "La inflación continuará impactando en los costos de movilidad y requerirá ajustes periódicos en el piso de oferta y abonos."
+  ],
+  "confidence": 0.85,
+  "conflicts": [
+    {
+      "class": "money",
+      "id": "conflict-monetizacion-particulares-pricing",
+      "parties": [
+        "finanzas",
+        "pm",
+        "fundador"
+      ],
+      "reversible": true,
+      "summary": "Falta de definición económica sobre si los particulares deben quedar excluidos, tener envíos de prueba gratuitos o contar con una modalidad de pase diario/por envío, elevando la decisión al checkpoint humano de Lautaro."
+    }
+  ],
+  "currency": "ARS (operación local) / USD (infraestructura y BaaS)",
+  "facts": [
+    "La plataforma monetiza únicamente a través del cobro de una suscripción mensual a comercios y emprendedores.",
+    "Los repartidores independientes participan de forma gratuita y no pagan comisión por entrega.",
+    "cadeApp no intermedia, cobra ni custodia los fondos correspondientes al valor del envío.",
+    "El lanzamiento geográfico está restringido a Aguilares, provincia de Tucumán, Argentina.",
+    "Existe una restricción de oferta mínima de ARS 1.000 por envío.",
+    "El backend y frontend se implementarán en Next.js con TypeScript estricto, evaluando Supabase o Firebase como BaaS."
+  ],
+  "findings": [
+    {
+      "assumptions": [
+        "El cobro manual por transferencia bancaria genera alta fricción operativa de conciliación y riesgo de morosidad sin suspensión automática de cuenta."
+      ],
+      "correction": "Incorporar al plan del MVP la integración con una pasarela de pagos local con soporte de débitos recurrentes/suscripciones (ej. Mercado Pago Subscriptions) y definir la lógica de webhooks para activación, reintentos y suspensión de comercios por falta de pago.",
+      "evidence": [
+        "input.context: '2. Decisiones humanas del intake... Ingresos: suscripción mensual para comercios y emprendedores.'",
+        "input.context: '8. Preguntas abiertas para el Consejo... 5. Suscripción: ... cómo se cobra el abono, si hay período de prueba o límite gratuito, y la facturación del abono.'"
+      ],
+      "impact": "Imposibilidad de recaudar ingresos de forma automatizada en el MVP o asunción imprevista de costos transaccionales de pasarelas de pago no presupuestadas.",
+      "severity": "high",
+      "statement": "Falta de definición del mecanismo operativo y pasarela de pago para el cobro de suscripciones mensuales a comercios y emprendedores."
+    },
+    {
+      "assumptions": [
+        "Un particular no contratará un abono mensual fijo para realizar 1 o 2 envíos esporádicos al mes."
+      ],
+      "correction": "Definir la regla de negocio para particulares en el MVP: o bien acotar el lanzamiento en Aguilares estrictamente a comercios/emprendedores B2B, o bien conceder un cupo de envíos sin cargo mensuales (freemium limitado) antes de exigir suscripción.",
+      "evidence": [
+        "input.context: '3. Actores: Solicitante: comercio, emprendimiento o particular que publica solicitudes.'",
+        "input.context: '2. Decisiones humanas del intake... Ingresos: suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis.'",
+        "input.context: '8. Preguntas abiertas para el Consejo... 5. Suscripción: qué pasa con los particulares que publican de vez en cuando...'"
+      ],
+      "impact": "Si los particulares usan la app gratuitamente sin intermediar pago, generan consumo de infraestructura y soporte sin monetización; si se les exige suscripción mensual, quedan excluidos del servicio.",
+      "severity": "high",
+      "statement": "Inconsistencia en el modelo de ingresos respecto a los particulares que publican solicitudes ocasionales sin pagar suscripción."
+    },
+    {
+      "assumptions": [
+        "La coyuntura inflacionaria en Argentina deteriora rápidamente los importes nominales fijos en ARS en plazos cortos."
+      ],
+      "correction": "Mover el valor del piso de oferta a una variable de configuración administrable desde la base de datos o panel de administración, evitando valores hardcodeados en el código de Next.js.",
+      "evidence": [
+        "input.context: '5. Flujo principal: 3. Ofertas: Ninguna oferta puede ser menor a ARS 1.000.'",
+        "input.context: '6. Reglas de ofertas: Oferta mínima de referencia: ARS 1.000.'"
+      ],
+      "impact": "Fijar ARS 1.000 como constante estática obligará a desplegar cambios de código continuos o dejará el mínimo por debajo de los costos reales de combustible de los repartidores, desincentivando su participación.",
+      "severity": "medium",
+      "statement": "El umbral de oferta mínima de ARS 1.000 está definido como un valor nominal fijo y rígido en el flujo central."
+    },
+    {
+      "assumptions": [
+        "Los planes de pago de Supabase y Firebase se facturan en USD con tarjetas de crédito sujetas a percepciones impositivas argentinas, mientras que los ingresos son en ARS."
+      ],
+      "correction": "Modelar el consumo estimado en el plan gratuito para el MVP en Aguilares (con compresión client-side obligatoria para DNI/selfies para no saturar storage) y documentar el punto de equilibrio en el que la suscripción paga de BaaS resulte necesaria.",
+      "evidence": [
+        "input.context: '8. Preguntas abiertas para el Consejo: 1. Supabase o Firebase: ... costos en plan gratuito y pago, y dependencia del proveedor.'",
+        "input.constraints: 'lanzamiento solo en Aguilares, Tucumán, Argentina'"
+      ],
+      "impact": "Riesgo de descalce cambiario o costos imprevistos en USD si el almacenamiento de DNI y selfies o las conexiones en tiempo real superan los límites del plan gratuito durante el lanzamiento.",
+      "severity": "medium",
+      "statement": "Falta de análisis de costos de infraestructura BaaS (Supabase vs Firebase) y su exposición a facturación en moneda extranjera."
+    },
+    {
+      "assumptions": [
+        "Los comercios registrados exigirán comprobante fiscal por el abono mensual del servicio SaaS.",
+        "La actividad encuadra en servicios gravados por Ingresos Brutos de Tucumán (DGR) y requiere régimen simplificado de Monotributo nacional."
+      ],
+      "correction": "Incorporar en el plan financiero el encuadre de Lautaro como Monotributista con emisión de Factura C electrónica y contemplar la alícuota de Ingresos Brutos de Tucumán (3% a 5%) al calcular el precio final de la suscripción.",
+      "evidence": [
+        "input.context: '2. Decisiones humanas del intake: Ingresos: suscripción mensual para comercios y emprendedores.'",
+        "input.constraints: 'lanzamiento solo en Aguilares, Tucumán, Argentina'"
+      ],
+      "impact": "Cálculo distorsionado del margen de ganancia si no se deducen los impuestos provinciales y retenciones bancarias sobre cobros electrónicos (SIRCREB/DGR Tucumán).",
+      "severity": "medium",
+      "statement": "Ausencia de previsión tributaria para la facturación de las suscripciones en la provincia de Tucumán."
+    }
+  ],
+  "helperRequests": [],
+  "sensitivity": [
+    "Escenario de baja tracción (10 comercios suscriptos a ARS 5.000/mes): Ingresos brutos de ARS 50.000/mes. Permite absorber comisiones de pasarela (~ARS 3.000) y costo impositivo de Monotributo básico, con margen operativo neutro en tanto el BaaS se mantenga en tier gratuito.",
+    "Escenario de tracción media (30 comercios suscriptos a ARS 6.000/mes): Ingresos brutos de ARS 180.000/mes. Genera un flujo de fondos neto positivo tras impuestos y pasarela, suficiente para absorber una eventual migración al tier pago de Supabase (USD 25/mes) o Firebase.",
+    "Escenario de saturación de almacenamiento por DNI y selfies sin comprimir: Si se registran 150 repartidores subiendo fotos directas de cámara (4MB por archivo = 1,2GB), se superaría el tier gratuito de Supabase (1GB), forzando un salto de costo de USD 25/mes. Si se implementa compresión en cliente a <250KB por imagen, el consumo total no superará los 75MB, preservando costo cero."
+  ],
+  "summary": "Dictamen financiero condicional: el modelo que prescinde de custodiar o intermediar los pagos del envío elimina el riesgo financiero directo por fondos de terceros, pero el MVP carece de definiciones indispensables para monetizar: no especifica la pasarela ni el flujo de cobro recurrente para las suscripciones de comercios, omite la política tarifaria para particulares, hardcodea un piso de ARS 1.000 vulnerable a la inflación argentina y carece de encuadre fiscal básico en Tucumán.",
+  "tax": "Régimen tributario asumido: Monotributo (ARCA / AFIP) con facturación tipo C para el abono a comercios. En jurisdicción provincial, Impuesto sobre los Ingresos Brutos de la DGR Tucumán (alícuota estimada entre 3% y 5%), previendo retenciones bancarias automatizadas bajo padrón SIRCREB.",
+  "verdict": "conditional"
+}

@@ -1,0 +1,73 @@
+{
+  "agentId": "pm",
+  "confidence": 0.85,
+  "conflicts": [
+    {
+      "class": "technical",
+      "id": "conf-auth-scope-p2-p3",
+      "parties": [
+        "pm",
+        "frontend",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "Solapamiento de alcance entre T-111 (P2) y T-121 (P3) respecto al flujo unificado de autenticación y registro de repartidores."
+    }
+  ],
+  "findings": [
+    {
+      "correction": "Exigir en el DoD de T-112 una validación de integración contra la RPC real de T-103 antes de su cierre definitivo, o establecer un check de compatibilidad obligatorio previo al merge de T-113.",
+      "evidence": [
+        "En Fase 1, la tarea T-112 define en su columna Dep: 'T-103 (o contrato de T-006 mientras tanto)', mientras que T-113 asume T-112 y T-102 completadas."
+      ],
+      "impact": "Si P2 desarrolla y mergea la creación de solicitudes contra el contrato estático mientras P1 ajusta la implementación en base de datos de T-103, se introducirán incompatibilidades de payload que romperán silenciosamente la integración en T-113.",
+      "severity": "high",
+      "statement": "T-112 permite depender de un contrato mockeado de T-006 sin una compuerta formal de integración contra la RPC real de T-103 antes de avanzar a T-113."
+    },
+    {
+      "correction": "Establecer explícitamente en T-111 que P2 provee el módulo central de Supabase Auth y redirección por rol, delimitando que T-121 (P3) consuma dicho flujo exclusivamente para la captura y validación documental del perfil repartidor.",
+      "evidence": [
+        "T-111 asigna a P2 'Auth (login y registro) + alta de comercio' en 'src/features/auth/**', mientras T-121 asigna a P3 'Onboarding del repartidor' en 'src/features/courier-onboarding/**' sin delimitar quién crea el usuario en Supabase Auth para repartidores."
+      ],
+      "impact": "Riesgo de colisión por edición simultánea en rutas de autenticación entre P2 y P3, o de omitir el registro de usuario base del repartidor previo a la carga documental.",
+      "severity": "high",
+      "statement": "Indefinición de límites en la creación de credenciales y rutas de autenticación de repartidores entre T-111 (P2) y T-121 (P3)."
+    },
+    {
+      "assumptions": [
+        "La restricción general del proyecto impone 'E2E de todos los flujos antes de producción', lo que requiere comprobaciones progresivas al culminar el núcleo transaccional en Fase 1."
+      ],
+      "correction": "Incorporar en el DoD de T-115 (o como hito de verificación al cierre de Fase 1) una prueba E2E con Playwright que cubra el ciclo completo: comercio crea solicitud -> repartidor oferta -> comercio acepta -> transición de viaje.",
+      "evidence": [
+        "Los DoDs de las tareas T-101 a T-124 contemplan pruebas unitarias, pgTAP y de componentes aislados, pero no existe validación automatizada del flujo solicitud-oferta-aceptación-viaje integrado."
+      ],
+      "impact": "Discrepancias de formato en tiempo real entre las RPCs de P1, la UI de P2 y el panel de administración de P3 permanecerán ocultas hasta fases tardías, incrementando el costo de retrabajo.",
+      "severity": "medium",
+      "statement": "Fase 1 carece de una tarea o criterio de aceptación de integración end-to-end (E2E) que conecte el flujo transaccional completo."
+    },
+    {
+      "correction": "Formalizar que los contratos Zod y tipos generados en T-006 por P2 funcionen como mocks ejecutables estandarizados con msw o fixtures, permitiendo a P2 y P3 avanzar en interfaces con desacople temporal de las migraciones de P1.",
+      "evidence": [
+        "En Fase 0, T-004 y T-005 son requeridas para 'contracts-v1'; en Fase 1, P1 asume secuencialmente T-101, T-102 y T-103, de las cuales dependen directamente T-113, T-114, T-115, T-122 y T-124."
+      ],
+      "impact": "Cualquier atraso en la pista P1 dejará bloqueadas las tareas transaccionales de P2 y P3, comprometiendo la cadencia del desarrollo simultáneo.",
+      "severity": "medium",
+      "statement": "Concentración secuencial de la ruta crítica en la pista P1 durante Fase 0 y Fase 1, generando riesgo de bloqueo para P2 y P3."
+    },
+    {
+      "assumptions": [
+        "Para la correcta entrega bajo la decisión D14, el repartidor requiere tener visible el medio de pago antes y durante el viaje."
+      ],
+      "correction": "Agregar al DoD de T-115 la verificación de que el medio de pago seleccionado en la solicitud se visualice claramente en la vista de viaje tanto del comercio como del repartidor.",
+      "evidence": [
+        "T-112 contempla capturar el medio de pago del destinatario, pero el DoD de T-115 se restringe al enlace de WhatsApp con el costo del envío sin validar la exposición del método de cobro (efectivo/transferencia) en la vista del repartidor."
+      ],
+      "impact": "Fricción e incertidumbre para el repartidor al momento del cobro en destino si el medio de pago acordado no figura en su interfaz activa de viaje.",
+      "severity": "low",
+      "statement": "Falta de validación explícita en el DoD de T-115 sobre la visualización del medio de pago seleccionado por el destinatario (D14)."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión de Fase 0 y Fase 1 focalizada en alcance, dependencias e integración operativa entre las 3 pistas. Se identifican ambigüedades en la compuerta de integración de T-112 con T-103, solapamiento potencial entre P2 y P3 en la autenticación de repartidores, cuello de botella en P1 sobre la ruta crítica y falta de un hito E2E integrado para validar el flujo transaccional completo al cierre de Fase 1.",
+  "verdict": "conditional"
+}

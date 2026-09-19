@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+
+<html class="h-full bg-background" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CadeApp Admin - Verificación en dos pasos</title>
+<!-- Fonts: Montserrat (Headings, Buttons, Wordmarks) & Inter (UI Body, Inputs) -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    .caret-blink {
+      animation: blink 1s ease-in-out infinite;
+    }
+  </style>
+<!-- Tailwind CSS via CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-surface": "#283140",
+            "on-tertiary": "#ffffff",
+            "tertiary-container": "#5cb5b8",
+            "primary": "#00696b",
+            "on-primary-container": "#004446",
+            "outline": "#6c7a7a",
+            "inverse-primary": "#4adadd",
+            "on-surface-variant": "#3c4949",
+            "inverse-on-surface": "#ebf1ff",
+            "on-primary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "surface-container-highest": "#dae3f7",
+            "primary-container": "#09babd",
+            "surface-tint": "#00696b",
+            "on-tertiary-fixed": "#002021",
+            "error": "#ba1a1a",
+            "surface-dim": "#d1daee",
+            "error-container": "#ffdad6",
+            "background": "#f9f9ff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "primary-fixed": "#6df6f9",
+            "outline-variant": "#bbc9c9",
+            "on-background": "#131c2a",
+            "on-surface": "#131c2a",
+            "tertiary": "#00696c",
+            "on-secondary-fixed-variant": "#40465c",
+            "secondary-fixed-dim": "#c0c5e0",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-primary-fixed": "#002020",
+            "primary-fixed-dim": "#4adadd",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed": "#151b2f",
+            "on-secondary": "#ffffff",
+            "on-error-container": "#93000a",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-tertiary-container": "#004446",
+            "surface-container-high": "#dfe8fd",
+            "surface-bright": "#f9f9ff",
+            "surface-container": "#e7eeff",
+            "on-primary": "#ffffff",
+            "surface-container-low": "#f0f3ff",
+            "secondary": "#585d75",
+            "secondary-fixed": "#dce1fd",
+            "secondary-container": "#d9defa",
+            "surface": "#f9f9ff",
+            "on-error": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "headline-lg": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"]
+          },
+          "fontSize": {
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="min-h-screen bg-[#FDFCFB] text-[#12182C] flex flex-col justify-between items-center selection:bg-primary-container selection:text-on-primary-container antialiased">
+<!-- Desktop Canvas Anchor (1280px container constraint) -->
+<div class="w-full max-w-[1280px] min-h-screen flex flex-col justify-between px-6 py-10 relative">
+<!-- Subtle Top Header with Status/Context -->
+<header class="w-full flex items-center justify-between">
+<div class="flex items-center gap-3">
+<!-- cadeApp brand emblem placeholder image -->
+<img alt="cadeApp insignia" class="w-8 h-8 rounded-lg object-contain bg-surface-container-lowest p-0.5 border border-[#E4E7EC]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWWmUq477kR-d3Mzfehv6ylBrpB64AhSmbJccxxOzxf0BQlRiz2VpBrCumq-GdSBMmxZGcLif7hQ-XCPkbx5QY5hddiaGJ6308QQUzturRf1az8QzDT3S05B03J7wMiMrVWslQ_0qKj0DVPykBZ82uFJXmDrw-Ua552Ga8_ekTUi4V6-4VMoQo-vyVDMXL7ZqErc0daDPVOwAb1PeUW5lqcQY7IYWdbdAkJzQ3iF_rPKk9JhN8aUwd4hzYtAxS-S5Xbg"/>
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md tracking-tight font-extrabold text-[#12182C]">cadeApp</span>
+<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#E6F8F8] text-[#0B7A7D] tracking-wide">ADMIN</span>
+</div>
+</div>
+<!-- Security Status Badge -->
+<div class="flex items-center gap-2 text-secondary text-sm font-medium">
+<span class="inline-block w-2 h-2 rounded-full bg-[#177A4B]"></span>
+<span>Conexión cifrada de extremo a extremo</span>
+</div>
+</header>
+<!-- Main Content Area: Centered MFA Card -->
+<main class="w-full flex flex-col items-center justify-center my-auto">
+<!-- Authentication Card (12px radius, pure white surface, #E4E7EC border) -->
+<div class="w-full max-w-[460px] bg-white rounded-[12px] border border-[#E4E7EC] p-8 shadow-[0_8px_30px_rgba(18,24,44,0.06)] relative overflow-hidden">
+<!-- Brand accent wave motif line on top card border -->
+<div class="absolute top-0 left-0 right-0 h-[3px] bg-primary-container"></div>
+<!-- Header block with icon and branding -->
+<div class="flex flex-col items-center text-center">
+<div class="w-14 h-14 rounded-[10px] bg-[#E6F8F8] flex items-center justify-center mb-5 border border-[#bbc9c9]/30">
+<span class="material-symbols-outlined text-[#0B7A7D] text-3xl" data-icon="shield_person">shield_person</span>
+</div>
+<h1 class="font-headline-lg text-[24px] leading-[30px] font-bold text-[#12182C] mb-2 tracking-tight">
+            Verificación en dos pasos
+          </h1>
+<p class="font-body-md text-[#5B6475] text-[15px] leading-[22px] max-w-sm">
+            Ingresá el código de 6 dígitos de tu app de autenticación.
+          </p>
+</div>
+<!-- Code Entry Section -->
+<form class="mt-8 space-y-6" onsubmit="event.preventDefault();">
+<!-- 6-digit input slots -->
+<div class="flex justify-between items-center gap-2.5">
+<!-- Digit 1: Filled '4' -->
+<div class="w-12 h-14 rounded-[10px] border border-[#0B7A7D] bg-[#FDFCFB] flex items-center justify-center text-[24px] font-headline-xl font-bold text-[#12182C] shadow-sm ring-1 ring-[#0B7A7D]/20">
+              4
+            </div>
+<!-- Digit 2: Filled '8' -->
+<div class="w-12 h-14 rounded-[10px] border border-[#0B7A7D] bg-[#FDFCFB] flex items-center justify-center text-[24px] font-headline-xl font-bold text-[#12182C] shadow-sm ring-1 ring-[#0B7A7D]/20">
+              8
+            </div>
+<!-- Digit 3: Filled '2' -->
+<div class="w-12 h-14 rounded-[10px] border border-[#0B7A7D] bg-[#FDFCFB] flex items-center justify-center text-[24px] font-headline-xl font-bold text-[#12182C] shadow-sm ring-1 ring-[#0B7A7D]/20">
+              2
+            </div>
+<!-- Digit 4: Active with blinking cursor -->
+<div class="w-12 h-14 rounded-[10px] border-2 border-primary-container bg-white flex items-center justify-center text-[24px] font-headline-xl text-[#12182C] ring-4 ring-primary-container/20">
+<span class="w-[2px] h-7 bg-primary-container caret-blink inline-block"></span>
+</div>
+<!-- Digit 5: Empty placeholder -->
+<div class="w-12 h-14 rounded-[10px] border border-[#E4E7EC] bg-white flex items-center justify-center text-secondary/30">
+<span class="w-2 h-2 rounded-full bg-[#E4E7EC]"></span>
+</div>
+<!-- Digit 6: Empty placeholder -->
+<div class="w-12 h-14 rounded-[10px] border border-[#E4E7EC] bg-white flex items-center justify-center text-secondary/30">
+<span class="w-2 h-2 rounded-full bg-[#E4E7EC]"></span>
+</div>
+</div>
+<!-- Helper info / Resend link -->
+<div class="flex items-center justify-between text-xs pt-1 px-1">
+<span class="text-[#5B6475] flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px] text-secondary" data-icon="timer">timer</span>
+              Expira en <strong class="text-[#12182C] font-semibold">0:48</strong>
+</span>
+<button class="text-[#0B7A7D] hover:text-[#004f51] font-semibold transition-colors hover:underline" type="button">
+              ¿No recibiste el código?
+            </button>
+</div>
+<!-- Primary CTA Button (48px height, Montserrat 700, teal #09BABD with ink #12182C) -->
+<button class="w-full h-12 bg-primary-container hover:bg-[#08a8ab] active:scale-[0.99] text-[#12182C] font-headline-md text-base rounded-[10px] flex items-center justify-center font-bold tracking-tight transition-all duration-150 shadow-sm" type="submit">
+            Verificar
+          </button>
+</form>
+<!-- Divider line -->
+<div class="my-6 border-t border-[#E4E7EC]"></div>
+<!-- Secondary link: Cerrar sesión -->
+<div class="text-center">
+<button class="text-sm font-medium text-[#5B6475] hover:text-[#12182C] transition-colors flex items-center justify-center gap-1.5 mx-auto py-1" type="button">
+<span class="material-symbols-outlined text-sm" data-icon="logout">logout</span>
+<span>Cerrar sesión</span>
+</button>
+</div>
+</div>
+<!-- Subtle Notice Below Card with Lock Icon -->
+<div class="mt-6 flex items-center justify-center gap-2 text-sm text-[#5B6475]">
+<span class="material-symbols-outlined text-[18px] text-[#5B6475]" data-icon="lock">lock</span>
+<span>El panel de administración requiere un segundo factor.</span>
+</div>
+</main>
+<!-- Footer Security Meta (Admin Compliance & Protocol) -->
+<footer class="w-full flex items-center justify-between text-xs text-[#5B6475] py-2 border-t border-[#E4E7EC]">
+<div class="flex items-center gap-6">
+<span>© 2025 cadeApp Logistics S.A.</span>
+<span class="text-[#bbc9c9]">|</span>
+<span>ID de Sesión: <code class="font-mono text-[#12182C]">cad-adm-8841-mfa</code></span>
+</div>
+<div class="flex items-center gap-4">
+<a class="hover:text-[#12182C] transition-colors" href="#">Términos del Operador</a>
+<a class="hover:text-[#12182C] transition-colors" href="#">Soporte Técnico Interno</a>
+</div>
+</footer>
+</div>
+</body></html>

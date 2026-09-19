@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CadeApp Admin - Postulantes / Diego S.</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Montserrat:wght@100..900&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-surface": "#283140",
+            "on-tertiary": "#ffffff",
+            "tertiary-container": "#5cb5b8",
+            "primary": "#00696b",
+            "on-primary-container": "#004446",
+            "outline": "#6c7a7a",
+            "inverse-primary": "#4adadd",
+            "on-surface-variant": "#3c4949",
+            "inverse-on-surface": "#ebf1ff",
+            "on-primary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "surface-container-highest": "#dae3f7",
+            "primary-container": "#09babd",
+            "surface-tint": "#00696b",
+            "on-tertiary-fixed": "#002021",
+            "error": "#ba1a1a",
+            "surface-dim": "#d1daee",
+            "error-container": "#ffdad6",
+            "background": "#f9f9ff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "primary-fixed": "#6df6f9",
+            "outline-variant": "#bbc9c9",
+            "on-background": "#131c2a",
+            "on-surface": "#131c2a",
+            "tertiary": "#00696c",
+            "on-secondary-fixed-variant": "#40465c",
+            "secondary-fixed-dim": "#c0c5e0",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-primary-fixed": "#002020",
+            "primary-fixed-dim": "#4adadd",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed": "#151b2f",
+            "on-secondary": "#ffffff",
+            "on-error-container": "#93000a",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-tertiary-container": "#004446",
+            "surface-container-high": "#dfe8fd",
+            "surface-bright": "#f9f9ff",
+            "surface-container": "#e7eeff",
+            "on-primary": "#ffffff",
+            "surface-container-low": "#f0f3ff",
+            "secondary": "#585d75",
+            "secondary-fixed": "#dce1fd",
+            "secondary-container": "#d9defa",
+            "surface": "#f9f9ff",
+            "on-error": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "headline-lg": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"]
+          },
+          "fontSize": {
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#FDFCFB] text-on-surface font-body-md min-h-screen antialiased flex flex-col selection:bg-primary-container selection:text-on-primary-container">
+<!-- Shared Component: SideNavBar -->
+<aside class="h-screen w-64 fixed left-0 top-0 flex flex-col shrink-0 bg-inverse-surface border-r border-outline z-40 justify-between p-4">
+<div class="flex flex-col gap-6">
+<!-- Brand & Header -->
+<div class="flex items-center gap-3 px-2 pt-2">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-on-primary-container font-headline-md font-bold">
+<span class="material-symbols-outlined text-2xl text-[#12182C]" data-icon="moped">moped</span>
+</div>
+<div class="flex flex-col">
+<span class="text-headline-md font-headline-md font-bold text-inverse-on-surface tracking-tight leading-none">CadeApp</span>
+<span class="text-xs font-body-md text-outline-variant mt-1">Panel de Administración</span>
+</div>
+</div>
+<!-- Quick Action CTA -->
+<button class="w-full h-11 flex items-center justify-center gap-2 bg-[#09BABD] text-[#12182C] font-label-md rounded-lg hover:opacity-90 transition-opacity">
+<span class="material-symbols-outlined text-lg" data-icon="add_circle">add_circle</span>
+<span>Nueva Gestión</span>
+</button>
+<!-- Navigation Links -->
+<nav aria-label="Menu principal" class="flex flex-col gap-1.5">
+<!-- Postulantes (ACTIVE per Intent and Specs) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary-container text-on-primary-container font-medium" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="person_search">person_search</span>
+<span class="text-label-md font-label-md">Postulantes</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="storefront">storefront</span>
+<span class="text-label-md font-label-md">Comercios</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="report_problem">report_problem</span>
+<span class="text-label-md font-label-md">Incidentes</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="tune">tune</span>
+<span class="text-label-md font-label-md">Parámetros</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="history">history</span>
+<span class="text-label-md font-label-md">Auditoría</span>
+</a>
+</nav>
+</div>
+<!-- Footer Links in SideNav -->
+<div class="flex flex-col gap-1 border-t border-outline/40 pt-4">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="settings">settings</span>
+<span class="text-label-md font-label-md">Configuración</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="help">help</span>
+<span class="text-label-md font-label-md">Soporte</span>
+</a>
+</div>
+</aside>
+<!-- Top Navigation Bar & Workspace Header -->
+<div class="pl-64 flex flex-col w-full">
+<!-- TopNavBar (Shared Component) -->
+<header class="bg-surface-container-lowest border-b border-outline-variant flex justify-between items-center h-16 px-8 w-full sticky top-0 z-30">
+<!-- Search Input aligned left -->
+<div class="flex items-center gap-6">
+<div class="relative w-80">
+<span class="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary text-lg" data-icon="search">search</span>
+<input class="w-full h-10 pl-10 pr-4 bg-background border border-[#E4E7EC] rounded-lg text-body-md focus:outline-none focus:border-primary-container text-on-surface" placeholder="Buscar por DNI, nombre, patente..." type="text"/>
+</div>
+<nav class="flex items-center gap-6">
+<a class="text-primary font-bold border-b-2 border-primary pb-1 font-label-md text-label-md" href="#">Operaciones</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1 font-label-md text-label-md" href="#">Monitoreo</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1 font-label-md text-label-md" href="#">Liquidaciones</a>
+</nav>
+</div>
+<!-- Trailing Cluster -->
+<div class="flex items-center gap-4">
+<button class="relative p-2 text-secondary hover:text-on-surface rounded-lg hover:bg-surface-container-low transition-colors" title="Notificaciones">
+<span class="material-symbols-outlined text-xl" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary-container ring-2 ring-white"></span>
+</button>
+<button class="p-2 text-secondary hover:text-on-surface rounded-lg hover:bg-surface-container-low transition-colors" title="Escudo de seguridad">
+<span class="material-symbols-outlined text-xl" data-icon="shield_person">shield_person</span>
+</button>
+<div class="h-6 w-px bg-outline-variant/60 mx-1"></div>
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest border border-outline-variant flex items-center justify-center font-bold text-xs text-primary">
+            LA
+          </div>
+<div class="flex flex-col text-left">
+<span class="text-xs font-semibold leading-tight text-on-surface">Lautaro R.</span>
+<span class="text-[11px] text-secondary">Super Admin</span>
+</div>
+</div>
+<button class="ml-2 text-xs font-label-md text-error hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-sm" data-icon="logout">logout</span>
+          Cerrar sesión
+        </button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="p-8 max-w-[1280px] w-full mx-auto pb-32">
+<!-- Breadcrumb Bar & Status Header -->
+<div class="flex items-center justify-between mb-6">
+<div class="flex items-center gap-2 text-secondary font-label-md text-label-md">
+<a class="hover:text-primary transition-colors flex items-center gap-1" href="#">
+<span class="material-symbols-outlined text-base" data-icon="arrow_back">arrow_back</span>
+            Postulantes
+          </a>
+<span>/</span>
+<span class="text-on-surface font-semibold">Diego S.</span>
+<span class="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#FFF4E0] text-[#B45309] border border-[#B45309]/20">
+            Pendiente de verificación
+          </span>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-xs text-secondary font-body-md">Tiempo de espera en cola: <strong class="text-on-surface">42 min</strong></span>
+<button class="text-xs text-primary underline ml-2 font-medium hover:opacity-80">Asignarme a mí</button>
+</div>
+</div>
+<!-- Main Columns Layout: 60% Left / 40% Right -->
+<div class="grid grid-cols-12 gap-8 items-start">
+<!-- Left Column: 60% (col-span-7 or 8; using 7/12 ~ 58.3% + spacing) -->
+<div class="col-span-7 flex flex-col gap-4">
+<!-- Warning-tinted Audit Alert Bar -->
+<div class="bg-[#FFF4E0] border border-[#B45309] rounded-lg px-4 py-3 flex items-center justify-between text-[#B45309] shadow-none">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-xl shrink-0" data-icon="visibility">visibility</span>
+<p class="text-body-md font-body-md font-medium text-xs md:text-sm">
+                Este acceso queda registrado en la auditoría. <span class="font-bold">ID de sesión: AUD-9824</span>
+</p>
+</div>
+<span class="text-[11px] bg-white/70 px-2 py-0.5 rounded font-mono font-medium border border-[#B45309]/30">
+              IP 181.44.12.9
+            </span>
+</div>
+<!-- Document Viewer Container Card -->
+<div class="bg-surface-container-lowest border border-[#E4E7EC] rounded-xl overflow-hidden flex flex-col">
+<!-- Tabs -->
+<div class="flex items-center border-b border-[#E4E7EC] bg-surface-container-low/40 px-3 pt-2 gap-1">
+<button class="px-4 py-2.5 text-xs font-label-md font-semibold border-b-2 border-[#09BABD] text-[#12182C] bg-white rounded-t-lg transition-colors flex items-center gap-1.5 shadow-sm">
+<span class="material-symbols-outlined text-sm text-[#09BABD]" data-icon="badge">badge</span>
+                DNI frente
+              </button>
+<button class="px-4 py-2.5 text-xs font-label-md text-secondary hover:text-on-surface transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm" data-icon="flip">flip</span>
+                DNI dorso
+              </button>
+<button class="px-4 py-2.5 text-xs font-label-md text-secondary hover:text-on-surface transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm" data-icon="face">face</span>
+                Selfie
+              </button>
+<button class="px-4 py-2.5 text-xs font-label-md text-secondary hover:text-on-surface transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm" data-icon="two_wheeler">two_wheeler</span>
+                Licencia
+              </button>
+<button class="px-4 py-2.5 text-xs font-label-md text-secondary hover:text-on-surface transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-sm" data-icon="description">description</span>
+                Seguro
+              </button>
+</div>
+<!-- Viewer Canvas Area with Controls -->
+<div class="relative bg-[#12182C]/5 p-6 flex flex-col items-center justify-center min-h-[460px] overflow-hidden border-b border-[#E4E7EC]">
+<!-- Floating Zoom and Rotate Controls Docked Top-Right -->
+<div class="absolute top-4 right-4 bg-white/95 backdrop-blur-sm border border-[#E4E7EC] rounded-lg shadow-sm flex items-center p-1 gap-1 z-10">
+<button class="p-1.5 rounded hover:bg-surface-container-low text-on-surface transition-colors" id="zoom-in" title="Acercar">
+<span class="material-symbols-outlined text-lg" data-icon="zoom_in">zoom_in</span>
+</button>
+<button class="p-1.5 rounded hover:bg-surface-container-low text-on-surface transition-colors" id="zoom-out" title="Alejar">
+<span class="material-symbols-outlined text-lg" data-icon="zoom_out">zoom_out</span>
+</button>
+<div class="h-4 w-px bg-outline-variant/60 mx-0.5"></div>
+<button class="p-1.5 rounded hover:bg-surface-container-low text-on-surface transition-colors" id="rotate-btn" title="Rotar 90°">
+<span class="material-symbols-outlined text-lg" data-icon="rotate_right">rotate_right</span>
+</button>
+<button class="px-2 py-1 text-xs font-medium rounded hover:bg-surface-container-low text-secondary transition-colors" id="reset-btn" title="Restablecer">
+                  Restablecer
+                </button>
+</div>
+<!-- High-Fidelity DNI Document Specimen -->
+<div class="w-full max-w-[500px] transition-transform duration-200 origin-center select-none shadow-md rounded-xl overflow-hidden border border-slate-300 bg-gradient-to-tr from-sky-50 to-blue-50 relative p-5" id="document-preview-target">
+<!-- Watermark / Security pattern simulation -->
+<div class="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#00696b_1px,transparent_1px)] [background-size:12px_12px]"></div>
+<!-- Header of DNI -->
+<div class="flex items-center justify-between border-b border-sky-200 pb-2 mb-4 relative z-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sky-700 text-2xl" data-icon="account_balance">account_balance</span>
+<div>
+<p class="text-[11px] font-bold tracking-wider text-slate-800 uppercase font-headline-md leading-none">República Argentina</p>
+<p class="text-[9px] text-slate-500 font-medium">Registro Nacional de las Personas</p>
+</div>
+</div>
+<span class="text-[10px] font-bold tracking-widest bg-sky-100 text-sky-900 px-2 py-0.5 rounded border border-sky-300">DOCUMENTO NACIONAL DE IDENTIDAD</span>
+</div>
+<!-- Body layout with photo and metadata -->
+<div class="flex gap-4 items-start relative z-0">
+<!-- Photo holder with verified prompt placeholder -->
+<div class="w-32 h-40 bg-white border-2 border-slate-300 rounded-lg overflow-hidden shrink-0 shadow-inner flex flex-col items-center justify-center relative">
+<img class="w-full h-full object-cover" data-alt="Official government identification photo portrait of a young Argentine courier applicant in his late twenties against a neutral grey studio backdrop. High-contrast crisp natural lighting, direct gaze, serious professional expression, sharp focus on facial features. Clean composition tailored for modern verification software." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBSY9lL5XUiZx_hPo8s2NTJ_lKvxsMDxb2ngW_nJjyfHLmEoykj7UAWykfbTp36he320MUUii8NefR22VgHrb45eIOlRYYKobPSVBFfeVKkfU4RMcINRXo9tv5EK-Q0y1z6TZlsxQymHYJNcNYR-s_x_U9psha10zN6NXwNRk9AWYRRmA3RQAdlya3-1xg8utmJFi9zUe-wwqu4iXhQnkcUy834H3-uvzNlX5px78keDTcdqXCyA6-C"/>
+<div class="absolute bottom-1 right-1 bg-white/90 p-0.5 rounded shadow">
+<span class="material-symbols-outlined text-xs text-primary" data-icon="verified_user">verified_user</span>
+</div>
+</div>
+<!-- Personal details column -->
+<div class="flex-1 flex flex-col justify-between h-40 py-0.5 text-slate-800">
+<div>
+<p class="text-[10px] uppercase font-bold text-slate-400 leading-none">Apellido / Surname</p>
+<p class="text-sm font-bold tracking-tight text-slate-900 mb-1.5 font-headline-md">SANTILLÁN</p>
+<p class="text-[10px] uppercase font-bold text-slate-400 leading-none">Nombre / Given Names</p>
+<p class="text-sm font-bold tracking-tight text-slate-900 mb-1.5 font-headline-md">DIEGO HERNÁN</p>
+<div class="grid grid-cols-2 gap-2 mt-1">
+<div>
+<p class="text-[9px] uppercase font-bold text-slate-400 leading-none">Nacionalidad</p>
+<p class="text-xs font-semibold text-slate-800">ARGENTINA</p>
+</div>
+<div>
+<p class="text-[9px] uppercase font-bold text-slate-400 leading-none">Fecha de Nac.</p>
+<p class="text-xs font-semibold text-slate-800">19/06/1996</p>
+</div>
+</div>
+</div>
+<div class="pt-2 border-t border-dashed border-slate-200 flex justify-between items-end">
+<div>
+<p class="text-[9px] uppercase font-bold text-slate-400 leading-none">Documento Nº</p>
+<p class="text-base font-extrabold tracking-wider text-slate-900 font-headline-md">39.841.321</p>
+</div>
+<div class="text-right">
+<p class="text-[9px] uppercase font-bold text-slate-400 leading-none">Emisión</p>
+<p class="text-[11px] font-semibold text-slate-700">12/03/2021</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer barcode track -->
+<div class="mt-3 pt-2 border-t border-sky-200 flex items-center justify-between text-[8px] text-slate-400 font-mono">
+<span>IDARG398413214<29841<<<<<<<<<</span>
+<span class="flex items-center gap-1 text-slate-600 font-sans font-medium">
+<span class="material-symbols-outlined text-xs text-primary" data-icon="check_circle">check_circle</span>
+                    MRZ Legible por OCR
+                  </span>
+</div>
+</div>
+<!-- Optical Inspection Note -->
+<div class="mt-4 flex items-center gap-4 text-xs text-secondary">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-sm text-[#177A4B]" data-icon="check">check</span>
+                  Frente escaneado a 300 DPI
+                </span>
+<span>•</span>
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-sm text-[#177A4B]" data-icon="aspect_ratio">aspect_ratio</span>
+                  Bordes detectados sin corte
+                </span>
+</div>
+</div>
+<!-- Document Actions Bar: Under the viewer for the current document -->
+<div class="p-4 bg-white flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="text-xs text-secondary">Estado del documento actual:</span>
+<span class="px-2 py-0.5 rounded text-xs font-semibold bg-surface-container-high text-primary">En revisión</span>
+</div>
+<div class="flex items-center gap-3">
+<button class="h-10 px-4 rounded-[10px] border border-[#C62828] text-[#C62828] font-label-md text-xs hover:bg-[#C62828]/5 transition-colors flex items-center gap-1.5" onclick="openModal('Rechazar comprobante', 'Motivo del rechazo de DNI / Documento')">
+<span class="material-symbols-outlined text-base" data-icon="cancel">cancel</span>
+                  Rechazar comprobante
+                </button>
+<button class="h-10 px-4 rounded-[10px] border border-[#177A4B] text-[#177A4B] font-label-md text-xs hover:bg-[#177A4B]/5 transition-colors flex items-center gap-1.5" onclick="triggerFeedback('Documento marcado como verificado')">
+<span class="material-symbols-outlined text-base" data-icon="task_alt">task_alt</span>
+                  Marcar licencia verificada
+                </button>
+</div>
+</div>
+</div>
+<!-- Document checklist / verification guide -->
+<div class="p-4 bg-surface-container-lowest border border-[#E4E7EC] rounded-xl flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-[#E6F8F8] text-[#0B7A7D] flex items-center justify-center">
+<span class="material-symbols-outlined text-base" data-icon="fact_check">fact_check</span>
+</div>
+<div>
+<h4 class="text-xs font-bold font-headline-md text-on-surface">Validación de Identidad y Vehículo</h4>
+<p class="text-xs text-secondary">Verificá que el DNI coincida con el titular de la cuenta bancaria y la licencia emitida.</p>
+</div>
+</div>
+<a class="text-xs font-semibold text-[#0B7A7D] hover:underline flex items-center gap-1" href="#">
+              Guía de rechazos
+              <span class="material-symbols-outlined text-sm" data-icon="open_in_new">open_in_new</span>
+</a>
+</div>
+</div>
+<!-- Right Column: 40% (col-span-5) -->
+<div class="col-span-5 flex flex-col gap-6">
+<!-- Card: Applicant Profile Data -->
+<div class="bg-surface-container-lowest border border-[#E4E7EC] rounded-xl p-6 shadow-none">
+<!-- Header applicant details -->
+<div class="flex items-start justify-between pb-5 border-b border-[#E4E7EC]">
+<div class="flex items-center gap-3.5">
+<div class="relative">
+<img class="w-14 h-14 rounded-full object-cover border-2 border-primary-container" data-alt="Close-up circular portrait photograph of Diego S., a young Argentine food delivery courier in a clean neutral urban environment. Natural afternoon light, sharp details, warm approachable demeanor, styled in contemporary minimalist flat UI guidelines." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5yy0FVzQouZYGd31Yqj1yonOtaOlpxw_qQ2yBQ20BnmOxAbZ5IgsGIY_3kCAY9wxMk_Vqy_kouXGHn7Rr6BztPoOTPRSKd3FhakHNKQscfYxad0uQiQBy_SMluy0LeGvhOTZlMbzq9uJsrJpUZ-mMMOjcYhbDlJnWHLEVwQMVgGZYYcIm8V9HvNlB5AAvCkinXCPXzR76ELRN19GVUgvqcRnZwptqPJH9E-TdVb2khEF_cq5tyscd"/>
+<div class="absolute -bottom-1 -right-1 bg-[#177A4B] text-white p-0.5 rounded-full ring-2 ring-white" title="Cuenta validada por SMS">
+<span class="material-symbols-outlined text-[10px] block" data-icon="check">check</span>
+</div>
+</div>
+<div>
+<h3 class="text-headline-md font-headline-md font-bold text-on-surface">Diego S.</h3>
+<p class="text-xs text-secondary font-medium mt-0.5">DNI terminado en ···321</p>
+</div>
+</div>
+<span class="px-2.5 py-1 rounded-full text-xs font-medium bg-[#E6F8F8] text-[#0B7A7D] border border-[#0B7A7D]/20">
+                Repartidor
+              </span>
+</div>
+<!-- Details Key/Value Matrix -->
+<div class="py-4 grid grid-cols-2 gap-4 border-b border-[#E4E7EC] text-xs">
+<div>
+<span class="text-secondary font-medium block">Teléfono de contacto</span>
+<span class="text-on-surface font-semibold text-sm mt-0.5 block flex items-center gap-1">
+<span class="material-symbols-outlined text-xs text-[#0B7A7D]" data-icon="call">call</span>
+                  3865 41-2390
+                </span>
+</div>
+<div>
+<span class="text-secondary font-medium block">Vehículo registrado</span>
+<span class="text-on-surface font-semibold text-sm mt-0.5 block flex items-center gap-1">
+<span class="material-symbols-outlined text-xs text-primary" data-icon="two_wheeler">two_wheeler</span>
+                  Moto · AB 123 CD
+                </span>
+</div>
+<div>
+<span class="text-secondary font-medium block">Fecha de registro</span>
+<span class="text-on-surface font-medium mt-0.5 block">14/10/2024 16:40</span>
+</div>
+<div>
+<span class="text-secondary font-medium block">Ciudad / Región</span>
+<span class="text-on-surface font-medium mt-0.5 block">Concepción, Tucumán</span>
+</div>
+</div>
+<!-- Consents with Verified Dates Section -->
+<div class="pt-4">
+<h4 class="text-xs font-bold uppercase tracking-wider text-secondary mb-3 font-label-md">Consentimientos Legales</h4>
+<div class="space-y-2.5">
+<div class="flex items-center justify-between p-2.5 bg-surface-container-low/60 rounded-lg border border-[#E4E7EC]/60">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#177A4B] text-base" data-icon="verified">verified</span>
+<span class="text-xs font-medium text-on-surface">Términos aceptados el 14/10</span>
+</div>
+<span class="text-[11px] text-secondary font-mono">16:41 hs</span>
+</div>
+<div class="flex items-center justify-between p-2.5 bg-surface-container-low/60 rounded-lg border border-[#E4E7EC]/60">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#177A4B] text-base" data-icon="verified">verified</span>
+<span class="text-xs font-medium text-on-surface">Privacidad aceptada el 14/10</span>
+</div>
+<span class="text-[11px] text-secondary font-mono">16:41 hs</span>
+</div>
+<div class="flex items-center justify-between p-2.5 bg-surface-container-low/60 rounded-lg border border-[#E4E7EC]/60">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#177A4B] text-base" data-icon="verified">verified</span>
+<span class="text-xs font-medium text-on-surface">Declaración independiente firmada</span>
+</div>
+<span class="text-[11px] text-secondary font-mono">16:44 hs</span>
+</div>
+</div>
+</div>
+<!-- Bank / Remittance account pre-check -->
+<div class="mt-4 pt-4 border-t border-[#E4E7EC] flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-secondary" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span class="text-xs text-secondary">CBU / Alias validado:</span>
+</div>
+<span class="text-xs font-mono font-bold text-on-surface">diego.santillan.mp</span>
+</div>
+</div>
+<!-- Card: Historial with vertical connected timeline -->
+<div class="bg-surface-container-lowest border border-[#E4E7EC] rounded-xl p-6 shadow-none">
+<div class="flex items-center justify-between pb-4 border-b border-[#E4E7EC]">
+<h3 class="text-sm font-bold font-headline-md text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-lg" data-icon="timeline">timeline</span>
+                Historial de Postulación
+              </h3>
+<span class="text-[11px] text-secondary">3 eventos registrados</span>
+</div>
+<!-- Connected vertical timeline -->
+<div class="relative pl-6 pt-4 space-y-6 before:absolute before:left-[11px] before:top-6 before:bottom-3 before:w-0.5 before:bg-[#E4E7EC]">
+<!-- Timeline Item 1: Registrado -->
+<div class="relative flex items-start gap-3">
+<div class="absolute -left-6 mt-1 w-3 h-3 rounded-full bg-[#177A4B] ring-4 ring-white"></div>
+<div class="flex-1">
+<div class="flex items-baseline justify-between">
+<p class="text-xs font-bold text-on-surface">1. Registrado</p>
+<time class="text-[11px] text-secondary font-mono">14/10 16:40</time>
+</div>
+<p class="text-xs text-secondary mt-0.5">Creación de cuenta mediante app móvil (Android). Teléfono confirmado por SMS.</p>
+</div>
+</div>
+<!-- Timeline Item 2: Documentos enviados -->
+<div class="relative flex items-start gap-3">
+<div class="absolute -left-6 mt-1 w-3 h-3 rounded-full bg-[#177A4B] ring-4 ring-white"></div>
+<div class="flex-1">
+<div class="flex items-baseline justify-between">
+<p class="text-xs font-bold text-on-surface">2. Documentos enviados</p>
+<time class="text-[11px] text-secondary font-mono">14/10 16:45</time>
+</div>
+<p class="text-xs text-secondary mt-0.5">Carga de DNI (ambos lados), selfie y póliza de seguro completadas.</p>
+</div>
+</div>
+<!-- Timeline Item 3: DNI consultado por Lautaro -->
+<div class="relative flex items-start gap-3">
+<div class="absolute -left-6 mt-1 w-3 h-3 rounded-full bg-[#09BABD] ring-4 ring-white animate-pulse"></div>
+<div class="flex-1">
+<div class="flex items-baseline justify-between">
+<p class="text-xs font-bold text-on-surface">3. DNI consultado por Lautaro (Admin)</p>
+<time class="text-[11px] text-[#0B7A7D] font-mono font-semibold">14/10 18:02</time>
+</div>
+<p class="text-xs text-secondary mt-0.5">Apertura del visor en alta resolución bajo la sesión <code class="text-[11px] text-[#B45309] bg-[#FFF4E0] px-1 py-0.5 rounded">AUD-9824</code>.</p>
+</div>
+</div>
+</div>
+<!-- Audit trail indicator footer -->
+<div class="mt-6 pt-3 border-t border-dashed border-[#E4E7EC] flex items-center justify-between text-[11px] text-secondary">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-xs text-slate-400" data-icon="lock">lock</span>
+                Registro inmutable
+              </span>
+<a class="text-primary hover:underline font-medium" href="#">Ver log completo</a>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Sticky Action Bar docked at bottom (right offset accounting for 256px sidebar) -->
+<div class="fixed bottom-0 right-0 left-64 bg-white/95 backdrop-blur-md border-t border-[#E4E7EC] py-3.5 px-8 z-30 flex items-center justify-between shadow-sm">
+<div class="flex items-center gap-3">
+<span class="flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+<p class="text-xs font-medium text-secondary">
+          Decisión pendiente para <strong class="text-on-surface">Diego S.</strong> (DNI ···321)
+        </p>
+<span class="text-xs text-slate-300">|</span>
+<span class="text-xs text-secondary">Aprobar o rechazar generará un comprobante de auditoría firmado.</span>
+</div>
+<!-- Action buttons cluster -->
+<div class="flex items-center gap-3">
+<!-- Suspender (Disabled state / requiere aprobación previa) -->
+<button class="h-11 px-4 rounded-[10px] text-xs font-label-md text-secondary/50 cursor-not-allowed bg-transparent border border-transparent hover:bg-transparent flex items-center gap-1.5" disabled="" title="Se requiere nivel Supervisor para suspender cuentas en onboarding">
+<span class="material-symbols-outlined text-base" data-icon="block">block</span>
+          Suspender (requiere aprobación previa)
+        </button>
+<!-- Rechazar (Danger outline) -->
+<button class="h-11 px-5 rounded-[10px] border border-[#C62828] text-[#C62828] font-label-md text-sm hover:bg-[#C62828]/5 transition-colors flex items-center gap-2" onclick="openModal('Rechazar Postulación', 'Ingrese el motivo formal del rechazo para notificar a Diego S. por la app')">
+<span class="material-symbols-outlined text-base" data-icon="close">close</span>
+          Rechazar
+        </button>
+<!-- Aprobar (Primary Brand Fill: Teal #09BABD, ink navy #12182C text) -->
+<button class="h-11 px-6 rounded-[10px] bg-[#09BABD] text-[#12182C] font-label-md font-bold text-sm hover:opacity-90 active:scale-[0.99] transition-all flex items-center gap-2 shadow-sm" onclick="openModal('Aprobar Postulante', 'Confirmá la habilitación inmediata de Diego S. para tomar pedidos en la ciudad de Concepción')">
+<span class="material-symbols-outlined text-lg" data-icon="how_to_reg">how_to_reg</span>
+          Aprobar
+        </button>
+</div>
+</div>
+</div>
+<!-- Confirmation Modal Dialog (System Rule: Aprobar, rechazar, suspender pide confirmación y motivo) -->
+<div class="fixed inset-0 bg-[#12182C]/40 backdrop-blur-xs z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-150" id="confirmation-modal">
+<div class="bg-white rounded-xl border border-[#E4E7EC] w-full max-w-lg p-6 shadow-2xl transform scale-95 transition-transform duration-150" id="modal-card">
+<div class="flex items-center justify-between pb-3 border-b border-[#E4E7EC]">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg bg-[#FFF4E0] text-[#B45309] flex items-center justify-center" id="modal-icon-container">
+<span class="material-symbols-outlined text-lg" data-icon="gavel">gavel</span>
+</div>
+<h3 class="font-headline-md font-bold text-on-surface text-base" id="modal-title">Confirmar Acción</h3>
+</div>
+<button class="text-secondary hover:text-on-surface p-1 rounded-lg" onclick="closeModal()">
+<span class="material-symbols-outlined text-lg" data-icon="close">close</span>
+</button>
+</div>
+<div class="mt-4 space-y-4">
+<p class="text-xs text-secondary leading-relaxed" id="modal-description">
+          Esta acción requiere justificación obligatoria según el protocolo de auditoría interna de CadeApp.
+        </p>
+<div>
+<label class="block text-xs font-semibold text-on-surface mb-1" for="action-reason">
+            Motivo de la resolución <span class="text-error">*</span>
+</label>
+<textarea class="w-full text-xs p-3 rounded-lg border border-[#E4E7EC] focus:border-[#09BABD] focus:ring-0 focus:outline-none text-on-surface resize-none" id="action-reason" placeholder="Ej.: DNI legible y verificado en Renaper. Licencia de moto al día." rows="3"></textarea>
+</div>
+<div class="p-3 bg-surface-container-low rounded-lg border border-[#E4E7EC] flex items-center gap-2 text-[11px] text-secondary">
+<span class="material-symbols-outlined text-base text-primary" data-icon="shield">shield</span>
+<span>Registrado bajo operador: <strong>Lautaro R. (AUD-9824)</strong></span>
+</div>
+</div>
+<div class="mt-6 flex items-center justify-end gap-3 pt-3 border-t border-[#E4E7EC]">
+<button class="h-10 px-4 rounded-[10px] border border-[#E4E7EC] text-on-surface text-xs font-label-md hover:bg-surface-container-low transition-colors" onclick="closeModal()">
+          Cancelar
+        </button>
+<button class="h-10 px-5 rounded-[10px] bg-[#09BABD] text-[#12182C] font-label-md font-bold text-xs hover:opacity-90 transition-opacity" id="modal-confirm-btn" onclick="executeModalAction()">
+          Confirmar y Registrar
+        </button>
+</div>
+</div>
+</div>
+<!-- Toast Notification Feedback -->
+<div class="fixed bottom-20 right-8 bg-[#12182C] text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 transform translate-y-10 opacity-0 pointer-events-none transition-all duration-200 z-50" id="toast">
+<span class="material-symbols-outlined text-[#09BABD]" data-icon="check_circle">check_circle</span>
+<span class="text-xs font-medium" id="toast-message">Acción completada con éxito</span>
+</div>
+<!-- Lightweight Micro-interactions for Zoom/Rotate and Modal -->
+<script>
+    let currentScale = 1;
+    let currentRotation = 0;
+    const preview = document.getElementById('document-preview-target');
+
+    function updateTransform() {
+      if (preview) {
+        preview.style.transform = `scale(${currentScale}) rotate(${currentRotation}deg)`;
+      }
+    }
+
+    document.getElementById('zoom-in')?.addEventListener('click', () => {
+      if (currentScale < 1.6) {
+        currentScale += 0.15;
+        updateTransform();
+      }
+    });
+
+    document.getElementById('zoom-out')?.addEventListener('click', () => {
+      if (currentScale > 0.7) {
+        currentScale -= 0.15;
+        updateTransform();
+      }
+    });
+
+    document.getElementById('rotate-btn')?.addEventListener('click', () => {
+      currentRotation = (currentRotation + 90) % 360;
+      updateTransform();
+    });
+
+    document.getElementById('reset-btn')?.addEventListener('click', () => {
+      currentScale = 1;
+      currentRotation = 0;
+      updateTransform();
+    });
+
+    // Modal Handling
+    const modal = document.getElementById('confirmation-modal');
+    const modalCard = document.getElementById('modal-card');
+    const modalTitle = document.getElementById('modal-title');
+    const modalDescription = document.getElementById('modal-description');
+    const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+
+    function openModal(title, desc) {
+      if (!modal) return;
+      modalTitle.innerText = title;
+      modalDescription.innerText = desc;
+      
+      if (title.toLowerCase().includes('rechazar')) {
+        modalConfirmBtn.className = 'h-10 px-5 rounded-[10px] bg-[#C62828] text-white font-label-md font-bold text-xs hover:opacity-90 transition-opacity';
+      } else {
+        modalConfirmBtn.className = 'h-10 px-5 rounded-[10px] bg-[#09BABD] text-[#12182C] font-label-md font-bold text-xs hover:opacity-90 transition-opacity';
+      }
+
+      modal.classList.remove('hidden');
+      setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        modalCard.classList.remove('scale-95');
+      }, 10);
+    }
+
+    function closeModal() {
+      if (!modal) return;
+      modal.classList.add('opacity-0');
+      modalCard.classList.add('scale-95');
+      setTimeout(() => {
+        modal.classList.add('hidden');
+        document.getElementById('action-reason').value = '';
+      }, 150);
+    }
+
+    function executeModalAction() {
+      const reason = document.getElementById('action-reason').value;
+      if (!reason.trim()) {
+        alert('Por favor ingrese un motivo antes de confirmar.');
+        return;
+      }
+      closeModal();
+      triggerFeedback('Acción registrada en auditoría con ID AUD-9824');
+    }
+
+    function triggerFeedback(msg) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-message');
+      if (toast && toastMsg) {
+        toastMsg.innerText = msg;
+        toast.classList.remove('translate-y-10', 'opacity-0', 'pointer-events-none');
+        setTimeout(() => {
+          toast.classList.add('translate-y-10', 'opacity-0', 'pointer-events-none');
+        }, 3500);
+      }
+    }
+  </script>
+</body></html>

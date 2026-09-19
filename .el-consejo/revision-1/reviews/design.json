@@ -1,0 +1,63 @@
+{
+  "agentId": "design",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "correction": "Incorporar en las especificaciones del MVP la matriz técnica de assets de marca indispensables para el manifest de la PWA: favicon, iconos adaptativos (192x192 y 512x512 px con safe-zone para Android/iOS), color de tema (theme_color) y pantalla de carga responsive.",
+      "evidence": [
+        "context:Sección 7: 'Debe funcionar como PWA'",
+        "context:Sección 7: 'El diseño visual se define después del plan y queda fuera de esta revisión'"
+      ],
+      "impact": "Al no prever la matriz técnica de assets (iconos 192x192 y 512x512 con soporte maskable, splash screen, favicon y theme-color), la PWA no cumplirá los criterios de instalabilidad en navegadores móviles o se instalará con marcadores de posición genéricos, afectando severamente la legitimidad y credibilidad de la plataforma.",
+      "severity": "high",
+      "statement": "El plan excluye el diseño visual pero omite la especificación técnica de los assets de marca mínimos requeridos para la instalabilidad y el funcionamiento de la PWA."
+    },
+    {
+      "assumptions": [
+        "Los repartidores en Aguilares operan en motocicleta o bicicleta en la vía pública bajo radiación solar intensa y utilizan dispositivos móviles de gama media o baja."
+      ],
+      "correction": "Establecer en los requisitos no funcionales del MVP el cumplimiento de contraste WCAG AA (ratio mínimo de 4.5:1 para textos y 3:1 para elementos de control) y áreas de toque táctil mínimas de 48x48 px en las pantallas operativas del repartidor.",
+      "evidence": [
+        "context:Sección 3: 'Repartidor independiente: se registra, un admin lo aprueba, ve solicitudes y oferta'",
+        "context:Sección 5: '6. Entrega: el repartidor hace el viaje y el pago se arregla entre las partes'"
+      ],
+      "impact": "Si la interfaz no garantiza contraste alto y áreas de toque amplias, los repartidores sufrirán dificultades severas para leer solicitudes y registrar ofertas bajo el sol, aumentando el riesgo de errores de interacción y accidentes viales.",
+      "severity": "high",
+      "statement": "Ausencia de directrices de ergonomía visual, contraste y accesibilidad para el uso de la aplicación en exteriores por parte de los repartidores."
+    },
+    {
+      "correction": "Incluir en la arquitectura del frontend una capa base de tokens de diseño semánticos (paleta de colores para estados, escala tipográfica y espaciados estandarizados) configurada a nivel de Tailwind/CSS Variables antes del desarrollo de vistas.",
+      "evidence": [
+        "context:Sección 7: 'Frontend en Next.js con TypeScript en modo strict'",
+        "input.scope: 'Fuera de alcance: diseño visual (se define después) y escritura de código'"
+      ],
+      "impact": "El desarrollo del frontend utilizará valores ad-hoc y dispersos en Tailwind CSS o estilos locales, requiriendo una refactorización integral y costosa cuando se diseñe la capa visual definitiva.",
+      "severity": "medium",
+      "statement": "Falta de definición de tokens de diseño semánticos para la implementación en Next.js, propiciando estilos hardcodeados y deuda técnica."
+    },
+    {
+      "correction": "Definir en el modelo de componentes un badge visual estandarizado de 'Repartidor Verificado' con iconografía distintiva y accesibilidad semántica que acompañe las ofertas y el perfil del repartidor.",
+      "evidence": [
+        "context:Sección 2: 'Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar'",
+        "context:Sección 5: '4. Selección: el solicitante compara las ofertas y elige la que prefiera'"
+      ],
+      "impact": "Los solicitantes (comercios y particulares) no tendrán una confirmación visual inmediata y clara sobre la legitimidad del repartidor al comparar ofertas, sembrando dudas sobre la seguridad en la manipulación del paquete.",
+      "severity": "medium",
+      "statement": "Omisión de un componente visual estandarizado de validación (badge o credencial) para identificar a los repartidores aprobados por el administrador."
+    },
+    {
+      "correction": "Especificar la jerarquía visual de la tarjeta de oferta priorizando el monto en ARS, tiempo estimado y reputación del repartidor, complementada con un indicador visual cronológico de los estados de la orden (publicada, ofertada, en camino, entregada).",
+      "evidence": [
+        "context:Sección 5: '3. Ofertas: cada repartidor interesado dice cuánto cobraría. Ninguna oferta puede ser menor a ARS 1.000'",
+        "context:Sección 6: 'Reglas de ofertas... El solicitante ve todas las ofertas y acepta la que quiera'"
+      ],
+      "impact": "Una disposición visual desordenada de múltiples ofertas con montos variables incrementa la fricción cognitiva del comerciante y puede inducir a selecciones erróneas o retrasar la confirmación del viaje.",
+      "severity": "medium",
+      "statement": "Falta de jerarquía visual y estandarización en la presentación de ofertas y estados del ciclo de vida del pedido."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión de diseño visual, marca, assets y ergonomía para el plan de MVP de cadeApp. Aunque la estética detallada se pospuso, el plan carece de especificaciones críticas sobre assets obligatorios para PWA, requerimientos de legibilidad y contraste en exteriores para repartidores en Aguilares, tokens de diseño base en Next.js, badges de confianza para repartidores habilitados y jerarquía visual de ofertas.",
+  "verdict": "conditional"
+}

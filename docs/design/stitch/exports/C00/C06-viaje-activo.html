@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp - Envío en curso</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-container": "#5cb5b8",
+            "error": "#ba1a1a",
+            "on-primary-fixed": "#002020",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "inverse-primary": "#4adadd",
+            "secondary-fixed-dim": "#c0c5e0",
+            "primary-fixed": "#6df6f9",
+            "surface-dim": "#d1daee",
+            "secondary-container": "#d9defa",
+            "secondary": "#585d75",
+            "surface-container-low": "#f0f3ff",
+            "tertiary-fixed": "#99f1f4",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-highest": "#dae3f7",
+            "on-secondary": "#ffffff",
+            "surface-container": "#e7eeff",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-tint": "#00696b",
+            "on-tertiary-container": "#004446",
+            "primary-container": "#09babd",
+            "surface-variant": "#dae3f7",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-tertiary": "#ffffff",
+            "on-surface": "#131c2a",
+            "secondary-fixed": "#dce1fd",
+            "on-surface-variant": "#3c4949",
+            "on-secondary-fixed": "#151b2f",
+            "primary": "#00696b",
+            "on-primary": "#ffffff",
+            "inverse-surface": "#283140",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed": "#002021",
+            "error-container": "#ffdad6",
+            "tertiary": "#00696c",
+            "on-primary-fixed-variant": "#004f51",
+            "on-error-container": "#93000a",
+            "surface-container-high": "#dfe8fd",
+            "surface-container-lowest": "#ffffff",
+            "primary-fixed-dim": "#4adadd",
+            "on-primary-container": "#004446",
+            "outline-variant": "#bbc9c9",
+            "on-secondary-container": "#5c6279",
+            "outline": "#6c7a7a",
+            "surface": "#f9f9ff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "surface-bright": "#f9f9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-sm": "0.5rem",
+            "space-md": "1rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "gutter": "0.5rem"
+          },
+          "fontFamily": {
+            "price-sm": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "label-md": ["Inter"],
+            "body-medium": ["Inter"],
+            "headline-md": ["Montserrat"],
+            "headline-lg": ["Montserrat"]
+          },
+          "fontSize": {
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    body {
+      background-color: #f1f3f7;
+      font-family: 'Inter', sans-serif;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="min-h-screen text-on-surface antialiased flex justify-center">
+<!-- Mobile Screen Shell Container (390px Baseline) -->
+<div class="w-full max-w-[390px] min-h-screen bg-surface flex flex-col relative pb-28 shadow-xl border-x border-outline-variant/30">
+<!-- Top Navigation Anchor (Task Focused View with Back Action) -->
+<header class="sticky top-0 z-40 bg-[#12182C] text-white px-4 h-14 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<button aria-label="Volver" class="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-white/10 active:scale-95 transition-all text-white" type="button">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-bold tracking-tight text-white">Envío en curso</h1>
+</div>
+<div class="flex items-center gap-1.5 bg-[#09BABD]/20 border border-[#09BABD]/40 px-2.5 py-1 rounded-full">
+<span class="w-2 h-2 rounded-full bg-primary-container animate-ping"></span>
+<span class="font-label-sm text-xs font-semibold text-primary-fixed">#C06</span>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 px-4 py-4 space-y-4">
+<!-- Horizontal 3-Step Progress Stepper -->
+<section class="bg-surface-container-lowest border border-[#E4E7EC] rounded-xl p-4">
+<div class="flex items-center justify-between relative">
+<!-- Step Connectors -->
+<div class="absolute top-4 left-6 right-6 h-0.5 bg-[#E4E7EC] -z-0">
+<div class="h-full bg-primary-container w-1/2"></div>
+</div>
+<!-- Step 1: Asignada (Completed) -->
+<div class="flex flex-col items-center gap-1.5 z-10">
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-bold text-sm">
+<span class="material-symbols-outlined text-base" data-icon="check" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check</span>
+</div>
+<span class="font-label-sm text-xs font-semibold text-on-surface">Asignada</span>
+</div>
+<!-- Step 2: Retirado (Current / Active) -->
+<div class="flex flex-col items-center gap-1.5 z-10">
+<div class="w-8 h-8 rounded-full bg-[#E6F8F8] border-2 border-primary-container text-[#0B7A7D] flex items-center justify-center font-bold relative">
+<span class="w-2.5 h-2.5 rounded-full bg-primary-container animate-pulse"></span>
+</div>
+<span class="font-label-sm text-xs font-bold text-[#0B7A7D]">Retirado</span>
+</div>
+<!-- Step 3: Entregado (Pending) -->
+<div class="flex flex-col items-center gap-1.5 z-10">
+<div class="w-8 h-8 rounded-full bg-surface-container-lowest border-2 border-[#E4E7EC] text-secondary flex items-center justify-center text-xs font-semibold">
+              3
+            </div>
+<span class="font-label-sm text-xs text-secondary">Entregado</span>
+</div>
+</div>
+<!-- Dynamic Status Subtext -->
+<div class="mt-3 pt-3 border-t border-[#E4E7EC] flex items-center justify-between text-xs">
+<span class="font-body-md text-xs text-secondary">Estado actual del repartidor:</span>
+<span class="font-label-md text-xs font-semibold text-[#0B7A7D] flex items-center gap-1">
+<span class="material-symbols-outlined text-sm" data-icon="moped">moped</span> En viaje al destino
+          </span>
+</div>
+</section>
+<!-- Courier Information Card -->
+<section class="bg-surface-container-lowest border border-[#E4E7EC] rounded-xl p-4 space-y-4">
+<div class="flex items-start justify-between gap-3">
+<div class="flex items-center gap-3">
+<!-- Avatar Placeholder with Image Requirement -->
+<div class="relative w-12 h-12 rounded-full overflow-hidden border border-[#E4E7EC] bg-surface-container flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="A candid profile portrait of an Argentine delivery courier in his late twenties wearing a clean modern dark blue polo shirt. High-contrast natural daylight illuminates his friendly and confident expression. The clean studio light-mode style highlights authentic features against a crisp solid off-white background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8TyJiOrzXMGE8JGdKj4SGV1TXf3Lerl6uqZnoazpqi_692Egq0VKdZ114wm5AJSlCXvyW8Ur_isWnAXoRxccwWQ_u31EVEWmhe4oCWl2YlQZrEwjPkSv3k8nhba8Fjv5Wal1akyB8YKrV0XtWFabs6cqXa7vScsoRT3MH9VdA1YELsQ6WjywF8rBcJq-6OuYNN_hiny2MNJ4Qm8h0CnAN19duGYjScRb8kd2zhfXRhHozVTluKfOp"/>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<h2 class="font-headline-md text-base font-bold text-[#12182C]">Joaquín R.</h2>
+<span class="material-symbols-outlined text-[#0B7A7D] text-base" data-icon="verified" data-weight="fill" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+<p class="font-body-md text-xs text-secondary">Moto · <span class="font-semibold text-on-surface">AB 123 CD</span></p>
+</div>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-[11px] text-secondary uppercase tracking-wider block">Acordado</span>
+<span class="font-headline-lg text-headline-lg font-bold text-[#12182C]">$ 1.800</span>
+</div>
+</div>
+<!-- Courier Verification Badges -->
+<div class="flex flex-wrap gap-2">
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F5EE] text-[#177A4B] font-label-sm text-xs font-semibold">
+<span class="material-symbols-outlined text-xs" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+            Licencia verificada
+          </span>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#E8F5EE] text-[#177A4B] font-label-sm text-xs font-semibold">
+<span class="material-symbols-outlined text-xs" data-icon="shield" data-weight="fill" style="font-variation-settings: 'FILL' 1;">shield</span>
+            Seguro verificado
+          </span>
+</div>
+<!-- Courier Communication CTAs (48px Min Target) -->
+<div class="grid grid-cols-2 gap-2.5 pt-1">
+<a class="h-12 px-3 rounded-[10px] bg-[#25D366] text-white flex items-center justify-center gap-2 font-label-md text-sm font-semibold active:opacity-90 hover:brightness-105 transition-all" href="https://wa.me/5493815550123">
+<span class="material-symbols-outlined text-lg" data-icon="chat">chat</span>
+<span>WhatsApp</span>
+</a>
+<a class="h-12 px-3 rounded-[10px] bg-white border border-[#E4E7EC] text-[#12182C] flex items-center justify-center gap-2 font-label-md text-sm font-semibold hover:bg-surface-container-low active:bg-surface-container transition-all" href="tel:+5493815550123">
+<span class="material-symbols-outlined text-lg text-secondary" data-icon="call">call</span>
+<span>Llamar</span>
+</a>
+</div>
+</section>
+<!-- Minimal Flat Route Map Card -->
+<section class="bg-surface-container-lowest border border-[#E4E7EC] rounded-xl overflow-hidden">
+<div class="p-3.5 border-b border-[#E4E7EC] flex items-center justify-between bg-white">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" data-icon="map">map</span>
+<h3 class="font-headline-md text-sm font-bold text-[#12182C]">Mapa del viaje</h3>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-container text-[#12182C] font-label-sm text-xs font-semibold">
+            ≈ 2,0 km
+          </span>
+</div>
+<!-- Stylized Flat Map Graphic of Aguilares -->
+<div class="relative h-44 bg-[#F5F7FA] p-3 flex flex-col justify-between overflow-hidden" data-location="Aguilares, Tucumán" style="">
+<!-- Background stylized grid street vector -->
+<svg class="absolute inset-0 w-full h-full text-outline-variant/20" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<pattern height="32" id="grid-pattern" patternunits="userSpaceOnUse" width="32">
+<path d="M 32 0 L 0 0 0 32" fill="none" stroke="currentColor" stroke-width="1.2"></path>
+</pattern>
+</defs>
+<rect fill="url(#grid-pattern)" height="100%" width="100%"></rect>
+<!-- Stylized Route Curve -->
+<path d="M 60 40 C 130 40, 140 120, 290 130" fill="none" stroke="#09BABD" stroke-dasharray="2 0" stroke-linecap="round" stroke-width="4.5"></path>
+<path d="M 60 40 C 130 40, 140 120, 290 130" fill="none" stroke="#0B7A7D" stroke-dasharray="4 6" stroke-linecap="round" stroke-width="1.5"></path>
+</svg>
+<!-- Store Pin (San Martín 450) -->
+<div class="relative z-10 flex items-center gap-1.5 self-start bg-white/95 backdrop-blur-sm border border-[#09BABD] px-2.5 py-1 rounded-lg shadow-sm">
+<span class="w-3 h-3 rounded-full bg-primary-container border-2 border-white shadow"></span>
+<div class="leading-none">
+<span class="font-label-sm text-[10px] text-secondary block">Retiro</span>
+<span class="font-label-md text-xs font-bold text-[#12182C]">San Martín 450</span>
+</div>
+</div>
+<!-- Customer Dropoff Pin (Belgrano 1220) -->
+<div class="relative z-10 flex items-center gap-1.5 self-end bg-[#12182C] border border-[#12182C] px-2.5 py-1 rounded-lg text-white shadow-sm mt-auto">
+<span class="material-symbols-outlined text-xs text-primary-fixed" data-icon="location_on" data-weight="fill" style="font-variation-settings: 'FILL' 1;">location_on</span>
+<div class="leading-none">
+<span class="font-label-sm text-[10px] text-surface/70 block">Entrega</span>
+<span class="font-label-md text-xs font-bold text-white">Belgrano 1220</span>
+</div>
+</div>
+</div>
+<div class="px-3.5 py-2.5 bg-surface text-[12px] text-secondary flex items-center justify-between border-t border-[#E4E7EC]">
+<span>Aguilares, Tucumán</span>
+<span class="font-label-sm font-semibold text-[#0B7A7D]">Ruta directa sin desvíos</span>
+</div>
+</section>
+<!-- Highlighted Merchant Action Card: Notificar al cliente -->
+<section class="p-4 rounded-xl border border-[#09BABD]/40 bg-[#F0FAF9] space-y-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" data-icon="notifications_active">notifications_active</span>
+<h3 class="font-headline-md text-base font-bold text-[#12182C]">
+            Avisale a tu cliente cuánto sale el envío
+          </h3>
+</div>
+<!-- WhatsApp Preview Speech Bubble -->
+<div class="bg-white border border-[#09BABD]/25 rounded-lg p-3 relative text-xs font-body-md text-on-surface shadow-xs">
+<p class="leading-relaxed">
+            "Hola Laura, tu pedido de Panadería La Espiga sale en camino con Joaquín (moto). El envío cuesta <strong class="text-[#12182C] font-semibold">$ 1.800</strong> y se paga en efectivo al recibir."
+          </p>
+<div class="mt-2 flex items-center justify-between text-[11px] text-secondary pt-1 border-t border-dashed border-outline-variant/40">
+<span>Plantilla predeterminada</span>
+<span class="font-medium text-[#09BABD]">Listo para enviar</span>
+</div>
+</div>
+<!-- Full Width WhatsApp Primary Button (48px tall) -->
+<button class="w-full h-12 rounded-[10px] bg-[#09BABD] text-[#12182C] font-headline-md text-sm font-bold flex items-center justify-center gap-2 active:opacity-90 hover:brightness-105 transition-all shadow-sm" type="button">
+<span class="material-symbols-outlined text-xl" data-icon="send">send</span>
+<span>Avisar a mi cliente</span>
+</button>
+</section>
+<!-- Delivery Details Card (Datos de la entrega) -->
+<section class="bg-surface-container-lowest rounded-xl border border-[#E4E7EC] p-4 space-y-3">
+<h3 class="font-headline-md text-sm font-bold text-[#12182C] pb-1 border-b border-[#E4E7EC] flex items-center justify-between">
+<span>Datos de la entrega</span>
+<span class="font-label-sm text-xs font-normal text-secondary">Ref #0928</span>
+</h3>
+<div class="space-y-2.5 text-xs font-body-md">
+<!-- Retiro -->
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-base text-secondary flex-shrink-0 mt-0.5" data-icon="storefront">storefront</span>
+<div>
+<span class="font-label-sm text-[11px] text-secondary block leading-none">Punto de retiro</span>
+<span class="font-body-medium text-xs text-on-surface font-semibold">San Martín 450, Centro</span>
+</div>
+</div>
+<!-- Entrega -->
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-base text-secondary flex-shrink-0 mt-0.5" data-icon="pin_drop">pin_drop</span>
+<div>
+<span class="font-label-sm text-[11px] text-secondary block leading-none">Punto de entrega</span>
+<span class="font-body-medium text-xs text-on-surface font-semibold">Belgrano 1220, Barrio Norte</span>
+</div>
+</div>
+<!-- Destinatario -->
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-base text-secondary flex-shrink-0 mt-0.5" data-icon="person">person</span>
+<div>
+<span class="font-label-sm text-[11px] text-secondary block leading-none">Destinatario</span>
+<span class="font-body-medium text-xs text-on-surface font-semibold">Laura M. · 381 555-0456</span>
+</div>
+</div>
+<!-- Forma de Pago -->
+<div class="flex items-start gap-2.5">
+<span class="material-symbols-outlined text-base text-secondary flex-shrink-0 mt-0.5" data-icon="payments">payments</span>
+<div>
+<span class="font-label-sm text-[11px] text-secondary block leading-none">Método de cobro</span>
+<span class="font-body-medium text-xs text-on-surface font-semibold">Paga: efectivo, necesita cambio</span>
+</div>
+</div>
+<!-- Indicaciones -->
+<div class="flex items-start gap-2.5 bg-surface-container-low p-2.5 rounded-lg border border-[#E4E7EC]">
+<span class="material-symbols-outlined text-base text-secondary flex-shrink-0 mt-0.5" data-icon="info">info</span>
+<div>
+<span class="font-label-sm text-[11px] text-secondary block leading-none">Indicaciones para el timbre</span>
+<span class="font-body-medium text-xs text-on-surface font-semibold">Tocar timbre 2B</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Problem Resolution & Ghost Action Links -->
+<section class="bg-surface-container-lowest rounded-xl border border-[#E4E7EC] overflow-hidden divide-y divide-[#E4E7EC]">
+<button class="w-full px-4 py-3 flex items-center justify-between text-left text-xs font-label-md text-secondary hover:bg-surface-container-low transition-colors" type="button">
+<span class="flex items-center gap-2">
+<span class="material-symbols-outlined text-base" data-icon="schedule">schedule</span>
+            El repartidor no llegó
+          </span>
+<span class="material-symbols-outlined text-base text-secondary/60" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full px-4 py-3 flex items-center justify-between text-left text-xs font-label-md text-secondary hover:bg-surface-container-low transition-colors" type="button">
+<span class="flex items-center gap-2">
+<span class="material-symbols-outlined text-base" data-icon="support_agent">support_agent</span>
+            Reportar un problema
+          </span>
+<span class="material-symbols-outlined text-base text-secondary/60" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full px-4 py-3 flex items-center justify-between text-left text-xs font-label-md text-[#C62828] hover:bg-error-container/20 transition-colors" type="button">
+<span class="flex items-center gap-2 font-semibold">
+<span class="material-symbols-outlined text-base" data-icon="cancel">cancel</span>
+            Cancelar envío
+          </span>
+<span class="material-symbols-outlined text-base text-[#C62828]/60" data-icon="chevron_right">chevron_right</span>
+</button>
+</section>
+<!-- Subdued Footer -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-6 flex flex-col gap-2 text-center items-center">
+<div class="flex items-center justify-center gap-4 text-xs font-label-sm text-secondary">
+<a class="hover:text-primary transition-colors duration-150" href="#">Términos y condiciones</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+<p class="font-body-md text-xs text-secondary/75">
+          © 2024 cadeApp. Envíos locales y logística inteligente.
+        </p>
+</footer>
+</main>
+<!-- Fixed Bottom Navigation (Shared Component Baseline for PWA) -->
+<nav class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] bg-white border-t border-[#E4E7EC] h-16 px-6 flex items-center justify-between z-50">
+<!-- Inicio (Active) -->
+<a class="flex flex-col items-center gap-0.5 text-primary-container font-semibold" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="storefront" data-weight="fill" style="font-variation-settings: 'FILL' 1;">storefront</span>
+<span class="font-label-sm text-[11px]">Inicio</span>
+</a>
+<!-- Historial -->
+<a class="flex flex-col items-center gap-0.5 text-secondary hover:text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="history">history</span>
+<span class="font-label-sm text-[11px]">Historial</span>
+</a>
+<!-- Cuenta -->
+<a class="flex flex-col items-center gap-0.5 text-secondary hover:text-on-surface transition-colors" href="#">
+<span class="material-symbols-outlined text-xl" data-icon="person">person</span>
+<span class="font-label-sm text-[11px]">Cuenta</span>
+</a>
+</nav>
+</div>
+</body></html>

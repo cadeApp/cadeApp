@@ -1,0 +1,18 @@
+{
+  "conflicts": [
+    {
+      "id": "push-notification-implementation-scope",
+      "class": "technical",
+      "reversible": true,
+      "summary": "Si se confirma Supabase (sin servicio de push propio), ni el plan ni los hallazgos de backend escopean todavía el trabajo de implementar Web Push estándar (tabla de subscriptions, función serverless/Edge Function para enviar con claves VAPID, manejo de expiración/renovación de tokens); sin asignarlo explícitamente como tarea, el esfuerzo de notificaciones push del MVP quedará subestimado.",
+      "parties": ["backend", "frontend"]
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "baas-choice",
+      "summary": "Ajusto mi postura. Mi hallazgo sobre Web Push/FCM (frontend.review.3) era explícitamente un insumo de costo para la decisión, no una objeción a Supabase, y lo confirmo ahora: los argumentos de backend para Supabase —transacciones ACID para evitar doble aceptación de oferta, PostGIS con índices espaciales nativos para 'repartidor más cercano', RLS auditable por rol— resuelven problemas de integridad y correctitud de datos que pesan más que la conveniencia de tener push de primera parte, y son ortogonales a mi otro hallazgo sobre geolocalización en segundo plano (PostGIS optimiza la consulta sobre la ubicación disponible; no cambia el límite de tracking en background de las PWA, que aplica igual con cualquier BaaS). La ausencia de push nativo en Supabase es una brecha real pero solucionable con el protocolo Web Push estándar (VAPID), independiente del proveedor de BaaS elegido —no requiere Firebase—, mediante una tabla de subscriptions en Postgres y una función serverless (API route de Next.js o Supabase Edge Function) que dispare los envíos. No sostengo que ese costo deba inclinar la elección hacia Firebase; sí declaro un conflicto nuevo para que ese trabajo quede escopeado explícitamente, porque hoy no figura en los hallazgos de backend (backend.review.0-5) ni en el plan.",
+      "position": "adjust"
+    }
+  ]
+}

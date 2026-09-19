@@ -1,0 +1,71 @@
+{
+  "agentId": "backend",
+  "verdict": "conditional",
+  "confidence": 0.72,
+  "summary": "El plan es internamente consistente con las decisiones D1-D14 del master plan: accept_offer atómico con FOR UPDATE, piso configurable en platform_settings, revalidación del estado del repartidor en cada RPC, expiración perezosa, documentos privados con URL firmada y auditoría, y admin_* con MFA. La separación domain/server/features con fronteras por ESLint está bien pensada. El riesgo principal para el objetivo de 'trabajo simultáneo sin pisarse y retomable por cualquiera' es que TODO el trabajo de base de datos (migraciones, RLS, RPC, cron, observabilidad) pasa por una sola persona (P1) de forma secuencial en las 3 fases, y esa misma persona es la única CODEOWNER de supabase/**, src/server/** y src/app/api/**, combinando un cuello de botella de throughput con un único punto de fallo para el review obligatorio. A esto se suma que no hay procedimiento definido para retomar una tarea de base de datos que otra persona dejó a medias, y que la sincronización entre el 'adaptador simulado' de RPC (para que P2/P3 avancen antes de que la RPC real exista) y los códigos de error reales no tiene dueño ni prueba de contrato asignada. También hay dos vacíos puntuales en las reglas para agy: el mecanismo de lint que evita que código 'use client' filtre la service role key no está especificado ni probado, y no existe una regla de concurrencia para los contadores de rate_limits, a diferencia de accept_offer que sí la tiene explícita.",
+  "findings": [
+    {
+      "severity": "high",
+      "statement": "P1 concentra de forma secuencial todo el trabajo de Supabase (migraciones, RLS, RPC, cron, observabilidad) en las 3 fases, y además es el único CODEOWNER de supabase/**, src/server/** y src/app/api/**, lo que crea a la vez un cuello de botella de throughput y un único punto de fallo para el review obligatorio de esos directorios.",
+      "evidence": [
+        "original.md L20-26: tabla de pistas, 'Solo P1 mergea migraciones y regenera src/types/database.types.ts. Si P2 o P3 necesitan un cambio de esquema, abren una tarea contract-change asignada a P1.'",
+        "original.md L327-355: cadena T-002→T-004→T-005 (Fase 0) y T-101→T-102→T-103→T-104→T-203→T-310 (Fase 1+), todas P1",
+        "original.md L313: 'CODEOWNERS: supabase/, src/server/ y src/app/api/ → P1'"
+      ],
+      "impact": "Si P1 se atrasa, se ausenta o queda bloqueado, ningún PR que toque esos directorios puede obtener la aprobación de CODEOWNERS requerida por la protección de rama, y las tareas P1 de Fase 1 que son dependencia de casi todas las tareas P2/P3 (T-113, T-114, T-115, T-122, T-123, T-124, T-203) se demoran en cadena, contradiciendo el objetivo explícito de que las 3 personas avancen en simultáneo y que cualquiera pueda continuar el trabajo.",
+      "correction": "Agregar al menos una segunda persona como CODEOWNER de supabase/**, src/server/** y src/app/api/** (aunque no mergee migraciones por default), definir explícitamente quién puede aprobar esos PRs si P1 no está disponible, y dividir alguna tarea P1 de Fase 1 (por ejemplo separar submit_offer/set_availability de accept_offer/ciclo de solicitud) para que dos personas puedan escribir RPCs en paralelo una vez congelado el esquema."
+    },
+    {
+      "severity": "high",
+      "statement": "El plan no define un procedimiento para retomar una tarea de base de datos que quedó a medias (migración empezada, RPC parcialmente escrita) por una persona distinta a quien la inició: la skill tomar-tarea solo cubre crear una rama nueva desde develop, y la ficha de tarea solo registra un estado de 4 valores sin detalle de qué se implementó o qué falta.",
+      "evidence": [
+        "original.md L255: 'git switch develop && git pull && git switch -c feat/T-xxx-<slug>.' (skill tomar-tarea, paso 3, asume rama nueva, no retomar una existente)",
+        "original.md L401: ficha de tarea, 'Estado: pendiente | en curso | en review | hecha' sin campo de detalle de avance"
+      ],
+      "impact": "Si P1 deja una migración o RPC a medio camino y otra persona (o su sesión de agy) necesita continuarla, no hay instrucción de qué rama retomar, qué ya se probó ni cómo sincronizar el estado local de Supabase (Docker) con lo que hay en la rama remota, con riesgo de reescribir trabajo, aplicar migraciones duplicadas o perder contexto — justo el escenario que el pedido humano marca como requisito explícito ('cualquiera tiene que poder retomar o continuar el trabajo en momentos distintos').",
+      "correction": "Agregar una skill retomar-tarea (o un paso condicional en tomar-tarea) que verifique si existe una rama feat/T-xxx remota y la traiga con git fetch/switch en lugar de crear una nueva, exigir que todo trabajo de Supabase quede committeado y pusheado al final de cada sesión (no solo en el estado local de Docker), y ampliar el campo Estado de la ficha con un resumen de qué migraciones/RPC ya están escritas y qué pruebas pasan."
+    },
+    {
+      "severity": "medium",
+      "statement": "El congelamiento contracts-v1 ocurre con T-004, T-005 y T-006 (esquema, RLS y rpc-contracts.ts) mergeados, pero los códigos de error y precondiciones concretas de las RPC críticas recién se implementan en T-101/T-102/T-103 de la Fase 1, y nadie tiene asignada la construcción ni el mantenimiento del 'adaptador simulado' detrás de src/server/rpc.ts que P2/P3 usan mientras tanto.",
+      "evidence": [
+        "original.md L337: 'Congelamiento de contratos: con T-004, T-005 y T-006 mergeadas, se etiqueta contracts-v1.'",
+        "original.md L395: 'Mientras P1 no mergea una RPC, P2 y P3 construyen la UI contra src/domain/rpc-contracts.ts con un adaptador simulado detrás de src/server/rpc.ts, y lo cambian por el real cuando la RPC llega a develop.' (sin dueño asignado)"
+      ],
+      "impact": "P2 y P3 pueden construir UI y wrappers contra una firma de RPC y un adaptador simulado que todavía no reflejan los códigos de error reales definidos después del freeze (por ejemplo si accept_offer termina necesitando un código de error no previsto en T-006), generando retrabajo justo cuando el plan espera la mayor velocidad en paralelo.",
+      "correction": "Asignar explícitamente el adaptador simulado a una tarea/dueño (por ejemplo dentro de T-006, a cargo de P2), exigir en el DoD de T-101/T-102/T-103 que cualquier código de error nuevo no previsto en rpc-contracts.ts se trate como contract-change antes de mergear, y agregar una prueba de contrato que compare las respuestas del adaptador simulado contra los códigos reales una vez existan."
+    },
+    {
+      "severity": "medium",
+      "statement": "La regla 'el código de cliente (\"use client\") nunca importa server/**', que es la barrera declarada contra fugas de la service role key, no especifica qué mecanismo de ESLint la hace cumplir de forma consciente de la directiva 'use client', ni el DoD de T-000 la prueba específicamente (solo dice 'un import prohibido de prueba hace fallar lint', genérico).",
+      "evidence": [
+        "original.md L86: 'El código de cliente (\"use client\") nunca importa server/**.'",
+        "original.md L109: 'La service role key solo existe en src/server/admin-client.ts. Nunca en código \"use client\".'",
+        "original.md L327: DoD de T-000, 'un import prohibido de prueba hace fallar lint' (sin especificar el caso 'use client' → server/**)"
+      ],
+      "impact": "Sin una regla de lint verificablemente consciente de la directiva 'use client', un import indirecto de server/** (por ejemplo vía un index.ts que reexporta algo de server) podría colarse en un componente cliente y filtrar la service role key al bundle sin que el CI lo detecte.",
+      "correction": "En T-000, especificar y verificar con un caso de prueba concreto que el lint bloquea un archivo 'use client' que importa (directa o transitivamente) algo de src/server/**, usando por ejemplo eslint-plugin-boundaries con detección de directivas o una regla custom, y documentar el mecanismo elegido en 20-arquitectura.md."
+    },
+    {
+      "severity": "medium",
+      "statement": "El plan exige y prueba concurrencia atómica para accept_offer (FOR UPDATE, N llamadas en paralelo) pero no define ninguna regla equivalente para los contadores de rate_limits que submit_offer y set_availability deben respetar, dejando la implementación concurrency-safe del incremento a criterio del agente.",
+      "evidence": [
+        "original.md L343: DoD de T-101 menciona 'rate limit' como caso de prueba, sin regla de implementación",
+        "original.md L158-171 (30-supabase-seguridad.md): cubre locking explícito solo para accept_offer, ninguna mención de rate_limits",
+        "master-plan.md L171: tabla rate_limits (subject, action, window_start, count) descrita como 'contadores para limitar abuso' sin detalle de atomicidad"
+      ],
+      "impact": "Sin una regla explícita (p. ej. upsert atómico), dos llamadas concurrentes de submit_offer podrían leer el mismo contador antes de incrementarlo y saltarse el límite, dejando el antiabuso descrito en el master plan sin garantía real bajo carga concurrente.",
+      "correction": "Agregar a 30-supabase-seguridad.md una regla explícita para rate_limits: incremento atómico (INSERT ... ON CONFLICT (subject, action, window_start) DO UPDATE SET count = count + 1) dentro de la misma RPC, y sumar un test pgTAP de concurrencia para el rate limit de submit_offer, igual que el que ya exige para accept_offer."
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "codeowners-spof-p1",
+      "class": "technical",
+      "reversible": true,
+      "summary": "Asignar a P1 como único CODEOWNER de supabase/**, src/server/** y src/app/api/**, sumado a que P1 concentra todas las migraciones/RLS/RPC de forma secuencial, crea un único punto de fallo para el review obligatorio y un cuello de botella de throughput que afecta la planificación (PM) y la configuración de protección de ramas (DevOps), no solo el diseño de backend.",
+      "parties": ["backend", "pm", "devops"]
+    }
+  ],
+  "helperRequests": []
+}

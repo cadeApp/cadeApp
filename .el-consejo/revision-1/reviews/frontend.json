@@ -1,0 +1,60 @@
+{
+  "agentId": "frontend",
+  "verdict": "conditional",
+  "confidence": 0.75,
+  "summary": "El plan es sólido en flujo de negocio y producto, pero como especificación de arquitectura frontend/PWA queda incompleto en puntos que afectan directamente la operación del MVP: depende de notificaciones push sin reconocer que en iOS requieren instalación manual previa a pantalla de inicio (sin `beforeinstallprompt`), plantea 'ubicación en vivo' de repartidores sin reconocer que las PWA no pueden rastrear ubicación en segundo plano de forma confiable, y no define fallback de tiempo real ni manejo de carga de imágenes (DNI/selfie) para redes móviles débiles en Aguilares. Ninguno de estos puntos invalida la propuesta, pero deben resolverse explícitamente antes de considerar el plan listo para desarrollo. Nota adicional no crítica: el plan no menciona una línea base de accesibilidad (semántica, foco, lectores de pantalla) pese a que el diseño visual queda fuera de esta etapa; conviene fijarla igual, ya que afecta la estructura de componentes, no solo el estilo.",
+  "findings": [
+    {
+      "severity": "high",
+      "statement": "El plan no especifica que en iOS los Web Push solo funcionan si la PWA fue instalada manualmente a la pantalla de inicio (Safari > 'Añadir a pantalla de inicio'), sin evento `beforeinstallprompt` disponible, y solo desde iOS 16.4+; sin un flujo de instalación explícito, los repartidores con iPhone no reciben ninguna notificación push de nuevas solicitudes u ofertas.",
+      "evidence": [
+        "original.md:63 — pregunta abierta 'Notificaciones de nuevas solicitudes y ofertas en una PWA (Android, iOS), y qué pasa si no llegan' no distingue la restricción de instalación de iOS.",
+        "original.md:55 — requisito 'Debe funcionar como PWA' sin mención de flujo de instalación A2HS."
+      ],
+      "impact": "Sin este flujo, los repartidores con iPhone (segmento significativo en Argentina) no verán notificaciones de nuevas solicitudes/ofertas en tiempo real, degradando la propuesta de valor central del marketplace (velocidad de oferta) para ese segmento y arriesgando el lanzamiento en Aguilares.",
+      "correction": "Definir en el plan un flujo de onboarding que guíe explícitamente a instalar la PWA en pantalla de inicio en iOS (con instrucciones visuales, ya que no existe `beforeinstallprompt`), condicionar o incentivar esa instalación para repartidores, y documentar el fallback in-app para quienes no instalen."
+    },
+    {
+      "severity": "high",
+      "statement": "El plan deja abierta la idea de 'ubicación en vivo' para calcular repartidores disponibles y cercanos, pero una PWA no puede hacer seguimiento de ubicación en segundo plano de forma confiable en iOS Safari ni de forma sostenida en Android sin que la app esté en primer plano; esa capacidad es propia de apps nativas, no de PWAs.",
+      "evidence": [
+        "original.md:62 — pregunta abierta 'ubicación en vivo, ubicación al marcarse disponible o zona declarada. Precisión y privacidad.'",
+        "original.md:36 — 'la solicitud queda visible ... primero los disponibles y más cercanos al punto de retiro' asume disponer de ubicación actualizada."
+      ],
+      "impact": "Si el diseño final asume 'ubicación en vivo' continua, la funcionalidad de ranking 'primero los disponibles y más cercanos' no será técnicamente viable como PWA y requerirá rediseño tardío, fuera de las restricciones técnicas ya fijadas (Next.js + PWA, sin app nativa).",
+      "correction": "Definir el modelo de disponibilidad como 'zona declarada + check-in manual o ubicación puntual al marcarse disponible / al abrir la app', no como tracking continuo en segundo plano, y documentar esa limitación como restricción técnica de PWA en el plan."
+    },
+    {
+      "severity": "medium",
+      "statement": "El plan no contempla que las notificaciones push en PWAs móviles son intrínsecamente poco confiables (Android puede suspender el service worker por optimización de batería/Doze; iOS restringe fuertemente la ejecución en segundo plano), por lo que depender solo de push para enterarse de nuevas solicitudes/ofertas es insuficiente.",
+      "evidence": [
+        "original.md:63 — la pregunta abierta ya reconoce el riesgo ('y qué pasa si no llegan') pero el plan no define una solución."
+      ],
+      "impact": "Repartidores pueden perder ofertas y solicitantes pueden no ver nuevas ofertas a tiempo, afectando directamente el flujo principal (creación → ofertas → selección) y la confianza en la plataforma durante el lanzamiento en Aguilares.",
+      "correction": "Especificar un mecanismo de respaldo en primer plano (suscripción en tiempo real vía Supabase Realtime o listeners de Firestore, más polling ligero al reabrir/enfocar la app) que actualice la lista de solicitudes/ofertas independientemente de si el push llegó."
+    },
+    {
+      "severity": "medium",
+      "statement": "La elección entre Supabase y Firebase (pregunta abierta 1) tiene una implicancia frontend concreta para notificaciones push que el plan no menciona: Firebase Cloud Messaging ofrece soporte de primera parte para Web Push (incluyendo iOS 16.4+) con SDK y manejo de tokens integrado, mientras que Supabase no incluye un servicio de push propio y requeriría implementar manualmente el protocolo Web Push con claves VAPID y un endpoint de envío.",
+      "assumptions": [
+        "Se asume que la recomendación final de BaaS (Supabase vs Firebase) se resolverá con otro insumo del Consejo; este hallazgo es un dato técnico de entrada para esa decisión, no una posición cerrada de frontend."
+      ],
+      "impact": "Si se elige Supabase sin planificar el trabajo adicional de implementar Web Push manualmente, el esfuerzo de frontend para notificaciones quedará subestimado en el cronograma del MVP.",
+      "correction": "Incluir en la justificación de la elección de BaaS el costo de implementación de push: si se elige Supabase, planificar explícitamente un servicio propio de Web Push con VAPID; si se elige Firebase, aprovechar FCM Web Push nativo."
+    },
+    {
+      "severity": "medium",
+      "statement": "El plan requiere que el repartidor cargue DNI, selfie y datos del vehículo para su aprobación, pero no define cómo se manejará esa carga de imágenes en celulares de gama baja y redes móviles inestables típicas de una localidad como Aguilares.",
+      "evidence": [
+        "original.md:14-15 — 'Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano'."
+      ],
+      "assumptions": [
+        "Se asume que Aguilares (localidad del interior de Tucumán) puede tener cobertura móvil menos estable que una capital de provincia; no se verificó con datos de cobertura reales del operador."
+      ],
+      "impact": "Sin compresión del lado del cliente ni reintentos/carga resumible, los repartidores con conexión débil o gama baja abandonarán el registro durante la carga de DNI/selfie, reduciendo la oferta de repartidores disponibles para el lanzamiento.",
+      "correction": "Especificar en el plan compresión de imágenes en el cliente antes de subir (resize/calidad), manejo de reintentos con feedback de progreso, y evaluar Background Sync del Service Worker para completar la carga cuando la red se recupere."
+    }
+  ],
+  "conflicts": [],
+  "helperRequests": []
+}

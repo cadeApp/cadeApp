@@ -1,0 +1,26 @@
+{
+  "conflicts": [
+    {
+      "class": "business",
+      "id": "conflict-subscription-paywall-vs-trial",
+      "parties": [
+        "marketing",
+        "pm",
+        "finance"
+      ],
+      "reversible": false,
+      "summary": "Tensión entre la decisión de cobrar abono mensual a comercios desde el primer día y la necesidad de marketing de ofrecer un período de prueba gratuito (trial) o cupo inicial bonificado para superar la barrera de adopción en Aguilares."
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "conflict-subscription-paywall-vs-trial",
+      "position": "adjust",
+      "summary": "Marketing ajusta su posición para converger con Finanzas y PM: en lugar de un período de prueba irrestricto que complique la previsibilidad financiera y la integración de débitos recurrentes, propone acotar el beneficio a un cupo de bienvenida estricto (los primeros 10 envíos bonificados por comercio o 14 días de gracia para el grupo inicial de 5 a 8 comercios ancla en Aguilares). Esto resuelve la barrera crítica de adopción y el arranque en frío (chicken-and-egg) sin alterar el modelo de suscripción mensual posterior, ratificando que la decisión final debe ser elevada al checkpoint humano de Lautaro por tratarse de una definición de negocio no técnica e irreversible."
+    }
+  ],
+  "_transport": {
+    "provider": "agy",
+    "compaction": 1
+  }
+}

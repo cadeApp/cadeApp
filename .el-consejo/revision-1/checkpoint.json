@@ -1,0 +1,431 @@
+{
+  "state": "RESOLVED",
+  "items": [
+    {
+      "id": "baas-choice",
+      "class": "technical",
+      "reversible": false,
+      "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+      "parties": [
+        "backend",
+        "pm",
+        "frontend"
+      ],
+      "scope": "conflict:baas-choice",
+      "override_required": true
+    },
+    {
+      "id": "state-machine-scope",
+      "class": "product",
+      "reversible": true,
+      "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+      "parties": [
+        "backend",
+        "pm"
+      ],
+      "scope": "conflict:state-machine-scope",
+      "override_required": false
+    },
+    {
+      "id": "subscription-payment-gateway",
+      "class": "money",
+      "reversible": false,
+      "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+      "parties": [
+        "backend",
+        "finance",
+        "legal"
+      ],
+      "scope": "conflict:subscription-payment-gateway",
+      "override_required": true
+    },
+    {
+      "id": "devops-baas-backup-criteria",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "El plan deja la elección entre Supabase y Firebase abierta para que el Consejo la recomiende, con criterios como modelo de datos, consultas geográficas y tiempo real. DevOps necesita que esa misma decisión incorpore explícitamente capacidad de backup/point-in-time recovery y costo del plan pago que la habilita, criterio que backend o seguridad podrían no priorizar de la misma forma al justificar la elección.",
+      "parties": [
+        "devops",
+        "backend",
+        "security"
+      ],
+      "normalized_from": "technical",
+      "scope": "conflict:devops-baas-backup-criteria",
+      "override_required": true
+    },
+    {
+      "class": "money",
+      "id": "conflict-monetizacion-particulares-pricing",
+      "parties": [
+        "finance",
+        "pm"
+      ],
+      "reversible": false,
+      "summary": "Falta de definición económica sobre si los particulares deben quedar excluidos, tener envíos de prueba gratuitos o contar con una modalidad de pase diario/por envío, elevando la decisión al checkpoint humano de Lautaro.",
+      "scope": "conflict:conflict-monetizacion-particulares-pricing",
+      "override_required": true
+    },
+    {
+      "class": "business",
+      "id": "conflict-subscription-paywall-vs-trial",
+      "parties": [
+        "marketing",
+        "pm",
+        "finance"
+      ],
+      "reversible": false,
+      "summary": "Tensión entre la decisión de cobrar abono mensual a comercios desde el primer día y la necesidad de marketing de ofrecer un período de prueba gratuito (trial) o cupo inicial bonificado para superar la barrera de adopción en Aguilares.",
+      "scope": "conflict:conflict-subscription-paywall-vs-trial",
+      "override_required": true
+    },
+    {
+      "class": "product",
+      "id": "conflict-particulars-monetization-scope",
+      "parties": [
+        "pm"
+      ],
+      "reversible": true,
+      "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual.",
+      "scope": "conflict:conflict-particulars-monetization-scope",
+      "override_required": false
+    },
+    {
+      "id": "qa-scope-vs-speed",
+      "class": "product",
+      "reversible": true,
+      "summary": "QA sostiene que el plan de MVP no puede darse por completo hasta definir una máquina de estados completa, reglas de autorización server-side y una estrategia de pruebas explícita; esto puede chocar con la prioridad de PM de lanzar rápido en Aguilares y tratar estos puntos como iteraciones post-MVP.",
+      "parties": [
+        "qa",
+        "pm"
+      ],
+      "scope": "conflict:qa-scope-vs-speed",
+      "override_required": false
+    },
+    {
+      "id": "courier-location-tradeoff",
+      "class": "product",
+      "reversible": false,
+      "summary": "El plan quiere ordenar solicitudes mostrando primero a los repartidores 'disponibles y más cercanos', lo que empuja hacia tracking de ubicación con buena precisión y frecuencia. Desde seguridad, eso debería minimizarse (ubicación declarada al marcarse disponible, sin historial persistente) porque un repartidor no es un empleado con consentimiento laboral pleno de ser rastreado. La decisión final de precisión/frecuencia de ubicación es de producto, no solo técnica.",
+      "parties": [
+        "security",
+        "pm",
+        "backend"
+      ],
+      "scope": "conflict:courier-location-tradeoff",
+      "override_required": true
+    },
+    {
+      "id": "recipient-pii-visibility-timing",
+      "class": "product",
+      "reversible": false,
+      "summary": "El plan no dice si el teléfono y la dirección de entrega del destinatario se muestran a todos los repartidores que ofertan o solo al elegido. Mostrarlos antes ayuda a que el repartidor calcule mejor su oferta (necesidad de producto/UX), pero expone datos de un tercero sin consentimiento a oferentes que nunca ganan la solicitud (postura de seguridad). Es una decisión de producto que security recomienda resolver a favor de revelar recién al aceptar la oferta.",
+      "parties": [
+        "security",
+        "pm",
+        "ux-ui"
+      ],
+      "scope": "conflict:recipient-pii-visibility-timing",
+      "override_required": true
+    },
+    {
+      "id": "devops-backup-vs-pii-retention",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Security (security.review.0) pide borrar DNI/selfie a los N días de la aprobación o baja del repartidor. Un esquema de backups periódicos del BaaS conserva esos documentos dentro de su propia ventana de retención (snapshots diarios/semanales) aunque se borren del registro activo, lo que puede incumplir en la práctica el compromiso de borrado si no se define explícitamente cómo se purgan o expiran los backups que contienen esos archivos.",
+      "parties": [
+        "devops",
+        "security",
+        "legal"
+      ],
+      "declared_by": "devops",
+      "origin": "rebuttal",
+      "scope": "conflict:devops-backup-vs-pii-retention",
+      "override_required": true
+    },
+    {
+      "id": "backup-retention-vs-pii-deletion",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "DevOps pide una cadencia de backup/point-in-time recovery probada para el MVP (devops.review.1), incluyendo los documentos de DNI y selfie de los repartidores. Security exige en security.review.0 una política de retención/borrado explícita para esos mismos archivos (borrar a los N días de la aprobación o al dar de baja al repartidor). Ambas cosas chocan si no se diseñan juntas: un backup completo del bucket de storage puede conservar indefinidamente un DNI/selfie que ya fue 'borrado' en la base viva, vaciando de sentido la política de retención y extendiendo la superficie de una eventual filtración. Falta definir si los backups tienen su propia ventana de expiración/purga para datos sensibles o si se excluyen del backup general y se manejan aparte.",
+      "parties": [
+        "security",
+        "devops",
+        "legal"
+      ],
+      "declared_by": "security",
+      "origin": "rebuttal",
+      "scope": "conflict:backup-retention-vs-pii-deletion",
+      "override_required": true
+    }
+  ],
+  "derived": [
+    {
+      "id": "finding:backend.review.0",
+      "scope": "finding:backend.review.0",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "El plan no define un mecanismo transaccional para garantizar que solo una oferta quede aceptada por solicitud; sin control de concurrencia en el servidor, dos aceptaciones simultáneas (doble clic, dos pestañas, reintento de red) pueden dejar la solicitud con más de un repartidor confirmado.",
+      "parties": [
+        "backend"
+      ],
+      "emitted_by": "backend"
+    },
+    {
+      "id": "finding:backend.review.1",
+      "scope": "finding:backend.review.1",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "La oferta mínima de ARS 1.000 se declara como regla de negocio pero el plan no especifica en qué capa se valida, dejando abierta la posibilidad de que solo se valide en el cliente.",
+      "parties": [
+        "backend"
+      ],
+      "emitted_by": "backend"
+    },
+    {
+      "id": "finding:pm.review.0",
+      "scope": "finding:pm.review.0",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "El plan carece de una máquina de estados finita (FSM) y reglas para excepciones operativas en el ciclo de vida de la solicitud.",
+      "parties": [
+        "pm"
+      ],
+      "emitted_by": "pm"
+    },
+    {
+      "id": "finding:qa.review.0",
+      "scope": "finding:qa.review.0",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "El flujo de selección de ofertas (pasos 4-5) no define ningún mecanismo de exclusión mutua ni transición atómica de estado, por lo que dos aceptaciones casi simultáneas (doble tap, dos pestañas, reintento de red) podrían confirmarse ambas como oferta ganadora.",
+      "parties": [
+        "qa"
+      ],
+      "emitted_by": "qa"
+    },
+    {
+      "id": "finding:qa.review.1",
+      "scope": "finding:qa.review.1",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "El plan describe la aprobación manual del repartidor (DNI, selfie, vehículo) como paso previo a ofertar, pero no especifica ningún control de autorización server-side que impida ofertar a un repartidor pendiente, rechazado o luego suspendido por el admin.",
+      "parties": [
+        "qa"
+      ],
+      "emitted_by": "qa"
+    },
+    {
+      "id": "finding:security.review.0",
+      "scope": "finding:security.review.0",
+      "class": "high_risk",
+      "reversible": false,
+      "override_required": true,
+      "summary": "El plan exige que los repartidores carguen DNI y selfie para la aprobación manual, pero no define cómo se almacenan, cifran, controlan los accesos, ni por cuánto tiempo se retienen o cuándo se borran esos datos.",
+      "parties": [
+        "security"
+      ],
+      "emitted_by": "security"
+    }
+  ],
+  "approved": [
+    {
+      "id": "state-machine-scope",
+      "scope": "conflict:state-machine-scope",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Corregir los 6 críticos\" (aceptación atómica, piso ARS 1.000 en la base, FSM server-side, chequeo de aprobación en cada oferta, DNI/selfie en bucket privado solo admin)."
+      ]
+    },
+    {
+      "id": "conflict-particulars-monetization-scope",
+      "scope": "conflict:conflict-particulars-monetization-scope",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Particulares: \"Solo comercios en el MVP\"."
+      ]
+    },
+    {
+      "id": "qa-scope-vs-speed",
+      "scope": "conflict:qa-scope-vs-speed",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 2/Pruebas: \"E2E de todos los flujos\"."
+      ]
+    }
+  ],
+  "overrides": [
+    {
+      "id": "baas-choice",
+      "scope": "conflict:baas-choice",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Supabase como BaaS\" (con plan contratado, backups/PITR y costo documentados antes del primer DNI real)."
+      ]
+    },
+    {
+      "id": "subscription-payment-gateway",
+      "scope": "conflict:subscription-payment-gateway",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: NO marcó \"Mercado Pago Suscripciones\".",
+        "Checkpoint 1/Prueba: \"Piloto gratis sin límite\".",
+        "Checkpoint 2/Cobro: \"se podria poner mp para futuro, pero nuestra idea es cobrar directamente a los que se quieran adherir una vez termine el piloto, que dicho piloto TyC nosotros lo elegimos, tipo podria ser 2 dias y nosotros ver que hay buen funcionamiento y termina el piloto\".",
+        "Checkpoint 3/Cobro: \"Si, es asi, pero facturacion no habra pq no, no somos ni monotributistas ni nada, todo en negro como se diria en argentina\"."
+      ]
+    },
+    {
+      "id": "devops-baas-backup-criteria",
+      "scope": "conflict:devops-baas-backup-criteria",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Supabase como BaaS\" (con plan contratado, backups/PITR y costo documentados antes del primer DNI real)."
+      ]
+    },
+    {
+      "id": "conflict-monetizacion-particulares-pricing",
+      "scope": "conflict:conflict-monetizacion-particulares-pricing",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Particulares: \"Solo comercios en el MVP\"."
+      ]
+    },
+    {
+      "id": "conflict-subscription-paywall-vs-trial",
+      "scope": "conflict:conflict-subscription-paywall-vs-trial",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Prueba: \"Piloto gratis sin límite\".",
+        "Checkpoint 2/Cobro: \"se podria poner mp para futuro, pero nuestra idea es cobrar directamente a los que se quieran adherir una vez termine el piloto, que dicho piloto TyC nosotros lo elegimos, tipo podria ser 2 dias y nosotros ver que hay buen funcionamiento y termina el piloto\"."
+      ]
+    },
+    {
+      "id": "courier-location-tradeoff",
+      "scope": "conflict:courier-location-tradeoff",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Ubicación: \"Lista única por ciudad\"."
+      ]
+    },
+    {
+      "id": "recipient-pii-visibility-timing",
+      "scope": "conflict:recipient-pii-visibility-timing",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Destinatario visible al aceptar\" (revelación progresiva, distancia calculada en servidor)."
+      ]
+    },
+    {
+      "id": "devops-backup-vs-pii-retention",
+      "scope": "conflict:devops-backup-vs-pii-retention",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 2/DNI-selfie: \"Guardar mientras esté activo\" (borrar 30 días después de la baja).",
+        "Checkpoint 3/Backups: \"Fuera del backup\"."
+      ]
+    },
+    {
+      "id": "backup-retention-vs-pii-deletion",
+      "scope": "conflict:backup-retention-vs-pii-deletion",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 2/DNI-selfie: \"Guardar mientras esté activo\" (borrar 30 días después de la baja).",
+        "Checkpoint 3/Backups: \"Fuera del backup\"."
+      ]
+    },
+    {
+      "id": "finding:backend.review.0",
+      "scope": "finding:backend.review.0",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Corregir los 6 críticos\" (aceptación atómica, piso ARS 1.000 en la base, FSM server-side, chequeo de aprobación en cada oferta, DNI/selfie en bucket privado solo admin)."
+      ]
+    },
+    {
+      "id": "finding:backend.review.1",
+      "scope": "finding:backend.review.1",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Corregir los 6 críticos\" (aceptación atómica, piso ARS 1.000 en la base, FSM server-side, chequeo de aprobación en cada oferta, DNI/selfie en bucket privado solo admin)."
+      ]
+    },
+    {
+      "id": "finding:pm.review.0",
+      "scope": "finding:pm.review.0",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Corregir los 6 críticos\" (aceptación atómica, piso ARS 1.000 en la base, FSM server-side, chequeo de aprobación en cada oferta, DNI/selfie en bucket privado solo admin)."
+      ]
+    },
+    {
+      "id": "finding:qa.review.0",
+      "scope": "finding:qa.review.0",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Corregir los 6 críticos\" (aceptación atómica, piso ARS 1.000 en la base, FSM server-side, chequeo de aprobación en cada oferta, DNI/selfie en bucket privado solo admin)."
+      ]
+    },
+    {
+      "id": "finding:qa.review.1",
+      "scope": "finding:qa.review.1",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Corregir los 6 críticos\" (aceptación atómica, piso ARS 1.000 en la base, FSM server-side, chequeo de aprobación en cada oferta, DNI/selfie en bucket privado solo admin)."
+      ]
+    },
+    {
+      "id": "finding:security.review.0",
+      "scope": "finding:security.review.0",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 1/Acuerdos: aprobó \"Corregir los 6 críticos\" (aceptación atómica, piso ARS 1.000 en la base, FSM server-side, chequeo de aprobación en cada oferta, DNI/selfie en bucket privado solo admin).",
+        "Checkpoint 2/DNI-selfie: \"Guardar mientras esté activo\" (borrar 30 días después de la baja).",
+        "Checkpoint 3/Backups: \"Fuera del backup\"."
+      ]
+    }
+  ],
+  "additionalDecisions": [
+    {
+      "id": "legal.review.3",
+      "scope": "finding:legal.review.3",
+      "kind": "decisión adicional (no era ítem de checkpoint)",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Checkpoint 3/Seguro: \"entonces podemos pedir solo licencia, pero no obligatoria, pero le daria como algun tipo de prioridad o algo segun mas documentacion suban asi promovemos que suban la documentacion\""
+      ]
+    },
+    {
+      "id": "scope:ai-implementation-plan",
+      "scope": "input:scope",
+      "kind": "ampliación de alcance durante el checkpoint (no revisada por el Consejo)",
+      "approved_by": "Lautaro (Lautaro073)",
+      "approved_at": "2026-09-17T08:27:34Z",
+      "evidence": [
+        "Mensaje del usuario: \"tambien tene en cuenta que tendremos un entorno real, develop,staging, produccion en github, y que ademas del master plan debe haber un plan de implementacion para las ia pq seremos 3 y todos usaremos agy para programar asi que debes crear buenas reglas, implementaciones, modularizaciones y separar bien las tareas\""
+      ]
+    }
+  ]
+}

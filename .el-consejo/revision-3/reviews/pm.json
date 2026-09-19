@@ -1,0 +1,34 @@
+{
+  "agentId": "pm",
+  "verdict": "conditional",
+  "confidence": 0.94,
+  "summary": "Dictamen de PM: CONDICIONAL (0.94). El cambio solicitado por Lautaro073 para incorporar pins en mapas resuelve un problema critico del producto en Aguilares (ausencia de numeracion catastral y calles sin nombre), reduciendo friccion y cancelaciones de envios. Se ratifica la decision D15 de Lautaro073: antes de ofertar, el repartidor ve unicamente barrio de retiro, barrio de entrega, tipo de paquete, medio de pago y distancia aproximada redondeada a 0.5 km calculada en servidor. Al aceptar la oferta, se revelan los puntos exactos, recorrido y boton externo a Google Maps. D3 y D7 se mantienen plenamente vigentes. Se aprueba la formula server-side de Haversine con factor 1.30 y los centroides de zones como respaldo. Condicionado a que el mapa nunca sea bloqueante para operar y que la degradacion a direccion en texto este garantizada.",
+  "findings": [
+    {
+      "statement": "D15 preserva D3 y D7: se prohibe terminantemente el tracking en vivo o la revelacion de coordenadas antes de aceptar la oferta.",
+      "severity": "critical",
+      "impact": "Si un repartidor tuviera acceso a las coordenadas antes de ser aceptado, se violaria la revelacion progresiva D3, exponiendo la ubicacion de destinatarios y hogares de comercios a personas no seleccionadas.",
+      "evidence": [
+        "docs/master-plan.md §2 (D3 y D7), §6.5 (revelacion progresiva).",
+        "Solicitud de Lautaro073: el repartidor ve el mapa y el recorrido recien al aceptar la oferta."
+      ],
+      "correction": "Registrar formalmente la Decision D15 en el master plan (§2) estableciendo que la lista de solicitudes abiertas y la pantalla de ofertar no envian coordenadas ni mapa al cliente. Solo tras matched se expone el mapa con los puntos confirmados.",
+      "assumptions": [
+        "El redondeo a 0.5 km provee suficiente precision para que el repartidor evalue su tarifa sin filtrar la ubicacion geografica exacta."
+      ]
+    },
+    {
+      "statement": "Respaldo obligatorio: la app debe ser 100% operativa si el mapa no carga o el usuario no puede usar mapas.",
+      "severity": "high",
+      "impact": "Si el mapa fuera el unico medio para dar de alta un comercio o crear una solicitud, usuarios con mala conectividad, navegadores antiguos o cuota agotada quedarian excluidos del servicio.",
+      "evidence": [
+        "docs/master-plan.md §8 (PWA accesible en redes intermitentes).",
+        "Restriccion no negociable: el mapa nunca es la unica via."
+      ],
+      "correction": "Hacer obligatorio el campo de direccion y referencia en texto; si el mapa falla o no se marca pin, el sistema calcula la distancia utilizando los centroides de la tabla zones.",
+      "assumptions": [
+        "La tabla zones cubre la totalidad del ejido urbano de Aguilares."
+      ]
+    }
+  ]
+}

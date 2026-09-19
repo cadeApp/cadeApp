@@ -1,0 +1,55 @@
+{
+  "agentId": "pm",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "correction": "Completar la columna 'DoD / pruebas' para T-305 a T-309 definiendo aserciones mínimas obligatorias (p. ej., T-305: bloqueo de oferta a repartidor pending y 403 en ruta protegida; T-306: bloqueo de publicación ante paid_until vencido y toggle de piloto; T-307: degradación graceful con push denegado y recuperación tras reconexión; T-308: suspensión cautelar inmediata de oferta activa; T-309: timeout controlado y carga exitosa en red 3G simulada con 0 violaciones axe).",
+      "evidence": [
+        "Tabla §7 Fase 3, filas T-305 a T-309, columna 'DoD / pruebas': figura '—' sin criterios verificables ni aserciones requeridas."
+      ],
+      "impact": "Los desarrolladores y agentes de agy no disponen de especificación clara de qué flujos, aserciones o condiciones de borde deben validar para considerar completadas estas suites críticas, lo que arriesga cobertura superficial o desalineación con el alcance del MVP.",
+      "severity": "high",
+      "statement": "Cinco tareas de pruebas E2E en Fase 3 (T-305, T-306, T-307, T-308 y T-309) carecen de Criterios de Aceptación y Definition of Done (DoD), figurando con guion vacío ('—')."
+    },
+    {
+      "correction": "Redistribuir tareas de Fase 3 reasignando a P1 las pruebas E2E de backend/autorización y suscripciones (T-305 y T-306) o la implementación de páginas legales (T-311), nivelando el esfuerzo del equipo.",
+      "evidence": [
+        "§7 Fases 2 y 3 y Paralelismo sugerido: P3 tiene asignadas T-201, T-202, T-301, T-302, T-305, T-306, T-308, T-309 y T-311 (9 tareas); P1 solo T-203 y T-310 (2 tareas); P2 tiene 5 tareas."
+      ],
+      "impact": "P3 se convierte en el cuello de botella del equipo retrasando el cierre del MVP, mientras P1 queda ocioso tras completar T-310, contraviniendo el objetivo de paralelismo eficiente entre 3 personas.",
+      "severity": "high",
+      "statement": "Desbalance severo de carga de trabajo entre pistas en Fases 2 y 3: P3 asume 9 tareas incluyendo el arnés E2E completo y 5 suites de pruebas, mientras P1 solo tiene 2 tareas."
+    },
+    {
+      "correction": "Adelantar T-301 en cuanto concluya la Fase 1 (o reasignarlo a P1 al inicio de Fase 3 tras T-203), desacoplándolo de la finalización de T-201 y T-202 para desbloquear de inmediato las pruebas E2E de P2.",
+      "evidence": [
+        "§7 Paralelismo sugerido ubica T-301 después de T-201 y T-202 en la pista P3 ('... → T-201 → T-202 → T-301'), a pesar de que las dependencias de T-301 son solo 'T-003, Fase 1'. T-303 de P2 depende de T-301."
+      ],
+      "impact": "P2 queda bloqueado sin poder ejecutar T-303 ni T-304 tras culminar T-205, esperando a que P3 termine tareas no relacionadas con E2E (PWA y cliente push), serializando artificialmente la Fase 3.",
+      "severity": "high",
+      "statement": "Secuenciamiento bloqueante del arnés E2E (T-301) en la pista de P3 retrasa innecesariamente el inicio de las pruebas de P2."
+    },
+    {
+      "correction": "Iniciar la redacción y envío a revisión legal de T-311 inmediatamente después de T-121 (en Fase 1/inicio de Semana B+), gestionando el trámite externo en paralelo para contar con el dictamen legal antes de llegar a T-312.",
+      "evidence": [
+        "§7 Fases 2 y 3: T-311 figura al final de la pista P3 ('... → T-309 → T-311') con dependencia 'T-111, T-121' y DoD 'Textos revisados por un abogado (bloqueante externo)'. T-312 exige 'abogado OK'."
+      ],
+      "impact": "Dado que la revisión de un abogado depende de tiempos externos ajenos al ciclo ágil de desarrollo, postergar el trámite legal hacia el final de Fase 3 arriesga demorar la salida a producción (T-312) aunque el desarrollo técnico esté terminado.",
+      "severity": "medium",
+      "statement": "Riesgo de bloqueo del lanzamiento por calendarización tardía de la revisión legal externa en T-311."
+    },
+    {
+      "correction": "Incorporar explícitamente en el DoD de T-312 y en docs/runbooks/release.md el hito de validación y aprobación formal del checkpoint humano de producto/negocio antes del merge final a main.",
+      "evidence": [
+        "§7 T-312: DoD indica únicamente 'PR staging → main aprobado por las 3 personas' y verificación técnica (E2E verde, migraciones, variables, rollback, abogado OK, simulacro OK)."
+      ],
+      "impact": "Se podría ejecutar el pase a producción sin validación formal del usuario/negocio sobre el alcance y funcionalidad del MVP, vulnerando el principio constitucional de que producto y negocio pasan por un checkpoint humano.",
+      "severity": "medium",
+      "statement": "Falta de checkpoint explícito de aceptación de producto y negocio en el checklist de release T-312."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Dictamen condicional del PM sobre la Sección 7 (Fases 2 y 3 y paralelismo). El plan define con claridad la descomposición técnica y el flujo hacia producción, pero presenta tres problemas clave desde la perspectiva de producto, alcance y gestión: 1) Cinco tareas E2E de Fase 3 (T-305 a T-309) carecen de Criterios de Aceptación y DoD detallado; 2) Desbalance severo de carga de trabajo, con 9 tareas concentradas en P3 frente a solo 2 en P1; y 3) Subóptima calendarización en la ruta crítica, donde el retraso del arnés E2E (T-301) y la gestión tardía de la revisión legal externa (T-311) ponen en riesgo la salida en T-312.",
+  "verdict": "conditional"
+}

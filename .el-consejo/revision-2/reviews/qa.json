@@ -1,0 +1,79 @@
+{
+  "agentId": "qa",
+  "verdict": "conditional",
+  "confidence": 0.75,
+  "summary": "El plan tiene fortalezas reales para QA: DoD de las tareas de P1 (RPC/RLS) con casos pgTAP concretos y falsables, reglas explícitas contra pruebas que no pueden fallar, mocks de base en tests de RPC y sleeps fijos, y un CI que re-ejecuta typecheck/lint/test/test:db/build en cada PR en vez de confiar en el reporte del agente. Sin embargo hay dos vacíos críticos frente al pedido humano y a D10: no existe ningún procedimiento para retomar una tarea 'en curso' iniciada por otra persona (solo hay skill para tomar una tarea nueva), y la matriz de E2E de la Fase 3 no cubre el registro/alta de comercio, pese a que el master plan lo lista como primer flujo obligatorio bajo D10. Además, las RPC admin_* que exige el master plan no tienen tarea de P1 que las cree ni pgTAP asignado, el staging compartido no tiene protección documentada contra corridas E2E simultáneas que tocan una bandera global (pilot_active), varias tareas de P2 en Fase 1 no dejan claro qué prueba automatizada respalda su DoD hasta que llega el E2E semanas después, y el criterio de '100% de ramas' de T-006 no está reforzado por ningún paso de cobertura en CI.",
+  "findings": [
+    {
+      "severity": "critical",
+      "statement": "El plan define en detalle cómo tomar una tarea nueva (skill tomar-tarea) pero no define ningún procedimiento para retomar una tarea 'en curso' que dejó otra persona, o la misma persona en otro momento: no hay paso que obligue a re-ejecutar typecheck/lint/test/test:db sobre la rama existente antes de continuar, ni un campo en la ficha para registrar qué se hizo y qué evidencia hay, ni una regla que obligue a pushear el trabajo en curso para que no quede solo en el disco de quien lo empezó.",
+      "impact": "Quien retoma una tarea confía ciegamente en el campo 'Estado: en curso' de la ficha sin verificar si el código en la rama remota realmente compila, pasa lint y tests; si la persona anterior tenía cambios sin pushear, ese trabajo se pierde sin que nadie lo note. Esto incumple directamente el criterio de aceptación humano 'cualquiera tiene que poder retomar o continuar el trabajo en momentos distintos', y abre la puerta a que una tarea se declare 'hecha' sobre una base que nadie verificó de punta a punta.",
+      "correction": "Agregar una skill 'retomar-tarea' (o ampliar tomar-tarea) que exija: git fetch + checkout de la rama exacta, correr pnpm typecheck/lint/test (y test:db si aplica) sobre el estado actual antes de tocar nada, y comparar el resultado contra los checkboxes de DoD ya marcados en la ficha. Agregar a la ficha una sección 'Progreso' (fecha, qué se hizo, qué falta, último commit). Agregar una regla que obligue a pushear la rama de la tarea al cierre de cada sesión de agy, no solo al abrir el PR.",
+      "evidence": [
+        "original.md:245-261 (skill tomar-tarea solo cubre iniciar tarea nueva: 'git switch develop && git pull && git switch -c feat/T-xxx-<slug>')",
+        "original.md:397-422 (ficha de tarea solo registra 'Estado: pendiente | en curso | en review | hecha', sin sección de progreso ni evidencia acumulada)",
+        "original.md:435-443 (§10: 'Sesiones de agy: una sesión por tarea y por rama. No reutilizar una conversación de otra tarea', sin instrucción sobre retomar una tarea de otra persona)",
+        "original.md:119-124 (reglas de seguridad operativa prohíben push a develop/staging/main pero no exigen pushear commits WIP a la rama de la tarea)"
+      ]
+    },
+    {
+      "severity": "critical",
+      "statement": "La matriz de E2E de la Fase 3 (T-301 a T-309) no incluye ningún spec para el registro/alta de comercio ni para el registro de la versión de consentimiento aceptada (T-111), pese a que el master plan lo lista como el primer flujo obligatorio de la estrategia de pruebas (§13.3) bajo la decisión cerrada D10 ('E2E de todos los flujos').",
+      "impact": "El checklist de release T-312 exige 'E2E verde' y se aprueba confiando en que 'todos los flujos' están cubiertos, pero el flujo de entrada de todo comercio a la plataforma nunca se prueba de punta a punta de forma automatizada; solo tiene la verificación manual y no reproducible de T-111 ('el comercio se registra y ve su panel'). Una regresión en el registro o en el guardado de la versión de consentimiento podría llegar a producción sin que ningún gate la detecte, incumpliendo D10 tal como queda redactada la matriz.",
+      "correction": "Agregar una tarea de Fase 3 (pista P2, dependiente de T-301 y T-111) con un spec e2e/specs/merchant-registration.spec.ts que cubra alta de comercio, consentimientos y su versión registrada, y sumarla a las dependencias de T-312. Actualizar la fila correspondiente de la matriz requisito→tarea→prueba del master plan (§16) para reflejarlo.",
+      "evidence": [
+        "docs/master-plan.md:308-310 (§13.3, primer flujo E2E requerido: 'registro de comercio; onboarding de repartidor y aprobación del admin con MFA')",
+        "docs/master-plan.md:35 (D10, cerrada: 'E2E de todos los flujos antes de pasar a producción')",
+        "original.md:371-382 (T-302 solo cubre onboarding de repartidor + MFA + DNI duplicado; ningún spec de T-301 a T-309 cubre alta de comercio)",
+        "original.md:347 (T-111 'alta de comercio con consentimientos', DoD verificado solo como 'el comercio se registra y ve su panel', sin spec e2e asociado)"
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "Ninguna tarea de la Fase 1 crea las funciones RPC admin_decide_courier, admin_suspend_courier, admin_verify_document, admin_set_subscription ni admin_update_setting que el master plan exige como única vía para esas operaciones críticas. T-122 y T-123 dependen de ellas para su DoD ('sin aal2 no se entra', 'suspender retira las ofertas pending', 'cambiar el piso se refleja en submit_offer'), pero son de la pista P3 y su lista de 'Archivos permitidos' no incluye supabase/migrations/** ni supabase/tests/**, mientras que la regla del §2 dice que solo P1 mergea migraciones.",
+      "impact": "O bien P3 termina escribiendo migraciones fuera de su carril (rompiendo 'una tarea = archivos permitidos' y 'solo P1 mergea migraciones'), o esas RPC se improvisan sin ficha, sin pgTAP y sin revisión de P1, dejando el gate de MFA de admin y la suspensión de repartidores sin prueba automatizada de base.",
+      "correction": "Agregar una tarea de Fase 1, pista P1, dependiente de contracts-v1, que cree las 5 RPC admin_* con sus políticas RLS/SECURITY DEFINER y sus tests pgTAP (caso feliz, sin aal2, rol incorrecto, estado incorrecto), y agregarla como dependencia explícita de T-122 y T-123.",
+      "evidence": [
+        "docs/master-plan.md:173 (lista de RPC críticas incluye admin_decide_courier, admin_suspend_courier, admin_verify_document, admin_set_subscription, admin_update_setting)",
+        "original.md:353-354 (T-122 y T-123, pista P3, 'Archivos permitidos' sin supabase/migrations/** ni supabase/tests/**)",
+        "original.md:26 ('Solo P1 mergea migraciones y regenera src/types/database.types.ts')",
+        "original.md:343-346 (T-101 a T-104, únicas tareas de Fase 1 que crean RPC/migraciones, ninguna menciona los RPC admin_*)"
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "El plan no documenta ningún mecanismo (concurrency group, lock o namespacing de datos) que impida que dos corridas de e2e-staging.yml se ejecuten en paralelo contra el mismo proyecto de Supabase staging. T-306 apaga y prende platform_settings.pilot_active, una bandera global de toda la plataforma; si corre al mismo tiempo que otro spec que necesita que un comercio pueda publicar (por ejemplo T-303), puede tumbarlo de forma no determinística.",
+      "impact": "Con 3 personas mergeando a staging en la misma franja horaria, dos ejecuciones de la suite E2E completa pueden solaparse y generar fallas intermitentes que no son un defecto real del código sino interferencia entre corridas: exactamente el tipo de prueba flaky que el resto del documento se esfuerza en evitar. Esto puede bloquear el release T-312 con falsos negativos o esconder un fallo real detrás de ruido conocido.",
+      "correction": "Agregar a e2e-staging.yml (y a migrate.yml) un concurrency group por ambiente que serialice las corridas contra staging; documentar en e2e/AGENTS.md que specs que tocan configuración global (como T-306) deben restaurarla en su teardown y, de ser posible, excluirse de la ejecución en paralelo con el resto de la suite.",
+      "evidence": [
+        "original.md:170 (platform_settings es una tabla global, sin partición por corrida de prueba)",
+        "original.md:376 (T-306 'piloto encendido/apagado' modifica platform_settings.pilot_active)",
+        "docs/master-plan.md:254 ('platform_settings.pilot_active = true' es una bandera única de la plataforma)",
+        "original.md:315-316 (migrate.yml y e2e-staging.yml no mencionan serialización entre corridas)"
+      ]
+    },
+    {
+      "severity": "medium",
+      "statement": "Los DoD de T-111 a T-115 (y parte de T-121) describen resultados observables en prosa sin indicar qué prueba automatizada los respalda, a diferencia de las tareas de P1 que citan casos pgTAP exactos. Como 40-testing.md solo pide tests de componente para 'lógica no trivial' y deja los flujos para Playwright (que llega recién en Fase 3), las server actions y queries de estas tareas pueden quedar sin ninguna prueba automatizada durante varias semanas.",
+      "impact": "Un agente puede marcar T-113 o T-114 como 'hecha' habiendo verificado el comportamiento a mano una sola vez, sin dejar ninguna prueba que falle si alguien rompe esa lógica después. Recién en Fase 3 aparecería la regresión, y para entonces puede ser difícil saber si el defecto es nuevo o viene de la implementación original.",
+      "correction": "Para cada tarea P2 de Fase 1, agregar al DoD un test mínimo (unitario o de componente) para la lógica de la server action/query involucrada -por ejemplo, mockear la respuesta del wrapper de RPC y verificar el mapeo a ActionResult y los mensajes de error- además de la verificación manual, para que exista una prueba que se rompa antes de que llegue el E2E de Fase 3.",
+      "evidence": [
+        "original.md:343-346 (T-101 a T-104 especifican pgTAP exacto: '999, 1000 y 1001', 'N=10, una sola ganadora')",
+        "original.md:347-351 (T-111 a T-115: DoD en prosa sin tipo de prueba nombrado)",
+        "original.md:180 (regla 40-testing.md: tests de componente solo para lógica no trivial; flujos cubiertos por Playwright)",
+        "original.md:384-393 (Fase 1 de P2 corre semanas antes que sus E2E correspondientes, T-303/T-304/T-307)"
+      ]
+    },
+    {
+      "severity": "low",
+      "statement": "T-006 exige '100% de ramas en domain' como parte del DoD, pero el pipeline de CI descrito (ci.yml) no incluye ningún paso que mida o exija un umbral de cobertura; el paso 'test' solo corre las pruebas, no verifica su cobertura.",
+      "impact": "Ese criterio de DoD queda librado al reporte que el propio agente decida adjuntar al PR, sin un gate automático que lo confirme de forma independiente, contradiciendo de forma puntual el principio del propio plan de que 'nada se da por verificado sin evidencia'.",
+      "correction": "Agregar a ci.yml un paso de cobertura con umbral (por ejemplo vitest --coverage con threshold de ramas acotado a src/domain) que falle el build si no se cumple, en vez de dejarlo como una cifra que el agente reporta pero nadie audita.",
+      "evidence": [
+        "original.md:333 (T-006 DoD: '100 % de ramas en domain')",
+        "original.md:314 (pipeline ci.yml: typecheck → lint → test → supabase start + test:db → db:types sin diff → build, sin paso de cobertura)"
+      ]
+    }
+  ],
+  "helperRequests": []
+}

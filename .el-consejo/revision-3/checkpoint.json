@@ -1,0 +1,73 @@
+{
+  "state": "RESOLVED",
+  "items": [
+    {
+      "id": "conf-privacidad-coordenadas-pre-oferta",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Privacidad pre-oferta resuelta por Decisión D15 de Lautaro073: antes de ofertar, el repartidor ve únicamente barrio de retiro, barrio de entrega, tipo de paquete, medio de pago y distancia aproximada calculada en el servidor y redondeada a 0.5 km. No recibe coordenadas ni mapa. Al aceptar la oferta, se revelan los puntos exactos, recorrido y botón \"Abrir en Google Maps\". D3 plenamente vigente.",
+      "parties": [
+        "security",
+        "pm",
+        "ux-ui",
+        "backend",
+        "legal"
+      ],
+      "override_required": false,
+      "resolution": "DECIDIDO_POR_HUMANO_D15"
+    },
+    {
+      "id": "conf-visibilidad-local-pre-oferta",
+      "class": "product",
+      "reversible": false,
+      "summary": "El punto del local sigue exactamente la misma regla: antes de ofertar solo el barrio; el punto exacto se revela al aceptar la oferta.",
+      "parties": [
+        "pm",
+        "security",
+        "backend"
+      ],
+      "override_required": false,
+      "resolution": "DECIDIDO_POR_HUMANO_D15"
+    },
+    {
+      "id": "conf-proveedor-mapas-costo",
+      "class": "money",
+      "reversible": true,
+      "summary": "Se aprueba Google Maps Platform con @vis.gl/react-google-maps bajo import dinámico. Cupo gratuito de 10.000 cargas de Dynamic Maps cubre holgadamente el piloto (~1.820 cargas/mes = ~18% del cupo, $0 USD). Se fijan Quota Caps y alertas de presupuesto en Google Cloud Billing. La app degrada graceful a texto si la API falla.",
+      "parties": [
+        "finance",
+        "frontend",
+        "ux-ui"
+      ],
+      "override_required": false,
+      "resolution": "ADJUDICADO_POR_CONSENSO"
+    },
+    {
+      "id": "conf-calculo-distancia-rutas-vs-haversine",
+      "class": "technical",
+      "reversible": true,
+      "summary": "Se aprueba el cálculo server-side en Postgres con fórmula Haversine x factor vial 1.30 redondeado a múltiplos de 500 m. Se descarta Routes API por costo y latencia. Los centroides de zones quedan como respaldo si faltan coordenadas.",
+      "parties": [
+        "backend",
+        "finance",
+        "pm"
+      ],
+      "override_required": false,
+      "resolution": "ADJUDICADO_POR_CONSENSO"
+    },
+    {
+      "id": "conf-ratificacion-d7-sin-tracking",
+      "class": "product",
+      "reversible": false,
+      "summary": "Se ratifica que D7 sigue 100% vigente: no hay seguimiento en vivo, no hay GPS de repartidores, no hay ranking por cercanía.",
+      "parties": [
+        "pm",
+        "security",
+        "legal",
+        "ux-ui"
+      ],
+      "override_required": false,
+      "resolution": "RATIFICADO"
+    }
+  ]
+}

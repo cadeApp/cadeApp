@@ -1,0 +1,355 @@
+{
+  "phase": "ADJUDICATION",
+  "conflict": {
+    "id": "conf-codeowners-routegroup-p2-p3",
+    "class": "technical",
+    "reversible": true,
+    "summary": "CODEOWNERS (original.md:313) asigna grupos de ruta completos: `src/app/(merchant|courier)/` y `src/ui/` → P2; `src/app/(admin|public)/` → P3. Pero las 'Archivos permitidos' de la Fase 1 contradicen ese patrón: T-111 (dueña P2) tiene permitido escribir en `src/app/(public)/login/**`, ruta que CODEOWNERS asigna a P3; T-121 (dueña P3) tiene permitido escribir en `src/app/(courier)/onboarding/**`, ruta que CODEOWNERS asigna a P2. No es un caso aislado de auth: cualquier tarea futura que necesite una subruta dentro de un grupo 'ajeno' repite el problema, porque CODEOWNERS es granular por grupo de ruta y 'Archivos permitidos' es granular por subcarpeta, y las dos tablas no están sincronizadas.",
+    "parties": [
+      "frontend",
+      "pm",
+      "backend"
+    ],
+    "declared_by": "frontend",
+    "origin": "rebuttal"
+  },
+  "reviews": [
+    {
+      "agentId": "frontend",
+      "verdict": "conditional",
+      "confidence": 0.72,
+      "summary": "El plan separa bien src/features/** y src/app/(grupo)/** entre las tres pistas, define una máquina de estados server-side sólida y reglas de accesibilidad razonables (§60-ui-accesibilidad.md). Pero para el objetivo de 'trabajar en simultáneo sin pisarse y poder retomar en cualquier momento' quedan puntos sin resolver: archivos raíz compartidos (layout, middleware) sin dueño, dependencia real de P3 hacia src/ui/** (T-008) no declarada, conflictos previsibles de package.json/lockfile sin procedimiento, un punto ciego en el barrel index.ts sobre exports de cliente vs. servidor, y fichas de tarea sin campo de handoff más allá de un estado enum.",
+      "findings": [
+        {
+          "id": "frontend.review.0",
+          "agentId": "frontend",
+          "severity": "high",
+          "statement": "El plan asigna carpetas por pista (P1/P2/P3) y CODEOWNERS por ruta, pero no asigna dueño a los archivos raíz compartidos por las tres pistas: el layout raíz (src/app/layout.tsx), un eventual middleware.ts para refrescar la sesión de Supabase en todos los grupos de rutas, y providers globales; ninguno aparece en la tabla de pistas (§2) ni en CODEOWNERS (§6).",
+          "evidence": [
+            "original.md:23-24 (tabla de pistas: P2 solo lista src/app/(merchant)/** y src/app/(courier)/**; P3 solo (admin)/** y (public)/**, sin ruta raíz de src/app/)",
+            "original.md:53-58 (árbol de src/app/ solo muestra los grupos de rutas y api/, sin layout.tsx ni middleware.ts)",
+            "original.md:313 (CODEOWNERS cubre src/app/(merchant|courier)/ → P2 y src/app/(admin|public)/ → P3, sin patrón para archivos raíz de src/app/)"
+          ],
+          "assumptions": [
+            "Next.js App Router requiere un layout raíz en src/app/layout.tsx y, según la documentación de @supabase/ssr, típicamente un middleware.ts que refresque la sesión en cada request; no se verificó la versión exacta de esa documentación en esta revisión."
+          ],
+          "impact": "Cuando T-008 (tokens/providers), T-111 (auth), T-201 (manifest/registro del SW) y T-202 (permiso de push) necesiten tocar el layout raíz o el middleware de sesión, dos o tres personas van a editar el mismo archivo en ramas paralelas sin que la regla 'tocá solo tus archivos permitidos' lo contemple, generando conflictos de merge recurrentes o, en el peor caso, que nadie lo asuma y la sesión de Supabase no se refresque en producción.",
+          "correction": "Agregar una fila 'Compartido / raíz' a la tabla de pistas (§2) con dueño explícito (sugerido P3, ya dueño de AGENTS.md/.agents/**) para src/app/layout.tsx, middleware.ts y providers globales, crear una tarea de Fase 0 que los cree, y establecer que cambios ahí se avisan al equipo como un contract-change liviano."
+        },
+        {
+          "id": "frontend.review.1",
+          "agentId": "frontend",
+          "severity": "medium",
+          "statement": "src/ui/** (primitivas accesibles y tokens, T-008) es propiedad exclusiva de P2, pero varias tareas de P3 con UI propia (T-121 onboarding, T-122/T-123 admin, T-124 incidentes) necesitan esas primitivas (por ejemplo el Dialog de confirmación en dos pasos que exige §60-ui-accesibilidad.md) sin declarar T-008 como dependencia.",
+          "evidence": [
+            "original.md:23 (src/ui/** listado solo bajo P2)",
+            "original.md:335 (T-008, dueño P2, Dep: T-000)",
+            "original.md:352-355 (T-121 Dep: T-005; T-122 Dep: T-121, T-101; T-123 Dep: T-005; T-124 Dep: T-103; ninguna lista T-008 como dependencia)"
+          ],
+          "impact": "P3 puede empezar a construir UI de admin/onboarding antes de que T-008 esté mergeada, duplicando componentes propios (su propio Dialog/Toast) o bloqueándose informalmente esperando a P2 sin que esa espera esté modelada en el plan; tampoco hay un proceso tipo contract-change para pedir una primitiva nueva a src/ui, a diferencia del que sí existe para el dominio de P1/P2.",
+          "correction": "Agregar T-008 a la columna Dep de T-121, T-122, T-123 y T-124, y extender la sección de congelamiento de contratos (o crear una nueva) para cubrir cambios a src/ui/** con el mismo mecanismo de aviso que contract-change."
+        },
+        {
+          "id": "frontend.review.2",
+          "agentId": "frontend",
+          "severity": "medium",
+          "statement": "package.json y el lockfile de pnpm no tienen dueño ni aparecen en ninguna ficha de tarea de ejemplo, pese a que la plantilla sí anticipa un campo 'Dependencias nuevas permitidas' por tarea; con tres personas agregando dependencias en ramas paralelas hacia develop, la regla de rebase ('resolvé conflictos solo en archivos de tu tarea') no cubre cómo resolver conflictos en package.json/pnpm-lock.yaml, que por definición no es 'archivo de tarea' de nadie en particular.",
+          "evidence": [
+            "original.md:74 (package.json en el árbol del repo, sin sección de dueño)",
+            "original.md:195 ('Rebase sobre develop antes de pedir review; resolvé conflictos solo en archivos de tu tarea')",
+            "original.md:413-414 (ficha de tarea: campo 'Dependencias nuevas permitidas', sin mención de package.json en 'Archivos permitidos')"
+          ],
+          "impact": "Conflictos de merge recurrentes en pnpm-lock.yaml entre las tres pistas, o bloqueo cuando alguien no sabe si package.json está entre sus 'archivos permitidos' para agregar una dependencia ya declarada en su propia ficha.",
+          "correction": "Declarar package.json y pnpm-lock.yaml como archivos compartidos, editables por cualquier tarea que liste una dependencia nueva en su ficha, y agregar a 50-git-y-ambientes.md el paso 'tras rebase, correr pnpm install para regenerar el lockfile antes de resolver conflictos a mano'."
+        },
+        {
+          "id": "frontend.review.3",
+          "agentId": "frontend",
+          "severity": "medium",
+          "statement": "La regla de fronteras dice que cada feature expone todo por index.ts y que el código \"use client\" nunca importa server/**, pero index.ts es el único punto público de la feature y, según el árbol, convive con queries.ts (lecturas server-side sin la directiva 'use server', a diferencia de actions.ts) en la misma carpeta; el plan no especifica si index.ts separa explícitamente exports de cliente y de servidor, ni menciona el paquete server-only como resguardo adicional a ESLint.",
+          "evidence": [
+            "original.md:66 (index.ts: API pública del módulo)",
+            "original.md:64-65 (actions.ts con 'use server'; queries.ts descrito como 'lecturas server-side', sin esa directiva)",
+            "original.md:86 ('El código de cliente (\"use client\") nunca importa server/**', hecho cumplir solo con ESLint no-restricted-imports/boundaries)"
+          ],
+          "assumptions": [
+            "Se asume, sin verificar contra la documentación vigente de Next.js, que ESLint por patrones de ruta no distingue si un archivo tiene la directiva 'use client', y que queries.ts sin 'use server' no recibe el mismo stubbing automático que sí aplica Next.js a los Server Actions; por eso un import accidental de queries.ts desde un componente cliente a través del barrel index.ts dependería de que el bundler haga tree-shaking correcto, lo cual no está garantizado."
+          ],
+          "impact": "Riesgo de que un componente cliente importe transitivamente código server-side (queries.ts) a través del barrel index.ts de una feature, rompiendo el build o dejando código server-side en el bundle de cliente si el tree-shaking del barrel no es perfecto; el problema puede aparecer recién en Fase 1, cuando varias features ya mezclen ambos tipos de export.",
+          "correction": "Agregar el paquete server-only a queries.ts, server/** y admin-client.ts (además de la regla de ESLint) para que un import indebido desde cliente falle de forma explícita en build, y documentar en 20-arquitectura.md si index.ts debe separar exports de UI de los exports server-side, o si estos últimos nunca deben reexportarse hacia componentes cliente."
+        },
+        {
+          "id": "frontend.review.4",
+          "agentId": "frontend",
+          "severity": "medium",
+          "statement": "La ficha de tarea (§8) solo registra el estado con un enum ('pendiente | en curso | en review | hecha') y la coordinación (§10.5) prohíbe reutilizar la sesión de agy de otra tarea; no hay un campo estructurado de notas de handoff (qué se probó, qué falló, por qué se detuvo) para que otra persona, o el mismo agente en otro momento, retome una tarea de UI a medias.",
+          "evidence": [
+            "original.md:401 (ficha: 'Estado: pendiente | en curso | en review | hecha', sin campo de notas)",
+            "original.md:441 ('una sesión por tarea y por rama. No reutilizar una conversación de otra tarea, para que el contexto no arrastre decisiones ajenas')"
+          ],
+          "impact": "Cuando una tarea de UI queda 'en curso' y otra persona (o la misma, días después) la retoma sin la conversación original de agy, tiene que reconstruir el contexto solo a partir del diff de la rama y comentarios de código; sin un registro explícito de bloqueos o decisiones parciales se arriesga a repetir trabajo, deshacer un enfoque válido o no entender por qué quedó una prueba en rojo.",
+          "correction": "Agregar a la plantilla de ficha (§8) una sección 'Notas de progreso / handoff' con bullets fechados (qué se intentó, qué falta, bloqueos encontrados) que cada sesión de agy deba actualizar antes de terminar, aunque la tarea no llegue a 'en review'."
+        }
+      ],
+      "helperRequests": []
+    },
+    {
+      "agentId": "pm",
+      "verdict": "conditional",
+      "confidence": 0.86,
+      "summary": "Dictamen final consolidado de PM: CONDICIONAL (confianza: 0.86). El plan de implementación de cadeApp está bien estructurado para guiar a 3 desarrolladores con agy, pero requiere corregir cinco aspectos críticos de producto y coordinación antes de su ejecución: 1) Definir el ownership formal del módulo troncal 'auth' en la matriz de responsabilidades; 2) Establecer un protocolo operativo en la skill tomar-tarea y prompt de arranque para retomar tareas asincrónicamente entre distintas sesiones; 3) Eliminar la regla de resolución contractual que da preeminencia a la base de datos sobre el dominio sin checkpoint humano; 4) Especificar Criterios de Aceptación y DoD completos para las tareas E2E de Fase 3 (T-305 a T-309); y 5) Rebalancear la distribución de carga en Fase 3 para garantizar un paralelismo equitativo entre las 3 pistas de trabajo.",
+      "findings": [
+        {
+          "id": "pm.review.0",
+          "agentId": "pm",
+          "correction": "Asignar formalmente 'src/features/auth/**' a una pista en §2 (recomendado: P3 dentro de plataforma/scaffold/onboarding o P1 por vinculación con Supabase Auth), publicando su contrato público en 'src/features/auth/index.ts' antes del inicio de las features dependientes.",
+          "evidence": [
+            "§2: P1 posee 'supabase/**', 'src/server/**', 'src/app/api/**', 'docs/adr/**'; P2 posee 'src/features/{merchants,requests,offers,trips,availability}/**'; P3 posee 'src/features/{courier-onboarding,admin,incidents,notifications,legal}/**'.",
+            "§3: 'Módulos de src/features: auth, merchants, requests, offers, trips, availability, courier-onboarding, admin, incidents, notifications, legal'."
+          ],
+          "impact": "Al no tener asignación explícita en ninguna pista, el desarrollo de autenticación (prerrequisito para el acceso de comercios, repartidores y administradores) provocará colisiones de código entre P2 y P3 o parálisis de tareas en Fase 1, violando el principio de trabajo paralelo sin pisarse.",
+          "severity": "high",
+          "statement": "El módulo troncal 'src/features/auth' está definido en la arquitectura modular (§3) pero no tiene dueño asignado en la matriz de responsabilidades (§2)."
+        },
+        {
+          "id": "pm.review.1",
+          "agentId": "pm",
+          "assumptions": [
+            "Si un desarrollador deja una tarea incompleta y otro la retoma con una nueva sesión de agy, el agente recreará la rama desde develop o generará conflictos al reescribir tests ya existentes si sigue el procedimiento estándar."
+          ],
+          "correction": "Incorporar en la skill tomar-tarea (o crear una skill complementaria retomar-tarea) una bifurcación para tareas en estado 'en curso' que descargue la rama remota existente y verifique el diff previo; incorporar en §8 una sección '## Bitácora / Handoff' en la plantilla de tarea y adaptar el prompt de arranque de §9 para contemplar la continuidad de tareas.",
+          "evidence": [
+            "§5 tomar-tarea/SKILL.md pasos 3 y 5: 'git switch develop && git pull && git switch -c feat/T-xxx-<slug>' y 'Escribir primero las pruebas del DoD y confirmar que fallan'.",
+            "§8 docs/tasks/_plantilla.md: Carece de campos para registrar el progreso actual, rama activa o notas de traspaso (handoff).",
+            "§9 Prompt de arranque: Asume inicio desde cero con 'Tomá la tarea T-xxx de cadeApp usando la skill tomar-tarea.'"
+          ],
+          "impact": "Pérdida de avance de trabajo en curso, colisiones de ramas en Git y bloqueo del objetivo de que cualquiera de las 3 personas pueda continuar el trabajo de otra en momentos diferentes.",
+          "severity": "high",
+          "statement": "La skill tomar-tarea (§5) y el prompt de arranque (§9) no contemplan el flujo para retomar tareas en curso ni el traspaso asincrónico entre distintas personas o sesiones de agy."
+        },
+        {
+          "id": "pm.review.2",
+          "agentId": "pm",
+          "assumptions": [
+            "P1 podría ajustar una función RPC o esquema por conveniencia técnica de base de datos, forzando a que las pistas de producto (P2) modifiquen las entidades y casos de uso de dominio, contraviniendo especificaciones funcionales del master plan."
+          ],
+          "correction": "Modificar §10.3 para establecer que los contratos de dominio (src/domain/) definen la verdad funcional del producto; si la RPC y domain difieren, la base de datos no se impone automáticamente: se abre un contract-change que debe ser validado por la pista funcional afectada o elevado a checkpoint humano si altera decisiones del producto.",
+          "evidence": [
+            "§10.3: 'Conflictos de contrato: gana la base (P1). Si domain y la RPC difieren, se abre una contract-change y se detienen las tareas afectadas.'"
+          ],
+          "impact": "Alteración silenciosa de reglas de negocio y flujos funcionales del MVP acordados en el master plan (D1 a D14) para acomodar conveniencias o limitaciones técnicas de persistencia sin evaluación de producto.",
+          "severity": "high",
+          "statement": "La regla de resolución de conflictos de contrato (§10.3) donde 'gana la base (P1)' subordina las decisiones y contratos de producto/dominio a restricciones de base de datos sin supervisión humana."
+        },
+        {
+          "id": "pm.review.3",
+          "agentId": "pm",
+          "correction": "Completar la columna 'DoD / pruebas' para T-305 a T-309 definiendo aserciones mínimas obligatorias (p. ej., T-305: bloqueo de oferta a repartidor pending y 403 en ruta protegida; T-306: bloqueo de publicación ante paid_until vencido y toggle de piloto; T-307: degradación graceful con push denegado y recuperación tras reconexión; T-308: suspensión cautelar inmediata de oferta activa; T-309: timeout controlado y carga exitosa en red 3G simulada con 0 violaciones axe).",
+          "evidence": [
+            "Tabla §7 Fase 3, filas T-305 a T-309, columna 'DoD / pruebas': figura '—' sin criterios verificables ni aserciones requeridas."
+          ],
+          "impact": "Los desarrolladores y agentes de agy no disponen de especificación clara de qué flujos, aserciones o condiciones de borde deben validar para considerar completadas estas suites críticas, lo que arriesga cobertura superficial o desalineación con el alcance del MVP.",
+          "severity": "high",
+          "statement": "Cinco tareas de pruebas E2E en Fase 3 (T-305, T-306, T-307, T-308 y T-309) carecen de Criterios de Aceptación y Definition of Done (DoD), figurando con guion vacío ('—')."
+        },
+        {
+          "id": "pm.review.4",
+          "agentId": "pm",
+          "correction": "Redistribuir tareas de Fase 3 reasignando a P1 las pruebas E2E de backend/autorización y suscripciones (T-305 y T-306) o la implementación de páginas legales (T-311), nivelando el esfuerzo del equipo.",
+          "evidence": [
+            "§7 Fases 2 y 3 y Paralelismo sugerido: P3 tiene asignadas T-201, T-202, T-301, T-302, T-305, T-306, T-308, T-309 y T-311 (9 tareas); P1 solo T-203 y T-310 (2 tareas); P2 tiene 5 tareas."
+          ],
+          "impact": "P3 se convierte en el cuello de botella del equipo retrasando el cierre del MVP, mientras P1 queda ocioso tras completar T-310, contraviniendo el objetivo de paralelismo eficiente entre 3 personas.",
+          "severity": "high",
+          "statement": "Desbalance severo de carga de trabajo entre pistas en Fases 2 y 3: P3 asume 9 tareas incluyendo el arnés E2E completo y 5 suites de pruebas, mientras P1 solo tiene 2 tareas."
+        }
+      ],
+      "conflicts": [
+        {
+          "class": "product",
+          "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+          "parties": [
+            "pm",
+            "backend"
+          ],
+          "reversible": true,
+          "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14."
+        },
+        {
+          "class": "technical",
+          "id": "conf-auth-scope-p2-p3",
+          "parties": [
+            "pm",
+            "frontend",
+            "backend"
+          ],
+          "reversible": true,
+          "summary": "Solapamiento de alcance entre T-111 (P2) y T-121 (P3) respecto al flujo unificado de autenticación y registro de repartidores."
+        }
+      ],
+      "helperRequests": []
+    },
+    {
+      "agentId": "backend",
+      "verdict": "conditional",
+      "confidence": 0.72,
+      "summary": "El plan es internamente consistente con las decisiones D1-D14 del master plan: accept_offer atómico con FOR UPDATE, piso configurable en platform_settings, revalidación del estado del repartidor en cada RPC, expiración perezosa, documentos privados con URL firmada y auditoría, y admin_* con MFA. La separación domain/server/features con fronteras por ESLint está bien pensada. El riesgo principal para el objetivo de 'trabajo simultáneo sin pisarse y retomable por cualquiera' es que TODO el trabajo de base de datos (migraciones, RLS, RPC, cron, observabilidad) pasa por una sola persona (P1) de forma secuencial en las 3 fases, y esa misma persona es la única CODEOWNER de supabase/**, src/server/** y src/app/api/**, combinando un cuello de botella de throughput con un único punto de fallo para el review obligatorio. A esto se suma que no hay procedimiento definido para retomar una tarea de base de datos que otra persona dejó a medias, y que la sincronización entre el 'adaptador simulado' de RPC (para que P2/P3 avancen antes de que la RPC real exista) y los códigos de error reales no tiene dueño ni prueba de contrato asignada. También hay dos vacíos puntuales en las reglas para agy: el mecanismo de lint que evita que código 'use client' filtre la service role key no está especificado ni probado, y no existe una regla de concurrencia para los contadores de rate_limits, a diferencia de accept_offer que sí la tiene explícita.",
+      "findings": [
+        {
+          "id": "backend.review.0",
+          "agentId": "backend",
+          "severity": "high",
+          "statement": "P1 concentra de forma secuencial todo el trabajo de Supabase (migraciones, RLS, RPC, cron, observabilidad) en las 3 fases, y además es el único CODEOWNER de supabase/**, src/server/** y src/app/api/**, lo que crea a la vez un cuello de botella de throughput y un único punto de fallo para el review obligatorio de esos directorios.",
+          "evidence": [
+            "original.md L20-26: tabla de pistas, 'Solo P1 mergea migraciones y regenera src/types/database.types.ts. Si P2 o P3 necesitan un cambio de esquema, abren una tarea contract-change asignada a P1.'",
+            "original.md L327-355: cadena T-002→T-004→T-005 (Fase 0) y T-101→T-102→T-103→T-104→T-203→T-310 (Fase 1+), todas P1",
+            "original.md L313: 'CODEOWNERS: supabase/, src/server/ y src/app/api/ → P1'"
+          ],
+          "impact": "Si P1 se atrasa, se ausenta o queda bloqueado, ningún PR que toque esos directorios puede obtener la aprobación de CODEOWNERS requerida por la protección de rama, y las tareas P1 de Fase 1 que son dependencia de casi todas las tareas P2/P3 (T-113, T-114, T-115, T-122, T-123, T-124, T-203) se demoran en cadena, contradiciendo el objetivo explícito de que las 3 personas avancen en simultáneo y que cualquiera pueda continuar el trabajo.",
+          "correction": "Agregar al menos una segunda persona como CODEOWNER de supabase/**, src/server/** y src/app/api/** (aunque no mergee migraciones por default), definir explícitamente quién puede aprobar esos PRs si P1 no está disponible, y dividir alguna tarea P1 de Fase 1 (por ejemplo separar submit_offer/set_availability de accept_offer/ciclo de solicitud) para que dos personas puedan escribir RPCs en paralelo una vez congelado el esquema."
+        },
+        {
+          "id": "backend.review.1",
+          "agentId": "backend",
+          "severity": "high",
+          "statement": "El plan no define un procedimiento para retomar una tarea de base de datos que quedó a medias (migración empezada, RPC parcialmente escrita) por una persona distinta a quien la inició: la skill tomar-tarea solo cubre crear una rama nueva desde develop, y la ficha de tarea solo registra un estado de 4 valores sin detalle de qué se implementó o qué falta.",
+          "evidence": [
+            "original.md L255: 'git switch develop && git pull && git switch -c feat/T-xxx-<slug>.' (skill tomar-tarea, paso 3, asume rama nueva, no retomar una existente)",
+            "original.md L401: ficha de tarea, 'Estado: pendiente | en curso | en review | hecha' sin campo de detalle de avance"
+          ],
+          "impact": "Si P1 deja una migración o RPC a medio camino y otra persona (o su sesión de agy) necesita continuarla, no hay instrucción de qué rama retomar, qué ya se probó ni cómo sincronizar el estado local de Supabase (Docker) con lo que hay en la rama remota, con riesgo de reescribir trabajo, aplicar migraciones duplicadas o perder contexto — justo el escenario que el pedido humano marca como requisito explícito ('cualquiera tiene que poder retomar o continuar el trabajo en momentos distintos').",
+          "correction": "Agregar una skill retomar-tarea (o un paso condicional en tomar-tarea) que verifique si existe una rama feat/T-xxx remota y la traiga con git fetch/switch en lugar de crear una nueva, exigir que todo trabajo de Supabase quede committeado y pusheado al final de cada sesión (no solo en el estado local de Docker), y ampliar el campo Estado de la ficha con un resumen de qué migraciones/RPC ya están escritas y qué pruebas pasan."
+        },
+        {
+          "id": "backend.review.2",
+          "agentId": "backend",
+          "severity": "medium",
+          "statement": "El congelamiento contracts-v1 ocurre con T-004, T-005 y T-006 (esquema, RLS y rpc-contracts.ts) mergeados, pero los códigos de error y precondiciones concretas de las RPC críticas recién se implementan en T-101/T-102/T-103 de la Fase 1, y nadie tiene asignada la construcción ni el mantenimiento del 'adaptador simulado' detrás de src/server/rpc.ts que P2/P3 usan mientras tanto.",
+          "evidence": [
+            "original.md L337: 'Congelamiento de contratos: con T-004, T-005 y T-006 mergeadas, se etiqueta contracts-v1.'",
+            "original.md L395: 'Mientras P1 no mergea una RPC, P2 y P3 construyen la UI contra src/domain/rpc-contracts.ts con un adaptador simulado detrás de src/server/rpc.ts, y lo cambian por el real cuando la RPC llega a develop.' (sin dueño asignado)"
+          ],
+          "impact": "P2 y P3 pueden construir UI y wrappers contra una firma de RPC y un adaptador simulado que todavía no reflejan los códigos de error reales definidos después del freeze (por ejemplo si accept_offer termina necesitando un código de error no previsto en T-006), generando retrabajo justo cuando el plan espera la mayor velocidad en paralelo.",
+          "correction": "Asignar explícitamente el adaptador simulado a una tarea/dueño (por ejemplo dentro de T-006, a cargo de P2), exigir en el DoD de T-101/T-102/T-103 que cualquier código de error nuevo no previsto en rpc-contracts.ts se trate como contract-change antes de mergear, y agregar una prueba de contrato que compare las respuestas del adaptador simulado contra los códigos reales una vez existan."
+        },
+        {
+          "id": "backend.review.3",
+          "agentId": "backend",
+          "severity": "medium",
+          "statement": "La regla 'el código de cliente (\"use client\") nunca importa server/**', que es la barrera declarada contra fugas de la service role key, no especifica qué mecanismo de ESLint la hace cumplir de forma consciente de la directiva 'use client', ni el DoD de T-000 la prueba específicamente (solo dice 'un import prohibido de prueba hace fallar lint', genérico).",
+          "evidence": [
+            "original.md L86: 'El código de cliente (\"use client\") nunca importa server/**.'",
+            "original.md L109: 'La service role key solo existe en src/server/admin-client.ts. Nunca en código \"use client\".'",
+            "original.md L327: DoD de T-000, 'un import prohibido de prueba hace fallar lint' (sin especificar el caso 'use client' → server/**)"
+          ],
+          "impact": "Sin una regla de lint verificablemente consciente de la directiva 'use client', un import indirecto de server/** (por ejemplo vía un index.ts que reexporta algo de server) podría colarse en un componente cliente y filtrar la service role key al bundle sin que el CI lo detecte.",
+          "correction": "En T-000, especificar y verificar con un caso de prueba concreto que el lint bloquea un archivo 'use client' que importa (directa o transitivamente) algo de src/server/**, usando por ejemplo eslint-plugin-boundaries con detección de directivas o una regla custom, y documentar el mecanismo elegido en 20-arquitectura.md."
+        },
+        {
+          "id": "backend.review.4",
+          "agentId": "backend",
+          "severity": "medium",
+          "statement": "El plan exige y prueba concurrencia atómica para accept_offer (FOR UPDATE, N llamadas en paralelo) pero no define ninguna regla equivalente para los contadores de rate_limits que submit_offer y set_availability deben respetar, dejando la implementación concurrency-safe del incremento a criterio del agente.",
+          "evidence": [
+            "original.md L343: DoD de T-101 menciona 'rate limit' como caso de prueba, sin regla de implementación",
+            "original.md L158-171 (30-supabase-seguridad.md): cubre locking explícito solo para accept_offer, ninguna mención de rate_limits",
+            "master-plan.md L171: tabla rate_limits (subject, action, window_start, count) descrita como 'contadores para limitar abuso' sin detalle de atomicidad"
+          ],
+          "impact": "Sin una regla explícita (p. ej. upsert atómico), dos llamadas concurrentes de submit_offer podrían leer el mismo contador antes de incrementarlo y saltarse el límite, dejando el antiabuso descrito en el master plan sin garantía real bajo carga concurrente.",
+          "correction": "Agregar a 30-supabase-seguridad.md una regla explícita para rate_limits: incremento atómico (INSERT ... ON CONFLICT (subject, action, window_start) DO UPDATE SET count = count + 1) dentro de la misma RPC, y sumar un test pgTAP de concurrencia para el rate limit de submit_offer, igual que el que ya exige para accept_offer."
+        }
+      ],
+      "conflicts": [
+        {
+          "id": "codeowners-spof-p1",
+          "class": "technical",
+          "reversible": true,
+          "summary": "Asignar a P1 como único CODEOWNER de supabase/**, src/server/** y src/app/api/**, sumado a que P1 concentra todas las migraciones/RLS/RPC de forma secuencial, crea un único punto de fallo para el review obligatorio y un cuello de botella de throughput que afecta la planificación (PM) y la configuración de protección de ramas (DevOps), no solo el diseño de backend.",
+          "parties": [
+            "backend",
+            "pm",
+            "devops"
+          ]
+        }
+      ],
+      "helperRequests": []
+    }
+  ],
+  "rebuttal": {
+    "rounds": 1,
+    "entries": [
+      {
+        "party": "backend",
+        "conflict_id": "codeowners-spof-p1",
+        "summary": "Mantengo el hallazgo. DevOps lo corrobora de forma independiente y lo hace más concreto: migrate.yml no serializa despliegues por ambiente (falta `concurrency:` group) y no hay plan de respaldo documentado para cuando P1 no está disponible (devops.review.1), exactamente el mismo cuello de botella y punto único de fallo que señalé desde CODEOWNERS. Sumo un matiz de Security: security.review.2 pide activar 'Require review from Code Owners' para que P1 apruebe obligatoriamente cualquier cambio a supabase/**, lo cual, tomado solo, profundizaría el problema en vez de resolverlo. Ajusto la corrección para conciliar ambos: agregar una segunda persona como CODEOWNER de supabase/**, src/server/** y src/app/api/**, pero que esa persona esté efectivamente entrenada en RLS/Postgres/SECURITY DEFINER antes de asumir el rol (no cualquiera de las 3), de modo que 'Require review from Code Owners' se pueda activar sin crear un cuello de botella de una sola persona. Sostengo también partir alguna tarea P1 de Fase 1 para permitir dos personas escribiendo RPC en paralelo una vez congelado el esquema.",
+        "position": "maintain"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+        "summary": "Ajusto mi posición. El principio 5 del plan ('la base es la autoridad': estados, piso, aceptación y autorización se validan en RPC/RLS, la UI nunca es la única barrera) es una garantía de seguridad legítima que backend no puede resignar: si domain 'gana' sobre la RPC en el sentido de que un chequeo de servidor se quita o se debilita para que coincida con lo que domain supone, se reabre exactamente el tipo de hallazgo crítico que el master plan ya corrigió (D2). Dicho esto, coincido con PM en que §10.3 tal como está redactado ('gana la base') resuelve automáticamente, sin checkpoint, una categoría de conflicto que puede ser de producto (p. ej. si una RPC termina rechazando una transición que domain consideraba válida, eso puede ser un cambio de comportamiento funcional, no solo técnico). Propongo separar las dos cosas: (1) el principio de que RPC/RLS son el mecanismo de enforcement en runtime se mantiene sin excepción; (2) cuando domain (src/domain/rpc-contracts.ts, mantenido por P2) y la implementación real de una RPC (P1) difieren, se abre contract-change y NO se resuelve por defecto a favor de P1: lo valida P2 como dueño de domain, y si el cambio toca una garantía de las decisiones D1-D14 del master plan, se escala a checkpoint humano antes de mergear, igual que pide PM.",
+        "position": "adjust"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "conf-auth-scope-p2-p3",
+        "summary": "Ajusto y sumo un dato técnico que PM y Frontend no tenían: la creación del registro base (auth.users + profiles con role) ya es responsabilidad de P1 vía el trigger de T-004 ('Se crea con un trigger al registrarse. role solo lo cambia el admin.', master-plan §7), así que la ambigüedad no está en quién crea la cuenta a nivel de base, sino en qué track posee el flujo de UI de alta (formulario de registro, verificación) para cada rol. Coincido con PM en que src/features/auth/** necesita un dueño único en §2, y agrego la corrección concreta que falta: declarar T-111 como Dependencia explícita de T-121 (hoy T-121 solo depende de T-005), de modo que exista un único módulo de alta/login genérico construido una vez (recomiendo P2, ya dueño de auth/** por CODEOWNERS) y que T-121 lo reutilice para el registro del repartidor en lugar de que P3 reimplemente su propio flujo de auth contra Supabase Auth. Esto evita además que dos tracks toquen lógica de sesión/JWT en paralelo sin coordinarse.",
+        "position": "adjust"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "agent-permission-enforcement",
+        "summary": "Ajusto: distingo entre los pedidos de Seguridad por costo/certeza de implementación. El chequeo de CI que falla si una tabla queda sin RLS habilitada o sin policies (security.review.2) es barato, concreto y directamente verificable con una consulta a pg_policies/pg_tables después de `supabase db reset`; lo apoyo sin reservas y no compite de forma relevante con la velocidad de arranque — puede sumarse al mismo job de test:db que ya existe en ci.yml. Lo mismo para que las credenciales de producción nunca vivan en una laptop y que `db push` a producción solo corra vía CI con el secreto del Environment (security.review.0, segunda mitad): es coherente con lo que el plan ya dice sobre migrate.yml y no agrega trabajo nuevo, solo lo hace explícito. En cambio, el 'sandboxing de agy' (allowlist/denylist de comandos a nivel del propio agente) depende de una capacidad de agy 1.2.4 que el plan nunca confirma que exista — el propio master plan lo marca como supuesto abierto (S10: 'verificar si cambian con una actualización'). No me opongo al pedido, pero pido secuenciarlo: verificar primero qué controles de permisos expone agy 1.2.4 realmente (tarea corta, no bloqueante) antes de comprometer el Fase 0 a un mecanismo que puede no existir tal como Seguridad lo describe.",
+        "position": "adjust"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "rebalance-fase3-p1-e2e",
+        "summary": "Conflicto nuevo. Coincido con el diagnóstico de PM (P1 queda con poca carga relativa en Fase 3) pero no con el mecanismo propuesto de transferir T-305/T-306 o T-311 completas a P1: esas tareas dependen de convenciones y carpetas (e2e/AGENTS.md, CODEOWNERS de e2e/** y de legal/** en P3) ajenas a la pista de P1, y no reducen el verdadero cuello de botella, que es la cadena secuencial T-101→T-102→T-103→T-104→T-203→T-310 de Fase 1 (mismo conflicto que codeowners-spof-p1). Propongo en su lugar: (a) usar la capacidad libre de P1 en Fase 3 para el trabajo que sí es de su dominio y que Seguridad y DevOps ya pidieron —el chequeo de CI de cobertura de RLS, el hardening de rate_limits, ser la segunda persona entrenada como backup de CODEOWNERS— y (b) si PM insiste en balancear con E2E, que P1 aporte las aserciones/casos de autorización de T-305/T-306 (conoce mejor las reglas de RPC) en modo de pareja con quien escribe el spec de Playwright, sin transferirle la propiedad del archivo ni la carpeta e2e/**.",
+        "position": "adjust"
+      },
+      {
+        "party": "frontend",
+        "conflict_id": "conf-auth-scope-p2-p3",
+        "summary": "Sostengo el conflicto que señaló PM y lo amplío con evidencia concreta de archivo: no es solo que `src/features/auth` carezca de dueño en la tabla de pistas (§2), sino que las Archivos-permitidos de T-111 y T-121 chocan directamente con CODEOWNERS (§6): T-111 (P2) escribe en `src/app/(public)/login/**`, ruta que CODEOWNERS da a P3; T-121 (P3) escribe en `src/app/(courier)/onboarding/**`, ruta que CODEOWNERS da a P2. Es la misma familia de problema que mi hallazgo sobre `src/app/layout.tsx` y `middleware.ts` sin dueño (root-files sin fila en §2 ni patrón en CODEOWNERS): infraestructura transversal a las tres pistas (login, sesión, layout raíz) queda repartida por quien la toca primero en vez de por una decisión explícita. Propongo resolver ambos con el mismo criterio: asignar `src/features/auth/**` (login, registro base con selección de rol, helpers de sesión) y `middleware.ts` (refresco de sesión de @supabase/ssr en todas las rutas) a P3, ya dueña de plataforma/scaffold/.agents/** y de los grupos (admin)/(public). Crear una tarea de Fase 0 a cargo de P3 para esa base, de la que T-111 pase a depender (P2 solo agrega el alta de comercio sobre esa base) y de la que T-121 también dependa para la creación de cuenta del repartidor (P3 solo agrega documentación/consentimientos sobre esa base). Así ninguna pista construye su propia versión de 'crear cuenta', y de paso se resuelve la contradicción con CODEOWNERS: si además se mueven las rutas de onboarding pre-aprobación de `(courier)/onboarding` a `(public)/onboarding/courier` (o se documenta una excepción explícita en CODEOWNERS para esa subruta), el patrón de dueños por grupo de ruta vuelve a ser consistente con quién escribe cada archivo.",
+        "position": "adjust"
+      },
+      {
+        "party": "frontend",
+        "conflict_id": "conf-codeowners-routegroup-p2-p3",
+        "summary": "Agrego este conflicto porque el choque entre CODEOWNERS (por grupo de ruta completo) y 'Archivos permitidos' (por subruta específica) no es exclusivo de auth: aparece en T-111 (login dentro de (public)) y en T-121 (onboarding dentro de (courier)), y cualquier tarea futura que necesite una subruta de un grupo 'ajeno' a su pista lo va a repetir. Pido que se resuelva a nivel de mecanismo y no caso por caso: o CODEOWNERS pasa a declarar patrones tan granulares como 'Archivos permitidos' (por subcarpeta, no por grupo de ruta completo), o el plan documenta explícitamente que 'Archivos permitidos' de la ficha puede pisar el patrón general de CODEOWNERS, y en ese caso el revisor obligatorio del PR es el dueño real de esa subruta según CODEOWNERS y no el de la pista que la escribió, para no perder la revisión cruzada que exige §6.",
+        "position": "maintain"
+      },
+      {
+        "party": "pm",
+        "conflict_id": "codeowners-spof-p1",
+        "position": "maintain",
+        "summary": "PM mantiene que concentrar migraciones y revisiones exclusivas en P1 genera un cuello de botella crítico para el cronograma y throughput del equipo; se requiere un segundo CODEOWNER para evitar el SPOF."
+      },
+      {
+        "party": "pm",
+        "conflict_id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+        "position": "maintain",
+        "summary": "PM mantiene firmemente que los contratos de dominio rigen las decisiones de producto y cualquier divergencia que afecte las decisiones D1-D14 debe pasar obligatoriamente por checkpoint humano."
+      },
+      {
+        "party": "pm",
+        "conflict_id": "conf-auth-scope-p2-p3",
+        "position": "maintain",
+        "summary": "PM mantiene la necesidad de asignar formalmente el ownership de src/features/auth en la matriz de responsabilidades para resolver el solapamiento funcional entre T-111 y T-121."
+      },
+      {
+        "party": "pm",
+        "conflict_id": "agent-permission-enforcement",
+        "position": "adjust",
+        "summary": "PM ajusta posición para incorporar controles técnicos automatizados indispensables en CI (auditoría de dependencias y verificación RLS) sin demorar el inicio de las tareas de Fase 0/1."
+      },
+      {
+        "party": "pm",
+        "conflict_id": "produccion-acceso-simetrico",
+        "position": "maintain",
+        "summary": "PM mantiene que la gobernanza del gate de producción y administración de credenciales maestras es una decisión de negocio/gobernanza que debe ser elevada al checkpoint humano según la Constitución."
+      }
+    ]
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "agentId": "backend",
+  "verdict": "conditional",
+  "confidence": 0.95,
+  "summary": "Dictamen de Backend: CONDICIONAL (0.95). Se definen las alteraciones al modelo relacional: 1) merchants.pickup_lat / pickup_lng; 2) delivery_request_contacts.pickup_lat / pickup_lng y dropoff_lat / dropoff_lng (protegidas por RLS estricta); 3) delivery_requests.route_distance_m (entero). Se implementa la RPC calculate_route_distance(lat1, lng1, lat2, lng2) con la formula esferica de Haversine nativa en SQL, multiplicada por factor de red vial urbana 1.30 y redondeada a multiplos de 500 metros. Bounding box de Aguilares validado en Postgres mediante CHECK constraints o trigger (-27.4550 a -27.4100 lat, -65.6400 a -65.5950 lng). Fallback a centroides de zones si las coordenadas son nulas. Cero llamadas a APIs externas en backend.",
+  "findings": [
+    {
+      "statement": "Las coordenadas exactas de retiro y entrega no deben almacenarse en delivery_requests publica.",
+      "severity": "critical",
+      "impact": "Si pickup_lat/lng o dropoff_lat/lng estuvieran en delivery_requests, cualquier repartidor disponible podria consultarlas mediante la API de Supabase, anulando D3.",
+      "evidence": [
+        "docs/master-plan.md §7 (delivery_requests no contiene datos sensibles; contacts si)."
+      ],
+      "correction": "Ubicarlas exclusivamente en delivery_request_contacts (dropoff_lat/lng y pickup_lat/lng de la solicitud). En delivery_requests solo se persiste route_distance_m (calculado en el servidor).",
+      "assumptions": [
+        "RLS de delivery_request_contacts solo permite SELECT al merchant dueno, courier aceptado y admin."
+      ]
+    },
+    {
+      "statement": "Calculo de distancia geodesica deterministico en SQL sin dependencias de red externa.",
+      "severity": "high",
+      "impact": "Usar Routes API de Google en cada calculo de solicitud agregaria costo por llamada y latencia HTTP (200-500ms) dentro de la transaccion de publicacion.",
+      "evidence": [
+        "Pregunta 4 del Consejo: Routes API vs Haversine en servidor."
+      ],
+      "correction": "Crear funcion SQL inmutable calculate_route_distance con formula Haversine x 1.30 redondeada a multiplos de 500m. Si faltan coordenadas, calcular entre centroides de zones.",
+      "assumptions": [
+        "El factor 1.30 refleja fielmente la trama de cuadricula de Aguilares."
+      ]
+    }
+  ]
+}

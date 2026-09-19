@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CadeApp Admin - Postulantes</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "inverse-surface": "#283140",
+            "on-tertiary": "#ffffff",
+            "tertiary-container": "#5cb5b8",
+            "primary": "#00696b",
+            "on-primary-container": "#004446",
+            "outline": "#6c7a7a",
+            "inverse-primary": "#4adadd",
+            "on-surface-variant": "#3c4949",
+            "inverse-on-surface": "#ebf1ff",
+            "on-primary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "surface-container-highest": "#dae3f7",
+            "primary-container": "#09babd",
+            "surface-tint": "#00696b",
+            "on-tertiary-fixed": "#002021",
+            "error": "#ba1a1a",
+            "surface-dim": "#d1daee",
+            "error-container": "#ffdad6",
+            "background": "#f9f9ff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "primary-fixed": "#6df6f9",
+            "outline-variant": "#bbc9c9",
+            "on-background": "#131c2a",
+            "on-surface": "#131c2a",
+            "tertiary": "#00696c",
+            "on-secondary-fixed-variant": "#40465c",
+            "secondary-fixed-dim": "#c0c5e0",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-primary-fixed": "#002020",
+            "primary-fixed-dim": "#4adadd",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-fixed": "#151b2f",
+            "on-secondary": "#ffffff",
+            "on-error-container": "#93000a",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-tertiary-container": "#004446",
+            "surface-container-high": "#dfe8fd",
+            "surface-bright": "#f9f9ff",
+            "surface-container": "#e7eeff",
+            "on-primary": "#ffffff",
+            "surface-container-low": "#f0f3ff",
+            "secondary": "#585d75",
+            "secondary-fixed": "#dce1fd",
+            "secondary-container": "#d9defa",
+            "surface": "#f9f9ff",
+            "on-error": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "headline-lg": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"]
+          },
+          "fontSize": {
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+      font-size: 20px;
+      line-height: 1;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body class="bg-[#FDFCFB] text-on-surface font-body-md text-body-md antialiased min-h-screen flex flex-col">
+<!-- SideNavBar Anchor Component -->
+<aside class="h-screen w-64 fixed left-0 top-0 flex flex-col shrink-0 bg-inverse-surface border-r border-outline z-40">
+<div class="w-64 h-full flex flex-col justify-between p-4 z-40">
+<!-- Top header & nav -->
+<div class="space-y-6">
+<!-- Brand identity -->
+<div class="flex items-center gap-3 px-2 py-2">
+<div class="w-9 h-9 rounded-lg bg-primary-container flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-on-primary-container" data-icon="two_wheeler">two_wheeler</span>
+</div>
+<div class="leading-tight">
+<div class="text-headline-md font-headline-md font-bold text-inverse-on-surface tracking-tight">CadeApp</div>
+<div class="text-[11px] font-label-sm text-outline-variant font-medium">Panel de Administración</div>
+</div>
+</div>
+<!-- CTA action button -->
+<button class="w-full h-10 px-4 rounded-lg bg-primary-container text-on-primary-container font-label-md text-label-md flex items-center justify-center gap-2 hover:opacity-95 transition-all active:scale-[0.99]">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+<span>Nueva Gestión</span>
+</button>
+<!-- Main navigation tabs -->
+<nav class="space-y-1">
+<!-- Item 1: Postulantes (ACTIVE) -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary-container text-on-primary-container font-medium transition-all duration-150 cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined" data-icon="person_search" data-weight="fill" style="font-variation-settings: 'FILL' 1;">person_search</span>
+<span class="text-label-md font-label-md">Postulantes</span>
+</a>
+<!-- Item 2: Comercios -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined" data-icon="storefront">storefront</span>
+<span class="text-label-md font-label-md">Comercios</span>
+</a>
+<!-- Item 3: Incidentes -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined" data-icon="report_problem">report_problem</span>
+<span class="text-label-md font-label-md">Incidentes</span>
+</a>
+<!-- Item 4: Parámetros -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined" data-icon="tune">tune</span>
+<span class="text-label-md font-label-md">Parámetros</span>
+</a>
+<!-- Item 5: Auditoría -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors cursor-pointer active:scale-[0.99]" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="text-label-md font-label-md">Auditoría</span>
+</a>
+</nav>
+</div>
+<!-- Footer navigation tabs -->
+<div class="pt-4 border-t border-outline/40 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors text-label-md font-label-md cursor-pointer" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Configuración</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-outline-variant hover:text-inverse-on-surface hover:bg-on-primary-fixed-variant transition-colors text-label-md font-label-md cursor-pointer" href="#">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+<span>Soporte</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Administrative Content Canvas (Desktop at 1280px container target) -->
+<div class="pl-64 flex flex-col flex-1 min-w-[1016px] bg-[#FDFCFB]">
+<!-- TopNavBar Anchor Component -->
+<header class="docked full-width top-0 bg-surface-container-lowest border-b border-outline-variant h-16 shrink-0 sticky z-30">
+<div class="flex justify-between items-center h-16 px-6 w-full max-w-full">
+<!-- Left: Search & Subtitle -->
+<div class="flex items-center gap-6">
+<div class="text-headline-md font-headline-md font-bold text-on-surface">CadeApp Admin</div>
+<!-- Admin Global Search Bar -->
+<div class="relative w-80">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-secondary" data-icon="search">search</span>
+<input class="w-full h-10 pl-9 pr-3 rounded-lg border border-[#E4E7EC] bg-surface-container-lowest text-body-md font-body-md text-on-surface placeholder:text-secondary focus:outline-none focus:border-primary-container" placeholder="Buscar trámite, DNI o repartidor..." type="text"/>
+</div>
+<!-- Secondary navigation links -->
+<div class="hidden lg:flex items-center gap-6 text-body-md">
+<a class="text-primary font-bold border-b-2 border-primary pb-1" href="#">Operaciones</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1" href="#">Monitoreo</a>
+<a class="text-secondary hover:text-on-surface transition-colors pb-1" href="#">Liquidaciones</a>
+</div>
+</div>
+<!-- Right: Actions and Central Admin Profile -->
+<div class="flex items-center gap-4">
+<button class="w-9 h-9 rounded-lg flex items-center justify-center text-secondary hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:scale-95" title="Alertas de seguridad">
+<span class="material-symbols-outlined" data-icon="shield_person">shield_person</span>
+</button>
+<button class="relative w-9 h-9 rounded-lg flex items-center justify-center text-secondary hover:bg-surface-container-low transition-colors duration-150 cursor-pointer active:scale-95" title="Notificaciones">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-error"></span>
+</button>
+<div class="h-6 w-[1px] bg-[#E4E7EC]"></div>
+<!-- Central Admin User -->
+<div class="flex items-center gap-3">
+<img class="w-9 h-9 rounded-full object-cover border border-[#E4E7EC]" data-alt="Professional studio portrait of a corporate system administrator in smart casual office attire looking direct to camera in bright daylight. The scene features minimal clean Scandinavian office decor with pristine white walls and high contrast geometric shadows. The aesthetic emphasizes trust, precision, dependability and technical rigor." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCLCMbNeThhm48o5RmjE_VwA0QkgEr5nWI-OCWDvzY-eqYCepBpGF9bSc1lNzdmIFBENiuE-6zZOR2I1RcK78kyURcwoqEtX_OR4E4vc39R1qdGhcOq_iGH1sd532aS0dDkq2ufUKNGi8ySGJ6zWZxOEaRJSuz1WWSNRQYSr8geL0QI55FAZyT8nEsJKFpG1h5ynGkeEPUhTCB_SV5YSgBiEYAQ0iRzCsG-r9az9EflyXYNvz_QvUxE"/>
+<div class="text-left leading-tight hidden sm:block">
+<div class="text-label-md font-label-md text-on-surface font-semibold">Martín G.</div>
+<div class="text-[11px] font-body-md text-secondary">Despacho Central</div>
+</div>
+</div>
+<button class="text-secondary hover:text-error text-label-sm font-label-sm flex items-center gap-1 ml-2 transition-colors cursor-pointer">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span>Cerrar sesión</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Content Workspace Area -->
+<main class="p-6 max-w-[1280px] w-full mx-auto space-y-6">
+<!-- Breadcrumbs & Quick Operational Notice -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2 text-body-md text-secondary">
+<span>Operaciones</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="chevron_right">chevron_right</span>
+<span>Validación de Identidad</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="chevron_right">chevron_right</span>
+<span class="text-on-surface font-medium">Postulantes a Repartidor</span>
+</div>
+<div class="text-label-sm font-label-sm text-secondary flex items-center gap-1.5">
+<span class="inline-block w-2 h-2 rounded-full bg-[#177A4B]"></span>
+<span>Cola de verificación en vivo: Nodo Centro</span>
+</div>
+</div>
+<!-- Title & Live Counter Cluster -->
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+<div class="flex items-center gap-3">
+<h1 class="text-headline-xl font-headline-xl text-on-surface font-bold">Postulantes</h1>
+<span class="inline-flex items-center px-3 py-1 rounded-full text-label-md font-label-md bg-[#E6F8F8] text-[#0B7A7D] border border-primary-container/30">
+            7 pendientes
+          </span>
+</div>
+<!-- Metric summaries in high-contrast bento snippet -->
+<div class="flex items-center gap-3">
+<div class="px-4 py-2 bg-surface-container-lowest border border-[#E4E7EC] rounded-lg flex items-center gap-3">
+<span class="material-symbols-outlined text-[#0B7A7D]" data-icon="schedule">schedule</span>
+<div class="text-left">
+<span class="text-[11px] block text-secondary uppercase font-semibold">T. Promedio Revisión</span>
+<span class="text-price-sm font-price-sm text-on-surface font-bold">14 min</span>
+</div>
+</div>
+<div class="px-4 py-2 bg-surface-container-lowest border border-[#E4E7EC] rounded-lg flex items-center gap-3">
+<span class="material-symbols-outlined text-[#177A4B]" data-icon="task_alt">task_alt</span>
+<div class="text-left">
+<span class="text-[11px] block text-secondary uppercase font-semibold">Aprobados Hoy</span>
+<span class="text-price-sm font-price-sm text-on-surface font-bold">29</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Filters & Control Toolbar -->
+<div class="bg-surface-container-lowest rounded-xl border border-[#E4E7EC] p-3 flex flex-wrap items-center justify-between gap-4">
+<!-- Filter Tabs: Pendientes, Aprobados, Rechazados, Suspendidos -->
+<div class="flex items-center bg-[#FDFCFB] p-1 rounded-lg border border-[#E4E7EC] gap-1">
+<button class="px-4 py-1.5 rounded-md font-label-md text-label-md bg-[#12182C] text-white shadow-none transition-all cursor-pointer">
+            Pendientes
+          </button>
+<button class="px-4 py-1.5 rounded-md font-label-md text-label-md text-[#5B6475] hover:text-[#12182C] hover:bg-white transition-colors cursor-pointer">
+            Aprobados
+          </button>
+<button class="px-4 py-1.5 rounded-md font-label-md text-label-md text-[#5B6475] hover:text-[#12182C] hover:bg-white transition-colors cursor-pointer">
+            Rechazados
+          </button>
+<button class="px-4 py-1.5 rounded-md font-label-md text-label-md text-[#5B6475] hover:text-[#12182C] hover:bg-white transition-colors cursor-pointer">
+            Suspendidos
+          </button>
+</div>
+<!-- Search Input & Secondary Filter Dropdowns -->
+<div class="flex items-center gap-3 flex-1 max-w-md justify-end">
+<div class="relative w-full max-w-xs">
+<span class="material-symbols-outlined absolute left-3 top-2.5 text-[#5B6475] text-[18px]" data-icon="search">search</span>
+<input class="w-full h-10 pl-9 pr-3 rounded-lg border border-[#E4E7EC] bg-white text-body-md text-on-surface placeholder:text-[#5B6475] focus:outline-none focus:ring-1 focus:ring-[#09BABD]" placeholder="Buscar por nombre..." type="text"/>
+</div>
+<button class="h-10 px-3 border border-[#E4E7EC] rounded-lg bg-white text-secondary hover:text-on-surface flex items-center gap-1.5 text-label-md font-label-md transition-colors" title="Filtros avanzados">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+<span>Filtros</span>
+</button>
+</div>
+</div>
+<!-- Dense Table Architecture -->
+<div class="bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl overflow-hidden shadow-none">
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-[#FDFCFB] border-b border-[#E4E7EC] text-[12px] font-semibold text-[#5B6475] tracking-wider uppercase">
+<th class="py-3 px-4" scope="col">Postulante</th>
+<th class="py-3 px-4" scope="col">Vehículo</th>
+<th class="py-3 px-4" scope="col">Documentos Obligatorios</th>
+<th class="py-3 px-4 text-center" scope="col">Opcionales</th>
+<th class="py-3 px-4" scope="col">Enviado</th>
+<th class="py-3 px-4" scope="col">Alerta</th>
+<th class="py-3 px-4 text-right" scope="col">Acción</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-[#E4E7EC] text-body-md font-body-md text-on-surface">
+<!-- Row 1: Diego S. -->
+<tr class="hover:bg-[#F9F9FF] transition-colors">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-full object-cover border border-[#E4E7EC]" data-alt="Close-up documentary portrait of a young male delivery courier smiling outdoors in daylight. He is wearing a minimalist dark collared polo shirt against a blurred urban background with clean modern architecture. The lighting is natural and sharp, capturing an approachable and professional Argentine worker persona." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMy7KANuEQJPEYQ_bI-momzjoXe2h8xaNzW2x230gyE0TK-x5IRkqtzckmepIXTCc6_6fuKQsREn2X52pmR2nxOvanrJIaVglX-kRG7g0lSZd2ziKylPtICemWC1YGfL2t-uIVqf8nNMeAbpznk4Z0NVh3aB93QO5LGE7Cc2MYNrA1ykG2eV5ArVIpkuWrKaybX8jRXGCVX4mRBwEmKXd0Z54rzqJeXHZHogRtiwXrlf7zmvd64So3"/>
+<div>
+<div class="font-label-md text-label-md text-[#12182C] font-semibold">Diego S.</div>
+<div class="text-[12px] text-[#5B6475]">DNI 38.412.901 · Rosario</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475]" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-medium text-[#12182C]">Moto</span>
+<span class="text-[12px] text-[#5B6475] bg-[#F0F3FF] px-1.5 py-0.5 rounded border border-[#E4E7EC]">AB 123 CD</span>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2 text-[12px]">
+<!-- DNI -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium" title="DNI Verificado">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>DNI</span>
+</div>
+<!-- Selfie -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium" title="Selfie biométrica validada">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Selfie</span>
+</div>
+<!-- Licencia -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium" title="Licencia de conducir vigente">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Licencia</span>
+</div>
+<!-- Seguro -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium" title="Póliza de seguro al día">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Seguro</span>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-md text-[13px] bg-[#E8F5EE] text-[#177A4B] font-semibold">
+                    2/2
+                  </span>
+</td>
+<td class="py-3.5 px-4 text-[#5B6475] text-[13px]">
+                  hace 2 h
+                </td>
+<td class="py-3.5 px-4">
+<span class="text-[13px] text-[#5B6475] italic">Sin alertas</span>
+</td>
+<td class="py-3.5 px-4 text-right">
+<button class="h-9 px-4 rounded-[10px] bg-white border border-[#E4E7EC] text-[#12182C] font-label-md text-label-md hover:bg-[#F0F3FF] hover:border-[#09BABD] transition-all cursor-pointer">
+                    Revisar
+                  </button>
+</td>
+</tr>
+<!-- Row 2: Cristian F. (Alerta DNI) -->
+<tr class="bg-[#FFFDFB] hover:bg-[#FFF8F0] transition-colors">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-full object-cover border border-[#E4E7EC]" data-alt="Focused portrait photo of a mid-twenties delivery cyclist standing by a brick wall in early morning ambient light. The cyclist has athletic build, casual sports pullover, looking intently at the viewer. Strong contrast, no studio filters, realistic honest documentary lighting style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDNKC4M2l6zLC-FXEluccdrCwiZ-g60d-KbeFCossiuGT2DMGDgOQtsLR4nxqyMs92w5_nVdVmlJzfxIqWztK7b0RTOHpPzBWDYhoJ0DDRFYArAOe0JECMuFT09IpK3z2j3BzFsGzTD_s7SzoYYbxqNm134NjPRO1CKPcL84AHZUK72tEvMeCKogfWO3vmdnK9bM8SLxAcjhn2O9XLOVgqnb8WErB6IyyR8mDqC3BBDuvDqFfPERd21"/>
+<div>
+<div class="font-label-md text-label-md text-[#12182C] font-semibold">Cristian F.</div>
+<div class="text-[12px] text-[#5B6475]">DNI 35.882.119 · Córdoba</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475]" data-icon="pedal_bike">pedal_bike</span>
+<span class="font-medium text-[#12182C]">Bici</span>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2 text-[12px]">
+<!-- DNI -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>DNI</span>
+</div>
+<!-- Selfie -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Selfie</span>
+</div>
+<!-- Licencia (No aplica a bici) -->
+<div class="flex items-center gap-1 bg-surface text-[#5B6475] px-2 py-0.5 rounded font-medium border border-[#E4E7EC]">
+<span class="text-[12px] font-bold">-</span>
+<span>Licencia</span>
+</div>
+<!-- Seguro -->
+<div class="flex items-center gap-1 bg-surface text-[#5B6475] px-2 py-0.5 rounded font-medium border border-[#E4E7EC]">
+<span class="text-[12px] font-bold">-</span>
+<span>Seguro</span>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-md text-[13px] bg-[#F0F3FF] text-[#5B6475] font-semibold">
+                    0/2
+                  </span>
+</td>
+<td class="py-3.5 px-4 text-[#5B6475] text-[13px]">
+                  hace 3 h
+                </td>
+<td class="py-3.5 px-4">
+<!-- Alerta Badge Soft Yellow / Red Border -->
+<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FFF4E0] border border-[#C62828] text-[#B45309] text-[12px] font-medium" title="Posible reingreso de persona con historial o sanción previa">
+<span class="material-symbols-outlined text-[14px] text-[#C62828]" data-icon="warning" data-weight="fill" style="font-variation-settings: 'FILL' 1;">warning</span>
+<span class="font-semibold">DNI ya registrado</span>
+</div>
+</td>
+<td class="py-3.5 px-4 text-right">
+<button class="h-9 px-4 rounded-[10px] bg-white border border-[#C62828]/40 text-[#C62828] hover:bg-[#FFDAD6]/30 font-label-md text-label-md transition-all cursor-pointer">
+                    Revisar
+                  </button>
+</td>
+</tr>
+<!-- Row 3: Marcos R. -->
+<tr class="hover:bg-[#F9F9FF] transition-colors">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-full object-cover border border-[#E4E7EC]" data-alt="Crisp documentary headshot of a thirty-year-old South American courier in bright afternoon daylight. Direct eye contact, calm expression, dressed in a utilitarian navy blue windbreaker jacket. Clean framing with strict architectural depth of field, natural skin texture and no photographic filters." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCKcbCX7S6syoYdE3mwZKQLqLO4ecDBQsdWtOx9R9OH_PGbg7UGTJq9OFjWK_L0hboC4xeN5A7LB-Lqx6jU0622nESlEY7euDZTzzlP0r_wjpO-SgVwCf0Dj4DRBMxa6IvPUEQkz8i0Z-orDHqcToCbe8D55mx9BefN9OXMk1FRPoKi-eno7FfAYbS765XVSzUS_VE25hj-pltN1oruDNb7NABIf_x0tntncDFqzdidc8yKZH0KNG_r"/>
+<div>
+<div class="font-label-md text-label-md text-[#12182C] font-semibold">Marcos R.</div>
+<div class="text-[12px] text-[#5B6475]">DNI 40.198.773 · Mendoza</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475]" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-medium text-[#12182C]">Moto</span>
+<span class="text-[12px] text-[#5B6475] bg-[#F0F3FF] px-1.5 py-0.5 rounded border border-[#E4E7EC]">CD 456 EF</span>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2 text-[12px]">
+<!-- DNI -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>DNI</span>
+</div>
+<!-- Selfie -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Selfie</span>
+</div>
+<!-- Licencia -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Licencia</span>
+</div>
+<!-- Seguro faltante -->
+<div class="flex items-center gap-1 bg-[#FFF4E0] text-[#B45309] px-2 py-0.5 rounded font-medium border border-[#E4E7EC]" title="Pendiente de carga o validación">
+<span class="text-[12px] font-bold">-</span>
+<span>Seguro</span>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-md text-[13px] bg-[#FFF4E0] text-[#B45309] font-semibold">
+                    1/2
+                  </span>
+</td>
+<td class="py-3.5 px-4 text-[#5B6475] text-[13px]">
+                  hace 5 h
+                </td>
+<td class="py-3.5 px-4">
+<span class="text-[13px] text-[#5B6475] italic">Sin alertas</span>
+</td>
+<td class="py-3.5 px-4 text-right">
+<button class="h-9 px-4 rounded-[10px] bg-white border border-[#E4E7EC] text-[#12182C] font-label-md text-label-md hover:bg-[#F0F3FF] hover:border-[#09BABD] transition-all cursor-pointer">
+                    Revisar
+                  </button>
+</td>
+</tr>
+<!-- Row 4: Lucas V. -->
+<tr class="hover:bg-[#F9F9FF] transition-colors">
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-full object-cover border border-[#E4E7EC]" data-alt="Realistic authentic headshot of an experienced male driver in his late thirties with dark hair, looking into the lens with a professional neutral stance. Clean natural outdoor lighting, set against a quiet suburban street backdrop. High contrast, crisp resolution, true-to-life tones with zero artificial gloss." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZ2d8aTkwGHP61W6jA9jU2ZiudB9Hjg0egHLuj_NWLIgMYoUopSKm4xQY26yCoUe960npkeOW5kVnl5aAEpzT6Bm-weaze9YYGICoW-LKtoL0vi9nFm1BPNu7vm4ZY86tipYN7G--OE9axWHzaVHBKmYiEoFcnFj5oIPnISZsPk3fFhufDkpMaBnejl8HZjGZkfCiwDgvmV1cI7_vG8-YoVOGMeEetJKK-KCCGGlxPwcTrNigqt1kO"/>
+<div>
+<div class="font-label-md text-label-md text-[#12182C] font-semibold">Lucas V.</div>
+<div class="text-[12px] text-[#5B6475]">DNI 32.551.490 · Santa Fe</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[#5B6475]" data-icon="directions_car">directions_car</span>
+<span class="font-medium text-[#12182C]">Auto</span>
+<span class="text-[12px] text-[#5B6475] bg-[#F0F3FF] px-1.5 py-0.5 rounded border border-[#E4E7EC]">AD 890 GH</span>
+</div>
+</td>
+<td class="py-3.5 px-4">
+<div class="flex items-center gap-2 text-[12px]">
+<!-- DNI -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>DNI</span>
+</div>
+<!-- Selfie -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Selfie</span>
+</div>
+<!-- Licencia -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Licencia</span>
+</div>
+<!-- Seguro -->
+<div class="flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] px-2 py-0.5 rounded font-medium">
+<span class="material-symbols-outlined text-[14px]" data-icon="check_circle" data-weight="fill" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Seguro</span>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-flex items-center px-2 py-0.5 rounded font-label-md text-[13px] bg-[#E8F5EE] text-[#177A4B] font-semibold">
+                    2/2
+                  </span>
+</td>
+<td class="py-3.5 px-4 text-[#5B6475] text-[13px]">
+                  hace 6 h
+                </td>
+<td class="py-3.5 px-4">
+<span class="text-[13px] text-[#5B6475] italic">Sin alertas</span>
+</td>
+<td class="py-3.5 px-4 text-right">
+<button class="h-9 px-4 rounded-[10px] bg-white border border-[#E4E7EC] text-[#12182C] font-label-md text-label-md hover:bg-[#F0F3FF] hover:border-[#09BABD] transition-all cursor-pointer">
+                    Revisar
+                  </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<!-- Table Footer with Pagination Controls -->
+<div class="py-3.5 px-4 bg-[#FDFCFB] border-t border-[#E4E7EC] flex items-center justify-between">
+<div class="text-[13px] text-[#5B6475]">
+            Mostrando 4 de 7 registros pendientes
+          </div>
+<div class="flex items-center gap-3">
+<button class="h-9 px-3.5 rounded-[10px] border border-[#E4E7EC] bg-white text-[#12182C] text-label-md font-label-md hover:bg-[#F0F3FF] disabled:opacity-40 disabled:cursor-not-allowed transition-all" disabled="">
+              Anterior
+            </button>
+<span class="text-label-md font-label-md text-[#12182C] px-2">
+              1 de 2
+            </span>
+<button class="h-9 px-3.5 rounded-[10px] border border-[#E4E7EC] bg-white text-[#12182C] text-label-md font-label-md hover:bg-[#F0F3FF] transition-all cursor-pointer">
+              Siguiente
+            </button>
+</div>
+</div>
+</div>
+<!-- Operational Guidelines Bento Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+<div class="p-4 bg-white border border-[#E4E7EC] rounded-xl flex items-start gap-3">
+<div class="p-2 rounded-lg bg-[#E6F8F8] text-[#0B7A7D]">
+<span class="material-symbols-outlined" data-icon="verified_user">verified_user</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-[#12182C] font-bold">Criterio de Validación</div>
+<p class="text-[13px] text-[#5B6475] mt-0.5">El DNI y la selfie deben coincidir con una similitud biométrica mayor al 94% en Renaper.</p>
+</div>
+</div>
+<div class="p-4 bg-white border border-[#E4E7EC] rounded-xl flex items-start gap-3">
+<div class="p-2 rounded-lg bg-[#FFF4E0] text-[#B45309]">
+<span class="material-symbols-outlined" data-icon="notification_important">notification_important</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-[#12182C] font-bold">Protocolo de Reingresos</div>
+<p class="text-[13px] text-[#5B6475] mt-0.5">Todo postulante con flag "DNI ya registrado" requiere doble autorización del supervisor.</p>
+</div>
+</div>
+<div class="p-4 bg-white border border-[#E4E7EC] rounded-xl flex items-start gap-3">
+<div class="p-2 rounded-lg bg-[#F0F3FF] text-[#00696B]">
+<span class="material-symbols-outlined" data-icon="electric_moped">electric_moped</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-[#12182C] font-bold">Flotas y Vehículos</div>
+<p class="text-[13px] text-[#5B6475] mt-0.5">Póliza civil para motos/autos debe cubrir expresamente transporte de paquetería urbana.</p>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

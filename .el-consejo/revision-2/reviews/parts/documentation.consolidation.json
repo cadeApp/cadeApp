@@ -1,0 +1,22 @@
+{
+  "choice": {
+    "confidence": 0.88,
+    "conflicts": [],
+    "keep": [
+      "p1.0",
+      "p2.1",
+      "p3.0",
+      "p3.1",
+      "p5.0"
+    ],
+    "summary": "Consolidación final de Documentación sobre el plan de implementación de cadeApp. Se emite un dictamen condicional fundamentado en 5 hallazgos de severidad alta que comprometen la claridad operativa, la trazabilidad del trabajo asincrónico entre 3 personas y la consistencia de contratos entre frontend, backend y reglas de agy. Los puntos neurálgicos a subsanar son: (1) asignación formal de propiedad documental para auth y lib en §2 y CODEOWNERS; (2) sincronización obligatoria de tipos de base de datos (pnpm db:types) en los comandos pre-PR de AGENTS.md; (3) estandarización de una sección de bitácora y handoff en docs/tasks/_plantilla.md para garantizar la continuidad entre sesiones aisladas; (4) formalización del protocolo y plantilla de contract-change para discrepancias en APIs/RPCs; y (5) definición rigurosa de los criterios de aceptación y escenarios E2E (DoD / pruebas) en las tareas críticas de release (T-305, T-306, T-308 y T-309). Resueltos estos puntos, el plan resulta completamente claro, trazable y gobernable.",
+    "verdict": "conditional"
+  },
+  "keptRefs": [
+    "p1.0",
+    "p2.1",
+    "p3.0",
+    "p3.1",
+    "p5.0"
+  ]
+}

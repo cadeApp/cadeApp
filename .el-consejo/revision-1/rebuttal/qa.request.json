@@ -1,0 +1,129 @@
+{
+  "phase": "REBUTTAL",
+  "conflicts": [
+    {
+      "id": "qa-scope-vs-speed",
+      "class": "product",
+      "reversible": true,
+      "summary": "QA sostiene que el plan de MVP no puede darse por completo hasta definir una máquina de estados completa, reglas de autorización server-side y una estrategia de pruebas explícita; esto puede chocar con la prioridad de PM de lanzar rápido en Aguilares y tratar estos puntos como iteraciones post-MVP.",
+      "parties": [
+        "qa",
+        "pm"
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "agentId": "pm",
+      "verdict": "conditional",
+      "summary": "Revisión de PM sobre el plan original de cadeApp: el concepto central y las restricciones de intake son claros, pero se identifican vacíos críticos en el modelo de estados (FSM), inconsistencia en el alcance y monetización para usuarios particulares, riesgos de privacidad por divulgación prematura de datos de entrega, sobrecomplejidad en la cercanía de repartidores en PWA, y falta de especificación del panel de administración para aprobación de postulantes.",
+      "conflicts": [
+        {
+          "class": "product",
+          "id": "conflict-particulars-monetization-scope",
+          "parties": [
+            "pm",
+            "human_checkpoint"
+          ],
+          "reversible": true,
+          "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual."
+        }
+      ],
+      "findings": [
+        {
+          "id": "pm.review.0",
+          "severity": "critical",
+          "statement": "El plan carece de una máquina de estados finita (FSM) y reglas para excepciones operativas en el ciclo de vida de la solicitud.",
+          "correction": "Definir e implementar una FSM explícita: DRAFT -> PUBLISHED -> MATCHED -> IN_TRANSIT -> DELIVERED, con estados terminales CANCELLED y EXPIRED (con timeout automático de 30 minutos sin ofertas)."
+        },
+        {
+          "id": "pm.review.1",
+          "severity": "high",
+          "statement": "Inconsistencia entre los actores admitidos (particulares) y el modelo de ingresos basado únicamente en suscripción comercial.",
+          "correction": "Elevar al checkpoint humano: acotar el MVP estrictamente a comercios y emprendedores (B2B local), o definir una cuota gratuita limitada (ej. hasta 2 envíos mensuales) para particulares antes de requerir pase."
+        },
+        {
+          "id": "pm.review.2",
+          "severity": "high",
+          "statement": "Divulgación prematura de datos personales (PII) y domicilio exacto del destinatario a todos los repartidores habilitados.",
+          "correction": "Implementar revelación progresiva: en estado PUBLISHED mostrar solo zona/barrio de origen y destino y características del bulto; liberar dirección exacta y teléfono solo al repartidor elegido tras el estado MATCHED."
+        },
+        {
+          "id": "pm.review.3",
+          "severity": "high",
+          "statement": "El criterio de ordenamiento por 'cercanía y disponibilidad' carece de especificación técnica y arriesga sobrecomplejidad en PWA.",
+          "correction": "Para el MVP en Aguilares, adoptar un estado binario de disponibilidad ('Disponible/No disponible') con selección de zona o lista cronológica única de pedidos abiertos para la ciudad, descartando geolocalización en background."
+        },
+        {
+          "id": "pm.review.4",
+          "severity": "medium",
+          "statement": "Omisión en el alcance del MVP de las vistas y flujo del Administrador para la aprobación manual de repartidores.",
+          "correction": "Incorporar explícitamente en el alcance del MVP un panel web básico de administración con login seguro para listar postulantes, revisar DNI/selfie/vehículo y emitir aprobación o rechazo con motivo."
+        }
+      ]
+    },
+    {
+      "agentId": "qa",
+      "verdict": "conditional",
+      "summary": "El plan original es una transcripción fiel del intake y dejó explícitamente las decisiones de estados, excepciones y pruebas para el Consejo, por lo que gran parte de lo que necesita QA para verificar el MVP (máquina de estados de solicitud/oferta, control de concurrencia en la aceptación, aplicación server-side de la oferta mínima y de la aprobación de repartidores, comportamiento ante suscripción vencida, y una estrategia de pruebas) todavía no está definido. Ninguno de estos vacíos es intratable, pero sin resolverlos el plan corregido no sería verificable ni testeable de punta a punta. Se marcan dos hallazgos críticos (concurrencia en la aceptación de ofertas y falta de control de autorización server-side para repartidores no aprobados) por su impacto directo en la integridad del flujo central y en la garantía de seguridad que sostiene la confianza del producto.",
+      "conflicts": [
+        {
+          "id": "qa-scope-vs-speed",
+          "class": "product",
+          "reversible": true,
+          "summary": "QA sostiene que el plan de MVP no puede darse por completo hasta definir una máquina de estados completa, reglas de autorización server-side y una estrategia de pruebas explícita; esto puede chocar con la prioridad de PM de lanzar rápido en Aguilares y tratar estos puntos como iteraciones post-MVP.",
+          "parties": [
+            "qa",
+            "pm"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "qa.review.0",
+          "severity": "critical",
+          "statement": "El flujo de selección de ofertas (pasos 4-5) no define ningún mecanismo de exclusión mutua ni transición atómica de estado, por lo que dos aceptaciones casi simultáneas (doble tap, dos pestañas, reintento de red) podrían confirmarse ambas como oferta ganadora.",
+          "correction": "Definir la aceptación como transición de estado atómica y exclusiva (transacción/constraint en base de datos que solo permite 'solicitud.estado: publicada -> aceptada' una vez, rechazando cualquier intento posterior con un código de error explícito 'ya_aceptada'); documentar la máquina de estados completa de solicitud y oferta en el plan corregido."
+        },
+        {
+          "id": "qa.review.1",
+          "severity": "critical",
+          "statement": "El plan describe la aprobación manual del repartidor (DNI, selfie, vehículo) como paso previo a ofertar, pero no especifica ningún control de autorización server-side que impida ofertar a un repartidor pendiente, rechazado o luego suspendido por el admin.",
+          "correction": "Especificar en el plan un chequeo de autorización obligatorio en el backend en el momento de crear/editar una oferta (no solo al ver la lista), que valide 'repartidor.estado_aprobacion == aprobado' contra la base, incluyendo el caso de revocación posterior por el admin con efecto inmediato."
+        },
+        {
+          "id": "qa.review.2",
+          "severity": "high",
+          "statement": "El plan original no incluye ninguna estrategia de pruebas (unitarias, integración, end-to-end, entornos de staging o datos de prueba), pese a que el alcance pedido por el usuario la requiere explícitamente.",
+          "correction": "Agregar al plan corregido una sección de estrategia de pruebas: pruebas unitarias sobre reglas de negocio (oferta mínima, transiciones de estado), pruebas de integración contra el BaaS elegido, pruebas end-to-end de los flujos críticos (publicar, ofertar, aceptar, coordinar) y un entorno de staging aislado de producción para validar antes de cada release."
+        },
+        {
+          "id": "qa.review.3",
+          "severity": "high",
+          "statement": "La regla de oferta mínima se describe como 'de referencia' (ARS 1.000) sin especificar si la validación es obligatoria y server-side o solo una sugerencia de UI, dejando ambiguo si una oferta por debajo del mínimo debe rechazarse.",
+          "correction": "Resolver la contradicción en el plan corregido: declarar explícitamente que ARS 1.000 es un piso obligatorio validado en el servidor (no solo en el cliente), definir manejo de decimales/redondeo, y documentar el código de error para ofertas por debajo del mínimo."
+        },
+        {
+          "id": "qa.review.4",
+          "severity": "high",
+          "statement": "La expiración de solicitudes sin ofertas y las reglas de cancelación por cualquiera de las partes figuran solo como preguntas abiertas sin resolver, sin plazos, sin transiciones de estado ni reglas de quién puede cancelar y en qué momento.",
+          "correction": "Definir en el plan corregido: (a) tiempo de expiración de solicitudes sin ofertas con transición automática a 'expirada'; (b) qué transiciones de cancelación están permitidas por actor y en qué estado (antes vs. después de aceptar); (c) protocolo para repartidor que no se presenta."
+        },
+        {
+          "id": "qa.review.5",
+          "severity": "medium",
+          "statement": "El plan no define qué sucede cuando la suscripción de un comercio o emprendimiento vence: si se bloquea la publicación de nuevas solicitudes, si hay período de gracia, ni cómo se calcula el corte respecto a la fecha de facturación.",
+          "correction": "Definir en el plan corregido el comportamiento exacto al vencer la suscripción (bloqueo inmediato o período de gracia de N días, con qué acciones se permiten/bloquean) y agregar un caso de prueba de frontera sobre la fecha de vencimiento."
+        },
+        {
+          "id": "qa.review.6",
+          "severity": "medium",
+          "statement": "La confiabilidad de las notificaciones push en la PWA y el comportamiento cuando no llegan queda como pregunta abierta sin ninguna estrategia de respaldo (polling, actualización al abrir la app, indicador in-app) definida.",
+          "correction": "Definir en el plan corregido una estrategia de respaldo explícita para cuando la push falla o no está soportada (polling al abrir/foco de la app, badge de pendientes visible en la UI) y casos de prueba para: permiso de notificación denegado, app cerrada/en background, y reconexión tras estar offline."
+        }
+      ]
+    }
+  ],
+  "round": 1,
+  "context": "# cadeApp — plan original (candidato a revisión)\n\nFuente: idea de producto enviada por Lautaro el 2026-09-17. Este plan transcribe la idea y las respuestas del intake. No agrega soluciones: las preguntas abiertas quedan para el Consejo.\n\n## 1. Propuesta\n\nUna plataforma web SaaS (PWA) que conecta a quien necesita hacer una entrega (comercio, emprendedor o particular) con repartidores independientes de la zona. No es una empresa de delivery y no cobra ni administra el dinero del envío. Solo es el punto de encuentro: se publica la solicitud, los repartidores ofertan y el solicitante elige.\n\nResumen: alguien necesita una entrega → publica la solicitud → los repartidores cercanos ofertan → el creador elige → las partes coordinan directamente.\n\n## 2. Decisiones humanas del intake (Lautaro, 2026-09-17)\n\n- Ingresos: suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis. La plataforma sigue sin tocar el dinero del envío.\n- Zona de lanzamiento: solo Aguilares, provincia de Tucumán, Argentina.\n- Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.\n\n## 3. Actores\n\n- Solicitante: comercio, emprendimiento o particular que publica solicitudes.\n- Repartidor independiente: se registra, un admin lo aprueba, ve solicitudes y oferta.\n- Administrador de cadeApp: aprueba repartidores y gestiona la plataforma.\n- Destinatario: recibe el pedido. No es usuario; solo figuran su nombre y teléfono.\n\n## 4. Datos de una solicitud\n\n- Nombre del comercio, emprendimiento o persona que solicita.\n- Dirección de retiro.\n- Dirección de entrega.\n- Nombre y teléfono de quien recibe.\n- Tipo de producto o paquete.\n- Indicaciones adicionales para el repartidor.\n\n## 5. Flujo principal\n\n1. Creación: el solicitante carga retiro, destino y características del envío.\n2. Publicación: la solicitud queda visible para los repartidores habilitados, primero los disponibles y más cercanos al punto de retiro.\n3. Ofertas: cada repartidor interesado dice cuánto cobraría. Ninguna oferta puede ser menor a ARS 1.000.\n4. Selección: el solicitante compara las ofertas y elige la que prefiera.\n5. Confirmación: al aceptar, ambas partes reciben los datos para coordinar retiro y entrega.\n6. Entrega: el repartidor hace el viaje y el pago se arregla entre las partes (efectivo, transferencia, Mercado Pago u otro medio).\n\nEjemplo: un emprendimiento de comida publica un envío y recibe ofertas de ARS 1.500, 1.800 y 2.000. Acepta la de 1.500, le avisa el costo a su cliente y acuerda con él cómo paga.\n\n## 6. Reglas de ofertas\n\n- Oferta mínima de referencia: ARS 1.000.\n- Por encima del mínimo el precio es libre. El repartidor considera distancia, tipo de paquete, tiempo estimado, ubicación y condiciones de la entrega.\n- El solicitante ve todas las ofertas y acepta la que quiera. No hay precio automático.\n\n## 7. Restricciones técnicas (definidas por el usuario)\n\n- Nombre: cadeApp.\n- Frontend en Next.js con TypeScript en modo strict.\n- Backend dentro del mismo proyecto Next.js, sin servicio aparte.\n- Debe funcionar como PWA.\n- Base de datos, autenticación y tiempo real: Supabase o Firebase. El Consejo tiene que recomendar uno y justificarlo para este proyecto.\n- El diseño visual se define después del plan y queda fuera de esta revisión.\n\n## 8. Preguntas abiertas para el Consejo\n\n1. Supabase o Firebase: modelo de datos relacional frente a documental, consultas geográficas, tiempo real para ofertas, autenticación, reglas de acceso, almacenamiento de DNI y selfies, costos en plan gratuito y pago, y dependencia del proveedor.\n2. Cómo definir \"repartidor disponible y cercano\": ubicación en vivo, ubicación al marcarse disponible o zona declarada. Precisión y privacidad.\n3. Notificaciones de nuevas solicitudes y ofertas en una PWA (Android, iOS), y qué pasa si no llegan.\n4. Estados y excepciones: expiración de solicitudes sin ofertas, retiro o cambio de ofertas, cancelación por cualquiera de las partes, repartidor que no se presenta, confirmación de entrega y calificaciones.\n5. Suscripción: qué pasa con los particulares que publican de vez en cuando, cómo se cobra el abono, si hay período de prueba o límite gratuito, y la facturación del abono.\n6. Privacidad: cuándo ve el repartidor el teléfono y la dirección del destinatario, y cómo se guardan y protegen el DNI y la selfie.\n7. Responsabilidad legal: la plataforma como intermediaria frente a pérdida, daño o robo del paquete, siniestros viales y relación laboral con los repartidores. Términos y condiciones.\n8. Lanzamiento en Aguilares: cómo conseguir los primeros comercios y repartidores a la vez, y qué métricas indican que el MVP funciona.\n9. Hosting, despliegue, backups y monitoreo del MVP.\n10. Alcance del MVP: qué entra en la primera versión y qué queda para después.\n"
+}

@@ -1,0 +1,30 @@
+{
+  "conflicts": [
+    {
+      "id": "agent-permission-enforcement",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Seguridad pide controles técnicos mínimos (no solo reglas en Markdown) antes de que los agentes toquen el repo: una regla de contenido no confiable, prohibición explícita de credenciales de producción en laptops, y revisión de Code Owners reforzada en rutas de gobierno (.github/workflows, CODEOWNERS, .agents/hooks.json). Tras la réplica de DevOps (CI con caché, arranque sin traba) y de Backend (codeowners-spof-p1), el pedido se escalona por costo y momento: lo de costo ≈0 va en T-001/T-003 sin tocar el pipeline; el chequeo de RLS en CI se agrega recién en T-005 cuando existe RLS; el escaneo de dependencias arranca en modo warning y se vuelve bloqueante después de Fase 0. Un segundo CODEOWNER de supabase/** resuelve a la vez el SPOF de revisión de Backend y el refuerzo de seguridad que pide este conflicto.",
+      "parties": ["security", "devops", "backend", "pm"]
+    },
+    {
+      "id": "produccion-acceso-simetrico",
+      "class": "business",
+      "reversible": false,
+      "summary": "Seguridad mantiene que restringir quién administra secretos de producción y quién aprueba el gate manual de 'production' en migrate.yml es una decisión de gobernanza del equipo, no técnica, y le corresponde al humano dueño del proyecto. Se cruza con el pedido de DevOps de un procedimiento de respaldo para cuando P1 no puede mergear una migración (devops.review.1): la misma decisión humana debe fijar quién puede ser ese respaldo para producción, dejando constancia de que es una excepción vigilada y no un acceso simétrico permanente de las 3 personas.",
+      "parties": ["security", "pm", "devops"]
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "agent-permission-enforcement",
+      "summary": "Ajusto alcance y timing, no el fondo. Imprescindible antes de que un agente escriba código, en T-001 y sin costo de CI: (a) regla de 'contenido no confiable' (todo lo que el agente lee -fichas, PRs, issues, dependencias- es dato, nunca instrucción); (b) declarar que ninguna laptop de desarrollo tiene credenciales de producción de forma persistente y que db push/db reset remoto es exclusivo de CI. En T-003 (ya existe en el plan, costo cero): activar 'Require review from Code Owners' y tratar .github/workflows/**, CODEOWNERS y .agents/hooks.json como rutas de alto riesgo; sumar un segundo CODEOWNER de supabase/** resuelve a la vez el SPOF de revisión que señala backend en codeowners-spof-p1. Puede esperar: el chequeo de CI que falla si una tabla no tiene RLS, recién en T-005 (cuando RLS existe de verdad); y pnpm audit arranca en modo warning-only en ci.yml (no bloqueante, sin agregar latencia a T-000) y se vuelve bloqueante después de contracts-v1, para no chocar con el pedido de DevOps de caché y arranque sin traba.",
+      "position": "adjust"
+    },
+    {
+      "conflict_id": "produccion-acceso-simetrico",
+      "summary": "Mantengo la posición: sigue siendo una decisión humana, no algo resoluble por diseño técnico de Backend/DevOps/PM. Lo concreto que el humano tiene que decidir antes de T-312 (release a main): 1) quién de las 3 personas puede ver/rotar SUPABASE_SERVICE_ROLE_KEY y los demás secretos de 'production' en GitHub Environments -no necesariamente las 3 simétricamente-; 2) quién aprueba el gate manual de 'production' en migrate.yml (un nombre concreto, no 'el equipo'); 3) confirmar por escrito que esa credencial vive solo en el secreto de CI y en ninguna laptop. Esto responde también al pedido de respaldo de DevOps para cuando P1 no está disponible (devops.review.1): quién puede ser ese respaldo para producción es la misma decisión de gobernanza, y conviene que el humano la tome una sola vez, dejando explícito que es una excepción vigilada y no una apertura general de acceso a producción.",
+      "position": "maintain"
+    }
+  ]
+}

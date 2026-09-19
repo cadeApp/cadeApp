@@ -1,0 +1,58 @@
+{
+  "agentId": "documentation",
+  "confidence": 0.85,
+  "findings": [
+    {
+      "correction": "Incorporar docs/security/rls-matrix.md dentro de 'Archivos permitidos' y en los criterios de aceptación (DoD) de T-005 como el documento canónico de roles y permisos.",
+      "evidence": [
+        "Fase 0, T-005: 'RLS v1 en todas las tablas, storage policies de courier-docs y matriz RLS'",
+        "Fase 0, T-005, Archivos permitidos: 'supabase/migrations/**', 'supabase/tests/rls_*.sql'"
+      ],
+      "impact": "La matriz de control de acceso queda implícita únicamente en código y pruebas pgTAP, impidiendo que humanos y agentes dispongan de una referencia arquitectónica clara y legible (ej. docs/security/rls-matrix.md) para auditar y mantener las reglas.",
+      "severity": "medium",
+      "statement": "T-005 define en su alcance la creación de una 'matriz RLS' pero restringe 'Archivos permitidos' exclusivamente a scripts SQL, omitiendo el documento técnico de soporte."
+    },
+    {
+      "correction": "Documentar formalmente la dependencia fijándola a contracts-v1 para el desarrollo de interfaz con contratos Zod de T-006, o exigir T-103 sin ambigüedades si la integración transaccional completa es requisito para el PR.",
+      "evidence": [
+        "Fase 1, T-112, Columna Dep: 'T-103 (o contrato de T-006 mientras tanto)'"
+      ],
+      "impact": "Genera incertidumbre documental para los desarrolladores y agentes de agy respecto al criterio de inicio y merge a develop: no queda claro si la tarea requiere el backend real o si puede integrarse con mocks, arriesgando desalineación entre ramas.",
+      "severity": "medium",
+      "statement": "La dependencia de T-112 contiene una disyunción ambigua ('T-103 (o contrato de T-006 mientras tanto)') que debilita la trazabilidad del grafo de dependencias."
+    },
+    {
+      "correction": "Agregar a Archivos permitidos y al DoD de T-104 la documentación del contrato de los endpoints en docs/api/endpoints.md o mediante especificaciones formales de API.",
+      "evidence": [
+        "Fase 1, T-104: '/api/cron/sweep: persistir expiraciones, purgar documentos con purge_after vencido...; /api/health'",
+        "Fase 1, T-104, Archivos permitidos: 'src/app/api/cron/**', 'src/app/api/health/**', 'src/server/**'"
+      ],
+      "impact": "El contrato de invocación (método HTTP, requerimiento de cabecera CRON_SECRET, esquemas de payload, respuestas y códigos de error) no queda registrado documentalmente, forzando a revisar el código fuente para integrar monitoreo o cron jobs.",
+      "severity": "medium",
+      "statement": "T-104 define rutas HTTP operativas (/api/cron/sweep y /api/health) pero no incluye entregables documentales de sus contratos de API ni especificaciones de uso."
+    },
+    {
+      "correction": "Aclarar en la descripción de T-002 que genera el borrador inicial y en T-007 su ratificación/cierre formal, estableciendo en las reglas del repo el uso de una estructura estándar (ej. MADR) con campo de estado explícito.",
+      "evidence": [
+        "Fase 0, T-002: Archivos permitidos incluye 'docs/adr/0002-hosting-y-cron.md (borrador)'",
+        "Fase 0, T-007: 'ADR-0001 Supabase (...) y ADR-0002 hosting y cron', Archivos permitidos 'docs/adr/**'"
+      ],
+      "impact": "Falta de claridad sobre la etapa en la que el documento pasa de estado borrador a aceptado, y ausencia de especificación sobre la plantilla estándar de ADR a seguir.",
+      "severity": "low",
+      "statement": "El ciclo de vida documental de ADR-0002 presenta solapamiento entre T-002 y T-007 sin explicitar convención de estados."
+    },
+    {
+      "correction": "Incluir en la ficha de T-115 o en la especificación funcional la redacción canónica de cada plantilla de mensaje y la lista cerrada de campos permitidos en los enlaces wa.me.",
+      "evidence": [
+        "Fase 1, T-115: 'WhatsApp wa.me (comercio ↔ repartidor y \\\"Avisar a mi cliente\\\" con el costo del envío)'",
+        "Fase 1, T-115, DoD: 'Unit del link de WhatsApp (sin datos de más); las transiciones siguen la máquina de estados'"
+      ],
+      "impact": "El criterio 'sin datos de más' es subjetivo; al no existir una especificación documental de los textos y parámetros exactos, diferentes agentes o desarrolladores pueden estructurar mensajes dispares o exponer PII inadvertidamente.",
+      "severity": "low",
+      "statement": "T-115 no especifica documentalmente las plantillas ni la lista blanca de datos para los enlaces de WhatsApp."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión documental de las Fases 0 y 1 (§7). Se identifican vacíos en la trazabilidad y artefactos documentales: omisión de la matriz RLS en archivos permitidos de T-005, ambigüedad en la formulación de dependencias de T-112, falta de especificación contractual para los endpoints de T-104, solapamiento del ciclo de vida de ADR-0002 y falta de plantilla canónica documentada para los enlaces de WhatsApp en T-115.",
+  "verdict": "conditional"
+}

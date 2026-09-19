@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=390, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>cadeApp - Perfil y documentación</title>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Fonts: Montserrat & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-lowest": "#ffffff",
+            "surface-bright": "#f9f9ff",
+            "primary-fixed": "#6df6f9",
+            "error-container": "#ffdad6",
+            "inverse-on-surface": "#ebf1ff",
+            "tertiary-container": "#5cb5b8",
+            "on-surface": "#131c2a",
+            "background": "#f9f9ff",
+            "on-primary-container": "#004446",
+            "secondary-fixed": "#dce1fd",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-secondary-fixed": "#151b2f",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container": "#e7eeff",
+            "surface-container-highest": "#dae3f7",
+            "on-surface-variant": "#3c4949",
+            "secondary": "#585d75",
+            "secondary-fixed-dim": "#c0c5e0",
+            "inverse-surface": "#283140",
+            "on-tertiary-container": "#004446",
+            "on-error": "#ffffff",
+            "on-tertiary-fixed": "#002021",
+            "tertiary": "#00696c",
+            "on-error-container": "#93000a",
+            "on-primary-fixed": "#002020",
+            "outline-variant": "#bbc9c9",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface": "#f9f9ff",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "outline": "#6c7a7a",
+            "error": "#ba1a1a",
+            "on-primary": "#ffffff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "surface-container-low": "#f0f3ff",
+            "surface-tint": "#00696b",
+            "inverse-primary": "#4adadd",
+            "secondary-container": "#d9defa",
+            "primary-fixed-dim": "#4adadd",
+            "surface-dim": "#d1daee",
+            "surface-container-high": "#dfe8fd",
+            "primary": "#00696b",
+            "primary-container": "#09babd",
+            "on-tertiary": "#ffffff",
+            "on-secondary": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-lg": "1.5rem",
+            "space-sm": "0.5rem",
+            "space-xs": "0.25rem",
+            "margin": "1rem",
+            "space-md": "1rem",
+            "gutter": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "label-md": ["Inter"],
+            "price-display": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "price-sm": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-lg": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "body-md": ["Inter"],
+            "body-medium": ["Inter"]
+          },
+          "fontSize": {
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      display: inline-block;
+      text-transform: none;
+      letter-spacing: normal;
+      word-wrap: normal;
+      white-space: nowrap;
+      direction: ltr;
+      vertical-align: middle;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body-md text-body-md antialiased min-h-screen flex justify-center selection:bg-primary-container selection:text-on-primary-container">
+<!-- Mobile Viewport Container 390px Baseline -->
+<div class="w-full max-w-[390px] min-h-screen flex flex-col bg-background relative shadow-xl overflow-x-hidden pb-24">
+<!-- TopAppBar Component (from JSON Shared Components) -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface border-b border-outline-variant/30">
+<div class="max-w-[390px] w-full mx-auto flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container" style="font-variation-settings: 'FILL' 1;">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<button class="font-label-md text-label-md text-primary-container hover:opacity-90 active:scale-95 transition-all" type="button">
+          Ingresar
+        </button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 w-full px-4 pt-18 mt-14 flex flex-col gap-4">
+<!-- Profile Header Hero Section -->
+<section class="flex flex-col items-center text-center pt-4 pb-2">
+<div class="relative mb-3">
+<img class="w-24 h-24 rounded-full object-cover border-2 border-surface-container-lowest shadow-sm" data-alt="Close up sharp portrait of an authentic young Argentine courier named Joaquín wearing a sleek matte navy motorcycle jacket and helmet under clear daytime outdoor lighting. The backdrop is a clean urban street with crisp realistic textures, sharp focus, natural daylight, and clean neutral colors." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBGHUL-mpMsd4kM1h2noU3Agr-lzdHGOtlwiRgrHxX-95qwMIxodi1nfBFj7M7bU4jhEnOT73kdqMTbJtr0AL61NMhxIRJEYL5f_N65OJAOsFRgjHm1q0678r4zQgac04uOrQkfpxyRonb4A64ZjiOauJM5cZIqc4gdHDhBhU2okrxtZ4w5BS9YqM0G7Ag4A6QdO-1IxTbnd8KJNTQHV7jWWSmw0_rIxHATNa2WcP425jvYz8Ukw7gz"/>
+<div class="absolute bottom-0 right-0 bg-primary-container text-on-primary-container rounded-full p-1 border-2 border-surface-container-lowest flex items-center justify-center shadow-sm">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">
+          Joaquín R.
+        </h1>
+<!-- Approved Pill Badge & Vehicle Details -->
+<div class="flex items-center gap-2 mt-1.5 flex-wrap justify-center">
+<span class="inline-flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] font-label-sm text-label-sm px-2.5 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+            Aprobado
+          </span>
+<span class="text-secondary font-body-md text-body-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">moped</span>
+            Moto · AB 123 CD
+          </span>
+</div>
+</section>
+<!-- Card "Tu documentación" -->
+<section class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-4 flex flex-col gap-3.5">
+<div class="flex items-center justify-between pb-1 border-b border-outline-variant/30">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Tu documentación</h2>
+<p class="font-body-md text-body-md text-secondary">1 de 2 opcionales verificados</p>
+</div>
+<span class="inline-flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] font-label-sm text-label-sm px-2.5 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 1;">done</span>
+            Licencia verificada
+          </span>
+</div>
+<!-- Progress Bar Indicator -->
+<div class="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary-container h-full rounded-full w-[75%] transition-all duration-300"></div>
+</div>
+<!-- Verification Checklist -->
+<div class="flex flex-col divide-y divide-outline-variant/20 pt-1">
+<!-- Item 1: DNI -->
+<div class="py-2.5 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-secondary text-[20px]">badge</span>
+<span class="font-body-medium text-body-medium text-on-surface">DNI</span>
+</div>
+<span class="inline-flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] font-label-sm text-label-sm px-2.5 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">check</span>
+              Verificado
+            </span>
+</div>
+<!-- Item 2: Selfie -->
+<div class="py-2.5 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-secondary text-[20px]">face</span>
+<span class="font-body-medium text-body-medium text-on-surface">Selfie</span>
+</div>
+<span class="inline-flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] font-label-sm text-label-sm px-2.5 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">check</span>
+              Verificada
+            </span>
+</div>
+<!-- Item 3: Licencia de conducir -->
+<div class="py-2.5 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-secondary text-[20px]">directions_car</span>
+<span class="font-body-medium text-body-medium text-on-surface">Licencia de conducir</span>
+</div>
+<span class="inline-flex items-center gap-1 bg-[#E8F5EE] text-[#177A4B] font-label-sm text-label-sm px-2.5 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">check</span>
+              Verificada
+            </span>
+</div>
+<!-- Item 4: Seguro vigente -->
+<div class="py-2.5 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-secondary text-[20px]">security</span>
+<span class="font-body-medium text-body-medium text-on-surface">Seguro vigente</span>
+</div>
+<span class="inline-flex items-center gap-1 bg-[#FFF4E0] text-[#B45309] font-label-sm text-label-sm px-2.5 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[13px]">pending</span>
+              En revisión
+            </span>
+</div>
+<!-- Item 5: Cambiar foto -->
+<div class="pt-3 pb-1 flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-secondary text-[20px]">add_a_photo</span>
+<span class="font-body-medium text-body-medium text-on-surface">Cambiar foto de perfil</span>
+</div>
+<button class="h-9 px-3.5 border border-outline-variant/50 rounded-lg bg-surface-container-lowest text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-colors active:scale-95" type="button">
+              Cambiar
+            </button>
+</div>
+</div>
+</section>
+<!-- Incentive Callout Card -->
+<section class="bg-[#F0FDFD] border border-primary-container/40 rounded-xl p-3 flex items-start gap-3 text-secondary">
+<div class="bg-primary-container/20 text-tertiary p-1.5 rounded-lg flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface leading-snug">
+<strong class="font-bold text-primary">Más documentación verificada:</strong> tus ofertas aparecen primero a los comercios de tu ciudad.
+        </p>
+</section>
+<!-- Settings List Rows -->
+<section class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl overflow-hidden divide-y divide-outline-variant/20">
+<!-- Toggle: Push Notifications -->
+<div class="p-3.5 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">notifications</span>
+<span class="font-body-medium text-body-medium text-on-surface">Notificaciones push</span>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-outline-variant after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-container"></div>
+</label>
+</div>
+<!-- Row: Install PWA -->
+<button class="w-full p-3.5 flex items-center justify-between hover:bg-surface-container-low transition-colors text-left" type="button">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">install_mobile</span>
+<span class="font-body-medium text-body-medium text-on-surface">Instalar la app (PWA)</span>
+</div>
+<span class="material-symbols-outlined text-secondary text-[20px]">chevron_right</span>
+</button>
+<!-- Row: Terms and Privacy -->
+<button class="w-full p-3.5 flex items-center justify-between hover:bg-surface-container-low transition-colors text-left" type="button">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary">description</span>
+<span class="font-body-medium text-body-medium text-on-surface">Términos y privacidad</span>
+</div>
+<span class="material-symbols-outlined text-secondary text-[20px]">chevron_right</span>
+</button>
+<!-- Row: Logout -->
+<button class="w-full p-3.5 flex items-center justify-between hover:bg-error-container/20 transition-colors text-left text-error" type="button">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-error">logout</span>
+<span class="font-label-md text-label-md text-error">Cerrar sesión</span>
+</div>
+<span class="material-symbols-outlined text-error text-[20px]">arrow_forward</span>
+</button>
+</section>
+<!-- Footer Component (Shared Components) -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center mt-2 border-t border-outline-variant/40">
+<p class="font-body-md text-body-md text-secondary">
+          © 2024 cadeApp. Envíos locales y logística inteligente.
+        </p>
+<div class="flex flex-wrap justify-center gap-x-4 gap-y-2 text-secondary font-body-md text-body-md">
+<a class="hover:text-primary transition-colors duration-150" href="#">Términos y condiciones</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+</footer>
+</main>
+<!-- Bottom Navigation Bar (Fixed 3 items: Solicitudes, Mis ofertas, Perfil [Active]) -->
+<nav aria-label="Navegación principal" class="fixed bottom-0 left-0 right-0 z-40 bg-surface-container-lowest border-t border-outline-variant/30 flex justify-center shadow-lg">
+<div class="w-full max-w-[390px] h-16 px-4 flex items-center justify-around">
+<!-- Tab 1: Solicitudes (Inactive) -->
+<button class="flex flex-col items-center justify-center flex-1 py-1 text-secondary hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-[24px]">local_shipping</span>
+<span class="font-label-sm text-label-sm mt-0.5">Solicitudes</span>
+</button>
+<!-- Tab 2: Mis ofertas (Inactive) -->
+<button class="flex flex-col items-center justify-center flex-1 py-1 text-secondary hover:text-on-surface transition-colors" type="button">
+<span class="material-symbols-outlined text-[24px]">payments</span>
+<span class="font-label-sm text-label-sm mt-0.5">Mis ofertas</span>
+</button>
+<!-- Tab 3: Perfil (Active - Brand Teal) -->
+<button class="flex flex-col items-center justify-center flex-1 py-1 text-primary-container font-semibold transition-colors" type="button">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-label-sm text-label-sm mt-0.5 text-primary">Perfil</span>
+</button>
+</div>
+</nav>
+</div>
+</body></html>

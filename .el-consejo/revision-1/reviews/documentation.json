@@ -1,0 +1,61 @@
+{
+  "agentId": "documentation",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "correction": "Definir explícitamente en la especificación funcional y en los términos del servicio la regla para particulares: si cuentan con una cuota de envíos de prueba gratuitos, si pagan una tarifa por solicitud publicada, o si quedan temporalmente excluidos del MVP para enfocar el lanzamiento exclusivamente en comercios y emprendedores suscritos.",
+      "evidence": [
+        "context: Sección 1 y 3 define a 'particular' como actor solicitante válido.",
+        "context: Sección 2 limita los ingresos a 'suscripción mensual para comercios y emprendedores' sin estipular tarifa ni acceso para particulares.",
+        "context: Sección 8 pregunta 5 confirma la omisión: 'qué pasa con los particulares que publican de vez en cuando, cómo se cobra el abono'."
+      ],
+      "impact": "Impide redactar especificaciones funcionales unívocas, términos y condiciones del servicio y contratos de validación, arriesgando frustración de usuarios particulares que desconozcan si deben pagar un abono comercial o si disponen de solicitudes libres.",
+      "severity": "high",
+      "statement": "Inconsistencia y ambigüedad documental en el modelo de monetización y alcance funcional para el actor 'particular'."
+    },
+    {
+      "correction": "Incorporar en el plan una matriz de ciclo de vida con estados exhaustivos (ej. DRAFT, PUBLISHED, OFFERED, ASSIGNED, IN_TRANSIT, DELIVERED, CANCELLED, EXPIRED) que documente para cada transición: actor emisor permitido, precondiciones, mutaciones de datos, eventos en tiempo real y política de manejo de excepciones.",
+      "evidence": [
+        "context: Sección 5 documenta solo un camino feliz lineal de 6 pasos sin tratamiento de desvíos.",
+        "context: Sección 8 pregunta 4 deja abierta la definición de 'expiración de solicitudes sin ofertas, retiro o cambio de ofertas, cancelación por cualquiera de las partes, repartidor que no se presenta, confirmación de entrega y calificaciones'."
+      ],
+      "impact": "Provoca desalineación técnica entre frontend y backend, impidiendo programar validaciones deterministas e introduciendo inconsistencias operativas ante cancelaciones, expiraciones o incumplimiento de repartidores.",
+      "severity": "high",
+      "statement": "Falta de especificación formal de la máquina de estados y transiciones para solicitudes y ofertas."
+    },
+    {
+      "correction": "Especificar la arquitectura de contratos de API (Route Handlers o Server Actions) documentando esquemas de entrada/salida tipados con Zod/TypeScript, respuestas de error normalizadas y la lista canónica de canales/eventos en tiempo real para la publicación y recepción de ofertas.",
+      "evidence": [
+        "context: Sección 7 exige 'Next.js con TypeScript en modo strict' y 'Backend dentro del mismo proyecto Next.js'.",
+        "context: El documento carece de catálogo de rutas de API, esquemas de payload o nomenclatura de eventos reactivos."
+      ],
+      "impact": "Dificulta el mantenimiento y la trazabilidad del código, impidiendo la generación de contratos tipados entre cliente y servidor en Next.js y aumentando el riesgo de errores de serialización o desincronización de eventos de ofertas.",
+      "severity": "medium",
+      "statement": "Ausencia de contratos de interfaz documentados para endpoints de API y suscripciones en tiempo real."
+    },
+    {
+      "correction": "Documentar en el modelo de datos la entidad Repartidor (estados: PENDING, APPROVED, REJECTED, SUSPENDED), los metadatos de los archivos cargados (DNI, selfie, vehículo) y una tabla de auditoría (admin_id, timestamp, estado_anterior, estado_nuevo, observaciones) que garantice trazabilidad completa del proceso de habilitación.",
+      "evidence": [
+        "context: Sección 2 y 3 establece la aprobación manual por administrador mediante DNI, selfie y datos del vehículo.",
+        "context: Sección 4 detalla únicamente los atributos de una solicitud de envío, omitiendo por completo los datos del repartidor y la auditoría de su aprobación."
+      ],
+      "impact": "Impide auditar quién, cuándo y con qué evidencia aprobó o rechazó a un repartidor, comprometiendo la seguridad operativa y dificultando el soporte ante reclamos o incidentes de entrega.",
+      "severity": "medium",
+      "statement": "Omisión del diccionario de datos y del registro de trazabilidad/auditoría para la habilitación de repartidores."
+    },
+    {
+      "correction": "Redactar un ADR formal que compare Supabase frente a Firebase bajo criterios objetivos (modelo relacional vs documental, soporte geoespacial para Aguilares, costos, almacenamiento de documentación sensible y lock-in) y documentar un runbook básico de despliegue, configuración de variables de entorno y respaldo de datos.",
+      "evidence": [
+        "context: Sección 7 y Sección 8 pregunta 1 requieren recomendar y justificar entre Supabase o Firebase sin criterios documentados.",
+        "context: Sección 8 preguntas 9 y 10 identifican hosting, despliegue, backups, monitoreo y alcance del MVP como interrogantes sin resolver."
+      ],
+      "impact": "Deja sin justificación técnica documentada la elección del BaaS y sin guía operativa al desarrollador único (Lautaro), dificultando la reproducibilidad del entorno, la configuración de variables y el plan de contingencia.",
+      "severity": "medium",
+      "statement": "Inexistencia de un Documento de Decisión de Arquitectura (ADR) y runbook operativo para el despliegue del MVP."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión documental de cadeApp completada: se emite veredicto condicional con 5 hallazgos priorizados (2 high, 3 medium) que señalan la necesidad de resolver ambigüedades en actores y monetización, formalizar máquinas de estado y contratos de API, estructurar el diccionario de datos de repartidores con auditoría y proveer ADR y runbook operativo.",
+  "verdict": "conditional"
+}

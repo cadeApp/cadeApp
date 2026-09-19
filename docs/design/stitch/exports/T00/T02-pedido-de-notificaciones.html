@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp - Notificaciones</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-error-container": "#93000a",
+            "on-tertiary": "#ffffff",
+            "surface-dim": "#d1daee",
+            "on-primary-fixed": "#002020",
+            "on-surface": "#131c2a",
+            "error-container": "#ffdad6",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-bright": "#f9f9ff",
+            "surface-container-highest": "#dae3f7",
+            "secondary-fixed-dim": "#c0c5e0",
+            "surface-container": "#e7eeff",
+            "on-primary-container": "#004446",
+            "on-surface-variant": "#3c4949",
+            "secondary-fixed": "#dce1fd",
+            "on-tertiary-container": "#004446",
+            "primary-fixed": "#6df6f9",
+            "on-secondary-fixed": "#151b2f",
+            "surface-tint": "#00696b",
+            "tertiary-fixed": "#99f1f4",
+            "error": "#ba1a1a",
+            "on-tertiary-fixed": "#002021",
+            "on-primary": "#ffffff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "inverse-primary": "#4adadd",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "secondary-container": "#d9defa",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-secondary": "#ffffff",
+            "secondary": "#585d75",
+            "primary-container": "#09babd",
+            "outline": "#6c7a7a",
+            "inverse-surface": "#283140",
+            "surface": "#f9f9ff",
+            "outline-variant": "#bbc9c9",
+            "surface-container-high": "#dfe8fd",
+            "tertiary-container": "#5cb5b8",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-container-low": "#f0f3ff",
+            "tertiary": "#00696c",
+            "on-secondary-container": "#5c6279",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed-variant": "#004f51",
+            "primary": "#00696b",
+            "primary-fixed-dim": "#4adadd"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "margin": "1rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-md": ["Montserrat"],
+            "price-sm": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "body-md": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "body-lg": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-sm": ["Inter"],
+            "label-md": ["Inter"]
+          },
+          "fontSize": {
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-surface text-on-surface font-body-md antialiased min-h-screen flex justify-center selection:bg-primary-container selection:text-on-primary-container">
+<!-- Mobile Viewport Simulation Container (390px baseline) -->
+<main class="w-full max-w-[390px] min-h-screen bg-surface-bright flex flex-col justify-between relative shadow-sm">
+<!-- Top Navigation Header (Linear sub-journey: Back Arrow + cadeApp branding) -->
+<header class="w-full h-14 px-4 flex items-center justify-between border-b border-outline-variant/30 bg-surface-container-lowest sticky top-0 z-20">
+<button aria-label="Volver" class="w-10 h-10 -ml-2 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container transition-colors active:scale-95 duration-150" onclick="window.history.back()" type="button">
+<span class="material-symbols-outlined text-[24px]">arrow_back</span>
+</button>
+<!-- Center Subtle Brand Mark -->
+<div class="flex items-center gap-2">
+<img alt="cadeApp isologotipo" class="h-7 w-7 object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDDhVnWmmZqMImtNMdnZ9OKxEflbLfy9LJGC640PSaHw9PMgtSMvHruej5muBzevk53I69dej5SHCQYXkp5xo576_D36MY5rfibUyRQCGXFESU1JDK5V9pM88054iK0VGtWzaHz18p6pR9vR5LCSgeFAWCTovpTuBEGNy1XxWgSrQZwAF047aFGdXtW4TEHEuQaMCejPo68eCPhktsOnUEsk_AJvJtJicOW_7NPU9QO-Cx6_vidppsfUz18m3cizzS-YQ"/>
+<span class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface">cadeApp</span>
+</div>
+<!-- Balance Spacer for Center Alignment -->
+<div class="w-10 -mr-2"></div>
+</header>
+<!-- Center Stage Content -->
+<div class="flex-1 flex flex-col items-center justify-center px-4 py-8">
+<!-- Prominent Notification Bell Badge -->
+<div class="relative flex items-center justify-center mb-6">
+<!-- Subtle Pulse Indicator Ring -->
+<div class="absolute w-28 h-28 rounded-full bg-primary-container/20 animate-pulse pointer-events-none"></div>
+<!-- Primary Circle Container -->
+<div class="w-24 h-24 rounded-full bg-primary-container/25 flex items-center justify-center border border-primary/20 relative z-10">
+<span class="material-symbols-outlined text-[44px] text-primary" style="font-variation-settings: 'FILL' 1;">
+            notifications_active
+          </span>
+</div>
+</div>
+<!-- Typography Section -->
+<div class="text-center max-w-[320px] mx-auto">
+<h1 class="font-headline-lg text-headline-lg text-on-surface font-bold tracking-tight">
+          ¿Te avisamos al instante?
+        </h1>
+<p class="font-body-lg text-body-lg text-secondary mt-3">
+          Te avisamos cuando aparezca una solicitud nueva o cuando te elijan.
+        </p>
+</div>
+<!-- Feature Highlight / Benefits Bento Stack -->
+<div class="w-full mt-6 flex flex-col gap-2.5">
+<div class="flex items-center gap-3.5 p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/40">
+<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+<div class="text-left">
+<p class="font-label-md text-label-md text-on-surface font-semibold">Cero demoras</p>
+<p class="font-body-md text-body-md text-secondary text-xs">Enterate al segundo y agarrá viajes antes que nadie.</p>
+</div>
+</div>
+<div class="flex items-center gap-3.5 p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/40">
+<div class="w-9 h-9 rounded-lg bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]">verified_user</span>
+</div>
+<div class="text-left">
+<p class="font-label-md text-label-md text-on-surface font-semibold">Sin spam molesto</p>
+<p class="font-body-md text-body-md text-secondary text-xs">Solo alertas directas sobre tus pedidos activos.</p>
+</div>
+</div>
+</div>
+<!-- Muted Info Safe Note Container -->
+<div class="mt-6 w-full max-w-[330px] mx-auto py-2.5 px-3.5 rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-outline shrink-0">info</span>
+<p class="font-body-md text-body-md text-outline text-xs text-center">
+          Si no llegan, igual lo vas a ver en la app al abrirla.
+        </p>
+</div>
+</div>
+<!-- Sticky Bottom Button Group (Anchored PWA Actions) -->
+<footer class="w-full p-4 bg-surface-bright/95 backdrop-blur-sm border-t border-outline-variant/30 flex flex-col gap-2.5 sticky bottom-0 z-20">
+<!-- Primary Action CTA -->
+<button class="w-full h-12 rounded-[10px] bg-primary-container text-on-primary-container font-headline-md text-headline-md font-bold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all duration-150 shadow-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2" id="btn-activate-notifications" type="button">
+<span class="material-symbols-outlined text-[22px]">notifications</span>
+<span>Activar avisos</span>
+</button>
+<!-- Ghost / Secondary Alternative Action -->
+<button class="w-full h-11 rounded-[10px] text-secondary font-label-md text-label-md flex items-center justify-center hover:text-on-surface active:opacity-75 transition-colors duration-150" id="btn-dismiss-notifications" onclick="window.history.back()" type="button">
+        Ahora no
+      </button>
+</footer>
+</main>
+<!-- Interactive Permissions Handler Micro-Script -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const activateBtn = document.getElementById('btn-activate-notifications');
+      
+      if (activateBtn) {
+        activateBtn.addEventListener('click', async () => {
+          activateBtn.classList.add('opacity-75', 'cursor-wait');
+          const originalText = activateBtn.innerHTML;
+          activateBtn.innerHTML = `
+            <span class="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
+            <span>Solicitando...</span>
+          `;
+
+          try {
+            if ('Notification' in window) {
+              const permission = await Notification.requestPermission();
+              if (permission === 'granted') {
+                activateBtn.innerHTML = `
+                  <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+                  <span>¡Avisos activados!</span>
+                `;
+                setTimeout(() => {
+                  window.history.back();
+                }, 800);
+                return;
+              }
+            }
+          } catch (e) {
+            console.log('Permisos no soportados o denegados');
+          }
+
+          // Fallback UI restore
+          setTimeout(() => {
+            activateBtn.innerHTML = originalText;
+            activateBtn.classList.remove('opacity-75', 'cursor-wait');
+          }, 600);
+        });
+      }
+    });
+  </script>
+</body></html>

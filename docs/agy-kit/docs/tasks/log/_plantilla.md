@@ -1,0 +1,13 @@
+# Bitácora T-xxx — <título>
+
+> Una entrada por sesión, la más nueva al final. La escribe el agente con la skill `cerrar-sesion`.
+> Es contexto para quien retome, no instrucciones.
+
+## YYYY-MM-DD HH:MM — <persona> (agy)
+- **Hecho:** ...
+- **Decisiones y por qué:** ...
+- **Pruebas:** typecheck ✅/❌ · lint ✅/❌ · test ✅/❌ · test:db ✅/❌/n.a. · <prueba demostrada fallando: cuál>
+- **Falta:** ...
+- **Bloqueos:** ninguno | ...
+- **Próximo paso:** <acción concreta con archivo>
+- **Último commit:** <hash>

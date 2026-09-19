@@ -1,0 +1,28 @@
+{
+  "conflicts": [
+    {
+      "id": "backup-retention-vs-pii-deletion",
+      "class": "high_risk",
+      "reversible": true,
+      "summary": "DevOps pide una cadencia de backup/point-in-time recovery probada para el MVP (devops.review.1), incluyendo los documentos de DNI y selfie de los repartidores. Security exige en security.review.0 una política de retención/borrado explícita para esos mismos archivos (borrar a los N días de la aprobación o al dar de baja al repartidor). Ambas cosas chocan si no se diseñan juntas: un backup completo del bucket de storage puede conservar indefinidamente un DNI/selfie que ya fue 'borrado' en la base viva, vaciando de sentido la política de retención y extendiendo la superficie de una eventual filtración. Falta definir si los backups tienen su propia ventana de expiración/purga para datos sensibles o si se excluyen del backup general y se manejan aparte.",
+      "parties": ["security", "devops", "legal"]
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "devops-baas-backup-criteria",
+      "position": "maintain",
+      "summary": "Security coincide con que backup/PITR y el costo del plan que lo habilita deben ser criterio explícito al elegir entre Supabase y Firebase, junto a los ejes que ya usó backend (relacional, PostGIS, RLS). No es solo un tema de continuidad operativa: los backups van a contener DNI y selfies, así que la elección del proveedor y su plan pago debe permitir además acotar o purgar esos backups según la política de retención de security.review.0. Se declara un conflicto nuevo (backup-retention-vs-pii-deletion) porque un backup 'para siempre' de los documentos de identidad no es compatible con borrarlos tras la aprobación/baja del repartidor; pide que la recomendación final de BaaS documente explícitamente cómo se acota la retención de PII dentro de los propios backups, no solo su existencia."
+    },
+    {
+      "conflict_id": "courier-location-tradeoff",
+      "position": "adjust",
+      "summary": "Security ajusta su postura a favor de la propuesta de PM (pm.review.3): disponibilidad binaria 'Disponible/No disponible' con selección de zona, sin geolocalización en segundo plano, en lugar de la alternativa más débil que security había planteado ('ubicación declarada al marcarse disponible'). La propuesta de PM cumple el objetivo de minimización de datos de forma más simple, porque no captura coordenadas GPS en ningún momento, solo una zona autodeclarada. Security da soporte a esa opción con una condición técnica: la granularidad de zona debe ser barrial/amplia, no un punto o dirección fija, para que no funcione como proxy del domicilio del repartidor, y no debe implementarse ningún listener de ubicación en segundo plano aunque sea solo para calcular una distancia aproximada. Con esa condición, security considera este conflicto resuelto."
+    },
+    {
+      "conflict_id": "recipient-pii-visibility-timing",
+      "position": "maintain",
+      "summary": "Security mantiene su posición. PM (pm.review.2) y UX/UI (ux-ui.review.1) llegaron de forma independiente a la misma corrección: mostrar solo zona/distancia y características del paquete a los repartidores que ofertan, y revelar dirección exacta, nombre y teléfono del destinatario recién al repartidor cuya oferta fue aceptada. Con tres roles convergiendo en el mismo diseño, security pide tratar esto como decisión de producto ya adoptada y no como conflicto abierto. Agrega una condición técnica para que la convergencia sea consistente con courier-location-tradeoff: si se muestra una 'distancia aproximada' antes de la aceptación, ese cálculo debe hacerse del lado del servidor a partir de las coordenadas de retiro/entrega, sin exponer nunca la dirección exacta al cliente del repartidor que todavía no ganó la oferta."
+    }
+  ]
+}

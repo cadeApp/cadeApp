@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>cadeApp — Ingresá a tu cuenta</title>
+<!-- Fonts: Montserrat & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Montserrat:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface-variant": "#3c4949",
+            "primary-container": "#09babd",
+            "surface-container": "#e7eeff",
+            "surface-container-low": "#f0f3ff",
+            "secondary-container": "#d9defa",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-container": "#5c6279",
+            "primary-fixed": "#6df6f9",
+            "on-tertiary-fixed": "#002021",
+            "tertiary-container": "#5cb5b8",
+            "surface-container-highest": "#dae3f7",
+            "inverse-surface": "#12182c",
+            "on-primary-fixed": "#002020",
+            "inverse-primary": "#4adadd",
+            "on-secondary-fixed": "#151b2f",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-background": "#12182c",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-high": "#dfe8fd",
+            "outline": "#6c7a7a",
+            "error-container": "#ffdad6",
+            "background": "#fdfcfb",
+            "primary": "#00696b",
+            "surface-tint": "#00696b",
+            "primary-fixed-dim": "#4adadd",
+            "secondary-fixed": "#dce1fd",
+            "on-secondary-fixed-variant": "#40465c",
+            "on-error-container": "#93000a",
+            "on-surface": "#12182c",
+            "on-error": "#ffffff",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#12182c",
+            "outline-variant": "#e4e7ec",
+            "on-tertiary-fixed-variant": "#004f51",
+            "secondary": "#5b6475",
+            "on-secondary": "#ffffff",
+            "tertiary": "#0b7a7d",
+            "on-tertiary-container": "#004446",
+            "tertiary-fixed": "#99f1f4",
+            "on-tertiary": "#ffffff",
+            "surface": "#ffffff",
+            "secondary-fixed-dim": "#c0c5e0",
+            "error": "#c62828",
+            "surface-dim": "#d1daee",
+            "surface-variant": "#dae3f7",
+            "surface-bright": "#f9f9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "0.5rem",
+            "space-xs": "0.25rem",
+            "margin": "1rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "price-display": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "body-medium": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"],
+            "body-lg": ["Inter"],
+            "label-sm": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-md": ["Montserrat"]
+          },
+          "fontSize": {
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased min-h-screen flex flex-col justify-between selection:bg-primary-container selection:text-on-surface">
+<!-- Mobile Safe Container: baseline 390px layout -->
+<div class="w-full max-w-[390px] mx-auto min-h-screen bg-background flex flex-col justify-between border-x border-outline-variant/30">
+<!-- Top Bar Navigation -->
+<header class="w-full h-14 px-margin flex items-center justify-between bg-surface border-b border-outline-variant/50 sticky top-0 z-20">
+<button aria-label="Volver" class="w-10 h-10 -ml-2 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container-low transition-colors duration-150 active:scale-95" type="button">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<!-- Small Logo in Header -->
+<div class="flex items-center gap-1.5 pr-8">
+<img alt="Logo cadeApp" class="w-7 h-7 object-contain rounded-sm" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBeYWAN4RinVf9o13KIJQ1qRNvPU_3g8LrFibbU8xBRUvhnM1aIqCG5aI-86pmQYz2NkxjmBcU7w7fzOXw-BLYT2Wh1yvT7PFLeF48sTcN3EWH439slrSYRdtZXfCBNkeYhiUDj4u92g3uH3XYaUWQZqRQlby4mQHujJ4HiyQcDTXhMdV2XF1P9ck9SMJLLVGqBvU5Ww-HQ_NWogAVLSg8yzUqiCdR6WKfJVGQCsZKojLINbLPVtNskV5XmYrJJYkqSLA"/>
+<span class="font-headline-md text-headline-md tracking-tight text-on-surface">cadeApp</span>
+</div>
+<div class="w-2"></div>
+</header>
+<!-- Main Content Flow -->
+<main class="flex-1 px-margin pt-space-lg pb-space-xl flex flex-col">
+<!-- Brand Motif Section Accent -->
+<div class="mb-space-lg">
+<h1 class="font-headline-xl text-headline-xl text-on-surface">Ingresá a tu cuenta</h1>
+<!-- Subtle road wave vector accent motif -->
+<div class="mt-2.5 flex items-center gap-2">
+<svg class="text-tertiary" fill="none" height="6" viewbox="0 0 44 6" width="44" xmlns="http://www.w3.org/2000/svg">
+<path d="M1 3C5 0.5 8 0.5 12 3C16 5.5 19 5.5 23 3C27 0.5 30 0.5 34 3C38 5.5 41 5.5 43 3" stroke="#09BABD" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+<span class="font-body-md text-body-md text-secondary">Logística simple para tu ciudad</span>
+</div>
+</div>
+<!-- Sign In Form -->
+<form class="space-y-space-md" onsubmit="event.preventDefault();">
+<!-- Email Input Stack -->
+<div class="space-y-1.5">
+<label class="block font-label-md text-label-md text-on-surface" for="email">Email</label>
+<div class="relative">
+<input class="w-full h-12 px-4 rounded-[10px] bg-surface-container-lowest border border-outline-variant text-body-lg font-body-lg text-on-surface placeholder:text-secondary/60 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-all" id="email" placeholder="tu@email.com" required="" style="border-color: #c62828;" type="email" value="juan.perez@gmail.com"/>
+</div>
+</div>
+<!-- Password Input Stack -->
+<div class="space-y-1.5">
+<div class="flex items-center justify-between">
+<label class="block font-label-md text-label-md text-on-surface" for="password">Contraseña</label>
+</div>
+<div class="relative flex items-center">
+<input class="w-full h-12 pl-4 pr-12 rounded-[10px] bg-surface-container-lowest border border-outline-variant text-body-lg font-body-lg text-on-surface placeholder:text-secondary/60 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container tracking-wider transition-all" id="password" placeholder="••••••••" required="" style="border-color: #c62828;" type="password" value="••••••••"/>
+<button aria-label="Mostrar u ocultar contraseña" class="absolute right-3 p-1.5 text-secondary hover:text-on-surface transition-colors flex items-center justify-center rounded" id="toggle-password" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="visibility" id="eye-icon">visibility</span>
+</button>
+</div>
+<!-- Forgot Password Link -->
+<div class="flex items-center gap-1.5 pt-1.5 text-error" id="login-error-message" style="color: #c62828;"><span class="material-symbols-outlined text-[18px]" data-icon="error">error</span><span class="font-label-sm text-label-sm">Email o contraseña incorrectos.</span></div><div class="text-right pt-1">
+<a class="font-label-sm text-label-sm text-tertiary hover:underline font-medium focus:outline-none focus:underline" href="#">
+              ¿Olvidaste tu contraseña?
+            </a>
+</div>
+</div>
+<!-- Primary Submit Button -->
+<div class="pt-2">
+<button class="w-full h-12 rounded-[10px] bg-primary-container text-on-primary-container font-headline-md text-headline-md flex items-center justify-center tracking-normal hover:opacity-90 active:scale-[0.99] transition-all duration-150" type="submit">
+            Ingresar
+          </button>
+</div>
+<!-- Divider with 'o' -->
+<div class="relative py-2 flex items-center justify-center">
+<div class="w-full border-t border-outline-variant"></div>
+<span class="absolute bg-background px-3 font-body-md text-body-md text-secondary lowercase">o</span>
+</div>
+<!-- Alternative Auth Button -->
+<button class="w-full h-12 rounded-[10px] bg-surface border border-outline-variant text-on-surface font-body-medium text-body-medium flex items-center justify-center gap-2 hover:bg-surface-container-lowest/60 active:scale-[0.99] transition-all duration-150" type="button">
+<span class="material-symbols-outlined text-[20px] text-on-surface" data-icon="mail">mail</span>
+<span>Recibir un código por email</span>
+</button>
+</form>
+<!-- Bottom Register Prompt -->
+<div class="mt-8 text-center">
+<p class="font-body-md text-body-md text-secondary">
+          ¿No tenés cuenta? 
+          <a class="text-tertiary font-label-md text-label-md font-semibold hover:underline ml-1" href="#">
+            Registrate
+          </a>
+</p>
+</div>
+</main>
+<!-- App System Footer (Shared Component Guidance) -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center border-t border-outline-variant/40 bg-surface-container-lowest">
+<div class="flex items-center gap-4">
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Términos y condiciones</a>
+<span class="text-outline-variant">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<span class="text-outline-variant">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+<p class="font-body-md text-body-md text-secondary text-xs">
+        © 2024 cadeApp. Envíos locales y logística inteligente.
+      </p>
+</footer>
+</div>
+<script>
+    // Password visibility toggle
+    const togglePasswordBtn = document.getElementById('toggle-password');
+    const passwordInput = document.getElementById('password');
+    const eyeIcon = document.getElementById('eye-icon');
+
+    if (togglePasswordBtn && passwordInput && eyeIcon) {
+      togglePasswordBtn.addEventListener('click', () => {
+        const isPassword = passwordInput.getAttribute('type') === 'password';
+        if (isPassword) {
+          passwordInput.setAttribute('type', 'text');
+          eyeIcon.textContent = 'visibility_off';
+          eyeIcon.setAttribute('data-icon', 'visibility_off');
+        } else {
+          passwordInput.setAttribute('type', 'password');
+          eyeIcon.textContent = 'visibility';
+          eyeIcon.setAttribute('data-icon', 'visibility');
+        }
+      });
+    }
+  </script>
+</body></html>

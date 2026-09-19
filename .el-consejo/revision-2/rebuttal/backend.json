@@ -1,0 +1,38 @@
+{
+  "conflicts": [
+    {
+      "id": "rebalance-fase3-p1-e2e",
+      "class": "technical",
+      "reversible": true,
+      "summary": "PM propone, para equilibrar la carga de Fase 3, reasignar a P1 las E2E de autorización/suscripción (T-305, T-306) o las páginas legales (T-311). Backend coincide en que P1 queda liviano en Fase 3, pero T-305/T-306 dependen del arnés y las convenciones de e2e/** (CODEOWNERS y AGENTS.md de esa carpeta son de P3) y T-311 es contenido de UI/legal sin relación con datos de servidor: transferir la propiedad completa de esas tareas a P1 no ataca el cuello de botella real (la cadena secuencial de Fase 1 T-101→T-102→T-103→T-104→T-203→T-310) y puede generar fricción de ownership con CODEOWNERS y con las reglas de e2e/AGENTS.md ('selectores accesibles', 'page objects') que P1 no maneja hoy.",
+      "parties": ["pm", "backend"]
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "codeowners-spof-p1",
+      "summary": "Mantengo el hallazgo. DevOps lo corrobora de forma independiente y lo hace más concreto: migrate.yml no serializa despliegues por ambiente (falta `concurrency:` group) y no hay plan de respaldo documentado para cuando P1 no está disponible (devops.review.1), exactamente el mismo cuello de botella y punto único de fallo que señalé desde CODEOWNERS. Sumo un matiz de Security: security.review.2 pide activar 'Require review from Code Owners' para que P1 apruebe obligatoriamente cualquier cambio a supabase/**, lo cual, tomado solo, profundizaría el problema en vez de resolverlo. Ajusto la corrección para conciliar ambos: agregar una segunda persona como CODEOWNER de supabase/**, src/server/** y src/app/api/**, pero que esa persona esté efectivamente entrenada en RLS/Postgres/SECURITY DEFINER antes de asumir el rol (no cualquiera de las 3), de modo que 'Require review from Code Owners' se pueda activar sin crear un cuello de botella de una sola persona. Sostengo también partir alguna tarea P1 de Fase 1 para permitir dos personas escribiendo RPC en paralelo una vez congelado el esquema.",
+      "position": "maintain"
+    },
+    {
+      "conflict_id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "summary": "Ajusto mi posición. El principio 5 del plan ('la base es la autoridad': estados, piso, aceptación y autorización se validan en RPC/RLS, la UI nunca es la única barrera) es una garantía de seguridad legítima que backend no puede resignar: si domain 'gana' sobre la RPC en el sentido de que un chequeo de servidor se quita o se debilita para que coincida con lo que domain supone, se reabre exactamente el tipo de hallazgo crítico que el master plan ya corrigió (D2). Dicho esto, coincido con PM en que §10.3 tal como está redactado ('gana la base') resuelve automáticamente, sin checkpoint, una categoría de conflicto que puede ser de producto (p. ej. si una RPC termina rechazando una transición que domain consideraba válida, eso puede ser un cambio de comportamiento funcional, no solo técnico). Propongo separar las dos cosas: (1) el principio de que RPC/RLS son el mecanismo de enforcement en runtime se mantiene sin excepción; (2) cuando domain (src/domain/rpc-contracts.ts, mantenido por P2) y la implementación real de una RPC (P1) difieren, se abre contract-change y NO se resuelve por defecto a favor de P1: lo valida P2 como dueño de domain, y si el cambio toca una garantía de las decisiones D1-D14 del master plan, se escala a checkpoint humano antes de mergear, igual que pide PM.",
+      "position": "adjust"
+    },
+    {
+      "conflict_id": "conf-auth-scope-p2-p3",
+      "summary": "Ajusto y sumo un dato técnico que PM y Frontend no tenían: la creación del registro base (auth.users + profiles con role) ya es responsabilidad de P1 vía el trigger de T-004 ('Se crea con un trigger al registrarse. role solo lo cambia el admin.', master-plan §7), así que la ambigüedad no está en quién crea la cuenta a nivel de base, sino en qué track posee el flujo de UI de alta (formulario de registro, verificación) para cada rol. Coincido con PM en que src/features/auth/** necesita un dueño único en §2, y agrego la corrección concreta que falta: declarar T-111 como Dependencia explícita de T-121 (hoy T-121 solo depende de T-005), de modo que exista un único módulo de alta/login genérico construido una vez (recomiendo P2, ya dueño de auth/** por CODEOWNERS) y que T-121 lo reutilice para el registro del repartidor en lugar de que P3 reimplemente su propio flujo de auth contra Supabase Auth. Esto evita además que dos tracks toquen lógica de sesión/JWT en paralelo sin coordinarse.",
+      "position": "adjust"
+    },
+    {
+      "conflict_id": "agent-permission-enforcement",
+      "summary": "Ajusto: distingo entre los pedidos de Seguridad por costo/certeza de implementación. El chequeo de CI que falla si una tabla queda sin RLS habilitada o sin policies (security.review.2) es barato, concreto y directamente verificable con una consulta a pg_policies/pg_tables después de `supabase db reset`; lo apoyo sin reservas y no compite de forma relevante con la velocidad de arranque — puede sumarse al mismo job de test:db que ya existe en ci.yml. Lo mismo para que las credenciales de producción nunca vivan en una laptop y que `db push` a producción solo corra vía CI con el secreto del Environment (security.review.0, segunda mitad): es coherente con lo que el plan ya dice sobre migrate.yml y no agrega trabajo nuevo, solo lo hace explícito. En cambio, el 'sandboxing de agy' (allowlist/denylist de comandos a nivel del propio agente) depende de una capacidad de agy 1.2.4 que el plan nunca confirma que exista — el propio master plan lo marca como supuesto abierto (S10: 'verificar si cambian con una actualización'). No me opongo al pedido, pero pido secuenciarlo: verificar primero qué controles de permisos expone agy 1.2.4 realmente (tarea corta, no bloqueante) antes de comprometer el Fase 0 a un mecanismo que puede no existir tal como Seguridad lo describe.",
+      "position": "adjust"
+    },
+    {
+      "conflict_id": "rebalance-fase3-p1-e2e",
+      "summary": "Conflicto nuevo. Coincido con el diagnóstico de PM (P1 queda con poca carga relativa en Fase 3) pero no con el mecanismo propuesto de transferir T-305/T-306 o T-311 completas a P1: esas tareas dependen de convenciones y carpetas (e2e/AGENTS.md, CODEOWNERS de e2e/** y de legal/** en P3) ajenas a la pista de P1, y no reducen el verdadero cuello de botella, que es la cadena secuencial T-101→T-102→T-103→T-104→T-203→T-310 de Fase 1 (mismo conflicto que codeowners-spof-p1). Propongo en su lugar: (a) usar la capacidad libre de P1 en Fase 3 para el trabajo que sí es de su dominio y que Seguridad y DevOps ya pidieron —el chequeo de CI de cobertura de RLS, el hardening de rate_limits, ser la segunda persona entrenada como backup de CODEOWNERS— y (b) si PM insiste en balancear con E2E, que P1 aporte las aserciones/casos de autorización de T-305/T-306 (conoce mejor las reglas de RPC) en modo de pareja con quien escribe el spec de Playwright, sin transferirle la propiedad del archivo ni la carpeta e2e/**.",
+      "position": "adjust"
+    }
+  ]
+}

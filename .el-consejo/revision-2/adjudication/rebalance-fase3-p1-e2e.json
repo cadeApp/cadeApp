@@ -1,0 +1,43 @@
+{
+  "status": "CONDICIONAL",
+  "class": "technical",
+  "reversible": true,
+  "positions": [
+    {
+      "agentId": "pm",
+      "position": "pm.review.4: hay un desbalance fuerte en Fases 2 y 3. P3 tiene 9 tareas (incluidos el entorno E2E y 5 suites) y P1 tiene 2, así que P3 se vuelve el cuello de botella y P1 queda sin trabajo. Propone pasar a P1 T-305 y T-306 (E2E de autorización y suscripción) o T-311 (páginas legales)."
+    },
+    {
+      "agentId": "backend",
+      "position": "Ajusta. Coincide en que P1 queda con poca carga en Fase 3, pero se opone a pasarle completas T-305 y T-306 o T-311. Dice que dependen de convenciones y carpetas de P3 (e2e/AGENTS.md y CODEOWNERS de e2e/** y legal/**) y que no atacan el verdadero cuello de botella, la cadena de Fase 1. Propone: (a) usar la capacidad de P1 en trabajo de su dominio (chequeo de CI de cobertura RLS, refuerzo de rate_limits, ser respaldo formado de CODEOWNERS); (b) si se equilibra con E2E, que P1 aporte las verificaciones de autorización de T-305 y T-306 trabajando en pareja con quien escribe el spec, sin pasarle la propiedad del archivo ni de e2e/**."
+    }
+  ],
+  "facts": [
+    "original.md L361-381: en Fases 2 y 3, P3 tiene T-201, T-202, T-301, T-302, T-305, T-306, T-308, T-309 y T-311 (9 tareas); P2 tiene T-204, T-205, T-303, T-304 y T-307 (5); P1 tiene T-203 y T-310 (2).",
+    "original.md L372-379 y L382: después de T-301, las suites T-302, T-305, T-306, T-308 y T-309 no dependen entre sí, y T-312 (release) depende de T-302…T-311. Hoy una sola persona las hace una tras otra (L391), sobre el camino crítico del release. Master-plan D10 (L35) exige E2E de todos los flujos antes de producción.",
+    "original.md L373, L374 y L377: P2 ya escribe specs en e2e/specs (T-303, T-304, T-307), aunque e2e/** es de P3 en §2 (L24) y en CODEOWNERS (L313). Escribir specs desde otra pista, con P3 como dueño de la carpeta, ya es algo que el plan hace.",
+    "original.md L375-376: T-305 prueba que un repartidor pending no oferta, la suspensión con ofertas activas y el acceso con rol equivocado; T-306 prueba el piloto y paid_until vencido. L343 y L345: el rechazo de repartidores pending en submit_offer (T-101) y el bloqueo de publicación por suscripción vencida en publish_request (T-103) son RPC de P1.",
+    "original.md L381: T-311 es UI y contenido legal en src/features/legal/** y src/app/(public)/legal/**, y depende de algo externo: la revisión de un abogado.",
+    "original.md L380: T-310 (P1) depende de T-104 y T-007, no de T-301, así que P1 puede cerrarla antes que el entorno E2E o en paralelo.",
+    "original.md L185-186 (40-testing.md) y L306 (nuevo-e2e, paso 5): toda prueba nueva debe mostrarse fallando al romper la regla antes de quedar en verde.",
+    "original.md L375-379: el DoD de T-305 a T-309 figura como '—' (pm.review.3).",
+    "original.md L330, L332 y L343: el chequeo de CI de cobertura RLS y la regla de rate_limits que Backend propone para P1 corresponden a tareas de Fase 0 y 1 (T-003, T-005 y T-101), no a Fase 3."
+  ],
+  "assumptions": [
+    "La cantidad de tareas mide mal el esfuerzo. Se asume que cinco suites E2E en serie después de T-301 pesan más en el calendario de P3 que T-203 y T-310 en el de P1.",
+    "Se asume que P1 puede seguir las convenciones de e2e/AGENTS.md y la skill nuevo-e2e con revisión de P3, igual que se espera de P2 en T-303, T-304 y T-307.",
+    "Si quien implementó la RPC escribe también su E2E, pueden compartir puntos ciegos. Se asume que la prueba obligatoria de falla y la revisión de P3 alcanzan para mitigarlo."
+  ],
+  "resolution": "1) T-305 y T-306 pasan a P1: P1 escribe e2e/specs/authorization.spec.ts y e2e/specs/subscription.spec.ts. La carpeta e2e/**, sus fixtures, page objects y e2e/AGENTS.md siguen siendo de P3, que revisa esos PR como code owner (mecanismo de conf-codeowners-routegroup-p2-p3), igual que ya pasa con T-303, T-304 y T-307 de P2. Si P1 necesita un fixture o page object nuevo, se lo pide a P3, o la ficha lo lista explícitamente como archivo permitido y lo revisa P3. 2) Condiciones para asignarlas: el DoD de T-305 y T-306 debe dejar de ser '—' antes (coherente con pm.review.3, que este fallo no resuelve). Cada spec debe mostrar, en local o staging y nunca en producción, que falla al desactivar la regla que prueba: submit_offer con un repartidor pending, publish_request con paid_until vencido y la guarda de rol en rutas (L185-186, L306). 3) T-311 queda en P3: es UI y contenido legal, depende de un abogado y no acorta el camino crítico técnico. 4) Se descarta usar la capacidad de P1 en Fase 3 para el chequeo de cobertura RLS y el refuerzo de rate_limits: esos controles tienen que existir antes (T-003, T-005 y T-101), y si se adoptan van ahí. También se descarta que P1 sea el respaldo de CODEOWNERS en Fase 3, porque en codeowners-spof-p1 P1 es el dueño principal y el respaldo es otra persona. 5) Coherencia con codeowners-spof-p1: si el respaldo escribe parte de las RPC de Fase 1, P1 queda aún más liviano y este reparto sigue valiendo; si el checkpoint elige a P3 como respaldo, este reparto importa más porque le libera tiempo. 6) Actualizar el orden de paralelismo (L389-391): P1, después de T-310, toma T-305 y T-306 cuando T-301 esté mergeada; P3 conserva T-302, T-308, T-309 y T-311.",
+  "dissent": [
+    "Backend prefería trabajar en pareja sin pasar la propiedad del spec. El fallo pasa a P1 la tarea y el archivo del spec, pero no la carpeta ni sus convenciones. La objeción por propiedad de carpetas pesa menos porque P2 ya escribe specs de E2E en T-303, T-304 y T-307.",
+    "PM ofreció T-311 como alternativa; se descarta."
+  ],
+  "confidence": 0.68,
+  "reopenCondition": "Reabrir si pasa alguna de estas cosas: (a) el primer PR de P1 en e2e/** necesita más de dos rondas de revisión de P3 por no seguir las convenciones, o P3 tarda en revisarlo más de lo que se ahorra; (b) T-310 o las tareas de respaldo de codeowners-spof-p1 ocupan la capacidad de P1 en Fase 3; (c) la estimación real de esfuerzo muestra que el camino crítico del release no pasa por las suites de P3; (d) alguno de los dos specs no falla al desactivar la regla, lo que indicaría puntos ciegos compartidos entre quien implementó y quien prueba.",
+  "rationale": "El desbalance que importa está en el camino crítico del release: cinco suites que no dependen entre sí las hace una sola persona, una tras otra. Pasar a P1 las dos suites cuyas reglas implementa permite correrlas en paralelo, con un reparto de propiedad que el plan ya usa con P2.",
+  "resolvedFindings": [
+    "rebalance-fase3-p1-e2e",
+    "pm.review.4"
+  ]
+}

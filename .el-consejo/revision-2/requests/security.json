@@ -1,0 +1,119 @@
+{
+  "phase": "INDEPENDENT_REVIEW",
+  "mode": "review",
+  "agentId": "security",
+  "outputContract": {
+    "contract": "role-review.schema.json",
+    "mode": "review",
+    "required": [
+      "agentId",
+      "verdict",
+      "confidence",
+      "findings",
+      "findings[].severity",
+      "findings[].statement",
+      "findings[].impact",
+      "findings[].correction"
+    ],
+    "optional": [
+      "findings[].evidence",
+      "findings[].assumptions",
+      "summary",
+      "conflicts",
+      "helperRequests",
+      "findings[].reproducibleSteps",
+      "validationChecks"
+    ],
+    "engineAssigned": [
+      "findings[].id",
+      "findings[].agentId"
+    ],
+    "types": {
+      "agentId": "texto (máx 128 caracteres)",
+      "verdict": "uno de: approve | conditional | block | not_applicable",
+      "confidence": "número entre 0 y 1",
+      "findings": "array de objeto con severity, statement, evidence, assumptions, impact, correction, reproducibleSteps",
+      "findings[].severity": "uno de: critical | high | medium | low",
+      "findings[].statement": "texto (máx 2000 caracteres)",
+      "findings[].impact": "texto (máx 2000 caracteres)",
+      "findings[].correction": "texto (máx 2000 caracteres)",
+      "findings[].evidence": "array de texto (máx 1000 caracteres)",
+      "findings[].assumptions": "array de texto (máx 1000 caracteres)",
+      "summary": "texto (máx 2000 caracteres)",
+      "conflicts": "array de objeto con id, class, reversible, summary, parties",
+      "helperRequests": "array de objeto con question, evidence, summary, references",
+      "findings[].reproducibleSteps": "array de texto (máx 1000 caracteres)",
+      "validationChecks": "array de objeto con id, reproducibleSteps, observed, evidence, scope, status, severity"
+    },
+    "itemShapes": {
+      "findings[]": {
+        "severity": "uno de: critical | high | medium | low — obligatorio",
+        "statement": "texto (máx 2000 caracteres) — obligatorio",
+        "evidence": "array de texto (máx 1000 caracteres)",
+        "assumptions": "array de texto (máx 1000 caracteres)",
+        "impact": "texto (máx 2000 caracteres) — obligatorio",
+        "correction": "texto (máx 2000 caracteres) — obligatorio",
+        "reproducibleSteps": "array de texto (máx 1000 caracteres)"
+      },
+      "conflicts[]": {
+        "id": "texto — obligatorio",
+        "class": "uno de: technical | product | business | contract | money | high_risk | taste — obligatorio",
+        "reversible": "booleano — obligatorio",
+        "summary": "texto (máx 2000 caracteres) — obligatorio",
+        "parties": "array de texto (máx 128 caracteres), al menos 1 — obligatorio"
+      },
+      "helperRequests[]": {
+        "question": "texto (máx 500 caracteres) — obligatorio",
+        "evidence": "array de texto (máx 500 caracteres) — obligatorio",
+        "summary": "texto (máx 1000 caracteres) — obligatorio",
+        "references": "array de texto (máx 500 caracteres) — obligatorio"
+      },
+      "validationChecks[]": {
+        "id": "texto (máx 200 caracteres) — obligatorio",
+        "reproducibleSteps": "array de texto (máx 1000 caracteres), al menos 1 — obligatorio",
+        "observed": "texto (máx 2000 caracteres) — obligatorio",
+        "evidence": "array de texto (máx 1000 caracteres), al menos 1 — obligatorio",
+        "scope": "texto (máx 200 caracteres) — obligatorio",
+        "status": "uno de: passed | failed | blocked | not_applicable — obligatorio",
+        "severity": "uno de: critical | high | medium | low"
+      }
+    },
+    "invariants": [
+      "Cada hallazgo lleva evidence o assumptions con al menos un elemento no vacío: sin respaldo es una opinión sin rótulo.",
+      "Como máximo 5 hallazgos no críticos; los críticos no tienen límite y nunca se ocultan.",
+      "findings[].id y findings[].agentId los asigna el motor al consolidar: no los envíes."
+    ],
+    "example": {
+      "agentId": "security",
+      "verdict": "conditional",
+      "confidence": 0.7,
+      "findings": [
+        {
+          "severity": "medium",
+          "statement": "<qué está mal, en una frase>",
+          "impact": "<consecuencia concreta si no se atiende>",
+          "correction": "<corrección concreta propuesta>",
+          "evidence": [
+            "<ruta:línea, comando o cita que lo respalda>"
+          ]
+        }
+      ]
+    }
+  },
+  "input": {
+    "source": "cadeApp — plan de implementación para agentes (docs/implementation-plan.md, versión ensamblada en revision-1 con la corrección D14 del pago del envío), 2026-09-17",
+    "goal": "Obtener un plan de implementación corregido, completo y ejecutable para que 3 personas construyan con agy el MVP de cadeApp definido en docs/master-plan.md, trabajando en simultáneo y en momentos distintos sobre GitHub, con buenas reglas para los agentes, buen código, modularización y buenas prácticas.",
+    "audience": "Las 3 personas del equipo de cadeApp, cada una programando con agy (Google Antigravity), y los agentes de agy que leen las reglas del repositorio.",
+    "scope": "Revisar el plan de implementación: principios de trabajo con IA, división de tareas en 3 personas para trabajo simultáneo, coordinación asincrónica entre personas y agentes (retomar trabajo de otro, en distintos momentos), estructura modular del repositorio, reglas de agy (AGENTS.md, .agents/rules, skills), calidad de código y buenas prácticas, git y ambientes develop/staging/main, CI/CD, fases, tareas, dependencias y pruebas. Fuera de alcance: decisiones de producto ya cerradas en el master plan (D1 a D14) y diseño visual.",
+    "constraints": "Next.js App Router con TypeScript strict, backend en el mismo Next.js, PWA, Supabase; decisiones D1 a D14 del master plan vigentes; 3 personas, todas programando con agy; GitHub con ramas develop, staging y main (producción); las personas pueden trabajar en momentos distintos y cualquiera tiene que poder retomar o continuar trabajo; las reglas de agy se cargan desde AGENTS.md por carpeta, .agents/rules/*.md, .agents/skills/<nombre>/SKILL.md y .agents/hooks.json (documentación integrada de agy 1.2.4); E2E de todos los flujos antes de producción.",
+    "acceptanceCriteria": "El plan de implementación corregido permite que 3 personas, cada una con agy, construyan el MVP de cadeApp en simultáneo sobre GitHub (develop, staging y main) con tareas divididas por persona que no se pisan, que cualquiera pueda continuar el trabajo en distintos momentos gracias a reglas de coordinación explícitas para humanos y agentes, y que el código cumpla reglas claras de calidad, modularización, seguridad y pruebas alineadas con el master plan."
+  },
+  "optionalSkills": [
+    "supabase"
+  ],
+  "helperPolicy": {
+    "limit": 1,
+    "maxDepth": 1,
+    "modelTier": "económico"
+  }
+}

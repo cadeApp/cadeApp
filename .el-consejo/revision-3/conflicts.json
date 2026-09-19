@@ -1,0 +1,63 @@
+{
+  "conflicts": [
+    {
+      "id": "conf-privacidad-coordenadas-pre-oferta",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Divergencia entre revelar el mapa antes de ofertar para facilitar la estimación de distancia del repartidor versus preservar D3 (revelación progresiva) para evitar la filtración de domicilios de destinatarios y comercios.",
+      "parties": [
+        "security",
+        "pm",
+        "ux-ui",
+        "backend",
+        "legal"
+      ]
+    },
+    {
+      "id": "conf-visibilidad-local-pre-oferta",
+      "class": "product",
+      "reversible": false,
+      "summary": "Evaluación sobre si el pin del local comercial puede ser visible públicamente antes de la oferta o si debe protegerse con la misma regla que el destinatario (para proteger a emprendedores hogareños).",
+      "parties": [
+        "pm",
+        "security",
+        "backend"
+      ]
+    },
+    {
+      "id": "conf-proveedor-mapas-costo",
+      "class": "money",
+      "reversible": true,
+      "summary": "Elección de proveedor de mapas: Google Maps Platform (10.000 llamadas gratis/mes por SKU Essentials desde marzo 2025) vs MapLibre/Leaflet + OpenStreetMap vs híbrido. Balance de costo $0 en piloto, calidad de cartografía en Aguilares y tamaño de bundle.",
+      "parties": [
+        "finance",
+        "frontend",
+        "ux-ui"
+      ]
+    },
+    {
+      "id": "conf-calculo-distancia-rutas-vs-haversine",
+      "class": "technical",
+      "reversible": true,
+      "summary": "Método para calcular la distancia de viaje: Google Routes API (costo variable y latencia externa) versus fórmula esférica de Haversine con factor 1.30 en Postgres (costo $0, 0ms latencia) con respaldo en centroides de zones.",
+      "parties": [
+        "backend",
+        "finance",
+        "pm"
+      ]
+    },
+    {
+      "id": "conf-ratificacion-d7-sin-tracking",
+      "class": "product",
+      "reversible": false,
+      "summary": "Confirmación de que la incorporación de mapas no deriva en tracking o GPS en vivo del repartidor, manteniendo estrictamente vigente la decisión D7.",
+      "parties": [
+        "pm",
+        "security",
+        "legal",
+        "ux-ui"
+      ]
+    }
+  ],
+  "partyNormalization": []
+}

@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+
+<html class="h-full bg-[#FDFCFB]" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp — Sistema de Diseño &amp; Hoja de Marca (S00)</title>
+<!-- Google Fonts: Montserrat (700) & Inter (400, 500, 600, 700) -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@700&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 with Forms Plugin -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              teal: '#09BABD',
+              'teal-dark': '#0B7A7D',
+              ink: '#12182C',
+              bg: '#FDFCFB',
+              surface: '#FFFFFF',
+              border: '#E4E7EC',
+              muted: '#5B6475',
+              success: '#177A4B',
+              'warning-text': '#B45309',
+              'warning-bg': '#FFF4E0',
+              danger: '#C62828',
+            }
+          },
+          fontFamily: {
+            heading: ['Montserrat', 'sans-serif'],
+            sans: ['Inter', 'sans-serif'],
+          },
+          borderRadius: {
+            card: '12px',
+            control: '10px',
+          }
+        }
+      }
+    }
+  </script>
+<!-- BEGIN: Custom Styles -->
+<style data-purpose="base-typography">
+    body {
+      font-family: 'Inter', sans-serif;
+      color: #12182C;
+      background-color: #FDFCFB;
+    }
+    h1, h2, h3, h4, .font-heading {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 700;
+    }
+  </style>
+<style data-purpose="wavy-road-motif">
+    /* Subtle decorative wavy road line */
+    .wavy-accent-line {
+      background-image: url("data:image/svg+xml,%3Csvg width='40' height='8' viewBox='0 0 40 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 4C10 4 10 1 20 1C30 1 30 7 40 7' stroke='%2309BABD' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: repeat-x;
+      height: 8px;
+    }
+  </style>
+<!-- END: Custom Styles -->
+</head>
+<body class="min-h-full py-10 px-4 sm:px-6 lg:px-12 antialiased">
+<div class="max-w-7xl mx-auto space-y-12">
+<!-- BEGIN: TopHeader -->
+<header class="bg-white border border-[#E4E7EC] rounded-card p-6 md:p-8 shadow-sm relative overflow-hidden" data-purpose="brand-header">
+<div class="absolute top-0 left-0 right-0 wavy-accent-line opacity-90"></div>
+<div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pt-3">
+<!-- Logo and Identity -->
+<div class="flex items-center gap-5">
+<div class="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 bg-white border border-[#E4E7EC] rounded-xl p-2 flex items-center justify-center shadow-xs">
+<img alt="cadeApp Logotipo Oficial" class="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAzw305KBCCFQIHypqZWrl1APb3JfcvQavDjfmN2M5na9jooxtYB52KwyyMXjHYSQlu62gUeV8PcETlAQ2L-bnsUYGrNG3lqP2SGhOK5ljDe0QIOvrWL2N93F70gki-7aeCiknHydbJSggdQJFE2Qfr7ScQ565WHAlKmpI7gEGSTd1d_aWA8IX8QhhMf5iupCjCjuADHfIKIT1_xYT3Yalny5em_RaFmZPYGQ3HwzleXeT03q_q5sG5KciIDSX8e44b0w"/>
+</div>
+<div>
+<div class="flex items-center gap-3">
+<h1 class="text-2xl sm:text-3xl text-[#12182C] tracking-tight">cadeApp</h1>
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#09BABD]/15 text-[#0B7A7D]">Design System</span>
+</div>
+<p class="text-sm sm:text-base text-[#5B6475] mt-0.5">S00 — Hoja de Marca y Biblioteca de Componentes UI</p>
+</div>
+</div>
+<!-- System Metadata Tags -->
+<div class="flex flex-wrap items-center gap-2 md:justify-end">
+<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#F1F5F9] text-[#12182C] border border-[#E4E7EC]">
+<svg class="w-3.5 h-3.5 text-[#0B7A7D]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><rect height="20" rx="2" ry="2" width="14" x="5" y="2"></rect><path d="M12 18h.01"></path></svg>
+            Mobile-first PWA (390px spec)
+          </span>
+<span class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-[#F1F5F9] text-[#12182C] border border-[#E4E7EC]">
+            v1.0
+          </span>
+<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#F1F5F9] text-[#12182C] border border-[#E4E7EC]">
+<svg class="w-3.5 h-3.5 text-[#0B7A7D]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+            Aguilares, Tucumán
+          </span>
+<span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-[#E8F5E9] text-[#177A4B] border border-[#177A4B]/20">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg>
+            WCAG AA Flat Compliant
+          </span>
+</div>
+</div>
+</header>
+<!-- END: TopHeader -->
+<!-- BEGIN: ColorPaletteSection -->
+<section class="space-y-4" data-purpose="palette-section">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-xl text-[#12182C]">01. Paleta de Colores</h2>
+<p class="text-sm text-[#5B6475]">Contraste verificado para accesibilidad exterior en repartos urbanos.</p>
+</div>
+<div class="h-1 w-24 bg-[#09BABD] rounded-full hidden sm:block"></div>
+</div>
+<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
+<!-- Teal Principal -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#09BABD] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#09BABD] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Teal Brand</p>
+<p class="text-xs font-mono font-medium text-[#0B7A7D] mt-0.5">#09BABD</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Botón primario, acentos visuales y branding.</p>
+</article>
+<!-- Tinta / Ink Navy -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#12182C] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#12182C] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Tinta (Ink Navy)</p>
+<p class="text-xs font-mono font-medium text-[#5B6475] mt-0.5">#12182C</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Texto base principal, top bar, botón secundario.</p>
+</article>
+<!-- Deep Teal -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#0B7A7D] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#0B7A7D] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Deep Teal</p>
+<p class="text-xs font-mono font-medium text-[#0B7A7D] mt-0.5">#0B7A7D</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Texto sobre blanco, enlaces, contraste accesible.</p>
+</article>
+<!-- Fondo -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#E4E7EC] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#FDFCFB] border border-[#E4E7EC] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Fondo (Background)</p>
+<p class="text-xs font-mono font-medium text-[#5B6475] mt-0.5">#FDFCFB</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Canvas base neutral cálido de la aplicación.</p>
+</article>
+<!-- Superficie -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#E4E7EC] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#FFFFFF] border border-[#E4E7EC] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Superficie</p>
+<p class="text-xs font-mono font-medium text-[#5B6475] mt-0.5">#FFFFFF</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Tarjetas elevadas, bottom sheets y modales.</p>
+</article>
+<!-- Borde -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#E4E7EC] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#E4E7EC] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Borde</p>
+<p class="text-xs font-mono font-medium text-[#5B6475] mt-0.5">#E4E7EC</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Líneas divisorias y contornos estructurales.</p>
+</article>
+<!-- Texto Secundario -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#5B6475] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#5B6475] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Texto Secundario</p>
+<p class="text-xs font-mono font-medium text-[#5B6475] mt-0.5">#5B6475</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Etiquetas de tiempo, distancias y metadatos.</p>
+</article>
+<!-- Éxito -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#177A4B] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#177A4B] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Éxito</p>
+<p class="text-xs font-mono font-medium text-[#177A4B] mt-0.5">#177A4B</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Estado entregado, verificación de carnet y DNI.</p>
+</article>
+<!-- Aviso -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#B45309] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#FFF4E0] border border-[#B45309]/30 flex items-center justify-center mb-3">
+<span class="text-xs font-semibold text-[#B45309]">Alerta</span>
+</div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Aviso (Warning)</p>
+<p class="text-xs font-mono font-medium text-[#B45309] mt-0.5">#B45309</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">En camino, ofertas próximas a vencer.</p>
+</article>
+<!-- Error -->
+<article class="bg-white border border-[#E4E7EC] rounded-card p-3 shadow-xs hover:border-[#C62828] transition-colors" data-purpose="color-card">
+<div class="h-14 rounded-lg bg-[#C62828] shadow-inner mb-3"></div>
+<p class="font-heading text-xs font-bold text-[#12182C]">Error / Peligro</p>
+<p class="text-xs font-mono font-medium text-[#C62828] mt-0.5">#C62828</p>
+<p class="text-[11px] text-[#5B6475] mt-1 line-clamp-2">Cancelado, campos inválidos o descarte.</p>
+</article>
+</div>
+</section>
+<!-- END: ColorPaletteSection -->
+<!-- BEGIN: TypographySection -->
+<section class="space-y-4" data-purpose="typography-section">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-xl text-[#12182C]">02. Escala Tipográfica</h2>
+<p class="text-sm text-[#5B6475]">Montserrat 700 para impacto numérico y jerarquía; Inter para legibilidad operativa.</p>
+</div>
+<div class="h-1 w-24 bg-[#09BABD] rounded-full hidden sm:block"></div>
+</div>
+<div class="bg-white border border-[#E4E7EC] rounded-card divide-y divide-[#E4E7EC] shadow-xs">
+<!-- Large Title -->
+<div class="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-4 items-baseline gap-2">
+<div class="text-xs text-[#5B6475] uppercase tracking-wider font-semibold">
+            Título Grande
+            <span class="block text-[11px] font-mono lowercase text-[#0B7A7D] font-normal">Montserrat 700 · 28px</span>
+</div>
+<div class="md:col-span-3">
+<h3 class="text-[28px] leading-tight text-[#12182C]">Encontrá envíos rápidos</h3>
+</div>
+</div>
+<!-- Section Title -->
+<div class="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-4 items-baseline gap-2">
+<div class="text-xs text-[#5B6475] uppercase tracking-wider font-semibold">
+            Título Sección
+            <span class="block text-[11px] font-mono lowercase text-[#0B7A7D] font-normal">Montserrat 700 · 20px</span>
+</div>
+<div class="md:col-span-3">
+<h4 class="text-[20px] leading-snug text-[#12182C]">Solicitudes disponibles en tu zona</h4>
+</div>
+</div>
+<!-- Prominent Amount -->
+<div class="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-4 items-baseline gap-2">
+<div class="text-xs text-[#5B6475] uppercase tracking-wider font-semibold">
+            Monto Destacado
+            <span class="block text-[11px] font-mono lowercase text-[#0B7A7D] font-normal">Montserrat 700 · 32px</span>
+</div>
+<div class="md:col-span-3 flex items-baseline gap-2">
+<span class="font-heading text-[32px] text-[#12182C] tracking-tight">$ 1.500</span>
+<span class="text-xs text-[#5B6475]">ARS (tarifa garantizada)</span>
+</div>
+</div>
+<!-- Body Copy -->
+<div class="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-4 items-baseline gap-2">
+<div class="text-xs text-[#5B6475] uppercase tracking-wider font-semibold">
+            Cuerpo de Texto
+            <span class="block text-[11px] font-mono lowercase text-[#0B7A7D] font-normal">Inter 400/500 · 16px</span>
+</div>
+<div class="md:col-span-3">
+<p class="text-[16px] text-[#12182C] leading-relaxed max-w-3xl">
+              Conectamos comercios locales con repartidores independientes de Aguilares de forma directa, sin comisiones ocultas y con trato transparente en cada pedido.
+            </p>
+</div>
+</div>
+<!-- Caption -->
+<div class="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-4 items-baseline gap-2">
+<div class="text-xs text-[#5B6475] uppercase tracking-wider font-semibold">
+            Caption / Info
+            <span class="block text-[11px] font-mono lowercase text-[#0B7A7D] font-normal">Inter 400 · 14px</span>
+</div>
+<div class="md:col-span-3">
+<p class="text-[14px] text-[#5B6475]">Vence en 18 min · Tarifa sugerida para paquete liviano</p>
+</div>
+</div>
+</div>
+</section>
+<!-- END: TypographySection -->
+<!-- BEGIN: ButtonsSection -->
+<section class="space-y-4" data-purpose="buttons-section">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-xl text-[#12182C]">03. Botones (Altura estándar 48px · Radio 10px)</h2>
+<p class="text-sm text-[#5B6475]">Diseñados para áreas táctiles seguras en dispositivos móviles.</p>
+</div>
+<div class="h-1 w-24 bg-[#09BABD] rounded-full hidden sm:block"></div>
+</div>
+<div class="bg-white border border-[#E4E7EC] rounded-card p-6 shadow-xs">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+<!-- Primary Button -->
+<div class="space-y-2">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Primario (Teal / Navy Text)</span>
+<button class="w-full h-12 px-5 rounded-control bg-[#09BABD] text-[#12182C] font-semibold text-sm hover:brightness-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></svg>
+              Publicar solicitud
+            </button>
+</div>
+<!-- Secondary Button -->
+<div class="space-y-2">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Secundario (Ink / White Text)</span>
+<button class="w-full h-12 px-5 rounded-control bg-[#12182C] text-white font-semibold text-sm hover:bg-[#12182C]/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm" type="button">
+<svg class="w-4 h-4 text-[#09BABD]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="m5 12 7-7 7 7"></path><path d="M12 19V5"></path></svg>
+              Ofertar
+            </button>
+</div>
+<!-- Outline Button -->
+<div class="space-y-2">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Outline (Borde nítido)</span>
+<button class="w-full h-12 px-5 rounded-control bg-white border border-[#E4E7EC] text-[#12182C] font-semibold text-sm hover:bg-[#FDFCFB] hover:border-[#5B6475] active:scale-[0.99] transition-all flex items-center justify-center gap-2" type="button">
+              Cancelar
+            </button>
+</div>
+<!-- Ghost Button -->
+<div class="space-y-2">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Ghost (Acción sutil)</span>
+<button class="w-full h-12 px-5 rounded-control bg-transparent text-[#0B7A7D] font-semibold text-sm hover:bg-[#09BABD]/10 active:scale-[0.99] transition-all flex items-center justify-center gap-1.5" type="button">
+              Ver detalle
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg>
+</button>
+</div>
+<!-- Destructive Button -->
+<div class="space-y-2">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Destructivo</span>
+<button class="w-full h-12 px-5 rounded-control bg-[#C62828] text-white font-semibold text-sm hover:bg-[#b02222] active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-sm" type="button">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              Cancelar solicitud
+            </button>
+</div>
+<!-- Loading State Button -->
+<div class="space-y-2">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Estado Cargando</span>
+<button class="w-full h-12 px-5 rounded-control bg-[#09BABD] text-[#12182C] font-semibold text-sm opacity-90 cursor-wait flex items-center justify-center gap-2.5" disabled="" type="button">
+<svg class="animate-spin w-4 h-4 text-[#12182C]" fill="none" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+<path class="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" fill="currentColor"></path>
+</svg>
+              Enviando…
+            </button>
+</div>
+</div>
+</div>
+</section>
+<!-- END: ButtonsSection -->
+<!-- BEGIN: FormControlsSection -->
+<section class="space-y-4" data-purpose="forms-section">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-xl text-[#12182C]">04. Campos de Formulario</h2>
+<p class="text-sm text-[#5B6475]">Inputs con altura de 48px, borde #E4E7EC y microinteracciones nítidas.</p>
+</div>
+<div class="h-1 w-24 bg-[#09BABD] rounded-full hidden sm:block"></div>
+</div>
+<div class="bg-white border border-[#E4E7EC] rounded-card p-6 shadow-xs space-y-6">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Normal Input -->
+<div class="space-y-1.5">
+<label class="block text-xs font-semibold text-[#12182C]" for="tel-normal">Teléfono de contacto</label>
+<div class="relative">
+<input class="w-full h-12 px-3.5 rounded-control border border-[#E4E7EC] bg-[#FDFCFB] text-sm text-[#12182C] placeholder-[#5B6475]/60 focus:bg-white focus:border-[#09BABD] focus:ring-1 focus:ring-[#09BABD] transition-colors" id="tel-normal" placeholder="Ej: 3865 12-3456" type="tel"/>
+</div>
+<p class="text-xs text-[#5B6475]">Te contactaremos por WhatsApp</p>
+</div>
+<!-- Input with Error -->
+<div class="space-y-1.5">
+<label class="block text-xs font-semibold text-[#12182C]" for="tel-error">Teléfono</label>
+<div class="relative">
+<input class="w-full h-12 px-3.5 pr-10 rounded-control border border-[#C62828] bg-white text-sm text-[#12182C] focus:border-[#C62828] focus:ring-1 focus:ring-[#C62828]" id="tel-error" type="text" value="1234"/>
+<div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[#C62828]">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+</div>
+</div>
+<p class="text-xs text-[#C62828] font-medium flex items-center gap-1">
+              Ingresá un teléfono válido
+            </p>
+</div>
+<!-- Custom Select -->
+<div class="space-y-1.5">
+<label class="block text-xs font-semibold text-[#12182C]" for="barrio-select">Barrio de entrega</label>
+<div class="relative">
+<select class="w-full h-12 pl-3.5 pr-10 rounded-control border border-[#E4E7EC] bg-[#FDFCFB] text-sm text-[#12182C] focus:bg-white focus:border-[#09BABD] focus:ring-1 focus:ring-[#09BABD] appearance-none" id="barrio-select">
+<option value="centro">Centro</option>
+<option selected="" value="norte">Barrio Norte</option>
+<option value="san-martin">Barrio San Martín</option>
+<option value="costanera">Barrio Costanera</option>
+</select>
+<div class="absolute inset-y-0 right-0 flex items-center pr-3.5 pointer-events-none text-[#5B6475]">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></svg>
+</div>
+</div>
+<p class="text-xs text-[#5B6475]">Zona de cobertura Aguilares</p>
+</div>
+</div>
+<div class="pt-4 border-t border-[#E4E7EC] grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+<!-- Segmented Control (Tabs) -->
+<div class="space-y-2">
+<span class="block text-xs font-semibold text-[#12182C]">Método de pago (Segmented Control)</span>
+<div class="p-1 bg-[#F1F5F9] rounded-control inline-flex w-full max-w-md border border-[#E4E7EC]">
+<button class="flex-1 py-2 text-xs font-semibold rounded-lg bg-white text-[#12182C] shadow-xs text-center" type="button">
+                Efectivo
+              </button>
+<button class="flex-1 py-2 text-xs font-medium text-[#5B6475] hover:text-[#12182C] text-center" type="button">
+                Transferencia
+              </button>
+<button class="flex-1 py-2 text-xs font-medium text-[#5B6475] hover:text-[#12182C] text-center" type="button">
+                A coordinar
+              </button>
+</div>
+</div>
+<!-- Selection Controls: Checkbox & Switch -->
+<div class="space-y-2">
+<span class="block text-xs font-semibold text-[#12182C]">Controles de Selección Rápida</span>
+<div class="flex flex-wrap items-center gap-6 pt-1">
+<!-- Checkbox -->
+<label class="inline-flex items-center gap-2.5 cursor-pointer">
+<input checked="" class="w-4 h-4 rounded text-[#09BABD] focus:ring-[#09BABD] border-[#E4E7EC] text-brand-teal" type="checkbox"/>
+<span class="text-xs font-medium text-[#12182C]">Acepto los términos</span>
+</label>
+<!-- Switch -->
+<label class="inline-flex items-center gap-3 cursor-pointer">
+<div class="relative inline-flex h-6 w-11 items-center rounded-full bg-[#09BABD]">
+<span class="inline-block h-4 w-4 transform rounded-full bg-white transition translate-x-6 shadow-sm"></span>
+</div>
+<span class="text-xs font-medium text-[#12182C]">Disponible para pedidos</span>
+</label>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: FormControlsSection -->
+<!-- BEGIN: BadgesSection -->
+<section class="space-y-4" data-purpose="badges-section">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-xl text-[#12182C]">05. Insignias de Estado (Badges Pill)</h2>
+<p class="text-sm text-[#5B6475]">Etiquetas redondeadas (rounded-full) con semántica clara de flujo logístico.</p>
+</div>
+<div class="h-1 w-24 bg-[#09BABD] rounded-full hidden sm:block"></div>
+</div>
+<div class="bg-white border border-[#E4E7EC] rounded-card p-6 shadow-xs">
+<div class="flex flex-wrap gap-3 items-center">
+<!-- Publicada -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#09BABD]/15 text-[#0B7A7D]">
+<span class="w-1.5 h-1.5 rounded-full bg-[#09BABD]"></span>
+            Publicada
+          </span>
+<!-- Con ofertas -->
+<span class="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border border-[#09BABD] text-[#0B7A7D] bg-white">
+<svg class="w-3 h-3 text-[#09BABD]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+            Con ofertas
+          </span>
+<!-- Asignada -->
+<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-[#12182C] text-white">
+            Asignada
+          </span>
+<!-- En camino -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#FFF4E0] text-[#B45309]">
+<svg class="w-3 h-3 text-[#B45309] animate-pulse" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            En camino
+          </span>
+<!-- Entregada -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#E8F5E9] text-[#177A4B]">
+<svg class="w-3 h-3 text-[#177A4B]" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg>
+            Entregada
+          </span>
+<!-- Vencida -->
+<span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-[#F1F5F9] text-[#5B6475]">
+            Vencida
+          </span>
+<!-- Cancelada -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#FEE2E2] text-[#C62828]">
+<svg class="w-3 h-3 text-[#C62828]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            Cancelada
+          </span>
+<!-- Licencia verificada -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#E8F5E9] text-[#177A4B] border border-[#177A4B]/20">
+<svg class="w-3 h-3 text-[#177A4B]" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg>
+            Licencia verificada
+          </span>
+<!-- Moto · declarado -->
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border border-[#E4E7EC] text-[#5B6475] bg-white">
+<svg class="w-3.5 h-3.5 text-[#5B6475]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><circle cx="18.5" cy="17.5" r="3.5"></circle><circle cx="5.5" cy="17.5" r="3.5"></circle><circle cx="15" cy="5" r="1"></circle><path d="M12 17.5V14l-3-3 4-3 2 3h2"></path></svg>
+            Moto · declarado
+          </span>
+</div>
+</div>
+</section>
+<!-- END: BadgesSection -->
+<!-- BEGIN: CardsAndSkeletonSection -->
+<section class="space-y-4" data-purpose="cards-comparison-section">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-xl text-[#12182C]">06. Tarjeta de Solicitud vs Estado de Carga</h2>
+<p class="text-sm text-[#5B6475]">Estructura de tarjeta compacta para feed con radio de 12px y padding de 16px.</p>
+</div>
+<div class="h-1 w-24 bg-[#09BABD] rounded-full hidden sm:block"></div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+<!-- Active Request Card -->
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold text-[#0B7A7D] uppercase tracking-wider">Estado Activo (Componente UI)</span>
+<span class="text-xs text-[#5B6475]">Radio 12px · Padding 16px</span>
+</div>
+<article class="bg-white border border-[#E4E7EC] rounded-card p-4 shadow-xs space-y-3.5 hover:border-[#09BABD] transition-colors" data-purpose="order-card">
+<!-- Header -->
+<div class="flex items-start justify-between gap-2">
+<div class="flex items-center gap-2">
+<span class="w-7 h-7 rounded-full bg-[#09BABD]/15 flex items-center justify-center text-[#0B7A7D] flex-shrink-0">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><circle cx="6" cy="19" r="3"></circle><path d="M9 19h8.5a4.5 4.5 0 0 0 0-9H14"></path><circle cx="18" cy="5" r="3"></circle></svg>
+</span>
+<h3 class="font-heading text-base text-[#12182C]">Centro → Barrio Norte</h3>
+</div>
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#09BABD]/15 text-[#0B7A7D] flex-shrink-0">
+                Publicada
+              </span>
+</div>
+<!-- Metadata & Details -->
+<div class="space-y-1.5 text-xs text-[#5B6475]">
+<div class="flex items-center gap-2 font-medium text-[#12182C]">
+<span>≈ 2 km</span>
+<span>•</span>
+<span>Paquete chico</span>
+</div>
+<p class="text-[#5B6475] bg-[#FDFCFB] p-2.5 rounded-lg border border-[#E4E7EC]">
+<strong class="font-medium text-[#12182C]">Detalle:</strong> Paga en efectivo (necesita cambio de $ 2.000).
+              </p>
+</div>
+<!-- Footer: Price & Expiry -->
+<div class="pt-2 border-t border-[#E4E7EC] flex items-center justify-between">
+<div>
+<span class="block text-[11px] uppercase tracking-wider text-[#5B6475] font-semibold">Tarifa ofrecida</span>
+<div class="font-heading text-2xl text-[#12182C] leading-none">$ 1.500</div>
+</div>
+<div class="flex items-center gap-1.5 text-xs text-[#B45309] font-medium bg-[#FFF4E0] px-2.5 py-1 rounded-full">
+<svg class="w-3.5 h-3.5 text-[#B45309]" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                Vence en 18 min
+              </div>
+</div>
+<!-- Action Button -->
+<button class="w-full h-11 rounded-control bg-[#09BABD] text-[#12182C] font-semibold text-sm hover:brightness-95 active:scale-[0.99] transition-all flex items-center justify-center gap-2" type="button">
+              Ofertar
+            </button>
+</article>
+</div>
+<!-- Skeleton Loader State -->
+<div class="space-y-2">
+<div class="flex items-center justify-between">
+<span class="text-xs font-semibold text-[#5B6475] uppercase tracking-wider">Estado de Carga (Skeleton Shimmer)</span>
+<span class="text-xs text-[#5B6475]">Animación pulse</span>
+</div>
+<article aria-hidden="true" class="bg-white border border-[#E4E7EC] rounded-card p-4 shadow-xs space-y-3.5 animate-pulse" data-purpose="order-card-skeleton">
+<!-- Header skeleton -->
+<div class="flex items-start justify-between gap-2">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-slate-200"></div>
+<div class="h-4 w-36 bg-slate-200 rounded"></div>
+</div>
+<div class="h-5 w-16 bg-slate-200 rounded-full"></div>
+</div>
+<!-- Metadata & Details skeleton -->
+<div class="space-y-2">
+<div class="h-3.5 w-24 bg-slate-200 rounded"></div>
+<div class="h-12 w-full bg-slate-100 rounded-lg border border-[#E4E7EC]/60"></div>
+</div>
+<!-- Footer skeleton -->
+<div class="pt-2 border-t border-[#E4E7EC] flex items-center justify-between">
+<div class="space-y-1">
+<div class="h-2.5 w-16 bg-slate-200 rounded"></div>
+<div class="h-6 w-20 bg-slate-200 rounded"></div>
+</div>
+<div class="h-6 w-24 bg-slate-200 rounded-full"></div>
+</div>
+<!-- Button skeleton -->
+<div class="w-full h-11 rounded-control bg-slate-200"></div>
+</article>
+</div>
+</div>
+</section>
+<!-- END: CardsAndSkeletonSection -->
+<!-- BEGIN: FeedbackNotificationSection -->
+<section class="space-y-4" data-purpose="feedback-toast-section">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="text-xl text-[#12182C]">07. Avisos, Diálogos y Feedback Flotante</h2>
+<p class="text-sm text-[#5B6475]">Toast notification para confirmación de acciones con tiempo de reversión.</p>
+</div>
+<div class="h-1 w-24 bg-[#09BABD] rounded-full hidden sm:block"></div>
+</div>
+<div class="bg-white border border-[#E4E7EC] rounded-card p-6 shadow-xs flex flex-col md:flex-row items-center justify-between gap-6">
+<div class="space-y-1 max-w-sm">
+<h3 class="font-heading text-sm text-[#12182C]">Patrón de Notificación SnackBar / Toast</h3>
+<p class="text-xs text-[#5B6475]">Aparece anclado en la parte inferior durante 4 segundos. Permite cancelar ofertas enviadas por error.</p>
+</div>
+<!-- Toast Floating Mockup -->
+<div class="w-full max-w-md bg-[#12182C] text-white rounded-card p-3.5 shadow-lg flex items-center justify-between gap-3 border border-slate-700/40" data-purpose="toast-notification">
+<div class="flex items-center gap-3">
+<span class="w-7 h-7 rounded-full bg-[#177A4B]/20 text-[#177A4B] flex items-center justify-center flex-shrink-0">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24"><path d="M20 6 9 17l-5-5"></path></svg>
+</span>
+<div>
+<p class="text-xs font-semibold text-white">Oferta enviada</p>
+<p class="text-[11px] text-slate-300">El comercio revisará tu propuesta en breve</p>
+</div>
+</div>
+<button class="text-xs font-semibold text-[#09BABD] hover:text-white px-2.5 py-1 rounded transition-colors flex-shrink-0" type="button">
+            Deshacer
+          </button>
+</div>
+</div>
+</section>
+<!-- END: FeedbackNotificationSection -->
+<!-- BEGIN: DesignGuidelinesSummary -->
+<footer class="border-t border-[#E4E7EC] pt-6 pb-12 text-xs text-[#5B6475] flex flex-col sm:flex-row items-center justify-between gap-4">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-[#09BABD]"></div>
+<p><strong>cadeApp</strong> · Sistema de componentes v1.0 · Diseñado para Aguilares, Tucumán</p>
+</div>
+<p class="text-[11px] text-[#5B6475]/80">
+        Regla de oro: No usar #09BABD para texto directo sobre blanco; usar #0B7A7D.
+      </p>
+</footer>
+<!-- END: DesignGuidelinesSummary -->
+</div>
+</body></html>

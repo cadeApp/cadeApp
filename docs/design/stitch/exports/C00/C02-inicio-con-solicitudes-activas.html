@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>cadeApp — Logística Inteligente</title>
+<!-- Google Fonts: Montserrat & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Verbatim Tailwind Configuration -->
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-container": "#5cb5b8",
+            "error": "#ba1a1a",
+            "on-primary-fixed": "#002020",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "inverse-primary": "#4adadd",
+            "secondary-fixed-dim": "#c0c5e0",
+            "primary-fixed": "#6df6f9",
+            "surface-dim": "#d1daee",
+            "secondary-container": "#d9defa",
+            "secondary": "#585d75",
+            "surface-container-low": "#f0f3ff",
+            "tertiary-fixed": "#99f1f4",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-highest": "#dae3f7",
+            "on-secondary": "#ffffff",
+            "surface-container": "#e7eeff",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-tint": "#00696b",
+            "on-tertiary-container": "#004446",
+            "primary-container": "#09babd",
+            "surface-variant": "#dae3f7",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-tertiary": "#ffffff",
+            "on-surface": "#131c2a",
+            "secondary-fixed": "#dce1fd",
+            "on-surface-variant": "#3c4949",
+            "on-secondary-fixed": "#151b2f",
+            "primary": "#00696b",
+            "on-primary": "#ffffff",
+            "inverse-surface": "#283140",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed": "#002021",
+            "error-container": "#ffdad6",
+            "tertiary": "#00696c",
+            "on-primary-fixed-variant": "#004f51",
+            "on-error-container": "#93000a",
+            "surface-container-high": "#dfe8fd",
+            "surface-container-lowest": "#ffffff",
+            "primary-fixed-dim": "#4adadd",
+            "on-primary-container": "#004446",
+            "outline-variant": "#bbc9c9",
+            "on-secondary-container": "#5c6279",
+            "outline": "#6c7a7a",
+            "surface": "#f9f9ff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "surface-bright": "#f9f9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-sm": "0.5rem",
+            "space-md": "1rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "gutter": "0.5rem"
+          },
+          "fontFamily": {
+            "price-sm": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "label-md": ["Inter"],
+            "body-medium": ["Inter"],
+            "headline-md": ["Montserrat"],
+            "headline-lg": ["Montserrat"]
+          },
+          "fontSize": {
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface antialiased selection:bg-primary-container selection:text-on-primary-container min-h-screen flex justify-center">
+<!-- Mobile Screen Container 390px Baseline -->
+<div class="w-full max-w-[390px] bg-surface flex flex-col min-h-screen relative pb-28">
+<!-- TopAppBar (from Shared Components JSON: small_center_aligned, headline: cadeApp, leading_icon: two_wheeler) -->
+<header class="fixed top-0 left-0 right-0 max-w-[390px] mx-auto z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface border-b border-outline-variant/30">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[24px]" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<!-- Piloto Badge / Trailing context -->
+<div class="flex items-center gap-2">
+<span class="px-2.5 py-0.5 rounded-full bg-primary-container/20 border border-primary-container text-primary-container font-label-sm text-[12px] font-semibold tracking-wide">
+          Piloto
+        </span>
+<button class="text-surface/80 hover:text-surface active:scale-95 transition-transform p-1">
+<span class="material-symbols-outlined text-[20px]" data-icon="notifications">notifications</span>
+</button>
+</div>
+</header>
+<!-- Main Scrollable Canvas -->
+<main class="flex-1 px-4 pt-18 mt-14 flex flex-col gap-5">
+<!-- Greeting Header -->
+<section class="pt-2 flex flex-col gap-1">
+<div class="flex items-center gap-1.5 text-secondary">
+<span class="material-symbols-outlined text-[16px] text-primary" data-icon="storefront">storefront</span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-[11px] font-semibold">Comercio adherido</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">
+          Hola, Panadería La Espiga
+        </h1>
+<p class="font-body-md text-body-md text-secondary">
+          Gestioná tus envíos locales de hoy en tiempo real.
+        </p>
+</section>
+<!-- Primary Action CTA -->
+<section>
+<button class="w-full h-12 rounded-[10px] bg-primary-container text-on-primary-container font-headline-md text-headline-md flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all shadow-none">
+<span class="material-symbols-outlined text-[22px] font-bold" data-icon="add">add</span>
+<span>Nueva solicitud</span>
+</button>
+</section>
+<!-- Quick Metrics Bento Grid -->
+<section class="grid grid-cols-2 gap-3">
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-3.5 flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-[12px] text-secondary">Despachos hoy</span>
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="local_shipping">local_shipping</span>
+</div>
+<div class="mt-2 flex items-baseline gap-1.5">
+<span class="font-headline-xl text-headline-xl text-on-surface">12</span>
+<span class="font-label-sm text-[12px] text-primary font-semibold flex items-center">
+<span class="material-symbols-outlined text-[14px]" data-icon="trending_up">trending_up</span>+4
+            </span>
+</div>
+</div>
+<div class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-3.5 flex flex-col justify-between">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-[12px] text-secondary">Tarifa promedio</span>
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="payments">payments</span>
+</div>
+<div class="mt-2 flex items-baseline">
+<span class="font-headline-md text-headline-md text-on-surface">$ 1.950</span>
+</div>
+</div>
+</section>
+<!-- Section Title & Counter -->
+<section class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2">
+<h2 class="font-headline-md text-headline-md text-on-surface">Activas</h2>
+<span class="h-5 px-2 bg-on-surface text-surface-container-lowest font-label-sm text-[12px] font-bold rounded-full flex items-center justify-center">
+            3
+          </span>
+</div>
+<button class="font-label-sm text-label-sm text-primary font-semibold hover:underline flex items-center gap-0.5">
+<span>Actualizar</span>
+<span class="material-symbols-outlined text-[16px]" data-icon="refresh">refresh</span>
+</button>
+</section>
+<!-- Active Delivery Request Cards -->
+<section class="flex flex-col gap-3">
+<!-- Card 1: Con ofertas -->
+<article class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-4 flex flex-col gap-3 transition-colors active:bg-surface-container-low cursor-pointer">
+<div class="flex items-center justify-between">
+<!-- Badge: Con ofertas -->
+<div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary-container bg-surface-container-low text-primary font-label-sm text-[12px] font-semibold">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary-container opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+</span>
+              Con ofertas
+            </div>
+<!-- Expiration info -->
+<span class="font-label-sm text-[12px] text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="timer">timer</span>
+              Vence en 17 min
+            </span>
+</div>
+<!-- Route & Package Details -->
+<div class="flex items-center justify-between">
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-1.5 font-headline-md text-[15px] text-on-surface">
+<span>Centro</span>
+<span class="material-symbols-outlined text-[16px] text-secondary" data-icon="arrow_forward">arrow_forward</span>
+<span>Barrio Norte</span>
+</div>
+<p class="font-body-md text-[13px] text-secondary">
+                Paquete chico · <span class="text-primary font-semibold">3 ofertas</span>
+</p>
+</div>
+<div class="flex items-center pl-2">
+<span class="material-symbols-outlined text-secondary text-[22px]" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Quick Actions Bar for Offers -->
+<div class="pt-2 border-t border-outline-variant/30 flex items-center justify-between text-on-surface-variant">
+<span class="font-label-sm text-[12px] text-secondary">Mejor oferta: <strong>$ 1.500</strong></span>
+<button class="px-3 py-1 bg-surface-container-high hover:bg-primary-container hover:text-on-primary-container text-on-surface font-label-sm text-[12px] font-semibold rounded-[8px] transition-colors">
+              Revisar ofertas
+            </button>
+</div>
+</article>
+<!-- Card 2: Asignada -->
+<article class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-4 flex flex-col gap-3 transition-colors active:bg-surface-container-low cursor-pointer">
+<div class="flex items-center justify-between">
+<!-- Badge: Asignada -->
+<span class="px-2.5 py-1 rounded-full bg-inverse-surface text-surface font-label-sm text-[12px] font-medium">
+              Asignada
+            </span>
+<!-- Status text -->
+<span class="font-label-sm text-[12px] text-primary font-medium flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]" data-icon="schedule">schedule</span>
+              Esperando retiro
+            </span>
+</div>
+<!-- Route & Details -->
+<div class="flex items-center justify-between">
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-1.5 font-headline-md text-[15px] text-on-surface">
+<span>Centro</span>
+<span class="material-symbols-outlined text-[16px] text-secondary" data-icon="arrow_forward">arrow_forward</span>
+<span>Barrio Sur</span>
+</div>
+<div class="flex items-center gap-2 font-body-md text-[13px] text-secondary">
+<span class="flex items-center gap-1 text-on-surface font-medium">
+<span class="material-symbols-outlined text-[15px] text-secondary" data-icon="person">person</span>
+                  Joaquín R.
+                </span>
+<span>·</span>
+<span class="font-price-sm text-price-sm text-on-surface">$ 1.800</span>
+</div>
+</div>
+<div class="flex items-center pl-2">
+<span class="material-symbols-outlined text-secondary text-[22px]" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Courier Mini Bar -->
+<div class="pt-2 border-t border-outline-variant/30 flex items-center justify-between">
+<span class="font-label-sm text-[12px] text-secondary">En moto · Llega en 8 min</span>
+<button class="text-primary font-label-sm text-[12px] font-semibold flex items-center gap-1 hover:underline">
+<span class="material-symbols-outlined text-[14px]" data-icon="call">call</span>
+              Llamar cadete
+            </button>
+</div>
+</article>
+<!-- Card 3: En camino -->
+<article class="bg-surface-container-lowest border border-outline-variant/40 rounded-xl p-4 flex flex-col gap-3 transition-colors active:bg-surface-container-low cursor-pointer">
+<div class="flex items-center justify-between">
+<!-- Badge: En camino (Warning palette) -->
+<span class="px-2.5 py-1 rounded-full bg-[#FFF4E0] text-[#B45309] font-label-sm text-[12px] font-semibold border border-[#B45309]/20">
+              En camino
+            </span>
+<!-- Status text -->
+<span class="font-label-sm text-[12px] text-secondary flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-tertiary" data-icon="done_all">done_all</span>
+              Retirado 14:32
+            </span>
+</div>
+<!-- Route & Details -->
+<div class="flex items-center justify-between">
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-1.5 font-headline-md text-[15px] text-on-surface">
+<span>Centro</span>
+<span class="material-symbols-outlined text-[16px] text-secondary" data-icon="arrow_forward">arrow_forward</span>
+<span>Barrio Oeste</span>
+</div>
+<div class="flex items-center gap-2 font-body-md text-[13px] text-secondary">
+<span class="flex items-center gap-1 text-on-surface font-medium">
+<span class="material-symbols-outlined text-[15px] text-secondary" data-icon="person">person</span>
+                  Micaela T.
+                </span>
+<span>·</span>
+<span class="font-price-sm text-price-sm text-on-surface">$ 2.200</span>
+</div>
+</div>
+<div class="flex items-center pl-2">
+<span class="material-symbols-outlined text-secondary text-[22px]" data-icon="chevron_right">chevron_right</span>
+</div>
+</div>
+<!-- Route Progress Bar Indicator -->
+<div class="pt-2 border-t border-outline-variant/30 flex flex-col gap-1.5">
+<div class="flex justify-between items-center text-[11px] font-label-sm">
+<span class="text-secondary font-medium">Destino: Av. San Martín 420</span>
+<span class="text-primary font-bold">75% recorrido</span>
+</div>
+<div class="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full rounded-full w-3/4"></div>
+</div>
+</div>
+</article>
+</section>
+<!-- Footer from Shared Components JSON -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center bg-surface-container-lowest border-t border-outline-variant/40 rounded-xl mt-4">
+<div class="flex items-center gap-1.5 text-on-surface">
+<span class="material-symbols-outlined text-primary text-[20px]" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">cadeApp</span>
+</div>
+<p class="font-body-md text-body-md text-secondary">
+          © 2024 cadeApp. Envíos locales y logística inteligente.
+        </p>
+<div class="flex flex-wrap justify-center gap-x-4 gap-y-2">
+<a class="font-body-md text-[13px] text-secondary hover:text-primary transition-colors duration-150" href="#">Términos y condiciones</a>
+<a class="font-body-md text-[13px] text-secondary hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<a class="font-body-md text-[13px] text-secondary hover:text-primary transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+</footer>
+</main>
+<!-- Bottom Navigation Bar (Mandatory Shell for Top-level 'Inicio' Screen) -->
+<nav class="fixed bottom-0 left-0 right-0 max-w-[390px] mx-auto w-full bg-surface-container-lowest border-t border-outline-variant/40 flex justify-around py-2 z-50">
+<!-- Inicio (Active) -->
+<button aria-label="Inicio" class="flex flex-col items-center gap-1 text-primary py-1 px-3 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[24px]" data-icon="home" data-weight="fill" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-[12px] font-bold text-primary">Inicio</span>
+</button>
+<!-- Historial (Inactive) -->
+<button aria-label="Historial" class="flex flex-col items-center gap-1 text-secondary py-1 px-3 hover:text-on-surface active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[24px]" data-icon="history">history</span>
+<span class="font-label-sm text-[12px] font-medium text-secondary">Historial</span>
+</button>
+<!-- Cuenta (Inactive) -->
+<button aria-label="Cuenta" class="flex flex-col items-center gap-1 text-secondary py-1 px-3 hover:text-on-surface active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-[24px]" data-icon="account_circle">account_circle</span>
+<span class="font-label-sm text-[12px] font-medium text-secondary">Cuenta</span>
+</button>
+</nav>
+</div>
+</body></html>

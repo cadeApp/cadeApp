@@ -1,0 +1,26 @@
+{
+  "conflicts": [
+    {
+      "class": "money",
+      "id": "subscription-payment-gateway",
+      "parties": [
+        "backend",
+        "finance",
+        "legal"
+      ],
+      "reversible": false,
+      "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse."
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "subscription-payment-gateway",
+      "position": "maintain",
+      "summary": "Legal mantiene el conflicto: la integración técnica de la pasarela de cobro recurrente de suscripciones debe supeditarse a la revisión conjunta de los términos de adhesión contractual, la garantía del botón de baja y derecho de revocación bajo la Ley 24.240 de Defensa del Consumidor y el encuadre fiscal formulado por Finanzas."
+    }
+  ],
+  "_transport": {
+    "provider": "agy",
+    "compaction": 1
+  }
+}

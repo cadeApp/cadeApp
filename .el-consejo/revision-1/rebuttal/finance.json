@@ -1,0 +1,41 @@
+{
+  "conflicts": [
+    {
+      "class": "money",
+      "id": "subscription-payment-gateway",
+      "parties": [
+        "backend",
+        "finance",
+        "legal"
+      ],
+      "reversible": false,
+      "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse."
+    },
+    {
+      "class": "money",
+      "id": "conflict-monetizacion-particulares-pricing",
+      "parties": [
+        "finance",
+        "pm"
+      ],
+      "reversible": false,
+      "summary": "Falta de definición económica sobre si los particulares deben quedar excluidos, tener envíos de prueba gratuitos o contar con una modalidad de pase diario/por envío, elevando la decisión al checkpoint humano de Lautaro."
+    },
+    {
+      "class": "business",
+      "id": "conflict-subscription-paywall-vs-trial",
+      "parties": [
+        "marketing",
+        "pm",
+        "finance"
+      ],
+      "reversible": false,
+      "summary": "Tensión entre la decisión de cobrar abono mensual a comercios desde el primer día y la necesidad de marketing de ofrecer un período de prueba gratuito (trial) o cupo inicial bonificado para superar la barrera de adopción en Aguilares."
+    }
+  ],
+  "entries": [],
+  "_transport": {
+    "provider": "agy",
+    "compaction": 1
+  }
+}

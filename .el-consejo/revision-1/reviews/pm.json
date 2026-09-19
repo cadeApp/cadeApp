@@ -1,0 +1,88 @@
+{
+  "agentId": "pm",
+  "confidence": 0.85,
+  "conflicts": [
+    {
+      "class": "product",
+      "id": "conflict-particulars-monetization-scope",
+      "parties": [
+        "pm",
+        "human_checkpoint"
+      ],
+      "reversible": true,
+      "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual."
+    }
+  ],
+  "findings": [
+    {
+      "assumptions": [
+        "En un servicio de envíos entre pares, una proporción considerable de pedidos experimentará cancelaciones, demoras o falta de ofertas."
+      ],
+      "correction": "Definir e implementar una FSM explícita: DRAFT -> PUBLISHED -> MATCHED -> IN_TRANSIT -> DELIVERED, con estados terminales CANCELLED y EXPIRED (con timeout automático de 30 minutos sin ofertas).",
+      "evidence": [
+        "context.md (Sección 5): Se describe un flujo lineal de 6 pasos sin ramificaciones de cancelación, expiración ni resolución de disputas.",
+        "context.md (Sección 8.4): Se enumeran como preguntas abiertas la expiración, cancelación y no presentación del repartidor."
+      ],
+      "impact": "Las solicitudes sin ofertas o canceladas quedarán en estados huérfanos en la base de datos y la interfaz, impidiendo que usuarios y repartidores liberen o cancelen sus transacciones.",
+      "severity": "critical",
+      "statement": "El plan carece de una máquina de estados finita (FSM) y reglas para excepciones operativas en el ciclo de vida de la solicitud."
+    },
+    {
+      "assumptions": [
+        "Un usuario particular no pagará una suscripción mensual fija para realizar envíos esporádicos o eventuales."
+      ],
+      "correction": "Elevar al checkpoint humano: acotar el MVP estrictamente a comercios y emprendedores (B2B local), o definir una cuota gratuita limitada (ej. hasta 2 envíos mensuales) para particulares antes de requerir pase.",
+      "evidence": [
+        "context.md (Sección 2): 'Ingresos: suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis.'",
+        "context.md (Sección 3): 'Solicitante: comercio, emprendimiento o particular que publica solicitudes.'",
+        "context.md (Sección 8.5): 'qué pasa con los particulares que publican de vez en cuando...'"
+      ],
+      "impact": "Si se exige suscripción, se expulsa al segmento particular; si no se les cobra ni hay comisión por envío, la plataforma asume costos operativos sin retorno ni control de abuso.",
+      "severity": "high",
+      "statement": "Inconsistencia entre los actores admitidos (particulares) y el modelo de ingresos basado únicamente en suscripción comercial."
+    },
+    {
+      "assumptions": [
+        "Los repartidores solo precisan zona aproximada/barrio, distancia estimada y características del paquete para cotizar su oferta."
+      ],
+      "correction": "Implementar revelación progresiva: en estado PUBLISHED mostrar solo zona/barrio de origen y destino y características del bulto; liberar dirección exacta y teléfono solo al repartidor elegido tras el estado MATCHED.",
+      "evidence": [
+        "context.md (Sección 4): La solicitud incluye 'Dirección de entrega' y 'Nombre y teléfono de quien recibe.'",
+        "context.md (Sección 5, paso 2): La solicitud completa queda visible a repartidores cercanos antes de que exista oferta aceptada.",
+        "context.md (Sección 8.6): 'Privacidad: cuándo ve el repartidor el teléfono y la dirección del destinatario...'"
+      ],
+      "impact": "Exposición injustificada de datos sensibles de terceros no usuarios, con riesgos de contacto no deseado, acoso o desintermediación fuera de la plataforma.",
+      "severity": "high",
+      "statement": "Divulgación prematura de datos personales (PII) y domicilio exacto del destinatario a todos los repartidores habilitados."
+    },
+    {
+      "assumptions": [
+        "El casco urbano de Aguilares es acotado (~35.000 habitantes) y no requiere rastreo satelital continuo en segundo plano en un MVP inicial."
+      ],
+      "correction": "Para el MVP en Aguilares, adoptar un estado binario de disponibilidad ('Disponible/No disponible') con selección de zona o lista cronológica única de pedidos abiertos para la ciudad, descartando geolocalización en background.",
+      "evidence": [
+        "context.md (Sección 5, paso 2): 'primero los disponibles y más cercanos al punto de retiro.'",
+        "context.md (Sección 8.2): 'Cómo definir repartidor disponible y cercano: ubicación en vivo, ubicación al marcarse disponible o zona declarada.'"
+      ],
+      "impact": "Intentar tracking continuo por GPS en una PWA genera problemas de compatibilidad en iOS, consumo excesivo de batería y demoras severas en el desarrollo del MVP.",
+      "severity": "high",
+      "statement": "El criterio de ordenamiento por 'cercanía y disponibilidad' carece de especificación técnica y arriesga sobrecomplejidad en PWA."
+    },
+    {
+      "assumptions": [
+        "Un proceso sin panel de control obligaría a inspecciones directas en la base de datos, lo que es propenso a errores humanos y no escalable."
+      ],
+      "correction": "Incorporar explícitamente en el alcance del MVP un panel web básico de administración con login seguro para listar postulantes, revisar DNI/selfie/vehículo y emitir aprobación o rechazo con motivo.",
+      "evidence": [
+        "context.md (Sección 2): 'un administrador lo aprueba a mano antes de que pueda ofertar.'",
+        "context.md (Sección 3): 'Administrador de cadeApp: aprueba repartidores y gestiona la plataforma.'"
+      ],
+      "impact": "Cuello de botella operativo y falta de trazabilidad en la admisión de repartidores, imposibilitando notificar aprobaciones o rechazos justificadamente.",
+      "severity": "medium",
+      "statement": "Omisión en el alcance del MVP de las vistas y flujo del Administrador para la aprobación manual de repartidores."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión de PM sobre el plan original de cadeApp: el concepto central y las restricciones de intake son claros, pero se identifican vacíos críticos en el modelo de estados (FSM), inconsistencia en el alcance y monetización para usuarios particulares, riesgos de privacidad por divulgación prematura de datos de entrega, sobrecomplejidad en la cercanía de repartidores en PWA, y falta de especificación del panel de administración para aprobación de postulantes.",
+  "verdict": "conditional"
+}

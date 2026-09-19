@@ -1,0 +1,433 @@
+{
+  "phase": "REBUTTAL",
+  "conflicts": [
+    {
+      "id": "baas-choice",
+      "class": "technical",
+      "reversible": false,
+      "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+      "parties": [
+        "backend",
+        "pm",
+        "frontend"
+      ]
+    },
+    {
+      "id": "state-machine-scope",
+      "class": "product",
+      "reversible": true,
+      "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+      "parties": [
+        "backend",
+        "pm"
+      ]
+    },
+    {
+      "id": "subscription-payment-gateway",
+      "class": "money",
+      "reversible": false,
+      "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+      "parties": [
+        "backend",
+        "finance",
+        "legal"
+      ]
+    },
+    {
+      "id": "devops-baas-backup-criteria",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "El plan deja la elección entre Supabase y Firebase abierta para que el Consejo la recomiende, con criterios como modelo de datos, consultas geográficas y tiempo real. DevOps necesita que esa misma decisión incorpore explícitamente capacidad de backup/point-in-time recovery y costo del plan pago que la habilita, criterio que backend o seguridad podrían no priorizar de la misma forma al justificar la elección.",
+      "parties": [
+        "devops",
+        "backend",
+        "security"
+      ],
+      "normalized_from": "technical"
+    },
+    {
+      "id": "courier-location-tradeoff",
+      "class": "product",
+      "reversible": false,
+      "summary": "El plan quiere ordenar solicitudes mostrando primero a los repartidores 'disponibles y más cercanos', lo que empuja hacia tracking de ubicación con buena precisión y frecuencia. Desde seguridad, eso debería minimizarse (ubicación declarada al marcarse disponible, sin historial persistente) porque un repartidor no es un empleado con consentimiento laboral pleno de ser rastreado. La decisión final de precisión/frecuencia de ubicación es de producto, no solo técnica.",
+      "parties": [
+        "security",
+        "pm",
+        "backend"
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "agentId": "backend",
+      "verdict": "conditional",
+      "summary": "Recomendación: Supabase para cadeApp. El dominio (solicitudes, ofertas, usuarios, comercios, suscripciones) es relacional con integridad transaccional crítica (una sola oferta aceptada, mínimo ARS 1.000 en servidor): Postgres con transacciones ACID y constraints cubre esto nativamente; en Firestore habría que emular transacciones con runTransaction y duplicar validaciones en Cloud Functions, más superficie de error. Cercanía geográfica: PostGIS (extensión estándar de Supabase) resuelve 'repartidores más cercanos' con índices espaciales nativos; Firestore no tiene geoqueries nativas y depende de geohashing de terceros (ej. geofirestore), menos preciso. Tiempo real de ofertas: ambos lo resuelven (Supabase Realtime sobre replicación lógica, Firestore listeners); no es un eje decisivo. Auth y reglas de acceso: Supabase Auth + RLS expresa en SQL reglas por rol (solicitante/repartidor/admin), auditable; Firebase Security Rules son más verbosas para este modelo con roles. Storage privado de DNI/selfie: ambos cubren el caso con buckets privados y URLs firmadas, sin diferencia decisiva. Backend embebido en Next.js: sin fricción particular en ninguno. Dependencia del proveedor: Supabase es Postgres estándar (self-hostable), menor lock-in que el modelo propietario de Firestore. Balance: Supabase gana por modelo relacional, PostGIS y transacciones, sin que los otros ejes lo contradigan. original.md es un intake sin diseño técnico: faltan máquina de estados, transacción de aceptación de oferta, validación server-side del mínimo, expiración programada y proveedor de cobro recurrente para la suscripción; se detallan como hallazgos.",
+      "conflicts": [
+        {
+          "id": "baas-choice",
+          "class": "technical",
+          "reversible": false,
+          "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+          "parties": [
+            "backend",
+            "pm",
+            "frontend"
+          ]
+        },
+        {
+          "id": "state-machine-scope",
+          "class": "product",
+          "reversible": true,
+          "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+          "parties": [
+            "backend",
+            "pm"
+          ]
+        },
+        {
+          "id": "subscription-payment-gateway",
+          "class": "money",
+          "reversible": true,
+          "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+          "parties": [
+            "backend",
+            "finance",
+            "legal"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "backend.review.0",
+          "severity": "critical",
+          "statement": "El plan no define un mecanismo transaccional para garantizar que solo una oferta quede aceptada por solicitud; sin control de concurrencia en el servidor, dos aceptaciones simultáneas (doble clic, dos pestañas, reintento de red) pueden dejar la solicitud con más de un repartidor confirmado.",
+          "correction": "Modelar la aceptación como transición atómica: en Supabase, un UPDATE condicionado a status = 'open' dentro de una transacción SQL (o una función RPC) que solo confirma la oferta si nadie más lo hizo antes, devolviendo error explícito en la segunda llamada; en Firestore, runTransaction sobre el documento de la solicitud con la misma lógica de guarda."
+        },
+        {
+          "id": "backend.review.1",
+          "severity": "critical",
+          "statement": "La oferta mínima de ARS 1.000 se declara como regla de negocio pero el plan no especifica en qué capa se valida, dejando abierta la posibilidad de que solo se valide en el cliente.",
+          "correction": "Forzar el mínimo en la capa de datos, no solo en UI: en Supabase, un CHECK (amount_cents >= 100000) en la tabla offers más una policy RLS que valide el rango en el INSERT; en Firestore, Security Rules y/o Cloud Function que rechacen escrituras con amount < 1000."
+        },
+        {
+          "id": "backend.review.2",
+          "severity": "high",
+          "statement": "El documento describe el flujo feliz (crear → publicar → ofertar → elegir → confirmar → entregar) pero no define una máquina de estados explícita con las transiciones de excepción que la propia sección 8 plantea como pregunta abierta (expiración, retiro de oferta, cancelación, no-show, confirmación de entrega).",
+          "correction": "Definir los estados de request (draft, open, offered, accepted, in_progress, completed, cancelled, expired) y de offer (pending, accepted, rejected, withdrawn, expired) con una tabla de transiciones permitidas, validada en el backend antes de cualquier escritura."
+        },
+        {
+          "id": "backend.review.3",
+          "severity": "high",
+          "statement": "El plan no indica cómo ni cuándo expira una solicitud sin ofertas ni qué proceso la marca como expirada; al estar el backend dentro de Next.js sin servicio aparte, no hay un mecanismo de cron nativo mencionado.",
+          "correction": "Definir un job programado (Vercel Cron sobre una API route, pg_cron + Edge Function en Supabase, o Cloud Scheduler + Cloud Function en Firebase) que revise solicitudes abiertas más allá de un TTL configurable y las mueva a estado expired."
+        },
+        {
+          "id": "backend.review.4",
+          "severity": "medium",
+          "statement": "El modelo de ingresos depende de una suscripción mensual a comercios pero el plan no especifica el proveedor de cobro recurrente ni qué ocurre ante un pago rechazado o vencido.",
+          "correction": "Elegir un proveedor con soporte de suscripciones recurrentes en Argentina (ej. Mercado Pago Suscripciones), definir un webhook idempotente para eventos de pago (aprobado, rechazado, cancelado) y un campo subscription_status en el comercio que controle si puede publicar solicitudes."
+        },
+        {
+          "id": "backend.review.5",
+          "severity": "medium",
+          "statement": "El plan menciona guardar DNI y selfie del repartidor pero no define las reglas de acceso al storage (quién puede leer los archivos, URLs firmadas, retención tras la decisión de aprobación).",
+          "correction": "Usar un bucket privado (Supabase Storage con RLS o Firebase Storage con reglas restringidas al rol admin), generar URLs firmadas de corta duración solo para el panel de administración, y definir una política de retención/anonimización tras la decisión de aprobación o rechazo."
+        }
+      ]
+    },
+    {
+      "agentId": "devops",
+      "verdict": "conditional",
+      "summary": "El plan resuelve producto y flujo pero deja explícitamente sin responder la pregunta abierta #9 (hosting, despliegue, backups y monitoreo) y no define entornos, CI/CD, mecanismo de tareas programadas ni observabilidad. Para un MVP que guarda documentos sensibles (DNI, selfie) y cobra suscripciones recurrentes, esos vacíos son operables antes de construir, no después.",
+      "conflicts": [
+        {
+          "id": "devops-baas-backup-criteria",
+          "class": "technical",
+          "reversible": true,
+          "summary": "El plan deja la elección entre Supabase y Firebase abierta para que el Consejo la recomiende, con criterios como modelo de datos, consultas geográficas y tiempo real. DevOps necesita que esa misma decisión incorpore explícitamente capacidad de backup/point-in-time recovery y costo del plan pago que la habilita, criterio que backend o seguridad podrían no priorizar de la misma forma al justificar la elección.",
+          "parties": [
+            "devops",
+            "backend",
+            "security"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "devops.review.0",
+          "severity": "high",
+          "statement": "El plan no define hosting, entornos (dev/preview/prod) ni pipeline de despliegue para el Next.js con backend embebido.",
+          "correction": "Agregar al plan una recomendación explícita de hosting compatible con Next.js + funciones serverless en el mismo proyecto (por ejemplo Vercel u otro proveedor equivalente), con al menos entorno de desarrollo, preview por rama/PR y producción, y una regla mínima de CI (build + typecheck strict) antes de promover a producción."
+        },
+        {
+          "id": "devops.review.1",
+          "severity": "high",
+          "statement": "No hay política de backup ni de restauración para los datos del BaaS, en particular para el DNI y la selfie que se piden a cada repartidor.",
+          "correction": "Definir antes del lanzamiento una cadencia de backup (nativa del BaaS si el plan pago la ofrece, o exportación programada si se queda en el plan gratuito) y documentar y probar al menos una restauración completa antes de aprobar el primer repartidor real."
+        },
+        {
+          "id": "devops.review.2",
+          "severity": "medium",
+          "statement": "El plan no especifica el mecanismo técnico para las tareas programadas que el propio flujo requiere: expiración de solicitudes sin ofertas y vencimiento/control de la suscripción mensual de comercios.",
+          "correction": "Especificar en el plan un mecanismo concreto de tareas programadas compatible con el hosting y el BaaS elegidos (por ejemplo cron jobs del proveedor de hosting invocando una ruta de API, o triggers/funciones programadas del propio BaaS) para expirar solicitudes y verificar el estado de la suscripción."
+        },
+        {
+          "id": "devops.review.3",
+          "severity": "medium",
+          "statement": "No hay plan de observabilidad ni alertas para detectar fallas del flujo en tiempo real (ofertas, notificaciones) durante el lanzamiento en Aguilares.",
+          "correction": "Incorporar monitoreo mínimo antes del lanzamiento: verificación de disponibilidad de las rutas críticas, captura de errores de aplicación, y un canal de alerta (email o WhatsApp al admin) cuando falle la publicación de solicitudes, el envío de ofertas o la aprobación de repartidores."
+        },
+        {
+          "id": "devops.review.4",
+          "severity": "medium",
+          "statement": "El plan no define una estrategia de migraciones de base de datos ni un procedimiento de rollback para cuando el esquema cambie durante la iteración del MVP.",
+          "correction": "Exigir migraciones versionadas (por ejemplo con el CLI del BaaS elegido) aplicadas primero en preview/staging, y documentar un procedimiento de rollback de un paso (redeploy de la build anterior de Next.js) antes de habilitar la aprobación de repartidores en producción."
+        }
+      ]
+    },
+    {
+      "agentId": "finance",
+      "verdict": "conditional",
+      "summary": "Dictamen financiero condicional: el modelo que prescinde de custodiar o intermediar los pagos del envío elimina el riesgo financiero directo por fondos de terceros, pero el MVP carece de definiciones indispensables para monetizar: no especifica la pasarela ni el flujo de cobro recurrente para las suscripciones de comercios, omite la política tarifaria para particulares, hardcodea un piso de ARS 1.000 vulnerable a la inflación argentina y carece de encuadre fiscal básico en Tucumán.",
+      "conflicts": [
+        {
+          "class": "money",
+          "id": "conflict-monetizacion-particulares-pricing",
+          "parties": [
+            "finanzas",
+            "pm",
+            "fundador"
+          ],
+          "reversible": true,
+          "summary": "Falta de definición económica sobre si los particulares deben quedar excluidos, tener envíos de prueba gratuitos o contar con una modalidad de pase diario/por envío, elevando la decisión al checkpoint humano de Lautaro."
+        }
+      ],
+      "findings": [
+        {
+          "id": "finance.review.0",
+          "severity": "high",
+          "statement": "Falta de definición del mecanismo operativo y pasarela de pago para el cobro de suscripciones mensuales a comercios y emprendedores.",
+          "correction": "Incorporar al plan del MVP la integración con una pasarela de pagos local con soporte de débitos recurrentes/suscripciones (ej. Mercado Pago Subscriptions) y definir la lógica de webhooks para activación, reintentos y suspensión de comercios por falta de pago."
+        },
+        {
+          "id": "finance.review.1",
+          "severity": "high",
+          "statement": "Inconsistencia en el modelo de ingresos respecto a los particulares que publican solicitudes ocasionales sin pagar suscripción.",
+          "correction": "Definir la regla de negocio para particulares en el MVP: o bien acotar el lanzamiento en Aguilares estrictamente a comercios/emprendedores B2B, o bien conceder un cupo de envíos sin cargo mensuales (freemium limitado) antes de exigir suscripción."
+        },
+        {
+          "id": "finance.review.2",
+          "severity": "medium",
+          "statement": "El umbral de oferta mínima de ARS 1.000 está definido como un valor nominal fijo y rígido en el flujo central.",
+          "correction": "Mover el valor del piso de oferta a una variable de configuración administrable desde la base de datos o panel de administración, evitando valores hardcodeados en el código de Next.js."
+        },
+        {
+          "id": "finance.review.3",
+          "severity": "medium",
+          "statement": "Falta de análisis de costos de infraestructura BaaS (Supabase vs Firebase) y su exposición a facturación en moneda extranjera.",
+          "correction": "Modelar el consumo estimado en el plan gratuito para el MVP en Aguilares (con compresión client-side obligatoria para DNI/selfies para no saturar storage) y documentar el punto de equilibrio en el que la suscripción paga de BaaS resulte necesaria."
+        },
+        {
+          "id": "finance.review.4",
+          "severity": "medium",
+          "statement": "Ausencia de previsión tributaria para la facturación de las suscripciones en la provincia de Tucumán.",
+          "correction": "Incorporar en el plan financiero el encuadre de Lautaro como Monotributista con emisión de Factura C electrónica y contemplar la alícuota de Ingresos Brutos de Tucumán (3% a 5%) al calcular el precio final de la suscripción."
+        }
+      ]
+    },
+    {
+      "agentId": "frontend",
+      "verdict": "conditional",
+      "summary": "El plan es sólido en flujo de negocio y producto, pero como especificación de arquitectura frontend/PWA queda incompleto en puntos que afectan directamente la operación del MVP: depende de notificaciones push sin reconocer que en iOS requieren instalación manual previa a pantalla de inicio (sin `beforeinstallprompt`), plantea 'ubicación en vivo' de repartidores sin reconocer que las PWA no pueden rastrear ubicación en segundo plano de forma confiable, y no define fallback de tiempo real ni manejo de carga de imágenes (DNI/selfie) para redes móviles débiles en Aguilares. Ninguno de estos puntos invalida la propuesta, pero deben resolverse explícitamente antes de considerar el plan listo para desarrollo. Nota adicional no crítica: el plan no menciona una línea base de accesibilidad (semántica, foco, lectores de pantalla) pese a que el diseño visual queda fuera de esta etapa; conviene fijarla igual, ya que afecta la estructura de componentes, no solo el estilo.",
+      "conflicts": [],
+      "findings": [
+        {
+          "id": "frontend.review.0",
+          "severity": "high",
+          "statement": "El plan no especifica que en iOS los Web Push solo funcionan si la PWA fue instalada manualmente a la pantalla de inicio (Safari > 'Añadir a pantalla de inicio'), sin evento `beforeinstallprompt` disponible, y solo desde iOS 16.4+; sin un flujo de instalación explícito, los repartidores con iPhone no reciben ninguna notificación push de nuevas solicitudes u ofertas.",
+          "correction": "Definir en el plan un flujo de onboarding que guíe explícitamente a instalar la PWA en pantalla de inicio en iOS (con instrucciones visuales, ya que no existe `beforeinstallprompt`), condicionar o incentivar esa instalación para repartidores, y documentar el fallback in-app para quienes no instalen."
+        },
+        {
+          "id": "frontend.review.1",
+          "severity": "high",
+          "statement": "El plan deja abierta la idea de 'ubicación en vivo' para calcular repartidores disponibles y cercanos, pero una PWA no puede hacer seguimiento de ubicación en segundo plano de forma confiable en iOS Safari ni de forma sostenida en Android sin que la app esté en primer plano; esa capacidad es propia de apps nativas, no de PWAs.",
+          "correction": "Definir el modelo de disponibilidad como 'zona declarada + check-in manual o ubicación puntual al marcarse disponible / al abrir la app', no como tracking continuo en segundo plano, y documentar esa limitación como restricción técnica de PWA en el plan."
+        },
+        {
+          "id": "frontend.review.2",
+          "severity": "medium",
+          "statement": "El plan no contempla que las notificaciones push en PWAs móviles son intrínsecamente poco confiables (Android puede suspender el service worker por optimización de batería/Doze; iOS restringe fuertemente la ejecución en segundo plano), por lo que depender solo de push para enterarse de nuevas solicitudes/ofertas es insuficiente.",
+          "correction": "Especificar un mecanismo de respaldo en primer plano (suscripción en tiempo real vía Supabase Realtime o listeners de Firestore, más polling ligero al reabrir/enfocar la app) que actualice la lista de solicitudes/ofertas independientemente de si el push llegó."
+        },
+        {
+          "id": "frontend.review.3",
+          "severity": "medium",
+          "statement": "La elección entre Supabase y Firebase (pregunta abierta 1) tiene una implicancia frontend concreta para notificaciones push que el plan no menciona: Firebase Cloud Messaging ofrece soporte de primera parte para Web Push (incluyendo iOS 16.4+) con SDK y manejo de tokens integrado, mientras que Supabase no incluye un servicio de push propio y requeriría implementar manualmente el protocolo Web Push con claves VAPID y un endpoint de envío.",
+          "correction": "Incluir en la justificación de la elección de BaaS el costo de implementación de push: si se elige Supabase, planificar explícitamente un servicio propio de Web Push con VAPID; si se elige Firebase, aprovechar FCM Web Push nativo."
+        },
+        {
+          "id": "frontend.review.4",
+          "severity": "medium",
+          "statement": "El plan requiere que el repartidor cargue DNI, selfie y datos del vehículo para su aprobación, pero no define cómo se manejará esa carga de imágenes en celulares de gama baja y redes móviles inestables típicas de una localidad como Aguilares.",
+          "correction": "Especificar en el plan compresión de imágenes en el cliente antes de subir (resize/calidad), manejo de reintentos con feedback de progreso, y evaluar Background Sync del Service Worker para completar la carga cuando la red se recupere."
+        }
+      ]
+    },
+    {
+      "agentId": "legal",
+      "verdict": "conditional",
+      "summary": "Dictamen legal condicional para el MVP de cadeApp en Aguilares (Tucumán). La plataforma puede operar como intermediario tecnológico sin intermediación financiera del envío, siempre que se subsanen cinco riesgos clave: mitigación de presunción laboral con repartidores (Ley 20.744), tratamiento y custodia de datos biométricos y personales (Ley 25.326), protección de datos de destinatarios no registrados, seguro obligatorio para vehículos de reparto (Ley 24.449 y CCyCN), y deslinde contractual de responsabilidad y bienes prohibidos.",
+      "conflicts": [],
+      "findings": [
+        {
+          "id": "legal.review.0",
+          "severity": "high",
+          "statement": "Tratamiento y almacenamiento de datos personales y biométricos (DNI y selfie) sin política de privacidad ni consentimiento informado previo bajo la Ley 25.326.",
+          "correction": "Redactar e implementar una Política de Privacidad con consentimiento explícito previo a la carga; aplicar cifrado en reposo para imágenes de DNI y selfies en el BaaS elegido; y definir un plazo de retención con eliminación o anonimización una vez validada la identidad."
+        },
+        {
+          "id": "legal.review.1",
+          "severity": "high",
+          "statement": "Riesgo de encuadre en presunción de relación laboral o dependencia encubierta (art. 23 Ley 20.744) derivado de la admisión discrecional y fijación de tarifa mínima.",
+          "correction": "Instrumentar un Contrato Marco de Prestador Independiente aceptado al registrarse; aclarar que la tarifa mínima es una referencia operativa fijada por oferta y demanda; garantizar libertad total de horarios, rechazo de viajes sin penalizaciones y permitir el ejercicio simultáneo en otras actividades."
+        },
+        {
+          "id": "legal.review.2",
+          "severity": "high",
+          "statement": "Tratamiento de datos personales de terceros no registrados (destinatarios) sin consentimiento directo ni política de minimización de datos.",
+          "correction": "Obligar contractualmente al solicitante/comercio a declarar que cuenta con la autorización del destinatario para la logística; revelar el teléfono y la dirección exacta únicamente al repartidor seleccionado tras la confirmación formal del envío; e incorporar prohibición expresa de contactar al destinatario fuera del propósito del envío."
+        },
+        {
+          "id": "legal.review.3",
+          "severity": "medium",
+          "statement": "Ausencia de verificación de seguro de responsabilidad civil obligatorio y licencia habilitante para los rodados de los repartidores.",
+          "correction": "Requerir en el onboarding del repartidor la carga de licencia de conducir vigente y comprobante de póliza de seguro de responsabilidad civil al día; el administrador no debe habilitar a ningún repartidor que no acredite seguro vigente."
+        },
+        {
+          "id": "legal.review.4",
+          "severity": "medium",
+          "statement": "Falta de deslinde contractual y exclusión de mercaderías prohibidas o peligrosas en el paquete.",
+          "correction": "Establecer en los Términos y Condiciones una lista exhaustiva de mercaderías prohibidas (estupefacientes, armas, dinero, mercancías peligrosas); disponer que cadeApp es exclusivamente un intermediario tecnológico que no asume custodia de la carga; y fijar el protocolo de resolución directa y denuncia policial obligatoria ante siniestros o ilícitos."
+        }
+      ]
+    },
+    {
+      "agentId": "pm",
+      "verdict": "conditional",
+      "summary": "Revisión de PM sobre el plan original de cadeApp: el concepto central y las restricciones de intake son claros, pero se identifican vacíos críticos en el modelo de estados (FSM), inconsistencia en el alcance y monetización para usuarios particulares, riesgos de privacidad por divulgación prematura de datos de entrega, sobrecomplejidad en la cercanía de repartidores en PWA, y falta de especificación del panel de administración para aprobación de postulantes.",
+      "conflicts": [
+        {
+          "class": "product",
+          "id": "conflict-particulars-monetization-scope",
+          "parties": [
+            "pm",
+            "human_checkpoint"
+          ],
+          "reversible": true,
+          "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual."
+        }
+      ],
+      "findings": [
+        {
+          "id": "pm.review.0",
+          "severity": "critical",
+          "statement": "El plan carece de una máquina de estados finita (FSM) y reglas para excepciones operativas en el ciclo de vida de la solicitud.",
+          "correction": "Definir e implementar una FSM explícita: DRAFT -> PUBLISHED -> MATCHED -> IN_TRANSIT -> DELIVERED, con estados terminales CANCELLED y EXPIRED (con timeout automático de 30 minutos sin ofertas)."
+        },
+        {
+          "id": "pm.review.1",
+          "severity": "high",
+          "statement": "Inconsistencia entre los actores admitidos (particulares) y el modelo de ingresos basado únicamente en suscripción comercial.",
+          "correction": "Elevar al checkpoint humano: acotar el MVP estrictamente a comercios y emprendedores (B2B local), o definir una cuota gratuita limitada (ej. hasta 2 envíos mensuales) para particulares antes de requerir pase."
+        },
+        {
+          "id": "pm.review.2",
+          "severity": "high",
+          "statement": "Divulgación prematura de datos personales (PII) y domicilio exacto del destinatario a todos los repartidores habilitados.",
+          "correction": "Implementar revelación progresiva: en estado PUBLISHED mostrar solo zona/barrio de origen y destino y características del bulto; liberar dirección exacta y teléfono solo al repartidor elegido tras el estado MATCHED."
+        },
+        {
+          "id": "pm.review.3",
+          "severity": "high",
+          "statement": "El criterio de ordenamiento por 'cercanía y disponibilidad' carece de especificación técnica y arriesga sobrecomplejidad en PWA.",
+          "correction": "Para el MVP en Aguilares, adoptar un estado binario de disponibilidad ('Disponible/No disponible') con selección de zona o lista cronológica única de pedidos abiertos para la ciudad, descartando geolocalización en background."
+        },
+        {
+          "id": "pm.review.4",
+          "severity": "medium",
+          "statement": "Omisión en el alcance del MVP de las vistas y flujo del Administrador para la aprobación manual de repartidores.",
+          "correction": "Incorporar explícitamente en el alcance del MVP un panel web básico de administración con login seguro para listar postulantes, revisar DNI/selfie/vehículo y emitir aprobación o rechazo con motivo."
+        }
+      ]
+    },
+    {
+      "agentId": "security",
+      "verdict": "conditional",
+      "summary": "El plan resuelve bien el modelo de negocio y el flujo, pero deja sin definir justamente los puntos que más riesgo de seguridad y privacidad implican: manejo de DNI y selfie de repartidores, exposición de datos del destinatario y ubicación de repartidores, seguridad del panel admin, validación del webhook de cobro de suscripción, autorización a nivel de fila por rol y mecanismos ante abuso o incidentes físicos. El propio documento marca varios de estos temas como 'preguntas abiertas', por lo que son correcciones esperables antes de construir, no fallas de ejecución.",
+      "conflicts": [
+        {
+          "id": "courier-location-tradeoff",
+          "class": "product",
+          "reversible": true,
+          "summary": "El plan quiere ordenar solicitudes mostrando primero a los repartidores 'disponibles y más cercanos', lo que empuja hacia tracking de ubicación con buena precisión y frecuencia. Desde seguridad, eso debería minimizarse (ubicación declarada al marcarse disponible, sin historial persistente) porque un repartidor no es un empleado con consentimiento laboral pleno de ser rastreado. La decisión final de precisión/frecuencia de ubicación es de producto, no solo técnica.",
+          "parties": [
+            "security",
+            "pm",
+            "backend"
+          ]
+        },
+        {
+          "id": "recipient-pii-visibility-timing",
+          "class": "product",
+          "reversible": true,
+          "summary": "El plan no dice si el teléfono y la dirección de entrega del destinatario se muestran a todos los repartidores que ofertan o solo al elegido. Mostrarlos antes ayuda a que el repartidor calcule mejor su oferta (necesidad de producto/UX), pero expone datos de un tercero sin consentimiento a oferentes que nunca ganan la solicitud (postura de seguridad). Es una decisión de producto que security recomienda resolver a favor de revelar recién al aceptar la oferta.",
+          "parties": [
+            "security",
+            "pm",
+            "ux-ui"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "security.review.0",
+          "severity": "critical",
+          "statement": "El plan exige que los repartidores carguen DNI y selfie para la aprobación manual, pero no define cómo se almacenan, cifran, controlan los accesos, ni por cuánto tiempo se retienen o cuándo se borran esos datos.",
+          "correction": "Definir en el plan: almacenamiento en bucket privado (no público) con cifrado en reposo, acceso restringido solo al rol admin vía reglas de seguridad/RLS, URLs firmadas de corta duración para visualizar el documento, y una política explícita de retención (por ejemplo, borrar selfie/DNI a los N días de la aprobación o al dar de baja al repartidor, conservando solo el resultado de la verificación)."
+        },
+        {
+          "id": "security.review.1",
+          "severity": "high",
+          "statement": "El panel de administración que aprueba repartidores (con acceso a DNI y selfies) y gestiona la suscripción de comercios no tiene ningún control de seguridad definido: no se especifica autenticación reforzada, control de acceso ni registro de auditoría.",
+          "correction": "Agregar al plan: autenticación multifactor obligatoria para cuentas admin, rol admin separado del resto de usuarios con permisos mínimos necesarios, y registro de auditoría (quién aprobó/rechazó a qué repartidor y cuándo, quién accedió a un DNI/selfie o modificó una suscripción)."
+        },
+        {
+          "id": "security.review.2",
+          "severity": "high",
+          "statement": "El plan no define cuándo el repartidor ve el teléfono y la dirección del destinatario (un tercero que no es usuario y no dio consentimiento directo), ni qué precisión y retención tiene la ubicación de los repartidores usada para ordenar solicitudes por cercanía.",
+          "correction": "Especificar en el plan: mostrar dirección de entrega exacta y datos del destinatario (nombre, teléfono, dirección) solo al repartidor cuya oferta fue aceptada; a los demás oferentes mostrarles zona aproximada/distancia. Para el ranking por cercanía, usar la ubicación declarada al marcarse disponible (no tracking en vivo continuo) o, si se usa ubicación en vivo, truncar precisión y no persistir el historial más allá de lo operativamente necesario."
+        },
+        {
+          "id": "security.review.3",
+          "severity": "high",
+          "statement": "El modelo de ingresos depende de una suscripción mensual cobrada a comercios, pero el plan no menciona qué proveedor de pago se usará ni cómo se valida el webhook que actualiza el estado de la suscripción.",
+          "correction": "Definir en el plan: validación obligatoria de la firma del webhook del proveedor de pago elegido antes de procesar cualquier evento, endpoint idempotente (registrar el id de evento procesado para no repetir efectos), y que el estado de suscripción solo cambie a partir de eventos verificados del proveedor, nunca desde una llamada del cliente."
+        },
+        {
+          "id": "security.review.4",
+          "severity": "high",
+          "statement": "El plan no define el modelo de autorización a nivel de fila por rol (qué puede leer/escribir cada solicitante, repartidor y admin) ni controles básicos contra abuso: cuentas falsas, repartidores rechazados que se vuelven a registrar, ofertas spam o scraping masivo de direcciones publicadas.",
+          "correction": "Agregar al plan: reglas de acceso a nivel de fila explícitas por tabla y rol (el solicitante ve solo sus propias solicitudes y las ofertas que recibió, el repartidor ve solo solicitudes abiertas y sus propias ofertas, el admin ve todo con auditoría); deduplicación de repartidores rechazados por número de DNI; límites de tasa en creación de solicitudes, ofertas y registro de cuentas."
+        },
+        {
+          "id": "security.review.5",
+          "severity": "medium",
+          "statement": "El flujo conecta desconocidos para un encuentro físico (retiro y entrega) y no incluye ningún mecanismo de seguridad física: no hay forma de reportar un incidente, ni de verificar en el momento del encuentro que la persona que se presenta es el repartidor aprobado.",
+          "correction": "Agregar al plan: mostrar al solicitante y al destinatario una foto y nombre del repartidor asignado antes del encuentro (ya capturados en la aprobación), un botón de reporte de incidente accesible desde la entrega activa, y un procedimiento documentado de qué hace el admin ante un reporte (suspensión cautelar del repartidor)."
+        }
+      ]
+    }
+  ],
+  "round": 1,
+  "context": "# cadeApp — plan original (candidato a revisión)\n\nFuente: idea de producto enviada por Lautaro el 2026-09-17. Este plan transcribe la idea y las respuestas del intake. No agrega soluciones: las preguntas abiertas quedan para el Consejo.\n\n## 1. Propuesta\n\nUna plataforma web SaaS (PWA) que conecta a quien necesita hacer una entrega (comercio, emprendedor o particular) con repartidores independientes de la zona. No es una empresa de delivery y no cobra ni administra el dinero del envío. Solo es el punto de encuentro: se publica la solicitud, los repartidores ofertan y el solicitante elige.\n\nResumen: alguien necesita una entrega → publica la solicitud → los repartidores cercanos ofertan → el creador elige → las partes coordinan directamente.\n\n## 2. Decisiones humanas del intake (Lautaro, 2026-09-17)\n\n- Ingresos: suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis. La plataforma sigue sin tocar el dinero del envío.\n- Zona de lanzamiento: solo Aguilares, provincia de Tucumán, Argentina.\n- Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.\n\n## 3. Actores\n\n- Solicitante: comercio, emprendimiento o particular que publica solicitudes.\n- Repartidor independiente: se registra, un admin lo aprueba, ve solicitudes y oferta.\n- Administrador de cadeApp: aprueba repartidores y gestiona la plataforma.\n- Destinatario: recibe el pedido. No es usuario; solo figuran su nombre y teléfono.\n\n## 4. Datos de una solicitud\n\n- Nombre del comercio, emprendimiento o persona que solicita.\n- Dirección de retiro.\n- Dirección de entrega.\n- Nombre y teléfono de quien recibe.\n- Tipo de producto o paquete.\n- Indicaciones adicionales para el repartidor.\n\n## 5. Flujo principal\n\n1. Creación: el solicitante carga retiro, destino y características del envío.\n2. Publicación: la solicitud queda visible para los repartidores habilitados, primero los disponibles y más cercanos al punto de retiro.\n3. Ofertas: cada repartidor interesado dice cuánto cobraría. Ninguna oferta puede ser menor a ARS 1.000.\n4. Selección: el solicitante compara las ofertas y elige la que prefiera.\n5. Confirmación: al aceptar, ambas partes reciben los datos para coordinar retiro y entrega.\n6. Entrega: el repartidor hace el viaje y el pago se arregla entre las partes (efectivo, transferencia, Mercado Pago u otro medio).\n\nEjemplo: un emprendimiento de comida publica un envío y recibe ofertas de ARS 1.500, 1.800 y 2.000. Acepta la de 1.500, le avisa el costo a su cliente y acuerda con él cómo paga.\n\n## 6. Reglas de ofertas\n\n- Oferta mínima de referencia: ARS 1.000.\n- Por encima del mínimo el precio es libre. El repartidor considera distancia, tipo de paquete, tiempo estimado, ubicación y condiciones de la entrega.\n- El solicitante ve todas las ofertas y acepta la que quiera. No hay precio automático.\n\n## 7. Restricciones técnicas (definidas por el usuario)\n\n- Nombre: cadeApp.\n- Frontend en Next.js con TypeScript en modo strict.\n- Backend dentro del mismo proyecto Next.js, sin servicio aparte.\n- Debe funcionar como PWA.\n- Base de datos, autenticación y tiempo real: Supabase o Firebase. El Consejo tiene que recomendar uno y justificarlo para este proyecto.\n- El diseño visual se define después del plan y queda fuera de esta revisión.\n\n## 8. Preguntas abiertas para el Consejo\n\n1. Supabase o Firebase: modelo de datos relacional frente a documental, consultas geográficas, tiempo real para ofertas, autenticación, reglas de acceso, almacenamiento de DNI y selfies, costos en plan gratuito y pago, y dependencia del proveedor.\n2. Cómo definir \"repartidor disponible y cercano\": ubicación en vivo, ubicación al marcarse disponible o zona declarada. Precisión y privacidad.\n3. Notificaciones de nuevas solicitudes y ofertas en una PWA (Android, iOS), y qué pasa si no llegan.\n4. Estados y excepciones: expiración de solicitudes sin ofertas, retiro o cambio de ofertas, cancelación por cualquiera de las partes, repartidor que no se presenta, confirmación de entrega y calificaciones.\n5. Suscripción: qué pasa con los particulares que publican de vez en cuando, cómo se cobra el abono, si hay período de prueba o límite gratuito, y la facturación del abono.\n6. Privacidad: cuándo ve el repartidor el teléfono y la dirección del destinatario, y cómo se guardan y protegen el DNI y la selfie.\n7. Responsabilidad legal: la plataforma como intermediaria frente a pérdida, daño o robo del paquete, siniestros viales y relación laboral con los repartidores. Términos y condiciones.\n8. Lanzamiento en Aguilares: cómo conseguir los primeros comercios y repartidores a la vez, y qué métricas indican que el MVP funciona.\n9. Hosting, despliegue, backups y monitoreo del MVP.\n10. Alcance del MVP: qué entra en la primera versión y qué queda para después.\n"
+}

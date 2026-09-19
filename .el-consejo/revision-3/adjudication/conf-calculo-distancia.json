@@ -1,0 +1,7 @@
+{
+  "conflictId": "conf-calculo-distancia-rutas-vs-haversine",
+  "decision": "Se aprueba cálculo server-side mediante fórmula Haversine con factor 1.30 y redondeo a 0.5 km en Postgres. Centroides de zones quedan como respaldo.",
+  "rationale": "Evita dependencias de red externa, latencia HTTP (200-500 ms) y costos variables de Routes API durante la creación o consulta de solicitudes. El factor 1.30 compensa la trama urbana de cuadrícula de Aguilares. El redondeo a 0.5 km previene la inferencia de coordenadas exactas por parte del repartidor antes de ofertar.",
+  "adjudicator": "judge",
+  "date": "2026-09-18"
+}

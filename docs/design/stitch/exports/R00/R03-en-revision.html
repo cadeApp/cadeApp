@@ -1,0 +1,261 @@
+<!DOCTYPE html><html class="light" lang="es"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>R03 — En revisión | cadeApp</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-container-lowest": "#ffffff",
+            "surface-bright": "#f9f9ff",
+            "primary-fixed": "#6df6f9",
+            "error-container": "#ffdad6",
+            "inverse-on-surface": "#ebf1ff",
+            "tertiary-container": "#5cb5b8",
+            "on-surface": "#131c2a",
+            "background": "#f9f9ff",
+            "on-primary-container": "#004446",
+            "secondary-fixed": "#dce1fd",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-secondary-fixed": "#151b2f",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container": "#e7eeff",
+            "surface-container-highest": "#dae3f7",
+            "on-surface-variant": "#3c4949",
+            "secondary": "#585d75",
+            "secondary-fixed-dim": "#c0c5e0",
+            "inverse-surface": "#283140",
+            "on-tertiary-container": "#004446",
+            "on-error": "#ffffff",
+            "on-tertiary-fixed": "#002021",
+            "tertiary": "#00696c",
+            "on-error-container": "#93000a",
+            "on-primary-fixed": "#002020",
+            "outline-variant": "#bbc9c9",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface": "#f9f9ff",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-secondary-container": "#5c6279",
+            "outline": "#6c7a7a",
+            "error": "#ba1a1a",
+            "on-primary": "#ffffff",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed": "#99f1f4",
+            "surface-container-low": "#f0f3ff",
+            "surface-tint": "#00696b",
+            "inverse-primary": "#4adadd",
+            "secondary-container": "#d9defa",
+            "primary-fixed-dim": "#4adadd",
+            "surface-dim": "#d1daee",
+            "surface-container-high": "#dfe8fd",
+            "primary": "#00696b",
+            "primary-container": "#09babd",
+            "on-tertiary": "#ffffff",
+            "on-secondary": "#ffffff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-lg": "1.5rem",
+            "space-sm": "0.5rem",
+            "space-xs": "0.25rem",
+            "margin": "1rem",
+            "space-md": "1rem",
+            "gutter": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "label-md": ["Inter"],
+            "price-display": ["Montserrat"],
+            "headline-md": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "price-sm": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "body-lg": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "body-md": ["Inter"],
+            "body-medium": ["Inter"]
+          },
+          "fontSize": {
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#FDFCFB] text-on-surface antialiased flex flex-col min-h-screen items-center font-body-md text-body-md selection:bg-primary-container selection:text-on-primary-container">
+<!-- Shared TopAppBar Container (390px baseline PWA) -->
+<header class="w-full bg-[#12182C] text-surface sticky top-0 z-50 shadow-none border-b border-outline-variant/30">
+<div class="max-w-[390px] mx-auto h-14 px-4 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-[24px]">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<button class="text-surface/80 hover:text-surface font-label-md text-label-md px-3 py-1.5 rounded-lg border border-outline-variant/40 active:scale-95 transition-all" type="button">
+        Ingresar
+      </button>
+</div>
+</header>
+<!-- Main Mobile Canvas Container -->
+<main class="w-full max-w-[390px] flex-1 px-4 pt-6 pb-8 flex flex-col items-center">
+<!-- Status Tracker Pill -->
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFF4E0] border border-[#FDE68A] text-[#B45309] font-label-sm text-label-sm mb-6">
+<span class="w-2 h-2 rounded-full bg-[#B45309] animate-pulse"></span>
+<span class="">En revisión manual</span>
+</div>
+<!-- Centered Brand Motif Area: Teal box, wavy road vector, and pending clock -->
+<div class="relative w-36 h-36 flex items-center justify-center mb-6">
+<!-- Background geometric surface with subtle border -->
+<div class="absolute inset-0 bg-[#E6F8F8] rounded-2xl border border-[#C5EEF0] flex items-center justify-center">
+<!-- SVG Brand Wavy Accent and Delivery Motif -->
+<svg class="w-24 h-24 text-primary" fill="none" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+<!-- Parcel silhouette -->
+<rect fill="#09BABD" fill-opacity="0.22" height="52" rx="8" stroke="#09BABD" stroke-dasharray="2 2" stroke-width="3" width="56" x="22" y="24"></rect>
+<rect fill="#09BABD" height="36" rx="6" width="40" x="30" y="32"></rect>
+<!-- The distinct wavy road cutout line from cadeApp mark -->
+<path d="M30 46 H42 C48 46 48 56 54 56 H70" stroke="#12182C" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.5"></path>
+<path d="M48 64 C56 64 62 60 70 60" stroke="#FFFFFF" stroke-linecap="round" stroke-width="2.5"></path>
+</svg>
+</div>
+<!-- Overlaid Floating Verification Clock Badge -->
+<div class="absolute -bottom-2 -right-2 bg-[#12182C] text-primary-container p-2 rounded-full border-2 border-[#FFFFFF] shadow-sm flex items-center justify-center">
+<span class="material-symbols-outlined text-[26px]">schedule</span>
+</div>
+</div>
+<!-- Text Block: Argentina local tone & exact prompt specifications -->
+<div class="text-center w-full px-2 mb-6">
+<h1 class="font-headline-xl text-headline-xl font-bold text-on-surface mb-2 leading-tight">
+        Estamos revisando tus datos
+      </h1>
+<p class="font-body-md text-body-md text-secondary leading-relaxed">
+        Te avisamos por acá y por notificación cuando estés aprobado. Suele demorar menos de 24 hs hábiles.
+      </p>
+</div>
+<!-- Verification Bento / Checklist Card -->
+<div class="w-full bg-[#FFFFFF] border border-[#E4E7EC] rounded-xl p-4 mb-6 shadow-none">
+<div class="flex items-center justify-between pb-3 border-b border-[#E4E7EC] mb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-[20px]">assignment_turned_in</span>
+<span class="font-label-md text-label-md text-on-surface">Documentación requerida</span>
+</div>
+<span class="font-label-sm text-label-sm font-semibold text-[#177A4B] bg-[#E8F5EE] px-2.5 py-0.5 rounded-full">4 de 4 obligatorios listos</span>
+</div>
+<!-- Item Checklist -->
+<ul class="space-y-3">
+<!-- 1. DNI frente -->
+<li class="flex items-center justify-between py-1">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-secondary text-[20px]">badge</span>
+<span class="font-body-medium text-body-medium text-on-surface">DNI frente</span>
+</div>
+<span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-[#177A4B] bg-[#E8F5EE] px-2.5 py-0.5 rounded-full">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: &quot;FILL&quot; 1;">check_circle</span>
+            Cargado
+          </span>
+</li>
+<!-- 2. DNI dorso -->
+<li class="flex items-center justify-between py-1 border-t border-[#F2F4F7]">
+<div class="flex items-center gap-2.5 pt-2">
+<span class="material-symbols-outlined text-secondary text-[20px]">badge</span>
+<span class="font-body-medium text-body-medium text-on-surface">DNI dorso</span>
+</div>
+<span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-[#177A4B] bg-[#E8F5EE] px-2.5 py-0.5 rounded-full pt-0.5">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: &quot;FILL&quot; 1;">check_circle</span>
+            Cargado
+          </span>
+</li>
+<!-- 3. Selfie -->
+<li class="flex items-center justify-between py-1 border-t border-[#F2F4F7]">
+<div class="flex items-center gap-2.5 pt-2">
+<span class="material-symbols-outlined text-secondary text-[20px]">face</span>
+<span class="font-body-medium text-body-medium text-on-surface">Selfie</span>
+</div>
+<span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-[#177A4B] bg-[#E8F5EE] px-2.5 py-0.5 rounded-full pt-0.5">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: &quot;FILL&quot; 1;">check_circle</span>
+            Cargado
+          </span>
+</li>
+<!-- 4. Foto de perfil -->
+<li class="flex items-center justify-between py-1 border-t border-[#F2F4F7]">
+<div class="flex items-center gap-2.5 pt-2">
+<span class="material-symbols-outlined text-secondary text-[20px]">account_circle</span>
+<span class="font-body-medium text-body-medium text-on-surface">Foto de perfil</span>
+</div>
+<span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-[#177A4B] bg-[#E8F5EE] px-2.5 py-0.5 rounded-full pt-0.5">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: &quot;FILL&quot; 1;">check_circle</span>
+            Cargado
+          </span>
+</li>
+<!-- 5. Licencia -->
+<li class="flex items-center justify-between py-1 border-t border-[#F2F4F7]"><div class="flex items-center gap-2.5 pt-2"><span class="material-symbols-outlined text-[#5B6475] text-[20px]">id_card</span><span class="font-body-medium text-body-medium text-on-surface">Licencia <span class="text-xs text-secondary font-normal">(Opcional)</span></span></div><span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-[#5B6475] bg-[#F2F4F7] px-2.5 py-0.5 rounded-full pt-0.5"><span class="material-symbols-outlined text-[15px]">remove</span>No cargada</span></li>
+<!-- 6. Seguro -->
+<li class="flex items-center justify-between py-1 border-t border-[#F2F4F7]"><div class="flex items-center gap-2.5 pt-2"><span class="material-symbols-outlined text-[#5B6475] text-[20px]">verified_user</span><span class="font-body-medium text-body-medium text-on-surface">Seguro <span class="text-xs text-secondary font-normal">(Opcional)</span></span></div><span class="inline-flex items-center gap-1 font-label-sm text-label-sm text-[#5B6475] bg-[#F2F4F7] px-2.5 py-0.5 rounded-full pt-0.5"><span class="material-symbols-outlined text-[15px]">remove</span>No cargado</span></li>
+</ul>
+<!-- Informative hint banner inside checklist -->
+<div class="mt-4 pt-3 border-t border-[#E4E7EC] flex items-start gap-2 bg-[#F9F9FF] p-2.5 rounded-lg">
+<span class="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5">info</span>
+<p class="font-label-sm text-label-sm text-secondary text-left leading-snug">Licencia y seguro son opcionales y no bloquean tu aprobación. Con tu DNI podés repartir de inmediato en bici o a pie; si los sumás más adelante, se habilitan más opciones y prioridad.</p>
+</div>
+</div>
+<!-- Action Buttons Stack (48px height minimum) -->
+<div class="w-full flex flex-col gap-3 mb-6">
+<button class="w-full h-12 px-4 rounded-[10px] bg-surface-container-lowest border border-[#E4E7EC] text-[#12182C] font-label-md text-label-md flex items-center justify-center gap-2 active:bg-surface-container hover:bg-surface-bright transition-colors" type="button">
+<span class="material-symbols-outlined text-[20px] text-primary">add_circle</span>
+<span class="">Completar documentación opcional</span>
+</button>
+<button class="w-full h-12 px-4 rounded-[10px] bg-transparent text-secondary hover:text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5 transition-colors active:opacity-75" type="button">
+<span class="material-symbols-outlined text-[18px]">logout</span>
+<span class="">Cerrar sesión</span>
+</button>
+</div>
+<!-- Reassuring Note Footer -->
+<div class="mt-auto pt-2 pb-4 text-center flex items-center justify-center gap-1.5 text-secondary">
+<span class="material-symbols-outlined text-[16px] text-primary">pin_drop</span>
+<span class="font-label-sm text-label-sm text-secondary">
+        Aguilares, Tucumán · Tu cuenta se activará automáticamente.
+      </span>
+</div>
+</main>
+<!-- Shared Component: Footer (from Shared JSON) -->
+<footer class="w-full border-t border-outline-variant/40 bg-surface-container-lowest">
+<div class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-[20px]">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-on-surface">cadeApp</span>
+</div>
+<nav class="flex flex-wrap justify-center gap-x-4 gap-y-2">
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Términos y condiciones</a>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Ayuda y contacto</a>
+</nav>
+<p class="font-body-md text-body-md text-secondary text-xs">
+        © 2024 cadeApp. Envíos locales y logística inteligente.
+      </p>
+</div>
+</footer>
+
+
+</body></html>

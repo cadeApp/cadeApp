@@ -1,0 +1,184 @@
+{
+  "phase": "REBUTTAL",
+  "conflicts": [
+    {
+      "id": "baas-choice",
+      "class": "technical",
+      "reversible": false,
+      "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+      "parties": [
+        "backend",
+        "pm",
+        "frontend"
+      ]
+    }
+  ],
+  "reviews": [
+    {
+      "agentId": "backend",
+      "verdict": "conditional",
+      "summary": "Recomendación: Supabase para cadeApp. El dominio (solicitudes, ofertas, usuarios, comercios, suscripciones) es relacional con integridad transaccional crítica (una sola oferta aceptada, mínimo ARS 1.000 en servidor): Postgres con transacciones ACID y constraints cubre esto nativamente; en Firestore habría que emular transacciones con runTransaction y duplicar validaciones en Cloud Functions, más superficie de error. Cercanía geográfica: PostGIS (extensión estándar de Supabase) resuelve 'repartidores más cercanos' con índices espaciales nativos; Firestore no tiene geoqueries nativas y depende de geohashing de terceros (ej. geofirestore), menos preciso. Tiempo real de ofertas: ambos lo resuelven (Supabase Realtime sobre replicación lógica, Firestore listeners); no es un eje decisivo. Auth y reglas de acceso: Supabase Auth + RLS expresa en SQL reglas por rol (solicitante/repartidor/admin), auditable; Firebase Security Rules son más verbosas para este modelo con roles. Storage privado de DNI/selfie: ambos cubren el caso con buckets privados y URLs firmadas, sin diferencia decisiva. Backend embebido en Next.js: sin fricción particular en ninguno. Dependencia del proveedor: Supabase es Postgres estándar (self-hostable), menor lock-in que el modelo propietario de Firestore. Balance: Supabase gana por modelo relacional, PostGIS y transacciones, sin que los otros ejes lo contradigan. original.md es un intake sin diseño técnico: faltan máquina de estados, transacción de aceptación de oferta, validación server-side del mínimo, expiración programada y proveedor de cobro recurrente para la suscripción; se detallan como hallazgos.",
+      "conflicts": [
+        {
+          "id": "baas-choice",
+          "class": "technical",
+          "reversible": false,
+          "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+          "parties": [
+            "backend",
+            "pm",
+            "frontend"
+          ]
+        },
+        {
+          "id": "state-machine-scope",
+          "class": "product",
+          "reversible": true,
+          "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+          "parties": [
+            "backend",
+            "pm"
+          ]
+        },
+        {
+          "id": "subscription-payment-gateway",
+          "class": "money",
+          "reversible": true,
+          "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+          "parties": [
+            "backend",
+            "finance",
+            "legal"
+          ]
+        }
+      ],
+      "findings": [
+        {
+          "id": "backend.review.0",
+          "severity": "critical",
+          "statement": "El plan no define un mecanismo transaccional para garantizar que solo una oferta quede aceptada por solicitud; sin control de concurrencia en el servidor, dos aceptaciones simultáneas (doble clic, dos pestañas, reintento de red) pueden dejar la solicitud con más de un repartidor confirmado.",
+          "correction": "Modelar la aceptación como transición atómica: en Supabase, un UPDATE condicionado a status = 'open' dentro de una transacción SQL (o una función RPC) que solo confirma la oferta si nadie más lo hizo antes, devolviendo error explícito en la segunda llamada; en Firestore, runTransaction sobre el documento de la solicitud con la misma lógica de guarda."
+        },
+        {
+          "id": "backend.review.1",
+          "severity": "critical",
+          "statement": "La oferta mínima de ARS 1.000 se declara como regla de negocio pero el plan no especifica en qué capa se valida, dejando abierta la posibilidad de que solo se valide en el cliente.",
+          "correction": "Forzar el mínimo en la capa de datos, no solo en UI: en Supabase, un CHECK (amount_cents >= 100000) en la tabla offers más una policy RLS que valide el rango en el INSERT; en Firestore, Security Rules y/o Cloud Function que rechacen escrituras con amount < 1000."
+        },
+        {
+          "id": "backend.review.2",
+          "severity": "high",
+          "statement": "El documento describe el flujo feliz (crear → publicar → ofertar → elegir → confirmar → entregar) pero no define una máquina de estados explícita con las transiciones de excepción que la propia sección 8 plantea como pregunta abierta (expiración, retiro de oferta, cancelación, no-show, confirmación de entrega).",
+          "correction": "Definir los estados de request (draft, open, offered, accepted, in_progress, completed, cancelled, expired) y de offer (pending, accepted, rejected, withdrawn, expired) con una tabla de transiciones permitidas, validada en el backend antes de cualquier escritura."
+        },
+        {
+          "id": "backend.review.3",
+          "severity": "high",
+          "statement": "El plan no indica cómo ni cuándo expira una solicitud sin ofertas ni qué proceso la marca como expirada; al estar el backend dentro de Next.js sin servicio aparte, no hay un mecanismo de cron nativo mencionado.",
+          "correction": "Definir un job programado (Vercel Cron sobre una API route, pg_cron + Edge Function en Supabase, o Cloud Scheduler + Cloud Function en Firebase) que revise solicitudes abiertas más allá de un TTL configurable y las mueva a estado expired."
+        },
+        {
+          "id": "backend.review.4",
+          "severity": "medium",
+          "statement": "El modelo de ingresos depende de una suscripción mensual a comercios pero el plan no especifica el proveedor de cobro recurrente ni qué ocurre ante un pago rechazado o vencido.",
+          "correction": "Elegir un proveedor con soporte de suscripciones recurrentes en Argentina (ej. Mercado Pago Suscripciones), definir un webhook idempotente para eventos de pago (aprobado, rechazado, cancelado) y un campo subscription_status en el comercio que controle si puede publicar solicitudes."
+        },
+        {
+          "id": "backend.review.5",
+          "severity": "medium",
+          "statement": "El plan menciona guardar DNI y selfie del repartidor pero no define las reglas de acceso al storage (quién puede leer los archivos, URLs firmadas, retención tras la decisión de aprobación).",
+          "correction": "Usar un bucket privado (Supabase Storage con RLS o Firebase Storage con reglas restringidas al rol admin), generar URLs firmadas de corta duración solo para el panel de administración, y definir una política de retención/anonimización tras la decisión de aprobación o rechazo."
+        }
+      ]
+    },
+    {
+      "agentId": "frontend",
+      "verdict": "conditional",
+      "summary": "El plan es sólido en flujo de negocio y producto, pero como especificación de arquitectura frontend/PWA queda incompleto en puntos que afectan directamente la operación del MVP: depende de notificaciones push sin reconocer que en iOS requieren instalación manual previa a pantalla de inicio (sin `beforeinstallprompt`), plantea 'ubicación en vivo' de repartidores sin reconocer que las PWA no pueden rastrear ubicación en segundo plano de forma confiable, y no define fallback de tiempo real ni manejo de carga de imágenes (DNI/selfie) para redes móviles débiles en Aguilares. Ninguno de estos puntos invalida la propuesta, pero deben resolverse explícitamente antes de considerar el plan listo para desarrollo. Nota adicional no crítica: el plan no menciona una línea base de accesibilidad (semántica, foco, lectores de pantalla) pese a que el diseño visual queda fuera de esta etapa; conviene fijarla igual, ya que afecta la estructura de componentes, no solo el estilo.",
+      "conflicts": [],
+      "findings": [
+        {
+          "id": "frontend.review.0",
+          "severity": "high",
+          "statement": "El plan no especifica que en iOS los Web Push solo funcionan si la PWA fue instalada manualmente a la pantalla de inicio (Safari > 'Añadir a pantalla de inicio'), sin evento `beforeinstallprompt` disponible, y solo desde iOS 16.4+; sin un flujo de instalación explícito, los repartidores con iPhone no reciben ninguna notificación push de nuevas solicitudes u ofertas.",
+          "correction": "Definir en el plan un flujo de onboarding que guíe explícitamente a instalar la PWA en pantalla de inicio en iOS (con instrucciones visuales, ya que no existe `beforeinstallprompt`), condicionar o incentivar esa instalación para repartidores, y documentar el fallback in-app para quienes no instalen."
+        },
+        {
+          "id": "frontend.review.1",
+          "severity": "high",
+          "statement": "El plan deja abierta la idea de 'ubicación en vivo' para calcular repartidores disponibles y cercanos, pero una PWA no puede hacer seguimiento de ubicación en segundo plano de forma confiable en iOS Safari ni de forma sostenida en Android sin que la app esté en primer plano; esa capacidad es propia de apps nativas, no de PWAs.",
+          "correction": "Definir el modelo de disponibilidad como 'zona declarada + check-in manual o ubicación puntual al marcarse disponible / al abrir la app', no como tracking continuo en segundo plano, y documentar esa limitación como restricción técnica de PWA en el plan."
+        },
+        {
+          "id": "frontend.review.2",
+          "severity": "medium",
+          "statement": "El plan no contempla que las notificaciones push en PWAs móviles son intrínsecamente poco confiables (Android puede suspender el service worker por optimización de batería/Doze; iOS restringe fuertemente la ejecución en segundo plano), por lo que depender solo de push para enterarse de nuevas solicitudes/ofertas es insuficiente.",
+          "correction": "Especificar un mecanismo de respaldo en primer plano (suscripción en tiempo real vía Supabase Realtime o listeners de Firestore, más polling ligero al reabrir/enfocar la app) que actualice la lista de solicitudes/ofertas independientemente de si el push llegó."
+        },
+        {
+          "id": "frontend.review.3",
+          "severity": "medium",
+          "statement": "La elección entre Supabase y Firebase (pregunta abierta 1) tiene una implicancia frontend concreta para notificaciones push que el plan no menciona: Firebase Cloud Messaging ofrece soporte de primera parte para Web Push (incluyendo iOS 16.4+) con SDK y manejo de tokens integrado, mientras que Supabase no incluye un servicio de push propio y requeriría implementar manualmente el protocolo Web Push con claves VAPID y un endpoint de envío.",
+          "correction": "Incluir en la justificación de la elección de BaaS el costo de implementación de push: si se elige Supabase, planificar explícitamente un servicio propio de Web Push con VAPID; si se elige Firebase, aprovechar FCM Web Push nativo."
+        },
+        {
+          "id": "frontend.review.4",
+          "severity": "medium",
+          "statement": "El plan requiere que el repartidor cargue DNI, selfie y datos del vehículo para su aprobación, pero no define cómo se manejará esa carga de imágenes en celulares de gama baja y redes móviles inestables típicas de una localidad como Aguilares.",
+          "correction": "Especificar en el plan compresión de imágenes en el cliente antes de subir (resize/calidad), manejo de reintentos con feedback de progreso, y evaluar Background Sync del Service Worker para completar la carga cuando la red se recupere."
+        }
+      ]
+    },
+    {
+      "agentId": "pm",
+      "verdict": "conditional",
+      "summary": "Revisión de PM sobre el plan original de cadeApp: el concepto central y las restricciones de intake son claros, pero se identifican vacíos críticos en el modelo de estados (FSM), inconsistencia en el alcance y monetización para usuarios particulares, riesgos de privacidad por divulgación prematura de datos de entrega, sobrecomplejidad en la cercanía de repartidores en PWA, y falta de especificación del panel de administración para aprobación de postulantes.",
+      "conflicts": [
+        {
+          "class": "product",
+          "id": "conflict-particulars-monetization-scope",
+          "parties": [
+            "pm",
+            "human_checkpoint"
+          ],
+          "reversible": true,
+          "summary": "Inconsistencia de modelo de negocio y alcance: los particulares están incluidos como solicitantes pero la monetización es suscripción fija para comercios y la app no cobra comisión por viaje. Lautaro debe definir si excluir a particulares en el MVP o darles un cupo gratuito mensual."
+        }
+      ],
+      "findings": [
+        {
+          "id": "pm.review.0",
+          "severity": "critical",
+          "statement": "El plan carece de una máquina de estados finita (FSM) y reglas para excepciones operativas en el ciclo de vida de la solicitud.",
+          "correction": "Definir e implementar una FSM explícita: DRAFT -> PUBLISHED -> MATCHED -> IN_TRANSIT -> DELIVERED, con estados terminales CANCELLED y EXPIRED (con timeout automático de 30 minutos sin ofertas)."
+        },
+        {
+          "id": "pm.review.1",
+          "severity": "high",
+          "statement": "Inconsistencia entre los actores admitidos (particulares) y el modelo de ingresos basado únicamente en suscripción comercial.",
+          "correction": "Elevar al checkpoint humano: acotar el MVP estrictamente a comercios y emprendedores (B2B local), o definir una cuota gratuita limitada (ej. hasta 2 envíos mensuales) para particulares antes de requerir pase."
+        },
+        {
+          "id": "pm.review.2",
+          "severity": "high",
+          "statement": "Divulgación prematura de datos personales (PII) y domicilio exacto del destinatario a todos los repartidores habilitados.",
+          "correction": "Implementar revelación progresiva: en estado PUBLISHED mostrar solo zona/barrio de origen y destino y características del bulto; liberar dirección exacta y teléfono solo al repartidor elegido tras el estado MATCHED."
+        },
+        {
+          "id": "pm.review.3",
+          "severity": "high",
+          "statement": "El criterio de ordenamiento por 'cercanía y disponibilidad' carece de especificación técnica y arriesga sobrecomplejidad en PWA.",
+          "correction": "Para el MVP en Aguilares, adoptar un estado binario de disponibilidad ('Disponible/No disponible') con selección de zona o lista cronológica única de pedidos abiertos para la ciudad, descartando geolocalización en background."
+        },
+        {
+          "id": "pm.review.4",
+          "severity": "medium",
+          "statement": "Omisión en el alcance del MVP de las vistas y flujo del Administrador para la aprobación manual de repartidores.",
+          "correction": "Incorporar explícitamente en el alcance del MVP un panel web básico de administración con login seguro para listar postulantes, revisar DNI/selfie/vehículo y emitir aprobación o rechazo con motivo."
+        }
+      ]
+    }
+  ],
+  "round": 1,
+  "context": "# cadeApp — plan original (candidato a revisión)\n\nFuente: idea de producto enviada por Lautaro el 2026-09-17. Este plan transcribe la idea y las respuestas del intake. No agrega soluciones: las preguntas abiertas quedan para el Consejo.\n\n## 1. Propuesta\n\nUna plataforma web SaaS (PWA) que conecta a quien necesita hacer una entrega (comercio, emprendedor o particular) con repartidores independientes de la zona. No es una empresa de delivery y no cobra ni administra el dinero del envío. Solo es el punto de encuentro: se publica la solicitud, los repartidores ofertan y el solicitante elige.\n\nResumen: alguien necesita una entrega → publica la solicitud → los repartidores cercanos ofertan → el creador elige → las partes coordinan directamente.\n\n## 2. Decisiones humanas del intake (Lautaro, 2026-09-17)\n\n- Ingresos: suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis. La plataforma sigue sin tocar el dinero del envío.\n- Zona de lanzamiento: solo Aguilares, provincia de Tucumán, Argentina.\n- Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.\n\n## 3. Actores\n\n- Solicitante: comercio, emprendimiento o particular que publica solicitudes.\n- Repartidor independiente: se registra, un admin lo aprueba, ve solicitudes y oferta.\n- Administrador de cadeApp: aprueba repartidores y gestiona la plataforma.\n- Destinatario: recibe el pedido. No es usuario; solo figuran su nombre y teléfono.\n\n## 4. Datos de una solicitud\n\n- Nombre del comercio, emprendimiento o persona que solicita.\n- Dirección de retiro.\n- Dirección de entrega.\n- Nombre y teléfono de quien recibe.\n- Tipo de producto o paquete.\n- Indicaciones adicionales para el repartidor.\n\n## 5. Flujo principal\n\n1. Creación: el solicitante carga retiro, destino y características del envío.\n2. Publicación: la solicitud queda visible para los repartidores habilitados, primero los disponibles y más cercanos al punto de retiro.\n3. Ofertas: cada repartidor interesado dice cuánto cobraría. Ninguna oferta puede ser menor a ARS 1.000.\n4. Selección: el solicitante compara las ofertas y elige la que prefiera.\n5. Confirmación: al aceptar, ambas partes reciben los datos para coordinar retiro y entrega.\n6. Entrega: el repartidor hace el viaje y el pago se arregla entre las partes (efectivo, transferencia, Mercado Pago u otro medio).\n\nEjemplo: un emprendimiento de comida publica un envío y recibe ofertas de ARS 1.500, 1.800 y 2.000. Acepta la de 1.500, le avisa el costo a su cliente y acuerda con él cómo paga.\n\n## 6. Reglas de ofertas\n\n- Oferta mínima de referencia: ARS 1.000.\n- Por encima del mínimo el precio es libre. El repartidor considera distancia, tipo de paquete, tiempo estimado, ubicación y condiciones de la entrega.\n- El solicitante ve todas las ofertas y acepta la que quiera. No hay precio automático.\n\n## 7. Restricciones técnicas (definidas por el usuario)\n\n- Nombre: cadeApp.\n- Frontend en Next.js con TypeScript en modo strict.\n- Backend dentro del mismo proyecto Next.js, sin servicio aparte.\n- Debe funcionar como PWA.\n- Base de datos, autenticación y tiempo real: Supabase o Firebase. El Consejo tiene que recomendar uno y justificarlo para este proyecto.\n- El diseño visual se define después del plan y queda fuera de esta revisión.\n\n## 8. Preguntas abiertas para el Consejo\n\n1. Supabase o Firebase: modelo de datos relacional frente a documental, consultas geográficas, tiempo real para ofertas, autenticación, reglas de acceso, almacenamiento de DNI y selfies, costos en plan gratuito y pago, y dependencia del proveedor.\n2. Cómo definir \"repartidor disponible y cercano\": ubicación en vivo, ubicación al marcarse disponible o zona declarada. Precisión y privacidad.\n3. Notificaciones de nuevas solicitudes y ofertas en una PWA (Android, iOS), y qué pasa si no llegan.\n4. Estados y excepciones: expiración de solicitudes sin ofertas, retiro o cambio de ofertas, cancelación por cualquiera de las partes, repartidor que no se presenta, confirmación de entrega y calificaciones.\n5. Suscripción: qué pasa con los particulares que publican de vez en cuando, cómo se cobra el abono, si hay período de prueba o límite gratuito, y la facturación del abono.\n6. Privacidad: cuándo ve el repartidor el teléfono y la dirección del destinatario, y cómo se guardan y protegen el DNI y la selfie.\n7. Responsabilidad legal: la plataforma como intermediaria frente a pérdida, daño o robo del paquete, siniestros viales y relación laboral con los repartidores. Términos y condiciones.\n8. Lanzamiento en Aguilares: cómo conseguir los primeros comercios y repartidores a la vez, y qué métricas indican que el MVP funciona.\n9. Hosting, despliegue, backups y monitoreo del MVP.\n10. Alcance del MVP: qué entra en la primera versión y qué queda para después.\n"
+}

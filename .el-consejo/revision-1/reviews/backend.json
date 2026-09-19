@@ -1,0 +1,91 @@
+{
+  "agentId": "backend",
+  "verdict": "conditional",
+  "confidence": 0.75,
+  "summary": "Recomendación: Supabase para cadeApp. El dominio (solicitudes, ofertas, usuarios, comercios, suscripciones) es relacional con integridad transaccional crítica (una sola oferta aceptada, mínimo ARS 1.000 en servidor): Postgres con transacciones ACID y constraints cubre esto nativamente; en Firestore habría que emular transacciones con runTransaction y duplicar validaciones en Cloud Functions, más superficie de error. Cercanía geográfica: PostGIS (extensión estándar de Supabase) resuelve 'repartidores más cercanos' con índices espaciales nativos; Firestore no tiene geoqueries nativas y depende de geohashing de terceros (ej. geofirestore), menos preciso. Tiempo real de ofertas: ambos lo resuelven (Supabase Realtime sobre replicación lógica, Firestore listeners); no es un eje decisivo. Auth y reglas de acceso: Supabase Auth + RLS expresa en SQL reglas por rol (solicitante/repartidor/admin), auditable; Firebase Security Rules son más verbosas para este modelo con roles. Storage privado de DNI/selfie: ambos cubren el caso con buckets privados y URLs firmadas, sin diferencia decisiva. Backend embebido en Next.js: sin fricción particular en ninguno. Dependencia del proveedor: Supabase es Postgres estándar (self-hostable), menor lock-in que el modelo propietario de Firestore. Balance: Supabase gana por modelo relacional, PostGIS y transacciones, sin que los otros ejes lo contradigan. original.md es un intake sin diseño técnico: faltan máquina de estados, transacción de aceptación de oferta, validación server-side del mínimo, expiración programada y proveedor de cobro recurrente para la suscripción; se detallan como hallazgos.",
+  "findings": [
+    {
+      "severity": "critical",
+      "statement": "El plan no define un mecanismo transaccional para garantizar que solo una oferta quede aceptada por solicitud; sin control de concurrencia en el servidor, dos aceptaciones simultáneas (doble clic, dos pestañas, reintento de red) pueden dejar la solicitud con más de un repartidor confirmado.",
+      "impact": "Dos repartidores se presentan al mismo retiro creyendo tener el trabajo confirmado, con daño reputacional inmediato en un lanzamiento acotado a Aguilares donde la confianza inicial es crítica.",
+      "correction": "Modelar la aceptación como transición atómica: en Supabase, un UPDATE condicionado a status = 'open' dentro de una transacción SQL (o una función RPC) que solo confirma la oferta si nadie más lo hizo antes, devolviendo error explícito en la segunda llamada; en Firestore, runTransaction sobre el documento de la solicitud con la misma lógica de guarda.",
+      "evidence": [
+        "original.md:38-39 'Selección: el solicitante compara las ofertas y elige... Confirmación: al aceptar, ambas partes reciben los datos' — no menciona control de concurrencia ni transacción.",
+        "requests/backend.json input.acceptanceCriteria pide explícitamente 'una sola oferta aceptada' y 'carreras al aceptar' como garantía a resolver."
+      ]
+    },
+    {
+      "severity": "critical",
+      "statement": "La oferta mínima de ARS 1.000 se declara como regla de negocio pero el plan no especifica en qué capa se valida, dejando abierta la posibilidad de que solo se valide en el cliente.",
+      "impact": "Una llamada directa a la API/SDK (o un cliente modificado) podría crear una oferta por debajo del mínimo, rompiendo la regla central del producto y afectando por igual a comercios y repartidores.",
+      "correction": "Forzar el mínimo en la capa de datos, no solo en UI: en Supabase, un CHECK (amount_cents >= 100000) en la tabla offers más una policy RLS que valide el rango en el INSERT; en Firestore, Security Rules y/o Cloud Function que rechacen escrituras con amount < 1000.",
+      "evidence": [
+        "original.md:37 'Ninguna oferta puede ser menor a ARS 1.000.'",
+        "original.md:46 'Oferta mínima de referencia: ARS 1.000.' — ninguna mención de dónde se valida."
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "El documento describe el flujo feliz (crear → publicar → ofertar → elegir → confirmar → entregar) pero no define una máquina de estados explícita con las transiciones de excepción que la propia sección 8 plantea como pregunta abierta (expiración, retiro de oferta, cancelación, no-show, confirmación de entrega).",
+      "impact": "Sin estados y transiciones válidas definidas de antemano, cada excepción se implementará ad hoc, generando inconsistencias entre lo que ve el solicitante y el repartidor, y bugs de estado difíciles de depurar ya en producción.",
+      "correction": "Definir los estados de request (draft, open, offered, accepted, in_progress, completed, cancelled, expired) y de offer (pending, accepted, rejected, withdrawn, expired) con una tabla de transiciones permitidas, validada en el backend antes de cualquier escritura.",
+      "evidence": [
+        "original.md:64 'Estados y excepciones: expiración de solicitudes sin ofertas, retiro o cambio de ofertas, cancelación por cualquiera de las partes, repartidor que no se presenta, confirmación de entrega y calificaciones.' listado como pregunta abierta sin respuesta en el cuerpo del plan."
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "El plan no indica cómo ni cuándo expira una solicitud sin ofertas ni qué proceso la marca como expirada; al estar el backend dentro de Next.js sin servicio aparte, no hay un mecanismo de cron nativo mencionado.",
+      "impact": "Solicitudes abandonadas quedarían visibles indefinidamente para los repartidores, degradando el feed de solicitudes disponibles y distorsionando las métricas de uso durante el lanzamiento en Aguilares.",
+      "correction": "Definir un job programado (Vercel Cron sobre una API route, pg_cron + Edge Function en Supabase, o Cloud Scheduler + Cloud Function en Firebase) que revise solicitudes abiertas más allá de un TTL configurable y las mueva a estado expired.",
+      "evidence": [
+        "original.md:54 'Backend dentro del mismo proyecto Next.js, sin servicio aparte.' — sin mención de scheduler.",
+        "original.md:64 pregunta abierta 4 incluye expiración sin resolver en el plan."
+      ]
+    },
+    {
+      "severity": "medium",
+      "statement": "El modelo de ingresos depende de una suscripción mensual a comercios pero el plan no especifica el proveedor de cobro recurrente ni qué ocurre ante un pago rechazado o vencido.",
+      "impact": "Sin proveedor de cobro recurrente definido ni manejo de webhooks de pago fallido, el único ingreso del negocio no puede implementarse ni operarse de forma confiable, y no hay forma de bloquear el acceso de comercios morosos.",
+      "correction": "Elegir un proveedor con soporte de suscripciones recurrentes en Argentina (ej. Mercado Pago Suscripciones), definir un webhook idempotente para eventos de pago (aprobado, rechazado, cancelado) y un campo subscription_status en el comercio que controle si puede publicar solicitudes.",
+      "evidence": [
+        "original.md:64 pregunta abierta 5 'Suscripción: ... cómo se cobra el abono, si hay período de prueba o límite gratuito, y la facturación del abono.' sin respuesta en el plan.",
+        "requests/backend.json input.constraints menciona 'ingresos por suscripción mensual a comercios y emprendedores' sin detalle de integración técnica."
+      ]
+    },
+    {
+      "severity": "medium",
+      "statement": "El plan menciona guardar DNI y selfie del repartidor pero no define las reglas de acceso al storage (quién puede leer los archivos, URLs firmadas, retención tras la decisión de aprobación).",
+      "impact": "Datos sensibles (DNI) en un bucket mal configurado o con URLs no expirables exponen a los repartidores a robo de identidad y a la plataforma a un manejo inadecuado de datos personales.",
+      "correction": "Usar un bucket privado (Supabase Storage con RLS o Firebase Storage con reglas restringidas al rol admin), generar URLs firmadas de corta duración solo para el panel de administración, y definir una política de retención/anonimización tras la decisión de aprobación o rechazo.",
+      "evidence": [
+        "original.md:15 'carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.'",
+        "original.md:66 pregunta abierta 6 'cómo se guardan y protegen el DNI y la selfie' sin respuesta en el plan."
+      ]
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "baas-choice",
+      "class": "technical",
+      "reversible": false,
+      "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+      "parties": ["backend", "pm", "frontend"]
+    },
+    {
+      "id": "state-machine-scope",
+      "class": "product",
+      "reversible": true,
+      "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+      "parties": ["backend", "pm"]
+    },
+    {
+      "id": "subscription-payment-gateway",
+      "class": "money",
+      "reversible": true,
+      "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+      "parties": ["backend", "finance", "legal"]
+    }
+  ],
+  "helperRequests": []
+}

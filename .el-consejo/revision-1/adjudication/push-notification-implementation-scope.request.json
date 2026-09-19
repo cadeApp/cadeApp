@@ -1,0 +1,242 @@
+{
+  "phase": "ADJUDICATION",
+  "conflict": {
+    "id": "push-notification-implementation-scope",
+    "class": "technical",
+    "reversible": true,
+    "summary": "Si se confirma Supabase (sin servicio de push propio), ni el plan ni los hallazgos de backend escopean todavía el trabajo de implementar Web Push estándar (tabla de subscriptions, función serverless/Edge Function para enviar con claves VAPID, manejo de expiración/renovación de tokens); sin asignarlo explícitamente como tarea, el esfuerzo de notificaciones push del MVP quedará subestimado.",
+    "parties": [
+      "frontend",
+      "backend"
+    ],
+    "declared_by": "frontend",
+    "origin": "rebuttal"
+  },
+  "reviews": [
+    {
+      "agentId": "backend",
+      "verdict": "conditional",
+      "confidence": 0.75,
+      "summary": "Recomendación: Supabase para cadeApp. El dominio (solicitudes, ofertas, usuarios, comercios, suscripciones) es relacional con integridad transaccional crítica (una sola oferta aceptada, mínimo ARS 1.000 en servidor): Postgres con transacciones ACID y constraints cubre esto nativamente; en Firestore habría que emular transacciones con runTransaction y duplicar validaciones en Cloud Functions, más superficie de error. Cercanía geográfica: PostGIS (extensión estándar de Supabase) resuelve 'repartidores más cercanos' con índices espaciales nativos; Firestore no tiene geoqueries nativas y depende de geohashing de terceros (ej. geofirestore), menos preciso. Tiempo real de ofertas: ambos lo resuelven (Supabase Realtime sobre replicación lógica, Firestore listeners); no es un eje decisivo. Auth y reglas de acceso: Supabase Auth + RLS expresa en SQL reglas por rol (solicitante/repartidor/admin), auditable; Firebase Security Rules son más verbosas para este modelo con roles. Storage privado de DNI/selfie: ambos cubren el caso con buckets privados y URLs firmadas, sin diferencia decisiva. Backend embebido en Next.js: sin fricción particular en ninguno. Dependencia del proveedor: Supabase es Postgres estándar (self-hostable), menor lock-in que el modelo propietario de Firestore. Balance: Supabase gana por modelo relacional, PostGIS y transacciones, sin que los otros ejes lo contradigan. original.md es un intake sin diseño técnico: faltan máquina de estados, transacción de aceptación de oferta, validación server-side del mínimo, expiración programada y proveedor de cobro recurrente para la suscripción; se detallan como hallazgos.",
+      "findings": [
+        {
+          "id": "backend.review.0",
+          "agentId": "backend",
+          "severity": "critical",
+          "statement": "El plan no define un mecanismo transaccional para garantizar que solo una oferta quede aceptada por solicitud; sin control de concurrencia en el servidor, dos aceptaciones simultáneas (doble clic, dos pestañas, reintento de red) pueden dejar la solicitud con más de un repartidor confirmado.",
+          "impact": "Dos repartidores se presentan al mismo retiro creyendo tener el trabajo confirmado, con daño reputacional inmediato en un lanzamiento acotado a Aguilares donde la confianza inicial es crítica.",
+          "correction": "Modelar la aceptación como transición atómica: en Supabase, un UPDATE condicionado a status = 'open' dentro de una transacción SQL (o una función RPC) que solo confirma la oferta si nadie más lo hizo antes, devolviendo error explícito en la segunda llamada; en Firestore, runTransaction sobre el documento de la solicitud con la misma lógica de guarda.",
+          "evidence": [
+            "original.md:38-39 'Selección: el solicitante compara las ofertas y elige... Confirmación: al aceptar, ambas partes reciben los datos' — no menciona control de concurrencia ni transacción.",
+            "requests/backend.json input.acceptanceCriteria pide explícitamente 'una sola oferta aceptada' y 'carreras al aceptar' como garantía a resolver."
+          ]
+        },
+        {
+          "id": "backend.review.1",
+          "agentId": "backend",
+          "severity": "critical",
+          "statement": "La oferta mínima de ARS 1.000 se declara como regla de negocio pero el plan no especifica en qué capa se valida, dejando abierta la posibilidad de que solo se valide en el cliente.",
+          "impact": "Una llamada directa a la API/SDK (o un cliente modificado) podría crear una oferta por debajo del mínimo, rompiendo la regla central del producto y afectando por igual a comercios y repartidores.",
+          "correction": "Forzar el mínimo en la capa de datos, no solo en UI: en Supabase, un CHECK (amount_cents >= 100000) en la tabla offers más una policy RLS que valide el rango en el INSERT; en Firestore, Security Rules y/o Cloud Function que rechacen escrituras con amount < 1000.",
+          "evidence": [
+            "original.md:37 'Ninguna oferta puede ser menor a ARS 1.000.'",
+            "original.md:46 'Oferta mínima de referencia: ARS 1.000.' — ninguna mención de dónde se valida."
+          ]
+        },
+        {
+          "id": "backend.review.2",
+          "agentId": "backend",
+          "severity": "high",
+          "statement": "El documento describe el flujo feliz (crear → publicar → ofertar → elegir → confirmar → entregar) pero no define una máquina de estados explícita con las transiciones de excepción que la propia sección 8 plantea como pregunta abierta (expiración, retiro de oferta, cancelación, no-show, confirmación de entrega).",
+          "impact": "Sin estados y transiciones válidas definidas de antemano, cada excepción se implementará ad hoc, generando inconsistencias entre lo que ve el solicitante y el repartidor, y bugs de estado difíciles de depurar ya en producción.",
+          "correction": "Definir los estados de request (draft, open, offered, accepted, in_progress, completed, cancelled, expired) y de offer (pending, accepted, rejected, withdrawn, expired) con una tabla de transiciones permitidas, validada en el backend antes de cualquier escritura.",
+          "evidence": [
+            "original.md:64 'Estados y excepciones: expiración de solicitudes sin ofertas, retiro o cambio de ofertas, cancelación por cualquiera de las partes, repartidor que no se presenta, confirmación de entrega y calificaciones.' listado como pregunta abierta sin respuesta en el cuerpo del plan."
+          ]
+        },
+        {
+          "id": "backend.review.3",
+          "agentId": "backend",
+          "severity": "high",
+          "statement": "El plan no indica cómo ni cuándo expira una solicitud sin ofertas ni qué proceso la marca como expirada; al estar el backend dentro de Next.js sin servicio aparte, no hay un mecanismo de cron nativo mencionado.",
+          "impact": "Solicitudes abandonadas quedarían visibles indefinidamente para los repartidores, degradando el feed de solicitudes disponibles y distorsionando las métricas de uso durante el lanzamiento en Aguilares.",
+          "correction": "Definir un job programado (Vercel Cron sobre una API route, pg_cron + Edge Function en Supabase, o Cloud Scheduler + Cloud Function en Firebase) que revise solicitudes abiertas más allá de un TTL configurable y las mueva a estado expired.",
+          "evidence": [
+            "original.md:54 'Backend dentro del mismo proyecto Next.js, sin servicio aparte.' — sin mención de scheduler.",
+            "original.md:64 pregunta abierta 4 incluye expiración sin resolver en el plan."
+          ]
+        },
+        {
+          "id": "backend.review.4",
+          "agentId": "backend",
+          "severity": "medium",
+          "statement": "El modelo de ingresos depende de una suscripción mensual a comercios pero el plan no especifica el proveedor de cobro recurrente ni qué ocurre ante un pago rechazado o vencido.",
+          "impact": "Sin proveedor de cobro recurrente definido ni manejo de webhooks de pago fallido, el único ingreso del negocio no puede implementarse ni operarse de forma confiable, y no hay forma de bloquear el acceso de comercios morosos.",
+          "correction": "Elegir un proveedor con soporte de suscripciones recurrentes en Argentina (ej. Mercado Pago Suscripciones), definir un webhook idempotente para eventos de pago (aprobado, rechazado, cancelado) y un campo subscription_status en el comercio que controle si puede publicar solicitudes.",
+          "evidence": [
+            "original.md:64 pregunta abierta 5 'Suscripción: ... cómo se cobra el abono, si hay período de prueba o límite gratuito, y la facturación del abono.' sin respuesta en el plan.",
+            "requests/backend.json input.constraints menciona 'ingresos por suscripción mensual a comercios y emprendedores' sin detalle de integración técnica."
+          ]
+        },
+        {
+          "id": "backend.review.5",
+          "agentId": "backend",
+          "severity": "medium",
+          "statement": "El plan menciona guardar DNI y selfie del repartidor pero no define las reglas de acceso al storage (quién puede leer los archivos, URLs firmadas, retención tras la decisión de aprobación).",
+          "impact": "Datos sensibles (DNI) en un bucket mal configurado o con URLs no expirables exponen a los repartidores a robo de identidad y a la plataforma a un manejo inadecuado de datos personales.",
+          "correction": "Usar un bucket privado (Supabase Storage con RLS o Firebase Storage con reglas restringidas al rol admin), generar URLs firmadas de corta duración solo para el panel de administración, y definir una política de retención/anonimización tras la decisión de aprobación o rechazo.",
+          "evidence": [
+            "original.md:15 'carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano antes de que pueda ofertar.'",
+            "original.md:66 pregunta abierta 6 'cómo se guardan y protegen el DNI y la selfie' sin respuesta en el plan."
+          ]
+        }
+      ],
+      "conflicts": [
+        {
+          "id": "baas-choice",
+          "class": "technical",
+          "reversible": false,
+          "summary": "Backend recomienda Supabase (Postgres + PostGIS, transacciones ACID, RLS) sobre Firebase por los requisitos de cercanía geográfica, integridad relacional de ofertas/solicitudes y transacciones atómicas al aceptar una oferta. La elección es prácticamente irreversible una vez construido el MVP y puede chocar con preferencias de stack de otros roles o con experiencia previa del equipo en Firebase.",
+          "parties": [
+            "backend",
+            "pm",
+            "frontend"
+          ]
+        },
+        {
+          "id": "state-machine-scope",
+          "class": "product",
+          "reversible": true,
+          "summary": "Backend propone modelar formalmente una máquina de estados con transiciones y validaciones server-side antes de escribir código; PM podría considerar esto fuera del alcance mínimo del MVP y preferir resolver las excepciones de forma ad hoc en la primera iteración.",
+          "parties": [
+            "backend",
+            "pm"
+          ]
+        },
+        {
+          "id": "subscription-payment-gateway",
+          "class": "money",
+          "reversible": true,
+          "summary": "La elección del proveedor de cobro recurrente para la suscripción de comercios (ej. Mercado Pago Suscripciones) tiene implicancias contractuales y de costos que exceden el diseño técnico del backend; requiere decisión conjunta con Finanzas y Legal antes de integrarse.",
+          "parties": [
+            "backend",
+            "finance",
+            "legal"
+          ]
+        }
+      ],
+      "helperRequests": []
+    },
+    {
+      "agentId": "frontend",
+      "verdict": "conditional",
+      "confidence": 0.75,
+      "summary": "El plan es sólido en flujo de negocio y producto, pero como especificación de arquitectura frontend/PWA queda incompleto en puntos que afectan directamente la operación del MVP: depende de notificaciones push sin reconocer que en iOS requieren instalación manual previa a pantalla de inicio (sin `beforeinstallprompt`), plantea 'ubicación en vivo' de repartidores sin reconocer que las PWA no pueden rastrear ubicación en segundo plano de forma confiable, y no define fallback de tiempo real ni manejo de carga de imágenes (DNI/selfie) para redes móviles débiles en Aguilares. Ninguno de estos puntos invalida la propuesta, pero deben resolverse explícitamente antes de considerar el plan listo para desarrollo. Nota adicional no crítica: el plan no menciona una línea base de accesibilidad (semántica, foco, lectores de pantalla) pese a que el diseño visual queda fuera de esta etapa; conviene fijarla igual, ya que afecta la estructura de componentes, no solo el estilo.",
+      "findings": [
+        {
+          "id": "frontend.review.0",
+          "agentId": "frontend",
+          "severity": "high",
+          "statement": "El plan no especifica que en iOS los Web Push solo funcionan si la PWA fue instalada manualmente a la pantalla de inicio (Safari > 'Añadir a pantalla de inicio'), sin evento `beforeinstallprompt` disponible, y solo desde iOS 16.4+; sin un flujo de instalación explícito, los repartidores con iPhone no reciben ninguna notificación push de nuevas solicitudes u ofertas.",
+          "evidence": [
+            "original.md:63 — pregunta abierta 'Notificaciones de nuevas solicitudes y ofertas en una PWA (Android, iOS), y qué pasa si no llegan' no distingue la restricción de instalación de iOS.",
+            "original.md:55 — requisito 'Debe funcionar como PWA' sin mención de flujo de instalación A2HS."
+          ],
+          "impact": "Sin este flujo, los repartidores con iPhone (segmento significativo en Argentina) no verán notificaciones de nuevas solicitudes/ofertas en tiempo real, degradando la propuesta de valor central del marketplace (velocidad de oferta) para ese segmento y arriesgando el lanzamiento en Aguilares.",
+          "correction": "Definir en el plan un flujo de onboarding que guíe explícitamente a instalar la PWA en pantalla de inicio en iOS (con instrucciones visuales, ya que no existe `beforeinstallprompt`), condicionar o incentivar esa instalación para repartidores, y documentar el fallback in-app para quienes no instalen."
+        },
+        {
+          "id": "frontend.review.1",
+          "agentId": "frontend",
+          "severity": "high",
+          "statement": "El plan deja abierta la idea de 'ubicación en vivo' para calcular repartidores disponibles y cercanos, pero una PWA no puede hacer seguimiento de ubicación en segundo plano de forma confiable en iOS Safari ni de forma sostenida en Android sin que la app esté en primer plano; esa capacidad es propia de apps nativas, no de PWAs.",
+          "evidence": [
+            "original.md:62 — pregunta abierta 'ubicación en vivo, ubicación al marcarse disponible o zona declarada. Precisión y privacidad.'",
+            "original.md:36 — 'la solicitud queda visible ... primero los disponibles y más cercanos al punto de retiro' asume disponer de ubicación actualizada."
+          ],
+          "impact": "Si el diseño final asume 'ubicación en vivo' continua, la funcionalidad de ranking 'primero los disponibles y más cercanos' no será técnicamente viable como PWA y requerirá rediseño tardío, fuera de las restricciones técnicas ya fijadas (Next.js + PWA, sin app nativa).",
+          "correction": "Definir el modelo de disponibilidad como 'zona declarada + check-in manual o ubicación puntual al marcarse disponible / al abrir la app', no como tracking continuo en segundo plano, y documentar esa limitación como restricción técnica de PWA en el plan."
+        },
+        {
+          "id": "frontend.review.2",
+          "agentId": "frontend",
+          "severity": "medium",
+          "statement": "El plan no contempla que las notificaciones push en PWAs móviles son intrínsecamente poco confiables (Android puede suspender el service worker por optimización de batería/Doze; iOS restringe fuertemente la ejecución en segundo plano), por lo que depender solo de push para enterarse de nuevas solicitudes/ofertas es insuficiente.",
+          "evidence": [
+            "original.md:63 — la pregunta abierta ya reconoce el riesgo ('y qué pasa si no llegan') pero el plan no define una solución."
+          ],
+          "impact": "Repartidores pueden perder ofertas y solicitantes pueden no ver nuevas ofertas a tiempo, afectando directamente el flujo principal (creación → ofertas → selección) y la confianza en la plataforma durante el lanzamiento en Aguilares.",
+          "correction": "Especificar un mecanismo de respaldo en primer plano (suscripción en tiempo real vía Supabase Realtime o listeners de Firestore, más polling ligero al reabrir/enfocar la app) que actualice la lista de solicitudes/ofertas independientemente de si el push llegó."
+        },
+        {
+          "id": "frontend.review.3",
+          "agentId": "frontend",
+          "severity": "medium",
+          "statement": "La elección entre Supabase y Firebase (pregunta abierta 1) tiene una implicancia frontend concreta para notificaciones push que el plan no menciona: Firebase Cloud Messaging ofrece soporte de primera parte para Web Push (incluyendo iOS 16.4+) con SDK y manejo de tokens integrado, mientras que Supabase no incluye un servicio de push propio y requeriría implementar manualmente el protocolo Web Push con claves VAPID y un endpoint de envío.",
+          "assumptions": [
+            "Se asume que la recomendación final de BaaS (Supabase vs Firebase) se resolverá con otro insumo del Consejo; este hallazgo es un dato técnico de entrada para esa decisión, no una posición cerrada de frontend."
+          ],
+          "impact": "Si se elige Supabase sin planificar el trabajo adicional de implementar Web Push manualmente, el esfuerzo de frontend para notificaciones quedará subestimado en el cronograma del MVP.",
+          "correction": "Incluir en la justificación de la elección de BaaS el costo de implementación de push: si se elige Supabase, planificar explícitamente un servicio propio de Web Push con VAPID; si se elige Firebase, aprovechar FCM Web Push nativo."
+        },
+        {
+          "id": "frontend.review.4",
+          "agentId": "frontend",
+          "severity": "medium",
+          "statement": "El plan requiere que el repartidor cargue DNI, selfie y datos del vehículo para su aprobación, pero no define cómo se manejará esa carga de imágenes en celulares de gama baja y redes móviles inestables típicas de una localidad como Aguilares.",
+          "evidence": [
+            "original.md:14-15 — 'Repartidor habilitado: carga DNI, selfie y datos del vehículo, y un administrador lo aprueba a mano'."
+          ],
+          "assumptions": [
+            "Se asume que Aguilares (localidad del interior de Tucumán) puede tener cobertura móvil menos estable que una capital de provincia; no se verificó con datos de cobertura reales del operador."
+          ],
+          "impact": "Sin compresión del lado del cliente ni reintentos/carga resumible, los repartidores con conexión débil o gama baja abandonarán el registro durante la carga de DNI/selfie, reduciendo la oferta de repartidores disponibles para el lanzamiento.",
+          "correction": "Especificar en el plan compresión de imágenes en el cliente antes de subir (resize/calidad), manejo de reintentos con feedback de progreso, y evaluar Background Sync del Service Worker para completar la carga cuando la red se recupere."
+        }
+      ],
+      "conflicts": [],
+      "helperRequests": []
+    }
+  ],
+  "rebuttal": {
+    "rounds": 1,
+    "entries": [
+      {
+        "party": "backend",
+        "conflict_id": "baas-choice",
+        "summary": "Mantengo la recomendación de Supabase, ajustando la justificación. Incorporo el costo real de implementar Web Push manual con VAPID que señala frontend.review.3 frente al soporte nativo de FCM: es un costo aceptable y acotado (librería web-push estándar), no una razón de peso para cambiar de proveedor. También bajo el peso de PostGIS como argumento decisivo, dado que pm.review.3 y el conflicto courier-location-tradeoff empujan a un modelo de disponibilidad por zona declarada en vez de geolocalización en vivo. El argumento que sostiene la recomendación sigue siendo el más fuerte: transacciones ACID e integridad relacional para 'una sola oferta aceptada' y el piso server-side de ARS 1.000 (backend.review.0 y backend.review.1), que Firestore solo puede emular con más código y más superficie de error.",
+        "position": "adjust"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "state-machine-scope",
+        "summary": "Retiro el encuadre de conflicto con PM: pm.review.0 propone de forma independiente una FSM explícita con severidad crítica (DRAFT→PUBLISHED→MATCHED→IN_TRANSIT→DELIVERED, CANCELLED/EXPIRED con timeout de 30 minutos), más detallada que backend.review.2. No hay desacuerdo de alcance, hay convergencia total en que la FSM es indispensable antes de construir. Adopto la nomenclatura de estados de PM y ajusto mi corrección original: el timeout de expiración debe ser una constante de configuración, con 30 minutos como valor por defecto sugerido por PM.",
+        "position": "withdraw"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "subscription-payment-gateway",
+        "summary": "Mantengo la posición y la refino con los aportes de finance y security. Finance (finance.review.0) confirma la necesidad de una pasarela con soporte de recurrencia en Argentina y sugiere el mismo proveedor que backend.review.4 (Mercado Pago Subscriptions). Adopto sin reservas el requisito de security.review.3: validar la firma del webhook antes de procesar cualquier evento y hacer el endpoint idempotente (registrar el id de evento procesado), de modo que subscription_status solo cambie a partir de eventos verificados del proveedor, nunca desde el cliente. Señalo que el diseño final de ese campo depende de una decisión de negocio pendiente (particulares excluidos vs. cupo gratuito), elevada por PM y finance al checkpoint humano, que no me corresponde resolver.",
+        "position": "adjust"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "devops-baas-backup-criteria",
+        "summary": "Acepto el criterio de DevOps: backup/PITR y su costo deben ser parte explícita de la justificación de BaaS, no un tema aparte. No cambia la recomendación de Supabase, porque Postgres tiene herramientas de backup maduras y disponibles incluso en plan gratuito (pg_dump programado), con PITR nativo como add-on pago en el plan Pro; Firestore necesitaría exportaciones programadas vía Cloud Scheduler para un resultado equivalente. Me comprometo a incluir esa sección de costo/backup en el documento final de elección de BaaS y a coordinar con DevOps una prueba de restauración completa antes de aprobar el primer repartidor real, dado que ahí se guarda DNI y selfie (devops.review.1).",
+        "position": "adjust"
+      },
+      {
+        "party": "backend",
+        "conflict_id": "courier-location-tradeoff",
+        "summary": "Aclaro que backend nunca defendió tracking en vivo ni rastreo en segundo plano; solo señalé que Supabase resuelve bien consultas de cercanía. Ante la convergencia de seguridad (minimizar precisión, sin historial persistente), PM (pm.review.3, disponibilidad binaria por zona) y la limitación técnica de frontend.review.1 (las PWA no sostienen rastreo confiable en segundo plano), adopto explícitamente el modelo de ubicación declarada: una sola columna de posición actual por repartidor, sobrescrita al marcarse disponible o abrir la app, sin tabla de historial. Es también la implementación más simple en Postgres (un índice espacial sobre un único punto, sin series de tiempo). Queda abierta la posibilidad de tracking más fino a futuro sin requerir cambio de BaaS, pero no es necesaria para el MVP.",
+        "position": "adjust"
+      },
+      {
+        "party": "frontend",
+        "conflict_id": "baas-choice",
+        "summary": "Ajusto mi postura. Mi hallazgo sobre Web Push/FCM (frontend.review.3) era explícitamente un insumo de costo para la decisión, no una objeción a Supabase, y lo confirmo ahora: los argumentos de backend para Supabase —transacciones ACID para evitar doble aceptación de oferta, PostGIS con índices espaciales nativos para 'repartidor más cercano', RLS auditable por rol— resuelven problemas de integridad y correctitud de datos que pesan más que la conveniencia de tener push de primera parte, y son ortogonales a mi otro hallazgo sobre geolocalización en segundo plano (PostGIS optimiza la consulta sobre la ubicación disponible; no cambia el límite de tracking en background de las PWA, que aplica igual con cualquier BaaS). La ausencia de push nativo en Supabase es una brecha real pero solucionable con el protocolo Web Push estándar (VAPID), independiente del proveedor de BaaS elegido —no requiere Firebase—, mediante una tabla de subscriptions en Postgres y una función serverless (API route de Next.js o Supabase Edge Function) que dispare los envíos. No sostengo que ese costo deba inclinar la elección hacia Firebase; sí declaro un conflicto nuevo para que ese trabajo quede escopeado explícitamente, porque hoy no figura en los hallazgos de backend (backend.review.0-5) ni en el plan.",
+        "position": "adjust"
+      }
+    ]
+  }
+}

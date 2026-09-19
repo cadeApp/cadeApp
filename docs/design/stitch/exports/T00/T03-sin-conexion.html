@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp - Modo Sin Conexión</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-error-container": "#93000a",
+            "on-tertiary": "#ffffff",
+            "surface-dim": "#d1daee",
+            "on-primary-fixed": "#002020",
+            "on-surface": "#131c2a",
+            "error-container": "#ffdad6",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-bright": "#f9f9ff",
+            "surface-container-highest": "#dae3f7",
+            "secondary-fixed-dim": "#c0c5e0",
+            "surface-container": "#e7eeff",
+            "on-primary-container": "#004446",
+            "on-surface-variant": "#3c4949",
+            "secondary-fixed": "#dce1fd",
+            "on-tertiary-container": "#004446",
+            "primary-fixed": "#6df6f9",
+            "on-secondary-fixed": "#151b2f",
+            "surface-tint": "#00696b",
+            "tertiary-fixed": "#99f1f4",
+            "error": "#ba1a1a",
+            "on-tertiary-fixed": "#002021",
+            "on-primary": "#ffffff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "inverse-primary": "#4adadd",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "secondary-container": "#d9defa",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-secondary": "#ffffff",
+            "secondary": "#585d75",
+            "primary-container": "#09babd",
+            "outline": "#6c7a7a",
+            "inverse-surface": "#283140",
+            "surface": "#f9f9ff",
+            "outline-variant": "#bbc9c9",
+            "surface-container-high": "#dfe8fd",
+            "tertiary-container": "#5cb5b8",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-container-low": "#f0f3ff",
+            "tertiary": "#00696c",
+            "on-secondary-container": "#5c6279",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed-variant": "#004f51",
+            "primary": "#00696b",
+            "primary-fixed-dim": "#4adadd"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "margin": "1rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-md": [
+              "Montserrat"
+            ],
+            "price-sm": [
+              "Montserrat"
+            ],
+            "headline-xl": [
+              "Montserrat"
+            ],
+            "body-md": [
+              "Inter"
+            ],
+            "headline-lg": [
+              "Montserrat"
+            ],
+            "price-display": [
+              "Montserrat"
+            ],
+            "body-lg": [
+              "Inter"
+            ],
+            "body-medium": [
+              "Inter"
+            ],
+            "label-sm": [
+              "Inter"
+            ],
+            "label-md": [
+              "Inter"
+            ]
+          },
+          "fontSize": {
+            "headline-md": [
+              "18px",
+              {
+                "lineHeight": "24px",
+                "letterSpacing": "-0.01em",
+                "fontWeight": "700"
+              }
+            ],
+            "price-sm": [
+              "16px",
+              {
+                "lineHeight": "20px",
+                "fontWeight": "700"
+              }
+            ],
+            "headline-xl": [
+              "28px",
+              {
+                "lineHeight": "34px",
+                "letterSpacing": "-0.02em",
+                "fontWeight": "700"
+              }
+            ],
+            "body-md": [
+              "14px",
+              {
+                "lineHeight": "20px",
+                "fontWeight": "400"
+              }
+            ],
+            "headline-lg": [
+              "22px",
+              {
+                "lineHeight": "28px",
+                "letterSpacing": "-0.015em",
+                "fontWeight": "700"
+              }
+            ],
+            "price-display": [
+              "24px",
+              {
+                "lineHeight": "28px",
+                "letterSpacing": "-0.02em",
+                "fontWeight": "700"
+              }
+            ],
+            "body-lg": [
+              "16px",
+              {
+                "lineHeight": "24px",
+                "fontWeight": "400"
+              }
+            ],
+            "body-medium": [
+              "16px",
+              {
+                "lineHeight": "24px",
+                "fontWeight": "500"
+              }
+            ],
+            "label-sm": [
+              "14px",
+              {
+                "lineHeight": "16px",
+                "fontWeight": "500"
+              }
+            ],
+            "label-md": [
+              "14px",
+              {
+                "lineHeight": "18px",
+                "fontWeight": "600"
+              }
+            ]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    body {
+      background-color: #f0f3ff;
+      color: #131c2a;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex justify-center bg-surface-container-low antialiased">
+<!-- PWA Container 390px Mobile Frame -->
+<div class="w-full max-w-[390px] min-h-screen bg-surface flex flex-col relative shadow-sm overflow-x-hidden pb-24">
+<!-- TopAppBar (Shared Component) -->
+<header class="fixed top-0 left-0 right-0 max-w-[390px] mx-auto w-full z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface border-b border-outline-variant/30">
+<div class="flex items-center gap-2">
+<img alt="cadeApp logo" class="w-7 h-7 object-contain rounded-sm" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA1abqqyKPF26ppI5n__kjML4xeLtVzvuRQS4EfQPeE_c3Y0tGsa0DSL6cJ24t-JTGieZDVK61wZVtLMct8A-wewVOYvPgAFmcAtAbdzM2JuvnutucQ8zSW9k7Z20wBR4c4WM_ky20xX3skXl6_QOJjxnK6xJc0lx9PTkdYJV3UH7cptLBtSrNxMJ4HppRGuWJmpSuWsYKlxMMQcLv2PiPMfljnmrpqppBhR93Nl0CpxRWzJOC96LoK4BHinlwCigMP6g"/>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<button class="text-primary-container font-headline-md text-body-md font-semibold hover:opacity-90 transition-opacity duration-150 active:scale-95" type="button">
+        Ingresar
+      </button>
+</header>
+<!-- Top Spacer for Fixed Header -->
+<div class="h-14 w-full"></div>
+<!-- Offline Warning Alert Banner -->
+<section class="sticky top-14 z-40 bg-error-container text-on-error-container px-4 py-2.5 flex items-center gap-2.5 border-b border-outline-variant/20 shadow-none">
+<span class="material-symbols-outlined text-[20px] text-error flex-shrink-0" data-icon="wifi_off">wifi_off</span>
+<p class="font-body-md text-body-md font-medium text-on-error-container leading-snug">
+        Sin conexión. Mostramos lo último que cargó.
+      </p>
+</section>
+<!-- Subheader: Filters & Activity Count (Faded / Inactive state) -->
+<section class="px-4 pt-4 pb-2 flex items-center justify-between opacity-60 pointer-events-none">
+<div class="flex items-center gap-1.5">
+<h1 class="font-headline-md text-headline-md text-on-surface font-bold tracking-tight">Viajes disponibles</h1>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-surface-container text-secondary">
+          3 en caché
+        </span>
+</div>
+<div class="flex items-center gap-1 text-secondary font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[16px]" data-icon="schedule">schedule</span>
+<span>Hace 8 min</span>
+</div>
+</section>
+<!-- Main Screen Content: Courier Requests Faded to 60% opacity with disabled styling -->
+<main class="px-4 flex flex-col gap-3.5 opacity-60 select-none pointer-events-none filter grayscale-[25%] transition-opacity duration-200">
+<!-- Card 1: Standard Courier Trip -->
+<article class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 flex flex-col gap-3">
+<!-- Card Header: Origin / Destination -->
+<div class="flex items-start justify-between gap-2">
+<div class="flex flex-col gap-0.5">
+<span class="font-headline-md text-headline-md text-on-surface font-bold">
+              Centro → Barrio Norte
+            </span>
+<div class="flex items-center gap-1 text-secondary font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px] text-outline" data-icon="route">route</span>
+<span>≈ 2,5 km · Paquete chico</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-surface-container text-secondary">
+            $ 1.800
+          </span>
+</div>
+<!-- Detail Attributes & Payment Indicator -->
+<div class="flex items-center justify-between pt-2 border-t border-outline-variant/50 text-secondary font-label-sm text-label-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="payments">payments</span>
+<span>Paga en efectivo</span>
+</div>
+<span class="text-xs text-outline">Comercio: Farmacia Del Pueblo</span>
+</div>
+<!-- Disabled Button -->
+<button class="w-full h-12 bg-surface-container-highest text-secondary font-body-medium text-body-medium rounded-lg flex items-center justify-center gap-2 cursor-not-allowed border border-outline-variant/40" disabled="">
+<span class="material-symbols-outlined text-[20px] text-secondary" data-icon="local_shipping">local_shipping</span>
+<span>Ofertar</span>
+</button>
+</article>
+<!-- Card 2: Urgency Trip (Faded) -->
+<article class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 flex flex-col gap-3">
+<!-- Card Header: Origin / Destination -->
+<div class="flex items-start justify-between gap-2">
+<div class="flex flex-col gap-0.5">
+<span class="font-headline-md text-headline-md text-on-surface font-bold">
+              Alberdi → Microcentro
+            </span>
+<div class="flex items-center gap-1 text-secondary font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px] text-outline" data-icon="route">route</span>
+<span>≈ 4,1 km · Bolso térmico</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-surface-container text-secondary">
+            $ 2.650
+          </span>
+</div>
+<!-- Detail Attributes & Payment Indicator -->
+<div class="flex items-center justify-between pt-2 border-t border-outline-variant/50 text-secondary font-label-sm text-label-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="payments">payments</span>
+<span>Paga en efectivo</span>
+</div>
+<span class="text-xs text-outline">Comercio: Heladería Grido</span>
+</div>
+<!-- Disabled Button -->
+<button class="w-full h-12 bg-surface-container-highest text-secondary font-body-medium text-body-medium rounded-lg flex items-center justify-center gap-2 cursor-not-allowed border border-outline-variant/40" disabled="">
+<span class="material-symbols-outlined text-[20px] text-secondary" data-icon="local_shipping">local_shipping</span>
+<span>Ofertar</span>
+</button>
+</article>
+<!-- Card 3: Document courier trip -->
+<article class="bg-surface-container-lowest border border-outline-variant rounded-xl p-4 flex flex-col gap-3">
+<!-- Card Header: Origin / Destination -->
+<div class="flex items-start justify-between gap-2">
+<div class="flex flex-col gap-0.5">
+<span class="font-headline-md text-headline-md text-on-surface font-bold">
+              Tribunales → Nueva Córdoba
+            </span>
+<div class="flex items-center gap-1 text-secondary font-body-md text-body-md">
+<span class="material-symbols-outlined text-[16px] text-outline" data-icon="route">route</span>
+<span>≈ 1,8 km · Sobre y trámite</span>
+</div>
+</div>
+<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-surface-container text-secondary">
+            $ 1.500
+          </span>
+</div>
+<!-- Detail Attributes & Payment Indicator -->
+<div class="flex items-center justify-between pt-2 border-t border-outline-variant/50 text-secondary font-label-sm text-label-sm">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="account_balance_wallet">account_balance_wallet</span>
+<span>Transferencia bancaria</span>
+</div>
+<span class="text-xs text-outline">Particular</span>
+</div>
+<!-- Disabled Button -->
+<button class="w-full h-12 bg-surface-container-highest text-secondary font-body-medium text-body-medium rounded-lg flex items-center justify-center gap-2 cursor-not-allowed border border-outline-variant/40" disabled="">
+<span class="material-symbols-outlined text-[20px] text-secondary" data-icon="local_shipping">local_shipping</span>
+<span>Ofertar</span>
+</button>
+</article>
+</main>
+<!-- Floating Sticky Offline Reconnect Card (Anchored right above BottomNavBar) -->
+<div class="fixed bottom-16 left-0 right-0 max-w-[390px] mx-auto px-4 pointer-events-auto z-40 mb-2">
+<div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-3.5 shadow-[0_8px_24px_rgba(18,24,44,0.12)] flex items-center justify-between gap-3">
+<div class="flex items-center gap-2.5 flex-1 min-w-0">
+<span class="material-symbols-outlined text-outline text-[22px] flex-shrink-0 animate-pulse" data-icon="cloud_off">cloud_off</span>
+<p class="font-body-md text-body-md text-on-surface leading-tight truncate">
+            Cuando vuelva la conexión, actualizamos solo.
+          </p>
+</div>
+<button class="h-10 px-3.5 bg-surface-container-lowest border border-outline-variant text-on-surface font-label-md text-label-md rounded-lg flex items-center gap-1.5 hover:bg-surface-container-low active:scale-95 transition-all flex-shrink-0" id="retry-btn" type="button">
+<span class="material-symbols-outlined text-[18px]" data-icon="refresh" id="refresh-icon">refresh</span>
+<span>Reintentar</span>
+</button>
+</div>
+</div>
+<!-- Bottom Navigation Bar (Active: Solicitudes) -->
+<nav class="fixed bottom-0 left-0 right-0 max-w-[390px] mx-auto h-16 bg-surface-container-lowest border-t border-outline-variant/40 flex items-center justify-around z-50 px-2 shadow-[0_-2px_10px_rgba(18,24,44,0.04)]">
+<!-- Tab 1: Solicitudes (Active) -->
+<a class="flex flex-col items-center justify-center flex-1 py-1 text-primary-container" href="#solicitudes">
+<span class="material-symbols-outlined text-[24px]" data-icon="list_alt" style="font-variation-settings: 'FILL' 1;">list_alt</span>
+<span class="font-label-sm text-xs font-semibold mt-0.5">Solicitudes</span>
+</a>
+<!-- Tab 2: Mis ofertas -->
+<a class="flex flex-col items-center justify-center flex-1 py-1 text-secondary hover:text-on-surface transition-colors" href="#ofertas">
+<span class="material-symbols-outlined text-[24px]" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-label-sm text-xs font-normal mt-0.5">Mis ofertas</span>
+</a>
+<!-- Tab 3: Perfil -->
+<a class="flex flex-col items-center justify-center flex-1 py-1 text-secondary hover:text-on-surface transition-colors" href="#perfil">
+<span class="material-symbols-outlined text-[24px]" data-icon="person">person</span>
+<span class="font-label-sm text-xs font-normal mt-0.5">Perfil</span>
+</a>
+</nav>
+</div>
+<script>
+    // Micro-interaction for reintentar button
+    const retryBtn = document.getElementById('retry-btn');
+    const refreshIcon = document.getElementById('refresh-icon');
+
+    if (retryBtn && refreshIcon) {
+      retryBtn.addEventListener('click', () => {
+        refreshIcon.classList.add('animate-spin');
+        setTimeout(() => {
+          refreshIcon.classList.remove('animate-spin');
+        }, 1200);
+      });
+    }
+  </script>
+</body></html>

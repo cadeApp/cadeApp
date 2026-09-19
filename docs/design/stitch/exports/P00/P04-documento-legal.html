@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+
+<html class="h-full bg-[#FDFCFB]" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Términos del piloto — cadeApp</title>
+<!-- Google Fonts: Montserrat (700) & Inter (400, 500, 600) -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Montserrat:wght@700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface-variant": "#3c4949",
+            "primary-container": "#09babd",
+            "surface-container": "#e7eeff",
+            "surface-container-low": "#f0f3ff",
+            "secondary-container": "#d9defa",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-container": "#5c6279",
+            "primary-fixed": "#6df6f9",
+            "on-tertiary-fixed": "#002021",
+            "tertiary-container": "#5cb5b8",
+            "surface-container-highest": "#dae3f7",
+            "inverse-surface": "#12182c",
+            "on-primary-fixed": "#002020",
+            "inverse-primary": "#4adadd",
+            "on-secondary-fixed": "#151b2f",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-background": "#12182c",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-high": "#dfe8fd",
+            "outline": "#6c7a7a",
+            "error-container": "#ffdad6",
+            "background": "#FDFCFB",
+            "primary": "#00696b",
+            "surface-tint": "#00696b",
+            "primary-fixed-dim": "#4adadd",
+            "secondary-fixed": "#dce1fd",
+            "on-secondary-fixed-variant": "#40465c",
+            "on-error-container": "#93000a",
+            "on-surface": "#12182c",
+            "on-error": "#ffffff",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#004446",
+            "outline-variant": "#e4e7ec",
+            "on-tertiary-fixed-variant": "#004f51",
+            "secondary": "#5b6475",
+            "on-secondary": "#ffffff",
+            "tertiary": "#0b7a7d",
+            "on-tertiary-container": "#004446",
+            "tertiary-fixed": "#99f1f4",
+            "on-tertiary": "#ffffff",
+            "surface": "#ffffff",
+            "secondary-fixed-dim": "#c0c5e0",
+            "error": "#c62828",
+            "surface-dim": "#d1daee",
+            "surface-variant": "#dae3f7",
+            "surface-bright": "#f9f9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "10px",
+            "xl": "12px",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "0.5rem",
+            "space-xs": "0.25rem",
+            "margin": "1rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "price-display": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "body-medium": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"],
+            "body-lg": ["Inter"],
+            "label-sm": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-md": ["Montserrat"]
+          },
+          "fontSize": {
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "26px", "fontWeight": "400" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    /* Brand Wavy Line Motif */
+    .road-wave {
+      stroke: #09BABD;
+      stroke-width: 2.5;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="min-h-full bg-background text-on-surface font-body-lg text-body-lg antialiased flex flex-col justify-between selection:bg-primary-container selection:text-inverse-surface">
+<!-- TOP APP BAR (Consistent with shared component shell anchored to viewport) -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface text-surface select-none">
+<div class="flex items-center gap-2">
+<button aria-label="Volver" class="w-10 h-10 -ml-2 rounded-lg flex items-center justify-center text-surface hover:text-primary-container active:scale-95 transition-transform duration-100" onclick="history.back()">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary-container" data-icon="two_wheeler">two_wheeler</span>
+<h1 class="font-headline-md text-headline-md font-bold text-surface tracking-tight">Términos del piloto</h1>
+</div>
+</div>
+<span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-tertiary-container/30 text-primary-fixed border border-primary-container/30">Aguilares</span>
+</header>
+<!-- MAIN CANVAS -->
+<main class="w-full max-w-[390px] mx-auto px-4 pt-20 pb-36 flex flex-col gap-6">
+<!-- Document Meta & Badge Section -->
+<section class="flex flex-col gap-2 pt-2 border-b border-outline-variant pb-4">
+<div class="flex items-center justify-between">
+<span class="inline-flex items-center px-2.5 py-1 rounded-full text-[13px] font-medium bg-[#E6F8F8] text-tertiary">
+          Fase 1 Activa
+        </span>
+<span class="font-label-sm text-label-sm text-secondary">Actualizado: Octubre 2024</span>
+</div>
+<p class="font-label-md text-label-md text-secondary">
+        Versión 1 · Aguilares, Tucumán
+      </p>
+<!-- Brand subtle wavy road motif divider -->
+<svg class="w-24 h-3 mt-1" fill="none" viewbox="0 0 100 12" xmlns="http://www.w3.org/2000/svg">
+<path class="road-wave" d="M2 6 Q 25 11 50 6 T 98 6"></path>
+</svg>
+</section>
+<!-- ACCORDION / COLLAPSIBLE INDEX -->
+<details class="group bg-surface border border-outline-variant rounded-xl overflow-hidden shadow-none transition-all duration-200" open="">
+<summary class="flex items-center justify-between p-4 cursor-pointer select-none bg-surface hover:bg-surface-container-low/40">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-tertiary text-[20px]" data-icon="list_alt">list_alt</span>
+<span class="font-headline-md text-headline-md text-on-surface">Contenido</span>
+</div>
+<span class="material-symbols-outlined text-secondary transition-transform duration-200 group-open:rotate-180" data-icon="expand_more">expand_more</span>
+</summary>
+<div class="px-4 pb-4 pt-1 border-t border-outline-variant/60">
+<ol class="flex flex-col gap-2.5 pt-2">
+<li>
+<a class="flex items-center justify-between py-1 text-tertiary font-label-md text-label-md hover:underline" href="#que-es-el-piloto">
+<span>1. Qué es el piloto</span>
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="chevron_right">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between py-1 text-tertiary font-label-md text-label-md hover:underline" href="#duracion">
+<span>2. Duración</span>
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="chevron_right">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between py-1 text-tertiary font-label-md text-label-md hover:underline" href="#alcance-cadeapp">
+<span>3. Qué hace y qué no hace cadeApp</span>
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="chevron_right">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between py-1 text-tertiary font-label-md text-label-md hover:underline" href="#pago-del-envio">
+<span>4. Pago del envío</span>
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="chevron_right">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="flex items-center justify-between py-1 text-tertiary font-label-md text-label-md hover:underline" href="#datos-personales">
+<span>5. Datos personales</span>
+<span class="material-symbols-outlined text-[18px] text-secondary" data-icon="chevron_right">chevron_right</span>
+</a>
+</li>
+</ol>
+</div>
+</details>
+<!-- MANDATORY CALLOUT CARD (Directly from requirements) -->
+<aside class="bg-surface border-2 border-primary-container rounded-xl p-4 flex gap-3.5 items-start">
+<div class="mt-0.5 w-8 h-8 rounded-lg bg-[#E6F8F8] text-tertiary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[20px]" data-icon="info">info</span>
+</div>
+<div class="flex-1">
+<p class="font-body-medium text-body-medium text-on-surface leading-snug">
+          cadeApp conecta comercios con repartidores independientes. No es una empresa de envíos, no emplea repartidores y no cobra el envío: lo paga quien recibe.
+        </p>
+</div>
+</aside>
+<!-- LEGAL BODY CONTENT STACK -->
+<article class="flex flex-col gap-6 text-on-surface">
+<!-- SECTION 1 -->
+<section class="scroll-mt-20 flex flex-col gap-2" id="que-es-el-piloto">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-tertiary">1.</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Qué es el piloto</h2>
+</div>
+<p class="text-body-lg leading-relaxed text-on-surface">
+          Este programa piloto está diseñado para evaluar y calibrar la logística urbana local dentro del radio céntrico y barrios aledaños de la ciudad de Aguilares, provincia de Tucumán.
+        </p>
+<p class="text-body-lg leading-relaxed text-secondary">
+          Durante esta primera fase, los comercios asociados pueden coordinar despachos directos de paquetería menor, gastronomía y mercadería cotidiana, optimizando tiempos muertos y facilitando ingresos directos a cadetes y repartidores de moto y bicicleta locales.
+        </p>
+</section>
+<hr class="border-outline-variant/60"/>
+<!-- SECTION 2 -->
+<section class="scroll-mt-20 flex flex-col gap-2" id="duracion">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-tertiary">2.</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Duración</h2>
+</div>
+<p class="text-body-lg leading-relaxed text-on-surface">
+          El piloto tendrá una extensión operativa inicial de <strong class="font-semibold text-on-surface">90 días corridos</strong> desde su activación formal en el municipio.
+        </p>
+<p class="text-body-lg leading-relaxed text-secondary">
+          cadeApp se reserva la potestad de extender, pausar temporalmente por cuestiones climáticas severas, o dar por concluido el ciclo de pruebas notificando a los comercios registrados con un mínimo de 48 horas de antelación vía mensaje de la plataforma.
+        </p>
+</section>
+<hr class="border-outline-variant/60"/>
+<!-- SECTION 3 -->
+<section class="scroll-mt-20 flex flex-col gap-2" id="alcance-cadeapp">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-tertiary">3.</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Qué hace y qué no hace cadeApp</h2>
+</div>
+<div class="grid grid-cols-1 gap-3 pt-1">
+<!-- Card Que hace -->
+<div class="bg-surface p-3.5 rounded-xl border border-outline-variant">
+<div class="flex items-center gap-2 mb-1.5 text-tertiary font-label-md text-label-md">
+<span class="material-symbols-outlined text-[18px]" data-icon="check_circle">check_circle</span>
+<span>Qué hace cadeApp:</span>
+</div>
+<ul class="text-body-md text-secondary space-y-1.5 list-disc list-inside">
+<li>Facilita la interfaz digital de enlace entre locales y repartidores.</li>
+<li>Calcula distancias estimadas de recorrido en Aguilares.</li>
+<li>Proporciona confirmación inmediata de toma del pedido.</li>
+</ul>
+</div>
+<!-- Card Que no hace -->
+<div class="bg-surface p-3.5 rounded-xl border border-outline-variant">
+<div class="flex items-center gap-2 mb-1.5 text-error font-label-md text-label-md">
+<span class="material-symbols-outlined text-[18px]" data-icon="cancel">cancel</span>
+<span>Qué NO hace cadeApp:</span>
+</div>
+<ul class="text-body-md text-secondary space-y-1.5 list-disc list-inside">
+<li>No mantiene flota de reparto propia ni relación de dependencia.</li>
+<li>No interviene en la preparación ni embalaje de los productos.</li>
+<li>No retiene comisiones por envío en esta etapa experimental.</li>
+</ul>
+</div>
+</div>
+</section>
+<hr class="border-outline-variant/60"/>
+<!-- SECTION 4 -->
+<section class="scroll-mt-20 flex flex-col gap-2" id="pago-del-envio">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-tertiary">4.</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Pago del envío</h2>
+</div>
+<p class="text-body-lg leading-relaxed text-on-surface">
+          El costo acordado del trayecto es de abono exclusivo y directo entre las partes involucradas. La tarifa sugerida se rige por bandas de distancia urbana en Aguilares:
+        </p>
+<!-- Pricing Reference Card -->
+<div class="bg-surface rounded-xl border border-outline-variant p-4 flex flex-col gap-3">
+<div class="flex justify-between items-center pb-2 border-b border-outline-variant/50">
+<span class="text-body-md text-secondary">Radio céntrico (hasta 15 cuadras)</span>
+<span class="font-price-sm text-price-sm text-on-surface">$ 1.500</span>
+</div>
+<div class="flex justify-between items-center">
+<span class="text-body-md text-secondary">Barrios periféricos y cruce ruta</span>
+<span class="font-price-sm text-price-sm text-on-surface">$ 2.200</span>
+</div>
+</div>
+<p class="text-body-md text-secondary">
+          El cliente receptor abona el importe pactado en efectivo o transferencia bancaria directa contra entrega del paquete en mano.
+        </p>
+</section>
+<hr class="border-outline-variant/60"/>
+<!-- SECTION 5 -->
+<section class="scroll-mt-20 flex flex-col gap-2" id="datos-personales">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-headline-md text-tertiary">5.</span>
+<h2 class="font-headline-md text-headline-md text-on-surface">Datos personales</h2>
+</div>
+<p class="text-body-lg leading-relaxed text-on-surface">
+          Los números de contacto y domicilios suministrados únicamente se comparten entre el comercio remitente y el repartidor asignado para garantizar la entrega.
+        </p>
+<p class="text-body-lg leading-relaxed text-secondary">
+          Concluida la entrega, la geolocalización y los canales de comunicación directa quedan cerrados para resguardar la privacidad de todos los usuarios de la red comunitaria.
+        </p>
+</section>
+</article>
+<!-- SHARED COMPONENT FOOTER -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center border-t border-outline-variant/40 bg-surface-container-lowest mt-4">
+<div class="flex flex-wrap items-center justify-center gap-4">
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Términos y condiciones</a>
+<span class="text-outline-variant">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Privacidad</a>
+<span class="text-outline-variant">•</span>
+<a class="font-body-md text-body-md text-secondary hover:text-on-surface hover:text-primary transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+<p class="font-body-md text-body-md text-secondary">
+        © 2024 cadeApp. Envíos locales y logística inteligente.
+      </p>
+</footer>
+</main>
+<!-- STICKY BOTTOM BAR (Mandatory action block) -->
+<div class="fixed bottom-0 left-0 w-full bg-surface border-t border-outline-variant shadow-[0_-4px_20px_rgba(18,24,44,0.08)] z-40">
+<div class="max-w-[390px] mx-auto px-4 py-3.5 flex flex-col gap-3">
+<!-- Custom Checkbox -->
+<label class="flex items-center gap-3 cursor-pointer select-none group" for="terms-checkbox">
+<div class="relative flex items-center justify-center">
+<input class="peer sr-only" id="terms-checkbox" onchange="toggleSubmitButton(this.checked)" type="checkbox"/>
+<div class="w-5 h-5 border-2 border-outline-variant rounded bg-surface peer-checked:bg-primary-container peer-checked:border-primary-container peer-focus-visible:ring-2 peer-focus-visible:ring-primary-container transition-all flex items-center justify-center group-hover:border-primary-container">
+<span class="material-symbols-outlined text-inverse-surface text-[16px] font-bold opacity-0 peer-checked:opacity-100 transition-opacity" data-icon="check">check</span>
+</div>
+</div>
+<span class="font-body-medium text-body-medium text-on-surface">
+          Leí y acepto los términos del piloto
+        </span>
+</label>
+<!-- Primary Action Button: disabled by default -->
+<button class="w-full h-12 rounded-lg font-headline-md text-headline-md flex items-center justify-center transition-all duration-150 select-none bg-surface-container-highest text-secondary cursor-not-allowed opacity-60" disabled="" id="continue-button" onclick="handleContinue()">
+        Continuar
+      </button>
+</div>
+</div>
+<!-- Toast Notification Alert Component (Initially Hidden) -->
+<div class="fixed top-16 left-1/2 -translate-x-1/2 w-[calc(100%-32px)] max-w-[358px] bg-inverse-surface text-surface px-4 py-3 rounded-xl flex items-center gap-3 shadow-lg z-50 transform -translate-y-6 opacity-0 pointer-events-none transition-all duration-200" id="toast-success">
+<span class="material-symbols-outlined text-primary-container" data-icon="check_circle">check_circle</span>
+<p class="font-label-md text-label-md text-surface flex-1">¡Términos aceptados con éxito!</p>
+</div>
+<!-- Interactive script for state handling -->
+<script>
+    function toggleSubmitButton(isChecked) {
+      const btn = document.getElementById('continue-button');
+      if (isChecked) {
+        btn.disabled = false;
+        btn.classList.remove('bg-surface-container-highest', 'text-secondary', 'cursor-not-allowed', 'opacity-60');
+        btn.classList.add('bg-primary-container', 'text-inverse-surface', 'active:scale-[0.99]', 'hover:opacity-95', 'cursor-pointer');
+      } else {
+        btn.disabled = true;
+        btn.classList.add('bg-surface-container-highest', 'text-secondary', 'cursor-not-allowed', 'opacity-60');
+        btn.classList.remove('bg-primary-container', 'text-inverse-surface', 'active:scale-[0.99]', 'hover:opacity-95', 'cursor-pointer');
+      }
+    }
+
+    function handleContinue() {
+      const toast = document.getElementById('toast-success');
+      toast.classList.remove('opacity-0', '-translate-y-6', 'pointer-events-none');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      
+      setTimeout(() => {
+        toast.classList.remove('opacity-100', 'translate-y-0');
+        toast.classList.add('opacity-0', '-translate-y-6', 'pointer-events-none');
+      }, 2500);
+    }
+  </script>
+</body></html>

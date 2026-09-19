@@ -1,0 +1,20 @@
+{
+  "agentId": "legal",
+  "verdict": "conditional",
+  "confidence": 0.91,
+  "summary": "Dictamen de Legal: CONDICIONAL (0.91). El uso de geolocalizacion para puntos de entrega y retiro se encuadra como dato operativo bajo la Ley 25.326 de Proteccion de Datos Personales. Se ratifica que D15 cumple con el principio de minimizacion al no transferir coordenadas al repartidor antes de la aceptacion. Se confirma que no existe rastreo ni geolocalizacion continua del trabajador (D7 intacto), mitigando riesgos de subordinacion laboral bajo Ley 20.744. Condicionado a: 1) Actualizar la Politica de Privacidad y Terminos y Condiciones aclarando que las coordenadas se usan exclusivamente para la ejecucion de la entrega; 2) El comercio declara contar con autorizacion del destinatario para referenciar el punto de entrega.",
+  "findings": [
+    {
+      "statement": "Encuadre de coordenadas como datos de localizacion bajo Ley 25.326.",
+      "severity": "medium",
+      "impact": "El tratamiento de coordenadas geograficas sin base contractual o consentimiento informado podria motivar observaciones de la Agencia de Acceso a la Informacion Publica (AAIP).",
+      "evidence": [
+        "docs/master-plan.md §10 (marco legal)."
+      ],
+      "correction": "Incluir en los Terminos y Condiciones y Politica de Privacidad (§10) una clausula especifica sobre la captura de puntos geograficos para facilitar la entrega.",
+      "assumptions": [
+        "El comercio cuenta con la anuencia de su cliente para fijar el punto de entrega."
+      ]
+    }
+  ]
+}

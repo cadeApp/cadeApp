@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>cadeApp — Registrarse (Paso 1 de 2)</title>
+<!-- Google Fonts: Montserrat (700) & Inter (400, 500, 600) -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Montserrat:wght@700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-surface-variant": "#3c4949",
+            "primary-container": "#09babd",
+            "surface-container": "#e7eeff",
+            "surface-container-low": "#f0f3ff",
+            "secondary-container": "#d9defa",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "on-secondary-container": "#5c6279",
+            "primary-fixed": "#6df6f9",
+            "on-tertiary-fixed": "#002021",
+            "tertiary-container": "#5cb5b8",
+            "surface-container-highest": "#dae3f7",
+            "inverse-surface": "#12182c",
+            "on-primary-fixed": "#002020",
+            "inverse-primary": "#4adadd",
+            "on-secondary-fixed": "#151b2f",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-background": "#12182c",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-high": "#dfe8fd",
+            "outline": "#6c7a7a",
+            "error-container": "#ffdad6",
+            "background": "#fdfcfb",
+            "primary": "#0b7a7d",
+            "surface-tint": "#00696b",
+            "primary-fixed-dim": "#4adadd",
+            "secondary-fixed": "#dce1fd",
+            "on-secondary-fixed-variant": "#40465c",
+            "on-error-container": "#93000a",
+            "on-surface": "#12182c",
+            "on-error": "#ffffff",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#12182c",
+            "outline-variant": "#e4e7ec",
+            "on-tertiary-fixed-variant": "#004f51",
+            "secondary": "#5b6475",
+            "on-secondary": "#ffffff",
+            "tertiary": "#00696c",
+            "on-tertiary-container": "#004446",
+            "tertiary-fixed": "#99f1f4",
+            "on-tertiary": "#ffffff",
+            "surface": "#ffffff",
+            "secondary-fixed-dim": "#c0c5e0",
+            "error": "#c62828",
+            "surface-dim": "#d1daee",
+            "surface-variant": "#dae3f7",
+            "surface-bright": "#fdfcfb"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "0.5rem",
+            "space-xs": "0.25rem",
+            "margin": "1rem",
+            "space-lg": "1.5rem",
+            "space-md": "1rem",
+            "space-sm": "0.5rem",
+            "space-xl": "2rem"
+          },
+          "fontFamily": {
+            "price-display": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "body-medium": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "label-md": ["Inter"],
+            "price-sm": ["Montserrat"],
+            "body-lg": ["Inter"],
+            "label-sm": ["Inter"],
+            "body-md": ["Inter"],
+            "headline-md": ["Montserrat"]
+          },
+          "fontSize": {
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-feature-settings: 'liga';
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Brand wavy motif */
+    .road-wave {
+      stroke-dasharray: 4 2;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen flex flex-col items-center antialiased select-none font-body-md text-body-md">
+<!-- Mobile Container Baseline 390px -->
+<div class="w-full max-w-[390px] min-h-screen bg-background flex flex-col relative pb-8">
+<!-- Top App Bar (Shared Component Style Anchor) -->
+<header class="w-full h-14 bg-inverse-surface flex items-center justify-between px-4 sticky top-0 z-50">
+<div class="flex items-center gap-3">
+<button aria-label="Volver" class="w-8 h-8 rounded-full flex items-center justify-center text-surface hover:opacity-90 active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined text-surface" data-icon="arrow_back">arrow_back</span>
+</button>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-primary-container text-[20px]" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+</div>
+<!-- Step Indicator Badge -->
+<div class="flex items-center">
+<span class="px-2.5 py-1 rounded-full bg-surface/10 text-surface text-[12px] font-label-md font-semibold tracking-wide">
+          Paso 1 de 2
+        </span>
+</div>
+</header>
+<!-- Visual Progress Bar Indicator -->
+<div class="w-full bg-outline-variant/30 h-1">
+<div class="bg-primary-container h-1 w-1/2 rounded-r-full transition-all duration-300"></div>
+</div>
+<!-- Main Registration Flow Content Canvas -->
+<main class="flex-1 px-4 pt-6 flex flex-col gap-6">
+<!-- Header & Brand Road Wavy Motif -->
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<h1 class="font-headline-xl text-headline-xl text-on-surface">¿Cómo vas a usar cadeApp?</h1>
+</div>
+<!-- Wavy Road motif vector accent -->
+<div aria-hidden="true" class="flex items-center gap-2 py-0.5">
+<svg class="text-primary-container" fill="none" height="8" viewbox="0 0 48 8" width="48">
+<path d="M1 4C6 4 8 1 13 1C18 1 20 7 25 7C30 7 32 1 37 1C42 1 44 4 47 4" stroke="currentColor" stroke-linecap="round" stroke-width="2"></path>
+</svg>
+<div class="h-[1px] flex-1 bg-outline-variant/60"></div>
+</div>
+<p class="text-secondary font-body-md text-body-md leading-snug">
+          Elegí tu rol para configurar tu perfil en tu ciudad.
+        </p>
+</div>
+<!-- Role Selection Bento Cards -->
+<section aria-label="Selección de perfil" class="flex flex-col gap-3">
+<!-- Role 1: Comercio (SELECTED STATE) -->
+<div aria-checked="true" class="cursor-pointer relative p-4 rounded-[12px] bg-surface border-2 border-primary-container flex items-start justify-between gap-3 shadow-sm transition-all active:scale-[0.99]" id="card-comercio" role="radio" tabindex="0">
+<div class="flex items-start gap-3.5">
+<div class="w-11 h-11 rounded-[10px] bg-primary-container/15 flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-primary text-[24px]" data-icon="storefront">storefront</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-md text-[16px] leading-[22px] font-bold text-on-surface">Tengo un comercio o emprendimiento</span>
+<span class="text-secondary font-body-md text-[14px] leading-tight mt-1">Publicá entregas y elegí al repartidor.</span>
+</div>
+</div>
+<!-- Selected Check Badge -->
+<div class="shrink-0 w-6 h-6 rounded-full bg-primary-container flex items-center justify-center mt-0.5 text-on-surface shadow-xs">
+<span class="material-symbols-outlined text-[16px] font-bold" data-icon="check">check</span>
+</div>
+</div>
+<!-- Role 2: Repartidor (UNSELECTED STATE) -->
+<div aria-checked="false" class="cursor-pointer relative p-4 rounded-[12px] bg-surface border border-outline-variant flex items-start justify-between gap-3 transition-all hover:border-outline active:scale-[0.99]" id="card-repartidor" role="radio" tabindex="0">
+<div class="flex items-start gap-3.5">
+<div class="w-11 h-11 rounded-[10px] bg-outline-variant/30 flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-secondary text-[24px]" data-icon="two_wheeler">two_wheeler</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-md text-[16px] leading-[22px] font-bold text-on-surface">Quiero repartir</span>
+<span class="text-secondary font-body-md text-[14px] leading-tight mt-1">Ofertá en las entregas de tu ciudad.</span>
+</div>
+</div>
+<!-- Unselected Radio Placeholder -->
+<div class="shrink-0 w-6 h-6 rounded-full border-2 border-outline-variant flex items-center justify-center mt-0.5"></div>
+</div>
+</section>
+<!-- Account Credentials Form -->
+<form class="flex flex-col gap-4" onsubmit="event.preventDefault();">
+<!-- Input Email -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="email">
+            Email
+          </label>
+<div class="relative flex items-center">
+<input class="w-full h-12 px-4 rounded-[10px] bg-surface border border-outline-variant text-[16px] text-on-surface placeholder:text-secondary/60 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-colors" id="email" name="email" placeholder="tu@email.com" required="" type="email"/>
+</div>
+</div>
+<!-- Input Password -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="password">
+            Contraseña
+          </label>
+<div class="relative flex items-center">
+<input class="w-full h-12 pl-4 pr-11 rounded-[10px] bg-surface border border-outline-variant text-[16px] text-on-surface placeholder:text-secondary/60 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container transition-colors" id="password" name="password" placeholder="••••••••" required="" type="password"/>
+<button aria-label="Mostrar u ocultar contraseña" class="absolute right-3 p-1.5 text-secondary hover:text-on-surface flex items-center justify-center transition-colors" id="toggle-password" type="button">
+<span class="material-symbols-outlined text-[20px]" data-icon="visibility">visibility</span>
+</button>
+</div>
+<span class="text-secondary font-body-md text-[13px] leading-tight flex items-center gap-1">
+<span class="material-symbols-outlined text-[15px]" data-icon="info">info</span>
+            Mínimo 8 caracteres
+          </span>
+</div>
+<!-- Terms and Privacy Checkbox -->
+<div class="flex items-start gap-3 pt-1">
+<div class="flex items-center h-5 mt-0.5">
+<input class="w-4 h-4 rounded-[4px] border-outline-variant text-primary focus:ring-primary-container accent-primary-container cursor-pointer" id="terms" name="terms" required="" type="checkbox"/>
+</div>
+<label class="text-secondary font-body-md text-[13px] leading-snug cursor-pointer select-none" for="terms">
+            Acepto los <a class="text-primary font-semibold underline underline-offset-2 hover:opacity-80 transition-opacity" href="#">Términos</a> y la <a class="text-primary font-semibold underline underline-offset-2 hover:opacity-80 transition-opacity" href="#">Política de privacidad</a>
+</label>
+</div>
+<!-- CTA Button -->
+<div class="pt-2">
+<button class="w-full h-12 rounded-[10px] bg-primary-container text-on-primary-container font-label-md font-semibold text-[16px] flex items-center justify-center gap-2 hover:opacity-95 active:scale-[0.98] transition-all shadow-none" type="submit">
+<span>Crear cuenta</span>
+<span class="material-symbols-outlined text-[20px]" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</form>
+<!-- Bottom Login Switch Anchor -->
+<div class="flex items-center justify-center gap-1.5 pt-2 text-center">
+<span class="text-secondary font-body-md text-body-md">¿Ya tenés cuenta?</span>
+<a class="text-primary font-label-md font-semibold hover:underline transition-all" href="#">
+          Ingresá
+        </a>
+</div>
+</main>
+<!-- Footer Component (Shared Anchor Blueprint) -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center border-t border-outline-variant/40 mt-6">
+<div class="flex flex-wrap justify-center items-center gap-x-4 gap-y-2">
+<a class="text-secondary hover:text-on-surface font-body-md text-body-md transition-colors duration-150" href="#">Términos y condiciones</a>
+<span class="text-outline-variant">•</span>
+<a class="text-secondary hover:text-on-surface font-body-md text-body-md transition-colors duration-150" href="#">Privacidad</a>
+<span class="text-outline-variant">•</span>
+<a class="text-secondary hover:text-on-surface font-body-md text-body-md transition-colors duration-150" href="#">Ayuda y contacto</a>
+</div>
+<p class="text-secondary font-body-md text-body-md text-[13px]">
+        © 2024 cadeApp. Envíos locales y logística inteligente.
+      </p>
+</footer>
+</div>
+<!-- Micro-interactions Script -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Toggle role card selection
+      const cardComercio = document.getElementById('card-comercio');
+      const cardRepartidor = document.getElementById('card-repartidor');
+
+      function selectCard(selected, unselected) {
+        // Selected style update
+        selected.setAttribute('aria-checked', 'true');
+        selected.className = "cursor-pointer relative p-4 rounded-[12px] bg-surface border-2 border-primary-container flex items-start justify-between gap-3 shadow-sm transition-all active:scale-[0.99]";
+        
+        const selectedIconBox = selected.querySelector('.w-11');
+        selectedIconBox.className = "w-11 h-11 rounded-[10px] bg-primary-container/15 flex items-center justify-center shrink-0 mt-0.5";
+        const selectedIcon = selected.querySelector('.material-symbols-outlined');
+        selectedIcon.className = "material-symbols-outlined text-primary text-[24px]";
+
+        const selectedBadgeContainer = selected.querySelector('.shrink-0.w-6');
+        selectedBadgeContainer.className = "shrink-0 w-6 h-6 rounded-full bg-primary-container flex items-center justify-center mt-0.5 text-on-surface shadow-xs";
+        selectedBadgeContainer.innerHTML = '<span class="material-symbols-outlined text-[16px] font-bold" data-icon="check">check</span>';
+
+        // Unselected style update
+        unselected.setAttribute('aria-checked', 'false');
+        unselected.className = "cursor-pointer relative p-4 rounded-[12px] bg-surface border border-outline-variant flex items-start justify-between gap-3 transition-all hover:border-outline active:scale-[0.99]";
+        
+        const unselectedIconBox = unselected.querySelector('.w-11');
+        unselectedIconBox.className = "w-11 h-11 rounded-[10px] bg-outline-variant/30 flex items-center justify-center shrink-0 mt-0.5";
+        const unselectedIcon = unselected.querySelector('.material-symbols-outlined');
+        unselectedIcon.className = "material-symbols-outlined text-secondary text-[24px]";
+
+        const unselectedBadgeContainer = unselected.querySelector('.shrink-0.w-6');
+        unselectedBadgeContainer.className = "shrink-0 w-6 h-6 rounded-full border-2 border-outline-variant flex items-center justify-center mt-0.5";
+        unselectedBadgeContainer.innerHTML = '';
+      }
+
+      cardComercio.addEventListener('click', () => selectCard(cardComercio, cardRepartidor));
+      cardRepartidor.addEventListener('click', () => selectCard(cardRepartidor, cardComercio));
+
+      // Toggle password visibility
+      const togglePasswordBtn = document.getElementById('toggle-password');
+      const passwordInput = document.getElementById('password');
+
+      togglePasswordBtn.addEventListener('click', () => {
+        const isPassword = passwordInput.getAttribute('type') === 'password';
+        passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+        const icon = togglePasswordBtn.querySelector('.material-symbols-outlined');
+        icon.innerText = isPassword ? 'visibility_off' : 'visibility';
+        icon.setAttribute('data-icon', isPassword ? 'visibility_off' : 'visibility');
+      });
+    });
+  </script>
+</body></html>

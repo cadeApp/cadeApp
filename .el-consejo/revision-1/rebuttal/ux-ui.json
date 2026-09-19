@@ -1,0 +1,26 @@
+{
+  "conflicts": [
+    {
+      "class": "product",
+      "id": "recipient-pii-visibility-timing",
+      "parties": [
+        "security",
+        "pm",
+        "ux-ui"
+      ],
+      "reversible": false,
+      "summary": "El plan no dice si el teléfono y la dirección de entrega del destinatario se muestran a todos los repartidores que ofertan o solo al elegido. Mostrarlos antes ayuda a que el repartidor calcule mejor su oferta (necesidad de producto/UX), pero expone datos de un tercero sin consentimiento a oferentes que nunca ganan la solicitud (postura de seguridad). Es una decisión de producto que security recomienda resolver a favor de revelar recién al aceptar la oferta."
+    }
+  ],
+  "entries": [
+    {
+      "conflict_id": "recipient-pii-visibility-timing",
+      "position": "adjust",
+      "summary": "UX/UI ajusta y formaliza su postura en pleno consenso con Seguridad y PM: se adopta el patrón de revelación progresiva (progressive disclosure). En el feed público de solicitudes es suficiente mostrar zona/barrio y distancia aproximada para estimar la tarifa; el teléfono y domicilio exacto del destinatario se revelan exclusivamente al repartidor cuya oferta haya sido aceptada (estado MATCHED)."
+    }
+  ],
+  "_transport": {
+    "provider": "agy",
+    "compaction": 1
+  }
+}

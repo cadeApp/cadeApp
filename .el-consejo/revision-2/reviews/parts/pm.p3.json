@@ -1,0 +1,85 @@
+{
+  "agentId": "pm",
+  "confidence": 0.88,
+  "conflicts": [
+    {
+      "class": "product",
+      "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "parties": [
+        "pm",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14."
+    }
+  ],
+  "findings": [
+    {
+      "assumptions": [
+        "Si un desarrollador deja una tarea incompleta y otro la retoma con una nueva sesión de agy, el agente recreará la rama desde develop o generará conflictos al reescribir tests ya existentes si sigue el procedimiento estándar."
+      ],
+      "correction": "Incorporar en la skill tomar-tarea (o crear una skill complementaria retomar-tarea) una bifurcación para tareas en estado 'en curso' que descargue la rama remota existente y verifique el diff previo; incorporar en §8 una sección '## Bitácora / Handoff' en la plantilla de tarea y adaptar el prompt de arranque de §9 para contemplar la continuidad de tareas.",
+      "evidence": [
+        "§5 tomar-tarea/SKILL.md pasos 3 y 5: 'git switch develop && git pull && git switch -c feat/T-xxx-<slug>' y 'Escribir primero las pruebas del DoD y confirmar que fallan'.",
+        "§8 docs/tasks/_plantilla.md: Carece de campos para registrar el progreso actual, rama activa o notas de traspaso (handoff).",
+        "§9 Prompt de arranque: Asume inicio desde cero con 'Tomá la tarea T-xxx de cadeApp usando la skill tomar-tarea.'"
+      ],
+      "impact": "Pérdida de avance de trabajo en curso, colisiones de ramas en Git y bloqueo del objetivo de que cualquiera de las 3 personas pueda continuar el trabajo de otra en momentos diferentes.",
+      "severity": "high",
+      "statement": "La skill tomar-tarea (§5) y el prompt de arranque (§9) no contemplan el flujo para retomar tareas en curso ni el traspaso asincrónico entre distintas personas o sesiones de agy."
+    },
+    {
+      "assumptions": [
+        "P1 podría ajustar una función RPC o esquema por conveniencia técnica de base de datos, forzando a que las pistas de producto (P2) modifiquen las entidades y casos de uso de dominio, contraviniendo especificaciones funcionales del master plan."
+      ],
+      "correction": "Modificar §10.3 para establecer que los contratos de dominio (src/domain/) definen la verdad funcional del producto; si la RPC y domain difieren, la base de datos no se impone automáticamente: se abre un contract-change que debe ser validado por la pista funcional afectada o elevado a checkpoint humano si altera decisiones del producto.",
+      "evidence": [
+        "§10.3: 'Conflictos de contrato: gana la base (P1). Si domain y la RPC difieren, se abre una contract-change y se detienen las tareas afectadas.'"
+      ],
+      "impact": "Alteración silenciosa de reglas de negocio y flujos funcionales del MVP acordados en el master plan (D1 a D14) para acomodar conveniencias o limitaciones técnicas de persistencia sin evaluación de producto.",
+      "severity": "high",
+      "statement": "La regla de resolución de conflictos de contrato (§10.3) donde 'gana la base (P1)' subordina las decisiones y contratos de producto/dominio a restricciones de base de datos sin supervisión humana."
+    },
+    {
+      "assumptions": [
+        "Los miembros del equipo no compartirán necesariamente un horario laboral coincidente, por lo que una reunión diaria síncrona paralizará la toma de tareas y la revisión de PRs para quienes operen en bandas horarias diferentes."
+      ],
+      "correction": "Reemplazar o complementar la sincronización diaria síncrona en §10.1 con un protocolo asincrónico diario formal (p. ej. reporte diario en GitHub Discussions / PR con: tarea en curso, contratos afectados, PRs bloqueados y necesidades de review).",
+      "evidence": [
+        "§10.1: 'Sincronización diaria corta: qué tarea toma cada uno, qué contratos cambian y qué PRs esperan review.'",
+        "Scope y constraints: 'las personas pueden trabajar en momentos distintos y cualquiera tiene que poder retomar o continuar trabajo', 'coordinación asincrónica entre personas y agentes'."
+      ],
+      "impact": "Tiempos muertos esperando la reunión síncrona para destrabar dependencias o revisiones de código, degradando la velocidad de entrega del MVP en un esquema asincrónico.",
+      "severity": "medium",
+      "statement": "La exigencia de una sincronización diaria síncrona (§10.1) colisiona con el requisito de permitir trabajo en momentos distintos y desacoplados."
+    },
+    {
+      "assumptions": [
+        "Sin un procedimiento claro de release/promoción entre ambientes, los 3 desarrolladores podrían generar inconsistencias entre lo probado en staging y lo integrado en develop, o saltarse la validación E2E previa a producción."
+      ],
+      "correction": "Definir en §6 la mecánica de promoción entre ambientes: PRs periódicos de release de develop a staging para estabilización y ejecución de la suite E2E completa, y PRs de staging a main sujetos a aprobación de release con verificación de criterios de aceptación del MVP.",
+      "evidence": [
+        "§6: Define ramas main, staging, develop y feat/T-xxx-*, pero solo especifica integración de PRs de features hacia develop y protecciones aisladas en main.",
+        "§6: 'e2e-staging.yml: después del deploy en staging, corre la suite completa y publica el reporte como artefacto.', pero no describe cómo ni cuándo staging se sincroniza desde develop ni cómo se autoriza el paso a main."
+      ],
+      "impact": "Falta de visibilidad sobre cuándo un hito del MVP está listo para ser validado funcionalmente en staging y riesgo de deploys a producción con features a medio integrar o sin corte de versión consensuado.",
+      "severity": "medium",
+      "statement": "El plan operativo de Git y CI/CD (§6) no explicita el flujo de promoción ni los criterios de aceptación para mover incrementos desde develop a staging y de staging a main."
+    },
+    {
+      "assumptions": [
+        "Un agente agy o desarrollador puede satisfacer el DoD técnico (escribir tests unitarios que pasen) sin haber cubierto los escenarios de usuario y validaciones funcionales requeridas por el master plan."
+      ],
+      "correction": "Incorporar en §8 una sección explícita '## Criterios de aceptación' (en formato Dado/Cuando/Entonces o checklist funcional verificable por el usuario) antes del DoD, exigiendo que las pruebas del DoD validen directamente cada criterio de aceptación.",
+      "evidence": [
+        "§8 docs/tasks/_plantilla.md: Incluye '## Objetivo' (2-3 líneas) y '## DoD' con checks de pruebas, typecheck, lint, test:db y PR, pero sin definición estructurada de criterios de aceptación funcionales."
+      ],
+      "impact": "Desviación entre lo que la tarea construye técnicamente y lo que el usuario o el negocio necesita, detectándose fallas funcionales recién en etapas tardías de integración o pruebas E2E.",
+      "severity": "medium",
+      "statement": "La ficha de tarea (§8) carece de una sección específica de Criterios de Aceptación funcionales observables, limitándose a una lista técnica de DoD."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Dictamen condicional de PM sobre la Parte 3 (§5, §6, §8, §9, §10). El diseño de procesos y reglas para agy es sólido, pero presenta brechas operativas en la coordinación asincrónica real (falta protocolo para retomar tareas en curso), subordinación indebida de contratos de negocio ante la base de datos (§10.3), ausencia de un flujo formal de promoción entre ambientes (develop -> staging -> main) y falta de criterios de aceptación funcionales estructurados en la ficha de tarea.",
+  "verdict": "conditional"
+}

@@ -1,0 +1,12 @@
+finance: nivel 0 excede la línea de comandos (51178); compacto
+pm: nivel 0 excede la línea de comandos (82192); compacto
+ux-ui: nivel 0 excede la línea de comandos (33774); compacto
+pm: nivel 1 excede la línea de comandos (48983); compacto
+pm: nivel 2 excede la línea de comandos (39475); compacto
+pm: FALLÓ AGY_TRANSPORT_INVALID_OPTIONS La línea de comandos total de Windows excede el límite máximo admitido (34550 > 32000 caracteres; límite lpCommandLine de Windows: 32 767)
+legal: nivel 0 excede la línea de comandos (36723); compacto
+finance: réplica ok (compactación 1, 48 s)
+marketing: nivel 0 excede la línea de comandos (32976); compacto
+ux-ui: FALLÓ  ux-ui: entrada inválida
+marketing: FALLÓ  marketing: entrada inválida
+legal: FALLÓ  legal: entrada inválida

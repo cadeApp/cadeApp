@@ -1,0 +1,10 @@
+{
+  "conflicts": [],
+  "entries": [
+    {
+      "conflict_id": "qa-scope-vs-speed",
+      "summary": "Ajusto el conflicto: el propio PM marcó como crítico el mismo vacío que yo señalé (pm.review.0: falta de máquina de estados finita, con una FSM propuesta DRAFT→PUBLISHED→MATCHED→IN_TRANSIT→DELIVERED, terminales CANCELLED/EXPIRED y timeout automático de 30 min sin ofertas). Eso corrobora mis hallazgos qa.review.0 y qa.review.4 en vez de contradecirlos: no hay evidencia de que PM quiera tratar la FSM como iteración post-MVP, así que la premisa original del conflicto (QA exhaustivo vs. PM apurado en este punto) no se sostiene tal como estaba planteada. La FSM de PM cubre gran parte de la expiración de solicitudes (qa.review.4), pero deja sin resolver dos puntos que sostengo como críticos: (a) qué mecanismo garantiza que la transición a MATCHED sea atómica y exclusiva bajo aceptaciones concurrentes (qa.review.0) -el timeout de 30 min no dice nada sobre exclusión mutua en el 'accept'-; (b) el chequeo server-side del estado de aprobación del repartidor en cada oferta, incluida revocación (qa.review.1), que PM no menciona en su FSM ni en pm.review.4 (que solo cubre el panel de aprobación, no la verificación en tiempo de oferta). Pido que ambos puntos se incorporen como parte del detalle de implementación de la FSM que propone PM, no como ítems aparte, y que las transiciones CANCELLED especifiquen quién puede dispararlas y desde qué estado. El resto de mis hallazgos no abordados por PM (oferta mínima ambigua qa.review.3, suscripción vencida qa.review.5, push sin respaldo qa.review.6, ausencia total de estrategia de pruebas qa.review.2) los mantengo sin cambios: PM no los contradice ni los cubre.",
+      "position": "adjust"
+    }
+  ]
+}

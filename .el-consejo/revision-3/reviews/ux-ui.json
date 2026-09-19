@@ -1,0 +1,32 @@
+{
+  "agentId": "ux-ui",
+  "verdict": "conditional",
+  "confidence": 0.92,
+  "summary": "Dictamen de UX-UI: CONDICIONAL (0.92). La inclusion de seleccion de pin en mapa mejora drasticamente la usabilidad en Aguilares frente a la falta de numeracion. Condicionado a: 1) En mobile, la fijacion del pin debe permitir ajuste manual sin arrastre (modo cruz central con mapa movil, botones de micro-ajuste, boton \"Usar mi ubicacion\" con touch target >= 48px); 2) Mostrar claramente la distancia redondeada (ej: \"≈ 2,0 km\") en tarjetas y resumenes; 3) Proveer estados claros de error y carga (pin fuera de Aguilares, mapa sin conexion, reintento); 4) Boton de accion principal \"Abrir en Google Maps\" prominente de 48px en la vista de viaje para despacho directo hacia la app nativa.",
+  "findings": [
+    {
+      "statement": "Fijacion accesible de pin en pantalla tactil de 360-390px sin depender de arrastre de precision.",
+      "severity": "high",
+      "impact": "Arrastrar un pin con el dedo en pantallas tactiles pequenas puede resultar frustrante o inexacto en esquinas o calles secundarias de tierra.",
+      "evidence": [
+        "docs/agy-kit/.agents/rules/25-stack-y-patrones.md §1 (WCAG AA, targets 48px)."
+      ],
+      "correction": "Implementar selector de mapa con pin central fijo (crosshair) donde el usuario desplaza el mapa por debajo, sumado a boton \"Usar mi ubicacion\", campos editables de referencia y botones de ajuste.",
+      "assumptions": [
+        "La geolocalizacion del navegador del comercio tiene una precision tipica de 10-50m en zonas urbanas."
+      ]
+    },
+    {
+      "statement": "Degradacion visual clara y accesible ante fallo de carga del script de mapas (T03).",
+      "severity": "medium",
+      "impact": "Una pantalla rota o con bloque gris sin mensaje desorienta al comerciante y frustra la publicacion de envios.",
+      "evidence": [
+        "docs/design/stitch/05-transversales.md T03."
+      ],
+      "correction": "Disenar e implementar el estado fallback: banner informativo sutil (\"No pudimos cargar el mapa; continua con la direccion y referencia\") y formulario de texto completo.",
+      "assumptions": [
+        "Los comercios conocen el barrio y las calles de referencia de su cliente."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "code": "AGY_TRANSPORT_INVALID_OPTIONS",
+  "message": "La línea de comandos total de Windows excede el límite máximo admitido (34550 > 32000 caracteres; límite lpCommandLine de Windows: 32 767)"
+}

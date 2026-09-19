@@ -1,0 +1,65 @@
+{
+  "agentId": "devops",
+  "verdict": "conditional",
+  "confidence": 0.72,
+  "summary": "El plan de implementación cubre lo esencial de un esquema de tres ambientes (ramas protegidas, CI con typecheck/lint/test/db-tests, migrate.yml por ambiente, CODEOWNERS por pista) y respeta las decisiones D11/D12 del master plan. Sin embargo, para el objetivo explícito de que 3 personas trabajen en simultáneo y CUALQUIERA pueda retomar el trabajo en otro momento, quedan huecos operativos: el flujo develop→staging→main no define cadencia ni dueño del corte de release ni cómo reconciliar una migración de hotfix; solo P1 puede mergear migraciones sin plan de respaldo (single point of failure); migrate.yml no declara control de concurrencia; el CI no menciona caché ni paralelización pese a la política de PRs chicos y frecuentes; el arranque bloquea a las 3 personas detrás de una sola tarea de scaffold sin time-box; y no se fijan versiones de Node/Supabase CLI/Docker ni existe un documento único de bootstrap del entorno local. Los costos operativos de tres proyectos Supabase + tres ambientes de hosting + minutos de CI ya están correctamente marcados como supuesto y delegados a T-007/ADR-0002 en el master plan; el plan de implementación no agrega ni contradice eso, solo referencia las tareas, lo cual es razonable pero deja el punto sin cerrar hasta que esas ADR existan.",
+  "findings": [
+    {
+      "severity": "high",
+      "statement": "El flujo de ramas (feat→develop→staging→main, hotfix fix/T-xxx-* desde main con back-merge a staging/develop) no define cadencia ni dueño del corte develop→staging, ni cómo se resuelven conflictos en ese PR de release, ni cómo se reconcilia una migración introducida directamente por un hotfix a main con el orden normal de migraciones (que en el resto del plan siempre pasa primero por develop/staging).",
+      "impact": "Con 3 personas mergeando a develop continuamente, el PR develop→staging puede acumular semanas de cambios sin fecha de corte definida; sin protocolo para ese merge grande, cualquiera puede resolverlo ad hoc arriesgando pérdida de cambios. Un hotfix con cambio de esquema aplicado primero a producción rompe la garantía implícita de que todo esquema se prueba antes en staging, y no hay instrucción explícita que prohíba o condicione ese caso.",
+      "correction": "Documentar en 50-git-y-ambientes.md: (1) cadencia y dueño del corte develop→staging (p. ej. release train semanal, responsable rotativo entre las 3 personas); (2) que el PR de release no absorbe resolución de conflictos de código (si hay conflicto, se bloquea hasta que develop esté verde, no se resuelve en el propio PR de release); (3) que un hotfix con cambio de esquema requiere aprobación explícita de P1 y replicación manual a develop/staging el mismo día, dejándolo escrito en AGENTS.md y supabase/AGENTS.md.",
+      "evidence": [
+        "original.md:311-317 (sección 6: ramas, hotfix y back-merge descritos sin cadencia ni dueño de corte de release)",
+        "original.md:439-440 (Coordinación del equipo: 'gana la base (P1)' y 'una sola persona las mergea', sin protocolo para el PR develop→staging)"
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "Solo P1 puede mergear migraciones y regenerar src/types/database.types.ts, sin plan de respaldo documentado, y migrate.yml no declara control de concurrencia (`concurrency:` group) para evitar que dos ejecuciones de `supabase db push` corran en paralelo contra el mismo proyecto de ambiente.",
+      "impact": "Si P1 no está disponible en cualquier momento de un proyecto de meses, nadie puede mergear una migración correctiva ni regenerar tipos, bloqueando tareas de P2/P3 que dependen de RPC nuevas (p. ej. T-112/T-114 dependen de T-101/T-103). Esto contradice el requisito explícito de que cualquiera pueda retomar o continuar el trabajo. Además, dos merges cercanos a supabase/** podrían disparar dos corridas de migrate.yml en paralelo contra el mismo proyecto Supabase, con riesgo de estado parcial o inconsistente.",
+      "correction": "Agregar `concurrency: { group: migrate-<ambiente>, cancel-in-progress: false }` en migrate.yml para serializar despliegues por ambiente. Documentar un procedimiento de respaldo acotado para cuando P1 no está disponible (p. ej. una segunda persona entrenada que puede mergear una migración ya revisada, dejando constancia de que es una excepción vigilada y no una apertura general de supabase/**).",
+      "evidence": [
+        "original.md:26 (Solo P1 mergea migraciones y regenera src/types/database.types.ts)",
+        "original.md:218 (supabase/AGENTS.md: Solo P1 mergea acá)",
+        "original.md:315 (migrate.yml aplica supabase db push al mergear, sin mención de concurrency)",
+        "original.md:440 (una sola persona las mergea (P1), sin plan de respaldo)"
+      ],
+      "assumptions": [
+        "Se asume que `supabase db push` no tiene un mecanismo propio de bloqueo ante ejecuciones concurrentes si el workflow no lo declara explícitamente."
+      ]
+    },
+    {
+      "severity": "medium",
+      "statement": "El pipeline ci.yml (pnpm install --frozen-lockfile → typecheck → lint → test → supabase start + test:db → db:types sin diff → build) se describe como secuencial y no menciona caché de pnpm, de las imágenes Docker de Supabase local ni de Playwright/Next.js build, ni paralelización de jobs.",
+      "impact": "Con 3 personas abriendo PRs chicos y frecuentes (regla explícita de PRs de ~400 líneas), cada PR dispara una corrida completa que descarga imágenes Docker de Supabase y reconstruye sin caché; esto puede llevar el CI a corridas largas, frenando el ciclo de review/merge y consumiendo más minutos de GitHub Actions de lo necesario, un costo operativo no estimado en el plan.",
+      "correction": "Agregar a ci.yml caché de pnpm store, caché de la instalación/imágenes de Supabase CLI entre corridas, y separar typecheck/lint/test unitario en jobs paralelos, dejando supabase start + test:db como job aislado. Fijar un tiempo objetivo de CI (p. ej. menos de 8 minutos) como criterio de aceptación de T-003.",
+      "evidence": [
+        "original.md:314 (CI (ci.yml): pnpm install --frozen-lockfile → typecheck → lint → test → supabase start + test:db → db:types sin diff → build, sin mención de caché ni paralelización)",
+        "original.md:13 (regla: PRs de hasta unas 400 líneas netas, que implica alta frecuencia de corridas de CI)"
+      ]
+    },
+    {
+      "severity": "medium",
+      "statement": "El arranque depende de que P3 complete en solitario T-000 (scaffold: Next.js, TS strict, ESLint con fronteras, Prettier, Vitest, Playwright y estructura de carpetas) antes de que P1 (T-002) y P2 (T-006, T-008) puedan empezar; además T-004, T-005, T-006 y T-008 no declaran T-003 (CI y protección de ramas) como dependencia, por lo que podrían mergearse a develop antes de que exista CI o protección de rama.",
+      "impact": "Las 3 personas quedan bloqueadas el primer día detrás de una sola tarea sin time-box ni plan de contingencia si T-000 se extiende. Además, los primeros PRs de esquema, RLS y dominio podrían mergearse a develop sin checks automáticos ni protección de rama, porque T-003 no es dependencia declarada de esas tareas.",
+      "correction": "Time-boxear T-000 con un DoD mínimo viable (mover configuraciones no bloqueantes como Playwright completo a una tarea paralela T-000b) y declarar T-003 como dependencia explícita de T-004, T-005, T-006 y T-008, o documentar explícitamente que esas primeras tareas se mergean con revisión manual reforzada hasta que T-003 esté activo.",
+      "evidence": [
+        "original.md:327-335 (tabla Fase 0: T-000 sin dependencias; T-002/T-006/T-008 dependen de T-000; T-004/T-005/T-006/T-008 sin dependencia declarada de T-003)",
+        "original.md:386-393 (Paralelismo sugerido: las 3 pistas arrancan recién 'tras T-000')"
+      ]
+    },
+    {
+      "severity": "high",
+      "statement": "El plan fija 'pnpm, versiones fijadas' en package.json pero no especifica cómo se fija la versión de Node.js (engines/corepack), ni pin de versión del Supabase CLI (que determina la imagen de Postgres/Docker usada por `supabase start`), ni versión mínima de Docker, ni existe un documento único de bootstrap del entorno para quien retoma una rama en otro momento.",
+      "impact": "Sin Node y Supabase CLI fijados, dos personas (o la misma persona en dos momentos distintos) pueden ejecutar `supabase start`/`db reset` sobre versiones de Postgres o extensiones distintas, produciendo un esquema local que difiere sutilmente del que valida CI; justo el escenario que el pedido humano busca evitar ('cualquiera tiene que poder retomar el trabajo en momentos distintos'). La skill tomar-tarea/SKILL.md asume el entorno ya funcionando y no cubre el bootstrap de herramientas.",
+      "correction": "Agregar a T-000/T-002: campo engines.node y packageManager (pnpm vía corepack) en package.json; pin de la versión del Supabase CLI documentado y verificable en CI; y un documento único (docs/onboarding.md o sección en AGENTS.md) con los pasos exactos para levantar el entorno local desde cero, referenciado desde tomar-tarea/SKILL.md.",
+      "evidence": [
+        "original.md:75 (package.json # pnpm, versiones fijadas, sin mención de Node ni corepack)",
+        "original.md:329 (T-002: Supabase CLI local... sin requisito de pin de versión en el DoD)",
+        "original.md:245-261 (tomar-tarea/SKILL.md no incluye pasos de bootstrap de entorno)"
+      ]
+    }
+  ],
+  "helperRequests": []
+}

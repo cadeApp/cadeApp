@@ -1,0 +1,60 @@
+{
+  "agentId": "documentation",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "correction": "Especificar en 10-typescript.md y 30-supabase-seguridad.md que todo MESSAGE de error emitido por una RPC debe agregarse como valor del tipo DomainErrorCode en src/domain/errors.ts, y documentar en src/server/rpc.ts el helper canónico encargado de traducir los errores de Postgres a ActionResult.",
+      "evidence": [
+        "AGENTS.md §4.2 (10-typescript.md): 'Errores de dominio: usar el union DomainErrorCode de src/domain/errors.ts; nunca strings sueltos. Resultados de acciones: type ActionResult<T> = { ok: true; data: T } | { ok: false; code: DomainErrorCode }.'",
+        "AGENTS.md §4.2 (30-supabase-seguridad.md): 'Operaciones críticas = funciones SECURITY DEFINER [...] y errores con códigos estables (RAISE EXCEPTION USING ERRCODE=\\'P0001\\', MESSAGE=\\'OFFER_BELOW_MINIMUM\\').'",
+        "AGENTS.md §4.2 (20-arquitectura.md): 'Server actions en features/x/actions.ts [...] llaman a src/server/rpc.ts y devuelven ActionResult.'"
+      ],
+      "impact": "Al trabajar 3 personas y agentes en paralelo, sin una convención documental que sincronice los MESSAGE de base de datos con DomainErrorCode ni una función centralizada en src/server/rpc.ts, los agentes implementarán mapeos ad-hoc o inconsistentes, rompiendo la trazabilidad contractual entre backend y UI.",
+      "severity": "high",
+      "statement": "Falta documentar en las reglas de arquitectura y TypeScript el mecanismo canónico de mapeo y sincronización entre las excepciones de Postgres (MESSAGE en funciones SECURITY DEFINER) y el union DomainErrorCode en TypeScript."
+    },
+    {
+      "correction": "Alinear AGENTS.md §4.1 (Calidad) con 50-git-y-ambientes.md, agregando pnpm db:types: 'Antes de abrir PR: (si tocaste supabase/migrations: pnpm db:types) && pnpm typecheck && pnpm lint && pnpm test && pnpm test:db (si tocaste supabase/).'",
+      "evidence": [
+        "AGENTS.md §4.1 (Calidad): 'Antes de abrir PR: pnpm typecheck && pnpm lint && pnpm test && pnpm test:db (si tocaste supabase/).'",
+        "AGENTS.md §4.2 (50-git-y-ambientes.md): 'src/types/database.types.ts se regenera solo en PRs de migración (pnpm db:types) y el CI falla si difiere.'"
+      ],
+      "impact": "Los agentes que sigan las instrucciones de AGENTS.md omitirán pnpm db:types tras crear migraciones, provocando fallos automáticos en el CI y desincronización en src/types/database.types.ts para las otras personas del equipo.",
+      "severity": "high",
+      "statement": "La lista de comandos pre-PR en AGENTS.md omite la regeneración obligatoria de tipos (pnpm db:types) al modificar supabase/, entrando en contradicción con la regla de CI de 50-git-y-ambientes.md."
+    },
+    {
+      "correction": "Indicar en 50-git-y-ambientes.md la ruta canónica de la plantilla (.github/pull_request_template.md) y especificar sus secciones obligatorias: tarea asociada, cambios introducidos, checklist de verificación local ejecutada y evidencia de pruebas verdes.",
+      "evidence": [
+        "AGENTS.md §4.2 (50-git-y-ambientes.md): 'Un PR = una tarea. Título: [T-xxx] descripción. Completá la plantilla con evidencia de checks.'",
+        "AGENTS.md §4.1 (Seguridad operativa del agente): 'No modifiques AGENTS.md, .agents/**, .github/** ni migraciones ya mergeadas salvo que la tarea lo diga.'"
+      ],
+      "impact": "Al no estar explicitada la ubicación (.github/pull_request_template.md) ni la estructura requerida para registrar la evidencia de checks, los desarrolladores y agentes generarán PRs con formatos dispares sin trazabilidad verificable del cumplimiento de pruebas.",
+      "severity": "medium",
+      "statement": "La regla de PR en 50-git-y-ambientes.md exige completar 'la plantilla' con evidencia de checks pero no documenta la ruta de la plantilla ni los apartados obligatorios requeridos."
+    },
+    {
+      "correction": "Pautar en 40-testing.md que la evidencia de fallo previo se documente brevemente en la descripción del PR (sección de pruebas) o mediante commits atómicos separados (fase roja y fase verde), garantizando trazabilidad auditable del comportamiento verificado.",
+      "evidence": [
+        "AGENTS.md §4.2 (40-testing.md): 'Una prueba que no puede fallar no verifica nada: al agregar una, rompé a propósito la regla y confirmá que falla antes de dejarla verde.'"
+      ],
+      "impact": "Al ser una acción efímera en el entorno local del agente, no queda evidencia documental ni registro auditable en el PR que demuestre que la prueba efectivamente fallaba antes de la solución, imposibilitando la verificación documental asincrónica por parte de otros miembros del equipo.",
+      "severity": "medium",
+      "statement": "La regla de prueba destructiva ('rompé a propósito la regla y confirmá que falla') en 40-testing.md carece de trazabilidad documental verificable en el proceso de entrega."
+    },
+    {
+      "correction": "Especificar en AGENTS.md (Convenciones) que los comentarios en el código, JSDoc/TSDoc y nombres de tests unitarios/E2E deben redactarse en inglés, reservando el español exclusivamente para archivos en docs/ y textos de UI.",
+      "evidence": [
+        "AGENTS.md §4.1 (Convenciones): 'Código e identificadores en inglés; textos de UI en español rioplatense (es-AR); docs en español. Commits: Conventional Commits con id de tarea: feat(offers): submit offer form [T-114].'",
+        "AGENTS.md §4.2 (60-ui-accesibilidad.md): 'Textos en es-AR, directos; no prometer \"verificado\" si el admin no revisó el comprobante.'"
+      ],
+      "impact": "Sin una delimitación clara entre 'código' y 'docs', 3 desarrolladores y sus respectivos agentes alternarán inglés y español en comentarios internos, JSDoc y nombres de tests (it/test), degradando la coherencia y mantenibilidad del código base.",
+      "severity": "medium",
+      "statement": "La convención de idiomas en AGENTS.md presenta ambigüedad respecto al idioma aplicable a comentarios de código, documentación JSDoc/TSDoc y nombres de pruebas automatizadas."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Dictamen de Documentación sobre la sección 4 (Reglas para agy). Se aprueba en forma condicional: la base de reglas es sólida y estructurada, pero requiere resolver la desincronización de comandos pre-PR (pnpm db:types), formalizar la trazabilidad y ubicación de la plantilla de PR, documentar el mapeo contractual entre errores de Postgres (MESSAGE) y DomainErrorCode, auditar la evidencia de pruebas no tautológicas y precisar la convención de idiomas para comentarios y tests.",
+  "verdict": "conditional"
+}

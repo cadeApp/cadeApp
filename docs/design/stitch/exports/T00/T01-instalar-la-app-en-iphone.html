@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+
+<html class="light" lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Instalá cadeApp en tu iPhone</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-error-container": "#93000a",
+            "on-tertiary": "#ffffff",
+            "surface-dim": "#d1daee",
+            "on-primary-fixed": "#002020",
+            "on-surface": "#131c2a",
+            "error-container": "#ffdad6",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-bright": "#f9f9ff",
+            "surface-container-highest": "#dae3f7",
+            "secondary-fixed-dim": "#c0c5e0",
+            "surface-container": "#e7eeff",
+            "on-primary-container": "#004446",
+            "on-surface-variant": "#3c4949",
+            "secondary-fixed": "#dce1fd",
+            "on-tertiary-container": "#004446",
+            "primary-fixed": "#6df6f9",
+            "on-secondary-fixed": "#151b2f",
+            "surface-tint": "#00696b",
+            "tertiary-fixed": "#99f1f4",
+            "error": "#ba1a1a",
+            "on-tertiary-fixed": "#002021",
+            "on-primary": "#ffffff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "inverse-primary": "#4adadd",
+            "on-primary-fixed-variant": "#004f51",
+            "surface-container-lowest": "#ffffff",
+            "secondary-container": "#d9defa",
+            "surface-variant": "#dae3f7",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "on-secondary": "#ffffff",
+            "secondary": "#585d75",
+            "primary-container": "#09babd",
+            "outline": "#6c7a7a",
+            "inverse-surface": "#283140",
+            "surface": "#f9f9ff",
+            "outline-variant": "#bbc9c9",
+            "surface-container-high": "#dfe8fd",
+            "tertiary-container": "#5cb5b8",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-container-low": "#f0f3ff",
+            "tertiary": "#00696c",
+            "on-secondary-container": "#5c6279",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed-variant": "#004f51",
+            "primary": "#00696b",
+            "primary-fixed-dim": "#4adadd"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.25rem",
+            "space-md": "1rem",
+            "space-xl": "2rem",
+            "space-sm": "0.5rem",
+            "margin": "1rem",
+            "gutter": "0.5rem",
+            "space-lg": "1.5rem"
+          },
+          "fontFamily": {
+            "headline-md": ["Montserrat"],
+            "price-sm": ["Montserrat"],
+            "headline-xl": ["Montserrat"],
+            "body-md": ["Inter"],
+            "headline-lg": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "body-lg": ["Inter"],
+            "body-medium": ["Inter"],
+            "label-sm": ["Inter"],
+            "label-md": ["Inter"]
+          },
+          "fontSize": {
+            "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700"}],
+            "price-sm": ["16px", {"lineHeight": "20px", "fontWeight": "700"}],
+            "headline-xl": ["28px", {"lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+            "headline-lg": ["22px", {"lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700"}],
+            "price-display": ["24px", {"lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+            "body-medium": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+            "label-sm": ["14px", {"lineHeight": "16px", "fontWeight": "500"}],
+            "label-md": ["14px", {"lineHeight": "18px", "fontWeight": "600"}]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-background text-on-surface font-body-md text-body-md antialiased min-h-screen flex flex-col justify-between items-center selection:bg-primary-container selection:text-on-primary-container">
+<!-- Mobile Viewport Shell (390px Baseline) -->
+<div class="w-full max-w-[390px] min-h-screen flex flex-col bg-surface relative shadow-sm">
+<!-- Top App Bar (Task Oriented / Linear Onboarding) -->
+<header class="h-14 w-full bg-inverse-surface flex items-center justify-between px-4 sticky top-0 z-50">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 rounded-lg overflow-hidden bg-surface-container-lowest flex items-center justify-center p-0.5">
+<img alt="cadeApp logo" class="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBK5OqYs-0q-pUDvpBHQtsl07v_-nKt1patEv94niBSNwIHuo13jxkdBWRThWJk1EfkRVXB62UJr78AFbjlmy_YaA3iA4JxXywb-Q61X_SS91KCv-GAv6pf59Qvn1D1OR9SWuMoIr-s3cjEP1ZPhvJ-Qft1xTj5Q-ZysQiPK59T1uY9K48w-WV_Aufl80eu80vf-jhFYq7sZUqkl1GgpfjFCI-6J50qrqj2WU0x1SuO1VaAG3-E5kHPsnYo64nFx2p6mg"/>
+</div>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<button aria-label="Cerrar" class="w-8 h-8 rounded-full flex items-center justify-center text-surface/80 hover:text-surface hover:bg-surface/10 active:scale-95 transition duration-150" type="button">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 px-4 py-5 flex flex-col gap-5">
+<!-- Screen Header Stack -->
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-surface-container text-primary">
+            PWA Safari
+          </span>
+<span class="h-1 w-6 rounded-full bg-primary-container"></span>
+</div>
+<h1 class="font-headline-md text-headline-md text-on-surface font-bold">Instalá cadeApp en tu iPhone</h1>
+<p class="font-body-md text-body-md text-secondary leading-snug">Así te llegan los avisos de ofertas y solicitudes al instante.</p>
+</div>
+<!-- Installation Guide Steps (Structured Shadcn-style Flat Cards) -->
+<div class="flex flex-col gap-3">
+<!-- Step 1 -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-4 flex items-start gap-3 relative overflow-hidden">
+<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center font-headline-md text-headline-md text-primary font-bold">
+            1
+          </div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between gap-1">
+<h2 class="font-body-medium text-body-medium text-on-surface font-semibold">Tocá el botón Compartir</h2>
+<div class="w-7 h-7 rounded-md bg-surface flex items-center justify-center text-primary-container border border-outline-variant/30 flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">ios_share</span>
+</div>
+</div>
+<p class="font-body-md text-body-md text-secondary mt-1">Está abajo, en el medio de Safari.</p>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-4 flex items-start gap-3 relative overflow-hidden">
+<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center font-headline-md text-headline-md text-primary font-bold">
+            2
+          </div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between gap-1">
+<h2 class="font-body-medium text-body-medium text-on-surface font-semibold">Elegí «Agregar a inicio»</h2>
+<div class="w-7 h-7 rounded-md bg-surface flex items-center justify-center text-primary-container border border-outline-variant/30 flex-shrink-0">
+<span class="material-symbols-outlined text-[20px]">add_box</span>
+</div>
+</div>
+<p class="font-body-md text-body-md text-secondary mt-1">Deslizá hacia abajo en el menú de opciones para encontrarlo.</p>
+</div>
+</div>
+<!-- Step 3 -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-4 flex items-start gap-3 relative overflow-hidden">
+<div class="flex-shrink-0 w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center font-headline-md text-headline-md text-primary font-bold">
+            3
+          </div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between gap-1">
+<h2 class="font-body-medium text-body-medium text-on-surface font-semibold">Abrí cadeApp desde el ícono</h2>
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center p-1 shadow-sm flex-shrink-0">
+<span class="material-symbols-outlined text-inverse-surface text-[20px]">two_wheeler</span>
+</div>
+</div>
+<p class="font-body-md text-body-md text-secondary mt-1">Ingresá a tu cuenta y habilitá las notificaciones push.</p>
+</div>
+</div>
+</div>
+<!-- Callout Notice for Chrome Users -->
+<div class="bg-surface-container-low rounded-xl border border-outline-variant/30 p-3.5 flex items-start gap-3">
+<span class="material-symbols-outlined text-tertiary flex-shrink-0 text-[20px] mt-0.5">info</span>
+<div class="flex-1">
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+<strong class="font-semibold text-on-surface">¿Usás Chrome en iPhone?</strong> Primero copiá y abrí este enlace directo en <span class="text-primary font-medium">Safari</span> para poder instalarla.
+          </p>
+</div>
+</div>
+<!-- Trust Indicator Badge -->
+<div class="flex items-center justify-center gap-2 pt-1 pb-2">
+<span class="material-symbols-outlined text-primary text-[18px]">verified_user</span>
+<span class="text-xs text-secondary font-medium">No ocupa espacio en la memoria de tu teléfono</span>
+</div>
+</main>
+<!-- Bottom Sticky Actions Deck (Safe Area Compliant) -->
+<div class="sticky bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-sm px-4 pt-3 pb-6 flex flex-col gap-2.5 z-40">
+<!-- Primary Action CTA -->
+<button class="w-full h-12 bg-primary-container hover:opacity-90 active:scale-[0.99] text-on-primary-container font-headline-md text-[16px] font-bold rounded-xl flex items-center justify-center gap-2 transition duration-150" type="button">
+<span>Ya la instalé</span>
+<span class="material-symbols-outlined text-[20px]">check_circle</span>
+</button>
+<!-- Ghost / Secondary Alternative Action -->
+<button class="w-full h-10 hover:bg-surface-container/60 active:scale-[0.99] text-secondary hover:text-on-surface font-body-medium text-body-md font-semibold rounded-lg flex items-center justify-center transition duration-150" type="button">
+        Más tarde
+      </button>
+</div>
+</div>
+</body></html>

@@ -1,0 +1,59 @@
+{
+  "agentId": "documentation",
+  "confidence": 0.9,
+  "findings": [
+    {
+      "correction": "Agregar a docs/tasks/_plantilla.md la sección '## Bitácora de trabajo y Handoff' (con fecha/hora, autor/agente, estado de avance, pruebas ejecutadas y contexto pendiente) y actualizar el paso 8 de tomar-tarea/SKILL.md para exigir asentar el resumen de sesión antes de pausar o abrir PR.",
+      "evidence": [
+        "§8 docs/tasks/_plantilla.md: la plantilla define solo metadatos estáticos (Pista/dueño, Estado, Dependencias, Contratos a leer, Objetivo, Archivos permitidos, Fuera de alcance, Dependencias nuevas, DoD) sin espacio para bitácora de ejecución o notas de traspaso.",
+        "§10.5: 'Sesiones de agy: una sesión por tarea y por rama. No reutilizar una conversación de otra tarea, para que el contexto no arrastre decisiones ajenas.'",
+        "input.constraints: 'las personas pueden trabajar en momentos distintos y cualquiera tiene que poder retomar o continuar trabajo'."
+      ],
+      "impact": "Al reiniciar el contexto en cada sesión de agy según §10.5, si un desarrollador interrumpe una tarea 'en curso', el siguiente miembro del equipo o su agente no sabrá qué se intentó, qué pruebas fallan ni qué bloqueos surgieron, perdiendo trazabilidad y forzando a deducir el estado por ensayo y error.",
+      "severity": "high",
+      "statement": "La plantilla de ficha de tarea (docs/tasks/_plantilla.md) y las pautas de coordinación carecen de una sección de bitácora/handoff para registrar el avance entre sesiones aisladas de agy, impidiendo la trazabilidad cuando otra persona retoma el trabajo asincrónicamente."
+    },
+    {
+      "correction": "Crear y documentar la plantilla docs/contracts/_plantilla_contract_change.md (con campos: contrato afectado, firma actual vs. propuesta, justificación, tareas bloqueadas y aprobación requerida de P1/P2) y referenciar dicha ruta explícita en nueva-rpc/SKILL.md y en el prompt de arranque de agy.",
+      "evidence": [
+        "§5 nueva-rpc/SKILL.md (paso 1): 'Confirmar firma y códigos de error en src/domain/rpc-contracts.ts (si no existen, es contract-change).'",
+        "§9 Prompt de arranque: 'Si un contrato no alcanza, no lo cambies: detenete y escribí qué contract-change hace falta.'",
+        "§10.3 Coordinación: 'Conflictos de contrato: gana la base (P1). Si domain y la RPC difieren, se abre una contract-change y se detienen las tareas afectadas.'"
+      ],
+      "impact": "Cuando agy o un programador detenga una tarea por falta de contrato, el requerimiento quedará en texto libre o en comentarios dispersos, provocando desincronización entre P1 (DB/RPC) y P2 (dominio/frontend) y dificultando la auditoría de cambios en APIs.",
+      "severity": "high",
+      "statement": "El procedimiento de 'contract-change' mencionado en las skills y en las reglas de coordinación carece de plantilla documental, ruta y formato de registro explícito, impidiendo la trazabilidad de discrepancias en contratos de API y RPC."
+    },
+    {
+      "correction": "Incorporar en la definición de CODEOWNERS en §6 la asignación de docs/: docs/tasks/ bajo la pista dueña de la tarea o asignación compartida, docs/adr/ con requerimiento de revisión cruzada obligatoria, y docs/ general asignado a P3 o a las tres pistas.",
+      "evidence": [
+        "§6 Git, CI/CD y ambientes (CODEOWNERS): 'supabase/, src/server/ y src/app/api/ → P1; src/domain/, src/features/{merchants,requests,offers,trips,availability}/, src/app/(merchant|courier)/ y src/ui/ → P2; .agents/, AGENTS.md, .github/, e2e/, public/, src/features/{courier-onboarding,admin,incidents,notifications,legal}/ y src/app/(admin|public)/ → P3.' La ruta docs/ no figura asignada a ninguna pista."
+      ],
+      "impact": "Las modificaciones a especificaciones clave (docs/tasks/, docs/adr/, docs/master-plan.md) podrán mergearse sin la revisión del responsable adecuado, comprometiendo la integridad documental y contractual del repositorio.",
+      "severity": "medium",
+      "statement": "El archivo CODEOWNERS en §6 no asigna propietarios para la carpeta docs/, dejando sin gobernanza formal la revisión de planes, contratos, fichas de tareas y registros de decisiones arquitectónicas (ADR)."
+    },
+    {
+      "correction": "Documentar en §6 la especificación de .github/pull_request_template.md con secciones obligatorias: Tarea T-xxx asociada, resumen de cambios, confirmación de 'Archivos permitidos', checklist de DoD completado y bloque de evidencia de salida de tests y capturas de pantalla.",
+      "evidence": [
+        "§5 tomar-tarea/SKILL.md (paso 8): 'Actualizar Estado en la ficha y abrir PR con la plantilla. No mergear.'",
+        "§6 Git, CI/CD y ambientes: detalla ramas, protecciones y workflows (ci.yml, migrate.yml, e2e-staging.yml), pero omite la existencia y contenido de .github/pull_request_template.md."
+      ],
+      "impact": "Los agentes y humanos redactarán descripciones de PR dispares que omitan referencias a la tarea T-xxx, checklist de DoD verificado o evidencias de pruebas locales exigidas por el flujo de trabajo, degradando la calidad de las revisiones cruzadas.",
+      "severity": "medium",
+      "statement": "La skill tomar-tarea/SKILL.md prescribe abrir Pull Request utilizando una plantilla, pero la plantilla de PR (.github/pull_request_template.md) no está definida ni documentada en la sección de Git y CI/CD."
+    },
+    {
+      "correction": "Especificar en §6 el mantenimiento obligatorio de .env.example en la raíz del repositorio, documentando el propósito de cada variable y detallando valores mock/locales válidos frente a los secrets requeridos exclusivamente en staging y producción.",
+      "evidence": [
+        "§6 Deploy de la app: 'Variables por ambiente: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, DNI_HMAC_SECRET y SENTRY_DSN.'"
+      ],
+      "impact": "Sin un archivo .env.example versionado y documentado con valores seguros/mock para desarrollo local, los nuevos agentes o colaboradores no tendrán una referencia clara para inicializar el proyecto, derivando en fallos en comandos locales como pnpm test y supabase start.",
+      "severity": "medium",
+      "statement": "La sección de ambientes y CI/CD enumera variables de entorno de despliegue pero omite documentar el archivo .env.example para la configuración y reproducibilidad de entornos locales."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Revisión documental de la Parte 3 (§5, §6, §8, §9, §10). Se emite dictamen condicional con 5 hallazgos priorizados orientados a garantizar la trazabilidad en el trabajo asincrónico (bitácora de handoff en la ficha de tarea), formalizar el procedimiento documental de contract-change para APIs/RPCs, asegurar la gobernanza de docs/ en CODEOWNERS, definir la plantilla de PR requerida por la skill tomar-tarea y documentar la configuración local vía .env.example.",
+  "verdict": "conditional"
+}

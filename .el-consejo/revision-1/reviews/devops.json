@@ -1,0 +1,72 @@
+{
+  "agentId": "devops",
+  "verdict": "conditional",
+  "confidence": 0.78,
+  "summary": "El plan resuelve producto y flujo pero deja explícitamente sin responder la pregunta abierta #9 (hosting, despliegue, backups y monitoreo) y no define entornos, CI/CD, mecanismo de tareas programadas ni observabilidad. Para un MVP que guarda documentos sensibles (DNI, selfie) y cobra suscripciones recurrentes, esos vacíos son operables antes de construir, no después.",
+  "findings": [
+    {
+      "severity": "high",
+      "statement": "El plan no define hosting, entornos (dev/preview/prod) ni pipeline de despliegue para el Next.js con backend embebido.",
+      "evidence": [
+        "original.md:69 — '9. Hosting, despliegue, backups y monitoreo del MVP.' figura como pregunta abierta sin respuesta en el resto del documento.",
+        "original.md:53-57 — las restricciones técnicas cubren stack (Next.js, TypeScript strict, PWA, Supabase/Firebase) pero no mencionan proveedor de hosting ni estrategia de entornos."
+      ],
+      "impact": "Sin una decisión de hosting y entornos, el equipo puede terminar desplegando cambios directo a producción sin ambiente de prueba, lo que arriesga interrumpir el único flujo de ingresos (suscripciones de comercios) y la aprobación manual de repartidores durante el lanzamiento en Aguilares.",
+      "correction": "Agregar al plan una recomendación explícita de hosting compatible con Next.js + funciones serverless en el mismo proyecto (por ejemplo Vercel u otro proveedor equivalente), con al menos entorno de desarrollo, preview por rama/PR y producción, y una regla mínima de CI (build + typecheck strict) antes de promover a producción."
+    },
+    {
+      "severity": "high",
+      "statement": "No hay política de backup ni de restauración para los datos del BaaS, en particular para el DNI y la selfie que se piden a cada repartidor.",
+      "evidence": [
+        "original.md:66 — 'cómo se guardan y protegen el DNI y la selfie' queda como pregunta abierta sin resolución de backup/retención.",
+        "original.md:15,20 — el repartidor 'carga DNI, selfie y datos del vehículo' y un admin lo aprueba; no se especifica respaldo de ese almacenamiento."
+      ],
+      "impact": "Una pérdida o corrupción de datos en el BaaS elegido, sin backup ni procedimiento de restauración probado, puede significar pérdida irrecuperable de documentos de identidad usados para habilitar repartidores, con exposición legal y operativa (hay que volver a pedir documentación a todos los repartidores aprobados).",
+      "correction": "Definir antes del lanzamiento una cadencia de backup (nativa del BaaS si el plan pago la ofrece, o exportación programada si se queda en el plan gratuito) y documentar y probar al menos una restauración completa antes de aprobar el primer repartidor real."
+    },
+    {
+      "severity": "medium",
+      "statement": "El plan no especifica el mecanismo técnico para las tareas programadas que el propio flujo requiere: expiración de solicitudes sin ofertas y vencimiento/control de la suscripción mensual de comercios.",
+      "evidence": [
+        "original.md:64 — 'expiración de solicitudes sin ofertas' aparece listada como estado/excepción abierta sin mecanismo definido.",
+        "original.md:13 — 'Ingresos: suscripción mensual para comercios y emprendedores' no describe cómo se detecta o aplica el vencimiento del abono."
+      ],
+      "assumptions": [
+        "Se asume que estas tareas requieren ejecución periódica fuera del ciclo de request-response de Next.js (cron o job programado), ya que no hay un servicio aparte definido en el plan."
+      ],
+      "impact": "Sin un mecanismo de scheduler definido, las solicitudes sin ofertas quedan visibles indefinidamente (degradando la experiencia de los repartidores) y comercios con la suscripción vencida podrían seguir publicando sin pagar, generando fuga de ingresos.",
+      "correction": "Especificar en el plan un mecanismo concreto de tareas programadas compatible con el hosting y el BaaS elegidos (por ejemplo cron jobs del proveedor de hosting invocando una ruta de API, o triggers/funciones programadas del propio BaaS) para expirar solicitudes y verificar el estado de la suscripción."
+    },
+    {
+      "severity": "medium",
+      "statement": "No hay plan de observabilidad ni alertas para detectar fallas del flujo en tiempo real (ofertas, notificaciones) durante el lanzamiento en Aguilares.",
+      "evidence": [
+        "original.md:69 — 'monitoreo del MVP' queda agrupado en la pregunta abierta #9, sin desarrollo posterior en el documento."
+      ],
+      "assumptions": [
+        "Se asume que Lautaro es el único operador del MVP en el lanzamiento, sin guardia dedicada, por lo que una falla silenciosa puede pasar inadvertida por horas."
+      ],
+      "impact": "Una caída del canal de ofertas en tiempo real o de las notificaciones (mencionadas como pregunta abierta #3) pasaría inadvertida, dañando la confianza de los primeros comercios y repartidores captados en Aguilares, justo en la ventana crítica de adopción inicial.",
+      "correction": "Incorporar monitoreo mínimo antes del lanzamiento: verificación de disponibilidad de las rutas críticas, captura de errores de aplicación, y un canal de alerta (email o WhatsApp al admin) cuando falle la publicación de solicitudes, el envío de ofertas o la aprobación de repartidores."
+    },
+    {
+      "severity": "medium",
+      "statement": "El plan no define una estrategia de migraciones de base de datos ni un procedimiento de rollback para cuando el esquema cambie durante la iteración del MVP.",
+      "evidence": [
+        "original.md — el documento completo no menciona control de versiones de esquema, entorno de prueba previo a producción, ni procedimiento de reversión de un despliegue."
+      ],
+      "impact": "Una migración de esquema o un despliegue defectuoso aplicado directo en producción, sin versión previa a la que volver, puede romper el flujo solicitud-oferta-elección para los primeros usuarios reales de Aguilares y sin un camino rápido de vuelta atrás.",
+      "correction": "Exigir migraciones versionadas (por ejemplo con el CLI del BaaS elegido) aplicadas primero en preview/staging, y documentar un procedimiento de rollback de un paso (redeploy de la build anterior de Next.js) antes de habilitar la aprobación de repartidores en producción."
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "devops-baas-backup-criteria",
+      "class": "technical",
+      "reversible": true,
+      "summary": "El plan deja la elección entre Supabase y Firebase abierta para que el Consejo la recomiende, con criterios como modelo de datos, consultas geográficas y tiempo real. DevOps necesita que esa misma decisión incorpore explícitamente capacidad de backup/point-in-time recovery y costo del plan pago que la habilita, criterio que backend o seguridad podrían no priorizar de la misma forma al justificar la elección.",
+      "parties": ["devops", "backend", "security"]
+    }
+  ],
+  "helperRequests": []
+}

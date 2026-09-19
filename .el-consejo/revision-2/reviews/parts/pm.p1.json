@@ -1,0 +1,64 @@
+{
+  "agentId": "pm",
+  "confidence": 0.85,
+  "conflicts": [],
+  "findings": [
+    {
+      "correction": "Asignar formalmente 'src/features/auth/**' a una pista en §2 (recomendado: P3 dentro de plataforma/scaffold/onboarding o P1 por vinculación con Supabase Auth), publicando su contrato público en 'src/features/auth/index.ts' antes del inicio de las features dependientes.",
+      "evidence": [
+        "§2: P1 posee 'supabase/**', 'src/server/**', 'src/app/api/**', 'docs/adr/**'; P2 posee 'src/features/{merchants,requests,offers,trips,availability}/**'; P3 posee 'src/features/{courier-onboarding,admin,incidents,notifications,legal}/**'.",
+        "§3: 'Módulos de src/features: auth, merchants, requests, offers, trips, availability, courier-onboarding, admin, incidents, notifications, legal'."
+      ],
+      "impact": "Al no tener asignación explícita en ninguna pista, el desarrollo de autenticación (prerrequisito para el acceso de comercios, repartidores y administradores) provocará colisiones de código entre P2 y P3 o parálisis de tareas en Fase 1, violando el principio de trabajo paralelo sin pisarse.",
+      "severity": "high",
+      "statement": "El módulo troncal 'src/features/auth' está definido en la arquitectura modular (§3) pero no tiene dueño asignado en la matriz de responsabilidades (§2)."
+    },
+    {
+      "correction": "Subdividir 'src/domain/' en subdirectorios modulares (por ejemplo 'src/domain/{common,merchants,trips,admin,couriers}/**') asignados a la pista dueña de cada vertical, o establecer formalmente que los contratos base de 'domain' se congelan mediante una tarea colaborativa transversal en Fase 0.",
+      "evidence": [
+        "§2: P2 es dueña exclusiva de 'Dominio puro...' y de la carpeta 'src/domain/**'. P3 es dueña de 'onboarding de repartidores, panel admin, PWA...'.",
+        "§3: 'src/domain/ # TS puro: estados, reglas, errores, contratos RPC'.",
+        "§1 (Principio 2): 'El agente no edita nada fuera de esa lista; si lo necesita, se detiene y pide una tarea de cambio de contrato'."
+      ],
+      "impact": "Cada vez que P1 ajuste contratos RPC en base de datos o P3 implemente reglas de negocio para admin, onboarding de repartidores o incidentes, sus agentes deberán detenerse a solicitar tareas de 'contract-change' a P2 para modificar 'src/domain/**', ralentizando severamente la ejecución paralela.",
+      "severity": "high",
+      "statement": "El ownership exclusivo de 'src/domain/**' asignado a P2 genera un cuello de botella de dependencias para el trabajo de P1 y P3."
+    },
+    {
+      "correction": "Asignar explícitamente 'src/lib/**' a P3 (plataforma) como responsable de utilidades transversales, e incorporar 'src/types/**' en la lista de carpetas de P1 en la tabla de §2.",
+      "evidence": [
+        "§2: La columna 'Carpetas' no incluye 'src/lib/**' ni 'src/types/**' en ninguna fila de la tabla.",
+        "§3: El árbol define 'src/lib/' ('utilidades sin estado...') y 'src/types/database.types.ts'."
+      ],
+      "impact": "Incertidumbre de ownership para los agentes al crear utilidades compartidas (link de WhatsApp, compresión, formato ARS) o tipos globales, propiciando violaciones a la regla de archivos permitidos por tarea o modificaciones no coordinadas.",
+      "severity": "medium",
+      "statement": "Las carpetas 'src/lib/**' y 'src/types/**' carecen de asignación explícita en la columna de carpetas de la matriz de responsabilidades (§2)."
+    },
+    {
+      "correction": "Explicitar en §3 la convención oficial de co-localización de tests (por ejemplo '__tests__/' o '*.test.ts(x)' dentro de cada módulo en 'src/features/<modulo>/', 'src/domain/' y 'src/lib/').",
+      "evidence": [
+        "§1 (Principio 3): 'Tareas chicas y verificables... con pruebas propias'.",
+        "§3: El árbol solo lista 'supabase/tests/' (pgTAP) y 'e2e/' (Playwright), sin indicar dónde residen las pruebas ejecutadas por el paso 'unit' de CI."
+      ],
+      "impact": "Los agentes generarán pruebas en rutas dispares o no estándares, lo que provocará que el workflow de CI ('workflows/ci.yml') omita suites de test o que los agentes intenten editar carpetas fuera de su lista permitida.",
+      "severity": "medium",
+      "statement": "La estructura del repositorio (§3) no define la ubicación ni convención de archivos para pruebas unitarias e integración de features y dominio."
+    },
+    {
+      "assumptions": [
+        "Se asume que la definición de hecho (DoD) para flujos funcionales completos requiere validación E2E además de pruebas unitarias/componentes."
+      ],
+      "correction": "Aclarar en §2 que P3 provee el scaffold, configuración y fixtures de 'e2e/**', pero que cada persona es responsable de incorporar los specs E2E correspondientes a sus flujos en 'e2e/specs/' dentro de la definición de hecho (DoD) de sus tareas.",
+      "evidence": [
+        "§2: P3 es dueña de 'E2E' con carpeta 'e2e/**', mientras P2 es dueña de la UI de comercio y repartidor.",
+        "§1: 'Cada tarea declara los archivos que puede tocar... con pruebas propias'."
+      ],
+      "impact": "Riesgo de que P2 cierre tareas de flujos de comercio/repartidor sin cobertura E2E (al tener P3 la propiedad exclusiva de 'e2e/**'), trasladando una sobrecarga de especificación a P3 y demorando la verificación de aceptación antes de producción.",
+      "severity": "medium",
+      "statement": "Existe ambigüedad respecto a la autoría de pruebas E2E de flujos de negocio entre la pista de aplicación (P2) y la de plataforma (P3)."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "Dictamen condicional para la Parte 1 (§1-§3). Los principios de trabajo con agentes y la estructura modular están bien encaminados, pero la matriz de asignación de responsabilidades de §2 presenta omisiones de ownership en módulos clave ('auth', 'lib', 'types'), genera un cuello de botella al centralizar todo 'domain' en P2, y no explicita la convención de pruebas unitarias ni el flujo de autoría para E2E entre P2 y P3.",
+  "verdict": "conditional"
+}

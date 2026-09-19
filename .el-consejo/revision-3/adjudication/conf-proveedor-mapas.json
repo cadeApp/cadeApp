@@ -1,0 +1,7 @@
+{
+  "conflictId": "conf-proveedor-mapas-costo",
+  "decision": "Se aprueba Google Maps Platform mediante @vis.gl/react-google-maps con carga diferida (next/dynamic), manteniendo costo $0 en piloto y preservando fallback en texto.",
+  "rationale": "La verificación formal de tarifas a marzo de 2025 confirma 10.000 llamadas gratuitas al mes de Dynamic Maps. El volumen proyectado del piloto en Aguilares es de ~1.820 cargas/mes (~18% del límite), con costo $0 USD. Cartográficamente, Google Maps supera a OpenStreetMap en Aguilares para calles periféricas y caminos secundarios. El botón externo universal https://www.google.com/maps/dir/ abre la aplicación nativa en el dispositivo del repartidor sin costo de API adicional. Para mitigar riesgos financieros, se exige la configuración de Quota Cap y alertas de facturación en Google Cloud.",
+  "adjudicator": "judge",
+  "date": "2026-09-18"
+}

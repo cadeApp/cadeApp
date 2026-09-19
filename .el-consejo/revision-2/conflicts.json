@@ -1,0 +1,60 @@
+{
+  "conflicts": [
+    {
+      "id": "codeowners-spof-p1",
+      "class": "technical",
+      "reversible": true,
+      "summary": "Asignar a P1 como único CODEOWNER de supabase/**, src/server/** y src/app/api/**, sumado a que P1 concentra todas las migraciones/RLS/RPC de forma secuencial, crea un único punto de fallo para el review obligatorio y un cuello de botella de throughput que afecta la planificación (PM) y la configuración de protección de ramas (DevOps), no solo el diseño de backend.",
+      "parties": [
+        "backend",
+        "pm",
+        "devops"
+      ]
+    },
+    {
+      "class": "product",
+      "id": "conflicto-jerarquia-contratos-p1-vs-dominio",
+      "parties": [
+        "pm",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "§10.3 establece que ante divergencias entre domain y RPC 'gana la base (P1)', subordinando los contratos de dominio y requisitos funcionales a la persistencia técnica sin pasar por checkpoint humano ni validar impacto en las decisiones D1-D14."
+    },
+    {
+      "class": "technical",
+      "id": "conf-auth-scope-p2-p3",
+      "parties": [
+        "pm",
+        "frontend",
+        "backend"
+      ],
+      "reversible": true,
+      "summary": "Solapamiento de alcance entre T-111 (P2) y T-121 (P3) respecto al flujo unificado de autenticación y registro de repartidores."
+    },
+    {
+      "id": "agent-permission-enforcement",
+      "class": "high_risk",
+      "reversible": false,
+      "summary": "Seguridad pide controles técnicos (sandboxing de agy, CI que valide RLS automáticamente, escaneo de dependencias, rutas de alto riesgo con revisión reforzada) además de las reglas en Markdown; implementarlos requiere trabajo de devops/backend que compite con la velocidad de arranque que busca el plan.",
+      "parties": [
+        "security",
+        "devops",
+        "backend",
+        "pm"
+      ],
+      "normalized_from": "technical"
+    },
+    {
+      "id": "produccion-acceso-simetrico",
+      "class": "business",
+      "reversible": false,
+      "summary": "Seguridad pide restringir quién de las 3 personas administra secretos y aprueba el gate de producción; esto es una decisión de gobernanza del equipo, no puramente técnica, y le corresponde definirla al humano dueño del proyecto.",
+      "parties": [
+        "security",
+        "pm"
+      ]
+    }
+  ],
+  "partyNormalization": []
+}

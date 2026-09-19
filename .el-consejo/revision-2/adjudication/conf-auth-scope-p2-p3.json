@@ -1,0 +1,48 @@
+{
+  "status": "CONDICIONAL",
+  "class": "technical",
+  "reversible": true,
+  "positions": [
+    {
+      "agentId": "pm",
+      "position": "Mantiene pm.review.0: src/features/auth figura como módulo en §3 pero no tiene dueño en §2. Eso va a producir choques entre P2 y P3 o trabas en Fase 1. Recomienda asignarlo formalmente (a P3 por plataforma y onboarding, o a P1 por Supabase Auth) y publicar su contrato en src/features/auth/index.ts antes de las features que dependen de él."
+    },
+    {
+      "agentId": "frontend",
+      "position": "Ajusta y amplía. Además de que el módulo no tiene dueño, los Archivos permitidos chocan con CODEOWNERS: T-111 (P2) escribe en (public)/login, que es de P3, y T-121 (P3) escribe en (courier)/onboarding, que es de P2. Propone dar src/features/auth/** (login, registro base con selección de rol y funciones de sesión) y middleware.ts a P3. También propone una tarea de Fase 0 de P3 de la que dependan T-111 y T-121, y mover el onboarding previo a la aprobación a (public)/onboarding/courier o documentar una excepción en CODEOWNERS."
+    },
+    {
+      "agentId": "backend",
+      "position": "Ajusta. La fila base (auth.users más profiles con role) ya la crea el trigger de T-004 (master-plan §7), así que la duda es quién es dueño del flujo de UI de alta. Pide un dueño único y que T-121 dependa de T-111, para reutilizar un solo módulo de alta y login. Recomienda P2, con el argumento de que P2 ya es dueño de auth/** por CODEOWNERS."
+    }
+  ],
+  "facts": [
+    "original.md L78: auth es uno de los módulos de src/features.",
+    "original.md L23-24 y L313: ni la tabla de pistas ni CODEOWNERS asignan src/features/auth. P2 tiene {merchants,requests,offers,trips,availability} y P3 tiene {courier-onboarding,admin,incidents,notifications,legal}. El texto no respalda la afirmación de Backend de que P2 ya es dueño de auth/** por CODEOWNERS.",
+    "original.md L347: T-111 (P2, Dep T-005 y T-006) es la única ficha que lista src/features/auth/**, junto con src/app/(public)/login/** y src/app/(merchant)/onboarding/**. Su DoD incluye que un repartidor no entre a (merchant).",
+    "original.md L352: T-121 (P3, Dep T-005) no lista archivos de auth ni ruta de registro. Ninguna ficha cubre explícitamente la creación de la cuenta del repartidor, aunque master-plan L56 incluye en el MVP el registro de repartidores con onboarding.",
+    "master-plan L158: profiles se crea con un trigger al registrarse y role solo lo cambia el admin. original.md L331: los triggers de profiles son parte de T-004 (P1).",
+    "master-plan L180: Supabase Auth con email (OTP o contraseña), MFA TOTP para admin y @supabase/ssr para sesiones en el servidor. original.md L68: los clientes Supabase viven en src/server/** (P1), y ninguna ficha dice quién crea el cliente server de @supabase/ssr.",
+    "original.md L168: la subida a courier-docs solo se permite en courier/{auth.uid()}/**, así que el onboarding del repartidor exige sesión iniciada. L55: (public) es para landing, login, términos y privacidad.",
+    "original.md L327-335 y L387: en Fase 0, P2 tiene T-006 y T-008; P3 tiene T-000 (que frena a las tres pistas), T-001 y T-003; P1 tiene T-002, T-004, T-005 y T-007.",
+    "original.md L353: T-122 (P3) incluye MFA obligatorio para admin."
+  ],
+  "assumptions": [
+    "El rol inicial (merchant o courier) llega al trigger de T-004 desde los metadatos del registro, que en Supabase Auth controla el propio usuario. Por eso el trigger debe ignorar o rechazar 'admin'. No se verificó el diseño concreto de T-004.",
+    "Una tarea base de auth acotada (login, registro con rol, cierre de sesión, sesión y guardas) entra en la capacidad de P2 al final de Fase 0 sin retrasar contracts-v1.",
+    "Mientras T-009 está en revisión, P3 puede avanzar con T-123 (Dep T-005), T-201 (Dep T-000) o src/lib/image-compression.ts de T-121, que no necesitan auth."
+  ],
+  "resolution": "1) Dueño: src/features/auth/** pasa a P2, en la fila de §2 y con una línea propia en CODEOWNERS. Se elige P2 y no P3 por la carga verificable de Fase 0 (P3 tiene T-000, que frena a todos, y T-003) y porque la única ficha que ya incluye auth es de P2. No se usa el argumento de Backend sobre CODEOWNERS porque es incorrecto. 2) Nueva tarea T-009 (Fase 0, P2), 'Auth base', con Dep T-004, T-005 y T-006. Incluye login, registro con rol merchant|courier (nunca admin), cierre de sesión, lectura de sesión y rol, guardas por rol, lectura del nivel aal y la actualización de sesión de @supabase/ssr como función exportada. Todo se expone solo por src/features/auth/index.ts. Archivos permitidos: src/features/auth/**, src/app/(public)/login/** y la ruta de registro dentro de (public). Esas dos rutas son de P3 por CODEOWNERS, así que P3 revisa el PR (mecanismo de conf-codeowners-routegroup-p2-p3). DoD: un merchant y un courier se registran y quedan con su rol; registrarse con rol admin no crea un admin; un courier no entra a (merchant) ni un merchant a (courier). El cliente server de @supabase/ssr en src/server/** lo pone P1: si ninguna tarea previa lo crea, se agrega a T-004 o T-005 y T-009 depende de esa tarea. T-004 o T-005 suman una prueba pgTAP de que el trigger no asigna admin desde los metadatos. 3) T-111 saca src/features/auth/** y src/app/(public)/login/** de sus Archivos permitidos, agrega Dep T-009 y se limita al alta de comercio (merchants y (merchant)/onboarding). 4) T-121 agrega Dep T-009: la cuenta del repartidor se crea con el registro de T-009, y T-121 solo agrega documentación, vehículo y consentimientos en (courier)/onboarding. La ruta no se mueve a (public), porque el onboarding exige sesión (L168) y (public) es para rutas sin sesión (L55). El layout de (courier), que es de P2, debe dejar pasar a couriers pending al onboarding y a la pantalla 'en revisión' (T-114). 5) T-122 conserva como UI propia el alta y la verificación de MFA de admin, usando la lectura de aal que exporta auth. 6) Se descarta que T-121 dependa de T-111 (propuesta de Backend): dejaría a P3 esperando también el alta de comercio. 7) Middleware: la lógica de sesión vive en auth. De quién es el archivo raíz middleware.ts corresponde a frontend.review.0 y no se decide acá; si queda en otra pista, solo llama a lo que exporta auth.",
+  "dissent": [
+    "Frontend propuso que P3 fuera dueño de auth y mover el onboarding previo a la aprobación a (public)/onboarding/courier. Se descartan las dos cosas, por la carga de Fase 0 y porque el onboarding exige sesión.",
+    "Backend propuso que T-121 dependa de T-111 en vez de crear una tarea base aparte. Se descarta porque bloquearía más a P3.",
+    "PM recomendó P3 o P1 como dueño; el fallo asigna P2. Su pedido central, un dueño único y formal, queda cumplido."
+  ],
+  "confidence": 0.7,
+  "reopenCondition": "Reabrir si pasa alguna de estas cosas: (a) T-006 o T-008 se atrasan tanto que T-009 no se mergea antes de que P3 termine el trabajo que no necesita auth (T-123, T-201, compresión de imágenes); (b) el diseño de T-004 no toma el rol desde el registro (por ejemplo, si el rol se elige después), lo que cambia el alcance de T-009; (c) frontend.review.0 asigna middleware.ts y el layout raíz de una forma incompatible con que la lógica de sesión viva en src/features/auth.",
+  "rationale": "El solapamiento real no está en la base, porque el trigger de T-004 ya crea profiles. Está en la UI y en la sesión. Una base de auth con dueño único, lista antes de T-111 y T-121, evita implementar dos veces lo mismo sin poner a P3 a esperar el alta de comercio.",
+  "resolvedFindings": [
+    "conf-auth-scope-p2-p3",
+    "pm.review.0"
+  ]
+}

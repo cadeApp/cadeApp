@@ -1,0 +1,32 @@
+{
+  "agentId": "security",
+  "verdict": "conditional",
+  "confidence": 0.96,
+  "summary": "Dictamen de Seguridad: CONDICIONAL (0.96). La proteccion de la privacidad del destinatario y del comercio requiere garantias tecnicas duras: 1) Matriz RLS rigurosa para delivery_request_contacts.pickup_lat/lng y dropoff_lat/lng con pruebas pgTAP que aseguren que un courier no asignado recibe 0 filas; 2) Prohibicion absoluta de registrar coordenadas en logs estructurados (Sentry), payloads de notificaciones push, webhooks o URLs de analytics; 3) Restriccion de la API Key de Google Maps por HTTP Referrer y API scope exclusivo (Maps JavaScript API); 4) Generacion de links de navegacion solo en el cliente del repartidor aceptado.",
+  "findings": [
+    {
+      "statement": "Fugas de coordenadas en logs, push o analytics.",
+      "severity": "critical",
+      "impact": "Coordenadas en URLs o payloads de push exponen la ubicacion geografica de personas a terceros y proveedores externos sin consentimiento.",
+      "evidence": [
+        "docs/master-plan.md §9 (seguridad y privacidad), regla 00."
+      ],
+      "correction": "Prohibir coordenadas en el helper sendNotification, en Sentry breadcrumbs y en URLs publicas. La URL de Google Maps solo se construye dinamicamente en el componente de viaje activo del repartidor aceptado.",
+      "assumptions": [
+        "Los inspectores de red de CI y linters bloquean variables de geolocalizacion en logs."
+      ]
+    },
+    {
+      "statement": "Proteccion de API Key publica de Google Maps.",
+      "severity": "high",
+      "impact": "Una clave de Maps expuesta sin restricciones de dominio puede ser utilizada por terceros generando cargos imprevistos o agotando el cupo gratuito.",
+      "evidence": [
+        "Restricciones no negociables: claves restringidas por dominio y por API."
+      ],
+      "correction": "Documentar en ADR y runbook de infraestructura la configuracion obligatoria en Google Cloud Console: restriccion por HTTP Referrers (*.cadeapp.com, localhost:* en dev) y restriccion de API exclusivamente a Maps JavaScript API.",
+      "assumptions": [
+        "Google Cloud Console aplica las restricciones de referrer en menos de 5 minutos tras su guardado."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "agentId": "marketing",
+  "confidence": 0.85,
+  "conflicts": [
+    {
+      "class": "business",
+      "id": "conflict-subscription-paywall-vs-trial",
+      "parties": [
+        "marketing",
+        "PM",
+        "Finanzas"
+      ],
+      "reversible": true,
+      "summary": "Tensión entre la decisión de cobrar abono mensual a comercios desde el primer día y la necesidad de marketing de ofrecer un período de prueba gratuito (trial) o cupo inicial bonificado para superar la barrera de adopción en Aguilares."
+    }
+  ],
+  "findings": [
+    {
+      "assumptions": [
+        "En un marketplace hiperlocal de envíos, una demora superior a 5-10 minutos sin ofertas iniciales genera abandono inmediato del comercio hacia métodos informales ya establecidos."
+      ],
+      "correction": "Diseñar un protocolo de siembra escalonado: reclutar y activar primero una base mínima de 10 a 15 cadetes clave mediante contacto directo en paradas locales, y lanzar inicialmente con un grupo cerrado de 5 a 8 comercios ancla de alta rotación en franjas horarias delimitadas (ej. almuerzo y cena) para concentrar la liquidez antes de la apertura general.",
+      "evidence": [
+        "context.md sección 5: 'Publicación: la solicitud queda visible para los repartidores habilitados... Ofertas: cada repartidor interesado dice cuánto cobraría.'",
+        "context.md sección 8, pregunta 8: 'Lanzamiento en Aguilares: cómo conseguir los primeros comercios y repartidores a la vez, y qué métricas indican que el MVP funciona.'"
+      ],
+      "impact": "Si los comercios pioneros publican y no reciben ofertas rápidas, considerarán inútil la plataforma y cancelarán la suscripción; si los repartidores se registran y no observan pedidos frecuentes, dejarán de abrir la PWA, provocando el colapso prematuro de la red en Aguilares.",
+      "severity": "high",
+      "statement": "Falta de estrategia de liquidez bilateral y resolución del arranque en frío (chicken-and-egg) para el lanzamiento en Aguilares."
+    },
+    {
+      "assumptions": [
+        "Los comercios y emprendedores locales presentan alta resistencia a pagar un costo fijo mensual por adelantado a una plataforma nueva sin comprobar previamente el volumen y confiabilidad de los repartidores."
+      ],
+      "correction": "Implementar una política de onboarding con período de prueba (trial de 14 a 30 días o los primeros 10 envíos bonificados sin abono) para que los negocios experimenten la agilidad del servicio antes de exigir el cobro de la suscripción mensual.",
+      "evidence": [
+        "context.md sección 2: 'Ingresos: suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis.'",
+        "context.md sección 8, pregunta 5: 'Suscripción: qué pasa con los particulares que publican de vez en cuando, cómo se cobra el abono, si hay período de prueba o límite gratuito...'"
+      ],
+      "impact": "Conversión inicial cercana a cero en el registro de comercios frente a alternativas informales y gratuitas ya arraigadas (grupos de WhatsApp y llamadas directas), paralizando la adquisición.",
+      "severity": "high",
+      "statement": "Barrera crítica de conversión por cobro de suscripción mensual por adelantado sin período de prueba ni demostración de valor."
+    },
+    {
+      "assumptions": [
+        "Los usuarios particulares tienen necesidades esporádicas de envío y no contratarán un abono mensual, pero habilitarles uso gratuito irrestricto incentivaría a microcomercios a hacerse pasar por particulares para no pagar."
+      ],
+      "correction": "Definir un cupo mensual gratuito limitado para particulares (ej. hasta 2 envíos mensuales no comerciales verificados por número telefónico) o acotar explícitamente el posicionamiento del MVP de forma exclusiva a comercios y emprendedores (B2B2C), postergando al segmento particular para fases posteriores.",
+      "evidence": [
+        "context.md sección 1: 'conecta a quien necesita hacer una entrega (comercio, emprendedor o particular)'",
+        "context.md sección 2: 'suscripción mensual para comercios y emprendedores. Los repartidores usan la app gratis.'",
+        "context.md sección 8, pregunta 5: 'qué pasa con los particulares que publican de vez en cuando'"
+      ],
+      "impact": "Pérdida de demanda espontánea de particulares o, por el contrario, canibalización del modelo de suscripción si los comercios eluden el pago registrándose como particulares.",
+      "severity": "medium",
+      "statement": "Ambigüedad en la propuesta de valor y modelo de monetización para el segmento de usuarios particulares."
+    },
+    {
+      "assumptions": [
+        "En una comunidad local como Aguilares, el boca a boca y la visibilidad física en paquetes y locales son los canales de adquisición de menor costo y mayor confianza comunitaria."
+      ],
+      "correction": "Aprovechar cada entrega como canal de adquisición: incluir un enlace de seguimiento de envío por WhatsApp/SMS dirigido al destinatario con identidad de marca ('Envío coordinado a través de cadeApp') y suministrar material físico de bajo costo (adhesivos 'Enviamos con cadeApp') a los comercios adheridos.",
+      "evidence": [
+        "context.md sección 3: 'Destinatario: recibe el pedido. No es usuario; solo figuran su nombre y teléfono.'",
+        "context.md sección 4: 'Nombre y teléfono de quien recibe.'"
+      ],
+      "impact": "Costo de adquisición de clientes (CAC) elevado y dependencia exclusiva del esfuerzo manual del fundador, desaprovechando la exposición natural de cada entrega realizada.",
+      "severity": "medium",
+      "statement": "Omisión de mecanismos de viralidad orgánica y marketing de bajo costo en los puntos de contacto del servicio."
+    },
+    {
+      "assumptions": [
+        "En dispositivos móviles (particularmente iOS y capas agresivas de ahorro de batería en Android), la tasa de recepción e interacción con web push notifications en PWA es sensiblemente inferior a la de apps de mensajería."
+      ],
+      "correction": "Incorporar WhatsApp como canal de contingencia prioritario (mediante enlaces directos de wa.me o alertas transaccionales clave) para avisar sobre nuevas solicitudes a repartidores activos y ofertas recibidas a comercios, complementando a la PWA.",
+      "evidence": [
+        "context.md sección 7: 'Debe funcionar como PWA.'",
+        "context.md sección 8, pregunta 3: 'Notificaciones de nuevas solicitudes y ofertas en una PWA (Android, iOS), y qué pasa si no llegan.'"
+      ],
+      "impact": "Falta de respuesta oportuna de repartidores ante solicitudes urgentes, percepción de lentitud del servicio y desinstalación o desuso de la PWA por parte de los usuarios.",
+      "severity": "medium",
+      "statement": "Riesgo de baja retención y retrasos operativos por depender exclusivamente de notificaciones web push en formato PWA."
+    }
+  ],
+  "helperRequests": [],
+  "summary": "El plan original describe adecuadamente el modelo funcional de dos puntas para Aguilares, pero carece de definiciones operativas críticas de Go-to-Market: no resuelve el problema del huevo y la gallina (liquidez bilateral), impone una barrera de suscripción anticipada que frenará la adopción de comercios, genera ambigüedad sobre el segmento particulares y no aprovecha canales locales orgánicos ni WhatsApp para retención y alertas. Se condiciona la aprobación a subsanar estas barreras antes de congelar el alcance del MVP.",
+  "verdict": "conditional"
+}

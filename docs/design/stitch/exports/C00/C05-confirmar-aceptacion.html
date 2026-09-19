@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+
+<html lang="es"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>cadeApp — Confirmar Aceptación</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Montserrat:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-container": "#5cb5b8",
+            "error": "#ba1a1a",
+            "on-primary-fixed": "#002020",
+            "tertiary-fixed-dim": "#7cd5d8",
+            "inverse-primary": "#4adadd",
+            "secondary-fixed-dim": "#c0c5e0",
+            "primary-fixed": "#6df6f9",
+            "surface-dim": "#d1daee",
+            "secondary-container": "#d9defa",
+            "secondary": "#585d75",
+            "surface-container-low": "#f0f3ff",
+            "tertiary-fixed": "#99f1f4",
+            "inverse-on-surface": "#ebf1ff",
+            "surface-container-highest": "#dae3f7",
+            "on-secondary": "#ffffff",
+            "surface-container": "#e7eeff",
+            "on-secondary-fixed-variant": "#40465c",
+            "surface-tint": "#00696b",
+            "on-tertiary-container": "#004446",
+            "primary-container": "#09babd",
+            "surface-variant": "#dae3f7",
+            "on-tertiary-fixed-variant": "#004f51",
+            "on-tertiary": "#ffffff",
+            "on-surface": "#131c2a",
+            "secondary-fixed": "#dce1fd",
+            "on-surface-variant": "#3c4949",
+            "on-secondary-fixed": "#151b2f",
+            "primary": "#00696b",
+            "on-primary": "#ffffff",
+            "inverse-surface": "#283140",
+            "on-background": "#131c2a",
+            "on-tertiary-fixed": "#002021",
+            "error-container": "#ffdad6",
+            "tertiary": "#00696c",
+            "on-primary-fixed-variant": "#004f51",
+            "on-error-container": "#93000a",
+            "surface-container-high": "#dfe8fd",
+            "surface-container-lowest": "#ffffff",
+            "primary-fixed-dim": "#4adadd",
+            "on-primary-container": "#004446",
+            "outline-variant": "#bbc9c9",
+            "on-secondary-container": "#5c6279",
+            "outline": "#6c7a7a",
+            "surface": "#f9f9ff",
+            "background": "#f9f9ff",
+            "on-error": "#ffffff",
+            "surface-bright": "#f9f9ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xl": "2rem",
+            "margin": "1rem",
+            "space-sm": "0.5rem",
+            "space-md": "1rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "gutter": "0.5rem"
+          },
+          "fontFamily": {
+            "price-sm": ["Montserrat"],
+            "price-display": ["Montserrat"],
+            "label-sm": ["Inter"],
+            "headline-xl": ["Montserrat"],
+            "body-md": ["Inter"],
+            "body-lg": ["Inter"],
+            "label-md": ["Inter"],
+            "body-medium": ["Inter"],
+            "headline-md": ["Montserrat"],
+            "headline-lg": ["Montserrat"]
+          },
+          "fontSize": {
+            "price-sm": ["16px", { "lineHeight": "20px", "fontWeight": "700" }],
+            "price-display": ["24px", { "lineHeight": "28px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "label-sm": ["14px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "headline-xl": ["28px", { "lineHeight": "34px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+            "label-md": ["14px", { "lineHeight": "18px", "fontWeight": "600" }],
+            "body-medium": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+            "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "headline-lg": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.015em", "fontWeight": "700" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    .wavy-rule {
+      background-image: url("data:image/svg+xml,%3Csvg width='40' height='6' viewBox='0 0 40 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 3C5 0 7 0 10 3C13 6 15 6 20 3C25 0 27 0 30 3C33 6 35 6 40 3' stroke='%2309BABD' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: repeat-x;
+      height: 6px;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface antialiased min-h-screen flex justify-center selection:bg-primary-container selection:text-on-primary-container">
+<!-- Mobile Viewport Frame (390px baseline) -->
+<div class="relative w-full max-w-[390px] min-h-screen bg-surface-container-lowest flex flex-col border-x border-outline-variant/30 overflow-x-hidden">
+<!-- TopAppBar (Shared Component) -->
+<header class="fixed top-0 left-0 w-full z-50 flex items-center justify-between px-4 h-14 bg-inverse-surface border-b border-outline-variant/30">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container" data-icon="two_wheeler">two_wheeler</span>
+<span class="font-headline-md text-headline-md font-bold text-surface tracking-tight">cadeApp</span>
+</div>
+<button class="text-primary-container font-semibold font-label-md text-label-md hover:opacity-90 transition-opacity duration-150 active:scale-95" type="button">
+        Ingresar
+      </button>
+</header>
+<!-- Request Detail Canvas (Background dimmed layer) -->
+<main aria-hidden="true" class="flex-1 w-full pt-16 pb-8 px-4 flex flex-col gap-4 select-none opacity-40 filter blur-[1px] pointer-events-none">
+<!-- Stepper / Order Breadcrumb Header -->
+<div class="flex items-center justify-between mt-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary" data-icon="arrow_back">arrow_back</span>
+<span class="font-headline-md text-headline-md text-on-surface">Envío #4829</span>
+</div>
+<span class="px-2.5 py-0.5 rounded-full text-xs font-label-md bg-[#FFF4E0] text-[#B45309]">3 ofertas</span>
+</div>
+<!-- Route Overview Card -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-4 flex flex-col gap-3">
+<div class="flex items-start justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" data-icon="store">store</span>
+<span class="font-label-md text-label-md text-on-surface">Pizzería Don Mario</span>
+</div>
+<span class="font-price-sm text-price-sm text-on-surface">$ 1.800</span>
+</div>
+<div class="flex flex-col gap-2 pl-2 border-l-2 border-dashed border-outline-variant">
+<div class="flex flex-col">
+<span class="text-[11px] font-label-sm text-secondary uppercase tracking-wider">Retiro</span>
+<span class="font-body-md text-body-md text-on-surface">San Martín 452</span>
+</div>
+<div class="flex flex-col">
+<span class="text-[11px] font-label-sm text-secondary uppercase tracking-wider">Entrega</span>
+<span class="font-body-md text-body-md text-on-surface">Av. Belgrano 1280 (Depto 4B)</span>
+</div>
+</div>
+<div class="w-full wavy-rule mt-1"></div>
+</div>
+<!-- Courier Offers List (Screen Context) -->
+<div class="flex flex-col gap-3">
+<span class="font-headline-md text-headline-md text-on-surface">Ofertas recibidas</span>
+<!-- Selected Courier Highlight -->
+<div class="bg-surface-container-lowest rounded-xl border-2 border-primary-container p-4 flex flex-col gap-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-inverse-surface flex items-center justify-center text-primary-container font-headline-md text-headline-md">
+                JR
+              </div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1">
+<span class="font-label-md text-label-md text-on-surface">Joaquín R.</span>
+<span class="material-symbols-outlined text-[#177A4B] text-[18px]" data-icon="verified" data-weight="fill">verified</span>
+</div>
+<span class="text-xs font-body-md text-secondary">4.9 ★ (182 viajes)</span>
+</div>
+</div>
+<span class="font-price-display text-price-display text-on-surface">$ 1.800</span>
+</div>
+</div>
+<!-- Another Courier Card -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-variant/40 p-4 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-secondary font-label-md">
+              MB
+            </div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface">Marcos B.</span>
+<span class="text-xs font-body-md text-secondary">4.7 ★ (64 viajes)</span>
+</div>
+</div>
+<span class="font-price-sm text-price-sm text-on-surface">$ 1.950</span>
+</div>
+</div>
+<!-- Delivery Map Preview -->
+<div class="w-full h-32 rounded-xl overflow-hidden border border-outline-variant/40 relative">
+<div class="w-full h-full bg-cover bg-center" data-alt="High-contrast clean vector style city map graphic of a mid-sized Argentine urban layout, featuring clean streets, delivery waypoints in deep teal and bright turquoise markers, illuminated in daylight with sharp geometric roads and modern flat design aesthetic." data-location="Argentina" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDWTZ_LV5JB7D1m_Og8-A-eJB83rRh3CZn7cA66b2o-E0mQJdOuJCJpoAN3TImY-HQUn1DYK6xE7Av0Dr2xbjU_IVaFkHrb-d1m3gbmvkBQ3gsomDGf4phNTS3tBVYF2K3fDB6OoDKyIzRuWJxtgvePU9lJ-bf6X3G6QYJ_H-F4fuwoVs3hEJ95fT7UMAYQfM5wfzbVi7mcCmJKDib8xdllFgykMebHXxMWOpQ17KPzE0aTVOGHk-6Q')"></div>
+<div class="absolute bottom-2 left-2 bg-inverse-surface/90 text-surface text-xs px-2 py-1 rounded font-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-primary-container text-sm" data-icon="near_me">near_me</span>
+          2.4 km distancia total
+        </div>
+</div>
+</main>
+<!-- Modal Backdrop Overlay (rgba(18, 24, 44, 0.6)) -->
+<div class="fixed inset-0 z-50 bg-[#12182C]/60 flex items-center justify-center p-4 backdrop-blur-[2px]">
+<!-- Dialog Card C05: Confirmar aceptación -->
+<div aria-labelledby="dialog-title" aria-modal="true" class="w-full max-w-[350px] bg-[#FFFFFF] rounded-[16px] p-6 border border-outline-variant/30 flex flex-col gap-4 shadow-[0_8px_30px_rgba(18,24,44,0.12)] animate-in fade-in zoom-in-95 duration-150" role="dialog">
+<!-- Modal Top Accent Graphic & Title -->
+<div class="flex flex-col gap-2 text-left">
+<div class="flex items-center justify-between">
+<div class="w-10 h-10 rounded-full bg-[#E6F8F8] text-[#0B7A7D] flex items-center justify-center">
+<span class="material-symbols-outlined" data-icon="handshake" data-weight="fill">handshake</span>
+</div>
+<span class="text-xs font-label-md px-2 py-0.5 rounded-full bg-[#E8F5EE] text-[#177A4B] flex items-center gap-1">
+<span class="material-symbols-outlined text-xs" data-icon="check_circle" data-weight="fill">check_circle</span>
+              Oferta activa
+            </span>
+</div>
+<h2 class="font-headline-lg text-headline-lg font-bold text-[#12182C] leading-tight mt-1" id="dialog-title">
+            ¿Aceptás la oferta de Joaquín R.?
+          </h2>
+</div>
+<!-- Summary Section inside Dialog -->
+<div class="bg-surface rounded-xl p-3.5 border border-[#E4E7EC] flex flex-col gap-3">
+<!-- Amount Highlight -->
+<div class="flex items-baseline justify-between">
+<span class="font-label-sm text-label-sm text-[#5B6475]">Tarifa acordada</span>
+<span class="font-price-display text-price-display text-[#12182C] font-bold">
+              $ 1.800
+            </span>
+</div>
+<div class="w-full wavy-rule"></div>
+<!-- Courier Details & Credentials -->
+<div class="flex flex-col gap-2">
+<!-- Row with badges: Moto · Licencia y seguro verificados -->
+<div class="flex items-center gap-1.5 text-xs text-[#177A4B] font-label-md bg-[#E8F5EE] px-2.5 py-1.5 rounded-lg">
+<span class="material-symbols-outlined text-[16px] shrink-0" data-icon="check_circle" data-weight="fill">check_circle</span>
+<span class="leading-none">Moto · Licencia y seguro verificados</span>
+</div>
+<!-- ETA Badge Row -->
+<div class="flex items-center gap-2 text-xs font-body-md text-[#12182C] px-1 pt-1">
+<span class="material-symbols-outlined text-primary text-[18px]" data-icon="schedule">schedule</span>
+<span>Llega a retirar en <strong class="font-semibold font-label-md">~10 min</strong></span>
+</div>
+</div>
+</div>
+<!-- Explanatory Legal / Operational Text -->
+<p class="font-body-md text-[14px] text-[#5B6475] leading-relaxed">
+          Al aceptar, Joaquín va a ver la dirección de retiro, la de entrega y los datos de tu cliente. Las otras ofertas se rechazan.
+        </p>
+<!-- CTA Buttons Stacked Full Width (48px tall each, gap-3 mt-4) -->
+<div class="flex flex-col gap-3 mt-1">
+<!-- Primary CTA Button -->
+<button class="w-full h-12 rounded-[10px] bg-primary-container text-[#12182C] font-headline-md text-headline-md font-bold flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all duration-150 shadow-none border-none cursor-pointer" onclick="handleAccept()" type="button">
+<span>Sí, aceptar</span>
+<span class="material-symbols-outlined text-xl" data-icon="arrow_forward">arrow_forward</span>
+</button>
+<!-- Outline CTA Button -->
+<button class="w-full h-12 rounded-[10px] bg-[#FFFFFF] border border-[#E4E7EC] text-[#12182C] font-label-md text-label-md font-semibold flex items-center justify-center hover:bg-surface-container-high/30 active:scale-[0.98] transition-all duration-150 cursor-pointer" onclick="handleBack()" type="button">
+            Volver
+          </button>
+</div>
+</div>
+</div>
+<!-- Footer (Shared Component) -->
+<footer class="w-full max-w-[390px] mx-auto px-4 py-8 flex flex-col gap-4 text-center items-center bg-surface-container-lowest border-t border-outline-variant/40 mt-auto">
+<div class="flex flex-wrap justify-center gap-4 text-xs font-body-md text-secondary">
+<a class="hover:text-primary transition-colors duration-150 active:opacity-80" href="#terminos">Términos y condiciones</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150 active:opacity-80" href="#privacidad">Privacidad</a>
+<span>·</span>
+<a class="hover:text-primary transition-colors duration-150 active:opacity-80" href="#ayuda">Ayuda y contacto</a>
+</div>
+<p class="font-body-md text-body-md text-secondary">
+        © 2024 cadeApp. Envíos locales y logística inteligente.
+      </p>
+</footer>
+</div>
+<script>
+    function handleAccept() {
+      const btn = event.currentTarget;
+      btn.innerHTML = '<span class="material-symbols-outlined animate-spin text-xl" data-icon="progress_activity">progress_activity</span><span>Asignando viaje...</span>';
+      setTimeout(() => {
+        alert('¡Viaje asignado con éxito a Joaquín R.! Redirigiendo a seguimiento en tiempo real...');
+      }, 600);
+    }
+
+    function handleBack() {
+      const dialog = document.querySelector('[role="dialog"]');
+      if (dialog) {
+        dialog.parentElement.classList.add('opacity-0', 'pointer-events-none', 'transition-opacity', 'duration-200');
+        const main = document.querySelector('main');
+        if (main) {
+          main.classList.remove('opacity-40', 'filter', 'blur-[1px]', 'pointer-events-none');
+          main.removeAttribute('aria-hidden');
+        }
+      }
+    }
+  </script>
+</body></html>

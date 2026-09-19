@@ -1,0 +1,66 @@
+{
+  "agentId": "documentation",
+  "verdict": "conditional",
+  "confidence": 0.88,
+  "summary": "Consolidación final de Documentación sobre el plan de implementación de cadeApp. Se emite un dictamen condicional fundamentado en 5 hallazgos de severidad alta que comprometen la claridad operativa, la trazabilidad del trabajo asincrónico entre 3 personas y la consistencia de contratos entre frontend, backend y reglas de agy. Los puntos neurálgicos a subsanar son: (1) asignación formal de propiedad documental para auth y lib en §2 y CODEOWNERS; (2) sincronización obligatoria de tipos de base de datos (pnpm db:types) en los comandos pre-PR de AGENTS.md; (3) estandarización de una sección de bitácora y handoff en docs/tasks/_plantilla.md para garantizar la continuidad entre sesiones aisladas; (4) formalización del protocolo y plantilla de contract-change para discrepancias en APIs/RPCs; y (5) definición rigurosa de los criterios de aceptación y escenarios E2E (DoD / pruebas) en las tareas críticas de release (T-305, T-306, T-308 y T-309). Resueltos estos puntos, el plan resulta completamente claro, trazable y gobernable.",
+  "findings": [
+    {
+      "correction": "Asignar explícitamente src/features/auth/** a una pista (ej. P3 junto a onboarding y admin, o P1 por la integración con Supabase Auth) y definir la pertenencia de src/lib/** en la tabla de §2.",
+      "evidence": [
+        "§2 tabla de pistas omite src/features/auth y src/lib/**, mientras que §3 lista auth como módulo de features y detalla src/lib/ en el árbol."
+      ],
+      "impact": "Quiebra el principio fundamental de 'una tarea = un dueño = una carpeta delimitada'. Los agentes que trabajen en autenticación o utilidades transversales no tendrán pista asignada, generando colisiones de edición y PRs sin revisor claro.",
+      "severity": "high",
+      "statement": "Los módulos src/features/auth y src/lib/** no tienen asignación explícita de dueño en la tabla de responsabilidades de pistas (§2)."
+    },
+    {
+      "correction": "Alinear AGENTS.md §4.1 (Calidad) con 50-git-y-ambientes.md, agregando pnpm db:types: 'Antes de abrir PR: (si tocaste supabase/migrations: pnpm db:types) && pnpm typecheck && pnpm lint && pnpm test && pnpm test:db (si tocaste supabase/).'",
+      "evidence": [
+        "AGENTS.md §4.1 (Calidad): 'Antes de abrir PR: pnpm typecheck && pnpm lint && pnpm test && pnpm test:db (si tocaste supabase/).'",
+        "AGENTS.md §4.2 (50-git-y-ambientes.md): 'src/types/database.types.ts se regenera solo en PRs de migración (pnpm db:types) y el CI falla si difiere.'"
+      ],
+      "impact": "Los agentes que sigan las instrucciones de AGENTS.md omitirán pnpm db:types tras crear migraciones, provocando fallos automáticos en el CI y desincronización en src/types/database.types.ts para las otras personas del equipo.",
+      "severity": "high",
+      "statement": "La lista de comandos pre-PR en AGENTS.md omite la regeneración obligatoria de tipos (pnpm db:types) al modificar supabase/, entrando en contradicción con la regla de CI de 50-git-y-ambientes.md."
+    },
+    {
+      "correction": "Agregar a docs/tasks/_plantilla.md la sección '## Bitácora de trabajo y Handoff' (con fecha/hora, autor/agente, estado de avance, pruebas ejecutadas y contexto pendiente) y actualizar el paso 8 de tomar-tarea/SKILL.md para exigir asentar el resumen de sesión antes de pausar o abrir PR.",
+      "evidence": [
+        "§8 docs/tasks/_plantilla.md: la plantilla define solo metadatos estáticos (Pista/dueño, Estado, Dependencias, Contratos a leer, Objetivo, Archivos permitidos, Fuera de alcance, Dependencias nuevas, DoD) sin espacio para bitácora de ejecución o notas de traspaso.",
+        "§10.5: 'Sesiones de agy: una sesión por tarea y por rama. No reutilizar una conversación de otra tarea, para que el contexto no arrastre decisiones ajenas.'",
+        "input.constraints: 'las personas pueden trabajar en momentos distintos y cualquiera tiene que poder retomar o continuar trabajo'."
+      ],
+      "impact": "Al reiniciar el contexto en cada sesión de agy según §10.5, si un desarrollador interrumpe una tarea 'en curso', el siguiente miembro del equipo o su agente no sabrá qué se intentó, qué pruebas fallan ni qué bloqueos surgieron, perdiendo trazabilidad y forzando a deducir el estado por ensayo y error.",
+      "severity": "high",
+      "statement": "La plantilla de ficha de tarea (docs/tasks/_plantilla.md) y las pautas de coordinación carecen de una sección de bitácora/handoff para registrar el avance entre sesiones aisladas de agy, impidiendo la trazabilidad cuando otra persona retoma el trabajo asincrónicamente."
+    },
+    {
+      "correction": "Crear y documentar la plantilla docs/contracts/_plantilla_contract_change.md (con campos: contrato afectado, firma actual vs. propuesta, justificación, tareas bloqueadas y aprobación requerida de P1/P2) y referenciar dicha ruta explícita en nueva-rpc/SKILL.md y en el prompt de arranque de agy.",
+      "evidence": [
+        "§5 nueva-rpc/SKILL.md (paso 1): 'Confirmar firma y códigos de error en src/domain/rpc-contracts.ts (si no existen, es contract-change).'",
+        "§9 Prompt de arranque: 'Si un contrato no alcanza, no lo cambies: detenete y escribí qué contract-change hace falta.'",
+        "§10.3 Coordinación: 'Conflictos de contrato: gana la base (P1). Si domain y la RPC difieren, se abre una contract-change y se detienen las tareas afectadas.'"
+      ],
+      "impact": "Cuando agy o un programador detenga una tarea por falta de contrato, el requerimiento quedará en texto libre o en comentarios dispersos, provocando desincronización entre P1 (DB/RPC) y P2 (dominio/frontend) y dificultando la auditoría de cambios en APIs.",
+      "severity": "high",
+      "statement": "El procedimiento de 'contract-change' mencionado en las skills y en las reglas de coordinación carece de plantilla documental, ruta y formato de registro explícito, impidiendo la trazabilidad de discrepancias en contratos de API y RPC."
+    },
+    {
+      "assumptions": [
+        "Los agentes de agy requieren aserciones explícitas y condiciones de salida verificables en el DoD de cada tarea para evitar dar por concluidos tests vacíos o superficiales."
+      ],
+      "correction": "Completar la columna 'DoD / pruebas' con las condiciones de verificación mínimas obligatorias: T-305 (aserciones de bloqueo HTTP 403 / redirección ante courier pending o rol inválido), T-306 (bloqueo efectivo de publicación si paid_until está vencido y toggle de piloto), T-308 (aserciones de suspensión cautelar inmediata y retención de ofertas activas), y T-309 (aserciones de timeout graceful ante 3G lento y reporte axe AA sin violaciones).",
+      "evidence": [
+        "Tabla Fase 3, fila T-305: DoD / pruebas figura como '—'.",
+        "Tabla Fase 3, fila T-306: DoD / pruebas figura como '—'.",
+        "Tabla Fase 3, fila T-308: DoD / pruebas figura como '—'.",
+        "Tabla Fase 3, fila T-309: DoD / pruebas figura como '—'."
+      ],
+      "impact": "Los desarrolladores y agentes de IA no cuentan con una pauta verificable de aserciones mínimas para validar la suite E2E, lo que arriesga suites de prueba incompletas o desalineadas con las reglas de negocio críticas.",
+      "severity": "high",
+      "statement": "Las tareas E2E T-305, T-306, T-308 y T-309 carecen de criterios de aceptación y definición de pruebas en la columna 'DoD / pruebas' (consignadas con guion '—')."
+    }
+  ],
+  "conflicts": [],
+  "helperRequests": []
+}
