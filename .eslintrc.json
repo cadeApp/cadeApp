@@ -1,0 +1,147 @@
+{
+  "extends": [
+    "next/core-web-vitals",
+    "plugin:boundaries/recommended"
+  ],
+  "plugins": [
+    "boundaries",
+    "cadeapp"
+  ],
+  "settings": {
+    "boundaries/include": ["src/**/*", "tools/lint-fixtures/**/*"],
+    "boundaries/elements": [
+      {
+        "type": "domain",
+        "pattern": "src/domain/**/*",
+        "mode": "file"
+      },
+      {
+        "type": "lib",
+        "pattern": "src/lib/**/*",
+        "mode": "file"
+      },
+      {
+        "type": "ui",
+        "pattern": "src/ui/**/*",
+        "mode": "file"
+      },
+      {
+        "type": "types",
+        "pattern": "src/types/**/*",
+        "mode": "file"
+      },
+      {
+        "type": "server",
+        "pattern": "src/server/**/*",
+        "mode": "file"
+      },
+      {
+        "type": "feature",
+        "pattern": "src/features/*",
+        "mode": "folder",
+        "capture": ["featureName"]
+      },
+      {
+        "type": "app",
+        "pattern": "src/app/**/*",
+        "mode": "file"
+      },
+      {
+        "type": "fixture",
+        "pattern": "tools/lint-fixtures/**/*",
+        "mode": "file"
+      }
+    ]
+  },
+  "rules": {
+    "boundaries/element-types": [
+      "error",
+      {
+        "default": "disallow",
+        "rules": [
+          {
+            "from": "domain",
+            "allow": ["domain"]
+          },
+          {
+            "from": "lib",
+            "allow": ["domain", "lib"]
+          },
+          {
+            "from": "ui",
+            "allow": ["domain", "lib", "ui"]
+          },
+          {
+            "from": "server",
+            "allow": ["domain", "lib", "types", "server"]
+          },
+          {
+            "from": "feature",
+            "allow": ["domain", "lib", "ui", "server", "types", "feature"]
+          },
+          {
+            "from": "app",
+            "allow": ["domain", "lib", "ui", "server", "types", "feature", "app"]
+          },
+          {
+            "from": "fixture",
+            "allow": ["domain", "lib", "ui", "server", "types", "feature"]
+          }
+        ]
+      }
+    ],
+    "boundaries/entry-point": [
+      "error",
+      {
+        "default": "allow",
+        "rules": [
+          {
+            "target": ["feature"],
+            "disallow": ["components/**/*", "hooks/**/*", "actions.ts", "queries.ts"],
+            "message": "Violación de frontera arquitectónica: No se permite importar archivos internos de una feature. Usá su index.ts (cliente) o server.ts (servidor) según la regla 20."
+          }
+        ]
+      }
+    ],
+    "cadeapp/client-no-server": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "axios",
+            "message": "Prohibido según regla 25: usar fetch nativo o cliente Supabase."
+          },
+          {
+            "name": "lodash",
+            "message": "Prohibido según regla 25: usar utilidades de TypeScript nativas."
+          },
+          {
+            "name": "moment",
+            "message": "Prohibido según regla 25: usar date-fns (locale es) o Intl."
+          },
+          {
+            "name": "react-hot-toast",
+            "message": "Prohibido según regla 25: usar sonner a través de src/ui/notify."
+          },
+          {
+            "name": "zustand",
+            "message": "Prohibido según regla 25: estado de servidor va en TanStack Query y estado local en useState sin aprobación de Lautaro073."
+          },
+          {
+            "name": "gsap",
+            "message": "Prohibido según regla 25: usar motion/react."
+          },
+          {
+            "name": "prisma",
+            "message": "Prohibido según regla 25: no usar ORMs (usar Supabase / PostgreSQL directo)."
+          },
+          {
+            "name": "@prisma/client",
+            "message": "Prohibido según regla 25: no usar ORMs (usar Supabase / PostgreSQL directo)."
+          }
+        ]
+      }
+    ]
+  }
+}
