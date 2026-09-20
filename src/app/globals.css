@@ -9,12 +9,12 @@
     @apply border-border;
   }
   html {
-    /* Cláusula Anti-12px (D16): piso tipográfico de lectura a 14px (text-sm) */
-    font-size: 14px;
+    /* NO fijar font-size acá: rompe la escala rem y la preferencia de accesibilidad del usuario */
     -webkit-tap-highlight-color: transparent;
   }
   body {
-    @apply bg-background text-foreground;
+    /* Cláusula Anti-12px (D16): piso tipográfico de lectura a 14px (text-sm sobre raíz 16px default) */
+    @apply bg-background text-foreground text-sm;
     font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
     min-height: 100dvh;
     overflow-x: hidden;

@@ -11,7 +11,7 @@ export default function HomePage() {
         <p className="text-muted-foreground text-sm">
           Plataforma de logística urbana hiperlocal para Aguilares, Tucumán.
         </p>
-        <div className="rounded-lg bg-muted p-3 text-xs font-mono text-muted-foreground">
+        <div className="rounded-lg bg-muted p-3 text-sm font-mono text-muted-foreground">
           Fase 0 · Scaffold mínimo operativo (T-000)
         </div>
       </div>

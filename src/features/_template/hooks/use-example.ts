@@ -4,11 +4,17 @@ import { useQuery } from '@tanstack/react-query';
 import { exampleKeys } from '../query-keys';
 import type { ExampleItem } from '../schemas';
 
-export function useExampleItems(initialData?: ExampleItem[]) {
+export interface UseExampleItemsOptions {
+  filters?: Record<string, unknown>;
+  initialData?: ExampleItem[];
+}
+
+export function useExampleItems({ filters = {}, initialData }: UseExampleItemsOptions = {}) {
   return useQuery({
-    queryKey: exampleKeys.lists(),
+    // La clave incluye los filtros para evitar colisiones de caché entre pantallas
+    queryKey: exampleKeys.list(filters),
     queryFn: async () => {
-      // Llamada a endpoint o Server Action en features reales
+      // En features reales: fetch a un route handler o llamada a Server Action
       return initialData ?? [];
     },
     initialData,

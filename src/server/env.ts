@@ -50,4 +50,14 @@ export const serverEnv = new Proxy({} as ServerEnv, {
   get(_target, prop: string | symbol) {
     return getServerEnv()[prop as keyof ServerEnv];
   },
+  ownKeys() {
+    return Reflect.ownKeys(getServerEnv());
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    return {
+      value: getServerEnv()[prop as keyof ServerEnv],
+      enumerable: true,
+      configurable: true,
+    };
+  },
 });

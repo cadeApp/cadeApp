@@ -61,6 +61,11 @@ const config: Config = {
         sans: ['var(--font-sans)', 'sans-serif'],
         display: ['var(--font-display)', 'sans-serif'],
       },
+      fontSize: {
+        // Cláusula Anti-12px (D16): ninguna parada de la escala baja de 14px
+        xs: ['0.875rem', { lineHeight: '1.25rem' }],
+        sm: ['0.875rem', { lineHeight: '1.25rem' }],
+      },
     },
   },
   plugins: [],

@@ -36,7 +36,19 @@ let cachedPublicEnv: PublicEnv | null = null;
 
 export function getPublicEnv(): PublicEnv {
   if (!cachedPublicEnv) {
-    cachedPublicEnv = createPublicEnv(process.env);
+    // IMPORTANTE: cada acceso debe ser una expresión literal `process.env.NEXT_PUBLIC_*`
+    // para que el DefinePlugin de Next.js lo sustituya textualmente en el bundle de cliente.
+    // NO reemplazar por un bucle ni por destructuring: rompe el inlineado en navegador.
+    cachedPublicEnv = createPublicEnv({
+      NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+      NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+      NEXT_PUBLIC_ENABLE_MOCK_MAPS: process.env.NEXT_PUBLIC_ENABLE_MOCK_MAPS,
+      NEXT_PUBLIC_SENTRY_DSN: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    });
   }
   return cachedPublicEnv;
 }
@@ -44,5 +56,15 @@ export function getPublicEnv(): PublicEnv {
 export const publicEnv = new Proxy({} as PublicEnv, {
   get(_target, prop: string | symbol) {
     return getPublicEnv()[prop as keyof PublicEnv];
+  },
+  ownKeys() {
+    return Reflect.ownKeys(getPublicEnv());
+  },
+  getOwnPropertyDescriptor(_target, prop) {
+    return {
+      value: getPublicEnv()[prop as keyof PublicEnv],
+      enumerable: true,
+      configurable: true,
+    };
   },
 });

@@ -8,7 +8,7 @@
     "cadeapp"
   ],
   "settings": {
-    "boundaries/include": ["src/**/*", "tools/lint-fixtures/**/*"],
+    "boundaries/include": ["src/**/*", "middleware.ts", "tools/lint-fixtures/**/*"],
     "boundaries/elements": [
       {
         "type": "domain",
@@ -44,6 +44,11 @@
       {
         "type": "app",
         "pattern": "src/app/**/*",
+        "mode": "file"
+      },
+      {
+        "type": "middleware",
+        "pattern": "middleware.ts",
         "mode": "file"
       },
       {
@@ -84,6 +89,10 @@
             "allow": ["domain", "lib", "ui", "server", "types", "feature", "app"]
           },
           {
+            "from": "middleware",
+            "allow": ["feature"]
+          },
+          {
             "from": "fixture",
             "allow": ["domain", "lib", "ui", "server", "types", "feature"]
           }
@@ -93,12 +102,16 @@
     "boundaries/entry-point": [
       "error",
       {
-        "default": "allow",
+        "default": "disallow",
         "rules": [
           {
             "target": ["feature"],
-            "disallow": ["components/**/*", "hooks/**/*", "actions.ts", "queries.ts"],
+            "allow": ["index.ts", "server.ts"],
             "message": "Violación de frontera arquitectónica: No se permite importar archivos internos de una feature. Usá su index.ts (cliente) o server.ts (servidor) según la regla 20."
+          },
+          {
+            "target": ["domain", "lib", "ui", "types", "server", "app", "middleware", "fixture"],
+            "allow": ["**/*"]
           }
         ]
       }
@@ -140,8 +153,62 @@
             "name": "@prisma/client",
             "message": "Prohibido según regla 25: no usar ORMs (usar Supabase / PostgreSQL directo)."
           }
+        ],
+        "patterns": [
+          {
+            "group": ["axios", "axios/*"],
+            "message": "Prohibido según regla 25: usar fetch nativo o cliente Supabase."
+          },
+          {
+            "group": ["lodash", "lodash/*", "lodash-es", "lodash-es/*"],
+            "message": "Prohibido según regla 25: usar utilidades de TypeScript nativas."
+          },
+          {
+            "group": ["moment", "moment/*"],
+            "message": "Prohibido según regla 25: usar date-fns (locale es) o Intl."
+          },
+          {
+            "group": ["react-hot-toast", "react-hot-toast/*"],
+            "message": "Prohibido según regla 25: usar sonner a través de src/ui/notify."
+          },
+          {
+            "group": ["zustand", "zustand/*"],
+            "message": "Prohibido según regla 25: estado de servidor va en TanStack Query y estado local en useState sin aprobación de Lautaro073."
+          },
+          {
+            "group": ["gsap", "gsap/*"],
+            "message": "Prohibido según regla 25: usar motion/react."
+          },
+          {
+            "group": ["prisma", "prisma/*", "@prisma/*"],
+            "message": "Prohibido según regla 25: no usar ORMs (usar Supabase / PostgreSQL directo)."
+          }
         ]
       }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/features/**/components/**",
+        "src/features/**/hooks/**",
+        "src/features/**/schemas.ts",
+        "src/features/**/copy.ts",
+        "src/features/**/index.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["@/server", "@/server/*", "src/server", "src/server/*"],
+                "message": "Violación de regla 20: En una feature, solo actions.ts y queries.ts pueden importar de src/server/**."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }
