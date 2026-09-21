@@ -1,23 +1,31 @@
 # Cómo se entrega una revisión
 
-Aplica cuando el PR es de otra persona (P2 o P3). Para los PR propios el flujo sigue igual — incluida la separación de canales: el dato estructurado nunca vive en la rama revisada.
+Dónde vive la revisión depende de **de quién es la PR**. Decidido por Lautaro073 el 2026-09-21.
 
-## La regla que manda
+## Los dos casos
 
-`revisar-pr` paso 6: **«No apruebes, no mergees y no hagas cambios en la rama»**. La revisión nunca entra en la rama que se está revisando. Si entrara, el head se movería mientras se revisa y el `verificado_en_sha` de cada hallazgo quedaría viejo en el mismo acto de reportarlo.
-
-## Los dos canales
-
-| Qué | Dónde | Quién lo toca |
+| De quién es la PR | El informe | El dato estructurado |
 |---|---|---|
-| **El informe** | Comentario en la PR, en formato copiable para su agy | Quien revisa |
-| **El dato estructurado** (`hallazgos.jsonl`, evidencia, rondas) | Rama `docs/revisiones`, carpeta `docs/revision-pr/pr-NN/` | Solo Lautaro073 |
+| **De Lautaro073** (P1) | Comentario en la PR | **En la rama de la tarea**, en `docs/revision-pr/pr-NN/` |
+| **De P2 o P3** | Comentario en la PR, copiable para su agy | **Rama `docs/revisiones`**, que solo toca Lautaro073 |
 
-La rama `docs/revisiones` se crea **cuando P2 abra su primera PR**. Es de vida larga: se le van sumando las carpetas de cada revisión y se mergea a `develop` cuando la PR revisada se cierra, así el histórico queda en la línea principal.
+El corte es quién tiene que hacer algo con eso. Si la PR es propia, la misma persona revisa y arregla: tener la carpeta a mano en la rama donde trabaja es lo cómodo, y no le cuesta ninguna operación de git. Si la PR es de P2 o P3, meterle commits a su rama la obliga a pullear sobre trabajo en curso, que es justo lo que frena a quien opera agy sin programar (§3.8).
 
-**Esto vale también para las PR propias**, y por dos motivos, no uno. El primero es el desvío de alcance: meter `docs/revision-pr/` en la rama de la tarea generó un hallazgo `A01` en las tres primeras PR. El segundo lo aprendimos en la #49: el commit `04d77e9` metió la carpeta en la rama, el revert `fbe7054` la borró entera y **se perdió el informe de la ronda 2**, que estaba sin commitear. La revisión se commitea en `docs/revisiones` al cerrar cada ronda, antes de reportar.
+## Lo que hay que tener en cuenta en cada caso
 
-Ventaja: la persona revisada **no tiene que pullear nada**. Lee un comentario. Cero operaciones de git sobre trabajo en curso — que es justo lo que frena a quien opera agy sin programar (§3.8).
+### PR propia · la carpeta va en la rama de la tarea
+
+- **`docs/revision-pr/**` está en los «Archivos permitidos» de las 27 fichas**, y `tools/verify-fichas.test.ts` lo exige. Sin eso, dejar la revisión en la rama es un desvío de alcance: fue `PR47-A01` y `PR49-A01`.
+- **Commitear al cerrar cada ronda, no dejarla en el árbol de trabajo.** En la #49, el revert `fbe7054` se llevó puesta la carpeta entera y el informe de la ronda 2 se perdió porque estaba sin commitear. Hubo que reconstruirlo.
+- **Un `revert` o un `merge` puede volver a borrarla.** Pasó dos veces. Si un merge trae un revert que la toca, se resuelve conservando la versión de la revisión.
+- Al mergear la PR, la carpeta entra a `develop` con ella. El histórico queda solo.
+
+### PR de P2 o P3 · la carpeta va a `docs/revisiones`
+
+- **`revisar-pr` paso 6 manda: «No apruebes, no mergees y no hagas cambios en la rama».** Acá aplica en serio: si la revisión entrara, el head se movería mientras se revisa y el `verificado_en_sha` de cada hallazgo quedaría viejo en el mismo acto de reportarlo.
+- La rama `docs/revisiones` es de vida larga. Se le suman las carpetas de cada revisión y se mergea a `develop` cuando la PR revisada se cierra, para que el histórico quede en la línea principal.
+- **Ese merge hay que hacerlo.** Después de cerrar la #49 no se hizo, y `develop` se quedó sin `pr-49` durante todo T-003.
+- La persona revisada no tiene que pullear nada: lee un comentario.
 
 ## Formato del comentario
 
