@@ -38,8 +38,8 @@ Completar al crear el repo:
 | Persona | Usuario de GitHub | Rol |
 |---|---|---|
 | Persona 1 | `@Lautaro073` | Líder técnico y desarrollador. Programa datos, servidor y arranque (T-000, T-001, T-003). Revisa y aprueba los PR de las otras dos personas. Único administrador de producción. |
-| Persona 2 | `@________` | Operador de agy (no programador) en la zona App de comercio y repartidor. agy codifica y ejecuta las skills bajo su cuenta. |
-| Persona 3 | `@________` | Operador de agy (no programador) en la zona Admin, PWA y calidad. agy codifica y ejecuta las skills bajo su cuenta. |
+| Persona 2 | `@KiraK72` | Operador de agy (no programador) en la zona App de comercio y repartidor. agy codifica y ejecuta las skills bajo su cuenta. |
+| Persona 3 | `Pendiente` | Operador de agy (no programador) en la zona Admin, PWA y calidad. agy codifica y ejecuta las skills bajo su cuenta (Lautaro073 cubre provisoriamente). |
 
 | Zona | Rutas | Dueña |
 |---|---|---|

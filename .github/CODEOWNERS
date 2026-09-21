@@ -1,0 +1,44 @@
+# cadeApp — dueños de código (equipo: Lautaro073 + operadores de agy).
+# Persona 2: @KiraK72. Persona 3: pendiente de incorporación (Lautaro073 cubre provisoriamente).
+# CODEOWNERS pide revisión automáticamente; QUIÉN debe aprobar lo hace cumplir el check `approval-policy`:
+#   - PR de persona2 o persona3 → aprobación de Lautaro073.
+#   - PR de Lautaro073 → aprobación de persona2 o persona3 con informe de revisar-pr.
+# GitHub usa la última línea que coincide.
+
+# Por defecto (incluye .github/, .agents/, AGENTS.md, docs/)
+*                                 @Lautaro073 @KiraK72
+
+# P1 · Lautaro073 · Datos, servidor y plataforma
+/supabase/                        @Lautaro073 @KiraK72
+/src/server/                      @Lautaro073 @KiraK72
+/src/app/api/                     @Lautaro073 @KiraK72
+/src/types/database.types.ts      @Lautaro073 @KiraK72
+/middleware.ts                    @Lautaro073 @KiraK72
+/src/app/layout.tsx               @Lautaro073 @KiraK72
+/src/app/providers.tsx            @Lautaro073 @KiraK72
+/package.json                     @Lautaro073 @KiraK72
+/pnpm-lock.yaml                   @Lautaro073 @KiraK72
+
+# P2 · KiraK72 · App de comercio y repartidor
+/src/domain/                      @KiraK72 @Lautaro073
+/src/ui/                          @KiraK72 @Lautaro073
+/src/lib/                         @KiraK72 @Lautaro073
+/src/app/(merchant)/              @KiraK72 @Lautaro073
+/src/app/(courier)/               @KiraK72 @Lautaro073
+/src/features/auth/               @KiraK72 @Lautaro073
+/src/features/merchants/          @KiraK72 @Lautaro073
+/src/features/requests/           @KiraK72 @Lautaro073
+/src/features/offers/             @KiraK72 @Lautaro073
+/src/features/trips/              @KiraK72 @Lautaro073
+/src/features/availability/       @KiraK72 @Lautaro073
+
+# P3 · Admin, PWA y calidad (Lautaro073 cubre provisoriamente hasta incorporar a Persona 3)
+/src/app/(admin)/                 @Lautaro073
+/src/app/(public)/                @Lautaro073
+/src/features/courier-onboarding/ @Lautaro073
+/src/features/admin/              @Lautaro073
+/src/features/incidents/          @Lautaro073
+/src/features/notifications/      @Lautaro073
+/src/features/legal/              @Lautaro073
+/public/                          @Lautaro073
+/e2e/                             @Lautaro073

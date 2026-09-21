@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
@@ -17,7 +17,8 @@ describe('T-001: DoD - Kit de agy, CODEOWNERS y Guard', () => {
       const hooksPath = path.resolve('.agents/hooks.json');
       expect(fs.existsSync(hooksPath), '.agents/hooks.json no existe').toBe(true);
       const content = JSON.parse(fs.readFileSync(hooksPath, 'utf-8'));
-      expect(content).toHaveProperty('PreToolUse');
+      const hookConfig = content['cadeapp-guard'] ?? content;
+      expect(hookConfig).toHaveProperty('PreToolUse');
     });
 
     it('debe existir .agents/scripts/agent-guard.mjs', () => {
