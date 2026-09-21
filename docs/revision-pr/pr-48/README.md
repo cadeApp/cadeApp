@@ -8,34 +8,36 @@
 | **Rama** | `feat/T-001-kit-agy-codeowners` → `develop` |
 | **Base** | `f6dc070` |
 | **Tamaño** | 64 archivos, +1079 / −204 |
-| **Estado** | Abierta · 5 hallazgos abiertos + 1 decisión |
+| **Estado** | Aprobada · 6/6 hallazgos corregidos y verificados · 2 decisiones resueltas (A01, A02) · 0 pendientes |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `fb7398a` | 5 abiertos + 1 decisión | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `d359aec` | **Todo cerrado y verificado**; 2 residuos menores | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| H01 | El comodín `.env*` esquiva el bloqueo de secretos | 🟠 | ❌ abierto |
-| H02 | `git push` pelado no se bloquea | 🟠 | ❌ abierto |
-| H03 | 7 referencias muertas a `docs/agy-kit/` | 🟡 | ❌ abierto |
-| H04 | Rutas de P3 sin revisor efectivo en CODEOWNERS | 🟡 | ❌ abierto |
-| H05 | El test de CODEOWNERS no valida que los usuarios existan | 🟡 | ❌ abierto |
-| **A01** | `tools/verify-t001.test.ts` fuera de los «Archivos permitidos» | 🔵 | 🔵 decisión pendiente |
+| H01 | El comodín `.env*` esquiva el bloqueo de secretos | 🟠 | ✅ arreglado (`d359aec`) |
+| H02 | `git push` pelado no se bloquea | 🟠 | ✅ arreglado (`d359aec`) |
+| H03 | 7 referencias muertas a `docs/agy-kit/` | 🟡 | ✅ arreglado (`d359aec`) |
+| H04 | Rutas de P3 sin revisor efectivo en CODEOWNERS | 🟡 | ✅ arreglado (`d359aec`) |
+| H05 | El test de CODEOWNERS no valida que los usuarios existan | 🟡 | ✅ arreglado (`d359aec`) |
+| **A01** | `tools/verify-t001.test.ts` fuera de los «Archivos permitidos» | 🔵 | ✅ resuelto: la ficha lo incluye |
+| **H06** | La regex nueva de `.env` bloquea nombres legítimos | ⚪ | ✅ arreglado |
+| **A02** | El arreglo de H03 tocó `tools/verify-approved-packages.test.ts` | 🔵 | ✅ resuelto: ficha ampliada a `tools/**` |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos reproducibles: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. **H01 + H02 (juntos)** — los dos son huecos de regex en `agent-guard.mjs`, y conviene arreglarlos en una sola pasada con sus fixtures.
-2. **H03** — reemplazar las 7 rutas muertas en `docs/implementation-plan.md` y el comentario de `tools/verify-approved-packages.test.ts:4`.
-3. **H04** — agregar `@KiraK72` como codueño de las rutas de P3.
-4. **H05** — llevar la validación real de CODEOWNERS a CI (T-003).
-5. **A01** — decisión: agregar `tools/**` a la ficha de T-001, o aceptar el desvío.
+No hay trabajo bloqueante. Quedan dos residuos:
+
+1. **H06 (bajo)** — la regex de `.env` quedó tan amplia que bloquea nombres legítimos como `.environment-setup.md`. Hoy no existe ningún archivo así en el repo, así que es deuda y no un bloqueo. Arreglo de una línea en `ronda-2.md`.
+2. **A02 (decisión)** — arreglar H03 tocó `tools/verify-approved-packages.test.ts`, una línea de comentario, fuera de los «Archivos permitidos». O se amplía la ficha a `tools/**`, o se acepta y se registra en la aprobación.
 
 ## Lo que está verificado y bien
 

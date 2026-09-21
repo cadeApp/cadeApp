@@ -192,6 +192,12 @@ describe('T-001: DoD - Kit de agy, CODEOWNERS y Guard', () => {
         });
         expect(result.decision).toBe('ask');
       });
+          it('H06: debe permitir nombres legítimos que empiezan con .env como .environment-setup.md (ask)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'cat docs/.environment-setup.md' } },
+        });
+        expect(result.decision).toBe('ask');
+      });
     });
 
     describe('DoD 3.2: Bloqueo de supabase remoto', () => {

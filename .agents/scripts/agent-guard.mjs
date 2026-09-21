@@ -23,7 +23,7 @@ const text = JSON.stringify(args);
 const command = typeof args.CommandLine === 'string' ? args.CommandLine : '';
 
 // .env, .env.local, .env.production... pero no .env.example
-const SECRET_FILE = /(^|[^a-zA-Z0-9_])\.env(?!\.example($|[\s"'\\/,;:)&|<>\]}`]))/i;
+const SECRET_FILE = /(^|[^a-zA-Z0-9_])\.env(?![a-zA-Z0-9_-])(?!\.example($|[\s"'\\/,;:)&|<>\]}`]))/i;
 const SECRET_NAME = /SERVICE_ROLE|VAPID_PRIVATE|DNI_HMAC_SECRET|CRON_SECRET|SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD/i;
 
 if (SECRET_FILE.test(text)) respond('deny', 'Regla 00: no se leen ni tocan archivos .env (solo .env.example).');
