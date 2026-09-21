@@ -8,23 +8,25 @@
 | **Rama** | `feat/T-003-ci-workflows` → `develop` |
 | **Base** | `cdf6d13` |
 | **Tamaño** | 7 archivos, +649 / −0 |
-| **Estado** | Abierta · **1 crítico, 1 alto, 3 medios** · 0 fuera de alcance |
+| **Estado** | Abierta · **5 de 7 cerrados y verificados** en `a5df3a9` · 2 abiertos, ninguno crítico |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `631dc1e` | 5 abiertos (1 crítico) · alcance limpio | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `a5df3a9` | **H01–H04 cerrados, los 4 demostrados en rojo** · 1 nuevo chico | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| **H01** | **Producción migraría contra la base de staging** | 🔴 | 🔴 abierto |
-| H02 | El filtro de quién migra saltea el job, y saltear es verde | 🟠 | 🔴 abierto |
-| H03 | El test de la compuerta de producción no la ve | 🟡 | 🔴 abierto |
-| H04 | El DoD pide que `bundle-budget` avise y el job bloquea | 🟡 | 🔴 abierto |
-| H05 | Los `.mjs` no pasan por typecheck, lint ni `pnpm test` | 🟡 | 🔴 abierto |
+| H01 | Producción migraría contra la base de staging | 🔴 | ✅ verificado (`a5df3a9`) |
+| H02 | El filtro de quién migra saltea el job, y saltear es verde | 🟠 | ✅ verificado (`a5df3a9`) |
+| H03 | El test de la compuerta de producción no la ve | 🟡 | ✅ verificado (`a5df3a9`) |
+| H04 | El DoD pide que `bundle-budget` avise y el job bloquea | 🟡 | ✅ verificado (`a5df3a9`) |
+| **H05** | Los `.mjs` no pasan por typecheck, lint ni `pnpm test` | 🟡 | 🔴 abierto — **decisión tuya** |
+| **H06** | El aviso de `bundle-budget` dice algo falso si no pudo leer la salida | 🟡 | 🔴 abierto |
 | A01 | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`631dc1e`) — **0 fuera** |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md)
