@@ -36,15 +36,16 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
-          test -n "$SUPABASE_ACCESS_TOKEN"
-          test -n "$SUPABASE_DB_PASSWORD"
-          test -n "$SUPABASE_PROJECT_REF"
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo '::error::Faltan credenciales o el ref de Supabase en el ambiente staging.'
+            exit 1
+          fi
           pnpm supabase link --project-ref "$SUPABASE_PROJECT_REF"
           pnpm supabase db push --yes
 
   production:
     name: migrate-production
-    if: github.ref_name == 'main'
+    if: github.ref_name == 'main' && github.actor == 'Lautaro073'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15
@@ -66,8 +67,9 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
         run: |
-          test -n "$SUPABASE_ACCESS_TOKEN"
-          test -n "$SUPABASE_DB_PASSWORD"
-          test -n "$SUPABASE_PROJECT_REF"
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo '::error::Faltan credenciales o el ref de Supabase en el ambiente production.'
+            exit 1
+          fi
           pnpm supabase link --project-ref "$SUPABASE_PROJECT_REF"
           pnpm supabase db push --yes

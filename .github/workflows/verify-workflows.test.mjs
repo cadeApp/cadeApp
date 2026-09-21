@@ -63,6 +63,11 @@ test('migration workflow serializes staging and production pushes', () => {
   assert.match(migrate, /pnpm supabase db push/);
 });
 
+test('production migration only runs when Lautaro073 triggered the main push', () => {
+  const migrate = workflow('migrate.yml');
+  assert.match(migrate, /if:\s*github\.ref_name == 'main' && github\.actor == 'Lautaro073'/);
+});
+
 test('every third-party action is pinned to a full commit SHA', () => {
   const names = readdirSync(new URL('.', import.meta.url)).filter((name) => name.endsWith('.yml'));
   assert.ok(names.length >= 3, 'CI, migration and approval workflows must exist');
@@ -101,10 +106,18 @@ test('comments do not revoke an approval, but a later change request does', asyn
   const { evaluateApprovalPolicy } = await import('./approval-policy.mjs');
   const approval = { user: 'Lautaro073', state: 'APPROVED', submittedAt: '2026-09-21T12:00:00Z' };
   const comment = { user: 'Lautaro073', state: 'COMMENTED', submittedAt: '2026-09-21T12:05:00Z' };
-  const changes = { user: 'Lautaro073', state: 'CHANGES_REQUESTED', submittedAt: '2026-09-21T12:10:00Z' };
-  assert.equal(evaluateApprovalPolicy({ author: 'KiraK72', reviews: [approval, comment], body: '' }).ok, true);
+  const changes = {
+    user: 'Lautaro073',
+    state: 'CHANGES_REQUESTED',
+    submittedAt: '2026-09-21T12:10:00Z',
+  };
   assert.equal(
-    evaluateApprovalPolicy({ author: 'KiraK72', reviews: [approval, comment, changes], body: '' }).ok,
+    evaluateApprovalPolicy({ author: 'KiraK72', reviews: [approval, comment], body: '' }).ok,
+    true
+  );
+  assert.equal(
+    evaluateApprovalPolicy({ author: 'KiraK72', reviews: [approval, comment, changes], body: '' })
+      .ok,
     false
   );
 });
