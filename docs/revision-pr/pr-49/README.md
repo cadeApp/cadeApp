@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-002-supabase-clients` → `develop` |
 | **Base** | `9f03018` |
 | **Tamaño** | 19 archivos, +664 / −57 |
-| **Estado** | Abierta · **11 cerrados y verificados · 1 decisión · 2 abiertos (ninguno bloquea)** |
+| **Estado** | Abierta · **13 cerrados y verificados · 0 decisiones · 2 abiertos (2 líneas de arreglo)** |
 
 ## Rondas
 
@@ -18,6 +18,7 @@
 | 2 | `04d77e9` | 4 cerrados · H04 revertido a abierto · A01 parcial | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `17a0be4` | H04 y A01 cerrados · H03 bajado a parcial · **5 nuevos, 1 crítico** | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 | 4 | `3be754a` | **Los 3 bloqueantes cerrados y verificados** · 2 nuevos chicos | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
+| 5 | `62cf1f9` | H10, H12 y el residual de H06 cerrados · **H13 reabierto: la prueba no ejecuta el script** | [`revisiones/ronda-5.md`](revisiones/ronda-5.md) |
 
 ## Estado por hallazgo
 
@@ -32,10 +33,11 @@
 | H07 | El CLI de Supabase está declarado pero no se puede instalar | 🔴 | ✅ verificado (`3be754a`) — `--frozen-lockfile` exit 0 |
 | H08 | `db:types` borra los tipos commiteados cuando falla | 🟠 | ✅ verificado (`3be754a`) — mismo md5 tras fallar |
 | H09 | `--project-id` recibe un nombre de proyecto, no un ref | 🟡 | ✅ verificado (`3be754a`) |
-| **H10** | La ficha promete una vinculación remota que ya no hace falta | 🔵 | 🔵 **decisión de @Lautaro073** |
+| H10 | La ficha promete una vinculación remota que ya no hace falta | 🔵 | ✅ verificado (`62cf1f9`) — resuelto por la opción (a) |
 | H11 | `.env.example` sigue entregando el flujo con Docker | 🟡 | ✅ verificado (`3be754a`) |
-| **H12** | `.env.example` trae una URL de Supabase que no puede existir | 🔵 | 🔴 abierto |
-| **H13** | El arreglo de H08 no tiene prueba de regresión | 🟡 | 🔴 abierto |
+| H12 | `.env.example` trae una URL de Supabase que no puede existir | 🔵 | ✅ verificado (`62cf1f9`) |
+| **H13** | La prueba de regresión no ejecuta el script: pasa en el vacío | 🟡 | 🔴 **abierto** |
+| **H14** | El arreglo de H12 amplió el regex del ref sin necesidad | 🔵 | 🔴 abierto |
 | **A01** | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`3be754a`) — **0 fuera de alcance** |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md)

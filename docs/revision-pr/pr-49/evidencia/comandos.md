@@ -344,3 +344,89 @@ FUERA DE ALCANCE: 0 (ninguno)
 ```
 
 `pnpm-lock.yaml` entró a los «Archivos permitidos» de la ficha y del plan; `tools/db-types.mjs` cae bajo `tools/**`.
+
+---
+
+# Ronda 5 — `62cf1f9`
+
+## Batería completa
+
+```bash
+pnpm typecheck                  # exit 0
+pnpm lint                       # ✔ No ESLint warnings or errors
+pnpm test                       # Test Files 8 passed (8) · Tests 66 passed (66)
+pnpm install --frozen-lockfile  # Done in 316ms · exit 0
+```
+
+Alcance: 19 archivos, 0 fuera de la ficha.
+
+## H13 · La prueba de regresión no ejecuta el script
+
+El mismo `spawnSync` del test, corrido a mano contra `tools/db-types.mjs`:
+
+```js
+const script = path.resolve('tools/db-types.mjs');
+// → C:\Users\El Yisus Pai\Desktop\Proyectos\cadeApp\tools\db-types.mjs   (tiene espacios)
+
+spawnSync('node', [script, '--invalid-flag-force-fail'], {
+  env: { ...process.env, DB_TYPES_TARGET_FILE: f },
+  shell: /* true | false */,
+});
+```
+
+```
+shell:true   status=1   ¿corrió el script? NO
+  → node:internal/modules/cjs/loader:1228
+    Error: Cannot find module 'C:\Users\El'
+
+shell:false  status=1   ¿corrió el script? SI
+  → [db:types] Ejecutando: pnpm supabase gen types typescript --invalid-flag-force-fail
+```
+
+### Demostración en rojo del test
+
+Parche temporal en `tools/db-types.mjs`, reproduciendo la semántica del bug de la ronda 3:
+
+```js
+writeFileSync(TARGET_FILE, '', 'utf-8'); // BUG SIMULADO (redirección >)
+const args = process.argv.slice(2);
+```
+
+```bash
+pnpm exec vitest run src/server/supabase/clients.test.ts -t "no debe truncar"
+```
+
+```
+ ✓ src/server/supabase/clients.test.ts (9 tests | 8 skipped) 44ms
+   Tests  1 passed | 8 skipped (9)
+```
+
+El test **pasó** con el script destruyendo el archivo. Restaurado con `git checkout -- tools/db-types.mjs`.
+
+Verificación aparte de que el arreglo de H08 sigue bien: ejecutando el script fuera del test (`shell:false`), falla y no toca el archivo destino.
+
+## H14 · El regex se amplió sin necesidad
+
+```bash
+node -e '...' # comparación de ambos regex sobre tres URLs
+```
+
+| URL | `[a-z0-9]+` | `[a-z0-9-]+` |
+|---|---|---|
+| `https://placeholderprojectref.supabase.co` | `placeholderprojectref` | `placeholderprojectref` |
+| `https://abcdefghijklmnopqrst.supabase.co` | `abcdefghijklmnopqrst` | `abcdefghijklmnopqrst` |
+| `https://cadeapp-staging.supabase.co` | `undefined` → `--linked` | `cadeapp-staging` |
+
+El placeholder nuevo ya matcheaba con el regex original: el cambio no era necesario y quita la validación que distingue un ref de un nombre de proyecto.
+
+## H10, H06 y H12 · Documentación cerrada
+
+```bash
+grep -n "vinculación\|supabase link" docs/tasks/T-002.md docs/implementation-plan.md
+```
+
+El objetivo y la fila del plan dicen ahora «configuración remota para `cadeapp-staging` vía variables de entorno (sin requerir `supabase link` en local)». El DoD de T-003 nombra `SUPABASE_PROJECT_REF`.
+
+`docs/onboarding.md:23`: «En CI (`ci.yml`, construido en T-003), se validará que no haya drift…».
+
+`.env.example:31`: `NEXT_PUBLIC_SUPABASE_URL=https://placeholderprojectref.supabase.co`, con el comentario `Staging / Prod: https://<project-ref>.supabase.co`.
