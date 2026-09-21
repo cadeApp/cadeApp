@@ -6,5 +6,5 @@
 - Orden dentro de una migración: tipos/enums → tablas → índices → funciones → RLS/policies → grants.
 - Toda función `SECURITY DEFINER`: `SET search_path = public, pg_temp`; `REVOKE ALL ... FROM public`; `GRANT EXECUTE ... TO authenticated`.
 - `seed.sql` nunca contiene datos reales; usuarios de prueba con emails `@example.test`.
-- Solo comandos locales (`pnpm supabase start`, `pnpm supabase db reset`). Los ambientes remotos los actualiza `migrate.yml`.
+- Los ambientes remotos los actualiza `migrate.yml`. Para desarrollo local se apunta a `cadeApp-staging` y los tipos se generan con `pnpm db:types` (sin Docker local).
 - Si Lautaro073 no está disponible, no se mergean cambios de esta carpeta (no hay procedimiento de emergencia).

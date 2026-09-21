@@ -40,7 +40,7 @@ Guardate estos 6 comandos. Son los únicos que vas a necesitar escribirle a agy:
 1. **Día 0 (Manual):** Crear repo en GitHub, ramas `develop` y `staging`, organización en Supabase y los 2 proyectos Free Tier (`cadeapp-prod` y `cadeapp-staging`).
 2. **T-000:** Scaffold inicial de Next.js.
 3. **T-001:** Instalación del kit agy, CODEOWNERS e issues.
-4. **T-002:** Supabase local (Docker) y configuración de proyectos staging/prod.
+4. **T-002:** Clientes de Supabase y vinculación a la nube (cadeApp-staging, sin Docker local).
 5. **T-003:** CI/CD (`ci.yml`, `migrate.yml`, `approval-policy.yml`).
 6. **T-004:** Esquema de base de datos v1 y seed.
 7. **T-007:** ADRs de Supabase y hosting.

@@ -122,7 +122,7 @@ Labels: `P1`, `P2`, `P3`, `fase-0` a `fase-3`, `bloqueada`, `contract-change`, `
 ### 3.7 Día 0 (Lautaro073, sin agentes)
 1. Crear el repo privado `cadeapp` en GitHub, invitar a las 3 personas y exigir 2FA.
 2. Crear `develop` y `staging` desde `main` y crear el Project "cadeApp" con las columnas y labels de §3.1.
-3. Crear la organización de Supabase y los **2 proyectos remotos del Free Tier**: `cadeapp-prod` (producción) y `cadeapp-staging` (staging, en T-002). No se crea proyecto remoto para `develop`: el desarrollo y CI corren 100% sobre Docker local y runners de GitHub (costo $0, sin límites excedidos).
+3. Crear la organización de Supabase y los **2 proyectos remotos del Free Tier**: `cadeapp-prod` (producción) y `cadeapp-staging` (staging y develop compartido, en T-002). Se utiliza `cadeapp-staging` tanto para develop como para staging, descartando Docker local para agilizar el onboarding de los operadores de agy y mantener costo $0 sin límites excedidos.
 4. Hosting: proyecto con ambientes de preview y producción. Producción la administra solo Lautaro073.
 5. Crear los GitHub Environments `staging` y `production` (este último con Lautaro073 como required reviewer). Los secretos se cargan a medida que las tareas los piden.
 6. Subir a `main` los documentos `docs/master-plan.md`, `docs/implementation-plan.md` y `docs/agy-kit/`, y completar la tabla de §2.
@@ -202,7 +202,7 @@ El hook ya se probó contra 35 casos: bloquea lo peligroso y deja pasar lo norma
   - Usa caché de pnpm y de las imágenes de Supabase. Objetivo: menos de 10 minutos.
   - `pnpm audit --audit-level=high` solo avisa hasta `contracts-v1`; después bloquea.
   - Las Actions de terceros van fijadas por SHA.
-- **`migrate.yml`:** al mergear a `staging` aplica `supabase db push` a `cadeapp-staging`. Al mergear a `main`, aplica a `cadeapp-prod` (exigiendo la aprobación de Lautaro073 en el environment `production`). En `develop`, la verificación de migraciones se realiza en CI con Docker en el runner de GitHub, sin requerir una base remota compartida.
+- **`migrate.yml`:** al mergear a `develop` o `staging` aplica `supabase db push` a `cadeapp-staging`. Al mergear a `main`, aplica a `cadeapp-prod` (exigiendo la aprobación de Lautaro073 en el environment `production`).
   - `concurrency: migrate-<ambiente>` con `cancel-in-progress: false`.
   - En `production` exige la aprobación de Lautaro073 en el environment.
 - **`e2e-staging.yml`:** corre después del deploy a staging, con `concurrency: e2e-staging`.
@@ -219,7 +219,7 @@ Cada tablero está en orden. `∥` = se puede hacer en paralelo con la anterior.
 
 ### 7.1 Persona 1 · Lautaro073 · Datos, servidor y arranque (15 tareas + revisión)
 1. T-000 Scaffold mínimo (máximo 1 día; destraba a todos)
-2. T-001 Kit de agy, CODEOWNERS, Project e issues (con P2 y P3 en el simulacro de traspaso) · ∥ T-002 Supabase local, clientes y proyectos staging/prod (Free Tier)
+2. T-001 Kit de agy, CODEOWNERS, Project e issues (con P2 y P3 en el simulacro de traspaso) · ∥ T-002 Clientes de Supabase y vinculación a la nube (cadeApp-staging, sin Docker local)
 3. T-003 CI/CD, protecciones y `approval-policy`
 4. T-004 Esquema v1 · ∥ T-007 ADRs
 5. T-005 RLS v1 → **`contracts-v1`**, junto con T-006 de P2
@@ -274,7 +274,7 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 |---|---|---|---|---|---|
 | T-000 | P1 | Scaffold mínimo: Next.js App Router, pnpm con `packageManager`, `.nvmrc` y `engines.node`, TS strict, ESLint con fronteras (`eslint-plugin-boundaries`) y regla cliente→servidor, `server-only`, Prettier con plugin de Tailwind, Tailwind, `components.json` de shadcn/ui apuntando a `src/ui`, Vitest con cobertura, raíz de `src/` según la regla 20, `src/features/_template/`, `layout.tsx`, `providers.tsx` con el `QueryClientProvider`, `middleware.ts` vacío, `src/server/env.ts` y `src/lib/env.public.ts` validados con Zod, `.env.example` | — | raíz y configs, esqueleto de `src/**`, `middleware.ts`, `components.json`, `tools/lint-fixtures/**` | typecheck, lint, test y build verdes. Lint falla con (a) un import profundo entre features, (b) un `"use client"` que importa `src/server/**` y (c) un paquete fuera de la lista aprobada, con fixtures commiteados. Importar un archivo `server-only` desde cliente rompe el build; arrancar sin una variable obligatoria falla con un mensaje claro |
 | T-001 | P1 | Instalar `docs/agy-kit/` en la raíz, CODEOWNERS con usuarios reales, Project y labels, un issue por tarea, fichas de Fase 0 y 1 | T-000 | `AGENTS.md`, `.agents/**`, `.github/CODEOWNERS`, `.github/pull_request_template.md`, `docs/**`, `supabase/AGENTS.md`, `src/domain/AGENTS.md`, `e2e/AGENTS.md` | GitHub no marca errores en CODEOWNERS; con agy en las máquinas de las 3 personas, leer `.env.local`, `pnpm supabase db push` y `git push origin develop` quedan bloqueados y `pnpm test` pide permiso normal; **simulacro de traspaso:** P2 empieza una ficha de prueba y P3 la retoma con `retomar-tarea` (acta en la bitácora); P2 y P3 generan un informe de `revisar-pr` sobre el PR de T-001 |
-| T-002 | P1 | CLI de Supabase en devDependencies con versión exacta, `config.toml`, proyectos staging y producción (Free Tier), clientes `src/server/supabase/{server,browser,admin}.ts`, scripts `db:*`, sección de base en `docs/onboarding.md` | T-000 | `supabase/config.toml`, `src/server/supabase/**`, `package.json` (scripts y devDep), `.env.example`, `docs/onboarding.md` | P2 o P3 levantan la base en su máquina siguiendo solo el onboarding (vía Docker local); no hay claves en el repo; el cliente admin tiene `server-only` |
+| T-002 | P1 | Clientes @supabase/ssr (`src/server/supabase/{server,browser,admin}.ts`), vinculación al proyecto remoto (`cadeapp-staging`), script `pnpm db:types` remoto, sección de base en `docs/agy-kit/docs/onboarding.md` (sin Docker local) | T-000 | `src/server/supabase/**`, `package.json` (scripts y dependencias), `.env.example`, `docs/agy-kit/docs/onboarding.md` | Variables de entorno validadas con `cadeapp-staging`; no hay claves en el repo; el cliente admin tiene `server-only`; tipos generados con `pnpm db:types` sin diff |
 | T-003 | P1 | `ci.yml`, `migrate.yml`, `approval-policy.yml`, protecciones y environments según §6 | T-000, T-002 | `.github/workflows/**` | Un PR con error de tipos queda bloqueado; CI con caché en menos de 10 minutos; una migración vacía de prueba se aplica en staging; dos merges seguidos no migran en paralelo; Actions fijadas por SHA; `approval-policy` bloquea un PR de prueba de P2 sin aprobación de Lautaro073 y uno de Lautaro073 sin informe de agy; job `bundle-budget` informa el first-load JS por ruta y avisa si supera el presupuesto de la regla 25 |
 | T-004 | P1 | Esquema v1 (§7 del master plan), trigger de alta (rol desde metadatos, solo `merchant` o `courier`), seed de zonas y settings, tipos generados | T-002 | `supabase/migrations/**`, `supabase/seed.sql`, `supabase/tests/structure.sql`, `src/types/database.types.ts` | pgTAP de estructura (tablas, índices únicos parciales, checks); registrarse con rol `admin` no crea un admin; tipos sin diff |
 | T-005 | P1 | RLS v1, storage `courier-docs`, matriz RLS, `rls_enabled.sql` | T-004 | `supabase/migrations/**`, `supabase/tests/rls_*.sql` | Matriz por rol (merchant, courier approved/pending/suspended, admin, anon); un repartidor no aceptado no lee contactos; el bucket no se puede leer; `rls_enabled.sql` falla con una tabla sin RLS (demostrado) |
@@ -413,8 +413,8 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
     - `src/features/_template/`, validación de variables de entorno con Zod;
     - skill `implementar-diseno` y §12 para trabajar con Stitch;
     - T-000, T-003, T-008, T-204 y T-205 ajustadas.
-13. **Infraestructura Free Tier y operadores no-técnicos (v2.3, Lautaro073, 2026-09-17):**
-    - Se confirma el supuesto S3 del master plan: 2 proyectos Supabase remotos en el Free Tier (`staging` y `producción`). `develop` opera sin base remota, usando Docker local para devs y en runners de GitHub para CI (costo $0, sin colisiones de datos).
+13. **Infraestructura Free Tier y operadores no-técnicos (v2.3, Lautaro073, 2026-09-17; actualizado 2026-09-21):**
+    - Se confirma el supuesto S3 del master plan: 2 proyectos Supabase remotos en el Free Tier (`staging` y `producción`). `develop` y `staging` comparten `cadeapp-staging` en la nube, prescindiendo de Docker local para facilitar la operatoria de P2/P3 y CI (costo $0).
     - Se formaliza que P2 y P3 no programan: agy codifica y se autoinstruye a través de fichas y skills (`tomar-tarea`, `retomar-tarea`, `cerrar-sesion`, `revisar-pr`), con Lautaro073 como único líder técnico y revisor humano.
 14. **Geolocalización, selección de pin en mapa de Aguilares y distancia en servidor (v2.4, D15, 2026-09-18):**
     - Se incorpora la selección de pin en mapa para retiro y entrega en mapa de Aguilares mediante `@vis.gl/react-google-maps` cargado dinámicamente (`src/ui/map.tsx`).
@@ -450,7 +450,7 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
 | A2 | GitHub no deja aprobar el propio PR, y un workflow puede leer las aprobaciones de un PR y la sección del informe para hacer cumplir `approval-policy` | T-003 |
 | A3 | En `hooks.json` de agy, el comando corre desde `.agents/`, `run_command` trae `CommandLine` y `"ask"` respeta los permisos normales | T-001 (prueba en agy) |
 | A4 | `concurrency` con `cancel-in-progress: false` no pierde migraciones (`db push` aplica todas las pendientes) | T-003 |
-| A5 | La CLI de Supabase como devDependency fija la versión de las imágenes locales | T-002 |
+| A5 | La CLI de Supabase genera tipos de TypeScript (`pnpm db:types`) directamente contra cadeApp-staging remoto sin requerir Docker local | T-002 |
 | A6 | El umbral inicial de cobertura (90 % de ramas en `domain`) es alcanzable sin tests vacíos | T-006 |
 | A7 | El release semanal alcanza para el ritmo del equipo | Primer mes |
 

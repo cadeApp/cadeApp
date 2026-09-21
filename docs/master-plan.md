@@ -273,12 +273,12 @@ Legal (sin acceso a fuentes durante la revisión) dejó estos puntos. **Antes de
 
 | Ambiente | Rama | Base | Deploy | Uso |
 |---|---|---|---|---|
-| local | `feat/*` | Supabase CLI (Docker) con `seed.sql` | `next dev` | Desarrollo con agy. |
-| develop | `develop` | Supabase CLI (Docker) local / CI runner | Preview/dev en el hosting | Integración diaria y pruebas de PR. |
+| local | `feat/*` | Proyecto Supabase `cadeapp-staging` (Free Tier) | `next dev` | Desarrollo con agy. |
+| develop | `develop` | Proyecto Supabase `cadeapp-staging` (Free Tier) | Preview/dev en el hosting | Integración diaria y pruebas de PR. |
 | staging | `staging` | Proyecto Supabase `cadeapp-staging` (Free Tier) | Ambiente staging | Suite E2E completa y prueba de restauración. |
 | producción | `main` | Proyecto Supabase `cadeapp-prod` (Free Tier) | Producción | Usuarios reales en Aguilares. |
 
-> **Nota de infraestructura:** Supabase limita a 2 proyectos activos gratuitos por cuenta (S3 confirmado). Se aprovechan para `staging` y `producción`. `develop` opera 100% sobre Supabase local (Docker) en desarrollo y en runners de GitHub Actions para CI, garantizando costo $0 y evitando colisiones de datos.
+> **Nota de infraestructura:** Supabase limita a 2 proyectos activos gratuitos por cuenta (S3 confirmado). Se aprovechan para `staging`/`develop` (comparten `cadeapp-staging`) y `producción` (`cadeapp-prod`). Se prescinde de Supabase CLI local (Docker) para que el equipo y los operadores de agy no dependan de Docker Desktop en sus máquinas, garantizando costo $0.
 
 - **Flujo:** `feat/T-xxx-*` → PR a `develop` → PR de release `develop → staging` → PR `staging → main`, solo con la suite E2E verde en staging.
 - **Protección de ramas** en `develop`, `staging` y `main`:
@@ -380,7 +380,7 @@ Las tareas están en [`implementation-plan.md`](implementation-plan.md).
 | Lista única por ciudad con prioridad por documentación | T-114, T-122 | Unitarias del orden por `doc_level`; E2E de feed y orden de ofertas (T-303). |
 | Notificaciones best-effort con respaldo | T-201, T-202, T-203, T-204 | Tests del emisor (payload sin datos personales, borrado ante 410); E2E con push denegado y reconexión (T-307). |
 | PWA instalable y usable en gama baja | T-201, T-205 | Chequeo de instalabilidad y E2E offline; axe AA; revisión manual en iOS y Android. |
-| Ambientes develop/staging/producción con CI/CD | T-002, T-003 | El pipeline bloquea un PR con typecheck roto; la migración se aplica en develop al mergear. |
+| Ambientes develop/staging/producción con CI/CD | T-002, T-003 | El pipeline bloquea un PR con typecheck roto; develop y staging vinculados a cadeApp-staging en nube sin Docker local. |
 | Backups y restauración probados | T-310 | Acta del simulacro de restauración en staging. |
 | Seguridad física e incidentes | T-124 | E2E de reporte y suspensión cautelar (T-308). |
 | Marco legal mínimo | T-311 | Páginas de TyC, privacidad, contrato y términos del piloto publicadas, con consentimiento versionado; revisión de abogado registrada. |
@@ -392,7 +392,7 @@ Las tareas están en [`implementation-plan.md`](implementation-plan.md).
 |---|---|
 | S1 | El hosting es Vercel, como recomendó DevOps ("Vercel u otro equivalente"). El plan Hobby no admite uso comercial, así que hay que verificar costo y plan. |
 | S2 | La frecuencia del cron depende del plan de hosting. La expiración perezosa garantiza la corrección aunque el cron corra poco. |
-| S3 | **Confirmado (Lautaro, 2026-09-17):** Supabase limita a 2 proyectos activos gratuitos por cuenta. Se usan para staging (`cadeapp-staging`) y producción (`cadeapp-prod`). `develop` utiliza Supabase CLI local (Docker) para desarrollo y Docker en el runner de GitHub Actions para CI, manteniendo el costo en $0 sin requerir cuentas secundarias ni degradar aislamiento. |
+| S3 | **Actualizado (Lautaro, 2026-09-21):** Supabase limita a 2 proyectos activos gratuitos por cuenta. Se usan para staging/develop (comparten el proyecto remoto `cadeapp-staging`) y producción (`cadeapp-prod`). Se descarta Supabase CLI local con Docker para simplificar el onboarding de los operadores de agy y CI, manteniendo el costo en $0 sin requerir Docker Desktop. |
 | S4 | Las calificaciones quedan fuera del MVP porque ningún rol las exigió. Se reevalúan después del piloto. |
 | S5 | El link público de seguimiento para el destinatario (propuesto por Persona) queda fuera del MVP: suma superficie de datos personales. |
 | S6 | Gracia de suscripción de 0 días, parametrizable. |

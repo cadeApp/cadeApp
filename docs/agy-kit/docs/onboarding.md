@@ -6,27 +6,23 @@
 ## 1. Herramientas
 - Node.js: la versión de `.nvmrc` / `engines.node` (usar nvm o fnm).
 - pnpm vía Corepack: `corepack enable` (la versión la fija `packageManager` en `package.json`).
-- Docker Desktop encendido (Supabase local).
 - Git y cuenta de GitHub con 2FA. agy instalado y con sesión iniciada.
-- **No** instalar ni loguear Supabase CLI global contra proyectos remotos: se usa la de `devDependencies` (`pnpm supabase`).
 
 ## 2. Repositorio
 ```
 git clone <repo> cadeapp && cd cadeapp
 pnpm install --frozen-lockfile
-cp .env.example .env.local        # completar SOLO con valores locales (los imprime `pnpm supabase status`)
+cp .env.example .env.local        # completar con las credenciales públicas de cadeApp-staging provistas por Lautaro073
 ```
 
-## 3. Base local
+## 3. Base y tipos (cadeApp-staging)
 ```
-pnpm supabase start
-pnpm supabase db reset            # aplica migraciones + seed
-pnpm db:types                     # no debería generar diff
+pnpm db:types                     # genera los tipos de TypeScript desde cadeApp-staging sin requerir Docker
 ```
 
 ## 4. Verificar
 ```
-pnpm typecheck && pnpm lint && pnpm test && pnpm test:db
+pnpm typecheck && pnpm lint && pnpm test
 pnpm dev                          # http://localhost:3000
 ```
 
@@ -36,4 +32,4 @@ pnpm dev                          # http://localhost:3000
 - Nueva tarea: "Tomá T-xxx con la skill tomar-tarea". Tarea empezada: "Retomá T-xxx con la skill retomar-tarea".
 
 ## Qué NO hay en tu máquina
-- Credenciales de staging o producción, service role remota, tokens de Supabase o Vercel. Los tiene CI.
+- Service role remota de producción, tokens de Supabase de deploy o Vercel. Los tiene CI. En `.env.local` solo van las variables públicas y la anon key de `cadeApp-staging`.
