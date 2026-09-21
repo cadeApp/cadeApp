@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-000-scaffold` → `develop` |
 | **Base** | `42fd11f` |
 | **Tamaño** | 40 archivos, +6620 líneas |
-| **Estado** | Abierta · **16/16 defectos cerrados**; solo queda la decisión H14 |
+| **Estado** | Abierta · 16/16 defectos corregidos y verificados en `4abf24a` · H14 aceptado · **queda A01** |
 
 ## Rondas
 
@@ -36,20 +36,34 @@
 | H11 | Server Actions inalcanzables | 🟡 | ✅ arreglado |
 | H12 | `queryKey` fijo | 🟡 | ✅ arreglado |
 | H13 | `maximumScale:1` bloquea el zoom | 🟡 | ✅ arreglado |
-| H14 | `middleware.ts` no vacío | 🔵 | 🔵 decisión pendiente |
+| H14 | `middleware.ts` no vacío | 🔵 | ✅ aceptado (`606c132`) |
+| **A01** | **Alcance:** el commit incluye `docs/revision-pr/**`, fuera de los «Archivos permitidos» de T-000 | 🔵 | 🔵 decisión pendiente |
 | H15 | Rangos caret | 🔵 | ✅ arreglado |
 | **R01** | **Regresión:** `overrides` desactiva la denylist en features | 🔴 | ✅ arreglado (ronda 3) |
 | **R02** | **Regresión:** partir el elemento `feature` rompe los imports intra-feature | 🟠 | ✅ nunca se commiteó |
+
+Los 16 defectos figuran como `arreglado-verificado` con `verificado_en_sha: "4abf24a"`; el método de comprobación de cada uno está en el `.jsonl` y se lista con `node ../analizar.mjs verificacion`.
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos reproducibles: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-Solo **H14**: decisión de @Lautaro073 sobre si `middleware.ts` debe quedar vacío como pide la ficha T-000, o si se acepta el desvío y se registra en la aprobación. No hay trabajo técnico pendiente.
+No hay trabajo técnico pendiente. Quedan **dos decisiones de @Lautaro073**, y ninguna se puede dar por cerrada en silencio:
+
+**H14 quedó resuelto**: @Lautaro073 eligió la opción (b), aceptar el placeholder con el matcher optimizado. Registrado como `aceptado` en `606c132`.
+
+Queda **A01**. El commit `4abf24a` agrega 13 archivos bajo `docs/revision-pr/**`, y los «Archivos permitidos» de T-000 son «raíz y configs, esqueleto de `src/**`, `middleware.ts`, `components.json`, `tools/lint-fixtures/**`»; el DoD común exige «sin cambios fuera de Archivos permitidos». Las opciones:
+
+- **(a)** Sacar `docs/revision-pr/**` a un PR propio, o a T-001, cuya ficha sí incluye `docs/**`.
+- **(b)** Aceptar el desvío y registrarlo en el comentario de aprobación, como se hizo con H14.
+
+Sigue como `decision-pendiente` en `hallazgos.jsonl`, así que `analizar.mjs verificacion` lo muestra hasta que se resuelva.
+
+> Nota: `606c132` solo tocó `docs/`, así que el código es idéntico al de `4abf24a` y las 16 verificaciones siguen vigentes. Si un commit posterior toca código, hay que revalidar antes de volver a darlas por buenas.
 
 ## Para el análisis posterior
 
-Lo aprendido está en [`lecciones.md`](lecciones.md): 14 lecciones candidatas (`AG-01` … `AG-14`), con las tres de mayor impacto señaladas.
+Lo aprendido está en [`lecciones.md`](lecciones.md): 15 lecciones candidatas (`AG-01` … `AG-15`), con las tres de mayor impacto señaladas.
 
 El dato más interesante de esta PR: **los 16 hallazgos convivieron con los cuatro checks en verde**. En 11 casos el check era literalmente cierto pero sobre un subconjunto que no incluía el defecto. Ese es el hilo del que conviene tirar para `AGENTS.md`.
 

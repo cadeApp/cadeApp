@@ -8,7 +8,9 @@
 
 ## Veredicto
 
-**Los 16 defectos están cerrados y verificados.** Queda un solo punto abierto: H14, que es una decisión humana, no un defecto.
+**Los 16 defectos están corregidos y verificados** — cada uno comprobado ejecutando algo contra `4abf24a`, con el método registrado en `hallazgos.jsonl`.
+
+De los dos puntos no técnicos, **H14 ya se resolvió** (desvío aceptado por @Lautaro073 en `606c132`). Queda **A01**: documentación fuera de los «Archivos permitidos» de T-000, pendiente de la misma decisión explícita.
 
 `pnpm lint` volvió a verde: la regresión R02 nunca llegó a commitearse — era un experimento del árbol de trabajo, y el commit final tomó el camino correcto.
 
@@ -92,20 +94,28 @@ Cero coincidencias de `font-size: 14px` en la raíz; `.text-xs` en `0.875rem` (1
 
 ---
 
-## Único punto abierto: H14
+## H14 · Resuelto: desvío aceptado
 
 `middleware.ts` sigue con función y matcher, y la ficha T-000 pide «`middleware.ts` vacío».
 
 El matcher quedó bien (excluye `api`, ancla `brand/`) y el archivo ya está bajo lint desde H10, así que aceptar el desvío es de bajo riesgo. Pero **es una decisión de @Lautaro073**, no algo que deba resolver un agente:
 
-- **(a)** Vaciar el archivo y que T-009 lo escriba entero.
-- **(b)** Aceptar el desvío y registrarlo en el comentario de aprobación del PR.
+**Resolución:** @Lautaro073 eligió la opción (b) — se acepta el placeholder con el matcher optimizado y queda registrado en la aprobación. Marcado como `aceptado` en `hallazgos.jsonl`, con `verificado_en_sha: 606c132`.
 
 ---
 
-## Nota de alcance
+## A01 · Desvío de alcance, pendiente de decisión
 
-El commit `4abf24a` incluye `docs/revision-pr/**`. Es documentación de proceso, fuera de los «Archivos permitidos» de T-000 (raíz y configs, esqueleto de `src/**`, `middleware.ts`, `components.json`, `tools/lint-fixtures/**`). No es un problema técnico; conviene mencionarlo en el PR para que no sorprenda en la aprobación.
+El commit `4abf24a` agrega 13 archivos bajo `docs/revision-pr/**`. Los «Archivos permitidos» de la ficha T-000 son «raíz y configs, esqueleto de `src/**`, `middleware.ts`, `components.json`, `tools/lint-fixtures/**`», y el DoD común de la sección 8 exige «sin cambios fuera de Archivos permitidos».
+
+No es un problema técnico, pero **tampoco alcanza con mencionarlo**: es el mismo tipo de desvío que H14 y merece el mismo tratamiento explícito. Queda registrado como `PR47-A01` con estado `decision-pendiente`.
+
+Opciones:
+
+- **(a)** Sacar `docs/revision-pr/**` de este PR y llevarlo a uno propio, o a T-001, cuya ficha sí incluye `docs/**` entre los archivos permitidos.
+- **(b)** Aceptar el desvío y registrarlo en el comentario de aprobación del PR, igual que H14.
+
+Vale notar que ningún check compara el diff contra la lista de archivos permitidos de la ficha — por eso este desvío y el de H14 pasaron sin que nada los señalara. Es material para `AG-13`.
 
 ---
 

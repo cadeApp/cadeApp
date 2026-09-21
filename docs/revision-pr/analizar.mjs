@@ -47,6 +47,49 @@ const vistas = {
     console.log('\n# Regresiones (arreglos que rompieron otra cosa)\n');
     for (const h of hallazgos.filter((x) => /-R\d/.test(x.id))) console.log(`${h.id}  ${h.titulo}`);
   },
+  verificacion: () => {
+    console.log('');
+    console.log('# Estado de verificacion');
+    console.log('');
+    const esArreglo = (h) => h.estado && h.estado.startsWith('arreglado');
+    const verificados = hallazgos.filter((h) => esArreglo(h) && h.verificado_en_sha);
+    const sinVerificar = hallazgos.filter((h) => esArreglo(h) && !h.verificado_en_sha);
+    const aceptados = hallazgos.filter((h) => h.estado === 'aceptado');
+    const pendientes = hallazgos.filter((h) => h.estado === 'decision-pendiente');
+    const otros = hallazgos.filter(
+      (h) => !esArreglo(h) && h.estado !== 'aceptado' && h.estado !== 'decision-pendiente'
+    );
+    console.log(`corregidos y VERIFICADOS ejecutando: ${verificados.length}`);
+    console.log(`corregidos SIN verificar:            ${sinVerificar.length}`);
+    console.log(`desvios ACEPTADOS por decision:      ${aceptados.length}`);
+    console.log(`decisiones PENDIENTES:               ${pendientes.length}`);
+    if (otros.length) console.log(`otros (parcial/abierto):             ${otros.length}`);
+    if (sinVerificar.length) {
+      console.log('');
+      console.log('! Corregido pero NO verificado de forma independiente:');
+      for (const h of sinVerificar) console.log(`  ${h.id}  ${h.titulo}`);
+    }
+    if (pendientes.length) {
+      console.log('');
+      console.log('> Requieren decision explicita:');
+      for (const h of pendientes) console.log(`  ${h.id}  ${h.titulo}`);
+    }
+    if (otros.length) {
+      console.log('');
+      console.log('~ Sin cerrar:');
+      for (const h of otros) console.log(`  ${h.id}  [${h.estado}]  ${h.titulo}`);
+    }
+    if (aceptados.length) {
+      console.log('');
+      console.log('= Desvios aceptados (decision, no verificacion tecnica):');
+      for (const h of aceptados)
+        console.log(`  ${h.id.padEnd(10)} ${h.verificado_en_sha}  ${h.verificado_metodo}`);
+    }
+    console.log('');
+    console.log('Verificados ejecutando, con el SHA en que se comprobo:');
+    for (const h of verificados)
+      console.log(`  ${h.id.padEnd(10)} ${h.verificado_en_sha}  ${h.verificado_metodo}`);
+  },
   archivos: () => {
     console.log('\n# Archivos que reinciden\n');
     for (const [a, n] of cuenta('archivo').filter(([, n]) => n > 1))

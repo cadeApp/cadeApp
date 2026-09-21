@@ -1,13 +1,13 @@
 # Lecciones de la PR #47 (T-000) para `AGENTS.md` y las reglas
 
-**Fuente:** 16 hallazgos (15 de la ronda 1 + 1 regresión de la ronda 2). Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 18 registros (15 hallazgos de la ronda 1, 2 regresiones introducidas al arreglar, 1 desvío de alcance). Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 **Destino sugerido:** `docs/agy-kit/AGENTS.md` y `docs/agy-kit/.agents/rules/`.
 
 ---
 
 ## El hallazgo meta: los checks verdes no eran evidencia
 
-De los 16 hallazgos, **los 16 convivieron con `typecheck`, `lint`, `test` y `build` en verde**. En 11 casos el check era literalmente cierto pero sobre un subconjunto que no incluía el defecto.
+De los 16 defectos, **los 16 convivieron con `typecheck`, `lint`, `test` y `build` en verde**. En 11 casos el check era literalmente cierto pero sobre un subconjunto que no incluía el defecto.
 
 Los tres modos de falla, por frecuencia:
 
@@ -16,6 +16,7 @@ Los tres modos de falla, por frecuencia:
 | El código nunca se ejecutó | H01, H11 | Nada consumía el módulo todavía, así que el build no podía fallar |
 | El control no alcanzaba el archivo | H09, H10, R01 | `next lint` no lee la raíz; un `override` desactivaba la regla |
 | El test no podía fallar | H04 | Aserción tautológica sobre un paquete de terceros |
+| El desvío no lo miraba nadie | H14, H15, A01 | Ningún check compara el diff contra los «Archivos permitidos» de la ficha |
 
 **Esto es lo más importante para `AGENTS.md`.** El agente reportó "4 checks verdes" de buena fe y era cierto; el problema es que trató *verde* como sinónimo de *verificado*.
 
@@ -110,11 +111,24 @@ Las Server Actions del template no tenían **ninguna** ruta de import válida de
 > **Regla propuesta.** Incluso en tareas sin DoD de accesibilidad, hay tres cosas que nunca se introducen sin aprobación explícita: bloquear el zoom (`maximumScale`/`user-scalable=no`), fijar `font-size` de `html` en px, y texto por debajo del piso de la cláusula Anti-12px. Añadir a la regla 60.
 
 ### AG-13 · Desvío de la ficha: frenar y consultar
-**Origen:** H14, H15
+**Origen:** H14, H15, A01
 
 La ficha T-000 decía «`middleware.ts` vacío» y se entregó con función y matcher. El plan pedía «versiones exactas» y se usaron rangos caret. Ninguno es un bug; ambos son decisiones que el agente tomó solo.
 
 > **Regla propuesta.** Cuando el agente concluye que conviene desviarse de la ficha, no lo hace: deja el comportamiento que pide la ficha, anota el desvío propuesto en una sección «Desvíos propuestos» del PR y lo consulta en el issue. Es el freno que ya pide §3.8.4 del plan, extendido a las desviaciones de la ficha y no solo a los archivos permitidos.
+>
+> **Corolario, por A01:** el desvío de «Archivos permitidos» también aplica a documentación y archivos de proceso, no solo a código. Y como **ningún check compara el diff contra la lista de la ficha**, conviene que T-003 agregue uno: leer los «Archivos permitidos» de la fila correspondiente y fallar si el diff los excede. Es barato y cierra la categoría entera.
+
+### AG-15 · Corregido no es corregido y verificado
+**Origen:** el ciclo completo de esta PR (rondas 2, 3 y 4)
+
+Un commit anunció «resuelve los 15 hallazgos» y tres estaban a medias. Otro arreglo desactivó el control de un hallazgo previo (`R01`) con los 23 tests en verde. Un tercero rompió `pnpm lint` y no se detectó hasta la ronda siguiente (`R02`).
+
+En los tres casos el mensaje de commit decía la verdad sobre la intención y no sobre el resultado.
+
+> **Regla propuesta.** Un hallazgo no se marca cerrado por haberlo arreglado: se marca cerrado cuando **alguien distinto de quien lo arregló lo comprobó ejecutando algo**, y queda registrado en qué commit se hizo esa comprobación. Estados separados para «corregido» y «corregido y verificado»; el primero es legítimo y hay que usarlo cuando corresponde.
+>
+> Para la skill `revisar-pr`: la salida de cada revisión incluye un comando reproducible por hallazgo, y la ronda siguiente los vuelve a correr **todos**, no solo los que se tocaron. Si el código cambió después de la última comprobación, el hallazgo vuelve a «sin verificar» hasta que se revalide.
 
 ### AG-14 · Un arreglo no puede reducir otro control
 **Origen:** R01 (regresión crítica)

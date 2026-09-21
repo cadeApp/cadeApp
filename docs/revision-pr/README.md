@@ -32,7 +32,7 @@ Campos:
 
 | Campo | Para qué |
 |---|---|
-| `id` | `PR<N>-H<nn>` (hallazgo) o `PR<N>-R<nn>` (regresión) |
+| `id` | `PR<N>-H<nn>` (hallazgo), `PR<N>-R<nn>` (regresión) o `PR<N>-A<nn>` (alcance: desvío de los «Archivos permitidos» de la ficha) |
 | `pr`, `tarea`, `ronda`, `sha` | Trazabilidad al commit exacto |
 | `archivo`, `linea` | Dónde |
 | `severidad` | `critico` · `alto` · `medio` · `bajo` · `decision` |
@@ -42,9 +42,31 @@ Campos:
 | `deteccion` | `verificado-runtime` · `verificado-build` · `verificado-lint` · `analisis` |
 | `evidencia` | El comando y su salida, resumidos |
 | `por_que_paso_los_checks` | **Lo más útil para mejorar los controles** |
-| `estado` | `arreglado` · `parcial` · `abierto` · `decision-pendiente` |
-| `ronda_arreglo`, `residual` | Qué quedó pendiente |
+| `estado` | `arreglado-verificado` · `arreglado-sin-verificar` · `parcial` · `abierto` · `decision-pendiente` · `aceptado` |
+| **`verificado_en_sha`** | **El SHA en el que se comprobó**, no aquel en que se dijo haberlo arreglado. `null` si nadie lo verificó de forma independiente |
+| `verificado_fecha`, `verificado_metodo` | Cuándo y cómo: el comando y su resultado, en una línea |
+| `ronda_arreglo`, `residual` | En qué ronda se tocó y qué quedó pendiente |
 | `leccion` | Referencia a `AG-xx` en `lecciones.md` |
+
+
+### Corregido no es lo mismo que corregido y verificado
+
+Un hallazgo pasa a `arreglado-verificado` **solo cuando alguien distinto de quien lo arregló lo comprobó ejecutando algo**, y queda registrado el `verificado_en_sha`: el commit en el que se hizo esa comprobación, no aquel en que se dijo haberlo arreglado.
+
+La distinción no es burocracia. En esta misma PR pasaron las dos cosas que justifican llevarla:
+
+- Un commit anunció «resuelve los 15 hallazgos» y tres estaban a medias; uno de ellos, el test de `server-only`, pasaba en verde sin ejercer lo que decía.
+- Un arreglo de un hallazgo **desactivó el control de otro** (`PR47-R01`), con los 23 tests en verde.
+
+Reglas de uso:
+
+- `arreglado-sin-verificar` es un estado legítimo y **hay que usarlo** cuando no se comprobó. Un mensaje de commit no es verificación.
+- Si el código cambia después de la comprobación, el `verificado_en_sha` queda viejo: hay que revalidar antes de volver a afirmar que está cerrado.
+- El `verificado_metodo` dice qué se corrió y qué dio. «Se revisó» no sirve; «lint: `axios` en `middleware.ts` reporta 2 errores» sí.
+- Cuando la comprobación fue lectura de código y no ejecución, se dice (`inspeccion: ...`). Es más débil y conviene que se note.
+- Un desvío que se decide aceptar va a `aceptado`, **no** a `arreglado-verificado`: no se comprobó nada, se tomó una decisión. El `verificado_en_sha` guarda el commit donde quedó registrada y `verificado_metodo` dice quién decidió. El script los cuenta por separado, porque mezclarlos volvería a borrar la distinción.
+
+`node docs/revision-pr/analizar.mjs verificacion` lista lo que está corregido sin verificar, para que no se cuele como cerrado.
 
 ### Catálogo de patrones
 
@@ -82,6 +104,7 @@ Vistas disponibles:
 | `node docs/revision-pr/analizar.mjs checks` | Por qué los checks no atajaron cada cosa — la fuente más rica para mejorar controles |
 | `node docs/revision-pr/analizar.mjs abiertos` | Lo que quedó abierto o a medias, en todas las PRs |
 | `node docs/revision-pr/analizar.mjs regresiones` | Arreglos que rompieron otra cosa |
+| `node docs/revision-pr/analizar.mjs verificacion` | **Qué está corregido y verificado, con el SHA**, qué está corregido sin verificar, y qué espera decisión |
 | `node docs/revision-pr/analizar.mjs archivos` | Archivos que reinciden |
 | `node docs/revision-pr/analizar.mjs` | Todas las vistas |
 
@@ -99,7 +122,18 @@ Criterio sugerido:
 - **Una sola PR, pero severidad `critico`** → vale la pena igual, con la advertencia de que es evidencia de un solo caso.
 - **Un patrón que deja de aparecer** tras agregar la regla → señal de que funcionó; anotarlo, porque justifica mantenerla.
 
-Y al revés: si una regla lleva varias PRs sin evitar nada, sobra. `AGENTS.md` largo se lee peor y se cumple menos, así que conviene podarlo con el mismo criterio con que se agrega.
+### Cuándo **no** quitar una regla
+
+Que un patrón deje de aparecer **no es motivo para eliminar la regla**: lo más probable es exactamente lo contrario, que la regla esté cumpliendo su función. Una regla que previene no deja rastro en los hallazgos, y confundir «no aparece» con «no sirve» lleva a desmantelar justo lo que funciona y a que el patrón vuelva.
+
+Antes de tocar una regla por antigüedad, hay que saber si está **respaldada por un control**:
+
+- **Regla con control** (lint, test, check de CI). Cero violaciones significa que funciona. **No se toca.** Si se quiere evidencia de que sigue viva, se rompe la regla a propósito una vez y se comprueba que el control salta — la misma demostración en rojo que pide el principio 8.
+- **Regla que es solo prosa** en `AGENTS.md`. Acá no se puede distinguir «se cumple» de «nadie la lee», porque en ninguno de los dos casos hay hallazgos. La respuesta correcta **no es borrarla**, sino convertirla en control. Si no es automatizable, se la deja y se revisa a mano cuando toque una PR del área.
+
+El único motivo legítimo para quitar una regla es que haya quedado **obsoleta** — el framework cambió, la práctica que prohibía ya no existe, o contradice otra regla más nueva. Nunca por silencio estadístico.
+
+Lo que sí conviene vigilar es el tamaño de `AGENTS.md`: un documento largo se lee peor. Pero la salida a eso es mover reglas a la regla por tema que corresponda y apoyarlas en controles, no podarlas por falta de incidentes.
 
 ## Al abrir una revisión nueva
 
