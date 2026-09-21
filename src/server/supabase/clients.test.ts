@@ -131,7 +131,6 @@ describe('T-002: DoD - Clientes de Supabase y Configuración', () => {
             ...process.env,
             DB_TYPES_TARGET_FILE: testFile,
           },
-          shell: process.platform === 'win32',
         });
 
         // La CLI debe fallar
