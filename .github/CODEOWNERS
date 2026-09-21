@@ -32,13 +32,13 @@
 /src/features/trips/              @KiraK72 @Lautaro073
 /src/features/availability/       @KiraK72 @Lautaro073
 
-# P3 · Admin, PWA y calidad (Lautaro073 cubre provisoriamente hasta incorporar a Persona 3)
-/src/app/(admin)/                 @Lautaro073
-/src/app/(public)/                @Lautaro073
-/src/features/courier-onboarding/ @Lautaro073
-/src/features/admin/              @Lautaro073
-/src/features/incidents/          @Lautaro073
-/src/features/notifications/      @Lautaro073
-/src/features/legal/              @Lautaro073
-/public/                          @Lautaro073
-/e2e/                             @Lautaro073
+# P3 · Admin, PWA y calidad (Lautaro073 y KiraK72 cubren provisoriamente hasta incorporar a Persona 3)
+/src/app/(admin)/                 @Lautaro073 @KiraK72
+/src/app/(public)/                @Lautaro073 @KiraK72
+/src/features/courier-onboarding/ @Lautaro073 @KiraK72
+/src/features/admin/              @Lautaro073 @KiraK72
+/src/features/incidents/          @Lautaro073 @KiraK72
+/src/features/notifications/      @Lautaro073 @KiraK72
+/src/features/legal/              @Lautaro073 @KiraK72
+/public/                          @Lautaro073 @KiraK72
+/e2e/                             @Lautaro073 @KiraK72

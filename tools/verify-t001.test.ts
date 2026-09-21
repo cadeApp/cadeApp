@@ -85,6 +85,9 @@ describe('T-001: DoD - Kit de agy, CODEOWNERS y Guard', () => {
       expect(content).toContain('@Lautaro073');
       expect(content).toContain('@KiraK72');
       expect(content).not.toContain('@persona2');
+      expect(content).not.toContain('@persona3');
+
+      const VALID_COLLABORATORS = new Set(['@Lautaro073', '@KiraK72']);
 
       const lines = content.split('\n');
       for (const line of lines) {
@@ -95,6 +98,10 @@ describe('T-001: DoD - Kit de agy, CODEOWNERS y Guard', () => {
         expect(owners.length, `Ruta sin dueños en CODEOWNERS: ${pattern}`).toBeGreaterThan(0);
         for (const owner of owners) {
           expect(owner.startsWith('@'), `Dueño debe comenzar con @: ${owner}`).toBe(true);
+          expect(
+            VALID_COLLABORATORS.has(owner),
+            `Dueño ${owner} en ruta ${pattern} no es un colaborador real del repositorio`
+          ).toBe(true);
         }
       }
     });
@@ -112,59 +119,183 @@ describe('T-001: DoD - Kit de agy, CODEOWNERS y Guard', () => {
       return JSON.parse(stdout.trim());
     };
 
-    it('DoD 3.1: debe bloquear lectura o mención de .env.local (deny)', () => {
-      const payload = {
-        toolCall: {
-          name: 'view_file',
-          args: {
-            AbsolutePath: 'c:/Users/El Yisus Pai/Desktop/Proyectos/cadeApp/.env.local',
+    describe('H01 & DoD 3.1: Bloqueo de secretos .env y allowlist de .env.example', () => {
+      it('debe bloquear lectura o mención de .env.local (deny)', () => {
+        const payload = {
+          toolCall: {
+            name: 'view_file',
+            args: {
+              AbsolutePath: 'c:/Users/El Yisus Pai/Desktop/Proyectos/cadeApp/.env.local',
+            },
           },
-        },
-      };
-      const result = runGuard(payload);
-      expect(result.decision).toBe('deny');
-      expect(result.reason).toContain('Regla 00');
+        };
+        const result = runGuard(payload);
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 00');
+      });
+
+      it('debe bloquear cat .env (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'cat .env' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 00');
+      });
+
+      it('H01: debe bloquear cat .env* con comodín (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'cat .env*' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 00');
+      });
+
+      it('H01: debe bloquear cat .env.* (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'cat .env.*' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 00');
+      });
+
+      it('H01: debe bloquear cp .env* /tmp/x (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'cp .env* /tmp/x' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 00');
+      });
+
+      it('H01: debe bloquear .env.example* si usa comodín o sufijo extraño (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'cat .env.example*' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 00');
+      });
+
+      it('H01: debe permitir cat .env.example (ask)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'cat .env.example' } },
+        });
+        expect(result.decision).toBe('ask');
+      });
+
+      it('H01: debe permitir view_file de .env.example (ask)', () => {
+        const result = runGuard({
+          toolCall: {
+            name: 'view_file',
+            args: {
+              AbsolutePath: 'c:/Users/El Yisus Pai/Desktop/Proyectos/cadeApp/.env.example',
+            },
+          },
+        });
+        expect(result.decision).toBe('ask');
+      });
     });
 
-    it('DoD 3.2: debe bloquear supabase db push (deny)', () => {
-      const payload = {
-        toolCall: {
-          name: 'run_command',
-          args: {
-            CommandLine: 'pnpm supabase db push',
+    describe('DoD 3.2: Bloqueo de supabase remoto', () => {
+      it('debe bloquear supabase db push (deny)', () => {
+        const payload = {
+          toolCall: {
+            name: 'run_command',
+            args: {
+              CommandLine: 'pnpm supabase db push',
+            },
           },
-        },
-      };
-      const result = runGuard(payload);
-      expect(result.decision).toBe('deny');
-      expect(result.reason).toContain('Regla 00');
+        };
+        const result = runGuard(payload);
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 00');
+      });
     });
 
-    it('DoD 3.3: debe bloquear git push origin develop (deny)', () => {
-      const payload = {
-        toolCall: {
-          name: 'run_command',
-          args: {
-            CommandLine: 'git push origin develop',
-          },
-        },
-      };
-      const result = runGuard(payload);
-      expect(result.decision).toBe('deny');
-      expect(result.reason).toContain('Regla 50');
+    describe('H02 & DoD 3.3: Bloqueo de git push desprotegido', () => {
+      it('debe bloquear git push origin develop (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push origin develop' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 50');
+      });
+
+      it('debe bloquear git push -u origin develop (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push -u origin develop' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 50');
+      });
+
+      it('debe bloquear git push origin staging y main (deny)', () => {
+        expect(runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push origin staging' } },
+        }).decision).toBe('deny');
+        expect(runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push origin main' } },
+        }).decision).toBe('deny');
+      });
+
+      it('H02: debe bloquear git push pelado (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 50');
+      });
+
+      it('H02: debe bloquear git push origin sin rama (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push origin' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 50');
+      });
+
+      it('H02: debe bloquear git push origin HEAD (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push origin HEAD' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 50');
+      });
+
+      it('H02: debe bloquear git push -u origin HEAD (deny)', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'git push -u origin HEAD' } },
+        });
+        expect(result.decision).toBe('deny');
+        expect(result.reason).toContain('Regla 50');
+      });
     });
 
-    it('DoD 3.4: debe permitir pnpm test con decisión ask (permisos normales de agy)', () => {
-      const payload = {
-        toolCall: {
-          name: 'run_command',
-          args: {
-            CommandLine: 'pnpm test',
+    describe('DoD 3.4: Permiso para comandos legítimos', () => {
+      it('debe permitir pnpm test con decisión ask', () => {
+        const result = runGuard({
+          toolCall: { name: 'run_command', args: { CommandLine: 'pnpm test' } },
+        });
+        expect(result.decision).toBe('ask');
+      });
+
+      it('H02: debe permitir git push origin feat/T-001-kit-agy-codeowners con decisión ask', () => {
+        const result = runGuard({
+          toolCall: {
+            name: 'run_command',
+            args: { CommandLine: 'git push origin feat/T-001-kit-agy-codeowners' },
           },
-        },
-      };
-      const result = runGuard(payload);
-      expect(result.decision).toBe('ask');
+        });
+        expect(result.decision).toBe('ask');
+      });
+
+      it('H02: debe permitir git push -u origin feat/T-001-kit-agy-codeowners con decisión ask', () => {
+        const result = runGuard({
+          toolCall: {
+            name: 'run_command',
+            args: { CommandLine: 'git push -u origin feat/T-001-kit-agy-codeowners' },
+          },
+        });
+        expect(result.decision).toBe('ask');
+      });
     });
   });
 });

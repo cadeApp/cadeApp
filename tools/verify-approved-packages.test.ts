@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import pkg from '../package.json';
 
-// Lista exhaustiva de dependencias aprobadas según docs/agy-kit/.agents/rules/25-stack-y-patrones.md.
+// Lista exhaustiva de dependencias aprobadas según .agents/rules/25-stack-y-patrones.md.
 // Cualquier agregado requiere la aprobación explícita de Lautaro073 (regla 00).
 const APPROVED_RUNTIME_PACKAGES = new Set([
   'next',

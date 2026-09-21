@@ -1,6 +1,6 @@
 # Revisiones de PR
 
-Registro de las revisiones de código de cada PR, guardado para poder **analizar patrones entre PRs** y mejorar `AGENTS.md` y las reglas de `docs/agy-kit/.agents/rules/` con evidencia en vez de intuición.
+Registro de las revisiones de código de cada PR, guardado para poder **analizar patrones entre PRs** y mejorar `AGENTS.md` y las reglas de `.agents/rules/` con evidencia en vez de intuición.
 
 No reemplaza la revisión en GitHub: es el archivo de lo que se encontró, cómo se comprobó y qué se aprendió.
 
@@ -87,6 +87,7 @@ Mantener esta lista estable entre PRs: si cambian los nombres, el análisis pier
 | `P11-api-publica-inconsistente` | La API no es alcanzable desde donde dice servir |
 | `P12-plantilla-propaga-antipatron` | Un error en andamiaje que se va a copiar |
 | `P13-accesibilidad-no-considerada` | Barrera de accesibilidad introducida sin evaluar |
+| `P14-referencia-muerta-tras-mover` | Se movió o borró un archivo y quedaron referencias a la ruta vieja |
 
 ## Cómo analizar
 
