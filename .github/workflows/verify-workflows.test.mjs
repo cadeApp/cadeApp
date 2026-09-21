@@ -34,9 +34,23 @@ test('CI compares generated Supabase types with the committed types', () => {
 
 test('bundle budget reports route sizes and checks the 180 KB limit', () => {
   const ci = workflow('ci.yml');
+  const budget = workflow('check-bundle-budget.mjs');
   assert.match(ci, /bundle-budget:/);
   assert.match(ci, /180/);
-  assert.match(ci, /GITHUB_STEP_SUMMARY/);
+  assert.match(budget, /GITHUB_STEP_SUMMARY/);
+});
+
+test('bundle budget fails a route over 180 KB and keeps route names in the report', async () => {
+  const { evaluateBundleBudget } = await import('./check-bundle-budget.mjs');
+  const buildOutput = [
+    'Route (app)                              Size     First Load JS',
+    '┌ ○ /                                    154 B          87.2 kB',
+    '└ ƒ /courier/requests                    4.2 kB         181 kB',
+  ].join('\n');
+  const result = evaluateBundleBudget(buildOutput, 180);
+  assert.equal(result.ok, false);
+  assert.match(result.report, /\/courier\/requests/);
+  assert.match(result.report, /181 kB/);
 });
 
 test('migration workflow serializes staging and production pushes', () => {
@@ -63,10 +77,10 @@ test('every third-party action is pinned to a full commit SHA', () => {
   }
 });
 
-test('approval workflow rechecks edits and submitted reviews', () => {
+test('approval workflow evaluates trusted base code after edits and submitted reviews', () => {
   const policy = workflow('approval-policy.yml');
   assert.match(policy, /pull_request_review:/);
-  assert.match(policy, /pull_request:/);
+  assert.match(policy, /pull_request_target:/);
   assert.match(policy, /edited/);
   assert.match(policy, /approval-policy\.mjs/);
 });
@@ -83,6 +97,18 @@ test('P2/P3 pull requests require Lautaro073 approval', async () => {
   assert.equal(approved.ok, true);
 });
 
+test('comments do not revoke an approval, but a later change request does', async () => {
+  const { evaluateApprovalPolicy } = await import('./approval-policy.mjs');
+  const approval = { user: 'Lautaro073', state: 'APPROVED', submittedAt: '2026-09-21T12:00:00Z' };
+  const comment = { user: 'Lautaro073', state: 'COMMENTED', submittedAt: '2026-09-21T12:05:00Z' };
+  const changes = { user: 'Lautaro073', state: 'CHANGES_REQUESTED', submittedAt: '2026-09-21T12:10:00Z' };
+  assert.equal(evaluateApprovalPolicy({ author: 'KiraK72', reviews: [approval, comment], body: '' }).ok, true);
+  assert.equal(
+    evaluateApprovalPolicy({ author: 'KiraK72', reviews: [approval, comment, changes], body: '' }).ok,
+    false
+  );
+});
+
 test('Lautaro073 pull requests require a complete agy review report', async () => {
   const { evaluateApprovalPolicy } = await import('./approval-policy.mjs');
   const reviews = [{ user: 'KiraK72', state: 'APPROVED', submittedAt: '2026-09-21T12:00:00Z' }];
@@ -91,7 +117,7 @@ test('Lautaro073 pull requests require a complete agy review report', async () =
     evaluateApprovalPolicy({
       author: 'Lautaro073',
       reviews,
-      body: '### Informe de revisión de agy\n\nAlcance, pruebas y seguridad revisados. No quedan hallazgos bloqueantes. Evidencia de los checks y riesgos documentada.',
+      body: '### Informe de revisión de agy\n\nInforme revisar-pr — T-003 — 2026-09-21 — generado por KiraK72\nResultado: SIN BLOQUEANTES\nChecks locales: typecheck ✅ · lint ✅ · test ✅ · test:db n.a.\nBLOQUEANTES:\n- ninguno\nMEJORAS:\n- ninguna\nNo revisado / dudas para Lautaro073:\n- ninguna',
     }).ok,
     true
   );
