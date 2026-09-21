@@ -66,6 +66,17 @@ Se reescribió la sección 3 de `docs/onboarding.md` para el flujo remoto y qued
 
 El patrón nuevo, `P15-entregable-declarado-pero-no-ejecutable`, se lleva tres de los cinco hallazgos nuevos (H07, H09, H10). Es la primera vez que aparece con ese peso, así que todavía es evidencia de una sola PR — pero conviene mirarlo en la #50, porque los tres salieron del mismo hueco: ningún check ejecuta lo que la tarea entrega.
 
+## Qué pasó al aplicarlas (ronda 4)
+
+Las cinco lecciones se aplicaron y las cinco funcionaron. Dos merecen nota:
+
+- **AG-18 rindió más de lo esperado.** Regenerar el lockfile no solo instaló el CLI: alineó los 28 especificadores que venían de T-000 y dejó `pnpm install --frozen-lockfile` funcionando **por primera vez en el repo**. Es el argumento más fuerte para meterla en el DoD común: el check que faltaba destapó deuda de dos PRs atrás.
+- **AG-19 se aplicó sin su contraparte, y dejó un hueco.** El script `tools/db-types.mjs` está bien hecho —verifica exit status, salida no vacía, `export type` y longitud mínima antes de escribir—, pero la prueba que lo acompaña mira la **forma** del script, no su comportamiento. Si alguien lo revierte a una redirección, los 65 tests siguen en verde y vuelve la pérdida de datos (`H13`).
+
+> **Lección sobre las lecciones.** Arreglar un hallazgo de correctness aplicando la lección que lo describe no alcanza: hay que aplicar también **AG-04** (demostrar en rojo) y **AG-07** (caso negativo). Si no, el arreglo queda sin red y la próxima PR puede deshacerlo sin que nada se entere. Conviene que `revisar-pr` exija, para todo hallazgo de severidad `alto` o `critico`, una prueba que falle si el arreglo se revierte.
+
+La ficha también se corrigió a sí misma en esta ronda: «Dependencias nuevas permitidas» pasó de `ninguna` a declarar el CLI, y `pnpm-lock.yaml` entró a los «Archivos permitidos». Es la primera vez en las tres PRs que una contradicción de ficha se arregla **en la ficha** en vez de aceptarse como desvío.
+
 ## Advertencias
 
 - **Esta PR no es representativa de una PR de feature.** T-002 es plomería: un CLI, un script de generación, un archivo de configuración y documentación de entorno. Casi todos los hallazgos nuevos son de la clase «el comando no corre», que en una tarea de producto no va a aparecer con esta densidad.

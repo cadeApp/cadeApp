@@ -214,3 +214,133 @@ Referencia oficial del CLI de Supabase:
 | `status` | — | *«Requires the local development stack to be started by running `supabase start`»* |
 
 La última fila es lo que sostiene H03 y H11: `pnpm supabase status`, que el onboarding sigue citando, necesita el stack local.
+
+---
+
+# Ronda 4 — `3be754a`
+
+## Batería del DoD, ahora con el check que faltaba
+
+```bash
+pnpm typecheck                  # exit 0
+pnpm lint                       # ✔ No ESLint warnings or errors
+pnpm test                       # Test Files 8 passed (8) · Tests 65 passed (65)
+pnpm install --frozen-lockfile  # Done in 325ms · exit 0
+pnpm supabase --version         # 2.116.0
+```
+
+## H07 · El lockfile quedó sano, sin bumps silenciosos
+
+```bash
+grep -n "^      supabase:" -A2 pnpm-lock.yaml
+```
+
+```yaml
+      supabase:
+        specifier: 2.116.0
+        version: 2.116.0
+```
+
+Regenerar un lockfile es la clase de cambio donde se cuelan versiones nuevas, así que lo revisé aparte:
+
+```bash
+git diff 17a0be4 3be754a -- pnpm-lock.yaml | grep -cE "^- +version:"   # 0
+git diff 17a0be4 3be754a -- pnpm-lock.yaml | grep -cE "^\+ +version:"  # 1
+git diff 17a0be4 3be754a -- pnpm-lock.yaml | grep -E "^\+  [a-z@].*@[0-9]"
+```
+
+```
++  eciesjs@0.5.0:
++  jose@6.2.12:
++  supabase@2.116.0:
+```
+
+Ninguna dependencia existente cambió de versión resuelta. Los 28 especificadores que cambiaron son todos del tipo `^0.5.2` → `0.5.2`: el lock se alineó con los pins exactos que `package.json` traía desde T-000.
+
+```bash
+ls node_modules/.bin/ | grep -i supabase   # supabase, supabase.CMD, supabase.ps1
+```
+
+## H08 · Demostración en verde
+
+Mismo escenario que destruyó el archivo en la ronda 3:
+
+```bash
+md5sum src/types/database.types.ts
+#  3346e27ae8ac3862547a83ad462e3421  ·  405 bytes
+
+pnpm db:types
+```
+
+```
+[db:types] Ejecutando: pnpm supabase gen types typescript --linked
+[db:types] Error al generar tipos con Supabase CLI:
+{"_tag":"Error","error":{"code":"LegacyProjectNotLinkedError",
+ "message":"Cannot find project ref. Have you run supabase link?"}}
+[db:types] src/types/database.types.ts NO fue modificado para proteger los tipos commiteados.
+ ELIFECYCLE  Command failed with exit code 1.
+```
+
+```bash
+md5sum src/types/database.types.ts
+#  3346e27ae8ac3862547a83ad462e3421  ·  405 bytes
+git status --porcelain   # (vacío)
+```
+
+Mismo hash, mismos bytes, árbol limpio.
+
+## H12 · La URL de `.env.example` no la parsea ni el propio script
+
+Regex de `tools/db-types.mjs:19` contra el valor que trae `.env.example`:
+
+```js
+"https://cadeapp-staging.supabase.co".match(/^https:\/\/([a-z0-9]+)\.supabase\.co/)
+// → null   (el guion no entra en [a-z0-9]+; cae a --linked)
+
+"https://abcdefghijklmnopqrst.supabase.co".match(/* idem */)
+// → "abcdefghijklmnopqrst"
+```
+
+El comentario dos líneas más arriba del mismo archivo dice la forma correcta: `Staging / Prod: https://<project-id>.supabase.co`.
+
+## H06 · El drift ya tiene dueño
+
+`docs/implementation-plan.md:277`, DoD de T-003:
+
+> `ci.yml` falla si `db:types` deja drift de `database.types.ts` (demostrado plantando un diff)
+
+Residual: `docs/onboarding.md:23` sigue en presente sobre un `ci.yml` que todavía no existe.
+
+## H10 · Sigue sin paso de vinculación
+
+```bash
+grep -rn "supabase link\|project-ref\|project_ref" docs/ package.json supabase/ .env.example tools/
+```
+
+Solo dos coincidencias, ninguna es un paso de vinculación:
+
+```
+docs/tasks/log/T-002.md:89   (la bitácora describiendo el arreglo)
+tools/db-types.mjs:15        (process.env.SUPABASE_PROJECT_REF)
+```
+
+Y el propio CLI lo pregunta al correr el script sin variables: *«Cannot find project ref. Have you run `supabase link`?»*.
+
+## H03 y H11 · Documentación coherente
+
+```bash
+grep -c "supabase status" .env.example docs/onboarding.md   # 0 y 0
+grep -c "supabase start"  .env.example                      # 0
+grep -c "test:db"         docs/onboarding.md                # 0
+```
+
+`docs/onboarding.md:17` ahora dice: `cp .env.example .env.local  # completar con las variables de cadeapp-staging (solicitarlas al Tech Lead)`.
+
+## A01 · Alcance, contrastado contra la ficha
+
+```
+BASE: 9f03018 · archivos: 19
+FUERA DE ALCANCE: 0 (ninguno)
+```
+
+`pnpm-lock.yaml` entró a los «Archivos permitidos» de la ficha y del plan; `tools/db-types.mjs` cae bajo `tools/**`.
