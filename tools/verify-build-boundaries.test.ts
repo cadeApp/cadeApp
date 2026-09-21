@@ -10,7 +10,7 @@ describe('DoD: Build Boundaries (server-only)', () => {
   it(
     'un Client Component que importa un módulo server-only rompe el build de producción (Hallazgo 4)',
     async () => {
-      const probeDir = path.resolve('src/app/__boundary_probe__');
+      const probeDir = path.resolve('src/app/boundary-probe');
       await fs.mkdir(probeDir, { recursive: true });
       await fs.writeFile(
         path.join(probeDir, 'probe.tsx'),
@@ -24,14 +24,16 @@ describe('DoD: Build Boundaries (server-only)', () => {
       try {
         let buildError: Error | null = null;
         try {
-          await execAsync('npx next build');
+          // --no-lint aísla la frontera de server-only del paso de ESLint
+          await execAsync('npx next build --no-lint');
         } catch (err) {
           buildError = err as Error;
         }
-        expect(buildError, 'El build debería haber fallado al importar server-only desde cliente').not.toBeNull();
-        expect(buildError!.message).toMatch(/server-only|Server Component|client-no-server|Violación de frontera/i);
+        expect(buildError, 'El build debería haber fallado por server-only').not.toBeNull();
+        expect(buildError!.message).toMatch(/needs server-only/i);
       } finally {
         await fs.rm(probeDir, { recursive: true, force: true });
+        await fs.rm(path.resolve('.next'), { recursive: true, force: true });
       }
     },
     { timeout: 120_000 }

@@ -117,6 +117,7 @@
       }
     ],
     "cadeapp/client-no-server": "error",
+    "cadeapp/feature-server-boundary": "error",
     "no-restricted-imports": [
       "error",
       {
@@ -186,29 +187,6 @@
         ]
       }
     ]
-  },
-  "overrides": [
-    {
-      "files": [
-        "src/features/**/components/**",
-        "src/features/**/hooks/**",
-        "src/features/**/schemas.ts",
-        "src/features/**/copy.ts",
-        "src/features/**/index.ts"
-      ],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["@/server", "@/server/*", "src/server", "src/server/*"],
-                "message": "Violación de regla 20: En una feature, solo actions.ts y queries.ts pueden importar de src/server/**."
-              }
-            ]
-          }
-        ]
-      }
-    }
-  ]
+  }
 }
+

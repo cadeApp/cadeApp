@@ -97,4 +97,37 @@ describe('T-000: Verificación de Fronteras Arquitectónicas y DoD', () => {
     );
     expect(hasRestrictedImport).toBe(true);
   });
+
+  it('DoD (c): ESLint debe fallar cuando un componente dentro de una feature importa paquetes prohibidos (R1)', async () => {
+    const filePath = path.resolve('tools/lint-fixtures/feature-component-unapproved-package.tsx');
+    const [result] = await eslint.lintFiles([filePath]);
+    expect(result).toBeDefined();
+    expect(result!.messages.length).toBeGreaterThan(0);
+
+    const hasRestrictedImport = result!.messages.some(
+      (m: { ruleId?: string | null; message: string }) =>
+        m.ruleId === 'no-restricted-imports' && m.message.includes('axios')
+    );
+    expect(hasRestrictedImport).toBe(true);
+  });
+
+  it('DoD (a): ESLint debe fallar cuando un archivo suelto de feature importa de src/server/** (Hallazgo 9)', async () => {
+    const filePath = path.resolve('tools/lint-fixtures/feature-loose-file-importing-server.ts');
+    const [result] = await eslint.lintFiles([filePath]);
+    expect(result).toBeDefined();
+    expect(result!.messages.length).toBeGreaterThan(0);
+
+    const hasFeatureServerViolation = result!.messages.some(
+      (m: { ruleId?: string | null }) => m.ruleId === 'cadeapp/feature-server-boundary'
+    );
+    expect(hasFeatureServerViolation).toBe(true);
+  });
+
+  it('DoD: Las Server Actions de features/_template pueden importar ./schemas y @/server sin errores de boundaries', async () => {
+    const filePath = path.resolve('src/features/_template/actions.ts');
+    const [result] = await eslint.lintFiles([filePath]);
+    expect(result).toBeDefined();
+    expect(result!.messages.length).toBe(0);
+  });
 });
+

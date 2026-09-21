@@ -13,9 +13,10 @@ export function useExampleItems({ filters = {}, initialData }: UseExampleItemsOp
   return useQuery({
     // La clave incluye los filtros para evitar colisiones de caché entre pantallas
     queryKey: exampleKeys.list(filters),
-    queryFn: async () => {
-      // En features reales: fetch a un route handler o llamada a Server Action
-      return initialData ?? [];
+    queryFn: async (): Promise<ExampleItem[]> => {
+      // En features reales: fetch a un route handler o llamada a Server Action.
+      // NO devolver initialData desde acá: la query nunca se actualizaría en un refetch.
+      throw new Error('Implementar la lectura real en la feature que copie este template');
     },
     initialData,
   });
