@@ -26,6 +26,7 @@ export function evaluateBundleBudget(buildOutput, maxKb) {
   }
   if (routes.length === 0) lines.push('| — | — | No se pudo leer el resultado de Next.js |');
   return {
+    routeCount: routes.length,
     ok: routes.length > 0 && routes.every(({ sizeKb }) => sizeKb <= maxKb),
     report: `${lines.join('\n')}\n`,
   };
@@ -39,5 +40,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, result.report);
   }
-  if (!result.ok) console.warn('::warning::Alguna ruta supera el presupuesto de First Load JS.');
+  if (result.routeCount === 0) {
+    console.error('::error::No se pudo leer ninguna ruta de la salida de Next.js.');
+    process.exitCode = 1;
+  } else if (!result.ok) {
+    console.warn('::warning::Alguna ruta supera el presupuesto de First Load JS.');
+  }
 }

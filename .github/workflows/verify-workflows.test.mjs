@@ -86,6 +86,25 @@ test('bundle budget reports an over-budget route without failing the job', () =>
   }
 });
 
+test('bundle budget fails when no route can be read from the build output', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cadeapp-bundle-'));
+  try {
+    const outputPath = join(directory, 'build-output.txt');
+    writeFileSync(outputPath, 'Next.js output in an unknown format\n');
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./check-bundle-budget.mjs', import.meta.url)), outputPath],
+      { encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' } }
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /No se pudo leer el resultado de Next.js/);
+    assert.match(result.stderr, /::error::/);
+    assert.doesNotMatch(result.stderr, /Alguna ruta supera/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('migration workflow serializes staging and production pushes', () => {
   const migrate = workflow('migrate.yml');
   assert.match(migrate, /staging/);
