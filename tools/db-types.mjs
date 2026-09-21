@@ -3,7 +3,9 @@ import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-const TARGET_FILE = path.resolve('src/types/database.types.ts');
+const TARGET_FILE = process.env.DB_TYPES_TARGET_FILE
+  ? path.resolve(process.env.DB_TYPES_TARGET_FILE)
+  : path.resolve('src/types/database.types.ts');
 
 const args = process.argv.slice(2);
 const cliArgs = ['supabase', 'gen', 'types', 'typescript'];
@@ -16,7 +18,7 @@ if (args.length > 0) {
     process.env.SUPABASE_PROJECT_ID ||
     (() => {
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const match = url?.match(/^https:\/\/([a-z0-9]+)\.supabase\.co/);
+      const match = url?.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co/);
       return match ? match[1] : null;
     })();
 

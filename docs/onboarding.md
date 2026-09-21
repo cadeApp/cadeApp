@@ -17,10 +17,10 @@ pnpm install --frozen-lockfile
 cp .env.example .env.local        # completar con las variables de cadeapp-staging (solicitarlas al Tech Lead)
 ```
 
-## 3. Base de datos (Vinculación remota)
+## 3. Base de datos (Entorno remoto)
 cadeApp utiliza el proyecto centralizado `cadeapp-staging` en la nube para desarrollo y staging (sin requerir Docker local para el flujo habitual).
 - Los tipos TypeScript de la base residen commiteados en `src/types/database.types.ts`.
-- En CI (`ci.yml`), el Tech Lead valida que no haya drift de tipos contra staging mediante `pnpm db:types`.
+- En CI (`ci.yml`, construido en T-003), se validará que no haya drift de tipos contra staging mediante `pnpm db:types`.
 - En local se trabaja consumiendo directamente los tipos commiteados en `src/types/database.types.ts`.
 
 ## 4. Verificar
