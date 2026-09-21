@@ -90,6 +90,36 @@ const vistas = {
     for (const h of verificados)
       console.log(`  ${h.id.padEnd(10)} ${h.verificado_en_sha}  ${h.verificado_metodo}`);
   },
+  origen: () => {
+    console.log('');
+    console.log('# Origen: culpa del agente o de la ficha?');
+    console.log('');
+    const prs = [...new Set(hallazgos.map((h) => h.pr))].sort();
+    const et = { agente: 'AGENTE', ficha: 'FICHA ', ambos: 'AMBOS ' };
+    console.log('PR      agente  ficha  ambos   % ficha');
+    for (const pr of prs) {
+      const g = hallazgos.filter((h) => h.pr === pr);
+      const c = { agente: 0, ficha: 0, ambos: 0 };
+      for (const h of g) if (c[h.origen] !== undefined) c[h.origen]++;
+      const pct = Math.round(((c.ficha + c.ambos / 2) / g.length) * 100);
+      console.log(
+        `#${pr}    ${String(c.agente).padStart(5)} ${String(c.ficha).padStart(6)} ${String(c.ambos).padStart(6)}   ${String(pct).padStart(4)}%`
+      );
+    }
+    const tot = { agente: 0, ficha: 0, ambos: 0 };
+    for (const h of hallazgos) if (tot[h.origen] !== undefined) tot[h.origen]++;
+    console.log(`TOTAL  ${String(tot.agente).padStart(5)} ${String(tot.ficha).padStart(6)} ${String(tot.ambos).padStart(6)}`);
+    for (const tipo of ['ficha', 'ambos']) {
+      const g = hallazgos.filter((h) => h.origen === tipo);
+      if (!g.length) continue;
+      console.log('');
+      console.log(`## Atribuibles a la ficha o al plan (${tipo})`);
+      for (const h of g) {
+        console.log(`  ${h.id}  ${h.titulo}`);
+        console.log(`            ${h.origen_motivo}`);
+      }
+    }
+  },
   archivos: () => {
     console.log('\n# Archivos que reinciden\n');
     for (const [a, n] of cuenta('archivo').filter(([, n]) => n > 1))

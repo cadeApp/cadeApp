@@ -39,6 +39,8 @@ Campos:
 | `categoria` | `correctness` · `test-coverage` · `conventions` · `accesibilidad` · `efficiency` |
 | **`patron`** | **El campo clave**: la causa raíz, normalizada. Es lo que permite ver reincidencias |
 | `causa_raiz` | Por qué pasó, en una frase |
+| **`origen`** | **`agente` · `ficha` · `ambos`**: si la ficha decía qué hacer con claridad y el agente lo hizo mal (`agente`), si seguirla al pie produce el defecto (`ficha`), o si lo decía en prosa sin ningún control que lo hiciera cumplir (`ambos`) |
+| `origen_motivo` | Por qué se clasificó así, citando la ficha o la regla |
 | `deteccion` | `verificado-runtime` · `verificado-build` · `verificado-lint` · `analisis` |
 | `evidencia` | El comando y su salida, resumidos |
 | `por_que_paso_los_checks` | **Lo más útil para mejorar los controles** |
@@ -88,6 +90,7 @@ Mantener esta lista estable entre PRs: si cambian los nombres, el análisis pier
 | `P12-plantilla-propaga-antipatron` | Un error en andamiaje que se va a copiar |
 | `P13-accesibilidad-no-considerada` | Barrera de accesibilidad introducida sin evaluar |
 | `P14-referencia-muerta-tras-mover` | Se movió o borró un archivo y quedaron referencias a la ruta vieja |
+| `P15-entregable-declarado-pero-no-ejecutable` | Se declaró una dependencia, script o paso que no se puede ejecutar realmente |
 
 ## Cómo analizar
 
@@ -106,6 +109,7 @@ Vistas disponibles:
 | `node docs/revision-pr/analizar.mjs abiertos` | Lo que quedó abierto o a medias, en todas las PRs |
 | `node docs/revision-pr/analizar.mjs regresiones` | Arreglos que rompieron otra cosa |
 | `node docs/revision-pr/analizar.mjs verificacion` | **Qué está corregido y verificado, con el SHA**, qué está corregido sin verificar, y qué espera decisión |
+| `node docs/revision-pr/analizar.mjs origen` | **¿Culpa del agente o de la ficha?** Reparto por PR y lista de los atribuibles al plan |
 | `node docs/revision-pr/analizar.mjs archivos` | Archivos que reinciden |
 | `node docs/revision-pr/analizar.mjs` | Todas las vistas |
 
