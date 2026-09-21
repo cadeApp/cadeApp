@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-002-supabase-clients` → `develop` |
 | **Base** | `9f03018` |
 | **Tamaño** | 19 archivos, +664 / −57 |
-| **Estado** | Abierta · **LISTA PARA ACEPTAR** · 15 de 16 cerrados y verificados en `4010afa` · 0 decisiones |
+| **Estado** | Abierta · **LISTA PARA ACEPTAR** · **17 de 17 cerrados y verificados** en `4010afa` · 0 abiertos, 0 decisiones |
 
 ## Rondas
 
@@ -39,7 +39,8 @@
 | H12 | `.env.example` trae una URL de Supabase que no puede existir | 🔵 | ✅ verificado (`62cf1f9`) |
 | H13 | La prueba de regresión no ejecuta el script: pasa en el vacío | 🟡 | ✅ verificado (`4010afa`) — demostrado en rojo |
 | H14 | El arreglo de H12 amplió el regex del ref sin necesidad | 🔵 | ✅ verificado (`4010afa`) |
-| **H15** | El cuerpo del PR no trae el checklist de seguridad (§2) | 🔵 | 🔴 abierto — **no es código** |
+| H15 | El cuerpo del PR no trae el checklist de seguridad (§2) | 🔵 | ✅ verificado (`4010afa`) |
+| H16 | La PR toca zona de P2 y el cuerpo declaraba «Rutas de otra zona: N/A» | 🟡 | ✅ verificado (`4010afa`) |
 | **A01** | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`3be754a`) — **0 fuera de alcance** |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md)

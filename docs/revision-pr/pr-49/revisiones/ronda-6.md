@@ -97,6 +97,20 @@ Por qué ningún check lo atajó: `approval-policy` es de T-003 y todavía no ex
 
 ---
 
+## Cierre · H15 y H16
+
+**H15 cerrado.** El cuerpo del PR se reescribió siguiendo el template: trae el checklist de seguridad con los cinco ítems, la casilla de «cada prueba nueva se demostró fallando», Dependencias nuevas y Rollback.
+
+**H16, encontrado al releerlo.** La fila «Rutas de otra zona» decía `N/A — Zona P1 propia`, y no es así: la tabla de §2 asigna `src/lib/**` a **P2**, y esta PR agrega `src/lib/supabase/browser.ts`.
+
+El archivo llegó ahí **al resolver H01**: el cliente de navegador vivía en `src/server/supabase/`, donde `cadeapp/client-no-server` lo volvía inalcanzable desde un Client Component. O sea, el arreglo correcto de un hallazgo creó un cruce de zona que nadie registró.
+
+La ficha sí nombra la subruta concreta (`src/lib/supabase/**`, no el grupo entero), que es lo que §2 exige. Lo que faltaba era el visto bueno de la dueña. Corregida la fila del cuerpo con la ruta, la dueña y el motivo del cruce.
+
+Por qué ningún control lo atajó: **el chequeo de alcance compara el diff contra los «Archivos permitidos» de la ficha, no contra la tabla de zonas de §2.** Son dos listas distintas y solo una está automatizada. Candidato claro a control nuevo en T-003.
+
+---
+
 ## Cómo terminó la PR
 
 Seis rondas, 16 hallazgos. El recorrido, en orden de lo que costó:
