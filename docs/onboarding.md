@@ -6,7 +6,7 @@
 ## 1. Herramientas
 - Node.js: la versión de `.nvmrc` / `engines.node` (usar nvm o fnm).
 - pnpm vía Corepack: `corepack enable` (la versión la fija `packageManager` en `package.json`).
-- Docker Desktop encendido (Supabase local).
+- Docker Desktop opcional (el flujo estándar utiliza el entorno remoto cadeapp-staging).
 - Git y cuenta de GitHub con 2FA. agy instalado y con sesión iniciada.
 - **No** instalar ni loguear Supabase CLI global contra proyectos remotos: se usa la de `devDependencies` (`pnpm supabase`).
 
@@ -14,19 +14,18 @@
 ```
 git clone <repo> cadeapp && cd cadeapp
 pnpm install --frozen-lockfile
-cp .env.example .env.local        # completar SOLO con valores locales (los imprime `pnpm supabase status`)
+cp .env.example .env.local        # completar con las variables de cadeapp-staging (solicitarlas al Tech Lead)
 ```
 
-## 3. Base local
-```
-pnpm supabase start
-pnpm supabase db reset            # aplica migraciones + seed
-pnpm db:types                     # no debería generar diff
-```
+## 3. Base de datos (Entorno remoto)
+cadeApp utiliza el proyecto centralizado `cadeapp-staging` en la nube para desarrollo y staging (sin requerir Docker local para el flujo habitual).
+- Los tipos TypeScript de la base residen commiteados en `src/types/database.types.ts`.
+- En CI (`ci.yml`, construido en T-003), se validará que no haya drift de tipos contra staging mediante `pnpm db:types`.
+- En local se trabaja consumiendo directamente los tipos commiteados en `src/types/database.types.ts`.
 
 ## 4. Verificar
 ```
-pnpm typecheck && pnpm lint && pnpm test && pnpm test:db
+pnpm typecheck && pnpm lint && pnpm test
 pnpm dev                          # http://localhost:3000
 ```
 

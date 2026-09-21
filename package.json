@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "db:types": "node tools/db-types.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.5.2",
@@ -49,6 +50,7 @@
     "prettier-plugin-tailwindcss": "0.6.14",
     "tailwindcss": "3.4.19",
     "typescript": "5.9.3",
-    "vitest": "2.1.9"
+    "vitest": "2.1.9",
+    "supabase": "2.116.0"
   }
 }

@@ -122,6 +122,45 @@ module.exports = {
         };
       },
     },
+    'server-layer-must-be-server-only': {
+      meta: {
+        type: 'problem',
+        docs: {
+          description: "Todo archivo de src/server/** empieza con import 'server-only' (Regla 20)",
+        },
+        schema: [],
+      },
+      create(context) {
+        const rawFilename =
+          context.filename ||
+          (typeof context.getFilename === 'function' ? context.getFilename() : '');
+        const filename = rawFilename.replace(/\\/g, '/');
+
+        const isServerFile =
+          /\/src\/server\/.+\.[jt]sx?$/.test(filename) ||
+          /\/tools\/lint-fixtures\/server-.+\.[jt]sx?$/.test(filename);
+        const isTestFile = /\.(test|spec)\.[jt]sx?$/.test(filename);
+
+        if (!isServerFile || isTestFile) {
+          return {};
+        }
+
+        return {
+          Program(node) {
+            const tieneImport = node.body.some(
+              (s) => s.type === 'ImportDeclaration' && s.source?.value === 'server-only'
+            );
+            if (!tieneImport) {
+              context.report({
+                node,
+                message:
+                  "Regla 20: Todo archivo de src/server/** debe empezar con import 'server-only'.",
+              });
+            }
+          },
+        };
+      },
+    },
   },
 };
 
