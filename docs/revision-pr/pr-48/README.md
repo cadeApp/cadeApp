@@ -8,14 +8,15 @@
 | **Rama** | `feat/T-001-kit-agy-codeowners` → `develop` |
 | **Base** | `f6dc070` |
 | **Tamaño** | 64 archivos, +1079 / −204 |
-| **Estado** | Aprobada · 6/6 hallazgos corregidos y verificados · 2 decisiones resueltas (A01, A02) · 0 pendientes |
+| **Estado** | Abierta · **7/7 cerrados y verificados en `9a96369`** · 0 pendientes |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `fb7398a` | 5 abiertos + 1 decisión | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
-| 2 | `d359aec` | **Todo cerrado y verificado**; 2 residuos menores | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 2 | `d359aec` | 5 hallazgos + A01 cerrados; 2 residuos menores | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 3 | `9a96369` | **H06 y A02 cerrados**; nada pendiente | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 
 ## Estado por hallazgo
 
@@ -27,17 +28,14 @@
 | H04 | Rutas de P3 sin revisor efectivo en CODEOWNERS | 🟡 | ✅ arreglado (`d359aec`) |
 | H05 | El test de CODEOWNERS no valida que los usuarios existan | 🟡 | ✅ arreglado (`d359aec`) |
 | **A01** | `tools/verify-t001.test.ts` fuera de los «Archivos permitidos» | 🔵 | ✅ resuelto: la ficha lo incluye |
-| **H06** | La regex nueva de `.env` bloquea nombres legítimos | ⚪ | ✅ arreglado |
+| **H06** | La regex nueva de `.env` bloquea nombres legítimos | ⚪ | ✅ arreglado (`9a96369`) |
 | **A02** | El arreglo de H03 tocó `tools/verify-approved-packages.test.ts` | 🔵 | ✅ resuelto: ficha ampliada a `tools/**` |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos reproducibles: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-No hay trabajo bloqueante. Quedan dos residuos:
-
-1. **H06 (bajo)** — la regex de `.env` quedó tan amplia que bloquea nombres legítimos como `.environment-setup.md`. Hoy no existe ningún archivo así en el repo, así que es deuda y no un bloqueo. Arreglo de una línea en `ronda-2.md`.
-2. **A02 (decisión)** — arreglar H03 tocó `tools/verify-approved-packages.test.ts`, una línea de comentario, fuera de los «Archivos permitidos». O se amplía la ficha a `tools/**`, o se acepta y se registra en la aprobación.
+Nada. Los 7 registros están cerrados y verificados en `9a96369`, y filtrando el diff por los «Archivos permitidos» de la ficha no queda ningún archivo fuera.
 
 ## Lo que está verificado y bien
 
