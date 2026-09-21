@@ -81,6 +81,21 @@ describe('Fichas de tarea: coherencia interna', () => {
     ).toEqual([]);
   });
 
+  it('toda ficha permite la carpeta de revisión de PR', () => {
+    // Las revisiones de las PR propias se commitean en la rama de la tarea
+    // (ver COMO-ENTREGAR.md). Sin este permiso, hacerlo es un desvío de
+    // alcance: fue PR47-A01 y PR49-A01.
+    const rotas = fichas
+      .filter((f) => !permite(f.permitidos, 'docs/revision-pr/pr-00/README.md'))
+      .map((f) => f.id);
+
+    expect(
+      rotas,
+      `Estas fichas no permiten docs/revision-pr/**, así que dejar la revisión en la rama ` +
+        `de la tarea sería un desvío: ${rotas.join(', ')}`
+    ).toEqual([]);
+  });
+
   it('toda ficha se lista a sí misma en «Archivos permitidos»', () => {
     // El agente marca las casillas del DoD, que viven en la propia ficha.
     const rotas = fichas.filter((f) => !permite(f.permitidos, f.archivo)).map((f) => f.id);
