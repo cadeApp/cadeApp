@@ -1,0 +1,54 @@
+{
+  "name": "cadeapp",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint --dir src --file middleware.ts --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.5.2",
+    "@supabase/supabase-js": "2.116.0",
+    "@tanstack/react-query": "5.103.1",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.475.0",
+    "next": "14.2.24",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "server-only": "0.0.1",
+    "sonner": "2.0.8",
+    "tailwind-merge": "2.6.1",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@testing-library/react": "16.3.3",
+    "@types/eslint": "8.56.12",
+    "@types/node": "20.19.43",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitest/coverage-v8": "2.1.9",
+    "autoprefixer": "10.6.1",
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.24",
+    "eslint-plugin-boundaries": "5.4.0",
+    "eslint-plugin-cadeapp": "file:./tools/eslint-plugin-cadeapp",
+    "jsdom": "26.1.0",
+    "postcss": "8.5.28",
+    "prettier": "3.9.8",
+    "prettier-plugin-tailwindcss": "0.6.14",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
+  }
+}

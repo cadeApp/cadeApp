@@ -1,0 +1,32 @@
+:root {
+  --background: 40 20% 99%; /* #FDFCFB */
+  --foreground: 226 42% 12%; /* #12182C */
+
+  --card: 0 0% 100%; /* #FFFFFF */
+  --card-foreground: 226 42% 12%; /* #12182C */
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 226 42% 12%;
+
+  --primary: 181 90% 39%; /* #09BABD */
+  --primary-foreground: 226 42% 12%; /* #12182C - WCAG AAA 6.93:1 */
+  --primary-dark: 181 83% 27%; /* #0B7A7D */
+
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 226 42% 12%;
+
+  --muted: 220 14% 96%; /* #F3F4F6 */
+  --muted-foreground: 215 16% 35%; /* #475467 */
+
+  --accent: 138 76% 97%; /* #F0FDF4 */
+  --accent-foreground: 142 76% 25%; /* #166534 */
+
+  --destructive: 0 84% 51%; /* #DC2626 */
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 216 12% 91%; /* #E4E7EC */
+  --input: 216 12% 91%; /* #E4E7EC */
+  --ring: 181 90% 39%; /* #09BABD */
+
+  --radius: 0.625rem; /* 10px */
+}
