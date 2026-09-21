@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-000-scaffold` → `develop` |
 | **Base** | `42fd11f` |
 | **Tamaño** | 40 archivos, +6620 líneas |
-| **Estado** | Abierta · `pnpm lint` **roto** en el árbol de trabajo (ver ronda 3) |
+| **Estado** | Abierta · **16/16 defectos cerrados**; solo queda la decisión H14 |
 
 ## Rondas
 
@@ -17,6 +17,7 @@
 | 1 | `f71d858` | 15 | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `d026834` | 11 arreglados, 3 parciales, 1 decisión, **1 regresión nueva** | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | árbol de trabajo | R01 cerrado, **R02 nuevo**: el lint falla | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `4abf24a` | **Todo cerrado y verificado**; R02 nunca se commiteó | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 
 ## Estado por hallazgo
 
@@ -25,29 +26,26 @@
 | H01 | `publicEnv` lanza en el navegador | 🔴 | ✅ arreglado |
 | H02 | Comentario antes de `'use client'` desactiva la regla | 🟠 | ✅ arreglado |
 | H03 | `font-size:14px` invierte la cláusula Anti-12px | 🟠 | ✅ arreglado |
-| H04 | Test de `server-only` tautológico | 🟠 | ⚠️ parcial |
+| H04 | Test de `server-only` tautológico | 🟠 | ✅ arreglado |
 | H05 | Denylist vs allowlist de paquetes | 🟠 | ✅ arreglado |
 | H06 | Regla ignora `export * from` | 🟡 | ✅ arreglado |
 | H07 | `includes('/server')` falso positivo | 🟡 | ✅ arreglado |
 | H08 | `entry-point` incompleto | 🟡 | ✅ arreglado |
-| H09 | `feature`→`server` sin restricción | 🟡 | ⚠️ parcial |
+| H09 | `feature`→`server` sin restricción | 🟡 | ✅ arreglado |
 | H10 | `middleware.ts` no se lintea | 🟡 | ✅ arreglado |
 | H11 | Server Actions inalcanzables | 🟡 | ✅ arreglado |
-| H12 | `queryKey` fijo | 🟡 | ⚠️ parcial |
+| H12 | `queryKey` fijo | 🟡 | ✅ arreglado |
 | H13 | `maximumScale:1` bloquea el zoom | 🟡 | ✅ arreglado |
 | H14 | `middleware.ts` no vacío | 🔵 | 🔵 decisión pendiente |
 | H15 | Rangos caret | 🔵 | ✅ arreglado |
 | **R01** | **Regresión:** `overrides` desactiva la denylist en features | 🔴 | ✅ arreglado (ronda 3) |
-| **R02** | **Regresión:** partir el elemento `feature` rompe los imports intra-feature | 🟠 | ❌ abierto |
+| **R02** | **Regresión:** partir el elemento `feature` rompe los imports intra-feature | 🟠 | ✅ nunca se commiteó |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos reproducibles: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. **R02 (bloqueante)** — `pnpm lint` falla en `actions.ts` y `queries.ts`. Terminar la regla `cadeapp/feature-server-boundary` (ya escrita, sin conectar) y revertir el elemento `feature-server-api`. Alternativa verificada en `ronda-3.md`.
-2. **H04** — renombrar el directorio de prueba sin guion bajo inicial, pasar `--no-lint` y cerrar el regex.
-3. **H12** — que el `queryFn` del template falle ruidosamente en vez de devolver el closure. Prioridad baja.
-4. **H14** — decisión de @Lautaro073 sobre `middleware.ts` vacío.
+Solo **H14**: decisión de @Lautaro073 sobre si `middleware.ts` debe quedar vacío como pide la ficha T-000, o si se acepta el desvío y se registra en la aprobación. No hay trabajo técnico pendiente.
 
 ## Para el análisis posterior
 
