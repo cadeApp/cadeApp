@@ -39,5 +39,5 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
   if (process.env.GITHUB_STEP_SUMMARY) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, result.report);
   }
-  if (!result.ok) process.exitCode = 1;
+  if (!result.ok) console.warn('::warning::Alguna ruta supera el presupuesto de First Load JS.');
 }

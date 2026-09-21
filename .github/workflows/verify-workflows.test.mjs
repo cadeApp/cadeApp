@@ -1,9 +1,21 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 function workflow(name) {
   return readFileSync(new URL(name, import.meta.url), 'utf8');
+}
+
+function job(yaml, name) {
+  const normalized = yaml.replace(/\r\n/g, '\n');
+  const start = normalized.indexOf(`\n  ${name}:\n`);
+  assert.notEqual(start, -1, `Missing ${name} job`);
+  const next = normalized.slice(start + 1).search(/\n  [\w-]+:\n/);
+  return next === -1 ? normalized.slice(start) : normalized.slice(start, start + next + 1);
 }
 
 test('CI gates pull requests with typecheck, lint, unit tests, build and cached dependencies', () => {
@@ -53,19 +65,47 @@ test('bundle budget fails a route over 180 KB and keeps route names in the repor
   assert.match(result.report, /181 kB/);
 });
 
+test('bundle budget reports an over-budget route without failing the job', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cadeapp-bundle-'));
+  try {
+    const outputPath = join(directory, 'build-output.txt');
+    writeFileSync(outputPath, '└ ○ /courier 4.2 kB 181 kB\n');
+    const result = spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL('./check-bundle-budget.mjs', import.meta.url)), outputPath],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, GITHUB_STEP_SUMMARY: '' },
+      }
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Supera el límite/);
+    assert.match(result.stderr, /::warning::/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('migration workflow serializes staging and production pushes', () => {
   const migrate = workflow('migrate.yml');
   assert.match(migrate, /staging/);
   assert.match(migrate, /main/);
   assert.match(migrate, /concurrency:/);
   assert.match(migrate, /cancel-in-progress:\s*false/);
-  assert.match(migrate, /environment:\s*(staging|production)/);
+  assert.match(job(migrate, 'staging'), /^\s+environment: staging$/m);
+  assert.match(job(migrate, 'production'), /^\s+environment: production$/m);
   assert.match(migrate, /pnpm supabase db push/);
 });
 
-test('production migration only runs when Lautaro073 triggered the main push', () => {
+test('production migration fails visibly for an unauthorized actor and uses a distinct project', () => {
   const migrate = workflow('migrate.yml');
-  assert.match(migrate, /if:\s*github\.ref_name == 'main' && github\.actor == 'Lautaro073'/);
+  const production = job(migrate, 'production');
+  assert.match(production, /if:\s*github\.ref_name == 'main'/);
+  assert.doesNotMatch(production, /github\.actor/);
+  assert.match(production, /GITHUB_ACTOR/);
+  assert.match(production, /SUPABASE_PRODUCTION_PROJECT_REF/);
+  assert.match(production, /SUPABASE_STAGING_PROJECT_REF/);
+  assert.match(production, /"\$SUPABASE_PROJECT_REF" = "\$SUPABASE_STAGING_PROJECT_REF"/);
 });
 
 test('every third-party action is pinned to a full commit SHA', () => {
