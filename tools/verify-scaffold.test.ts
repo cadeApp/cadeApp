@@ -129,5 +129,31 @@ describe('T-000: Verificación de Fronteras Arquitectónicas y DoD', () => {
     expect(result).toBeDefined();
     expect(result!.messages.length).toBe(0);
   });
+
+  it('H01 & AG-10: Un Client Component ("use client") puede importar y usar Supabase desde @/lib/supabase/browser sin violar fronteras', async () => {
+    const filePath = path.resolve('tools/lint-fixtures/client-browser-supabase-consumer.tsx');
+    const [result] = await eslint.lintFiles([filePath]);
+    expect(result).toBeDefined();
+    expect(result!.messages.length).toBe(0);
+  });
+
+  it('H02: ESLint debe fallar si un archivo de src/server/** no contiene import "server-only"', async () => {
+    const filePath = path.resolve('tools/lint-fixtures/server-without-server-only.ts');
+    const [result] = await eslint.lintFiles([filePath]);
+    expect(result).toBeDefined();
+    expect(result!.messages.length).toBeGreaterThan(0);
+
+    const hasServerOnlyViolation = result!.messages.some(
+      (m: { ruleId?: string | null }) => m.ruleId === 'cadeapp/server-layer-must-be-server-only'
+    );
+    expect(hasServerOnlyViolation).toBe(true);
+  });
+
+  it('H02 (AG-07): ESLint NO debe fallar cuando un archivo de src/server/** contiene import "server-only"', async () => {
+    const filePath = path.resolve('tools/lint-fixtures/server-with-server-only.ts');
+    const [result] = await eslint.lintFiles([filePath]);
+    expect(result).toBeDefined();
+    expect(result!.messages.length).toBe(0);
+  });
 });
 

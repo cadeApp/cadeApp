@@ -70,7 +70,7 @@
           },
           {
             "from": "lib",
-            "allow": ["domain", "lib"]
+            "allow": ["domain", "lib", "types"]
           },
           {
             "from": "ui",
@@ -118,6 +118,7 @@
     ],
     "cadeapp/client-no-server": "error",
     "cadeapp/feature-server-boundary": "error",
+    "cadeapp/server-layer-must-be-server-only": "error",
     "no-restricted-imports": [
       "error",
       {
