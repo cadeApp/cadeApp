@@ -14,7 +14,7 @@
 ```
 git clone <repo> cadeapp && cd cadeapp
 pnpm install --frozen-lockfile
-cp .env.example .env.local        # completar SOLO con valores locales (los imprime `pnpm supabase status`)
+cp .env.example .env.local        # completar con las variables de cadeapp-staging (solicitarlas al Tech Lead)
 ```
 
 ## 3. Base de datos (Vinculación remota)

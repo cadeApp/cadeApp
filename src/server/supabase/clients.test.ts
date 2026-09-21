@@ -103,11 +103,16 @@ describe('T-002: DoD - Clientes de Supabase y Configuración', () => {
       expect(content).toContain('project_id');
     });
 
-    it('package.json debe incluir el script db:types', () => {
+    it('package.json debe incluir el script db:types apuntando a tools/db-types.mjs (H08)', () => {
       const pkgPath = path.resolve('package.json');
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       expect(pkg.scripts).toHaveProperty('db:types');
-      expect(pkg.scripts['db:types']).toContain('supabase gen types');
+      expect(pkg.scripts['db:types']).toBe('node tools/db-types.mjs');
+      expect(fs.existsSync(path.resolve('tools/db-types.mjs'))).toBe(true);
+      const scriptContent = fs.readFileSync(path.resolve('tools/db-types.mjs'), 'utf-8');
+      expect(scriptContent).toContain('supabase');
+      expect(scriptContent).toContain('gen');
+      expect(scriptContent).toContain('types');
     });
   });
 });

@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "db:types": "supabase gen types typescript --project-id cadeapp-staging > src/types/database.types.ts"
+    "db:types": "node tools/db-types.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.5.2",
