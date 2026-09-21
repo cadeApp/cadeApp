@@ -27,7 +27,7 @@
 | H05 | Los `.mjs` no pasan por typecheck, lint ni `pnpm test` | 🟡 | 🔴 abierto |
 | A01 | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`631dc1e`) — **0 fuera** |
 
-Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
+Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md)
 
 ## Lo que está bien
 
