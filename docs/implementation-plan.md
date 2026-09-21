@@ -1,7 +1,7 @@
 # cadeApp — Plan de implementación para agentes (agy) · v2.5
 
 > Revisado por El Consejo en `revision-3` (2026-09-18). **Estado: APROBADO CON RESOLUCIÓN D16.** El registro está en `.el-consejo/revision-3/`.
-> Qué construir: [master-plan.md](master-plan.md). Reglas listas para copiar: [`docs/agy-kit/`](agy-kit/README.md). Diseños y especificaciones vinculantes: [`docs/design/stitch/exports/`](design/stitch/exports/registro.md).
+> Qué construir: [master-plan.md](master-plan.md). Reglas y skills de agy: [`.agents/`](../.agents/). Diseños y especificaciones vinculantes: [`docs/design/stitch/exports/`](design/stitch/exports/registro.md).
 > Somos 3 personas con agy, trabajando **en simultáneo** y **en horarios distintos**. **Lautaro073** es el **único programador y líder técnico**:
 > programa la zona más crítica (datos y servidor) y el arranque, y revisa todo. Las otras dos personas **no saben programar**:
 > operan agy como herramienta de codificación asistida mediante fichas, skills y prompts predefinidos. **agy es quien codifica**,
@@ -15,8 +15,8 @@
 | Si sos… | Leé primero | Tu primera tarea |
 |---|---|---|
 | Persona 1 · Lautaro073 (líder técnico y programador: datos, servidor y arranque) | §3.7 Día 0, §2, §7.1 | Día 0 (humano) → T-000 |
-| Persona 2 · App de comercio y repartidor (operador de agy) | §3.8, §7.2, `agy-kit/.agents/rules/20-arquitectura.md` | T-006 y T-008 (cuando T-000 esté mergeada) |
-| Persona 3 · Admin, PWA y calidad (operador de agy) | §3.8, §7.3, `agy-kit/.agents/rules/40-testing.md` | T-201 (cuando T-000 esté mergeada) |
+| Persona 2 · App de comercio y repartidor (operador de agy) | §3.8, §7.2, `.agents/rules/20-arquitectura.md` | T-006 y T-008 (cuando T-000 esté mergeada) |
+| Persona 3 · Admin, PWA y calidad (operador de agy) | §3.8, §7.3, `.agents/rules/40-testing.md` | T-201 (cuando T-000 esté mergeada) |
 
 Todos: [`docs/guia-prompts.md`](guia-prompts.md) (**manual de prompts para copiar y pegar según tu rol**), `docs/onboarding.md` (en el kit), §3 (coordinación) y la skill `tomar-tarea`.
 
@@ -38,8 +38,8 @@ Completar al crear el repo:
 | Persona | Usuario de GitHub | Rol |
 |---|---|---|
 | Persona 1 | `@Lautaro073` | Líder técnico y desarrollador. Programa datos, servidor y arranque (T-000, T-001, T-003). Revisa y aprueba los PR de las otras dos personas. Único administrador de producción. |
-| Persona 2 | `@________` | Operador de agy (no programador) en la zona App de comercio y repartidor. agy codifica y ejecuta las skills bajo su cuenta. |
-| Persona 3 | `@________` | Operador de agy (no programador) en la zona Admin, PWA y calidad. agy codifica y ejecuta las skills bajo su cuenta. |
+| Persona 2 | `@KiraK72` | Operador de agy (no programador) en la zona App de comercio y repartidor. agy codifica y ejecuta las skills bajo su cuenta. |
+| Persona 3 | `Pendiente` | Operador de agy (no programador) en la zona Admin, PWA y calidad. agy codifica y ejecuta las skills bajo su cuenta (Lautaro073 cubre provisoriamente). |
 
 | Zona | Rutas | Dueña |
 |---|---|---|
@@ -122,11 +122,11 @@ Labels: `P1`, `P2`, `P3`, `fase-0` a `fase-3`, `bloqueada`, `contract-change`, `
 ### 3.7 Día 0 (Lautaro073, sin agentes)
 1. Crear el repo privado `cadeapp` en GitHub, invitar a las 3 personas y exigir 2FA.
 2. Crear `develop` y `staging` desde `main` y crear el Project "cadeApp" con las columnas y labels de §3.1.
-3. Crear la organización de Supabase y los **2 proyectos remotos del Free Tier**: `cadeapp-prod` (producción) y `cadeapp-staging` (staging, en T-002). No se crea proyecto remoto para `develop`: el desarrollo y CI corren 100% sobre Docker local y runners de GitHub (costo $0, sin límites excedidos).
+3. Crear la organización de Supabase y los **2 proyectos remotos del Free Tier**: `cadeapp-prod` (producción) y `cadeapp-staging` (staging y develop compartido, en T-002). Se utiliza `cadeapp-staging` tanto para develop como para staging, descartando Docker local para agilizar el onboarding de los operadores de agy y mantener costo $0 sin límites excedidos.
 4. Hosting: proyecto con ambientes de preview y producción. Producción la administra solo Lautaro073.
 5. Crear los GitHub Environments `staging` y `production` (este último con Lautaro073 como required reviewer). Los secretos se cargan a medida que las tareas los piden.
-6. Subir a `main` los documentos `docs/master-plan.md`, `docs/implementation-plan.md` y `docs/agy-kit/`, y completar la tabla de §2.
-7. Pedirles a P2 y P3 que sigan `docs/agy-kit/docs/onboarding.md` y lean §3.8 mientras Lautaro073 hace T-000.
+6. Subir a `main` los documentos `docs/master-plan.md` y `docs/implementation-plan.md`, y completar la tabla de §2.
+7. Pedirles a P2 y P3 que sigan `docs/onboarding.md` y lean §3.8 mientras Lautaro073 hace T-000.
 
 ### 3.8 Guía para quienes operan agy sin saber programar (P2 y P3)
 Como operador de agy no necesitás saber programar: **agy es quien escribe el código, corre las pruebas y genera los commits**. Tu rol es dirigirlo con las skills y vigilar que no se desvíe. **Toda la secuencia de prompts listos para copiar y pegar está en [`docs/guia-prompts.md`](guia-prompts.md)**:
@@ -165,7 +165,7 @@ cadeapp/
 
 Módulos: `auth`, `merchants`, `requests`, `offers`, `trips`, `availability`, `courier-onboarding`, `admin`, `incidents`, `notifications`, `legal`.
 
-Fronteras (ESLint + `server-only`; detalle en `agy-kit/.agents/rules/20-arquitectura.md`):
+Fronteras (ESLint + `server-only`; detalle en `.agents/rules/20-arquitectura.md`):
 - `domain` es puro.
 - `server` lleva `import 'server-only'` en todos sus archivos.
 - Una feature expone `index.ts` (apto para cliente) y `server.ts` (solo servidor).
@@ -174,7 +174,7 @@ Fronteras (ESLint + `server-only`; detalle en `agy-kit/.agents/rules/20-arquitec
 
 ## 5. Reglas y skills de agy (kit)
 
-Todo está en `docs/agy-kit/` y se instala en T-001:
+Instalado en la raíz en T-001:
 
 | Archivo | Para qué |
 |---|---|
@@ -272,9 +272,8 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 
 | ID | Quién | Tarea | Depende de | Archivos permitidos | DoD específico |
 |---|---|---|---|---|---|
-| T-000 | P1 | Scaffold mínimo: Next.js App Router, pnpm con `packageManager`, `.nvmrc` y `engines.node`, TS strict, ESLint con fronteras (`eslint-plugin-boundaries`) y regla cliente→servidor, `server-only`, Prettier con plugin de Tailwind, Tailwind, `components.json` de shadcn/ui apuntando a `src/ui`, Vitest con cobertura, raíz de `src/` según la regla 20, `src/features/_template/`, `layout.tsx`, `providers.tsx` con el `QueryClientProvider`, `middleware.ts` vacío, `src/server/env.ts` y `src/lib/env.public.ts` validados con Zod, `.env.example` | — | raíz y configs, esqueleto de `src/**`, `middleware.ts`, `components.json`, `tools/lint-fixtures/**` | typecheck, lint, test y build verdes. Lint falla con (a) un import profundo entre features, (b) un `"use client"` que importa `src/server/**` y (c) un paquete fuera de la lista aprobada, con fixtures commiteados. Importar un archivo `server-only` desde cliente rompe el build; arrancar sin una variable obligatoria falla con un mensaje claro |
-| T-001 | P1 | Instalar `docs/agy-kit/` en la raíz, CODEOWNERS con usuarios reales, Project y labels, un issue por tarea, fichas de Fase 0 y 1 | T-000 | `AGENTS.md`, `.agents/**`, `.github/CODEOWNERS`, `.github/pull_request_template.md`, `docs/**`, `supabase/AGENTS.md`, `src/domain/AGENTS.md`, `e2e/AGENTS.md` | GitHub no marca errores en CODEOWNERS; con agy en las máquinas de las 3 personas, leer `.env.local`, `pnpm supabase db push` y `git push origin develop` quedan bloqueados y `pnpm test` pide permiso normal; **simulacro de traspaso:** P2 empieza una ficha de prueba y P3 la retoma con `retomar-tarea` (acta en la bitácora); P2 y P3 generan un informe de `revisar-pr` sobre el PR de T-001 |
-| T-002 | P1 | CLI de Supabase en devDependencies con versión exacta, `config.toml`, proyectos staging y producción (Free Tier), clientes `src/server/supabase/{server,browser,admin}.ts`, scripts `db:*`, sección de base en `docs/onboarding.md` | T-000 | `supabase/config.toml`, `src/server/supabase/**`, `package.json` (scripts y devDep), `.env.example`, `docs/onboarding.md` | P2 o P3 levantan la base en su máquina siguiendo solo el onboarding (vía Docker local); no hay claves en el repo; el cliente admin tiene `server-only` |
+| T-001 | P1 | Instalar kit de agy en la raíz, CODEOWNERS con usuarios reales, Project y labels, un issue por tarea, fichas de Fase 0 y 1 | T-000 | `AGENTS.md`, `.agents/**`, `.github/CODEOWNERS`, `.github/pull_request_template.md`, `docs/**`, `supabase/AGENTS.md`, `src/domain/AGENTS.md`, `e2e/AGENTS.md`, `tools/**` | GitHub no marca errores en CODEOWNERS; con agy en las máquinas de las 3 personas, leer `.env.local`, `pnpm supabase db push` y `git push origin develop` quedan bloqueados y `pnpm test` pide permiso normal; **simulacro de traspaso:** P2 empieza una ficha de prueba y P3 la retoma con `retomar-tarea` (acta en la bitácora); P2 y P3 generan un informe de `revisar-pr` sobre el PR de T-001 |
+| T-002 | P1 | Clientes @supabase/ssr (`src/server/supabase/{server,browser,admin}.ts`), vinculación al proyecto remoto (`cadeapp-staging`), script `pnpm db:types` remoto, sección de base en `docs/onboarding.md` (sin Docker local) | T-000 | `src/server/supabase/**`, `package.json` (scripts y dependencias), `.env.example`, `docs/onboarding.md` | Variables de entorno validadas con `cadeapp-staging`; no hay claves en el repo; el cliente admin tiene `server-only`; tipos generados con `pnpm db:types` sin diff |
 | T-003 | P1 | `ci.yml`, `migrate.yml`, `approval-policy.yml`, protecciones y environments según §6 | T-000, T-002 | `.github/workflows/**` | Un PR con error de tipos queda bloqueado; CI con caché en menos de 10 minutos; una migración vacía de prueba se aplica en staging; dos merges seguidos no migran en paralelo; Actions fijadas por SHA; `approval-policy` bloquea un PR de prueba de P2 sin aprobación de Lautaro073 y uno de Lautaro073 sin informe de agy; job `bundle-budget` informa el first-load JS por ruta y avisa si supera el presupuesto de la regla 25 |
 | T-004 | P1 | Esquema v1 (§7 del master plan), trigger de alta (rol desde metadatos, solo `merchant` o `courier`), seed de zonas y settings, tipos generados | T-002 | `supabase/migrations/**`, `supabase/seed.sql`, `supabase/tests/structure.sql`, `src/types/database.types.ts` | pgTAP de estructura (tablas, índices únicos parciales, checks); registrarse con rol `admin` no crea un admin; tipos sin diff |
 | T-005 | P1 | RLS v1, storage `courier-docs`, matriz RLS, `rls_enabled.sql` | T-004 | `supabase/migrations/**`, `supabase/tests/rls_*.sql` | Matriz por rol (merchant, courier approved/pending/suspended, admin, anon); un repartidor no aceptado no lee contactos; el bucket no se puede leer; `rls_enabled.sql` falla con una tabla sin RLS (demostrado) |

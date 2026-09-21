@@ -23,7 +23,7 @@ const text = JSON.stringify(args);
 const command = typeof args.CommandLine === 'string' ? args.CommandLine : '';
 
 // .env, .env.local, .env.production... pero no .env.example
-const SECRET_FILE = /(^|[\\/\s"'=:])\.env(?!\.example)(\.[\w-]+)*(?=$|[\s"'\\/,;)])/i;
+const SECRET_FILE = /(^|[^a-zA-Z0-9_])\.env(?![a-zA-Z0-9_-])(?!\.example($|[\s"'\\/,;:)&|<>\]}`]))/i;
 const SECRET_NAME = /SERVICE_ROLE|VAPID_PRIVATE|DNI_HMAC_SECRET|CRON_SECRET|SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD/i;
 
 if (SECRET_FILE.test(text)) respond('deny', 'Regla 00: no se leen ni tocan archivos .env (solo .env.example).');
@@ -35,6 +35,7 @@ if (toolName === 'run_command' || command) {
     [/\bsupabase\b[^\n|&;]*--(linked|db-url|project-ref)\b/i, 'Regla 00: nada de Supabase remoto desde local.'],
     [/\bgit\s+push\b[^\n|&;]*(\s--force\b|\s-f\b|--force-with-lease)/i, 'Regla 50: sin force push.'],
     [/\bgit\s+push\b[^\n|&;]*\b(origin\s+)?(HEAD:)?(develop|staging|main)\b(?![\w/-])/i, 'Regla 50: no se pushea a develop, staging ni main.'],
+    [/\bgit\s+push\b(?![^\n|&;]*\s+[a-zA-Z0-9][\w.-]*\s+(?!develop\b|staging\b|main\b|HEAD\b)[a-zA-Z0-9][\w./-]*)/i, 'Regla 50: push sin rama explícita; nombrá remoto y rama (nunca develop, staging ni main).'],
     [/\bgit\s+(branch\s+-D|push\s+\S+\s+--delete)\s+(develop|staging|main)\b/i, 'Regla 50: no se borran ramas protegidas.'],
     [/\bvercel\b[^\n|&;]*\b(deploy|--prod|env|secrets|promote|rollback)\b/i, 'Regla 00: deploys y variables de hosting solo por CI.'],
     [/\bgh\s+(secret|variable)\b|\bgh\s+api\b[^\n]*\/(secrets|environments)\b/i, 'Regla 00: secretos de GitHub fuera del alcance del agente.'],
