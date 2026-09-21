@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { createClient as createServerClient } from './server';
 import { createClient as createBrowserClient } from '@/lib/supabase/browser';
 import { createAdminClient } from './admin';
@@ -103,11 +105,45 @@ describe('T-002: DoD - Clientes de Supabase y Configuración', () => {
       expect(content).toContain('project_id');
     });
 
-    it('package.json debe incluir el script db:types', () => {
+    it('package.json debe incluir el script db:types apuntando a tools/db-types.mjs sin redirección (H08, H13)', () => {
       const pkgPath = path.resolve('package.json');
       const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
       expect(pkg.scripts).toHaveProperty('db:types');
-      expect(pkg.scripts['db:types']).toContain('supabase gen types');
+      expect(pkg.scripts['db:types']).toBe('node tools/db-types.mjs');
+      expect(pkg.scripts['db:types']).not.toContain('>');
+      expect(fs.existsSync(path.resolve('tools/db-types.mjs'))).toBe(true);
+      const scriptContent = fs.readFileSync(path.resolve('tools/db-types.mjs'), 'utf-8');
+      expect(scriptContent).toContain('supabase');
+      expect(scriptContent).toContain('gen');
+      expect(scriptContent).toContain('types');
+    });
+
+    it('tools/db-types.mjs no debe truncar ni modificar el archivo destino si la CLI falla (H13)', () => {
+      const tmpDir = os.tmpdir();
+      const testFile = path.join(tmpDir, `test-db-types-${Date.now()}.ts`);
+      const initialContent = '/* original types content */';
+      fs.writeFileSync(testFile, initialContent, 'utf-8');
+
+      try {
+        const result = spawnSync('node', [path.resolve('tools/db-types.mjs'), '--invalid-flag-force-fail'], {
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            DB_TYPES_TARGET_FILE: testFile,
+          },
+        });
+
+        // La CLI debe fallar
+        expect(result.status).not.toBe(0);
+
+        // El archivo destino NO debe haber sido alterado ni truncado a 0 bytes
+        const finalContent = fs.readFileSync(testFile, 'utf-8');
+        expect(finalContent).toBe(initialContent);
+      } finally {
+        if (fs.existsSync(testFile)) {
+          fs.unlinkSync(testFile);
+        }
+      }
     });
   });
 });
