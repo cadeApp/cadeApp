@@ -90,6 +90,7 @@ Mantener esta lista estable entre PRs: si cambian los nombres, el análisis pier
 | `P12-plantilla-propaga-antipatron` | Un error en andamiaje que se va a copiar |
 | `P13-accesibilidad-no-considerada` | Barrera de accesibilidad introducida sin evaluar |
 | `P14-referencia-muerta-tras-mover` | Se movió o borró un archivo y quedaron referencias a la ruta vieja |
+| `P15-entregable-declarado-pero-no-ejecutable` | Se declaró una dependencia, script o paso que no se puede ejecutar realmente |
 
 ## Cómo analizar
 

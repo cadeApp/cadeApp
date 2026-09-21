@@ -1,6 +1,6 @@
 # Cómo se entrega una revisión
 
-Aplica cuando el PR es de otra persona (P2 o P3). Para los PR propios el flujo sigue igual.
+Aplica cuando el PR es de otra persona (P2 o P3). Para los PR propios el flujo sigue igual — incluida la separación de canales: el dato estructurado nunca vive en la rama revisada.
 
 ## La regla que manda
 
@@ -14,6 +14,8 @@ Aplica cuando el PR es de otra persona (P2 o P3). Para los PR propios el flujo s
 | **El dato estructurado** (`hallazgos.jsonl`, evidencia, rondas) | Rama `docs/revisiones`, carpeta `docs/revision-pr/pr-NN/` | Solo Lautaro073 |
 
 La rama `docs/revisiones` se crea **cuando P2 abra su primera PR**. Es de vida larga: se le van sumando las carpetas de cada revisión y se mergea a `develop` cuando la PR revisada se cierra, así el histórico queda en la línea principal.
+
+**Esto vale también para las PR propias**, y por dos motivos, no uno. El primero es el desvío de alcance: meter `docs/revision-pr/` en la rama de la tarea generó un hallazgo `A01` en las tres primeras PR. El segundo lo aprendimos en la #49: el commit `04d77e9` metió la carpeta en la rama, el revert `fbe7054` la borró entera y **se perdió el informe de la ronda 2**, que estaba sin commitear. La revisión se commitea en `docs/revisiones` al cerrar cada ronda, antes de reportar.
 
 Ventaja: la persona revisada **no tiene que pullear nada**. Lee un comentario. Cero operaciones de git sobre trabajo en curso — que es justo lo que frena a quien opera agy sin programar (§3.8).
 
