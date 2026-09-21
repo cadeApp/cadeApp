@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-002-supabase-clients` → `develop` |
 | **Base** | `9f03018` |
 | **Tamaño** | 19 archivos, +664 / −57 |
-| **Estado** | Abierta · **13 cerrados y verificados · 0 decisiones · 2 abiertos (2 líneas de arreglo)** |
+| **Estado** | Abierta · **LISTA PARA ACEPTAR** · 15 de 16 cerrados y verificados en `4010afa` · 0 decisiones |
 
 ## Rondas
 
@@ -19,6 +19,7 @@
 | 3 | `17a0be4` | H04 y A01 cerrados · H03 bajado a parcial · **5 nuevos, 1 crítico** | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 | 4 | `3be754a` | **Los 3 bloqueantes cerrados y verificados** · 2 nuevos chicos | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 | 5 | `62cf1f9` | H10, H12 y el residual de H06 cerrados · **H13 reabierto: la prueba no ejecuta el script** | [`revisiones/ronda-5.md`](revisiones/ronda-5.md) |
+| 6 | `4010afa` | **H13 demostrado en rojo y H14 cerrados · los 15 técnicos cerrados** | [`revisiones/ronda-6.md`](revisiones/ronda-6.md) |
 
 ## Estado por hallazgo
 
@@ -36,8 +37,9 @@
 | H10 | La ficha promete una vinculación remota que ya no hace falta | 🔵 | ✅ verificado (`62cf1f9`) — resuelto por la opción (a) |
 | H11 | `.env.example` sigue entregando el flujo con Docker | 🟡 | ✅ verificado (`3be754a`) |
 | H12 | `.env.example` trae una URL de Supabase que no puede existir | 🔵 | ✅ verificado (`62cf1f9`) |
-| **H13** | La prueba de regresión no ejecuta el script: pasa en el vacío | 🟡 | 🔴 **abierto** |
-| **H14** | El arreglo de H12 amplió el regex del ref sin necesidad | 🔵 | 🔴 abierto |
+| H13 | La prueba de regresión no ejecuta el script: pasa en el vacío | 🟡 | ✅ verificado (`4010afa`) — demostrado en rojo |
+| H14 | El arreglo de H12 amplió el regex del ref sin necesidad | 🔵 | ✅ verificado (`4010afa`) |
+| **H15** | El cuerpo del PR no trae el checklist de seguridad (§2) | 🔵 | 🔴 abierto — **no es código** |
 | **A01** | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`3be754a`) — **0 fuera de alcance** |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md)
@@ -65,7 +67,7 @@ Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidenc
 
 > **H10 es una decisión de una línea, no un arreglo.** Al delegar el drift a CI y resolver el ref por variable de entorno, la vinculación dejó de hacer falta; lo que sobra es la línea del objetivo que la promete.
 
-> **H13 es el hallazgo más sustantivo que queda:** el arreglo de una pérdida de datos quedó cubierto por una prueba de forma, no de comportamiento. Si alguien revierte el script, los 65 tests siguen en verde.
+> **H13 tardó tres rondas:** primero no existía la prueba, después existía pero no ejecutaba el script, y recién en la sexta atrapó el bug. Demostrada en rojo en `4010afa`.
 
 ## Nota sobre esta carpeta
 

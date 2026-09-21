@@ -430,3 +430,61 @@ El objetivo y la fila del plan dicen ahora «configuración remota para `cadeapp
 `docs/onboarding.md:23`: «En CI (`ci.yml`, construido en T-003), se validará que no haya drift…».
 
 `.env.example:31`: `NEXT_PUBLIC_SUPABASE_URL=https://placeholderprojectref.supabase.co`, con el comentario `Staging / Prod: https://<project-ref>.supabase.co`.
+
+---
+
+# Ronda 6 — `4010afa`
+
+## Batería completa
+
+```bash
+pnpm typecheck                  # exit 0
+pnpm lint                       # ✔ No ESLint warnings or errors
+pnpm test                       # Test Files 8 passed (8) · Tests 66 passed (66)
+pnpm build                      # exit 0 · First Load JS 87.2 kB
+pnpm install --frozen-lockfile  # Done in 322ms · exit 0
+```
+
+Alcance: 19 archivos, 0 fuera de la ficha.
+
+## H13 · Demostración en rojo, ahora sí
+
+Mismo parche temporal que en la ronda 5 sobre `tools/db-types.mjs`:
+
+```js
+writeFileSync(TARGET_FILE, '', 'utf-8'); // BUG SIMULADO (redirección >)
+const args = process.argv.slice(2);
+```
+
+```bash
+pnpm exec vitest run src/server/supabase/clients.test.ts -t "no debe truncar"
+```
+
+```
+AssertionError: expected '' to be '/* original types content */'
+ ❯ src/server/supabase/clients.test.ts:141:30
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 skipped (9)
+```
+
+En la ronda 5, con `shell:true`, este mismo escenario pasaba en verde. Restaurado con `git checkout -- tools/db-types.mjs`.
+
+## H14 · Regex estricto restaurado
+
+| URL | `[a-z0-9]+` |
+|---|---|
+| `https://placeholderprojectref.supabase.co` | `placeholderprojectref` |
+| `https://abcdefghijklmnopqrst.supabase.co` | `abcdefghijklmnopqrst` |
+| `https://cadeapp-staging.supabase.co` | `undefined` → `--linked` |
+
+## Checklist de seguridad · ítem 5 (ningún control debilitado)
+
+```bash
+git diff 9f03018 4010afa | grep -nE '^+.*("off"|"warn"|eslint-disable|@ts-ignore|@ts-expect-error|.skip|.todo)'
+# (ninguno)
+
+git diff 9f03018 4010afa -- package.json | grep -E '^[+-].*"(lint|test|typecheck|build)"'
+# (los 4 checks intactos)
+```
+
+Único ensanche, en `.eslintrc.json`: `from: "lib"` pasa de `["domain","lib"]` a `["domain","lib","types"]`. Necesario (`browser.ts` importa `Database` de `@/types`) y consistente: `server`, `feature`, `app` y `fixture` ya permitían `types`.
