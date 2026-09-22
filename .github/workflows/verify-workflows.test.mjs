@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -20,7 +20,7 @@ function job(yaml, name) {
   const normalized = yaml.replace(/\r\n/g, '\n');
   const start = normalized.indexOf(`\n  ${name}:\n`);
   assert.notEqual(start, -1, `Missing ${name} job`);
-  const next = normalized.slice(start + 1).search(/\n  [\w-]+:\n/);
+  const next = normalized.slice(start + 1).search(/\n {2}[\w-]+:\n/);
   return next === -1 ? normalized.slice(start) : normalized.slice(start, start + next + 1);
 }
 
@@ -52,6 +52,24 @@ test('pnpm test includes workflow behavior tests', () => {
 
 test('pnpm lint checks workflow modules despite the hidden directory', () => {
   assert.match(projectPackage().scripts.lint, /eslint --no-ignore --ext \.mjs \.github\/workflows/);
+});
+
+test('workflow lint rejects unused code and debugger statements', () => {
+  const eslint = fileURLToPath(new URL('../../node_modules/eslint/bin/eslint.js', import.meta.url));
+  const probe = fileURLToPath(new URL(`lint-probe-${process.pid}.mjs`, import.meta.url));
+  writeFileSync(probe, 'const unused = 1;\ndebugger;\n');
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [eslint, '--no-ignore', '--ext', '.mjs', '.github/workflows'],
+      { cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding: 'utf8' }
+    );
+    assert.notEqual(result.status, 0, result.stderr);
+    assert.match(result.stdout, /no-unused-vars/);
+    assert.match(result.stdout, /no-debugger/);
+  } finally {
+    unlinkSync(probe);
+  }
 });
 
 test('pnpm typecheck checks workflow modules as JavaScript', () => {
