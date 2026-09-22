@@ -1,6 +1,13 @@
 -- T-005: RLS v1, actor access policies and secure courier-docs storage
 
--- 1. Remove initial default_deny policies from T-004
+-- 1. Clean up temporary public helper functions if defined
+drop function if exists public.is_admin();
+drop function if exists public.is_approved_courier();
+drop function if exists public.is_request_merchant(uuid, uuid);
+drop function if exists public.is_accepted_offer_courier(uuid, uuid);
+drop function if exists public.is_courier_assigned_to_request(uuid, uuid);
+
+-- 2. Remove initial default_deny policies from T-004
 do $$
 declare
   table_name text;
@@ -17,8 +24,11 @@ begin
 end;
 $$;
 
--- 2. Security helper functions (SECURITY DEFINER to avoid RLS recursion)
-create or replace function public.is_admin()
+-- 3. Private schema for internal security helpers (avoids RLS recursion and public type drift)
+create schema if not exists app_private;
+grant usage on schema app_private to authenticated, anon;
+
+create or replace function app_private.is_admin()
 returns boolean
 language sql
 security definer
@@ -31,10 +41,10 @@ as $$
   );
 $$;
 
-revoke all on function public.is_admin() from public, anon, authenticated;
-grant execute on function public.is_admin() to authenticated;
+revoke all on function app_private.is_admin() from public, anon, authenticated;
+grant execute on function app_private.is_admin() to authenticated;
 
-create or replace function public.is_approved_courier()
+create or replace function app_private.is_approved_courier()
 returns boolean
 language sql
 security definer
@@ -50,10 +60,10 @@ as $$
   );
 $$;
 
-revoke all on function public.is_approved_courier() from public, anon, authenticated;
-grant execute on function public.is_approved_courier() to authenticated;
+revoke all on function app_private.is_approved_courier() from public, anon, authenticated;
+grant execute on function app_private.is_approved_courier() to authenticated;
 
-create or replace function public.is_request_merchant(req_id uuid, m_id uuid)
+create or replace function app_private.is_request_merchant(req_id uuid, m_id uuid)
 returns boolean
 language sql
 security definer
@@ -66,10 +76,10 @@ as $$
   );
 $$;
 
-revoke all on function public.is_request_merchant(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.is_request_merchant(uuid, uuid) to authenticated;
+revoke all on function app_private.is_request_merchant(uuid, uuid) from public, anon, authenticated;
+grant execute on function app_private.is_request_merchant(uuid, uuid) to authenticated;
 
-create or replace function public.is_accepted_offer_courier(off_id uuid, c_id uuid)
+create or replace function app_private.is_accepted_offer_courier(off_id uuid, c_id uuid)
 returns boolean
 language sql
 security definer
@@ -82,10 +92,10 @@ as $$
   );
 $$;
 
-revoke all on function public.is_accepted_offer_courier(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.is_accepted_offer_courier(uuid, uuid) to authenticated;
+revoke all on function app_private.is_accepted_offer_courier(uuid, uuid) from public, anon, authenticated;
+grant execute on function app_private.is_accepted_offer_courier(uuid, uuid) to authenticated;
 
-create or replace function public.is_courier_assigned_to_request(req_id uuid, c_id uuid)
+create or replace function app_private.is_courier_assigned_to_request(req_id uuid, c_id uuid)
 returns boolean
 language sql
 security definer
@@ -99,17 +109,17 @@ as $$
   );
 $$;
 
-revoke all on function public.is_courier_assigned_to_request(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.is_courier_assigned_to_request(uuid, uuid) to authenticated;
+revoke all on function app_private.is_courier_assigned_to_request(uuid, uuid) from public, anon, authenticated;
+grant execute on function app_private.is_courier_assigned_to_request(uuid, uuid) to authenticated;
 
--- 3. Actor RLS policies
+-- 4. Actor RLS policies
 
 -- public.profiles
 create policy profiles_select_self on public.profiles
   for select to authenticated using (id = auth.uid());
 
 create policy profiles_select_admin on public.profiles
-  for select to authenticated using (public.is_admin());
+  for select to authenticated using (app_private.is_admin());
 
 create policy profiles_update_self on public.profiles
   for update to authenticated
@@ -118,18 +128,18 @@ create policy profiles_update_self on public.profiles
 
 create policy profiles_update_admin on public.profiles
   for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.zones
 create policy zones_select_active on public.zones
   for select to anon, authenticated
-  using (active or public.is_admin());
+  using (active or app_private.is_admin());
 
 create policy zones_write_admin on public.zones
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.merchants
 create policy merchants_select_self on public.merchants
@@ -138,11 +148,11 @@ create policy merchants_select_self on public.merchants
 
 create policy merchants_select_admin on public.merchants
   for select to authenticated
-  using (public.is_admin());
+  using (app_private.is_admin());
 
 create policy merchants_select_courier on public.merchants
   for select to authenticated
-  using (public.is_approved_courier());
+  using (app_private.is_approved_courier());
 
 create policy merchants_update_self on public.merchants
   for update to authenticated
@@ -151,8 +161,8 @@ create policy merchants_update_self on public.merchants
 
 create policy merchants_update_admin on public.merchants
   for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.couriers
 create policy couriers_select_self on public.couriers
@@ -161,7 +171,7 @@ create policy couriers_select_self on public.couriers
 
 create policy couriers_select_admin on public.couriers
   for select to authenticated
-  using (public.is_admin());
+  using (app_private.is_admin());
 
 create policy couriers_update_self on public.couriers
   for update to authenticated
@@ -174,8 +184,8 @@ create policy couriers_update_self on public.couriers
 
 create policy couriers_update_admin on public.couriers
   for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.courier_documents
 create policy courier_documents_select_self on public.courier_documents
@@ -184,7 +194,7 @@ create policy courier_documents_select_self on public.courier_documents
 
 create policy courier_documents_select_admin on public.courier_documents
   for select to authenticated
-  using (public.is_admin());
+  using (app_private.is_admin());
 
 create policy courier_documents_insert_self on public.courier_documents
   for insert to authenticated
@@ -192,8 +202,8 @@ create policy courier_documents_insert_self on public.courier_documents
 
 create policy courier_documents_write_admin on public.courier_documents
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.delivery_requests
 create policy delivery_requests_select_merchant on public.delivery_requests
@@ -203,16 +213,16 @@ create policy delivery_requests_select_merchant on public.delivery_requests
 create policy delivery_requests_select_courier on public.delivery_requests
   for select to authenticated
   using (
-    public.is_approved_courier()
+    app_private.is_approved_courier()
     and (
       (status = 'published' and (expires_at is null or expires_at > now()))
-      or (accepted_offer_id is not null and public.is_accepted_offer_courier(accepted_offer_id, auth.uid()))
+      or (accepted_offer_id is not null and app_private.is_accepted_offer_courier(accepted_offer_id, auth.uid()))
     )
   );
 
 create policy delivery_requests_select_admin on public.delivery_requests
   for select to authenticated
-  using (public.is_admin());
+  using (app_private.is_admin());
 
 create policy delivery_requests_insert_merchant on public.delivery_requests
   for insert to authenticated
@@ -225,40 +235,40 @@ create policy delivery_requests_update_merchant on public.delivery_requests
 
 create policy delivery_requests_update_admin on public.delivery_requests
   for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.delivery_request_contacts (D3, D15: strict contact disclosure)
 create policy contacts_select_merchant on public.delivery_request_contacts
   for select to authenticated
-  using (public.is_request_merchant(request_id, auth.uid()));
+  using (app_private.is_request_merchant(request_id, auth.uid()));
 
 create policy contacts_select_accepted_courier on public.delivery_request_contacts
   for select to authenticated
-  using (public.is_courier_assigned_to_request(request_id, auth.uid()));
+  using (app_private.is_courier_assigned_to_request(request_id, auth.uid()));
 
 create policy contacts_select_admin on public.delivery_request_contacts
   for select to authenticated
-  using (public.is_admin());
+  using (app_private.is_admin());
 
 create policy contacts_insert_merchant on public.delivery_request_contacts
   for insert to authenticated
-  with check (public.is_request_merchant(request_id, auth.uid()));
+  with check (app_private.is_request_merchant(request_id, auth.uid()));
 
 create policy contacts_update_merchant on public.delivery_request_contacts
   for update to authenticated
-  using (public.is_request_merchant(request_id, auth.uid()))
-  with check (public.is_request_merchant(request_id, auth.uid()));
+  using (app_private.is_request_merchant(request_id, auth.uid()))
+  with check (app_private.is_request_merchant(request_id, auth.uid()));
 
 create policy contacts_write_admin on public.delivery_request_contacts
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.offers
 create policy offers_select_merchant on public.offers
   for select to authenticated
-  using (public.is_request_merchant(request_id, auth.uid()));
+  using (app_private.is_request_merchant(request_id, auth.uid()));
 
 create policy offers_select_courier on public.offers
   for select to authenticated
@@ -266,13 +276,13 @@ create policy offers_select_courier on public.offers
 
 create policy offers_select_admin on public.offers
   for select to authenticated
-  using (public.is_admin());
+  using (app_private.is_admin());
 
 create policy offers_insert_courier on public.offers
   for insert to authenticated
   with check (
     courier_id = auth.uid()
-    and public.is_approved_courier()
+    and app_private.is_approved_courier()
   );
 
 create policy offers_update_courier on public.offers
@@ -282,12 +292,12 @@ create policy offers_update_courier on public.offers
 
 create policy offers_update_merchant on public.offers
   for update to authenticated
-  using (public.is_request_merchant(request_id, auth.uid()));
+  using (app_private.is_request_merchant(request_id, auth.uid()));
 
 create policy offers_update_admin on public.offers
   for update to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.incidents
 create policy incidents_select_reporter on public.incidents
@@ -296,7 +306,7 @@ create policy incidents_select_reporter on public.incidents
 
 create policy incidents_select_admin on public.incidents
   for select to authenticated
-  using (public.is_admin());
+  using (app_private.is_admin());
 
 create policy incidents_insert_authenticated on public.incidents
   for insert to authenticated
@@ -304,8 +314,8 @@ create policy incidents_insert_authenticated on public.incidents
 
 create policy incidents_write_admin on public.incidents
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.push_subscriptions
 create policy push_subscriptions_all_self on public.push_subscriptions
@@ -315,8 +325,8 @@ create policy push_subscriptions_all_self on public.push_subscriptions
 
 create policy push_subscriptions_admin on public.push_subscriptions
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.consents
 create policy consents_select_self on public.consents
@@ -329,14 +339,14 @@ create policy consents_insert_self on public.consents
 
 create policy consents_admin on public.consents
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.audit_log
 create policy audit_log_admin on public.audit_log
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.platform_settings
 create policy platform_settings_select_authenticated on public.platform_settings
@@ -345,16 +355,16 @@ create policy platform_settings_select_authenticated on public.platform_settings
 
 create policy platform_settings_write_admin on public.platform_settings
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
 -- public.rate_limits (managed exclusively via security definer RPCs; client direct select denied)
 create policy rate_limits_admin on public.rate_limits
   for all to authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
 
--- 4. Storage courier-docs: bucket and policies
+-- 5. Storage courier-docs: bucket and policies
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'courier-docs',
@@ -378,5 +388,5 @@ create policy courier_docs_insert_own_folder on storage.objects
 
 create policy courier_docs_admin on storage.objects
   for all to authenticated
-  using (bucket_id = 'courier-docs' and public.is_admin())
-  with check (bucket_id = 'courier-docs' and public.is_admin());
+  using (bucket_id = 'courier-docs' and app_private.is_admin())
+  with check (bucket_id = 'courier-docs' and app_private.is_admin());
