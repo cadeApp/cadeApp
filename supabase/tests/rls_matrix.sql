@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(49);
+select plan(55);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -458,6 +458,39 @@ select is(
   (select count(*) from public.offers where id = pg_temp.offer_c2_id()),
   1::bigint,
   'courier cannot delete its own offer'
+);
+
+-- 50. H20: lives_ok alone would also accept an UPDATE that changed zero rows.
+select is(
+  (select message from public.offers where id = pg_temp.offer_c2_id()),
+  'still available',
+  'courier pending offer edit persisted'
+);
+
+-- 51-55. Legitimate inserts still work with the stricter initial-state checks.
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select lives_ok(
+  'insert into public.offers (request_id, courier_id, amount_ars, eta_minutes) values (pg_temp.req_m2_pub_id(), pg_temp.courier_approved_1_id(), 1500, 15)',
+  'approved courier can create a pending offer'
+);
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select lives_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method) values (pg_temp.merchant_1_id(), (select id from public.zones where active limit 1), (select id from public.zones where active limit 1), ''chico'', ''cash'')',
+  'merchant can create a draft request with server timestamps'
+);
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
+select lives_ok(
+  'insert into public.courier_documents (courier_id, kind, storage_path) values (pg_temp.courier_approved_2_id(), ''license'', ''courier/c3/license/normal-upload.jpg'')',
+  'courier can submit a document for review'
+);
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select lives_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_pub_id(), pg_temp.merchant_1_id(), ''complaint'', ''normal incident'')',
+  'merchant can report an open incident'
+);
+select lives_ok(
+  'insert into public.consents (profile_id, document, version) values (pg_temp.merchant_1_id(), ''tos'', ''v1'')',
+  'merchant can record consent at database time'
 );
 
 select * from finish();
