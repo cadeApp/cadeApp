@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(30);
+select plan(49);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -333,6 +333,131 @@ select throws_ok(
   '42501'::char(5),
   null::text,
   'merchant cannot mark its own request as delivered'
+);
+
+-- 31-32. H15: a courier cannot create an offer with a decided lifecycle.
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select throws_ok(
+  'insert into public.offers (request_id, courier_id, amount_ars, eta_minutes, status) values (pg_temp.req_m2_pub_id(), pg_temp.courier_approved_1_id(), 1500, 15, ''accepted'')',
+  '42501'::char(5), null::text,
+  'courier cannot create an offer that is born accepted'
+);
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
+select throws_ok(
+  'insert into public.offers (request_id, courier_id, amount_ars, eta_minutes, decided_at) values (pg_temp.req_m2_pub_id(), pg_temp.courier_approved_2_id(), 1500, 15, now())',
+  '42501'::char(5), null::text,
+  'courier cannot create an offer with a decision timestamp'
+);
+
+-- 33-39. H16: only a new draft with server timestamps may be inserted.
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select throws_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, status) select pg_temp.merchant_1_id(), id, id, ''chico'', ''cash'', ''delivered'' from public.zones where active limit 1',
+  '42501'::char(5), null::text,
+  'merchant cannot create a request that is born delivered'
+);
+select throws_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, created_at) select pg_temp.merchant_1_id(), id, id, ''chico'', ''cash'', now() - interval ''1 day'' from public.zones where active limit 1',
+  '42501'::char(5), null::text,
+  'merchant cannot backdate request creation'
+);
+select throws_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, published_at) select pg_temp.merchant_1_id(), id, id, ''chico'', ''cash'', now() from public.zones where active limit 1',
+  '42501'::char(5), null::text,
+  'merchant cannot create a request with published_at set'
+);
+select throws_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, matched_at) select pg_temp.merchant_1_id(), id, id, ''chico'', ''cash'', now() from public.zones where active limit 1',
+  '42501'::char(5), null::text,
+  'merchant cannot create a request with matched_at set'
+);
+select throws_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, picked_up_at) select pg_temp.merchant_1_id(), id, id, ''chico'', ''cash'', now() from public.zones where active limit 1',
+  '42501'::char(5), null::text,
+  'merchant cannot create a request with picked_up_at set'
+);
+select throws_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, delivered_at) select pg_temp.merchant_1_id(), id, id, ''chico'', ''cash'', now() from public.zones where active limit 1',
+  '42501'::char(5), null::text,
+  'merchant cannot create a request with delivered_at set'
+);
+select throws_ok(
+  'insert into public.delivery_requests (merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, cancelled_at) select pg_temp.merchant_1_id(), id, id, ''chico'', ''cash'', now() from public.zones where active limit 1',
+  '42501'::char(5), null::text,
+  'merchant cannot create a request with cancelled_at set'
+);
+
+-- 40-42. H17: document review and retention metadata belong to the server.
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
+select throws_ok(
+  'insert into public.courier_documents (courier_id, kind, storage_path, status) values (pg_temp.courier_approved_2_id(), ''license'', ''courier/c3/license/forged-review.jpg'', ''verified'')',
+  '42501'::char(5), null::text,
+  'courier cannot upload a document already verified'
+);
+select throws_ok(
+  'insert into public.courier_documents (courier_id, kind, storage_path, purge_after) values (pg_temp.courier_approved_2_id(), ''insurance'', ''courier/c3/insurance/forged-purge.jpg'', now())',
+  '42501'::char(5), null::text,
+  'courier cannot choose document purge_after'
+);
+select throws_ok(
+  'insert into public.courier_documents (courier_id, kind, storage_path, purge_after, purged_at) values (pg_temp.courier_approved_2_id(), ''avatar'', ''courier/c3/avatar/forged-purged.jpg'', now(), now())',
+  '42501'::char(5), null::text,
+  'courier cannot mark a new document as purged'
+);
+
+-- 43-44. H18: incident resolution belongs to an admin workflow.
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select throws_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description, status) values (pg_temp.req_m1_pub_id(), pg_temp.merchant_1_id(), ''complaint'', ''forged resolution'', ''resolved'')',
+  '42501'::char(5), null::text,
+  'merchant cannot create an incident already resolved'
+);
+select throws_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description, resolution) values (pg_temp.req_m1_pub_id(), pg_temp.merchant_1_id(), ''complaint'', ''forged resolution'', ''closed by me'')',
+  '42501'::char(5), null::text,
+  'merchant cannot write an incident resolution on insert'
+);
+
+-- 45. H19: accepted_at must be the database transaction time.
+select throws_ok(
+  'insert into public.consents (profile_id, document, version, accepted_at) values (pg_temp.merchant_1_id(), ''tos'', ''v1'', now() - interval ''1 day'')',
+  '42501'::char(5), null::text,
+  'merchant cannot backdate consent acceptance'
+);
+
+-- 46. H20: the legitimate edit to a pending own offer remains possible.
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
+select lives_ok(
+  'update public.offers set message = ''still available'' where id = pg_temp.offer_c2_id()',
+  'courier can edit its own pending offer'
+);
+
+-- 47. H06: merchant cannot move offer lifecycle outside the T-006 RPC.
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select throws_ok(
+  'update public.offers set status = ''accepted'' where id = pg_temp.offer_c2_id()',
+  '42501'::char(5), null::text,
+  'merchant cannot accept an offer without the RPC'
+);
+
+-- 48-49. H20: an owner cannot delete a request or an offer directly.
+select pg_temp.reset_actor();
+insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method)
+select '00000000-0000-0000-0000-000000000104'::uuid, pg_temp.merchant_1_id(), id, id, 'chico', 'cash'
+from public.zones where active limit 1;
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+delete from public.delivery_requests where id = '00000000-0000-0000-0000-000000000104'::uuid;
+select is(
+  (select count(*) from public.delivery_requests where id = '00000000-0000-0000-0000-000000000104'::uuid),
+  1::bigint,
+  'merchant cannot delete its own request'
+);
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
+delete from public.offers where id = pg_temp.offer_c2_id();
+select is(
+  (select count(*) from public.offers where id = pg_temp.offer_c2_id()),
+  1::bigint,
+  'courier cannot delete its own offer'
 );
 
 select * from finish();
