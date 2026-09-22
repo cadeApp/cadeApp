@@ -229,7 +229,7 @@ begin
 end;
 $$;
 
-revoke all on function public.set_updated_at() from public;
+revoke all on function public.set_updated_at() from public, anon, authenticated;
 
 create trigger delivery_requests_set_updated_at
   before update on public.delivery_requests
@@ -279,7 +279,7 @@ begin
 end;
 $$;
 
-revoke all on function public.handle_new_user() from public;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
 
 create trigger on_auth_user_created
   after insert on auth.users
