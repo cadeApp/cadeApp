@@ -17,7 +17,7 @@ begin
 end;
 $$;
 
--- 2. Security helper functions to avoid recursion and evaluate roles securely
+-- 2. Security helper functions (SECURITY DEFINER to avoid RLS recursion)
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -53,6 +53,55 @@ $$;
 revoke all on function public.is_approved_courier() from public, anon, authenticated;
 grant execute on function public.is_approved_courier() to authenticated;
 
+create or replace function public.is_request_merchant(req_id uuid, m_id uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.delivery_requests
+    where id = req_id and merchant_id = m_id
+  );
+$$;
+
+revoke all on function public.is_request_merchant(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.is_request_merchant(uuid, uuid) to authenticated;
+
+create or replace function public.is_accepted_offer_courier(off_id uuid, c_id uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.offers
+    where id = off_id and courier_id = c_id and status = 'accepted'
+  );
+$$;
+
+revoke all on function public.is_accepted_offer_courier(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.is_accepted_offer_courier(uuid, uuid) to authenticated;
+
+create or replace function public.is_courier_assigned_to_request(req_id uuid, c_id uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.delivery_requests dr
+    join public.offers o on o.id = dr.accepted_offer_id
+    where dr.id = req_id and o.courier_id = c_id and o.status = 'accepted'
+  );
+$$;
+
+revoke all on function public.is_courier_assigned_to_request(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.is_courier_assigned_to_request(uuid, uuid) to authenticated;
+
 -- 3. Actor RLS policies
 
 -- public.profiles
@@ -61,15 +110,6 @@ create policy profiles_select_self on public.profiles
 
 create policy profiles_select_admin on public.profiles
   for select to authenticated using (public.is_admin());
-
-create policy profiles_select_counterpart on public.profiles
-  for select to authenticated using (
-    exists (
-      select 1 from public.delivery_requests dr
-      where (dr.merchant_id = auth.uid() and dr.accepted_offer_id in (select o.id from public.offers o where o.courier_id = profiles.id))
-         or (dr.merchant_id = profiles.id and dr.accepted_offer_id in (select o.id from public.offers o where o.courier_id = auth.uid()))
-    )
-  );
 
 create policy profiles_update_self on public.profiles
   for update to authenticated
@@ -123,16 +163,6 @@ create policy couriers_select_admin on public.couriers
   for select to authenticated
   using (public.is_admin());
 
-create policy couriers_select_merchant on public.couriers
-  for select to authenticated
-  using (
-    exists (
-      select 1 from public.delivery_requests dr
-      join public.offers o on o.id = dr.accepted_offer_id
-      where dr.merchant_id = auth.uid() and o.courier_id = couriers.profile_id
-    )
-  );
-
 create policy couriers_update_self on public.couriers
   for update to authenticated
   using (profile_id = auth.uid())
@@ -176,7 +206,7 @@ create policy delivery_requests_select_courier on public.delivery_requests
     public.is_approved_courier()
     and (
       (status = 'published' and (expires_at is null or expires_at > now()))
-      or (accepted_offer_id in (select o.id from public.offers o where o.courier_id = auth.uid()))
+      or (accepted_offer_id is not null and public.is_accepted_offer_courier(accepted_offer_id, auth.uid()))
     )
   );
 
@@ -201,25 +231,11 @@ create policy delivery_requests_update_admin on public.delivery_requests
 -- public.delivery_request_contacts (D3, D15: strict contact disclosure)
 create policy contacts_select_merchant on public.delivery_request_contacts
   for select to authenticated
-  using (
-    exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = delivery_request_contacts.request_id
-        and dr.merchant_id = auth.uid()
-    )
-  );
+  using (public.is_request_merchant(request_id, auth.uid()));
 
 create policy contacts_select_accepted_courier on public.delivery_request_contacts
   for select to authenticated
-  using (
-    exists (
-      select 1 from public.delivery_requests dr
-      join public.offers o on o.id = dr.accepted_offer_id
-      where dr.id = delivery_request_contacts.request_id
-        and o.courier_id = auth.uid()
-        and o.status = 'accepted'
-    )
-  );
+  using (public.is_courier_assigned_to_request(request_id, auth.uid()));
 
 create policy contacts_select_admin on public.delivery_request_contacts
   for select to authenticated
@@ -227,30 +243,12 @@ create policy contacts_select_admin on public.delivery_request_contacts
 
 create policy contacts_insert_merchant on public.delivery_request_contacts
   for insert to authenticated
-  with check (
-    exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = delivery_request_contacts.request_id
-        and dr.merchant_id = auth.uid()
-    )
-  );
+  with check (public.is_request_merchant(request_id, auth.uid()));
 
 create policy contacts_update_merchant on public.delivery_request_contacts
   for update to authenticated
-  using (
-    exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = delivery_request_contacts.request_id
-        and dr.merchant_id = auth.uid()
-    )
-  )
-  with check (
-    exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = delivery_request_contacts.request_id
-        and dr.merchant_id = auth.uid()
-    )
-  );
+  using (public.is_request_merchant(request_id, auth.uid()))
+  with check (public.is_request_merchant(request_id, auth.uid()));
 
 create policy contacts_write_admin on public.delivery_request_contacts
   for all to authenticated
@@ -260,13 +258,7 @@ create policy contacts_write_admin on public.delivery_request_contacts
 -- public.offers
 create policy offers_select_merchant on public.offers
   for select to authenticated
-  using (
-    exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = offers.request_id
-        and dr.merchant_id = auth.uid()
-    )
-  );
+  using (public.is_request_merchant(request_id, auth.uid()));
 
 create policy offers_select_courier on public.offers
   for select to authenticated
@@ -281,12 +273,6 @@ create policy offers_insert_courier on public.offers
   with check (
     courier_id = auth.uid()
     and public.is_approved_courier()
-    and exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = offers.request_id
-        and dr.status = 'published'
-        and (dr.expires_at is null or dr.expires_at > now())
-    )
   );
 
 create policy offers_update_courier on public.offers
@@ -296,13 +282,7 @@ create policy offers_update_courier on public.offers
 
 create policy offers_update_merchant on public.offers
   for update to authenticated
-  using (
-    exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = offers.request_id
-        and dr.merchant_id = auth.uid()
-    )
-  );
+  using (public.is_request_merchant(request_id, auth.uid()));
 
 create policy offers_update_admin on public.offers
   for update to authenticated
@@ -313,19 +293,6 @@ create policy offers_update_admin on public.offers
 create policy incidents_select_reporter on public.incidents
   for select to authenticated
   using (reporter_id = auth.uid());
-
-create policy incidents_select_participants on public.incidents
-  for select to authenticated
-  using (
-    exists (
-      select 1 from public.delivery_requests dr
-      where dr.id = incidents.request_id
-        and (
-          dr.merchant_id = auth.uid()
-          or dr.accepted_offer_id in (select o.id from public.offers o where o.courier_id = auth.uid())
-        )
-    )
-  );
 
 create policy incidents_select_admin on public.incidents
   for select to authenticated
