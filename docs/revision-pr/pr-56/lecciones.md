@@ -1,8 +1,8 @@
 # Lecciones de la PR #56 para `AGENTS.md` y las reglas
 
-**Fuente:** 9 hallazgos de la ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 15 hallazgos en dos rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
-> Provisorio: la PR sigue abierta con 2 bloqueantes. Se completa al cerrarla.
+> Provisorio: la PR sigue abierta, ya **sin bloqueantes**. Se completa al cerrarla.
 
 ## Patrón dominante
 
@@ -48,16 +48,54 @@ Lo que lo dejó pasar no es el error en sí, es que **las dos únicas pruebas de
 
 > **Regla propuesta.** Todo rol que aparece en la matriz necesita **al menos una aserción positiva**: algo que sí puede ver o hacer. Una batería de pruebas compuesta solo por negativas no distingue «la policy funciona» de «el rol está roto». Y cuando una policy mezcla actores con privilegios distintos sobre una misma función, conviene partirla en dos policies en vez de resolverlo con un `or`.
 
+### AG-35 · `throws_ok` con tres argumentos compara el mensaje de error, no la descripción
+**Origen:** H10
+
+Las siete aserciones de rechazo se escribieron como `throws_ok(sql, '42501', 'el repartidor no puede autoverificarse')`, leyendo el tercer argumento como la descripción del test. pgTAP lo toma como **el mensaje de error esperado** y lo compara con `=`, no por substring. `db-tests` quedó rojo dos corridas con `wanted: 42501: el repartidor no puede...`, y el arreglo intermedio —poner el mensaje real— tampoco funcionó, porque a `new row violates row-level security policy` le sobra el sufijo `for table couriers`.
+
+La forma correcta es la de cuatro argumentos, con el mensaje en nulo y casts explícitos para resolver la sobrecarga:
+
+```sql
+select throws_ok(sql, '42501'::char(5), null::text, 'descripción del test');
+```
+
+> **Regla propuesta.** Una prueba de rechazo afirma el **SQLSTATE**, nunca el texto del error: `42501` es estable entre versiones de PostgreSQL y no depende del idioma del servidor ni del nombre de la tabla. Si de verdad hace falta afirmar el mensaje, la herramienta es `throws_like` con un patrón, no `throws_ok` con una igualdad. Y antes de pasarle tres argumentos a una función de pgTAP, mirar su firma: varias tienen sobrecargas donde el argumento del medio no es lo que parece.
+
+### AG-36 · Quien arregla no puede firmar la verificación, aunque tenga razón
+**Origen:** A02
+
+El `hallazgos.jsonl` de esta carpeta llegó a la ronda 2 modificado desde el lado del autor, con los nueve hallazgos en `arreglado-verificado` y `verificado_en_sha: 45ca9bb`. El contenido técnico era correcto. El SHA no: sobre `45ca9bb` el `db-tests` estaba **rojo**, y los arreglos recién quedaron verdes en `cdb7489`.
+
+Ese es el mecanismo, y no tiene nada que ver con la buena fe: **cuando uno viene de arreglar, el estado que tiene en la cabeza es el de su última edición, no el del árbol.** Por eso el campo lo firma quien no editó.
+
+> **Regla propuesta.** `estado`, `verificado_en_sha`, `verificado_fecha` y `verificado_metodo` los escribe únicamente quien revisa. El autor tiene su canal y es suyo: la bitácora `docs/tasks/log/T-xxx.md`, donde dice qué hizo, por qué, con qué evidencia y con el número de run. Un hallazgo que el autor encuentra —como `H10`— llega igual de completo por ahí, y llega **con la autoría correcta**, que es un dato que después sirve.
+
+### AG-37 · Cuando aparece una instancia de un patrón, hay que barrer la clase entera antes de cerrar la ronda
+**Origen:** H11, H12 (lección sobre la revisión, no sobre el código)
+
+En la ronda 1 encontré `P17` en `couriers`, en `merchants` y en `offers` del lado del comercio, y cerré la ronda. En la ronda 2 aparecieron **dos más que ya estaban ahí**: el otro lado de `offers` (`H11`) y `delivery_requests` (`H12`), que es la tabla central del dominio. Nadie las tocó entre una ronda y otra; simplemente no las miré.
+
+El costo no es teórico: el agy arregló nueve hallazgos, corrió CI hasta ponerlo verde y avisó que estaba listo, y la ronda siguiente le devolvió dos más de la misma familia. Eso es un ciclo entero de ida y vuelta que se podía haber ahorrado.
+
+> **Regla propuesta.** Al encontrar el primer caso de un patrón estructural —una policy, un handler, un guard, un índice—, no se reporta ese caso: se **enumera la clase completa** y se revisan todas sus instancias en la misma ronda. Para RLS, la enumeración es mecánica: `grep -n "create policy" migración` y recorrer la lista entera, marcando cada una con qué operación cubre y qué columnas congela. La lista sale en un comando; leerla completa cuesta menos que una ronda extra.
+
 ## Advertencias
 
-- **Ronda 1 de una PR abierta.** Las tres lecciones salen de esta PR; `AG-32` y `AG-33` se refuerzan entre sí y probablemente convenga escribirlas como una sola cuando la PR cierre.
+- **Ronda 1 de una PR abierta.** Las tres primeras lecciones salen de la ronda 1; `AG-32` y `AG-33` se refuerzan entre sí y probablemente convenga escribirlas como una sola cuando la PR cierre.
+- **`AG-33` ganó dos casos en la ronda 2** (`H11` y `H12`) sin que nadie tocara esas policies: estaban desde el principio y la ronda 1 no las miró. Eso es `AG-37`, y es la lección más cara de esta PR.
+- **`AG-35` y `AG-36` no son del mismo tipo que las demás.** Una es una trampa de herramienta y la otra es de proceso; ninguna dice nada sobre la calidad del diseño de RLS, que es bueno.
 - **`AG-32` es la que más rinde y la más barata:** la infraestructura de pruebas ya existe y está bien hecha. Es agregar aserciones a `rls_matrix.sql`, no reescribir nada.
 - **Nada de esto desmerece el trabajo.** La parte difícil —probar con los roles reales, evitar la recursión con `app_private`, hacer `rls_enabled.sql` genérico— está bien resuelta, y es la que suele salir mal.
 
 ## Lo que dice el dato entre PRs
 
-Nueve hallazgos, **todos `origen: agente`**. Tercera PR consecutiva sin ningún `origen: ficha` puro: las fichas dejaron de ser la fuente de los problemas después de las PR #50 y #53.
+Quince hallazgos, **todos `origen: agente`**. Tercera PR consecutiva sin ningún `origen: ficha` puro: las fichas dejaron de ser la fuente de los problemas después de las PR #50 y #53.
 
-Aparece un patrón nuevo con dos casos de entrada, `P17-with-check-no-congela-columnas-de-privilegio`, y otro con tres, `P18-policy-sin-condicion-de-relacion`. Los dos son de la misma familia —una policy que concede más de lo que su nombre sugiere— y los dos se hacen visibles recién ahora, porque T-005 es la primera tarea que escribe autorización. Conviene mirarlos en T-006, que va a escribir las RPC que se apoyan en estas policies.
+`P17-with-check-no-congela-columnas-de-privilegio` cerró la PR con **cinco casos** —`H01`, `H02`, `H06`, `H11`, `H12`— y entró directo al quinto puesto del catálogo sobre 80 hallazgos de 6 PRs. `P18-policy-sin-condicion-de-relacion` quedó con tres. Los dos son de la misma familia —una policy que concede más de lo que su nombre sugiere— y se hacen visibles recién ahora, porque T-005 es la primera tarea que escribe autorización. Hay que mirarlos en T-006, que va a escribir las RPC que se apoyan en estas policies, y donde `H06`, `H12` y `H13` van a aterrizar.
 
-El dato de proceso de esta ronda es otro: **la autorrevisión del agy declaró cero hallazgos** sobre una migración con dos escaladas de privilegios. Eso no dice que el agy revise mal; dice lo que ya sabíamos y ahora está medido: **revisarse a uno mismo no encuentra lo que uno no pensó al escribirlo.** Es el argumento para que la revisión independiente no sea opcional, y para no confundir el `approval-policy` —que verifica formato— con un control de contenido.
+El dato de proceso tiene ahora dos mitades, y la segunda matiza a la primera:
+
+- **La autorrevisión del agy declaró cero hallazgos** sobre una migración con dos escaladas de privilegios. Eso no dice que el agy revise mal; dice lo que ya sabíamos y ahora está medido: **revisarse a uno mismo no encuentra lo que uno no pensó al escribirlo.**
+- Pero en la ronda 2 **el agy encontró solo un defecto real que la revisión no había visto** (`H10`), leyendo su propio CI en rojo. Revisarse a uno mismo sí encuentra lo que la ejecución te tira por la cara. Las dos cosas conviven: la autorrevisión sirve y no reemplaza; por eso la regla 50 la pide y `COMO-ENTREGAR.md` le da un canal propio en vez de prohibirla.
+
+Y una tercera, sobre esta revisión: **dos de los cinco hallazgos de la ronda 2 ya estaban en la ronda 1** (`H11`, `H12`). Ver `AG-37`. El `approval-policy` no habría atrapado ninguno de los dos, porque verifica formato; el único freno real sigue siendo que la revisión independiente mire, y que mire la clase entera.

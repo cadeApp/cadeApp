@@ -91,6 +91,12 @@ Mantener esta lista estable entre PRs: si cambian los nombres, el análisis pier
 | `P13-accesibilidad-no-considerada` | Barrera de accesibilidad introducida sin evaluar |
 | `P14-referencia-muerta-tras-mover` | Se movió o borró un archivo y quedaron referencias a la ruta vieja |
 | `P15-entregable-declarado-pero-no-ejecutable` | Se declaró una dependencia, script o paso que no se puede ejecutar realmente |
+| `P16-cascada-declarada-que-no-cascadea` | Se declaró un borrado o una propagación en cascada que no se produce |
+| `P17-with-check-no-congela-columnas-de-privilegio` | Una policy de escritura deja libres las columnas que deciden privilegios |
+| `P18-policy-sin-condicion-de-relacion` | Una policy concede más de lo que su nombre sugiere por no exigir vínculo con la fila |
+| `P19-cuerpo-de-pr-fuera-de-template` | El cuerpo del PR no sigue la plantilla o le faltan secciones obligatorias |
+| `P20-justificacion-de-seguridad-no-escrita` | La decisión de seguridad es correcta pero no quedó escrita donde se revisa |
+| `P21-asercion-que-compara-el-mensaje-de-error` | La prueba afirma el texto del error en vez del código, y se rompe sola |
 
 ## Cómo analizar
 
