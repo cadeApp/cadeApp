@@ -303,10 +303,10 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "delivery_requests_accepted_offer_fk"
-            columns: ["accepted_offer_id"]
+            columns: ["accepted_offer_id", "id"]
             isOneToOne: false
             referencedRelation: "offers"
-            referencedColumns: ["id"]
+            referencedColumns: ["id", "request_id"]
           },
           {
             foreignKeyName: "delivery_requests_dropoff_zone_id_fkey"

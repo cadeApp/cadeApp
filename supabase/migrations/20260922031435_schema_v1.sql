@@ -61,7 +61,7 @@ create table public.couriers (
   available boolean not null default false,
   dni_hmac text unique,
   decided_at timestamptz,
-  decided_by uuid references public.profiles (id),
+  decided_by uuid references public.profiles (id) on delete set null,
   deactivated_at timestamptz,
   constraint couriers_doc_level_range check (doc_level between 0 and 2),
   constraint couriers_dni_hmac_format check (dni_hmac is null or dni_hmac ~ '^[0-9a-f]{64}$')
@@ -142,9 +142,12 @@ create table public.offers (
   constraint offers_eta_minutes_positive check (eta_minutes > 0)
 );
 
+alter table public.offers
+  add constraint offers_id_request_uk unique (id, request_id);
+
 alter table public.delivery_requests
   add constraint delivery_requests_accepted_offer_fk
-  foreign key (accepted_offer_id) references public.offers (id);
+  foreign key (accepted_offer_id, id) references public.offers (id, request_id);
 
 create table public.incidents (
   id uuid primary key default gen_random_uuid(),
@@ -180,7 +183,7 @@ create table public.consents (
 
 create table public.audit_log (
   id bigint generated always as identity primary key,
-  actor_id uuid references public.profiles (id),
+  actor_id uuid references public.profiles (id) on delete set null,
   action text not null,
   target_type text not null,
   target_id text not null,
@@ -215,6 +218,36 @@ create index courier_documents_courier_idx on public.courier_documents (courier_
 create index push_subscriptions_user_idx on public.push_subscriptions (user_id);
 create index audit_log_target_idx on public.audit_log (target_type, target_id, created_at desc);
 
+create function public.set_updated_at()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+revoke all on function public.set_updated_at() from public;
+
+create trigger delivery_requests_set_updated_at
+  before update on public.delivery_requests
+  for each row execute function public.set_updated_at();
+
+create trigger offers_set_updated_at
+  before update on public.offers
+  for each row execute function public.set_updated_at();
+
+create trigger incidents_set_updated_at
+  before update on public.incidents
+  for each row execute function public.set_updated_at();
+
+-- Nota de diseño (H03): handle_new_user rechaza el rol 'admin' y cualquier rol ausente o
+-- desconocido en el alta pública para impedir escalamiento de privilegios.
+-- Para crear el primer admin (bootstrap), se da de alta como 'merchant' o 'courier' y luego
+-- se promueve explícitamente con service_role:
+--   update public.profiles set role = 'admin' where id = '<auth_user_id>';
 create function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -247,7 +280,6 @@ end;
 $$;
 
 revoke all on function public.handle_new_user() from public;
-grant execute on function public.handle_new_user() to authenticated;
 
 create trigger on_auth_user_created
   after insert on auth.users

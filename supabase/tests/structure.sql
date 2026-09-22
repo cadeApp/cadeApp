@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(37);
+select plan(41);
 
 select ok(
   to_regclass(format('public.%I', table_name)) is not null,
@@ -249,6 +249,126 @@ end;
 $$;
 
 select ok(pg_temp.active_zone_count() > 0, 'at least one active Aguilares zone is seeded');
+
+select ok(
+  not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'),
+  'authenticated cannot execute security definer trigger function handle_new_user'
+);
+
+select ok(
+  not has_function_privilege('anon', 'public.handle_new_user()', 'execute'),
+  'anon cannot execute security definer trigger function handle_new_user'
+);
+
+create function pg_temp.test_actor_delete_sets_null()
+returns boolean
+language plpgsql
+as $$
+declare
+  admin_id uuid := '00000000-0000-0000-0000-000000000106';
+  courier_id uuid := '00000000-0000-0000-0000-000000000102';
+  audit_id bigint;
+  courier_decided_by uuid;
+  audit_actor_id uuid;
+begin
+  perform pg_temp.signup_role(admin_id, 'merchant');
+  update public.profiles set role = 'admin' where id = admin_id;
+
+  update public.couriers
+  set decided_by = admin_id, decided_at = now()
+  where profile_id = courier_id;
+
+  insert into public.audit_log (actor_id, action, target_type, target_id)
+  values (admin_id, 'approve_courier', 'courier', courier_id::text)
+  returning id into audit_id;
+
+  delete from auth.users where id = admin_id;
+
+  select decided_by into courier_decided_by
+  from public.couriers where profile_id = courier_id;
+
+  select actor_id into audit_actor_id
+  from public.audit_log where id = audit_id;
+
+  return exists (select 1 from public.couriers where profile_id = courier_id)
+    and courier_decided_by is null
+    and exists (select 1 from public.audit_log where id = audit_id)
+    and audit_actor_id is null;
+end;
+$$;
+
+select ok(
+  pg_temp.test_actor_delete_sets_null(),
+  'deleting an actor account preserves couriers and audit_log rows with null references'
+);
+
+create function pg_temp.test_updated_at_and_composite_offer_fk()
+returns text
+language plpgsql
+as $$
+declare
+  zone_id uuid;
+  merchant_id uuid := '00000000-0000-0000-0000-000000000101';
+  courier_id uuid := '00000000-0000-0000-0000-000000000102';
+  req_a uuid := '00000000-0000-0000-0000-000000000201';
+  req_b uuid := '00000000-0000-0000-0000-000000000202';
+  offer_a uuid := '00000000-0000-0000-0000-000000000301';
+  incident_a uuid := '00000000-0000-0000-0000-000000000401';
+  old_ts timestamptz := '2020-01-01T00:00:00Z'::timestamptz;
+  req_ts timestamptz;
+  offer_ts timestamptz;
+  incident_ts timestamptz;
+  cross_fk_result text := 'DID_NOT_FAIL';
+begin
+  select id into zone_id from public.zones where active limit 1;
+
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, updated_at
+  ) values
+    (req_a, merchant_id, zone_id, zone_id, 'chico', 'cash', old_ts),
+    (req_b, merchant_id, zone_id, zone_id, 'chico', 'cash', old_ts);
+
+  insert into public.offers (
+    id, request_id, courier_id, amount_ars, eta_minutes, updated_at
+  ) values (
+    offer_a, req_a, courier_id, 1500, 15, old_ts
+  );
+
+  insert into public.incidents (
+    id, request_id, reporter_id, kind, description, updated_at
+  ) values (
+    incident_a, req_a, merchant_id, 'delay', 'initial report', old_ts
+  );
+
+  update public.delivery_requests set notes = 'updated' where id = req_a returning updated_at into req_ts;
+  update public.offers set message = 'updated' where id = offer_a returning updated_at into offer_ts;
+  update public.incidents set description = 'updated' where id = incident_a returning updated_at into incident_ts;
+
+  if not (req_ts > old_ts and offer_ts > old_ts and incident_ts > old_ts) then
+    return 'UPDATED_AT_NOT_REFRESHED';
+  end if;
+
+  begin
+    update public.delivery_requests set accepted_offer_id = offer_a where id = req_b;
+  exception when foreign_key_violation then
+    cross_fk_result := 'REJECTED_CROSS_OFFER';
+  end;
+
+  if cross_fk_result <> 'REJECTED_CROSS_OFFER' then
+    return cross_fk_result;
+  end if;
+
+  update public.delivery_requests set accepted_offer_id = offer_a where id = req_a;
+
+  return 'OK';
+end;
+$$;
+
+select is(
+  pg_temp.test_updated_at_and_composite_offer_fk(),
+  'OK',
+  'set_updated_at triggers refresh updated_at and composite FK ties accepted_offer_id to the same request'
+);
 
 select * from finish();
 rollback;
