@@ -167,14 +167,10 @@ create policy profiles_update_admin on public.profiles
   using (app_private.is_admin())
   with check (app_private.is_admin());
 
--- public.zones (H04: split public active read from admin full read to avoid ungranted is_admin() call on anon)
+-- public.zones (H04: split public active read; H14: zones_write_admin covers admin select via FOR ALL)
 create policy zones_select_public on public.zones
   for select to anon, authenticated
   using (active);
-
-create policy zones_select_admin on public.zones
-  for select to authenticated
-  using (app_private.is_admin());
 
 create policy zones_write_admin on public.zones
   for all to authenticated
@@ -284,10 +280,21 @@ create policy delivery_requests_insert_merchant on public.delivery_requests
   for insert to authenticated
   with check (merchant_id = auth.uid());
 
+-- H12: Freeze lifecycle status, accepted_offer_id and timestamps against direct merchant tampering
 create policy delivery_requests_update_merchant on public.delivery_requests
   for update to authenticated
   using (merchant_id = auth.uid())
-  with check (merchant_id = auth.uid());
+  with check (
+    merchant_id = auth.uid()
+    and status = (select dr.status from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and accepted_offer_id is not distinct from (select dr.accepted_offer_id from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and created_at = (select dr.created_at from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and published_at is not distinct from (select dr.published_at from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and matched_at is not distinct from (select dr.matched_at from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and picked_up_at is not distinct from (select dr.picked_up_at from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and delivered_at is not distinct from (select dr.delivered_at from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and cancelled_at is not distinct from (select dr.cancelled_at from public.delivery_requests dr where dr.id = delivery_requests.id)
+  );
 
 create policy delivery_requests_update_admin on public.delivery_requests
   for update to authenticated
@@ -341,10 +348,16 @@ create policy offers_insert_courier on public.offers
     and app_private.is_approved_courier()
   );
 
+-- H11: Freeze request_id and status, allow updates only while status is pending
 create policy offers_update_courier on public.offers
   for update to authenticated
   using (courier_id = auth.uid())
-  with check (courier_id = auth.uid());
+  with check (
+    courier_id = auth.uid()
+    and request_id = (select o.request_id from public.offers o where o.id = offers.id)
+    and status = (select o.status from public.offers o where o.id = offers.id)
+    and (select o.status from public.offers o where o.id = offers.id) = 'pending'
+  );
 
 -- H06: Freeze amount_ars, eta_minutes, message, courier_id and request_id against merchant tampering
 create policy offers_update_merchant on public.offers
