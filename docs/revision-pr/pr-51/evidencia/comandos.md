@@ -195,3 +195,73 @@ npx prettier --check .github/workflows/ci.yml middleware.ts docs/onboarding.md d
 ```
 
 Falla en los cuatro, y esta PR no tocó ninguno. El diff contra la salida de Prettier es `1,50c1,50` con contenido idéntico: solo difieren los fines de línea. `core.autocrlf=true`, sin `.gitattributes`, `.prettierrc` sin `endOfLine`.
+
+## Ronda 4 — `17b7661`
+
+### Alcance
+
+```bash
+gh pr diff 51 --name-only     # 17 archivos · FUERA DE ALCANCE: 0 (ninguno)
+```
+
+### H07 · Las tres demostraciones en rojo
+
+```
+[base] sin tocar nada                            pass 17 / fail 0
+borro .github/workflows/.eslintrc.json           pass 16 / fail 1  -> workflow lint rejects unused code and debugger statements
+saco eslint:recommended del .eslintrc            pass 16 / fail 1  -> workflow lint rejects unused code and debugger statements
+[H03 sigue vivo?] borro environment: production  pass 16 / fail 1  -> migration workflow serializes staging and production pushes
+[restaurado]                                     pass 17 / fail 0
+```
+
+La tercera comprueba que el cambio de `/\n  [\w-]+:\n/` a `/\n {2}[\w-]+:\n/` no debilitó el recortador de jobs.
+
+### H07 · Punta a punta, los mismos cinco defectos de la ronda 3
+
+```
+$ pnpm lint
+  52:7   error  'noUsado' is assigned a value but never used  no-unused-vars
+  53:10  error  'muerta' is defined but never used            no-unused-vars
+  55:3   error  Unreachable code                              no-unreachable
+  57:5   error  Unexpected constant condition                 no-constant-condition
+  57:11  error  Empty block statement                         no-empty
+  58:1   error  Unexpected 'debugger' statement               no-debugger
+✖ 6 problems   LINT_EXIT=1
+```
+
+En la ronda 3, los seis pasaban en verde.
+
+### La prueba nueva corre también en CI, en Linux
+
+```bash
+gh api repos/cadeApp/cadeApp/actions/jobs/106596728001/logs --allow-escape-sequences
+```
+
+```
+Test Files  9 passed (9)
+# tests 17 · pass 17 · fail 0
+```
+
+El `spawnSync` del binario de ESLint por ruta relativa (`../../node_modules/eslint/bin/eslint.js`) resuelve igual con los symlinks de pnpm en el runner.
+
+### H08 · El bloque propuesto contra el módulo real
+
+```bash
+node -e "import('.../approval-policy.mjs')"   # evaluateApprovalPolicy
+```
+
+```
+cuerpo con el bloque + aprobación de par : { ok: true,  'Aprobación externa e informe completos.' }
+el mismo cuerpo sin la aprobación de par : { ok: false, 'requiere aprobación de otra persona' }
+el cuerpo de hoy, con aprobación         : { ok: false, 'Falta el informe completo de revisar-pr' }
+cuerpo con LF                            : ok: true
+cuerpo con CRLF                          : ok: true
+```
+
+La API devuelve el cuerpo con `\r\n` y `hasCompleteReport` no normaliza fines de línea; lo probé en los dos y da igual, porque las seis expresiones son de una sola línea.
+
+### Árbol después de correr la suite
+
+```bash
+pnpm test && git status --porcelain    # limpio: el probe de lint se borra en el finally
+```

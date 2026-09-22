@@ -1,8 +1,8 @@
 # Lecciones de la PR #51 para `AGENTS.md` y las reglas
 
-**Fuente:** 11 hallazgos en 3 rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 11 hallazgos en 4 rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
-> Provisorio: la PR sigue abierta con 5 hallazgos sin cerrar, ninguno bloqueante. Se completa al cerrarla.
+> Provisorio: la PR sigue abierta con 2 hallazgos sin cerrar —uno es del revisor, el otro es de nivel repo— y ninguno bloqueante. Se completa al cerrarla.
 
 ## Patrón dominante
 
@@ -64,3 +64,17 @@ El contraejemplo está en la misma PR: el tercio de `typecheck` de H05 **sí** s
 `origen: ficha` venía subiendo —#47 11%, #48 25%, #49 31%— y en la #51 **no hay ninguno puro: 0 de 11**. Quedan dos `ambos` (18%): H05, donde la ficha dejaba los `.mjs` fuera del alcance de los checks por construcción, y H11, donde la bitácora pide una casilla que el entorno no permite satisfacer. No es que la ficha mejore sola: es que las fichas se arreglaron entre la #49 y la #51 (las PR #50 y #53 sumaron la bitácora, la propia ficha y `docs/revision-pr/**` a las 27). Según el criterio del README eso es señal de que el arreglo funcionó, **no de que el control sobre las fichas sobre**.
 
 Lo que subió en cambio es `origen: agente` sobre controles: 9 de los 11 hallazgos de esta PR son decisiones de implementación, no huecos de la ficha. Es lo esperable en una tarea de plomería de CI, donde la ficha describe qué controlar y el agente elige cómo.
+
+## Qué pasó al aplicarlas (ronda 4)
+
+**AG-26 rindió a la vuelta siguiente, y de más.** La regla decía que extender un check a una carpeta nueva se demuestra plantando un defecto del tipo que ese check debería atrapar. El arreglo de H07 no se quedó en agregar `.github/workflows/.eslintrc.json`: agregó una prueba que **escribe un `.mjs` con `const unused = 1; debugger;`, corre ESLint de verdad y exige que falle**. Los mismos cinco defectos que en la ronda 3 pasaban en verde ahora dan 6 errores y `exit 1`.
+
+Hay un detalle de diseño que conviene guardar con la lección: la prueba escribe el probe **dentro** de la carpeta que se está cubriendo, no en un temporal. Tiene que ser así, porque la configuración de ESLint cascadea por directorio y un archivo en `/tmp` no la recibiría — la prueba mediría otra cosa. Es el mismo razonamiento que hace falta para probar un `tsconfig` con `include` acotado.
+
+**AG-27 se aplicó al revés de lo esperado, y bien.** La regla pedía correr el control contra el artefacto real. El agy lo hizo y encontró que no lo podía satisfacer: el bloque literal lo tiene que generar quien aprueba, según el template. En vez de inventar un informe para poner el check en verde, dejó dicho en el cuerpo de quién es y por qué. **Un control que uno no puede satisfacer sin falsear el artefacto se declara, no se rellena.** Vale sumarlo a la regla.
+
+### Y una para el lado del que revisa
+
+**Antes de llamar «redundante» a un control, comprobar que el otro control existe.** En H09 afirmé que la aprobación de par dentro de `approval-policy.mjs` duplicaba lo que ya pide la protección de rama. No lo duplica: la protección de rama **no existe** en este repo —el plan privado no la habilita y `gh api` devuelve 403 sobre `develop`, `staging` y `main`—, así que esa línea del script es la única que hace cumplir §2 hoy. El dato estaba en la bitácora de la ronda 1 y no lo crucé con mi propio hallazgo.
+
+> **Regla propuesta, para `revisar-pr`.** Cuando un hallazgo dice «esto ya lo cubre X», el hallazgo no está cerrado hasta **verificar que X está activo en este repo**, no que exista en el plan o en la documentación. Una defensa en profundidad de dos capas donde una no está configurada es una sola capa.
