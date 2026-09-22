@@ -1,6 +1,6 @@
 # Lecciones de la PR #56 para `AGENTS.md` y las reglas
 
-**Fuente:** 15 hallazgos en dos rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 22 hallazgos en tres rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 > Provisorio: la PR sigue abierta, ya **sin bloqueantes**. Se completa al cerrarla.
 
@@ -70,6 +70,23 @@ Ese es el mecanismo, y no tiene nada que ver con la buena fe: **cuando uno viene
 
 > **Regla propuesta.** `estado`, `verificado_en_sha`, `verificado_fecha` y `verificado_metodo` los escribe únicamente quien revisa. El autor tiene su canal y es suyo: la bitácora `docs/tasks/log/T-xxx.md`, donde dice qué hizo, por qué, con qué evidencia y con el número de run. Un hallazgo que el autor encuentra —como `H10`— llega igual de completo por ahí, y llega **con la autoría correcta**, que es un dato que después sirve.
 
+### AG-38 · Una policy de `insert` decide **cómo nace** la fila, no solo de quién es
+**Origen:** H15, H16, H17, H18, H19
+
+Las tres rondas de esta PR endurecieron `update` columna por columna y ninguna miró `insert`. Al barrerlo aparecieron cinco policies donde el `with check` solo verifica el dueño, y el cliente elige el estado inicial:
+
+| Policy | Nace pudiendo ser |
+|---|---|
+| `offers_insert_courier` | `status = 'accepted'` — toma el cupo del índice único que `H11` acababa de cerrar por `update` |
+| `delivery_requests_insert_merchant` | `status = 'delivered'` con los cinco *timestamps* fabricados |
+| `courier_documents_insert_self` | `status = 'verified'` — el hermano de `H01` |
+| `incidents_insert_authenticated` | `status = 'resolved'` con su `resolution` escrita |
+| `consents_insert_self` | `accepted_at` retroactivo en un registro con valor probatorio |
+
+El `default` de la columna no protege nada: un valor explícito lo pisa, y ninguna de estas tablas tiene `before insert`. Y congelar la columna en `update` **no cierra nada** si se puede nacer en el estado privilegiado: `H15` es literalmente `H11` por la otra sentencia.
+
+> **Regla propuesta.** Endurecer `update` sin endurecer `insert` es media protección, y la mitad que falta suele ser la barata de explotar: en vez de mover una fila al estado que uno quiere, se crea ahí. Toda policy de `insert` fija explícitamente el estado inicial —`status = '<inicial>'`, las columnas de decisión en `null`, las fechas al `default`— y no solo el dueño de la fila. El `default` de la columna es una comodidad para el que escribe bien, nunca un control.
+
 ### AG-37 · Cuando aparece una instancia de un patrón, hay que barrer la clase entera antes de cerrar la ronda
 **Origen:** H11, H12 (lección sobre la revisión, no sobre el código)
 
@@ -84,6 +101,7 @@ El costo no es teórico: el agy arregló nueve hallazgos, corrió CI hasta poner
 - **Ronda 1 de una PR abierta.** Las tres primeras lecciones salen de la ronda 1; `AG-32` y `AG-33` se refuerzan entre sí y probablemente convenga escribirlas como una sola cuando la PR cierre.
 - **`AG-33` ganó dos casos en la ronda 2** (`H11` y `H12`) sin que nadie tocara esas policies: estaban desde el principio y la ronda 1 no las miró. Eso es `AG-37`, y es la lección más cara de esta PR.
 - **`AG-35` y `AG-36` no son del mismo tipo que las demás.** Una es una trampa de herramienta y la otra es de proceso; ninguna dice nada sobre la calidad del diseño de RLS, que es bueno.
+- **`AG-37` y `AG-38` son la misma lección vista dos veces.** `AG-37` dice que hay que barrer la clase entera; `AG-38` es lo que apareció cuando por fin la barrí. Si en la ronda 1 hubiera enumerado las cincuenta y tres policies por operación, `H11`, `H12` y `H15` a `H19` habrían salido juntos y esta PR habría cerrado en dos rondas en vez de cuatro.
 - **`AG-32` es la que más rinde y la más barata:** la infraestructura de pruebas ya existe y está bien hecha. Es agregar aserciones a `rls_matrix.sql`, no reescribir nada.
 - **Nada de esto desmerece el trabajo.** La parte difícil —probar con los roles reales, evitar la recursión con `app_private`, hacer `rls_enabled.sql` genérico— está bien resuelta, y es la que suele salir mal.
 
@@ -98,4 +116,4 @@ El dato de proceso tiene ahora dos mitades, y la segunda matiza a la primera:
 - **La autorrevisión del agy declaró cero hallazgos** sobre una migración con dos escaladas de privilegios. Eso no dice que el agy revise mal; dice lo que ya sabíamos y ahora está medido: **revisarse a uno mismo no encuentra lo que uno no pensó al escribirlo.**
 - Pero en la ronda 2 **el agy encontró solo un defecto real que la revisión no había visto** (`H10`), leyendo su propio CI en rojo. Revisarse a uno mismo sí encuentra lo que la ejecución te tira por la cara. Las dos cosas conviven: la autorrevisión sirve y no reemplaza; por eso la regla 50 la pide y `COMO-ENTREGAR.md` le da un canal propio en vez de prohibirla.
 
-Y una tercera, sobre esta revisión: **dos de los cinco hallazgos de la ronda 2 ya estaban en la ronda 1** (`H11`, `H12`). Ver `AG-37`. El `approval-policy` no habría atrapado ninguno de los dos, porque verifica formato; el único freno real sigue siendo que la revisión independiente mire, y que mire la clase entera.
+Y una tercera, sobre esta revisión, que en la ronda 3 se agravó: **dos de los cinco hallazgos de la ronda 2 ya estaban en la ronda 1** (`H11`, `H12`), y **los cinco de la ronda 3 estaban desde el primer commit** (`H15` a `H19`). Ninguno de los siete salió de trabajo nuevo: salieron de que la revisión miró `select`, después `update`, y recién en la ronda 3 miró `insert`. Ver `AG-37` y `AG-38`. El `approval-policy` no habría atrapado ninguno de los dos, porque verifica formato; el único freno real sigue siendo que la revisión independiente mire, y que mire la clase entera.

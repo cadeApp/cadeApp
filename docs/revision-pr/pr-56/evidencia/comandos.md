@@ -261,3 +261,139 @@ node docs/revision-pr/analizar.mjs | head -25
 ```
 
 Después: **80 hallazgos en 6 PRs**, veintiún patrones, uno por número, ninguno sin registrar. `P17` queda quinto con 5 casos.
+
+---
+
+## Ronda 3 — `aad5031`
+
+### La fase roja, demostrada en el histórico
+
+Esta es la evidencia más importante de la ronda: las pruebas se commitearon **solas**, antes del arreglo.
+
+```bash
+git log --oneline 4f621fe..aad5031
+gh run list --branch feat/T-005-rls-v1 --limit 6
+```
+
+```
+73ab5f1  test(rls): add tests 29 and 30 demonstrating red phase   CI failure
+e75093f  fix(rls): address findings H11, H12 and H14              CI success
+aad5031  docs(tasks): record green CI evidence                    CI success
+```
+
+```bash
+gh run view 35696027405 --log | grep -E "not ok|# Failed|Result:"
+```
+
+```
+# Failed test 29: "courier cannot change the amount of an already accepted offer"
+# Failed test 30: "merchant cannot mark its own request as delivered"
+rls_matrix.sql (Wstat: 0 Tests: 30 Failed: 2)
+Result: FAIL
+```
+
+### Alcance
+
+```bash
+gh pr diff 56 --name-only   # 14 archivos
+```
+
+```
+archivos: 14 · FUERA DE ALCANCE: 0 (ninguno)
+```
+
+Undécima ronda consecutiva sin desvío.
+
+### Checks locales
+
+```bash
+pnpm typecheck   # exit 0
+pnpm lint        # exit 0
+pnpm test        # exit 0 · 72/72 Vitest · 18/18 workflows
+```
+
+### CI
+
+```bash
+gh run view 35696899101 --log --job=106645651103 | grep -E "\.sql \.+ ok|Tests=|Result:"
+```
+
+```
+rls_enabled.sql .. ok
+rls_matrix.sql ... ok
+structure.sql .... ok
+Files=3, Tests=73,  1 wallclock secs
+Result: PASS
+```
+
+`PR54-H02` sigue apareciendo en el mismo log:
+
+```
+[warning]Path Validation Error: Path(s) specified in the action for caching
+do(es) not exist, hence no cache is being saved.
+```
+
+### El barrido de `insert`, que es lo que faltaba
+
+```bash
+grep -c "create policy" supabase/migrations/20260922051650_rls_v1.sql   # 53
+awk '/^create policy/{p=1} p{print} /;[[:space:]]*$/{if(p){print "---";p=0}}' \
+  supabase/migrations/20260922051650_rls_v1.sql \
+  | grep -E "^create policy|for (insert|all)|^  with check|---" \
+  | grep -B2 -A1 "for insert"
+```
+
+Siete policies de `insert` para actores no admin. Cinco no fijan el estado inicial:
+
+| Policy | `with check` | Nace pudiendo ser |
+|---|---|---|
+| `courier_documents_insert_self` | `courier_id = auth.uid()` | `status = 'verified'` |
+| `delivery_requests_insert_merchant` | `merchant_id = auth.uid()` | `status = 'delivered'` + *timestamps* |
+| `offers_insert_courier` | `courier_id = auth.uid()` y `is_approved_courier()` | `status = 'accepted'` |
+| `incidents_insert_authenticated` | relación ✅ (`H08`) | `status = 'resolved'` + `resolution` |
+| `consents_insert_self` | `profile_id = auth.uid()` | `accepted_at` retroactivo |
+
+Las dos que sí están bien: `contacts_insert_merchant` (todas sus columnas son contenido del comercio) y `courier_docs_insert_own_folder` (`H09`).
+
+### Por qué el `default` no protege
+
+```bash
+grep -n "create trigger\|before insert\|before update" supabase/migrations/*.sql
+```
+
+```
+delivery_requests_set_updated_at  before update
+offers_set_updated_at             before update
+incidents_set_updated_at          before update
+on_auth_user_created              (after insert on auth.users)
+```
+
+No hay ningún `before insert` en las tablas de `public`, y un valor explícito en el `insert` pisa el `default` de la columna. El `default` es una comodidad para quien escribe bien, no un control.
+
+### H17 · Por qué la FK tapa lo que la policy no pide
+
+```bash
+grep -n "courier_id uuid not null references public.couriers" \
+  supabase/migrations/20260922031435_schema_v1.sql
+```
+
+`courier_documents.courier_id references public.couriers (profile_id)`, y `handle_new_user` solo crea fila en `couriers` para el rol `courier`. Por eso un comercio no puede insertar ahí aunque la policy no le pida rol — al revés de `storage.objects`, donde no hay FK y `H09` tuvo que pedirlo a mano.
+
+### H06 · Aceptar una oferta, hoy
+
+```bash
+sed -n '/create policy offers_update_merchant/,/);/p' supabase/migrations/20260922051650_rls_v1.sql
+sed -n '/create policy delivery_requests_update_merchant/,/);/p' supabase/migrations/20260922051650_rls_v1.sql
+```
+
+`offers_update_merchant` **no** congela `status`: el comercio puede poner la oferta en `accepted`. `delivery_requests_update_merchant` **sí** congela `accepted_offer_id` desde `H12`: el comercio no puede vincularla. Queda una oferta huérfana en `accepted` ocupando el cupo del índice único, con la solicitud sin asignar.
+
+### A02 · Esta vez no pasó
+
+```bash
+git status --short                                    # vacío
+gh pr view 56 --json comments                         # sin comentario nuevo del agy
+git diff --stat 4f621fe..aad5031 -- docs/revision-pr/ # sin cambios
+```
+
+El único canal usado fue `docs/tasks/log/T-005.md`.
