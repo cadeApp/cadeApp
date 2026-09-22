@@ -17,10 +17,13 @@ try {
   respond('force_ask', 'agent-guard: no pude leer la llamada; confirmá manualmente.');
 }
 
-const toolName = String(payload?.toolCall?.name ?? '');
-const args = payload?.toolCall?.args ?? {};
+// PR57-H18: el runtime manda `tool_name` / `tool_input` y el comando en `command`.
+// Leer solo `toolCall.args.CommandLine` dejaba `command` vacío y `args` en {}, así que
+// ninguna regla matcheaba y todo salía por el `ask` final. Se aceptan las dos formas.
+const toolName = String(payload?.tool_name ?? payload?.toolCall?.name ?? '');
+const args = payload?.tool_input ?? payload?.toolCall?.args ?? payload?.toolCall?.input ?? {};
 const text = JSON.stringify(args);
-const command = typeof args.CommandLine === 'string' ? args.CommandLine : '';
+const command = [args.command, args.CommandLine, args.cmd].find((c) => typeof c === 'string') ?? '';
 
 // .env, .env.local, .env.production... pero no .env.example
 const SECRET_FILE = /(^|[^a-zA-Z0-9_])\.env(?![a-zA-Z0-9_-])(?!\.example($|[\s"'\\/,;:)&|<>\]}`]))/i;
