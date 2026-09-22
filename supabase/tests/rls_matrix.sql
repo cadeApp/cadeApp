@@ -7,8 +7,8 @@ select plan(15);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
-create function pg_temp.merchant_1_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000m1'::uuid $$;
-create function pg_temp.merchant_2_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000m2'::uuid $$;
+create function pg_temp.merchant_1_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000b1'::uuid $$;
+create function pg_temp.merchant_2_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000b2'::uuid $$;
 create function pg_temp.courier_pending_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000c1'::uuid $$;
 create function pg_temp.courier_approved_1_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000c2'::uuid $$;
 create function pg_temp.courier_approved_2_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000c3'::uuid $$;
