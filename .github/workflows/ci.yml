@@ -58,8 +58,10 @@ jobs:
           pnpm format:check > format-output.txt 2>&1 || FMT_FAILED=1
           cat format-output.txt
           if [ -n "$FMT_FAILED" ]; then
-            SUMMARY=$(grep -m1 'Code style issues' format-output.txt || echo 'ver el log del job')
-            echo "::warning title=Formato (prettier, no bloquea todavia)::${SUMMARY}"
+            # Sin comas en el title: GitHub las usa para separar propiedades y trunca.
+            # Y sin ANSI en el message, que prettier colorea aunque no haya tty.
+            SUMMARY=$(grep -m1 'Code style issues' format-output.txt | sed 's/\x1b\[[0-9;]*m//g' || echo 'ver el log del job')
+            echo "::warning title=Formato pendiente (prettier no bloquea todavia)::${SUMMARY}"
           fi
 
   unit:
@@ -202,7 +204,7 @@ jobs:
             pnpm audit --audit-level=high > audit-output.txt 2>&1 || AUDIT_FAILED=1
             cat audit-output.txt
             if [ -n "$AUDIT_FAILED" ]; then
-              SUMMARY=$(grep -m1 'Severity:' audit-output.txt || echo 'ver el log del job')
+              SUMMARY=$(grep -m1 'Severity:' audit-output.txt | sed 's/\x1b\[[0-9;]*m//g' || echo 'ver el log del job')
               echo "::warning title=Auditoria de dependencias (no bloquea hasta contracts-v1)::${SUMMARY}"
             fi
           fi
