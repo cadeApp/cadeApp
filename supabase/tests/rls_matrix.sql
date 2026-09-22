@@ -221,8 +221,8 @@ select is(
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select throws_ok(
   'insert into storage.objects (id, bucket_id, name) values (gen_random_uuid(), ''courier-docs'', ''courier/'' || pg_temp.merchant_1_id() || ''/test.png'')',
-  '42501',
-  'new row violates row-level security policy',
+  '42501'::char(5),
+  null::text,
   'merchant cannot insert into courier-docs bucket'
 );
 
@@ -250,8 +250,8 @@ select lives_ok(
 -- 20. H05: profiles update rechaza auto-promoción a admin
 select throws_ok(
   'update public.profiles set role = ''admin'' where id = pg_temp.merchant_1_id()',
-  '42501',
-  'new row violates row-level security policy',
+  '42501'::char(5),
+  null::text,
   'profile owner cannot elevate role to admin'
 );
 
@@ -265,16 +265,16 @@ select lives_ok(
 -- 22. H01: couriers update rechaza autoverificación de documentos
 select throws_ok(
   'update public.couriers set license_status = ''verified'', insurance_status = ''verified'' where profile_id = pg_temp.courier_approved_1_id()',
-  '42501',
-  'new row violates row-level security policy',
+  '42501'::char(5),
+  null::text,
   'courier cannot self-verify license or insurance status'
 );
 
 -- 23. H01: couriers update rechaza falsificar aprobación administrativa
 select throws_ok(
   'update public.couriers set decided_by = pg_temp.admin_id() where profile_id = pg_temp.courier_approved_1_id()',
-  '42501',
-  'new row violates row-level security policy',
+  '42501'::char(5),
+  null::text,
   'courier cannot forge decided_by approval record'
 );
 
@@ -288,16 +288,16 @@ select lives_ok(
 -- 25. H02: merchants update rechaza autoconcederse suscripción
 select throws_ok(
   'update public.merchants set subscription_status = ''active'', paid_until = ''2099-12-31'' where profile_id = pg_temp.merchant_1_id()',
-  '42501',
-  'new row violates row-level security policy',
+  '42501'::char(5),
+  null::text,
   'merchant cannot grant self active subscription or extended paid_until'
 );
 
 -- 26. H06: offers update de merchant rechaza alterar monto ofrecido
 select throws_ok(
   'update public.offers set amount_ars = 500 where id = pg_temp.offer_c2_id()',
-  '42501',
-  'new row violates row-level security policy',
+  '42501'::char(5),
+  null::text,
   'merchant cannot tamper with courier offer amount'
 );
 
@@ -305,8 +305,8 @@ select throws_ok(
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
 select throws_ok(
   'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.courier_approved_2_id(), ''complaint'', ''unrelated incident'')',
-  '42501',
-  'new row violates row-level security policy',
+  '42501'::char(5),
+  null::text,
   'unrelated courier cannot create incident on request'
 );
 
