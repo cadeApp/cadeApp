@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(28);
+select plan(30);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -315,6 +315,24 @@ select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
 select lives_ok(
   'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), ''delay'', ''pincho rueda'')',
   'assigned courier can create incident on its matched request'
+);
+
+-- 29. H11: courier cannot change the amount of an already accepted offer
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select throws_ok(
+  'update public.offers set amount_ars = 9000 where id = pg_temp.offer_c1_id()',
+  '42501'::char(5),
+  null::text,
+  'courier cannot change the amount of an already accepted offer'
+);
+
+-- 30. H12: merchant cannot mark its own request as delivered
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select throws_ok(
+  'update public.delivery_requests set status = ''delivered'', delivered_at = now() where id = pg_temp.req_m1_pub_id()',
+  '42501'::char(5),
+  null::text,
+  'merchant cannot mark its own request as delivered'
 );
 
 select * from finish();
