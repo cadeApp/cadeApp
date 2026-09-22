@@ -1,14 +1,16 @@
 # Lecciones de la PR #51 para `AGENTS.md` y las reglas
 
-**Fuente:** 6 hallazgos de la ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 11 hallazgos en 3 rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
-> Provisorio: la PR sigue abierta con 5 hallazgos sin cerrar. Se completa al cerrarla.
+> Provisorio: la PR sigue abierta con 5 hallazgos sin cerrar, ninguno bloqueante. Se completa al cerrarla.
 
 ## Patrón dominante
 
-Los tres hallazgos más graves tienen la misma forma: **algo que parece un control y no lo es.** Una variable que existe pero apunta al proyecto equivocado, un `if:` que saltea en vez de bloquear, y un test que busca un string en un archivo en vez de mirar el bloque que le importa. Los tres pasan en verde mientras no protegen nada.
+**Algo que parece un control y no lo es.** En la ronda 1 fueron tres: una variable que existe pero apunta al proyecto equivocado, un `if:` que saltea en vez de bloquear, y un test que busca un string en un archivo en vez de mirar el bloque que le importa. En la ronda 3 volvió con otras dos caras: un comando de lint que corre, lee los archivos y no tiene ninguna regla capaz de fallar, y un control que valida el cuerpo del PR probado contra un cuerpo sintético que no es el del PR.
 
-Es una vuelta de tuerca sobre `P08-control-no-cubre-lo-que-dice`: acá el control no es incompleto, es **decorativo**.
+Es una vuelta de tuerca sobre `P08-control-no-cubre-lo-que-dice`: acá el control no es incompleto, es **decorativo**. Los cinco pasan en verde mientras no protegen nada.
+
+Es esperable en T-003 y conviene decirlo: **es una tarea donde casi todo lo que se escribe *es* un control.** La proporción no se traslada a una PR de producto.
 
 ## Lecciones propuestas
 
@@ -33,8 +35,32 @@ Es una vuelta de tuerca sobre `P08-control-no-cubre-lo-que-dice`: acá el contro
 
 > **Regla propuesta.** Un test sobre un archivo de configuración parsea la estructura y comprueba **el bloque concreto** (este job, esta clave), no la presencia de un string en el archivo. Si se usa string matching, se demuestra en rojo borrando exactamente la línea que se quiere proteger — que es como se encontró éste.
 
+### AG-26 · Sumar un comando a un check no es sumar cobertura: hay que mirar la configuración que resuelve
+**Origen:** H07
+
+Para que `pnpm lint` alcanzara los `.mjs` de workflows se le agregó `eslint --no-ignore --ext .mjs .github/workflows`. El comando corre, no es un no-op —inspecciona los tres archivos— y de las **55 reglas que resuelve, ninguna puede dispararse sobre un módulo de Node**: son todas de React, Next y jsx-a11y, o tienen scope a `src/`, y el `.eslintrc.json` raíz no extiende `eslint:recommended`. Cinco defectos clásicos plantados (variable sin usar, código inalcanzable, bloque vacío, `debugger`) pasan en verde. Lo único que lo hace fallar es un error de sintaxis, que `tsc` ya atrapa.
+
+La prueba que acompaña el arreglo verifica que el comando **esté en `package.json`**, lo que se lee como «cubierto».
+
+> **Regla propuesta.** Cuando se extiende un check a una carpeta nueva, la evidencia no es que el comando corra: es **plantar un defecto del tipo que ese check debería atrapar y verlo fallar**. Para lint, un `no-unused-vars`; para typecheck, un error de tipos; para tests, una assert que no se cumple. Si el defecto pasa en verde, el comando se agregó pero la cobertura no. Vale mirar `eslint --print-config` / el `tsconfig` efectivo antes de dar el punto por cerrado.
+
+El contraejemplo está en la misma PR: el tercio de `typecheck` de H05 **sí** se demostró así, y encima en el runner de GitHub. Los dos arreglos son del mismo commit; el que se demostró con un defecto real quedó bien y el que se demostró con un `assert` de forma, no.
+
+### AG-27 · Un control que lee el cuerpo del PR se prueba contra el cuerpo del PR
+**Origen:** H08
+
+`approval-policy.mjs` exige seis cadenas literales en la sección «Informe de revisión de agy», y sus pruebas lo ejercitan con un cuerpo sintético que las trae todas. El cuerpo real de la PR que construye el control **no las trae**: corriendo `evaluateApprovalPolicy` contra el cuerpo real, da `ok: false`. No se notó porque `pull_request_target` usa la definición de la rama base y el workflow todavía no está ahí, así que el check no corrió nunca de verdad.
+
+> **Regla propuesta.** Un control que valida un artefacto del proceso —el cuerpo del PR, una bitácora, una ficha— se corre **contra el artefacto real** antes de cerrar la tarea, aunque el workflow todavía no esté en la base. Es una línea de `node -e` y contesta la única pregunta que importa: ¿el PR que agrega el control lo pasaría?
+
 ## Advertencias
 
-- **Ronda 1 de una PR abierta.** Las tres lecciones salen de un solo caso cada una; conviene confirmarlas cuando la PR cierre.
-- **T-003 es plomería de CI**, igual que T-002 lo era de configuración. La densidad de «controles decorativos» es propia de un área donde casi todo lo que se escribe *es* un control; no hay que esperar la misma proporción en una PR de producto.
-- **AG-24 es la que más rinde de las tres** y es barata: se aplica leyendo cualquier `if:` de un workflow y preguntando qué pasa cuando da falso.
+- **PR abierta.** AG-26 y AG-27 salen de un caso cada una, igual que las tres primeras. Conviene confirmarlas cuando la PR cierre.
+- **AG-24 es la que más rinde** y es la más barata: se aplica leyendo cualquier `if:` de un workflow y preguntando qué pasa cuando da falso.
+- **AG-26 es la que más se repite disfrazada.** Es la misma familia que `AG-20` de la #49 («verificar los argumentos, no solo el nombre del comando») y que `P15-entregable-declarado-pero-no-ejecutable`: tres PRs seguidas encontraron un entregable que se declara y no se ejercita. Ya no es evidencia de una sola PR.
+
+## Lo que dice el dato entre PRs
+
+`origen: ficha` venía subiendo —#47 11%, #48 25%, #49 31%— y en la #51 **no hay ninguno puro: 0 de 11**. Quedan dos `ambos` (18%): H05, donde la ficha dejaba los `.mjs` fuera del alcance de los checks por construcción, y H11, donde la bitácora pide una casilla que el entorno no permite satisfacer. No es que la ficha mejore sola: es que las fichas se arreglaron entre la #49 y la #51 (las PR #50 y #53 sumaron la bitácora, la propia ficha y `docs/revision-pr/**` a las 27). Según el criterio del README eso es señal de que el arreglo funcionó, **no de que el control sobre las fichas sobre**.
+
+Lo que subió en cambio es `origen: agente` sobre controles: 9 de los 11 hallazgos de esta PR son decisiones de implementación, no huecos de la ficha. Es lo esperable en una tarea de plomería de CI, donde la ficha describe qué controlar y el agente elige cómo.
