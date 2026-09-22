@@ -15,7 +15,8 @@
     "test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "db:types": "node tools/db-types.mjs"
+    "db:types": "node tools/db-types.mjs",
+    "test:db": "supabase test db"
   },
   "dependencies": {
     "@supabase/ssr": "0.5.2",
