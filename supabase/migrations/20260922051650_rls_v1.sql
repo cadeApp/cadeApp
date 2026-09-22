@@ -250,7 +250,12 @@ create policy courier_documents_select_admin on public.courier_documents
 
 create policy courier_documents_insert_self on public.courier_documents
   for insert to authenticated
-  with check (courier_id = auth.uid());
+  with check (
+    courier_id = auth.uid()
+    and status = 'submitted'
+    and purge_after is null
+    and purged_at is null
+  );
 
 create policy courier_documents_write_admin on public.courier_documents
   for all to authenticated
@@ -278,7 +283,16 @@ create policy delivery_requests_select_admin on public.delivery_requests
 
 create policy delivery_requests_insert_merchant on public.delivery_requests
   for insert to authenticated
-  with check (merchant_id = auth.uid());
+  with check (
+    merchant_id = auth.uid()
+    and status = 'draft'
+    and created_at = now()
+    and published_at is null
+    and matched_at is null
+    and picked_up_at is null
+    and delivered_at is null
+    and cancelled_at is null
+  );
 
 -- H12: Freeze lifecycle status, accepted_offer_id and timestamps against direct merchant tampering
 create policy delivery_requests_update_merchant on public.delivery_requests
@@ -346,6 +360,8 @@ create policy offers_insert_courier on public.offers
   with check (
     courier_id = auth.uid()
     and app_private.is_approved_courier()
+    and status = 'pending'
+    and decided_at is null
   );
 
 -- H11: Freeze request_id and status, allow updates only while status is pending
@@ -359,7 +375,8 @@ create policy offers_update_courier on public.offers
     and (select o.status from public.offers o where o.id = offers.id) = 'pending'
   );
 
--- H06: Freeze amount_ars, eta_minutes, message, courier_id and request_id against merchant tampering
+-- H06: Merchant cannot move offer state; T-006 RPC owns the transition.
+-- Freeze offer contents and ownership against merchant tampering.
 create policy offers_update_merchant on public.offers
   for update to authenticated
   using (app_private.is_request_merchant(request_id, auth.uid()))
@@ -370,6 +387,8 @@ create policy offers_update_merchant on public.offers
     and amount_ars = (select o.amount_ars from public.offers o where o.id = offers.id)
     and eta_minutes = (select o.eta_minutes from public.offers o where o.id = offers.id)
     and message is not distinct from (select o.message from public.offers o where o.id = offers.id)
+    and status = (select o.status from public.offers o where o.id = offers.id)
+    and decided_at is not distinct from (select o.decided_at from public.offers o where o.id = offers.id)
   );
 
 create policy offers_update_admin on public.offers
@@ -391,6 +410,8 @@ create policy incidents_insert_authenticated on public.incidents
   for insert to authenticated
   with check (
     reporter_id = auth.uid()
+    and status = 'open'
+    and resolution is null
     and (
       app_private.is_request_merchant(request_id, auth.uid())
       or app_private.is_courier_assigned_to_request(request_id, auth.uid())
@@ -421,7 +442,7 @@ create policy consents_select_self on public.consents
 
 create policy consents_insert_self on public.consents
   for insert to authenticated
-  with check (profile_id = auth.uid());
+  with check (profile_id = auth.uid() and accepted_at = now());
 
 create policy consents_admin on public.consents
   for all to authenticated
