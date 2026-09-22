@@ -1,8 +1,8 @@
 # Lecciones de la PR #57 para `AGENTS.md` y las reglas
 
-**Fuente:** 17 hallazgos en la ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 24 hallazgos en tres rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
-> Ronda 1 de una PR abierta. Las conclusiones pueden moverse.
+> Cerrada al darla por lista: 18 de 24 verificados, 3 aceptados por decisión, 0 bloqueantes.
 
 ## Patrón dominante
 
@@ -153,3 +153,40 @@ Y sobre el proceso, dos cosas que esta ronda muestra bien:
 
 - **El agy corrió el barrido en vez de tachar los hallazgos de a uno.** La bitácora lo registra y el resultado se verifica: 40 identificadores citados, 4 inexistentes y las cuatro legítimas. Eso es `AG-37` funcionando del lado de quien arregla, que es donde más rinde.
 - **No tocó `docs/revision-pr/**`, segunda vez consecutiva.** La regla que entró a `COMO-ENTREGAR.md` después de la #56 se cumple sola. Vale anotarlo, porque es justo el caso de `no-podar-reglas-por-silencio`: que el patrón no aparezca es la señal de que la regla sirve.
+
+---
+
+# Lecciones de la ronda 3
+
+## AG-46 · Antes de afirmar que una ruta no resuelve, ejecutarla desde donde la ejecuta quien la usa
+**Origen:** R01 — regresión de la revisión
+
+En la ronda 2 reporté que el hook estaba muerto por dos motivos: el formato del payload y una ruta que no resolvía. **El primero era cierto; el segundo lo inventé yo.** Medí `node scripts/agent-guard.mjs` parado en la raíz del repo, vi `MODULE_NOT_FOUND` y di por sentado que ese era el cwd del hook. `agy` los lanza desde `<repo>/.agents/`, así que la ruta original era correcta y la mía la rompió.
+
+El agy no lo discutió: lo probó. Puso mi versión y el runner devolvió
+
+```
+Cannot find module 'c:\…\cadeApp\.agents\.agents\scripts\agent-guard.mjs'
+```
+
+y ese `.agents\.agents` duplicado cierra la pregunta sin margen.
+
+Lo más incómodo no es el error, es **cómo pasó mis propios controles**. Escribí una prueba para respaldar el hallazgo, y la prueba afirmaba `existsSync(path.resolve(script))` — o sea, medía desde la raíz, que era exactamente mi supuesto. Un test que codifica la hipótesis equivocada pasa en verde y **hace que el error se vea verificado**. Es `P04-test-tautologico` con otro disfraz: no es que no pueda fallar, es que solo puede confirmar a quien lo escribió.
+
+> **Regla propuesta.** Una afirmación sobre el entorno —una ruta relativa, un cwd, una variable, un orden de carga— se comprueba **ejecutando desde donde lo ejecuta el que la usa**, no desde donde uno está parado. Y cuando la prueba que respalda un hallazgo depende del mismo supuesto que el hallazgo, no es evidencia: es la misma afirmación escrita dos veces. La forma de romper el círculo es la del agy — correrlo en vivo y leer el error, que suele traer la respuesta impresa.
+>
+> Corolario práctico: cuando un control es *invocado por otro proceso* (un hook, un runner, un cron), el cwd es parte del contrato y hay que verificarlo antes de tocar nada.
+
+## Lo que esta ronda dice del proceso
+
+Tres cosas que conviene dejar escritas, porque son del tipo que después se olvida:
+
+- **El agy encontró un defecto real de la revisión y lo demostró en vivo.** Es la segunda vez en el proyecto —la primera fue `PR56-H10`, el `throws_ok` de tres argumentos— y las dos veces por el mismo mecanismo: **la ejecución le tira por la cara lo que la lectura no ve**. La revisión independiente encuentra lo que el autor no pensó; el autor encuentra lo que el entorno le grita. Las dos hacen falta.
+- **Su arreglo quedó mejor que mi propuesta.** El test ahora resuelve y ejecuta con `cwd: path.dirname(HOOKS_PATH)`, o sea contra el cwd real, en vez de contra una constante. Si mañana cambia, el test lo dice.
+- **La regresión falló ruidosamente.** Entre `594e04c` y `6a46563` el hook no cargaba, pero tiraba `Cannot find module` en cada llamada en vez de devolver `ask` en silencio. No hubo ventana de falso verde. Vale la pena notarlo, porque es la diferencia entre un control roto que se nota y uno que no — y la versión original del bug, la del payload, era justamente de las que no se notan.
+
+## El dato entre PRs, al cerrar
+
+**112 hallazgos en 7 PRs.** Cuatro regresiones registradas: `PR47-R01`, `PR47-R02`, `PR48-H06` y ahora `PR57-R01`, **la primera de la revisión y no del agy**. El campo `origen` solo sirve si me incluye.
+
+Y el reparto final de la #57: 24 hallazgos, 18 cerrados, 3 aceptados por decisión de Lautaro073 y 3 abiertos que van a otras tareas. Ninguno bloqueante al cierre.

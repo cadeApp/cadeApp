@@ -693,3 +693,83 @@ pnpm format:check # exit 1 · 14 archivos — advisory
 ```bash
 gh pr checks 57   # 8 de 8 en 3152068, approval-policy incluido
 ```
+
+---
+
+# Ronda 3 — `29b82fc`
+
+## R01 · La prueba del cwd, que es del agy
+
+Puso mi versión de la ruta y ejecutó. El runner `PreToolUse` respondió:
+
+```
+Error: Cannot find module 'c:\Users\El Yisus Pai\Desktop\Proyectos\cadeApp\.agents\.agents\scripts\agent-guard.mjs'
+```
+
+El `.agents\.agents` duplicado es la prueba del cwd: `agy` lanza los hooks desde `<repo>/.agents/`,
+así que `node scripts/agent-guard.mjs` —la ruta original— resolvía bien y la mía no. Revertido en
+`6a46563`, con el test adaptado:
+
+```diff
+-const GUARD_PATH = path.resolve('.agents/scripts/agent-guard.mjs');
++const HOOKS_DIR = path.dirname(HOOKS_PATH);
++const GUARD_PATH = path.resolve(HOOKS_DIR, 'scripts/agent-guard.mjs');
+   execFileSync(process.execPath, [GUARD_PATH], {
++    cwd: HOOKS_DIR,
+-        existsSync(path.resolve(script)),
++        existsSync(path.resolve(HOOKS_DIR, script)),
+```
+
+Ahora la prueba mide contra el cwd real en vez de contra mi supuesto. Es mejor que lo que yo había
+escrito, y hay que decirlo: mi versión validaba mi propia hipótesis, así que pasaba en verde estando
+equivocada.
+
+## H18 · El guard, desde el cwd real
+
+```bash
+cd .agents
+for p in '{"tool_name":"Bash","tool_input":{"command":"supabase db push --linked"}}' \
+         '{"tool_name":"Read","tool_input":{"file_path":".env.local"}}' \
+         '{"tool_name":"Bash","tool_input":{"command":"git push origin develop"}}' \
+         '{"tool_name":"Bash","tool_input":{"command":"pnpm typecheck"}}'; do
+  echo "$p" | node scripts/agent-guard.mjs; echo
+done
+```
+
+```
+{"decision":"deny","reason":"Regla 00: comandos de Supabase contra ambientes remotos solo corren en CI."}
+{"decision":"deny","reason":"Regla 00: no se leen ni tocan archivos .env (solo .env.example)."}
+{"decision":"deny","reason":"Regla 50: no se pushea a develop, staging ni main."}
+{"decision":"ask"}
+```
+
+Los tres peligrosos bloqueados y el inocuo en `ask`. Antes del arreglo del payload los cuatro
+devolvían `ask`.
+
+## Barrido, tercera corrida
+
+```
+citados: 40 · no existen: 4 -> accept_offer, pg_dump, publish_request, submit_offer
+```
+
+Las cuatro legítimas. Estable desde la ronda 2.
+
+## Checks en `29b82fc`
+
+```bash
+pnpm typecheck   # exit 0
+pnpm lint        # exit 0
+pnpm test        # 80/80 Vitest · 19/19 workflows · 6/6 ADR
+```
+
+```bash
+gh pr checks 57                       # 8 de 8
+gh run view --job <db-tests> --log | grep -E "Tests=|Result:"
+```
+
+```
+Files=3, Tests=98,  0 wallclock secs
+Result: PASS
+```
+
+Verde en el log, no solo en el color.
