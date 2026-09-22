@@ -82,11 +82,13 @@ test('pnpm typecheck checks workflow modules as JavaScript', () => {
   assert.ok(config.include.includes('*.mjs'));
 });
 
-test('CI compares generated Supabase types with the committed types', () => {
-  const ci = workflow('ci.yml');
-  assert.match(ci, /SUPABASE_PROJECT_REF/);
-  assert.match(ci, /pnpm db:types/);
-  assert.match(ci, /git diff --exit-code -- src\/types\/database\.types\.ts/);
+test('CI compares generated Supabase types with the committed types against the local database', () => {
+  // Contra la base local, no contra staging: es la comparación que responde
+  // «¿los tipos commiteados coinciden con las migraciones de este repo?», y la
+  // única que tiene sentido en un PR. El porqué está en el test de abajo.
+  const dbTests = job(workflow('ci.yml'), 'db-tests');
+  assert.match(dbTests, /pnpm db:types --local/);
+  assert.match(dbTests, /git diff --exit-code -- src\/types\/database\.types\.ts/);
 });
 
 test('bundle budget reports route sizes and checks the 180 KB limit', () => {
@@ -159,6 +161,33 @@ test('migration workflow serializes staging and production pushes', () => {
   assert.match(job(migrate, 'staging'), /^\s+environment: staging$/m);
   assert.match(job(migrate, 'production'), /^\s+environment: production$/m);
   assert.match(migrate, /pnpm supabase db push/);
+});
+
+test('the remote type comparison runs where staging is the truth, not in a pull request', () => {
+  // develop va adelante de staging por diseño: migrate.yml solo corre al
+  // pushear a staging o main. Comparar los tipos commiteados contra el esquema
+  // remoto durante un PR a develop falla siempre que haya una migración
+  // mergeada y todavía no promovida. Pasó en T-003 y volvería a pasar en el
+  // primer PR que no toque supabase/migrations.
+  const ci = workflow('ci.yml');
+  assert.ok(
+    !/^ {2}db-types:$/m.test(ci),
+    'ci.yml no debe comparar los tipos contra el remoto: develop va adelante de staging'
+  );
+  assert.doesNotMatch(ci, /SUPABASE_ACCESS_TOKEN/, 'ci.yml no necesita el token de Supabase');
+
+  // Y el drift de staging se verifica justo después de aplicarle las
+  // migraciones, que es el único momento en que staging es la verdad.
+  const staging = job(workflow('migrate.yml'), 'staging');
+  const push = staging.indexOf('pnpm supabase db push');
+  const genTypes = staging.indexOf('pnpm db:types');
+  assert.notEqual(push, -1, 'el job de staging debe aplicar las migraciones');
+  assert.notEqual(genTypes, -1, 'el job de staging debe regenerar los tipos');
+  assert.ok(
+    push < genTypes,
+    'los tipos se regeneran después del db push, no antes: si no, se comparan contra el esquema viejo'
+  );
+  assert.match(staging, /git diff --exit-code -- src\/types\/database\.types\.ts/);
 });
 
 test('production migration fails visibly for an unauthorized actor and uses a distinct project', () => {
