@@ -19,7 +19,7 @@ pnpm test:db (si aplica)
 - [ ] Bitácora `docs/tasks/log/T-xxx.md` al día
 
 ### Informe de revisión de agy (obligatorio; lo verifica `approval-policy`)
-<!-- Pegá acá el informe completo de la skill revisar-pr. Si el PR es de Lautaro073, lo genera quien aprueba. -->
+<!-- Pegá acá el informe completo de la skill revisar-pr, con el formato literal de .agents/skills/revisar-pr/SKILL.md: approval-policy busca esas líneas y un resumen en prosa lo hace fallar. Si el PR es de Lautaro073, lo genera la revisión independiente y lo pega él antes de mergear. -->
 
 ### Rutas de otra zona (si hay)
 | Ruta | Dueña de la zona (visto bueno) |

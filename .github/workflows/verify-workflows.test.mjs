@@ -226,16 +226,30 @@ test('comments do not revoke an approval, but a later change request does', asyn
   );
 });
 
+const INFORME_COMPLETO =
+  '### Informe de revisión de agy\n\nInforme revisar-pr — T-003 — 2026-09-21 — generado por la revisión independiente\nResultado: SIN BLOQUEANTES\nChecks locales: typecheck ✅ · lint ✅ · test ✅ · test:db n.a.\nBLOQUEANTES:\n- ninguno\nMEJORAS:\n- ninguna\nNo revisado / dudas para Lautaro073:\n- ninguna';
+
 test('Lautaro073 pull requests require a complete agy review report', async () => {
   const { evaluateApprovalPolicy } = await import('./approval-policy.mjs');
   const reviews = [{ user: 'KiraK72', state: 'APPROVED', submittedAt: '2026-09-21T12:00:00Z' }];
   assert.equal(evaluateApprovalPolicy({ author: 'Lautaro073', reviews, body: '' }).ok, false);
   assert.equal(
-    evaluateApprovalPolicy({
-      author: 'Lautaro073',
-      reviews,
-      body: '### Informe de revisión de agy\n\nInforme revisar-pr — T-003 — 2026-09-21 — generado por KiraK72\nResultado: SIN BLOQUEANTES\nChecks locales: typecheck ✅ · lint ✅ · test ✅ · test:db n.a.\nBLOQUEANTES:\n- ninguno\nMEJORAS:\n- ninguna\nNo revisado / dudas para Lautaro073:\n- ninguna',
-    }).ok,
+    evaluateApprovalPolicy({ author: 'Lautaro073', reviews, body: INFORME_COMPLETO }).ok,
     true
   );
+});
+
+test('Lautaro073 merges his own pull requests: no peer approval is required', async () => {
+  // P2 y P3 no programan, asi que no pueden revisar codigo, y GitHub no permite
+  // aprobar el propio PR. Exigir una aprobacion de par seria un check que nadie
+  // puede satisfacer. Lo que la reemplaza es el informe de revisar-pr en el
+  // cuerpo, que este mismo control exige. Ver implementation-plan.md §2.
+  const { evaluateApprovalPolicy } = await import('./approval-policy.mjs');
+  const sinReviews = evaluateApprovalPolicy({
+    author: 'Lautaro073',
+    reviews: [],
+    body: INFORME_COMPLETO,
+  });
+  assert.equal(sinReviews.ok, true, sinReviews.reason);
+  assert.equal(evaluateApprovalPolicy({ author: 'Lautaro073', reviews: [], body: '' }).ok, false);
 });
