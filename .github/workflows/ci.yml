@@ -84,10 +84,13 @@ jobs:
         with:
           node-version: 22.14.0
           cache: pnpm
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/.cache/supabase
-          key: supabase-${{ runner.os }}-${{ hashFiles('supabase/config.toml') }}
+      # Sin caché de ~/.cache/supabase: el CLI nunca escribe ahí, así que el paso
+      # terminaba en «Path Validation Error: Path(s) specified in the action for
+      # caching do(es) not exist, hence no cache is being saved» en cada corrida.
+      # Lo que tarda es bajar las imágenes de Docker, que no viven en esa ruta y
+      # que además se traen sin autenticar contra Docker Hub, con su límite. Eso
+      # sigue abierto: es PR54-H02, y necesita una decisión (credenciales, espejo
+      # o aceptar la intermitencia), no otro paso de caché.
       - run: pnpm install --frozen-lockfile
       - name: Run local RPC/RLS tests and compare local types when schema exists
         run: |
