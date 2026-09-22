@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** @typedef {{ user: string, state: string, submittedAt: string }} ReviewState */
+/** @typedef {{ user?: { login?: string } | null, state: string, submitted_at?: string | null }} ApiReview */
+
+/** @param {ReviewState[]} reviews */
 function latestReviewStates(reviews) {
   const latest = new Map();
   for (const review of reviews) {
@@ -15,6 +19,7 @@ function latestReviewStates(reviews) {
   return latest;
 }
 
+/** @param {string} body */
 function hasCompleteReport(body) {
   const section = body
     .split(/^### Informe de revisión de agy[^\n]*$/m)[1]
@@ -32,6 +37,7 @@ function hasCompleteReport(body) {
   ].every((part) => part.test(section));
 }
 
+/** @param {{ author: string, reviews: ReviewState[], body: string }} input */
 export function evaluateApprovalPolicy({ author, reviews, body }) {
   const latest = latestReviewStates(reviews);
   if (author === 'Lautaro073') {
@@ -53,6 +59,7 @@ export function evaluateApprovalPolicy({ author, reviews, body }) {
   return { ok: true, reason: 'Aprobación de Lautaro073 vigente.' };
 }
 
+/** @param {string} repository @param {string} token @param {string} path */
 async function githubApi(repository, token, path) {
   const response = await fetch(`https://api.github.com/repos/${repository}${path}`, {
     headers: {
@@ -81,6 +88,7 @@ async function main() {
   const pull = await githubApi(repository, token, `/pulls/${number}`);
   const reviews = [];
   for (let page = 1; ; page += 1) {
+    /** @type {ApiReview[]} */
     const batch = await githubApi(
       repository,
       token,

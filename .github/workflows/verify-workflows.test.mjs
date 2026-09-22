@@ -6,10 +6,16 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
+/** @param {string} name */
 function workflow(name) {
   return readFileSync(new URL(name, import.meta.url), 'utf8');
 }
 
+function projectPackage() {
+  return JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+}
+
+/** @param {string} yaml @param {string} name */
 function job(yaml, name) {
   const normalized = yaml.replace(/\r\n/g, '\n');
   const start = normalized.indexOf(`\n  ${name}:\n`);
@@ -35,6 +41,27 @@ test('CI gates pull requests with typecheck, lint, unit tests, build and cached 
   ]) {
     assert.ok(ci.includes(required), `CI must include ${required}`);
   }
+});
+
+test('pnpm test includes workflow behavior tests', () => {
+  assert.match(
+    projectPackage().scripts.test,
+    /node --test \.github\/workflows\/verify-workflows\.test\.mjs/
+  );
+});
+
+test('pnpm lint checks workflow modules despite the hidden directory', () => {
+  assert.match(projectPackage().scripts.lint, /eslint --no-ignore --ext \.mjs \.github\/workflows/);
+});
+
+test('pnpm typecheck checks workflow modules as JavaScript', () => {
+  assert.match(
+    projectPackage().scripts.typecheck,
+    /tsc --project \.github\/workflows\/tsconfig\.json/
+  );
+  const config = JSON.parse(readFileSync(new URL('tsconfig.json', import.meta.url), 'utf8'));
+  assert.equal(config.compilerOptions.checkJs, true);
+  assert.ok(config.include.includes('*.mjs'));
 });
 
 test('CI compares generated Supabase types with the committed types', () => {

@@ -2,6 +2,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** @param {string} buildOutput @param {number} maxKb */
 export function evaluateBundleBudget(buildOutput, maxKb) {
   const routes = [];
   for (const line of buildOutput.split(/\r?\n/)) {
