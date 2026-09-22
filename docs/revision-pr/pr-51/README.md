@@ -7,8 +7,8 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-003-ci-workflows` → `develop` |
 | **Base** | `75d00cc` |
-| **Tamaño** | 17 archivos |
-| **Estado** | Draft · **9 de 11 cerrados** en `17b7661` · 2 abiertos (uno es mío, el otro es de nivel repo) · **el código de T-003 está terminado** |
+| **Tamaño** | 18 archivos |
+| **Estado** | Draft · **9 de 12 cerrados** en `17eb44a` · **el código está terminado** · falta una PR de un archivo para que CI quede 8/8 |
 
 ## Rondas
 
@@ -18,6 +18,7 @@
 | 2 | `a5df3a9` | **H01–H04 cerrados, los 4 demostrados en rojo** · 1 nuevo chico | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `1381d86` | **H05 y H06 cerrados; el typecheck demostrado en el runner** · 5 nuevos, ninguno bloqueante | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 | 4 | `17b7661` | **H07, H09 y H10 cerrados** · 0 nuevos · queda H08, que es mío | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
+| 5 | `17eb44a` | **Veredicto de aptitud.** El drift de `db-types` no es de esquema y no depende de T-004 · 1 nuevo (H12) | [`revisiones/ronda-5.md`](revisiones/ronda-5.md) |
 
 ## Estado por hallazgo
 
@@ -34,7 +35,8 @@
 | H09 | La política exige para P1 una aprobación de par que §2 no le pide al check | 🟡 | ✅ resuelto por decisión (`17b7661`) — **corrigió mi premisa** |
 | H10 | El checklist de seguridad del cuerpo no es el del template (falta el ítem 5) | 🔵 | ✅ verificado (`17b7661`) |
 | **H11** | «Prettier ✅» no es reproducible en un checkout de Windows | 🔵 | 🔴 abierto — nivel repo, fuera de T-003 |
-| A01 | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`17b7661`) — **0 fuera**, sexta ronda |
+| **H12** | `db:types` genera sin `--schema`: el contrato se llevaría los esquemas internos de Supabase | 🔵 | 🔴 abierto — va con la PR que sincronice el contrato |
+| A01 | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`17eb44a`) — **0 fuera**, séptima ronda |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md)
 
@@ -60,4 +62,10 @@ Las decisiones difíciles —las de seguridad— están bien tomadas desde la ro
 
 > **H09 me corrigió.** Yo llamé «copia» a la aprobación de par del script porque la protección de rama ya la pide; la protección de rama no existe en el plan de este repo, así que esa línea es la única que hace cumplir §2 hoy.
 
-Lo que impide mergear no es código: `db-types` rojo hasta que T-004 sincronice `database.types.ts`, la PR en Draft, `SUPABASE_PRODUCTION_PROJECT_REF` sin cargar, los environments con `protection_rules: []`, y las demostraciones en vivo del DoD — que solo se pueden hacer con los workflows ya en la rama base.
+**Lo único que falta para aprobar** (ver [`revisiones/ronda-5.md`](revisiones/ronda-5.md)):
+
+1. Una PR de un archivo que commitee `src/types/database.types.ts` generado, con `--schema public` (H12). **No depende de T-004:** el esquema `public` está vacío en las dos puntas y las ~640 líneas de diferencia son tipos auxiliares del CLI más los esquemas `storage` y `graphql_public` de la plataforma.
+2. Pegar el bloque del informe en el cuerpo (H08).
+3. Sacar la PR de Draft y pedir la aprobación de P2 o P3.
+
+Después del merge, y no antes: `SUPABASE_PRODUCTION_PROJECT_REF` en Actions, revisores obligatorios en los dos environments, y las demostraciones en vivo del DoD — que solo se pueden hacer con los workflows ya en la rama base.
