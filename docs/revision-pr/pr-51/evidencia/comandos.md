@@ -67,3 +67,201 @@ pnpm test | grep "Test Files"
 ```
 
 `tsconfig.include` es `**/*.ts` y `**/*.tsx`; `pnpm lint` corre sobre `--dir src --file middleware.ts`. Los dos scripts solo se ejercitan con `node --test`, dentro del job `unit` de CI.
+
+## Ronda 2 — `a5df3a9`
+
+Las cuatro demostraciones en rojo están en [`../revisiones/ronda-2.md`](../revisiones/ronda-2.md). Cada rotura en el worktree dejó la suite en `11 pass 1 fail`; restaurada, `12 pass 0 fail`.
+
+## Ronda 3 — `1381d86`
+
+### Alcance
+
+```bash
+gh pr diff 51 --name-only
+```
+
+13 archivos: 7 bajo `.github/workflows/`, 3 bajo `docs/revision-pr/pr-51/`, `docs/tasks/T-003.md`, `docs/tasks/log/T-003.md` y `package.json`. **0 fuera de alcance.**
+
+### H05 · Las cinco demostraciones en rojo
+
+Cada caso rompe un control, corre `node --test .github/workflows/verify-workflows.test.mjs` y restaura:
+
+```
+[base] sin tocar nada                      pass 16 / fail 0
+saco node --test de pnpm test              pass 15 / fail 1  -> pnpm test includes workflow behavior tests
+saco eslint de pnpm lint                   pass 15 / fail 1  -> pnpm lint checks workflow modules...
+saco tsc --project de pnpm typecheck       pass 15 / fail 1  -> pnpm typecheck checks workflow modules...
+pongo checkJs en false                     pass 15 / fail 1  -> pnpm typecheck checks workflow modules...
+vacio el include del tsconfig              pass 15 / fail 1  -> pnpm typecheck checks workflow modules...
+[restaurado]                               pass 16 / fail 0
+```
+
+### H05 · El typecheck atrapa un error de tipos real
+
+```
+.github/workflows/check-bundle-budget.mjs(52,50): error TS2551:
+  Property 'toFixed' does not exist on type 'string'.
+TC_EXIT=2
+```
+
+Y en el runner, que es la evidencia que vale:
+
+```bash
+gh api repos/cadeApp/cadeApp/actions/runs/35676222759 --jq '"head_sha=\(.head_sha) conclusion=\(.conclusion)"'
+```
+
+```
+head_sha=98d6d3b  conclusion=failure
+typecheck  failure
+lint       success
+```
+
+### H06 · En rojo
+
+Revertido el arreglo al `console.warn` único:
+
+```
+not ok 9 - bundle budget fails when no route can be read from the build output
+# tests 16 · pass 15 · fail 1
+```
+
+Y el job real midió rutas de verdad, así que el `exit 1` nuevo no dispara por sorpresa:
+
+```bash
+gh api repos/cadeApp/cadeApp/actions/jobs/106584217862/logs --allow-escape-sequences
+```
+
+```
+## First Load JS por ruta (límite 180 kB)
+| / | 87.2 kB | OK |
+| /_not-found | 88 kB | OK |
+```
+
+### H07 · El lint corre, lee los archivos y no puede fallar
+
+```bash
+npx eslint --no-ignore --ext .mjs .github/workflows -f json   # 3 archivos, 0 mensajes
+npx eslint --no-ignore --print-config .github/workflows/check-bundle-budget.mjs
+```
+
+55 reglas activas: todas `@next/next/*`, `react/*`, `react-hooks/*`, `jsx-a11y/*`, `boundaries/*` (con `include` limitado a `src/**`) o `cadeapp/*`. **No hay `eslint:recommended`.**
+
+Con cinco defectos clásicos plantados en `check-bundle-budget.mjs`:
+
+```
+$ pnpm lint
+✔ No ESLint warnings or errors
+LINT_EXIT=0
+```
+
+Con un `.eslintrc.json` dentro de `.github/workflows/` (`eslint:recommended` + `env: node`), los mismos defectos:
+
+```
+no-unused-vars · no-unreachable · no-constant-condition · no-empty · no-debugger
+✖ 7 problems   ESLINT_EXIT=1
+```
+
+El séptimo es `no-regex-spaces` en `verify-workflows.test.mjs:23`, real y ya en el árbol.
+
+### H08 · La política corrida contra el cuerpo real
+
+```bash
+gh pr view 51 --json body --jq .body            > body-51.txt
+gh api repos/cadeApp/cadeApp/pulls/51/reviews   > reviews-51.json   # []
+node -e "import('...approval-policy.mjs')"      # evaluateApprovalPolicy
+```
+
+```
+--- tal como está el PR #51 hoy ---
+{ ok: false, reason: 'El PR de Lautaro073 requiere aprobación de otra persona.' }
+--- suponiendo que P2 ya aprobó ---
+{ ok: false, reason: 'Falta el informe completo de revisar-pr sin bloqueantes.' }
+--- con el informe en el formato que exige la skill ---
+{ ok: true, reason: 'Aprobación externa e informe completos.' }
+```
+
+Por qué no frena a esta PR:
+
+```bash
+git ls-tree origin/develop .github/workflows/    # (vacío)
+```
+
+`pull_request_target` usa la definición de la rama base, y ahí todavía no hay workflows.
+
+### H11 · Prettier
+
+```bash
+npx prettier --check .github/workflows/ci.yml middleware.ts docs/onboarding.md docs/tasks/T-002.md
+```
+
+Falla en los cuatro, y esta PR no tocó ninguno. El diff contra la salida de Prettier es `1,50c1,50` con contenido idéntico: solo difieren los fines de línea. `core.autocrlf=true`, sin `.gitattributes`, `.prettierrc` sin `endOfLine`.
+
+## Ronda 4 — `17b7661`
+
+### Alcance
+
+```bash
+gh pr diff 51 --name-only     # 17 archivos · FUERA DE ALCANCE: 0 (ninguno)
+```
+
+### H07 · Las tres demostraciones en rojo
+
+```
+[base] sin tocar nada                            pass 17 / fail 0
+borro .github/workflows/.eslintrc.json           pass 16 / fail 1  -> workflow lint rejects unused code and debugger statements
+saco eslint:recommended del .eslintrc            pass 16 / fail 1  -> workflow lint rejects unused code and debugger statements
+[H03 sigue vivo?] borro environment: production  pass 16 / fail 1  -> migration workflow serializes staging and production pushes
+[restaurado]                                     pass 17 / fail 0
+```
+
+La tercera comprueba que el cambio de `/\n  [\w-]+:\n/` a `/\n {2}[\w-]+:\n/` no debilitó el recortador de jobs.
+
+### H07 · Punta a punta, los mismos cinco defectos de la ronda 3
+
+```
+$ pnpm lint
+  52:7   error  'noUsado' is assigned a value but never used  no-unused-vars
+  53:10  error  'muerta' is defined but never used            no-unused-vars
+  55:3   error  Unreachable code                              no-unreachable
+  57:5   error  Unexpected constant condition                 no-constant-condition
+  57:11  error  Empty block statement                         no-empty
+  58:1   error  Unexpected 'debugger' statement               no-debugger
+✖ 6 problems   LINT_EXIT=1
+```
+
+En la ronda 3, los seis pasaban en verde.
+
+### La prueba nueva corre también en CI, en Linux
+
+```bash
+gh api repos/cadeApp/cadeApp/actions/jobs/106596728001/logs --allow-escape-sequences
+```
+
+```
+Test Files  9 passed (9)
+# tests 17 · pass 17 · fail 0
+```
+
+El `spawnSync` del binario de ESLint por ruta relativa (`../../node_modules/eslint/bin/eslint.js`) resuelve igual con los symlinks de pnpm en el runner.
+
+### H08 · El bloque propuesto contra el módulo real
+
+```bash
+node -e "import('.../approval-policy.mjs')"   # evaluateApprovalPolicy
+```
+
+```
+cuerpo con el bloque + aprobación de par : { ok: true,  'Aprobación externa e informe completos.' }
+el mismo cuerpo sin la aprobación de par : { ok: false, 'requiere aprobación de otra persona' }
+el cuerpo de hoy, con aprobación         : { ok: false, 'Falta el informe completo de revisar-pr' }
+cuerpo con LF                            : ok: true
+cuerpo con CRLF                          : ok: true
+```
+
+La API devuelve el cuerpo con `\r\n` y `hasCompleteReport` no normaliza fines de línea; lo probé en los dos y da igual, porque las seis expresiones son de una sola línea.
+
+### Árbol después de correr la suite
+
+```bash
+pnpm test && git status --porcelain    # limpio: el probe de lint se borra en el finally
+```
