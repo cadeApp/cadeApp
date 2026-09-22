@@ -265,3 +265,58 @@ La API devuelve el cuerpo con `\r\n` y `hasCompleteReport` no normaliza fines de
 ```bash
 pnpm test && git status --porcelain    # limpio: el probe de lint se borra en el finally
 ```
+
+## Ronda 5 — `17eb44a` · Veredicto de aptitud
+
+### Checks revalidados contra el SHA final
+
+```bash
+pnpm typecheck   # exit 0
+pnpm lint        # exit 0
+pnpm test        # 72/72 Vitest · 17/17 workflows · arbol limpio
+gh pr checks 51  # 7 pass · db-types fail
+```
+
+### El drift de db-types, leído de punta a punta
+
+```bash
+gh api repos/cadeApp/cadeApp/actions/jobs/106599108795/logs --allow-escape-sequences
+```
+
+```
+   public: {
+-    Tables: Record<string, never>;
+-    Views: Record<string, never>;
+-    Functions: Record<string, never>;
+-    Enums: Record<string, never>;
+-    CompositeTypes: Record<string, never>;
+-  };
++    Tables: {
++      [_ in never]: never
++    }
+...
++  storage: {
++    Tables: {
+```
+
+Las dos puntas dicen que `public` está vacío. La diferencia son los tipos auxiliares del CLI y los esquemas `storage` y `graphql_public`.
+
+### El stub commiteado
+
+```bash
+cat src/types/database.types.ts               # 12 lineas
+git log --oneline -- src/types/database.types.ts
+#   f71d858 feat(scaffold): T-000 scaffold minimo de Next.js App Router
+```
+
+Una sola aparición en el historial: lo escribió T-000 a mano y nunca se regeneró, aunque el encabezado diga «generados automáticamente por Supabase CLI (T-002)».
+
+### H12 · El comando que genera
+
+```bash
+sed -n '11,30p' tools/db-types.mjs
+#   const cliArgs = ['supabase', 'gen', 'types', 'typescript'];
+#   ... cliArgs.push('--project-id', projectRef)
+```
+
+Sin `--schema`, así que la salida incluye `storage` y `graphql_public`. No verificado ejecutando: la máquina de desarrollo no guarda credenciales (§2).
