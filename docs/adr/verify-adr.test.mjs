@@ -82,11 +82,15 @@ test('2. ADR-0001 documenta modelo relacional/ACID, RLS real (H01/H03/H04), push
   assert.match(content, /contacts_select_admin/);
   assert.match(content, /app_private\.is_admin\(\)/);
   assert.match(content, /delivery_requests_select_courier/);
+  // H01 / H02 / H22: ADR-0001 describe el estado destino decidido por Lautaro073 (notes protegido hasta matched,
+  // visible solo para comercio dueño, repartidor de accepted_offer_id y admin, distinto de offers.message,
+  // con migración a delivery_request_contacts y test de columna en RLS asignados a T-006 / H22).
   assert.match(content, /\bH02\b/);
-  assert.match(content, /\bPR56-H13\b/);
-  // H01: notes no debe listarse como columna de delivery_request_contacts
-  assert.doesNotMatch(content, /dropoff_lat\/lng`,\s*`notes`/);
-  assert.doesNotMatch(content, /`recipient_phone`\s+y\s+`notes`/);
+  assert.match(content, /\bH22\b/);
+  assert.match(content, /\bT-006\b/);
+  assert.match(content, /offers\.message/);
+  assert.doesNotMatch(content, /Mientras `Lautaro073` resuelve la decisión abierta/);
+  assert.doesNotMatch(content, /quedando abierta la decisión `H02`/);
   assert.match(content, /supabase\/tests\/rls_matrix\.sql/);
   assert.match(content, /courier-docs/);
   assert.match(content, /audit_log/);

@@ -8,13 +8,15 @@ import { describe, expect, it } from 'vitest';
 // repo, y el script leía un formato de payload que los hooks no mandan. Con
 // cualquiera de los dos, todo pasaba como "ask" y nada quedaba bloqueado.
 
-const GUARD_PATH = path.resolve('.agents/scripts/agent-guard.mjs');
 const HOOKS_PATH = path.resolve('.agents/hooks.json');
+const HOOKS_DIR = path.dirname(HOOKS_PATH);
+const GUARD_PATH = path.resolve(HOOKS_DIR, 'scripts/agent-guard.mjs');
 
 type Decision = { decision: string; reason?: string };
 
 function runGuard(payload: unknown): Decision {
   const out = execFileSync(process.execPath, [GUARD_PATH], {
+    cwd: HOOKS_DIR,
     input: JSON.stringify(payload),
     encoding: 'utf8',
   });
@@ -22,7 +24,7 @@ function runGuard(payload: unknown): Decision {
 }
 
 describe('agent-guard: el hook está enganchado', () => {
-  it('la ruta del comando de hooks.json resuelve desde la raíz del repo', () => {
+  it('la ruta del comando de hooks.json resuelve y ejecuta desde .agents/ (cwd real de agy)', () => {
     const hooks = JSON.parse(readFileSync(HOOKS_PATH, 'utf8')) as {
       [k: string]: { PreToolUse?: { hooks?: { command?: string }[] }[] };
     };
@@ -34,9 +36,10 @@ describe('agent-guard: el hook está enganchado', () => {
     expect(commands.length).toBeGreaterThan(0);
     for (const command of commands) {
       const script = command.replace(/^node\s+/, '').trim();
+      const resolvedFromHooksDir = path.resolve(HOOKS_DIR, script);
       expect(
-        existsSync(path.resolve(script)),
-        `hooks.json invoca "${command}" y ${script} no existe desde la raíz del repo`
+        existsSync(resolvedFromHooksDir),
+        `hooks.json invoca "${command}" y ${script} no existe desde ${HOOKS_DIR} (cwd con el que agy lanza los hooks)`
       ).toBe(true);
     }
   });
