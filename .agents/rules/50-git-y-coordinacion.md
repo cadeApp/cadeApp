@@ -28,10 +28,13 @@
   segundo rebasea y vuelve a correr `pnpm test:db` antes del merge.
 
 ## Revisión
-- develop/staging/main protegidas: PR, checks verdes (incluido `approval-policy`), rama al día y una aprobación.
+- develop/staging/main protegidas: PR, checks verdes (incluido `approval-policy`) y rama al día.
+  Sin «require approvals»: bloquearía los PR de Lautaro073, que nadie más puede aprobar.
 - Antes de pedir revisión: skill `revisar-pr` sobre el propio PR, corregir bloqueantes y pegar el informe.
-- PR de persona2 o persona3 → aprueba Lautaro073. PR de Lautaro073 → aprueba persona2 o persona3, solo con CI verde,
-  su propio informe de `revisar-pr` sin bloqueantes y el checklist de seguridad marcado.
+- PR de persona2 o persona3 → aprueba Lautaro073. **PR de Lautaro073 → los aprueba y mergea él mismo**, con CI
+  verde, el informe de `revisar-pr` sin bloqueantes en el cuerpo y el checklist de seguridad marcado. No se pide
+  aprobación de persona2 ni persona3: no programan, así que no pueden revisar código. Lo que reemplaza a la
+  aprobación de un par es la revisión independiente, que corre hasta que no queda ningún hallazgo abierto.
 - Si otra zona toca tus archivos, dejá un comentario de visto bueno (coordinación; no reemplaza la aprobación).
 - No hay procedimiento de emergencia: si Lautaro073 no está, no se mergean cambios de `supabase/`, RLS ni RPC;
   se sigue con el fake de RPC.
