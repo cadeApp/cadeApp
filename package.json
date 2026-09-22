@@ -15,6 +15,8 @@
     "test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs && node --test docs/adr/verify-adr.test.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "format": "prettier --write \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
+    "format:check": "prettier --check \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
     "db:types": "node tools/db-types.mjs",
     "test:db": "supabase test db"
   },

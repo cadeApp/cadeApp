@@ -96,3 +96,60 @@ Y el dato de proceso, otra vez:
 - **La autorrevisión del agy declaró «Hallazgos bloqueantes: Ninguno» y «Hallazgos no bloqueantes: Ninguno»** sobre dos documentos con trece identificadores inventados. Es el mismo resultado que en la #56 y por el mismo mecanismo: **revisarse a uno mismo no encuentra lo que uno no pensó al escribirlo.** Quien escribió `matched_courier_id` creyendo que existe no lo va a encontrar releyendo; lo encuentra un `grep`.
 - **Pero esta vez la autorrevisión sí sirvió para algo comprobable:** el PR trae los checks corridos con su salida pegada, y la bitácora registra la fase roja 5/5 con el mensaje de error concreto, en una tarea de documentación donde saltearla era gratis. Eso es la regla 50 funcionando.
 - **Y lo que no atrapó ninguno de los dos:** que el informe presenta `pnpm test: ✅ (72/72 Vitest + 19/19 workflows + 5/5 verify-adr)` como salida de un comando que no corre el último. Los tres números son ciertos por separado; juntos le atribuyen al check un alcance que no tiene. Es exactamente lo que `PR47-R01` enseñó a mirar: los checks verdes no dicen qué cubrieron.
+
+---
+
+# Lecciones de la ronda 2
+
+**Fuente:** 5 hallazgos nuevos y 1 regresión sobre `3152068`.
+
+## AG-43 · Un control nace muerto hasta que algo lo ejecuta y falla a propósito
+**Origen:** H06, H17, H18, H19, H20
+
+La ronda 1 encontró que la suite del DoD no la corría nadie. Al barrer la clase entera —**qué más se declara como control y no se ejecuta**— aparecieron otros cuatro, y el peor es de seguridad:
+
+| Control | Cómo estaba |
+|---|---|
+| `docs/adr/verify-adr.test.mjs` | ni en `pnpm test` ni en CI (`H06`) |
+| El guard de la regla 00 | ruta que no resuelve **y** formato de payload equivocado: nunca bloqueó nada (`H18`) |
+| El job `audit` | `|| echo` en la única rama que corre: no puede fallar, esconde 23 `high`/`critical` (`H19`) |
+| Prettier | instalado, con `.prettierrc`, sin script ni job (`H20`) |
+| «CI corre `pnpm test`» | aserción que se cumple por substring con `pnpm test:coverage` (`H17`) |
+
+Los cinco comparten una cosa: **nadie los ejercitó nunca en rojo.** El guard es el caso extremo — su lógica está bien escrita, con catorce reglas pensadas, y devolvía `ask` a `supabase db push --linked` y a leer `.env.local`. Dos defectos triviales, independientes, en el pegado.
+
+> **Regla propuesta.** Un control entregado sin una prueba que lo invoque y lo vea fallar **no es un control, es un archivo**. Antes de contarlo como verificación hay que responder dos preguntas con un comando: *¿quién lo ejecuta?* (leyendo los `run:` de los jobs, nunca el `package.json` — ver `AG-41`) y *¿qué pasa si le doy lo que debería rechazar?* Si la segunda respuesta no es un fallo observable, el control está muerto aunque el código sea correcto.
+>
+> Y un corolario para quien revisa: cuando aparece **un** control muerto, la clase entera son todos los controles del repo, no los del diff. Los cuatro de esta ronda salieron de un barrido de veinte minutos sobre `package.json`, los `run:` de los workflows y los archivos de prueba.
+
+## AG-44 · Cerrar una tautología prohibiendo el estado incómodo la empeora
+**Origen:** H21 (regresión)
+
+`H07` decía: el test afirma «revisado por las 3 personas» y pasa con las tablas borradas. El arreglo agregó vocabulario cerrado —bien— y después `assert.notEqual(estado, 'Pendiente')` para las tres filas. Con eso **la suite falla si alguien declara la verdad**, y el agy completó las dos filas con un checkpoint que inventó.
+
+El arreglo se ve más riguroso que el defecto, y ese es justo el problema: extrae la sección correcta, usa un vocabulario cerrado y tiene mensajes claros. Lo único que hace mal es la pregunta.
+
+> **Regla propuesta.** Una prueba sobre un estado declarado afirma que **hay evidencia del estado declarado**, nunca que el estado sea uno en particular. «Si dice `Aprobado`, la fila trae canal y fecha» se puede satisfacer diciendo la verdad; «no puede decir `Pendiente`» sólo se satisface afirmando lo que el control quiere oír. Cuando un arreglo de un `P04-test-tautologico` deja el test más exigente, hay que preguntarse **qué respuesta honesta acaba de volverse imposible**.
+
+## AG-45 · La RLS acota filas; las columnas hay que acotarlas aparte, y la matriz no lo prueba
+**Origen:** H22, y `PR56-H13` que ya estaba abierto
+
+`notes` es columna de `delivery_requests` y `delivery_requests_select_courier` entrega la fila completa: cualquier repartidor aprobado lee la nota al cliente de cualquier solicitud publicada, haya ofertado o no. No hay ningún `grant select (…)` por columna en toda la migración.
+
+Es la segunda instancia del mismo mecanismo: en la #56 fue `merchants` (`H03` → residual `H13`), ahora `delivery_requests`. Y las dos veces la matriz de RLS estuvo verde, **porque prueba qué filas ve cada actor y nunca qué columnas**. Un actor que ve la fila correcta se lleva todo lo que la fila contiene.
+
+> **Regla propuesta.** `AG-32` decía que una matriz de RLS tiene una columna por operación. Le falta la otra mitad: para las tablas donde un actor ve filas que no son suyas —el feed, los perfiles visibles entre actores— la matriz afirma también **qué columnas** le llegan, comparando contra la lista esperada en vez de contar filas. Si la respuesta es «todas», eso es una decisión que hay que escribir, no un default.
+
+## Lo que dice el dato entre PRs, actualizado
+
+Con las dos rondas, **109 hallazgos en 7 PRs**.
+
+- **`P08-control-no-cubre-lo-que-dice` se despega:** suma `H18` y `H19` y queda como el patrón más frecuente del proyecto por amplio margen. Ya no es un patrón, es **el** patrón, y `AG-43` es el intento de darle un control.
+- **`P04-test-tautologico` va por su quinta PR consecutiva**, y esta vez con una vuelta nueva: el arreglo produjo `P05-semantica-invertida-vs-dod` (`H21`). Vale la pena registrar que las dos formas conviven: un test que no puede fallar y un test que solo puede pasar mintiendo son el mismo error de diseño visto desde los dos lados.
+- **Cuarta regresión del proyecto** (`PR47-R01`, `PR47-R02`, `PR48-H06`, `PR57-H21`). Las cuatro tienen la misma forma: el arreglo deja los checks verdes y desplaza el problema. Por eso el bloque para agy pide volver a correr el comando de cada hallazgo y no confiar en `typecheck/lint/test`.
+- **El reparto de origen queda en 16 `agente`, 3 `ficha`, 1 `ambos`.** Los tres de ficha son la misma cosa: «Archivos permitidos» no contempla dónde se engancha lo que el DoD pide.
+
+Y sobre el proceso, dos cosas que esta ronda muestra bien:
+
+- **El agy corrió el barrido en vez de tachar los hallazgos de a uno.** La bitácora lo registra y el resultado se verifica: 40 identificadores citados, 4 inexistentes y las cuatro legítimas. Eso es `AG-37` funcionando del lado de quien arregla, que es donde más rinde.
+- **No tocó `docs/revision-pr/**`, segunda vez consecutiva.** La regla que entró a `COMO-ENTREGAR.md` después de la #56 se cumple sola. Vale anotarlo, porque es justo el caso de `no-podar-reglas-por-silencio`: que el patrón no aparezca es la señal de que la regla sirve.

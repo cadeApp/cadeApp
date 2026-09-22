@@ -49,6 +49,18 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      # PR57-H20: prettier estaba instalado con su .prettierrc y no lo corria nadie,
+      # mientras la bitacora de T-003 anotaba «Prettier ✅». Todavia no bloquea:
+      # hay 25 archivos de src/** sin formatear y formatearlos excede T-007.
+      - name: Check formatting (advisory)
+        run: |
+          FMT_FAILED=
+          pnpm format:check > format-output.txt 2>&1 || FMT_FAILED=1
+          cat format-output.txt
+          if [ -n "$FMT_FAILED" ]; then
+            SUMMARY=$(grep -m1 'Code style issues' format-output.txt || echo 'ver el log del job')
+            echo "::warning title=Formato (prettier, no bloquea todavia)::${SUMMARY}"
+          fi
 
   unit:
     name: unit
@@ -177,10 +189,20 @@ jobs:
           node-version: 22.14.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # PR57-H19: la rama advisory terminaba en `|| echo`, asi que el job quedaba
+      # en `pass` mudo al lado de los que si verifican algo, escondiendo 23
+      # vulnerabilidades high/critical. Sigue sin bloquear —es la decision
+      # "advisory hasta contracts-v1"— pero ahora se ve en el resumen del run.
       - name: Audit dependencies (advisory until contracts-v1)
         run: |
           if [ -f src/domain/rpc-contracts.ts ] && [ -d supabase/migrations ]; then
             pnpm audit --audit-level=high
           else
-            pnpm audit --audit-level=high || echo 'Aviso: audit no bloquea antes de contracts-v1.'
+            AUDIT_FAILED=
+            pnpm audit --audit-level=high > audit-output.txt 2>&1 || AUDIT_FAILED=1
+            cat audit-output.txt
+            if [ -n "$AUDIT_FAILED" ]; then
+              SUMMARY=$(grep -m1 'Severity:' audit-output.txt || echo 'ver el log del job')
+              echo "::warning title=Auditoria de dependencias (no bloquea hasta contracts-v1)::${SUMMARY}"
+            fi
           fi

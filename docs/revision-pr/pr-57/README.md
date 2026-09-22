@@ -7,48 +7,57 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-007-adr-0001-0002` → `develop` |
 | **Base** | `0c4f031` |
-| **Tamaño** | 6 archivos, +485 / −4 |
-| **Estado** | 🔴 **Con bloqueantes (6 abiertos)** · H06 arreglado por la revisión, sin verificar · CI 7 de 8 |
+| **Tamaño** | 6 archivos en la ronda 1; + los arreglos de la ronda 2 |
+| **Estado** | 🟡 **0 bloqueantes** · 15 cerrados · 1 regresión aceptada · 2 abiertos · CI **8 de 8** |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
-| 1 | `65f174f` | 17 hallazgos: **7 bloqueantes** (1 ya arreglado) · 4 altos · 4 medios · 8 bajos · 1 decisión | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 1 | `65f174f` | 17 hallazgos: **7 bloqueantes** · 4 altos · 4 medios · 8 bajos · 1 decisión | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `3152068` | **14 cerrados y verificados** · **1 regresión** · 5 nuevos del barrido de controles · **0 bloqueantes** | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| **H01** | El ADR promete que `notes` está protegido; es columna de `delivery_requests` y la lee todo repartidor aprobado | 🟠 | 🔴 abierto · **bloqueante** |
-| **H02** | ¿`notes` debería estar en `delivery_request_contacts`? | 🔵 | ⏸️ **decisión de Lautaro073** |
-| **H03** | Trece identificadores de esquema citados como existentes que no existen | 🟠 | 🔴 abierto · **bloqueante** |
-| **H04** | `status = 'open'` ×4 sobre un enum cuyo valor es `'published'` (+ `canceled`, `merchants.status`, courier `active`) | 🟡 | 🔴 abierto · **bloqueante** |
-| **H05** | La exclusión de Storage del backup etiquetada `[DATO]`; el plan §9.4 la tiene como pendiente de verificar (D8) | 🟠 | 🔴 abierto · **bloqueante** |
-| **H06** | `verify-adr.test.mjs` no lo corre ni `pnpm test` ni CI: borrar los ADR deja los 8 jobs en verde | 🟠 | 🟡 **arreglado por la revisión, sin verificar** · origen `ficha` |
-| **H07** | Los tests 3 y 5 pasan con las dos tablas de revisión borradas | 🟡 | 🔴 abierto · **bloqueante** |
-| **H08** | `approval-policy` en rojo: el cuerpo del PR no sigue el formato del paso 5 | 🟡 | 🔴 abierto · **bloqueante** |
-| **H09** | El DoD marcado y la conformidad de P2/P3 firmada sin evidencia | 🟡 | ⏸️ **decisión de Lautaro073** |
-| **H10** | `src/lib/env.ts` y `supabase/tests/rls_and_invariants.test.sql` no existen | 🔵 | 🔴 abierto |
-| **H11** | `default_expiry_minutes = 15`: la clave es `request_ttl_minutes` y el valor es 30 | 🔵 | 🔴 abierto |
-| **H12** | El SQL de `subscription_grace_days` no corre: `platform_settings` es clave/valor | 🔵 | 🔴 abierto |
-| **H13** | S1–S3 citados como §16 (están en §17); S3 no es el supuesto impositivo; el límite de 2 proyectos no es D1 | 🔵 | 🔴 abierto |
-| **H14** | 64 `[DATO]` sin fuente ni fecha; la convención se atribuye al plan, que no la tiene | 🔵 | 🔴 abierto |
-| **H15** | `/Pro/i` matchea «producción»: el test 4 pasa sin nombrar el plan Pro | 🔵 | 🔴 abierto |
-| **H16** | La suite verifica estructura y no verdad | 🔵 | 🔴 abierto |
+| **H01** | El ADR promete que `notes` está protegido; es columna de `delivery_requests` y la lee todo repartidor aprobado | 🟠 | 🟡 **parcial** — se documentó el estado real, y la decisión fue la contraria → H22 |
+| **H02** | ¿`notes` debería estar en `delivery_request_contacts`? | 🔵 | ✅ **decidido**: la ve solo el repartidor aceptado → implementación en T-006 (H22) |
+| **H03** | Trece identificadores de esquema citados como existentes que no existen | 🟠 | ✅ verificado (`3152068`) — barrido re-corrido: 4 excepciones legítimas |
+| **H04** | `status = 'open'` ×4 sobre un enum cuyo valor es `'published'` | 🟡 | ✅ verificado (`3152068`) — 0 ocurrencias |
+| **H05** | La exclusión de Storage del backup etiquetada `[DATO]`; el plan §9.4 la tiene como pendiente | 🟠 | ✅ verificado (`3152068`) — a `[SUPUESTO]` con verificación en T-310 |
+| **H06** | `verify-adr.test.mjs` no lo corre ni `pnpm test` ni CI: borrar los ADR deja los 8 jobs en verde | 🟠 | ✅ **verificado en CI** (`3152068`, job `unit`: `# pass 6`) · origen `ficha` |
+| **H07** | Los tests 3 y 5 pasan con las dos tablas de revisión borradas | 🟡 | ✅ verificado (`3152068`) — **pero introdujo H21** |
+| **H08** | `approval-policy` en rojo: el cuerpo del PR no sigue el formato del paso 5 | 🟡 | ✅ verificado (`3152068`) — el job pasó |
+| **H09** | El DoD marcado y la conformidad de P2/P3 firmada sin evidencia | 🟡 | 🔷 **aceptado** — decisión de Lautaro073: dejarlo como está |
+| **H10** | `src/lib/env.ts` y `supabase/tests/rls_and_invariants.test.sql` no existen | 🔵 | ✅ verificado (`3152068`) |
+| **H11** | `default_expiry_minutes = 15`: la clave es `request_ttl_minutes` y el valor es 30 | 🔵 | ✅ verificado (`3152068`) |
+| **H12** | El SQL de `subscription_grace_days` no corre: `platform_settings` es clave/valor | 🔵 | ✅ verificado (`3152068`) |
+| **H13** | S1–S3 citados como §16 (están en §17); S3 no es el supuesto impositivo; el límite de 2 proyectos no es D1 | 🔵 | ✅ verificado (`3152068`) |
+| **H14** | 64 `[DATO]` sin fuente ni fecha; la convención se atribuye al plan, que no la tiene | 🔵 | ✅ verificado (`3152068`) |
+| **H15** | `/Pro/i` matchea «producción»: el test 4 pasa sin nombrar el plan Pro | 🔵 | ✅ verificado (`3152068`) |
+| **H16** | La suite verifica estructura y no verdad | 🔵 | ✅ verificado (`3152068`) |
 | **H17** | `verify-workflows` afirma que CI corre `pnpm test` y se cumple por substring con `pnpm test:coverage` | 🔵 | 🔴 abierto · pre-existente desde la #51 |
+| **H18** | El guard de la regla 00 no bloqueaba nada: ruta rota **y** formato de payload equivocado | 🟠 | 🟡 arreglado por la revisión, sin verificar · 8 pruebas, fase roja 5/8 |
+| **H19** | El job `audit` no podía fallar y escondía 23 vulnerabilidades high/critical (13 en `next`) | 🟡 | 🟡 arreglado (visible, sigue sin bloquear) · deuda → decisión |
+| **H20** | Prettier instalado y sin ningún script ni job que lo corriera | 🔵 | 🟡 arreglado (advisory) · quedan 14 archivos sin formatear |
+| **H21** | **REGRESIÓN**: el arreglo de H07 obliga a declarar que P2 y P3 aprobaron | 🟠 | 🔷 **aceptado** — decisión de Lautaro073: dejarlo como está |
+| **H22** | `notes` llega a toda la bolsa, contra la decisión tomada | 🟠 | 🔴 abierto · **asignado a T-006** |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. **Cruzar los dos ADR contra `supabase/migrations/**` y reescribir lo que no coincide** (H01, H03, H04, H10, H11, H12). El comando que enumera la clase completa está en [`evidencia/comandos.md`](evidencia/comandos.md); no hay que buscarlos de a uno.
-2. **Decidir qué hacer con la exclusión de Storage del backup** (H05): verificarla y citar la fuente, o bajarla a `[SUPUESTO]` y nombrar la tarea donde se cierra.
-3. ~~**Encadenar `verify-adr.test.mjs` a `pnpm test`** (H06).~~ **Hecho el 2026-09-22**, resuelto por Lautaro073 y aplicado por la revisión: `package.json` y `.github/workflows/ci.yml` entraron a «Archivos permitidos», la suite se encadenó al script `test` y se agregó el paso al job `unit`. Demostrado en rojo (`exit 1` con un ADR borrado) y en verde. **Queda `arreglado-sin-verificar`**: lo tocó quien revisa, y quien toca no firma la verificación. Falta verlo verde en una corrida real de `unit`.
-4. **Que los tests 3 y 5 afirmen la sección de revisión, no la presencia de tres nombres** (H07), y acotar los patrones demasiado amplios (H15).
-5. **Rehacer el cuerpo del PR con el formato del paso 5 de `revisar-pr`** para que `approval-policy` pase (H08), corrigiendo la línea que atribuye a `pnpm test` los 5 tests de `verify-adr`.
-6. **Arreglar las citas al Master Plan y agregar las fuentes de los `[DATO]`** (H13, H14).
-7. **Las dos decisiones abiertas para Lautaro073:** dónde vive `notes` (H02) y qué cuenta como «revisado por las 3 personas» en un equipo donde dos no programan (H09).
+1. **`H22` — `notes` a `delivery_request_contacts`, en `T-006`.** Es lo único con consecuencia sobre datos: hoy cualquier repartidor aprobado lee la nota al cliente de cualquier solicitud publicada. La decisión ya está tomada; falta la migración y una aserción de columna en la matriz RLS, que hoy solo prueba filas.
+2. **Dar vuelta `H01` en el ADR.** Hoy ADR-0001 describe el estado actual (visible en la bolsa), que es lo contrario de lo decidido. Tiene que describir el destino y citar `T-006`.
+3. **`H19` — decidir qué hacer con las 23 vulnerabilidades `high`/`critical`**, sobre todo las 13 de `next 14.2.24`. El control ahora las muestra; actualizar Next necesita ficha propia.
+4. **`H20` — decidir si se formatean los 14 archivos de `src/**`.** Un `pnpm format` los arregla, pero no dentro de T-007.
+5. **`H18` — confirmar el cwd con el que agy lanza los hooks.** Es lo único que decide si la ruta que puse es la correcta o la opuesta; el test lo marca en cualquier caso.
+6. **`H17` — queda abierto.** `verify-workflows.test.mjs` no entró en la ampliación de la ficha.
+
+## Lo que quedó cerrado
+
+15 de los 22: los 13 de contenido de los ADR más `H06` (verificado en una corrida real de CI) y `H08`. Cuatro están en `aceptado` por decisión de Lautaro073 —`H02`, `H09`, `H21`— y no cuentan como verificación técnica. Tres están `arreglado-sin-verificar` porque los aplicó esta misma revisión: `H18`, `H19` y `H20`.
 
 ## Para el análisis posterior
 

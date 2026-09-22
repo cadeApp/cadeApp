@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node scripts/agent-guard.mjs",
+            "command": "node .agents/scripts/agent-guard.mjs",
             "timeout": 10
           }
         ]

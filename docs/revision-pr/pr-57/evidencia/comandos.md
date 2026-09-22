@@ -533,3 +533,163 @@ aserciones sobre el workflow.
    alcanza `src`, `middleware.ts` y los `.mjs` de `.github/workflows`; el nuevo `.mjs` vive en
    `docs/`. Es un residual menor —el archivo se ejecuta, que era lo que faltaba— pero conviene que
    esté escrito en vez de darlo por cubierto.
+
+---
+
+# Ronda 2 — `3152068`
+
+## Barrido de identificadores, re-corrido
+
+```bash
+# mismo comando de la ronda 1
+```
+
+```
+citados: 40 · no existen: 4
+  accept_offer      <- RPC de T-102, futura
+  pg_dump           <- herramienta
+  publish_request   <- RPC de T-103, futura
+  submit_offer      <- RPC de T-101, futura
+```
+
+Los trece inventados se fueron. `grep "'open'" docs/adr/*.md` devuelve 0 en los tres archivos.
+
+## H06, verificado en una corrida real
+
+```bash
+gh run view --job 106823192500 --log | grep -E "verify-adr|# pass|# fail"
+```
+
+```
+unit  Run node --test docs/adr/verify-adr.test.mjs   1..6
+unit  Run node --test docs/adr/verify-adr.test.mjs   # tests 6
+unit  Run node --test docs/adr/verify-adr.test.mjs   # pass 6
+unit  Run node --test docs/adr/verify-adr.test.mjs   # fail 0
+```
+
+Eso es lo que le faltaba al hallazgo: ejecución en CI, no en mi máquina.
+
+## H18 · El guard de la regla 00
+
+### La ruta
+
+```bash
+cat .agents/hooks.json | grep command     # "node scripts/agent-guard.mjs"
+ls scripts/                               # ls: cannot access 'scripts/': No such file or directory
+ls .agents/scripts/                       # agent-guard.mjs
+```
+
+### El payload — los dos formatos, lado a lado
+
+```bash
+cd .agents
+echo '{"toolCall":{"name":"run_command","args":{"CommandLine":"supabase db push --linked"}}}' | node scripts/agent-guard.mjs
+echo '{"tool_name":"Bash","tool_input":{"command":"supabase db push --linked"}}'              | node scripts/agent-guard.mjs
+echo '{"toolCall":{"name":"read_file","args":{"path":".env.local"}}}'                         | node scripts/agent-guard.mjs
+echo '{"tool_name":"Read","tool_input":{"file_path":".env.local"}}'                           | node scripts/agent-guard.mjs
+```
+
+```
+{"decision":"deny","reason":"Regla 00: comandos de Supabase contra ambientes remotos solo corren en CI."}
+{"decision":"ask"}
+{"decision":"deny","reason":"Regla 00: no se leen ni tocan archivos .env (solo .env.example)."}
+{"decision":"ask"}
+```
+
+La lógica del guard funciona; lo que no funciona es la forma en que la invoca el runtime.
+
+### Fase roja, antes del arreglo
+
+```bash
+pnpm vitest run tools/verify-agent-guard.test.ts
+```
+
+```
+× la ruta del comando de hooks.json resuelve desde la raíz del repo
+  → hooks.json invoca "node scripts/agent-guard.mjs" y scripts/agent-guard.mjs
+    no existe desde la raíz del repo
+× bloquea un comando de Supabase contra un ambiente remoto  → expected 'ask' to be 'deny'
+× bloquea la lectura de un archivo .env                     → expected 'ask' to be 'deny'
+× bloquea un comando que menciona un secreto                → expected 'ask' to be 'deny'
+× bloquea un push a una rama protegida                      → expected 'ask' to be 'deny'
+Tests  5 failed | 3 passed (8)
+```
+
+Los 3 que pasaban desde el principio son los correctos: el formato viejo sigue funcionando y los dos
+casos que deben quedar en `ask` (`pnpm typecheck`, leer `.env.example`) quedan en `ask`.
+
+### Verde, después
+
+```
+✓ tools/verify-agent-guard.test.ts (8 tests)
+Tests  8 passed (8)
+```
+
+El arreglo, en dos líneas:
+
+```diff
+-const toolName = String(payload?.toolCall?.name ?? '');
+-const args = payload?.toolCall?.args ?? {};
+-const command = typeof args.CommandLine === 'string' ? args.CommandLine : '';
++const toolName = String(payload?.tool_name ?? payload?.toolCall?.name ?? '');
++const args = payload?.tool_input ?? payload?.toolCall?.args ?? payload?.toolCall?.input ?? {};
++const command = [args.command, args.CommandLine, args.cmd].find((c) => typeof c === 'string') ?? '';
+```
+
+```diff
+-"command": "node scripts/agent-guard.mjs",
++"command": "node .agents/scripts/agent-guard.mjs",
+```
+
+## H19 · Lo que escondía el job `audit`
+
+```bash
+pnpm audit --audit-level=high --json | node -e "…"
+```
+
+```
+por severidad:          {"info":0,"low":4,"moderate":23,"high":18,"critical":5}
+modulos high/critical:  {"next":13,"handlebars":5,"postcss":2,"glob":1,"vite":1,"vitest":1}
+```
+
+Simulación del paso nuevo, con la misma lógica que va al workflow:
+
+```
+::warning title=Auditoria de dependencias (no bloquea hasta contracts-v1)::Severity: 4 low | 23 moderate | 18 high | 5 critical
+exit=0
+```
+
+Sigue sin bloquear —es la decisión vigente— y ahora aparece en el resumen del run.
+
+> Nota sobre el primer intento, que estaba mal: escribí `pnpm audit … | tee audit-output.txt && exit 0`.
+> El `&&` evalúa el exit del pipeline, que es el de `tee` y es 0 casi siempre, así que siempre habría
+> salido por el `exit 0` y **nunca** habría llegado al `::warning::`. Corregido a una asignación
+> condicional sin pipe, y simulado antes de darlo por bueno.
+
+## H20 · Prettier
+
+```bash
+pnpm format:check
+```
+
+```
+[warn] Code style issues found in 14 files. Run Prettier with --write to fix.
+exit 1
+```
+
+Con `.sql` en el glob daba `exit 2` y `No parser could be inferred` sobre los 6 archivos de
+`supabase/` — error de herramienta, no de formato. Prettier no tiene parser para SQL, así que el
+glob quedó en `{src,tools}/**/*.{ts,tsx,mjs,css}` más `middleware.ts` y los `.mjs` de workflows.
+
+## Checks al cierre de la ronda 2
+
+```bash
+pnpm typecheck   # exit 0
+pnpm lint        # exit 0
+pnpm test        # 80/80 Vitest (10 archivos) · 19/19 workflows · 6/6 ADR
+pnpm format:check # exit 1 · 14 archivos — advisory
+```
+
+```bash
+gh pr checks 57   # 8 de 8 en 3152068, approval-policy incluido
+```
