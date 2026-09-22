@@ -397,3 +397,106 @@ git diff --stat 4f621fe..aad5031 -- docs/revision-pr/ # sin cambios
 ```
 
 El único canal usado fue `docs/tasks/log/T-005.md`.
+
+---
+
+## Ronda 4 — `f48c95b` · cierre
+
+### La fase roja, otra vez en el histórico y más precisa
+
+```bash
+git log --oneline 5e10429..f48c95b
+gh run view 35699218634 --log | grep -E "# Failed test|Tests: [0-9]+ Failed|Result:"
+```
+
+```
+7da1949  test(rls): expose unsafe inserts and state transitions   CI failure
+e076368  fix(rls): validate initial state and server timestamps    CI success
+bf46dba  test(rls): verify legitimate inserts and persisted edit   CI success
+```
+
+```
+# Failed test 31..45 y 47   (16 de 49)
+rls_matrix.sql (Wstat: 0 Tests: 49 Failed: 16)
+Result: FAIL
+```
+
+Las dieciséis fallaron con `caught: no exception, wanted: 42501`, y las positivas y las de `delete` pasaron en la misma corrida. O sea que lo que estaba rojo era exactamente lo que se iba a arreglar.
+
+### CI final
+
+```bash
+gh run view 35700546988 --log --job=106657376178 | grep -E "\.sql \.+ ok|Tests=|Result:"
+gh pr checks 56
+```
+
+```
+rls_enabled.sql .. ok
+rls_matrix.sql ... ok
+structure.sql .... ok
+Files=3, Tests=98
+Result: PASS
+```
+
+9 de 9 jobs. Local: `pnpm typecheck && pnpm lint && pnpm test` exit 0.
+
+### Alcance
+
+```bash
+gh pr diff 56 --name-only   # 15 archivos
+```
+
+```
+archivos: 15 · FUERA DE ALCANCE: 0 (ninguno)
+```
+
+Duodécima ronda consecutiva sin desvío.
+
+### La tabla de las 53 policies, ya en verde
+
+```bash
+grep -n "create policy" supabase/migrations/20260922051650_rls_v1.sql
+```
+
+| Tabla | `insert` no admin | `update` no admin | `delete` no admin |
+|---|---|---|---|
+| `profiles` | — | self, congela `role` (`created_at` libre → `H22`) | — |
+| `merchants` | — | self, congela 3 ✅ | — |
+| `couriers` | — | self, congela 7 ✅ | — |
+| `courier_documents` | ✅ `H17` | — | — |
+| `delivery_requests` | ✅ `H16` | ✅ `H12` | — |
+| `delivery_request_contacts` | contenido ✅ | contenido ✅ | — |
+| `offers` | ✅ `H15` | courier ✅ `H11` · merchant ✅ `H06` (`created_at` libre → `H21`) | — |
+| `incidents` | ✅ `H18` | — | — |
+| `push_subscriptions` | self ✅ | self ✅ | self ✅ |
+| `consents` | ✅ `H19` | — | — |
+| `zones` · `audit_log` · `platform_settings` · `rate_limits` | — | — | — |
+| `storage.objects` | ✅ `H09` | — | — |
+
+### H06 · Por qué la decisión (a) era la que el plan ya pedía
+
+```bash
+grep -n "T-101\|T-102\|T-103\|T-105" docs/implementation-plan.md | grep "supabase/migrations"
+sed -n '/^## Archivos permitidos/,/^$/p' docs/tasks/T-006.md
+```
+
+`T-006` es de P2 y sus archivos permitidos son `src/domain/**`: es el contrato, no la implementación. Las RPC SQL están en `T-101` (`submit_offer`, `withdraw_offer`), `T-102` (`accept_offer` *«atómica e idempotente»*), `T-103` (ciclo de solicitud) y `T-105` (`admin_*`).
+
+El DoD de `T-102` pide *«10 llamadas concurrentes → una sola ganadora; idempotencia; `ALREADY_MATCHED`»*. Ese invariante no se sostiene si el cliente puede escribir `offers.status = 'accepted'` por su cuenta, así que congelarlo no fue una preferencia.
+
+### H13 · Por qué va a T-106 y no a T-006
+
+```bash
+grep -n "T-106" docs/implementation-plan.md | cut -c1-260
+```
+
+`T-106` es *«Migración, RLS de coordenadas (`merchants.default_pickup_lat/lng`, …)»* y su DoD ya pide *«pgTAP de RLS: repartidor no aceptado recibe NULL al leer coordenadas»*. Las coordenadas ya están planificadas; faltan `notes`, `paid_until` y `subscription_status`.
+
+### H21 · Qué le queda a `offers_update_merchant`
+
+```bash
+sed -n '/create policy offers_update_merchant/,/);/p' supabase/migrations/20260922051650_rls_v1.sql
+grep -n "create table public.offers" -A 12 supabase/migrations/20260922031435_schema_v1.sql
+```
+
+Diez columnas. Siete congeladas por el `with check`; `id` no se puede mover porque la subconsulta `where o.id = offers.id` devuelve `null` si cambia; `updated_at` lo pisa el trigger. Queda `created_at`.

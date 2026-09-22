@@ -1,8 +1,8 @@
 # Lecciones de la PR #56 para `AGENTS.md` y las reglas
 
-**Fuente:** 22 hallazgos en tres rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 24 hallazgos en cuatro rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
-> Provisorio: la PR sigue abierta, ya **sin bloqueantes**. Se completa al cerrarla.
+> Cerrado al mergear la PR: 21 de 24 hallazgos verificados, 0 bloqueantes.
 
 ## Patrón dominante
 
@@ -101,6 +101,7 @@ El costo no es teórico: el agy arregló nueve hallazgos, corrió CI hasta poner
 - **Ronda 1 de una PR abierta.** Las tres primeras lecciones salen de la ronda 1; `AG-32` y `AG-33` se refuerzan entre sí y probablemente convenga escribirlas como una sola cuando la PR cierre.
 - **`AG-33` ganó dos casos en la ronda 2** (`H11` y `H12`) sin que nadie tocara esas policies: estaban desde el principio y la ronda 1 no las miró. Eso es `AG-37`, y es la lección más cara de esta PR.
 - **`AG-35` y `AG-36` no son del mismo tipo que las demás.** Una es una trampa de herramienta y la otra es de proceso; ninguna dice nada sobre la calidad del diseño de RLS, que es bueno.
+- **La ronda 4 agregó una lección que no propuse yo.** La prueba 50 verifica que el `update` de la 46 **persistió**, porque una `lives_ok` sobre un `update` que no matchea ninguna fila también pasa. Yo había pedido solo la `lives_ok`, que sola habría sido un `P04-test-tautologico`. Vale la pena escribirlo: *una prueba positiva de escritura afirma el efecto, no la ausencia de error.*
 - **`AG-37` y `AG-38` son la misma lección vista dos veces.** `AG-37` dice que hay que barrer la clase entera; `AG-38` es lo que apareció cuando por fin la barrí. Si en la ronda 1 hubiera enumerado las cincuenta y tres policies por operación, `H11`, `H12` y `H15` a `H19` habrían salido juntos y esta PR habría cerrado en dos rondas en vez de cuatro.
 - **`AG-32` es la que más rinde y la más barata:** la infraestructura de pruebas ya existe y está bien hecha. Es agregar aserciones a `rls_matrix.sql`, no reescribir nada.
 - **Nada de esto desmerece el trabajo.** La parte difícil —probar con los roles reales, evitar la recursión con `app_private`, hacer `rls_enabled.sql` genérico— está bien resuelta, y es la que suele salir mal.

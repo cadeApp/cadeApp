@@ -7,8 +7,8 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-005-rls-v1` → `develop` |
 | **Base** | `f698539` |
-| **Tamaño** | 14 archivos, +1959 / −0 |
-| **Estado** | Draft · **8 abiertos, 0 bloqueantes** · CI 9 de 9 · alcance limpio |
+| **Tamaño** | 15 archivos, +2590 / −1 |
+| **Estado** | ✅ **Lista para mergear** · 21 de 24 cerrados · 0 bloqueantes · CI 9 de 9 · alcance limpio |
 
 ## Rondas
 
@@ -17,6 +17,7 @@
 | 1 | `3a6876b` | **2 bloqueantes** (escalada de privilegios en escritura) · 1 alto · 3 medios · 3 azules | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `86fd6fe` | 9 cerrados · 1 a medias · **2 nuevos de la misma familia** · 0 bloqueantes | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `aad5031` | 4 cerrados con **fase roja en el histórico** · **5 nuevos del barrido de `insert`** · 0 bloqueantes | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `f48c95b` | **7 cerrados** · 2 azules cosméticos · 0 bloqueantes · **cerrada** | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 
 ## Estado por hallazgo
 
@@ -27,22 +28,24 @@
 | **H03** | Cualquier repartidor aprobado lee todas las filas de `merchants`, con dirección y `notes` | 🟠 | ✅ verificado (`86fd6fe`) — prueba 11 · residual → H13 |
 | **H04** | La única policy que nombra a `anon` llama a una función que `anon` no puede ejecutar | 🟡 | ✅ verificado (`86fd6fe`) — prueba 3, positiva |
 | **H05** | La matriz no hace ningún `update` sobre `profiles`, `couriers` ni `merchants` | 🟡 | ✅ verificado (`86fd6fe`) — 15 → 28 aserciones |
-| **H06** | `offers_update_merchant` sin `with check`: el comercio reescribe `amount_ars` y `status` | 🔵 | 🟡 **a medias** · **decisión urgente**: aceptar una oferta quedó a medias |
+| **H06** | `offers_update_merchant` sin `with check`: el comercio reescribe `amount_ars` y `status` | 🟡 | ✅ verificado (`f48c95b`) — **decisión (a)**: el estado lo mueve la RPC · prueba 47 |
 | **H07** | `using (true)` en `platform_settings` sin la justificación escrita | 🔵 | ✅ verificado (`86fd6fe`) |
 | **H08** | Cualquiera abre un incidente sobre cualquier solicitud | 🔵 | ✅ verificado (`86fd6fe`) — pruebas 27, 28 |
 | **H09** | Subir a `courier-docs` no requiere ser repartidor | 🔵 | ✅ verificado (`86fd6fe`) — prueba 16 |
 | **H10** | Las 7 `throws_ok` comparaban el mensaje de error y dejaban `db-tests` rojo | 🟡 | ✅ verificado (`86fd6fe`) — **encontrado y arreglado por el agy** |
 | **H11** | `offers_update_courier` sin `with check`: el repartidor reescribe el monto ya aceptado | 🟠 | ✅ verificado (`aad5031`) — prueba 29, **roja en `73ab5f1`** · residual → H15 |
 | **H12** | `delivery_requests_update_merchant` no congela el ciclo de vida | 🟡 | ✅ verificado (`aad5031`) — prueba 30, roja y después verde · residual → H16 |
-| **H13** | Residual de H03: se acotaron las filas, no las columnas | 🟡 | 🔴 abierto — va al DoD de T-006 |
+| **H13** | Residual de H03: se acotaron las filas, no las columnas | 🟡 | 🔴 abierto — **va a T-106**, no a T-006 (corregido en la ronda 4) |
 | **H14** | `zones_select_admin` es redundante con `zones_write_admin` | 🔵 | ✅ verificado (`aad5031`) — eliminada |
-| **H15** | Una oferta puede **nacer** en `accepted` y tomar el cupo del índice único | 🟠 | 🔴 abierto — ronda 3 |
-| **H16** | Una solicitud puede **nacer** en `delivered` con los *timestamps* fabricados | 🟡 | 🔴 abierto — ronda 3 |
-| **H17** | Un documento de repartidor puede **nacer** en `verified` | 🟡 | 🔴 abierto — ronda 3 |
-| **H18** | Un incidente puede **nacer** `resolved` con su `resolution` escrita | 🔵 | 🔴 abierto — ronda 3 |
-| **H19** | El cliente elige `accepted_at` de su propio consentimiento | 🔵 | 🔴 abierto — ronda 3 |
-| **H20** | Falta la aserción positiva de H11, y no hay ninguna de `delete` | 🟡 | 🔴 abierto — ronda 3 |
-| A01 | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`aad5031`) — **0 fuera**, undécima ronda |
+| **H15** | Una oferta puede **nacer** en `accepted` y tomar el cupo del índice único | 🟠 | ✅ verificado (`f48c95b`) — pruebas 31, 32, 51 |
+| **H16** | Una solicitud puede **nacer** en `delivered` con los *timestamps* fabricados | 🟡 | ✅ verificado (`f48c95b`) — pruebas 33–39, 52 |
+| **H17** | Un documento de repartidor puede **nacer** en `verified` | 🟡 | ✅ verificado (`f48c95b`) — pruebas 40–42, 53 |
+| **H18** | Un incidente puede **nacer** `resolved` con su `resolution` escrita | 🔵 | ✅ verificado (`f48c95b`) — pruebas 43, 44, 54 |
+| **H19** | El cliente elige `accepted_at` de su propio consentimiento | 🔵 | ✅ verificado (`f48c95b`) — pruebas 45, 55 |
+| **H20** | Falta la aserción positiva de H11, y no hay ninguna de `delete` | 🟡 | ✅ verificado (`f48c95b`) — pruebas 46, 48, 49 **y 50** (persistencia) |
+| **H21** | `offers_update_merchant` quedó vestigial: solo deja escribir `created_at` | 🔵 | 🔴 abierto — cosmético, ronda 4 |
+| **H22** | `profiles_update_self` no congela `created_at` | 🔵 | 🔴 abierto — cosmético, ronda 4 |
+| A01 | Archivos fuera de los «Archivos permitidos» | 🔵 | ✅ verificado (`f48c95b`) — **0 fuera**, duodécima ronda |
 | A02 | La carpeta de revisión se volvió a escribir desde el lado del autor | 🔵 | ✅ verificado (`aad5031`) — **no volvió a pasar** |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md) · Autorrevisión del agy: [`autorrevision-agy.md`](autorrevision-agy.md)
@@ -59,13 +62,11 @@ Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidenc
 
 ## Lo que no
 
-> **Una sola familia, tres rondas, tres barridos.** La ronda 1 miró `select`, la 2 y la 3 miraron `update`, y **la 3 fue la primera que miró `insert`**. Cada barrido encontró casos que ya estaban desde el primer commit. `P17` cerró con diez casos: `H01`, `H02`, `H06`, `H11`, `H12`, `H15`, `H16`, `H17`, `H18`, `H19`.
+> **Una sola familia, cuatro rondas, tres barridos.** La ronda 1 miró `select`, la 2 y la 3 `update`, y la 3 fue la primera que miró `insert`. `P17` cerró con doce casos. **Siete de los veintidós hallazgos ya estaban en el primer commit** y salieron tarde porque esta revisión revisó por capas en vez de enumerar la clase completa de entrada. Es `AG-37` y `AG-38`, y la tabla de las 53 policies por operación quedó en [`ronda-3.md`](revisiones/ronda-3.md#la-enumeración-completa-para-que-no-haya-ronda-4) para que T-106 arranque desde ahí.
 
-> **Los siete hallazgos de las rondas 2 y 3 son un costo de esta revisión, no del trabajo.** Nadie tocó esas policies entre rondas. Es `AG-37` y `AG-38`. Por eso la ronda 3 entrega [la enumeración completa de las policies por operación](revisiones/ronda-3.md#la-enumeración-completa-para-que-no-haya-ronda-4) en vez de otra lista.
+> **Una corrección de la revisión:** en la ronda 3 escribí que las transiciones serían «RPC de T-006». Está mal. T-006 es de P2 y es la capa de contrato (`src/domain/**`); las RPC SQL son **T-101** (`submit_offer`, `withdraw_offer`), **T-102** (`accept_offer`), **T-103** (ciclo de solicitud) y **T-105** (`admin_*`). El agy lo corrigió por su cuenta en la bitácora.
 
-> **`H15` es literalmente `H11` por la otra sentencia:** congelar `status` en `update` no sirve de nada si la fila puede nacer en `accepted`.
-
-> **`H06`, `H12` y `H13` son la misma pregunta:** ¿quién mueve el estado, el cliente o la RPC de T-006? Desde la ronda 3 tiene consecuencia concreta: aceptar una oferta quedó a medias y hay que decidir.
+> **Queda abierto y no es de esta PR:** `H13` → **T-106**, cuyo DoD ya cubre las coordenadas y solo necesita sumar `notes`, `paid_until` y `subscription_status`. `H21` y `H22` son cosméticos.
 
 ## Nota de proceso
 
