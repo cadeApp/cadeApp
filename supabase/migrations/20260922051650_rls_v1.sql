@@ -112,6 +112,42 @@ $$;
 revoke all on function app_private.is_courier_assigned_to_request(uuid, uuid) from public, anon, authenticated;
 grant execute on function app_private.is_courier_assigned_to_request(uuid, uuid) to authenticated;
 
+create or replace function app_private.is_merchant_visible_to_courier(m_id uuid, c_id uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.delivery_requests dr
+    where dr.merchant_id = m_id
+      and (
+        (dr.status = 'published' and (dr.expires_at is null or dr.expires_at > now()))
+        or (dr.accepted_offer_id is not null and app_private.is_accepted_offer_courier(dr.accepted_offer_id, c_id))
+      )
+  );
+$$;
+
+revoke all on function app_private.is_merchant_visible_to_courier(uuid, uuid) from public, anon, authenticated;
+grant execute on function app_private.is_merchant_visible_to_courier(uuid, uuid) to authenticated;
+
+create or replace function app_private.is_courier()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'courier'
+  );
+$$;
+
+revoke all on function app_private.is_courier() from public, anon, authenticated;
+grant execute on function app_private.is_courier() to authenticated;
+
 -- 4. Actor RLS policies
 
 -- public.profiles
@@ -131,10 +167,14 @@ create policy profiles_update_admin on public.profiles
   using (app_private.is_admin())
   with check (app_private.is_admin());
 
--- public.zones
-create policy zones_select_active on public.zones
+-- public.zones (H04: split public active read from admin full read to avoid ungranted is_admin() call on anon)
+create policy zones_select_public on public.zones
   for select to anon, authenticated
-  using (active or app_private.is_admin());
+  using (active);
+
+create policy zones_select_admin on public.zones
+  for select to authenticated
+  using (app_private.is_admin());
 
 create policy zones_write_admin on public.zones
   for all to authenticated
@@ -150,14 +190,24 @@ create policy merchants_select_admin on public.merchants
   for select to authenticated
   using (app_private.is_admin());
 
+-- H03: Courier approved only sees merchants with an active relationship (published non-expired request or accepted delivery)
 create policy merchants_select_courier on public.merchants
   for select to authenticated
-  using (app_private.is_approved_courier());
+  using (
+    app_private.is_approved_courier()
+    and app_private.is_merchant_visible_to_courier(profile_id, auth.uid())
+  );
 
+-- H02: Freeze subscription_status, paid_until and notes against merchant self-tampering
 create policy merchants_update_self on public.merchants
   for update to authenticated
   using (profile_id = auth.uid())
-  with check (profile_id = auth.uid());
+  with check (
+    profile_id = auth.uid()
+    and subscription_status = (select m.subscription_status from public.merchants m where m.profile_id = auth.uid())
+    and paid_until is not distinct from (select m.paid_until from public.merchants m where m.profile_id = auth.uid())
+    and notes is not distinct from (select m.notes from public.merchants m where m.profile_id = auth.uid())
+  );
 
 create policy merchants_update_admin on public.merchants
   for update to authenticated
@@ -173,6 +223,7 @@ create policy couriers_select_admin on public.couriers
   for select to authenticated
   using (app_private.is_admin());
 
+-- H01: Freeze status, dni_hmac, license_status, insurance_status, decided_by, decided_at and deactivated_at
 create policy couriers_update_self on public.couriers
   for update to authenticated
   using (profile_id = auth.uid())
@@ -180,6 +231,11 @@ create policy couriers_update_self on public.couriers
     profile_id = auth.uid()
     and status = (select c.status from public.couriers c where c.profile_id = auth.uid())
     and dni_hmac is not distinct from (select c.dni_hmac from public.couriers c where c.profile_id = auth.uid())
+    and license_status = (select c.license_status from public.couriers c where c.profile_id = auth.uid())
+    and insurance_status = (select c.insurance_status from public.couriers c where c.profile_id = auth.uid())
+    and decided_by is not distinct from (select c.decided_by from public.couriers c where c.profile_id = auth.uid())
+    and decided_at is not distinct from (select c.decided_at from public.couriers c where c.profile_id = auth.uid())
+    and deactivated_at is not distinct from (select c.deactivated_at from public.couriers c where c.profile_id = auth.uid())
   );
 
 create policy couriers_update_admin on public.couriers
@@ -290,9 +346,18 @@ create policy offers_update_courier on public.offers
   using (courier_id = auth.uid())
   with check (courier_id = auth.uid());
 
+-- H06: Freeze amount_ars, eta_minutes, message, courier_id and request_id against merchant tampering
 create policy offers_update_merchant on public.offers
   for update to authenticated
-  using (app_private.is_request_merchant(request_id, auth.uid()));
+  using (app_private.is_request_merchant(request_id, auth.uid()))
+  with check (
+    app_private.is_request_merchant(request_id, auth.uid())
+    and courier_id = (select o.courier_id from public.offers o where o.id = offers.id)
+    and request_id = (select o.request_id from public.offers o where o.id = offers.id)
+    and amount_ars = (select o.amount_ars from public.offers o where o.id = offers.id)
+    and eta_minutes = (select o.eta_minutes from public.offers o where o.id = offers.id)
+    and message is not distinct from (select o.message from public.offers o where o.id = offers.id)
+  );
 
 create policy offers_update_admin on public.offers
   for update to authenticated
@@ -308,9 +373,17 @@ create policy incidents_select_admin on public.incidents
   for select to authenticated
   using (app_private.is_admin());
 
+-- H08: Require incident reporter to be request merchant owner, assigned accepted courier, or admin
 create policy incidents_insert_authenticated on public.incidents
   for insert to authenticated
-  with check (reporter_id = auth.uid());
+  with check (
+    reporter_id = auth.uid()
+    and (
+      app_private.is_request_merchant(request_id, auth.uid())
+      or app_private.is_courier_assigned_to_request(request_id, auth.uid())
+      or app_private.is_admin()
+    )
+  );
 
 create policy incidents_write_admin on public.incidents
   for all to authenticated
@@ -349,6 +422,9 @@ create policy audit_log_admin on public.audit_log
   with check (app_private.is_admin());
 
 -- public.platform_settings
+-- H07: USING (true) is justified because client-side operational flows (such as offer floor calculation,
+-- request TTL countdown, pilot terms gate, and subscription grace period checks) require access to
+-- system settings without privilege escalation.
 create policy platform_settings_select_authenticated on public.platform_settings
   for select to authenticated
   using (true);
@@ -378,10 +454,12 @@ on conflict (id) do update set
   file_size_limit = 10485760,
   allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
+-- H09: Restrict courier-docs upload to users having courier role (onboarding before admin approval)
 create policy courier_docs_insert_own_folder on storage.objects
   for insert to authenticated
   with check (
     bucket_id = 'courier-docs'
+    and app_private.is_courier()
     and (storage.foldername(name))[1] = 'courier'
     and (storage.foldername(name))[2] = auth.uid()::text
   );

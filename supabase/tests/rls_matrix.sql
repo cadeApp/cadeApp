@@ -3,12 +3,13 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(15);
+select plan(28);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
 create function pg_temp.merchant_1_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000b1'::uuid $$;
 create function pg_temp.merchant_2_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000b2'::uuid $$;
+create function pg_temp.merchant_idle_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000b3'::uuid $$;
 create function pg_temp.courier_pending_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000c1'::uuid $$;
 create function pg_temp.courier_approved_1_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000c2'::uuid $$;
 create function pg_temp.courier_approved_2_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000c3'::uuid $$;
@@ -64,6 +65,7 @@ begin
     (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.merchant_1_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm1@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.merchant_2_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm2@example.test', 'pwd', '{"role": "merchant"}'),
+    (pg_temp.merchant_idle_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm3@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.courier_pending_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c1@example.test', 'pwd', '{"role": "courier"}'),
     (pg_temp.courier_approved_1_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c2@example.test', 'pwd', '{"role": "courier"}'),
     (pg_temp.courier_approved_2_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c3@example.test', 'pwd', '{"role": "courier"}'),
@@ -116,7 +118,13 @@ select is(
   'anon sees 0 delivery_request_contacts'
 );
 
--- 3. merchant_1 ve sus solicitudes, no las de merchant_2
+-- 3. H04: anon ve zonas activas sin error de permisos
+select ok(
+  (select count(*) from public.zones where active) >= 1,
+  'anon can select active zones without permission error'
+);
+
+-- 4. merchant_1 ve sus solicitudes, no las de merchant_2
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select is(
   (select count(*) from public.delivery_requests),
@@ -124,14 +132,14 @@ select is(
   'merchant_1 sees only its own 2 delivery_requests'
 );
 
--- 4. merchant_1 ve los contactos de sus solicitudes
+-- 5. merchant_1 ve los contactos de sus solicitudes
 select is(
   (select count(*) from public.delivery_request_contacts),
   2::bigint,
   'merchant_1 sees contacts for its own 2 requests'
 );
 
--- 5. courier pending ve 0 delivery_requests
+-- 6. courier pending ve 0 delivery_requests
 select pg_temp.act_as('authenticated', pg_temp.courier_pending_id());
 select is(
   (select count(*) from public.delivery_requests),
@@ -139,7 +147,7 @@ select is(
   'courier pending sees 0 delivery_requests'
 );
 
--- 6. courier suspended ve 0 delivery_requests
+-- 7. courier suspended ve 0 delivery_requests
 select pg_temp.act_as('authenticated', pg_temp.courier_suspended_id());
 select is(
   (select count(*) from public.delivery_requests),
@@ -147,7 +155,7 @@ select is(
   'courier suspended sees 0 delivery_requests'
 );
 
--- 7. courier approved ve solicitudes published
+-- 8. courier approved ve solicitudes published
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
 select is(
   (select count(*) from public.delivery_requests where status = 'published'),
@@ -155,14 +163,14 @@ select is(
   'courier approved sees 2 published delivery_requests'
 );
 
--- 8. INVARIANTE CLAVE: courier approved_1 ve SOLO contactos de la solicitud donde es el asignado
+-- 9. INVARIANTE CLAVE: courier approved_1 ve SOLO contactos de la solicitud donde es el asignado
 select is(
   (select array_agg(request_id order by request_id) from public.delivery_request_contacts),
   array[pg_temp.req_m1_matched_id()],
   'courier approved sees contacts ONLY for matched request where it is the accepted courier'
 );
 
--- 9. courier approved_2 NO ve contactos de req_m1_matched
+-- 10. courier approved_2 NO ve contactos de req_m1_matched
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
 select is(
   (select count(*) from public.delivery_request_contacts),
@@ -170,7 +178,15 @@ select is(
   'courier approved_2 sees 0 contacts because it was not accepted on any request'
 );
 
--- 10. merchant ve ofertas de sus solicitudes
+-- 11. H03: courier approved ve comercios con solicitudes activas pero NO ve comercio ocioso
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select ok(
+  exists (select 1 from public.merchants where profile_id = pg_temp.merchant_1_id())
+  and not exists (select 1 from public.merchants where profile_id = pg_temp.merchant_idle_id()),
+  'courier sees active merchants with requests but cannot see idle merchant'
+);
+
+-- 12. merchant ve ofertas de sus solicitudes
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select is(
   (select count(*) from public.offers),
@@ -178,7 +194,7 @@ select is(
   'merchant_1 sees the 2 offers made to its requests'
 );
 
--- 11. courier approved ve solo sus propias ofertas
+-- 13. courier approved ve solo sus propias ofertas
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
 select is(
   (select count(*) from public.offers),
@@ -186,14 +202,14 @@ select is(
   'courier approved_1 sees only its 1 own offer'
 );
 
--- 12. Storage courier-docs: bucket existe y es privado
+-- 14. Storage courier-docs: bucket existe y es privado
 select pg_temp.reset_actor();
 select ok(
   exists (select 1 from storage.buckets where id = 'courier-docs' and not public),
   'bucket courier-docs exists and is private'
 );
 
--- 13. Storage courier-docs: select denegado a courier autenticado
+-- 15. Storage courier-docs: select denegado a courier autenticado
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
 select is(
   (select count(*) from storage.objects where bucket_id = 'courier-docs'),
@@ -201,7 +217,15 @@ select is(
   'direct select on storage courier-docs is denied to authenticated couriers'
 );
 
--- 14. admin ve todas las solicitudes y contactos
+-- 16. H09: Storage courier-docs: insert denegado a actor sin rol courier
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select throws_ok(
+  'insert into storage.objects (id, bucket_id, name) values (gen_random_uuid(), ''courier-docs'', ''courier/'' || pg_temp.merchant_1_id() || ''/test.png'')',
+  'row-level security',
+  'merchant cannot insert into courier-docs bucket'
+);
+
+-- 17. admin ve todas las solicitudes y contactos
 select pg_temp.act_as('authenticated', pg_temp.admin_id());
 select is(
   (select count(*) from public.delivery_requests),
@@ -209,11 +233,81 @@ select is(
   'admin sees all 3 delivery_requests'
 );
 
--- 15. H07: merchant puede hacer update y dispara set_updated_at sin error de permisos
+-- 18. H07 (PR54): merchant puede hacer update y dispara set_updated_at sin error de permisos
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select lives_ok(
   'update public.delivery_requests set notes = ''updated by merchant'' where id = pg_temp.req_m1_pub_id()',
   'merchant can update its own request and trigger set_updated_at executes without privilege error'
+);
+
+-- 19. H05: profiles update legítimo permitido
+select lives_ok(
+  'update public.profiles set display_name = ''Comercio Test'' where id = pg_temp.merchant_1_id()',
+  'profile owner can update display_name'
+);
+
+-- 20. H05: profiles update rechaza auto-promoción a admin
+select throws_ok(
+  'update public.profiles set role = ''admin'' where id = pg_temp.merchant_1_id()',
+  'row-level security',
+  'profile owner cannot elevate role to admin'
+);
+
+-- 21. H05: couriers update legítimo permitido
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select lives_ok(
+  'update public.couriers set available = false, vehicle_plate = ''123XYZ'' where profile_id = pg_temp.courier_approved_1_id()',
+  'courier can update operational availability and plate'
+);
+
+-- 22. H01: couriers update rechaza autoverificación de documentos
+select throws_ok(
+  'update public.couriers set license_status = ''verified'', insurance_status = ''verified'' where profile_id = pg_temp.courier_approved_1_id()',
+  'row-level security',
+  'courier cannot self-verify license or insurance status'
+);
+
+-- 23. H01: couriers update rechaza falsificar aprobación administrativa
+select throws_ok(
+  'update public.couriers set decided_by = pg_temp.admin_id() where profile_id = pg_temp.courier_approved_1_id()',
+  'row-level security',
+  'courier cannot forge decided_by approval record'
+);
+
+-- 24. H05: merchants update legítimo permitido
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select lives_ok(
+  'update public.merchants set business_name = ''Pizzeria Centro'' where profile_id = pg_temp.merchant_1_id()',
+  'merchant can update business_name'
+);
+
+-- 25. H02: merchants update rechaza autoconcederse suscripción
+select throws_ok(
+  'update public.merchants set subscription_status = ''active'', paid_until = ''2099-12-31'' where profile_id = pg_temp.merchant_1_id()',
+  'row-level security',
+  'merchant cannot grant self active subscription or extended paid_until'
+);
+
+-- 26. H06: offers update de merchant rechaza alterar monto ofrecido
+select throws_ok(
+  'update public.offers set amount_ars = 500 where id = pg_temp.offer_c2_id()',
+  'row-level security',
+  'merchant cannot tamper with courier offer amount'
+);
+
+-- 27. H08: incidents insert rechaza reportero sin relación con la solicitud
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
+select throws_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.courier_approved_2_id(), ''complaint'', ''unrelated incident'')',
+  'row-level security',
+  'unrelated courier cannot create incident on request'
+);
+
+-- 28. H08: incidents insert permitido a courier asignado a la solicitud
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select lives_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), ''delay'', ''pincho rueda'')',
+  'assigned courier can create incident on its matched request'
 );
 
 select * from finish();
