@@ -109,3 +109,74 @@ grep -n "rls_enabled" docs/tasks/T-005.md
 ```
 
 Más `supabase/tests/rls_*.sql` en sus «Archivos permitidos». La obligación diferida tiene dueño y criterio demostrable.
+
+## Ronda 2 — `6a640e4`
+
+### Checks
+
+```bash
+pnpm typecheck    # exit 0
+pnpm lint         # exit 0
+pnpm test         # 72/72 Vitest · 18/18 workflows · arbol limpio
+gh pr checks 54   # 9 de 9 pass, approval-policy incluido
+```
+
+```bash
+gh pr diff 54 --name-only   # 17 archivos · FUERA DE ALCANCE: 0 (ninguno)
+```
+
+### `db-tests`, ahora con 41 pruebas
+
+```bash
+gh api repos/cadeApp/cadeApp/actions/jobs/106615598818/logs --allow-escape-sequences
+```
+
+```
+All tests successful.
+Files=1, Tests=41
+```
+
+### H02 · El mismo problema, segunda corrida
+
+```bash
+gh api .../jobs/106615598818/logs | grep -c toomanyrequests   # 20
+```
+
+| | ronda 1 | ronda 2 |
+|---|---|---|
+| `toomanyrequests: Rate exceeded` | 20 | **20** |
+| `Path Validation Error ... no cache is being saved` | sí | **sí** |
+| Duración de `db-tests` | 3 m 51 s | 3 m 44 s |
+
+No es un pico: pasa en cada corrida.
+
+### Los arreglos, leídos en el diff
+
+```bash
+git diff 49778c9..6a640e4 -- supabase/migrations/ supabase/tests/
+```
+
+- `couriers.decided_by` y `audit_log.actor_id` → `on delete set null`
+- `offers_id_request_uk unique (id, request_id)` + `foreign key (accepted_offer_id, id) references offers (id, request_id)`
+- `set_updated_at()` + tres triggers `before update`
+- `revoke all on function public.handle_new_user() from public, anon, authenticated` (se fue el `grant`)
+- `plan(37)` → `plan(41)`
+
+### Las cuatro pruebas nuevas
+
+```sql
+select ok(not has_function_privilege('authenticated', 'public.handle_new_user()', 'execute'), ...);
+select ok(not has_function_privilege('anon',          'public.handle_new_user()', 'execute'), ...);
+select ok(pg_temp.test_actor_delete_sets_null(), ...);
+select is(pg_temp.test_updated_at_and_composite_offer_fk(), 'OK', ...);
+```
+
+`has_function_privilege` consulta el privilegio de **otro** rol, así que correr como superusuario no la enmascara. `test_actor_delete_sets_null` hace `delete from auth.users` de verdad. Y `test_updated_at_...` fuerza `updated_at` a `2020-01-01` en el `insert` —donde no hay trigger— antes de hacer los `update`, así que la prueba no puede pasar por el `default now()`.
+
+### Tipos
+
+```bash
+git diff 49778c9..6a640e4 -- src/types/database.types.ts
+```
+
+Un solo cambio: la relación de `delivery_requests_accepted_offer_fk` pasó de `["accepted_offer_id"] → ["id"]` a `["accepted_offer_id","id"] → ["id","request_id"]`. Las funciones de trigger no aparecen en `Functions`, como corresponde. El `git diff --exit-code` de `db-tests` pasa.
