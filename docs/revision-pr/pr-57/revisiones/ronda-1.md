@@ -236,8 +236,16 @@ O sea: **borrar los dos ADR completos deja `pnpm test` y los 8 jobs de CI en ver
 **Esto es origen `ficha`, no del agy, y hay que decirlo.** «Archivos permitidos» de T-007 son `docs/adr/**`, `docs/tasks/T-007.md`, `docs/tasks/log/T-007.md` y `docs/revision-pr/**`. `package.json` y `.github/workflows/ci.yml` están fuera. El agy no podía cablearlo sin desviarse del alcance, y la bitácora deja registrada la decisión de ponerlo en `docs/adr/**` justamente por eso. Hizo lo correcto con la ficha que tenía.
 
 **Qué hay que hacer — para Lautaro073, porque toca la ficha:**
-1. Agregar `package.json` a «Archivos permitidos» de T-007 y encadenar `node --test docs/adr/verify-adr.test.mjs` al script `test`. Es una línea y lo deja cubierto por el job `unit` sin tocar `ci.yml`.
+1. Agregar `package.json` a «Archivos permitidos» de T-007 y encadenar `node --test docs/adr/verify-adr.test.mjs` al script `test`.
 2. O aceptar explícitamente que es un control manual, y entonces sacarlo del DoD como evidencia: hoy el PR lo presenta como si `pnpm test` lo cubriera (ver H08).
+
+> ### Corrección — 2026-09-22, posterior al cierre de la ronda
+>
+> **La opción 1, como la escribí arriba, no alcanzaba, y el error es mío.** Dije que encadenarlo al script `test` lo dejaba «cubierto por el job `unit` sin tocar `ci.yml`». **CI no corre `pnpm test` en ningún job:** `unit` corre `pnpm test:coverage` —que es `vitest run --coverage`— y `node --test .github/workflows/verify-workflows.test.mjs`. Encadenarlo solo al script lo habría dejado igual de fuera de CI, y el hallazgo se habría cerrado en falso.
+>
+> Lo que lo esconde es un control que afirma lo contrario: `verify-workflows.test.mjs:37` exige que `ci.yml` incluya la cadena `pnpm test`, y eso se cumple **por substring** con `pnpm test:coverage`. O sea que hay una aserción que declara cubierto en CI un script que CI no ejecuta. Eso queda anotado como `H17`; es pre-existente desde la #51 y es un hueco de mi propia revisión de entonces, no de esta PR.
+>
+> **Resuelto por Lautaro073 el 2026-09-22 (opción 1, ampliada):** se habilitaron `package.json` y `.github/workflows/ci.yml` en «Archivos permitidos» de T-007, se encadenó la suite al script `test` y se agregó el paso al job `unit`. **Lo aplicó la revisión, no el agy**, así que `H06` queda en `arreglado-sin-verificar`: quien tocó no firma la verificación (`AG-36` vale igual para mí). Demostración en rojo y en verde, y el residual que queda abierto, en [`evidencia/comandos.md`](../evidencia/comandos.md).
 
 **Prueba en rojo:**
 

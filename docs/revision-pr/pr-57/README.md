@@ -8,13 +8,13 @@
 | **Rama** | `feat/T-007-adr-0001-0002` → `develop` |
 | **Base** | `0c4f031` |
 | **Tamaño** | 6 archivos, +485 / −4 |
-| **Estado** | 🔴 **Con bloqueantes (7)** · CI 7 de 8 · alcance limpio |
+| **Estado** | 🔴 **Con bloqueantes (6 abiertos)** · H06 arreglado por la revisión, sin verificar · CI 7 de 8 |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
-| 1 | `65f174f` | 16 hallazgos: **7 bloqueantes** · 4 altos · 4 medios · 7 bajos · 1 decisión | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 1 | `65f174f` | 17 hallazgos: **7 bloqueantes** (1 ya arreglado) · 4 altos · 4 medios · 8 bajos · 1 decisión | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 
 ## Estado por hallazgo
 
@@ -25,7 +25,7 @@
 | **H03** | Trece identificadores de esquema citados como existentes que no existen | 🟠 | 🔴 abierto · **bloqueante** |
 | **H04** | `status = 'open'` ×4 sobre un enum cuyo valor es `'published'` (+ `canceled`, `merchants.status`, courier `active`) | 🟡 | 🔴 abierto · **bloqueante** |
 | **H05** | La exclusión de Storage del backup etiquetada `[DATO]`; el plan §9.4 la tiene como pendiente de verificar (D8) | 🟠 | 🔴 abierto · **bloqueante** |
-| **H06** | `verify-adr.test.mjs` no lo corre ni `pnpm test` ni CI: borrar los ADR deja los 8 jobs en verde | 🟠 | 🔴 abierto · **bloqueante** · origen `ficha` |
+| **H06** | `verify-adr.test.mjs` no lo corre ni `pnpm test` ni CI: borrar los ADR deja los 8 jobs en verde | 🟠 | 🟡 **arreglado por la revisión, sin verificar** · origen `ficha` |
 | **H07** | Los tests 3 y 5 pasan con las dos tablas de revisión borradas | 🟡 | 🔴 abierto · **bloqueante** |
 | **H08** | `approval-policy` en rojo: el cuerpo del PR no sigue el formato del paso 5 | 🟡 | 🔴 abierto · **bloqueante** |
 | **H09** | El DoD marcado y la conformidad de P2/P3 firmada sin evidencia | 🟡 | ⏸️ **decisión de Lautaro073** |
@@ -36,6 +36,7 @@
 | **H14** | 64 `[DATO]` sin fuente ni fecha; la convención se atribuye al plan, que no la tiene | 🔵 | 🔴 abierto |
 | **H15** | `/Pro/i` matchea «producción»: el test 4 pasa sin nombrar el plan Pro | 🔵 | 🔴 abierto |
 | **H16** | La suite verifica estructura y no verdad | 🔵 | 🔴 abierto |
+| **H17** | `verify-workflows` afirma que CI corre `pnpm test` y se cumple por substring con `pnpm test:coverage` | 🔵 | 🔴 abierto · pre-existente desde la #51 |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
@@ -43,7 +44,7 @@ Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidenc
 
 1. **Cruzar los dos ADR contra `supabase/migrations/**` y reescribir lo que no coincide** (H01, H03, H04, H10, H11, H12). El comando que enumera la clase completa está en [`evidencia/comandos.md`](evidencia/comandos.md); no hay que buscarlos de a uno.
 2. **Decidir qué hacer con la exclusión de Storage del backup** (H05): verificarla y citar la fuente, o bajarla a `[SUPUESTO]` y nombrar la tarea donde se cierra.
-3. **Encadenar `verify-adr.test.mjs` a `pnpm test`** (H06). Requiere agregar `package.json` a «Archivos permitidos» de T-007 — es decisión de Lautaro073 porque toca la ficha.
+3. ~~**Encadenar `verify-adr.test.mjs` a `pnpm test`** (H06).~~ **Hecho el 2026-09-22**, resuelto por Lautaro073 y aplicado por la revisión: `package.json` y `.github/workflows/ci.yml` entraron a «Archivos permitidos», la suite se encadenó al script `test` y se agregó el paso al job `unit`. Demostrado en rojo (`exit 1` con un ADR borrado) y en verde. **Queda `arreglado-sin-verificar`**: lo tocó quien revisa, y quien toca no firma la verificación. Falta verlo verde en una corrida real de `unit`.
 4. **Que los tests 3 y 5 afirmen la sección de revisión, no la presencia de tres nombres** (H07), y acotar los patrones demasiado amplios (H15).
 5. **Rehacer el cuerpo del PR con el formato del paso 5 de `revisar-pr`** para que `approval-policy` pase (H08), corrigiendo la línea que atribuye a `pnpm test` los 5 tests de `verify-adr`.
 6. **Arreglar las citas al Master Plan y agregar las fuentes de los `[DATO]`** (H13, H14).

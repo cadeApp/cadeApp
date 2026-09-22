@@ -68,6 +68,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:coverage
       - run: node --test .github/workflows/verify-workflows.test.mjs
+      # PR57-H06: la suite que verifica el DoD de T-007 vivia solo en el script
+      # `test`, que este job no corre — corre `test:coverage`. Sin este paso,
+      # borrar los dos ADR dejaba los 8 jobs en verde.
+      - run: node --test docs/adr/verify-adr.test.mjs
 
   db-tests:
     name: db-tests

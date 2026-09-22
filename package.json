@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "next lint --dir src --file middleware.ts --max-warnings 0 && eslint --no-ignore --ext .mjs .github/workflows --max-warnings 0",
     "typecheck": "tsc --noEmit && tsc --project .github/workflows/tsconfig.json",
-    "test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs",
+    "test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs && node --test docs/adr/verify-adr.test.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "db:types": "node tools/db-types.mjs",

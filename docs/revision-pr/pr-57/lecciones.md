@@ -1,6 +1,6 @@
 # Lecciones de la PR #57 para `AGENTS.md` y las reglas
 
-**Fuente:** 16 hallazgos en la ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 17 hallazgos en la ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 > Ronda 1 de una PR abierta. Las conclusiones pueden moverse.
 
@@ -12,7 +12,7 @@ Los dos ADR argumentan bien y describen mal. La decisión —Supabase sobre Fire
 
 Nada de eso es difícil de detectar. Un cruce de veinte líneas de Node entre los backticks de los ADR y `supabase/migrations/**` los encuentra todos de una vez, y está en [`evidencia/comandos.md`](evidencia/comandos.md). Lo que no había era **nadie que lo hiciera**: ni el agy, ni su autorrevisión, ni el test que escribió, ni —hasta la segunda pasada— esta revisión.
 
-Y la consecuencia no es cosmética, porque este documento es la referencia. Dos ejemplos de los quince:
+Y la consecuencia no es cosmética, porque este documento es la referencia. Dos ejemplos:
 
 - **ADR-0001 afirma que `notes` está protegido.** No lo está: es columna de `delivery_requests` y todo repartidor aprobado la lee en la bolsa. El documento al que alguien va a ir a preguntar «¿esto se ve antes de aceptar?» hoy contesta mal.
 - **ADR-0002 dice buscar `status = 'open'`.** T-104 va a implementar el barrido con esa consulta, que devuelve cero filas y no falla.
@@ -33,7 +33,7 @@ Ninguno de los cinco filtros podía atraparlo, porque los cinco leen el document
 
 > **Regla propuesta.** Cuando un documento cita identificadores del repo —tablas, columnas, policies, índices, rutas de archivo, variables de entorno, claves de configuración, valores de enum—, esos nombres son **verificables** y hay que verificarlos con un comando, no leyéndolos. El orden importa: primero el cruce mecánico, después la lectura. La lectura humana es buena juzgando si el argumento se sostiene y es mala contando si `matched_courier_id` existe; el grep es lo contrario. Usar cada uno para lo suyo.
 >
-> Y el corolario para quien revisa: **en una PR de documentación, el primer comando no es leer el diff, es cruzar los nombres.** Trece de los dieciséis hallazgos de esta ronda salieron de ahí.
+> Y el corolario para quien revisa: **en una PR de documentación, el primer comando no es leer el diff, es cruzar los nombres.** Trece de los diecisiete hallazgos de esta ronda salieron de ahí.
 
 ### AG-40 · `[DATO]` es una afirmación sobre una fuente; sin la fuente es un `[SUPUESTO]` con mejor tipografía
 **Origen:** H05, H14
@@ -57,8 +57,14 @@ Es la tercera vez que aparece esta forma, y conviene mirarlas juntas: `PR47-A01`
 >
 > Y para quien revisa, la pregunta de una línea: **¿qué pasa si borro el entregable y corro los checks?** Si quedan verdes, el control no existe. Es la misma pregunta de `PR51-H06`, ahora aplicada a una tarea de documentación.
 
+**Addendum del arreglo, que hace la lección más incómoda.** Al aplicar la opción 1 apareció que **CI no corre `pnpm test` en ningún job**: `unit` corre `pnpm test:coverage` y el `node --test` de workflows. O sea que encadenar la suite al script `test` —que era exactamente lo que yo había propuesto— la habría dejado igual de fuera de CI, y el hallazgo se habría cerrado en falso. Hubo que agregar además el paso a `ci.yml`.
+
+Lo que lo escondía es lo peor del asunto: `verify-workflows.test.mjs:37` afirma que `ci.yml` incluye `pnpm test`, y **eso se cumple por substring con `pnpm test:coverage`** (`H17`). Hay una aserción que declara cubierto en CI un script que CI no ejecuta, y está ahí desde la #51 — o sea que es un hueco de mi propia revisión de entonces, no de esta PR.
+
+> **Corolario.** «Está en el script» y «CI lo ejecuta» son dos afirmaciones distintas, y la segunda solo se comprueba **leyendo los `run:` de los jobs**, nunca el `package.json`. Un control que afirma lo primero y se lee como lo segundo es peor que no tener control, porque cierra la pregunta.
+
 ### AG-42 · Contar etiquetas mide disciplina de formato; no mide nada más
-**Origen:** H07, H15, H16
+**Origen:** H07, H15, H16, H17
 
 La suite verifica el DoD así: que ciertas cadenas aparezcan (`/ACID/i`, `/Row Level Security/`, `/purge_after/`), que haya al menos 5 `[DATO]` y 3 `[SUPUESTO]`, y que los tres nombres de persona estén en el archivo. Todo eso está bien elegido para verificar **estructura**. El problema es que se usó para declarar conformes dos documentos con veintitantos errores de hecho.
 

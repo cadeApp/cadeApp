@@ -38,8 +38,11 @@ pnpm test        # Test Files 9 passed (9) · Tests 72 passed (72) · workflows 
 node --test docs/adr/verify-adr.test.mjs   # 1..5 · # pass 5 · # fail 0
 ```
 
-Ningún archivo del repo se modificó en toda la revisión. Las demostraciones en rojo corrieron sobre
-copias en el scratchpad de la sesión.
+Durante la revisión no se modificó ningún archivo del repo: las demostraciones en rojo corrieron
+sobre copias en el scratchpad de la sesión. **Después de cerrar la ronda**, a pedido de Lautaro073,
+la revisión aplicó el arreglo de `H06` sobre tres archivos (`docs/tasks/T-007.md`, `package.json` y
+`.github/workflows/ci.yml`); está al final de este documento, con lo que eso implica para el estado
+del hallazgo.
 
 ### CI
 
@@ -433,3 +436,100 @@ que T-104 va a construir. Sin distinguir «ya existe» de «va a existir» —un
 por ejemplo `(T-104)` al lado de la ruta— el control nuevo nace con el defecto de H15,
 `P07-coincidencia-demasiado-amplia`. **D no tiene ese problema y es la que más rinde**: una línea, y
 cierra H06.
+
+---
+
+## H06 · El arreglo, aplicado por la revisión a pedido de Lautaro073
+
+### Primero, lo que estaba mal en mi propia propuesta
+
+```bash
+sed -n '53,64p' .github/workflows/ci.yml   # job unit
+node -e "const s=require('./package.json').scripts; console.log(s.test, '|', s['test:coverage'])"
+```
+
+```
+  unit:
+    steps:
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:coverage
+      - run: node --test .github/workflows/verify-workflows.test.mjs
+
+vitest run && node --test .github/workflows/verify-workflows.test.mjs | vitest run --coverage
+```
+
+**CI no corre `pnpm test` en ningún job.** En la ronda 1 escribí que encadenar la suite al script
+`test` la dejaba «cubierta por el job `unit` sin tocar `ci.yml`»: es falso, y habría cerrado el
+hallazgo en falso. Hay que tocar las dos cosas.
+
+Y hay un control que decía lo contrario (H17):
+
+```bash
+sed -n '27,44p' .github/workflows/verify-workflows.test.mjs | grep -n "pnpm test"
+```
+
+```
+'pnpm test',      <- assert.ok(ci.includes('pnpm test'))
+```
+
+Se cumple **por substring** con `pnpm test:coverage`. Una aserción que declara cubierto en CI un
+script que CI no ejecuta.
+
+### El cambio
+
+```diff
+ # docs/tasks/T-007.md — Archivos permitidos
+ - `docs/revision-pr/**`
++- `package.json` — solo para encadenar `docs/adr/verify-adr.test.mjs` al script `test`
++- `.github/workflows/ci.yml` — solo para que el job `unit` lo ejecute
+```
+
+```diff
+ # package.json
+-"test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs",
++"test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs && node --test docs/adr/verify-adr.test.mjs",
+```
+
+```diff
+ # .github/workflows/ci.yml — job unit
+       - run: node --test .github/workflows/verify-workflows.test.mjs
++      - run: node --test docs/adr/verify-adr.test.mjs
+```
+
+### Demostración en rojo y en verde
+
+Borrar un ADR ahora rompe los checks, que es exactamente lo que antes no pasaba:
+
+```bash
+mv docs/adr/README.md docs/adr/README.md.bak; pnpm test >/dev/null 2>&1; echo "exit $?"
+mv docs/adr/README.md.bak docs/adr/README.md; pnpm test >/dev/null 2>&1; echo "exit $?"
+```
+
+```
+pnpm test SIN docs/adr/README.md -> exit 1     (4 pass, 1 fail: "Falta docs/adr/README.md")
+pnpm test restaurado             -> exit 0
+```
+
+Antes del cambio, ese mismo `mv` dejaba `pnpm test` en **exit 0** y los 8 jobs en verde.
+
+### Checks después del cambio
+
+```bash
+pnpm typecheck   # exit 0
+pnpm lint        # exit 0 — "✔ No ESLint warnings or errors"
+pnpm test        # 72/72 Vitest · 19/19 workflows · 5/5 ADR
+```
+
+`verify-workflows.test.mjs` sigue en 19/19 con el paso nuevo en `ci.yml`: no rompió ninguna de sus
+aserciones sobre el workflow.
+
+### Lo que queda abierto, y por qué H06 **no** está verificado
+
+1. **Lo arregló la revisión, no el agy.** `estado` queda en `arreglado-sin-verificar`. Quien tocó no
+   firma la verificación: `AG-36` vale igual cuando el que viene de editar soy yo.
+2. **El paso de `ci.yml` está demostrado local, no en una corrida real.** Hasta que el push dispare
+   `unit` y se vea `# pass 5` en su log, lo único probado es que el comando funciona en esta máquina.
+3. **`docs/adr/verify-adr.test.mjs` sigue sin entrar en `pnpm lint` ni en `pnpm typecheck`.** `lint`
+   alcanza `src`, `middleware.ts` y los `.mjs` de `.github/workflows`; el nuevo `.mjs` vive en
+   `docs/`. Es un residual menor —el archivo se ejecuta, que era lo que faltaba— pero conviene que
+   esté escrito en vez de darlo por cubierto.
