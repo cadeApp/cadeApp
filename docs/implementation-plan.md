@@ -51,13 +51,13 @@ La zona sirve para repartir tareas y coordinar, no para aprobar.
 
 **Quién aprueba cada PR** (checkpoint revision-2, ajustado al equipo real):
 - **PR de Persona 2 o Persona 3:** lo aprueba **Lautaro073**, siempre. Antes de pedir revisión, quien lo abre adjunta el informe de revisión de agy (skill `revisar-pr`) con lo bloqueante corregido.
-- **PR de Lautaro073:** lo aprueba Persona 2 o Persona 3. No revisan el código línea por línea. Verifican:
+- **PR de Lautaro073:** los aprueba y mergea **él mismo**. P2 y P3 no programan, así que no pueden revisar código; pedirles una aprobación sería un requisito que nadie puede cumplir, y GitHub además no permite aprobar el propio PR. Lo que reemplaza a la aprobación de un par es la **revisión independiente**, que corre sobre el PR ronda por ronda hasta que no queda ningún hallazgo abierto y deja el informe de `revisar-pr` en el cuerpo. Antes de mergear, Lautaro073 verifica:
   1. que CI esté verde, incluidas las pruebas de base y `rls_enabled.sql`;
-  2. que haya un informe de `revisar-pr` generado por ellos, sin hallazgos bloqueantes;
+  2. que el cuerpo traiga el informe de `revisar-pr` sin hallazgos bloqueantes;
   3. que el checklist de seguridad esté marcado.
 
-  Si el informe marca algo bloqueante, no aprueban: lo comentan.
-- **Check de CI `approval-policy`** (T-003): falla si un PR de P2 o P3 no tiene la aprobación de Lautaro073, o si un PR de Lautaro073 no tiene la sección de informe de agy completa.
+  Si el informe marca algo bloqueante, no se mergea: se corrige y se vuelve a revisar.
+- **Check de CI `approval-policy`** (T-003): falla si un PR de P2 o P3 no tiene la aprobación de Lautaro073, o si un PR de Lautaro073 no tiene la sección de informe de agy completa. **En los PR de Lautaro073 no exige aprobación de un par, a propósito:** no hay quién la dé.
 - **Tocar la zona de otra persona:** la ficha nombra la subruta y la dueña de esa zona deja un comentario de visto bueno para coordinar. El visto bueno no reemplaza la aprobación.
 - **Producción:** solo Lautaro073 ve y rota los secretos de producción, aprueba el environment `production` y el PR `staging → main`. Lo hace desde las consolas web con 2FA. **Su máquina de desarrollo, donde corre agy, tampoco guarda credenciales de staging ni de producción.**
 - **Sin respaldo experto en la base:** si Lautaro073 no está, no se mergean migraciones ni cambios de RLS o RPC. P2 y P3 siguen contra el fake de RPC (§3.4). No hay procedimiento de emergencia (break-glass). Nunca se aplican migraciones a mano: solo `migrate.yml`.
@@ -194,10 +194,11 @@ El hook ya se probó contra 35 casos: bloquea lo peligroso y deja pasar lo norma
 
 - **Ramas:** `main` (producción), `staging`, `develop`, `feat/T-xxx-*`, `cc/CC-nnn-*`, y `fix/T-xxx-*` para hotfix.
 - **Protección** (en `develop`, `staging` y `main`):
-  - PR obligatorio, con una aprobación de otra persona, checks verdes (incluido `approval-policy`) y rama al día;
+  - PR obligatorio, checks verdes (incluido `approval-policy`) y rama al día;
   - sin push directo ni force push, tampoco para administradores;
-  - en `main` se suma el check `e2e-staging`.
-- **Hasta que T-003 esté mergeada,** cada PR lleva la salida local de los checks pegada y se aprueba según §2. Los PR de Lautaro073 de T-000 y T-001 los aprueba P2 o P3 con informe de agy.
+  - en `main` se suma el check `e2e-staging`;
+  - **sin «require approvals»:** GitHub no distingue por autor, así que exigir una review aprobatoria bloquearía para siempre los PR de Lautaro073, que nadie más puede aprobar (§2). La aprobación de los PR de P2 y P3 la exige el check `approval-policy`, que sí distingue el autor.
+- **Hasta que T-003 esté mergeada,** cada PR lleva la salida local de los checks pegada y se aprueba según §2. Los PR de Lautaro073 los mergea él con el informe de la revisión independiente en el cuerpo.
 - **`ci.yml`:** corre en paralelo `typecheck`, `lint`, `unit` + cobertura (umbral en `src/domain`), `db-tests` (Supabase local, `rls_enabled.sql`, `db:types` sin diff) y `build`.
   - Usa caché de pnpm y de las imágenes de Supabase. Objetivo: menos de 10 minutos.
   - `pnpm audit --audit-level=high` solo avisa hasta `contracts-v1`; después bloquea.

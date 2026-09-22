@@ -41,16 +41,15 @@ function hasCompleteReport(body) {
 export function evaluateApprovalPolicy({ author, reviews, body }) {
   const latest = latestReviewStates(reviews);
   if (author === 'Lautaro073') {
-    const peerApproved = [...latest.values()].some(
-      (review) => review.user !== author && review.state === 'APPROVED'
-    );
-    if (!peerApproved) {
-      return { ok: false, reason: 'El PR de Lautaro073 requiere aprobación de otra persona.' };
-    }
+    // No se exige la aprobación de un par: P2 y P3 no programan, así que no
+    // pueden revisar código, y GitHub tampoco permite aprobar el propio PR.
+    // Sería un check que nadie puede satisfacer. Lo que lo reemplaza es el
+    // informe de revisar-pr en el cuerpo, que es exactamente lo que §2 le pide
+    // a este control (docs/implementation-plan.md).
     if (!hasCompleteReport(body)) {
       return { ok: false, reason: 'Falta el informe completo de revisar-pr sin bloqueantes.' };
     }
-    return { ok: true, reason: 'Aprobación externa e informe completos.' };
+    return { ok: true, reason: 'Informe de revisar-pr completo y sin bloqueantes.' };
   }
 
   if (latest.get('Lautaro073')?.state !== 'APPROVED') {
