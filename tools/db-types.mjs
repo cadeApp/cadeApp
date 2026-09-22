@@ -8,7 +8,7 @@ const TARGET_FILE = process.env.DB_TYPES_TARGET_FILE
   : path.resolve('src/types/database.types.ts');
 
 const args = process.argv.slice(2);
-const cliArgs = ['supabase', 'gen', 'types', 'typescript', '--schema', 'public'];
+const cliArgs = ['supabase', 'gen', 'types', 'typescript'];
 
 if (args.length > 0) {
   cliArgs.push(...args);
