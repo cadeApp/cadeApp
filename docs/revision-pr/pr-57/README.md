@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-007-adr-0001-0002` → `develop` |
 | **Base** | `0c4f031` |
 | **Tamaño** | 6 archivos en la ronda 1; + los arreglos de la ronda 2 |
-| **Estado** | 🟡 **0 bloqueantes** · 15 cerrados · 1 regresión aceptada · 2 abiertos · CI **8 de 8** |
+| **Estado** | 🟡 **0 bloqueantes**, pero **no lista**: `H01` quedó al revés de la decisión de `H02` · 15 cerrados · CI **8 de 8** en `5fa934d` |
 
 ## Rondas
 
@@ -16,6 +16,8 @@
 |---|---|---|---|
 | 1 | `65f174f` | 17 hallazgos: **7 bloqueantes** · 4 altos · 4 medios · 8 bajos · 1 decisión | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `3152068` | **14 cerrados y verificados** · **1 regresión** · 5 nuevos del barrido de controles · **0 bloqueantes** | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+
+> Los arreglos de `H18`, `H19` y `H20` quedaron en `5fa934d`, con CI 8 de 8 y las dos anotaciones nuevas visibles en el run `35756449764`. Siguen en `arreglado-sin-verificar`: los aplicó quien revisa.
 
 ## Estado por hallazgo
 
