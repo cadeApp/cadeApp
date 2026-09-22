@@ -11,6 +11,19 @@ Dónde vive la revisión depende de **de quién es la PR**. Decidido por Lautaro
 
 El corte es quién tiene que hacer algo con eso. Si la PR es propia, la misma persona revisa y arregla: tener la carpeta a mano en la rama donde trabaja es lo cómodo, y no le cuesta ninguna operación de git. Si la PR es de P2 o P3, meterle commits a su rama la obliga a pullear sobre trabajo en curso, que es justo lo que frena a quien opera agy sin programar (§3.8).
 
+## La carpeta es de quien revisa, siempre
+
+`docs/revision-pr/pr-NN/` la escribe **la revisión**, nunca el agy que hizo el trabajo, aunque la rama sea la misma y aunque los dos sean Lautaro073 en sesiones distintas.
+
+**El agy se revisa a sí mismo, y está bien:** la regla 50 lo pide —*«antes de pedir revisión: skill `revisar-pr` sobre el propio PR, corregir bloqueantes y pegar el informe»*—. Lo que no puede es escribir la carpeta, firmar como «revisión independiente» ni marcar hallazgos como verificados. **Su canal es la bitácora**, `docs/tasks/log/T-xxx.md`, que es suya: «hecho», «decisiones», «pruebas», «falta».
+
+Por qué importa, con el dato de las dos veces que pasó:
+
+- En la **#54**, el agy marcó cinco hallazgos como `arreglado-verificado` con `ronda_arreglo` equivocado. El contenido era cierto, pero **quien arregla no es quien verifica**: si el autor certifica sus propios arreglos, el campo deja de distinguir «corregido» de «corregido y verificado», que es justo para lo que existe.
+- En la **#56**, el agy escribió la carpeta entera antes de que la revisión la mirara: «Resultado: SIN BLOQUEANTES», «MEJORAS: ninguna pendiente», un solo registro en `hallazgos.jsonl`. La revisión independiente encontró nueve hallazgos, **dos de ellos escaladas de privilegios**. Se conservó en `pr-56/autorrevision-agy.md` porque el contraste es el dato: revisarse a uno mismo no encuentra lo que uno no pensó al escribirlo.
+
+Y una consecuencia que conviene tener clara: **`approval-policy` verifica el formato del informe, no quién lo escribió.** El cuerpo de la #56 decía `generado por agy` y el check pasó igual. No puede verificar autoría. El freno real es que Lautaro073 no mergea hasta que la revisión independiente lo diga; el check es el recordatorio de pegar el informe, no su garantía.
+
 ## Lo que hay que tener en cuenta en cada caso
 
 ### PR propia · la carpeta va en la rama de la tarea
