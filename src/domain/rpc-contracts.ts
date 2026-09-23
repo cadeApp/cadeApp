@@ -324,6 +324,17 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * Precedencia canónica de errores de `submit_offer` (D05 / CC-001 — compartida entre
+   * `supabase/migrations/20260923050000_rpc_offers_v1.sql` y `src/domain/testing/rpc-fake.ts`):
+   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
+   *   2. Repartidor (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED` → `COURIER_UNAVAILABLE`)
+   *   3. Parámetros de entrada (`VALIDATION_ERROR`)
+   *   4. Piso dinámico `min_offer_ars` (`OFFER_BELOW_MINIMUM`)
+   *   5. Tope por ventana `max_offers_per_min` (`RATE_LIMITED`)
+   *   6. Solicitud (`NOT_FOUND` → `REQUEST_EXPIRED` → `INVALID_STATE_TRANSITION`)
+   *   7. Oferta activa duplicada (`DUPLICATE_ACTIVE_OFFER`)
+   */
   submit_offer: {
     inputSchema: submitOfferInputSchema,
     outputSchema: submitOfferOutputSchema,

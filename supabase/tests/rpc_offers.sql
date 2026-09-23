@@ -318,7 +318,7 @@ select throws_ok(
   'Un comercio no puede invocar set_availability (UNAUTHORIZED_ACTOR)'
 );
 
--- 31-33. DoD (D01, D02, D04, H01, H04): Tope de ventana desde platform_settings.max_offers_per_min y upsert atómico sobre la PK
+-- 31. DoD (D01, D02, D04, H01, H04): Tope de ventana desde platform_settings.max_offers_per_min y upsert atómico sobre la PK
 select pg_temp.reset_actor();
 insert into public.rate_limits (subject, action, window_start, count)
 values (pg_temp.courier_approved_2_id()::text, 'submit_offer', date_trunc('minute', now()), 10)

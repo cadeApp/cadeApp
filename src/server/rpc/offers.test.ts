@@ -25,6 +25,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
     const fake = createFakeRpcClient({
       settings: {
         minOfferArs: 1000,
+        maxOffersPerMin: 10,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -105,6 +106,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
     const fake = createFakeRpcClient({
       settings: {
         minOfferArs: 1500,
+        maxOffersPerMin: 10,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -515,7 +517,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         pilotActive: true,
         pilotTermsVersion: 'v1',
         subscriptionGraceDays: 0,
-      } as unknown as Parameters<typeof createFakeRpcClient>[0]['settings'],
+      },
       initialActor: {
         userId: COURIER_1_ID,
         role: 'courier',
