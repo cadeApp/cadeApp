@@ -340,6 +340,17 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   (options.initialMerchants ?? []).forEach(putMerchant);
   (options.initialDocuments ?? []).forEach((d) => documents.set(d.documentId, { ...d }));
 
+  function checkCourierEligibility(): ActionResult<
+    FakeCourierRecord,
+    'NOT_FOUND' | 'COURIER_SUSPENDED' | 'COURIER_NOT_APPROVED'
+  > {
+    const courier = couriers.get(actor.userId);
+    if (!courier) return err('NOT_FOUND');
+    if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
+    if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
+    return ok(courier);
+  }
+
   async function executeRpc<K extends RpcName>(
     rpcName: K,
     rawInput: RpcInput<K>,
@@ -686,11 +697,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     mark_picked_up: (rawInput) =>
       executeRpc('mark_picked_up', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        const courier = couriers.get(actor.userId);
-        if (!req || !courier) return err('NOT_FOUND');
-
-        if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
-        if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
+        if (!req) return err('NOT_FOUND');
+        const eligibility = checkCourierEligibility();
+        if (!eligibility.ok) return eligibility;
 
         const currentNow = nowFn();
         const transition = transitionRequest({
@@ -716,6 +725,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       executeRpc('mark_delivered', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
         if (!req) return err('NOT_FOUND');
+        const eligibility = checkCourierEligibility();
+        if (!eligibility.ok) return eligibility;
 
         const currentNow = nowFn();
         const transition = transitionRequest({
@@ -804,6 +815,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       executeRpc('courier_cancel_match', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
         if (!req) return err('NOT_FOUND');
+        const eligibility = checkCourierEligibility();
+        if (!eligibility.ok) return eligibility;
 
         const currentNow = nowFn();
         const transition = transitionRequest({
@@ -904,6 +917,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           (actor.role === 'courier' && req.assignedCourierId === actor.userId);
         if (!isParticipant) {
           return err('UNAUTHORIZED_ACTOR');
+        }
+        if (actor.role === 'courier') {
+          const eligibility = checkCourierEligibility();
+          if (!eligibility.ok) return eligibility;
         }
 
         const currentNow = nowFn();
