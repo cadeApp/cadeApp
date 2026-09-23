@@ -22,6 +22,15 @@ create function pg_temp.req_pub_3_id() returns uuid language sql as $$ select '0
 create function pg_temp.req_expired_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-000000001204'::uuid $$;
 create function pg_temp.req_draft_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-000000001205'::uuid $$;
 
+create function pg_temp.find_offer_id(p_req_id uuid, p_courier_id uuid)
+returns uuid
+language sql
+security definer
+set search_path = public, pg_temp
+as $$
+  select id from public.offers where request_id = p_req_id and courier_id = p_courier_id order by created_at desc limit 1;
+$$;
+
 create function pg_temp.act_as(role_name text, actor_id uuid default null)
 returns void
 language plpgsql
@@ -242,7 +251,7 @@ select throws_ok(
 -- 21-25. withdraw_offer: retiro exitoso, re-oferta posterior permitida, OFFER_NOT_PENDING y UNAUTHORIZED_ACTOR
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
 select throws_ok(
-  $$ select public.withdraw_offer((select id from public.offers where request_id = pg_temp.req_pub_1_id() and courier_id = pg_temp.courier_approved_1_id())) $$,
+  $$ select public.withdraw_offer(pg_temp.find_offer_id(pg_temp.req_pub_1_id(), pg_temp.courier_approved_1_id())) $$,
   'P0001'::char(5),
   'UNAUTHORIZED_ACTOR',
   'Otro repartidor no puede retirar una oferta ajena (UNAUTHORIZED_ACTOR)'
