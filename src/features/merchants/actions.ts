@@ -1,13 +1,10 @@
 'use server';
 
 import { createClient } from '@/server/supabase/server';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
-import type { Database, TablesInsert, TablesUpdate } from '@/types/database.types';
+import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import { merchantOnboardingSchema } from './schemas';
-
-type AppSupabaseClient = SupabaseClient<Database, 'public', 'public', Database['public']>;
 
 export interface MerchantOnboardingResult {
   readonly redirectTo: string;
@@ -16,7 +13,7 @@ export interface MerchantOnboardingResult {
 export async function merchantOnboardingAction(
   input: unknown
 ): Promise<ActionResult<MerchantOnboardingResult, DomainErrorCode>> {
-  const supabase = (await createClient()) as unknown as AppSupabaseClient;
+  const supabase = await createClient();
 
   const {
     data: { user },
@@ -50,28 +47,39 @@ export async function merchantOnboardingAction(
   }
 
   // 3. Consulta de la versión configurada de los términos del piloto
-  const { data: settingData } = await supabase
+  const { data: settingData, error: settingError } = await supabase
     .from('platform_settings')
     .select('value')
     .eq('key', 'pilot_terms_version')
     .maybeSingle<{ value: unknown }>();
 
-  const pilotTermsVersion =
-    typeof settingData?.value === 'string'
-      ? settingData.value
-      : typeof settingData?.value === 'number'
-        ? String(settingData.value)
-        : '1.0';
+  if (
+    settingError ||
+    !settingData ||
+    settingData.value === null ||
+    settingData.value === undefined
+  ) {
+    return err('INTERNAL_ERROR');
+  }
+
+  const rawValue = settingData.value;
+  let pilotTermsVersion: string;
+  if (typeof rawValue === 'string' && rawValue.trim().length > 0) {
+    pilotTermsVersion = rawValue.trim();
+  } else if (typeof rawValue === 'number') {
+    pilotTermsVersion = String(rawValue);
+  } else {
+    return err('INTERNAL_ERROR');
+  }
 
   // 4. Registro de consentimiento de términos del piloto
   const consentPayload: TablesInsert<'consents'> = {
     profile_id: user.id,
     document: 'pilot_terms',
     version: pilotTermsVersion,
-    accepted_at: new Date().toISOString(),
   };
 
-  const { error: consentError } = await supabase.from('consents').insert(consentPayload);
+  const { error: consentError } = await supabase.from('consents').insert(consentPayload as never);
 
   if (consentError) {
     return err('INTERNAL_ERROR');
@@ -85,7 +93,7 @@ export async function merchantOnboardingAction(
 
   const { error: profileUpdateError } = await supabase
     .from('profiles')
-    .update(profilePayload)
+    .update(profilePayload as never)
     .eq('id', user.id);
 
   if (profileUpdateError) {
@@ -105,7 +113,9 @@ export async function merchantOnboardingAction(
     paid_until: null,
   };
 
-  const { error: merchantError } = await supabase.from('merchants').upsert(merchantPayload);
+  const { error: merchantError } = await supabase
+    .from('merchants')
+    .upsert(merchantPayload as never);
 
   if (merchantError) {
     return err('INTERNAL_ERROR');

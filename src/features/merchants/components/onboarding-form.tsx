@@ -7,6 +7,8 @@ import { Store, Phone, MapPin, Crosshair, Info, AlertTriangle, AlertCircle } fro
 import { isWithinAguilaresBounds } from '@/domain/schemas';
 import { merchantOnboardingAction } from '../actions';
 import { merchantCopy } from '../copy';
+import { merchantOnboardingSchema, type MerchantOnboardingInput } from '../schemas';
+import { useForm, zodResolver } from './form-hooks';
 import type { ZoneOption } from '../queries';
 
 interface MerchantOnboardingFormProps {
@@ -16,23 +18,36 @@ interface MerchantOnboardingFormProps {
 export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
   const router = useRouter();
 
-  const [businessName, setBusinessName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [defaultPickupZoneId, setDefaultPickupZoneId] = useState('');
-  const [defaultPickupAddress, setDefaultPickupAddress] = useState('');
-  const [defaultPickupLat, setDefaultPickupLat] = useState<number | null>(null);
-  const [defaultPickupLng, setDefaultPickupLng] = useState<number | null>(null);
-  const [notes, setNotes] = useState('');
-  const [acceptPilotTerms, setAcceptPilotTerms] = useState(false);
-
   const [coordsError, setCoordsError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isPending, setIsPending] = useState(false);
   const [locating, setLocating] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<MerchantOnboardingInput>({
+    resolver: zodResolver(merchantOnboardingSchema),
+    defaultValues: {
+      businessName: '',
+      phone: '',
+      defaultPickupZoneId: null,
+      defaultPickupAddress: '',
+      defaultPickupLat: null,
+      defaultPickupLng: null,
+      notes: '',
+      acceptPilotTerms: false as unknown as true,
+    },
+  });
+
+  const defaultPickupLat = watch('defaultPickupLat');
+  const defaultPickupLng = watch('defaultPickupLng');
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
-      setCoordsError('Tu navegador no soporta geolocalización.');
+      setCoordsError(merchantCopy.onboarding.geoNotSupported);
       return;
     }
     setLocating(true);
@@ -43,59 +58,43 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         const { latitude, longitude } = pos.coords;
         if (!isWithinAguilaresBounds(latitude, longitude)) {
           setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);
-          setDefaultPickupLat(null);
-          setDefaultPickupLng(null);
+          setValue('defaultPickupLat', null, { shouldValidate: true });
+          setValue('defaultPickupLng', null, { shouldValidate: true });
           return;
         }
-        setDefaultPickupLat(latitude);
-        setDefaultPickupLng(longitude);
+        setValue('defaultPickupLat', latitude, { shouldValidate: true });
+        setValue('defaultPickupLng', longitude, { shouldValidate: true });
         setCoordsError(null);
       },
       () => {
         setLocating(false);
-        setCoordsError(
-          'No pudimos obtener tu ubicación actual. Podés continuar con la dirección escrita.'
-        );
+        setCoordsError(merchantCopy.onboarding.geoErrorFallback);
       },
       { timeout: 10000, enableHighAccuracy: true }
     );
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (!acceptPilotTerms) {
-      setErrorMessage(merchantCopy.onboarding.errorTermsRequired);
-      return;
-    }
-
+  const onSubmit = async (data: MerchantOnboardingInput) => {
     if (
-      defaultPickupLat != null &&
-      defaultPickupLng != null &&
-      !isWithinAguilaresBounds(defaultPickupLat, defaultPickupLng)
+      data.defaultPickupLat != null &&
+      data.defaultPickupLng != null &&
+      !isWithinAguilaresBounds(data.defaultPickupLat, data.defaultPickupLng)
     ) {
       setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);
       return;
     }
 
     setErrorMessage(null);
-    setIsPending(true);
 
     try {
       const result = await merchantOnboardingAction({
-        businessName,
-        phone,
-        defaultPickupZoneId: defaultPickupZoneId || undefined,
-        defaultPickupAddress,
-        defaultPickupLat: defaultPickupLat ?? null,
-        defaultPickupLng: defaultPickupLng ?? null,
-        notes: notes || undefined,
-        acceptPilotTerms: true,
+        ...data,
+        defaultPickupZoneId: data.defaultPickupZoneId || undefined,
+        notes: data.notes || undefined,
       });
 
       if (!result.ok) {
         setErrorMessage(merchantCopy.onboarding.errorGeneric);
-        setIsPending(false);
         return;
       }
 
@@ -103,7 +102,6 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
       router.refresh();
     } catch {
       setErrorMessage(merchantCopy.onboarding.errorGeneric);
-      setIsPending(false);
     }
   };
 
@@ -137,7 +135,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         <p className="text-sm text-muted-foreground">{merchantCopy.onboarding.subtitle}</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         {/* Nombre del negocio */}
         <div className="space-y-2">
           <label htmlFor="businessName" className="text-sm font-medium text-foreground">
@@ -147,14 +145,15 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             <input
               id="businessName"
               type="text"
-              required
-              value={businessName}
-              onChange={(e) => setBusinessName(e.target.value)}
+              {...register('businessName')}
               placeholder={merchantCopy.onboarding.businessNamePlaceholder}
               className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pl-10 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
             <Store className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
           </div>
+          {errors.businessName && (
+            <p className="text-sm text-destructive">{errors.businessName.message}</p>
+          )}
         </div>
 
         {/* Teléfono de contacto */}
@@ -166,15 +165,17 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             <input
               id="phone"
               type="tel"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              {...register('phone')}
               placeholder={merchantCopy.onboarding.phonePlaceholder}
               className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pl-10 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
             <Phone className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
           </div>
-          <p className="text-sm text-muted-foreground">{merchantCopy.onboarding.phoneHelper}</p>
+          {errors.phone ? (
+            <p className="text-sm text-destructive">{errors.phone.message}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">{merchantCopy.onboarding.phoneHelper}</p>
+          )}
         </div>
 
         {/* Barrio de retiro habitual */}
@@ -184,8 +185,9 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           </label>
           <select
             id="zone"
-            value={defaultPickupZoneId}
-            onChange={(e) => setDefaultPickupZoneId(e.target.value)}
+            {...register('defaultPickupZoneId', {
+              setValueAs: (v: string) => (v === '' ? null : v),
+            })}
             className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <option value="">{merchantCopy.onboarding.zonePlaceholder}</option>
@@ -195,6 +197,9 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
               </option>
             ))}
           </select>
+          {errors.defaultPickupZoneId && (
+            <p className="text-sm text-destructive">{errors.defaultPickupZoneId.message}</p>
+          )}
         </div>
 
         {/* Dirección de retiro habitual */}
@@ -206,15 +211,17 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             <input
               id="address"
               type="text"
-              required
-              value={defaultPickupAddress}
-              onChange={(e) => setDefaultPickupAddress(e.target.value)}
+              {...register('defaultPickupAddress')}
               placeholder={merchantCopy.onboarding.addressPlaceholder}
               className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pl-10 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
             <MapPin className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
           </div>
-          <p className="text-sm text-muted-foreground">{merchantCopy.onboarding.addressHelper}</p>
+          {errors.defaultPickupAddress ? (
+            <p className="text-sm text-destructive">{errors.defaultPickupAddress.message}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">{merchantCopy.onboarding.addressHelper}</p>
+          )}
         </div>
 
         {/* Ubicación del local en el mapa / Fallback graceful */}
@@ -245,13 +252,14 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           >
             <Crosshair className="h-5 w-5 text-primary-dark" />
             <span>
-              {locating ? 'Obteniendo ubicación...' : merchantCopy.onboarding.useMyLocation}
+              {locating ? merchantCopy.onboarding.locating : merchantCopy.onboarding.useMyLocation}
             </span>
           </button>
 
           {defaultPickupLat != null && defaultPickupLng != null && !coordsError && (
             <div className="rounded-md bg-primary/10 p-2.5 text-sm text-primary-dark">
-              Ubicación marcada: ({defaultPickupLat.toFixed(4)}, {defaultPickupLng.toFixed(4)})
+              {merchantCopy.onboarding.locationMarked} ({defaultPickupLat.toFixed(4)},{' '}
+              {defaultPickupLng.toFixed(4)})
             </div>
           )}
 
@@ -264,9 +272,18 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
               <span>{coordsError}</span>
             </div>
           )}
+          {errors.defaultPickupLat && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <span>{errors.defaultPickupLat.message}</span>
+            </div>
+          )}
         </div>
 
-        {/* Referencia adicional (notas) */}
+        {/* Referencia adicional (notas) - H07: min-h-20 */}
         <div className="space-y-2">
           <label htmlFor="notes" className="text-sm font-medium text-foreground">
             {merchantCopy.onboarding.notesLabel}
@@ -274,11 +291,13 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           <textarea
             id="notes"
             rows={2}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            {...register('notes', {
+              setValueAs: (v: string) => (v === '' ? null : v),
+            })}
             placeholder={merchantCopy.onboarding.notesPlaceholder}
-            className="flex min-h-[80px] w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="flex min-h-20 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
+          {errors.notes && <p className="text-sm text-destructive">{errors.notes.message}</p>}
         </div>
 
         {/* Tarjeta informativa de piloto gratis */}
@@ -292,22 +311,32 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           </p>
         </div>
 
-        {/* Checkbox de términos del piloto */}
-        <div className="flex items-start space-x-2 pt-1">
-          <input
-            id="pilotTerms"
-            type="checkbox"
-            checked={acceptPilotTerms}
-            onChange={(e) => setAcceptPilotTerms(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
-          />
-          <label htmlFor="pilotTerms" className="text-sm leading-relaxed text-muted-foreground">
-            Acepto los{' '}
+        {/* Checkbox de términos del piloto (H06: contenedor min-h-12 min-w-12 para target táctil >= 48px) */}
+        <div className="flex items-center space-x-2 pt-1">
+          <label
+            htmlFor="pilotTerms"
+            className="flex min-h-12 min-w-12 cursor-pointer items-center justify-center"
+          >
+            <input
+              id="pilotTerms"
+              type="checkbox"
+              {...register('acceptPilotTerms')}
+              className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+            />
+          </label>
+          <label
+            htmlFor="pilotTerms"
+            className="cursor-pointer text-sm leading-relaxed text-muted-foreground"
+          >
+            {merchantCopy.onboarding.acceptTermsPrefix}{' '}
             <Link href="/terms" className="text-primary-dark underline hover:text-foreground">
               {merchantCopy.onboarding.pilotTermsLink}
             </Link>
           </label>
         </div>
+        {errors.acceptPilotTerms && (
+          <p className="text-sm text-destructive">{errors.acceptPilotTerms.message}</p>
+        )}
 
         {errorMessage && (
           <div
@@ -319,13 +348,15 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           </div>
         )}
 
-        {/* Botón principal Empezar */}
+        {/* Botón principal Empezar (H03: isSubmitting) */}
         <button
           type="submit"
-          disabled={isPending || Boolean(coordsError)}
+          disabled={isSubmitting || Boolean(coordsError)}
           className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-base font-semibold text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
         >
-          {isPending ? merchantCopy.onboarding.loadingButton : merchantCopy.onboarding.submitButton}
+          {isSubmitting
+            ? merchantCopy.onboarding.loadingButton
+            : merchantCopy.onboarding.submitButton}
         </button>
       </form>
     </div>

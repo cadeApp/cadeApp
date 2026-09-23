@@ -273,4 +273,61 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       expect(result.code).toBe('INTERNAL_ERROR');
     }
   });
+
+  it('falla con INTERNAL_ERROR si platform_settings no devuelve versión de pilot_terms o es null (H04)', async () => {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: null,
+            error: null,
+          }),
+        };
+      }
+      if (table === 'consents') {
+        return {
+          insert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      if (table === 'merchants') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      return {};
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1', email: 'comercio@test.com' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
+      ? T
+      : never);
+
+    const result = await merchantOnboardingAction(validFormInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INTERNAL_ERROR');
+    }
+  });
 });

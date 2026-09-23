@@ -17,15 +17,21 @@ export const merchantCopy = {
     mapCardHelper:
       'Mové el mapa para marcar la puerta de tu negocio. Muy útil si tu calle no tiene número.',
     useMyLocation: 'Usar mi ubicación actual',
+    locating: 'Obteniendo ubicación...',
+    geoNotSupported: 'Tu navegador no soporta geolocalización.',
+    geoErrorFallback:
+      'No pudimos obtener tu ubicación actual. Podés continuar con la dirección escrita.',
     mapOutOfAguilares:
       'Ubicación fuera de Aguilares. Por favor, marcá el local dentro del radio urbano de la ciudad.',
     mapFallbackNotice:
       'No pudimos cargar el mapa. No te preocupes: continuá con la dirección y agregá una referencia.',
+    locationMarked: 'Ubicación marcada:',
     notesLabel: 'Referencia adicional',
     notesPlaceholder: 'Ej. Portón verde al lado de la farmacia, timbre blanco',
     pilotBadge: 'Piloto gratis',
     pilotNotice: 'Estás en el piloto gratis. Cuando termine te vamos a avisar cómo seguir.',
     acceptPilotTerms: 'Acepto los Términos del piloto',
+    acceptTermsPrefix: 'Acepto los',
     pilotTermsLink: 'Términos del piloto',
     submitButton: 'Empezar',
     loadingButton: 'Guardando...',
