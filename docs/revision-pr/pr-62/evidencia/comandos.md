@@ -342,3 +342,161 @@ El barrido de numeración da 45 números para el rango `1..43`. Las aserciones y
 - **Nada ejecutado**: `pnpm typecheck`, `lint`, `test`, `test:coverage`, `build`, `test:db`.
 - **CI**: no consultado. El cuerpo declara `18 passed (18)` y `160 passed (160)`; `offers.test.ts` sigue teniendo
   4 casos `it()`, así que es plausible, pero no está verificado de forma independiente.
+
+---
+
+# Ronda 3 · 2026-09-23 · SHA `35ce99d`
+
+Arreglos en `35ce99d`; fase roja de `H10` en su propio commit `2d1e9fa`. Igual que las dos anteriores: **sin
+ejecutar suites ni consultar CI**.
+
+## 1. Qué cambió desde la ronda 2
+
+```bash
+git diff --numstat d992b3a..35ce99d
+```
+
+```
+ 11   9  docs/contracts/CC-001.md
+  1   1  docs/implementation-plan.md
+  4   2  docs/tasks/T-101.md
+ 26   0  docs/tasks/log/T-101.md
+  6   0  src/domain/domain.test.ts
+ 11   0  src/domain/rpc-contracts.ts
+ 65  12  src/domain/testing/rpc-fake.ts
+145   0  src/server/rpc/offers.test.ts
+  1   1  supabase/tests/rpc_offers.sql
+```
+
+Alcance total: 19 archivos. La ficha sumó `src/domain/testing/rpc-fake.ts` y `src/domain/domain.test.ts`
+citando `D05` y `D06`.
+
+## 2. `H10` · Barrido de precedencia (nuevo en esta ronda)
+
+Extrae el orden de rechazo de `submit_offer` de las dos implementaciones y lo compara contra la precedencia
+documentada en `rpc-contracts.ts`.
+
+```
+## Documentada en rpc-contracts.ts
+   1. Actor y rol (UNAUTHENTICATED → UNAUTHORIZED_ACTOR)
+   2. Repartidor (NOT_FOUND → COURIER_SUSPENDED → COURIER_NOT_APPROVED → COURIER_UNAVAILABLE)
+   3. Parámetros de entrada (VALIDATION_ERROR)
+   4. Piso dinámico min_offer_ars (OFFER_BELOW_MINIMUM)
+   5. Tope por ventana max_offers_per_min (RATE_LIMITED)
+   6. Solicitud (NOT_FOUND → REQUEST_EXPIRED → INVALID_STATE_TRANSITION)
+   7. Oferta activa duplicada (DUPLICATE_ACTIVE_OFFER)
+
+## Orden de raise en el SQL
+   UNAUTHENTICATED -> UNAUTHORIZED_ACTOR -> NOT_FOUND -> COURIER_SUSPENDED -> COURIER_NOT_APPROVED ->
+   COURIER_UNAVAILABLE -> VALIDATION_ERROR x4 -> OFFER_BELOW_MINIMUM -> RATE_LIMITED ->
+   NOT_FOUND -> REQUEST_EXPIRED -> INVALID_STATE_TRANSITION -> DUPLICATE_ACTIVE_OFFER
+
+## Orden en el fake · pre-chequeo de executeRpc
+   NOT_FOUND(courier) -> COURIER_* -> VALIDATION_ERROR(schema)
+## Orden en el fake · handler
+   NOT_FOUND -> <piso> -> <rate> -> RATE_LIMITED -> <solicitud> -> NOT_FOUND ->
+   REQUEST_EXPIRED -> INVALID_STATE_TRANSITION -> DUPLICATE_ACTIVE_OFFER
+
+## Secuencia clave piso -> rate -> solicitud
+   SQL : {"piso":10,"rate":11,"req":13} OK
+   Fake: {"piso":1,"rate":2,"req":4} OK
+   coinciden: SI
+```
+
+La pieza que lo hizo posible: el chequeo de repartidor se movió a un pre-paso dentro de `executeRpc`, **antes**
+del `inputSchema.safeParse`, que es lo que hacía falta para que el paso 2 quede sobre el 3.
+
+Demostrado en rojo primero (`2d1e9fa`):
+
+```
+AssertionError: Monto bajo el piso + solicitud inexistente -> OFFER_BELOW_MINIMUM:
+  expected { ok: false, code: 'NOT_FOUND' } to deeply equal { ok: false, code: 'OFFER_BELOW_MINIMUM' }
+```
+
+## 3. `H11` · Equivalencia del rate limit entre el SQL y el fake
+
+El SQL incrementa y revierte; el fake consulta e incrementa solo en éxito. Recorrido de casos:
+
+| Situación | SQL | Fake | ¿igual? |
+|---|---|---|---|
+| N éxitos, N < max | incrementa a N+1, pasa | `N+1 ≤ max`, pasa, incrementa | sí |
+| En el tope, llamada válida | incrementa, `>max` → `RATE_LIMITED`, revierte | `>max` → `RATE_LIMITED`, no incrementa | sí |
+| Falla después del contador | incrementa y revierte | nunca incrementa | sí |
+
+Resultado observable idéntico: exactamente `max` ofertas exitosas por ventana, y los intentos fallidos no
+consumen cuota.
+
+El test 5 agrega el avance de reloj:
+
+```ts
+// en el tope + solicitud vencida -> RATE_LIMITED
+expect(await fake.submit_offer({ requestId: REQ_EXPIRED_ID, amountArs: 1600, etaMinutes: 15 }))
+  .toEqual({ ok: false, code: 'RATE_LIMITED' });
+currentNow = new Date('2026-09-23T05:01:00.000Z');   // minuto siguiente
+expect(await fake.submit_offer({ requestId: REQ_EXPIRED_ID, amountArs: 1600, etaMinutes: 15 }))
+  .toEqual({ ok: false, code: 'REQUEST_EXPIRED' });
+```
+
+## 4. `H12` y `H13`
+
+```bash
+node plan62.mjs
+# plan declarado : 43 · total contado : 43 · OK
+# numerados en comentarios: 1..43 (43 numeros)      ← antes daba 45
+
+sed -n '/## Aprobaciones/,$p' docs/contracts/CC-001.md
+# Decidido y aprobado por `@Lautaro073` (P1) el 2026-09-23 (`D02`, `D03`, `D05`, `D06` en PR #62).
+```
+
+## 5. `H14` · Código inalcanzable en el fake
+
+```
+## Chequeo de repartidor repetido en el handler (ya lo hace executeRpc)
+   courier faltante: SI (inalcanzable)
+   elegibilidad    : SI (inalcanzable)
+```
+
+`rpc-fake.ts:377-390` (pre-paso en `executeRpc`) y `:541-552` (handler) hacen lo mismo; el segundo nunca se
+alcanza.
+
+## 6. `H15` · Precedencia documentada solo para una RPC
+
+```
+## Precedencia documentada para withdraw_offer / set_availability
+   withdraw_offer  : NO
+   set_availability: NO
+```
+
+Verifiqué que las dos coinciden hoy entre SQL y fake:
+
+| | orden compartido |
+|---|---|
+| `withdraw_offer` | params → oferta `NOT_FOUND` → titularidad → `OFFER_NOT_PENDING` → **rate limit** |
+| `set_availability` | params `VALIDATION_ERROR` → repartidor `NOT_FOUND` → estado |
+
+Notar que en `withdraw_offer` el rate limit va **después** del estado, al revés que en `submit_offer`.
+
+## 7. Barridos finales
+
+```
+## platform_settings
+   usadas por la migracion: max_offers_per_min, min_offer_ars
+   sembradas en seed.sql:   min_offer_ars, max_offers_per_min, request_ttl_minutes,
+                            pilot_active, pilot_terms_version, subscription_grace_days
+
+## Literales numericos en la migracion
+   or p_eta_minutes > 240
+   if char_length(v_clean_message) > 280 then
+
+## Prohibidos en los 19 archivos: (sin coincidencias)
+```
+
+Recordatorio del falso positivo conocido: mi script reporta «declara y NO levanta: `INTERNAL_ERROR`» en las tres
+RPC. Es correcto que el SQL no lo levante — lo produce el wrapper. El test 4 del PR sí codifica esa regla.
+
+## 8. Lo que no se verificó, en ninguna de las tres rondas
+
+- `pnpm typecheck`, `lint`, `test`, `test:coverage`, `build`, `test:db`: **no ejecutados**.
+- Los ocho jobs de CI: **no consultados**.
+- En particular, el umbral de cobertura de 90 % de ramas sobre `src/domain/**` con las dos ramas inalcanzables
+  de `H14`: no medido.
