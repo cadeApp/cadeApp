@@ -192,3 +192,184 @@ para los seis pares que enumera y ciego para los cuatro que no.
   propia ni axe— puede medirlos en la suite unitaria. Es parte del argumento de `D03`.
 - **La página de muestra S00 en un navegador**: no existe ninguna ruta que la renderice (ver `D02`), así que no
   se pudo abrir.
+
+---
+
+# Ronda 2 · 2026-09-23 · árbol de trabajo SIN COMMITEAR
+
+**No hay SHA.** El head del PR sigue en `2491a4c` y los 29 archivos de la ronda 2 viven solo en el árbol
+compartido. El snapshot se tomó a las 02:50.
+
+```bash
+# El árbol compartido NO se toca: se copia a un worktree detached
+git worktree add --detach ../cadeApp-rev59b 2491a4c
+cd ../cadeApp-rev59b
+for f in $(cd ../cadeApp && git status --short | awk '{print $2}'); do cp "../cadeApp/$f" "$f"; done
+mkdir -p public/brand src/app/design-system
+cp ../cadeApp/public/brand/*  public/brand/
+cp ../cadeApp/public/*.png    public/
+cp ../cadeApp/src/app/design-system/page.tsx src/app/design-system/
+pnpm install --frozen-lockfile        # exit 0 en 52,1 s
+```
+
+Fidelidad del snapshot comprobada archivo por archivo con `md5sum` tras normalizar CRLF (ver `AG-53`).
+
+## Checks
+
+```
+pnpm typecheck     exit 0
+pnpm lint          exit 0 · ✔ No ESLint warnings or errors
+pnpm test          13 archivos · 126 casos (eran 116) + 19 workflows + 6 ADR
+pnpm test:coverage exit 0
+pnpm build         exit 0
+```
+
+`build`:
+
+```
+Route (app)                     Size  First Load JS
+┌ ○ /                          123 B         103 kB
+├ ○ /_not-found                987 B         104 kB
+└ ○ /design-system             161 B         168 kB      ← presupuesto 180 kB
+```
+
+`coverage`, recorte de `src/ui` (umbral nuevo: 80/80/80/80 con `perFile`):
+
+```
+ ui                 |   98.09 |    89.39 |     100 |   98.09 |     (era 88.75 / 64.15)
+  dialog.tsx        |   95.78 |    81.13 |     100 |   95.78 |     (era 73.68 / 53.84)
+  select.tsx        |   98.95 |    94.23 |     100 |   98.95 |     (era 82.56 / 62.50)
+  form.tsx          |   97.97 |     90.9 |     100 |   97.97 |     (era 83.57 / 72.22)
+  notify.ts         |   96.22 |    93.75 |     100 |   96.22 |     (era 94.89 / 65.21)
+  sheet.tsx         |   93.82 |    80.48 |     100 |   93.82 |     (era 83.96 / 57.14)  ← el más justo
+  toaster.tsx       |     100 |      100 |     100 |     100 |     (era 12.5)
+ ui/motion          |   97.11 |    85.71 |     100 |   97.11 |     (era 91.15 / 78.57)
+```
+
+## Alcance
+
+```bash
+cd ../cadeApp && git status --short
+```
+
+29 modificados + `public/` y `src/app/design-system/` sin trackear = **33 archivos**.
+Contra la lista ampliada de `docs/tasks/T-008.md`: **8 fuera** — `assets/1.svg` … `assets/8.svg`.
+
+## `H20` · Los ocho `assets/` sobrescritos
+
+```bash
+for n in 1 2 3 4 5 6 7 8; do
+  echo "$n: $(git cat-file -p HEAD:assets/$n.svg | wc -c) -> $(wc -c < assets/$n.svg)"
+done
+```
+
+```
+1: 1187143 -> 2258151   (+90%)     5:  261631 -> 1712594  (+555%)
+2:  891716 -> 1314059   (+47%)     6: 1009031 ->  465150   (-54%)
+3:  226793 -> 1151253  (+408%)     7:  753411 -> 2117089  (+181%)
+4:  626966 -> 2596324  (+314%)     8: 1298709 -> 2271459   (+75%)
+                                total: 6,45 MB -> 13,9 MB
+```
+
+## `H21` · El logo publicado es el export crudo
+
+```bash
+md5sum public/brand/logo.svg assets/2.svg
+# 377c2c2392f187c08f3a1ffb41024e8b  public/brand/logo.svg
+# 377c2c2392f187c08f3a1ffb41024e8b  assets/2.svg        ← el mismo archivo
+
+head -c 220 public/brand/logo.svg
+# <svg ... xmlns:c2pa="http://c2pa.org/manifest"><metadata><c2pa:manifest>AABCIWp1bWIA…
+```
+
+| archivo | bytes | presupuesto |
+|---|---|---|
+| `public/brand/logo.svg` | 1.314.059 | < 5 KB → **256×** |
+| `public/brand/logo.webp` | 798.777 | — |
+| `public/icon-192x192.png` | 15.893 | ok |
+| `public/icon-512x512.png` | 82.281 | ok |
+
+## `R01` · Lo que se perdió al reescribir `notify.ts`
+
+```bash
+grep -rn "DOMAIN_ERROR_MESSAGES" src/    # sin resultados en todo el repositorio
+grep -rn "notify.promise\|promise(" src/ui/ --include=*.ts --include=*.tsx | grep -v test   # sin resultados
+```
+
+En la ronda 1 eran 27 mensajes en es-AR con una prueba que recorría `ALL_DOMAIN_ERROR_CODES`. Hoy no existen, y
+la prueba se fue con ellos.
+
+## `H01` · Por qué `approval-policy` sigue rojo
+
+```bash
+gh pr checks 59
+# approval-policy  fail  5s  .../runs/35819462013
+```
+
+`hasCompleteReport()` exige seis cadenas literales y el cuerpo no tiene ninguna:
+
+| espera | el cuerpo dice |
+|---|---|
+| `Informe revisar-pr — T-008` | `### Informe de revisión de agy` |
+| `Resultado: SIN BLOQUEANTES` | `**Bloqueantes: 0**` |
+| `Checks locales:` | — |
+| `BLOQUEANTES:` | `**Bloqueantes: 0**` (minúscula) |
+| `MEJORAS:` | — |
+| `No revisado / dudas para Lautaro073:` | — |
+
+## Batería de mutaciones · ronda 2
+
+Script en el scratchpad; cada mutación se revierte **desde memoria** antes de la siguiente (ver `AG-53`).
+
+```
+M1   roja (vivo)     tailwind.config.ts: xs a 0.75rem                    (R1: ciego)
+M2   VERDE (ciego)   dialog.tsx: saco el foco automático al abrir        (R1: ciego) → H09
+M3   roja (vivo)     card.tsx: shadow-[…] ring-[3px] size-[13px]         (R1: ciego)
+M4   roja (vivo)     dialog.tsx: desconecto onConfirm                    (R1: ciego)
+M5   roja (vivo)     motion: setPrefersReduced(false)                    (R1: ciego)
+M6   roja (vivo)     tokens.ts: mutedForeground a 2,42:1                 (R1: vivo)
+M6b  VERDE (ciego)   tokens.css: --accent deja badge-success en 1,06:1   (R1: ciego) → H22
+M8   roja (vivo)     notify.ts: sin id en el payload de Sonner           (R1: ciego)
+M9   roja (vivo)     tokens.css: saco la guarda de movimiento reducido   (nueva)
+M11  roja (vivo)     form.tsx: FormControl sin aria-describedby          (nueva)
+M12  roja (vivo)     borro public/icon-192x192.png                       (nueva)
+M13  roja (vivo)     notify.ts: sin sanitizeToastMessage                 (nueva)
+
+Vivos: 10 · ciegos: 2
+```
+
+Contraprueba de `M6b`, para separar «la matriz no mira» de «la matriz mira la copia equivocada`:
+
+```bash
+sed -i "s/accent: '#F0FDF4'/accent: '#1A6B45'/" src/ui/tokens.ts && npx vitest run src/ui/ui-system.test.tsx
+# Tests  2 failed | 19 passed (21)   ← la matriz SÍ está viva contra tokens.ts
+```
+
+O sea: viva contra `tokens.ts`, ciega contra `tokens.css`, que es lo que el navegador pinta.
+
+## Probe de la ronda 2 — 6 de 6 en rojo
+
+`src/ui/review-pr59-r2-probe.test.tsx`, tipado antes de correrlo (`tsc --noEmit` exit 0), retirado al cerrar.
+
+```
+✗ R2-01 Escape → onClose: expected "spy" to be called 1 times, but got 2 times
+✗ R2-02 tokens.ts vs tokens.css: ningún test del repositorio compara los dos archivos
+✗ R2-03 DOMAIN_ERROR_MESSAGES no está en notify.ts (ni en ningún lado)
+✗ R2-04 logo.svg = 1283 KB contra 5 KB de presupuesto
+✗ R2-04 el SVG publicado contiene c2pa:manifest
+✗ R2-05 backdrop-blur-xs en dialog.tsx y sheet.tsx
+```
+
+## Tailwind: `backdrop-blur-xs` no existe en 3.4
+
+```bash
+node -e "console.log(Object.keys(require('tailwindcss/defaultTheme').blur).join(', '))"
+# 0, none, sm, DEFAULT, md, lg, xl, 2xl, 3xl
+node -e "console.log(require('tailwindcss/package.json').version)"   # 3.4.19
+```
+
+## Lo que no se pudo verificar
+
+- **Nada contra un SHA**: el trabajo está sin commitear. Todo lo cerrado en esta ronda hay que revalidarlo.
+- **CI sobre el trabajo de la ronda 2**: no corrió, porque no hay push.
+- **`pnpm test:db`**: sin Docker local; el PR no toca `supabase/` ni `src/server/`.

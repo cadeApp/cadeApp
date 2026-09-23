@@ -1,6 +1,7 @@
 # PR #59 — T-008 · Base de UI y tokens de Stitch (D16)
 
-> ❌ **Con bloqueantes · 9 bloqueantes · 10 mejoras · 4 decisiones resueltas · CI 7 de 8 en `e3c1a4d`**
+> ❌ **Con bloqueantes · 4 bloqueantes · 2 regresiones · 8 mejoras · 3 decisiones resueltas**
+> ⚠️ **El trabajo de la ronda 2 está sin commitear**: no hay SHA que verificar.
 
 | | |
 |---|---|
@@ -8,65 +9,95 @@
 | **Tarea / issue** | [`T-008`](../../tasks/T-008.md) · Issue #9 |
 | **Autor** | Lautaro073 (agy) |
 | **Revisión** | independiente — no es el agy que implementó |
-| **SHA revisado** | `e3c1a4d` (implementación `40ab440`, Fase Roja `3b6ad9f`) |
-| **Base** | `origin/develop` = `92c8386` |
-| **Alcance** | 28 archivos · **0 fuera** de «Archivos permitidos» |
+| **Head del PR** | `2491a4c` (el commit de la ronda 1) |
+| **Estado revisado en ronda 2** | árbol de trabajo sin commitear, snapshot del 2026-09-23 02:50 |
+| **Alcance** | 33 archivos · **8 fuera** de «Archivos permitidos» (`assets/1-8.svg`) |
 
 ## Rondas
 
-| Ronda | SHA | Fecha | Resultado | Informe |
+| Ronda | Estado revisado | Fecha | Resultado | Informe |
 |---|---|---|---|---|
 | 1 | `e3c1a4d` | 2026-09-23 | ❌ 9 bloqueantes · 10 mejoras · 4 decisiones | [`ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | sin commitear | 2026-09-23 | ❌ 4 bloqueantes · 2 regresiones · 8 mejoras · 3 decisiones | [`ronda-2.md`](revisiones/ronda-2.md) |
 
-## Resumen en una línea
+## Lo primero
 
-El código tiene disciplina real —cero dependencias no autorizadas, cero `any`/`!`/`.skip`, tokens correctos,
-matriz de contraste que calcula de verdad— y lo que falla es **lo que lo verifica**: de nueve controles del DoD
-que rompí a propósito, **ocho dejaron la suite en verde**.
+**Nada de la ronda 2 está commiteado.** 29 archivos modificados y dos carpetas sin trackear viven solo en el
+árbol de trabajo compartido; `origin/feat/T-008-ui-tokens-d16` sigue en `2491a4c` y la bitácora no tiene entrada
+nueva. `AGENTS.md` §5 pide cerrar cada sesión con bitácora, commit y push.
+
+Por eso **ningún hallazgo cerrado en esta ronda lleva `verificado_en_sha`**, aunque todos se verificaron
+ejecutando. `analizar.mjs verificacion` los lista bajo «corregido pero NO verificado», que es lo correcto: la
+ronda 3 tiene que revalidarlos contra el commit.
+
+## El dato de la ronda: los controles pasaron de 1 vivo sobre 9 a 10 sobre 12
+
+Misma batería de mutaciones que la ronda 1, más cuatro nuevas.
+
+| # | Rompí | R1 | R2 |
+|---|---|---|---|
+| M1 | `xs` vuelve a 12 px | 🟢 | 🔴 |
+| M2 | saco el foco automático del Dialog | 🟢 | 🟢 (`H09` · lo hace Radix) |
+| M3 | clases arbitrarias en `src/ui` | 🟢 | 🔴 |
+| M4 | desconecto Confirmar de `ConfirmDialog` | 🟢 | 🔴 |
+| M5 | `MotionConfig` no lee la preferencia | 🟢 | 🔴 |
+| M6 | `mutedForeground` a 2,42:1 | 🔴 | 🔴 |
+| M6b | `--accent` de `tokens.css` a 1,06:1 | 🟢 | 🟢 (`H22` · dos copias) |
+| M8 | `notify` sin `id` | 🟢 | 🔴 |
+| M9 | saco la guarda CSS de movimiento reducido | — | 🔴 |
+| M11 | `FormControl` no apunta al error | — | 🔴 |
+| M12 | borro un asset de `public/` | — | 🔴 |
+| M13 | `notify` no sanitiza | — | 🔴 |
 
 ## Estado por hallazgo
 
-| id | sev | archivo | qué | estado |
-|---|---|---|---|---|
-| `H01` | alto | cuerpo del PR | `approval-policy` en rojo: CI es 7 de 8 y el informe declara todo verde | abierto |
-| `H02` | alto | `skeleton.tsx:15` | `animate-pulse` y `animate-spin` ignoran el movimiento reducido; los presets que lo respetan no animan nada | abierto |
-| `H03` | alto | `ui-system.test.tsx:264` | `ConfirmDialog` 0 % de cobertura; la prueba afirma sobre un `vi.fn()` desconectado | abierto |
-| `H04` | alto | `ui-system.test.tsx:92` | Anti-12px se verifica sobre `tokens.css`, que no tiene tipografía | abierto |
-| `H05` | alto | `select.tsx:117` | `role="option"` huérfano en S00 y la auditoría reporta 0 violaciones | abierto |
-| `H06` | alto | `form.tsx:188` | `FormMessage` sin `id`; el control sin `aria-describedby` | abierto |
-| `H07` | alto | `ui-system.test.tsx:343` | El barrido de arbitrarios usa lista fija: 8 clases reales escapan | abierto |
-| `H08` | alto | `motion/index.tsx:26` | Nada ejercita la detección de `prefers-reduced-motion` | abierto |
-| `H09` | alto | `ui-system.test.tsx:145` | El foco automático del Dialog: la prueba enfoca y después afirma | abierto |
-| `H10` | medio | `notify.ts:58` | `notify` suprime en vez de reemplazar; el id puede quedar tomado | abierto |
-| `H11` | medio | `notify.ts:48` | El sanitizador no reconoce lo que produce `formatPhone` | abierto |
-| `H12` | medio | `select.tsx:141` | El Select muestra el value crudo en el primer pintado | abierto |
-| `H13` | medio | `tokens.ts:95` | La matriz no cubre `.badge-success` ni `bg-muted` | abierto |
-| `H14` | medio | `brand-logo.tsx:4` | `BRAND_ASSET_PATHS`: cuatro rutas 404 | abierto (cierra con `D02`) |
-| `H15` | bajo | `tokens.css:12` | El ratio es 7,35:1 y no 6,93:1; el umbral 6.9 no es AAA | abierto |
-| `H16` | bajo | `brand-logo.tsx:11` | El SVG está duplicado: se puede cambiar el color con la suite en verde | abierto |
-| `H17` | bajo | `select.tsx:77` | El Select no tiene teclado ni forma de cerrarse | abierto (cierra con `D01`) |
-| `H18` | bajo | `dialog.tsx:101` | El Dialog no devuelve el foco al cerrar | abierto (cierra con `D01`) |
-| `H19` | bajo | `toaster.tsx:9` | El `<Toaster />` real nunca se renderiza | abierto |
-| `D01` | 🔵 | `T-008.md:24` | Librerías de la regla 25 prohibidas por la ficha | **decidido**: ampliar ficha e instalar |
-| `D02` | 🔵 | `T-008.md:8` | `public/**` y la ruta de S00 | **decidido**: ampliar ficha |
-| `D03` | 🔵 | `showcase.tsx:23` | axe | **decidido**: mover a E2E |
-| `D04` | 🔵 | `vitest.config.ts:15` | Umbral de cobertura para `src/ui/**` | **decidido**: sumarlo en esta PR |
+### Bloqueantes abiertos
 
-Las cuatro decisiones se le preguntaron a Lautaro073 **antes** de escribir el informe, así que la ronda 2 entra
-con todo resuelto y nada esperando.
+| id | archivo | qué |
+|---|---|---|
+| `H01` | cuerpo del PR | **parcial**: se agregó la sección pero `approval-policy` sigue rojo y el informe quedó viejo |
+| `H20` | `assets/1-8.svg` | 8 archivos fuera de alcance; 7 más pesados; 6,45 MB → 13,9 MB |
+| `H21` | `public/brand/logo.svg` | 1,25 MB contra 5 KB de presupuesto; copia byte a byte de `assets/2.svg` |
+| `R01` | `notify.ts` | **regresión**: desaparecieron `DOMAIN_ERROR_MESSAGES` y `notify.promise` |
 
-## Checks en `e3c1a4d`
+### Cerrados en la ronda 2 (sin SHA — revalidar)
 
-Worktree detached (`../cadeApp-rev59`) con `pnpm install --frozen-lockfile`. El árbol compartido con el agy no se
-tocó y nunca se cambió de rama.
+`H02` · `H03` · `H04` · `H05` · `H06` · `H07` · `H08` · `H10` · `H11` · `H12` · `H14` · `H15` · `H16` · `H17` ·
+`H18` · `H19` · `D01` · `D02` · `D03` · `D04` — y `H09` y `H13` cerrados en la propiedad con residual anotado.
 
-`typecheck` ✅ · `lint` ✅ · `test` ✅ (13 archivos · 116 casos + 19 workflows + 6 ADR) · `test:coverage` ✅
-(pero el umbral solo alcanza `src/domain/**`; `src/ui` queda en **64,15 % de ramas**) · `test:db` n.a. (sin Docker
-local; en CI pasa) · **CI 7 de 8**: `approval-policy` en rojo.
+### Mejoras abiertas
+
+| id | archivo | qué |
+|---|---|---|
+| `R02` | `dialog.tsx:144` | `Escape` invoca `onClose` dos veces |
+| `H22` | `tokens.css:21` | `tokens.ts` y `tokens.css` son copias sin control de sincronía |
+| `H23` | `verify-fichas.test.ts:118` | `T-008` en `EXCEPCIONES`, que es para tareas mergeadas |
+| `H24` | `dialog.tsx:180` | `backdrop-blur-xs` no existe en Tailwind 3.4 |
+| `H25` | `brand-logo.tsx:38` | la marca quedó como `CadeApp` y `Cade` |
+| `H26` | `notify.ts:43` | `activeToastIds` es estado muerto |
+| `H27` | `ui-system.test.tsx:93` | el nombre de la prueba dice Tucumán; el código, Buenos_Aires |
+| `H28` | `dialog.tsx:123` | duplica a mano la gestión de foco de Radix |
+| `H29` | `design-system/page.tsx:4` | ruta pública e indexable, 168 kB |
+
+### Decisiones
+
+| id | qué | decisión |
+|---|---|---|
+| `D01`–`D04` | ronda 1 | **aplicadas** |
+| `D05` | dónde viven los mensajes de `DomainErrorCode` | crear `src/lib/error-messages.ts` |
+| `D06` | plan §8 vs excepción en `verify-fichas` | actualizar el plan y sacar la excepción |
+| `D07` | exposición de `/design-system` | pública con `noindex` |
+
+## Checks (snapshot del árbol de trabajo)
+
+`typecheck` ✅ · `lint` ✅ · `test` ✅ **126 casos** (eran 116) + 19 + 6 · `test:coverage` ✅ con `src/ui` en
+**98,09 % / 89,39 % de ramas** y umbral real de 80 por archivo · `build` ✅ (`/` 103 kB, `/design-system` 168 kB,
+presupuesto 180) · `test:db` n.a. · CI **7 de 8** en `2491a4c`, y **el trabajo de esta ronda todavía no pasó por
+CI**.
 
 ## Archivos
 
-- [`revisiones/ronda-1.md`](revisiones/ronda-1.md) — informe completo
-- [`hallazgos.jsonl`](hallazgos.jsonl) — 23 registros
-- [`lecciones.md`](lecciones.md) — `AG-49` a `AG-52`
-- [`evidencia/comandos.md`](evidencia/comandos.md) — comandos, probe y batería de mutaciones
+- [`revisiones/ronda-1.md`](revisiones/ronda-1.md) · [`revisiones/ronda-2.md`](revisiones/ronda-2.md)
+- [`hallazgos.jsonl`](hallazgos.jsonl) — 38 registros
+- [`lecciones.md`](lecciones.md) — `AG-49` a `AG-54`
+- [`evidencia/comandos.md`](evidencia/comandos.md)

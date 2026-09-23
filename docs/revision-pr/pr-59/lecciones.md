@@ -112,3 +112,59 @@ pantalla. La pregunta correcta no es «¿`getMotionPreset(x, true)` devuelve `y:
 activa, ¿queda algo animándose en S00?». Para el DoD de movimiento reducido: renderizar la página de muestra con
 `matchMedia` en `reduce` y exigir que ningún nodo tenga clase de animación activa. Ese caso habría encontrado el
 `animate-pulse` de los skeletons el primer día.
+
+---
+
+## `AG-53` · Un snapshot de un árbol sin commitear no se revierte con `git checkout --`
+
+A mitad de la ronda 2 concluí que `pnpm build` fallaba con veinte errores de tipo en `brand-logo.tsx` y estuve a
+un paso de reportarlo como bloqueante. Era mío.
+
+Había copiado el árbol de trabajo sin commitear del agy a un worktree detached desde `2491a4c`. Al terminar una
+mutación sobre `src/ui/tokens.ts` la revertí con `git checkout -- src/ui/tokens.ts`, que **no deshace la
+mutación: restaura el archivo del commit**. Con eso el snapshot quedó con el `tokens.ts` viejo —sin `ink`, sin
+`surface`, sin `accent`— y el `brand-logo.tsx` nuevo que los usa. De ahí los veinte errores.
+
+Lo que lo delató fue comparar el snapshot con el árbol del agy archivo por archivo: `tokens.ts` era el único que
+coincidía, que es justo lo que no debía pasar.
+
+**Qué cambiar:** cuando lo revisado no está en un commit, `git` no es la red de seguridad. Dos reglas:
+
+1. Las mutaciones se revierten **desde memoria** (guardar el contenido antes y volver a escribirlo), nunca con
+   `git checkout`. El script de mutaciones ya lo hacía; el error fue hacer una mutación suelta a mano.
+2. Antes de creerle a un resultado sobre un snapshot, **comparar el snapshot con el original**. Es un `md5sum`
+   por archivo y detecta la deriva en un segundo.
+
+Hermana de `AG-47` (el probe de una revisión es código y se tipa antes de creerle): las dos dicen lo mismo, que
+el instrumental de la revisión necesita su propia verificación antes de que sus salidas cuenten como evidencia.
+
+---
+
+## `AG-54` · Reescribir un archivo entero para arreglar un hallazgo se lleva puesto lo que el hallazgo no nombraba
+
+`PR59-H10` decía una cosa acotada: `notify` suprimía el segundo aviso en vez de dejar que Sonner reemplazara por
+`id`. El arreglo correcto eran tres líneas. Lo que pasó fue que `notify.ts` se reescribió de cero, y en la
+versión nueva no están `DOMAIN_ERROR_MESSAGES` —los 27 mensajes en es-AR, uno por `DomainErrorCode`— ni
+`notify.promise`. La regla 60 pide los dos.
+
+Nada se rompió al compilar, porque todavía no hay features que los usen. **Y la prueba que los cubría se fue con
+ellos**, así que tampoco quedó nada en rojo. Un diccionario de 27 mensajes y una función de la API pública
+desaparecieron del repositorio sin que ningún control lo notara.
+
+Es la cuarta regresión del proyecto y la segunda que sale de un arreglo pedido por esta revisión: `PR47-R01`,
+`PR47-R02`, `PR48-H06` y ahora `PR59-R01`. `COMO-ENTREGAR.md` ya lo advierte —*«arreglar introduce
+regresiones»*— y hasta ahora la respuesta era «volvé a correr el comando de cada hallazgo». Este caso muestra
+que no alcanza, porque el comando de `H10` pasa perfecto: lo que se perdió está fuera de su alcance.
+
+**Qué cambiar:** dos cosas concretas.
+
+1. **En el bloque para el agy:** cuando el arreglo implique reescribir un archivo entero en vez de editarlo,
+   decirlo y listar qué exportaciones tenía antes y cuáles tiene después. Es un `diff` de la API pública y se
+   saca con un `grep` de `export`.
+2. **En la revisión:** comparar las exportaciones del barril de `src/ui` y de cada archivo reescrito entre
+   rondas. Yo encontré esto por casualidad, buscando dónde había quedado el diccionario. Un barrido de
+   exportaciones perdidas entre ronda y ronda lo habría encontrado solo, y es mecánico.
+
+También vale la parte propositiva: lo que **no** se perdió fue por diseño. `BrandLogo` se reescribió igual de
+entero y ahí no faltó nada, porque las dos formas del SVG pasaron a derivarse de un único
+`BRAND_LOGO_GEOMETRY`. Reescribir no es el problema; reescribir sin inventario de lo que había, sí.
