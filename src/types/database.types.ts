@@ -617,7 +617,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      set_availability: {
+        Args: { p_available: boolean }
+        Returns: Json
+      }
+      submit_offer: {
+        Args: {
+          p_amount_ars: number
+          p_eta_minutes: number
+          p_message?: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      withdraw_offer: {
+        Args: { p_offer_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       consent_document: "tos" | "privacy" | "courier_contract" | "pilot_terms"
