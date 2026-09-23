@@ -20,6 +20,12 @@ export default defineConfig({
           lines: 90,
           statements: 90,
         },
+        'src/ui/**/*.{ts,tsx}': {
+          branches: 80,
+          functions: 80,
+          lines: 80,
+          statements: 80,
+        },
       },
     },
   },

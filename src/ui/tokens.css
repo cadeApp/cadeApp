@@ -1,32 +1,67 @@
 :root {
-  --background: 40 20% 99%; /* #FDFCFB */
-  --foreground: 226 42% 12%; /* #12182C */
+  --background: 30 33.33% 98.82%; /* #FDFCFB */
+  --foreground: 226.15 41.94% 12.16%; /* #12182C */
 
   --card: 0 0% 100%; /* #FFFFFF */
-  --card-foreground: 226 42% 12%; /* #12182C */
+  --card-foreground: 226.15 41.94% 12.16%; /* #12182C */
 
-  --popover: 0 0% 100%;
-  --popover-foreground: 226 42% 12%;
+  --popover: 0 0% 100%; /* #FFFFFF */
+  --popover-foreground: 226.15 41.94% 12.16%; /* #12182C */
 
-  --primary: 181 90% 39%; /* #09BABD */
-  --primary-foreground: 226 42% 12%; /* #12182C - WCAG AAA 6.93:1 */
-  --primary-dark: 181 83% 27%; /* #0B7A7D */
+  --primary: 181 90.91% 38.82%; /* #09BABD */
+  --primary-foreground: 226.15 41.94% 12.16%; /* #12182C - WCAG AAA 7.35:1 */
+  --primary-dark: 181.58 83.82% 26.67%; /* #0B7A7D - WCAG AA 5.04:1 sobre blanco */
 
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 226 42% 12%;
+  --secondary: 226.15 41.94% 12.16%; /* #12182C - Tinta marina para botón secundario */
+  --secondary-foreground: 0 0% 100%; /* #FFFFFF */
 
-  --muted: 220 14% 96%; /* #F3F4F6 */
-  --muted-foreground: 215 16% 35%; /* #475467 */
+  --muted: 220 14.29% 95.88%; /* #F3F4F6 */
+  --muted-foreground: 219.23 12.5% 40.78%; /* #5B6475 - Texto secundario Stitch WCAG AA */
 
-  --accent: 138 76% 97%; /* #F0FDF4 */
-  --accent-foreground: 142 76% 25%; /* #166534 */
+  --accent: 138.46 76.47% 96.67%; /* #F0FDF4 */
+  --accent-foreground: 151.52 68.28% 28.43%; /* #177A4B */
 
-  --destructive: 0 84% 51%; /* #DC2626 */
-  --destructive-foreground: 0 0% 100%;
+  --success: 151.52 68.28% 28.43%; /* #177A4B */
+  --success-foreground: 0 0% 100%; /* #FFFFFF */
 
-  --border: 216 12% 91%; /* #E4E7EC */
-  --input: 216 12% 91%; /* #E4E7EC */
-  --ring: 181 90% 39%; /* #09BABD */
+  --warning: 25.96 90.48% 37.06%; /* #B45309 */
+  --warning-surface: 38.71 100% 93.92%; /* #FFF4E0 */
 
-  --radius: 0.625rem; /* 10px */
+  --destructive: 0 66.39% 46.67%; /* #C62828 */
+  --destructive-foreground: 0 0% 100%; /* #FFFFFF */
+
+  --border: 217.5 17.39% 90.98%; /* #E4E7EC */
+  --input: 217.5 17.39% 90.98%; /* #E4E7EC */
+  --ring: 181 90.91% 38.82%; /* #09BABD */
+
+  --radius: 0.625rem; /* 10px en botones e inputs; Card usa rounded-xl (12px) */
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.badge-success {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--success));
+  border-color: hsl(var(--success));
+}
+
+.badge-warning {
+  background-color: hsl(var(--warning-surface));
+  color: hsl(var(--warning));
+  border-color: hsl(var(--warning));
+}
+
+.badge-danger {
+  background-color: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+  border-color: hsl(var(--destructive));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
 }
