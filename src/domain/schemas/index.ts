@@ -138,6 +138,9 @@ export function calculateHaversineRouteDistanceM(
   origin: CoordinatePoint,
   destination: CoordinatePoint
 ): number {
+  if (origin.lat === destination.lat && origin.lng === destination.lng) {
+    return 0;
+  }
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(destination.lat - origin.lat);
   const dLng = toRad(destination.lng - origin.lng);
@@ -153,6 +156,13 @@ export function calculateHaversineRouteDistanceM(
     ROUTE_DISTANCE_STEP_M,
     Math.round(rawMeters / ROUTE_DISTANCE_STEP_M) * ROUTE_DISTANCE_STEP_M
   );
+}
+
+export function formatZoneToZoneDisplayLabel(
+  pickupZoneName: string,
+  dropoffZoneName: string
+): string {
+  return `De barrio ${pickupZoneName.trim()} a barrio ${dropoffZoneName.trim()}`;
 }
 
 export function validateRoutePointsAndCalculateDistanceM(

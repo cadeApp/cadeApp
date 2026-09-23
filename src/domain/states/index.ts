@@ -105,11 +105,14 @@ export function transitionRequest(
 
   switch (transitionKey) {
     case 'draft->published': {
-      if (actor !== 'merchant' || input.isOwnerMerchant === false) {
+      if (actor !== 'merchant' || input.isOwnerMerchant !== true) {
         return err('UNAUTHORIZED_ACTOR');
       }
+      if (!input.subscriptionStatus) {
+        return err('SUBSCRIPTION_INACTIVE');
+      }
       const subCheck = canMerchantPublishRequest({
-        subscriptionStatus: input.subscriptionStatus ?? (input.pilotActive ? 'pilot' : 'active'),
+        subscriptionStatus: input.subscriptionStatus,
         pilotActive: input.pilotActive ?? false,
         paidUntil: input.paidUntil,
         graceDays: input.graceDays ?? 0,
@@ -122,14 +125,14 @@ export function transitionRequest(
     }
 
     case 'published->matched': {
-      if (actor !== 'merchant' || input.isOwnerMerchant === false) {
+      if (actor !== 'merchant' || input.isOwnerMerchant !== true) {
         return err('UNAUTHORIZED_ACTOR');
       }
       return ok({ status: 'matched', offerSideEffect: 'accept_one_reject_others' });
     }
 
     case 'published->cancelled': {
-      if (actor !== 'merchant' || input.isOwnerMerchant === false) {
+      if (actor !== 'merchant' || input.isOwnerMerchant !== true) {
         return err('UNAUTHORIZED_ACTOR');
       }
       return ok({ status: 'cancelled', offerSideEffect: 'expire_all_pending' });
@@ -146,7 +149,7 @@ export function transitionRequest(
     }
 
     case 'matched->in_transit': {
-      if (actor !== 'courier' || input.isAssignedCourier === false) {
+      if (actor !== 'courier' || input.isAssignedCourier !== true) {
         return err('UNAUTHORIZED_ACTOR');
       }
       return ok({ status: 'in_transit', offerSideEffect: 'none' });
@@ -155,30 +158,30 @@ export function transitionRequest(
     case 'matched->published': {
       const hasReason = Boolean(input.reason && input.reason.trim().length > 0);
       if (actor === 'merchant') {
-        if (input.isOwnerMerchant === false) return err('UNAUTHORIZED_ACTOR');
-        if (!hasReason) return err('VALIDATION_ERROR');
+        if (input.isOwnerMerchant !== true) return err('UNAUTHORIZED_ACTOR');
+        if (!hasReason) return err('REASON_REQUIRED');
         return ok({ status: 'published', offerSideEffect: 'cancel_accepted' });
       }
       if (actor === 'courier') {
-        if (input.isAssignedCourier === false) return err('UNAUTHORIZED_ACTOR');
-        if (!hasReason) return err('VALIDATION_ERROR');
+        if (input.isAssignedCourier !== true) return err('UNAUTHORIZED_ACTOR');
+        if (!hasReason) return err('REASON_REQUIRED');
         return ok({ status: 'published', offerSideEffect: 'cancel_accepted' });
       }
       return err('UNAUTHORIZED_ACTOR');
     }
 
     case 'matched->cancelled': {
-      if (actor !== 'merchant' || input.isOwnerMerchant === false) {
+      if (actor !== 'merchant' || input.isOwnerMerchant !== true) {
         return err('UNAUTHORIZED_ACTOR');
       }
       if (!input.reason || input.reason.trim().length === 0) {
-        return err('VALIDATION_ERROR');
+        return err('REASON_REQUIRED');
       }
       return ok({ status: 'cancelled', offerSideEffect: 'cancel_accepted' });
     }
 
     case 'in_transit->delivered': {
-      if (actor !== 'courier' || input.isAssignedCourier === false) {
+      if (actor !== 'courier' || input.isAssignedCourier !== true) {
         return err('UNAUTHORIZED_ACTOR');
       }
       return ok({ status: 'delivered', offerSideEffect: 'none' });
@@ -189,7 +192,7 @@ export function transitionRequest(
         return err('UNAUTHORIZED_ACTOR');
       }
       if (!input.reason || input.reason.trim().length === 0) {
-        return err('VALIDATION_ERROR');
+        return err('REASON_REQUIRED');
       }
       return ok({ status: 'cancelled', offerSideEffect: 'cancel_accepted' });
     }
@@ -215,6 +218,7 @@ export function canTransitionRequest(
     expiresAt: to === 'expired' ? samplePast : sampleFuture,
     isOwnerMerchant: true,
     isAssignedCourier: true,
+    subscriptionStatus: 'pilot',
     pilotActive: true,
     reason: 'motivo-valido',
   }).ok;

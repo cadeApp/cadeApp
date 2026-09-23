@@ -12,6 +12,22 @@ import {
 
 export const uuidSchema = z.string().uuid();
 
+export const isoTimestampSchema = z.string().datetime({ offset: true });
+
+export const civilDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(
+    (val) => {
+      const y = Number(val.slice(0, 4));
+      const m = Number(val.slice(5, 7));
+      const d = Number(val.slice(8, 10));
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+    },
+    { message: 'VALIDATION_ERROR' }
+  );
+
 export function validateOfferAmountAgainstFloor(
   amountArs: number,
   minOfferArs: number
@@ -32,9 +48,9 @@ export const publishRequestInputSchema = z.object({
 export const publishRequestOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('published'),
-  publishedAt: z.string(),
-  expiresAt: z.string(),
-  routeDistanceM: z.number().int().nonnegative(),
+  publishedAt: isoTimestampSchema,
+  expiresAt: isoTimestampSchema,
+  routeDistanceM: z.number().int().nonnegative().nullable(),
 });
 
 // 2. cancel_request
@@ -45,7 +61,7 @@ export const cancelRequestInputSchema = z.object({
 export const cancelRequestOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('cancelled'),
-  cancelledAt: z.string(),
+  cancelledAt: isoTimestampSchema,
 });
 
 // 3. submit_offer
@@ -60,7 +76,7 @@ export const submitOfferOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('pending'),
   amountArs: z.number().int().min(1),
-  createdAt: z.string(),
+  createdAt: isoTimestampSchema,
 });
 
 // 4. withdraw_offer
@@ -70,7 +86,7 @@ export const withdrawOfferInputSchema = z.object({
 export const withdrawOfferOutputSchema = z.object({
   offerId: uuidSchema,
   status: z.literal('withdrawn'),
-  decidedAt: z.string(),
+  decidedAt: isoTimestampSchema,
 });
 
 // 5. accept_offer
@@ -81,7 +97,7 @@ export const acceptOfferOutputSchema = z.object({
   requestId: uuidSchema,
   acceptedOfferId: uuidSchema,
   status: z.literal('matched'),
-  matchedAt: z.string(),
+  matchedAt: isoTimestampSchema,
   idempotent: z.boolean(),
 });
 
@@ -92,7 +108,7 @@ export const markPickedUpInputSchema = z.object({
 export const markPickedUpOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('in_transit'),
-  pickedUpAt: z.string(),
+  pickedUpAt: isoTimestampSchema,
 });
 
 // 7. mark_delivered
@@ -102,7 +118,7 @@ export const markDeliveredInputSchema = z.object({
 export const markDeliveredOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('delivered'),
-  deliveredAt: z.string(),
+  deliveredAt: isoTimestampSchema,
 });
 
 // 8. report_no_show
@@ -114,7 +130,7 @@ export const reportNoShowOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.enum(['published', 'cancelled']),
   cancelledOfferId: uuidSchema,
-  expiresAt: z.string().nullable(),
+  expiresAt: isoTimestampSchema.nullable(),
 });
 
 // 9. courier_cancel_match
@@ -126,7 +142,7 @@ export const courierCancelMatchOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('published'),
   cancelledOfferId: uuidSchema,
-  expiresAt: z.string(),
+  expiresAt: isoTimestampSchema,
 });
 
 // 10. republish_request
@@ -137,8 +153,8 @@ export const republishRequestInputSchema = z.object({
 export const republishRequestOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('published'),
-  publishedAt: z.string(),
-  expiresAt: z.string(),
+  publishedAt: isoTimestampSchema,
+  expiresAt: isoTimestampSchema,
 });
 
 // 11. report_incident
@@ -151,7 +167,7 @@ export const reportIncidentOutputSchema = z.object({
   incidentId: uuidSchema,
   requestId: uuidSchema,
   status: incidentStatusSchema,
-  createdAt: z.string(),
+  createdAt: isoTimestampSchema,
 });
 
 // 12. set_availability
@@ -164,18 +180,43 @@ export const setAvailabilityOutputSchema = z.object({
 });
 
 // 13. calculate_route_distance
-export const calculateRouteDistanceInputSchema = z.object({
-  pickupLat: aguilaresLatSchema.nullable().optional(),
-  pickupLng: aguilaresLngSchema.nullable().optional(),
-  dropoffLat: aguilaresLatSchema.nullable().optional(),
-  dropoffLng: aguilaresLngSchema.nullable().optional(),
+const calculateRouteDistanceWithCoordsSchema = z.object({
+  pickupLat: aguilaresLatSchema,
+  pickupLng: aguilaresLngSchema,
+  dropoffLat: aguilaresLatSchema,
+  dropoffLng: aguilaresLngSchema,
+  pickupZoneName: z.string().trim().min(1).max(120).optional(),
+  dropoffZoneName: z.string().trim().min(1).max(120).optional(),
   pickupZoneId: uuidSchema.nullable().optional(),
   dropoffZoneId: uuidSchema.nullable().optional(),
 });
-export const calculateRouteDistanceOutputSchema = z.object({
-  routeDistanceM: z.number().int().positive(),
-  usedZoneFallback: z.boolean(),
+
+const calculateRouteDistanceZoneOnlySchema = z.object({
+  pickupLat: z.null().optional(),
+  pickupLng: z.null().optional(),
+  dropoffLat: z.null().optional(),
+  dropoffLng: z.null().optional(),
+  pickupZoneName: z.string().trim().min(1).max(120),
+  dropoffZoneName: z.string().trim().min(1).max(120),
+  pickupZoneId: uuidSchema.nullable().optional(),
+  dropoffZoneId: uuidSchema.nullable().optional(),
 });
+
+export const calculateRouteDistanceInputSchema = z.union([
+  calculateRouteDistanceWithCoordsSchema,
+  calculateRouteDistanceZoneOnlySchema,
+]);
+
+export const calculateRouteDistanceOutputSchema = z.union([
+  z.object({
+    routeDistanceM: z.number().int().nonnegative(),
+    displayLabel: z.string().trim().min(1).optional(),
+  }),
+  z.object({
+    routeDistanceM: z.null(),
+    displayLabel: z.string().regex(/^De barrio .+ a barrio .+$/),
+  }),
+]);
 
 // 14. admin_decide_courier
 export const adminDecideCourierInputSchema = z.object({
@@ -186,7 +227,7 @@ export const adminDecideCourierInputSchema = z.object({
 export const adminDecideCourierOutputSchema = z.object({
   courierId: uuidSchema,
   status: z.enum(['approved', 'rejected']),
-  decidedAt: z.string(),
+  decidedAt: isoTimestampSchema,
 });
 
 // 15. admin_suspend_courier
@@ -198,7 +239,7 @@ export const adminSuspendCourierOutputSchema = z.object({
   courierId: uuidSchema,
   status: z.literal('suspended'),
   withdrawnOffersCount: z.number().int().nonnegative(),
-  deactivatedAt: z.string(),
+  deactivatedAt: isoTimestampSchema,
 });
 
 // 16. admin_verify_document
@@ -219,24 +260,39 @@ export const adminVerifyDocumentOutputSchema = z.object({
 export const adminSetSubscriptionInputSchema = z.object({
   merchantId: uuidSchema,
   subscriptionStatus: merchantSubscriptionStatusSchema,
-  paidUntil: z.string().nullable().optional(),
+  paidUntil: civilDateSchema.nullable().optional(),
   notes: z.string().trim().max(1000).nullable().optional(),
 });
 export const adminSetSubscriptionOutputSchema = z.object({
   merchantId: uuidSchema,
   subscriptionStatus: merchantSubscriptionStatusSchema,
-  paidUntil: z.string().nullable(),
+  paidUntil: civilDateSchema.nullable(),
 });
 
 // 18. admin_update_setting
-export const adminUpdateSettingInputSchema = z.object({
-  key: platformSettingKeySchema,
-  value: z.union([z.number().int().nonnegative(), z.boolean(), z.string().min(1)]),
-});
-export const adminUpdateSettingOutputSchema = z.object({
-  key: platformSettingKeySchema,
-  value: z.union([z.number().int().nonnegative(), z.boolean(), z.string()]),
-});
+export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
+  z.object({
+    key: z.literal('min_offer_ars'),
+    value: z.number().int().min(1),
+  }),
+  z.object({
+    key: z.literal('request_ttl_minutes'),
+    value: z.number().int().min(1),
+  }),
+  z.object({
+    key: z.literal('pilot_active'),
+    value: z.boolean(),
+  }),
+  z.object({
+    key: z.literal('pilot_terms_version'),
+    value: z.string().trim().min(1),
+  }),
+  z.object({
+    key: z.literal('subscription_grace_days'),
+    value: z.number().int().min(0),
+  }),
+]);
+export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
 export const RPC_CONTRACTS = {
   publish_request: {
@@ -396,6 +452,7 @@ export const RPC_CONTRACTS = {
     errorCodes: [
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
       'COURIER_NOT_APPROVED',
       'COURIER_SUSPENDED',
       'VALIDATION_ERROR',
@@ -406,6 +463,7 @@ export const RPC_CONTRACTS = {
     outputSchema: calculateRouteDistanceOutputSchema,
     errorCodes: [
       'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
       'OUT_OF_BOUNDS_AGUILARES',
       'INVALID_ZONE',
       'VALIDATION_ERROR',
@@ -503,5 +561,5 @@ export type RpcErrorCode<K extends RpcName> = (typeof RPC_CONTRACTS)[K]['errorCo
 export type RpcClientContract = {
   readonly [K in RpcName]: (
     input: RpcInput<K>
-  ) => Promise<ActionResult<RpcOutput<K>, DomainErrorCode>>;
+  ) => Promise<ActionResult<RpcOutput<K>, RpcErrorCode<K>>>;
 };

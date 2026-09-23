@@ -3,4 +3,4 @@ export * from './priority';
 export * from './rpc-contracts';
 export * from './schemas';
 export * from './states';
-export * from './testing/rpc-fake';
+

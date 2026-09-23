@@ -55,7 +55,6 @@ export type ActionSuccess<T> = {
 export type ActionFailure<E extends DomainErrorCode = DomainErrorCode> = {
   readonly ok: false;
   readonly code: E;
-  readonly message?: string;
 };
 
 export type ActionResult<T, E extends DomainErrorCode = DomainErrorCode> =
@@ -66,12 +65,8 @@ export function ok<T>(data: T): ActionSuccess<T> {
 }
 
 export function err<E extends DomainErrorCode = DomainErrorCode>(
-  code: E,
-  message?: string
+  code: E
 ): ActionFailure<E> {
-  if (message !== undefined) {
-    return { ok: false, code, message };
-  }
   return { ok: false, code };
 }
 
