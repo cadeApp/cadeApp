@@ -43,3 +43,37 @@ Validar el input no alcanza. Un fake útil debe fallar si faltan filas relaciona
 ## AG-57 · Un cast puede reabrir el contrato que el genérico acaba de cerrar
 
 Estrechar `RpcClientContract` a `RpcErrorCode<K>` no sirve si el adapter conserva una entrada amplia y la convierte con `as`. Los mecanismos de prueba —incluido `setForcedError`— deben preservar la misma relación RPC × error que la API pública (H05).
+
+---
+
+# Lecciones de la ronda 3
+
+## AG-47 · Un probe de revisión es código, y va tipado antes de creerle
+**Origen:** las tres correcciones de mi propio probe en la ronda 3
+
+La primera corrida del probe dio dos fallos y **los dos eran míos**: afirmé `r.error` cuando `ActionFailure` expone `code`, y llamé `admin_verify_document` con `status` cuando el campo es `decision` —así que el input fallaba la validación y nunca llegaba al handler, que sí tenía su guarda—. Corregidas esas dos, `tsc --noEmit` encontró una tercera: `report_no_show` no toma `reason`, o sea que ese test venía pasando por el motivo equivocado.
+
+Si me hubiera quedado en la primera corrida, habría reportado **dos bloqueantes inexistentes sobre un fake correcto**, en la ronda que decide si la PR se mergea. Y el costo no habría sido solo mío: el agy habría salido a "arreglar" algo que funcionaba.
+
+> **Regla propuesta.** El probe de una revisión se corre bajo las mismas reglas que el código que revisa: `tsc --noEmit` antes de leer sus resultados. Un probe rojo es una afirmación sobre el código ajeno, y hay exactamente dos explicaciones —el defecto existe, o el probe está mal—; el compilador descarta la segunda en segundos y es la más probable cuando el probe se escribió contra una API que uno acaba de leer.
+>
+> Señal concreta: **un fallo cuyo valor recibido es `undefined` casi nunca es el defecto**, es un campo que no se llama así. Antes de escribirlo como hallazgo, leer el tipo.
+
+Es la misma familia que `AG-46` de la PR #57: allá validé una hipótesis sobre el entorno con una prueba que codificaba esa misma hipótesis; acá afirmé sobre una API sin cruzar su tipo. Las dos veces el error fue **no aplicarme el método que le exijo al autor**.
+
+## AG-48 · Cuando el arreglo elimina la construcción que escondía el defecto, la clase queda cerrada
+**Origen:** H07
+
+Los cuatro contracasos de `H07` se podían cerrar uno por uno con guardas puntuales. El arreglo hizo eso **y además eliminó los ocho `!` non-null** que los escondían. Esa segunda parte no era necesaria para que el probe se pusiera en verde, y es la que hace que el defecto no vuelva: con `tsc` en strict y cero non-null, la clase entera de «acceso a una entidad ausente» pasa a estar cerrada por el compilador en vez de por inspección.
+
+La diferencia práctica se va a ver en T-101, cuando estas RPC se implementen de verdad contra Postgres: quien agregue un handler nuevo no puede callar un `undefined` sin que `tsc` lo pare.
+
+> **Regla propuesta.** Al cerrar un hallazgo, preguntar qué construcción del código permitía que el defecto existiera sin ser visible —un `!`, un `as`, un `catch` vacío, un `?? {}`— y si se puede eliminar esa construcción en vez de solo el síntoma. Cuando se puede, el arreglo deja de depender de que la próxima persona se acuerde.
+
+## Lo que dice el dato de esta PR
+
+**16 hallazgos en tres rondas: 15 verificados, 1 abierto no bloqueante.** Catorce de los dieciséis salieron de la ronda 1, lo que dice que el barrido inicial estuvo bien hecho: las rondas 2 y 3 no descubrieron familias nuevas, solo midieron si los arreglos cerraban.
+
+- **La severidad se concentró en el fake, no en los contratos.** `rpc-contracts.ts`, `errors.ts`, `states/` y `schemas/` cerraron en la ronda 2 y no volvieron a moverse. Lo caro fue `rpc-fake.ts`, que es el que simula el comportamiento — y tiene sentido, porque es donde un error no rompe nada hoy y rompe todo en T-101.
+- **`H14` cambió el tablero.** Esta PR no solo remedió las vulnerabilidades: al crear `src/domain/rpc-contracts.ts` hace que el `if` del job `audit` entre por primera vez en su rama estricta. Desde el merge, `audit` es un check bloqueante real y no un `pass` decorativo. Vale anotarlo porque en la PR #57 el mismo job fue hallazgo (`PR57-H19`) justamente por lo contrario.
+- **Cero desvíos de alcance en tres rondas**, con una ficha que se amplió dos veces por decisión humana explícita y quedó registrada en el README de la carpeta. Es el uso correcto de la ampliación: se pide, se aprueba, se escribe.

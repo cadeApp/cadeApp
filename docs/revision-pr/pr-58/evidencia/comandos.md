@@ -272,3 +272,164 @@ Severity: 2 low | 13 moderate | 8 high (8 ignored) | 2 critical (2 ignored)
 ```
 
 Se cruzaron los IDs con las advisories primarias de GitHub y la política de soporte de Next.js. Lautaro073 autorizó actualizar a una versión soportada y parcheada, como mínimo 15.5.24. No se considera H14 verificado en `ad630b9`.
+
+---
+
+# Ronda 3 — `d100c3a`
+
+Todo en un worktree detached, para no tocar el árbol que comparte el agy:
+
+```bash
+git worktree add --detach ../cadeApp-rev58 d100c3a
+pnpm install --frozen-lockfile     # exit 0 · 27,5 s
+# ... probes y checks ...
+git worktree remove --force ../cadeApp-rev58
+```
+
+## H14 · La remediación, medida
+
+```bash
+pnpm audit --audit-level=high
+```
+
+```
+2 vulnerabilities found
+Severity: 2 moderate
+exit=0
+```
+
+Contra la ronda 2: `25 vulnerabilities · 2 low | 13 moderate | 8 high (8 ignored) | 2 critical (2 ignored)`.
+
+```bash
+node -e "const p=require('./package.json'); console.log(p.dependencies.next, JSON.stringify(p.pnpm))"
+```
+
+```
+15.5.26 {"overrides":{"glob":"10.5.0","handlebars":"4.7.9","postcss":"8.5.28","vite":"6.4.3"}}
+```
+
+`pnpm.auditConfig.ignoreGhsas` ya no existe.
+
+### El job `audit` ahora es bloqueante, y por culpa de este PR
+
+El `if` del workflow pide `src/domain/rpc-contracts.ts`, que este PR crea:
+
+```bash
+gh run view --job <audit> --log | grep -E "vulnerabilities|Severity|no bloquea"
+```
+
+```
+2 vulnerabilities found
+Severity: 2 moderate
+```
+
+No aparece el `Aviso: audit no bloquea antes de contracts-v1`, o sea que corrió la rama estricta.
+
+## Probe de ronda 3 — los siete contracasos de la ronda 2, más uno
+
+```bash
+npx vitest run src/domain/review-pr58-r3-probe.test.ts
+npx tsc --noEmit          # el probe también se tipa
+```
+
+```
+✓ setForcedError rechaza un código que no pertenece a publish_request
+✓ accept_offer rechaza una oferta cuyo courier no existe
+✓ admin_verify_document devuelve NOT_FOUND y no un TypeError si falta el courier
+✓ report_no_show sobre matched sin acceptedOfferId no devuelve un output inválido
+✓ report_incident rechaza una solicitud draft
+✓ report_incident produce INCIDENT_WINDOW_EXPIRED pasadas las 24 h de delivered
+✓ una oferta sembrada con el primer ID de la secuencia sobrevive a submit_offer
+✓ package.json no ignora avisos de seguridad
+Tests  8 passed (8)
+```
+
+En la ronda 2, los siete primeros **pasaban demostrando el defecto**.
+
+### Y tres correcciones del propio probe
+
+La primera corrida dio 2 fallos que eran míos:
+
+```
+× admin_verify_document … → expected undefined to be 'NOT_FOUND'
+× report_incident …       → expected undefined to be 'INCIDENT_WINDOW_EXPIRED'
+```
+
+`ActionFailure` expone `code`, no `error` (`errors.ts:55-58`). Corregido, quedó uno:
+
+```
+× admin_verify_document … → expected 'VALIDATION_ERROR' to be 'NOT_FOUND'
+```
+
+que tampoco era del fake: el campo de entrada es `decision`, no `status`, así que fallaba la
+validación de input y nunca llegaba al handler —que sí tiene su guarda en `rpc-fake.ts:979`—.
+Y `tsc --noEmit` sobre el probe encontró un tercero:
+
+```
+review-pr58-r3-probe.test.ts(68,56): error TS2353: 'reason' does not exist in type
+  '{ requestId: string; republish?: boolean | undefined; }'
+```
+
+`report_no_show` no toma `reason`: ese test estaba pasando por el motivo equivocado. Con las tres
+corregidas, 8/8 y `tsc` limpio.
+
+## H15 · La mejora no bloqueante de la ronda 2
+
+```
+✓ clave invalida emite INVALID_SETTING_KEY y no el generico
+✓ valor invalido emite INVALID_SETTING_VALUE y no el generico
+✓ una clave valida con valor valido sigue funcionando
+Tests  3 passed (3)
+```
+
+## Los ocho `!` de la ronda 2
+
+```bash
+grep -cE '[a-zA-Z0-9_)\]]![.\[]' src/domain/testing/rpc-fake.ts
+```
+
+```
+0
+```
+
+Con `pnpm typecheck` en 0 y `strict`, eso significa que las guardas son reales.
+
+```bash
+for pat in ': any' 'as any' '@ts-ignore' '.only(' '.skip('; do ...; done
+```
+
+Cero ocurrencias de cada uno: cumple `AGENTS.md` §4.
+
+## Checks completos
+
+```bash
+pnpm typecheck      # exit 0
+pnpm lint           # exit 0
+pnpm test           # 98 Vitest (11 archivos) · 19 workflows · 6 ADR
+pnpm test:coverage  # exit 0 — domain 100 % · states 93,91 % ramas · rpc-fake 91,1 % ramas
+pnpm build          # exit 0 — First Load JS 103 kB / 180 kB
+npx prettier --check <archivos tocados>   # All matched files use Prettier code style!
+```
+
+```bash
+gh pr checks 58     # 8 de 8
+gh run view --job <db-tests> --log | grep -E "Tests=|Result:"
+```
+
+```
+Files=3, Tests=98,  0 wallclock secs
+Result: PASS
+```
+
+## Alcance
+
+```bash
+gh pr diff 58 --name-only    # 21 archivos
+```
+
+Los 21 caen dentro de «Archivos permitidos» de `docs/tasks/T-006.md`, que incluye las ampliaciones
+autorizadas en las rondas 1 y 2 (`vitest.config.ts`, `package.json`, `pnpm-lock.yaml`,
+`src/server/supabase/server.ts`, `tools/verify-build-boundaries.test.ts`). **0 fuera de alcance.**
+
+El worktree se borró y el probe se retiró: ningún archivo del repositorio quedó modificado por la
+revisión.
