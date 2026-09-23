@@ -498,4 +498,147 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       ).toEqual([...declaredSqlCodes].sort());
     }
   });
+
+  it('5. Precedencia canónica de errores en submit_offer (D05 / H10) y rate limit por ventana en el fake (D06 / H11)', async () => {
+    let currentNow = new Date('2026-09-23T05:00:00.000Z');
+    const REQ_EXPIRED_ID = '30000000-0000-4000-8000-000000000009';
+    const REQ_DRAFT_ID = '30000000-0000-4000-8000-000000000010';
+    const REQ_MISSING_ID = '30000000-0000-4000-8000-999999999999';
+    const COURIER_SUSPENDED = '20000000-0000-4000-8000-000000000099';
+
+    const fake = createFakeRpcClient({
+      now: () => currentNow,
+      settings: {
+        minOfferArs: 1500,
+        maxOffersPerMin: 2,
+        requestTtlMinutes: 30,
+        pilotActive: true,
+        pilotTermsVersion: 'v1',
+        subscriptionGraceDays: 0,
+      } as unknown as Parameters<typeof createFakeRpcClient>[0]['settings'],
+      initialActor: {
+        userId: COURIER_1_ID,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      },
+      initialCouriers: [
+        { courierId: COURIER_1_ID, status: 'approved', available: true },
+        { courierId: COURIER_SUSPENDED, status: 'suspended', available: false },
+      ],
+      initialMerchants: [{ merchantId: MERCHANT_ID, subscriptionStatus: 'pilot' }],
+      initialRequests: [
+        {
+          requestId: REQ_1_ID,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T05:30:00.000Z',
+        },
+        {
+          requestId: REQ_2_ID,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T05:30:00.000Z',
+        },
+        {
+          requestId: REQ_EXPIRED_ID,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T04:00:00.000Z',
+        },
+        {
+          requestId: REQ_DRAFT_ID,
+          merchantId: MERCHANT_ID,
+          status: 'draft',
+        },
+      ],
+    });
+
+    // Tabla de casos H10 (D05): dos problemas simultáneos -> gana la precedencia canónica de la RPC
+    // (actor -> repartidor -> parámetros -> piso -> rate limit -> solicitud -> duplicada)
+    const dualFaultCases: Array<{
+      readonly label: string;
+      readonly actorId: string;
+      readonly requestId: string;
+      readonly amountArs: number;
+      readonly expectedCode: string;
+    }> = [
+      {
+        label: 'Monto bajo el piso + solicitud inexistente -> OFFER_BELOW_MINIMUM',
+        actorId: COURIER_1_ID,
+        requestId: REQ_MISSING_ID,
+        amountArs: 1000,
+        expectedCode: 'OFFER_BELOW_MINIMUM',
+      },
+      {
+        label: 'Monto bajo el piso + solicitud vencida -> OFFER_BELOW_MINIMUM',
+        actorId: COURIER_1_ID,
+        requestId: REQ_EXPIRED_ID,
+        amountArs: 1000,
+        expectedCode: 'OFFER_BELOW_MINIMUM',
+      },
+      {
+        label: 'Monto bajo el piso + solicitud en draft -> OFFER_BELOW_MINIMUM',
+        actorId: COURIER_1_ID,
+        requestId: REQ_DRAFT_ID,
+        amountArs: 1000,
+        expectedCode: 'OFFER_BELOW_MINIMUM',
+      },
+      {
+        label: 'Repartidor suspendido + solicitud vencida -> COURIER_SUSPENDED',
+        actorId: COURIER_SUSPENDED,
+        requestId: REQ_EXPIRED_ID,
+        amountArs: 1600,
+        expectedCode: 'COURIER_SUSPENDED',
+      },
+      {
+        label: 'Repartidor suspendido + solicitud inexistente -> COURIER_SUSPENDED',
+        actorId: COURIER_SUSPENDED,
+        requestId: REQ_MISSING_ID,
+        amountArs: 1600,
+        expectedCode: 'COURIER_SUSPENDED',
+      },
+    ];
+
+    for (const tc of dualFaultCases) {
+      fake.setActor({
+        userId: tc.actorId,
+        role: 'courier',
+        courierStatus: tc.actorId === COURIER_SUSPENDED ? 'suspended' : 'approved',
+        courierAvailable: tc.actorId !== COURIER_SUSPENDED,
+      });
+      const res = await fake.submit_offer({
+        requestId: tc.requestId,
+        amountArs: tc.amountArs,
+        etaMinutes: 15,
+      });
+      expect(res, tc.label).toEqual({ ok: false, code: tc.expectedCode });
+    }
+
+    // D06 / H11 + 6.ª fila de H10: alcanzar el tope de ventana (maxOffersPerMin = 2) con 2 ofertas exitosas
+    // y comprobar que la 3.ª llamada ante una solicitud vencida devuelve RATE_LIMITED (antes de REQUEST_EXPIRED)
+    fake.setActor({
+      userId: COURIER_1_ID,
+      role: 'courier',
+      courierStatus: 'approved',
+      courierAvailable: true,
+    });
+    expect(
+      await fake.submit_offer({ requestId: REQ_1_ID, amountArs: 1500, etaMinutes: 15 })
+    ).toEqual({ ok: true, data: expect.objectContaining({ status: 'pending' }) });
+    expect(
+      await fake.submit_offer({ requestId: REQ_2_ID, amountArs: 1500, etaMinutes: 15 })
+    ).toEqual({ ok: true, data: expect.objectContaining({ status: 'pending' }) });
+
+    // 6.ª fila de H10: en el tope (2/2 en la ventana) + solicitud vencida -> RATE_LIMITED
+    expect(
+      await fake.submit_offer({ requestId: REQ_EXPIRED_ID, amountArs: 1600, etaMinutes: 15 })
+    ).toEqual({ ok: false, code: 'RATE_LIMITED' });
+
+    // Al avanzar al minuto siguiente, la ventana se renueva
+    currentNow = new Date('2026-09-23T05:01:00.000Z');
+    expect(
+      await fake.submit_offer({ requestId: REQ_EXPIRED_ID, amountArs: 1600, etaMinutes: 15 })
+    ).toEqual({ ok: false, code: 'REQUEST_EXPIRED' });
+  });
 });
