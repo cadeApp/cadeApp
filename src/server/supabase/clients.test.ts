@@ -1,11 +1,31 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawnSync } from 'node:child_process';
+import * as supabaseSsr from '@supabase/ssr';
+import * as nextHeaders from 'next/headers';
 import { createClient as createServerClient } from './server';
 import { createClient as createBrowserClient } from '@/lib/supabase/browser';
 import { createAdminClient } from './admin';
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(),
+}));
+
+vi.mock('@supabase/ssr', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@supabase/ssr')>();
+  return {
+    ...actual,
+    createServerClient: vi.fn(
+      (url: string, key: string, options: Parameters<typeof actual.createServerClient>[2]) => {
+        // Ejercita la lectura inicial de cookies igual que @supabase/ssr
+        options.cookies.getAll();
+        return { url, key, options } as unknown as ReturnType<typeof actual.createServerClient>;
+      }
+    ),
+  };
+});
 
 describe('T-002: DoD - Clientes de Supabase y Configuración', () => {
   describe('DoD 1: Existencia e interfaz de los clientes de Supabase', () => {
@@ -13,6 +33,73 @@ describe('T-002: DoD - Clientes de Supabase y Configuración', () => {
       const serverFile = path.resolve('src/server/supabase/server.ts');
       expect(fs.existsSync(serverFile), 'src/server/supabase/server.ts no existe').toBe(true);
       expect(typeof createServerClient).toBe('function');
+    });
+
+    it('createClient() de servidor espera cookies() asíncrono (Next 15) y delega getAll/setAll en el cookieStore resuelto (H16)', async () => {
+      vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000');
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:54321');
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-placeholder-unit-test');
+
+      try {
+        const mockCookiesList = [{ name: 'sb-access-token', value: 'jwt-123' }];
+        const setSpy = vi.fn();
+        const getAllSpy = vi.fn(() => mockCookiesList);
+
+        vi.mocked(nextHeaders.cookies).mockImplementation(
+          async () =>
+            ({
+              getAll: getAllSpy,
+              set: setSpy,
+            }) as unknown as Awaited<ReturnType<typeof nextHeaders.cookies>>
+        );
+
+        const ssrMock = vi.mocked(supabaseSsr.createServerClient);
+        ssrMock.mockClear();
+
+        const client = await createServerClient();
+        expect(client).toBeDefined();
+        expect(nextHeaders.cookies).toHaveBeenCalledTimes(1);
+        expect(ssrMock).toHaveBeenCalledTimes(1);
+        expect(ssrMock).toHaveBeenCalledWith(
+          'http://127.0.0.1:54321',
+          'anon-key-placeholder-unit-test',
+          expect.objectContaining({
+            cookies: expect.objectContaining({
+              getAll: expect.any(Function),
+              setAll: expect.any(Function),
+            }),
+          })
+        );
+
+        const passedOptions = ssrMock.mock.calls[0]?.[2];
+        expect(passedOptions).toBeDefined();
+
+        // Verifica lectura de cookies desde el cookieStore resuelto por await cookies()
+        const readCookies = passedOptions?.cookies.getAll();
+        expect(getAllSpy).toHaveBeenCalledTimes(2);
+        expect(readCookies).toEqual(mockCookiesList);
+
+        // Verifica escritura de cookies delegada a cookieStore.set(...)
+        passedOptions?.cookies.setAll?.([
+          { name: 'sb-refresh-token', value: 'ref-456', options: { path: '/', httpOnly: true } },
+        ]);
+        expect(setSpy).toHaveBeenCalledWith('sb-refresh-token', 'ref-456', {
+          path: '/',
+          httpOnly: true,
+        });
+
+        // Verifica que en un Server Component de solo lectura (cuando set lanza error) no explota
+        setSpy.mockImplementationOnce(() => {
+          throw new Error('Cookies can only be modified in a Server Action or Route Handler');
+        });
+        expect(() =>
+          passedOptions?.cookies.setAll?.([
+            { name: 'sb-readonly', value: 'val', options: { path: '/' } },
+          ])
+        ).not.toThrow();
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it('debe existir src/lib/supabase/browser.ts y exportar createClient (H01)', () => {
@@ -125,13 +212,17 @@ describe('T-002: DoD - Clientes de Supabase y Configuración', () => {
       fs.writeFileSync(testFile, initialContent, 'utf-8');
 
       try {
-        const result = spawnSync('node', [path.resolve('tools/db-types.mjs'), '--invalid-flag-force-fail'], {
-          encoding: 'utf-8',
-          env: {
-            ...process.env,
-            DB_TYPES_TARGET_FILE: testFile,
-          },
-        });
+        const result = spawnSync(
+          'node',
+          [path.resolve('tools/db-types.mjs'), '--invalid-flag-force-fail'],
+          {
+            encoding: 'utf-8',
+            env: {
+              ...process.env,
+              DB_TYPES_TARGET_FILE: testFile,
+            },
+          }
+        );
 
         // La CLI debe fallar
         expect(result.status).not.toBe(0);
