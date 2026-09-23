@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(32);
+select plan(36);
 
 -- IDs de actores para pruebas de T-101
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000011a1'::uuid $$;
@@ -336,6 +336,39 @@ select pg_temp.reset_actor();
 select ok(
   (select count >= 1 from public.rate_limits where subject = pg_temp.courier_approved_1_id()::text and action = 'submit_offer'),
   'submit_offer incrementa atómicamente la fila correspondiente en public.rate_limits'
+);
+
+-- 33-36. H03 Demostración en rojo: resetea el contador, corre tres throws_ok con OFFER_BELOW_MINIMUM y afirma que el contador vale 3 (va a valer 0)
+select pg_temp.reset_actor();
+delete from public.rate_limits
+where subject = pg_temp.courier_approved_1_id()::text
+  and action = 'submit_offer';
+
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select throws_ok(
+  $$ select public.submit_offer(pg_temp.req_pub_2_id(), 999, 15, 'Intento fallido 1') $$,
+  'P0001'::char(5),
+  'OFFER_BELOW_MINIMUM',
+  'H03 intento fallido 1 con OFFER_BELOW_MINIMUM'
+);
+select throws_ok(
+  $$ select public.submit_offer(pg_temp.req_pub_2_id(), 999, 15, 'Intento fallido 2') $$,
+  'P0001'::char(5),
+  'OFFER_BELOW_MINIMUM',
+  'H03 intento fallido 2 con OFFER_BELOW_MINIMUM'
+);
+select throws_ok(
+  $$ select public.submit_offer(pg_temp.req_pub_2_id(), 999, 15, 'Intento fallido 3') $$,
+  'P0001'::char(5),
+  'OFFER_BELOW_MINIMUM',
+  'H03 intento fallido 3 con OFFER_BELOW_MINIMUM'
+);
+
+select pg_temp.reset_actor();
+select is(
+  (select coalesce(max(count), 0) from public.rate_limits where subject = pg_temp.courier_approved_1_id()::text and action = 'submit_offer'),
+  3,
+  'Demostración H03 en rojo: si las llamadas con OFFER_BELOW_MINIMUM persistieran su incremento, el contador valdría 3 (vale 0)'
 );
 
 select * from finish();
