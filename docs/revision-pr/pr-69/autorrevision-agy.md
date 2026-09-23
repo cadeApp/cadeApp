@@ -33,7 +33,7 @@ Archivos permitidos según `docs/tasks/T-114.md`:
 ## 3. Estado de los Checks Locales
 - `pnpm typecheck`: ✅ 0 errores
 - `pnpm lint`: ✅ 0 advertencias, 0 errores
-- `pnpm test`: ✅ 25 test files passed, 224 tests passed
+- `pnpm test`: ✅ 26 test files passed, 227 tests passed (252 pruebas en total con workflows y ADRs)
 - `pnpm build`: ✅ Build de producción exitoso (rutas `/courier/feed` y `/courier/offers` generadas)
 
 ---
@@ -42,11 +42,11 @@ Archivos permitidos según `docs/tasks/T-114.md`:
 ```
 Informe revisar-pr — T-114 — 2026-09-23 — generado por asako669
 Resultado: SIN BLOQUEANTES
-Checks locales: typecheck ✅ · lint ✅ · test ✅ (25 suites, 224 pruebas) · test:db n.a.
+Checks locales: typecheck ✅ · lint ✅ · test ✅ (26 suites, 227 pruebas unitarias, 252 totales) · test:db n.a.
 BLOQUEANTES:
 - ninguno
 MEJORAS:
-- ninguno
+- ninguna
 No revisado / dudas para Lautaro073:
 - ninguna
 ```
