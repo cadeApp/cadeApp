@@ -383,21 +383,21 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         amountArs: 1500,
         etaMinutes: 15,
       })
-    ).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    ).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
 
     rpcSpy.mockResolvedValueOnce({ data: { malformed: true }, error: null });
     expect(await withdrawOfferRpc(mockClient, { offerId: OFFER_1_ID })).toEqual({
       ok: false,
-      code: 'VALIDATION_ERROR',
+      code: 'INTERNAL_ERROR',
     });
 
     rpcSpy.mockResolvedValueOnce({ data: { malformed: true }, error: null });
     expect(await setAvailabilityRpc(mockClient, { available: true })).toEqual({
       ok: false,
-      code: 'VALIDATION_ERROR',
+      code: 'INTERNAL_ERROR',
     });
 
-    // Mapeo de código SQL 23505, 42501, subcadena y fallback desconocido
+    // Mapeo de código SQL 23505, 42501, subcadena y fallback desconocido (INTERNAL_ERROR por D03 / H02)
     expect(
       mapOfferRpcError('submit_offer', {
         code: '23505',
@@ -421,37 +421,81 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         code: 'XX000',
         message: 'unexpected internal error',
       })
-    ).toBe('VALIDATION_ERROR');
+    ).toBe('INTERNAL_ERROR');
   });
 
-  it('4. Contrato SQL: la migración de T-101 define SECURITY DEFINER, search_path fijo, FOR UPDATE, rate_limits atómico y solo códigos de RPC_CONTRACTS', () => {
+  it('4. Contrato SQL por función (H05): cada bloque exige SECURITY DEFINER, search_path, locks y coincidencia bidireccional con RPC_CONTRACTS', () => {
     const migrationsDir = path.resolve('supabase/migrations');
     const files = fs.readdirSync(migrationsDir).filter((f) => f.includes('rpc_offers'));
     expect(files.length).toBe(1);
 
     const sql = fs.readFileSync(path.join(migrationsDir, files[0] ?? ''), 'utf8');
-    expect(sql).toMatch(/create or replace function public\.submit_offer/i);
-    expect(sql).toMatch(/create or replace function public\.withdraw_offer/i);
-    expect(sql).toMatch(/create or replace function public\.set_availability/i);
-    expect(sql).toMatch(/security definer/i);
-    expect(sql).toMatch(/set search_path = public, pg_temp/i);
-    expect(sql).toMatch(/for update/i);
-    expect(sql).toMatch(/insert into public\.rate_limits/i);
-    expect(sql).toMatch(/on conflict \(subject, action, window_start\)/i);
-    expect(sql).toMatch(/min_offer_ars/);
+    const seedSql = fs.readFileSync(path.resolve('supabase/seed.sql'), 'utf8');
+    expect(seedSql).toMatch(/'max_offers_per_min'/);
+    expect(seedSql).toMatch(/'min_offer_ars'/);
 
-    // Verificar que cada MESSAGE = '...' de P0001 en la migración existe en RPC_CONTRACTS
-    const allowedCodes = new Set<string>([
-      ...RPC_CONTRACTS.submit_offer.errorCodes,
-      ...RPC_CONTRACTS.withdraw_offer.errorCodes,
-      ...RPC_CONTRACTS.set_availability.errorCodes,
-    ]);
-    const raisedCodes = Array.from(sql.matchAll(/message\s*=\s*'([A-Z0-9_]+)'/gi)).map(
-      (m) => m[1] ?? ''
-    );
-    expect(raisedCodes.length).toBeGreaterThanOrEqual(10);
-    for (const c of raisedCodes) {
-      expect(allowedCodes.has(c), `Código SQL ${c} no figura en RPC_CONTRACTS`).toBe(true);
+    const rawBlocks = sql.split(/create\s+or\s+replace\s+function\s+public\./i).slice(1);
+    expect(rawBlocks.length).toBe(3);
+
+    const blockByRpc = new Map<string, string>();
+    for (const block of rawBlocks) {
+      const fnName = block.match(/^([a-z0-9_]+)\s*\(/i)?.[1];
+      if (fnName) {
+        blockByRpc.set(fnName, block);
+      }
+    }
+
+    const expectedRpcs = ['submit_offer', 'withdraw_offer', 'set_availability'] as const;
+    expect([...blockByRpc.keys()].sort()).toEqual([...expectedRpcs].sort());
+
+    for (const rpcName of expectedRpcs) {
+      const block = blockByRpc.get(rpcName) ?? '';
+      expect(block, `${rpcName}: falta SECURITY DEFINER`).toMatch(/security\s+definer/i);
+      expect(block, `${rpcName}: falta SET search_path = public, pg_temp`).toMatch(
+        /set\s+search_path\s*=\s*public,\s*pg_temp/i
+      );
+      expect(block, `${rpcName}: falta FOR UPDATE`).toMatch(/for\s+update/i);
+
+      if (rpcName === 'submit_offer') {
+        expect(block, 'submit_offer: falta FOR SHARE sobre couriers').toMatch(/for\s+share/i);
+        expect(block, 'submit_offer: falta insert en rate_limits').toMatch(
+          /insert\s+into\s+public\.rate_limits/i
+        );
+        expect(block, 'submit_offer: falta ON CONFLICT (subject, action, window_start)').toMatch(
+          /on\s+conflict\s*\(\s*subject,\s*action,\s*window_start\s*\)/i
+        );
+        expect(block, 'submit_offer: falta lectura de min_offer_ars').toMatch(/min_offer_ars/);
+        expect(block, 'submit_offer: falta lectura de max_offers_per_min').toMatch(
+          /max_offers_per_min/
+        );
+      }
+
+      if (rpcName === 'withdraw_offer') {
+        expect(block, 'withdraw_offer: falta insert en rate_limits').toMatch(
+          /insert\s+into\s+public\.rate_limits/i
+        );
+        expect(block, 'withdraw_offer: falta ON CONFLICT (subject, action, window_start)').toMatch(
+          /on\s+conflict\s*\(\s*subject,\s*action,\s*window_start\s*\)/i
+        );
+        expect(block, 'withdraw_offer: falta lectura de max_offers_per_min').toMatch(
+          /max_offers_per_min/
+        );
+      }
+
+      const raisedInSql = new Set(
+        Array.from(block.matchAll(/message\s*=\s*'([A-Z0-9_]+)'/gi)).map((m) => m[1] ?? '')
+      );
+      const declaredCodes = RPC_CONTRACTS[rpcName].errorCodes;
+      expect(
+        declaredCodes,
+        `${rpcName}: debe declarar INTERNAL_ERROR en RPC_CONTRACTS (D03)`
+      ).toContain('INTERNAL_ERROR');
+
+      const declaredSqlCodes = new Set(declaredCodes.filter((c) => c !== 'INTERNAL_ERROR'));
+      expect(
+        [...raisedInSql].sort(),
+        `${rpcName}: discrepancia bidireccional entre códigos levantados en SQL y declarados en RPC_CONTRACTS`
+      ).toEqual([...declaredSqlCodes].sort());
     }
   });
 });

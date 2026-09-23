@@ -340,6 +340,7 @@ export const RPC_CONTRACTS = {
       'DUPLICATE_ACTIVE_OFFER',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   withdraw_offer: {
@@ -350,9 +351,9 @@ export const RPC_CONTRACTS = {
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
       'OFFER_NOT_PENDING',
-      'INVALID_STATE_TRANSITION',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   accept_offer: {
@@ -456,6 +457,7 @@ export const RPC_CONTRACTS = {
       'COURIER_NOT_APPROVED',
       'COURIER_SUSPENDED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   calculate_route_distance: {

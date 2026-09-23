@@ -1,5 +1,10 @@
 -- T-101: Transactional RPCs for courier offers and availability (submit_offer, withdraw_offer, set_availability) with atomic rate_limits
 
+-- D02 / H01: Ensure max_offers_per_min exists in platform_settings even before seed.sql runs
+insert into public.platform_settings (key, value)
+values ('max_offers_per_min', '10'::jsonb)
+on conflict (key) do nothing;
+
 create or replace function public.submit_offer(
   p_request_id uuid,
   p_amount_ars integer,
@@ -18,6 +23,7 @@ declare
   v_courier_available boolean;
   v_req public.delivery_requests%rowtype;
   v_min_offer_ars integer;
+  v_max_offers_per_min integer;
   v_rate_count integer;
   v_clean_message text;
   v_offer public.offers%rowtype;
@@ -74,6 +80,44 @@ begin
     v_clean_message := null;
   end if;
 
+  -- H09: Read platform_settings and perform rate_limits upsert BEFORE taking FOR UPDATE on delivery_requests
+  -- so the exclusive lock on the hot request row is held only for the final state & duplicate check + insert.
+  select (value #>> '{}')::integer
+  into v_max_offers_per_min
+  from public.platform_settings
+  where key = 'max_offers_per_min';
+
+  if v_max_offers_per_min is null or v_max_offers_per_min < 1 then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  select (value #>> '{}')::integer
+  into v_min_offer_ars
+  from public.platform_settings
+  where key = 'min_offer_ars';
+
+  if v_min_offer_ars is null or v_min_offer_ars < 1 then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  if p_amount_ars < 1 or p_amount_ars < v_min_offer_ars then
+    raise exception using errcode = 'P0001', message = 'OFFER_BELOW_MINIMUM';
+  end if;
+
+  -- D01 / H03: This upsert runs inside the same PostgreSQL transaction as the RPC.
+  -- Any subsequent RAISE EXCEPTION aborts the transaction and rolls back this increment,
+  -- so public.rate_limits intentionally limits successful offers per 1-minute window.
+  -- Counting failed attempts requires an autonomous transaction or edge limiter (out of scope for T-101).
+  insert into public.rate_limits (subject, action, window_start, count)
+  values (v_actor_id::text, 'submit_offer', date_trunc('minute', now()), 1)
+  on conflict (subject, action, window_start)
+  do update set count = public.rate_limits.count + 1
+  returning count into v_rate_count;
+
+  if v_rate_count > v_max_offers_per_min then
+    raise exception using errcode = 'P0001', message = 'RATE_LIMITED';
+  end if;
+
   select *
   into v_req
   from public.delivery_requests
@@ -92,29 +136,6 @@ begin
 
   if v_req.status <> 'published' then
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
-  end if;
-
-  insert into public.rate_limits (subject, action, window_start, count)
-  values (v_actor_id::text, 'submit_offer', date_trunc('minute', now()), 1)
-  on conflict (subject, action, window_start)
-  do update set count = public.rate_limits.count + 1
-  returning count into v_rate_count;
-
-  if v_rate_count > 10 then
-    raise exception using errcode = 'P0001', message = 'RATE_LIMITED';
-  end if;
-
-  select (value #>> '{}')::integer
-  into v_min_offer_ars
-  from public.platform_settings
-  where key = 'min_offer_ars';
-
-  if v_min_offer_ars is null or v_min_offer_ars < 1 then
-    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
-  end if;
-
-  if p_amount_ars < 1 or p_amount_ars < v_min_offer_ars then
-    raise exception using errcode = 'P0001', message = 'OFFER_BELOW_MINIMUM';
   end if;
 
   if exists (
@@ -170,6 +191,7 @@ declare
   v_actor_id uuid := auth.uid();
   v_role public.profile_role;
   v_offer public.offers%rowtype;
+  v_max_offers_per_min integer;
   v_rate_count integer;
 begin
   if v_actor_id is null then
@@ -185,6 +207,15 @@ begin
   end if;
 
   if p_offer_id is null then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  select (value #>> '{}')::integer
+  into v_max_offers_per_min
+  from public.platform_settings
+  where key = 'max_offers_per_min';
+
+  if v_max_offers_per_min is null or v_max_offers_per_min < 1 then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
@@ -206,13 +237,15 @@ begin
     raise exception using errcode = 'P0001', message = 'OFFER_NOT_PENDING';
   end if;
 
+  -- D01 / H03: Upsert runs inside the same transaction; failed attempts roll back this increment,
+  -- so rate_limits limits successful withdrawals per 1-minute window against max_offers_per_min.
   insert into public.rate_limits (subject, action, window_start, count)
   values (v_actor_id::text, 'withdraw_offer', date_trunc('minute', now()), 1)
   on conflict (subject, action, window_start)
   do update set count = public.rate_limits.count + 1
   returning count into v_rate_count;
 
-  if v_rate_count > 10 then
+  if v_rate_count > v_max_offers_per_min then
     raise exception using errcode = 'P0001', message = 'RATE_LIMITED';
   end if;
 

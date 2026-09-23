@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(36);
+select plan(43);
 
 -- IDs de actores para pruebas de T-101
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000011a1'::uuid $$;
@@ -318,7 +318,7 @@ select throws_ok(
   'Un comercio no puede invocar set_availability (UNAUTHORIZED_ACTOR)'
 );
 
--- 31-32. DoD: rate_limits atómico (incremento en public.rate_limits y bloqueo con RATE_LIMITED al superar el umbral de ventana)
+-- 31-33. DoD (D01, D02, D04, H01, H04): Tope de ventana desde platform_settings.max_offers_per_min y upsert atómico sobre la PK
 select pg_temp.reset_actor();
 insert into public.rate_limits (subject, action, window_start, count)
 values (pg_temp.courier_approved_2_id()::text, 'submit_offer', date_trunc('minute', now()), 10)
@@ -329,17 +329,37 @@ select throws_ok(
   $$ select public.submit_offer(pg_temp.req_pub_2_id(), 1600, 15, 'Excede rate limit') $$,
   'P0001'::char(5),
   'RATE_LIMITED',
-  'Cuando el contador atómico de rate_limits supera el máximo por ventana, submit_offer rechaza con RATE_LIMITED'
+  'Limita ofertas exitosas por ventana: cuando el contador alcanza platform_settings.max_offers_per_min (10), submit_offer rechaza con RATE_LIMITED'
 );
 
+-- 32. D04 / H04: Afirma el valor exacto del contador (3 tras las 3 ofertas exitosas de courier_approved_1_id) con limit 1
 select pg_temp.reset_actor();
-select ok(
-  (select count >= 1 from public.rate_limits where subject = pg_temp.courier_approved_1_id()::text and action = 'submit_offer'),
-  'submit_offer incrementa atómicamente la fila correspondiente en public.rate_limits'
+select is(
+  (
+    select count
+    from public.rate_limits
+    where subject = pg_temp.courier_approved_1_id()::text
+      and action = 'submit_offer'
+    order by window_start desc
+    limit 1
+  ),
+  3,
+  'Tope de ventana verificado y upsert atómico sobre la PK: el contador de courier_approved_1_id vale exactamente 3 tras 3 ofertas exitosas y 9 intentos fallidos'
 );
 
--- 33-36. H03 Demostración en rojo: resetea el contador, corre tres throws_ok con OFFER_BELOW_MINIMUM y afirma que el contador vale 3 (va a valer 0)
+-- 33. D02 / H01: Tope dinámico leído de platform_settings.max_offers_per_min (al bajarlo a 3, la 4.ª oferta de courier_approved_1_id recibe RATE_LIMITED)
+update public.platform_settings set value = '3'::jsonb where key = 'max_offers_per_min';
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select throws_ok(
+  $$ select public.submit_offer(pg_temp.req_pub_3_id(), 1600, 15, 'Cuarta oferta con tope 3') $$,
+  'P0001'::char(5),
+  'RATE_LIMITED',
+  'Con platform_settings.max_offers_per_min cambiado a 3, la 4.ª oferta de courier_approved_1_id rechaza con RATE_LIMITED'
+);
 select pg_temp.reset_actor();
+update public.platform_settings set value = '10'::jsonb where key = 'max_offers_per_min';
+
+-- 34-37. D01 / H03: Tras resetear el contador y ejecutar 3 throws_ok con OFFER_BELOW_MINIMUM, el contador vale 0 (el rate limit solo cuenta ofertas exitosas)
 delete from public.rate_limits
 where subject = pg_temp.courier_approved_1_id()::text
   and action = 'submit_offer';
@@ -366,9 +386,39 @@ select throws_ok(
 
 select pg_temp.reset_actor();
 select is(
-  (select coalesce(max(count), 0) from public.rate_limits where subject = pg_temp.courier_approved_1_id()::text and action = 'submit_offer'),
-  3,
-  'Demostración H03 en rojo: si las llamadas con OFFER_BELOW_MINIMUM persistieran su incremento, el contador valdría 3 (vale 0)'
+  (
+    select coalesce(max(count), 0)
+    from public.rate_limits
+    where subject = pg_temp.courier_approved_1_id()::text
+      and action = 'submit_offer'
+  ),
+  0,
+  'D01 / H03: Los 3 intentos fallidos con OFFER_BELOW_MINIMUM revierten su transacción y dejan el contador en 0 (limita ofertas exitosas por ventana)'
+);
+
+-- 38-43. H08: Verificación explícita de SECURITY DEFINER (is_definer) y bloqueo de rol anon (42501) en las 3 RPC
+select is_definer('public', 'submit_offer', array['uuid', 'integer', 'integer', 'text'], 'submit_offer es SECURITY DEFINER');
+select is_definer('public', 'withdraw_offer', array['uuid'], 'withdraw_offer es SECURITY DEFINER');
+select is_definer('public', 'set_availability', array['boolean'], 'set_availability es SECURITY DEFINER');
+
+select pg_temp.act_as('anon');
+select throws_ok(
+  $$ select public.submit_offer(pg_temp.req_pub_1_id(), 1600, 15, null) $$,
+  '42501'::char(5),
+  null,
+  'Rol anon no tiene permiso EXECUTE sobre submit_offer (42501)'
+);
+select throws_ok(
+  $$ select public.withdraw_offer(pg_temp.req_pub_1_id()) $$,
+  '42501'::char(5),
+  null,
+  'Rol anon no tiene permiso EXECUTE sobre withdraw_offer (42501)'
+);
+select throws_ok(
+  $$ select public.set_availability(true) $$,
+  '42501'::char(5),
+  null,
+  'Rol anon no tiene permiso EXECUTE sobre set_availability (42501)'
 );
 
 select * from finish();

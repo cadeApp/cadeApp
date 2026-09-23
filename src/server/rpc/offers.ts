@@ -42,7 +42,8 @@ function isAllowedOfferRpcError<K extends OfferRpcName>(
 /**
  * Maps a PostgREST / Postgres error returned by `submit_offer`, `withdraw_offer`,
  * or `set_availability` into the strict `RpcErrorCode<K>` union declared in
- * `@/domain/rpc-contracts`.
+ * `@/domain/rpc-contracts`. Unrecognized infrastructure/database errors fall back
+ * to `INTERNAL_ERROR` (D03 / H02).
  */
 export function mapOfferRpcError<K extends OfferRpcName>(
   rpcName: K,
@@ -74,7 +75,7 @@ export function mapOfferRpcError<K extends OfferRpcName>(
     return 'UNAUTHORIZED_ACTOR';
   }
 
-  return 'VALIDATION_ERROR' as RpcErrorCode<K>;
+  return 'INTERNAL_ERROR';
 }
 
 /**
@@ -107,7 +108,7 @@ export async function submitOfferRpc(
 
   const parsedOutput = RPC_CONTRACTS.submit_offer.outputSchema.safeParse(data);
   if (!parsedOutput.success) {
-    return err('VALIDATION_ERROR');
+    return err('INTERNAL_ERROR');
   }
 
   return ok(parsedOutput.data);
@@ -139,7 +140,7 @@ export async function withdrawOfferRpc(
 
   const parsedOutput = RPC_CONTRACTS.withdraw_offer.outputSchema.safeParse(data);
   if (!parsedOutput.success) {
-    return err('VALIDATION_ERROR');
+    return err('INTERNAL_ERROR');
   }
 
   return ok(parsedOutput.data);
@@ -172,7 +173,7 @@ export async function setAvailabilityRpc(
   const parsedOutput =
     RPC_CONTRACTS.set_availability.outputSchema.safeParse(data);
   if (!parsedOutput.success) {
-    return err('VALIDATION_ERROR');
+    return err('INTERNAL_ERROR');
   }
 
   return ok(parsedOutput.data);
