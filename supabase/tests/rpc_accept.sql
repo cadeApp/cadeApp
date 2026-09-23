@@ -308,7 +308,7 @@ select throws_ok(
   'Una solicitud en estado cancelled lanza INVALID_STATE_TRANSITION'
 );
 
--- 15-24. DoD: 10 llamadas competidoras sobre las 10 ofertas de la misma solicitud → una sola ganadora y 9 ALREADY_MATCHED
+-- 15-23. DoD (D01): Competencia de 10 ofertas sobre la misma solicitud → una sola ganadora y 9 ALREADY_MATCHED
 create temp table t102_race_results (
   idx integer primary key,
   outcome text not null,
@@ -442,7 +442,7 @@ select is(
   'La idempotencia (paso 5) precede al chequeo de estado del repartidor (paso 8)'
 );
 
--- 28-34. Precedencia canónica ante fallos simultáneos en SQL (CC-002)
+-- 28-34. Precedencia canónica ante fallos simultáneos en SQL (CC-003)
 -- 28. Actor no autenticado + oferta inexistente -> UNAUTHENTICATED (paso 1 precede a paso 3)
 select pg_temp.act_as('authenticated', null);
 select throws_ok(

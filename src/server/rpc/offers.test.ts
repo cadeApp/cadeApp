@@ -647,7 +647,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
 });
 
 describe('T-102 · RPC accept_offer atómica e idempotente', () => {
-  it('6. DoD 10 llamadas concurrentes → una sola ganadora; idempotencia preservando matchedAt; ALREADY_MATCHED; repartidor suspendido entre la oferta y la aceptación', async () => {
+  it('6. DoD Competencia de 10 ofertas → una sola ganadora y 9 ALREADY_MATCHED; idempotencia preservando matchedAt; repartidor suspendido entre la oferta y la aceptación', async () => {
     let currentNow = new Date('2026-09-23T10:00:00.000Z');
     const courierUuid = (idx: number) =>
       `00000000-0000-4000-8000-000000000c${String(idx).padStart(2, '0')}`;
@@ -744,7 +744,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     const pendingCourierRes = await acceptOfferRpc(caller, { offerId: offerPendingId });
     expect(pendingCourierRes).toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
 
-    // 2. 10 llamadas concurrentes con Promise.all sobre las 10 ofertas de REQ_1_ID → una sola ganadora y 9 ALREADY_MATCHED
+    // 2. Competencia sobre las 10 ofertas de REQ_1_ID → una sola ganadora y 9 ALREADY_MATCHED
     const raceResults = await Promise.all(
       offers10.map((o) => acceptOfferRpc(caller, { offerId: o.offerId }))
     );
@@ -829,7 +829,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     });
   });
 
-  it('7. Precedencia canónica de errores en accept_offer ante fallos simultáneos (CC-002)', async () => {
+  it('7. Precedencia canónica de errores en accept_offer ante fallos simultáneos (CC-003)', async () => {
     const OTHER_MERCHANT = '00000000-0000-4000-8000-0000000000b9';
     const COURIER_SUSP = '00000000-0000-4000-8000-000000000c99';
     const REQ_MATCHED = '00000000-0000-4000-8000-000000000901';
@@ -972,7 +972,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     });
   });
 
-  it('8. Contrato SQL de accept_offer: SECURITY DEFINER, search_path, locks FOR UPDATE/FOR SHARE, drop policy offers_update_merchant y coincidencia bidireccional de códigos', () => {
+  it('8. Contrato SQL de accept_offer: SECURITY DEFINER, search_path, orden jerárquico de locks anclados por sentencia (H01/D01), sin UPDATE revertido en REQUEST_EXPIRED (H03/D02) y coincidencia bidireccional de códigos', () => {
     const migrationPath = path.resolve(
       process.cwd(),
       'supabase/migrations/20260923170000_rpc_accept_offer_v1.sql'
@@ -989,9 +989,51 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     const body = acceptBlock ?? '';
     expect(body).toMatch(/security\s+definer/i);
     expect(body).toMatch(/set\s+search_path\s*=\s*public\s*,\s*pg_temp/i);
-    expect(body).toMatch(/from\s+public\.delivery_requests[\s\S]*?for\s+update/i);
-    expect(body).toMatch(/from\s+public\.offers[\s\S]*?for\s+update/i);
-    expect(body).toMatch(/from\s+public\.couriers[\s\S]*?for\s+share/i);
+
+    // H01 / D01: cada lock debe estar anclado a su propia sentencia SELECT (sin cruzar ';')
+    // y adquirirse en orden jerárquico padre -> hijo: delivery_requests FOR UPDATE < offers FOR UPDATE < couriers FOR SHARE
+    const reqLockRegex = /from\s+public\.delivery_requests\s+dr[^;]*?for\s+update\s*;/i;
+    const offerLockRegex = /from\s+public\.offers\s+o[^;]*?for\s+update\s*;/i;
+    const courierLockRegex = /from\s+public\.couriers\s+c[^;]*?for\s+share\s*;/i;
+
+    const reqLockMatch = body.match(reqLockRegex);
+    const offerLockMatch = body.match(offerLockRegex);
+    const courierLockMatch = body.match(courierLockRegex);
+
+    expect(
+      reqLockMatch,
+      'Falta FOR UPDATE en la sentencia SELECT de public.delivery_requests'
+    ).not.toBeNull();
+    expect(
+      offerLockMatch,
+      'Falta FOR UPDATE en la sentencia SELECT de public.offers'
+    ).not.toBeNull();
+    expect(
+      courierLockMatch,
+      'Falta FOR SHARE en la sentencia SELECT de public.couriers'
+    ).not.toBeNull();
+
+    const reqLockIndex = reqLockMatch?.index ?? -1;
+    const offerLockIndex = offerLockMatch?.index ?? -1;
+    const courierLockIndex = courierLockMatch?.index ?? -1;
+
+    expect(reqLockIndex).toBeGreaterThanOrEqual(0);
+    expect(reqLockIndex).toBeLessThan(offerLockIndex);
+    expect(offerLockIndex).toBeLessThan(courierLockIndex);
+
+    // H01: mutaciones M1 y M2 — quitar el FOR UPDATE individual de offers o de delivery_requests debe fallar su control
+    const m1WithoutOffersLock = body.replace(offerLockRegex, (stmt) =>
+      stmt.replace(/for\s+update\s*;/i, ';')
+    );
+    expect(m1WithoutOffersLock).not.toMatch(offerLockRegex);
+
+    const m2WithoutReqLock = body.replace(reqLockRegex, (stmt) =>
+      stmt.replace(/for\s+update\s*;/i, ';')
+    );
+    expect(m2WithoutReqLock).not.toMatch(reqLockRegex);
+
+    // H03 / D02: no debe existir un UPDATE a status = 'expired' antes de raise exception 'REQUEST_EXPIRED'
+    expect(body).not.toMatch(/set\s+status\s*=\s*'expired'/i);
 
     const raisedCodes = Array.from(body.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map(
       (m) => m[1] as RpcErrorCode<'accept_offer'>

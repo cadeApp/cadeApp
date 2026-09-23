@@ -119,12 +119,10 @@ begin
     raise exception 'ALREADY_MATCHED' using errcode = 'P0001';
   end if;
 
-  -- 6. Expiración perezosa y estado de la solicitud (precedencia paso 6: REQUEST_EXPIRED -> INVALID_STATE_TRANSITION)
+  -- 6. Rechazo perezoso por vencimiento y estado de la solicitud (precedencia paso 6: REQUEST_EXPIRED -> INVALID_STATE_TRANSITION)
+  -- Sin UPDATE: RAISE EXCEPTION aborta la transacción y revertiría cualquier escritura (igual que submit_offer en T-101;
+  -- la transición persistente a 'expired' la realiza el cron de barrido de T-104).
   if v_request.status = 'published' and v_request.expires_at is not null and v_request.expires_at <= v_now then
-    update public.delivery_requests
-    set status = 'expired'
-    where id = v_request.id;
-
     raise exception 'REQUEST_EXPIRED' using errcode = 'P0001';
   end if;
 
