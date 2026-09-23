@@ -1,7 +1,13 @@
-# Evidencia · PR #64 · T-102 — Ronda 1 sobre `071ba95`
+# Evidencia · PR #64 · T-102
 
-Revisión estática. Por el método acordado con Lautaro073, **CI se mira recién cuando la ronda está para
-aprobar**: esta tiene bloqueantes, así que no se consultó ningún job ni se corrió ninguna suite.
+Dos rondas: `071ba95` y `570473d`. Por el método acordado con Lautaro073, **CI se mira recién cuando la ronda
+está para aprobar** — la ronda 1 fue íntegramente estática y la 2 leyó los ocho jobs por dentro.
+
+---
+
+# Ronda 1 sobre `071ba95`
+
+Revisión estática: esta ronda tiene bloqueantes, así que no se consultó ningún job ni se corrió ninguna suite.
 
 ## Preparación
 
@@ -200,4 +206,113 @@ partía por ahí. `AG-60` otra vez: antes de reportar lo que dice un script prop
 
 ```bash
 git worktree remove --force ../cadeApp-rev64 && git worktree prune
+```
+
+---
+
+# Ronda 2 · verificación de cierre sobre `570473d`
+
+```bash
+git fetch origin
+git log --format="%h %an %s" 4efca15..origin/feat/T-102-rpc-accept-offer
+#   570473d  fix(offers): resolve PR #64 round 1 findings D01, D02 and H01-H06
+git worktree add --detach ../cadeApp-rev64b 570473d
+git diff --stat 071ba95 570473d -- . ':(exclude)docs/revision-pr'    # 9 archivos, +86 -32
+```
+
+## `H01` · batería de mutación sobre el test 8
+
+`scratchpad/mutar64.mjs` evalúa los tres regex nuevos (anclados con `[^;]*?`), la comprobación de orden por
+índice y las dos mutaciones embebidas, sobre el cuerpo real y cinco mutaciones:
+
+```
+A · cuerpo real, regex anclado                       -> VERDE
+B · sin el 'for update' de offers                    -> ROJO   (ronda 1: verde)
+C · sin el 'for update' de delivery_requests         -> ROJO   (ronda 1: verde)
+D · orden de locks invertido                         -> ROJO   (control nuevo)
+E · cuerpo real pero con el regex viejo [\s\S]*?     -> ROJO   <- el decisivo
+F · con el update a expired de vuelta                -> ROJO
+```
+
+El caso **E** es el que prueba que las aserciones `M1`/`M2` embebidas no son tautológicas: con el comodín viejo,
+el `replace` de la mutación deja de ser específico y el `not.toMatch` falla. El control detecta que lo debiliten.
+
+## `H03` · la escritura, y la afirmación sobre T-104
+
+```bash
+node scratchpad/barrido64.mjs | tail -3
+#   ## escritura antes de un raise en el mismo bloque (se revierte)
+#   (vacio)
+
+# el comentario nuevo afirma que la transicion persistente la hace el cron de T-104: verificado
+blob=$(git ls-tree origin/develop docs/tasks/T-104.md | awk '{print $3}')
+git cat-file -p $blob | head -8
+#   # T-104 — `/api/cron/sweep` (expiraciones, purga de documentos, suscripciones vencidas)
+```
+
+## `H04` · barrido de referencias
+
+```bash
+grep -rn "CC-002" src/ supabase/ docs/tasks/T-102.md docs/tasks/log/T-102.md docs/contracts/CC-003.md
+#   src/domain/domain.test.ts:65    describe('CC-002 — Contratos del ciclo de solicitudes', ...
+#   src/domain/domain.test.ts:1351  // ... la nueva guarda de aprobación de CC-002
+```
+
+Las dos son al `CC-002` **real** (el del ciclo de solicitudes, PR #66, cuyo título en develop es «Contratos y
+alcance para el ciclo de solicitudes»). Correctas, no son residuos.
+
+## Sin regresión
+
+```
+## pgTAP        plan 34 · 34 aserciones · 1..34 · sin duplicados ni faltantes
+## codigos      levanta 10 ⊂ declara 11 · solo sobra INTERNAL_ERROR (lo produce el wrapper)
+## precedencia  8 pasos documentados == orden de raise del SQL == orden del fake
+```
+
+## CI · `570473d` (primera vez que se mira en esta PR)
+
+```
+8/8 pass · mergeState=CLEAN
+unit      Test Files 21 passed (21) · Tests 206 passed (206)
+          offers.ts 100/100/100/100 · rpc-contracts.ts 100 · rpc-fake.ts 93.15 branch (umbral 90 perFile)
+db-tests  Files=5, Tests=175 · All tests successful. · Result: PASS · los 5 archivos en ok
+```
+
+Cruce independiente del total pgTAP:
+
+```bash
+grep -hoE "plan\( *[0-9]+ *\)" supabase/tests/*.sql
+#   2 + 55 + 34 + 43 + 41 = 175 = lo que reporta CI
+```
+
+### La diferencia con los números del cuerpo, perseguida
+
+El cuerpo declara `18 passed (18)` / `192 passed`; CI da 21 / 206, y este commit no agregó archivos de prueba.
+
+```bash
+sha=$(git rev-parse 071ba95)
+gh api "repos/cadeApp/cadeApp/actions/runs?head_sha=$sha" --jq '.workflow_runs[] | "\(.id) \(.name)"'
+gh run view 35917191525 --log | grep "Test Files"      # 18 passed (18) -> el cuerpo era correcto
+
+git log --format="%h %s" 4ec86e2..origin/develop
+#   7f2b336 [T-111] Alta de comercio (#61)
+git diff --name-only 4ec86e2 origin/develop | grep "\.test\."
+#   src/features/merchants/{actions,queries,schemas}.test.ts   <- los 3 archivos que faltaban
+```
+
+CI corre sobre el merge de la PR con develop, y develop avanzó. **No es hallazgo.**
+
+## Barrido sugerido para T-103 (ver `lecciones.md`)
+
+```bash
+# escrituras que un raise posterior revierte, en cualquier migracion
+node -e "const s=require('fs').readFileSync(process.argv[1],'utf8').replace(/\r\n/g,'\n');
+for(const m of s.matchAll(/update public\.(\w+)[\s\S]{0,220}?raise exception/g))
+  if(!/exception\s+when/.test(m[0])) console.log('!!', m[1]);" <migracion>
+```
+
+## Limpieza
+
+```bash
+git worktree remove --force ../cadeApp-rev64b && git worktree prune
 ```

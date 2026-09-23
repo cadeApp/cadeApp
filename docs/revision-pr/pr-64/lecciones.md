@@ -1,6 +1,6 @@
 # Lecciones de la PR #64 (T-102) para `AGENTS.md` y las reglas
 
-**Fuente:** 8 registros en la ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 8 registros en dos rondas, los 8 cerrados y verificados. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
 
@@ -72,8 +72,9 @@ en T-101 el mismo ítem terminó en la decisión `D04`, reformularlo.
 
 ## Advertencias
 
-- **Ronda 1 de una PR abierta.** Las dos lecciones salen de la misma familia y conviene revisarlas juntas cuando
-  la PR cierre; si el arreglo de `D01` deja el control estructural sano y mutado, `AG-62` gana su caso completo.
+- **`AG-62` ganó su caso en la ronda 2.** La apuesta era: si el arreglo de `D01` dejaba el control estructural
+  sano y mutado, la lección quedaba demostrada y no solo argumentada. Eso pasó — el DoD nombra el mecanismo y el
+  mecanismo tiene un control que detecta las tres regresiones (`AG-63`). Las dos lecciones se leen juntas.
 - **Nada de esto toca el diseño, que es bueno.** La parte difícil —serializar sin deadlocks, la idempotencia con
   `matchedAt` preservado, la cascada en una transacción, y cerrar `PR56-H21` con algo *más* restrictivo que lo
   que pedía la ficha— está bien resuelta. Los tres bloqueantes son de control y de contrato, no de lógica.
@@ -92,3 +93,44 @@ criterio del README —2 o más PRs distintas con el mismo patrón—, y la form
 El reparto de `origen` sigue la tendencia: 5 de 6 hallazgos son `agente` y uno solo es `ambos` (`H02`, donde la
 ficha enuncia un invariante en prosa sin control que lo haga cumplir, igual que en T-101). Las fichas siguen sin
 ser la fuente de los problemas.
+
+---
+
+## `AG-63` · Una mutación que queda escrita en el test deja de ser un acto de revisión y pasa a ser un control
+
+**Origen:** la ronda 2, y no la propuse yo.
+
+`AG-61` pide mutar el control antes de confiar en él. Eso es un acto puntual: lo hace quien revisa, una vez, y
+después no queda nada. El arreglo de `H01` fue un paso más allá y dejó la mutación **dentro del test**:
+
+```ts
+const m1WithoutOffersLock = body.replace(offerLockRegex, (stmt) => stmt.replace(/for\s+update\s*;/i, ';'));
+expect(m1WithoutOffersLock).not.toMatch(offerLockRegex);
+```
+
+Leído rápido parece un adorno: mutar el texto y comprobar que el regex ya no matchea suena a tautología. No lo
+es, y lo que lo demuestra es la mutación que le hice yo al control: **si alguien afloja el regex al comodín viejo
+`[\s\S]*?`, esa misma aserción se pone roja.** Con el comodín, el `replace` deja de ser específico —arrastra el
+`for update` de otra sentencia— y el `not.toMatch` falla.
+
+O sea que la aserción no protege el código: **protege el control que protege el código.** Es el único mecanismo
+que vi hasta ahora que impide que una aserción se degrade en silencio, que es precisamente cómo nacieron `H01`,
+`AG-58` y la mitad de los `P08` del catálogo.
+
+> **Regla propuesta.** Cuando un control es una aserción de texto sobre código —SQL, una migración, un
+> workflow—, la mutación que lo valida se escribe **al lado, en el mismo test**: se rompe a propósito la
+> propiedad en una copia en memoria y se afirma que el control la detecta. Cuesta tres líneas, corre en cada CI,
+> y hace que debilitar el control sea un test rojo en vez de un cambio que nadie nota.
+>
+> Es el complemento de `AG-61`: aquella dice *mutá antes de confiar*; esta dice *dejá la mutación escrita para
+> no tener que volver a confiar*.
+
+## Advertencia para T-103, que está en curso
+
+`H03` —una escritura antes de un `raise`, que la excepción revierte— nació de que la regla estaba escrita por el
+mismo autor un día antes, en T-101, y no viajó. **T-103 tiene «expiración perezosa» en su DoD** (plan §8) y se
+está trabajando ahora. Si la implementa con `update` + `raise`, es `H03` otra vez, y esta vez sobre la tarea que
+*posee* el ciclo de vida de la solicitud. Conviene mirarlo en la ronda 1 de esa PR, no en la tercera.
+
+El barrido es de una línea y ya está en `evidencia/comandos.md`: buscar `update public.<tabla>` seguido de
+`raise exception` sin un `exception when` en el medio.
