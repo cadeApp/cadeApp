@@ -95,6 +95,7 @@ export function resolvePostLoginRedirect(rawRedirectTo: unknown, role: ProfileRo
     !rawRedirectTo.startsWith('/') ||
     rawRedirectTo.startsWith('//') ||
     rawRedirectTo.includes('://') ||
+    rawRedirectTo.includes('\\') ||
     /[\r\n]/.test(rawRedirectTo)
   ) {
     return getRoleDefaultPath(role);

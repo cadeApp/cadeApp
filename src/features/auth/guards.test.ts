@@ -204,6 +204,10 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(resolvePostLoginRedirect('//evil.com', 'courier')).toBe('/courier/feed');
     expect(resolvePostLoginRedirect('/login', 'merchant')).toBe('/merchant/dashboard');
 
+    // PR60-H08: rechazo de barras invertidas para evitar bypass con normalización WHATWG
+    expect(resolvePostLoginRedirect('/\\evil.com', 'merchant')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/foo\\bar', 'courier')).toBe('/courier/feed');
+
     // Cross-role redirect attempt
     expect(resolvePostLoginRedirect('/merchant/dashboard', 'courier')).toBe('/courier/feed');
     expect(resolvePostLoginRedirect('/courier/feed', 'merchant')).toBe('/merchant/dashboard');
