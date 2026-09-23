@@ -36,40 +36,45 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
         };
       }
       if (table === 'delivery_requests') {
-        return {
+        const data = [
+          {
+            id: 'req-1',
+            approx_distance_m: 2500,
+            package_type: 'small',
+            recipient_payment_method: 'cash',
+            needs_change: true,
+            cash_change_amount: 5000,
+            notes: 'Frágil',
+            published_at: '2026-09-23T18:00:00.000Z',
+            expires_at: '2026-09-23T18:30:00.000Z',
+            pickup_zone: { name: 'Centro' },
+            dropoff_zone: { name: 'Barrio Norte' },
+          },
+        ];
+        const builder = {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
           order: vi.fn().mockReturnThis(),
-          returns: vi.fn().mockResolvedValue({
-            data: [
-              {
-                id: 'req-1',
-                approx_distance_m: 2500,
-                package_type: 'small',
-                recipient_payment_method: 'cash',
-                needs_change: true,
-                cash_change_amount: 5000,
-                notes: 'Frágil',
-                published_at: '2026-09-23T18:00:00.000Z',
-                expires_at: '2026-09-23T18:30:00.000Z',
-                pickup_zone: { name: 'Centro' },
-                dropoff_zone: { name: 'Barrio Norte' },
-              },
-            ],
-            error: null,
-          }),
+          then: (resolve: (val: unknown) => void) =>
+            resolve({
+              data,
+              error: null,
+            }),
         };
+        return builder;
       }
       if (table === 'offers') {
-        return {
+        const builder = {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
           in: vi.fn().mockReturnThis(),
-          returns: vi.fn().mockResolvedValue({
-            data: [],
-            error: null,
-          }),
+          then: (resolve: (val: unknown) => void) =>
+            resolve({
+              data: [],
+              error: null,
+            }),
         };
+        return builder;
       }
       return {};
     });
@@ -88,6 +93,11 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     expect(requests).toHaveLength(1);
 
     const first = requests[0];
+    expect(first).toBeDefined();
+    if (!first) {
+      throw new Error('First request should be defined');
+    }
+
     // Datos permitidos presentes
     expect(first.pickupZoneName).toBe('Centro');
     expect(first.dropoffZoneName).toBe('Barrio Norte');

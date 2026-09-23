@@ -33,10 +33,10 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       />
     );
 
-    expect(screen.getByText(/estamos revisando tus datos/i)).toBeInTheDocument();
-    expect(screen.getByText(/te avisamos por acá y por notificación/i)).toBeInTheDocument();
+    expect(screen.getByText(/estamos revisando tus datos/i)).toBeDefined();
+    expect(screen.getByText(/te avisamos por acá y por notificación/i)).toBeDefined();
     // No debe mostrar la lista de solicitudes abiertas
-    expect(screen.queryByText(/solicitudes abiertas/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/solicitudes abiertas/i)).toBeNull();
   });
 
   it('DoD 2: Una oferta bajo el piso muestra el error del servidor', async () => {
@@ -57,7 +57,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     );
 
     // Muestra el piso visible en el formulario
-    expect(screen.getByText(/mínimo \$ 1\.000/i)).toBeInTheDocument();
+    expect(screen.getByText(/mínimo \$ 1\.000/i)).toBeDefined();
 
     const input = screen.getByLabelText(/monto de la oferta/i);
     fireEvent.change(input, { target: { value: '800' } });
@@ -66,7 +66,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     fireEvent.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText(/la oferta es menor al monto mínimo permitido/i)).toBeInTheDocument();
+      expect(screen.getByText(/la oferta es menor al monto mínimo permitido/i)).toBeDefined();
     });
   });
 
@@ -130,7 +130,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     );
 
     // Indicador visual de necesidad de cambio presente
-    expect(screen.getByText(/necesita cambio/i)).toBeInTheDocument();
+    expect(screen.getByText(/necesita cambio/i)).toBeDefined();
 
     // Piso tipográfico de 14px: ninguna clase text-xs (12px) en los textos de la tarjeta
     const cardElement = container.querySelector('[data-testid="request-card"]');

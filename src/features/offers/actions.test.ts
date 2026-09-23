@@ -3,6 +3,11 @@ import * as serverSupabase from '@/server/supabase/server';
 import * as offersRpc from '@/server/rpc/offers';
 import { submitOfferAction, withdrawOfferAction } from './actions';
 
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+}));
+
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
 }));
