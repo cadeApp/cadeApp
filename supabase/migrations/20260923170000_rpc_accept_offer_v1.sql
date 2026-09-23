@@ -8,9 +8,15 @@
 -- ============================================================================
 
 -- PR56-H21: Con status y decided_at congelados por RLS desde T-005, la policy
--- offers_update_merchant ya no cumple ninguna función legítima para el comercio
--- (que acepta exclusivamente vía public.accept_offer).
+-- offers_update_merchant anterior dejaba expuesta la columna created_at.
+-- Reemplazar su with check por false impide el 100 % de las escrituras directas
+-- del comercio (incluido created_at) y preserva el rechazo explícito 42501 ante
+-- intentos de UPDATE directo (verificado en rls_matrix.sql tests 26/47 y rpc_accept.sql).
 drop policy if exists offers_update_merchant on public.offers;
+create policy offers_update_merchant on public.offers
+  for update to authenticated
+  using (app_private.is_request_merchant(request_id, auth.uid()))
+  with check (false);
 
 -- ----------------------------------------------------------------------------
 -- 1. public.accept_offer

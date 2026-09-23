@@ -197,17 +197,13 @@ select is_definer(
   'public.accept_offer debe ser SECURITY DEFINER'
 );
 
--- 2. PR56-H21: la policy redundante offers_update_merchant debe haber sido eliminada
-select is(
-  (
-    select count(*)::integer
-    from pg_policies
-    where schemaname = 'public'
-      and tablename = 'offers'
-      and policyname = 'offers_update_merchant'
-  ),
-  0,
-  'PR56-H21: la policy offers_update_merchant no existe en public.offers'
+-- 2. PR56-H21: offers_update_merchant bloquea con 42501 incluso la modificación de created_at por el comercio
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select throws_ok(
+  $$ update public.offers set created_at = now() - interval '1 day' where id = pg_temp.offer_race_id(1) $$,
+  '42501'::char(5),
+  null,
+  'PR56-H21: el comercio no puede alterar created_at ni ninguna otra columna de public.offers (42501)'
 );
 
 -- 3. Privilegios: el rol anon tiene revocada la ejecución (42501)
@@ -397,18 +393,18 @@ select is(
   'delivery_requests queda en status=matched con accepted_offer_id=offer_1 y matched_at no nulo'
 );
 
--- 22. El helper RLS is_courier_assigned_to_request autoriza al repartidor ganador (courier 1)
+-- 22. El helper RLS app_private.is_courier_assigned_to_request autoriza al repartidor ganador (courier 1)
 select is(
-  public.is_courier_assigned_to_request(pg_temp.req_race_id(), pg_temp.courier_id(1)),
+  app_private.is_courier_assigned_to_request(pg_temp.req_race_id(), pg_temp.courier_id(1)),
   true,
-  'is_courier_assigned_to_request devuelve true para el repartidor de la oferta aceptada'
+  'app_private.is_courier_assigned_to_request devuelve true para el repartidor de la oferta aceptada'
 );
 
--- 23. El helper RLS is_courier_assigned_to_request rechaza a los repartidores no ganadores (courier 2)
+-- 23. El helper RLS app_private.is_courier_assigned_to_request rechaza a los repartidores no ganadores (courier 2)
 select is(
-  public.is_courier_assigned_to_request(pg_temp.req_race_id(), pg_temp.courier_id(2)),
+  app_private.is_courier_assigned_to_request(pg_temp.req_race_id(), pg_temp.courier_id(2)),
   false,
-  'is_courier_assigned_to_request devuelve false para un repartidor cuya oferta fue rechazada'
+  'app_private.is_courier_assigned_to_request devuelve false para un repartidor cuya oferta fue rechazada'
 );
 
 -- 24-27. DoD: Idempotencia — volver a llamar accept_offer con la misma oferta ya aceptada devuelve ok con idempotent = true y preserva matchedAt
