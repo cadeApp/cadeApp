@@ -1,8 +1,8 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { type NextRequest } from 'next/server';
+import { updateSession } from '@/features/auth/server';
 
-export async function middleware(_request: NextRequest) {
-  // Placeholder inicial T-000: en T-009 se integrará la actualización de sesión de Supabase Auth
-  return NextResponse.next();
+export async function middleware(request: NextRequest) {
+  return await updateSession(request);
 }
 
 export const config = {
