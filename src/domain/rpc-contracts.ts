@@ -329,7 +329,7 @@ export const RPC_CONTRACTS = {
    * `supabase/migrations/20260923050000_rpc_offers_v1.sql` y `src/domain/testing/rpc-fake.ts`):
    *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
    *   2. Repartidor (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED` → `COURIER_UNAVAILABLE`)
-   *   3. Parámetros de entrada (`VALIDATION_ERROR`)
+   *   3. Parámetros de entrada (`VALIDATION_ERROR`: `requestId`, `amountArs`, `etaMinutes`, `message`)
    *   4. Piso dinámico `min_offer_ars` (`OFFER_BELOW_MINIMUM`)
    *   5. Tope por ventana `max_offers_per_min` (`RATE_LIMITED`)
    *   6. Solicitud (`NOT_FOUND` → `REQUEST_EXPIRED` → `INVALID_STATE_TRANSITION`)
@@ -354,6 +354,15 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * Precedencia canónica de errores de `withdraw_offer` (H15 / CC-001 — compartida entre
+   * `supabase/migrations/20260923050000_rpc_offers_v1.sql` y `src/domain/testing/rpc-fake.ts`):
+   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
+   *   2. Parámetros de entrada (`VALIDATION_ERROR`: `offerId`)
+   *   3. Oferta y titularidad (`NOT_FOUND` → `UNAUTHORIZED_ACTOR` si `courier_id <> auth.uid()`)
+   *   4. Estado de la oferta (`OFFER_NOT_PENDING` si `status <> 'pending'`)
+   *   5. Tope por ventana `max_offers_per_min` (`RATE_LIMITED`; se evalúa después del estado de la oferta, al revés que en `submit_offer`)
+   */
   withdraw_offer: {
     inputSchema: withdrawOfferInputSchema,
     outputSchema: withdrawOfferOutputSchema,
@@ -458,6 +467,13 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * Precedencia canónica de errores de `set_availability` (H15 / CC-001 — compartida entre
+   * `supabase/migrations/20260923050000_rpc_offers_v1.sql` y `src/domain/testing/rpc-fake.ts`):
+   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
+   *   2. Parámetros de entrada (`VALIDATION_ERROR`: `available`)
+   *   3. Repartidor y estado (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED`)
+   */
   set_availability: {
     inputSchema: setAvailabilityInputSchema,
     outputSchema: setAvailabilityOutputSchema,

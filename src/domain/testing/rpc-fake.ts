@@ -538,17 +538,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     submit_offer: (rawInput) =>
       executeRpc('submit_offer', rawInput, false, (input) => {
-        const courier = couriers.get(actor.userId);
-        if (!courier) return err('NOT_FOUND');
-
-        const eligibility = canCourierSubmitOffer({
-          status: courier.status,
-          available: courier.available,
-        });
-        if (!eligibility.ok) {
-          return err(eligibility.code as RpcErrorCode<'submit_offer'>);
-        }
-
         const floorCheck = validateOfferAmountAgainstFloor(input.amountArs, settings.minOfferArs);
         if (!floorCheck.ok) {
           return err(floorCheck.code as RpcErrorCode<'submit_offer'>);
