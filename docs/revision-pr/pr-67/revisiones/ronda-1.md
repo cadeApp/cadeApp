@@ -8,19 +8,20 @@
 
 ## Checks locales
 
-| Check | Resultado |
-|---|---|
-| `pnpm typecheck` | ✅ |
-| `pnpm lint` | ✅ |
-| `pnpm test` | ✅ (25 suites, 227 tests) |
-| `pnpm test:db` | n.a. (no toca `supabase/` ni `src/server/supabase/`) |
-| Prettier (`src/features/requests/**`) | ✅ |
-| Prettier (`docs/tasks/T-112.md`, `docs/tasks/log/T-112.md`) | ❌ (2 archivos con issues) |
-| CI | ✅ todos salvo `approval-policy` (esperado) |
+| Check                                                       | Resultado                                            |
+| ----------------------------------------------------------- | ---------------------------------------------------- |
+| `pnpm typecheck`                                            | ✅                                                   |
+| `pnpm lint`                                                 | ✅                                                   |
+| `pnpm test`                                                 | ✅ (25 suites, 227 tests)                            |
+| `pnpm test:db`                                              | n.a. (no toca `supabase/` ni `src/server/supabase/`) |
+| Prettier (`src/features/requests/**`)                       | ✅                                                   |
+| Prettier (`docs/tasks/T-112.md`, `docs/tasks/log/T-112.md`) | ❌ (2 archivos con issues)                           |
+| CI                                                          | ✅ todos salvo `approval-policy` (esperado)          |
 
 ## Alcance
 
 Todos los archivos modificados están dentro de los «Archivos permitidos» de T-112:
+
 - `src/features/requests/**` ✅
 - `src/app/(merchant)/requests/new/**` ✅
 - `docs/tasks/T-112.md` ✅
@@ -31,22 +32,23 @@ No se agregaron dependencias nuevas. ✅
 
 ## DoD
 
-| Criterio | Cumple |
-|---|---|
-| Tests del schema y de la action | ✅ 10 tests en `schemas.test.ts`, 6 en `actions.test.ts`, 4 en `queries.test.ts`, 4 en `create-request-form.test.tsx` |
-| Contactos y coordenadas opcionales en `delivery_request_contacts` | ✅ |
-| Cálculo de distancia server-side (Haversine + fallback centroide) | ✅ |
-| Chips de cambio guardan `cash_change_amount` | ✅ |
-| Bloqueo sin piloto ni suscripción | ✅ `canMerchantPublishRequest` + test |
-| `pnpm typecheck && pnpm lint && pnpm test` | ✅ |
-| Sin cambios fuera de «Archivos permitidos» | ✅ |
-| Bitácora `docs/tasks/log/T-112.md` al día | ✅ |
+| Criterio                                                          | Cumple                                                                                                                |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Tests del schema y de la action                                   | ✅ 10 tests en `schemas.test.ts`, 6 en `actions.test.ts`, 4 en `queries.test.ts`, 4 en `create-request-form.test.tsx` |
+| Contactos y coordenadas opcionales en `delivery_request_contacts` | ✅                                                                                                                    |
+| Cálculo de distancia server-side (Haversine + fallback centroide) | ✅                                                                                                                    |
+| Chips de cambio guardan `cash_change_amount`                      | ✅                                                                                                                    |
+| Bloqueo sin piloto ni suscripción                                 | ✅ `canMerchantPublishRequest` + test                                                                                 |
+| `pnpm typecheck && pnpm lint && pnpm test`                        | ✅                                                                                                                    |
+| Sin cambios fuera de «Archivos permitidos»                        | ✅                                                                                                                    |
+| Bitácora `docs/tasks/log/T-112.md` al día                         | ✅                                                                                                                    |
 
 ## Hallazgos
 
 ### BLOQUEANTES (1)
 
 #### H01 · `text-success` no es un token de Tailwind — feedback de GPS invisible
+
 - **Archivo:** `create-request-form.tsx:304,377`
 - **Patrón:** P13-accesibilidad-no-considerada
 - **Severidad:** alto
@@ -63,12 +65,14 @@ que no matchean ninguna utilidad, así que este `<span>` hereda el color del pad
 `text-foreground`), pero el autor claramente pretendía un color verde de éxito.
 
 **Verificación:**
+
 ```bash
 grep 'success' tailwind.config.ts
 # → 0 resultados
 ```
 
 **Qué hay que hacer:**
+
 1. Definir un token `success` / `success-foreground` en `tailwind.config.ts`, o
 2. Usar un token existente como `text-primary` con un ícono `CheckCircle2` (que ya está).
 
@@ -80,6 +84,7 @@ grep 'success' tailwind.config.ts
 ### MEJORAS (4)
 
 #### H02 · Formulario con 18 `React.useState` en vez de `react-hook-form`
+
 - **Archivo:** `create-request-form.tsx:48-96`
 - **Patrón:** P10-desvio-de-ficha-sin-consultar
 - **Severidad:** bajo
@@ -92,6 +97,7 @@ pero el formulario completo se beneficiaría de `useForm` + `zodResolver` para c
 validación, errores por campo y reducir boilerplate.
 
 #### H03 · `as unknown as AppSupabaseClient` — residual AG-59
+
 - **Archivo:** `actions.ts:21`, `queries.ts:32`
 - **Patrón:** P12-plantilla-propaga-antipatron
 - **Severidad:** bajo
@@ -103,6 +109,7 @@ constraint, pero cada feature lo copia. La raíz se resuelve con un `contract-ch
 `server.ts`.
 
 #### H04 · Prettier formatting en docs
+
 - **Archivo:** `docs/tasks/T-112.md`, `docs/tasks/log/T-112.md`
 - **Patrón:** P19-cuerpo-de-pr-fuera-de-template
 - **Severidad:** bajo
@@ -116,6 +123,7 @@ npx prettier --check docs/tasks/T-112.md docs/tasks/log/T-112.md
 sobre ambos archivos.
 
 #### H05 · HTML `<select>` nativo en vez de `@radix-ui/react-select`
+
 - **Archivo:** `create-request-form.tsx:255,327`
 - **Patrón:** P12-plantilla-propaga-antipatron
 - **Severidad:** bajo
@@ -130,6 +138,7 @@ pero pierde la consistencia visual del sistema de diseño y la accesibilidad mej
 ## Lo que la autorrevisión del PR declaró vs lo que encontró esta revisión
 
 El informe del PR (sección "Informe de revisión de agy") declaró:
+
 - Resultado: SIN BLOQUEANTES
 - MEJORAS: ninguno
 
