@@ -42,10 +42,11 @@ src/features/merchants/schemas.ts
 src/features/merchants/server.ts
 ```
 
-### 3. Checks locales
+### 3. Checks locales y formato Prettier
 
 ```powershell
 pnpm typecheck; pnpm lint; pnpm test
+npx prettier --check middleware.ts "src/features/merchants/**" "src/app/(merchant)/onboarding/page.tsx" docs/tasks/T-111.md docs/tasks/log/T-111.md
 ```
 
 Salida:
@@ -53,83 +54,83 @@ Salida:
 ```text
 tsc --noEmit && tsc --project .github/workflows/tsconfig.json -> exit 0
 ✔ No ESLint warnings or errors -> exit 0
-Test Files  1 failed | 17 passed (18)
-     Tests  1 failed | 138 passed (139)
+Checking formatting...
+[warn] docs/tasks/log/T-111.md
 ```
 
-El fallo es `verify-scaffold.test.ts > DoD (a): ESLint debe fallar ante un import profundo a components de otra feature` (timeout 5000ms en ESLint). Es un fallo preexistente por timeout de ESLint, no introducido por esta PR.
+---
 
-### 4. CI real
+## Ronda 2 (`efd8d9f8db8337ea48fc97ed79cd2e12b73b4a96`)
+
+### 1. Worktree aislado e instalación congelada
 
 ```powershell
-gh pr checks 61 --json name,state
-```
-
-Salida:
-
-```json
-[
-  { "name": "bundle-budget", "state": "SUCCESS" },
-  { "name": "approval-policy", "state": "FAILURE" },
-  { "name": "typecheck", "state": "SUCCESS" },
-  { "name": "lint", "state": "SUCCESS" },
-  { "name": "unit", "state": "SUCCESS" },
-  { "name": "db-tests", "state": "SUCCESS" },
-  { "name": "build", "state": "SUCCESS" },
-  { "name": "audit", "state": "SUCCESS" }
-]
-```
-
-`approval-policy` falla porque la revisión independiente aún no se pegó.
-
-### 5. Formato Prettier
-
-```powershell
-npx prettier --check middleware.ts "src/features/merchants/**" "src/app/(merchant)/onboarding/page.tsx" docs/tasks/T-111.md docs/tasks/log/T-111.md
+git worktree add --detach ../cadeApp-rev61 efd8d9f8db8337ea48fc97ed79cd2e12b73b4a96
+pnpm -C ../cadeApp-rev61 install --frozen-lockfile
 ```
 
 Salida:
 
 ```text
-Checking formatting...
-[warn] docs/tasks/log/T-111.md
-[warn] Code style issues found in the above file. Run Prettier with --write to fix.
+HEAD is now at efd8d9f docs(T-111): session log round 1 fixes
+Lockfile is up to date, resolution step is skipped
+Packages: +518
+Done in 44.1s using pnpm v10.28.0 (exit code 0)
 ```
 
-### 6. Verificaciones específicas de hallazgos
+### 2. Alcance y verificación de propiedad (`AG-36`)
 
 ```powershell
-# H01: server-only faltante en server.ts
-grep -c "server-only" src/features/merchants/server.ts
-# -> 0
-
-# H02: doble cast en actions.ts
-grep "as unknown as" src/features/merchants/actions.ts
-# -> const supabase = (await createClient()) as unknown as AppSupabaseClient;
-
-# H03: react-hook-form no usado
-grep -c "react-hook-form" src/features/merchants/components/onboarding-form.tsx
-# -> 0
-
-# H04: fallback '1.0'
-grep "'1.0'" src/features/merchants/actions.ts
-# -> : '1.0';
-
-# H05: strings hardcodeados
-grep "Obteniendo ubicación" src/features/merchants/components/onboarding-form.tsx
-# -> {locating ? 'Obteniendo ubicación...' : merchantCopy.onboarding.useMyLocation}
-grep "Ubicación marcada" src/features/merchants/components/onboarding-form.tsx
-# -> Ubicación marcada: ({defaultPickupLat.toFixed(4)}, {defaultPickupLng.toFixed(4)})
-
-# H06: checkbox size
-grep "h-4 w-4" src/features/merchants/components/onboarding-form.tsx
-# -> className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
-
-# H07: arbitrary value
-grep "min-h-\[" src/features/merchants/components/onboarding-form.tsx
-# -> min-h-[80px]
-
-# text-xs check (ninguno encontrado)
-grep -c "text-xs" src/features/merchants/components/onboarding-form.tsx
-# -> 0
+git diff d57820d..efd8d9f --stat
 ```
+
+Salida (7 archivos tocados por el autor en Ronda 2; `docs/revision-pr/pr-61/**` intacto):
+
+```text
+ docs/tasks/log/T-111.md                            |  21 +++
+ src/features/merchants/actions.test.ts             |  57 +++++++
+ src/features/merchants/actions.ts                  |  42 +++--
+ src/features/merchants/components/form-hooks.ts    | 148 +++++++++++++++++
+ .../merchants/components/onboarding-form.tsx       | 179 ++++++++++++---------
+ src/features/merchants/copy.ts                     |   6 +
+ src/features/merchants/server.ts                   |   2 +
+ 7 files changed, 365 insertions(+), 90 deletions(-)
+```
+
+### 3. Checks locales y logs reales de CI (`run 35832549815`)
+
+```powershell
+pnpm typecheck; pnpm lint; pnpm test
+npx prettier --check "src/features/merchants/**" "src/app/(merchant)/onboarding/page.tsx" docs/tasks/T-111.md docs/tasks/log/T-111.md
+```
+
+Salida:
+
+```text
+tsc --noEmit && tsc --project .github/workflows/tsconfig.json -> exit 0
+✔ No ESLint warnings or errors -> exit 0
+Test Files  18 passed (18)
+     Tests  140 passed (140)
+# verify-workflows.test.mjs: pass 19, fail 0
+# verify-adr.test.mjs: pass 6, fail 0
+All matched files use Prettier code style!
+```
+
+Cobertura de `src/features/merchants` y `bundle-budget` en CI (`run 35832549815`):
+
+```text
+actions.ts    |   89.36 |    69.23 |     100 |   89.36 |
+queries.ts    |     100 |      100 |     100 |     100 |
+schemas.ts    |     100 |      100 |     100 |     100 |
+
+| Ruta        | Tamaño | Estado |
+| /onboarding | 124 kB | OK     |
+```
+
+### 4. Probe ejecutable de verificación de Ronda 2 (`probe-ronda-2.test.ts`)
+
+Ejecutado sobre `efd8d9f` y retirado antes de commitear:
+
+- `H01`: `src/features/merchants/server.ts` comienza con `import 'server-only';` ✅
+- `H03`: `zodResolver(merchantOnboardingSchema)` devuelve errores por campo e integra con `useForm` ✅
+- `H04` y `H08`: `merchantOnboardingAction` rechaza `pilot_terms_version` vacío (`"   "`) o `null` con `INTERNAL_ERROR` y omite `accepted_at` al insertar en `consents` ✅
