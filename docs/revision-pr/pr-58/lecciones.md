@@ -27,3 +27,19 @@ El job `audit` estaba diseñado para bloquear al aparecer `rpc-contracts.ts`. La
 ## AG-53 · Un contrato público debe cerrar códigos, fechas y forma de error
 
 Tipos amplios (`DomainErrorCode`, `string`, `message?`) permiten estados que cada RPC no promete y que la UI no sabe interpretar. Derivar los errores por RPC, validar ISO y mantener `{ ok:false, code }` exacto (H02, H05, H10, H11).
+
+## AG-54 · Un gate verde por lista de excepciones no es una remediación
+
+Si `audit` termina 0 solo porque todas las severidades bloqueantes están en `ignoreGhsas`, el color describe la configuración del filtro, no el riesgo del árbol. El informe debe contar también los avisos ignorados y comprobar soporte upstream. En H14, Next 14 quedó fuera de soporte y se silenciaron 8 altas y 2 críticas.
+
+## AG-55 · La unicidad de un generador se prueba contra el estado inicial
+
+Una secuencia creciente evita colisiones entre objetos creados después del arranque, pero puede pisar fixtures, filas restauradas o IDs reservados. El test mínimo combina al menos un ID sembrado con uno generado y afirma que ambos sobreviven (H08).
+
+## AG-56 · Un fake contractual valida relaciones y su propia salida
+
+Validar el input no alcanza. Un fake útil debe fallar si faltan filas relacionadas y debe comprobar que el resultado del handler pasa el `outputSchema`. Así un `undefined` escondido por `!` falla cerca de la implementación, no varias capas después (H07).
+
+## AG-57 · Un cast puede reabrir el contrato que el genérico acaba de cerrar
+
+Estrechar `RpcClientContract` a `RpcErrorCode<K>` no sirve si el adapter conserva una entrada amplia y la convierte con `as`. Los mecanismos de prueba —incluido `setForcedError`— deben preservar la misma relación RPC × error que la API pública (H05).
