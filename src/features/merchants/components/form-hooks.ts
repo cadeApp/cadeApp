@@ -103,16 +103,21 @@ export function useForm<T extends Record<string, unknown>>({
 
   const setValue = useCallback(
     <K extends keyof T>(name: K, val: T[K], options?: { shouldValidate?: boolean }) => {
-      setValues((prev) => {
-        const updated = { ...prev, [name]: val };
-        if (options?.shouldValidate) {
-          const res = resolver(updated);
-          setErrors(res.errors);
-        }
-        return updated;
-      });
+      setValues((prev) => ({ ...prev, [name]: val }));
+      if (options?.shouldValidate) {
+        setErrors((prevErrors) => {
+          const res = resolver({ ...values, [name]: val });
+          const nextErrors = { ...prevErrors };
+          if (res.errors[name]) {
+            nextErrors[name] = res.errors[name];
+          } else {
+            delete nextErrors[name];
+          }
+          return nextErrors;
+        });
+      }
     },
-    [resolver]
+    [resolver, values]
   );
 
   const watch = useCallback(<K extends keyof T>(name: K): T[K] => values[name], [values]);
