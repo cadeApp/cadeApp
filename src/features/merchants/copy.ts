@@ -1,0 +1,35 @@
+export const merchantCopy = {
+  onboarding: {
+    stepIndicator: 'Paso 2 de 2',
+    title: 'Contanos de tu negocio',
+    subtitle: 'Completá los datos básicos para empezar a publicar envíos en Aguilares.',
+    businessNameLabel: 'Nombre del negocio',
+    businessNamePlaceholder: 'Ej. Panadería La Espiga',
+    phoneLabel: 'Teléfono de contacto',
+    phonePlaceholder: 'Ej. 381 555-0123',
+    phoneHelper: 'Lo ve solo el repartidor que elijas.',
+    zoneLabel: 'Barrio de retiro habitual',
+    zonePlaceholder: 'Seleccioná un barrio',
+    addressLabel: 'Dirección de retiro habitual',
+    addressPlaceholder: 'Ej. San Martín 450',
+    addressHelper: 'Se completa sola en cada solicitud. Podés cambiarla.',
+    mapCardTitle: 'Ubicación del local en el mapa',
+    mapCardHelper:
+      'Mové el mapa para marcar la puerta de tu negocio. Muy útil si tu calle no tiene número.',
+    useMyLocation: 'Usar mi ubicación actual',
+    mapOutOfAguilares:
+      'Ubicación fuera de Aguilares. Por favor, marcá el local dentro del radio urbano de la ciudad.',
+    mapFallbackNotice:
+      'No pudimos cargar el mapa. No te preocupes: continuá con la dirección y agregá una referencia.',
+    notesLabel: 'Referencia adicional',
+    notesPlaceholder: 'Ej. Portón verde al lado de la farmacia, timbre blanco',
+    pilotBadge: 'Piloto gratis',
+    pilotNotice: 'Estás en el piloto gratis. Cuando termine te vamos a avisar cómo seguir.',
+    acceptPilotTerms: 'Acepto los Términos del piloto',
+    pilotTermsLink: 'Términos del piloto',
+    submitButton: 'Empezar',
+    loadingButton: 'Guardando...',
+    errorGeneric: 'Ocurrió un error al guardar los datos. Por favor reintentá.',
+    errorTermsRequired: 'Tenés que aceptar los Términos del piloto para continuar.',
+  },
+} as const;
