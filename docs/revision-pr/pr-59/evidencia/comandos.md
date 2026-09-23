@@ -373,3 +373,168 @@ node -e "console.log(require('tailwindcss/package.json').version)"   # 3.4.19
 - **Nada contra un SHA**: el trabajo está sin commitear. Todo lo cerrado en esta ronda hay que revalidarlo.
 - **CI sobre el trabajo de la ronda 2**: no corrió, porque no hay push.
 - **`pnpm test:db`**: sin Docker local; el PR no toca `supabase/` ni `src/server/`.
+
+---
+
+# Ronda 3 · 2026-09-23 · SHA `c4797ce`
+
+Arreglos en `30653c2` (ronda 1) y `cdbd9a9` (ronda 2); bitácora en `c4797ce`.
+
+```bash
+git fetch origin
+git worktree add --detach ../cadeApp-rev59c c4797ce
+cd ../cadeApp-rev59c && pnpm install --frozen-lockfile     # exit 0
+```
+
+## Checks
+
+```
+pnpm typecheck     exit 0
+pnpm lint          exit 0 · ✔ No ESLint warnings or errors
+pnpm test          13 archivos · 129 casos + 19 workflows + 6 ADR
+pnpm test:coverage exit 0
+pnpm build         exit 0 · / 103 kB · /design-system 168 kB (presupuesto 180)
+```
+
+```
+ ui                 |   98.85 |     91.9 |     100 |   98.85 |
+  dialog.tsx        |   97.87 |     87.5 |     100 |   97.87 | 20-21,65-66
+  select.tsx        |   98.95 |    94.23 |     100 |   98.95 | 22-23
+  notify.ts         |   96.61 |    95.23 |     100 |   96.61 | 36-37
+  sheet.tsx         |   97.03 |    84.37 |     100 |   97.03 | 19-20,64-65   ← el más justo
+  toaster.tsx       |     100 |      100 |     100 |     100 |
+ ui/motion          |   97.11 |    85.71 |     100 |   97.11 |
+```
+
+Ningún archivo de `src/ui` por debajo del umbral de 80 de ramas.
+
+## CI — 8 de 8
+
+```bash
+gh pr checks 59
+# approval-policy pass · audit pass · build pass · bundle-budget pass
+# db-tests pass · lint pass · typecheck pass · unit pass
+```
+
+`db-tests` leído del log y no del color:
+
+```bash
+gh run view 35829564958 --log | grep -iE "Tests=|Result:"
+# Files=3, Tests=98,  1 wallclock secs
+# Result: PASS
+```
+
+## Alcance
+
+```bash
+gh pr diff 59 --name-only | wc -l                      # 45
+git diff --stat origin/develop...c4797ce -- assets/    # (vacío)
+```
+
+45 archivos, todos dentro de la lista ampliada de `docs/tasks/T-008.md`. **`assets/` intacto**: los ocho
+originales están idénticos a `develop` y no forman parte del PR.
+
+```bash
+for f in $(gh pr diff 59 --name-only | grep -E '\.tsx?$'); do
+  grep -nE ':\s*any\b|as any|@ts-ignore|@ts-expect-error|\.only\(|\.skip\(|[a-zA-Z0-9_)\]]!\.' "$f"
+done
+# (sin coincidencias)
+```
+
+## Batería de mutaciones · 16 vivas, 0 ciegas
+
+```
+M1   roja  R1:ciego R2:vivo   tailwind.config.ts: xs a 0.75rem
+M2   SIN OBJETIVO             dialog.tsx: el focusables[0]?.focus() ya no existe → clase cerrada
+M3   roja  R1:ciego R2:vivo   card.tsx: shadow-[…] ring-[3px] size-[13px]
+M4   roja  R1:ciego R2:vivo   dialog.tsx: desconecto onConfirm
+M5   roja  R1:ciego R2:vivo   motion: setPrefersReduced(false)
+M6   roja  R1:vivo  R2:vivo   tokens.ts: mutedForeground a 2,42:1
+M6b  roja  R1:ciego R2:ciego  tokens.css: --accent a 152 60% 26% → badge-success 1,06:1
+M8   roja  R1:ciego R2:vivo   notify.ts: sin id en el payload de Sonner
+M9   roja           R2:vivo   tokens.css: saco la guarda de movimiento reducido
+M11  roja           R2:vivo   form.tsx: FormControl sin aria-describedby
+M12  roja           R2:vivo   borro public/icon-192x192.png
+M13  roja           R2:vivo   notify.ts: sin sanitizeToastMessage
+M14  roja  (nueva)            error-messages.ts: borro un código del diccionario
+M15  roja  (nueva)            notify.ts: rompo notify.promise
+M16  roja  (nueva)            page.tsx: saco el noindex de /design-system
+M17  roja  (nueva)            tokens.css: desincronizo --primary del hex
+M18  roja  (nueva)            logo.svg: lo engordo a 6 KB y le devuelvo el namespace c2pa
+
+vivos: 16 · ciegos: 0
+```
+
+**`M6b` y `M17` dieron «sin objetivo» en la primera corrida** porque `tokens.css` se había reescrito con
+precisión decimal (`--primary: 181 90.91% 38.82%` donde antes decía `181 90% 39%`). Se reapuntaron a los valores
+nuevos y se volvieron a correr: **las dos en rojo**. Ver `AG-55`.
+
+```bash
+# contraprueba reapuntada
+sed -i 's/--accent: 138.46 76.47% 96.67%;/--accent: 152 60% 26%;/' src/ui/tokens.css
+npx vitest run src/ui/ui-system.test.tsx     # roja
+sed -i 's/--primary: 181 90.91% 38.82%;/--primary: 181 90% 30%;/' src/ui/tokens.css
+npx vitest run src/ui/ui-system.test.tsx     # roja
+```
+
+## El probe de la ronda 2, corrido sin tocarlo — 6 de 6 en verde
+
+Los seis casos se escribieron en la ronda 2 para fallar. Ahora pasan:
+
+```
+✓ R2-01  Escape invoca onClose exactamente 1 vez (era 2)
+✓ R2-02  existe la prueba que compara tokens.css con DESIGN_TOKENS (hslToHex)
+✓ R2-03  DOMAIN_ERROR_MESSAGES en src/lib/error-messages.ts; notify.promise volvió;
+         activeToastIds y resetActiveToasts eliminados
+✓ R2-04  logo.svg < 5 KB, sin c2pa, con el wordmark cadeApp
+✓ R2-04  assets/ intacto
+✓ R2-05  0 usos de backdrop-blur-xs
+```
+
+## `H30` · El WebP del logo
+
+```bash
+node -e "
+const b=require('fs').readFileSync('public/brand/logo.webp');
+console.log('bytes:', b.length, '|', b.toString('ascii',0,4), b.toString('ascii',8,12), JSON.stringify(b.toString('ascii',12,16)));
+console.log('sync:', b.slice(23,26).toString('hex'));
+console.log('dimensiones:', (b.readUInt16LE(26)&0x3fff)+'x'+(b.readUInt16LE(28)&0x3fff));
+"
+# bytes: 45 | RIFF WEBP "VP8 "
+# sync: 9d012a
+# dimensiones: 272x0
+```
+
+Contenedor válido, imagen vacía. Lo que lo deja pasar:
+
+```ts
+const webpStat = fs.statSync(webpPath);
+expect(webpStat.size).toBeGreaterThan(20);        // 45 > 20 ✓
+expect(webpStat.size).toBeLessThan(50 * 1024);    // 45 < 51200 ✓
+```
+
+Los otros tres sí son reales:
+
+```bash
+head -c 8 public/icon-192x192.png | od -An -tx1   # 89504e470d0a1a0a  (PNG, 15.893 B)
+head -c 8 public/icon-512x512.png | od -An -tx1   # 89504e470d0a1a0a  (PNG, 82.281 B)
+wc -c public/brand/logo.svg                        # 1106
+```
+
+## `D06` verificado
+
+```bash
+grep -n "EXCEPCIONES = new Set" tools/verify-fichas.test.ts
+# 120:  const EXCEPCIONES = new Set(['T-000', 'T-001', 'T-002']);
+
+git diff origin/develop...c4797ce -- docs/implementation-plan.md
+# la fila de T-008 pasa a 7.35:1, suma la ruta S00, las primitivas Radix reales
+# y el DoD nuevo con el umbral de cobertura
+```
+
+## Lo que no se pudo verificar
+
+- **`pnpm test:db` local**: sin Docker. En CI pasa y se leyó el log.
+- **El render real en navegador**: jsdom no carga CSS. El contraste se verifica con la matriz de tokens, que
+  ahora sí está sincronizada con lo que se pinta (`H22`), y el chequeo con `@axe-core/playwright` quedó para E2E
+  por `D03`.

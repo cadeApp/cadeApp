@@ -168,3 +168,61 @@ que no alcanza, porque el comando de `H10` pasa perfecto: lo que se perdió est�
 También vale la parte propositiva: lo que **no** se perdió fue por diseño. `BrandLogo` se reescribió igual de
 entero y ahí no faltó nada, porque las dos formas del SVG pasaron a derivarse de un único
 `BRAND_LOGO_GEOMETRY`. Reescribir no es el problema; reescribir sin inventario de lo que había, sí.
+
+---
+
+## `AG-55` · «Sin objetivo» no es «cerrado»: una mutación que no aplica hay que reapuntarla, no darla por buena
+
+En la ronda 3 corrí la batería de 16 mutaciones y tres dieron **«sin objetivo»**: el patrón que buscaba ya no
+estaba en el archivo. La tentación es obvia — el código cambió, el hallazgo está arreglado, listo. Es
+exactamente al revés: «sin objetivo» no dice nada sobre si el control funciona, solo que el archivo se reescribió.
+
+Las tres resultaron ser dos cosas distintas y hay que saber cuál es cuál:
+
+- **`M2` era una clase cerrada.** `focusables[0]?.focus()` ya no existe en `DialogContent` porque se eliminó el
+  manejo de foco propio y quedó solo el de Radix. No hay mutación posible porque el defecto dejó de ser
+  expresable. Eso sí es cerrar.
+- **`M6b` y `M17` eran mi regex desactualizado.** `tokens.css` se había reescrito con precisión decimal
+  (`--primary: 181 90.91% 38.82%` donde antes decía `181 90% 39%`), así que mi patrón no matcheaba. Reapunté las
+  dos a los valores nuevos, las volví a correr y **las dos dieron rojo**. Si las dejaba en «sin objetivo» habría
+  reportado `H22` como cerrado sin haberlo comprobado — y `H22` es justamente el hallazgo de que el control
+  miraba la copia equivocada.
+
+**Qué cambiar:** el script de mutaciones tiene que tratar «sin objetivo» como **un fallo de la revisión, no un
+resultado**. Que imprima el archivo y obligue a decidir a mano entre las dos lecturas: o el constructo
+desapareció (y se dice por qué eso cierra la clase), o el patrón quedó viejo (y se reapunta). Nunca se cuenta
+como control verificado.
+
+Es la tercera de la misma familia: `AG-46` (antes de decir que una ruta no resuelve, ejecutala desde donde la
+ejecuta su usuario), `AG-47` (el probe se tipa antes de creerle) y `AG-53` (el snapshot se compara con el
+original). Las cuatro dicen que **el instrumental de la revisión falla en silencio**, y que un resultado vacío
+es casi siempre un instrumento roto antes que una propiedad cumplida.
+
+---
+
+## `AG-56` · Un presupuesto en bytes no distingue un archivo de un archivo vacío
+
+`H21` era un logo de 1,25 MB contra un presupuesto de 5 KB. El arreglo fue bueno para el SVG: 1.106 bytes, con
+las figuras reales, el wordmark correcto y sin los metadatos del exportador. Y el control se amplió de
+`existsSync` a medir bytes **y** contenido.
+
+Para el WebP se amplió solo a bytes:
+
+```ts
+expect(webpStat.size).toBeGreaterThan(20);
+expect(webpStat.size).toBeLessThan(50 * 1024);
+```
+
+Lo que hay en disco es un WebP de **272 × 0 píxeles**: 45 bytes, contenedor RIFF válido, firma `WEBP`, chunk
+`VP8 `, código de sincronía correcto — y alto cero. Pasa las dos aserciones y no dibuja nada.
+
+**La forma general:** cuando un hallazgo es «esto pesa demasiado», el arreglo natural es poner un techo, y un
+techo se satisface igual de bien con el archivo correcto que con uno degenerado. El piso de 20 bytes intentaba
+cubrir eso y no alcanza, porque el encabezado de cualquier formato pesa más que eso.
+
+**Qué cambiar:** para un archivo binario, el control se escribe sobre lo que el formato **significa**, no sobre
+lo que ocupa. Un WebP se comprueba leyendo ancho y alto del encabezado VP8; un PNG, por su firma y su `IHDR`. Son
+cuatro líneas de `readUInt16LE` y convierten «el archivo existe y no es enorme» en «el archivo es una imagen».
+
+Y hay un indicio que sirve de alarma barata: **si dentro del mismo `it` un archivo se comprueba por contenido y
+el de al lado solo por tamaño, la asimetría es el hallazgo.** Acá estaba a cinco líneas de distancia.

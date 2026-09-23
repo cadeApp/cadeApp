@@ -1,7 +1,6 @@
 # PR #59 — T-008 · Base de UI y tokens de Stitch (D16)
 
-> ❌ **Con bloqueantes · 4 bloqueantes · 2 regresiones · 8 mejoras · 3 decisiones resueltas**
-> ⚠️ **El trabajo de la ronda 2 está sin commitear**: no hay SHA que verificar.
+> ✅ **Lista para aceptar · 0 bloqueantes · 38 de 40 cerrados · CI 8 de 8 en `c4797ce`**
 
 | | |
 |---|---|
@@ -9,95 +8,66 @@
 | **Tarea / issue** | [`T-008`](../../tasks/T-008.md) · Issue #9 |
 | **Autor** | Lautaro073 (agy) |
 | **Revisión** | independiente — no es el agy que implementó |
-| **Head del PR** | `2491a4c` (el commit de la ronda 1) |
-| **Estado revisado en ronda 2** | árbol de trabajo sin commitear, snapshot del 2026-09-23 02:50 |
-| **Alcance** | 33 archivos · **8 fuera** de «Archivos permitidos» (`assets/1-8.svg`) |
+| **SHA final** | `c4797ce` (arreglos en `30653c2` y `cdbd9a9`) |
+| **Alcance** | 45 archivos · **0 fuera** de «Archivos permitidos» · `assets/` intacto |
 
 ## Rondas
 
-| Ronda | Estado revisado | Fecha | Resultado | Informe |
-|---|---|---|---|---|
-| 1 | `e3c1a4d` | 2026-09-23 | ❌ 9 bloqueantes · 10 mejoras · 4 decisiones | [`ronda-1.md`](revisiones/ronda-1.md) |
-| 2 | sin commitear | 2026-09-23 | ❌ 4 bloqueantes · 2 regresiones · 8 mejoras · 3 decisiones | [`ronda-2.md`](revisiones/ronda-2.md) |
-
-## Lo primero
-
-**Nada de la ronda 2 está commiteado.** 29 archivos modificados y dos carpetas sin trackear viven solo en el
-árbol de trabajo compartido; `origin/feat/T-008-ui-tokens-d16` sigue en `2491a4c` y la bitácora no tiene entrada
-nueva. `AGENTS.md` §5 pide cerrar cada sesión con bitácora, commit y push.
-
-Por eso **ningún hallazgo cerrado en esta ronda lleva `verificado_en_sha`**, aunque todos se verificaron
-ejecutando. `analizar.mjs verificacion` los lista bajo «corregido pero NO verificado», que es lo correcto: la
-ronda 3 tiene que revalidarlos contra el commit.
-
-## El dato de la ronda: los controles pasaron de 1 vivo sobre 9 a 10 sobre 12
-
-Misma batería de mutaciones que la ronda 1, más cuatro nuevas.
-
-| # | Rompí | R1 | R2 |
+| Ronda | Estado revisado | Resultado | Informe |
 |---|---|---|---|
-| M1 | `xs` vuelve a 12 px | 🟢 | 🔴 |
-| M2 | saco el foco automático del Dialog | 🟢 | 🟢 (`H09` · lo hace Radix) |
-| M3 | clases arbitrarias en `src/ui` | 🟢 | 🔴 |
-| M4 | desconecto Confirmar de `ConfirmDialog` | 🟢 | 🔴 |
-| M5 | `MotionConfig` no lee la preferencia | 🟢 | 🔴 |
-| M6 | `mutedForeground` a 2,42:1 | 🔴 | 🔴 |
-| M6b | `--accent` de `tokens.css` a 1,06:1 | 🟢 | 🟢 (`H22` · dos copias) |
-| M8 | `notify` sin `id` | 🟢 | 🔴 |
-| M9 | saco la guarda CSS de movimiento reducido | — | 🔴 |
-| M11 | `FormControl` no apunta al error | — | 🔴 |
-| M12 | borro un asset de `public/` | — | 🔴 |
-| M13 | `notify` no sanitiza | — | 🔴 |
+| 1 | `e3c1a4d` | ❌ 9 bloqueantes · 10 mejoras · 4 decisiones | [`ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | sin commitear | ❌ 4 bloqueantes · 2 regresiones · 8 mejoras · 3 decisiones | [`ronda-2.md`](revisiones/ronda-2.md) |
+| 3 | `c4797ce` | ✅ **sin bloqueantes** · 1 medio abierto · 1 bajo | [`ronda-3.md`](revisiones/ronda-3.md) |
 
-## Estado por hallazgo
+## El dato de la PR: los controles del DoD
 
-### Bloqueantes abiertos
+| | Ronda 1 | Ronda 2 | Ronda 3 |
+|---|---|---|---|
+| **Mutaciones que ponen la suite en rojo** | **1 de 9** | **10 de 12** | **16 de 16** |
 
-| id | archivo | qué |
+En la ronda 1 se podía devolver la tipografía a 12 px, desconectar el botón Confirmar del diálogo de acciones
+irreversibles, meter clases arbitrarias y apagar la detección de movimiento reducido — todo con los 116 tests en
+verde. Hoy cada una de esas cosas pone la suite en rojo.
+
+`M2` cerró de una forma distinta: quedó **sin objetivo**, porque el manejo de foco propio se eliminó y solo
+queda el de Radix. No hay dos implementaciones que confundir, así que no hay mutación que hacer.
+
+## Lo que queda abierto
+
+| id | sev | archivo | qué |
+|---|---|---|---|
+| `H30` | medio | `public/brand/logo.webp` | WebP de **272 × 0 px**: contenedor válido sin imagen. El control mide bytes (`> 20`), no dimensiones. Nadie lo consume todavía, pero el DoD dice «assets reales en `public/`» |
+| `H31` | bajo | `implementation-plan.md:283` | La columna de archivos permitidos del plan §8 no lista los dos `tools/` ni el propio plan |
+
+## Cerrados, con SHA
+
+**38 de 40.** Los nueve bloqueantes de la ronda 1, los cuatro de la ronda 2, las dos regresiones y las siete
+decisiones `D01`–`D07`. Los 24 que la ronda 2 había cerrado sobre un árbol sin commitear se revalidaron uno por
+uno contra `c4797ce`; ninguno quedó sin `verificado_en_sha`.
+
+## Checks en `c4797ce`
+
+Worktree detached, `pnpm install --frozen-lockfile`. El árbol compartido no se tocó y nunca se cambió de rama.
+
+`typecheck` ✅ · `lint` ✅ · `test` ✅ **129 casos** + 19 workflows + 6 ADR · `test:coverage` ✅ con `src/ui` en
+**98,85 % / 91,90 % de ramas** y ningún archivo bajo el umbral de 80 · `build` ✅ (`/` 103 kB, `/design-system`
+168 kB de 180) · `test:db` n.a. local, en CI `Files=3, Tests=98, Result: PASS` leído del log · **CI 8 de 8** ·
+0 `any` · 0 `@ts-ignore` · 0 `!` · 0 `.only` · 0 `.skip`.
+
+### Cobertura de ramas, de punta a punta
+
+| | Ronda 1 | Ronda 3 |
 |---|---|---|
-| `H01` | cuerpo del PR | **parcial**: se agregó la sección pero `approval-policy` sigue rojo y el informe quedó viejo |
-| `H20` | `assets/1-8.svg` | 8 archivos fuera de alcance; 7 más pesados; 6,45 MB → 13,9 MB |
-| `H21` | `public/brand/logo.svg` | 1,25 MB contra 5 KB de presupuesto; copia byte a byte de `assets/2.svg` |
-| `R01` | `notify.ts` | **regresión**: desaparecieron `DOMAIN_ERROR_MESSAGES` y `notify.promise` |
-
-### Cerrados en la ronda 2 (sin SHA — revalidar)
-
-`H02` · `H03` · `H04` · `H05` · `H06` · `H07` · `H08` · `H10` · `H11` · `H12` · `H14` · `H15` · `H16` · `H17` ·
-`H18` · `H19` · `D01` · `D02` · `D03` · `D04` — y `H09` y `H13` cerrados en la propiedad con residual anotado.
-
-### Mejoras abiertas
-
-| id | archivo | qué |
-|---|---|---|
-| `R02` | `dialog.tsx:144` | `Escape` invoca `onClose` dos veces |
-| `H22` | `tokens.css:21` | `tokens.ts` y `tokens.css` son copias sin control de sincronía |
-| `H23` | `verify-fichas.test.ts:118` | `T-008` en `EXCEPCIONES`, que es para tareas mergeadas |
-| `H24` | `dialog.tsx:180` | `backdrop-blur-xs` no existe en Tailwind 3.4 |
-| `H25` | `brand-logo.tsx:38` | la marca quedó como `CadeApp` y `Cade` |
-| `H26` | `notify.ts:43` | `activeToastIds` es estado muerto |
-| `H27` | `ui-system.test.tsx:93` | el nombre de la prueba dice Tucumán; el código, Buenos_Aires |
-| `H28` | `dialog.tsx:123` | duplica a mano la gestión de foco de Radix |
-| `H29` | `design-system/page.tsx:4` | ruta pública e indexable, 168 kB |
-
-### Decisiones
-
-| id | qué | decisión |
-|---|---|---|
-| `D01`–`D04` | ronda 1 | **aplicadas** |
-| `D05` | dónde viven los mensajes de `DomainErrorCode` | crear `src/lib/error-messages.ts` |
-| `D06` | plan §8 vs excepción en `verify-fichas` | actualizar el plan y sacar la excepción |
-| `D07` | exposición de `/design-system` | pública con `noindex` |
-
-## Checks (snapshot del árbol de trabajo)
-
-`typecheck` ✅ · `lint` ✅ · `test` ✅ **126 casos** (eran 116) + 19 + 6 · `test:coverage` ✅ con `src/ui` en
-**98,09 % / 89,39 % de ramas** y umbral real de 80 por archivo · `build` ✅ (`/` 103 kB, `/design-system` 168 kB,
-presupuesto 180) · `test:db` n.a. · CI **7 de 8** en `2491a4c`, y **el trabajo de esta ronda todavía no pasó por
-CI**.
+| `src/ui` | 64,15 % | **91,90 %** |
+| `dialog.tsx` | 53,84 % | 87,50 % |
+| `select.tsx` | 62,50 % | 94,23 % |
+| `notify.ts` | 65,21 % | 95,23 % |
+| `sheet.tsx` | 57,14 % | 84,37 % |
+| `toaster.tsx` | 12,50 % (líneas) | 100 % |
 
 ## Archivos
 
-- [`revisiones/ronda-1.md`](revisiones/ronda-1.md) · [`revisiones/ronda-2.md`](revisiones/ronda-2.md)
-- [`hallazgos.jsonl`](hallazgos.jsonl) — 38 registros
-- [`lecciones.md`](lecciones.md) — `AG-49` a `AG-54`
+- [`revisiones/ronda-1.md`](revisiones/ronda-1.md) · [`ronda-2.md`](revisiones/ronda-2.md) · [`ronda-3.md`](revisiones/ronda-3.md)
+- [`hallazgos.jsonl`](hallazgos.jsonl) — 40 registros
+- [`lecciones.md`](lecciones.md) — `AG-49` a `AG-56`
 - [`evidencia/comandos.md`](evidencia/comandos.md)
