@@ -62,6 +62,116 @@ const REQ_MISSING = '30000000-0000-4000-8000-999999999999';
 const DOC_1 = '40000000-0000-4000-8000-000000000001';
 const DOC_2 = '40000000-0000-4000-8000-000000000002';
 
+describe('CC-002 — Contratos del ciclo de solicitudes', () => {
+  const requestRpcs = [
+    'publish_request',
+    'cancel_request',
+    'mark_picked_up',
+    'mark_delivered',
+    'report_no_show',
+    'courier_cancel_match',
+    'republish_request',
+    'report_incident',
+  ] as const;
+
+  it.each(requestRpcs)('%s declara INTERNAL_ERROR para fallos de infraestructura', (rpc) => {
+    expect(RPC_CONTRACTS[rpc].errorCodes).toContain('INTERNAL_ERROR');
+  });
+
+  const courierRpcs = ['mark_delivered', 'courier_cancel_match', 'report_incident'] as const;
+  const offerId = '50000000-0000-4000-8000-000000000001';
+  const now = new Date('2026-09-23T15:00:00.000Z');
+
+  it.each(['merchant', 'admin'] as const)(
+    'report_incident permite al %s sin exigir un registro de repartidor',
+    async (role) => {
+      const fake = createFakeRpcClient({
+        settings: BASE_SETTINGS,
+        now: () => now,
+        initialActor: { userId: role === 'merchant' ? MERCHANT_1 : ADMIN_1, role },
+        initialRequests: [{ requestId: REQ_1, merchantId: MERCHANT_1, status: 'matched' }],
+      });
+      expect(
+        await fake.report_incident({
+          requestId: REQ_1,
+          kind: 'demora',
+          description: 'Demora en el retiro',
+        })
+      ).toEqual({
+        ok: true,
+        data: {
+          incidentId: expect.any(String),
+          requestId: REQ_1,
+          status: 'open',
+          createdAt: now.toISOString(),
+        },
+      });
+    }
+  );
+
+  for (const rpc of courierRpcs) {
+    it.each(['COURIER_NOT_APPROVED', 'COURIER_SUSPENDED'] as const)(`${rpc} declara %s`, (code) =>
+      expect(RPC_CONTRACTS[rpc].errorCodes).toContain(code)
+    );
+
+    it.each(['pending', 'rejected', 'suspended', 'approved'] as const)(
+      `${rpc} revalida el estado %s al ejecutar y conserva los datos si rechaza`,
+      async (status) => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          now: () => now,
+          initialActor: { userId: COURIER_1, role: 'courier', courierStatus: 'approved' },
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: rpc === 'mark_delivered' ? 'in_transit' : 'matched',
+              acceptedOfferId: offerId,
+              assignedCourierId: COURIER_1,
+            },
+          ],
+          initialOffers: [
+            {
+              offerId,
+              requestId: REQ_1,
+              courierId: COURIER_1,
+              amountArs: BASE_SETTINGS.minOfferArs,
+              status: 'accepted',
+            },
+          ],
+        });
+        // Simula una suspensión/revisión posterior a aceptar sin renovar la sesión.
+        fake.seedCourier({ courierId: COURIER_1, status, available: false });
+        const requestBefore = { ...fake.getRequest(REQ_1) };
+        const offerBefore = { ...fake.getOffer(offerId) };
+        const result =
+          rpc === 'mark_delivered'
+            ? await fake.mark_delivered({ requestId: REQ_1 })
+            : rpc === 'courier_cancel_match'
+              ? await fake.courier_cancel_match({ requestId: REQ_1, reason: 'Pinchadura' })
+              : await fake.report_incident({
+                  requestId: REQ_1,
+                  kind: 'demora',
+                  description: 'Demora en el retiro',
+                });
+
+        if (status === 'approved') {
+          expect(result.ok).toBe(true);
+          if (result.ok)
+            expect(RPC_CONTRACTS[rpc].outputSchema.safeParse(result.data).success).toBe(true);
+        } else {
+          expect(result).toEqual({
+            ok: false,
+            code: status === 'suspended' ? 'COURIER_SUSPENDED' : 'COURIER_NOT_APPROVED',
+          });
+          expect(fake.getRequest(REQ_1)).toEqual(requestBefore);
+          expect(fake.getOffer(offerId)).toEqual(offerBefore);
+        }
+      }
+    );
+  }
+});
+
 describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () => {
   describe('Clúster 1 — Máquina de estados: evidencia positiva (H01) y REASON_REQUIRED (H02)', () => {
     const now = new Date('2026-09-22T15:00:00.000Z');
@@ -1238,6 +1348,8 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       expect(
         await fake.mark_picked_up({ requestId: '30000000-0000-4000-8000-000000000012' })
       ).toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
+      // Aísla la transición inválida de la nueva guarda de aprobación de CC-002.
+      fake.setActor({ courierStatus: 'approved' });
       expect(
         await fake.mark_delivered({ requestId: '30000000-0000-4000-8000-000000000012' })
       ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });

@@ -309,6 +309,7 @@ export const RPC_CONTRACTS = {
       'INVALID_STATE_TRANSITION',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   cancel_request: {
@@ -322,6 +323,7 @@ export const RPC_CONTRACTS = {
       'REASON_REQUIRED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   /**
@@ -403,6 +405,7 @@ export const RPC_CONTRACTS = {
       'COURIER_SUSPENDED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   mark_delivered: {
@@ -412,8 +415,11 @@ export const RPC_CONTRACTS = {
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
+      'COURIER_NOT_APPROVED',
+      'COURIER_SUSPENDED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   report_no_show: {
@@ -426,6 +432,7 @@ export const RPC_CONTRACTS = {
       'SUBSCRIPTION_INACTIVE',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   courier_cancel_match: {
@@ -435,9 +442,12 @@ export const RPC_CONTRACTS = {
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
+      'COURIER_NOT_APPROVED',
+      'COURIER_SUSPENDED',
       'REASON_REQUIRED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   republish_request: {
@@ -452,6 +462,7 @@ export const RPC_CONTRACTS = {
       'INVALID_STATE_TRANSITION',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   report_incident: {
@@ -461,10 +472,13 @@ export const RPC_CONTRACTS = {
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
       'NOT_FOUND',
+      'COURIER_NOT_APPROVED',
+      'COURIER_SUSPENDED',
       'INCIDENT_WINDOW_EXPIRED',
       'INVALID_STATE_TRANSITION',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   /**
