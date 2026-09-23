@@ -69,3 +69,42 @@ hallazgo como lo que falta en el otro.
 Es pariente de `AG-51` (un control que enumera selectores se desactualiza cuando el código elige otros
 elementos) y de `AG-56` (un presupuesto en bytes no distingue un archivo de un archivo vacío): las tres son
 controles que miden una propiedad más barata que la que su nombre promete.
+
+---
+
+## `AG-59` · Dos implementaciones del mismo contrato pueden levantar los mismos códigos y elegir uno distinto
+
+En la ronda 1 corrí un barrido que, por cada RPC, extrae los `message = 'CODE'` del SQL y los compara con
+`RPC_CONTRACTS[rpc].errorCodes` en los dos sentidos. Dio «coinciden exactamente» para `submit_offer` (12 y 12) y
+lo reporté como lo mejor de esa ronda. Era cierto y era insuficiente.
+
+En la ronda 2 fui a mirar el fake de dominio, que implementa las mismas RPC para que las features T-1xx se
+desarrollen contra él, y **valida en otro orden**. Los dos levantan los mismos doce códigos; ante las mismas
+entradas eligen uno distinto:
+
+| Entrada | RPC | Fake |
+|---|---|---|
+| Monto bajo el piso + solicitud inexistente | `OFFER_BELOW_MINIMUM` | `NOT_FOUND` |
+| Repartidor suspendido + solicitud vencida | `COURIER_SUSPENDED` | `REQUEST_EXPIRED` |
+
+Un formulario que muestre un mensaje según el código se comporta de una forma en las pruebas y de otra en
+producción, y ninguna de las dos implementaciones está mal: **la precedencia no está escrita en ningún lado.**
+
+Dos cosas que conviene separar:
+
+1. **El barrido de conjuntos tiene un techo.** «Los mismos códigos» es una condición necesaria y débil. Cuando
+   hay dos implementaciones de un contrato, lo que hay que comparar es el **comportamiento ante las mismas
+   entradas**, no el vocabulario. La forma barata de hacerlo es una tabla de combinaciones conflictivas
+   —dos problemas simultáneos— y correr las dos implementaciones contra ella.
+2. **Y una parte la produje yo.** Pedí mover el piso y el rate limit antes del `for update` para acortar la
+   sección crítica (`H09`). El arreglo es correcto para lo que pedía, y de paso adelantó esos dos chequeos
+   respecto de la validación de la solicitud, agregando tres combinaciones divergentes. Un hallazgo de
+   rendimiento movió la semántica observable.
+
+**Qué cambiar:** cuando una revisión pida reordenar validaciones, el hallazgo tiene que decir explícitamente
+**qué precedencia de errores queda** y contra qué otra implementación hay que contrastarla. Y cuando existan dos
+implementaciones del mismo contrato —RPC y fake, servidor y cliente—, el orden de los rechazos es parte del
+contrato y va escrito una sola vez, no inferido dos veces.
+
+La skill `contract-change` ya lo anticipa en su línea 15: *«Dominio y RPC no coinciden: NO gana nadie por
+defecto»*. Lo que faltaba era un control que lo detectara sin que alguien se acuerde de ir a mirar.

@@ -168,3 +168,177 @@ diff de `docs/tasks/T-101.md` solo agrega `src/server/rpc/offers.test.ts` y `src
 - **`pnpm test:db`**: este entorno no tiene Docker, y además esta ronda no corre suites.
 - **CI**: no consultado. Los 32 resultados pgTAP y los 160 casos de Vitest que declara el cuerpo del PR quedan
   **sin verificar de forma independiente** en esta ronda.
+
+---
+
+# Ronda 2 · 2026-09-23 · SHA `15e9b72`
+
+Arreglos en `15e9b72`; fase roja de `H03` en su propio commit `b0e969b`. Igual que la ronda 1: **sin ejecutar
+suites ni consultar CI**.
+
+## 1. Qué cambió desde la ronda 1
+
+```bash
+git diff --numstat d529c61..15e9b72
+```
+
+```
+ 27   0  docs/contracts/CC-001.md            (nuevo)
+  1   1  docs/implementation-plan.md
+  5   1  docs/tasks/T-101.md
+ 38  24  docs/tasks/log/T-101.md
+  3   1  src/domain/rpc-contracts.ts
+ 72  28  src/server/rpc/offers.test.ts
+  6   5  src/server/rpc/offers.ts
+ 56  23  supabase/migrations/20260923050000_rpc_offers_v1.sql
+  1   0  supabase/seed.sql
+ 89   6  supabase/tests/rpc_offers.sql
+```
+
+Alcance total del PR: 16 archivos, todos dentro de la ficha ampliada (`supabase/seed.sql`,
+`src/domain/rpc-contracts.ts`, `docs/contracts/**` y `docs/implementation-plan.md` se sumaron citando `D02`,
+`D03` y `D01`/`D04`).
+
+## 2. Barrido mecánico, mismo script que la ronda 1
+
+```
+platform_settings
+   usadas por la migracion: max_offers_per_min, min_offer_ars
+   sembradas en seed.sql:   min_offer_ars, max_offers_per_min, request_ttl_minutes,
+                            pilot_active, pilot_terms_version, subscription_grace_days
+
+Literales numericos en la migracion:
+   or p_eta_minutes > 240
+   if char_length(v_clean_message) > 280 then
+   (los dos `if v_rate_count > 10` desaparecieron)
+
+plan declarado : 43
+aserciones     : {"throws_ok":27,"lives_ok":5,"is":4,"ok":1,"has_function":3,"is_definer":3}
+total contado  : 43   OK
+```
+
+**Falso positivo conocido de mi script:** sigue reportando «declara y NO levanta: `INTERNAL_ERROR`» en las tres
+RPC. Es correcto que el SQL no lo levante — lo produce el wrapper. El test 4 del PR sí codifica esa regla
+(`declaredSqlCodes = declared − INTERNAL_ERROR`), o sea que su control es más preciso que mi barrido.
+
+## 3. `H01` cerrado
+
+```bash
+grep -n "max_offers_per_min" supabase/seed.sql supabase/migrations/20260923050000_rpc_offers_v1.sql | head
+```
+
+```
+seed.sql:13:  ('max_offers_per_min', '10'::jsonb),
+migración:4-7:  insert into public.platform_settings (key, value)
+                values ('max_offers_per_min', '10'::jsonb) on conflict (key) do nothing;
+migración:  select (value #>> '{}')::integer into v_max_offers_per_min ... (×2)
+migración:  if v_rate_count > v_max_offers_per_min then                  (×2)
+```
+
+Y el control que lo prueba dinámico, test 33: baja la clave a `3`, comprueba `RATE_LIMITED` en la 4.ª oferta y
+la restaura a `10`.
+
+## 4. `H02` cerrado
+
+```bash
+git diff d529c61..15e9b72 -- src/server/rpc/offers.ts
+```
+
+- `return 'VALIDATION_ERROR' as RpcErrorCode<K>;` → `return 'INTERNAL_ERROR';` (sin cast)
+- Los tres `safeParse` de output fallido pasaron de `VALIDATION_ERROR` a `INTERNAL_ERROR`, que no pedí y es
+  correcto.
+- `CC-001` registra el cambio de contrato.
+
+## 5. `H03` cerrado, con demostración en rojo
+
+Commit `b0e969b`, salida pegada en el cuerpo del PR:
+
+```
+# Failed test 36: "…si las llamadas con OFFER_BELOW_MINIMUM persistieran su incremento,
+#                  el contador valdría 3 (vale 0)"
+#         have: 0
+#         want: 3
+```
+
+Después invertido a `is(…, 0)` como guardia de regresión (tests 34-37).
+
+## 6. `H05` cerrado — el test quedó mejor que mi barrido
+
+`offers.test.ts:427` ahora:
+
+```ts
+const rawBlocks = sql.split(/create\s+or\s+replace\s+function\s+public\./i).slice(1);
+expect(rawBlocks.length).toBe(3);
+// … mapea bloque → nombre, compara el conjunto de nombres
+for (const rpcName of expectedRpcs) {
+  expect(block, `${rpcName}: falta SECURITY DEFINER`).toMatch(/security\s+definer/i);
+  // … search_path y for update dentro de CADA bloque
+  const declaredSqlCodes = new Set(declaredCodes.filter((c) => c !== 'INTERNAL_ERROR'));
+  expect([...raisedInSql].sort()).toEqual([...declaredSqlCodes].sort());   // bidireccional, por RPC
+}
+```
+
+## 7. `H10` · La divergencia de precedencia
+
+Orden de la RPC, leído de `20260923050000_rpc_offers_v1.sql`:
+
+```
+actor → repartidor → parámetros → OFFER_BELOW_MINIMUM → RATE_LIMITED → solicitud → DUPLICATE_ACTIVE_OFFER
+```
+
+Orden del fake, leído de `rpc-fake.ts:506-540`:
+
+```
+solicitud/repartidor faltante → REQUEST_EXPIRED → INVALID_STATE_TRANSITION → elegibilidad →
+OFFER_BELOW_MINIMUM → DUPLICATE_ACTIVE_OFFER
+```
+
+Combinaciones que discrepan:
+
+| Entrada | RPC | Fake | ¿nueva? |
+|---|---|---|---|
+| Monto bajo el piso + solicitud inexistente | `OFFER_BELOW_MINIMUM` | `NOT_FOUND` | sí (`H09`) |
+| Monto bajo el piso + solicitud vencida | `OFFER_BELOW_MINIMUM` | `REQUEST_EXPIRED` | sí (`H09`) |
+| Monto bajo el piso + solicitud en `draft` | `OFFER_BELOW_MINIMUM` | `INVALID_STATE_TRANSITION` | sí (`H09`) |
+| Repartidor suspendido + solicitud vencida | `COURIER_SUSPENDED` | `REQUEST_EXPIRED` | no |
+| Repartidor suspendido + solicitud inexistente | `COURIER_SUSPENDED` | `NOT_FOUND` | no |
+| En el tope + solicitud vencida | `RATE_LIMITED` | `REQUEST_EXPIRED` | no |
+
+## 8. `H11` · El fake no tiene rate limit
+
+```bash
+grep -c "RATE_LIMITED\|maxOffersPerMin\|rateLimit" src/domain/testing/rpc-fake.ts   # 0
+sed -n '35,41p' src/domain/testing/rpc-fake.ts
+```
+
+```ts
+export interface FakePlatformSettings {
+  readonly minOfferArs: number;
+  readonly requestTtlMinutes: number;
+  readonly pilotActive: boolean;
+  readonly pilotTermsVersion: string;
+  readonly subscriptionGraceDays: number;
+}
+```
+
+Sin `maxOffersPerMin`, y `assertValidFakeOptions` exige explícitamente las otras cinco.
+
+## 9. `H12` · Numeración duplicada
+
+```bash
+grep -nE "^-- [0-9]" supabase/tests/rpc_offers.sql | tail -5
+```
+
+```
+321:-- 31-33. …
+335:-- 32. D04 / H04: …
+350:-- 33. D02 / H01: …
+```
+
+El barrido de numeración da 45 números para el rango `1..43`. Las aserciones y el `plan(43)` están bien.
+
+## 10. Lo que no se verificó
+
+- **Nada ejecutado**: `pnpm typecheck`, `lint`, `test`, `test:coverage`, `build`, `test:db`.
+- **CI**: no consultado. El cuerpo declara `18 passed (18)` y `160 passed (160)`; `offers.test.ts` sigue teniendo
+  4 casos `it()`, así que es plausible, pero no está verificado de forma independiente.

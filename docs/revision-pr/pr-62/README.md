@@ -1,6 +1,6 @@
 # PR #62 — T-101 · `submit_offer`, `withdraw_offer`, `set_availability` y `rate_limits` atómico
 
-> ❌ **Con bloqueantes · 2 bloqueantes · 7 mejoras · 4 decisiones resueltas**
+> ❌ **Con bloqueantes · 1 bloqueante · 3 mejoras · 13 de 19 cerrados**
 > ⚠️ **Revisión estática**: a pedido de Lautaro073 no se corrieron suites ni se consultó CI.
 
 | | |
@@ -9,14 +9,15 @@
 | **Tarea / issue** | [`T-101`](../../tasks/T-101.md) · Issue #11 |
 | **Autor** | Lautaro073 (agy) |
 | **Revisión** | independiente — no es el agy que implementó |
-| **SHA revisado** | `ee247ac` · base `origin/develop` = `ddef51a` |
-| **Alcance** | 7 archivos · **0 fuera** de «Archivos permitidos» |
+| **SHA revisado** | `15e9b72` · base `origin/develop` = `ddef51a` |
+| **Alcance** | 16 archivos · **0 fuera** de «Archivos permitidos» |
 
 ## Rondas
 
 | Ronda | SHA | Fecha | Resultado | Informe |
 |---|---|---|---|---|
 | 1 | `ee247ac` | 2026-09-23 | ❌ 2 bloqueantes · 7 mejoras · 4 decisiones | [`ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `15e9b72` | 2026-09-23 | ❌ 1 bloqueante · 3 mejoras · 2 decisiones | [`ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Resumen
 
@@ -26,59 +27,68 @@ atómico sobre la PK `(subject, action, window_start)`, y el piso de oferta sale
 `AGENTS.md` §2. El cruce mecánico contra `rpc-contracts.ts` da **exacto** en `submit_offer` (12/12) y
 `set_availability` (6/6).
 
-Lo que falla está en los bordes: una clave de configuración que dos documentos dan por existente y no existe, y
-un contrato que no deja distinguir un error del usuario de una caída de la base.
+Los dos bloqueantes de la ronda 1 se cerraron: `max_offers_per_min` existe y se lee, y `CC-001` agregó
+`INTERNAL_ERROR` a las tres RPC. Lo que queda es que el fake de dominio y la RPC todavía no son el mismo
+contrato.
 
 ## Estado por hallazgo
 
-### Bloqueantes
+### Cerrados en la ronda 2, verificados en `15e9b72`
 
-| id | archivo | qué |
-|---|---|---|
-| `H01` | `…rpc_offers_v1.sql:103` | El tope del rate limit es un literal `10` ×2; el cuerpo y la bitácora dicen que sale de `platform_settings.max_offers_per_min`, clave que **no existe** ni en el código ni en `seed.sql` |
-| `H02` | `offers.ts:77` | Todo fallo de infraestructura se convierte en `VALIDATION_ERROR`, porque las tres RPC no declaran `INTERNAL_ERROR`. Y `withdraw_offer` declara `INVALID_STATE_TRANSITION` y nunca lo levanta |
+`H01` · `H02` · `H03` · `H04` · `H05` · `H06` · `H07` · `H08` · `H09` — y las cuatro decisiones `D01`–`D04`,
+aplicadas y citadas línea por línea en la ficha.
 
-### Mejoras
+Tres se cerraron con más de lo pedido: el test 4 (`H05`) quedó mejor que el barrido con el que lo encontré, la
+conducta aceptada de `H03` quedó congelada por un test que falla si cambia —demostrado en rojo antes, en su
+propio commit `b0e969b`— y el test 33, que nadie pidió, es el que prueba que el tope sale de verdad de
+`platform_settings`.
 
-| id | archivo | qué |
-|---|---|---|
-| `H03` | `…rpc_offers_v1.sql:97` | El rate limit **no cuenta los intentos fallidos**: el `raise` revierte su propio incremento. Solo frena el tráfico válido |
-| `H04` | `rpc_offers.sql:336` | El ítem «llamadas concurrentes» del DoD no está cubierto; el test que dice medir atomicidad afirma `count >= 1` |
-| `H05` | `offers.test.ts:427` | El test «Contrato SQL» se satisface con una coincidencia de texto en un archivo de tres funciones, y compara los códigos en un solo sentido y con las tres listas juntas |
-| `H06` | cuerpo del PR + bitácora | Cuatro contradicciones con el código, incluido un `DomainErrorCode` inventado (`REQUEST_NOT_PUBLISHED`) |
-| `H07` | `log/T-101.md` | La bitácora registra una ampliación y un cambio en `public/brand/logo.svg` que no están en este PR ni en la ficha |
-| `H08` | `rpc_offers.sql:114` | Nada comprueba que sigan siendo `security definer` ni que `anon` no pueda ejecutarlas |
-| `H09` | `…rpc_offers_v1.sql:81` | El `for update` sobre `delivery_requests` se toma antes del upsert y de la lectura del piso, alargando la sección crítica |
+### Abiertos
+
+| id | sev | archivo | qué |
+|---|---|---|---|
+| `H10` | **alto** | `rpc-fake.ts:506` | La RPC y el fake devuelven **códigos distintos para las mismas entradas**: validan en otro orden. Seis combinaciones discrepan; tres las ensanchó el arreglo de `H09` |
+| `H11` | medio | `rpc-fake.ts:35` | El fake no implementa rate limiting: `RATE_LIMITED` es inalcanzable ahí y `FakePlatformSettings` no conoce `maxOffersPerMin` |
+| `H12` | bajo | `rpc_offers.sql:321` | Numeración duplicada en los comentarios: 32 y 33 aparecen dos veces |
+| `H13` | bajo | `CC-001.md` | Lleva tildada una aprobación de P2, que no revisa PRs |
 
 ### Decisiones
 
 | id | qué | decisión |
 |---|---|---|
-| `D01` | El rate limit no cuenta fallidos | **aceptar y documentar** |
-| `D02` | Tope hardcodeado en `10` | **hacerlo configurable** con `max_offers_per_min` en `platform_settings` + `seed.sql` |
-| `D03` | Contratos de las tres RPC | **`contract-change`**: sacar `INVALID_STATE_TRANSITION`, agregar `INTERNAL_ERROR` |
-| `D04` | «llamadas concurrentes» del DoD | **reformular el ítem** y que el test 32 afirme el valor exacto |
+| `D01`–`D04` | ronda 1 | **aplicadas** |
+| `D05` | Precedencia de errores entre la RPC y el fake | **fijar la de la RPC como canónica** y alinear el fake, ampliando `CC-001` |
+| `D06` | El fake y el rate limit | **sumar `maxOffersPerMin` y el contador** al fake, dentro de `CC-001` |
+
+## El dato de la ronda
+
+Los nueve hallazgos de la ronda 1 están cerrados. Lo que queda es de una sola naturaleza: **el fake y la RPC no
+son el mismo contrato todavía**. Y una parte la produje yo: al pedir `H09` adelanté el piso y el rate limit
+respecto de la validación de la solicitud, lo que agregó tres combinaciones divergentes. La parte vieja se me
+había pasado en la ronda 1 porque comparé los *conjuntos* de códigos por función y no el *orden*.
 
 ## Lo verificado (todo estático)
 
 | | |
 |---|---|
-| Alcance | ✅ 7 archivos, 0 fuera |
+| Alcance | ✅ 16 archivos, 0 fuera; la ficha se amplió citando `D02`, `D03` y `D01`/`D04` línea por línea |
 | Construcciones prohibidas | ✅ 0 `any` · 0 `@ts-ignore` · 0 `!` · 0 `.only` · 0 `.skip` |
 | `"use client"` en `src/server/` | ✅ ninguno |
-| `security definer` + `search_path` | ✅ las tres |
-| Privilegios | ✅ `revoke all from public, anon, authenticated` + `grant execute to authenticated` |
+| `security definer` + `search_path` por función | ✅ las tres, y ahora lo exige el test 4 **dentro de cada bloque** |
+| Privilegios | ✅ y ahora con control: tres `is_definer` y tres casos `anon` esperando `42501` |
 | Policies `using (true)` | ✅ ninguna |
 | Códigos SQL ⊆ catálogo | ✅ los 14 distintos |
-| Códigos por RPC vs contrato | ✅ `submit_offer` 12/12 · ✅ `set_availability` 6/6 · ❌ `withdraw_offer` +1 |
-| `plan(32)` vs aserciones | ✅ 32 y 32, numeradas 1..32 sin huecos |
-| Claves de `platform_settings` | ✅ `min_offer_ars` · ❌ `max_offers_per_min` no existe |
+| Códigos por RPC vs contrato | ✅ los tres coinciden (descontando `INTERNAL_ERROR`, que lo produce el wrapper) |
+| `plan(43)` vs aserciones | ✅ 43 y 43 |
+| Claves de `platform_settings` | ✅ las dos existen en la migración y en `seed.sql` |
+| Precedencia de errores RPC vs fake | ❌ ver `H10` |
+| `RATE_LIMITED` alcanzable en el fake | ❌ ver `H11` |
 
 **No ejecutado ni consultado:** `pnpm typecheck` · `lint` · `test` · `test:coverage` · `test:db` · los 8 jobs de CI.
 
 ## Archivos
 
-- [`revisiones/ronda-1.md`](revisiones/ronda-1.md) — informe completo
-- [`hallazgos.jsonl`](hallazgos.jsonl) — 13 registros
-- [`lecciones.md`](lecciones.md) — `AG-57` y `AG-58`
+- [`revisiones/ronda-1.md`](revisiones/ronda-1.md) · [`revisiones/ronda-2.md`](revisiones/ronda-2.md)
+- [`hallazgos.jsonl`](hallazgos.jsonl) — 19 registros
+- [`lecciones.md`](lecciones.md) — `AG-57` a `AG-59`
 - [`evidencia/comandos.md`](evidencia/comandos.md) — barridos reproducibles
