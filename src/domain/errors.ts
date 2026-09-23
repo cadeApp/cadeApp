@@ -64,9 +64,7 @@ export function ok<T>(data: T): ActionSuccess<T> {
   return { ok: true, data };
 }
 
-export function err<E extends DomainErrorCode = DomainErrorCode>(
-  code: E
-): ActionFailure<E> {
+export function err<E extends DomainErrorCode = DomainErrorCode>(code: E): ActionFailure<E> {
   return { ok: false, code };
 }
 

@@ -16,6 +16,8 @@ import {
   type DocumentReviewStatus,
   type MerchantSubscriptionStatus,
   type OfferStatus,
+  PLATFORM_SETTING_KEYS,
+  type PlatformSettingKey,
   type ProfileRole,
   calculateHaversineRouteDistanceM,
   formatZoneToZoneDisplayLabel,
@@ -53,6 +55,7 @@ export interface FakeSeedRequest {
   readonly merchantId: string;
   readonly status: DeliveryRequestStatus;
   readonly expiresAt?: string | null;
+  readonly deliveredAt?: string | null;
   readonly acceptedOfferId?: string | null;
   readonly assignedCourierId?: string | null;
   readonly pickupLat?: number | null;
@@ -68,6 +71,7 @@ export interface FakeRequestRecord {
   readonly merchantId: string;
   status: DeliveryRequestStatus;
   expiresAt: string | null;
+  deliveredAt: string | null;
   acceptedOfferId: string | null;
   assignedCourierId: string | null;
   pickupLat: number | null;
@@ -148,7 +152,7 @@ export interface FakeRpcOptions {
 }
 
 export interface FakeRpcClient extends RpcClientContract {
-  readonly setForcedError: (code: DomainErrorCode | null) => void;
+  readonly setForcedError: <K extends RpcName>(rpcName: K, code: RpcErrorCode<K> | null) => void;
   readonly setMinOfferArs: (minOfferArs: number) => void;
   readonly setActor: (patch: Partial<FakeActorContext>) => void;
   readonly seedRequest: (request: FakeSeedRequest) => void;
@@ -196,6 +200,14 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_update_setting: ['admin'],
 };
 
+const ACTIVE_INCIDENT_STATUSES: readonly DeliveryRequestStatus[] = [
+  'published',
+  'matched',
+  'in_transit',
+];
+
+const INCIDENT_WINDOW_MS = 24 * 3_600_000;
+
 function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatformSettings {
   if (!options || typeof options !== 'object' || !options.settings) {
     throw new Error(
@@ -221,7 +233,7 @@ function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatfo
 
 export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   let settings: FakePlatformSettings = assertValidFakeOptions(options);
-  let forcedError: DomainErrorCode | null = null;
+  const forcedErrors = new Map<RpcName, DomainErrorCode>();
   const nowFn = options.now ?? (() => new Date('2026-09-22T15:00:00.000Z'));
 
   let actor: FakeActorContext = {
@@ -238,12 +250,23 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const merchants = new Map<string, FakeMerchantRecord>();
   const documents = new Map<string, FakeDocumentRecord>();
 
+  function nextUniqueOfferId(): string {
+    while (true) {
+      offerSeq += 1;
+      const candidate = `00000000-0000-4000-8000-${String(offerSeq).padStart(12, '0')}`;
+      if (!offers.has(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
   function putRequest(r: FakeSeedRequest) {
     requests.set(r.requestId, {
       requestId: r.requestId,
       merchantId: r.merchantId,
       status: r.status,
       expiresAt: r.expiresAt ?? null,
+      deliveredAt: r.deliveredAt ?? null,
       acceptedOfferId: r.acceptedOfferId ?? null,
       assignedCourierId: r.assignedCourierId ?? null,
       pickupLat: r.pickupLat ?? null,
@@ -303,10 +326,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     requireAdminAal2: boolean,
     handler: (validInput: RpcInput<K>) => ActionResult<RpcOutput<K>, RpcErrorCode<K>>
   ): Promise<ActionResult<RpcOutput<K>, RpcErrorCode<K>>> {
-    if (forcedError !== null) {
-      const code = forcedError as RpcErrorCode<K>;
-      forcedError = null;
-      return err(code);
+    const forced = forcedErrors.get(rpcName);
+    if (forced !== undefined) {
+      forcedErrors.delete(rpcName);
+      return err(forced as RpcErrorCode<K>);
     }
     if (!actor.userId || !actor.role) {
       return err('UNAUTHENTICATED' as RpcErrorCode<K>);
@@ -317,18 +340,49 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (requireAdminAal2 && actor.aal !== 'aal2') {
       return err('AAL2_REQUIRED' as RpcErrorCode<K>);
     }
+    if (rpcName === 'admin_update_setting') {
+      const candidate = rawInput as unknown as { readonly key?: unknown } | null;
+      const rawKey = candidate && typeof candidate === 'object' ? candidate.key : undefined;
+      if (
+        typeof rawKey !== 'string' ||
+        !PLATFORM_SETTING_KEYS.includes(rawKey as PlatformSettingKey)
+      ) {
+        return err('INVALID_SETTING_KEY' as RpcErrorCode<K>);
+      }
+      const settingParsed = RPC_CONTRACTS.admin_update_setting.inputSchema.safeParse(rawInput);
+      if (!settingParsed.success) {
+        return err('INVALID_SETTING_VALUE' as RpcErrorCode<K>);
+      }
+    }
     const parsed = RPC_CONTRACTS[rpcName].inputSchema.safeParse(rawInput);
     if (!parsed.success) {
       const firstMsg = parsed.error.issues[0]?.message;
       const mapped = isDomainErrorCode(firstMsg) ? firstMsg : 'VALIDATION_ERROR';
       return err(mapped as RpcErrorCode<K>);
     }
-    return handler(parsed.data as RpcInput<K>);
+    const result = handler(parsed.data as RpcInput<K>);
+    if (result.ok) {
+      const outParsed = RPC_CONTRACTS[rpcName].outputSchema.safeParse(result.data);
+      if (!outParsed.success) {
+        return err('VALIDATION_ERROR' as RpcErrorCode<K>);
+      }
+    }
+    return result;
   }
 
   return {
-    setForcedError(code) {
-      forcedError = code;
+    setForcedError(rpcName, code) {
+      if (code === null) {
+        forcedErrors.delete(rpcName);
+        return;
+      }
+      const allowed = RPC_CONTRACTS[rpcName]?.errorCodes as readonly DomainErrorCode[] | undefined;
+      if (!allowed || !allowed.includes(code)) {
+        throw new Error(
+          `Error code ${String(code)} is not in RPC_CONTRACTS.${String(rpcName)}.errorCodes`
+        );
+      }
+      forcedErrors.set(rpcName, code);
     },
 
     setMinOfferArs(nextFloor) {
@@ -357,9 +411,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     publish_request: (rawInput) =>
       executeRpc('publish_request', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        if (!req) return err('NOT_FOUND');
+        const merchant = merchants.get(actor.userId);
+        if (!req || !merchant) return err('NOT_FOUND');
 
-        const merchant = merchants.get(actor.userId)!;
         const currentNow = nowFn();
         const transition = transitionRequest({
           from: req.status,
@@ -452,7 +506,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     submit_offer: (rawInput) =>
       executeRpc('submit_offer', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        if (!req) return err('NOT_FOUND');
+        const courier = couriers.get(actor.userId);
+        if (!req || !courier) return err('NOT_FOUND');
 
         const currentNow = nowFn();
         if (isRequestExpired(req.status, req.expiresAt, currentNow)) {
@@ -462,7 +517,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('INVALID_STATE_TRANSITION');
         }
 
-        const courier = couriers.get(actor.userId)!;
         const eligibility = canCourierSubmitOffer({
           status: courier.status,
           available: courier.available,
@@ -486,8 +540,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           }
         }
 
-        offerSeq += 1;
-        const offerId = `00000000-0000-4000-8000-${String(offerSeq).padStart(12, '0')}`;
+        const offerId = nextUniqueOfferId();
         offers.set(offerId, {
           offerId,
           requestId: input.requestId,
@@ -529,7 +582,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!offer) return err('NOT_FOUND');
 
         const req = requests.get(offer.requestId);
-        if (!req) return err('NOT_FOUND');
+        const offerCourier = couriers.get(offer.courierId);
+        if (!req || !offerCourier) return err('NOT_FOUND');
 
         if (req.merchantId !== actor.userId) {
           return err('UNAUTHORIZED_ACTOR');
@@ -558,12 +612,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('OFFER_NOT_PENDING');
         }
 
-        const offerCourier = couriers.get(offer.courierId);
-        if (offerCourier) {
-          const courierCheck = canCourierBeAccepted({ status: offerCourier.status });
-          if (!courierCheck.ok) {
-            return err(courierCheck.code as RpcErrorCode<'accept_offer'>);
-          }
+        const courierCheck = canCourierBeAccepted({ status: offerCourier.status });
+        if (!courierCheck.ok) {
+          return err(courierCheck.code as RpcErrorCode<'accept_offer'>);
         }
 
         offer.status = 'accepted';
@@ -593,9 +644,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     mark_picked_up: (rawInput) =>
       executeRpc('mark_picked_up', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        if (!req) return err('NOT_FOUND');
+        const courier = couriers.get(actor.userId);
+        if (!req || !courier) return err('NOT_FOUND');
 
-        const courier = couriers.get(actor.userId)!;
         if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
         if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
 
@@ -636,24 +687,26 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err(transition.code as RpcErrorCode<'mark_delivered'>);
         }
 
+        const deliveredAt = currentNow.toISOString();
         req.status = 'delivered';
+        req.deliveredAt = deliveredAt;
         return ok({
           requestId: input.requestId,
           status: 'delivered',
-          deliveredAt: currentNow.toISOString(),
+          deliveredAt,
         });
       }),
 
     report_no_show: (rawInput) =>
       executeRpc('report_no_show', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        if (!req) return err('NOT_FOUND');
+        const merchant = merchants.get(actor.userId);
+        if (!req || !merchant) return err('NOT_FOUND');
 
         const nextStatus = input.republish === false ? 'cancelled' : 'published';
         const currentNow = nowFn();
 
         if (nextStatus === 'published') {
-          const merchant = merchants.get(actor.userId)!;
           const subCheck = canMerchantPublishRequest({
             subscriptionStatus: merchant.subscriptionStatus,
             pilotActive: settings.pilotActive,
@@ -678,7 +731,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err(transition.code as RpcErrorCode<'report_no_show'>);
         }
 
-        const cancelledOfferId = req.acceptedOfferId!;
+        const cancelledOfferId = req.acceptedOfferId;
+        if (!cancelledOfferId || !offers.has(cancelledOfferId)) {
+          return err('INVALID_STATE_TRANSITION');
+        }
         const acceptedOffer = offers.get(cancelledOfferId);
         if (acceptedOffer) {
           acceptedOffer.status = 'cancelled';
@@ -720,7 +776,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err(transition.code as RpcErrorCode<'courier_cancel_match'>);
         }
 
-        const cancelledOfferId = req.acceptedOfferId!;
+        const cancelledOfferId = req.acceptedOfferId;
+        if (!cancelledOfferId || !offers.has(cancelledOfferId)) {
+          return err('INVALID_STATE_TRANSITION');
+        }
         const acceptedOffer = offers.get(cancelledOfferId);
         if (acceptedOffer) {
           acceptedOffer.status = 'cancelled';
@@ -745,13 +804,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     republish_request: (rawInput) =>
       executeRpc('republish_request', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        if (!req) return err('NOT_FOUND');
+        const merchant = merchants.get(actor.userId);
+        if (!req || !merchant) return err('NOT_FOUND');
         if (req.merchantId !== actor.userId) {
           return err('UNAUTHORIZED_ACTOR');
         }
 
         const currentNow = nowFn();
-        const merchant = merchants.get(actor.userId)!;
         const subCheck = canMerchantPublishRequest({
           subscriptionStatus: merchant.subscriptionStatus,
           pilotActive: settings.pilotActive,
@@ -805,13 +864,26 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('UNAUTHORIZED_ACTOR');
         }
 
+        const currentNow = nowFn();
+        if (req.status === 'delivered') {
+          const deliveredMs = req.deliveredAt ? Date.parse(req.deliveredAt) : Number.NaN;
+          if (
+            Number.isNaN(deliveredMs) ||
+            currentNow.getTime() - deliveredMs > INCIDENT_WINDOW_MS
+          ) {
+            return err('INCIDENT_WINDOW_EXPIRED');
+          }
+        } else if (!ACTIVE_INCIDENT_STATUSES.includes(req.status)) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
         incidentSeq += 1;
         const incidentId = `00000000-0000-4000-8000-${String(10_000 + incidentSeq).padStart(12, '0')}`;
         return ok({
           incidentId,
           requestId: input.requestId,
           status: 'open',
-          createdAt: nowFn().toISOString(),
+          createdAt: currentNow.toISOString(),
         });
       }),
 
@@ -856,10 +928,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
         return ok({
           routeDistanceM: null,
-          displayLabel: formatZoneToZoneDisplayLabel(
-            input.pickupZoneName,
-            input.dropoffZoneName
-          ),
+          displayLabel: formatZoneToZoneDisplayLabel(input.pickupZoneName, input.dropoffZoneName),
         });
       }),
 
@@ -906,12 +975,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       executeRpc('admin_verify_document', rawInput, true, (input) => {
         const doc = documents.get(input.documentId);
         if (!doc) return err('NOT_FOUND');
+        const courier = couriers.get(doc.courierId);
+        if (!courier) return err('NOT_FOUND');
         if (input.decision === 'rejected' && (!input.reason || input.reason.trim().length === 0)) {
           return err('REASON_REQUIRED');
         }
 
         doc.status = input.decision;
-        const courier = couriers.get(doc.courierId)!;
         if (doc.kind === 'license') courier.licenseStatus = input.decision;
         if (doc.kind === 'insurance') courier.insuranceStatus = input.decision;
         const docLevel = computeDocLevel(courier.licenseStatus, courier.insuranceStatus);

@@ -438,12 +438,8 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       });
       expect(zoneOnlyOutput.success).toBe(true);
 
-      expect(
-        aguilaresCoordPairSchema.safeParse({ lat: -27.432, lng: null }).success
-      ).toBe(false);
-      expect(
-        aguilaresCoordPairSchema.safeParse({ lat: -27.432, lng: -65.615 }).success
-      ).toBe(true);
+      expect(aguilaresCoordPairSchema.safeParse({ lat: -27.432, lng: null }).success).toBe(false);
+      expect(aguilaresCoordPairSchema.safeParse({ lat: -27.432, lng: -65.615 }).success).toBe(true);
       expect(isWithinAguilaresBounds(AGUILARES_BOUNDS.minLat, AGUILARES_BOUNDS.minLng)).toBe(true);
       expect(createOfferAmountArsSchema(1200).safeParse(1100).success).toBe(false);
       expect(createOfferAmountArsSchema(1200).safeParse(1200).success).toBe(true);
@@ -575,7 +571,13 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       };
 
       const byDoc = sortOffersForMerchant([o1, o2, o3, o4, o5], 'doc_level');
-      expect(byDoc.map((o) => o.id)).toEqual(['c-offer', 'd-offer', 'a-offer', 'e-offer', 'b-offer']);
+      expect(byDoc.map((o) => o.id)).toEqual([
+        'c-offer',
+        'd-offer',
+        'a-offer',
+        'e-offer',
+        'b-offer',
+      ]);
 
       const byPrice = sortOffersForMerchant([o1, o3, o2], 'price');
       expect(byPrice.map((o) => o.id)).toEqual(['a-offer', 'b-offer', 'c-offer']);
@@ -645,14 +647,16 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         await fake.submit_offer({ requestId: REQ_1, amountArs: 1500, etaMinutes: 15 })
       ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
 
-      expect(
-        await fake.admin_update_setting({ key: 'min_offer_ars', value: 1400 })
-      ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+      expect(await fake.admin_update_setting({ key: 'min_offer_ars', value: 1400 })).toEqual({
+        ok: false,
+        code: 'UNAUTHORIZED_ACTOR',
+      });
 
       fake.setActor({ userId: ADMIN_1, role: 'admin', aal: 'aal1' });
-      expect(
-        await fake.admin_update_setting({ key: 'min_offer_ars', value: 1400 })
-      ).toEqual({ ok: false, code: 'AAL2_REQUIRED' });
+      expect(await fake.admin_update_setting({ key: 'min_offer_ars', value: 1400 })).toEqual({
+        ok: false,
+        code: 'AAL2_REQUIRED',
+      });
     });
 
     it('H07 y H08: el fake devuelve NOT_FOUND ante UUID inexistente, genera IDs únicos para múltiples ofertas, rechaza las restantes al aceptar una y ejecuta el ciclo completo de las 18 RPC', async () => {
@@ -736,7 +740,9 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         courierStatus: 'approved',
         courierAvailable: true,
       });
-      expect(await fake.submit_offer({ requestId: REQ_MISSING, amountArs: 1300, etaMinutes: 10 })).toEqual({
+      expect(
+        await fake.submit_offer({ requestId: REQ_MISSING, amountArs: 1300, etaMinutes: 10 })
+      ).toEqual({
         ok: false,
         code: 'NOT_FOUND',
       });
@@ -944,14 +950,20 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       expect(() => fake.setMinOfferArs(0)).toThrow();
       expect(fake.getSettings().minOfferArs).toBe(1100);
 
-      fake.setForcedError('RATE_LIMITED');
+      fake.setForcedError('publish_request', 'RATE_LIMITED');
       expect(await fake.publish_request({ requestId: REQ_2 })).toEqual({
         ok: false,
         code: 'RATE_LIMITED',
       });
+      fake.setForcedError('publish_request', null);
 
       // Courier 1 submits offer on REQ_2, withdraws it, then submits another offer
-      fake.setActor({ userId: COURIER_1, role: 'courier', courierStatus: 'approved', courierAvailable: true });
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
       expect(await fake.set_availability({ available: true })).toEqual({
         ok: true,
         data: { courierId: COURIER_1, available: true },
@@ -1029,7 +1041,12 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       });
 
       // NOT_FOUND & guard branches across remaining RPCs
-      fake.setActor({ userId: COURIER_1, role: 'courier', courierStatus: 'approved', courierAvailable: true });
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
       expect(await fake.withdraw_offer({ offerId: REQ_MISSING })).toEqual({
         ok: false,
         code: 'NOT_FOUND',
@@ -1180,7 +1197,12 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       });
 
       // Withdraw by non-owner courier & mark_picked_up with suspended/pending courier
-      fake.setActor({ userId: COURIER_2, role: 'courier', courierStatus: 'approved', courierAvailable: true });
+      fake.setActor({
+        userId: COURIER_2,
+        role: 'courier',
+        courierStatus: 'approved',
+        courierAvailable: true,
+      });
       expect(
         await fake.withdraw_offer({ offerId: '50000000-0000-4000-8000-000000000009' })
       ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
@@ -1192,11 +1214,21 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         acceptedOfferId: '50000000-0000-4000-8000-000000000009',
         assignedCourierId: COURIER_1,
       });
-      fake.setActor({ userId: COURIER_1, role: 'courier', courierStatus: 'suspended', courierAvailable: false });
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'suspended',
+        courierAvailable: false,
+      });
       expect(
         await fake.mark_picked_up({ requestId: '30000000-0000-4000-8000-000000000012' })
       ).toEqual({ ok: false, code: 'COURIER_SUSPENDED' });
-      fake.setActor({ userId: COURIER_1, role: 'courier', courierStatus: 'pending', courierAvailable: false });
+      fake.setActor({
+        userId: COURIER_1,
+        role: 'courier',
+        courierStatus: 'pending',
+        courierAvailable: false,
+      });
       expect(
         await fake.mark_picked_up({ requestId: '30000000-0000-4000-8000-000000000012' })
       ).toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
@@ -1241,6 +1273,232 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
           expect(isDomainErrorCode(typedCode)).toBe(true);
         }
       }
+    });
+
+    describe('Ronda 2 — Cierre de H05, H07, H08 y códigos específicos de admin_update_setting', () => {
+      it('H05 (Ronda 2): setForcedError está ligado por RPC y rechaza códigos fuera del catálogo de la RPC invocada', () => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+        });
+        expect(() =>
+          (fake.setForcedError as unknown as (rpc: string, code: string) => void)(
+            'publish_request',
+            'AAL2_REQUIRED'
+          )
+        ).toThrow();
+      });
+
+      it('H04/Mejora Ronda 2: admin_update_setting devuelve INVALID_SETTING_KEY ante clave desconocida e INVALID_SETTING_VALUE ante valor inválido', async () => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: ADMIN_1, role: 'admin', aal: 'aal2' },
+        });
+        expect(
+          await fake.admin_update_setting({
+            key: 'unknown_key' as unknown as 'pilot_active',
+            value: true,
+          })
+        ).toEqual({ ok: false, code: 'INVALID_SETTING_KEY' });
+
+        expect(
+          await fake.admin_update_setting({
+            key: 'pilot_active',
+            value: 1 as unknown as boolean,
+          })
+        ).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
+      });
+
+      it('H07.1 (Ronda 2): accept_offer rechaza con NOT_FOUND una oferta cuyo courierId no existe', async () => {
+        const orphanOfferId = '60000000-0000-4000-8000-000000000001';
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+          initialMerchants: [{ merchantId: MERCHANT_1, subscriptionStatus: 'pilot' }],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'published',
+              expiresAt: '2026-09-22T16:00:00.000Z',
+            },
+          ],
+          initialOffers: [
+            {
+              offerId: orphanOfferId,
+              requestId: REQ_1,
+              courierId: '20000000-0000-4000-8000-999999999999',
+              amountArs: 1500,
+              status: 'pending',
+            },
+          ],
+        });
+
+        expect(await fake.accept_offer({ offerId: orphanOfferId })).toEqual({
+          ok: false,
+          code: 'NOT_FOUND',
+        });
+      });
+
+      it('H07.2 (Ronda 2): admin_verify_document devuelve NOT_FOUND (sin lanzar TypeError) si falta el courier del documento', async () => {
+        const orphanDocId = '40000000-0000-4000-8000-000000000099';
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: ADMIN_1, role: 'admin', aal: 'aal2' },
+          initialDocuments: [
+            {
+              documentId: orphanDocId,
+              courierId: '20000000-0000-4000-8000-999999999999',
+              kind: 'license',
+              status: 'submitted',
+            },
+          ],
+        });
+
+        expect(
+          await fake.admin_verify_document({ documentId: orphanDocId, decision: 'verified' })
+        ).toEqual({
+          ok: false,
+          code: 'NOT_FOUND',
+        });
+      });
+
+      it('H07.3 (Ronda 2): report_no_show y courier_cancel_match rechazan con INVALID_STATE_TRANSITION una solicitud matched sin acceptedOfferId válido', async () => {
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+          initialMerchants: [{ merchantId: MERCHANT_1, subscriptionStatus: 'pilot' }],
+          initialCouriers: [{ courierId: COURIER_1, status: 'approved', available: true }],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'matched',
+              acceptedOfferId: null,
+              assignedCourierId: COURIER_1,
+            },
+          ],
+        });
+
+        expect(await fake.report_no_show({ requestId: REQ_1, republish: true })).toEqual({
+          ok: false,
+          code: 'INVALID_STATE_TRANSITION',
+        });
+
+        fake.setActor({ userId: COURIER_1, role: 'courier' });
+        expect(
+          await fake.courier_cancel_match({ requestId: REQ_1, reason: 'Sin oferta válida' })
+        ).toEqual({
+          ok: false,
+          code: 'INVALID_STATE_TRANSITION',
+        });
+      });
+
+      it('H07.4 (Ronda 2): report_incident rechaza solicitudes draft y aplica la ventana de 24 horas posteriores a deliveredAt (INCIDENT_WINDOW_EXPIRED)', async () => {
+        let currentNow = new Date('2026-09-22T15:00:00.000Z');
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          now: () => currentNow,
+          initialActor: { userId: MERCHANT_1, role: 'merchant' },
+          initialMerchants: [{ merchantId: MERCHANT_1, subscriptionStatus: 'pilot' }],
+          initialCouriers: [{ courierId: COURIER_1, status: 'approved', available: true }],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'draft',
+            },
+            {
+              requestId: REQ_2,
+              merchantId: MERCHANT_1,
+              status: 'in_transit',
+              assignedCourierId: COURIER_1,
+            },
+          ],
+        });
+
+        expect(
+          await fake.report_incident({
+            requestId: REQ_1,
+            kind: 'other',
+            description: 'Solicitud en borrador',
+          })
+        ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+        fake.setActor({ userId: COURIER_1, role: 'courier' });
+        expect(await fake.mark_delivered({ requestId: REQ_2 })).toEqual({
+          ok: true,
+          data: expect.objectContaining({ status: 'delivered' }),
+        });
+
+        // Within 24h window -> ok
+        currentNow = new Date('2026-09-23T14:00:00.000Z');
+        expect(
+          await fake.report_incident({
+            requestId: REQ_2,
+            kind: 'damage',
+            description: 'Dentro de las 24 horas',
+          })
+        ).toEqual({
+          ok: true,
+          data: expect.objectContaining({ status: 'open' }),
+        });
+
+        // After 24h window -> INCIDENT_WINDOW_EXPIRED
+        currentNow = new Date('2026-09-23T15:00:01.000Z');
+        expect(
+          await fake.report_incident({
+            requestId: REQ_2,
+            kind: 'damage',
+            description: 'Fuera de las 24 horas',
+          })
+        ).toEqual({ ok: false, code: 'INCIDENT_WINDOW_EXPIRED' });
+      });
+
+      it('H08 (Ronda 2): submit_offer nunca colisiona ni sobreescribe una oferta sembrada con 00000000-0000-4000-8000-000000000001', async () => {
+        const seededOfferId = '00000000-0000-4000-8000-000000000001';
+        const fake = createFakeRpcClient({
+          settings: BASE_SETTINGS,
+          initialActor: {
+            userId: COURIER_2,
+            role: 'courier',
+            courierStatus: 'approved',
+            courierAvailable: true,
+          },
+          initialCouriers: [
+            { courierId: COURIER_1, status: 'approved', available: true },
+            { courierId: COURIER_2, status: 'approved', available: true },
+          ],
+          initialRequests: [
+            {
+              requestId: REQ_1,
+              merchantId: MERCHANT_1,
+              status: 'published',
+              expiresAt: '2026-09-22T16:00:00.000Z',
+            },
+          ],
+          initialOffers: [
+            {
+              offerId: seededOfferId,
+              requestId: REQ_1,
+              courierId: COURIER_1,
+              amountArs: 1300,
+              status: 'pending',
+            },
+          ],
+        });
+
+        const submitted = await fake.submit_offer({
+          requestId: REQ_1,
+          amountArs: 1400,
+          etaMinutes: 15,
+        });
+        expect(submitted.ok).toBe(true);
+        if (submitted.ok) {
+          expect(submitted.data.offerId).not.toBe(seededOfferId);
+        }
+        expect(fake.getOffer(seededOfferId)?.courierId).toBe(COURIER_1);
+      });
     });
   });
 });

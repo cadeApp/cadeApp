@@ -9,8 +9,8 @@ import type { Database } from '@/types/database.types';
  * Crea un cliente Supabase para Server Components, Server Actions y Route Handlers.
  * Maneja lectura y escritura de cookies delegando en cookies() de Next.js.
  */
-export function createClient() {
-  const cookieStore = cookies();
+export async function createClient() {
+  const cookieStore = await cookies();
 
   return createServerClient<Database>(
     publicEnv.NEXT_PUBLIC_SUPABASE_URL,
