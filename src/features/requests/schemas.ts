@@ -36,7 +36,7 @@ export const createDeliveryRequestSchema = z
       .max(30, 'El teléfono es demasiado largo'),
     recipientConsentDeclared: z.literal(true, {
       errorMap: () => ({
-        message: 'Debés declarar que contás con la autorización del destinatario',
+        message: 'Debés declarar que contás con la autorización del destinatario.',
       }),
     }),
     packageType: packageTypeSchema,

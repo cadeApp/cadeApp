@@ -92,12 +92,35 @@ describe('T-112: CreateRequestForm', () => {
   it('bloquea el submit si no se marca la declaración de consentimiento del destinatario', async () => {
     const { container } = render(<CreateRequestForm zones={mockZones} />);
 
-    const form = container.querySelector('form')!;
+    const form = container.querySelector('form');
+    expect(form).not.toBeNull();
+    if (!form) return;
     fireEvent.submit(form);
 
     expect(
-      screen.getByText('Debés declarar que contás con la autorización del destinatario.')
+      await screen.findByText('Debés declarar que contás con la autorización del destinatario.')
     ).toBeDefined();
     expect(actions.createDeliveryRequestAction).not.toHaveBeenCalled();
   });
+
+  it('PR67-H01: muestra la confirmación de pin fijado usando el token válido text-primary y no text-success', () => {
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: mockZones[0]?.id ?? 'zone-centro',
+          defaultPickupLat: -27.43,
+          defaultPickupLng: -65.61,
+          notes: '',
+        }}
+      />
+    );
+
+    const pinBadge = screen.getByText('Pin de retiro fijado').closest('span');
+    expect(pinBadge).not.toBeNull();
+    expect(pinBadge?.className).toContain('text-primary');
+    expect(pinBadge?.className).not.toContain('text-success');
+  });
 });
+

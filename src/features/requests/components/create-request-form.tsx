@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import {
   AlertCircle,
   Banknote,
@@ -27,6 +29,11 @@ import { Textarea } from '@/ui/textarea';
 import { createDeliveryRequestAction } from '../actions';
 import { requestsCopy } from '../copy';
 import type { MerchantDefaultPickup, ZoneOption } from '../queries';
+import {
+  createDeliveryRequestSchema,
+  type CreateDeliveryRequestInput,
+  type CreateDeliveryRequestOutput,
+} from '../schemas';
 
 interface CreateRequestFormProps {
   readonly zones: ZoneOption[];
@@ -37,54 +44,53 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
   const router = useRouter();
   const copy = requestsCopy.newRequest;
 
-  // Punto de retiro (precargado y editable)
-  const [pickupAddress, setPickupAddress] = React.useState(
-    defaultPickup?.defaultPickupAddress ?? ''
-  );
-  const [pickupZoneId, setPickupZoneId] = React.useState(
-    defaultPickup?.defaultPickupZoneId ?? zones[0]?.id ?? ''
-  );
-  const [pickupLat, setPickupLat] = React.useState<number | null>(
-    defaultPickup?.defaultPickupLat ?? null
-  );
-  const [pickupLng, setPickupLng] = React.useState<number | null>(
-    defaultPickup?.defaultPickupLng ?? null
-  );
+  // Estados efímeros de UI
   const [pickupLocating, setPickupLocating] = React.useState(false);
   const [pickupCoordsError, setPickupCoordsError] = React.useState<string | null>(null);
 
-  // Destino y entrega
-  const [dropoffAddress, setDropoffAddress] = React.useState('');
-  const [dropoffZoneId, setDropoffZoneId] = React.useState(zones[1]?.id ?? zones[0]?.id ?? '');
-  const [dropoffLat, setDropoffLat] = React.useState<number | null>(null);
-  const [dropoffLng, setDropoffLng] = React.useState<number | null>(null);
   const [dropoffLocating, setDropoffLocating] = React.useState(false);
   const [dropoffCoordsError, setDropoffCoordsError] = React.useState<string | null>(null);
 
-  // Destinatario
-  const [recipientName, setRecipientName] = React.useState('');
-  const [recipientPhone, setRecipientPhone] = React.useState('');
-  const [recipientConsentDeclared, setRecipientConsentDeclared] = React.useState(false);
-
-  // Paquete
-  const [packageType, setPackageType] = React.useState<'sobre' | 'chico' | 'mediano' | 'grande'>(
-    'chico'
-  );
-
-  // Medio de pago del destinatario
-  const [paymentMethod, setPaymentMethod] = React.useState<'cash' | 'transfer' | 'to_agree'>(
-    'cash'
-  );
-  const [needsChange, setNeedsChange] = React.useState(false);
-  const [cashChangeAmount, setCashChangeAmount] = React.useState<number | null>(null);
   const [customChangeInput, setCustomChangeInput] = React.useState('');
+  const [serverError, setServerError] = React.useState<string | null>(null);
 
-  // Notas / Indicaciones
-  const [notes, setNotes] = React.useState(defaultPickup?.notes ?? '');
+  // Formulario gobernado por react-hook-form + zodResolver
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<CreateDeliveryRequestInput, unknown, CreateDeliveryRequestOutput>({
+    resolver: zodResolver(createDeliveryRequestSchema),
+    defaultValues: {
+      pickupAddress: defaultPickup?.defaultPickupAddress ?? '',
+      pickupZoneId: defaultPickup?.defaultPickupZoneId ?? zones[0]?.id ?? '',
+      pickupLat: defaultPickup?.defaultPickupLat ?? null,
+      pickupLng: defaultPickup?.defaultPickupLng ?? null,
+      dropoffAddress: '',
+      dropoffZoneId: zones[1]?.id ?? zones[0]?.id ?? '',
+      dropoffLat: null,
+      dropoffLng: null,
+      recipientName: '',
+      recipientPhone: '',
+      recipientConsentDeclared: false as unknown as true,
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      cashChangeAmount: null,
+      notes: defaultPickup?.notes ?? '',
+    },
+  });
 
-  // Estado general de envío
-  const [formError, setFormError] = React.useState<string | null>(null);
-  const [isPending, setIsPending] = React.useState(false);
+  const pickupLat = watch('pickupLat');
+  const pickupLng = watch('pickupLng');
+  const dropoffLat = watch('dropoffLat');
+  const dropoffLng = watch('dropoffLng');
+  const packageType = watch('packageType');
+  const paymentMethod = watch('recipientPaymentMethod');
+  const needsChange = watch('needsChange');
+  const cashChangeAmount = watch('cashChangeAmount');
 
   // Geolocalización para retiro
   const handleUseMyLocationPickup = () => {
@@ -100,12 +106,12 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         const { latitude, longitude } = pos.coords;
         if (!isWithinAguilaresBounds(latitude, longitude)) {
           setPickupCoordsError(copy.mapOutOfAguilares);
-          setPickupLat(null);
-          setPickupLng(null);
+          setValue('pickupLat', null, { shouldValidate: true });
+          setValue('pickupLng', null, { shouldValidate: true });
           return;
         }
-        setPickupLat(latitude);
-        setPickupLng(longitude);
+        setValue('pickupLat', latitude, { shouldValidate: true });
+        setValue('pickupLng', longitude, { shouldValidate: true });
         setPickupCoordsError(null);
       },
       () => {
@@ -130,12 +136,12 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         const { latitude, longitude } = pos.coords;
         if (!isWithinAguilaresBounds(latitude, longitude)) {
           setDropoffCoordsError(copy.mapOutOfAguilares);
-          setDropoffLat(null);
-          setDropoffLng(null);
+          setValue('dropoffLat', null, { shouldValidate: true });
+          setValue('dropoffLng', null, { shouldValidate: true });
           return;
         }
-        setDropoffLat(latitude);
-        setDropoffLng(longitude);
+        setValue('dropoffLat', latitude, { shouldValidate: true });
+        setValue('dropoffLng', longitude, { shouldValidate: true });
         setDropoffCoordsError(null);
       },
       () => {
@@ -147,73 +153,41 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
   };
 
   const handlePresetChangeAmount = (amount: number) => {
-    setCashChangeAmount(amount);
+    setValue('cashChangeAmount', amount, { shouldValidate: true });
     setCustomChangeInput('');
   };
 
   const handleCustomChangeChange = (val: string) => {
     setCustomChangeInput(val);
     const parsed = Number.parseInt(val.replace(/\D/g, ''), 10);
-    setCashChangeAmount(Number.isNaN(parsed) || parsed <= 0 ? null : parsed);
+    setValue('cashChangeAmount', Number.isNaN(parsed) || parsed <= 0 ? null : parsed, {
+      shouldValidate: true,
+    });
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setFormError(null);
-
-    if (!recipientConsentDeclared) {
-      setFormError('Debés declarar que contás con la autorización del destinatario.');
-      return;
-    }
-
-    if (paymentMethod === 'cash' && needsChange && (!cashChangeAmount || cashChangeAmount <= 0)) {
-      setFormError(
-        'Ingresá o seleccioná con cuánto dinero en efectivo va a pagar el destinatario.'
-      );
-      return;
-    }
-
-    setIsPending(true);
+  const onSubmit = async (data: CreateDeliveryRequestOutput) => {
+    setServerError(null);
 
     try {
-      const result = await createDeliveryRequestAction({
-        pickupZoneId,
-        pickupAddress,
-        pickupLat: pickupLat ?? null,
-        pickupLng: pickupLng ?? null,
-        dropoffZoneId,
-        dropoffAddress,
-        dropoffLat: dropoffLat ?? null,
-        dropoffLng: dropoffLng ?? null,
-        recipientName,
-        recipientPhone,
-        recipientConsentDeclared: true,
-        packageType,
-        recipientPaymentMethod: paymentMethod,
-        needsChange,
-        cashChangeAmount: paymentMethod === 'cash' && needsChange ? cashChangeAmount : null,
-        notes: notes || undefined,
-      });
+      const result = await createDeliveryRequestAction(data);
 
       if (!result.ok) {
         const msg = getDomainErrorMessage(result.code);
-        setFormError(msg);
+        setServerError(msg);
         notify.error(msg);
-        setIsPending(false);
         return;
       }
 
       notify.success('Solicitud publicada con éxito');
       router.push(result.data.redirectTo);
     } catch {
-      setFormError(copy.errorGeneric);
+      setServerError(copy.errorGeneric);
       notify.error(copy.errorGeneric);
-      setIsPending(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto w-full max-w-xl space-y-6 pb-16">
+    <form onSubmit={handleSubmit(onSubmit)} className="mx-auto w-full max-w-xl space-y-6 pb-16">
       {/* Encabezado */}
       <div className="space-y-1">
         <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
@@ -222,13 +196,13 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         <p className="text-sm text-muted-foreground">{copy.pageSubtitle}</p>
       </div>
 
-      {formError && (
+      {serverError && (
         <div
           role="alert"
           className="flex items-start gap-3 rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive"
         >
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-          <span>{formError}</span>
+          <span>{serverError}</span>
         </div>
       )}
 
@@ -255,9 +229,8 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             </label>
             <select
               id="pickup-zone"
-              value={pickupZoneId}
-              onChange={(e) => setPickupZoneId(e.target.value)}
-              required
+              {...register('pickupZoneId')}
+              aria-invalid={Boolean(errors.pickupZoneId)}
               className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="" disabled>
@@ -269,6 +242,11 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                 </option>
               ))}
             </select>
+            {errors.pickupZoneId && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {errors.pickupZoneId.message}
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -277,13 +255,17 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             </label>
             <Input
               id="pickup-address"
-              value={pickupAddress}
-              onChange={(e) => setPickupAddress(e.target.value)}
+              {...register('pickupAddress')}
               placeholder={copy.pickupAddressPlaceholder}
-              required
               maxLength={200}
+              aria-invalid={Boolean(errors.pickupAddress)}
               className="h-12 text-sm"
             />
+            {errors.pickupAddress && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {errors.pickupAddress.message}
+              </p>
+            )}
           </div>
 
           <div className="pt-1">
@@ -301,12 +283,17 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               {pickupLocating ? 'Obteniendo GPS...' : copy.useMyLocation}
             </Button>
             {pickupLat != null && pickupLng != null && !pickupCoordsError && (
-              <span className="text-success ml-3 inline-flex items-center gap-1 text-sm font-medium">
+              <span className="text-primary ml-3 inline-flex items-center gap-1 text-sm font-medium">
                 <CheckCircle2 className="h-4 w-4" /> Pin de retiro fijado
               </span>
             )}
             {pickupCoordsError && (
               <p className="mt-2 text-sm text-destructive">{pickupCoordsError}</p>
+            )}
+            {errors.pickupLat && (
+              <p role="alert" className="mt-2 text-sm text-destructive">
+                {errors.pickupLat.message}
+              </p>
             )}
           </div>
         </div>
@@ -328,9 +315,8 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             </label>
             <select
               id="dropoff-zone"
-              value={dropoffZoneId}
-              onChange={(e) => setDropoffZoneId(e.target.value)}
-              required
+              {...register('dropoffZoneId')}
+              aria-invalid={Boolean(errors.dropoffZoneId)}
               className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="" disabled>
@@ -342,6 +328,11 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                 </option>
               ))}
             </select>
+            {errors.dropoffZoneId && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {errors.dropoffZoneId.message}
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -350,13 +341,17 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             </label>
             <Input
               id="dropoff-address"
-              value={dropoffAddress}
-              onChange={(e) => setDropoffAddress(e.target.value)}
+              {...register('dropoffAddress')}
               placeholder={copy.dropoffAddressPlaceholder}
-              required
               maxLength={200}
+              aria-invalid={Boolean(errors.dropoffAddress)}
               className="h-12 text-sm"
             />
+            {errors.dropoffAddress && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {errors.dropoffAddress.message}
+              </p>
+            )}
           </div>
 
           <div className="pt-1">
@@ -374,12 +369,17 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               {dropoffLocating ? 'Obteniendo GPS...' : 'Fijar ubicación opcional en Aguilares'}
             </Button>
             {dropoffLat != null && dropoffLng != null && !dropoffCoordsError && (
-              <span className="text-success ml-3 inline-flex items-center gap-1 text-sm font-medium">
+              <span className="text-primary ml-3 inline-flex items-center gap-1 text-sm font-medium">
                 <CheckCircle2 className="h-4 w-4" /> Pin de entrega fijado
               </span>
             )}
             {dropoffCoordsError && (
               <p className="mt-2 text-sm text-destructive">{dropoffCoordsError}</p>
+            )}
+            {errors.dropoffLat && (
+              <p role="alert" className="mt-2 text-sm text-destructive">
+                {errors.dropoffLat.message}
+              </p>
             )}
           </div>
 
@@ -398,14 +398,18 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                   <User className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="recipient-name"
-                    value={recipientName}
-                    onChange={(e) => setRecipientName(e.target.value)}
+                    {...register('recipientName')}
                     placeholder={copy.recipientNamePlaceholder}
-                    required
                     maxLength={100}
+                    aria-invalid={Boolean(errors.recipientName)}
                     className="h-12 pl-9 text-sm"
                   />
                 </div>
+                {errors.recipientName && (
+                  <p role="alert" className="text-sm font-medium text-destructive">
+                    {errors.recipientName.message}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -420,33 +424,42 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                   <Input
                     id="recipient-phone"
                     type="tel"
-                    value={recipientPhone}
-                    onChange={(e) => setRecipientPhone(e.target.value)}
+                    {...register('recipientPhone')}
                     placeholder={copy.recipientPhonePlaceholder}
-                    required
                     maxLength={30}
+                    aria-invalid={Boolean(errors.recipientPhone)}
                     className="h-12 pl-9 text-sm"
                   />
                 </div>
+                {errors.recipientPhone && (
+                  <p role="alert" className="text-sm font-medium text-destructive">
+                    {errors.recipientPhone.message}
+                  </p>
+                )}
               </div>
             </div>
 
             {/* Declaración de consentimiento */}
-            <div className="mt-4 flex items-start gap-3 rounded-lg border border-border/70 bg-muted/30 p-3.5">
-              <input
-                id="recipient-consent"
-                type="checkbox"
-                checked={recipientConsentDeclared}
-                onChange={(e) => setRecipientConsentDeclared(e.target.checked)}
-                required
-                className="mt-1 h-5 w-5 rounded border-border text-primary focus:ring-primary"
-              />
-              <label
-                htmlFor="recipient-consent"
-                className="cursor-pointer text-sm leading-relaxed text-foreground"
-              >
-                {copy.recipientConsentLabel}
-              </label>
+            <div className="mt-4 flex flex-col gap-1.5">
+              <div className="flex items-start gap-3 rounded-lg border border-border/70 bg-muted/30 p-3.5">
+                <input
+                  id="recipient-consent"
+                  type="checkbox"
+                  {...register('recipientConsentDeclared')}
+                  className="mt-1 h-5 w-5 rounded border-border text-primary focus:ring-primary"
+                />
+                <label
+                  htmlFor="recipient-consent"
+                  className="cursor-pointer text-sm leading-relaxed text-foreground"
+                >
+                  {copy.recipientConsentLabel}
+                </label>
+              </div>
+              {errors.recipientConsentDeclared && (
+                <p role="alert" className="text-sm font-medium text-destructive">
+                  {errors.recipientConsentDeclared.message}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -473,7 +486,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                 <button
                   key={type}
                   type="button"
-                  onClick={() => setPackageType(type)}
+                  onClick={() => setValue('packageType', type, { shouldValidate: true })}
                   className={cn(
                     'flex min-h-[58px] flex-col items-start justify-center rounded-lg border p-3 text-left transition-colors',
                     isSelected
@@ -517,10 +530,10 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                     key={method}
                     type="button"
                     onClick={() => {
-                      setPaymentMethod(method);
+                      setValue('recipientPaymentMethod', method, { shouldValidate: true });
                       if (method !== 'cash') {
-                        setNeedsChange(false);
-                        setCashChangeAmount(null);
+                        setValue('needsChange', false, { shouldValidate: true });
+                        setValue('cashChangeAmount', null, { shouldValidate: true });
                         setCustomChangeInput('');
                       }
                     }}
@@ -552,9 +565,9 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                     size="sm"
                     variant={needsChange ? 'default' : 'outline'}
                     onClick={() => {
-                      setNeedsChange(true);
+                      setValue('needsChange', true, { shouldValidate: true });
                       if (!cashChangeAmount) {
-                        setCashChangeAmount(2000);
+                        setValue('cashChangeAmount', 2000, { shouldValidate: true });
                       }
                     }}
                     className="min-h-[44px] min-w-[60px] text-sm"
@@ -566,8 +579,8 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                     size="sm"
                     variant={!needsChange ? 'default' : 'outline'}
                     onClick={() => {
-                      setNeedsChange(false);
-                      setCashChangeAmount(null);
+                      setValue('needsChange', false, { shouldValidate: true });
+                      setValue('cashChangeAmount', null, { shouldValidate: true });
                       setCustomChangeInput('');
                     }}
                     className="min-h-[44px] min-w-[60px] text-sm"
@@ -612,6 +625,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                       value={customChangeInput}
                       onChange={(e) => handleCustomChangeChange(e.target.value)}
                       placeholder={copy.changeCustomPlaceholder}
+                      aria-invalid={Boolean(errors.cashChangeAmount)}
                       className="h-12 text-sm"
                     />
                     {cashChangeAmount != null && (
@@ -620,6 +634,11 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                         <span className="font-semibold text-foreground">
                           {formatArs(cashChangeAmount)}
                         </span>
+                      </p>
+                    )}
+                    {errors.cashChangeAmount && (
+                      <p role="alert" className="mt-1 text-sm font-medium text-destructive">
+                        {errors.cashChangeAmount.message}
                       </p>
                     )}
                   </div>
@@ -637,22 +656,27 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         </label>
         <Textarea
           id="notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          {...register('notes')}
           placeholder={copy.notesPlaceholder}
           maxLength={500}
+          aria-invalid={Boolean(errors.notes)}
           className="min-h-[96px] text-sm"
         />
+        {errors.notes && (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            {errors.notes.message}
+          </p>
+        )}
       </section>
 
       {/* 6. Botón de envío */}
       <Button
         type="submit"
         size="lg"
-        disabled={isPending}
+        disabled={isSubmitting}
         className="min-h-[52px] w-full rounded-xl text-base font-bold shadow-md"
       >
-        {isPending ? copy.submittingButton : copy.submitButton}
+        {isSubmitting ? copy.submittingButton : copy.submitButton}
       </Button>
     </form>
   );

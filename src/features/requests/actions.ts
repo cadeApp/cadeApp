@@ -1,6 +1,5 @@
 'use server';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { calculateHaversineRouteDistanceM, profileRoleSchema } from '@/domain/schemas';
 import { canMerchantPublishRequest } from '@/domain/states';
@@ -8,7 +7,11 @@ import { createClient } from '@/server/supabase/server';
 import type { Database, TablesInsert } from '@/types/database.types';
 import { createDeliveryRequestSchema } from './schemas';
 
-type AppSupabaseClient = SupabaseClient<Database, 'public', 'public', Database['public']>;
+interface ZoneCentroidRow {
+  id: string;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+}
 
 export interface CreateDeliveryRequestResult {
   readonly requestId: string;
@@ -18,7 +21,7 @@ export interface CreateDeliveryRequestResult {
 export async function createDeliveryRequestAction(
   input: unknown
 ): Promise<ActionResult<CreateDeliveryRequestResult, DomainErrorCode>> {
-  const supabase = (await createClient()) as unknown as AppSupabaseClient;
+  const supabase = await createClient();
 
   // 1. Verificación de sesión de autenticación
   const {
@@ -116,7 +119,7 @@ export async function createDeliveryRequestAction(
     // Fallback: consulta centroides de los barrios seleccionados
     const { data: zones } = await supabase
       .from('zones')
-      .select('id, centroid_lat, centroid_lng')
+      .select<string, ZoneCentroidRow>('id, centroid_lat, centroid_lng')
       .in('id', [data.pickupZoneId, data.dropoffZoneId]);
 
     if (Array.isArray(zones) && zones.length > 0) {
@@ -154,7 +157,7 @@ export async function createDeliveryRequestAction(
 
   const { data: createdRequest, error: requestInsertError } = await supabase
     .from('delivery_requests')
-    .insert(requestPayload)
+    .insert(requestPayload as never)
     .select('id')
     .single<{ id: string }>();
 
@@ -178,7 +181,7 @@ export async function createDeliveryRequestAction(
 
   const { error: contactsInsertError } = await supabase
     .from('delivery_request_contacts')
-    .insert(contactsPayload);
+    .insert(contactsPayload as never);
 
   if (contactsInsertError) {
     return err('INTERNAL_ERROR');

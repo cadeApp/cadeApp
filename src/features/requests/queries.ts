@@ -1,10 +1,6 @@
 import 'server-only';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/server/supabase/server';
-import type { Database } from '@/types/database.types';
-
-type AppSupabaseClient = SupabaseClient<Database, 'public', 'public', Database['public']>;
 
 export interface ZoneOption {
   readonly id: string;
@@ -29,7 +25,7 @@ interface ZoneRow {
 }
 
 export async function getActiveZones(): Promise<ZoneOption[]> {
-  const supabase = (await createClient()) as unknown as AppSupabaseClient;
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from('zones')
     .select<string, ZoneRow>('id, name, centroid_lat, centroid_lng')
