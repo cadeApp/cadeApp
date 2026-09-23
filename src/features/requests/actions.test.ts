@@ -302,8 +302,12 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       notes: 'Tocar timbre blanco',
       status: 'draft',
     });
-    expect(typeof (insertedRequest as unknown as { route_distance_m: number }).route_distance_m).toBe('number');
-    expect((insertedRequest as unknown as { route_distance_m: number }).route_distance_m).toBeGreaterThan(0);
+    expect(
+      typeof (insertedRequest as unknown as { route_distance_m: number }).route_distance_m
+    ).toBe('number');
+    expect(
+      (insertedRequest as unknown as { route_distance_m: number }).route_distance_m
+    ).toBeGreaterThan(0);
 
     // Verificación 2: delivery_request_contacts contiene datos protegidos
     expect(insertedContacts).toMatchObject({
@@ -418,6 +422,8 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
 
     // Se calculó la distancia basada en los centroides de zones
     expect(insertedRequest).not.toBeNull();
-    expect((insertedRequest as unknown as { route_distance_m: number }).route_distance_m).toBeGreaterThan(0);
+    expect(
+      (insertedRequest as unknown as { route_distance_m: number }).route_distance_m
+    ).toBeGreaterThan(0);
   });
 });
