@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { loginAction } from '../actions';
 import { authCopy } from '../copy';
+import { resolvePostLoginRedirect } from '../guards';
 
 export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string }) {
   const router = useRouter();
@@ -21,7 +22,7 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
     setIsPending(true);
 
     try {
-      const result = await loginAction({ email, password });
+      const result = await loginAction({ email, password, redirectTo: initialRedirectTo });
       if (!result.ok) {
         if (result.code === 'UNAUTHENTICATED') {
           setErrorMessage(authCopy.login.errorInvalidCredentials);
@@ -32,7 +33,8 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
         return;
       }
 
-      const targetUrl = initialRedirectTo || result.data.redirectTo;
+      // Sanitiza el destino final previniendo Open Redirect y salto de roles
+      const targetUrl = resolvePostLoginRedirect(initialRedirectTo, result.data.role);
       router.push(targetUrl);
       router.refresh();
     } catch {
@@ -73,7 +75,7 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
             </label>
             <Link
               href="/forgot-password"
-              className="text-xs text-primary-dark hover:underline focus:outline-none focus:ring-1 focus:ring-ring"
+              className="text-sm text-primary-dark hover:underline focus:outline-none focus:ring-1 focus:ring-ring"
             >
               {authCopy.login.forgotPassword}
             </Link>
@@ -86,13 +88,13 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pr-10 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pr-12 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+              className="absolute right-0 top-0 flex h-12 w-12 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              aria-label={showPassword ? authCopy.login.hidePassword : authCopy.login.showPassword}
             >
               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
             </button>

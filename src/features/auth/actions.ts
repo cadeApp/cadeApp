@@ -2,9 +2,9 @@
 
 import { createClient } from '@/server/supabase/server';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
-import { SIGNUP_ROLES, type ProfileRole } from '@/domain/schemas';
+import { SIGNUP_ROLES, profileRoleSchema, type ProfileRole } from '@/domain/schemas';
 import { loginSchema, registerSchema } from './schemas';
-import { getRoleDefaultPath } from './guards';
+import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
 
 export async function loginAction(
   input: unknown
@@ -26,14 +26,23 @@ export async function loginAction(
     return err('UNAUTHENTICATED');
   }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', data.user.id)
-    .maybeSingle<{ role: ProfileRole }>();
+    .maybeSingle<{ role: unknown }>();
 
-  const role = profile?.role ?? 'merchant';
-  const redirectTo = getRoleDefaultPath(role);
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const role = roleParsed.data;
+  const redirectTo = resolvePostLoginRedirect(parsed.data.redirectTo, role);
 
   return ok({
     userId: data.user.id,

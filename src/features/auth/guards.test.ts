@@ -6,6 +6,7 @@ import {
   isCourierRoute,
   isAdminRoute,
   isPublicRoute,
+  resolvePostLoginRedirect,
   type AuthSession,
 } from './guards';
 
@@ -157,5 +158,57 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     if (registerCourier.action === 'redirect') {
       expect(registerCourier.redirectTo).toBe(getRoleDefaultPath('courier'));
     }
+  });
+
+  it('PR60-H02: evita colisión de startsWith con /couriers y /merchants de admin', () => {
+    expect(isCourierRoute('/couriers')).toBe(false);
+    expect(isAdminRoute('/couriers')).toBe(true);
+
+    expect(isMerchantRoute('/merchants')).toBe(false);
+    expect(isAdminRoute('/merchants')).toBe(true);
+  });
+
+  it('PR60-H02: default-deny en rutas de App Router sin route group para usuario anon', () => {
+    const unauthenticatedSession: AuthSession | null = null;
+    const tripsAttempt = evaluateRouteGuard('/trips/trip-1', unauthenticatedSession);
+    expect(tripsAttempt.action).toBe('redirect');
+
+    const feedAttempt = evaluateRouteGuard('/feed', unauthenticatedSession);
+    expect(feedAttempt.action).toBe('redirect');
+
+    const incidentsAttempt = evaluateRouteGuard('/incidents', unauthenticatedSession);
+    expect(incidentsAttempt.action).toBe('redirect');
+  });
+
+  it('PR60-H02: admin con aal1 no entra a merchant ni courier y no cicla en /login/mfa', () => {
+    const adminAal1: AuthSession = {
+      userId: 'usr-admin',
+      email: 'admin@test.com',
+      role: 'admin',
+      aal: 'aal1',
+    };
+
+    const merchantAttempt = evaluateRouteGuard('/merchant/dashboard', adminAal1);
+    expect(merchantAttempt.action).toBe('redirect');
+    if (merchantAttempt.action === 'redirect') {
+      expect(merchantAttempt.redirectTo).toBe('/admin');
+    }
+
+    const mfaAttempt = evaluateRouteGuard('/login/mfa', adminAal1);
+    expect(mfaAttempt.action).toBe('allow');
+  });
+
+  it('PR60-H04: resolvePostLoginRedirect previene Open Redirect y respeta rol', () => {
+    // Open redirect attempts
+    expect(resolvePostLoginRedirect('https://evil.com', 'merchant')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('//evil.com', 'courier')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/login', 'merchant')).toBe('/merchant/dashboard');
+
+    // Cross-role redirect attempt
+    expect(resolvePostLoginRedirect('/merchant/dashboard', 'courier')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/courier/feed', 'merchant')).toBe('/merchant/dashboard');
+
+    // Valid internal redirect for role
+    expect(resolvePostLoginRedirect('/merchant/history', 'merchant')).toBe('/merchant/history');
   });
 });

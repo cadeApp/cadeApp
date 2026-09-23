@@ -137,6 +137,28 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       }
       expect(mockSignUp).not.toHaveBeenCalled();
     });
+
+    it('registerAction rechaza acceptTerms: false con VALIDATION_ERROR (PR60-H06)', async () => {
+      const mockSignUp = vi.fn();
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'comercio@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: false,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+      expect(mockSignUp).not.toHaveBeenCalled();
+    });
   });
 
   describe('Consumo asíncrono obligatorio de await createClient() en login y logout (H16)', () => {
@@ -161,7 +183,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       });
 
       vi.mocked(serverSupabase.createClient).mockImplementation(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 5));
+        await Promise.resolve();
         return {
           auth: {
             signInWithPassword: mockSignIn,
@@ -187,11 +209,49 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       }
     });
 
+    it('loginAction rechaza con UNAUTHORIZED_ACTOR cuando profiles devuelve null o error (PR60-H01)', async () => {
+      const mockSignIn = vi.fn().mockResolvedValue({
+        data: {
+          user: { id: 'usr-courier-1', email: 'courier@test.com' },
+          session: { access_token: 'jwt' },
+        },
+        error: null,
+      });
+
+      const mockFrom = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: null,
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signInWithPassword: mockSignIn,
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await loginAction({
+        email: 'courier@test.com',
+        password: 'password123',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('UNAUTHORIZED_ACTOR');
+      }
+    });
+
     it('logoutAction consume asíncronamente createClient() y llama a signOut()', async () => {
       const mockSignOut = vi.fn().mockResolvedValue({ error: null });
 
       vi.mocked(serverSupabase.createClient).mockImplementation(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 5));
+        await Promise.resolve();
         return {
           auth: {
             signOut: mockSignOut,

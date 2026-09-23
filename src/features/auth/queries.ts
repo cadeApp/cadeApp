@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
-import type { ProfileRole } from '@/domain/schemas';
+import { profileRoleSchema } from '@/domain/schemas';
 import type { AuthSession } from './guards';
 
 /**
@@ -19,21 +19,27 @@ export async function getServerSession(): Promise<AuthSession | null> {
     return null;
   }
 
-  // Lectura del perfil para obtener el rol asignado
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle<{ role: ProfileRole }>();
+  // Lecturas paralelas independientes de perfil y MFA AAL (Regla 25 §6)
+  const [profileResult, aalResult] = await Promise.all([
+    supabase.from('profiles').select('role').eq('id', user.id).maybeSingle<{ role: unknown }>(),
+    supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+  ]);
 
-  // Nivel de aseguramiento de autenticación (AAL para MFA)
-  const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  const aal = aalData?.currentLevel === 'aal2' ? 'aal2' : 'aal1';
+  if (profileResult.error || !profileResult.data) {
+    return null;
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profileResult.data.role);
+  if (!roleParsed.success) {
+    return null;
+  }
+
+  const aal = aalResult.data?.currentLevel === 'aal2' ? 'aal2' : 'aal1';
 
   return {
     userId: user.id,
     email: user.email ?? '',
-    role: profile?.role ?? 'merchant',
+    role: roleParsed.data,
     aal,
   };
 }

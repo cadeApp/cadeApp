@@ -34,8 +34,8 @@ describe('T-009 / H16: Queries de sesión y consumo asíncrono de createClient()
     });
 
     vi.mocked(serverSupabase.createClient).mockImplementation(async () => {
-      // Simula retraso asíncrono para verificar que se espera la promesa
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      // Simula retraso asíncrono con microtarea para verificar que se espera la promesa sin timer fijo
+      await Promise.resolve();
       return {
         auth: {
           getUser: mockGetUser,
@@ -70,6 +70,42 @@ describe('T-009 / H16: Queries de sesión y consumo asíncrono de createClient()
 
     const session = await getServerSession();
     expect(serverSupabase.createClient).toHaveBeenCalledTimes(1);
+    expect(session).toBeNull();
+  });
+
+  it('getServerSession retorna null si el perfil devuelve null o error (PR60-H01)', async () => {
+    const mockGetUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'usr-test-1', email: 'test@example.com' } },
+      error: null,
+    });
+
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: null,
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    const mockGetAal = vi.fn().mockResolvedValue({
+      data: { currentLevel: 'aal1' },
+      error: null,
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: mockGetUser,
+        mfa: {
+          getAuthenticatorAssuranceLevel: mockGetAal,
+        },
+      },
+      from: mockFrom,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const session = await getServerSession();
     expect(session).toBeNull();
   });
 });

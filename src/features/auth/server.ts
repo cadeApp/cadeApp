@@ -4,7 +4,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { publicEnv } from '@/lib/env.public';
 import type { Database } from '@/types/database.types';
-import type { ProfileRole } from '@/domain/schemas';
+import { profileRoleSchema } from '@/domain/schemas';
 import { evaluateRouteGuard, type AuthSession } from './guards';
 
 export * from './queries';
@@ -47,20 +47,24 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   let session: AuthSession | null = null;
   if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .maybeSingle<{ role: ProfileRole }>();
+    // Lecturas paralelas independientes de perfil y MFA AAL (Regla 25 §6)
+    const [profileResult, aalResult] = await Promise.all([
+      supabase.from('profiles').select('role').eq('id', user.id).maybeSingle<{ role: unknown }>(),
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+    ]);
 
-    const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-
-    session = {
-      userId: user.id,
-      email: user.email ?? '',
-      role: profile?.role ?? 'merchant',
-      aal: aalData?.currentLevel === 'aal2' ? 'aal2' : 'aal1',
-    };
+    if (!profileResult.error && profileResult.data) {
+      const roleParsed = profileRoleSchema.safeParse(profileResult.data.role);
+      if (roleParsed.success) {
+        const aal = aalResult.data?.currentLevel === 'aal2' ? 'aal2' : 'aal1';
+        session = {
+          userId: user.id,
+          email: user.email ?? '',
+          role: roleParsed.data,
+          aal,
+        };
+      }
+    }
   }
 
   const guardResult = evaluateRouteGuard(request.nextUrl.pathname, session);
@@ -70,7 +74,13 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     const [targetPath = '/', queryString] = guardResult.redirectTo.split('?');
     redirectUrl.pathname = targetPath;
     redirectUrl.search = queryString ? `?${queryString}` : '';
-    return NextResponse.redirect(redirectUrl);
+
+    // PR60-H03: Preservar las cookies rotadas de supabaseResponse en la respuesta de redirección
+    const redirectResponse = NextResponse.redirect(redirectUrl);
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie);
+    });
+    return redirectResponse;
   }
 
   return supabaseResponse;

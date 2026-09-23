@@ -20,7 +20,7 @@ export function RegisterForm() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!acceptTerms) {
-      setErrorMessage('Tenés que aceptar los Términos y la Política de privacidad.');
+      setErrorMessage(authCopy.register.errorTermsRequired);
       return;
     }
     setErrorMessage(null);
@@ -31,6 +31,7 @@ export function RegisterForm() {
         email,
         password,
         role,
+        acceptTerms,
       });
 
       if (!result.ok) {
@@ -64,6 +65,7 @@ export function RegisterForm() {
         <div className="space-y-3">
           <button
             type="button"
+            aria-pressed={role === 'merchant'}
             onClick={() => setRole('merchant')}
             className={`relative flex w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors ${
               role === 'merchant'
@@ -78,7 +80,7 @@ export function RegisterForm() {
               <div className="font-semibold text-foreground">
                 {authCopy.register.merchantRoleTitle}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-sm text-muted-foreground">
                 {authCopy.register.merchantRoleDesc}
               </div>
             </div>
@@ -91,6 +93,7 @@ export function RegisterForm() {
 
           <button
             type="button"
+            aria-pressed={role === 'courier'}
             onClick={() => setRole('courier')}
             className={`relative flex w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors ${
               role === 'courier'
@@ -105,7 +108,7 @@ export function RegisterForm() {
               <div className="font-semibold text-foreground">
                 {authCopy.register.courierRoleTitle}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-sm text-muted-foreground">
                 {authCopy.register.courierRoleDesc}
               </div>
             </div>
@@ -149,7 +152,7 @@ export function RegisterForm() {
             onChange={(e) => setPassword(e.target.value)}
             className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           />
-          <p className="text-xs text-muted-foreground">{authCopy.register.passwordHelper}</p>
+          <p className="text-sm text-muted-foreground">{authCopy.register.passwordHelper}</p>
         </div>
 
         {/* Checkbox de términos */}
@@ -161,7 +164,7 @@ export function RegisterForm() {
             onChange={(e) => setAcceptTerms(e.target.checked)}
             className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
           />
-          <label htmlFor="terms" className="text-xs leading-relaxed text-muted-foreground">
+          <label htmlFor="terms" className="text-sm leading-relaxed text-muted-foreground">
             Acepto los{' '}
             <Link href="/terms" className="text-primary-dark underline hover:text-foreground">
               Términos

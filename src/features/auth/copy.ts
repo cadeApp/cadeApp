@@ -11,6 +11,8 @@ export const authCopy = {
     registerLink: 'Registrate',
     errorInvalidCredentials: 'Email o contraseña incorrectos.',
     errorGeneric: 'Ocurrió un error al intentar ingresar. Por favor, reintentá.',
+    showPassword: 'Ver contraseña',
+    hidePassword: 'Ocultar contraseña',
   },
   register: {
     title: '¿Cómo vas a usar cadeApp?',
@@ -29,5 +31,6 @@ export const authCopy = {
     loginLink: 'Ingresá',
     errorGeneric: 'No pudimos crear tu cuenta. Revisá los datos ingresados.',
     errorAdminRejected: 'El rol solicitado no es válido para el registro público.',
+    errorTermsRequired: 'Tenés que aceptar los Términos y la Política de privacidad.',
   },
 } as const;
