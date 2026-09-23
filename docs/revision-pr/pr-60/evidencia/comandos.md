@@ -127,3 +127,86 @@ Checking formatting...
 [warn] docs/tasks/log/T-009.md
 [warn] Code style issues found in 2 files. Run Prettier with --write to fix.
 ```
+
+---
+
+## Ronda 2 (`576d6fe55ccaa1cf6f87e0ed0f47cd0b6186cee7`)
+
+### 1. Worktree aislado e instalación congelada
+
+```powershell
+git worktree add --detach ../cadeApp-rev60 576d6fe55ccaa1cf6f87e0ed0f47cd0b6186cee7
+pnpm -C ../cadeApp-rev60 install --frozen-lockfile
+```
+
+Salida:
+
+```text
+HEAD is now at 576d6fe docs(T-009): session log
+Lockfile is up to date, resolution step is skipped
+Packages: +518
+Done in 31.3s using pnpm v10.28.0 (exit code 0)
+```
+
+### 2. Alcance y verificación de propiedad (`AG-36`)
+
+```powershell
+gh pr diff 60 --name-only
+git log 52a685c..576d6fe --name-only
+```
+
+Salida: 19 archivos de tarea + 5 archivos de `docs/revision-pr/pr-60/**` (creados en `52a685c` y **no tocados** por `409b509` ni `576d6fe`).
+
+### 3. Checks locales y logs reales de CI (`run 35818656558`)
+
+```powershell
+pnpm typecheck && pnpm lint && pnpm test
+npx prettier --check middleware.ts "src/features/auth/**" "src/app/(public)/login/page.tsx" "src/app/(public)/register/page.tsx" docs/tasks/T-009.md docs/tasks/log/T-009.md
+```
+
+Salida:
+
+```text
+tsc --noEmit && tsc --project .github/workflows/tsconfig.json -> exit 0
+✔ No ESLint warnings or errors -> exit 0
+Test Files  15 passed (15)
+     Tests  126 passed (126)
+# verify-workflows.test.mjs: pass 19, fail 0
+# verify-adr.test.mjs: pass 6, fail 0
+All matched files use Prettier code style!
+```
+
+Cobertura de `src/features/auth` y `db-tests` / `bundle-budget` en CI (`run 35818656558`):
+
+```text
+features/auth     |   89.42 |    83.62 |     100 |   89.42 |
+  actions.ts      |   77.89 |    62.06 |     100 |   77.89 |
+  guards.ts       |   89.79 |     91.8 |     100 |   89.79 |
+  queries.ts      |     100 |    88.88 |     100 |     100 |
+  schemas.ts      |     100 |      100 |     100 |     100 |
+  server.ts       |   97.05 |    85.71 |     100 |   97.05 | 40-41
+
+pnpm supabase start
+Files=3, Tests=98, Result: PASS
+
+| Ruta | Tamaño | Estado |
+| /login | 110 kB | OK |
+| /register | 110 kB | OK |
+```
+
+### 4. Probe ejecutable de verificación de Ronda 2 (`probe-ronda-2.test.ts`)
+
+Ejecutado sobre `576d6fe` con `pnpm typecheck && pnpm vitest run src/features/auth/probe-ronda-2.test.ts` y retirado antes de commitear:
+
+```text
+ RUN  v3.2.7 C:/Users/El Yisus Pai/Desktop/Proyectos/cadeApp-rev60
+
+ ✓ src/features/auth/probe-ronda-2.test.ts (4 tests) 20ms
+   ✓ H01 FIXED: getServerSession, updateSession y loginAction rechazan sesión cuando profiles devuelve null o rol inválido
+   ✓ H02 FIXED: evaluateRouteGuard protege rutas reales de (admin)/(merchant)/(courier) sin prefijo, bloquea colisión /couriers y /merchants, y permite /login/mfa para admin aal1
+   ✓ H03 FIXED: updateSession preserva las cookies rotadas por Supabase Auth cuando devuelve una redirección 307
+   ✓ H04 & H06 FIXED: resolvePostLoginRedirect bloquea Open Redirect y rutas de otro rol; registerAction exige acceptTerms; 0 usos de text-xs y ojo de 48x48px
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+```
