@@ -12,6 +12,8 @@ describe('cn utility', () => {
   });
 
   it('ignora valores condicionales falsy', () => {
-    expect(cn('text-sm', false && 'text-lg', null, undefined, 'font-bold')).toBe('text-sm font-bold');
+    expect(cn('text-sm', false && 'text-lg', null, undefined, 'font-bold')).toBe(
+      'text-sm font-bold'
+    );
   });
 });

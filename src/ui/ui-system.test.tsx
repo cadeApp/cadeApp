@@ -50,6 +50,7 @@ import {
   notify,
   DOMAIN_ERROR_MESSAGES,
   MotionProvider,
+  AnimatedBox,
   getMotionPreset,
   DesignSystemShowcase,
   auditElementAccessibility,
@@ -170,14 +171,14 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       }
 
       // Dos llamadas seguidas con el mismo código de error usan el mismo id determinístico y no apilan duplicados
-      const id1 = notify.error('OFFER_BELOW_MIN_FLOOR');
-      const id2 = notify.error('OFFER_BELOW_MIN_FLOOR');
-      expect(id1).toBe('domain-error:OFFER_BELOW_MIN_FLOOR');
+      const id1 = notify.error('OFFER_BELOW_MINIMUM');
+      const id2 = notify.error('OFFER_BELOW_MINIMUM');
+      expect(id1).toBe('domain-error:OFFER_BELOW_MINIMUM');
       expect(id2).toBe(id1);
       expect(toast.error).toHaveBeenCalledTimes(1);
       expect(toast.error).toHaveBeenCalledWith(
-        DOMAIN_ERROR_MESSAGES.OFFER_BELOW_MIN_FLOOR,
-        expect.objectContaining({ id: 'domain-error:OFFER_BELOW_MIN_FLOOR' })
+        DOMAIN_ERROR_MESSAGES.OFFER_BELOW_MINIMUM,
+        expect.objectContaining({ id: 'domain-error:OFFER_BELOW_MINIMUM' })
       );
 
       // Si se pasa un id explícito repetido en notify.success, tampoco duplica mientras sigue activo
@@ -258,6 +259,48 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       render(<TestForm />);
       fireEvent.click(screen.getByRole('button', { name: 'Ofertar' }));
       expect(screen.getByText('La oferta mínima es de $ 1.000')).toBeDefined();
+    });
+
+    it('ejercita ConfirmDialog, Sheet (cierre con Escape), AnimatedBox y notify.info / notify.promise', async () => {
+      const onSheetChange = vi.fn();
+      const onConfirm = vi.fn();
+      render(
+        <MotionProvider reducedMotion="always">
+          <AnimatedBox preset="slideUpSheet">Contenido animado</AnimatedBox>
+          <Sheet open onOpenChange={onSheetChange}>
+            <SheetContent>
+              <SheetHeader>
+                <SheetTitle>Detalle de envío</SheetTitle>
+                <SheetDescription>Información de retiro</SheetDescription>
+              </SheetHeader>
+            </SheetContent>
+          </Sheet>
+          <Dialog open onOpenChange={() => undefined}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Confirmar</DialogTitle>
+                <DialogDescription>Paso 2</DialogDescription>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
+        </MotionProvider>
+      );
+
+      const dialogs = screen.getAllByRole('dialog');
+      expect(dialogs.length).toBe(2);
+      fireEvent.keyDown(dialogs[0] as HTMLElement, { key: 'Escape' });
+      expect(onSheetChange).toHaveBeenCalledWith(false);
+      expect(onConfirm).not.toHaveBeenCalled();
+
+      notify.info('Actualizando solicitudes');
+      expect(toast.info).toHaveBeenCalledTimes(1);
+
+      await notify.promise(Promise.resolve('ok'), {
+        loading: 'Publicando…',
+        success: 'Solicitud publicada',
+        error: 'INTERNAL_ERROR',
+      });
+      expect(toast.promise).toHaveBeenCalledTimes(1);
     });
   });
 
