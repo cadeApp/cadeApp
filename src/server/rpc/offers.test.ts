@@ -649,20 +649,26 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
 describe('T-102 · RPC accept_offer atómica e idempotente', () => {
   it('6. DoD 10 llamadas concurrentes → una sola ganadora; idempotencia preservando matchedAt; ALREADY_MATCHED; repartidor suspendido entre la oferta y la aceptación', async () => {
     let currentNow = new Date('2026-09-23T10:00:00.000Z');
-    const couriers = Array.from({ length: 12 }, (_, idx) => ({
-      courierId: `00000000-0000-4000-8000-000000000c${String(idx + 1).padStart(2, '0')}`,
+    const courierUuid = (idx: number) =>
+      `00000000-0000-4000-8000-000000000c${String(idx).padStart(2, '0')}`;
+    const offerUuid = (idx: number) =>
+      `00000000-0000-4000-8000-000000000a${String(idx).padStart(2, '0')}`;
+
+    const couriers10 = Array.from({ length: 10 }, (_, idx) => ({
+      courierId: courierUuid(idx + 1),
       status: 'approved' as const,
       available: true,
     }));
     const offers10 = Array.from({ length: 10 }, (_, idx) => ({
-      offerId: `00000000-0000-4000-8000-000000000a${String(idx + 1).padStart(2, '0')}`,
+      offerId: offerUuid(idx + 1),
       requestId: REQ_1_ID,
-      courierId: couriers[idx].courierId,
+      courierId: courierUuid(idx + 1),
       amountArs: 1500 + idx * 50,
       status: 'pending' as const,
     }));
-    const offerSuspendedId = '00000000-0000-4000-8000-000000000a11';
-    const offerPendingId = '00000000-0000-4000-8000-000000000a12';
+    const firstOfferId = offerUuid(1);
+    const offerSuspendedId = offerUuid(11);
+    const offerPendingId = offerUuid(12);
 
     const fake = createFakeRpcClient({
       now: () => currentNow,
@@ -681,10 +687,10 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
       },
       initialMerchants: [{ merchantId: MERCHANT_ID, subscriptionStatus: 'pilot' }],
       initialCouriers: [
-        ...couriers.slice(0, 10),
+        ...couriers10,
         // Entre la oferta y la aceptación, el repartidor 11 fue suspendido y el 12 pasó a pending
-        { courierId: couriers[10].courierId, status: 'suspended', available: false },
-        { courierId: couriers[11].courierId, status: 'pending', available: false },
+        { courierId: courierUuid(11), status: 'suspended', available: false },
+        { courierId: courierUuid(12), status: 'pending', available: false },
       ],
       initialRequests: [
         {
@@ -705,14 +711,14 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
         {
           offerId: offerSuspendedId,
           requestId: REQ_2_ID,
-          courierId: couriers[10].courierId,
+          courierId: courierUuid(11),
           amountArs: 1600,
           status: 'pending',
         },
         {
           offerId: offerPendingId,
           requestId: REQ_2_ID,
-          courierId: couriers[11].courierId,
+          courierId: courierUuid(12),
           amountArs: 1650,
           status: 'pending',
         },
@@ -752,7 +758,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
       ok: true,
       data: {
         requestId: REQ_1_ID,
-        acceptedOfferId: offers10[0].offerId,
+        acceptedOfferId: firstOfferId,
         status: 'matched',
         matchedAt: '2026-09-23T10:00:00.000Z',
         idempotent: false,
@@ -763,18 +769,20 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     }
 
     // 3. Las 9 ofertas restantes quedaron en rejected en el estado real
-    const snapOffers = fake.snapshot().offers.filter((o) => o.requestId === REQ_1_ID);
-    expect(snapOffers.filter((o) => o.status === 'accepted')).toHaveLength(1);
-    expect(snapOffers.filter((o) => o.status === 'rejected')).toHaveLength(9);
+    const snapOffers = offers10.map((o) => fake.getOffer(o.offerId));
+    expect(snapOffers.filter((o) => o?.status === 'accepted')).toHaveLength(1);
+    expect(snapOffers.filter((o) => o?.status === 'rejected')).toHaveLength(9);
+    expect(fake.getRequest(REQ_1_ID)?.status).toBe('matched');
+    expect(fake.getRequest(REQ_1_ID)?.acceptedOfferId).toBe(firstOfferId);
 
     // 4. Idempotencia: avanzamos el reloj y volvemos a llamar acceptOfferRpc sobre la oferta ganadora
     currentNow = new Date('2026-09-23T10:05:00.000Z');
-    const idempotentRes = await acceptOfferRpc(caller, { offerId: offers10[0].offerId });
+    const idempotentRes = await acceptOfferRpc(caller, { offerId: firstOfferId });
     expect(idempotentRes).toEqual({
       ok: true,
       data: {
         requestId: REQ_1_ID,
-        acceptedOfferId: offers10[0].offerId,
+        acceptedOfferId: firstOfferId,
         status: 'matched',
         matchedAt: '2026-09-23T10:00:00.000Z',
         idempotent: true,
@@ -791,7 +799,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
         error: { code: '57014', message: 'statement timeout' },
       })),
     };
-    expect(await acceptOfferRpc(brokenCaller, { offerId: offers10[0].offerId })).toEqual({
+    expect(await acceptOfferRpc(brokenCaller, { offerId: firstOfferId })).toEqual({
       ok: false,
       code: 'INTERNAL_ERROR',
     });
@@ -802,13 +810,20 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
         error: null,
       })),
     };
-    expect(await acceptOfferRpc(malformedOutputCaller, { offerId: offers10[0].offerId })).toEqual({
+    expect(await acceptOfferRpc(malformedOutputCaller, { offerId: firstOfferId })).toEqual({
       ok: false,
       code: 'INTERNAL_ERROR',
     });
 
+    expect(
+      mapOfferRpcError('accept_offer', {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "idx_offers_one_accepted_per_request"',
+      })
+    ).toBe('ALREADY_MATCHED');
+
     const serverClient = createOffersRpcServerClient(caller);
-    expect(await serverClient.accept_offer({ offerId: offers10[0].offerId })).toEqual({
+    expect(await serverClient.accept_offer({ offerId: firstOfferId })).toEqual({
       ok: true,
       data: expect.objectContaining({ idempotent: true }),
     });
