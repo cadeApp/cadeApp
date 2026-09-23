@@ -25,7 +25,7 @@ set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid := auth.uid();
-  v_role public.user_role;
+  v_role public.profile_role;
   v_offer_request_id uuid;
   v_offer_courier_id uuid;
   v_request public.delivery_requests%rowtype;
@@ -86,7 +86,7 @@ begin
   select *
     into v_courier
   from public.couriers c
-  where c.id = v_offer_courier_id
+  where c.profile_id = v_offer_courier_id
   for share;
 
   if not found then

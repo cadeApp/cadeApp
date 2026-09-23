@@ -29,9 +29,9 @@ returns void
 language plpgsql
 as $$
 begin
-  reset role;
+  set local role postgres;
   perform set_config('request.jwt.claim.sub', '', true);
-  perform set_config('request.jwt.claims', '{}', true);
+  perform set_config('request.jwt.claims', '', true);
 end;
 $$;
 
@@ -79,114 +79,115 @@ create or replace function pg_temp.offer_cancelled_req_id() returns uuid languag
   select '22222222-2222-4222-8222-000000000406'::uuid
 $$;
 
--- Semilla de usuarios (2 comercios y 14 repartidores)
-insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
-values
-  (pg_temp.merchant_1_id(), 'm1_t102@test.local', '{"role":"merchant","display_name":"Comercio 1 T102","phone":"3865200001"}'::jsonb, now(), now()),
-  (pg_temp.merchant_2_id(), 'm2_t102@test.local', '{"role":"merchant","display_name":"Comercio 2 T102","phone":"3865200002"}'::jsonb, now(), now());
-
+-- Semilla de usuarios (2 comercios y 14 repartidores) como superusuario
 do $$
 declare
+  v_zone_id uuid;
   i integer;
 begin
+  select id into v_zone_id from public.zones where active limit 1;
+
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+  values
+    (pg_temp.merchant_1_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm1_t102@test.local', 'pwd', '{"role":"merchant"}'),
+    (pg_temp.merchant_2_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm2_t102@test.local', 'pwd', '{"role":"merchant"}');
+
   for i in 1..14 loop
-    insert into auth.users (id, email, raw_user_meta_data, created_at, updated_at)
+    insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
     values (
       pg_temp.courier_id(i),
+      '00000000-0000-0000-0000-000000000000',
+      'authenticated',
+      'authenticated',
       format('c%s_t102@test.local', i),
-      json_build_object('role', 'courier', 'display_name', format('Repartidor %s', i), 'phone', format('38652100%s', lpad(i::text, 2, '0')))::jsonb,
-      now(),
-      now()
+      'pwd',
+      '{"role":"courier"}'
     );
   end loop;
+
+  -- Todos los repartidores nacen aprobados y disponibles para poder ofertar
+  update public.couriers
+  set status = 'approved',
+      available = true
+  where profile_id in (select pg_temp.courier_id(g) from generate_series(1, 14) as g);
+
+  -- Solicitudes de prueba
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, status, published_at, expires_at
+  )
+  values
+    (
+      pg_temp.req_race_id(),
+      pg_temp.merchant_1_id(),
+      v_zone_id,
+      v_zone_id,
+      'chico',
+      'cash',
+      'published',
+      now() - interval '5 minutes',
+      now() + interval '25 minutes'
+    ),
+    (
+      pg_temp.req_checks_id(),
+      pg_temp.merchant_1_id(),
+      v_zone_id,
+      v_zone_id,
+      'mediano',
+      'transfer',
+      'published',
+      now() - interval '5 minutes',
+      now() + interval '25 minutes'
+    ),
+    (
+      pg_temp.req_expired_id(),
+      pg_temp.merchant_1_id(),
+      v_zone_id,
+      v_zone_id,
+      'chico',
+      'cash',
+      'published',
+      now() - interval '35 minutes',
+      now() - interval '5 minutes'
+    ),
+    (
+      pg_temp.req_cancelled_id(),
+      pg_temp.merchant_1_id(),
+      v_zone_id,
+      v_zone_id,
+      'chico',
+      'cash',
+      'cancelled',
+      now() - interval '15 minutes',
+      now() + interval '15 minutes'
+    );
+
+  -- 10 ofertas pendientes en req_race_id (de los repartidores 1..10)
+  insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
+  select
+    pg_temp.offer_race_id(g),
+    pg_temp.req_race_id(),
+    pg_temp.courier_id(g),
+    1400 + (g * 50),
+    15,
+    'pending'::public.offer_status
+  from generate_series(1, 10) as g;
+
+  -- Ofertas en req_checks_id, req_expired_id y req_cancelled_id
+  insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
+  values
+    (pg_temp.offer_suspended_id(), pg_temp.req_checks_id(), pg_temp.courier_id(11), 1600, 15, 'pending'),
+    (pg_temp.offer_pending_courier_id(), pg_temp.req_checks_id(), pg_temp.courier_id(12), 1650, 15, 'pending'),
+    (pg_temp.offer_rejected_courier_id(), pg_temp.req_checks_id(), pg_temp.courier_id(13), 1700, 15, 'pending'),
+    (pg_temp.offer_withdrawn_id(), pg_temp.req_checks_id(), pg_temp.courier_id(14), 1750, 15, 'withdrawn'),
+    (pg_temp.offer_expired_req_id(), pg_temp.req_expired_id(), pg_temp.courier_id(1), 1600, 15, 'pending'),
+    (pg_temp.offer_cancelled_req_id(), pg_temp.req_cancelled_id(), pg_temp.courier_id(1), 1600, 15, 'pending');
+
+  -- Entre la creación de la oferta y la aceptación, cambian los estados de los repartidores 11, 12 y 13
+  update public.couriers set status = 'suspended', available = false where profile_id = pg_temp.courier_id(11);
+  update public.couriers set status = 'pending', available = false where profile_id = pg_temp.courier_id(12);
+  update public.couriers set status = 'rejected', available = false where profile_id = pg_temp.courier_id(13);
 end;
 $$;
-
-insert into public.merchants (id, business_name, category, pickup_zone_id, pickup_address, subscription_status)
-values
-  (pg_temp.merchant_1_id(), 'Pizzería Don Juan T102', 'gastronomia', (select id from public.zones limit 1), 'San Martín 500', 'pilot'),
-  (pg_temp.merchant_2_id(), 'Farmacia Sur T102', 'farmacia', (select id from public.zones limit 1), 'Alberdi 200', 'pilot');
-
-insert into public.couriers (id, vehicle_type, dni_hmac, status, available)
-select
-  pg_temp.courier_id(i),
-  'moto',
-  repeat(to_hex(i), 32),
-  'approved'::public.courier_status,
-  true
-from generate_series(1, 14) as i;
-
--- Solicitudes de prueba
-insert into public.delivery_requests (
-  id, merchant_id, pickup_zone_id, dropoff_zone_id, package_size, status, published_at, expires_at
-)
-values
-  (
-    pg_temp.req_race_id(),
-    pg_temp.merchant_1_id(),
-    (select id from public.zones order by name asc limit 1),
-    (select id from public.zones order by name desc limit 1),
-    'chico',
-    'published',
-    now() - interval '5 minutes',
-    now() + interval '25 minutes'
-  ),
-  (
-    pg_temp.req_checks_id(),
-    pg_temp.merchant_1_id(),
-    (select id from public.zones order by name asc limit 1),
-    (select id from public.zones order by name desc limit 1),
-    'mediano',
-    'published',
-    now() - interval '5 minutes',
-    now() + interval '25 minutes'
-  ),
-  (
-    pg_temp.req_expired_id(),
-    pg_temp.merchant_1_id(),
-    (select id from public.zones order by name asc limit 1),
-    (select id from public.zones order by name desc limit 1),
-    'chico',
-    'published',
-    now() - interval '35 minutes',
-    now() - interval '5 minutes'
-  ),
-  (
-    pg_temp.req_cancelled_id(),
-    pg_temp.merchant_1_id(),
-    (select id from public.zones order by name asc limit 1),
-    (select id from public.zones order by name desc limit 1),
-    'chico',
-    'cancelled',
-    now() - interval '15 minutes',
-    now() + interval '15 minutes'
-  );
-
--- 10 ofertas pendientes en req_race_id (de los repartidores 1..10)
-insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
-select
-  pg_temp.offer_race_id(i),
-  pg_temp.req_race_id(),
-  pg_temp.courier_id(i),
-  1400 + (i * 50),
-  15,
-  'pending'::public.offer_status
-from generate_series(1, 10) as i;
-
--- Ofertas en req_checks_id, req_expired_id y req_cancelled_id
-insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
-values
-  (pg_temp.offer_suspended_id(), pg_temp.req_checks_id(), pg_temp.courier_id(11), 1600, 15, 'pending'),
-  (pg_temp.offer_pending_courier_id(), pg_temp.req_checks_id(), pg_temp.courier_id(12), 1650, 15, 'pending'),
-  (pg_temp.offer_rejected_courier_id(), pg_temp.req_checks_id(), pg_temp.courier_id(13), 1700, 15, 'pending'),
-  (pg_temp.offer_withdrawn_id(), pg_temp.req_checks_id(), pg_temp.courier_id(14), 1750, 15, 'withdrawn'),
-  (pg_temp.offer_expired_req_id(), pg_temp.req_expired_id(), pg_temp.courier_id(1), 1600, 15, 'pending'),
-  (pg_temp.offer_cancelled_req_id(), pg_temp.req_cancelled_id(), pg_temp.courier_id(1), 1600, 15, 'pending');
-
--- Entre la creación de la oferta y la aceptación, cambian los estados de los repartidores 11, 12 y 13
-update public.couriers set status = 'suspended', available = false where id = pg_temp.courier_id(11);
-update public.couriers set status = 'pending', available = false where id = pg_temp.courier_id(12);
-update public.couriers set status = 'rejected', available = false where id = pg_temp.courier_id(13);
 
 -- 1. Seguridad de definición (SECURITY DEFINER)
 select is_definer(
@@ -437,7 +438,7 @@ select is(
 
 -- 27. Aun si el repartidor ganador fuera suspendido DESPUÉS del match, la lectura idempotente de accept_offer sobre la misma oferta ya aceptada sigue devolviendo idempotent = true (paso 5 precede al paso 8)
 select pg_temp.reset_actor();
-update public.couriers set status = 'suspended', available = false where id = pg_temp.courier_id(1);
+update public.couriers set status = 'suspended', available = false where profile_id = pg_temp.courier_id(1);
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select is(
   (public.accept_offer(pg_temp.offer_race_id(1)) ->> 'idempotent')::boolean,
@@ -484,7 +485,7 @@ select throws_ok(
 
 -- 32. Solicitud vencida + repartidor suspendido -> REQUEST_EXPIRED (paso 6 precede a paso 8)
 select pg_temp.reset_actor();
-update public.couriers set status = 'suspended' where id = pg_temp.courier_id(2);
+update public.couriers set status = 'suspended' where profile_id = pg_temp.courier_id(2);
 insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
 values ('22222222-2222-4222-8222-000000000499'::uuid, pg_temp.req_expired_id(), pg_temp.courier_id(2), 1500, 15, 'pending');
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
@@ -508,7 +509,7 @@ select throws_ok(
 
 -- 34. Oferta retirada + repartidor suspendido en solicitud publicada -> OFFER_NOT_PENDING (paso 7 precede a paso 8)
 select pg_temp.reset_actor();
-update public.couriers set status = 'suspended' where id = pg_temp.courier_id(14);
+update public.couriers set status = 'suspended' where profile_id = pg_temp.courier_id(14);
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select throws_ok(
   $$ select public.accept_offer(pg_temp.offer_withdrawn_id()) $$,
