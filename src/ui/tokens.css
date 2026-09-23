@@ -9,7 +9,7 @@
   --popover-foreground: 226 42% 12%; /* #12182C */
 
   --primary: 181 90% 39%; /* #09BABD */
-  --primary-foreground: 226 42% 12%; /* #12182C - WCAG AAA 6.93:1 */
+  --primary-foreground: 226 42% 12%; /* #12182C - WCAG AAA 7.35:1 */
   --primary-dark: 181 83% 27%; /* #0B7A7D - WCAG AA 5.04:1 sobre blanco */
 
   --secondary: 226 42% 12%; /* #12182C - Tinta marina para botón secundario */
@@ -57,4 +57,11 @@
   background-color: hsl(var(--destructive));
   color: hsl(var(--destructive-foreground));
   border-color: hsl(var(--destructive));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
 }

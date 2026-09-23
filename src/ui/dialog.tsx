@@ -1,22 +1,23 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from './cn';
-import { Button } from './button';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { cn } from '@/ui/cn';
+import { Button } from '@/ui/button';
+import { AnimatedBox } from '@/ui/motion';
 
-interface DialogContextValue {
+interface DialogInternalContextValue {
   open: boolean;
-  onOpenChange: (nextOpen: boolean) => void;
-  titleId: string;
-  descriptionId: string;
+  setOpen: (open: boolean) => void;
+  triggerRef: React.MutableRefObject<HTMLElement | null>;
 }
 
-const DialogContext = React.createContext<DialogContextValue | null>(null);
+const DialogInternalContext = React.createContext<DialogInternalContextValue | null>(null);
 
-function useDialogContext(): DialogContextValue {
-  const ctx = React.useContext(DialogContext);
+function useDialogInternalContext() {
+  const ctx = React.useContext(DialogInternalContext);
   if (!ctx) {
-    throw new Error('Los subcomponentes de Dialog deben usarse dentro de <Dialog>.');
+    throw new Error('Dialog components must be rendered inside <Dialog>');
   }
   return ctx;
 }
@@ -28,124 +29,139 @@ export interface DialogProps {
   children: React.ReactNode;
 }
 
-export function Dialog({ open, defaultOpen = false, onOpenChange, children }: DialogProps) {
-  const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
-  const titleId = React.useId();
-  const descriptionId = React.useId();
+export function Dialog({
+  open: controlledOpen,
+  defaultOpen = false,
+  onOpenChange,
+  children,
+}: DialogProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const triggerRef = React.useRef<HTMLElement | null>(null);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
 
-  const isOpen = open !== undefined ? open : internalOpen;
-
-  const handleOpenChange = React.useCallback(
-    (nextOpen: boolean) => {
-      if (open === undefined) {
-        setInternalOpen(nextOpen);
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      if (next && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+        triggerRef.current = document.activeElement;
       }
-      onOpenChange?.(nextOpen);
+      if (!isControlled) {
+        setUncontrolledOpen(next);
+      }
+      onOpenChange?.(next);
+      if (!next && triggerRef.current) {
+        const toFocus = triggerRef.current;
+        queueMicrotask(() => {
+          toFocus.focus();
+        });
+      }
     },
-    [onOpenChange, open]
+    [isControlled, onOpenChange]
   );
 
+  React.useEffect(() => {
+    if (open && !triggerRef.current && typeof document !== 'undefined') {
+      if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+        triggerRef.current = document.activeElement;
+      }
+    }
+  }, [open]);
+
   return (
-    <DialogContext.Provider
-      value={{
-        open: isOpen,
-        onOpenChange: handleOpenChange,
-        titleId,
-        descriptionId,
-      }}
-    >
-      {children}
-    </DialogContext.Provider>
+    <DialogInternalContext.Provider value={{ open, setOpen, triggerRef }}>
+      <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+        {children}
+      </DialogPrimitive.Root>
+    </DialogInternalContext.Provider>
   );
 }
 
 export function DialogTrigger({
   children,
+  onClick,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { onOpenChange } = useDialogContext();
+  const { setOpen, triggerRef } = useDialogInternalContext();
+
   return (
-    <button type="button" onClick={() => onOpenChange(true)} {...props}>
-      {children}
-    </button>
+    <DialogPrimitive.Trigger asChild>
+      <button
+        type="button"
+        ref={(node) => {
+          if (node) {
+            triggerRef.current = node;
+          }
+        }}
+        onClick={(e) => {
+          triggerRef.current = e.currentTarget;
+          setOpen(true);
+          onClick?.(e);
+        }}
+        {...props}
+      >
+        {children}
+      </button>
+    </DialogPrimitive.Trigger>
   );
 }
 
-const FOCUSABLE_SELECTOR = [
-  'button:not([disabled])',
-  '[href]',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[tabindex]:not([tabindex="-1"])',
-].join(', ');
-
 export interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {
   preventCloseOnEscape?: boolean;
+  onClose?: () => void;
 }
 
-/**
- * Contenido modal de `Dialog` con trampa de foco (`Tab` / `Shift+Tab`),
- * cierre con `Escape` (`Esc`) y atributos `role="dialog"` y `aria-modal="true"`.
- */
 export function DialogContent({
   className,
   children,
   preventCloseOnEscape = false,
-  onKeyDown,
+  onClose,
   ...props
 }: DialogContentProps) {
-  const { open, onOpenChange, titleId, descriptionId } = useDialogContext();
+  const { open, setOpen } = useDialogInternalContext();
   const contentRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
-    if (!open) return;
-    const node = contentRef.current;
-    if (!node) return;
-    const focusables = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+    if (!open) {
+      return;
+    }
+    const container = contentRef.current;
+    const focusables = container
+      ? Array.from(
+          container.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+      : [];
     if (focusables.length > 0) {
       focusables[0]?.focus();
     } else {
-      node.focus();
+      container?.focus();
     }
   }, [open]);
 
-  if (!open) {
-    return null;
-  }
-
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    onKeyDown?.(event);
-    if (event.defaultPrevented) return;
-
     if (event.key === 'Escape') {
+      event.stopPropagation();
       if (!preventCloseOnEscape) {
-        event.preventDefault();
-        onOpenChange(false);
+        onClose?.();
+        setOpen(false);
       }
       return;
     }
 
-    if (event.key === 'Tab') {
-      const node = contentRef.current;
-      if (!node) return;
-      const focusables = Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (focusables.length === 0) {
-        event.preventDefault();
-        return;
-      }
-
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      const active = document.activeElement as HTMLElement | null;
-
-      if (event.shiftKey) {
-        if (!active || active === first || !node.contains(active)) {
+    if (event.key === 'Tab' && contentRef.current) {
+      const focusables = Array.from(
+        contentRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      );
+      if (focusables.length > 0) {
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
           event.preventDefault();
           last?.focus();
-        }
-      } else {
-        if (!active || active === last || !node.contains(active)) {
+        } else if (!event.shiftKey && document.activeElement === last) {
           event.preventDefault();
           first?.focus();
         }
@@ -153,25 +169,44 @@ export function DialogContent({
     }
   };
 
+  if (!open) {
+    return null;
+  }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/50 p-4">
-      <div
-        ref={contentRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        tabIndex={-1}
-        onKeyDown={handleKeyDown}
-        className={cn(
-          'w-full max-w-md rounded-xl border border-border bg-card p-6 text-card-foreground shadow-lg focus:outline-none',
-          className
-        )}
-        {...props}
-      >
-        {children}
+    <DialogPrimitive.Portal>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <DialogPrimitive.Overlay
+          className="fixed inset-0 bg-foreground/50 backdrop-blur-xs transition-opacity"
+          aria-hidden="true"
+          onClick={() => {
+            if (!preventCloseOnEscape) {
+              onClose?.();
+              setOpen(false);
+            }
+          }}
+        />
+        <DialogPrimitive.Content
+          ref={contentRef}
+          onEscapeKeyDown={(event) => {
+            if (preventCloseOnEscape) {
+              event.preventDefault();
+            } else {
+              onClose?.();
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          tabIndex={-1}
+          className={cn(
+            'relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 text-card-foreground shadow-modal focus:outline-none',
+            className
+          )}
+          {...props}
+        >
+          <AnimatedBox preset="scaleTap">{children}</AnimatedBox>
+        </DialogPrimitive.Content>
       </div>
-    </div>
+    </DialogPrimitive.Portal>
   );
 }
 
@@ -180,11 +215,9 @@ export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLD
 }
 
 export function DialogTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  const { titleId } = useDialogContext();
   return (
-    <h2
-      id={titleId}
-      className={cn('font-display text-xl font-bold tracking-tight text-foreground', className)}
+    <DialogPrimitive.Title
+      className={cn('font-display text-lg font-bold text-foreground', className)}
       {...props}
     />
   );
@@ -194,16 +227,18 @@ export function DialogDescription({
   className,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
-  const { descriptionId } = useDialogContext();
   return (
-    <p id={descriptionId} className={cn('text-sm text-muted-foreground', className)} {...props} />
+    <DialogPrimitive.Description
+      className={cn('text-sm text-muted-foreground', className)}
+      {...props}
+    />
   );
 }
 
 export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
+      className={cn('mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end', className)}
       {...props}
     />
   );
@@ -214,28 +249,25 @@ export interface ConfirmDialogProps {
   onOpenChange: (open: boolean) => void;
   title: string;
   description: string;
-  confirmLabel?: string;
+  confirmLabel: string;
   cancelLabel?: string;
-  variant?: 'default' | 'destructive';
-  isPending?: boolean;
   onConfirm: () => void;
+  isPending?: boolean;
+  variant?: 'destructive' | 'default' | 'primary';
 }
 
-/**
- * Diálogo de confirmación en dos pasos para acciones irreversibles
- * (aceptar oferta, cancelar solicitud, suspender repartidor).
- */
 export function ConfirmDialog({
   open,
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Confirmar',
+  confirmLabel,
   cancelLabel = 'Volver',
-  variant = 'default',
-  isPending = false,
   onConfirm,
+  isPending = false,
+  variant = 'destructive',
 }: ConfirmDialogProps) {
+  const buttonVariant = variant === 'primary' ? 'default' : variant;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent preventCloseOnEscape={isPending}>
@@ -244,13 +276,18 @@ export function ConfirmDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" disabled={isPending} onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isPending}
+            onClick={() => onOpenChange(false)}
+          >
             {cancelLabel}
           </Button>
           <Button
-            variant={variant}
+            type="button"
+            variant={buttonVariant}
             isPending={isPending}
-            pendingText="Procesando…"
             onClick={onConfirm}
           >
             {confirmLabel}

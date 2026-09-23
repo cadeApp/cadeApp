@@ -1,250 +1,222 @@
 'use client';
 
 import * as React from 'react';
-import { Package, Bike, Clock, CheckCircle2 } from 'lucide-react';
-import { formatArs } from '@/lib/format';
-import { verifyTokenContrastMatrix } from './tokens';
-import { TopBar } from './top-bar';
-import { BottomNav } from './bottom-nav';
-import { Button } from './button';
-import { Input } from './input';
-import { Textarea } from './textarea';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './select';
-import { Badge } from './badge';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './card';
-import { RequestCardSkeleton } from './skeleton';
-import { EmptyState } from './empty-state';
+import { Home, Package, User } from 'lucide-react';
+import { Badge } from '@/ui/badge';
+import { BottomNav } from '@/ui/bottom-nav';
+import { BrandLogo } from '@/ui/brand-logo';
+import { Button } from '@/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/ui/card';
+import { EmptyState } from '@/ui/empty-state';
+import {
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/ui/form';
+import { Input } from '@/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
+import { Skeleton, SkeletonRequestCard } from '@/ui/skeleton';
+import { Textarea } from '@/ui/textarea';
+import { TopBar } from '@/ui/top-bar';
 
-export interface AccessibilityAuditReport {
-  violations: string[];
+export interface AccessibilityViolation {
+  rule: string;
+  elementTag: string;
+  message: string;
 }
 
 /**
- * Auditoría automatizada de accesibilidad DOM (equivalente a reglas nucleares de axe WCAG 2.2 AA)
- * para verificar que cualquier pantalla o muestra (`DesignSystemShowcase`) no tenga violaciones.
+ * Auditoría estructural del DOM de la pantalla de muestra S00:
+ * verifica nombres accesibles en botones, imágenes/SVG, controles de formulario,
+ * encabezados y padres ARIA requeridos (como role="option" dentro de role="listbox").
+ * Nota (D03): la auditoría completa con @axe-core/playwright corresponde a la suite E2E.
  */
-export function auditElementAccessibility(root: HTMLElement): AccessibilityAuditReport {
-  const violations: string[] = [];
+export function auditDomAccessibilityStructure(root: HTMLElement): AccessibilityViolation[] {
+  const violations: AccessibilityViolation[] = [];
 
-  // 1. Matriz de contraste WCAG AA/AAA de tokens
-  const contrast = verifyTokenContrastMatrix();
-  if (!contrast.allPass) {
-    violations.push('contrast: La matriz de contraste de tokens Stitch no cumple WCAG AA/AAA.');
-  }
-
-  // 2. Todo botón y enlace interactivo debe tener nombre accesible
-  const interactiveNodes = Array.from(root.querySelectorAll<HTMLElement>('button, a[href]'));
-  for (const node of interactiveNodes) {
-    const text = (node.textContent ?? '').trim();
-    const ariaLabel = node.getAttribute('aria-label');
-    const ariaLabelledBy = node.getAttribute('aria-labelledby');
-    if (!text && !ariaLabel && !ariaLabelledBy) {
-      violations.push(
-        `button-name: Elemento <${node.tagName.toLowerCase()}> sin nombre accesible.`
-      );
+  const buttons = Array.from(root.querySelectorAll('button'));
+  for (const btn of buttons) {
+    const label = (btn.textContent ?? '').trim() || btn.getAttribute('aria-label') || '';
+    if (!label) {
+      violations.push({
+        rule: 'button-name',
+        elementTag: 'BUTTON',
+        message: 'Every button must have discernible text or an aria-label.',
+      });
     }
   }
 
-  // 3. Todo input y textarea visible debe tener label asociado o aria-label
-  const formControls = Array.from(root.querySelectorAll<HTMLElement>('input, textarea, select'));
-  for (const ctrl of formControls) {
-    const id = ctrl.getAttribute('id');
-    const ariaLabel = ctrl.getAttribute('aria-label');
-    const ariaLabelledBy = ctrl.getAttribute('aria-labelledby');
-    const hasLabelFor = id ? Boolean(root.querySelector(`label[for="${id}"]`)) : false;
-    if (!hasLabelFor && !ariaLabel && !ariaLabelledBy) {
-      violations.push(`label: Control <${ctrl.tagName.toLowerCase()}> sin etiqueta asociada.`);
+  const imagesAndSvgs = Array.from(root.querySelectorAll('img, svg[role="img"]'));
+  for (const img of imagesAndSvgs) {
+    const alt = img.getAttribute('alt') || img.getAttribute('aria-label') || '';
+    if (!alt) {
+      violations.push({
+        rule: 'image-alt',
+        elementTag: img.tagName,
+        message: 'Images and role="img" SVGs must have alt or aria-label.',
+      });
     }
   }
 
-  // 4. Imágenes y role="img" deben tener alt o aria-label
-  const images = Array.from(root.querySelectorAll<HTMLElement>('img, [role="img"]'));
-  for (const img of images) {
-    if (img.getAttribute('aria-hidden') === 'true') continue;
-    const alt = img.getAttribute('alt');
-    const ariaLabel = img.getAttribute('aria-label');
-    if (!alt && !ariaLabel) {
-      violations.push('image-alt: Elemento gráfico sin atributo alt ni aria-label.');
+  const inputs = Array.from(root.querySelectorAll('input, textarea'));
+  for (const input of inputs) {
+    const id = input.getAttribute('id');
+    const ariaLabel = input.getAttribute('aria-label') || input.getAttribute('aria-labelledby');
+    const hasExplicitLabel = id ? Boolean(root.querySelector(`label[for="${id}"]`)) : false;
+    if (!hasExplicitLabel && !ariaLabel) {
+      violations.push({
+        rule: 'label',
+        elementTag: input.tagName,
+        message: `Form control #${id ?? 'unidentified'} is missing an associated label.`,
+      });
     }
   }
 
-  // 5. Diálogos abiertos deben tener aria-modal="true" y aria-labelledby
-  const dialogs = Array.from(root.querySelectorAll<HTMLElement>('[role="dialog"]'));
-  for (const dlg of dialogs) {
-    if (dlg.getAttribute('aria-modal') !== 'true') {
-      violations.push('aria-dialog-name: [role="dialog"] sin aria-modal="true".');
-    }
-    if (!dlg.getAttribute('aria-labelledby') && !dlg.getAttribute('aria-label')) {
-      violations.push('aria-dialog-name: [role="dialog"] sin aria-labelledby ni aria-label.');
+  const headings = Array.from(root.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+  for (const h of headings) {
+    if (!(h.textContent ?? '').trim()) {
+      violations.push({
+        rule: 'empty-heading',
+        elementTag: h.tagName,
+        message: 'Headings must not be empty.',
+      });
     }
   }
 
-  return { violations };
+  const options = Array.from(root.querySelectorAll('[role="option"]'));
+  for (const opt of options) {
+    if (!opt.closest('[role="listbox"]')) {
+      violations.push({
+        rule: 'aria-required-parent',
+        elementTag: opt.tagName,
+        message: 'Elements with role="option" must be contained within an element with role="listbox".',
+      });
+    }
+  }
+
+  return violations;
 }
 
-/**
- * Página de muestra S00 — Hoja de marca y componentes de Stitch (D16).
- */
+export const auditElementAccessibility = auditDomAccessibilityStructure;
+
 export function DesignSystemShowcase() {
-  const [selectedZone, setSelectedZone] = React.useState('centro');
+  const [zone, setZone] = React.useState('centro');
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <TopBar title="Hoja de marca S00" subtitle="Sistema de diseño Stitch (D16)" />
+    <div className="min-h-screen bg-background pb-20 text-foreground" data-testid="s00-showcase">
+      <TopBar
+        title="Sistema de Diseño"
+        subtitle="Aguilares · S00"
+        rightAction={<Badge variant="published">D16</Badge>}
+      />
 
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-6 p-4">
-        <section aria-labelledby="sec-typography" className="space-y-2">
-          <h2 id="sec-typography" className="font-display text-xl font-bold text-foreground">
-            Tipografía y montos
+      <main className="mx-auto max-w-md space-y-6 p-4">
+        <section aria-labelledby="s00-brand-heading" className="space-y-3">
+          <h2 id="s00-brand-heading" className="font-display text-lg font-bold">
+            Identidad de Marca
           </h2>
-          <p className="text-base text-foreground">
-            Cuerpo principal en Inter 16 px y texto secundario nunca menor a 14 px (Cláusula
-            Anti-12px).
-          </p>
-          <p className="font-display text-3xl font-bold text-foreground">{formatArs(1500)}</p>
-        </section>
-
-        <section aria-labelledby="sec-buttons" className="space-y-3">
-          <h2 id="sec-buttons" className="font-display text-xl font-bold text-foreground">
-            Botones (48 px de alto)
-          </h2>
-          <div className="grid grid-cols-1 gap-2.5">
-            <Button className="w-full">Publicar solicitud</Button>
-            <Button variant="secondary" className="w-full">
-              Ofertar
-            </Button>
-            <Button variant="outline" className="w-full">
-              Cancelar
-            </Button>
-            <Button variant="ghost" className="w-full">
-              Ver detalle
-            </Button>
-            <Button variant="destructive" className="w-full">
-              Cancelar solicitud
-            </Button>
-            <Button isPending pendingText="Enviando…" className="w-full">
-              Publicar solicitud
-            </Button>
+          <div className="flex items-center justify-between rounded-xl border border-border bg-card p-4 shadow-card">
+            <BrandLogo />
+            <Badge variant="delivered">WCAG AAA</Badge>
           </div>
         </section>
 
-        <section aria-labelledby="sec-fields" className="space-y-3">
-          <h2 id="sec-fields" className="font-display text-xl font-bold text-foreground">
-            Campos de formulario
+        <section aria-labelledby="s00-buttons-heading" className="space-y-3">
+          <h2 id="s00-buttons-heading" className="font-display text-lg font-bold">
+            Acciones Táctiles (≥ 48px)
           </h2>
-          <div className="space-y-1.5">
-            <label htmlFor="s00-phone" className="block text-sm font-semibold text-foreground">
-              Teléfono
-            </label>
-            <Input
-              id="s00-phone"
-              type="tel"
-              inputMode="tel"
-              placeholder="3865 12-3456"
-              defaultValue="3865 12-3456"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="s00-phone-error"
-              className="block text-sm font-semibold text-destructive"
-            >
-              Teléfono con error
-            </label>
-            <Input
-              id="s00-phone-error"
-              aria-invalid="true"
-              aria-describedby="s00-phone-error-msg"
-              defaultValue="123"
-            />
-            <p id="s00-phone-error-msg" role="alert" className="text-sm text-destructive">
-              Ingresá un teléfono válido
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <label id="s00-zone-label" className="block text-sm font-semibold text-foreground">
-              Barrio de entrega
-            </label>
-            <Select value={selectedZone} onValueChange={setSelectedZone}>
-              <SelectTrigger aria-labelledby="s00-zone-label">
-                <SelectValue placeholder="Elegí el barrio" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="centro">Centro</SelectItem>
-                <SelectItem value="norte">Barrio Norte</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="s00-notes" className="block text-sm font-semibold text-foreground">
-              Indicaciones de entrega
-            </label>
-            <Textarea id="s00-notes" placeholder="Portón verde al lado del kiosco" />
+          <div className="flex flex-col gap-3">
+            <Button variant="default" size="lg">
+              Publicar pedido
+            </Button>
+            <div className="grid grid-cols-3 gap-2">
+              <Button variant="outline" size="default">
+                +$ 100
+              </Button>
+              <Button variant="outline" size="default">
+                +$ 200
+              </Button>
+              <Button variant="outline" size="default">
+                +$ 500
+              </Button>
+            </div>
+            <Button variant="secondary" isPending pendingText="Procesando oferta...">
+              Enviar oferta
+            </Button>
           </div>
         </section>
 
-        <section aria-labelledby="sec-badges" className="space-y-3">
-          <h2 id="sec-badges" className="font-display text-xl font-bold text-foreground">
-            Insignias de estado y verificación
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="published">Publicada</Badge>
-            <Badge variant="with_offers">Con ofertas</Badge>
-            <Badge variant="matched">Asignada</Badge>
-            <Badge variant="in_transit">En camino</Badge>
-            <Badge variant="delivered">Entregada</Badge>
-            <Badge variant="expired">Vencida</Badge>
-            <Badge variant="cancelled">Cancelada</Badge>
-            <Badge variant="verified">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-              Licencia verificada
-            </Badge>
-            <Badge variant="declared">Moto · declarado</Badge>
-          </div>
-        </section>
-
-        <section aria-labelledby="sec-cards" className="space-y-3">
-          <h2 id="sec-cards" className="font-display text-xl font-bold text-foreground">
-            Tarjeta de solicitud y Skeleton
+        <section aria-labelledby="s00-forms-heading" className="space-y-3">
+          <h2 id="s00-forms-heading" className="font-display text-lg font-bold">
+            Controles de Formulario
           </h2>
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between gap-2">
-                <CardTitle>Centro → Barrio Norte</CardTitle>
-                <Badge variant="published">Publicada</Badge>
-              </div>
-              <CardDescription>≈ 2 km · Paquete chico</CardDescription>
+              <CardTitle>Nueva oferta</CardTitle>
+              <CardDescription>Proponé tu tarifa en pesos argentinos enteros.</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-1 text-sm text-foreground">
-              <p>Paga en efectivo (necesita cambio)</p>
+            <CardContent className="space-y-4">
+              <FormField name="offerAmount" error="El monto debe superar el piso vigente.">
+                <FormItem>
+                  <FormLabel>Monto de oferta (ARS)</FormLabel>
+                  <FormControl>
+                    <Input type="number" defaultValue="1500" />
+                  </FormControl>
+                  <FormDescription>Sin centavos ni decimales.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              </FormField>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="showcase-notes"
+                  className="block text-sm font-semibold text-foreground"
+                >
+                  Notas para el comercio
+                </label>
+                <Textarea id="showcase-notes" placeholder="Llego en 5 minutos..." />
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="block text-sm font-semibold text-foreground">Barrio</span>
+                <Select value={zone} onValueChange={setZone}>
+                  <SelectTrigger aria-label="Seleccionar barrio">
+                    <SelectValue placeholder="Elegí un barrio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="centro">Centro</SelectItem>
+                    <SelectItem value="villa-nueva">Villa Nueva</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
-            <CardFooter className="justify-between">
-              <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                <Clock className="h-4 w-4" aria-hidden="true" />
-                Vence en 18 min
-              </span>
-              <span className="font-display text-lg font-bold text-foreground">
-                {formatArs(1500)}
-              </span>
+            <CardFooter>
+              <Badge variant="in_transit">Tiempo restante: 18 min</Badge>
             </CardFooter>
           </Card>
-
-          <RequestCardSkeleton />
         </section>
 
-        <section aria-labelledby="sec-empty" className="space-y-3">
-          <h2 id="sec-empty" className="font-display text-xl font-bold text-foreground">
-            Estado vacío
+        <section aria-labelledby="s00-states-heading" className="space-y-3">
+          <h2 id="s00-states-heading" className="font-display text-lg font-bold">
+            Estados de Carga y Vacío
           </h2>
+          <Skeleton className="h-6 w-36" />
+          <SkeletonRequestCard />
           <EmptyState
-            icon={<Package className="h-6 w-6" />}
-            title="Todavía no hay solicitudes"
-            description="Publicá tu primer envío en Aguilares para recibir ofertas de repartidores cercanos."
-            actionLabel="Publicar solicitud"
-            onAction={() => undefined}
+            title="No hay solicitudes abiertas"
+            description="Te avisaremos apenas un comercio de Aguilares publique un envío."
+            actionLabel="Actualizar listado"
+            onAction={() => {}}
           />
         </section>
       </main>
@@ -253,16 +225,22 @@ export function DesignSystemShowcase() {
         items={[
           {
             id: 'requests',
-            label: 'Envíos',
-            href: '/requests',
-            icon: <Package className="h-5 w-5" />,
+            href: '/courier',
+            label: 'Solicitudes',
+            icon: <Home className="h-5 w-5" />,
             active: true,
           },
           {
             id: 'trips',
-            label: 'Viajes',
-            href: '/trips',
-            icon: <Bike className="h-5 w-5" />,
+            href: '/courier/trips',
+            label: 'Mis viajes',
+            icon: <Package className="h-5 w-5" />,
+          },
+          {
+            id: 'profile',
+            href: '/courier/profile',
+            label: 'Perfil',
+            icon: <User className="h-5 w-5" />,
           },
         ]}
       />

@@ -1,21 +1,22 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from './cn';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { cn } from '@/ui/cn';
+import { AnimatedBox } from '@/ui/motion';
 
-interface SheetContextValue {
+interface SheetInternalContextValue {
   open: boolean;
-  onOpenChange: (nextOpen: boolean) => void;
-  titleId: string;
-  descriptionId: string;
+  setOpen: (open: boolean) => void;
+  triggerRef: React.MutableRefObject<HTMLElement | null>;
 }
 
-const SheetContext = React.createContext<SheetContextValue | null>(null);
+const SheetInternalContext = React.createContext<SheetInternalContextValue | null>(null);
 
-function useSheetContext(): SheetContextValue {
-  const ctx = React.useContext(SheetContext);
+function useSheetInternalContext() {
+  const ctx = React.useContext(SheetInternalContext);
   if (!ctx) {
-    throw new Error('Los subcomponentes de Sheet deben usarse dentro de <Sheet>.');
+    throw new Error('Sheet components must be rendered inside <Sheet>');
   }
   return ctx;
 }
@@ -27,46 +28,79 @@ export interface SheetProps {
   children: React.ReactNode;
 }
 
-export function Sheet({ open, defaultOpen = false, onOpenChange, children }: SheetProps) {
-  const [internalOpen, setInternalOpen] = React.useState(defaultOpen);
-  const titleId = React.useId();
-  const descriptionId = React.useId();
+export function Sheet({
+  open: controlledOpen,
+  defaultOpen = false,
+  onOpenChange,
+  children,
+}: SheetProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen);
+  const triggerRef = React.useRef<HTMLElement | null>(null);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
 
-  const isOpen = open !== undefined ? open : internalOpen;
-
-  const handleOpenChange = React.useCallback(
-    (nextOpen: boolean) => {
-      if (open === undefined) {
-        setInternalOpen(nextOpen);
+  const setOpen = React.useCallback(
+    (next: boolean) => {
+      if (next && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+        triggerRef.current = document.activeElement;
       }
-      onOpenChange?.(nextOpen);
+      if (!isControlled) {
+        setUncontrolledOpen(next);
+      }
+      onOpenChange?.(next);
+      if (!next && triggerRef.current) {
+        const toFocus = triggerRef.current;
+        queueMicrotask(() => {
+          toFocus.focus();
+        });
+      }
     },
-    [onOpenChange, open]
+    [isControlled, onOpenChange]
   );
 
+  React.useEffect(() => {
+    if (open && !triggerRef.current && typeof document !== 'undefined') {
+      if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+        triggerRef.current = document.activeElement;
+      }
+    }
+  }, [open]);
+
   return (
-    <SheetContext.Provider
-      value={{
-        open: isOpen,
-        onOpenChange: handleOpenChange,
-        titleId,
-        descriptionId,
-      }}
-    >
-      {children}
-    </SheetContext.Provider>
+    <SheetInternalContext.Provider value={{ open, setOpen, triggerRef }}>
+      <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
+        {children}
+      </DialogPrimitive.Root>
+    </SheetInternalContext.Provider>
   );
 }
 
 export function SheetTrigger({
   children,
+  onClick,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const { onOpenChange } = useSheetContext();
+  const { setOpen, triggerRef } = useSheetInternalContext();
+
   return (
-    <button type="button" onClick={() => onOpenChange(true)} {...props}>
-      {children}
-    </button>
+    <DialogPrimitive.Trigger asChild>
+      <button
+        type="button"
+        ref={(node) => {
+          if (node) {
+            triggerRef.current = node;
+          }
+        }}
+        onClick={(e) => {
+          triggerRef.current = e.currentTarget;
+          setOpen(true);
+          onClick?.(e);
+        }}
+        {...props}
+      >
+        {children}
+      </button>
+    </DialogPrimitive.Trigger>
   );
 }
 
@@ -78,43 +112,66 @@ export function SheetContent({
   side = 'bottom',
   className,
   children,
-  onKeyDown,
   ...props
 }: SheetContentProps) {
-  const { open, onOpenChange, titleId, descriptionId } = useSheetContext();
+  const { open, setOpen } = useSheetInternalContext();
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const container = contentRef.current;
+    const focusables = container
+      ? Array.from(
+          container.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        )
+      : [];
+    if (focusables.length > 0) {
+      focusables[0]?.focus();
+    } else {
+      container?.focus();
+    }
+  }, [open]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      setOpen(false);
+    }
+  };
 
   if (!open) {
     return null;
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    onKeyDown?.(event);
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      onOpenChange(false);
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/50">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        tabIndex={-1}
-        onKeyDown={handleKeyDown}
-        className={cn(
-          'safe-area-bottom w-full border-t border-border bg-card p-6 text-card-foreground shadow-lg',
-          side === 'bottom' ? 'max-w-lg rounded-t-xl' : 'h-full max-w-sm border-l',
-          className
-        )}
-        {...props}
-      >
-        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-border" aria-hidden="true" />
-        {children}
+    <DialogPrimitive.Portal>
+      <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <DialogPrimitive.Overlay
+          className="fixed inset-0 bg-foreground/50 backdrop-blur-xs"
+          aria-hidden="true"
+          onClick={() => setOpen(false)}
+        />
+        <DialogPrimitive.Content
+          ref={contentRef}
+          data-sheet-side={side}
+          onKeyDown={handleKeyDown}
+          tabIndex={-1}
+          className={cn(
+            'relative z-10 w-full max-w-lg border border-border bg-card p-6 text-card-foreground shadow-modal safe-area-bottom focus:outline-none',
+            side === 'bottom' ? 'rounded-t-xl sm:rounded-xl' : 'h-full max-w-md rounded-l-xl',
+            className
+          )}
+          {...props}
+        >
+          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted" aria-hidden="true" />
+          <AnimatedBox preset="sheetSpring">{children}</AnimatedBox>
+        </DialogPrimitive.Content>
       </div>
-    </div>
+    </DialogPrimitive.Portal>
   );
 }
 
@@ -123,11 +180,9 @@ export function SheetHeader({ className, ...props }: React.HTMLAttributes<HTMLDi
 }
 
 export function SheetTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  const { titleId } = useSheetContext();
   return (
-    <h2
-      id={titleId}
-      className={cn('font-display text-lg font-bold tracking-tight text-foreground', className)}
+    <DialogPrimitive.Title
+      className={cn('font-display text-lg font-bold text-foreground', className)}
       {...props}
     />
   );
@@ -137,12 +192,14 @@ export function SheetDescription({
   className,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
-  const { descriptionId } = useSheetContext();
   return (
-    <p id={descriptionId} className={cn('text-sm text-muted-foreground', className)} {...props} />
+    <DialogPrimitive.Description
+      className={cn('text-sm text-muted-foreground', className)}
+      {...props}
+    />
   );
 }
 
 export function SheetFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('mt-6 flex flex-col gap-2', className)} {...props} />;
+  return <div className={cn('mt-6 flex flex-col gap-3', className)} {...props} />;
 }

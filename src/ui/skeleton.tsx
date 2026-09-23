@@ -39,3 +39,6 @@ export function RequestCardSkeleton() {
     </Card>
   );
 }
+
+export const SkeletonRequestCard = RequestCardSkeleton;
+

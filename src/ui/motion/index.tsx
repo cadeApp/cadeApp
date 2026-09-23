@@ -1,188 +1,139 @@
 'use client';
 
 import * as React from 'react';
-import { cn } from '../cn';
+import { LazyMotion, MotionConfig, domAnimation, m } from 'motion/react';
+import { cn } from '@/ui/cn';
 
-export type ReducedMotionStrategy = 'user' | 'always' | 'never';
+export type MotionPresetName = 'fadeIn' | 'slideUp' | 'scaleTap' | 'sheetSpring' | 'none';
 
-interface MotionContextValue {
-  reducedMotion: ReducedMotionStrategy;
-  prefersReducedMotion: boolean;
+export interface MotionPresetConfig {
+  duration: number;
+  initialClass: string;
+  animateClass: string;
 }
 
-const MotionContext = React.createContext<MotionContextValue>({
-  reducedMotion: 'user',
-  prefersReducedMotion: false,
-});
+export const MOTION_PRESETS: Record<MotionPresetName, MotionPresetConfig> = {
+  fadeIn: {
+    duration: 0.18,
+    initialClass: 'opacity-0',
+    animateClass: 'opacity-100',
+  },
+  slideUp: {
+    duration: 0.22,
+    initialClass: 'opacity-0 translate-y-2',
+    animateClass: 'opacity-100 translate-y-0',
+  },
+  scaleTap: {
+    duration: 0.12,
+    initialClass: 'scale-95',
+    animateClass: 'scale-100',
+  },
+  sheetSpring: {
+    duration: 0.25,
+    initialClass: 'translate-y-4 opacity-0',
+    animateClass: 'translate-y-0 opacity-100',
+  },
+  none: {
+    duration: 0,
+    initialClass: '',
+    animateClass: '',
+  },
+} as const;
 
-export interface MotionConfigProps {
-  reducedMotion?: ReducedMotionStrategy;
-  children: React.ReactNode;
-}
-
-export function MotionConfig({ reducedMotion = 'user', children }: MotionConfigProps) {
-  const [systemReduced, setSystemReduced] = React.useState(false);
+export function useReducedMotionPreference(): boolean {
+  const [prefersReduced, setPrefersReduced] = React.useState(false);
 
   React.useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
       return;
     }
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setSystemReduced(mediaQuery.matches);
+    setPrefersReduced(mediaQuery.matches);
 
     const listener = (event: MediaQueryListEvent) => {
-      setSystemReduced(event.matches);
+      setPrefersReduced(event.matches);
     };
-
-    if (typeof mediaQuery.addEventListener === 'function') {
-      mediaQuery.addEventListener('change', listener);
-      return () => mediaQuery.removeEventListener('change', listener);
-    }
-    return undefined;
+    mediaQuery.addEventListener('change', listener);
+    return () => mediaQuery.removeEventListener('change', listener);
   }, []);
 
-  const prefersReducedMotion =
-    reducedMotion === 'always' ? true : reducedMotion === 'never' ? false : systemReduced;
-
-  return (
-    <MotionContext.Provider value={{ reducedMotion, prefersReducedMotion }}>
-      {children}
-    </MotionContext.Provider>
-  );
+  return prefersReduced;
 }
 
-export interface LazyMotionProps {
-  children: React.ReactNode;
-}
-
-export function LazyMotion({ children }: LazyMotionProps) {
-  return <>{children}</>;
-}
+const MotionContext = React.createContext<{ reducedMotion: boolean }>({
+  reducedMotion: false,
+});
 
 export interface MotionProviderProps {
-  reducedMotion?: ReducedMotionStrategy;
   children: React.ReactNode;
+  forceReducedMotion?: boolean;
+  reducedMotion?: 'user' | 'always' | 'never' | boolean;
 }
 
-/**
- * Proveedor de animaciones `MotionProvider` montado una sola vez en `src/app/providers.tsx`
- * con `LazyMotion` y `MotionConfig reducedMotion="user"` (Regla 60).
- */
-export function MotionProvider({ reducedMotion = 'user', children }: MotionProviderProps) {
+export function MotionProvider({
+  children,
+  forceReducedMotion,
+  reducedMotion: reducedMotionProp,
+}: MotionProviderProps) {
+  const systemReduced = useReducedMotionPreference();
+  const forcedBool =
+    forceReducedMotion ??
+    (typeof reducedMotionProp === 'boolean'
+      ? reducedMotionProp
+      : reducedMotionProp === 'always'
+        ? true
+        : reducedMotionProp === 'never'
+          ? false
+          : undefined);
+  const reducedMotion = forcedBool ?? systemReduced;
+
   return (
-    <LazyMotion>
-      <MotionConfig reducedMotion={reducedMotion}>{children}</MotionConfig>
+    <LazyMotion features={domAnimation}>
+      <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
+        <MotionContext.Provider value={{ reducedMotion }}>{children}</MotionContext.Provider>
+      </MotionConfig>
     </LazyMotion>
   );
 }
 
-export function useReducedMotionPreference(): boolean {
-  return React.useContext(MotionContext).prefersReducedMotion;
-}
-
-export type MotionPresetName = 'fadeIn' | 'fadeOut' | 'slideUpSheet' | 'highlightItem';
-
-export interface MotionTransformState {
-  opacity: number;
-  x: number;
-  y: number;
-  scale: number;
-}
-
-export interface MotionPresetDefinition {
-  name: MotionPresetName;
-  animatedProperties: readonly ('opacity' | 'transform')[];
-  initial: MotionTransformState;
-  animate: MotionTransformState;
-  exit: MotionTransformState;
-  transition: {
-    durationMs: number;
-    easing: string;
-  };
-}
-
-export const MOTION_PRESETS: Record<MotionPresetName, MotionPresetDefinition> = {
-  fadeIn: {
-    name: 'fadeIn',
-    animatedProperties: ['opacity'],
-    initial: { opacity: 0, x: 0, y: 0, scale: 1 },
-    animate: { opacity: 1, x: 0, y: 0, scale: 1 },
-    exit: { opacity: 0, x: 0, y: 0, scale: 1 },
-    transition: { durationMs: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
-  },
-  fadeOut: {
-    name: 'fadeOut',
-    animatedProperties: ['opacity'],
-    initial: { opacity: 1, x: 0, y: 0, scale: 1 },
-    animate: { opacity: 0, x: 0, y: 0, scale: 1 },
-    exit: { opacity: 0, x: 0, y: 0, scale: 1 },
-    transition: { durationMs: 150, easing: 'ease-out' },
-  },
-  slideUpSheet: {
-    name: 'slideUpSheet',
-    animatedProperties: ['opacity', 'transform'],
-    initial: { opacity: 0, x: 0, y: 24, scale: 1 },
-    animate: { opacity: 1, x: 0, y: 0, scale: 1 },
-    exit: { opacity: 0, x: 0, y: 16, scale: 1 },
-    transition: { durationMs: 240, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
-  },
-  highlightItem: {
-    name: 'highlightItem',
-    animatedProperties: ['opacity', 'transform'],
-    initial: { opacity: 0.85, x: 0, y: 0, scale: 0.98 },
-    animate: { opacity: 1, x: 0, y: 0, scale: 1 },
-    exit: { opacity: 0, x: 0, y: 0, scale: 1 },
-    transition: { durationMs: 220, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
-  },
-};
-
-/**
- * Devuelve el preset de animación oficial respetando `prefers-reduced-motion` (Regla 60):
- * cuando `prefersReducedMotion` es `true`, ningún preset desplaza ni escala (`x=0, y=0, scale=1`).
- */
-export function getMotionPreset(
+export function resolveMotionPreset(
   preset: MotionPresetName,
-  prefersReducedMotion: boolean
-): MotionPresetDefinition {
-  const base = MOTION_PRESETS[preset];
-  if (!prefersReducedMotion) {
-    return base;
+  reducedMotion: boolean
+): MotionPresetConfig {
+  if (reducedMotion) {
+    return MOTION_PRESETS.none;
   }
-
-  return {
-    ...base,
-    animatedProperties: ['opacity'],
-    initial: { opacity: base.initial.opacity, x: 0, y: 0, scale: 1 },
-    animate: { opacity: base.animate.opacity, x: 0, y: 0, scale: 1 },
-    exit: { opacity: base.exit.opacity, x: 0, y: 0, scale: 1 },
-    transition: {
-      durationMs: 150,
-      easing: 'linear',
-    },
-  };
+  return MOTION_PRESETS[preset];
 }
 
 export interface AnimatedBoxProps extends React.HTMLAttributes<HTMLDivElement> {
   preset?: MotionPresetName;
+  reducedMotionOverride?: boolean;
 }
 
 export function AnimatedBox({
   preset = 'fadeIn',
+  reducedMotionOverride,
   className,
   children,
   ...props
 }: AnimatedBoxProps) {
-  const prefersReducedMotion = useReducedMotionPreference();
-  const activePreset = getMotionPreset(preset, prefersReducedMotion);
+  const ctx = React.useContext(MotionContext);
+  const systemReduced = useReducedMotionPreference();
+  const effectiveReduced = reducedMotionOverride ?? (ctx.reducedMotion || systemReduced);
+  const config = resolveMotionPreset(preset, effectiveReduced);
 
   return (
-    <div
-      data-motion-preset={activePreset.name}
-      data-reduced-motion={prefersReducedMotion ? 'true' : 'false'}
-      className={cn('transition-opacity duration-200', className)}
-      {...props}
+    <m.div
+      data-motion-preset={preset}
+      data-reduced-motion={String(effectiveReduced)}
+      initial={effectiveReduced ? false : { opacity: 0.98 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: config.duration }}
+      className={cn('transition-all', config.animateClass, className)}
+      {...(props as Record<string, unknown>)}
     >
       {children}
-    </div>
+    </m.div>
   );
 }
