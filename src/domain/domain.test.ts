@@ -44,6 +44,7 @@ import { type FakePlatformSettings, createFakeRpcClient } from './testing/rpc-fa
 
 const BASE_SETTINGS: FakePlatformSettings = {
   minOfferArs: 1200,
+  maxOffersPerMin: 10,
   requestTtlMinutes: 25,
   pilotActive: true,
   pilotTermsVersion: 'v1.0',
@@ -592,6 +593,11 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       expect(() =>
         createFakeRpcClient({
           settings: { ...BASE_SETTINGS, minOfferArs: 0 },
+        })
+      ).toThrow();
+      expect(() =>
+        createFakeRpcClient({
+          settings: { ...BASE_SETTINGS, maxOffersPerMin: 0 },
         })
       ).toThrow();
     });

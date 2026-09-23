@@ -34,6 +34,7 @@ import {
 
 export interface FakePlatformSettings {
   readonly minOfferArs: number;
+  readonly maxOffersPerMin: number;
   readonly requestTtlMinutes: number;
   readonly pilotActive: boolean;
   readonly pilotTermsVersion: string;
@@ -211,13 +212,15 @@ const INCIDENT_WINDOW_MS = 24 * 3_600_000;
 function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatformSettings {
   if (!options || typeof options !== 'object' || !options.settings) {
     throw new Error(
-      'createFakeRpcClient requires explicit options.settings (minOfferArs, requestTtlMinutes, pilotActive, pilotTermsVersion, subscriptionGraceDays)'
+      'createFakeRpcClient requires explicit options.settings (minOfferArs, maxOffersPerMin, requestTtlMinutes, pilotActive, pilotTermsVersion, subscriptionGraceDays)'
     );
   }
   const { settings } = options;
   if (
     !Number.isInteger(settings.minOfferArs) ||
     settings.minOfferArs < 1 ||
+    !Number.isInteger(settings.maxOffersPerMin) ||
+    settings.maxOffersPerMin < 1 ||
     !Number.isInteger(settings.requestTtlMinutes) ||
     settings.requestTtlMinutes < 1 ||
     typeof settings.pilotActive !== 'boolean' ||
@@ -249,6 +252,23 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const couriers = new Map<string, FakeCourierRecord>();
   const merchants = new Map<string, FakeMerchantRecord>();
   const documents = new Map<string, FakeDocumentRecord>();
+  const rateLimits = new Map<string, number>();
+
+  function getWindowBucketKey(subject: string, action: string, currentNow: Date): string {
+    const minuteIso = new Date(Math.floor(currentNow.getTime() / 60_000) * 60_000).toISOString();
+    return `${subject}:${action}:${minuteIso}`;
+  }
+
+  function getWindowRateCount(subject: string, action: string, currentNow: Date): number {
+    return rateLimits.get(getWindowBucketKey(subject, action, currentNow)) ?? 0;
+  }
+
+  function incrementWindowRateCount(subject: string, action: string, currentNow: Date): number {
+    const key = getWindowBucketKey(subject, action, currentNow);
+    const next = (rateLimits.get(key) ?? 0) + 1;
+    rateLimits.set(key, next);
+    return next;
+  }
 
   function nextUniqueOfferId(): string {
     while (true) {
@@ -352,6 +372,19 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       const settingParsed = RPC_CONTRACTS.admin_update_setting.inputSchema.safeParse(rawInput);
       if (!settingParsed.success) {
         return err('INVALID_SETTING_VALUE' as RpcErrorCode<K>);
+      }
+    }
+    if (rpcName === 'submit_offer') {
+      const courier = couriers.get(actor.userId);
+      if (!courier) {
+        return err('NOT_FOUND' as RpcErrorCode<K>);
+      }
+      const eligibility = canCourierSubmitOffer({
+        status: courier.status,
+        available: courier.available,
+      });
+      if (!eligibility.ok) {
+        return err(eligibility.code as RpcErrorCode<K>);
       }
     }
     const parsed = RPC_CONTRACTS[rpcName].inputSchema.safeParse(rawInput);
@@ -505,29 +538,27 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     submit_offer: (rawInput) =>
       executeRpc('submit_offer', rawInput, false, (input) => {
-        const req = requests.get(input.requestId);
-        const courier = couriers.get(actor.userId);
-        if (!req || !courier) return err('NOT_FOUND');
+        const floorCheck = validateOfferAmountAgainstFloor(input.amountArs, settings.minOfferArs);
+        if (!floorCheck.ok) {
+          return err(floorCheck.code as RpcErrorCode<'submit_offer'>);
+        }
 
         const currentNow = nowFn();
+        if (
+          getWindowRateCount(actor.userId, 'submit_offer', currentNow) + 1 >
+          settings.maxOffersPerMin
+        ) {
+          return err('RATE_LIMITED');
+        }
+
+        const req = requests.get(input.requestId);
+        if (!req) return err('NOT_FOUND');
+
         if (isRequestExpired(req.status, req.expiresAt, currentNow)) {
           return err('REQUEST_EXPIRED');
         }
         if (req.status !== 'published') {
           return err('INVALID_STATE_TRANSITION');
-        }
-
-        const eligibility = canCourierSubmitOffer({
-          status: courier.status,
-          available: courier.available,
-        });
-        if (!eligibility.ok) {
-          return err(eligibility.code as RpcErrorCode<'submit_offer'>);
-        }
-
-        const floorCheck = validateOfferAmountAgainstFloor(input.amountArs, settings.minOfferArs);
-        if (!floorCheck.ok) {
-          return err(floorCheck.code as RpcErrorCode<'submit_offer'>);
         }
 
         for (const existing of offers.values()) {
@@ -539,6 +570,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             return err('DUPLICATE_ACTIVE_OFFER');
           }
         }
+
+        incrementWindowRateCount(actor.userId, 'submit_offer', currentNow);
 
         const offerId = nextUniqueOfferId();
         offers.set(offerId, {
@@ -568,11 +601,20 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const transition = transitionOffer(offer.status, 'withdrawn', 'courier');
         if (!transition.ok) return err('OFFER_NOT_PENDING');
 
+        const currentNow = nowFn();
+        if (
+          getWindowRateCount(actor.userId, 'withdraw_offer', currentNow) + 1 >
+          settings.maxOffersPerMin
+        ) {
+          return err('RATE_LIMITED');
+        }
+
+        incrementWindowRateCount(actor.userId, 'withdraw_offer', currentNow);
         offer.status = 'withdrawn';
         return ok({
           offerId: input.offerId,
           status: 'withdrawn',
-          decidedAt: nowFn().toISOString(),
+          decidedAt: currentNow.toISOString(),
         });
       }),
 
