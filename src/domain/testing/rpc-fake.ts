@@ -56,6 +56,7 @@ export interface FakeSeedRequest {
   readonly merchantId: string;
   readonly status: DeliveryRequestStatus;
   readonly expiresAt?: string | null;
+  readonly matchedAt?: string | null;
   readonly deliveredAt?: string | null;
   readonly acceptedOfferId?: string | null;
   readonly assignedCourierId?: string | null;
@@ -72,6 +73,7 @@ export interface FakeRequestRecord {
   readonly merchantId: string;
   status: DeliveryRequestStatus;
   expiresAt: string | null;
+  matchedAt: string | null;
   deliveredAt: string | null;
   acceptedOfferId: string | null;
   assignedCourierId: string | null;
@@ -286,6 +288,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       merchantId: r.merchantId,
       status: r.status,
       expiresAt: r.expiresAt ?? null,
+      matchedAt: r.matchedAt ?? null,
       deliveredAt: r.deliveredAt ?? null,
       acceptedOfferId: r.acceptedOfferId ?? null,
       assignedCourierId: r.assignedCourierId ?? null,
@@ -637,7 +640,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             requestId: offer.requestId,
             acceptedOfferId: input.offerId,
             status: 'matched',
-            matchedAt: currentNow.toISOString(),
+            matchedAt: req.matchedAt ?? currentNow.toISOString(),
             idempotent: true,
           });
         }
@@ -659,6 +662,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err(courierCheck.code as RpcErrorCode<'accept_offer'>);
         }
 
+        const matchedIso = currentNow.toISOString();
         offer.status = 'accepted';
         for (const sibling of offers.values()) {
           if (
@@ -673,12 +677,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         req.status = 'matched';
         req.acceptedOfferId = input.offerId;
         req.assignedCourierId = offer.courierId;
+        req.matchedAt = matchedIso;
 
         return ok({
           requestId: offer.requestId,
           acceptedOfferId: input.offerId,
           status: 'matched',
-          matchedAt: currentNow.toISOString(),
+          matchedAt: matchedIso,
           idempotent: false,
         });
       }),
