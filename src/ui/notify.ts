@@ -1,12 +1,21 @@
 import { toast } from 'sonner';
 
+import type { DomainErrorCode } from '@/domain/errors';
+import { DOMAIN_ERROR_MESSAGES, getDomainErrorMessage } from '@/lib/error-messages';
+
+export { DOMAIN_ERROR_MESSAGES, getDomainErrorMessage };
+
 export interface NotifyOptions {
   id?: string;
   description?: string;
   duration?: number;
 }
 
-const activeToastIds = new Set<string>();
+export interface NotifyPromiseMessages<T> {
+  loading: string;
+  success: string | ((data: T) => string);
+  error: DomainErrorCode | string | ((error: unknown) => DomainErrorCode | string);
+}
 
 /**
  * Sanitiza mensajes de notificación para impedir fugas accidentales de PII
@@ -40,18 +49,10 @@ function dispatchToast(
     : undefined;
   const resolvedId = buildDedupeId(kind, safeMessage, options?.id);
 
-  activeToastIds.add(resolvedId);
-
-  const cleanup = () => {
-    activeToastIds.delete(resolvedId);
-  };
-
   return toast[kind](safeMessage, {
     id: resolvedId,
     description: safeDescription,
     duration: options?.duration ?? (kind === 'error' ? 5000 : 3500),
-    onDismiss: cleanup,
-    onAutoClose: cleanup,
   });
 }
 
@@ -59,13 +60,25 @@ export const notify = {
   success(message: string, options?: NotifyOptions) {
     return dispatchToast('success', message, options);
   },
-  error(message: string, options?: NotifyOptions) {
-    return dispatchToast('error', message, options);
+  error(codeOrMessage: DomainErrorCode | string, options?: NotifyOptions) {
+    const resolvedMessage = getDomainErrorMessage(codeOrMessage);
+    return dispatchToast('error', resolvedMessage, options);
   },
   info(message: string, options?: NotifyOptions) {
     return dispatchToast('info', message, options);
   },
-  resetActiveToasts() {
-    activeToastIds.clear();
+  promise<T>(promise: Promise<T> | (() => Promise<T>), messages: NotifyPromiseMessages<T>) {
+    return toast.promise(promise, {
+      loading: sanitizeToastMessage(messages.loading),
+      success: (data: T) => {
+        const raw = typeof messages.success === 'function' ? messages.success(data) : messages.success;
+        return sanitizeToastMessage(raw);
+      },
+      error: (err: unknown) => {
+        const rawCodeOrMessage =
+          typeof messages.error === 'function' ? messages.error(err) : messages.error;
+        return sanitizeToastMessage(getDomainErrorMessage(rawCodeOrMessage));
+      },
+    });
   },
 };

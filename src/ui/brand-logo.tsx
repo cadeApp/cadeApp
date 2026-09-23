@@ -25,7 +25,7 @@ export const BRAND_LOGO_GEOMETRY = {
   frontWheel: { cx: 52.5, cy: 41.5, r: 4.8 },
 } as const;
 
-export const BRAND_LOGO_SVG_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BRAND_LOGO_GEOMETRY.viewBoxFull}" role="img" aria-label="CadeApp">
+export const BRAND_LOGO_SVG_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BRAND_LOGO_GEOMETRY.viewBoxFull}" role="img" aria-label="cadeApp">
   <rect x="${BRAND_LOGO_GEOMETRY.box.x}" y="${BRAND_LOGO_GEOMETRY.box.y}" width="${BRAND_LOGO_GEOMETRY.box.width}" height="${BRAND_LOGO_GEOMETRY.box.height}" rx="${BRAND_LOGO_GEOMETRY.box.rx}" fill="${DESIGN_TOKENS.colors.primary}" />
   <path d="${BRAND_LOGO_GEOMETRY.wavyRoadPath}" stroke="${DESIGN_TOKENS.colors.background}" stroke-width="2.6" stroke-linecap="round" fill="none" />
   <path d="${BRAND_LOGO_GEOMETRY.boxBasePath}" stroke="${DESIGN_TOKENS.colors.ink}" stroke-width="2.5" stroke-linecap="round" />
@@ -35,7 +35,7 @@ export const BRAND_LOGO_SVG_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" vi
   <path d="${BRAND_LOGO_GEOMETRY.chassisPath}" stroke="${DESIGN_TOKENS.colors.ink}" stroke-width="3.2" stroke-linecap="round" fill="none" />
   <circle cx="${BRAND_LOGO_GEOMETRY.rearWheel.cx}" cy="${BRAND_LOGO_GEOMETRY.rearWheel.cy}" r="${BRAND_LOGO_GEOMETRY.rearWheel.r}" fill="${DESIGN_TOKENS.colors.ink}" />
   <circle cx="${BRAND_LOGO_GEOMETRY.frontWheel.cx}" cy="${BRAND_LOGO_GEOMETRY.frontWheel.cy}" r="${BRAND_LOGO_GEOMETRY.frontWheel.r}" fill="${DESIGN_TOKENS.colors.ink}" />
-  <text x="68" y="38" font-family="${DESIGN_TOKENS.fonts.display}, sans-serif" font-weight="800" font-size="27" fill="${DESIGN_TOKENS.colors.ink}">CadeApp</text>
+  <text x="68" y="38" font-family="${DESIGN_TOKENS.fonts.display}, sans-serif" font-weight="800" font-size="27" fill="${DESIGN_TOKENS.colors.ink}">cadeApp</text>
 </svg>`;
 
 export interface BrandLogoProps extends React.SVGAttributes<SVGSVGElement> {
@@ -47,7 +47,7 @@ export interface BrandLogoProps extends React.SVGAttributes<SVGSVGElement> {
 
 export function BrandLogo({
   showWordmark = true,
-  label = 'CadeApp',
+  label = 'cadeApp',
   size = 'md',
   variant = 'default',
   className,
@@ -121,7 +121,7 @@ export function BrandLogo({
           fontSize="27"
           fill={DESIGN_TOKENS.colors.ink}
         >
-          CadeApp
+          cadeApp
         </text>
       ) : null}
     </svg>

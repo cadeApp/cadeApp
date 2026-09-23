@@ -115,10 +115,9 @@ describe('Fichas de tarea: sincronía con el plan', () => {
    *   T-000 — no tiene fila en la tabla §8.
    *   T-001 — su DoD se reescribió durante la tarea (PR #48).
    *   T-002 — su DoD se reformuló durante la tarea (PR #49).
-   *   T-008 — su DoD se reformuló por decisiones D01-D04 de Lautaro073 en PR #59.
    * Cualquier ficha nueva o no empezada entra al control.
    */
-  const EXCEPCIONES = new Set(['T-000', 'T-001', 'T-002', 'T-008']);
+  const EXCEPCIONES = new Set(['T-000', 'T-001', 'T-002']);
 
   const plan = fs
     .readFileSync('docs/implementation-plan.md', 'utf-8')

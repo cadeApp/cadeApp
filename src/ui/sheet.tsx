@@ -115,33 +115,6 @@ export function SheetContent({
   ...props
 }: SheetContentProps) {
   const { open, setOpen } = useSheetInternalContext();
-  const contentRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const container = contentRef.current;
-    const focusables = container
-      ? Array.from(
-          container.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-          )
-        )
-      : [];
-    if (focusables.length > 0) {
-      focusables[0]?.focus();
-    } else {
-      container?.focus();
-    }
-  }, [open]);
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      setOpen(false);
-    }
-  };
 
   if (!open) {
     return null;
@@ -151,14 +124,12 @@ export function SheetContent({
     <DialogPrimitive.Portal>
       <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
         <DialogPrimitive.Overlay
-          className="fixed inset-0 bg-foreground/50 backdrop-blur-xs"
+          className="fixed inset-0 bg-foreground/50 backdrop-blur-sm"
           aria-hidden="true"
           onClick={() => setOpen(false)}
         />
         <DialogPrimitive.Content
-          ref={contentRef}
           data-sheet-side={side}
-          onKeyDown={handleKeyDown}
           tabIndex={-1}
           className={cn(
             'relative z-10 w-full max-w-lg border border-border bg-card p-6 text-card-foreground shadow-modal safe-area-bottom focus:outline-none',

@@ -10,6 +10,7 @@ vi.mock('sonner', () => ({
     success: vi.fn((_msg, opts) => opts?.id ?? 'mock-success'),
     error: vi.fn((_msg, opts) => opts?.id ?? 'mock-error'),
     info: vi.fn((_msg, opts) => opts?.id ?? 'mock-info'),
+    promise: vi.fn((promise, opts) => ({ promise, opts })),
   },
   Toaster: (props: Record<string, unknown>) => (
     <div data-testid="sonner-toaster-mock" data-position={String(props.position ?? '')} />
@@ -18,6 +19,8 @@ vi.mock('sonner', () => ({
 
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { ALL_DOMAIN_ERROR_CODES } from '@/domain/errors';
+import { DOMAIN_ERROR_MESSAGES, getDomainErrorMessage } from '@/lib/error-messages';
 import { formatArs, formatDate, formatPhone } from '@/lib/format';
 import {
   BRAND_ASSET_PATHS,
@@ -71,7 +74,6 @@ import {
 
 describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src/ui', () => {
   beforeEach(() => {
-    notify.resetActiveToasts();
     vi.clearAllMocks();
   });
 
@@ -90,7 +92,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       expect(() => formatArs(Number.NaN)).toThrow(RangeError);
     });
 
-    it('formatDate formatea en huso horario America/Argentina/Tucuman (UTC-3)', () => {
+    it('formatDate formatea en huso horario America/Argentina/Buenos_Aires (UTC-3)', () => {
       const utcIso = '2026-09-20T01:30:00.000Z';
       expect(formatDate(utcIso, 'date')).toBe('19/09/2026');
       expect(formatDate(utcIso, 'time')).toMatch(/22:30/);
@@ -511,12 +513,42 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       expect(tokensTsContent).toMatch(/>=\s*7\.0/);
     });
 
-    it('H14 y D02: existen en disco los 4 assets de BRAND_ASSET_PATHS en public/ y la ruta src/app/design-system/page.tsx', () => {
-      expect(fs.existsSync(path.resolve('public/brand/logo.svg'))).toBe(true);
-      expect(fs.existsSync(path.resolve('public/brand/logo.webp'))).toBe(true);
-      expect(fs.existsSync(path.resolve('public/icon-192x192.png'))).toBe(true);
-      expect(fs.existsSync(path.resolve('public/icon-512x512.png'))).toBe(true);
+    it('H14, H21, H25, D02 y D07: verifica en disco existencia y presupuesto en bytes (< 5 KB en logo.svg) de BRAND_ASSET_PATHS y metadata de /design-system', () => {
+      const svgPath = path.resolve('public/brand/logo.svg');
+      const webpPath = path.resolve('public/brand/logo.webp');
+      const icon192Path = path.resolve('public/icon-192x192.png');
+      const icon512Path = path.resolve('public/icon-512x512.png');
+
+      expect(fs.existsSync(svgPath)).toBe(true);
+      expect(fs.existsSync(webpPath)).toBe(true);
+      expect(fs.existsSync(icon192Path)).toBe(true);
+      expect(fs.existsSync(icon512Path)).toBe(true);
       expect(fs.existsSync(path.resolve('src/app/design-system/page.tsx'))).toBe(true);
+
+      const svgStat = fs.statSync(svgPath);
+      expect(svgStat.size).toBeGreaterThan(100);
+      expect(svgStat.size).toBeLessThan(5 * 1024);
+
+      const svgContent = fs.readFileSync(svgPath, 'utf8');
+      expect(svgContent).toContain('cadeApp');
+      expect(svgContent).not.toContain('CadeApp');
+      expect(svgContent).not.toContain('c2pa:manifest');
+
+      const webpStat = fs.statSync(webpPath);
+      expect(webpStat.size).toBeGreaterThan(20);
+      expect(webpStat.size).toBeLessThan(50 * 1024);
+
+      const icon192Stat = fs.statSync(icon192Path);
+      expect(icon192Stat.size).toBeGreaterThan(1000);
+      expect(icon192Stat.size).toBeLessThan(100 * 1024);
+
+      const icon512Stat = fs.statSync(icon512Path);
+      expect(icon512Stat.size).toBeGreaterThan(1000);
+      expect(icon512Stat.size).toBeLessThan(150 * 1024);
+
+      const pageContent = fs.readFileSync(path.resolve('src/app/design-system/page.tsx'), 'utf8');
+      expect(pageContent).toContain("title: 'Sistema de Diseño (S00) | cadeApp'");
+      expect(pageContent).toContain('robots: { index: false, follow: false }');
     });
 
     it('H18 y H19: Sheet abre, cierra con Escape restaurando el foco al trigger, y Toaster se monta con las clases de marca', async () => {
@@ -676,6 +708,154 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
 
       expect(container).toBeDefined();
       expect(onNavigate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('9. Ronda 2: Cierre conductual de D05..D07, R01, R02 y H21..H29', () => {
+    it('D05 y R01: DOMAIN_ERROR_MESSAGES cubre los 27 códigos de ALL_DOMAIN_ERROR_CODES, notify.error traduce DomainErrorCode y notify.promise delega a Sonner', () => {
+      expect(ALL_DOMAIN_ERROR_CODES.length).toBe(27);
+      for (const code of ALL_DOMAIN_ERROR_CODES) {
+        const msg = DOMAIN_ERROR_MESSAGES[code];
+        expect(typeof msg).toBe('string');
+        expect(msg.trim().length).toBeGreaterThanOrEqual(12);
+        expect(getDomainErrorMessage(code)).toBe(msg);
+      }
+      expect(getDomainErrorMessage('Error personalizado')).toBe('Error personalizado');
+
+      notify.error('OFFER_BELOW_MINIMUM');
+      expect(toast.error).toHaveBeenCalledWith(
+        DOMAIN_ERROR_MESSAGES.OFFER_BELOW_MINIMUM,
+        expect.objectContaining({
+          id: `error:${DOMAIN_ERROR_MESSAGES.OFFER_BELOW_MINIMUM.toLowerCase()}`,
+        })
+      );
+
+      const fakeTask = Promise.resolve({ id: 'req-1' });
+      const result = notify.promise(fakeTask, {
+        loading: 'Publicando pedido al 3865 12-3456...',
+        success: (data) => `Pedido ${data.id} publicado`,
+        error: () => 'ALREADY_MATCHED',
+      }) as unknown as {
+        opts: {
+          loading: string;
+          success: (data: { id: string }) => string;
+          error: (err: unknown) => string;
+        };
+      };
+
+      expect(toast.promise).toHaveBeenCalledTimes(1);
+      expect(result.opts.loading).toBe('Publicando pedido al [teléfono oculto]...');
+      expect(result.opts.success({ id: 'req-1' })).toBe('Pedido req-1 publicado');
+      expect(result.opts.error(new Error('conflict'))).toBe(DOMAIN_ERROR_MESSAGES.ALREADY_MATCHED);
+
+      const staticPromiseResult = notify.promise(fakeTask, {
+        loading: 'Guardando...',
+        success: 'Listo',
+        error: 'SUBSCRIPTION_INACTIVE',
+      }) as unknown as {
+        opts: {
+          success: (data: { id: string }) => string;
+          error: (err: unknown) => string;
+        };
+      };
+      expect(staticPromiseResult.opts.success({ id: 'req-1' })).toBe('Listo');
+      expect(staticPromiseResult.opts.error(new Error('sub'))).toBe(
+        DOMAIN_ERROR_MESSAGES.SUBSCRIPTION_INACTIVE
+      );
+    });
+
+    it('R02 y H28: presionar Escape en DialogContent invoca onClose exactamente 1 vez (sin duplicación con Radix)', () => {
+      const onCloseSpy = vi.fn();
+      render(
+        <Dialog defaultOpen>
+          <DialogContent onClose={onCloseSpy}>
+            <DialogTitle>Confirmar</DialogTitle>
+            <DialogDescription>Probando unicidad de onClose al presionar Escape</DialogDescription>
+          </DialogContent>
+        </Dialog>
+      );
+
+      const dialog = screen.getByRole('dialog');
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+      expect(onCloseSpy).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    it('H22: las variables HSL de :root en src/ui/tokens.css coinciden con los hex de DESIGN_TOKENS.colors', () => {
+      function hslToHex(h: number, s: number, l: number): string {
+        const sNorm = s / 100;
+        const lNorm = l / 100;
+        const c = (1 - Math.abs(2 * lNorm - 1)) * sNorm;
+        const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+        const m = lNorm - c / 2;
+        let rPrime = 0;
+        let gPrime = 0;
+        let bPrime = 0;
+        if (h >= 0 && h < 60) {
+          rPrime = c;
+          gPrime = x;
+        } else if (h >= 60 && h < 120) {
+          rPrime = x;
+          gPrime = c;
+        } else if (h >= 120 && h < 180) {
+          gPrime = c;
+          bPrime = x;
+        } else if (h >= 180 && h < 240) {
+          gPrime = x;
+          bPrime = c;
+        } else if (h >= 240 && h < 300) {
+          rPrime = x;
+          bPrime = c;
+        } else {
+          rPrime = c;
+          bPrime = x;
+        }
+        const toHex = (channel: number) =>
+          Math.round((channel + m) * 255)
+            .toString(16)
+            .padStart(2, '0')
+            .toUpperCase();
+        return `#${toHex(rPrime)}${toHex(gPrime)}${toHex(bPrime)}`;
+      }
+
+      const cssText = fs.readFileSync(path.resolve('src/ui/tokens.css'), 'utf8');
+      const rootBlockMatch = cssText.match(/:root\s*\{([\s\S]*?)\}/);
+      expect(rootBlockMatch).not.toBeNull();
+      const rootBlock = rootBlockMatch ? rootBlockMatch[1] ?? '' : '';
+
+      const cssHslVars = new Map<string, string>();
+      const varRegex = /--([a-z0-9-]+):\s*([0-9.]+)\s+([0-9.]+)%\s+([0-9.]+)%\s*;/g;
+      let match: RegExpExecArray | null = varRegex.exec(rootBlock);
+      while (match !== null) {
+        const varName = match[1];
+        const h = Number(match[2]);
+        const s = Number(match[3]);
+        const l = Number(match[4]);
+        if (varName) {
+          cssHslVars.set(varName, hslToHex(h, s, l));
+        }
+        match = varRegex.exec(rootBlock);
+      }
+
+      const expectedPairs: ReadonlyArray<[string, string]> = [
+        ['primary', DESIGN_TOKENS.colors.primary],
+        ['primary-dark', DESIGN_TOKENS.colors.primaryDark],
+        ['foreground', DESIGN_TOKENS.colors.ink],
+        ['background', DESIGN_TOKENS.colors.background],
+        ['card', DESIGN_TOKENS.colors.surface],
+        ['muted', DESIGN_TOKENS.colors.muted],
+        ['muted-foreground', DESIGN_TOKENS.colors.mutedForeground],
+        ['border', DESIGN_TOKENS.colors.border],
+        ['accent', DESIGN_TOKENS.colors.accent],
+        ['success', DESIGN_TOKENS.colors.success],
+        ['warning', DESIGN_TOKENS.colors.warning],
+        ['warning-surface', DESIGN_TOKENS.colors.warningSurface],
+        ['destructive', DESIGN_TOKENS.colors.danger],
+      ];
+
+      for (const [cssVar, tokenHex] of expectedPairs) {
+        expect(cssHslVars.get(cssVar), `Variable CSS --${cssVar} desincronizada`).toBe(tokenHex);
+      }
     });
   });
 });

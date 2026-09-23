@@ -118,56 +118,6 @@ export function DialogContent({
   ...props
 }: DialogContentProps) {
   const { open, setOpen } = useDialogInternalContext();
-  const contentRef = React.useRef<HTMLDivElement | null>(null);
-
-  React.useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const container = contentRef.current;
-    const focusables = container
-      ? Array.from(
-          container.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-          )
-        )
-      : [];
-    if (focusables.length > 0) {
-      focusables[0]?.focus();
-    } else {
-      container?.focus();
-    }
-  }, [open]);
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      if (!preventCloseOnEscape) {
-        onClose?.();
-        setOpen(false);
-      }
-      return;
-    }
-
-    if (event.key === 'Tab' && contentRef.current) {
-      const focusables = Array.from(
-        contentRef.current.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        )
-      );
-      if (focusables.length > 0) {
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
-      }
-    }
-  };
 
   if (!open) {
     return null;
@@ -177,7 +127,7 @@ export function DialogContent({
     <DialogPrimitive.Portal>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <DialogPrimitive.Overlay
-          className="fixed inset-0 bg-foreground/50 backdrop-blur-xs transition-opacity"
+          className="fixed inset-0 bg-foreground/50 backdrop-blur-sm transition-opacity"
           aria-hidden="true"
           onClick={() => {
             if (!preventCloseOnEscape) {
@@ -187,7 +137,6 @@ export function DialogContent({
           }}
         />
         <DialogPrimitive.Content
-          ref={contentRef}
           onEscapeKeyDown={(event) => {
             if (preventCloseOnEscape) {
               event.preventDefault();
@@ -195,7 +144,6 @@ export function DialogContent({
               onClose?.();
             }
           }}
-          onKeyDown={handleKeyDown}
           tabIndex={-1}
           className={cn(
             'relative z-10 w-full max-w-md rounded-xl border border-border bg-card p-6 text-card-foreground shadow-modal focus:outline-none',
