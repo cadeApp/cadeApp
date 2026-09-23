@@ -108,3 +108,37 @@ contrato y va escrito una sola vez, no inferido dos veces.
 
 La skill `contract-change` ya lo anticipa en su línea 15: *«Dominio y RPC no coinciden: NO gana nadie por
 defecto»*. Lo que faltaba era un control que lo detectara sin que alguien se acuerde de ir a mirar.
+
+---
+
+## `AG-60` · Un barrido que falla en silencio no devuelve «nada»: devuelve algo con forma de hallazgo
+
+En la ronda 4, `barrido62.mjs` reportó `!! NO figura en rpc-contracts.ts` para las tres RPC. Leído sin
+desconfianza, eso es un bloqueante: la PR habría roto el contrato de `submit_offer`, `withdraw_offer` y
+`set_availability` a la vez.
+
+No era eso. El regex pide `\{\n\s*inputSchema`, y el checkout de un `git worktree` en Windows entrega CRLF por
+`core.autocrlf=true`: después de `{` viene `\r`, y `\n` no matchea. Los blobs del repositorio son LF, así que el
+código estaba perfecto y lo roto era el instrumento. Corrido contra los bytes de `git cat-file`, el barrido
+cruza bien las tres funciones.
+
+Y no fue el único: en la misma ronda, mi chequeo de CRLF (`grep -c $'\r'`) evaluaba el patrón vacío y matcheaba
+todas las líneas, y mi chequeo de alcance comparaba por cadena literal contra una ficha que habilita
+`docs/contracts/**` como glob. Tres instrumentos, tres resultados falsos, todos míos.
+
+**Lo que los delató, en los tres casos, fue la forma del resultado, no el resultado:**
+
+- «Las tres funciones a la vez» es demasiado parejo. Un defecto real rara vez es tan simétrico.
+- El conteo de líneas con CR daba 565, 567, 578, 578 y 594 en cinco commits: **exactamente** el total de líneas
+  de cada uno. Un patrón que matchea todo es un patrón que no matchea nada.
+- El único archivo «fuera de alcance» era el que la ficha habilita con un `**`.
+
+**Qué cambiar:** esto es `AG-55` («sin objetivo» es una falla del instrumento, no un resultado) en su forma
+peligrosa. Allá el instrumento callaba; acá **habla y acusa**. Antes de escribir un hallazgo que sale de un
+script propio, hay que reproducirlo por una segunda vía —leer el archivo, o correrlo sobre los bytes que guarda
+git en vez de los que entrega el checkout—, y sospechar en particular de tres formas: el resultado demasiado
+parejo, el conteo que coincide con el total, y el único elemento que falla siendo el que usa otra notación.
+
+Corolario específico de este repositorio: **`core.autocrlf=true` y no hay `.gitattributes`**. Cualquier script
+de revisión que ancle `\n` va a mentir sobre un worktree recién creado. Los barridos se corren sobre
+`git cat-file -p`, o los regex usan `\r?\n`.

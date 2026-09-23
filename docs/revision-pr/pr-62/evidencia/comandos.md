@@ -500,3 +500,96 @@ RPC. Es correcto que el SQL no lo levante — lo produce el wrapper. El test 4 d
 - Los ocho jobs de CI: **no consultados**.
 - En particular, el umbral de cobertura de 90 % de ramas sobre `src/domain/**` con las dos ramas inalcanzables
   de `H14`: no medido.
+
+---
+
+# Ronda 4 · verificación de cierre sobre `3c9d94f`
+
+```bash
+git fetch origin
+git log -1 --format="%H %s %P" 3c9d94f      # padre = c5eae06, lineage limpio
+git diff --stat c5eae06 3c9d94f             # 4 archivos, +30 -15
+git worktree add --detach ../cadeApp-rev62c 3c9d94f
+```
+
+## H14 · las guardas, y que no quedara nada colgando
+
+```bash
+sed -n '370,400p' src/domain/testing/rpc-fake.ts        # pre-paso de executeRpc intacto
+sed -n '/submit_offer: (rawInput) =>/,/withdraw_offer:/p' src/domain/testing/rpc-fake.ts
+grep -n "canCourierSubmitOffer" src/domain/testing/rpc-fake.ts
+#   28: import   382: uso unico  -> sin import huerfano
+```
+
+El handler completo no vuelve a nombrar `courier`: la lectura solo servía para revalidar.
+
+## H15 · el orden de rechazo de las otras dos, en las dos implementaciones
+
+```bash
+for f in withdraw_offer set_availability; do
+  awk "/create or replace function public\.$f/,/^\\$\\$;/" \
+    supabase/migrations/20260923050000_rpc_offers_v1.sql | grep -nE "message = '"
+done
+sed -n '/withdraw_offer: (rawInput) =>/,/set_availability:/p' src/domain/testing/rpc-fake.ts | grep -nE "err\('"
+```
+
+Coinciden con lo que afirma cada comentario nuevo.
+
+## H16 · los campos, completos
+
+```bash
+sed -n '/export const submitOfferInputSchema/,/^});/p' src/domain/rpc-contracts.ts | grep -nE "^\s+[a-zA-Z]+:"
+#   requestId, amountArs, etaMinutes, message  -> los cuatro del comentario, ni uno mas
+grep -rniE "\bnote\b" src/domain/ src/server/ supabase/ docs/tasks/T-101.md docs/tasks/log/T-101.md docs/contracts/CC-001.md
+```
+
+## Las tres fallas de instrumental (ver `AG-60`)
+
+```bash
+node scratchpad/barrido62.mjs
+#   !! NO figura en rpc-contracts.ts   x3   <-- FALSO. El regex pide \{\n y el checkout da CRLF.
+```
+
+Reproducido contra los bytes que guarda git, no los que entrega el checkout:
+
+```bash
+blob=$(git ls-tree 3c9d94f src/domain/rpc-contracts.ts | awk '{print $3}')
+git cat-file -p $blob > rc.ts          # LF: el regex matchea las 18 entradas
+```
+
+El chequeo de CRLF también mentía: `git cat-file -p $blob | grep -c $'\r'` devolvía 565/567/578/578/594 en los
+cinco commits, **exactamente el total de líneas de cada uno** — patrón vacío. Y el de alcance daba falso
+negativo en `docs/contracts/CC-001.md`, que la ficha habilita como `docs/contracts/**`.
+
+## Barrido de contrato, ya corregido
+
+```
+submit_offer      levanta 12 · declara 13 · sobra INTERNAL_ERROR (lo produce el wrapper)
+withdraw_offer    levanta  6 · declara  7 · idem
+set_availability  levanta  6 · declara  7 · idem
+```
+
+Ninguna función levanta un código que no declare. Sin regresión.
+
+## CI · `3c9d94f` (primera ronda en la que se mira)
+
+```
+8/8 pass · mergeState=CLEAN
+unit      Test Files 18 passed (18) · Tests 161 passed (161)
+          rpc-fake.ts  96.07 stmts | 91.86 branch | 100 funcs   (umbral 90 perFile en src/domain/**)
+db-tests  Files=4, Tests=141 · All tests successful. · Result: PASS
+```
+
+Cruce independiente del total pgTAP:
+
+```bash
+grep -hoE "plan\( *[0-9]+ *\)" supabase/tests/*.sql
+#   plan(2) + plan(55) + plan(43) + plan(41) = 141 = lo que reporta CI
+```
+
+`161 passed` es idéntico al de `c5eae06`: sacar las dos guardas no costó ninguna prueba, que es la confirmación
+de que eran inalcanzables.
+
+```bash
+git worktree remove --force ../cadeApp-rev62c && git worktree prune
+```
