@@ -141,7 +141,7 @@ export function OfferSheet({
             <span>·</span>
             <span>{paymentLabel}</span>
             {request.needsChange && (
-              <Badge variant="in_transit" className="text-xs">
+              <Badge variant="in_transit" className="text-sm">
                 {OFFERS_COPY.changeNeededBadge}
                 {request.cashChangeAmount ? ` (${formatArs(request.cashChangeAmount)})` : ''}
               </Badge>

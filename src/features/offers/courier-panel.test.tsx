@@ -4,7 +4,20 @@ import React from 'react';
 import { CourierFeed } from './components/courier-feed';
 import { UnderReview } from './components/under-review';
 import { OfferSheet } from './components/offer-sheet';
-import type { AvailableRequestItem } from './schemas';
+import { MyOffersList } from './components/my-offers-list';
+import type { AvailableRequestItem, CourierOfferItem } from './schemas';
+
+const pushMock = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: pushMock,
+    replace: vi.fn(),
+    prefetch: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
 
 describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
   const sampleRequest: AvailableRequestItem = {
@@ -138,4 +151,55 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     const textXsElements = cardElement?.querySelectorAll('.text-xs');
     expect(textXsElements?.length ?? 0).toBe(0);
   });
+
+  it('PR69-H01: MyOffersList usa useRouter (soft navigation) al ir al viaje en lugar de hard reload', () => {
+    pushMock.mockClear();
+    const sampleAcceptedOffer: CourierOfferItem = {
+      offerId: 'offer-uuid-1',
+      requestId: 'req-uuid-456',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Norte',
+      amountArs: 1500,
+      etaMinutes: 15,
+      message: null,
+      status: 'accepted',
+      createdAt: '2026-09-23T10:00:00Z',
+      decidedAt: '2026-09-23T10:05:00Z',
+      requestExpiresAt: null,
+      approxDistanceKm: '2,5',
+    };
+
+    render(<MyOffersList initialOffers={[sampleAcceptedOffer]} />);
+
+    const acceptedTab = screen.getByRole('button', { name: /aceptadas/i });
+    fireEvent.click(acceptedTab);
+
+    const goToTripBtn = screen.getByRole('button', { name: /ir al viaje/i });
+    fireEvent.click(goToTripBtn);
+
+    expect(pushMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).toHaveBeenCalledWith(`/trips/${sampleAcceptedOffer.requestId}`);
+  });
+
+  it('PR69-H02 / D16: OfferSheet respeta la Cláusula Anti-12px en el badge de cambio (text-sm, sin text-xs)', () => {
+    const { container } = render(
+      <OfferSheet
+        isOpen={true}
+        onClose={vi.fn()}
+        request={sampleRequest}
+        minOfferArs={1000}
+        onSubmitOffer={vi.fn()}
+      />
+    );
+
+    const badgeText = screen.getByText(/necesita cambio/i);
+    const badgeElement = badgeText.closest('span');
+    expect(badgeElement).not.toBeNull();
+    expect(badgeElement?.classList.contains('text-xs')).toBe(false);
+    expect(badgeElement?.classList.contains('text-sm')).toBe(true);
+
+    const textXsElements = container.querySelectorAll('.text-xs');
+    expect(textXsElements.length).toBe(0);
+  });
 });
+

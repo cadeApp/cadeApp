@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { TopBar } from '@/ui/top-bar';
 import { Card, CardContent } from '@/ui/card';
 import { Button } from '@/ui/button';
@@ -21,6 +22,7 @@ export interface MyOffersListProps {
 }
 
 export function MyOffersList({ initialOffers }: MyOffersListProps) {
+  const router = useRouter();
   const [offers, setOffers] = useState<CourierOfferItem[]>(initialOffers);
   const [activeTab, setActiveTab] = useState<'pending' | 'accepted' | 'other'>('pending');
   const [offerToWithdraw, setOfferToWithdraw] = useState<CourierOfferItem | null>(null);
@@ -125,7 +127,7 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
                 <Button
                   className="w-full min-h-12 text-sm font-bold"
                   onClick={() => {
-                    window.location.href = `/trips/${offer.requestId}`;
+                    router.push(`/trips/${offer.requestId}`);
                   }}
                 >
                   {OFFERS_COPY.goToTripButton}
