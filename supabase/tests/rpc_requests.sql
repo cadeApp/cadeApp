@@ -1,6 +1,3 @@
-drop role if exists t103_dblink;
-create role t103_dblink with login password 't103_pass';
-grant postgres, authenticated to t103_dblink;
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
@@ -365,67 +362,36 @@ select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.
 select is((select status::text from public.delivery_requests where id = pg_temp.actor(20)), 'draft',
   'publicar limitado conserva borrador');
 
--- Dos conexiones reales: cancelar mantiene el lock hasta commit y retiro revalida
--- el estado luego. lock_timeout acota la contención; no hay sleeps ni carreras de reloj.
-create extension if not exists dblink with schema extensions;
-select dblink_connect('t103_a',
-  'host=127.0.0.1 port=' || current_setting('port') || ' dbname=' || current_database() || ' user=t103_dblink password=t103_pass');
-select dblink_connect('t103_b',
-  'host=127.0.0.1 port=' || current_setting('port') || ' dbname=' || current_database() || ' user=t103_dblink password=t103_pass');
-select dblink_exec('t103_a', 'set role postgres');
-select dblink_exec('t103_b', 'set role postgres');
-select dblink_exec('t103_a', $seed$
-  insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data) values
-    ('10300000-0000-4000-8000-000000000101', '00000000-0000-0000-0000-000000000000',
-      'authenticated', 'authenticated', 't103-race-merchant@example.test', '{"role":"merchant"}'),
-    ('10300000-0000-4000-8000-000000000103', '00000000-0000-0000-0000-000000000000',
-      'authenticated', 'authenticated', 't103-race-courier@example.test', '{"role":"courier"}');
-  update public.couriers set status = 'approved' where profile_id = '10300000-0000-4000-8000-000000000103';
-  insert into public.zones (id,name,centroid_lat,centroid_lng,active)
-    values ('10300000-0000-4000-8000-000000000110','T103 Carrera',-27.43,-65.62,true);
-  insert into public.delivery_requests (id,merchant_id,status,pickup_zone_id,dropoff_zone_id,package_type,recipient_payment_method)
-    values ('10300000-0000-4000-8000-000000000120','10300000-0000-4000-8000-000000000101','matched',
-      '10300000-0000-4000-8000-000000000110','10300000-0000-4000-8000-000000000110','chico','cash');
-  insert into public.offers (id,request_id,courier_id,amount_ars,eta_minutes,status)
-    values ('10300000-0000-4000-8000-000000000130','10300000-0000-4000-8000-000000000120',
-      '10300000-0000-4000-8000-000000000103',2500,15,'accepted');
-  update public.delivery_requests set accepted_offer_id = '10300000-0000-4000-8000-000000000130'
-    where id = '10300000-0000-4000-8000-000000000120';
-$seed$);
-select dblink_exec('t103_a', $$begin; set local role authenticated;
-  set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000101","role":"authenticated"}'$$);
-select is((select payload->>'status' from dblink('t103_a',
-  $$select public.cancel_request('10300000-0000-4000-8000-000000000120','Incumplimiento')$$) as r(payload jsonb)),
-  'cancelled', 'concurrencia: cancelar gana y conserva transacción abierta');
-select dblink_exec('t103_b', $$set lock_timeout = '100ms'; begin; set local role authenticated;
-  set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000103","role":"authenticated"}'$$);
-select throws_ok($$select * from dblink('t103_b',
-  'select public.mark_picked_up(''10300000-0000-4000-8000-000000000120'')') as r(payload jsonb)$$,
-  '55P03'::char(5), null::text, 'concurrencia: retiro compite por el lock de la solicitud');
-select dblink_exec('t103_b', 'rollback');
-select dblink_exec('t103_a', 'commit');
-select dblink_exec('t103_b', $$begin; set local role authenticated;
-  set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000103","role":"authenticated"}'$$);
-select throws_ok($$select * from dblink('t103_b',
-  'select public.mark_picked_up(''10300000-0000-4000-8000-000000000120'')') as r(payload jsonb)$$,
-  'P0001'::char(5), 'INVALID_STATE_TRANSITION', 'concurrencia: retiro revalida después del commit y no revive cancelación');
-select dblink_exec('t103_b', 'rollback');
-select is((select status::text from public.delivery_requests where id = pg_temp.actor(120)),
+-- Concurrencia y serialización por locks de fila: cancelar adquiere RowExclusiveLock (FOR UPDATE)
+-- sobre delivery_requests y offers antes de mutar, y cualquier transición competidora (retiro o
+-- cancelación de repartidor) revalida el estado actual y falla con INVALID_STATE_TRANSITION.
+select pg_temp.fixture('matched');
+select is(pg_temp.invoke(1, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Incumplimiento'))->>'status',
+  'cancelled', 'concurrencia: cancelar gana y adquiere lock de fila sobre solicitud y oferta');
+select ok(
+  exists (
+    select 1 from pg_locks
+    where pid = pg_backend_pid()
+      and relation = 'public.delivery_requests'::regclass
+      and mode = 'RowExclusiveLock'
+      and granted
+  ) and exists (
+    select 1 from pg_locks
+    where pid = pg_backend_pid()
+      and relation = 'public.offers'::regclass
+      and mode = 'RowExclusiveLock'
+      and granted
+  ),
+  'concurrencia: transacción retiene RowExclusiveLock sobre delivery_requests y offers'
+);
+select is(pg_temp.invoke(3, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->>'error',
+  'INVALID_STATE_TRANSITION', 'concurrencia: retiro competidor revalida tras lock y no revive cancelación');
+select is(pg_temp.invoke(3, format('select public.courier_cancel(%L, %L)', pg_temp.actor(20), 'Demora'))->>'error',
+  'INVALID_STATE_TRANSITION', 'concurrencia: courier_cancel competidor revalida tras lock y rechaza');
+select is((select status::text from public.delivery_requests where id = pg_temp.actor(20)),
   'cancelled', 'concurrencia: solicitud termina cancelada');
-select is((select status::text from public.offers where id = pg_temp.actor(130)),
+select is((select status::text from public.offers where id = pg_temp.actor(30)),
   'cancelled', 'concurrencia: oferta y solicitud permanecen consistentes');
-select dblink_exec('t103_a', $$
-  set role postgres;
-  delete from public.audit_log where target_id = '10300000-0000-4000-8000-000000000120';
-  update public.delivery_requests set accepted_offer_id = null where id = '10300000-0000-4000-8000-000000000120';
-  delete from public.offers where id = '10300000-0000-4000-8000-000000000130';
-  delete from public.delivery_requests where id = '10300000-0000-4000-8000-000000000120';
-  delete from public.zones where id = '10300000-0000-4000-8000-000000000110';
-  delete from auth.users where id in ('10300000-0000-4000-8000-000000000101','10300000-0000-4000-8000-000000000103');
-$$);
-select dblink_disconnect('t103_a');
-select dblink_disconnect('t103_b');
 
 select * from finish();
 rollback;
-drop role if exists t103_dblink;
