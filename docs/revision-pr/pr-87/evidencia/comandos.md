@@ -147,3 +147,137 @@ tail -n 60 /tmp/pr87-build.log
 ~~~
 
 CI se abre recién cuando la ronda quede sin bloqueantes.
+
+
+---
+
+# Ronda 2 — evidencia sobre 225cd08
+
+## Alcance
+
+~~~bash
+git diff --name-only origin/develop...HEAD
+# Contrastar con "Archivos permitidos" de docs/tasks/T-118.md.
+~~~
+
+Resultado de la revisión remota:
+~~~text
+FUERA DE FICHA:
+src/features/requests/index.ts
+src/ui/brand-logo.tsx
+src/ui/button.tsx
+src/ui/top-bar.tsx
+src/ui/ui-system.test.tsx
+~~~
+
+Los cuatro \`src/ui/**\` son A01. \`requests/index.ts\` queda como A02 decisión porque la arquitectura prohíbe deep imports.
+
+## H01/H07/H09 — hueco del control
+
+~~~bash
+grep -nE 'href="/(terms|privacy)"|text-xs' 'src/app/(public)/layout.tsx'
+grep -n "src/app/(public)/layout.tsx" src/app/route-integrity.test.ts
+~~~
+
+Resultado:
+~~~text
+public/layout: /terms x2, /privacy x1, text-xs x1
+route-integrity: sólo lo enumera como archivo requerido; no está en auditedFiles/auditedViews.
+~~~
+
+Además:
+~~~bash
+grep -nE "redirectTo: '/admin'|redirectTo: \`/admin/mfa" src/features/auth/guards.ts
+~~~
+
+## H02 — enum de suscripción
+
+~~~bash
+grep -n "merchant_subscription_status" src/types/database.types.ts
+grep -nE "subscriptionStatus:|'trial'|'grace_period'|'suspended'" src/features/merchants/queries.ts
+grep -n "default 'pilot'" supabase/migrations/20260922031435_schema_v1.sql
+~~~
+
+Contrato: \`pilot|active|expired|cancelled\`; código: \`trial|active|grace_period|suspended\`.
+
+Mutación/prueba que debe existir:
+~~~text
+DB devuelve pilot -> C08 renderiza estado piloto sin excepción.
+DB devuelve expired/cancelled -> render consistente.
+Cambiar pilot por trial en mapper -> test rojo.
+~~~
+
+## H03 — enum documental
+
+~~~bash
+grep -n "document_review_status" src/types/database.types.ts
+grep -nE "pending|approved|valid|verified|submitted" \
+  'src/app/(courier)/courier/profile/page.tsx' \
+  src/features/courier-onboarding/components/courier-profile-view.tsx
+~~~
+
+Contrato: \`none|submitted|verified|rejected\`; la UI no tiene cases \`submitted/verified\`.
+
+## H06 — error boundaries físicamente presentes pero inalcanzables
+
+~~~bash
+grep -n "if (error || !rawRequests.length)" src/features/requests/queries.ts
+grep -n "if (merchantError || !merchant)" src/features/merchants/queries.ts
+grep -nE "profileResult.error|courierResult.error|docsResult.error" 'src/app/(courier)/courier/profile/page.tsx' || true
+~~~
+
+Un error DB se transforma en vacío/null o se ignora; no llega a \`error.tsx\`.
+
+## R01/R02/H13 — paginación
+
+~~~bash
+grep -nE "useState<FilterTab>|filteredRequests.length === 0|nextCursor" src/features/requests/components/merchant-history-view.tsx
+grep -nE "searchParams|cursorCreatedAt|cursorId" 'src/app/(merchant)/merchant/history/page.tsx'
+grep -nE "limit\\(pageSize \\+ 1\\)|avgRateArs: 0|query = query.or" src/features/requests/queries.ts
+grep -n "getMerchantRequests" src/features/requests/queries.test.ts || true
+~~~
+
+Resultado: no hay test de getMerchantRequests/51 filas; filtro cliente ocurre después del slice; cursor no se valida; métricas compartidas usan la página y tarifa=0.
+
+## H14 — columnas C02
+
+~~~bash
+grep -nE "select\\('id, name'\\)|merchantProfile.id" 'src/app/(merchant)/merchant/dashboard/page.tsx'
+grep -nE "profile_id:|business_name:" src/types/database.types.ts
+~~~
+
+\`merchants\` no tiene \`id\` ni \`name\`.
+
+## H15 — variante inexistente
+
+~~~bash
+grep -n "variant: 'primary'" \
+  'src/app/(merchant)/merchant/plan/page.tsx' \
+  src/features/courier-onboarding/components/courier-profile-view.tsx
+sed -n '8,18p' src/ui/button.tsx
+~~~
+
+\`primary\` no está entre las variantes de Button.
+
+## H10/H11 — PR real
+
+~~~bash
+gh pr view 87 --json body,comments
+~~~
+
+Resultado de la revisión remota:
+- sin capturas;
+- body real no tiene \`### Qué cambia\`, \`### DoD\`, \`### Evidencia de checks\`, \`### Informe de revisión de agy\` ni \`### Rollback\`;
+- conserva “400 tests” y “sin modificaciones src/ui”, ambos desactualizados/contradichos por el head.
+
+## Batería exigida para siguiente ronda
+
+~~~bash
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+# + pruebas de mutación específicas descritas en ronda-2.md
+~~~
+
+No abrir CI como evidencia de cierre hasta eliminar estos bloqueantes.
