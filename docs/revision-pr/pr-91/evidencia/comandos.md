@@ -207,3 +207,55 @@ En `038faab`, por inspección de dependencias de las aserciones, X01–X05 no ti
 ## 7. Validación del artefacto de revisión
 
 Se validó `hallazgos.jsonl` parseando las 8 líneas como JSON. El comando canónico del repo `node docs/revision-pr/analizar.mjs verificacion` debe correrse en un checkout tras traer este commit; no pudo ejecutarse en esta sesión por no disponer del árbol local completo.
+
+
+---
+
+# Ronda 2 sobre `6f867f1`
+
+## Delta desde la ronda 1
+
+Comparación `18f4749...6f867f1`:
+
+```text
+status: ahead
+ahead_by: 1
+behind_by: 0
+total_commits: 1
+
+docs/tasks/log/T-203.md  +9 / -0
+```
+
+Commit nuevo:
+
+```text
+6f867f115699d9c8df373aa3126b8f6e0910677c
+docs(T-203): session log - bloqueada por ficha [T-203]
+```
+
+No hay cambios en `src/**`, `package.json`, `pnpm-lock.yaml`, tests ni `docs/tasks/T-203.md`.
+
+## Ficha oficial releída
+
+`develop:docs/tasks/T-203.md` continúa con:
+
+```text
+Archivos permitidos:
+- src/server/push/**
+- src/app/api/push/**
+- supabase/migrations/**
+- docs/tasks/T-203.md
+- docs/tasks/log/T-203.md
+- docs/revision-pr/**
+
+Dependencias nuevas permitidas:
+- ninguna
+```
+
+La rama todavía contiene la versión autoampliada de la ficha, pero el nuevo commit no volvió a modificarla.
+
+## Revalidación de los 8 hallazgos
+
+No existe cambio de producto que pueda cerrar A01/H01-H07. Todos permanecen abiertos por la misma evidencia de ronda 1. La nueva bitácora confirma explícitamente que el agente se detuvo por A01/H01 y que H02-H07 siguen pendientes.
+
+No se ejecutan nuevas mutaciones ni checks sobre producto en ronda 2 porque el SHA de producto no cambió; la ronda no presenta resultados de ejecución inventados. CI final tampoco se inspecciona mientras siguen abiertos los bloqueantes.
