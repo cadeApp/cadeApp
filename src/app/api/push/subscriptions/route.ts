@@ -8,6 +8,7 @@ const upsertSubscriptionSchema = z.object({
   endpoint: z.string().url(),
   p256dh: z.string().min(1),
   auth: z.string().min(1),
+  platform: z.string().optional(),
 });
 
 const deleteSubscriptionSchema = z.object({
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { endpoint, p256dh, auth } = parsed.data;
+    const { endpoint, p256dh, auth, platform } = parsed.data;
 
     const { error: dbError } = await supabase.from('push_subscriptions').upsert(
       {
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
         endpoint,
         p256dh,
         auth,
+        platform: platform ?? null,
         last_seen_at: new Date().toISOString(),
       } as never,
       { onConflict: 'endpoint' }

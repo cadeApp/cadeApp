@@ -76,6 +76,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
           endpoint: 'https://push.example.com/sub/1',
           p256dh: 'valid-p256dh',
           auth: 'valid-auth',
+          platform: 'android',
         }),
       });
 
@@ -90,6 +91,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
           endpoint: 'https://push.example.com/sub/1',
           p256dh: 'valid-p256dh',
           auth: 'valid-auth',
+          platform: 'android',
         }),
         { onConflict: 'endpoint' }
       );

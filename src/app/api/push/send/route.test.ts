@@ -84,6 +84,7 @@ describe('POST /api/push/send', () => {
       sentCount: 1,
       failedCount: 0,
       deletedSubscriptions: [],
+      attempts: [{ endpoint: 'https://push.example.com/sub/1', status: 201 }],
       errors: [],
     });
 

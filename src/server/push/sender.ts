@@ -74,6 +74,7 @@ export interface PushSubscriptionRecord {
   endpoint: string;
   p256dh: string;
   auth: string;
+  platform?: string | null;
 }
 
 export interface PushDatabaseClient {
@@ -81,8 +82,14 @@ export interface PushDatabaseClient {
   deleteSubscriptionByEndpoint(endpoint: string): Promise<void>;
 }
 
+export interface PushAttemptRecord {
+  endpoint: string;
+  status: number;
+  error?: string;
+}
+
 export interface PushTransport {
-  send(subscription: PushSubscriptionRecord, payload: string): Promise<{ status: number }>;
+  send(subscription: PushSubscriptionRecord, payload: string): Promise<{ status: number; error?: string }>;
 }
 
 export interface SendPushResult {
@@ -90,6 +97,7 @@ export interface SendPushResult {
   sentCount: number;
   failedCount: number;
   deletedSubscriptions: string[];
+  attempts: PushAttemptRecord[];
   errors: Error[];
 }
 
@@ -99,7 +107,7 @@ export class DefaultPushDatabaseClient implements PushDatabaseClient {
     const supabase = createAdminClient();
     const { data, error } = await supabase
       .from('push_subscriptions')
-      .select('id, user_id, endpoint, p256dh, auth')
+      .select('id, user_id, endpoint, p256dh, auth, platform')
       .in('user_id', userIds);
 
     if (error || !data) {
@@ -112,6 +120,7 @@ export class DefaultPushDatabaseClient implements PushDatabaseClient {
       endpoint: row.endpoint,
       p256dh: row.p256dh,
       auth: row.auth,
+      platform: row.platform ?? null,
     }));
   }
 
@@ -128,8 +137,22 @@ export class DefaultPushDatabaseClient implements PushDatabaseClient {
   }
 }
 
+export interface WebPushClient {
+  setVapidDetails: (subject: string, publicKey: string, privateKey: string) => void;
+  sendNotification: (
+    subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+    payload?: string | Buffer | null,
+    options?: { TTL?: number }
+  ) => Promise<{ statusCode: number }>;
+}
+
 export class WebPushTransport implements PushTransport {
   private vapidConfigured = false;
+  private client: WebPushClient;
+
+  constructor(client: WebPushClient = webpush) {
+    this.client = client;
+  }
 
   private configureVapid(): void {
     if (this.vapidConfigured) return;
@@ -138,15 +161,15 @@ export class WebPushTransport implements PushTransport {
     const subject = serverEnv.VAPID_SUBJECT || 'mailto:admin@cadeapp.com';
 
     if (publicKey && privateKey) {
-      webpush.setVapidDetails(subject, publicKey, privateKey);
+      this.client.setVapidDetails(subject, publicKey, privateKey);
       this.vapidConfigured = true;
     }
   }
 
-  async send(subscription: PushSubscriptionRecord, payload: string): Promise<{ status: number }> {
+  async send(subscription: PushSubscriptionRecord, payload: string): Promise<{ status: number; error?: string }> {
     this.configureVapid();
     try {
-      const res = await webpush.sendNotification(
+      const res = await this.client.sendNotification(
         {
           endpoint: subscription.endpoint,
           keys: {
@@ -164,7 +187,7 @@ export class WebPushTransport implements PushTransport {
       if (err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number') {
         return { status: err.statusCode };
       }
-      throw err;
+      return { status: 500, error: err instanceof Error ? err.message : String(err) };
     }
   }
 }
@@ -185,6 +208,7 @@ export async function sendPushNotification(
     sentCount: 0,
     failedCount: 0,
     deletedSubscriptions: [],
+    attempts: [],
     errors: [],
   };
 
@@ -213,7 +237,13 @@ export async function sendPushNotification(
 
   for (const sub of subscriptions) {
     try {
-      const { status } = await transport.send(sub, payloadStr);
+      const { status, error } = await transport.send(sub, payloadStr);
+      result.attempts.push({
+        endpoint: sub.endpoint,
+        status,
+        ...(error ? { error } : {}),
+      });
+
       if (status >= 200 && status < 300) {
         result.sentCount += 1;
       } else if (status === 410 || status === 404) {
@@ -230,7 +260,13 @@ export async function sendPushNotification(
       }
     } catch (err) {
       result.failedCount += 1;
-      result.errors.push(err instanceof Error ? err : new Error(String(err)));
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      result.attempts.push({
+        endpoint: sub.endpoint,
+        status: 500,
+        error: errorMsg,
+      });
+      result.errors.push(err instanceof Error ? err : new Error(errorMsg));
     }
   }
 
@@ -244,11 +280,19 @@ export async function safeNotifyPostTransition(
     db?: PushDatabaseClient;
     transport?: PushTransport;
   }
-): Promise<void> {
+): Promise<SendPushResult> {
   try {
-    await sendPushNotification(userIds, event, options);
+    return await sendPushNotification(userIds, event, options);
   } catch (err) {
     // Best effort invariant: pushing never fails or reverts the business transaction
     console.error('[Push] safeNotifyPostTransition encountered an unexpected error:', err);
+    return {
+      totalSubscriptions: 0,
+      sentCount: 0,
+      failedCount: 0,
+      deletedSubscriptions: [],
+      attempts: [],
+      errors: [err instanceof Error ? err : new Error(String(err))],
+    };
   }
 }

@@ -43,6 +43,7 @@ describe('DefaultPushDatabaseClient', () => {
           endpoint: 'https://push.example.com/sub/1',
           p256dh: 'test-p256dh',
           auth: 'test-auth',
+          platform: 'web',
         },
       ],
       error: null,
@@ -64,11 +65,12 @@ describe('DefaultPushDatabaseClient', () => {
         endpoint: 'https://push.example.com/sub/1',
         p256dh: 'test-p256dh',
         auth: 'test-auth',
+        platform: 'web',
       },
     ]);
 
     expect(mockFrom).toHaveBeenCalledWith('push_subscriptions');
-    expect(mockSelect).toHaveBeenCalledWith('id, user_id, endpoint, p256dh, auth');
+    expect(mockSelect).toHaveBeenCalledWith('id, user_id, endpoint, p256dh, auth, platform');
     expect(mockIn).toHaveBeenCalledWith('user_id', [USER_1]);
   });
 
