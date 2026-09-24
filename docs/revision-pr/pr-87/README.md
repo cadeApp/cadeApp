@@ -29,13 +29,13 @@
 | H05 | arreglado-verificado (regresiones R01/R02 separadas) |
 | H06 | parcial |
 | H07 | parcial |
-| H08 | parcial / ligado a A01 |
+| H08 | arreglado-verificado |
 | H09 | parcial |
 | H10 | abierto |
 | H11 | abierto |
 | H12 | arreglado-verificado |
-| A01 | abierto |
-| A02 | decisión-pendiente |
+| A01 | aceptado por decisión P1 |
+| A02 | aceptado por decisión P1 |
 | R01 | abierto |
 | R02 | abierto |
 | H13 | abierto |
@@ -56,3 +56,8 @@ Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [evidencia
 ## Nota de entorno
 
 Como en R1, esta revisión operó sobre el árbol remoto por GitHub API y no dispone de checkout ejecutable. No se atribuye verde independiente a typecheck/lint/test/build y no se abrió CI con bloqueantes presentes.
+
+
+## Corrección de alcance de R2
+
+Lautaro/P1 confirmó que los cambios visuales compartidos en `src/ui/**` y el barrel de History en `src/features/requests/index.ts` fueron pedidos/autorizados por él durante la implementación. No se consideran desvíos del agente. A01/A02 quedan aceptados y H08 cerrado. El resultado vigente de R2 es **13 bloqueantes y ninguna decisión pendiente**.

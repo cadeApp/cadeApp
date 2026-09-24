@@ -281,3 +281,20 @@ pnpm build
 ~~~
 
 No abrir CI como evidencia de cierre hasta eliminar estos bloqueantes.
+
+
+## Corrección de alcance de R2 por decisión de P1
+
+Lautaro/P1 confirmó después de la primera publicación de R2 que él había autorizado expresamente durante la implementación:
+
+~~~text
+src/ui/brand-logo.tsx
+src/ui/button.tsx
+src/ui/top-bar.tsx
+src/ui/ui-system.test.tsx
+src/features/requests/index.ts   # barrel de MerchantHistoryView
+~~~
+
+Por tanto estos archivos **no se usan como evidencia de desvío del agente**. A01/A02 pasan a `aceptado`; H08 queda cerrado porque los estilos locales/hex originales sí fueron eliminados.
+
+La siguiente ronda debe comprobar que la autorización quedó documentada como excepción explícita en ficha/bitácora/body, sin ampliar el resto del scope.
