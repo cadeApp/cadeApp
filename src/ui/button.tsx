@@ -66,7 +66,9 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isPending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : null}
-        <span>{isPending && pendingText ? pendingText : children}</span>
+        <span className="inline-flex w-full items-center justify-center gap-2">
+          {isPending && pendingText ? pendingText : children}
+        </span>
       </button>
     );
   }

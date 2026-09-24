@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Store, Bike, Check, AlertCircle } from 'lucide-react';
+import { Store, Check, AlertCircle } from 'lucide-react';
+import { BrandLogo } from '@/ui/brand-logo';
 import { registerAction } from '../actions';
 import { authCopy } from '../copy';
 import type { SignupRole } from '../schemas';
@@ -101,8 +102,8 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
                 : 'border-border bg-card/60 hover:bg-card'
             }`}
           >
-            <div className="mt-0.5 rounded-full bg-primary/10 p-2 text-primary-dark">
-              <Bike className="h-5 w-5" />
+            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 p-1.5 text-primary-dark">
+              <BrandLogo showWordmark={false} className="h-6 w-auto shrink-0" />
             </div>
             <div className="flex-1 pr-6">
               <div className="font-semibold text-foreground">

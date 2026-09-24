@@ -5,7 +5,7 @@ import { MerchantNav } from './merchant-nav';
 
 export default function MerchantLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto flex min-h-screen max-w-[390px] flex-col bg-background text-foreground">
+    <div className="mx-auto flex min-h-screen w-full max-w-[390px] sm:max-w-xl md:max-w-3xl lg:max-w-4xl flex-col bg-background text-foreground">
       <TopBar
         showLogo
         rightAction={
