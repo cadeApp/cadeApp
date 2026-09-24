@@ -1,6 +1,10 @@
 import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
+import type { Database } from '@/types/database.types';
+
+export type MerchantSubscriptionStatus =
+  Database['public']['Enums']['merchant_subscription_status'];
 
 export interface ZoneOption {
   readonly id: string;
@@ -13,7 +17,7 @@ export interface MerchantAccountProfile {
   readonly zoneName: string | null;
   readonly phone: string | null;
   readonly notes: string | null;
-  readonly subscriptionStatus: 'trial' | 'active' | 'grace_period' | 'suspended';
+  readonly subscriptionStatus: MerchantSubscriptionStatus;
   readonly paidUntil: string | null;
 }
 
@@ -25,18 +29,23 @@ export async function getActiveZones(): Promise<ZoneOption[]> {
     .eq('active', true)
     .order('name', { ascending: true });
 
-  if (error || !data) {
-    return [];
+  if (error) {
+    throw new Error(`Error al consultar zonas: ${error.message}`);
   }
 
-  return data;
+  return data ?? [];
 }
 
 export async function getMerchantAccountProfile(): Promise<MerchantAccountProfile | null> {
   const supabase = await createClient();
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw new Error(`Error de sesión al consultar perfil de comercio: ${authError.message}`);
+  }
 
   if (!user) {
     return null;
@@ -47,7 +56,7 @@ export async function getMerchantAccountProfile(): Promise<MerchantAccountProfil
     readonly default_pickup_address: string | null;
     readonly default_pickup_zone_id: string | null;
     readonly notes: string | null;
-    readonly subscription_status: 'trial' | 'active' | 'grace_period' | 'suspended';
+    readonly subscription_status: MerchantSubscriptionStatus;
     readonly paid_until: string | null;
     readonly zones: { readonly name?: string } | null;
   }
@@ -57,7 +66,10 @@ export async function getMerchantAccountProfile(): Promise<MerchantAccountProfil
     readonly phone: string | null;
   }
 
-  const [{ data: merchant, error: merchantError }, { data: profile }] = await Promise.all([
+  const [
+    { data: merchant, error: merchantError },
+    { data: profile, error: profileError },
+  ] = await Promise.all([
     supabase
       .from('merchants')
       .select(
@@ -72,7 +84,15 @@ export async function getMerchantAccountProfile(): Promise<MerchantAccountProfil
       .maybeSingle<ProfileQueryRow>(),
   ]);
 
-  if (merchantError || !merchant) {
+  if (merchantError) {
+    throw new Error(`Error al consultar comercio: ${merchantError.message}`);
+  }
+
+  if (profileError) {
+    throw new Error(`Error al consultar perfil: ${profileError.message}`);
+  }
+
+  if (!merchant) {
     return null;
   }
 

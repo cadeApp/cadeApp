@@ -22,17 +22,54 @@ import { EmptyState } from '@/ui/empty-state';
 import { BrandLogo } from '@/ui/brand-logo';
 import { cn } from '@/ui/cn';
 import { logoutAction } from '@/features/auth';
+import type { Database } from '@/types/database.types';
+
+export type DocumentReviewStatus = Database['public']['Enums']['document_review_status'];
+export type CourierReviewStatus = Database['public']['Enums']['courier_status'];
 
 export interface CourierProfileData {
   readonly displayName: string;
   readonly email: string;
   readonly vehicleType: string | null;
   readonly plate: string | null;
-  readonly dniStatus: string;
-  readonly selfieStatus: string;
-  readonly licenseStatus: string;
-  readonly insuranceStatus: string;
-  readonly courierStatus: string;
+  readonly dniStatus: DocumentReviewStatus;
+  readonly selfieStatus: DocumentReviewStatus;
+  readonly licenseStatus: DocumentReviewStatus;
+  readonly insuranceStatus: DocumentReviewStatus;
+  readonly courierStatus: CourierReviewStatus;
+}
+
+export function combineDniDocumentStatus(
+  dniFront: DocumentReviewStatus,
+  dniBack: DocumentReviewStatus
+): DocumentReviewStatus {
+  if (dniFront === 'rejected' || dniBack === 'rejected') {
+    return 'rejected';
+  }
+  if (dniFront === 'verified' && dniBack === 'verified') {
+    return 'verified';
+  }
+  if (dniFront === 'submitted' || dniBack === 'submitted') {
+    return 'submitted';
+  }
+  return 'none';
+}
+
+export function getDocumentStatusPresentation(status: DocumentReviewStatus) {
+  switch (status) {
+    case 'verified':
+      return { variant: 'verified' as const, label: 'Validado por admin' };
+    case 'submitted':
+      return { variant: 'declared' as const, label: 'En revisión' };
+    case 'rejected':
+      return { variant: 'destructive' as const, label: 'Observado' };
+    case 'none':
+      return { variant: 'outline' as const, label: 'No cargado' };
+    default: {
+      const exhaustiveCheck: never = status;
+      throw new Error(`Estado documental no soportado: ${String(exhaustiveCheck)}`);
+    }
+  }
 }
 
 function getVehicleInfo(type: string | null) {
@@ -56,10 +93,8 @@ function getVehicleInfo(type: string | null) {
   }
 }
 
-function getCourierStatusBadge(status: string) {
+function getCourierStatusBadge(status: CourierReviewStatus) {
   switch (status) {
-    case 'active':
-    case 'enabled':
     case 'approved':
       return (
         <Badge variant="verified" className="text-sm">
@@ -67,16 +102,15 @@ function getCourierStatusBadge(status: string) {
         </Badge>
       );
     case 'pending':
-    case 'pending_review':
       return (
-        <Badge variant="pending" className="text-sm">
+        <Badge variant="declared" className="text-sm">
           En revisión administrativa
         </Badge>
       );
     case 'rejected':
     case 'suspended':
       return (
-        <Badge variant="rejected" className="text-sm">
+        <Badge variant="destructive" className="text-sm">
           Requiere atención
         </Badge>
       );
@@ -89,34 +123,16 @@ function getCourierStatusBadge(status: string) {
   }
 }
 
-function getDocStatusBadge(status: string) {
-  switch (status) {
-    case 'valid':
-    case 'approved':
-      return (
-        <Badge variant="verified" className="text-sm">
-          Validado por admin
-        </Badge>
-      );
-    case 'pending':
-      return (
-        <Badge variant="pending" className="text-sm">
-          En revisión
-        </Badge>
-      );
-    case 'rejected':
-      return (
-        <Badge variant="rejected" className="text-sm">
-          Observado
-        </Badge>
-      );
-    default:
-      return (
-        <Badge variant="outline" className="text-sm text-muted-foreground">
-          No cargado
-        </Badge>
-      );
-  }
+function getDocStatusBadge(status: DocumentReviewStatus) {
+  const presentation = getDocumentStatusPresentation(status);
+  return (
+    <Badge
+      variant={presentation.variant}
+      className={cn('text-sm', presentation.variant === 'outline' && 'text-muted-foreground')}
+    >
+      {presentation.label}
+    </Badge>
+  );
 }
 
 export function CourierProfileView({ profile }: { profile: CourierProfileData | null }) {
@@ -150,15 +166,15 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           icon={<User className="h-6 w-6 text-muted-foreground" aria-hidden="true" />}
           title="Todavía no completaste tu legajo de repartidor"
           description="Subí tu documento, selfie y tipo de movilidad para iniciar la revisión."
-          action={
-            <Link
-              href="/courier/onboarding/identity"
-              className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full sm:w-auto')}
-            >
-              Completar legajo
-            </Link>
-          }
         />
+        <div className="flex justify-center">
+          <Link
+            href="/courier/onboarding/identity"
+            className={cn(buttonVariants({ variant: 'default', size: 'lg' }), 'w-full sm:w-auto')}
+          >
+            Completar legajo
+          </Link>
+        </div>
 
         <div className="pt-2">
           <Button
@@ -255,7 +271,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
         <div className="divide-y divide-border/60 text-sm">
           <div className="flex items-center justify-between py-3">
             <div className="flex items-center gap-2">
-              {profile.dniStatus === 'approved' ? (
+              {profile.dniStatus === 'verified' ? (
                 <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
               ) : (
                 <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -267,7 +283,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
 
           <div className="flex items-center justify-between py-3">
             <div className="flex items-center gap-2">
-              {profile.selfieStatus === 'approved' ? (
+              {profile.selfieStatus === 'verified' ? (
                 <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
               ) : (
                 <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />

@@ -31,11 +31,11 @@ function getDateGroupLabel(dateIso: string): string {
 function getStatusBadgeConfig(status: MerchantRequestSummary['status']) {
   switch (status) {
     case 'delivered':
-      return { variant: 'verified' as const, label: 'Entregada' };
+      return { variant: 'delivered' as const, label: 'Entregada' };
     case 'cancelled':
-      return { variant: 'rejected' as const, label: 'Cancelada' };
+      return { variant: 'cancelled' as const, label: 'Cancelada' };
     case 'expired':
-      return { variant: 'outline' as const, label: 'Vencida' };
+      return { variant: 'expired' as const, label: 'Vencida' };
     case 'matched':
       return { variant: 'matched' as const, label: 'Asignada' };
     case 'in_transit':
@@ -48,11 +48,17 @@ function getStatusBadgeConfig(status: MerchantRequestSummary['status']) {
 export function MerchantHistoryView({
   requests,
   nextCursor = null,
+  activeStatus = 'all',
 }: {
   requests: readonly MerchantRequestSummary[];
   nextCursor?: { readonly createdAt: string; readonly id: string } | null;
+  activeStatus?: FilterTab;
 }) {
-  const [activeTab, setActiveTab] = React.useState<FilterTab>('all');
+  const [activeTab, setActiveTab] = React.useState<FilterTab>(activeStatus);
+
+  React.useEffect(() => {
+    setActiveTab(activeStatus);
+  }, [activeStatus]);
 
   const filteredRequests = React.useMemo(() => {
     if (activeTab === 'all') return requests;
@@ -73,6 +79,16 @@ export function MerchantHistoryView({
 
   const dateKeys = Object.keys(grouped);
 
+  const buildNextCursorHref = (cursor: { readonly createdAt: string; readonly id: string }) => {
+    const params = new URLSearchParams();
+    if (activeTab !== 'all') {
+      params.set('status', activeTab);
+    }
+    params.set('cursorCreatedAt', cursor.createdAt);
+    params.set('cursorId', cursor.id);
+    return `/merchant/history?${params.toString()}`;
+  };
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
       <div>
@@ -84,64 +100,64 @@ export function MerchantHistoryView({
         </p>
       </div>
 
-      {/* Tabs accesibles con altura mínima de 48px (min-h-12) */}
+      {/* Tabs accesibles con altura mínima de 48px (min-h-12) y sincronización con searchParams */}
       <div
         role="tablist"
         aria-label="Filtro de historial"
         className="flex w-full rounded-xl border border-border bg-muted p-1"
       >
-        <button
-          type="button"
+        <Link
+          href="/merchant/history?status=all"
           role="tab"
           aria-selected={activeTab === 'all'}
           onClick={() => setActiveTab('all')}
-          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`flex min-h-12 flex-1 items-center justify-center rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'all'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Todas
-        </button>
-        <button
-          type="button"
+        </Link>
+        <Link
+          href="/merchant/history?status=delivered"
           role="tab"
           aria-selected={activeTab === 'delivered'}
           onClick={() => setActiveTab('delivered')}
-          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`flex min-h-12 flex-1 items-center justify-center rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'delivered'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Entregadas
-        </button>
-        <button
-          type="button"
+        </Link>
+        <Link
+          href="/merchant/history?status=cancelled"
           role="tab"
           aria-selected={activeTab === 'cancelled'}
           onClick={() => setActiveTab('cancelled')}
-          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`flex min-h-12 flex-1 items-center justify-center rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'cancelled'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Canceladas
-        </button>
-        <button
-          type="button"
+        </Link>
+        <Link
+          href="/merchant/history?status=expired"
           role="tab"
           aria-selected={activeTab === 'expired'}
           onClick={() => setActiveTab('expired')}
-          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`flex min-h-12 flex-1 items-center justify-center rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'expired'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
           Vencidas
-        </button>
+        </Link>
       </div>
 
       {/* Lista agrupada o Estado Vacío */}
@@ -207,9 +223,7 @@ export function MerchantHistoryView({
           {nextCursor ? (
             <div className="pt-2">
               <Link
-                href={`/merchant/history?cursorCreatedAt=${encodeURIComponent(
-                  nextCursor.createdAt
-                )}&cursorId=${encodeURIComponent(nextCursor.id)}`}
+                href={buildNextCursorHref(nextCursor)}
                 className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), 'w-full')}
               >
                 Ver siguientes envíos

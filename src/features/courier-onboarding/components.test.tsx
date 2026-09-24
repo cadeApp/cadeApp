@@ -6,6 +6,12 @@ import { StepIndicator } from './components/step-indicator';
 import { IdentityForm } from './components/identity-form';
 import { VehicleForm } from './components/vehicle-form';
 import { StatusView } from './components/status-view';
+import {
+  CourierProfileView,
+  combineDniDocumentStatus,
+  getDocumentStatusPresentation,
+  type DocumentReviewStatus,
+} from './components/courier-profile-view';
 import * as actionsModule from './actions';
 
 vi.mock('next/navigation', () => ({
@@ -173,4 +179,65 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByRole('button', { name: /Ir al panel de repartidor/i })).toBeDefined();
     });
   });
+
+  describe('CourierProfileView (R08) y estados documentales reales (PR87-H03)', () => {
+    it('combineDniDocumentStatus combina frente y dorso con none|submitted|verified|rejected', () => {
+      expect(combineDniDocumentStatus('verified', 'verified')).toBe('verified');
+      expect(combineDniDocumentStatus('verified', 'submitted')).toBe('submitted');
+      expect(combineDniDocumentStatus('submitted', 'none')).toBe('submitted');
+      expect(combineDniDocumentStatus('verified', 'rejected')).toBe('rejected');
+      expect(combineDniDocumentStatus('rejected', 'none')).toBe('rejected');
+      expect(combineDniDocumentStatus('none', 'none')).toBe('none');
+    });
+
+    it('getDocumentStatusPresentation mapea submitted a "En revisión" y verified a "Validado por admin"', () => {
+      expect(getDocumentStatusPresentation('verified')).toEqual({
+        variant: 'verified',
+        label: 'Validado por admin',
+      });
+      expect(getDocumentStatusPresentation('submitted')).toEqual({
+        variant: 'declared',
+        label: 'En revisión',
+      });
+      expect(getDocumentStatusPresentation('rejected')).toEqual({
+        variant: 'destructive',
+        label: 'Observado',
+      });
+      expect(getDocumentStatusPresentation('none')).toEqual({
+        variant: 'outline',
+        label: 'No cargado',
+      });
+      expect(() =>
+        getDocumentStatusPresentation('pending' as unknown as DocumentReviewStatus)
+      ).toThrow(/Estado documental no soportado/);
+    });
+
+    it('renderiza CourierProfileView con los 4 estados documentales reales y EmptyState cuando profile es null', () => {
+      const { unmount } = render(
+        <CourierProfileView
+          profile={{
+            displayName: 'Carlos Gómez',
+            email: 'carlos@test.com',
+            vehicleType: 'motorcycle',
+            plate: 'AB 123 CD',
+            dniStatus: 'verified',
+            selfieStatus: 'submitted',
+            licenseStatus: 'rejected',
+            insuranceStatus: 'none',
+            courierStatus: 'approved',
+          }}
+        />
+      );
+
+      expect(screen.getByText('Validado por admin')).toBeDefined();
+      expect(screen.getByText('En revisión')).toBeDefined();
+      expect(screen.getByText('Observado')).toBeDefined();
+      expect(screen.getByText('No cargado')).toBeDefined();
+      unmount();
+
+      render(<CourierProfileView profile={null} />);
+      expect(screen.getByText(/Todavía no completaste tu legajo de repartidor/i)).toBeDefined();
+    });
+  });
 });
+

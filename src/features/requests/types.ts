@@ -56,6 +56,6 @@ export interface MerchantRequestDetail {
 
 export interface MerchantMetrics {
   readonly dispatchedToday: number;
-  readonly avgRateArs: number;
+  readonly avgRateArs: number | null;
   readonly activeCount: number;
 }

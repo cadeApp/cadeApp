@@ -126,7 +126,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     const aal1Result = evaluateRouteGuard('/admin/couriers', adminWithoutAal2);
     expect(aal1Result.action).toBe('redirect');
     if (aal1Result.action === 'redirect') {
-      expect(aal1Result.redirectTo).toContain('/admin/mfa');
+      expect(aal1Result.redirectTo).toContain('/login?mfaRequired=1');
     }
 
     const aal2Result = evaluateRouteGuard('/admin/couriers', adminWithAal2);

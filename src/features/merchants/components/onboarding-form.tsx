@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { Store, Phone, MapPin, Crosshair, Info, AlertTriangle, AlertCircle } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
 import { Badge } from '@/ui/badge';
@@ -337,9 +336,10 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             className="cursor-pointer text-sm leading-relaxed text-muted-foreground"
           >
             {merchantCopy.onboarding.acceptTermsPrefix}{' '}
-            <Link href="/terms" className="text-primary-dark underline hover:text-foreground">
+            <span className="font-semibold text-foreground">
               {merchantCopy.onboarding.pilotTermsLink}
-            </Link>
+            </span>{' '}
+            <span className="text-muted-foreground">(en publicación · T-311)</span>
           </label>
         </div>
         {errors.acceptPilotTerms && (

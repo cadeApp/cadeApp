@@ -33,7 +33,7 @@ export function StepIndicator({ currentStep }: StepIndicatorProps) {
                 }`}
               />
               <span
-                className={`text-xs font-semibold flex items-center gap-0.5 ${
+                className={`text-sm font-semibold flex items-center gap-0.5 ${
                   isDone
                     ? 'text-primary'
                     : isActive

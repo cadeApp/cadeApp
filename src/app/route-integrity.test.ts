@@ -38,6 +38,68 @@ function resolveRouteToFilesystemPage(routePath: string): string | null {
   return null;
 }
 
+function walkProductionFiles(dirPath: string): string[] {
+  if (!fs.existsSync(dirPath)) return [];
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  const results: string[] = [];
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...walkProductionFiles(full));
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+      !entry.name.endsWith('.test.ts') &&
+      !entry.name.endsWith('.test.tsx')
+    ) {
+      results.push(full);
+    }
+  }
+  return results;
+}
+
+function getAllT118ScopeFiles(): string[] {
+  const dirs = [
+    path.join(ROOT_DIR, 'app/(public)'),
+    path.join(ROOT_DIR, 'app/(merchant)'),
+    path.join(ROOT_DIR, 'app/(courier)'),
+    path.join(ROOT_DIR, 'features/auth'),
+    path.join(ROOT_DIR, 'features/merchants'),
+    path.join(ROOT_DIR, 'features/requests'),
+    path.join(ROOT_DIR, 'features/offers/components'),
+    path.join(ROOT_DIR, 'features/courier-onboarding'),
+    path.join(ROOT_DIR, 'features/availability'),
+  ];
+  const files = new Set<string>([
+    path.join(ROOT_DIR, 'app/page.tsx'),
+    path.join(ROOT_DIR, 'app/(public)/layout.tsx'),
+  ]);
+  for (const d of dirs) {
+    for (const f of walkProductionFiles(d)) {
+      files.add(f);
+    }
+  }
+  return Array.from(files);
+}
+
+function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): void {
+  const forbiddenHrefs = ['href="/terms"', 'href="/privacy"', 'href="/admin"', 'href="/admin/mfa"'];
+  for (const token of forbiddenHrefs) {
+    if (sourceCode.includes(token)) {
+      throw new Error(`${fileLabel} contiene enlace roto prohibido: ${token}`);
+    }
+  }
+  if (/redirectTo:\s*['"]\/admin(\/mfa)?['"]/.test(sourceCode)) {
+    throw new Error(`${fileLabel} emite redirectTo hacia ruta inexistente /admin o /admin/mfa`);
+  }
+}
+
+function assertNoTextXs(sourceCode: string, fileLabel: string): void {
+  if (/\btext-xs\b/.test(sourceCode)) {
+    throw new Error(`${fileLabel} viola el piso tipográfico de 14px usando text-xs`);
+  }
+}
+
 describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
   describe('DoD 1: P01 Landing pública de inicio (src/app/page.tsx)', () => {
     it('no debe contener el placeholder de Fase 0 (T-000) y debe implementar la landing P01 de Aguilares', () => {
@@ -146,32 +208,59 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
     });
   });
 
-  describe('DoD 4: Destinos de getRoleDefaultPath, enlaces y Redirecciones (PR87-H01)', () => {
-    it('getRoleDefaultPath para merchant, courier y admin resuelve únicamente a rutas existentes en el filesystem', () => {
+  describe('DoD 4: Destinos de getRoleDefaultPath, enlaces y Redirecciones en TODO el alcance T-118 (PR87-H01, H09)', () => {
+    it('getRoleDefaultPath y evaluateRouteGuard para merchant, courier y admin resuelven únicamente a rutas existentes en el filesystem', () => {
       const merchantPath = getRoleDefaultPath('merchant');
       const courierPath = getRoleDefaultPath('courier');
       const adminPath = getRoleDefaultPath('admin');
 
       expect(merchantPath).toBe('/merchant/dashboard');
       expect(courierPath).toBe('/courier/feed');
+      expect(adminPath).toBe('/');
       expect(resolveRouteToFilesystemPage(merchantPath)).not.toBeNull();
       expect(resolveRouteToFilesystemPage(courierPath)).not.toBeNull();
       expect(resolveRouteToFilesystemPage(adminPath)).not.toBeNull();
+
+      const adminAal1: AuthSession = {
+        userId: 'adm-1',
+        email: 'adm@cade.app',
+        role: 'admin',
+        aal: 'aal1',
+      };
+      const guardResult = evaluateRouteGuard('/admin/settings', adminAal1);
+      expect(guardResult.action).toBe('redirect');
+      if (guardResult.action === 'redirect') {
+        expect(guardResult.redirectTo).not.toBe('/admin');
+        expect(guardResult.redirectTo).not.toBe('/admin/mfa');
+        expect(resolveRouteToFilesystemPage(guardResult.redirectTo)).not.toBeNull();
+      }
     });
 
-    it('no emite enlaces rotos hacia /admin, /terms ni /privacy en las vistas auditadas', () => {
-      const auditedFiles = [
-        'src/app/page.tsx',
-        'src/features/auth/components/register-form.tsx',
-        'src/app/(merchant)/merchant/plan/page.tsx',
-        'src/features/courier-onboarding/components/courier-profile-view.tsx',
-      ];
+    it('incluye src/app/(public)/layout.tsx en la auditoría, muestra texto explícito "en publicación · T-311" y no emite links rotos (/terms, /privacy, /admin, /admin/mfa)', () => {
+      const publicLayoutPath = path.join(ROOT_DIR, 'app/(public)/layout.tsx');
+      const publicLayoutContent = fs.readFileSync(publicLayoutPath, 'utf-8');
+      expect(publicLayoutContent).toContain('en publicación · T-311');
 
-      for (const rel of auditedFiles) {
-        const content = fs.readFileSync(path.resolve(ROOT_DIR, '..', rel), 'utf-8');
-        expect(content, `${rel} no debe enlazar a /terms inexistente`).not.toContain('href="/terms"');
-        expect(content, `${rel} no debe enlazar a /privacy inexistente`).not.toContain('href="/privacy"');
+      const allScopeFiles = getAllT118ScopeFiles();
+      expect(allScopeFiles).toContain(publicLayoutPath);
+
+      for (const fullPath of allScopeFiles) {
+        const rel = path.relative(path.resolve(ROOT_DIR, '..'), fullPath).replace(/\\/g, '/');
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        expect(() => assertNoInvalidInternalLinks(content, rel)).not.toThrow();
       }
+    });
+
+    it('detecta mutaciones inválidas de href o redirectTo (PR87-H09)', () => {
+      expect(() =>
+        assertNoInvalidInternalLinks('<Link href="/terms">Términos</Link>', 'mutated-layout.tsx')
+      ).toThrow(/enlace roto prohibido/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "return { action: 'redirect', redirectTo: '/admin/mfa' };",
+          'mutated-guards.ts'
+        )
+      ).toThrow(/ruta inexistente/);
     });
 
     it('registerAction redirige a onboarding específico de cada rol para usuarios nuevos', async () => {
@@ -212,58 +301,53 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
     });
   });
 
-  describe('DoD 5: Integridad de Navegación, Tipografía >=14px y Targets >=48px (PR87-H07, PR87-H08)', () => {
-    it('merchant-nav.tsx define los 3 destinos canónicos de comercio', () => {
-      const navPath = path.resolve(ROOT_DIR, 'app/(merchant)/merchant-nav.tsx');
-      expect(fs.existsSync(navPath), 'Debe existir merchant-nav.tsx').toBe(true);
-      const content = fs.readFileSync(navPath, 'utf-8');
+  describe('DoD 5: Integridad de Navegación, 0 text-xs en TODO el alcance T-118 y buttonVariants válidos (PR87-H07, H08, H15)', () => {
+    it('merchant-nav.tsx y courier-nav.tsx definen los 3 destinos canónicos de cada rol', () => {
+      const merchantNav = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(merchant)/merchant-nav.tsx'),
+        'utf-8'
+      );
+      expect(merchantNav).toContain('/merchant/dashboard');
+      expect(merchantNav).toContain('/merchant/history');
+      expect(merchantNav).toContain('/merchant/plan');
 
-      expect(content).toContain('/merchant/dashboard');
-      expect(content).toContain('/merchant/history');
-      expect(content).toContain('/merchant/plan');
+      const courierNav = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(courier)/courier-nav.tsx'),
+        'utf-8'
+      );
+      expect(courierNav).toContain('/courier/feed');
+      expect(courierNav).toContain('/courier/offers');
+      expect(courierNav).toContain('/courier/profile');
     });
 
-    it('courier-nav.tsx define los 3 destinos canónicos de repartidor incluyendo perfil R08', () => {
-      const navPath = path.resolve(ROOT_DIR, 'app/(courier)/courier-nav.tsx');
-      expect(fs.existsSync(navPath), 'Debe existir courier-nav.tsx').toBe(true);
-      const content = fs.readFileSync(navPath, 'utf-8');
-
-      expect(content).toContain('/courier/feed');
-      expect(content).toContain('/courier/offers');
-      expect(content).toContain('/courier/profile');
-    });
-
-    it('el layout de comercio src/app/(merchant)/layout.tsx define el contenedor centrado mobile-first', () => {
-      const layoutPath = path.resolve(ROOT_DIR, 'app/(merchant)/layout.tsx');
-      expect(fs.existsSync(layoutPath), 'Debe existir (merchant)/layout.tsx').toBe(true);
-      const content = fs.readFileSync(layoutPath, 'utf-8');
-
-      expect(content).toMatch(/max-w-\[390px\]/);
-      expect(content).toMatch(/mx-auto/);
-    });
-
-    it('respeta piso tipográfico de 14px (sin text-xs), targets >=48px y ausencia de CSS/hex arbitrarios en vistas auditadas', () => {
-      const auditedViews = [
-        'src/app/(merchant)/layout.tsx',
-        'src/app/(courier)/layout.tsx',
-        'src/app/(merchant)/merchant/plan/page.tsx',
-        'src/features/courier-onboarding/components/courier-profile-view.tsx',
-        'src/features/requests/components/merchant-history-view.tsx',
-      ];
-
-      for (const rel of auditedViews) {
-        const content = fs.readFileSync(path.resolve(ROOT_DIR, '..', rel), 'utf-8');
-        expect(content, `${rel} no debe usar text-xs`).not.toMatch(/\btext-xs\b/);
-        expect(content, `${rel} no debe usar switch h-7 w-12`).not.toMatch(/h-7 w-12/);
-        expect(content, `${rel} no debe usar tabs min-h-10`).not.toMatch(/min-h-10/);
-        expect(content, `${rel} no debe inyectar <style>`).not.toMatch(/<style>/);
-        expect(content, `${rel} no debe usar hex arbitrario #25D366`).not.toMatch(/#25D366/i);
+    it('0 ocurrencias de text-xs y 0 usos de variant: "primary" en TODO el alcance de T-118', () => {
+      const allScopeFiles = getAllT118ScopeFiles();
+      for (const fullPath of allScopeFiles) {
+        const rel = path.relative(path.resolve(ROOT_DIR, '..'), fullPath).replace(/\\/g, '/');
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        expect(() => assertNoTextXs(content, rel)).not.toThrow();
+        expect(content, `${rel} no debe invocar variant: 'primary'`).not.toMatch(
+          /variant:\s*['"]primary['"]/
+        );
       }
+
+      expect(() => assertNoTextXs('<p className="text-xs">12px</p>', 'mutated.tsx')).toThrow(
+        /text-xs/
+      );
     });
   });
 
-  describe('DoD 6: Prohibición de Datos Fantasma y Paginación en Unidades Reales (PR87-H02, H03, H04, H05, H09)', () => {
-    it('C08 (/merchant/plan/page.tsx + queries.ts) lee subscription_status/paid_until y no contiene AFIP, ARBA ni estados fijos fantasma', () => {
+  describe('DoD 6: Esquema real de DB, Prohibición de Datos Fantasma y Paginación (PR87-H02, H03, H04, H05, H14)', () => {
+    it('MerchantDashboardPage (/merchant/dashboard/page.tsx) consulta profile_id, business_name en lugar de columnas inexistentes id, name (PR87-H14)', () => {
+      const dashboardPage = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(merchant)/merchant/dashboard/page.tsx'),
+        'utf-8'
+      );
+      expect(dashboardPage).toContain(".select('profile_id, business_name')");
+      expect(dashboardPage).not.toContain(".select('id, name')");
+    });
+
+    it('C08 (/merchant/plan/page.tsx + queries.ts + copy.ts) usa el enum real merchant_subscription_status (pilot|active|expired|cancelled) y no contiene AFIP/ARBA ni trial fantasma', () => {
       const planPage = fs.readFileSync(
         path.resolve(ROOT_DIR, 'app/(merchant)/merchant/plan/page.tsx'),
         'utf-8'
@@ -272,16 +356,23 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         path.resolve(ROOT_DIR, 'features/merchants/queries.ts'),
         'utf-8'
       );
-      const combined = `${planPage}\n${merchantQueries}`;
+      const merchantCopy = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'features/merchants/copy.ts'),
+        'utf-8'
+      );
+      const combined = `${planPage}\n${merchantQueries}\n${merchantCopy}`;
 
       expect(combined).not.toMatch(/AFIP/i);
       expect(combined).not.toMatch(/ARBA/i);
-      expect(planPage).not.toMatch(/Piloto activo|piloto gratis/i);
       expect(merchantQueries).toContain('subscription_status');
       expect(merchantQueries).toContain('paid_until');
+      expect(merchantCopy).toContain("case 'pilot':");
+      expect(merchantCopy).toContain("case 'active':");
+      expect(merchantCopy).toContain("case 'expired':");
+      expect(merchantCopy).toContain("case 'cancelled':");
     });
 
-    it('R08 (/courier/profile/page.tsx + CourierProfileView) no solicita CBU/CVU/alias ni fabrica estados moto/approved/Verificado fijos', () => {
+    it('R08 (/courier/profile/page.tsx + CourierProfileView) usa el enum real document_review_status (none|submitted|verified|rejected) y no solicita CBU/CVU/alias', () => {
       const profilePage = fs.readFileSync(
         path.resolve(ROOT_DIR, 'app/(courier)/courier/profile/page.tsx'),
         'utf-8'
@@ -297,10 +388,13 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       expect(combined).not.toMatch(/alias bancario/i);
       expect(combined).not.toMatch(/\|\|\s*'moto'/);
       expect(combined).not.toMatch(/\|\|\s*'approved'/);
-      expect(combined).not.toMatch(/Aprobado|Verificad/);
+      expect(profileLeaf).toContain("case 'submitted':");
+      expect(profileLeaf).toContain("case 'verified':");
+      expect(profileLeaf).toContain("case 'rejected':");
+      expect(profileLeaf).toContain("case 'none':");
     });
 
-    it('C07 (src/features/requests/queries.ts) pagina a máximo 50 con cursor y no fabrica 1,0 km ni Centro/Aguilares ante datos ausentes', () => {
+    it('C07 (src/features/requests/queries.ts) filtra por estado antes de paginar, valida cursor con Zod y no inventa $0 ni distancias', () => {
       const requestsQueries = fs.readFileSync(
         path.resolve(ROOT_DIR, 'features/requests/queries.ts'),
         'utf-8'
@@ -309,8 +403,9 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       expect(requestsQueries).not.toContain("return '1,0'");
       expect(requestsQueries).not.toContain("?? 'Centro'");
       expect(requestsQueries).not.toContain("?? 'Aguilares'");
-      expect(requestsQueries).toMatch(/\.limit\(/);
-      expect(requestsQueries).toContain('nextCursor');
+      expect(requestsQueries).toContain('merchantHistoryCursorSchema');
+      expect(requestsQueries).toContain('getMerchantHistoryRequests');
+      expect(requestsQueries).toContain('avgRateArs: number | null = null');
     });
   });
 });

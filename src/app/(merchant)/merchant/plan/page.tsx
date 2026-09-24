@@ -15,59 +15,8 @@ import {
   LogOut,
 } from 'lucide-react';
 import { getMerchantAccountProfile } from '@/features/merchants/server';
+import { getSubscriptionDisplay } from '@/features/merchants';
 import { logoutAction } from '@/features/auth';
-
-function getSubscriptionDisplay(
-  status: 'trial' | 'active' | 'grace_period' | 'suspended',
-  paidUntil: string | null
-) {
-  const formattedUntil = paidUntil
-    ? new Date(paidUntil).toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-      })
-    : 'Sin fecha de vencimiento asignada';
-
-  switch (status) {
-    case 'trial':
-      return {
-        badgeVariant: 'published' as const,
-        badgeLabel: 'Período de prueba',
-        headline: 'Suscripción en período de prueba bonificado',
-        description:
-          'Podés publicar todas las entregas que necesites con el abono mensual bonificado.',
-        untilLabel: formattedUntil,
-      };
-    case 'active':
-      return {
-        badgeVariant: 'verified' as const,
-        badgeLabel: 'Suscripción al día',
-        headline: 'Tu abono mensual está activo',
-        description:
-          'Tu comercio tiene habilitadas las publicaciones ilimitadas de envíos.',
-        untilLabel: formattedUntil,
-      };
-    case 'grace_period':
-      return {
-        badgeVariant: 'pending' as const,
-        badgeLabel: 'Período de gracia',
-        headline: 'Tu abono está en período de gracia',
-        description:
-          'Contactate con soporte para regularizar el abono mensual y mantener el servicio activo.',
-        untilLabel: formattedUntil,
-      };
-    case 'suspended':
-      return {
-        badgeVariant: 'rejected' as const,
-        badgeLabel: 'Suspendida',
-        headline: 'Suscripción pausada',
-        description:
-          'Tu cuenta de comercio se encuentra pausada. Escribinos para reactivarla.',
-        untilLabel: formattedUntil,
-      };
-  }
-}
 
 export default async function MerchantPlanPage() {
   const profile = await getMerchantAccountProfile();
@@ -94,15 +43,15 @@ export default async function MerchantPlanPage() {
           icon={<Store className="h-6 w-6 text-muted-foreground" aria-hidden="true" />}
           title="Todavía no completaste el alta de tu comercio"
           description="Completá los datos de tu negocio para ver tu perfil y el estado real de tu suscripción."
-          action={
-            <Link
-              href="/merchant/onboarding"
-              className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full sm:w-auto')}
-            >
-              Completar alta del comercio
-            </Link>
-          }
         />
+        <div className="flex justify-center">
+          <Link
+            href="/merchant/onboarding"
+            className={cn(buttonVariants({ variant: 'default', size: 'lg' }), 'w-full sm:w-auto')}
+          >
+            Completar alta del comercio
+          </Link>
+        </div>
 
         <form action={handleLogout} className="pt-2">
           <Button

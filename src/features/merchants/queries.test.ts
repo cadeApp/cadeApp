@@ -1,58 +1,148 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
-import { getActiveZones } from './queries';
+import { getActiveZones, getMerchantAccountProfile } from './queries';
+import { getSubscriptionDisplay, type MerchantSubscriptionStatus } from './copy';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
-describe('T-111: Merchant queries (zonas activas)', () => {
+describe('T-111 / T-118: queries de merchants y estado de suscripción (C08)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('obtiene la lista de zonas activas ordenadas por nombre', async () => {
-    const mockOrder = vi.fn().mockResolvedValue({
-      data: [
-        { id: 'zone-1', name: 'Barrio Norte' },
-        { id: 'zone-2', name: 'Centro' },
-      ],
-      error: null,
-    });
-    const mockEq = vi.fn().mockReturnValue({ order: mockOrder });
-    const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
-    const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
+  it('retorna la lista de zonas activas ordenada', async () => {
+    const mockZones = [
+      { id: 'z1', name: 'Barrio Centro' },
+      { id: 'z2', name: 'Barrio San Martín' },
+    ];
 
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
-      from: mockFrom,
-    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
-      ? T
-      : never);
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue({ data: mockZones, error: null }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
     const zones = await getActiveZones();
-    expect(zones).toHaveLength(2);
-    expect(zones[0]?.name).toBe('Barrio Norte');
-    expect(zones[1]?.name).toBe('Centro');
-    expect(mockFrom).toHaveBeenCalledWith('zones');
-    expect(mockEq).toHaveBeenCalledWith('active', true);
+    expect(zones).toEqual(mockZones);
   });
 
-  it('retorna array vacío ante error de consulta', async () => {
-    const mockOrder = vi.fn().mockResolvedValue({
-      data: null,
-      error: { message: 'Database query error' },
-    });
-    const mockEq = vi.fn().mockReturnValue({ order: mockOrder });
-    const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
-    const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
+  it('PR87-H06: propaga error de Supabase en getActiveZones para activar error.tsx y devuelve [] ante 0 filas sin error', async () => {
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
-    vi.mocked(serverSupabase.createClient).mockResolvedValue({
-      from: mockFrom,
-    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
-      ? T
-      : never);
+    await expect(getActiveZones()).rejects.toThrow(/Error al consultar zonas/);
 
-    const zones = await getActiveZones();
-    expect(zones).toEqual([]);
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await expect(getActiveZones()).resolves.toEqual([]);
+  });
+
+  it.each(['pilot', 'active', 'expired', 'cancelled'] as const)(
+    'PR87-H02: getMerchantAccountProfile y getSubscriptionDisplay soportan el estado real de DB "%s"',
+    async (status) => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  business_name: 'Panadería La Espiga',
+                  default_pickup_address: 'San Martín 450',
+                  default_pickup_zone_id: 'z1',
+                  notes: 'Timbre blanco',
+                  subscription_status: status,
+                  paid_until: '2026-12-31T23:59:59Z',
+                  zones: { name: 'Centro' },
+                },
+                error: null,
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { display_name: 'Juan', phone: '3815550123' },
+              error: null,
+            }),
+          };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantAccountProfile();
+      expect(profile).not.toBeNull();
+      expect(profile?.subscriptionStatus).toBe(status);
+
+      const display = getSubscriptionDisplay(status, profile?.paidUntil ?? null);
+      expect(display.headline.length).toBeGreaterThan(5);
+      expect(display.badgeLabel.length).toBeGreaterThan(3);
+    }
+  );
+
+  it('PR87-H02 / H06: lanza error ante fallo DB en getMerchantAccountProfile, devuelve null si no hay comercio y rechaza estados fuera de contrato como "trial"', async () => {
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'connection refused' },
+        }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await expect(getMerchantAccountProfile()).rejects.toThrow(/Error al consultar comercio/);
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    await expect(getMerchantAccountProfile()).resolves.toBeNull();
+
+    expect(() =>
+      getSubscriptionDisplay('trial' as unknown as MerchantSubscriptionStatus, null)
+    ).toThrow(/Estado de suscripción no soportado/);
   });
 });

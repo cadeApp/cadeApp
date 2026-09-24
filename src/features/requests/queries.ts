@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import type {
   MerchantRequestSummary,
@@ -8,6 +9,14 @@ import type {
   MerchantMetrics,
 } from './types';
 import type { PackageType, RecipientPaymentMethod, DeliveryRequestStatus } from '@/domain/schemas';
+
+export const historyFilterStatusSchema = z.enum(['all', 'delivered', 'cancelled', 'expired']);
+export type HistoryFilterStatus = z.infer<typeof historyFilterStatusSchema>;
+
+export const merchantHistoryCursorSchema = z.object({
+  createdAt: z.string().datetime({ offset: true }),
+  id: z.string().uuid(),
+});
 
 export interface ZoneOption {
   readonly id: string;
@@ -31,7 +40,34 @@ export interface MerchantHistoryCursor {
 
 export interface GetMerchantRequestsOptions {
   readonly limit?: number;
+  readonly status?: HistoryFilterStatus;
   readonly cursor?: MerchantHistoryCursor | null;
+}
+
+export function parseMerchantHistorySearchParams(raw?: {
+  status?: string;
+  cursorCreatedAt?: string;
+  cursorId?: string;
+}): {
+  status: HistoryFilterStatus;
+  cursor: MerchantHistoryCursor | null;
+} {
+  const statusParsed = historyFilterStatusSchema.safeParse(raw?.status);
+  const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
+
+  if (!raw?.cursorCreatedAt || !raw?.cursorId) {
+    return { status, cursor: null };
+  }
+
+  const cursorParsed = merchantHistoryCursorSchema.safeParse({
+    createdAt: raw.cursorCreatedAt,
+    id: raw.cursorId,
+  });
+
+  return {
+    status,
+    cursor: cursorParsed.success ? cursorParsed.data : null,
+  };
 }
 
 interface ZoneRow {
@@ -58,7 +94,11 @@ export async function getActiveZones(): Promise<ZoneOption[]> {
     .eq('active', true)
     .order('name', { ascending: true });
 
-  if (error || !data) {
+  if (error) {
+    throw new Error(`Error al cargar zonas activas: ${error.message}`);
+  }
+
+  if (!data) {
     return [];
   }
 
@@ -88,7 +128,11 @@ export async function getMerchantDefaultPickup(
       notes: string | null;
     }>();
 
-  if (error || !data) {
+  if (error) {
+    throw new Error(`Error al cargar dirección de retiro del comercio: ${error.message}`);
+  }
+
+  if (!data) {
     return null;
   }
 
@@ -135,100 +179,13 @@ interface RawOfferItem {
   } | null;
 }
 
-export async function getMerchantRequests(
-  merchantId: string,
-  options?: GetMerchantRequestsOptions
-): Promise<{
-  requests: MerchantRequestSummary[];
-  metrics: MerchantMetrics;
-  nextCursor: MerchantHistoryCursor | null;
-}> {
-  const supabase = await createClient();
-  const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
-
-  let query = supabase
-    .from('delivery_requests')
-    .select(`
-      id,
-      approx_distance_m,
-      package_type,
-      recipient_payment_method,
-      needs_change,
-      cash_change_amount,
-      status,
-      expires_at,
-      created_at,
-      accepted_offer_id,
-      pickup_zone:zones!pickup_zone_id(name),
-      dropoff_zone:zones!dropoff_zone_id(name)
-    `)
-    .eq('merchant_id', merchantId)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(pageSize + 1);
-
-  if (options?.cursor?.createdAt && options?.cursor?.id) {
-    query = query.or(
-      `created_at.lt.${options.cursor.createdAt},and(created_at.eq.${options.cursor.createdAt},id.lt.${options.cursor.id})`
-    );
-  }
-
-  const { data: requestsData, error } = await query;
-
-  const fetchedRows = (requestsData as unknown as RawMerchantRequest[] | null) ?? [];
-  const hasMore = fetchedRows.length > pageSize;
-  const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
-  const lastItem = rawRequests.at(-1);
-  const nextCursor: MerchantHistoryCursor | null =
-    hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
-
-  if (error || !rawRequests.length) {
-    return {
-      requests: [],
-      metrics: {
-        dispatchedToday: 0,
-        avgRateArs: 0,
-        activeCount: 0,
-      },
-      nextCursor: null,
-    };
-  }
-
-  const requestIds = rawRequests.map((r) => r.id);
-  const offersCountMap = new Map<string, number>();
-
-  const { data: offersData } = await supabase
-    .from('offers')
-    .select('request_id')
-    .in('request_id', requestIds)
-    .eq('status', 'pending');
-
-  if (offersData) {
-    for (const off of offersData as Array<{ request_id: string }>) {
-      offersCountMap.set(off.request_id, (offersCountMap.get(off.request_id) ?? 0) + 1);
-    }
-  }
-
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-
-  let dispatchedToday = 0;
-  let activeCount = 0;
-
-  const requests: MerchantRequestSummary[] = rawRequests.map((req) => {
+function mapRawMerchantRequests(
+  rawRequests: RawMerchantRequest[],
+  offersCountMap: Map<string, number>
+): MerchantRequestSummary[] {
+  return rawRequests.map((req) => {
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
-
-    if (['published', 'matched', 'in_transit'].includes(req.status)) {
-      activeCount += 1;
-    }
-
-    if (
-      ['matched', 'in_transit', 'delivered'].includes(req.status) &&
-      req.created_at >= todayStart
-    ) {
-      dispatchedToday += 1;
-    }
 
     return {
       id: req.id,
@@ -246,12 +203,267 @@ export async function getMerchantRequests(
       acceptedOfferId: req.accepted_offer_id,
     };
   });
+}
+
+export async function getMerchantHistoryRequests(
+  merchantId: string,
+  options?: GetMerchantRequestsOptions
+): Promise<{
+  requests: MerchantRequestSummary[];
+  nextCursor: MerchantHistoryCursor | null;
+  status: HistoryFilterStatus;
+}> {
+  const supabase = await createClient();
+  const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
+  const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
+  const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
+
+  const cursorParsed = options?.cursor
+    ? merchantHistoryCursorSchema.safeParse(options.cursor)
+    : null;
+  const validCursor: MerchantHistoryCursor | null =
+    cursorParsed && cursorParsed.success ? cursorParsed.data : null;
+
+  let query = supabase
+    .from('delivery_requests')
+    .select(`
+      id,
+      approx_distance_m,
+      package_type,
+      recipient_payment_method,
+      needs_change,
+      cash_change_amount,
+      status,
+      expires_at,
+      created_at,
+      accepted_offer_id,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `)
+    .eq('merchant_id', merchantId);
+
+  if (status !== 'all') {
+    query = query.eq('status', status);
+  }
+
+  query = query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(pageSize + 1);
+
+  if (validCursor) {
+    query = query.or(
+      `created_at.lt.${validCursor.createdAt},and(created_at.eq.${validCursor.createdAt},id.lt.${validCursor.id})`
+    );
+  }
+
+  const { data: requestsData, error } = await query;
+
+  if (error) {
+    throw new Error(`Error al cargar historial de solicitudes: ${error.message}`);
+  }
+
+  const fetchedRows = (requestsData as unknown as RawMerchantRequest[] | null) ?? [];
+  const hasMore = fetchedRows.length > pageSize;
+  const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
+  const lastItem = rawRequests.at(-1);
+  const nextCursor: MerchantHistoryCursor | null =
+    hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
+
+  if (!rawRequests.length) {
+    return {
+      requests: [],
+      nextCursor: null,
+      status,
+    };
+  }
+
+  const requestIds = rawRequests.map((r) => r.id);
+  const offersCountMap = new Map<string, number>();
+
+  const { data: offersData, error: offersError } = await supabase
+    .from('offers')
+    .select('request_id')
+    .in('request_id', requestIds)
+    .eq('status', 'pending');
+
+  if (offersError) {
+    throw new Error(`Error al cargar conteo de ofertas: ${offersError.message}`);
+  }
+
+  if (offersData) {
+    for (const off of offersData as Array<{ request_id: string }>) {
+      offersCountMap.set(off.request_id, (offersCountMap.get(off.request_id) ?? 0) + 1);
+    }
+  }
 
   return {
-    requests,
+    requests: mapRawMerchantRequests(rawRequests, offersCountMap),
+    nextCursor,
+    status,
+  };
+}
+
+export async function getMerchantRequests(
+  merchantId: string,
+  options?: GetMerchantRequestsOptions
+): Promise<{
+  requests: MerchantRequestSummary[];
+  metrics: MerchantMetrics;
+  nextCursor: MerchantHistoryCursor | null;
+}> {
+  const supabase = await createClient();
+  const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
+  const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
+  const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
+
+  const cursorParsed = options?.cursor
+    ? merchantHistoryCursorSchema.safeParse(options.cursor)
+    : null;
+  const validCursor: MerchantHistoryCursor | null =
+    cursorParsed && cursorParsed.success ? cursorParsed.data : null;
+
+  let pageQuery = supabase
+    .from('delivery_requests')
+    .select(`
+      id,
+      approx_distance_m,
+      package_type,
+      recipient_payment_method,
+      needs_change,
+      cash_change_amount,
+      status,
+      expires_at,
+      created_at,
+      accepted_offer_id,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `)
+    .eq('merchant_id', merchantId);
+
+  if (status !== 'all') {
+    pageQuery = pageQuery.eq('status', status);
+  }
+
+  pageQuery = pageQuery
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(pageSize + 1);
+
+  if (validCursor) {
+    pageQuery = pageQuery.or(
+      `created_at.lt.${validCursor.createdAt},and(created_at.eq.${validCursor.createdAt},id.lt.${validCursor.id})`
+    );
+  }
+
+  const metricsQuery = supabase
+    .from('delivery_requests')
+    .select('id, status, created_at, accepted_offer_id')
+    .eq('merchant_id', merchantId);
+
+  const [pageResult, metricsResult] = await Promise.all([pageQuery, metricsQuery]);
+
+  if (pageResult.error) {
+    throw new Error(`Error al cargar solicitudes del comercio: ${pageResult.error.message}`);
+  }
+  if (metricsResult.error) {
+    throw new Error(`Error al cargar métricas del comercio: ${metricsResult.error.message}`);
+  }
+
+  const fetchedRows = (pageResult.data as unknown as RawMerchantRequest[] | null) ?? [];
+  const hasMore = fetchedRows.length > pageSize;
+  const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
+  const lastItem = rawRequests.at(-1);
+  const nextCursor: MerchantHistoryCursor | null =
+    hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
+
+  const allMerchantRows =
+    (metricsResult.data as unknown as Array<{
+      id: string;
+      status: string;
+      created_at: string;
+      accepted_offer_id: string | null;
+    }> | null) ?? rawRequests;
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+
+  let dispatchedToday = 0;
+  let activeCount = 0;
+  const acceptedOfferIds: string[] = [];
+
+  for (const row of allMerchantRows) {
+    if (['published', 'matched', 'in_transit'].includes(row.status)) {
+      activeCount += 1;
+    }
+    if (
+      ['matched', 'in_transit', 'delivered'].includes(row.status) &&
+      row.created_at >= todayStart
+    ) {
+      dispatchedToday += 1;
+    }
+    if (row.accepted_offer_id) {
+      acceptedOfferIds.push(row.accepted_offer_id);
+    }
+  }
+
+  let avgRateArs: number | null = null;
+  if (acceptedOfferIds.length > 0) {
+    const { data: acceptedOffersData, error: acceptedOffersError } = await supabase
+      .from('offers')
+      .select('amount_ars')
+      .in('id', acceptedOfferIds);
+
+    if (acceptedOffersError) {
+      throw new Error(`Error al cargar ofertas aceptadas: ${acceptedOffersError.message}`);
+    }
+
+    const validAmounts = (
+      (acceptedOffersData as Array<{ amount_ars: number }> | null) ?? []
+    ).filter((o) => typeof o.amount_ars === 'number' && o.amount_ars > 0);
+
+    if (validAmounts.length > 0) {
+      const sum = validAmounts.reduce((acc, item) => acc + item.amount_ars, 0);
+      avgRateArs = Math.round(sum / validAmounts.length);
+    }
+  }
+
+  if (!rawRequests.length) {
+    return {
+      requests: [],
+      metrics: {
+        dispatchedToday,
+        avgRateArs,
+        activeCount,
+      },
+      nextCursor: null,
+    };
+  }
+
+  const requestIds = rawRequests.map((r) => r.id);
+  const offersCountMap = new Map<string, number>();
+
+  const { data: offersData, error: offersError } = await supabase
+    .from('offers')
+    .select('request_id')
+    .in('request_id', requestIds)
+    .eq('status', 'pending');
+
+  if (offersError) {
+    throw new Error(`Error al cargar ofertas pendientes: ${offersError.message}`);
+  }
+
+  if (offersData) {
+    for (const off of offersData as Array<{ request_id: string }>) {
+      offersCountMap.set(off.request_id, (offersCountMap.get(off.request_id) ?? 0) + 1);
+    }
+  }
+
+  return {
+    requests: mapRawMerchantRequests(rawRequests, offersCountMap),
     metrics: {
       dispatchedToday,
-      avgRateArs: 0,
+      avgRateArs,
       activeCount,
     },
     nextCursor,
@@ -288,7 +500,11 @@ export async function getMerchantRequestWithOffers(
     .eq('merchant_id', merchantId)
     .maybeSingle<RawMerchantRequest & { notes: string | null }>();
 
-  if (requestError || !requestData) {
+  if (requestError) {
+    throw new Error(`Error al cargar detalle de solicitud: ${requestError.message}`);
+  }
+
+  if (!requestData) {
     return null;
   }
 
@@ -315,7 +531,7 @@ export async function getMerchantRequestWithOffers(
     acceptedOfferId: requestData.accepted_offer_id,
   };
 
-  const { data: offersData } = await supabase
+  const { data: offersData, error: offersError } = await supabase
     .from('offers')
     .select(`
       id,
@@ -335,6 +551,10 @@ export async function getMerchantRequestWithOffers(
     `)
     .eq('request_id', requestId)
     .order('created_at', { ascending: false });
+
+  if (offersError) {
+    throw new Error(`Error al cargar ofertas de la solicitud: ${offersError.message}`);
+  }
 
   const rawOffers = (offersData as unknown as RawOfferItem[] | null) ?? [];
 

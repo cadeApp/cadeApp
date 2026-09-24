@@ -1,12 +1,23 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
-import { CourierProfileView, type CourierProfileData } from '@/features/courier-onboarding';
+import {
+  CourierProfileView,
+  combineDniDocumentStatus,
+  type CourierProfileData,
+  type DocumentReviewStatus,
+  type CourierReviewStatus,
+} from '@/features/courier-onboarding';
 
 export default async function CourierProfilePage() {
   const supabase = await createClient();
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+
+  if (authError) {
+    throw new Error(`Error de sesión al consultar perfil de repartidor: ${authError.message}`);
+  }
 
   if (!user) {
     redirect('/login');
@@ -25,9 +36,9 @@ export default async function CourierProfilePage() {
       .maybeSingle<{
         vehicle_type: string | null;
         vehicle_plate: string | null;
-        license_status: string;
-        insurance_status: string;
-        status: string;
+        license_status: DocumentReviewStatus;
+        insurance_status: DocumentReviewStatus;
+        status: CourierReviewStatus;
       }>(),
     supabase
       .from('courier_documents')
@@ -35,24 +46,29 @@ export default async function CourierProfilePage() {
       .eq('courier_id', user.id),
   ]);
 
+  if (profileResult.error) {
+    throw new Error(`Error al consultar perfil de usuario: ${profileResult.error.message}`);
+  }
+
+  if (courierResult.error) {
+    throw new Error(`Error al consultar legajo de repartidor: ${courierResult.error.message}`);
+  }
+
+  if (docsResult.error) {
+    throw new Error(`Error al consultar documentos de repartidor: ${docsResult.error.message}`);
+  }
+
   const courier = courierResult.data;
   if (!courier) {
     return <CourierProfileView profile={null} />;
   }
 
-  const docs = (docsResult.data ?? []) as Array<{ kind: string; status: string }>;
-  const dniFront = docs.find((d) => d.kind === 'dni_front')?.status ?? 'none';
-  const dniBack = docs.find((d) => d.kind === 'dni_back')?.status ?? 'none';
-  const selfie = docs.find((d) => d.kind === 'selfie')?.status ?? 'none';
+  const docs = (docsResult.data ?? []) as Array<{ kind: string; status: DocumentReviewStatus }>;
+  const dniFront: DocumentReviewStatus = docs.find((d) => d.kind === 'dni_front')?.status ?? 'none';
+  const dniBack: DocumentReviewStatus = docs.find((d) => d.kind === 'dni_back')?.status ?? 'none';
+  const selfie: DocumentReviewStatus = docs.find((d) => d.kind === 'selfie')?.status ?? 'none';
 
-  const dniStatus =
-    dniFront === dniBack
-      ? dniFront
-      : dniFront === 'rejected' || dniBack === 'rejected'
-        ? 'rejected'
-        : dniFront === 'pending' || dniBack === 'pending'
-          ? 'pending'
-          : 'none';
+  const dniStatus = combineDniDocumentStatus(dniFront, dniBack);
 
   const profileData: CourierProfileData = {
     displayName: profileResult.data?.display_name ?? 'Sin nombre registrado',

@@ -488,7 +488,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                   )}
                 >
                   <span className="text-sm font-bold capitalize">{opt.label}</span>
-                  <span className="line-clamp-2 text-xs opacity-80">{opt.description}</span>
+                  <span className="line-clamp-2 text-sm opacity-80">{opt.description}</span>
                 </button>
               );
             })}

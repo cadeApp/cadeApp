@@ -99,7 +99,7 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
             <TrendingUp className="h-4 w-4" aria-hidden="true" />
           </div>
           <p className="mt-2 font-display text-2xl font-bold text-foreground">
-            {formatArs(metrics.avgRateArs)}
+            {metrics.avgRateArs !== null ? formatArs(metrics.avgRateArs) : 'Sin datos'}
           </p>
         </Card>
 

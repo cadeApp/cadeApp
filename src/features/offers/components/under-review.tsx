@@ -60,7 +60,7 @@ export function UnderReview({ onLogout, onCompleteDocs }: UnderReviewProps) {
                 )}
                 <span className="text-sm font-medium text-foreground">{doc.label}</span>
               </div>
-              <Badge variant={doc.uploaded ? 'verified' : 'outline'} className="text-xs">
+              <Badge variant={doc.uploaded ? 'verified' : 'outline'} className="text-sm">
                 {doc.uploaded ? OFFERS_COPY.docUploaded : OFFERS_COPY.docNotUploaded}
               </Badge>
             </div>
