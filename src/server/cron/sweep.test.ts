@@ -764,4 +764,172 @@ describe('runSweep logic', () => {
 
     await expect(runSweep()).rejects.toThrow('Failed to fetch platform_settings');
   });
+
+  it('falla y no actualiza courier_documents si el insert de audit_log de la purga falla (D02 / X20)', async () => {
+    const mockStorageRemove = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockDocUpdate = vi.fn();
+    const mockAuditInsert = vi
+      .fn()
+      .mockImplementation((entries: Array<{ target_type: string }>) => {
+        if (entries.some((e) => e.target_type === 'courier_document')) {
+          return Promise.resolve({ error: { message: 'Audit log table locked / insert failed' } });
+        }
+        return Promise.resolve({ error: null });
+      });
+
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'courier_documents') {
+        return {
+          select: vi.fn().mockReturnValue({
+            lte: vi.fn().mockReturnValue({
+              is: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 'doc-fail-audit',
+                    courier_id: 'courier-audit-fail',
+                    storage_path: 'courier-audit-fail/dni.jpg',
+                    purge_after: '2026-08-01T00:00:00Z',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+          update: mockDocUpdate,
+        };
+      }
+      if (table === 'delivery_requests') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              lte: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: { value: '0' }, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'merchants') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        };
+      }
+      if (table === 'audit_log') {
+        return { insert: mockAuditInsert };
+      }
+      return {};
+    });
+
+    setAdminClientMock({
+      from: mockFrom,
+      storage: {
+        from: vi.fn().mockReturnValue({
+          remove: mockStorageRemove,
+        }),
+      },
+    });
+
+    await expect(runSweep()).rejects.toThrow(
+      'Failed to insert audit_log for purged documents: Audit log table locked / insert failed'
+    );
+    expect(mockStorageRemove).toHaveBeenCalledWith(['courier-audit-fail/dni.jpg']);
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+  });
+
+  it('expira comercio justo cuando termina el último día de gracia en Aguilares (-03:00) y calcula el cutoff exacto (H12 / X18)', async () => {
+    // 2026-09-24T03:01:00.000Z es 2026-09-24 00:01:00 en Aguilares (-03:00)
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-24T03:01:00.000Z'));
+
+    const mockMerchantUpdateSelect = vi.fn().mockResolvedValue({
+      data: [{ profile_id: 'merchant-last-grace-day', paid_until: '2026-09-21' }],
+      error: null,
+    });
+    const mockMerchantUpdateOr = vi.fn().mockImplementation((condition: string) => {
+      // Si el cutoff no es 2026-09-21 (por ejemplo X18 que calcula 2026-09-20), no encuentra la fila
+      if (!condition.includes('paid_until.lte.2026-09-21')) {
+        return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+      }
+      return { select: mockMerchantUpdateSelect };
+    });
+    const mockMerchantUpdate = vi.fn().mockReturnValue({
+      in: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          or: mockMerchantUpdateOr,
+        }),
+      }),
+    });
+
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'delivery_requests' || table === 'courier_documents') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              lte: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            lte: vi.fn().mockReturnValue({
+              is: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { key: 'subscription_grace_days', value: '2' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'merchants') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  profile_id: 'merchant-last-grace-day',
+                  paid_until: '2026-09-21', // con 2 días de gracia venció el 2026-09-23 a las 23:59:59.999 (-03:00)
+                  subscription_status: 'active',
+                },
+              ],
+              error: null,
+            }),
+          }),
+          update: mockMerchantUpdate,
+        };
+      }
+      if (table === 'audit_log') {
+        return { insert: vi.fn().mockResolvedValue({ error: null }) };
+      }
+      return {};
+    });
+
+    setAdminClientMock({
+      from: mockFrom,
+      storage: {
+        from: vi.fn().mockReturnValue({
+          remove: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+      },
+    });
+
+    const result = await runSweep();
+    expect(result.expiredSubscriptionsCount).toBe(1);
+    expect(mockMerchantUpdateOr).toHaveBeenCalledWith(
+      expect.stringContaining('paid_until.lte.2026-09-21')
+    );
+  });
 });
