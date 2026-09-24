@@ -146,6 +146,22 @@ end;
 $$;
 select * from pg_temp.matrix();
 
+create function pg_temp.common_errors() returns setof text language plpgsql as $$
+declare c record; a integer;
+begin
+  for c in select * from rpc_cases loop
+    a := case when c.name in ('mark_picked_up','mark_delivered','courier_cancel_match') then 3 else 1 end;
+    return next is(pg_temp.invoke(0, format(c.call_sql, pg_temp.actor(20)))->>'error',
+      'UNAUTHENTICATED', c.name || ': sin sesión');
+    return next is(pg_temp.invoke(a, format(c.call_sql, null))->>'error',
+      'VALIDATION_ERROR', c.name || ': requestId nulo');
+    return next is(pg_temp.invoke(a, format(c.call_sql, pg_temp.actor(999)))->>'error',
+      'NOT_FOUND', c.name || ': solicitud inexistente');
+  end loop;
+end;
+$$;
+select * from pg_temp.common_errors();
+
 select pg_temp.fixture('draft');
 update public.platform_settings set value = 'false'::jsonb where key = 'pilot_active';
 update public.merchants set subscription_status = 'expired', paid_until = current_date - 5
@@ -210,6 +226,49 @@ select is((select published_at from public.delivery_requests where id = pg_temp.
 -- ≈1487 m esféricos x 1.30 = ≈1933 m, redondeo a 500 m => 2000.
 select is((select route_distance_m from public.delivery_requests where id = pg_temp.actor(20)), 2000,
   'distancia por centroides sin coordenadas privadas en la respuesta');
+
+-- Los límites se parametrizan a valores pequeños para demostrar que no están hardcodeados.
+select pg_temp.fixture('draft');
+update public.platform_settings set value = '1'::jsonb where key = 'max_request_publications_per_min';
+select ok(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20))) ? 'data',
+  'primera publicación dentro del cupo');
+select ok(pg_temp.invoke(1, format('select public.cancel_request(%L, null)', pg_temp.actor(20))) ? 'data',
+  'cancelar no consume cupo de publicación');
+select is(pg_temp.invoke(1, format('select public.republish_request(%L, null)', pg_temp.actor(20)))->>'error',
+  'RATE_LIMITED', 'publicar y republicar comparten límite');
+select is((select count from public.rate_limits where subject = pg_temp.actor(1)::text
+  and action = 'publish_request' and window_start = date_trunc('minute', now())), 1,
+  'rechazo no consume contador');
+select is((select status::text from public.delivery_requests where id = pg_temp.actor(20)),
+  'cancelled', 'rechazo por límite conserva solicitud');
+
+select pg_temp.fixture('matched');
+update public.platform_settings set value = '1'::jsonb where key = 'max_incidents_per_min';
+select ok(pg_temp.invoke(1, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
+  'primer incidente dentro del cupo');
+select is(pg_temp.invoke(1, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20)))->>'error',
+  'RATE_LIMITED', 'segundo incidente excede configuración dinámica');
+select is((select count(*)::integer from public.incidents where request_id = pg_temp.actor(20)), 1,
+  'incidente rechazado no se persiste');
+select ok(pg_temp.invoke(5, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
+  'otro actor conserva su propio cupo');
+
+select pg_temp.fixture('draft');
+update public.platform_settings set value = 'false'::jsonb where key = 'pilot_active';
+update public.platform_settings set value = '2'::jsonb where key = 'subscription_grace_days';
+update public.merchants set subscription_status = 'active',
+  paid_until = (now() at time zone 'America/Argentina/Buenos_Aires')::date - 2
+where profile_id = pg_temp.actor(1);
+select ok(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20))) ? 'data',
+  'suscripción activa admite último día de gracia de Argentina');
+
+select pg_temp.fixture('draft');
+update public.platform_settings set value = 'false'::jsonb where key = 'pilot_active';
+update public.merchants set subscription_status = 'active',
+  paid_until = (now() at time zone 'America/Argentina/Buenos_Aires')::date - 3
+where profile_id = pg_temp.actor(1);
+select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
+  'SUBSCRIPTION_INACTIVE', 'pasada la gracia se bloquea publicación');
 
 select * from finish();
 rollback;
