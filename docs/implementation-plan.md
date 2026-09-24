@@ -550,10 +550,13 @@ Las 36 vistas generadas en Stitch están archivadas en `docs/design/stitch/expor
 
 ### 12.8 Protocolo de implementación para agy y operadores
 
+La directiva operativa completa para las tareas visuales está en [`docs/design/visual-task-directive.md`](design/visual-task-directive.md). La ficha y esa directiva deben leerse antes de tomar T-008, T-111 a T-118, T-121 a T-124, T-201, T-202, T-204, T-205 o T-311.
+
 Al tomar cualquier tarea de UI (T-008, T-111 a T-118, T-121 a T-124):
 1. **Lectura previa obligatoria:** El agente debe consultar el `README.md` de la carpeta correspondiente en `docs/design/stitch/exports/` antes de escribir código.
 2. **Utilizar componentes de `src/ui/`:** No crear elementos HTML crudos con estilos en línea. Usar las primitivas shadcn/ui (`Button`, `Card`, `Input`, `Dialog`, `Skeleton`, etc.).
 3. **Respetar tokens semánticos:** Usar clases semánticas de Tailwind (`bg-primary`, `text-primary-foreground`, `border-border`, etc.) mapeadas a `src/ui/tokens.css`.
 4. **Respetar el piso de 14px:** Clampear todo texto secundario a `text-sm font-medium`.
 5. **No inventar datos fantasma:** Seguir estrictamente la lista de datos extirpados de §12.5.
+6. **Validar con evidencia:** Aplicar `implementar-diseno`, consultar los agentes de Frontend, Diseño y Persona de El Consejo, verificar en navegador a 390 px y 360 px y adjuntar capturas y diferencias deliberadas al PR. Si falta una referencia, descargarla con el MCP de Stitch en el worktree sin copiar HTML/CSS exportado al producto.
 
