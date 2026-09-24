@@ -68,3 +68,20 @@ justamente la columna que decidió. La guarda deja pasar exactamente la carrera 
 > (`status = 'published' and expires_at <= now`), y lo que se audita o se cuenta sale del `returning`/`.select()`
 > del `update`, no de la lista leída antes. Antes de escribir la guarda, se listan las transiciones de otras tareas
 > que tocan esas columnas.
+
+## Ronda 3
+
+### `AG-75` · Una batería de mutaciones escrita por quien arregla mide lo que quien arregla pensó
+
+**Origen:** `D02`, `H13`
+
+El agente trajo su propia batería (`evidencia/mut.mjs`) y reescribió la de la revisión: «14/14 en rojo, 0 ciegas».
+Era cierto. Pero sus 14 son las que la ronda 2 ya había escrito, rehechas para el código nuevo. Ninguna apunta a lo
+que el arreglo **agregó**: el orden de la purga, la guarda de `expires_at`, el corte de `paid_until`, las filas del
+`.select()`. Con las 10 que agregó la revisión para eso, aparecieron dos ciegas, y una es la que protege la
+auditoría de la destrucción de un DNI.
+
+> **Regla propuesta.** Cada ronda, quien revisa agrega una mutación por cada cosa que el arreglo introdujo, y no
+> reusa la batería del autor como control. La del autor sirve como evidencia de su trabajo; la verificación sale de
+> la de la revisión. Y la evidencia de rondas anteriores no se reescribe: si una mutación ya no aplica, se agrega la
+> nueva al lado.
