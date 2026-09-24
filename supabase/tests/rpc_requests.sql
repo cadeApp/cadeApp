@@ -430,9 +430,9 @@ select is((select cancel_reason from public.delivery_requests where id = pg_temp
   'Operativo', 'M08: cancel_request persiste cancel_reason cuando termina en cancelled');
 select is((select accepted_offer_id from public.delivery_requests where id = pg_temp.actor(20)),
   null::uuid, 'M09c: cancel_request limpia accepted_offer_id al cancelar');
-select is((select count(*)::int from public.audit_log where target_table = 'delivery_requests' and target_id = pg_temp.actor(20)::text and action = 'admin_cancel_in_transit'),
+select is((select count(*)::int from public.audit_log where target_type = 'delivery_request' and target_id = pg_temp.actor(20)::text and action = 'cancel_request'),
   1, 'M11: admin cancel_request en in_transit inserta fila en audit_log');
-select is((select array_agg(k order by k) from jsonb_object_keys((select after from public.audit_log where target_table = 'delivery_requests' and target_id = pg_temp.actor(20)::text and action = 'admin_cancel_in_transit' limit 1)) as t(k)),
+select is((select array_agg(k order by k) from jsonb_object_keys((select after from public.audit_log where target_type = 'delivery_request' and target_id = pg_temp.actor(20)::text and action = 'cancel_request' limit 1)) as t(k)),
   array['status'], 'M12 / H09: audit_log.after contiene únicamente la clave status sin motivo libre');
 
 -- D03: admin sin AAL2 recibe AAL2_REQUIRED en cancel_request sobre in_transit

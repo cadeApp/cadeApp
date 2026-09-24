@@ -594,6 +594,7 @@ export type Database = {
           actor_id: string | null
           created_at: string
           id: string
+          offer_id: string | null
           reason: string
           request_id: string
         }
@@ -602,6 +603,7 @@ export type Database = {
           actor_id?: string | null
           created_at?: string
           id?: string
+          offer_id?: string | null
           reason: string
           request_id: string
         }
@@ -610,6 +612,7 @@ export type Database = {
           actor_id?: string | null
           created_at?: string
           id?: string
+          offer_id?: string | null
           reason?: string
           request_id?: string
         }
@@ -619,6 +622,13 @@ export type Database = {
             columns: ["actor_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_cancellation_reasons_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
             referencedColumns: ["id"]
           },
           {
