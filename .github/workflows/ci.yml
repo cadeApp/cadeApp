@@ -209,6 +209,10 @@ jobs:
   bundle-budget:
     name: bundle-budget
     needs: build
+    # T-010: sin un if propio, el success() implícito mira toda la cadena de needs, y un
+    # `changes` salteado (repositorio público, PR recién abierta) salteaba este job aunque
+    # build hubiera pasado. Lo mostró la primera corrida real de la PR #74.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

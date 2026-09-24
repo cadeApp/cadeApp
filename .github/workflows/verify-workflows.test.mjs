@@ -459,7 +459,16 @@ test('each heavy job runs unless the decision proved a skip', () => {
       `${nombre} no tiene la condicion que corre todo ante la duda`
     );
   }
-  assert.match(job(ci, 'bundle-budget'), /\n {4}needs: build\n/);
+  const budget = job(ci, 'bundle-budget');
+  assert.match(budget, /\n {4}needs: build\n/);
+  // Sin un if propio, el success() implicito de GitHub mira toda la cadena de needs: con
+  // `changes` salteado (repo publico, PR recien abierta) bundle-budget quedaba salteado
+  // aunque build pasara. No lo vio ninguna prueba local; lo mostro la primera corrida real
+  // de la PR #74 (run 35942161677: build success, bundle-budget skipped).
+  assert.ok(
+    budget.includes("if: ${{ !cancelled() && needs.build.result == 'success' }}"),
+    'bundle-budget tiene que correr siempre que build haya pasado'
+  );
 });
 
 test('the decision job does not start while the repository is public', () => {
