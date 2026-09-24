@@ -29,7 +29,11 @@ export interface SupabaseRpcCaller {
   ): PromiseLike<SupabaseRpcResponse<unknown>>;
 }
 
-type OfferRpcName = 'submit_offer' | 'withdraw_offer' | 'set_availability';
+type OfferRpcName =
+  | 'submit_offer'
+  | 'withdraw_offer'
+  | 'accept_offer'
+  | 'set_availability';
 
 function isAllowedOfferRpcError<K extends OfferRpcName>(
   rpcName: K,
@@ -41,9 +45,9 @@ function isAllowedOfferRpcError<K extends OfferRpcName>(
 
 /**
  * Maps a PostgREST / Postgres error returned by `submit_offer`, `withdraw_offer`,
- * or `set_availability` into the strict `RpcErrorCode<K>` union declared in
+ * `accept_offer`, or `set_availability` into the strict `RpcErrorCode<K>` union declared in
  * `@/domain/rpc-contracts`. Unrecognized infrastructure/database errors fall back
- * to `INTERNAL_ERROR` (D03 / H02).
+ * to `INTERNAL_ERROR` (D03 / H02 / CC-001 / CC-003).
  */
 export function mapOfferRpcError<K extends OfferRpcName>(
   rpcName: K,
@@ -66,6 +70,17 @@ export function mapOfferRpcError<K extends OfferRpcName>(
     isAllowedOfferRpcError(rpcName, 'DUPLICATE_ACTIVE_OFFER')
   ) {
     return 'DUPLICATE_ACTIVE_OFFER';
+  }
+
+  // Defense in depth (H05): `public.accept_offer` catches `unique_violation` (23505)
+  // inside its PL/pgSQL block and raises `P0001` ('ALREADY_MATCHED'), so PostgREST
+  // normally receives `P0001`. This branch guards against a raw `23505` if the index
+  // `offers_one_accepted_per_request_idx` ever surfaces directly.
+  if (
+    error.code === '23505' &&
+    isAllowedOfferRpcError(rpcName, 'ALREADY_MATCHED')
+  ) {
+    return 'ALREADY_MATCHED';
   }
 
   if (
@@ -147,6 +162,37 @@ export async function withdrawOfferRpc(
 }
 
 /**
+ * Typed server wrapper for `public.accept_offer(p_offer_id)`.
+ */
+export async function acceptOfferRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<
+  ActionResult<RpcOutput<'accept_offer'>, RpcErrorCode<'accept_offer'>>
+> {
+  const parsedInput = RPC_CONTRACTS.accept_offer.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { offerId } = parsedInput.data;
+  const { data, error } = await client.rpc('accept_offer', {
+    p_offer_id: offerId,
+  });
+
+  if (error) {
+    return err(mapOfferRpcError('accept_offer', error));
+  }
+
+  const parsedOutput = RPC_CONTRACTS.accept_offer.outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return ok(parsedOutput.data);
+}
+
+/**
  * Typed server wrapper for `public.set_availability(p_available)`.
  */
 export async function setAvailabilityRpc(
@@ -181,17 +227,18 @@ export async function setAvailabilityRpc(
 
 /**
  * Creates a server-side RPC client implementing the `submit_offer`,
- * `withdraw_offer`, and `set_availability` methods of `RpcClientContract`.
+ * `withdraw_offer`, `accept_offer`, and `set_availability` methods of `RpcClientContract`.
  */
 export function createOffersRpcServerClient(
   client: SupabaseRpcCaller,
 ): Pick<
   RpcClientContract,
-  'submit_offer' | 'withdraw_offer' | 'set_availability'
+  'submit_offer' | 'withdraw_offer' | 'accept_offer' | 'set_availability'
 > {
   return {
     submit_offer: (input) => submitOfferRpc(client, input),
     withdraw_offer: (input) => withdrawOfferRpc(client, input),
+    accept_offer: (input) => acceptOfferRpc(client, input),
     set_availability: (input) => setAvailabilityRpc(client, input),
   };
 }

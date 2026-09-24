@@ -617,6 +617,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      accept_offer: { Args: { p_offer_id: string }; Returns: Json }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
       submit_offer: {
         Args: {

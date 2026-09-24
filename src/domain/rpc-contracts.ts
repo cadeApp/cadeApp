@@ -378,6 +378,18 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * Precedencia canónica de errores de `accept_offer` (CC-003 — compartida entre
+   * `supabase/migrations/20260923170000_rpc_accept_offer_v1.sql` y `src/domain/testing/rpc-fake.ts`):
+   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
+   *   2. Parámetros de entrada (`VALIDATION_ERROR`: `offerId`)
+   *   3. Existencia de oferta, solicitud y repartidor (`NOT_FOUND`)
+   *   4. Titularidad del comercio sobre la solicitud (`UNAUTHORIZED_ACTOR` si `merchant_id <> auth.uid()`)
+   *   5. Idempotencia y competencia (`idempotent: true` si `status = 'matched'` y `accepted_offer_id = offerId` → `ALREADY_MATCHED` si `status = 'matched'` con otra oferta)
+   *   6. Solicitud (`REQUEST_EXPIRED` si `status = 'published'` y `expires_at <= now()`, sin persistir transición → `INVALID_STATE_TRANSITION` si `status <> 'published'`)
+   *   7. Estado de la oferta (`OFFER_NOT_PENDING` si `status <> 'pending'`)
+   *   8. Elegibilidad del repartidor al aceptar (`COURIER_SUSPENDED` → `COURIER_NOT_APPROVED`)
+   */
   accept_offer: {
     inputSchema: acceptOfferInputSchema,
     outputSchema: acceptOfferOutputSchema,
@@ -392,6 +404,7 @@ export const RPC_CONTRACTS = {
       'COURIER_SUSPENDED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   mark_picked_up: {
