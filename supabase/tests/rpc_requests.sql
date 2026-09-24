@@ -24,16 +24,17 @@ create function pg_temp.fixture(p_status text) returns void language plpgsql as 
 begin
   update public.delivery_requests set accepted_offer_id = null where id = pg_temp.actor(20);
   delete from public.request_cancellation_reasons where request_id = pg_temp.actor(20);
-  delete from public.audit_log where target_id = pg_temp.actor(20);
+  delete from public.audit_log where target_id = pg_temp.actor(20)::text;
   delete from public.incidents where request_id = pg_temp.actor(20);
   delete from public.offers where request_id = pg_temp.actor(20);
   delete from public.delivery_requests where id = pg_temp.actor(20);
   delete from public.rate_limits where subject in
     (pg_temp.actor(1)::text, pg_temp.actor(3)::text, pg_temp.actor(5)::text);
   update public.merchants set subscription_status = 'pilot', paid_until = null
-  where profile_id = pg_temp.actor(1);
-  update public.couriers set status = 'approved', available = true
-  where profile_id = pg_temp.actor(3);
+  where profile_id in (pg_temp.actor(1), pg_temp.actor(2));
+  insert into public.couriers (profile_id, status, available)
+  values (pg_temp.actor(3), 'approved', true), (pg_temp.actor(4), 'approved', true)
+  on conflict (profile_id) do update set status = 'approved', available = true;
   update public.platform_settings set value = 'true'::jsonb where key = 'pilot_active';
   update public.platform_settings set value = '30'::jsonb where key = 'request_ttl_minutes';
   insert into public.delivery_requests (
@@ -430,9 +431,9 @@ select is((select cancel_reason from public.delivery_requests where id = pg_temp
   'Operativo', 'M08: cancel_request persiste cancel_reason cuando termina en cancelled');
 select is((select accepted_offer_id from public.delivery_requests where id = pg_temp.actor(20)),
   null::uuid, 'M09c: cancel_request limpia accepted_offer_id al cancelar');
-select is((select count(*)::int from public.audit_log where target_table = 'delivery_requests' and target_id = pg_temp.actor(20) and action = 'admin_cancel_in_transit'),
+select is((select count(*)::int from public.audit_log where target_table = 'delivery_requests' and target_id = pg_temp.actor(20)::text and action = 'admin_cancel_in_transit'),
   1, 'M11: admin cancel_request en in_transit inserta fila en audit_log');
-select is((select array_agg(k order by k) from jsonb_object_keys((select after from public.audit_log where target_table = 'delivery_requests' and target_id = pg_temp.actor(20) and action = 'admin_cancel_in_transit' limit 1)) as t(k)),
+select is((select array_agg(k order by k) from jsonb_object_keys((select after from public.audit_log where target_table = 'delivery_requests' and target_id = pg_temp.actor(20)::text and action = 'admin_cancel_in_transit' limit 1)) as t(k)),
   array['status'], 'M12 / H09: audit_log.after contiene únicamente la clave status sin motivo libre');
 
 -- D03: admin sin AAL2 recibe AAL2_REQUIRED en cancel_request sobre in_transit
@@ -458,144 +459,110 @@ where id = pg_temp.actor(20);
 select is((pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->'data'->>'routeDistanceM')::int,
   500, 'H07: publish_request aplica piso de 500 m cuando puntos distintos distan menos de 500 m');
 
--- D01 / H01 / H02: tabla de doble falla S01..S15 y controles de alcanzabilidad C01..C04
+-- D01 / H01 / H02: tabla de doble falla S01..S15 y controles C01..C04 (idéntica a domain.test.ts y ronda-1.md)
 create function pg_temp.check_d01() returns setof text language plpgsql as $$
 begin
-  -- S01: 6 vs 8 en publish_request (draft expirada + rate_limits agotado -> REQUEST_EXPIRED)
-  perform pg_temp.fixture('draft');
-  update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  insert into public.rate_limits (subject, action, window_start, count)
-  values (pg_temp.actor(1)::text, 'publish_request', date_trunc('minute', now()), 1);
-  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'REQUEST_EXPIRED', 'S01: 6 (REQUEST_EXPIRED) precede a 8 (RATE_LIMITED)');
-
-  -- S02: 8a vs 8b en publish_request (draft con suscripción inactiva + rate_limits agotado -> SUBSCRIPTION_INACTIVE)
-  perform pg_temp.fixture('draft');
-  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
-  insert into public.rate_limits (subject, action, window_start, count)
-  values (pg_temp.actor(1)::text, 'publish_request', date_trunc('minute', now()), 1);
-  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'SUBSCRIPTION_INACTIVE', 'S02: 8a (SUBSCRIPTION_INACTIVE) precede a 8b (RATE_LIMITED)');
-
-  -- S03: 6 vs 7 en publish_request (published con expires_at vencido -> REQUEST_EXPIRED)
+  -- S01: admin cancela published -> INVALID_STATE_TRANSITION
   perform pg_temp.fixture('published');
-  update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'REQUEST_EXPIRED', 'S03: 6 (REQUEST_EXPIRED) precede a 7 (INVALID_STATE_TRANSITION) en publish_request');
+  return next is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Motivo'))->>'error',
+    'INVALID_STATE_TRANSITION', 'S01: admin cancela published -> INVALID_STATE_TRANSITION');
 
-  -- S04: 7 vs 8 en publish_request (published no expirada + suscripción inactiva -> INVALID_STATE_TRANSITION)
-  perform pg_temp.fixture('published');
-  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
-  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'INVALID_STATE_TRANSITION', 'S04: 7 (INVALID_STATE_TRANSITION) precede a 8 (SUBSCRIPTION_INACTIVE) en publish_request');
-
-  -- S05: 7 vs 8 en publish_request (published no expirada + rate_limits agotado -> INVALID_STATE_TRANSITION)
-  perform pg_temp.fixture('published');
-  insert into public.rate_limits (subject, action, window_start, count)
-  values (pg_temp.actor(1)::text, 'publish_request', date_trunc('minute', now()), 1);
-  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'INVALID_STATE_TRANSITION', 'S05: 7 (INVALID_STATE_TRANSITION) precede a 8 (RATE_LIMITED) en publish_request');
-
-  -- S06: 5 vs 8 en publish_request (draft de otro comercio + suscripción inactiva del llamador -> UNAUTHORIZED_ACTOR)
-  perform pg_temp.fixture('draft');
-  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(2);
-  return next is(pg_temp.invoke(2, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'UNAUTHORIZED_ACTOR', 'S06: 5 (UNAUTHORIZED_ACTOR) precede a 8 (SUBSCRIPTION_INACTIVE)');
-
-  -- S07: 5 vs 6 en publish_request (draft expirada de otro comercio -> UNAUTHORIZED_ACTOR)
-  perform pg_temp.fixture('draft');
-  update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  return next is(pg_temp.invoke(2, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'UNAUTHORIZED_ACTOR', 'S07: 5 (UNAUTHORIZED_ACTOR) precede a 6 (REQUEST_EXPIRED)');
-
-  -- S08: 5 vs 7 en publish_request (published de otro comercio -> UNAUTHORIZED_ACTOR)
-  perform pg_temp.fixture('published');
-  return next is(pg_temp.invoke(2, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'UNAUTHORIZED_ACTOR', 'S08: 5 (UNAUTHORIZED_ACTOR) precede a 7 (INVALID_STATE_TRANSITION)');
-
-  -- S09: 6 vs 8 en mark_picked_up (matched con expires_at vencido + courier suspended -> REQUEST_EXPIRED)
+  -- S02: admin cancela matched -> INVALID_STATE_TRANSITION
   perform pg_temp.fixture('matched');
-  update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(3);
-  return next is(pg_temp.invoke(3, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->>'error',
-    'REQUEST_EXPIRED', 'S09: 6 (REQUEST_EXPIRED) precede a 8 (COURIER_NOT_APPROVED) en mark_picked_up');
+  return next is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Motivo'))->>'error',
+    'INVALID_STATE_TRANSITION', 'S02: admin cancela matched -> INVALID_STATE_TRANSITION');
 
-  -- S10: 7 vs 8 en mark_picked_up (published con courier asignado pero suspended -> INVALID_STATE_TRANSITION)
-  perform pg_temp.fixture('matched');
-  update public.delivery_requests set status = 'published' where id = pg_temp.actor(20);
-  update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(3);
-  return next is(pg_temp.invoke(3, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->>'error',
-    'INVALID_STATE_TRANSITION', 'S10: 7 (INVALID_STATE_TRANSITION) precede a 8 (COURIER_NOT_APPROVED) en mark_picked_up');
+  -- S03: comercio cancela in_transit -> INVALID_STATE_TRANSITION
+  perform pg_temp.fixture('in_transit');
+  return next is(pg_temp.invoke(1, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Motivo'))->>'error',
+    'INVALID_STATE_TRANSITION', 'S03: comercio cancela in_transit -> INVALID_STATE_TRANSITION');
 
-  -- S11: 6 vs 7 en cancel_request (published con expires_at vencido -> REQUEST_EXPIRED)
+  -- S04: comercio ajeno cancela published vencida -> UNAUTHORIZED_ACTOR (no revela vencimiento)
   perform pg_temp.fixture('published');
   update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  return next is(pg_temp.invoke(1, format('select public.cancel_request(%L, null)', pg_temp.actor(20)))->>'error',
-    'REQUEST_EXPIRED', 'S11: 6 (REQUEST_EXPIRED) precede a 7 (INVALID_STATE_TRANSITION) en cancel_request');
+  return next is(pg_temp.invoke(2, format('select public.cancel_request(%L, null)', pg_temp.actor(20)))->>'error',
+    'UNAUTHORIZED_ACTOR', 'S04: comercio ajeno cancela published vencida -> UNAUTHORIZED_ACTOR');
 
-  -- S12: 6 vs 8 en report_no_show (matched con expires_at vencido + suscripción inactiva -> REQUEST_EXPIRED)
-  perform pg_temp.fixture('matched');
+  -- S05: incidente sobre published vencida -> INVALID_STATE_TRANSITION (expiración perezosa)
+  perform pg_temp.fixture('published');
   update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
-  return next is(pg_temp.invoke(1, format('select public.report_no_show(%L, true)', pg_temp.actor(20)))->>'error',
-    'REQUEST_EXPIRED', 'S12: 6 (REQUEST_EXPIRED) precede a 8 (SUBSCRIPTION_INACTIVE) en report_no_show');
+  return next is(pg_temp.invoke(1, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Demora de prueba'))->>'error',
+    'INVALID_STATE_TRANSITION', 'S05: report_incident sobre published vencida -> INVALID_STATE_TRANSITION');
 
-  -- S13: 7 vs 8 en republish_request (draft no expirada + suscripción inactiva -> INVALID_STATE_TRANSITION)
-  perform pg_temp.fixture('draft');
-  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
-  return next is(pg_temp.invoke(1, format('select public.republish_request(%L, null)', pg_temp.actor(20)))->>'error',
-    'INVALID_STATE_TRANSITION', 'S13: 7 (INVALID_STATE_TRANSITION) precede a 8 (SUBSCRIPTION_INACTIVE) en republish_request');
-
-  -- S14: 7 vs 8 en report_incident (cancelled con courier asignado suspended -> INVALID_STATE_TRANSITION)
-  perform pg_temp.fixture('matched');
-  update public.delivery_requests set status = 'cancelled' where id = pg_temp.actor(20);
-  update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(3);
-  return next is(pg_temp.invoke(3, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Detalle de prueba'))->>'error',
-    'INVALID_STATE_TRANSITION', 'S14: 7 (INVALID_STATE_TRANSITION) precede a 8 (COURIER_NOT_APPROVED) en report_incident');
-
-  -- S15: 7 vs 8 en report_incident (cancelled con comercio de suscripción inactiva -> INVALID_STATE_TRANSITION)
-  perform pg_temp.fixture('cancelled');
-  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
-  return next is(pg_temp.invoke(1, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Detalle de prueba'))->>'error',
-    'INVALID_STATE_TRANSITION', 'S15: 7 (INVALID_STATE_TRANSITION) precede a 8 (SUBSCRIPTION_INACTIVE) en report_incident');
-
-  -- H01: 5 vs 8 en report_incident (tercero no participante con perfil inactivo -> UNAUTHORIZED_ACTOR)
+  -- S06 (H01a): courier ajeno y suspendido reporta incidente sobre matched -> UNAUTHORIZED_ACTOR
   perform pg_temp.fixture('matched');
   update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(4);
-  return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Detalle de prueba'))->>'error',
-    'UNAUTHORIZED_ACTOR', 'H01a: courier ajeno suspendido recibe UNAUTHORIZED_ACTOR antes que COURIER_NOT_APPROVED');
+  return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Demora de prueba'))->>'error',
+    'UNAUTHORIZED_ACTOR', 'S06 / H01a: courier ajeno suspendido en report_incident -> UNAUTHORIZED_ACTOR');
 
+  -- S07: republish_request con suscripción vencida sobre draft -> INVALID_STATE_TRANSITION
+  perform pg_temp.fixture('draft');
+  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
+  return next is(pg_temp.invoke(1, format('select public.republish_request(%L, %L)', pg_temp.actor(20), 'Motivo'))->>'error',
+    'INVALID_STATE_TRANSITION', 'S07: republish_request sobre draft con suscripción vencida -> INVALID_STATE_TRANSITION');
+
+  -- S08: republish_request con suscripción vencida sobre matched sin motivo -> REASON_REQUIRED
+  perform pg_temp.fixture('matched');
+  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
+  return next is(pg_temp.invoke(1, format('select public.republish_request(%L, null)', pg_temp.actor(20)))->>'error',
+    'REASON_REQUIRED', 'S08: republish_request sobre matched sin motivo con suscripción vencida -> REASON_REQUIRED');
+
+  -- S09: report_no_show con suscripción vencida sobre published -> INVALID_STATE_TRANSITION
+  perform pg_temp.fixture('published');
+  update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
+  return next is(pg_temp.invoke(1, format('select public.report_no_show(%L, true)', pg_temp.actor(20)))->>'error',
+    'INVALID_STATE_TRANSITION', 'S09: report_no_show sobre published con suscripción vencida -> INVALID_STATE_TRANSITION');
+
+  -- S10: report_no_show por comercio ajeno con suscripción vencida sobre matched -> UNAUTHORIZED_ACTOR
   perform pg_temp.fixture('matched');
   update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(2);
-  return next is(pg_temp.invoke(2, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Detalle de prueba'))->>'error',
-    'UNAUTHORIZED_ACTOR', 'H01b: comercio ajeno con suscripción vencida recibe UNAUTHORIZED_ACTOR');
+  return next is(pg_temp.invoke(2, format('select public.report_no_show(%L, true)', pg_temp.actor(20)))->>'error',
+    'UNAUTHORIZED_ACTOR', 'S10: report_no_show por comercio ajeno con suscripción vencida -> UNAUTHORIZED_ACTOR');
 
-  -- H02: republish_request sobre solicitud published con expires_at vencido republica sin esperar al cron
+  -- S11: courier ajeno marca retirado una published -> UNAUTHORIZED_ACTOR
+  perform pg_temp.fixture('published');
+  return next is(pg_temp.invoke(4, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->>'error',
+    'UNAUTHORIZED_ACTOR', 'S11: courier ajeno en mark_picked_up sobre published -> UNAUTHORIZED_ACTOR');
+
+  -- S12: courier ajeno marca retirado una draft -> UNAUTHORIZED_ACTOR
+  perform pg_temp.fixture('draft');
+  return next is(pg_temp.invoke(4, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->>'error',
+    'UNAUTHORIZED_ACTOR', 'S12: courier ajeno en mark_picked_up sobre draft -> UNAUTHORIZED_ACTOR');
+
+  -- S13: publish_request sobre matched -> INVALID_STATE_TRANSITION
+  perform pg_temp.fixture('matched');
+  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
+    'INVALID_STATE_TRANSITION', 'S13: publish_request sobre matched -> INVALID_STATE_TRANSITION');
+
+  -- S14 (H01b): courier ajeno sin registro en couriers reporta incidente sobre matched -> UNAUTHORIZED_ACTOR
+  perform pg_temp.fixture('matched');
+  delete from public.couriers where profile_id = pg_temp.actor(4);
+  return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Demora de prueba'))->>'error',
+    'UNAUTHORIZED_ACTOR', 'S14 / H01b: courier ajeno sin registro en couriers en report_incident -> UNAUTHORIZED_ACTOR');
+
+  -- S15 (H02): republish_request sobre published con expires_at vencido republica sin esperar al cron
   perform pg_temp.fixture('published');
   update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  return next is(pg_temp.invoke(1, format('select public.republish_request(%L, %L)', pg_temp.actor(20), 'Expiró sin ofertas'))->'data'->>'status',
-    'published', 'H02: republish_request republica solicitud published cuyo expires_at ya venció');
+  return next is(pg_temp.invoke(1, format('select public.republish_request(%L, null)', pg_temp.actor(20)))->'data'->>'status',
+    'published', 'S15 / H02: republish_request sobre published vencida republica sin esperar al cron');
 
-  -- Controles de alcanzabilidad C01..C04 (prueban que el código perdedor sigue vivo cuando la guarda previa pasa)
-  perform pg_temp.fixture('draft');
-  insert into public.rate_limits (subject, action, window_start, count)
-  values (pg_temp.actor(1)::text, 'publish_request', date_trunc('minute', now()), 1);
-  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'RATE_LIMITED', 'C01: RATE_LIMITED sigue alcanzable en publish_request');
+  -- Controles C01..C04
+  perform pg_temp.fixture('published');
+  return next is(pg_temp.invoke(1, format('select public.cancel_request(%L, null)', pg_temp.actor(20)))->'data'->>'status',
+    'cancelled', 'C01: comercio cancela published vigente -> cancelled');
+
+  perform pg_temp.fixture('matched');
+  return next is(pg_temp.invoke(3, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->'data'->>'status',
+    'in_transit', 'C02: courier asignado retira matched -> in_transit');
 
   perform pg_temp.fixture('draft');
   update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
   return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'SUBSCRIPTION_INACTIVE', 'C02: SUBSCRIPTION_INACTIVE sigue alcanzable en publish_request');
+    'SUBSCRIPTION_INACTIVE', 'C03: publish_request sobre draft con suscripción vencida -> SUBSCRIPTION_INACTIVE');
 
-  perform pg_temp.fixture('matched');
-  update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(3);
-  return next is(pg_temp.invoke(3, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->>'error',
-    'COURIER_NOT_APPROVED', 'C03: COURIER_NOT_APPROVED sigue alcanzable en mark_picked_up');
-
-  perform pg_temp.fixture('published');
-  return next is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
-    'INVALID_STATE_TRANSITION', 'C04: INVALID_STATE_TRANSITION sigue alcanzable en publish_request');
+  perform pg_temp.fixture('expired');
+  return next is(pg_temp.invoke(1, format('select public.republish_request(%L, null)', pg_temp.actor(20)))->'data'->>'status',
+    'published', 'C04: republish_request sobre expired -> published');
 end;
 $$;
 select * from pg_temp.check_d01();

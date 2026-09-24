@@ -857,9 +857,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (effectiveStatus !== 'matched') {
           return err('INVALID_STATE_TRANSITION');
         }
-        if (!input.reason || input.reason.trim().length === 0) {
-          return err('REASON_REQUIRED');
-        }
 
         const cancelledOfferId = req.acceptedOfferId;
         const acceptedOffer = cancelledOfferId ? offers.get(cancelledOfferId) : undefined;

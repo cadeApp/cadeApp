@@ -1716,6 +1716,85 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         // D03: admin en in_transit sin aal2 recibe AAL2_REQUIRED; con aal2 acepta
         expect(code(await mk('in_transit', adminAal1).cancel_request({ requestId: REQ_1, reason: 'Sin MFA' }))).toBe('AAL2_REQUIRED');
         expect(code(await mk('in_transit', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('ok');
+        expect(code(await mk('published', merch, { expiresAt: past }).cancel_request({ requestId: REQ_1 }))).toBe('REQUEST_EXPIRED');
+        expect(code(await mk('matched', merch).cancel_request({ requestId: REQ_1 }))).toBe('REASON_REQUIRED');
+
+        // Cobertura directa de ramas de transitionRequest y fecha civil en canMerchantPublishRequest
+        expect(
+          canMerchantPublishRequest({
+            subscriptionStatus: 'active',
+            pilotActive: false,
+            paidUntil: '2026-09-25',
+            graceDays: 0,
+            now,
+          })
+        ).toEqual({ ok: true, data: true });
+        expect(
+          transitionRequest({
+            from: 'published',
+            to: 'cancelled',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'expire_all_pending' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'in_transit',
+            actor: 'courier',
+            isAssignedCourier: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'in_transit', offerSideEffect: 'none' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'published',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            reason: 'No show',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'published', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'published',
+            actor: 'courier',
+            isAssignedCourier: true,
+            reason: 'Pinchadura',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'published', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'cancelled',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            reason: 'Cliente canceló',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'delivered',
+            actor: 'courier',
+            isAssignedCourier: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'delivered', offerSideEffect: 'none' } });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'cancelled',
+            actor: 'admin',
+            reason: 'Incidente operativo',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
       });
     });
   });
