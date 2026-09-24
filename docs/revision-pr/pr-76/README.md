@@ -1,43 +1,39 @@
 # PR #76 — T-113 · Mis solicitudes, ofertas en tiempo real y aceptar oferta
 
-| | |
-|---|---|
-| **PR** | https://github.com/cadeApp/cadeApp/pull/76 |
-| **Tarea** | T-113 (Fase 1: Núcleo transaccional y flujos) |
-| **Autor** | @asako669 (P2) |
-| **Rama** | `feat/T-113-requests-offers` → `develop` |
-| **Base** | `develop` @ `b6b5f39` |
-| **Tamaño** | 3 archivos, +455 líneas |
-| **Estado** | abierta (Draft) |
+> ✅ **Lista para aceptar · 0 bloqueantes · 8 de 8 cerrados y verificados**  
+> Ronda 1 con 6 bloqueantes; Ronda 2 con implementación completa y CI leído por dentro (305 tests en verde).
+
+|                   |                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| **PR**            | [#76](https://github.com/cadeApp/cadeApp/pull/76) · `feat/T-113-requests-offers` → `develop` |
+| **Tarea / issue** | [`T-113`](../../tasks/T-113.md) · Issue #19                                                  |
+| **Autor**         | asako669 (agy)                                                                               |
+| **Revisión**      | independiente — no es el agy que implementó                                                  |
+| **SHA final**     | `e845ed3` · base `origin/develop` = `b6b5f39` al abrir la revisión                           |
+| **Alcance**       | 25 archivos en el diff · **0 fuera** de «Archivos permitidos»                                |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
-|---|---|---|---|
-| 1 | `d0470aa` | 6 (5 bloqueantes, 1 mejora) | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| Ronda | SHA       | Resultado                                           | Informe                               |
+| ----- | --------- | --------------------------------------------------- | ------------------------------------- |
+| 1     | `d0470aa` | ❌ 6 bloqueantes · 2 mejoras · 0 decisiones         | [`ronda-1.md`](revisiones/ronda-1.md) |
+| 2     | `e845ed3` | ✅ **sin bloqueantes · 8/8 cerrados y verificados** | [`ronda-2.md`](revisiones/ronda-2.md) |
 
-## Estado por hallazgo
+## Qué cambió entre rondas
 
-| ID | Título | Sev. | Estado |
-|---|---|---|---|
-| H01 | Trabajo principal declarado en la descripción del PR no está commiteado ni presente en la rama | crítico | abierto |
-| H02 | `pnpm typecheck` falla con 24 errores de compilación TypeScript | crítico | abierto |
-| H03 | Tests de `acceptOfferAction` asumen contrato inventado e inexistente en vez de `src/domain/rpc-contracts.ts` | alto | abierto |
-| H04 | `request-offers.test.tsx` asume matchers de `@testing-library/jest-dom` no soportados y omite entorno jsdom | alto | abierto |
-| H05 | La suite de pruebas de la tarea está en rojo (`pnpm test` falla) | crítico | abierto |
-| H06 | Plantilla del PR incompleta: sección de informe agy sin reporte y checklist del DoD sin tildar | medio | abierto |
+| Aspecto                         | Ronda 1 (`d0470aa`)                                                                   | Ronda 2 (`e845ed3`)                                                                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Código de producción**        | Inexistente (PR en Draft solo con tests preliminares)                                 | Implementado al 100%: `acceptOfferAction`, pantallas C02 (`/merchant/requests`), C04 (`/merchant/requests/[id]`), diálogo C05 y skeletons de carga |
+| **Contrato RPC `accept_offer`** | Mock inventaba campos (`matched: true`, `offerId`, `courierId`) y fallaba `typecheck` | Tipado canónico `AcceptOfferResult` (`requestId`, `acceptedOfferId`, `status: 'matched'`, `matchedAt`, `idempotent`)                               |
+| **Códigos de error**            | Mock usaba `INVALID_STATE` (inexistente)                                              | Código canónico `INVALID_STATE_TRANSITION` y cobertura ampliada con `it.each` para 5 códigos adicionales                                           |
+| **Revalidación de caché**       | Test prometía revalidar pero no afirmaba `revalidatePath`                             | Aserción explícita `expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests')` verificada en rojo y verde                                  |
+| **Suscripción Realtime**        | Prop espurio `onRegisterRealtime` que salteaba Supabase                               | Hook `useRequestOffers` con canal real `postgres_changes`, filtro `request_id`, revalidación en focus y cleanup `removeChannel`                    |
+| **Entorno de pruebas UI**       | Faltaba `@vitest-environment jsdom` y usaba matchers incompatibles                    | Directiva jsdom configurada, matchers nativos de Vitest y suite adicional para C02                                                                 |
+| **CI en GitHub**                | Jobs en rojo por fallos de compilación TS                                             | **8/8 jobs en verde** (305 tests pasando, 0 errores de compilación o lint)                                                                         |
 
-Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
+## Lo mejor de la PR
 
-## Qué queda por hacer
-
-1. Implementar la Server Action `acceptOfferAction` en `src/features/offers/actions.ts` alineada al contrato real `RPC_CONTRACTS.accept_offer` de `src/domain/rpc-contracts.ts`.
-2. Corregir `src/features/offers/actions.test.ts` para que afirme los tipos y códigos de error reales (`INVALID_STATE_TRANSITION`, `status: 'matched'`, `idempotent: boolean`, etc.).
-3. Agregar directiva `// @vitest-environment jsdom` en `src/features/requests/components/request-offers.test.tsx` y reemplazar los 16 matchers de jest-dom por aserciones estándar de Vitest (`toBeDefined()`, `not.toBeNull()`, `toContain()`).
-4. Implementar los componentes y páginas requeridas (`RequestOffersList`, `/merchant/requests`, `/merchant/requests/[id]`, modal C05, Realtime).
-5. Dejar `pnpm typecheck && pnpm lint && pnpm test` en verde.
-6. Correr auto-revisión de agy con `revisar-pr`, actualizar bitácora y pegar informe en el PR.
-
-## Para el análisis posterior
-
-Ver [`lecciones.md`](lecciones.md) (lecciones AG-64, AG-65, AG-66). Criterio para llevar algo a `AGENTS.md` en el [README del directorio](../README.md#cuándo-tocar-agentsmd): hace falta que el patrón aparezca en 2+ PRs, salvo severidad crítica.
+- **Excelente experiencia de usuario en tiempo real:** La suscripción a Supabase Realtime en `useRequestOffers` gestiona limpiamente las ofertas entrantes sin recargar la página, desuscribiéndose adecuadamente en el desmontaje.
+- **Diálogo C05 riguroso y accesible:** Muestra el desglose de tarifa acordada, medio de pago y cambio en efectivo, junto con la advertencia de revelación progresiva de datos (D3) y manejo de errores visible en banner (`role="alert"`).
+- **Purga total de Stitch (S4):** Ausencia absoluta de calificaciones, estrellas o viajes fantasma; en su lugar se destacan las insignias de documentación (`Licencia verificada`, `Seguro verificado`, `Documentación en revisión`).
+- **Respeto estricto del sistema de diseño (D16):** Cumplimiento de la cláusula Anti-12px (piso de 14px `text-sm`) en todas las vistas y métricas de comercio.

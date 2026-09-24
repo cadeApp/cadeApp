@@ -13,6 +13,7 @@ En `src/features/offers/actions.test.ts`, el test de `acceptOfferAction` invent�
 Ninguno de los dos coincide con el contrato canónico fijado por T-102 en `src/domain/rpc-contracts.ts` (`acceptOfferOutputSchema` define `{ requestId, acceptedOfferId, status: 'matched', matchedAt, idempotent }` y el código canónico es `'INVALID_STATE_TRANSITION'`).
 
 El costo de diseñar tests en fase roja contra contratos imaginados es doble:
+
 1. `typecheck` falla inmediatamente con `TS2739` y `TS2322`.
 2. Fuerza a que la implementación de la Server Action introduzca adaptaciones o transformaciones erróneas que contradicen la API del servidor.
 
@@ -24,9 +25,10 @@ El costo de diseñar tests en fase roja contra contratos imaginados es doble:
 
 **Origen:** `PR76-H05` (pariente de `P08-control-no-cubre-lo-que-dice` y `AG-62`)
 
-El DoD de `T-113` pide: *"la oferta nueva aparece sin recargar"*. Para cubrirlo, el test de UI introdujo un prop de prueba en `<RequestOffersList onRegisterRealtime={...}>` y llamó manualmente a la función inyectada con un payload simulado.
+El DoD de `T-113` pide: _"la oferta nueva aparece sin recargar"_. Para cubrirlo, el test de UI introdujo un prop de prueba en `<RequestOffersList onRegisterRealtime={...}>` y llamó manualmente a la función inyectada con un payload simulado.
 
 Ese control mide que el componente tiene un `useState` que responde a un callback. Es **completamente ciego** a todo lo que hace que el tiempo real funcione en el producto:
+
 - Si el cliente de Supabase llama a `supabase.channel(...)` con el nombre correcto de canal.
 - Si escucha los cambios de Postgres (`postgres_changes`) en `event: 'INSERT'`, `schema: 'public'`, `table: 'offers'`.
 - Si aplica el filtro por `request_id = eq.<id>`.
