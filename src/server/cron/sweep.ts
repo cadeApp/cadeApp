@@ -28,43 +28,50 @@ export async function runSweep(): Promise<SweepResult> {
   if (expiredRequests && expiredRequests.length > 0) {
     const expiredRequestIds = expiredRequests.map((r) => r.id);
 
-    // Actualizar solicitudes a 'expired' (con guarda TOCTOU status = 'published')
-    const { error: reqUpdateError } = await supabase
+    // Actualizar solicitudes a 'expired' (con guarda TOCTOU status = 'published' y expires_at <= nowIso)
+    // D02: delivery_requests.update primero para obtener las filas efectivamente actualizadas
+    const { data: updatedRequests, error: reqUpdateError } = await supabase
       .from('delivery_requests')
       .update({ status: 'expired' })
       .in('id', expiredRequestIds)
-      .eq('status', 'published');
+      .eq('status', 'published')
+      .lte('expires_at', nowIso)
+      .select('id, merchant_id');
 
     if (reqUpdateError) {
       throw new Error(`Failed to update delivery_requests to expired: ${reqUpdateError.message}`);
     }
 
-    // Actualizar ofertas 'pending' asociadas a 'expired' con decided_at = now()
-    const { error: offersUpdateError } = await supabase
-      .from('offers')
-      .update({ status: 'expired', decided_at: nowIso })
-      .in('request_id', expiredRequestIds)
-      .eq('status', 'pending');
+    if (updatedRequests && updatedRequests.length > 0) {
+      const actuallyExpiredIds = updatedRequests.map((r) => r.id);
 
-    if (offersUpdateError) {
-      throw new Error(`Failed to update offers to expired: ${offersUpdateError.message}`);
+      // D02: audit_log antes de offers.update para que un fallo no deje huecos de auditoría
+      const auditEntries = updatedRequests.map((r) => ({
+        target_type: 'delivery_request',
+        target_id: r.id,
+        action: 'expired',
+        before: { status: 'published' },
+        after: { status: 'expired', expired_at: nowIso },
+      }));
+
+      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);
+      if (auditError) {
+        throw new Error(`Failed to insert audit_log for expired requests: ${auditError.message}`);
+      }
+
+      // Actualizar ofertas 'pending' asociadas a 'expired' con decided_at = now()
+      const { error: offersUpdateError } = await supabase
+        .from('offers')
+        .update({ status: 'expired', decided_at: nowIso })
+        .in('request_id', actuallyExpiredIds)
+        .eq('status', 'pending');
+
+      if (offersUpdateError) {
+        throw new Error(`Failed to update offers to expired: ${offersUpdateError.message}`);
+      }
+
+      expiredRequestsCount = updatedRequests.length;
     }
-
-    // Registrar en audit_log en singular con before y after
-    const auditEntries = expiredRequests.map((r) => ({
-      target_type: 'delivery_request',
-      target_id: r.id,
-      action: 'expired',
-      before: { status: 'published' },
-      after: { status: 'expired', expired_at: nowIso },
-    }));
-
-    const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);
-    if (auditError) {
-      throw new Error(`Failed to insert audit_log for expired requests: ${auditError.message}`);
-    }
-
-    expiredRequestsCount = expiredRequests.length;
   }
 
   // 2. Purga física de legajos vencidos en courier-docs (courier_documents con purge_after <= now() y purged_at IS NULL)
@@ -91,18 +98,7 @@ export async function runSweep(): Promise<SweepResult> {
     if (!storageError) {
       const docIds = docsToPurge.map((d) => d.id);
 
-      // Marcar purged_at = now() solo si el storage remove no dio error
-      const { error: docUpdateError } = await supabase
-        .from('courier_documents')
-        .update({ purged_at: nowIso })
-        .in('id', docIds)
-        .is('purged_at', null);
-
-      if (docUpdateError) {
-        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);
-      }
-
-      // Registrar en audit_log en singular con before y after
+      // D02: audit_log antes de courier_documents.update para que un fallo deje duplicados y no huecos
       const auditEntries = docsToPurge.map((d) => ({
         target_type: 'courier_document',
         target_id: d.id,
@@ -116,7 +112,22 @@ export async function runSweep(): Promise<SweepResult> {
         throw new Error(`Failed to insert audit_log for purged documents: ${auditError.message}`);
       }
 
-      purgedDocsCount = docsToPurge.length;
+      // Marcar purged_at = now() solo si el storage remove no dio error
+      const { data: updatedDocs, error: docUpdateError } = await supabase
+        .from('courier_documents')
+        .update({ purged_at: nowIso })
+        .in('id', docIds)
+        .is('purged_at', null)
+        .select('id');
+
+      if (docUpdateError) {
+        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);
+      }
+
+      purgedDocsCount = updatedDocs?.length ?? 0;
+    } else {
+      // H01: terminar en error para que la ruta responda 500 y el cron registre la falla
+      throw new Error(`Failed to purge courier documents from storage: ${storageError.message}`);
     }
   }
 
@@ -179,30 +190,42 @@ export async function runSweep(): Promise<SweepResult> {
     if (expiredMerchants.length > 0) {
       const expiredProfileIds = expiredMerchants.map((m) => m.profile_id);
 
-      const { error: merchantUpdateError } = await supabase
+      // Fecha de corte en Aguilares (-03:00) para guarda TOCTOU contra renovaciones concurrentes
+      const nowAguilares = new Date(nowDate.getTime() - 3 * 3600 * 1000);
+      const cutoff = new Date(nowAguilares.getTime() - (graceDays + 1) * 86_400_000);
+      const cutoffDate = cutoff.toISOString().split('T')[0];
+
+      const { data: updatedMerchants, error: merchantUpdateError } = await supabase
         .from('merchants')
         .update({ subscription_status: 'expired' })
         .in('profile_id', expiredProfileIds)
-        .eq('subscription_status', 'active');
+        .eq('subscription_status', 'active')
+        .or(`paid_until.lte.${cutoffDate},paid_until.is.null`)
+        .select('profile_id, paid_until');
 
       if (merchantUpdateError) {
         throw new Error(`Failed to update merchants to expired: ${merchantUpdateError.message}`);
       }
 
-      const auditEntries = expiredMerchants.map((m) => ({
-        target_type: 'merchant',
-        target_id: m.profile_id,
-        action: 'subscription_expired',
-        before: { subscription_status: 'active', paid_until: m.paid_until },
-        after: { subscription_status: 'expired' },
-      }));
+      if (updatedMerchants && updatedMerchants.length > 0) {
+        // D02: audit_log solo para los comercios efectivamente actualizados
+        const auditEntries = updatedMerchants.map((m) => ({
+          target_type: 'merchant',
+          target_id: m.profile_id,
+          action: 'subscription_expired',
+          before: { subscription_status: 'active', paid_until: m.paid_until },
+          after: { subscription_status: 'expired' },
+        }));
 
-      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);
-      if (auditError) {
-        throw new Error(`Failed to insert audit_log for expired merchants: ${auditError.message}`);
+        const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);
+        if (auditError) {
+          throw new Error(
+            `Failed to insert audit_log for expired merchants: ${auditError.message}`
+          );
+        }
+
+        expiredSubscriptionsCount = updatedMerchants.length;
       }
-
-      expiredSubscriptionsCount = expiredMerchants.length;
     }
   }
 

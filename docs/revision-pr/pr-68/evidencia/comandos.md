@@ -119,7 +119,6 @@ if (!authHeader || authHeader !== expectedAuth) {
 }
 ```
 
-
 ---
 
 # Ronda 2 sobre `430ada3`
@@ -147,35 +146,88 @@ al terminar.
 ```js
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-const SW = 'src/server/cron/sweep.ts', RT = 'src/app/api/cron/sweep/route.ts';
+const SW = 'src/server/cron/sweep.ts',
+  RT = 'src/app/api/cron/sweep/route.ts';
 const M = {
   'X00-control': [],
-  'X01-positivo-sin-guarda-published': [[SW, ".in('id', expiredRequestIds)\n      .eq('status', 'published');", ".in('id', expiredRequestIds);"]],
-  'X02-solicitud-a-cancelled': [[SW, ".update({ status: 'expired' })\n      .in('id', expiredRequestIds)", ".update({ status: 'cancelled' })\n      .in('id', expiredRequestIds)"]],
-  'X03-ofertas-a-withdrawn': [[SW, ".update({ status: 'expired', decided_at: nowIso })", ".update({ status: 'withdrawn', decided_at: nowIso })"]],
-  'X04-ofertas-de-ninguna-solicitud': [[SW, ".in('request_id', expiredRequestIds)", ".in('request_id', [])"]],
-  'X05-purged_at-null': [[SW, ".update({ purged_at: nowIso })", ".update({ purged_at: null })"]],
-  'X06-comercio-a-cancelled': [[SW, ".update({ subscription_status: 'expired' })", ".update({ subscription_status: 'cancelled' })"]],
-  'X07-ignora-error-storage': [[SW, "if (!storageError) {", "if (true) {"]],
-  'X08-gracia-por-defecto-30': [[SW, "let graceDays = 0;", "let graceDays = 30;"]],
+  'X01-positivo-sin-guarda-published': [
+    [
+      SW,
+      ".in('id', expiredRequestIds)\n      .eq('status', 'published');",
+      ".in('id', expiredRequestIds);",
+    ],
+  ],
+  'X02-solicitud-a-cancelled': [
+    [
+      SW,
+      ".update({ status: 'expired' })\n      .in('id', expiredRequestIds)",
+      ".update({ status: 'cancelled' })\n      .in('id', expiredRequestIds)",
+    ],
+  ],
+  'X03-ofertas-a-withdrawn': [
+    [
+      SW,
+      ".update({ status: 'expired', decided_at: nowIso })",
+      ".update({ status: 'withdrawn', decided_at: nowIso })",
+    ],
+  ],
+  'X04-ofertas-de-ninguna-solicitud': [
+    [SW, ".in('request_id', expiredRequestIds)", ".in('request_id', [])"],
+  ],
+  'X05-purged_at-null': [[SW, '.update({ purged_at: nowIso })', '.update({ purged_at: null })']],
+  'X06-comercio-a-cancelled': [
+    [
+      SW,
+      ".update({ subscription_status: 'expired' })",
+      ".update({ subscription_status: 'cancelled' })",
+    ],
+  ],
+  'X07-ignora-error-storage': [[SW, 'if (!storageError) {', 'if (true) {']],
+  'X08-gracia-por-defecto-30': [[SW, 'let graceDays = 0;', 'let graceDays = 30;']],
   'X09-comercios-de-nadie': [[SW, ".in('profile_id', expiredProfileIds)", ".in('profile_id', [])"]],
-  'X10-ruta-sin-chequeo-de-largo': [[RT, "authHeaderBuf.length !== expectedAuthBuf.length ||\n    ", ""]],
-  'X11-ruta-500-con-detalle': [[RT, "} catch {\n    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });", "} catch (e) {\n    return NextResponse.json({ error: 'Internal Error', details: String(e) }, { status: 500 });"]],
-  'X12-docs-marca-sin-guarda': [[SW, ".in('id', docIds)\n        .is('purged_at', null);", ".in('id', docIds);"]],
-  'X13-reloj-corrido-3h': [[SW, "now: nowDate,", "now: new Date(nowDate.getTime() + 3 * 3600 * 1000),"]],
-  'X14-ignora-gracia': [[SW, "        graceDays,\n", "        graceDays: 0,\n"]],
+  'X10-ruta-sin-chequeo-de-largo': [
+    [RT, 'authHeaderBuf.length !== expectedAuthBuf.length ||\n    ', ''],
+  ],
+  'X11-ruta-500-con-detalle': [
+    [
+      RT,
+      "} catch {\n    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });",
+      "} catch (e) {\n    return NextResponse.json({ error: 'Internal Error', details: String(e) }, { status: 500 });",
+    ],
+  ],
+  'X12-docs-marca-sin-guarda': [
+    [SW, ".in('id', docIds)\n        .is('purged_at', null);", ".in('id', docIds);"],
+  ],
+  'X13-reloj-corrido-3h': [
+    [SW, 'now: nowDate,', 'now: new Date(nowDate.getTime() + 3 * 3600 * 1000),'],
+  ],
+  'X14-ignora-gracia': [[SW, '        graceDays,\n', '        graceDays: 0,\n']],
 };
 const name = process.argv[2];
-const orig = new Map([[SW, readFileSync(SW)], [RT, readFileSync(RT)]]);
+const orig = new Map([
+  [SW, readFileSync(SW)],
+  [RT, readFileSync(RT)],
+]);
 try {
   for (const [f, a, b] of M[name]) {
-    const t = readFileSync(f, 'utf8'); const n = t.split(a).length - 1;
-    if (n !== 1) { console.log(`${name}: SIN OBJETIVO (${n})`); process.exit(2); }
+    const t = readFileSync(f, 'utf8');
+    const n = t.split(a).length - 1;
+    if (n !== 1) {
+      console.log(`${name}: SIN OBJETIVO (${n})`);
+      process.exit(2);
+    }
     writeFileSync(f, t.replace(a, b));
   }
-  let out = ''; try { out = execSync('pnpm exec vitest run src/server/cron src/app/api 2>&1', { encoding: 'utf8' }); } catch (e) { out = e.stdout ?? String(e); }
+  let out = '';
+  try {
+    out = execSync('pnpm exec vitest run src/server/cron src/app/api 2>&1', { encoding: 'utf8' });
+  } catch (e) {
+    out = e.stdout ?? String(e);
+  }
   console.log(`${name}: ${(out.split('\n').find((l) => /^\s+Tests\s/.test(l)) ?? '?').trim()}`);
-} finally { for (const [f, b] of orig) writeFileSync(f, b); }
+} finally {
+  for (const [f, b] of orig) writeFileSync(f, b);
+}
 ```
 
 ```text
@@ -222,3 +274,37 @@ pnpm exec prettier --check (6 archivos) -> All matched files use Prettier code s
 audit_log.actor_id: uuid references profiles on delete set null (acepta null: la auditoría del barrido es válida)
 ls vercel.json -> No such file or directory ; ADR-0002 :29 y :90 lo asignan a T-104
 ```
+
+---
+
+# Ronda 3 sobre la resolución integral de Ronda 2
+
+- **Fecha:** 2026-09-24
+- **Checks locales:**
+  - `pnpm typecheck`: exit code 0
+  - `pnpm lint`: exit code 0 (0 warnings, 0 errors)
+  - `pnpm test`: 36 test files passed (36), 317 tests passed (317), 20 workflow tests passed (20), 6 ADR tests passed (6). Total: 343 tests en verde.
+  - `npx prettier --check`: limpio en todos los archivos.
+  - `as unknown as`: 0 en `src/server/cron/**` y `src/app/api/cron/**` (resuelto H08).
+
+## Batería completa de mutaciones (`mut.mjs`) — 15 de 15 verificadas (0 ciegas)
+
+```text
+X00-control: Tests  13 passed (13)
+X01-positivo-sin-guarda-published: Tests  3 failed | 10 passed (13)
+X02-solicitud-a-cancelled: Tests  1 failed | 12 passed (13)
+X03-ofertas-a-withdrawn: Tests  1 failed | 12 passed (13)
+X04-ofertas-de-ninguna-solicitud: Tests  2 failed | 11 passed (13)
+X05-purged_at-null: Tests  1 failed | 12 passed (13)
+X06-comercio-a-cancelled: Tests  1 failed | 12 passed (13)
+X07-ignora-error-storage: Tests  1 failed | 12 passed (13)
+X08-gracia-por-defecto-30: Tests  1 failed | 12 passed (13)
+X09-comercios-de-nadie: Tests  1 failed | 12 passed (13)
+X10-ruta-sin-chequeo-de-largo: Tests  1 failed | 12 passed (13)
+X11-ruta-500-con-detalle: Tests  1 failed | 12 passed (13)
+X12-docs-marca-sin-guarda: Tests  2 failed | 11 passed (13)
+X13-reloj-corrido-3h: Tests  1 failed | 12 passed (13)
+X14-ignora-gracia: Tests  1 failed | 12 passed (13)
+```
+
+Resultado: 14/14 mutaciones activas en ROJO, control en VERDE. 0 mutaciones ciegas.

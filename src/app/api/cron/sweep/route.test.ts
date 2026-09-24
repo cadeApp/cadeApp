@@ -15,6 +15,16 @@ vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
 }));
 
+type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+type AdminClientMock = DeepPartial<ReturnType<typeof createAdminClient>>;
+
+function setAdminClientMock(mock: AdminClientMock) {
+  vi.mocked(createAdminClient).mockReturnValue(mock as ReturnType<typeof createAdminClient>);
+}
+
 describe('GET & POST /api/cron/sweep', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -66,7 +76,12 @@ describe('GET & POST /api/cron/sweep', () => {
           }),
           update: vi.fn().mockReturnValue({
             in: vi.fn().mockReturnValue({
-              is: vi.fn().mockResolvedValue({ error: null }),
+              is: vi.fn().mockReturnValue({
+                select: vi.fn().mockResolvedValue({
+                  data: [{ id: 'doc-1' }],
+                  error: null,
+                }),
+              }),
             }),
           }),
         };
@@ -84,7 +99,14 @@ describe('GET & POST /api/cron/sweep', () => {
           }),
           update: vi.fn().mockReturnValue({
             in: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ error: null }),
+              eq: vi.fn().mockReturnValue({
+                lte: vi.fn().mockReturnValue({
+                  select: vi.fn().mockResolvedValue({
+                    data: [{ id: 'req-1', merchant_id: 'merchant-1' }],
+                    error: null,
+                  }),
+                }),
+              }),
             }),
           }),
         };
@@ -116,7 +138,14 @@ describe('GET & POST /api/cron/sweep', () => {
           }),
           update: vi.fn().mockReturnValue({
             in: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ error: null }),
+              eq: vi.fn().mockReturnValue({
+                or: vi.fn().mockReturnValue({
+                  select: vi.fn().mockResolvedValue({
+                    data: [{ profile_id: 'merchant-2', paid_until: '2026-08-01' }],
+                    error: null,
+                  }),
+                }),
+              }),
             }),
           }),
         };
@@ -144,14 +173,14 @@ describe('GET & POST /api/cron/sweep', () => {
       return {};
     });
 
-    vi.mocked(createAdminClient).mockReturnValue({
+    setAdminClientMock({
       from: mockFrom,
       storage: {
         from: vi.fn().mockReturnValue({
           remove: mockStorageRemove,
         }),
       },
-    } as unknown as ReturnType<typeof createAdminClient>);
+    });
 
     const reqGet = new NextRequest('http://localhost:3000/api/cron/sweep', {
       headers: {
