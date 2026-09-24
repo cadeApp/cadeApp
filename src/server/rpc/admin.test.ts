@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RPC_CONTRACTS } from '@/domain/rpc-contracts';
 import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
@@ -15,6 +17,15 @@ const ADMIN_ID = '00000000-0000-4000-8000-0000000000a1';
 const MERCHANT_ID = '00000000-0000-4000-8000-0000000000b1';
 const COURIER_1_ID = '00000000-0000-4000-8000-0000000000c1';
 const DOC_1_ID = '00000000-0000-4000-8000-0000000000d1';
+
+const ADMIN_RPC_NAMES = [
+  'admin_decide_courier',
+  'admin_suspend_courier',
+  'admin_verify_document',
+  'admin_set_subscription',
+  'admin_update_setting',
+] as const;
+type AdminRpcName = (typeof ADMIN_RPC_NAMES)[number];
 
 const DEFAULT_SETTINGS = {
   minOfferArs: 1000,
@@ -266,20 +277,68 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
     expect(capturedArgValue).toBe(1500);
   });
 
-  it('7. Verificación de coincidencia de nombres de RPC con RPC_CONTRACTS', () => {
-    const adminRpcNames = [
-      'admin_decide_courier',
-      'admin_suspend_courier',
-      'admin_verify_document',
-      'admin_set_subscription',
-      'admin_update_setting',
-    ] as const;
+  it('7. H15: los códigos que levanta cada RPC en SQL coinciden con RPC_CONTRACTS, por función y en los dos sentidos', () => {
+    const sql = fs.readFileSync(
+      path.resolve(process.cwd(), 'supabase/migrations/20260924013700_rpc_admin_v1.sql'),
+      'utf8',
+    );
+    // Códigos que pone el wrapper (Zod en la frontera), no el SQL.
+    const wrapperOnly: Record<AdminRpcName, readonly string[]> = {
+      admin_decide_courier: [],
+      admin_suspend_courier: ['VALIDATION_ERROR'],
+      admin_verify_document: [],
+      admin_set_subscription: [],
+      admin_update_setting: ['VALIDATION_ERROR'],
+    };
+    const raisedBy = (text: string, fn: string): Set<string> => {
+      const blocks = text.split(/create or replace function /i);
+      const body = blocks.find((b) => b.startsWith(fn + '('));
+      if (!body) throw new Error(`sin objetivo: no encontré ${fn} en la migración`);
+      const codes = new Set([...body.matchAll(/message = '([A-Z0-9_]+)'/g)].map((m) => m[1] ?? ''));
+      if (/perform app_private\.assert_admin_aal2\(\)/.test(body)) {
+        for (const c of raisedBy(text, 'app_private.assert_admin_aal2')) codes.add(c);
+      }
+      return codes;
+    };
+    const check = (text: string) =>
+      ADMIN_RPC_NAMES.map((name) => {
+        const raised = raisedBy(text, `public.${name}`);
+        for (const c of wrapperOnly[name]) raised.add(c);
+        const declared = new Set<string>(RPC_CONTRACTS[name].errorCodes);
+        return {
+          name,
+          missing: [...declared].filter((c) => !raised.has(c)),
+          undeclared: [...raised].filter((c) => !declared.has(c)),
+        };
+      });
 
-    for (const name of adminRpcNames) {
-      expect(RPC_CONTRACTS[name]).toBeDefined();
-      expect(RPC_CONTRACTS[name].inputSchema).toBeDefined();
-      expect(RPC_CONTRACTS[name].outputSchema).toBeDefined();
+    for (const r of check(sql)) {
+      expect({ name: r.name, missing: r.missing, undeclared: r.undeclared }).toEqual({
+        name: r.name,
+        missing: [],
+        undeclared: [],
+      });
     }
+
+    // AG-63: el control detecta una regresión en una copia en memoria.
+    const withoutStateCheck = sql.replace(
+      /(create or replace function public\.admin_verify_document[\s\S]*?)message = 'INVALID_STATE_TRANSITION'/i,
+      "$1message = 'SOMETHING_ELSE'",
+    );
+    expect(withoutStateCheck).not.toBe(sql);
+    const verify = check(withoutStateCheck).find((r) => r.name === 'admin_verify_document');
+    expect(verify?.missing).toContain('INVALID_STATE_TRANSITION');
+    expect(verify?.undeclared).toContain('SOMETHING_ELSE');
+
+    const withoutPreamble = sql.replace(
+      /(create or replace function public\.admin_suspend_courier[\s\S]*?)perform app_private\.assert_admin_aal2\(\);/i,
+      '$1',
+    );
+    expect(withoutPreamble).not.toBe(sql);
+    const suspend = check(withoutPreamble).find((r) => r.name === 'admin_suspend_courier');
+    expect(suspend?.missing).toEqual(
+      expect.arrayContaining(['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'AAL2_REQUIRED']),
+    );
   });
 
   it('8. H08 / D05: Pruebas de contrato y coincidencia de bordes entre fake y RPC (D03, D04 y NOT_FOUND)', async () => {

@@ -1,5 +1,35 @@
 -- T-105: Transactional RPCs for admin operations (admin_decide_courier, admin_suspend_courier, admin_verify_document, admin_set_subscription, admin_update_setting)
 
+-- H14: preámbulo común de las RPC admin_*. Orden de rechazo (contrato):
+-- UNAUTHENTICATED -> UNAUTHORIZED_ACTOR -> AAL2_REQUIRED. Solo lo invocan las RPC
+-- security definer de este archivo (corren como su dueño); nadie más tiene execute.
+create or replace function app_private.assert_admin_aal2()
+returns void
+language plpgsql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+begin
+  if auth.uid() is null then
+    raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
+  end if;
+
+  if not exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'admin'
+  ) then
+    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
+  end if;
+
+  if coalesce(auth.jwt()->>'aal', '') <> 'aal2' then
+    raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
+  end if;
+end;
+$$;
+
+revoke all on function app_private.assert_admin_aal2() from public, anon, authenticated;
+
 -- 1. admin_decide_courier
 create or replace function public.admin_decide_courier(
   p_courier_id uuid,
@@ -13,32 +43,12 @@ set search_path = public, pg_temp
 as $$
 declare
   v_actor_id uuid := auth.uid();
-  v_role public.profile_role;
-  v_aal text;
   v_courier_status public.courier_status;
   v_decided_at timestamptz := now();
   v_target_status public.courier_status;
 begin
-  if v_actor_id is null then
-    raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
-  end if;
-
-  select role into v_role
-  from public.profiles
-  where id = v_actor_id;
-
-  if v_role is null or v_role <> 'admin' then
-    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
-  end if;
-
-  v_aal := coalesce(
-    auth.jwt()->>'aal',
-    coalesce((nullif(current_setting('request.jwt.claims', true), ''))::jsonb->>'aal', '')
-  );
-
-  if v_aal <> 'aal2' then
-    raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
-  end if;
+  -- H14: autenticación, rol admin y MFA (aal2) en un solo lugar
+  perform app_private.assert_admin_aal2();
 
   if p_decision not in ('approved', 'rejected') then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
@@ -102,32 +112,12 @@ set search_path = public, pg_temp
 as $$
 declare
   v_actor_id uuid := auth.uid();
-  v_role public.profile_role;
-  v_aal text;
   v_courier_status public.courier_status;
   v_deactivated_at timestamptz := now();
   v_withdrawn_count integer := 0;
 begin
-  if v_actor_id is null then
-    raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
-  end if;
-
-  select role into v_role
-  from public.profiles
-  where id = v_actor_id;
-
-  if v_role is null or v_role <> 'admin' then
-    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
-  end if;
-
-  v_aal := coalesce(
-    auth.jwt()->>'aal',
-    coalesce((nullif(current_setting('request.jwt.claims', true), ''))::jsonb->>'aal', '')
-  );
-
-  if v_aal <> 'aal2' then
-    raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
-  end if;
+  -- H14: autenticación, rol admin y MFA (aal2) en un solo lugar
+  perform app_private.assert_admin_aal2();
 
   if p_reason is null or trim(p_reason) = '' then
     raise exception using errcode = 'P0001', message = 'REASON_REQUIRED';
@@ -194,8 +184,6 @@ set search_path = public, pg_temp
 as $$
 declare
   v_actor_id uuid := auth.uid();
-  v_role public.profile_role;
-  v_aal text;
   v_courier_id uuid;
   v_kind public.courier_document_kind;
   v_doc_status public.document_review_status;
@@ -203,26 +191,8 @@ declare
   v_target_status public.document_review_status;
   v_doc_level integer;
 begin
-  if v_actor_id is null then
-    raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
-  end if;
-
-  select role into v_role
-  from public.profiles
-  where id = v_actor_id;
-
-  if v_role is null or v_role <> 'admin' then
-    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
-  end if;
-
-  v_aal := coalesce(
-    auth.jwt()->>'aal',
-    coalesce((nullif(current_setting('request.jwt.claims', true), ''))::jsonb->>'aal', '')
-  );
-
-  if v_aal <> 'aal2' then
-    raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
-  end if;
+  -- H14: autenticación, rol admin y MFA (aal2) en un solo lugar
+  perform app_private.assert_admin_aal2();
 
   if p_decision not in ('verified', 'rejected') then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
@@ -303,32 +273,12 @@ set search_path = public, pg_temp
 as $$
 declare
   v_actor_id uuid := auth.uid();
-  v_role public.profile_role;
-  v_aal text;
   v_current_status public.merchant_subscription_status;
   v_current_paid_until date;
   v_target_status public.merchant_subscription_status;
 begin
-  if v_actor_id is null then
-    raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
-  end if;
-
-  select role into v_role
-  from public.profiles
-  where id = v_actor_id;
-
-  if v_role is null or v_role <> 'admin' then
-    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
-  end if;
-
-  v_aal := coalesce(
-    auth.jwt()->>'aal',
-    coalesce((nullif(current_setting('request.jwt.claims', true), ''))::jsonb->>'aal', '')
-  );
-
-  if v_aal <> 'aal2' then
-    raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
-  end if;
+  -- H14: autenticación, rol admin y MFA (aal2) en un solo lugar
+  perform app_private.assert_admin_aal2();
 
   -- H03: Valores reales del enum merchant_subscription_status: pilot, active, expired, cancelled
   if p_subscription_status not in ('pilot', 'active', 'expired', 'cancelled') then
@@ -346,6 +296,9 @@ begin
 
   v_target_status := p_subscription_status::public.merchant_subscription_status;
 
+  -- H12: semántica elegida (igual que el fake de dominio): paid_until se REEMPLAZA
+  -- siempre, así que omitirlo lo deja en null (p. ej. al pasar a expired/cancelled);
+  -- notes solo se reemplaza si viene, para no perder el historial de notas.
   update public.merchants
   set
     subscription_status = v_target_status,
@@ -384,31 +337,11 @@ set search_path = public, pg_temp
 as $$
 declare
   v_actor_id uuid := auth.uid();
-  v_role public.profile_role;
-  v_aal text;
   v_old_value jsonb;
   v_str_val text;
 begin
-  if v_actor_id is null then
-    raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
-  end if;
-
-  select role into v_role
-  from public.profiles
-  where id = v_actor_id;
-
-  if v_role is null or v_role <> 'admin' then
-    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
-  end if;
-
-  v_aal := coalesce(
-    auth.jwt()->>'aal',
-    coalesce((nullif(current_setting('request.jwt.claims', true), ''))::jsonb->>'aal', '')
-  );
-
-  if v_aal <> 'aal2' then
-    raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
-  end if;
+  -- H14: autenticación, rol admin y MFA (aal2) en un solo lugar
+  perform app_private.assert_admin_aal2();
 
   -- H17: Usar FOR UPDATE al leer la fila previa para prevenir lecturas desactualizadas en concurrencia
   select value into v_old_value

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(57);
+select plan(59);
 
 -- IDs fijos válidos (hexadecimal estricto) para pruebas de T-105
 create or replace function pg_temp.admin_id() returns uuid language sql immutable as $$
@@ -439,6 +439,16 @@ select results_eq(
 select results_eq(
   $$ select action from public.audit_log where target_id = pg_temp.merchant_id()::text order by created_at desc limit 1 $$,
   $$ values ('admin_set_subscription') $$
+);
+
+-- 4.11 H12: sin paid_until se borra la vigencia y notes se conserva (semántica escrita en la RPC)
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal2');
+select lives_ok(
+  $$ select public.admin_set_subscription(pg_temp.merchant_id(), 'expired', null, null) $$
+);
+select results_eq(
+  $$ select paid_until is null, notes from public.merchants where profile_id = pg_temp.merchant_id() $$,
+  $$ values (true, 'Pago al día'::text) $$
 );
 
 -- 5. admin_update_setting
