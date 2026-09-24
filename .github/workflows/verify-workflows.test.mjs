@@ -282,3 +282,48 @@ test('Lautaro073 merges his own pull requests: no peer approval is required', as
   assert.equal(sinReviews.ok, true, sinReviews.reason);
   assert.equal(evaluateApprovalPolicy({ author: 'Lautaro073', reviews: [], body: '' }).ok, false);
 });
+
+test('board-sync automatically unblocks dependent issues and marks merged PR tasks as hecha', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const phase0 = Array.from({ length: 10 }, (_, idx) => ({
+    number: idx + 1,
+    title: idx === 0 ? 'T-000: Scaffold mínimo' : `[T-00${idx}] Tarea base ${idx}`,
+    body: '**Depende de:** ninguna.',
+    state: 'CLOSED',
+    labels: ['bloqueada'],
+  }));
+  const issues = [
+    ...phase0,
+    {
+      number: 13,
+      title: '[T-103] Ciclo de solicitud',
+      body: '**Depende de:** T-102.',
+      state: 'OPEN',
+      labels: ['en-review'],
+    },
+    {
+      number: 30,
+      title: '[T-203] Emisor de push',
+      body: '**Depende de:** T-103.',
+      state: 'OPEN',
+      labels: ['bloqueada'],
+    },
+  ];
+  const transitions = computeBoardTransitions({
+    issues,
+    pullRequests: [],
+    mergedTaskIds: ['T-103'],
+  });
+  const t103 = transitions.find((item) => item.taskId === 'T-103');
+  const t203 = transitions.find((item) => item.taskId === 'T-203');
+
+  assert.equal(t103?.targetState, 'hecha');
+  assert.equal(t103?.shouldCloseIssue, true);
+  assert.deepEqual(t103?.addLabels, ['hecha']);
+  assert.deepEqual(t103?.removeLabels, ['en-review']);
+
+  assert.equal(t203?.targetState, 'lista');
+  assert.deepEqual(t203?.addLabels, ['lista']);
+  assert.deepEqual(t203?.removeLabels, ['bloqueada']);
+});
+

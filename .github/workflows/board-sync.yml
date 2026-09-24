@@ -1,0 +1,35 @@
+name: board-sync
+
+on:
+  push:
+    branches: [develop]
+  issues:
+    types: [closed, reopened]
+  pull_request_target:
+    branches: [develop]
+    types: [opened, reopened, closed, ready_for_review, converted_to_draft]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  board-sync:
+    name: board-sync
+    runs-on: ubuntu-latest
+    concurrency:
+      group: board-sync
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+      - name: Unblock ready issues and sync Project #2 board
+        run: node .github/workflows/board-sync.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
