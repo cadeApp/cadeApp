@@ -300,7 +300,10 @@ const PUSH_SEGURO = Object.freeze({
   eventName: 'pull_request',
   action: 'synchronize',
   isFastForward: true,
-  changedFiles: Object.freeze(['docs/tasks/log/T-010.md', 'docs/revision-pr/pr-99/hallazgos.jsonl']),
+  changedFiles: Object.freeze([
+    'docs/tasks/log/T-010.md',
+    'docs/revision-pr/pr-99/hallazgos.jsonl',
+  ]),
   previousRunConclusion: 'success',
   branchContainsBase: true,
 });
@@ -461,8 +464,16 @@ test('each heavy job runs unless the decision proved a skip', () => {
 
 test('the decision job does not start while the repository is public', () => {
   const changes = job(workflow('ci.yml'), 'changes');
-  assert.ok(changes.includes('github.event.repository.private'), 'con el repo publico no arranca');
-  assert.ok(changes.includes("github.event.action == 'synchronize'"));
+  // Se mira la linea del if y no el bloque entero: el env IS_PRIVATE tambien nombra
+  // github.event.repository.private y satisfacia la asercion sin proteger nada. Lo
+  // encontro la bateria de mutacion de T-010: el mismo caso que PR64-H01.
+  const condicion = changes.match(/\n {4}if: (.*)\n/)?.[1] ?? '';
+  assert.match(
+    condicion,
+    /github\.event\.repository\.private &&/,
+    'con el repo publico no arranca'
+  );
+  assert.match(condicion, /github\.event\.action == 'synchronize'/);
   assert.match(changes, /actions: read/);
   assert.match(changes, /fetch-depth: 0/);
   // Un error del decisor no puede poner el CI en rojo: se corre todo y listo.
