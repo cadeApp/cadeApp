@@ -451,10 +451,10 @@ reset role;
 
 -- H07: piso de 500 m en route_distance_m cuando pickup y dropoff difieren pero están a < 500 m
 select pg_temp.fixture('draft');
-update public.delivery_requests
-set pickup_point = extensions.st_setsrid(extensions.st_makepoint(-65.5808, -27.4321), 4326)::extensions.geography,
-    dropoff_point = extensions.st_setsrid(extensions.st_makepoint(-65.5808, -27.4331), 4326)::extensions.geography
-where id = pg_temp.actor(20);
+update public.delivery_request_contacts
+set pickup_lat = -27.430000, pickup_lng = -65.620000,
+    dropoff_lat = -27.430500, dropoff_lng = -65.620000
+where request_id = pg_temp.actor(20);
 select is((pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->'data'->>'routeDistanceM')::int,
   500, 'H07: publish_request aplica piso de 500 m cuando puntos distintos distan menos de 500 m');
 
