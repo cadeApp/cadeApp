@@ -670,3 +670,68 @@ grep -rn REQUEST_NOT_FOUND src supabase                      # sin resultados
 grep -n 'v_eff_status :=' -A2 supabase/migrations/20260924010124_rpc_requests_v1.sql   # solo published + expires_at
 grep -n 'auth.jwt()' supabase/migrations/20260924010124_rpc_requests_v1.sql            # sin resultados
 ```
+
+
+---
+
+# Ronda 3 sobre `93cc3c5`
+
+Head al abrir la ronda: `93cc3c5` (dos commits del agente sobre `4806a25`: `508f331` y `93cc3c5`). Merge-base
+`b6b5f39`. El agente no tocó `docs/revision-pr/pr-63/`. Cambios desde `37014bd`: la policy de la tabla de
+motivos, `rpc_requests.sql` y la bitácora. `git diff 37014bd 93cc3c5 --stat -- supabase/migrations src` muestra
+solo 5 líneas de la migración, todas de la policy: `request_cycle`, el fake y `requests.test.ts` no cambiaron.
+
+Docker se había vuelto a caer: relancé `dockerd` y `supabase stop --no-backup && supabase start`.
+
+| Comando | Resultado en `93cc3c5` |
+|---|---|
+| `pnpm supabase test db` | `Files=7, Tests=1385, Result: PASS` |
+| `psql … -f supabase/tests/rpc_requests.sql` | `1..1208`, 1208 ok, 0 not ok |
+| `pnpm db:types --local` + `git diff --exit-code` | sin diff; `mtime` = `date` siguiente |
+| `pnpm typecheck` · `lint` · `test` (worktree limpio) | exit 0 · `✔ No ESLint warnings or errors` · `Tests 296 passed (296)`, workflows `pass 19 fail 0`, ADR `pass 6 fail 0` |
+
+## Batería de mutación (`mutar3.py` = `mutar2.py` con `SHA = '93cc3c5'` y una mutación más)
+
+```python
+'M22-aal2-antes-que-expirado': [("  if p_action = 'cancel_request' and v_request.status = 'published' and v_request.expires_at <= v_now then\n",
+   "  if p_action = 'cancel_request' and v_role = 'admin' and coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'aal', '') <> 'aal2' then raise exception 'AAL2_REQUIRED' using errcode = 'P0001'; end if;\n  if p_action = 'cancel_request' and v_request.status = 'published' and v_request.expires_at <= v_now then\n")],
+```
+
+| Mutación | ok | not ok | Lectura |
+|---|---|---|---|
+| M00 control | 1208 | 0 | verde, como debe |
+| M01–M05 | — | 1, 2, 1, 1, 1 | rojas |
+| **M06** `expires_at` solo en `publish` | 1205 | **3** | **roja** (era ciega) → `H10` cerrado |
+| M07–M12 | — | 1, 1, 3, 1, 3, 1 | rojas |
+| **M13** motivo en el `before` | 1207 | **1** | **roja** (era ciega) → `H09` cerrado |
+| M14–M19 | — | 2, 3, 2, 3, 2, 1 | rojas |
+| **M20** `republish` no expira `pending` | 1207 | **1** | **roja** (era ciega) → `H12` cerrado |
+| **M21** policy `using (true)` | 1205 | **3** | **roja** (era ciega) → `H11` cerrado |
+| **M22** `aal2` antes que el vencimiento | 1208 | 0 | **ciega** → `H14` |
+
+Qué falla con M21:
+
+```text
+not ok 1178 - H11 / P1a: courier ajeno lee 0 motivos en request_cancellation_reasons
+not ok 1179 - H11 / P1b: courier que canceló lee 0 motivos en request_cancellation_reasons
+not ok 1180 - H11 / P1c: comercio dueño lee 0 motivos en request_cancellation_reasons
+```
+
+La bitácora (`docs/tasks/log/T-103.md:89`) declara para M21 «`P1a`, `P1b`, `P1c`, `P1e` y `P1f` (RED: `5`
+fallos)». `P1e` y `P1f` son `insert` y los bloquea la falta de `grant`: M21 solo cambia la policy, así que no
+pueden fallar. → `R01`.
+
+## Citas del cuerpo y de la bitácora contra el código
+
+```bash
+sed -n '62p;97p' src/domain/rpc-contracts.ts          # requestId: uuidSchema (x2)
+grep -n 'Precedencia canónica del ciclo' src/domain/rpc-contracts.ts   # 299
+grep -n "'AAL2_REQUIRED'" src/domain/rpc-contracts.ts                 # 344 (cancel_request), más los admin_*
+M=supabase/migrations/20260924010124_rpc_requests_v1.sql
+grep -n 'create table public.request_cancellation_reasons' $M        # 2
+grep -n 'greatest(500' $M                                            # 178
+grep -n "if p_action = 'report_incident' and (v_offer.courier_id" $M  # 91
+grep -n 'v_eff_status :=' $M                                         # 106
+grep -n "raise exception 'AAL2_REQUIRED'" $M                      # 123 (el if empieza en 121)
+grep -n 'P4b' supabase/tests/rpc_requests.sql                        # 598, 602
+```

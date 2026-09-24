@@ -2,7 +2,7 @@
 
 Numeración continua del proyecto. `AG-01`…`AG-63` están en las carpetas de las PRs anteriores.
 
-**Fuente:** 12 registros en la ronda 1 (7 bloqueantes, 3 decisiones, 2 mejoras) y 6 más en la ronda 2 (5 bloqueantes contando los parciales, 1 desvío aceptado, 1 mejora). Datos crudos en
+**Fuente:** 12 registros en la ronda 1 (7 bloqueantes, 3 decisiones, 2 mejoras) y 6 más en la ronda 2 (5 bloqueantes contando los parciales, 1 desvío aceptado, 1 mejora) y 1 en la ronda 3 (mejora). Datos crudos en
 [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
@@ -108,6 +108,24 @@ contra el hallazgo que lo motivó (S15, H03a), no contra la clase a la que perte
 
 ---
 
+## Ronda 3
+
+### `AG-70` · Un rojo anotado desde lo esperado se delata por las pruebas que la mutación no puede tocar
+
+**Origen:** `R01` (residuo)
+
+La ronda 2 pidió anotar en la bitácora el rojo de cada arreglo, y la ronda 3 lo trajo para las cuatro
+mutaciones. Tres se reproducen tal cual. La cuarta dice «M21: fallan `P1a`, `P1b`, `P1c`, `P1e` y `P1f`», y con
+M21 fallan tres: `P1e` y `P1f` son `insert`, y los bloquea el `grant`, no la policy que M21 abre. Nadie puede
+haber visto ese rojo: se escribió listando las pruebas nuevas, no leyendo la salida.
+
+> **Regla propuesta.** El rojo que se anota se copia de la salida (`not ok N - …`), no se enumera desde las
+> pruebas que se agregaron. Y quien revisa lo corre y lo compara: un rojo que incluye una prueba que la mutación no
+> puede alcanzar es la señal más barata de que no se ejecutó. Es `AG-68` desde el lado del autor: allá la prueba
+> tenía el nombre de la mutación sin matarla; acá la bitácora tiene el rojo sin haberlo visto.
+
+---
+
 ## Advertencias
 
 - **Ronda 1 de una PR abierta.** `AG-64` y `AG-65` salen de un solo caso cada una.
@@ -142,3 +160,9 @@ parte de código.
 
 `R01` repite `H05`: la PR reincidió en describir algo que no es. En la ronda 1 era una prueba que ya no existía;
 en la 2, código con otra forma. Las dos veces el texto se escribió desde la intención y no desde el diff.
+
+### Después de la ronda 3
+
+La batería de mutación terminó **21 de 21 en rojo** sobre 1.208 aserciones, contra 2 de 13 en la ronda 1. Las
+tres rondas usaron el mismo arnés y las mismas mutaciones, más una por arreglo: el número es comparable y es la
+mejor medida que dejó esta PR de cuánto controla su suite.
