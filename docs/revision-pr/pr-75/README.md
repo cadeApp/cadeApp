@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-105-admin-rpc` → `develop` |
 | **Base** | `b6b5f39` |
 | **Tamaño** | 4 archivos, +889 líneas |
-| **Estado** | Draft · **bloqueada** (ronda 4: 5 bloqueantes; D06: el fake va a `cc/CC-005`) |
+| **Estado** | Draft · **espera #79** (ronda 5: sin bloqueantes propios; falta merge de CC-005 y rebase) |
 
 ## Rondas
 
@@ -18,6 +18,7 @@
 | 2 | `b257f1b` | 3 nuevos + 1 decisión; 12 cerrados y verificados | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `c9585ba` | 1 nuevo; 4 cerrados y verificados | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 | 4 | `904e3df` | 4 nuevos + 1 decisión; 0 cerrados | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
+| 5 | `02dca77` (+ `e6f43f7`) | 1 nuevo (de la #79); 6 cerrados y verificados | [`revisiones/ronda-5.md`](revisiones/ronda-5.md) |
 
 ## Estado por hallazgo
 
@@ -30,10 +31,10 @@
 | H05 | La suite no cubre el DoD (efectos, aal2, estado incorrecto, ofertas pending) | alto | arreglado-verificado (`c9585ba`) |
 | H06 | El wrapper codifica dos veces `p_value` | alto | arreglado-verificado (`b257f1b`) |
 | H07 | Las funciones son ejecutables por `PUBLIC`/`anon` | medio | arreglado-verificado (`b257f1b`) |
-| H08 | Sin test de contrato; fake y RPC divergen | medio | **parcial**: 4 de 5 en el fake, fuera de alcance (A01, H19) |
+| H08 | Sin test de contrato; fake y RPC divergen | medio | arreglado-verificado (`02dca77` + CC-005, integrado) |
 | H09 | `INVALID_SETTING_*` inalcanzables por el wrapper | medio | arreglado-verificado (`b257f1b`) |
 | H10 | El motivo se exige y se descarta; no se escribe `audit_log` | alto | arreglado-verificado (`b257f1b`) |
-| H11 | `database.types.ts` sin regenerar | medio | **abierto**: a mano otra vez (+9/−38) |
+| H11 | `database.types.ts` sin regenerar | medio | arreglado-verificado (`02dca77`) |
 | H12 | `paid_until` se borra cuando no viene y `notes` no | bajo | abierto (mejora) |
 | H13 | `pilot_terms_version` acepta solo espacios | bajo | arreglado-verificado (`b257f1b`) |
 | H14 | Preámbulo de autorización copiado cinco veces | bajo | abierto (mejora) |
@@ -41,26 +42,26 @@
 | D02 | Auditoría dentro de cada RPC | decision | arreglado-verificado (`b257f1b`) |
 | D03 | `decide` solo desde `pending` | decision | arreglado-verificado (`b257f1b`) |
 | D04 | `verify` solo desde `submitted` y sin purgar | decision | arreglado-verificado (`b257f1b`) |
-| D05 | CC del fake antes del merge | decision | pendiente (ver D06) |
+| D05 | CC del fake antes del merge | decision | parcial: CC abierto (#79), falta P2 y merge |
 | H15 | Caso 7 de `admin.test.ts` tautológico | bajo | abierto (mejora) |
 | H16 | `VALID_SETTING_KEYS` copia `PLATFORM_SETTING_KEYS` | bajo | arreglado-verificado (`c9585ba`) |
 | H17 | `before` del audit de `update_setting` sin lock | bajo | arreglado-verificado (`c9585ba`) |
-| H18 | Bitácora sin la sesión; commit y cuerpo declaran H08/H11 resueltos | alto | **parcial**: bitácora ok; 4 afirmaciones falsas |
-| A01 | Cambio de contrato (fake) dentro de T-105, fuera de alcance y sin CC | alto | **abierto** (D06) |
-| D06 | Llevar el fake a `cc/CC-005` | decision | decidido, pendiente |
-| H19 | El test de contrato afirma la divergencia (suspender a un suspendido → OK) | alto | **abierto** |
-| H20 | Validaciones inalcanzables en el fake | bajo | abierto (mejora, va al CC) |
-| H21 | Cuerpo del PR fuera de la plantilla; `approval-policy` va a fallar | alto | **abierto** |
+| H18 | Bitácora sin la sesión; commit y cuerpo declaran H08/H11 resueltos | alto | parcial: queda «268 passed» sin el CC |
+| A01 | Cambio de contrato (fake) dentro de T-105, fuera de alcance y sin CC | alto | arreglado-verificado (`02dca77`) |
+| D06 | Llevar el fake a `cc/CC-005` | decision | parcial: falta P2, merge y rebase |
+| H19 | El test de contrato afirma la divergencia (suspender a un suspendido → OK) | alto | arreglado-verificado (`02dca77` + CC-005) |
+| H20 | Validaciones inalcanzables en el fake | bajo | arreglado-verificado (inspección) |
+| H21 | Cuerpo del PR fuera de la plantilla; `approval-policy` va a fallar | alto | arreglado-verificado (`02dca77`) |
+| H22 | `CC-005.md` afirma `purgedAt == null` y el fake no lo tiene | bajo | abierto (de la #79) |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. `D06`/`A01`/`H19`/`H20`: `cc/CC-005` con el fake corregido (suspender a un suspendido → `INVALID_STATE_TRANSITION`) y sin código muerto; validado por @KiraK72; mergeado antes. Sacar `rpc-fake.ts` y `domain.test.ts` de T-105.
-2. `H11`: `pnpm db:types --local` y commitear lo que salga, sin tocarlo.
-3. `H18`/`H21`: cuerpo del PR en la plantilla, sin afirmaciones falsas.
-4. Ronda 5: T-105 rebasada sobre el CC; CI entrando a los logs.
+1. @KiraK72 valida la #79 (CC-005) y se mergea.
+2. T-105 se rebasa sobre develop; el cuerpo pasa a los números reales.
+3. Ronda 6: `pnpm test` y `test:db` sobre el SHA rebasado, y CI entrando a los logs. Si coincide, queda para aprobar.
 
 ## Para el análisis posterior
 
-Ver [`lecciones.md`](lecciones.md) (`AG-64` a `AG-71`). Criterio para llevar algo a `AGENTS.md` en el [README del directorio](../README.md#cuándo-tocar-agentsmd).
+Ver [`lecciones.md`](lecciones.md) (`AG-64` a `AG-72`). Criterio para llevar algo a `AGENTS.md` en el [README del directorio](../README.md#cuándo-tocar-agentsmd).

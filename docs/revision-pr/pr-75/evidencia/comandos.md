@@ -274,3 +274,49 @@ git status --short   # limpio
 pnpm typecheck; pnpm lint; pnpm test   # exit 0 · ✔ · Test Files 32 passed (32), Tests 268 passed (268)
 grep -n "Informe de revisión" .github/workflows/approval-policy.mjs   # :25 split por "### Informe de revisión de agy"
 ```
+
+---
+
+# Ronda 5 · SHA `02dca77` (+ `cc/CC-005` = `e6f43f7`)
+
+T-105 sola:
+
+```bash
+pnpm typecheck; pnpm lint; pnpm test     # ronda-5/test-solo-resumen.txt → 1 failed (admin.test.ts caso 8, esperado) | 267 passed
+pnpm vitest run src/server/supabase/clients.test.ts   # x2 → 10/10 (el timeout de la corrida completa fue de carga)
+git diff origin/develop 02dca77 -- src/domain         # vacío
+```
+
+Integración descartable (rama local borrada después):
+
+```bash
+git checkout -b zz-integracion-r5 && git merge --no-edit origin/cc/CC-005-admin-fake-alignment   # sin conflictos
+pnpm typecheck; pnpm lint; pnpm test     # ronda-5/test-integrado-resumen.txt → 32/32 · 268/268 · 19/0 · 6/0
+```
+
+Probe del fake integrado (Vitest descartable):
+
+```
+DIV 1 decide approved->rejected           -> INVALID_STATE_TRANSITION
+DIV 2 decide suspended->approved          -> INVALID_STATE_TRANSITION
+DIV 3 suspend suspended                   -> INVALID_STATE_TRANSITION
+DIV 4 verify verified doc                 -> INVALID_STATE_TRANSITION
+DIV 5 decide inexistente+rejected s/motivo -> REASON_REQUIRED
+DIV 6 verify inexistente+rejected s/motivo -> REASON_REQUIRED
+```
+
+Mutaciones del fake (en memoria, restaurado en `finally`; `git status` limpio):
+
+```
+MF1 sin chequeo de suspendido en suspend  -> admin.test.ts + domain.test.ts: 2 failed | 52 passed
+MF2 sin chequeo de pending en decide      -> 2 failed | 52 passed
+```
+
+Base y tipos:
+
+```bash
+pnpm supabase stop --no-backup; pnpm supabase start -x …
+pnpm supabase test db        # ronda-5/testdb-resumen.txt → Files=7, Tests=234, Result: PASS
+pnpm db:types --local; git diff --exit-code -- src/types/database.types.ts   # vacío
+python3 docs/revision-pr/pr-75/evidencia/ronda-2/mut.py supabase/tests/rpc_admin.sql   # ronda-5/mutaciones.out (igual que la ronda 3)
+```

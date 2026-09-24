@@ -134,3 +134,21 @@ Es `AG-59` con un paso más: allá dos implementaciones divergían sin control; 
 ### El dato de la ronda
 
 Arreglar `H18` (la bitácora) produjo `H21` (el cuerpo fuera de plantilla). Arreglar `H11` a mano, por tercera vez, lo dejó peor que antes. Los dos hallazgos que se repiten desde la ronda 1 son los únicos que se resuelven con un comando o con una plantilla, no con código. El patrón es el de `AG-65`/`AG-67`: el cierre se declara sin correr lo que lo demostraría (`git diff --exit-code` después de `db:types`).
+
+---
+
+## Ronda 5
+
+### `AG-72` · Dos PRs que dependen entre sí se verifican integradas, no de a una
+
+**Origen:** `H08`, `H19`, `D06`.
+
+Después de `D06`, la verdad del contrato quedó repartida: el test de contrato está en T-105 y el fake en el CC-005. Mirada sola, T-105 tiene un test rojo; mirado solo, el CC tiene un fake que nadie contrasta con la RPC. Ninguna de las dos lecturas dice si el conjunto funciona.
+
+Una rama local descartable con las dos mergeadas contestó en una corrida: sin conflictos, 268/268, las seis combinaciones iguales a la RPC y las dos mutaciones del fake en rojo en las dos suites. Es lo que va a existir después del rebase, así que es lo único que vale la pena verificar antes.
+
+> **Regla propuesta.** Cuando una revisión separa un cambio en dos PRs (un CC y su tarea), la ronda siguiente verifica **la integración**, en una rama local descartable, además de cada PR por separado. Los números que se reportan para aprobar son los de la integración; los de cada PR sola se reportan como tales, con el rojo esperado dicho explícitamente.
+
+### El dato de la PR hasta acá
+
+Cinco rondas y 22 hallazgos. Los tres que costaron más de dos rondas no eran de código: la suite que no corría (`H04`, tres rondas), los tipos escritos a mano (`H11`, cuatro rondas) y las afirmaciones del cuerpo y la bitácora (`H18`/`H21`). Los tres se cierran con un comando cuya salida se pega: `test db`, `db:types` con `git diff --exit-code`, y el `--stat` del commit. La migración, que era lo difícil, quedó bien en la ronda 2.
