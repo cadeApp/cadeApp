@@ -270,5 +270,27 @@ where profile_id = pg_temp.actor(1);
 select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
   'SUBSCRIPTION_INACTIVE', 'pasada la gracia se bloquea publicación');
 
+-- Regresión de contrato: pilot con fecha pagada sigue habilitado fuera del piloto.
+select pg_temp.fixture('draft');
+update public.platform_settings set value = 'false'::jsonb where key = 'pilot_active';
+update public.merchants set paid_until = (now() at time zone 'America/Argentina/Buenos_Aires')::date
+where profile_id = pg_temp.actor(1);
+select ok(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20))) ? 'data',
+  'piloto pagado puede publicar aunque el piloto global haya terminado');
+
+select pg_temp.fixture('matched');
+update public.delivery_requests set accepted_offer_id = null where id = pg_temp.actor(20);
+select is(pg_temp.invoke(1, format('select public.report_no_show(%L)', pg_temp.actor(20)))->>'error',
+  'INVALID_STATE_TRANSITION', 'no_show sin oferta aceptada no devuelve UUID nulo');
+
+select pg_temp.fixture('draft');
+update public.zones set active = false where id = pg_temp.actor(10);
+select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
+  'INVALID_ZONE', 'zona inactiva no permite publicación');
+update public.zones set active = true where id = pg_temp.actor(10);
+update public.platform_settings set value = '"invalid"'::jsonb where key = 'request_ttl_minutes';
+select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
+  'INTERNAL_ERROR', 'configuración inválida falla cerrada sin filtrar SQL');
+
 select * from finish();
 rollback;
