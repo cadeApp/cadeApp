@@ -126,6 +126,24 @@ haber visto ese rojo: se escribió listando las pruebas nuevas, no leyendo la sa
 
 ---
 
+## Ronda 4
+
+### `AG-71` · Un contract-change que vive en la rama de la tarea no reserva su número
+
+**Origen:** `H15`, costo de `A01`
+
+En la ronda 2 se aceptó dejar `CC-005` dentro de la PR, y lo verifiqué contra todas las ramas remotas: el número
+estaba libre. Dos rondas después, otra tarea abrió y mergeó su propio `CC-005` en menos de una hora. Nada lo
+podía detectar: CI corre sobre la rama, no sobre el merge con el develop de hoy, y el chequeo de la revisión
+era una foto.
+
+> **Regla propuesta.** El número de un CC se reserva **en develop**, no en una rama: o el CC se mergea primero
+> (la skill `contract-change`), o se abre un commit mínimo en develop con el archivo vacío del número tomado. Y
+> cuando se acepta un CC dentro de una PR, la revisión vuelve a chequear el número en cada ronda con
+> `git merge-tree origin/develop HEAD`, que además muestra cualquier otro conflicto antes de que GitHub lo marque.
+
+---
+
 ## Advertencias
 
 - **Ronda 1 de una PR abierta.** `AG-64` y `AG-65` salen de un solo caso cada una.

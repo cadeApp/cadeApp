@@ -735,3 +735,92 @@ grep -n 'v_eff_status :=' $M                                         # 106
 grep -n "raise exception 'AAL2_REQUIRED'" $M                      # 123 (el if empieza en 121)
 grep -n 'P4b' supabase/tests/rpc_requests.sql                        # 598, 602
 ```
+
+
+---
+
+# Ronda 4 sobre `0327282`
+
+Un commit del agente sobre `b1a6dff`: `0327282` (bitácora, `domain.test.ts` y `rpc_requests.sql`). **A pedido de
+Lautaro073, esta ronda no levantó Supabase local** (costo de la sesión en la nube): la base se verificó con los logs
+de CI. El daemon de Docker además había quedado con un `/var/run/docker.pid` huérfano (PID 494 inexistente).
+
+## CI de `0327282` (run `35959903059`), leído por dentro
+
+Los 9 check runs del head están en `success` (`get_check_runs` del PR). Log de `db-tests` (job `107506930532`):
+
+```text
+Applying migration 20260924010124_rpc_requests_v1.sql...
+/home/runner/work/cadeApp/cadeApp/supabase/tests/rpc_requests.sql ........... ok
+All tests successful.
+Files=7, Tests=1385,  1 wallclock secs
+Result: PASS
+[db:types] Ejecutando: pnpm supabase gen types typescript --schema public --local
+[db:types] Tipos generados exitosamente en …/src/types/database.types.ts
+```
+
+`ci.yml:118-119` corre `pnpm db:types --local` y `git diff --exit-code -- src/types/database.types.ts` en el mismo
+paso; el job verde implica que no hubo diff. Commit `0327282`: 05:25:44Z; la corrida arrancó a las 05:29:51Z.
+
+Log de `unit` (job `107506930745`): workflows `# pass 19 # fail 0`, ADR `# pass 6 # fail 0`. La línea de resumen
+de Vitest no entró en la cola del log; la reproduje localmente:
+
+```text
+$ pnpm exec vitest run
+ Test Files  32 passed (32)
+      Tests  296 passed (296)
+```
+
+## H14 del lado del fake: M22 aplicada a `rpc-fake.ts`
+
+```js
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+const F = 'src/domain/testing/rpc-fake.ts';
+const orig = readFileSync(F);
+const text = orig.toString('utf8');
+const oldS = "        if (req.status === 'published' && isRequestExpired(req.status, req.expiresAt, currentNow)) {\n          return err('REQUEST_EXPIRED');\n        }\n";
+const newS = "        if (actor.role === 'admin' && actor.aal !== 'aal2') {\n          return err('AAL2_REQUIRED');\n        }\n" + oldS;
+const n = text.split(oldS).length - 1;
+if (n !== 1) { console.log('SIN OBJETIVO', n); process.exit(2); }
+try {
+  writeFileSync(F, text.replace(oldS, newS));
+  let out = '';
+  try { out = execSync('pnpm exec vitest run src/domain/domain.test.ts 2>&1', { encoding: 'utf8' }); } catch (e) { out = e.stdout ?? String(e); }
+  console.log('FAKE-M22: ' + out.split('\n').filter((l) => /domain.test.ts:[0-9]+|Expected|Received/.test(l)).slice(0, 4).join(' | '));
+} finally { writeFileSync(F, orig); }
+```
+
+```text
+FAKE-M22: Expected: "REQUEST_EXPIRED" | Received: "AAL2_REQUIRED" | ❯ src/domain/domain.test.ts:1719:132
+```
+
+`git status --porcelain` limpio después.
+
+## R01: barrido de citas por línea en la bitácora
+
+```bash
+git diff b1a6dff 0327282 -- docs/tasks/log/T-103.md | grep '^+' | grep -oE '`[^`]*:[0-9]+(-[0-9]+)?`'   # vacío
+```
+
+## H15: develop avanzó con otro CC-005
+
+```bash
+git log --oneline b6b5f39..origin/develop
+# 53bd0ef [CC-005] Alineación del fake de RPCs administrativas con las reglas transaccionales (#79)
+git merge-tree --write-tree --name-only origin/develop 0327282
+# CONFLICT (add/add): Merge conflict in docs/contracts/CC-005.md
+# Auto-merging src/domain/domain.test.ts
+# Auto-merging src/domain/testing/rpc-fake.ts
+```
+
+Merge simulado en un worktree descartable, con el `CC-005.md` de develop y el de esta PR como `CC-006.md`:
+
+```text
+$ pnpm exec vitest run   ->  Test Files 32 passed (32) · Tests 296 passed (296)
+$ pnpm typecheck         ->  exit 0
+```
+
+Referencias a `CC-005` que son de esta PR (`grep -rn CC-005` sobre `0327282`): `src/domain/rpc-contracts.ts:299`,
+`src/domain/domain.test.ts:1623`, `docs/tasks/T-103.md:16-19`, `docs/contracts/CC-005.md` y dos en la bitácora.
+`grep -cE '\bT0[1-8]\b'`: `domain.test.ts` 2 (solo `T02`), `rpc_requests.sql` 0.

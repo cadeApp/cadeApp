@@ -1,7 +1,7 @@
 # PR #63 — T-103 · Ciclo de solicitud
 
-> ❌ **Con 1 bloqueante, solo de texto · ronda 3 · código y pruebas completos: 21 de 21 mutaciones rojas · 16 de 19 registros cerrados y verificados, 1 aceptado**
-> Las tres rondas corrieron la base local (Docker); CI no consultado, por método.
+> ❌ **Con 1 bloqueante de coordinación · ronda 4 · código, pruebas y texto cerrados · 18 de 20 registros verificados, 1 aceptado · falta renombrar `CC-005` → `CC-006` y mergear develop**
+> Rondas 1–3 con base local; ronda 4 con CI leído por dentro (sin Docker, a pedido de Lautaro073).
 
 | | |
 |---|---|
@@ -9,7 +9,7 @@
 | **Tarea / issue** | [`T-103`](../../tasks/T-103.md) · Issue #13 |
 | **Autor** | Lautaro073 (Codex, después Antigravity) |
 | **Revisión** | independiente — no es el agente que implementó |
-| **SHA revisado** | ronda 1 `9f2e42e` · ronda 2 `37014bd` · ronda 3 `93cc3c5` · base `origin/develop` = `b6b5f39` |
+| **SHA revisado** | ronda 1 `9f2e42e` · ronda 2 `37014bd` · ronda 3 `93cc3c5` · ronda 4 `0327282` · la rama sale de `b6b5f39`; develop ya está en `53bd0ef` |
 | **Alcance** | 10 archivos en la ronda 2 · la ficha amplía a `src/domain/**` y `CC-005`: **aceptado** por Lautaro073 (`A01`) |
 
 ## Rondas
@@ -19,6 +19,7 @@
 | 1 | `9f2e42e` | ❌ 7 bloqueantes · 2 mejoras · 3 decisiones | [`ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `37014bd` | ❌ 5 bloqueantes · 1 mejora · 9 cerrados · 1 desvío aceptado | [`ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `93cc3c5` | ❌ 1 bloqueante de texto (`R01`) · 1 mejora · 7 cerrados | [`ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `0327282` | ❌ 1 bloqueante de coordinación (`H15`) · 2 cerrados · CI 9/9 leído | [`ronda-4.md`](revisiones/ronda-4.md) |
 
 La ronda 1 la empezó otra sesión, de forma estática, y no llegó a commitearse. Esta la terminó sobre el mismo SHA,
 con cada hallazgo corrido contra la base local.
@@ -43,16 +44,17 @@ con cada hallazgo corrido contra la base local.
 | H10 | «M06a/M06b» no pueden fallar | alto | ✅ verificado en `93cc3c5` |
 | H11 | La tabla de motivos sin test de RLS | alto | ✅ verificado en `93cc3c5` |
 | H12 | Efectos de republicar una vencida sin aserción | medio | ✅ verificado en `93cc3c5` |
-| R01 | Cuerpo y bitácora describen código que no existe | medio | ⚠️ parcial: rojo de M21 declarado 5 (son 3) y citas de línea |
+| R01 | Cuerpo y bitácora describen código que no existe | medio | ✅ verificado en `0327282` |
 | H13 | Policy `for all` donde alcanza `for select` | bajo | ✅ verificado en `93cc3c5` |
-| H14 | «P4b» corre con `aal2` y no fija el orden que dice | bajo | abierto (mejora) |
+| H14 | «P4b» corre con `aal2` y no fija el orden que dice | bajo | ✅ verificado en `0327282` (lado SQL por inspección + CI) |
+| H15 | `CC-005` duplicado con develop (#79): conflicto | medio | abierto |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-Solo texto: en la bitácora, el rojo de M21 (3, no 5) y, en la bitácora y el cuerpo, las citas de línea
-reemplazadas por nombres de símbolo (`R01`). `H14` si entra. Después, la ronda 4 mira CI por dentro.
+Solo `H15`: mergear develop, quedarse con el `CC-005.md` de develop, pasar el de esta PR a `CC-006` con sus
+referencias propias (no las de #79), y CI verde sobre el merge. La ronda 5 lo verifica leyendo CI.
 
 ## Para el análisis posterior
 
