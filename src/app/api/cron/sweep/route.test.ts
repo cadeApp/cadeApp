@@ -65,7 +65,9 @@ describe('GET & POST /api/cron/sweep', () => {
             }),
           }),
           update: vi.fn().mockReturnValue({
-            in: vi.fn().mockResolvedValue({ error: null }),
+            in: vi.fn().mockReturnValue({
+              is: vi.fn().mockResolvedValue({ error: null }),
+            }),
           }),
         };
       }
@@ -81,7 +83,9 @@ describe('GET & POST /api/cron/sweep', () => {
             }),
           }),
           update: vi.fn().mockReturnValue({
-            in: vi.fn().mockResolvedValue({ error: null }),
+            in: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ error: null }),
+            }),
           }),
         };
       }
@@ -100,12 +104,20 @@ describe('GET & POST /api/cron/sweep', () => {
         return {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockResolvedValue({
-              data: [{ id: 'merchant-2', paid_until: '2026-08-01' }],
+              data: [
+                {
+                  profile_id: 'merchant-2',
+                  paid_until: '2026-08-01',
+                  subscription_status: 'active',
+                },
+              ],
               error: null,
             }),
           }),
           update: vi.fn().mockReturnValue({
-            in: vi.fn().mockResolvedValue({ error: null }),
+            in: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ error: null }),
+            }),
           }),
         };
       }
@@ -141,6 +153,35 @@ describe('GET & POST /api/cron/sweep', () => {
       },
     } as unknown as ReturnType<typeof createAdminClient>);
 
+    const reqGet = new NextRequest('http://localhost:3000/api/cron/sweep', {
+      headers: {
+        authorization: 'Bearer test-cron-secret-12345',
+      },
+    });
+
+    const responseGet = await GET(reqGet);
+    expect(responseGet.status).toBe(200);
+
+    const jsonGet = await responseGet.json();
+    expect(jsonGet.ok).toBe(true);
+    expect(jsonGet.swept).toBeDefined();
+    expect(jsonGet.swept.purgedDocsCount).toBe(1);
+    expect(jsonGet.swept.expiredRequestsCount).toBe(1);
+
+    const reqPost = new NextRequest('http://localhost:3000/api/cron/sweep', {
+      headers: {
+        authorization: 'Bearer test-cron-secret-12345',
+      },
+    });
+    const responsePost = await POST(reqPost);
+    expect(responsePost.status).toBe(200);
+  });
+
+  it('responde 500 con error sanitizado si runSweep lanza excepción', async () => {
+    vi.mocked(createAdminClient).mockImplementation(() => {
+      throw new Error('Database connection failed catastrophically');
+    });
+
     const req = new NextRequest('http://localhost:3000/api/cron/sweep', {
       headers: {
         authorization: 'Bearer test-cron-secret-12345',
@@ -148,12 +189,10 @@ describe('GET & POST /api/cron/sweep', () => {
     });
 
     const response = await GET(req);
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(500);
 
     const json = await response.json();
-    expect(json.ok).toBe(true);
-    expect(json.swept).toBeDefined();
-    expect(json.swept.purgedDocsCount).toBe(1);
-    expect(json.swept.expiredRequestsCount).toBe(1);
+    expect(json).toEqual({ error: 'Internal Error' });
+    expect(json.details).toBeUndefined();
   });
 });
