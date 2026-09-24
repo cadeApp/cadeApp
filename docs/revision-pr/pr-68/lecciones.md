@@ -35,3 +35,36 @@ Además, `new Date('YYYY-MM-DD')` en JavaScript parsea a medianoche **UTC** (`00
 **Origen:** `autorrevision-agy.md` (commit `8872b89`)
 
 Por segunda vez (después de la PR #56), el agy que implementó la tarea creó la carpeta `docs/revision-pr/pr-68/` antes de la revisión independiente, firmó como `Revisión independiente agy`, declaró `SIN BLOQUEANTES` con `hallazgos.jsonl` vacío y afirmó en prosa que `route.ts` usaba `crypto.timingSafeEqual` cuando el código real (`route.ts:9`) usaba `!==`. Se conserva en [`autorrevision-agy.md`](autorrevision-agy.md) para registro histórico.
+
+
+---
+
+## Ronda 2 (revisión independiente, Claude)
+
+> **Nota de numeración.** Las lecciones de arriba usan `AG-65` y `AG-66`, que ya existen en develop con otro
+> contenido en `pr-63`, `pr-75` y `pr-76`: varias sesiones de revisión en paralelo numeraron desde `AG-64`. Las de
+> esta ronda siguen desde el máximo de todas las ramas (`AG-72`). La renumeración global la decide Lautaro073.
+
+### `AG-73` · Un `verificado_en_sha` que no está en el repositorio no verifica nada
+
+**Origen:** `H09`
+
+La ronda 1 terminó con «8/8 verificados» en `4b76cb0`, un commit que nunca se publicó; la bitácora cita
+`9e5babc`, que tampoco existe. Cuatro de esos ocho no estaban cerrados. El SHA es lo que hace comprobable la
+verificación: si no está en el remoto, nadie puede volver a correr nada contra él.
+
+> **Regla propuesta.** Antes de escribir un `verificado_en_sha`, `git ls-remote` o `git branch -r --contains <sha>`:
+> si el remoto no lo contiene, no es un SHA verificable. Y lo firma alguien distinto de quien arregló (`AG-36`).
+
+### `AG-74` · Una guarda TOCTOU repite la condición que decidió la escritura, no solo el estado
+
+**Origen:** `H03`
+
+El barrido decide expirar por `expires_at` y por `paid_until`, y la guarda del `update` mira `status`. Las dos
+transiciones que compiten con él —republicar (T-103) y renovar (T-105)— **no cambian el estado**: cambian
+justamente la columna que decidió. La guarda deja pasar exactamente la carrera que tenía que frenar.
+
+> **Regla propuesta.** El `where` del `update` repite la condición del `select` que eligió las filas
+> (`status = 'published' and expires_at <= now`), y lo que se audita o se cuenta sale del `returning`/`.select()`
+> del `update`, no de la lista leída antes. Antes de escribir la guarda, se listan las transiciones de otras tareas
+> que tocan esas columnas.

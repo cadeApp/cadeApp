@@ -118,3 +118,107 @@ if (!authHeader || authHeader !== expectedAuth) {
   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 }
 ```
+
+
+---
+
+# Ronda 2 sobre `430ada3`
+
+Revisión independiente (Claude, sesión en la nube). Sin base local, a pedido de Lautaro073: el código es
+TypeScript con pruebas unitarias sobre mocks, así que alcanza Vitest.
+
+## Estado de la rama y de lo registrado
+
+```bash
+git log --oneline origin/develop..origin/feat/T-104-cron-sweep     # 11 commits; el arreglo es dfb954e
+git merge-base origin/develop origin/feat/T-104-cron-sweep         # 3faf0aa (develop ya está en 720e2d4; sin conflicto)
+git cat-file -t 4b76cb0    # fatal: Not a valid object name  -> el verificado_en_sha de la ronda 1 no existe
+git cat-file -t 9e5babc    # no existe                      -> el «Último commit» de la bitácora
+git show --stat --format='%h %an %cI' 50ce7dd   # misma cuenta que dfb954e, 18 min después; marca 8/8 verificados
+git diff origin/develop...origin/feat/T-104-cron-sweep -- docs/tasks/T-104.md   # solo líneas en blanco y tildes del DoD
+```
+
+## Batería de mutación (`mut.mjs`)
+
+Muta `sweep.ts` o `route.ts` en disco exigiendo una sola coincidencia, corre
+`vitest run src/server/cron src/app/api` y restaura los bytes desde memoria en un `finally`. `git status` limpio
+al terminar.
+
+```js
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+const SW = 'src/server/cron/sweep.ts', RT = 'src/app/api/cron/sweep/route.ts';
+const M = {
+  'X00-control': [],
+  'X01-positivo-sin-guarda-published': [[SW, ".in('id', expiredRequestIds)\n      .eq('status', 'published');", ".in('id', expiredRequestIds);"]],
+  'X02-solicitud-a-cancelled': [[SW, ".update({ status: 'expired' })\n      .in('id', expiredRequestIds)", ".update({ status: 'cancelled' })\n      .in('id', expiredRequestIds)"]],
+  'X03-ofertas-a-withdrawn': [[SW, ".update({ status: 'expired', decided_at: nowIso })", ".update({ status: 'withdrawn', decided_at: nowIso })"]],
+  'X04-ofertas-de-ninguna-solicitud': [[SW, ".in('request_id', expiredRequestIds)", ".in('request_id', [])"]],
+  'X05-purged_at-null': [[SW, ".update({ purged_at: nowIso })", ".update({ purged_at: null })"]],
+  'X06-comercio-a-cancelled': [[SW, ".update({ subscription_status: 'expired' })", ".update({ subscription_status: 'cancelled' })"]],
+  'X07-ignora-error-storage': [[SW, "if (!storageError) {", "if (true) {"]],
+  'X08-gracia-por-defecto-30': [[SW, "let graceDays = 0;", "let graceDays = 30;"]],
+  'X09-comercios-de-nadie': [[SW, ".in('profile_id', expiredProfileIds)", ".in('profile_id', [])"]],
+  'X10-ruta-sin-chequeo-de-largo': [[RT, "authHeaderBuf.length !== expectedAuthBuf.length ||\n    ", ""]],
+  'X11-ruta-500-con-detalle': [[RT, "} catch {\n    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });", "} catch (e) {\n    return NextResponse.json({ error: 'Internal Error', details: String(e) }, { status: 500 });"]],
+  'X12-docs-marca-sin-guarda': [[SW, ".in('id', docIds)\n        .is('purged_at', null);", ".in('id', docIds);"]],
+  'X13-reloj-corrido-3h': [[SW, "now: nowDate,", "now: new Date(nowDate.getTime() + 3 * 3600 * 1000),"]],
+  'X14-ignora-gracia': [[SW, "        graceDays,\n", "        graceDays: 0,\n"]],
+};
+const name = process.argv[2];
+const orig = new Map([[SW, readFileSync(SW)], [RT, readFileSync(RT)]]);
+try {
+  for (const [f, a, b] of M[name]) {
+    const t = readFileSync(f, 'utf8'); const n = t.split(a).length - 1;
+    if (n !== 1) { console.log(`${name}: SIN OBJETIVO (${n})`); process.exit(2); }
+    writeFileSync(f, t.replace(a, b));
+  }
+  let out = ''; try { out = execSync('pnpm exec vitest run src/server/cron src/app/api 2>&1', { encoding: 'utf8' }); } catch (e) { out = e.stdout ?? String(e); }
+  console.log(`${name}: ${(out.split('\n').find((l) => /^\s+Tests\s/.test(l)) ?? '?').trim()}`);
+} finally { for (const [f, b] of orig) writeFileSync(f, b); }
+```
+
+```text
+X00-control: Tests  11 passed (11)
+X01-positivo-sin-guarda-published: Tests  1 failed | 10 passed (11)
+X02-solicitud-a-cancelled: Tests  11 passed (11)          <- ciega
+X03-ofertas-a-withdrawn: Tests  11 passed (11)            <- ciega
+X04-ofertas-de-ninguna-solicitud: Tests  11 passed (11)   <- ciega
+X05-purged_at-null: Tests  11 passed (11)                 <- ciega
+X06-comercio-a-cancelled: Tests  11 passed (11)           <- ciega
+X07-ignora-error-storage: Tests  1 failed | 10 passed (11)
+X08-gracia-por-defecto-30: Tests  11 passed (11)          <- ciega
+X09-comercios-de-nadie: Tests  11 passed (11)             <- ciega
+X10-ruta-sin-chequeo-de-largo: Tests  1 failed | 10 passed (11)
+X11-ruta-500-con-detalle: Tests  1 failed | 10 passed (11)
+X12-docs-marca-sin-guarda: Tests  1 failed | 10 passed (11)
+X13-reloj-corrido-3h: Tests  1 failed | 10 passed (11)
+X14-ignora-gracia: Tests  1 failed | 10 passed (11)
+```
+
+## H01: la falla de Storage termina en 200
+
+`sweep.ts:91` es `if (!storageError) { … }` sin `else`; la prueba `sweep.test.ts:205` afirma
+`result.purgedDocsCount === 0` con `runSweep()` resuelto. La ruta (`route.ts:26-31`) devuelve `{ ok: true }` si
+`runSweep` no lanza.
+
+## H03: las transiciones que no cambian el estado
+
+```bash
+# T-103: republicar una published vencida la deja en 'published' con expires_at nuevo (S15 de rpc_requests.sql)
+# T-105: renovar a un comercio lo deja en 'active' con paid_until nuevo
+git show origin/develop:supabase/migrations/20260924013700_rpc_admin_v1.sql | sed -n 302,306p
+#   update public.merchants set subscription_status = v_target_status, paid_until = p_paid_until, …
+```
+
+El `update` del barrido filtra por `id`/`profile_id` + estado; la auditoría, las ofertas y los contadores usan
+la lista del `select` (`sweep.ts:46`, `:54-67`, `:192-205`), no las filas actualizadas.
+
+## Resto
+
+```text
+grep -c 'as unknown as'  src/server/cron/sweep.test.ts -> 6 · src/app/api/cron/sweep/route.test.ts -> 1
+pnpm exec prettier --check (6 archivos) -> All matched files use Prettier code style!
+audit_log.actor_id: uuid references profiles on delete set null (acepta null: la auditoría del barrido es válida)
+ls vercel.json -> No such file or directory ; ADR-0002 :29 y :90 lo asignan a T-104
+```
