@@ -394,12 +394,14 @@ select ok((select picked_up_at is not null from public.delivery_requests where i
   'M03: mark_picked_up persiste picked_up_at en delivery_requests');
 
 select pg_temp.fixture('matched');
+update public.platform_settings set value = '17'::jsonb where key = 'request_ttl_minutes';
 select is(pg_temp.invoke(3, format('select public.courier_cancel_match(%L, %L)', pg_temp.actor(20), 'Pinchadura'))->'data'->>'status',
   'published', 'M04: courier_cancel_match devuelve published');
 select is((select status::text from public.offers where id = pg_temp.actor(30)),
   'cancelled', 'M04: courier_cancel_match persiste offers.status = cancelled');
-select ok((select expires_at > now() + interval '25 minutes' from public.delivery_requests where id = pg_temp.actor(20)),
-  'M06a: courier_cancel_match renueva expires_at al republicar');
+select is((select expires_at from public.delivery_requests where id = pg_temp.actor(20)),
+  now() + interval '17 minutes',
+  'M06a / H10: courier_cancel_match renueva expires_at al TTL distinto del sembrado');
 select is((select accepted_offer_id from public.delivery_requests where id = pg_temp.actor(20)),
   null::uuid, 'M09a: courier_cancel_match limpia accepted_offer_id');
 select is((select cancel_reason from public.delivery_requests where id = pg_temp.actor(20)),
@@ -408,12 +410,14 @@ select is((select reason from public.request_cancellation_reasons where request_
   'Pinchadura', 'D02a: courier_cancel_match registra motivo en request_cancellation_reasons');
 
 select pg_temp.fixture('matched');
+update public.platform_settings set value = '17'::jsonb where key = 'request_ttl_minutes';
 select is(pg_temp.invoke(1, format('select public.republish_request(%L, %L)', pg_temp.actor(20), 'Nuevo intento'))->'data'->>'status',
   'published', 'M05: republish_request devuelve published');
 select is((select status::text from public.offers where id = pg_temp.actor(30)),
   'cancelled', 'M05: republish_request persiste offers.status = cancelled');
-select ok((select expires_at > now() + interval '25 minutes' from public.delivery_requests where id = pg_temp.actor(20)),
-  'M06b: republish_request renueva expires_at al republicar');
+select is((select expires_at from public.delivery_requests where id = pg_temp.actor(20)),
+  now() + interval '17 minutes',
+  'M06b / H10: republish_request renueva expires_at al TTL distinto del sembrado');
 select is((select accepted_offer_id from public.delivery_requests where id = pg_temp.actor(20)),
   null::uuid, 'M09b: republish_request limpia accepted_offer_id');
 select is((select cancel_reason from public.delivery_requests where id = pg_temp.actor(20)),
@@ -434,6 +438,38 @@ select is((select count(*)::int from public.audit_log where target_type = 'deliv
   1, 'M11: admin cancel_request en in_transit inserta fila en audit_log');
 select is((select array_agg(k order by k) from jsonb_object_keys((select after from public.audit_log where target_type = 'delivery_request' and target_id = pg_temp.actor(20)::text and action = 'cancel_request' limit 1)) as t(k)),
   array['status'], 'M12 / H09: audit_log.after contiene únicamente la clave status sin motivo libre');
+select is((select array_agg(k order by k) from jsonb_object_keys((select before from public.audit_log where target_type = 'delivery_request' and target_id = pg_temp.actor(20)::text and action = 'cancel_request' limit 1)) as t(k)),
+  array['offerId', 'status'], 'M13 / H09: audit_log.before contiene únicamente las claves offerId y status sin motivo libre');
+
+-- H11 / M21: RLS real con role authenticated sobre public.request_cancellation_reasons
+create function pg_temp.read_as(p_actor integer, p_sql text, p_aal text default 'aal1') returns text language plpgsql as $$
+declare v text;
+begin
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', pg_temp.actor(p_actor), 'role', 'authenticated', 'aal', p_aal)::text, true);
+  set local role authenticated;
+  execute p_sql into v;
+  set local role postgres;
+  return v;
+exception when others then
+  set local role postgres;
+  return 'ERR ' || sqlstate;
+end $$;
+
+select pg_temp.fixture('matched');
+select ok(pg_temp.invoke(3, format('select public.courier_cancel_match(%L, %L)', pg_temp.actor(20), 'no atendia')) ? 'data',
+  'H11-pre: courier_cancel_match registra motivo privado');
+select is(pg_temp.read_as(4, format('select count(*)::text from public.request_cancellation_reasons where request_id = %L', pg_temp.actor(20))),
+  '0', 'H11 / P1a: courier ajeno lee 0 motivos en request_cancellation_reasons');
+select is(pg_temp.read_as(3, format('select count(*)::text from public.request_cancellation_reasons where request_id = %L', pg_temp.actor(20))),
+  '0', 'H11 / P1b: courier que canceló lee 0 motivos en request_cancellation_reasons');
+select is(pg_temp.read_as(1, format('select count(*)::text from public.request_cancellation_reasons where request_id = %L', pg_temp.actor(20))),
+  '0', 'H11 / P1c: comercio dueño lee 0 motivos en request_cancellation_reasons');
+select is(pg_temp.read_as(5, format('select count(*)::text from public.request_cancellation_reasons where request_id = %L', pg_temp.actor(20)), 'aal2'),
+  '1', 'H11 / P1d: admin con aal2 lee 1 motivo en request_cancellation_reasons (AG-34)');
+select is(pg_temp.read_as(1, format('insert into public.request_cancellation_reasons (request_id, action, reason) values (%L, ''x'', ''y'') returning id::text', pg_temp.actor(20))),
+  'ERR 42501', 'H11 / P1e: comercio no puede insertar directo en request_cancellation_reasons');
+select is(pg_temp.read_as(5, format('insert into public.request_cancellation_reasons (request_id, action, reason) values (%L, ''x'', ''y'') returning id::text', pg_temp.actor(20)), 'aal2'),
+  'ERR 42501', 'H11 / P1f / H13: admin tampoco puede insertar directo en request_cancellation_reasons (solo select)');
 
 -- D03: admin sin AAL2 recibe AAL2_REQUIRED en cancel_request sobre in_transit
 select pg_temp.fixture('in_transit');
@@ -446,6 +482,15 @@ select throws_ok(
   format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Sin MFA'),
   'P0001', 'AAL2_REQUIRED',
   'D03: admin con aal1 recibe AAL2_REQUIRED al cancelar solicitud in_transit'
+);
+select set_config('request.jwt.claims', json_build_object(
+  'sub', pg_temp.actor(5)::text, 'role', 'authenticated',
+  'app_metadata', json_build_object('role', 'admin')
+)::text, true);
+select throws_ok(
+  format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Sin claim aal'),
+  'P0001', 'AAL2_REQUIRED',
+  'D03b / P4a: admin sin claim aal recibe AAL2_REQUIRED al cancelar solicitud in_transit'
 );
 reset role;
 
@@ -539,11 +584,22 @@ begin
   return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Demora de prueba'))->>'error',
     'UNAUTHORIZED_ACTOR', 'S14 / H01b: courier ajeno sin registro en couriers en report_incident -> UNAUTHORIZED_ACTOR');
 
-  -- S15 (H02): republish_request sobre published con expires_at vencido republica sin esperar al cron
+  -- S15 (H02 / H12): republish_request sobre published con expires_at vencido republica, expira ofertas pending previas y renueva expires_at
   perform pg_temp.fixture('published');
+  update public.platform_settings set value = '17'::jsonb where key = 'request_ttl_minutes';
   update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
   return next is(pg_temp.invoke(1, format('select public.republish_request(%L, null)', pg_temp.actor(20)))->'data'->>'status',
     'published', 'S15 / H02: republish_request sobre published vencida republica sin esperar al cron');
+  return next is((select status::text from public.offers where id = pg_temp.actor(31)),
+    'expired', 'H12 / M20: republish_request sobre published vencida expira ofertas pending previas');
+  return next is((select expires_at from public.delivery_requests where id = pg_temp.actor(20)),
+    now() + interval '17 minutes', 'H12 / P2b: republish_request sobre published vencida renueva expires_at al TTL configurado');
+
+  -- P4b: admin con aal1 sobre published vencida recibe REQUEST_EXPIRED según precedencia de paso 3 antes de paso 5
+  perform pg_temp.fixture('published');
+  update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
+  return next is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Motivo'))->>'error',
+    'REQUEST_EXPIRED', 'P4b: admin sobre published vencida recibe REQUEST_EXPIRED antes del chequeo de rol/AAL2');
 
   -- Controles C01..C04
   perform pg_temp.fixture('published');

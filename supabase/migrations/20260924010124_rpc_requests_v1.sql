@@ -12,9 +12,8 @@ create table public.request_cancellation_reasons (
 alter table public.request_cancellation_reasons enable row level security;
 
 create policy request_cancellation_reasons_admin on public.request_cancellation_reasons
-  for all to authenticated
-  using (app_private.is_admin())
-  with check (app_private.is_admin());
+  for select to authenticated
+  using (app_private.is_admin());
 
 revoke all on table public.request_cancellation_reasons from public, anon, authenticated;
 grant select on table public.request_cancellation_reasons to authenticated;
