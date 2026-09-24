@@ -588,6 +588,58 @@ export type Database = {
         }
         Relationships: []
       }
+      request_cancellation_reasons: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          id: string
+          offer_id: string | null
+          reason: string
+          request_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          offer_id?: string | null
+          reason: string
+          request_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          offer_id?: string | null
+          reason?: string
+          request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_cancellation_reasons_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_cancellation_reasons_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_cancellation_reasons_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       zones: {
         Row: {
           active: boolean
@@ -618,6 +670,29 @@ export type Database = {
     }
     Functions: {
       accept_offer: { Args: { p_offer_id: string }; Returns: Json }
+      cancel_request: {
+        Args: { p_reason?: string; p_request_id: string }
+        Returns: Json
+      }
+      courier_cancel_match: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: Json
+      }
+      mark_delivered: { Args: { p_request_id: string }; Returns: Json }
+      mark_picked_up: { Args: { p_request_id: string }; Returns: Json }
+      publish_request: { Args: { p_request_id: string }; Returns: Json }
+      report_incident: {
+        Args: { p_description: string; p_kind: string; p_request_id: string }
+        Returns: Json
+      }
+      report_no_show: {
+        Args: { p_republish?: boolean; p_request_id: string }
+        Returns: Json
+      }
+      republish_request: {
+        Args: { p_reason?: string; p_request_id: string }
+        Returns: Json
+      }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
       submit_offer: {
         Args: {
