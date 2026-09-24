@@ -59,3 +59,32 @@ El otro sentido es más sutil. El wrapper parsea con la `discriminatedUnion` del
 - `P15-entregable-declarado-pero-no-ejecutable` suma cinco en esta PR (`H01` a `H04` y `H10`) y queda como el tercer patrón del catálogo.
 - `P08` suma dos más (`H05`, `H08`): sigue presente, y es la tercera PR seguida con él.
 - Como en la #64, el control de mutación no se pudo aplicar a la suite, porque no corre. La mutación de `H05` (borrar el `update` de `offers`) va en la ronda 2.
+
+---
+
+## Ronda 2
+
+### `AG-67` · El arreglo de «la suite no corre» se declaró sin correr la suite
+
+**Origen:** `H04` en `b257f1b`.
+
+La ronda 1 dijo, con la salida pegada, que `rpc_admin.sql` corría 0 de 25. El arreglo reescribió el archivo entero —con una semilla mucho mejor, pruebas de efecto y el caso de ofertas `pending` + `accepted`— y la bitácora cerró con «test:db ✅ (36 assertions)». Corre 0 de 36, por un UUID con una `m`.
+
+Lo notable no es el UUID. Es que **el hallazgo decía literalmente «pegar la línea `Result:` de una corrida real»**, y el cierre volvió a ser un tilde sin esa línea. Si la línea hubiera estado, el problema se habría visto en el momento de copiarla, porque no existe.
+
+Y la segunda capa lo confirma. Una vez corregidos los UUID, la semilla viola un índice único que está en el esquema desde T-004. Ninguna de las dos capas se puede escribir si se corrió la suite una sola vez.
+
+> **Regla propuesta, más fuerte que `AG-65`.** Cuando un hallazgo dice «la suite no corre», su arreglo se cierra **pegando la salida completa de esa suite en la bitácora**, no un resumen. Quien revisa compara esa salida con la suya; si no coinciden, el arreglo no está hecho. Y el `db-tests` de CI, que existe justamente para esto, se mira antes de declarar el arreglo, no después.
+
+### `AG-68` · Un hallazgo que cambia comportamiento observable tiene que nombrar las pruebas que invalida
+
+**Origen:** `H07` → `not ok 1` de la ronda 2. **La lección es sobre esta revisión.**
+
+Pedí el `revoke … from anon` (`H07`) sin decir que, a partir de ahí, `anon` no llega a la función: recibe `42501` de Postgres, no el `UNAUTHENTICATED` de la RPC. La suite reescrita conservó la prueba vieja y quedó mal por hacer lo que yo pedí. Es el mismo mecanismo de `AG-59` —un pedido de revisión que mueve la semántica observable—, en chico.
+
+> **Regla propuesta.** Todo hallazgo cuyo arreglo cambia qué error ve un actor (permisos, orden de validaciones, un `revoke`) incluye una línea «**invalida:**» con las pruebas existentes que dejan de ser ciertas y qué deberían afirmar ahora.
+
+### Lo que sí funcionó
+
+- **Las dos mutaciones de Vitest se ponen rojas** (`H06`, `H09`): el test del wrapper afirma exactamente lo que el hallazgo pedía. Es el `(a)` y el `(b)` de `AG-66`.
+- **La batería de mutaciones necesitó controles positivos para poder confiar en ella.** Las nueve mutaciones y la base dieron idéntico, que es la forma exacta que `AG-60` manda sospechar. Tres mutaciones de control que **tienen** que dar rojo lo resolvieron en una corrida: el instrumento funcionaba y las nueve eran cegueras reales. Conviene que cualquier batería de mutación incluya al menos un control positivo por defecto.

@@ -123,3 +123,96 @@ select has_table_privilege('authenticated','public.audit_log','UPDATE'),
 ```
 
 Más la policy `audit_log_admin … for all` de `20260922051650_rls_v1.sql:453`.
+
+---
+
+# Ronda 2 · SHA `b257f1b`
+
+Base local desde cero para que la migración modificada se aplique entera (si no, `start` reutiliza el volumen con la versión anterior):
+
+```bash
+pnpm supabase stop --no-backup
+pnpm supabase start -x realtime,storage-api,imgproxy,studio,vector,logflare,edge-runtime,supavisor,mailpit,postgres-meta
+```
+
+## Suite (H04)
+
+```bash
+pnpm supabase test db     # ver ronda-2/testdb-resumen.txt
+# rpc_admin.sql:14: ERROR:  invalid input syntax for type uuid: "00000000-0000-4000-8000-0000000000m1"
+# Parse errors: Bad plan.  You planned 36 tests but ran 0.
+# Files=7, Tests=177 · Result: FAIL
+```
+
+Copia descartable `ronda-2/rpc_admin_copia-descartable.sql`: solo cambia la semilla (UUID en hex y la oferta `accepted` en una segunda solicitud). **No es el arreglo propuesto**: es el instrumento para poder medir la suite. Corrida directa con `psql -f`: `not ok 1` (espera `UNAUTHENTICATED` y recibe `42501`), `not ok 36` y «planned 36 but ran 37».
+
+## Sondas (H01–H03, H10, H13, D02–D04)
+
+`sonda-1.sql` y `sonda-2.sql` de la ronda 1, re-corridas sin cambios → `ronda-2/sonda-1.out`, `ronda-2/sonda-2.out`. Nuevas: `ronda-2/sonda-3.sql` (D04, contenido del audit, suspender con `pending` + `accepted`) y `ronda-2/sonda-4.sql` (una fila de audit por RPC).
+
+```bash
+docker exec -i supabase_db_cadeapp-staging psql -U postgres -d postgres -v ON_ERROR_STOP=1 < sonda-N.sql
+```
+
+## Batería de mutaciones (H05)
+
+`ronda-2/mut.py`: por cada mutación, arma `begin; <función mutada>; <cuerpo de la suite>` y cuenta los `ok` / `not ok`. Todo en una transacción con `rollback`: la migración del repo no se toca. Resultado en `ronda-2/mutaciones.out`:
+
+```
+M0-base:                          fallan [1, 36]
+C1-CONTROL-sin-aal2-en-decide:    fallan [1, 3, 7, 36]      <- el instrumento detecta
+C2-CONTROL-decide-sin-audit:      fallan [1, 9, 36]         <- el instrumento detecta
+C3-CONTROL-suspend-no-retira:     fallan [1, 15, 17, 36]    <- el instrumento detecta
+M1..M9:                           fallan [1, 36]            <- ciegas
+```
+
+Las nueve iguales, más la base, es la forma que `AG-60` pide sospechar. Por eso van los tres controles: prueban que la mutación sí se aplica y que la suite la ve cuando tiene la aserción.
+
+```bash
+python3 mut.py rpc_admin_copia-descartable.sql     # desde la raíz del repo
+```
+
+## Wrapper (H06, H09) y fake (H08)
+
+Mutaciones con `sed` sobre `src/server/rpc/admin.ts`, restauradas con el `sed` inverso (`git diff` vacío después):
+
+```
+M0 base                                      Tests 7 passed (7)
+M1 p_value: JSON.stringify(value)            Failed Tests 1
+M2 INVALID_SETTING_KEY -> INVALID_SETTING_VALUE   Failed Tests 1
+```
+
+Probe descartable contra el fake (borrado después):
+
+```
+FAKE decide approved->rejected      {"ok":true,…}     RPC: INVALID_STATE_TRANSITION
+FAKE decide suspended->approved     {"ok":true,…}     RPC: INVALID_STATE_TRANSITION
+FAKE suspend suspended              {"ok":true,…}     RPC: INVALID_STATE_TRANSITION
+FAKE verify verified doc            {"ok":true,…}     RPC: INVALID_STATE_TRANSITION
+FAKE decide inexistente+rejected    NOT_FOUND         RPC: REASON_REQUIRED
+WRAPPER sin key VALIDATION_ERROR    FAKE sin key INVALID_SETTING_KEY
+```
+
+## Tipos (H11)
+
+```bash
+pnpm db:types --local; git diff --stat -- src/types/database.types.ts
+#  src/types/database.types.ts | 16 ++++------------
+git show HEAD:src/types/database.types.ts > src/types/database.types.ts
+```
+
+## Ficha (D01)
+
+```bash
+git diff origin/develop b257f1b -- docs/tasks/T-105.md
+# +- `src/server/rpc/admin.test.ts`
+# +- `src/types/database.types.ts`
+```
+
+## Checks
+
+```
+pnpm typecheck   exit 0
+pnpm lint        ✔ No ESLint warnings or errors
+pnpm test        Test Files 32 passed (32) · Tests 267 passed (267) · # pass 19/# fail 0 · # pass 6/# fail 0
+```
