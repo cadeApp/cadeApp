@@ -1,4 +1,24 @@
 -- T-103: ciclo atómico. Solo las ocho entradas públicas son invocables por clientes.
+create table public.request_cancellation_reasons (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null references public.delivery_requests (id) on delete cascade,
+  offer_id uuid references public.offers (id) on delete set null,
+  actor_id uuid references public.profiles (id) on delete set null,
+  action text not null,
+  reason text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.request_cancellation_reasons enable row level security;
+
+create policy request_cancellation_reasons_admin on public.request_cancellation_reasons
+  for all to authenticated
+  using (app_private.is_admin())
+  with check (app_private.is_admin());
+
+revoke all on table public.request_cancellation_reasons from public, anon, authenticated;
+grant select on table public.request_cancellation_reasons to authenticated;
+
 create function app_private.request_setting_int(p_key text) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_value jsonb;
@@ -43,6 +63,7 @@ declare
   v_lat2 double precision;
   v_lng2 double precision;
   v_incident uuid;
+  v_eff_status public.delivery_request_status;
   v_status public.delivery_request_status;
   v_result jsonb;
 begin
@@ -68,6 +89,9 @@ begin
   select * into v_offer from public.offers
     where id = v_request.accepted_offer_id and request_id = p_request_id for update;
   if v_role = 'courier' then
+    if p_action = 'report_incident' and (v_offer.courier_id is distinct from v_uid or v_offer.status is distinct from 'accepted') then
+      raise exception 'UNAUTHORIZED_ACTOR' using errcode = 'P0001';
+    end if;
     select * into v_courier from public.couriers where profile_id = v_uid for share;
     if not found then raise exception 'NOT_FOUND' using errcode = 'P0001'; end if;
     if v_courier.status = 'suspended' then raise exception 'COURIER_SUSPENDED' using errcode = 'P0001'; end if;
@@ -79,30 +103,35 @@ begin
     raise exception 'UNAUTHORIZED_ACTOR' using errcode = 'P0001';
   end if;
 
-  if v_request.status = 'published' and v_request.expires_at <= v_now then
-    if p_action = 'cancel_request' then raise exception 'REQUEST_EXPIRED' using errcode = 'P0001'; end if;
-    -- La expiración se observa aunque el barrido aún no haya persistido expired.
-    raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
+  -- H02: estado efectivo con expiración perezosa (published con expires_at <= now() => expired).
+  v_eff_status := case when v_request.status = 'published' and v_request.expires_at <= v_now
+    then 'expired'::public.delivery_request_status else v_request.status end;
+  if p_action = 'cancel_request' and v_request.status = 'published' and v_request.expires_at <= v_now then
+    raise exception 'REQUEST_EXPIRED' using errcode = 'P0001';
   end if;
-  if (p_action = 'publish_request' and v_request.status <> 'draft')
+  if (p_action = 'publish_request' and v_eff_status <> 'draft')
     or (p_action = 'cancel_request' and not (
-      (v_role = 'merchant' and v_request.status in ('published','matched'))
-      or (v_role = 'admin' and v_request.status = 'in_transit')))
-    or (p_action in ('mark_picked_up','report_no_show','courier_cancel_match') and v_request.status <> 'matched')
-    or (p_action = 'mark_delivered' and v_request.status <> 'in_transit')
-    or (p_action = 'republish_request' and v_request.status not in ('matched','expired','cancelled'))
-    or (p_action = 'report_incident' and v_request.status not in ('published','matched','in_transit','delivered')) then
+      (v_role = 'merchant' and v_eff_status in ('published','matched'))
+      or (v_role = 'admin' and v_eff_status = 'in_transit')))
+    or (p_action in ('mark_picked_up','report_no_show','courier_cancel_match') and v_eff_status <> 'matched')
+    or (p_action = 'mark_delivered' and v_eff_status <> 'in_transit')
+    or (p_action = 'republish_request' and v_eff_status not in ('matched','expired','cancelled'))
+    or (p_action = 'report_incident' and v_eff_status not in ('published','matched','in_transit','delivered')) then
     raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
   end if;
-  if ((p_action = 'cancel_request' and v_request.status in ('matched','in_transit'))
-    or (p_action = 'republish_request' and v_request.status = 'matched')
+  if p_action = 'cancel_request' and v_role = 'admin'
+    and coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'aal', '') <> 'aal2' then
+    raise exception 'AAL2_REQUIRED' using errcode = 'P0001';
+  end if;
+  if ((p_action = 'cancel_request' and v_eff_status in ('matched','in_transit'))
+    or (p_action = 'republish_request' and v_eff_status = 'matched')
     or p_action = 'courier_cancel_match') and coalesce(btrim(p_reason), '') = '' then
     raise exception 'REASON_REQUIRED' using errcode = 'P0001';
   end if;
   if p_action = 'report_no_show' and (v_offer.id is null or v_offer.status <> 'accepted') then
     raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
   end if;
-  if p_action = 'report_incident' and v_request.status = 'delivered'
+  if p_action = 'report_incident' and v_eff_status = 'delivered'
     and (v_request.delivered_at is null or v_now > v_request.delivered_at + interval '24 hours') then
     raise exception 'INCIDENT_WINDOW_EXPIRED' using errcode = 'P0001';
   end if;
@@ -146,10 +175,11 @@ begin
       or v_lng1 not between -65.6400 and -65.5950 or v_lng2 not between -65.6400 and -65.5950 then
       raise exception 'OUT_OF_BOUNDS_AGUILARES' using errcode = 'P0001';
     end if;
-    v_distance := (round((6371000 * 2 * asin(sqrt(least(1.0,
-      power(sin(radians(v_lat2 - v_lat1) / 2), 2)
-      + cos(radians(v_lat1)) * cos(radians(v_lat2)) * power(sin(radians(v_lng2 - v_lng1) / 2), 2))))
-      * 1.30 / 500)::numeric) * 500)::integer;
+    v_distance := case when v_lat1 = v_lat2 and v_lng1 = v_lng2 then 0
+      else greatest(500, (round((6371000 * 2 * asin(sqrt(least(1.0,
+        power(sin(radians(v_lat2 - v_lat1) / 2), 2)
+        + cos(radians(v_lat1)) * cos(radians(v_lat2)) * power(sin(radians(v_lng2 - v_lng1) / 2), 2))))
+        * 1.30 / 500)::numeric) * 500)::integer) end;
   end if;
 
   if p_action in ('publish_request','republish_request','report_incident') then
@@ -181,6 +211,11 @@ begin
     where id = v_request.accepted_offer_id and request_id = p_request_id and status = 'accepted';
   update public.offers set status = 'expired', decided_at = v_now
     where request_id = p_request_id and status = 'pending';
+  if p_action = 'report_no_show' or nullif(btrim(p_reason), '') is not null then
+    insert into public.request_cancellation_reasons (request_id, offer_id, actor_id, action, reason)
+      values (p_request_id, v_request.accepted_offer_id, v_uid, p_action,
+        case when p_action = 'report_no_show' then 'no_show' else btrim(p_reason) end);
+  end if;
   update public.delivery_requests set status = v_status, accepted_offer_id = null,
     published_at = case when v_status = 'published' then v_now else published_at end,
     expires_at = v_expires,
@@ -191,6 +226,9 @@ begin
     cancel_reason = case when p_action = 'report_no_show' then 'no_show' else nullif(btrim(p_reason), '') end,
     route_distance_m = case when p_action = 'publish_request' then v_distance else route_distance_m end
     where id = p_request_id;
+  if v_status = 'published' then
+    update public.delivery_requests set cancel_reason = null where id = p_request_id;
+  end if;
   -- Solo IDs/estados: los motivos libres y datos privados nunca van al audit log.
   insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
     values (v_uid, p_action, 'delivery_request', p_request_id,

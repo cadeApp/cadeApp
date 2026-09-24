@@ -588,6 +588,48 @@ export type Database = {
         }
         Relationships: []
       }
+      request_cancellation_reasons: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          id: string
+          reason: string
+          request_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          reason: string
+          request_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          id?: string
+          reason?: string
+          request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_cancellation_reasons_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_cancellation_reasons_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       zones: {
         Row: {
           active: boolean

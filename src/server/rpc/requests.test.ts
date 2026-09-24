@@ -69,10 +69,17 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     for (const c of cases) {
       const declaration = sql.match(new RegExp(`\\('${c.name}', array\\[([^\\]]+)\\]\\)`));
       expect(declaration, c.name).not.toBeNull();
-      const codes = [...(declaration?.[1] ?? '').matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+      const codes = [...(declaration?.[1] ?? '').matchAll(/'([A-Z0-9_]+)'/g)].map((m) => m[1]);
       expect(codes.sort(), c.name).toEqual([...RPC_CONTRACTS[c.name].errorCodes].sort());
     }
-    expect(sql).toContain("result->>'error' = any");
+    const strictContractErrorAssertRegex =
+      /return\s+next\s+ok\(\s*result->>'error'\s*=\s*any\(/i;
+    expect(sql).toMatch(strictContractErrorAssertRegex);
+    const v04MutatedSql = sql.replace(
+      strictContractErrorAssertRegex,
+      "return next ok(true or result->>'error' = any("
+    );
+    expect(v04MutatedSql).not.toMatch(strictContractErrorAssertRegex);
   });
 
   it('la migración SQL cumple SECURITY DEFINER por función, locks anclados por sentencia en orden jerárquico (AG-58/AG-61/AG-63), sin UPDATE antes de RAISE (H03) y preserva hitos al cancelar', () => {
@@ -94,11 +101,13 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       fnBlocks.find((b) => b.trimStart().startsWith('app_private.request_cycle(')) ?? '';
     expect(cycleBlock.length).toBeGreaterThan(0);
 
-    // AG-61 / AG-63 (H01): cada lock anclado a su propia sentencia SELECT ([^;]*?) y en orden padre -> hijo
+    // AG-61 / AG-63 (H01) + H08 (V03): cada lock anclado a su propia sentencia SELECT ([^;]*?) y ningún lock de hijo/actor precede al de delivery_requests
     const reqLockRegex = /from\s+public\.delivery_requests\b[^;]*?for\s+update\s*;/i;
     const offerLockRegex = /from\s+public\.offers\b[^;]*?for\s+update\s*;/i;
     const courierLockRegex = /from\s+public\.couriers\b[^;]*?for\s+share\s*;/i;
     const merchantLockRegex = /from\s+public\.merchants\b[^;]*?for\s+share\s*;/i;
+    const anyChildOrActorLockRegex =
+      /from\s+public\.(?:offers|couriers|merchants)\b[^;]*?for\s+(?:update|share)\s*;/i;
 
     const reqLockMatch = cycleBlock.match(reqLockRegex);
     const offerLockMatch = cycleBlock.match(offerLockRegex);
@@ -114,13 +123,20 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     const offerIdx = offerLockMatch?.index ?? -1;
     const courierIdx = courierLockMatch?.index ?? -1;
     const merchantIdx = merchantLockMatch?.index ?? -1;
+    const firstChildOrActorLockIdx = cycleBlock.search(anyChildOrActorLockRegex);
 
     expect(reqIdx).toBeGreaterThanOrEqual(0);
+    expect(reqIdx).toBeLessThan(firstChildOrActorLockIdx);
     expect(reqIdx).toBeLessThan(offerIdx);
     expect(offerIdx).toBeLessThan(courierIdx);
     expect(courierIdx).toBeLessThan(merchantIdx);
+    expect(
+      Array.from(
+        cycleBlock.matchAll(/from\s+public\.couriers\b[^;]*?for\s+(?:update|share)\s*;/gi)
+      )
+    ).toHaveLength(1);
 
-    // AG-63: mutaciones embebidas M1, M2 y M3 — quitar cada lock individual debe hacer fallar su control
+    // AG-63 + V03: mutaciones embebidas M1, M2, M3 y V03
     const m1WithoutReqLock = cycleBlock.replace(reqLockRegex, (s) =>
       s.replace(/for\s+update\s*;/i, ';')
     );
@@ -135,6 +151,14 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       s.replace(/for\s+share\s*;/i, ';')
     );
     expect(m3WithoutCourierLock).not.toMatch(courierLockRegex);
+
+    const v03WithPriorCourierLock = cycleBlock.replace(
+      reqLockRegex,
+      (s) => `from public.couriers where profile_id = v_user for update;\n  select status ${s}`
+    );
+    expect(v03WithPriorCourierLock.search(reqLockRegex)).toBeGreaterThan(
+      v03WithPriorCourierLock.search(anyChildOrActorLockRegex)
+    );
 
     // H03: sin UPDATE muerto en delivery_requests a status = 'expired' y todas las mutaciones de negocio ocurren después del último RAISE EXCEPTION
     expect(cycleBlock).not.toMatch(
