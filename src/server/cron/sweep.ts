@@ -73,7 +73,7 @@ export async function runSweep(): Promise<SweepResult> {
 
     // Registrar en audit_log
     const auditEntries = docsToPurge.map((d) => ({
-      target_type: 'courier_document',
+      target_type: 'courier_documents',
       target_id: d.id,
       action: 'purged',
       after: { purged_at: nowIso, courier_id: d.courier_id },

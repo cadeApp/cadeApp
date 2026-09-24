@@ -21,6 +21,7 @@ describe('runSweep logic', () => {
 
   it('procesa correctamente expiraciones, purga y suscripciones vencidas', async () => {
     const mockStorageRemove = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockAuditInsert = vi.fn().mockResolvedValue({ error: null });
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'delivery_requests') {
@@ -107,7 +108,7 @@ describe('runSweep logic', () => {
 
       if (table === 'audit_log') {
         return {
-          insert: vi.fn().mockResolvedValue({ error: null }),
+          insert: mockAuditInsert,
         };
       }
 
@@ -129,5 +130,13 @@ describe('runSweep logic', () => {
     expect(result.purgedDocsCount).toBe(1);
     expect(result.expiredSubscriptionsCount).toBe(1);
     expect(mockStorageRemove).toHaveBeenCalledWith(['courier-1/dni.jpg']);
+
+    expect(mockAuditInsert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        target_type: 'courier_documents',
+        target_id: 'doc-10',
+        action: 'purged',
+      }),
+    ]);
   });
 });
