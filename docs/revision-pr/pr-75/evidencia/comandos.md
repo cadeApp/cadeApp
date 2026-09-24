@@ -320,3 +320,27 @@ pnpm supabase test db        # ronda-5/testdb-resumen.txt → Files=7, Tests=234
 pnpm db:types --local; git diff --exit-code -- src/types/database.types.ts   # vacío
 python3 docs/revision-pr/pr-75/evidencia/ronda-2/mut.py supabase/tests/rpc_admin.sql   # ronda-5/mutaciones.out (igual que la ronda 3)
 ```
+
+---
+
+# Ronda 6 · SHA `d18c562` · verificación en CI (run 35961614712)
+
+Por indicación de Lautaro073, Supabase se verificó con el `db-tests` del CI, sin base local.
+
+```bash
+git merge-base --is-ancestor origin/develop d18c562 && echo contiene-develop   # sí (merge faa5dc6)
+git diff --stat 59698a9 faa5dc6 -- . ':!src/domain' ':!docs/contracts'      # vacío: el merge solo trae el CC
+git diff e6f43f7 53bd0ef -- src/                                           # vacío: el fake mergeado = el verificado en la ronda 5
+git diff develop...d18c562 -- src/domain                                   # vacío
+grep -n "git diff --exit-code" .github/workflows/ci.yml                    # :119, mismo paso que db:types --local
+```
+
+Logs (GitHub Actions, `get_job_logs`):
+
+```
+db-tests  107511219050  rpc_admin.sql .............. ok · Files=7, Tests=234 · Result: PASS · [db:types] Tipos generados… (git diff --exit-code sin salida, job success)
+unit      107511219130  admin.test.ts (8 tests) · Test Files 32 passed (32) · Tests 268 passed (268) · # pass 19/# fail 0 · # pass 6/# fail 0
+approval-policy 107511985104  "Informe de revisar-pr completo y sin bloqueantes."
+```
+
+Reviews de la #79: `[]` (D07).

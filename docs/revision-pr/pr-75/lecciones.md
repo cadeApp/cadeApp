@@ -152,3 +152,11 @@ Una rama local descartable con las dos mergeadas contestó en una corrida: sin c
 ### El dato de la PR hasta acá
 
 Cinco rondas y 22 hallazgos. Los tres que costaron más de dos rondas no eran de código: la suite que no corría (`H04`, tres rondas), los tipos escritos a mano (`H11`, cuatro rondas) y las afirmaciones del cuerpo y la bitácora (`H18`/`H21`). Los tres se cierran con un comando cuya salida se pega: `test db`, `db:types` con `git diff --exit-code`, y el `--stat` del commit. La migración, que era lo difícil, quedó bien en la ronda 2.
+
+---
+
+## Ronda 6 (cierre)
+
+- **Seis rondas, 22 hallazgos y 7 decisiones.** Quedan tres mejoras abiertas; nada bloquea. La migración quedó bien en la ronda 2. Las cuatro rondas siguientes fueron de evidencia (suite que no corría, tipos a mano, afirmaciones del cuerpo) y de proceso (el CC). Ver `AG-65`, `AG-67`, `AG-69` y `AG-71`.
+- **El check verde con el informe equivocado.** `approval-policy` pasó con un informe del agy que dice «MEJORAS: ninguna», cuando hay tres abiertas. Es lo que `COMO-ENTREGAR.md` ya advertía: el check verifica formato, no autoría. El freno sigue siendo que Lautaro073 pegue el informe de la revisión independiente antes de mergear.
+- **`D07`:** una validación que la decisión pedía «antes» se hizo «después». Es aceptable porque el código está verificado de forma independiente, pero conviene que la próxima ficha que dependa de un CC lo diga: **el CC se mergea con la aprobación de la dueña del contrato, no solo con la de quien lo propone**.
