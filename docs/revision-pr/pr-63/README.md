@@ -1,7 +1,7 @@
 # PR #63 — T-103 · Ciclo de solicitud
 
-> ❌ **Con 1 bloqueante de coordinación · ronda 4 · código, pruebas y texto cerrados · 18 de 20 registros verificados, 1 aceptado · falta renombrar `CC-005` → `CC-006` y mergear develop**
-> Rondas 1–3 con base local; ronda 4 con CI leído por dentro (sin Docker, a pedido de Lautaro073).
+> ✅ **Mergeada a pedido de Lautaro073 · 18 de 20 registros verificados, 2 aceptados (`A01` y `H15`, este sin verificación independiente)**
+> Rondas 1–3 con base local; ronda 4 y cierre con CI leído por dentro (`8bec19e`: `db-tests` 1.385/1.385, 8/8 checks).
 
 | | |
 |---|---|
@@ -47,16 +47,16 @@ con cada hallazgo corrido contra la base local.
 | R01 | Cuerpo y bitácora describen código que no existe | medio | ✅ verificado en `0327282` |
 | H13 | Policy `for all` donde alcanza `for select` | bajo | ✅ verificado en `93cc3c5` |
 | H14 | «P4b» corre con `aal2` y no fija el orden que dice | bajo | ✅ verificado en `0327282` (lado SQL por inspección + CI) |
-| H15 | `CC-005` duplicado con develop (#79): conflicto | medio | ⚠️ arreglado sin verificar: lo arregló esta sesión a pedido (`8dff50e`, `e5ce192`) |
+| H15 | `CC-005` duplicado con develop (#79): conflicto | medio | 🔵 aceptado: lo arregló esta sesión a pedido (`8dff50e`, `e5ce192`); CI de `8bec19e` verde |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
-## Qué queda por hacer
+## Cierre
 
-`H15` lo arregló esta misma sesión, a pedido de Lautaro073: merge de develop (`8dff50e`) y `CC-005` → `CC-006`
-(`e5ce192`). Como quien arregla no firma la verificación (`AG-36`), queda **arreglado sin verificar** hasta que
-alguien distinto lea CI sobre `e5ce192`. Falta además el cuerpo de la PR: `CC-005` → `CC-006` y la frase de las 27
-combinaciones.
+Lautaro073 pidió que la sesión de revisión hiciera el renombre `CC-005` → `CC-006` y mergeara. El merge de develop
+(`8dff50e`), la renumeración (`e5ce192`) y el cuerpo de la PR los hizo esta sesión. CI de `8bec19e`, leído por
+dentro: `db-tests` `Files=7, Tests=1385, Result: PASS`, tipos sin diff y los otros 7 checks en `success`. Como
+quien arregló es quien revisa, `H15` queda **aceptado**, no verificado de forma independiente (`AG-36`).
 
 ## Para el análisis posterior
 
