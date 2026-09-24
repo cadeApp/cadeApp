@@ -35,6 +35,13 @@ export const withdrawOfferFormSchema = z.object({
 
 export type WithdrawOfferFormInput = z.infer<typeof withdrawOfferFormSchema>;
 
+export const acceptOfferFormSchema = z.object({
+  offerId: uuidSchema,
+});
+
+export type AcceptOfferFormInput = z.infer<typeof acceptOfferFormSchema>;
+
+
 export interface AvailableRequestItem {
   readonly id: string;
   readonly pickupZoneName: string;
