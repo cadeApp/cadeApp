@@ -407,8 +407,7 @@ select is((select cancel_reason from public.delivery_requests where id = pg_temp
 select is((select reason from public.request_cancellation_reasons where request_id = pg_temp.actor(20) order by created_at desc limit 1),
   'Pinchadura', 'D02a: courier_cancel_match registra motivo en request_cancellation_reasons');
 
-select pg_temp.fixture('expired');
-update public.delivery_requests set accepted_offer_id = pg_temp.actor(30) where id = pg_temp.actor(20);
+select pg_temp.fixture('matched');
 select is(pg_temp.invoke(1, format('select public.republish_request(%L, %L)', pg_temp.actor(20), 'Nuevo intento'))->'data'->>'status',
   'published', 'M05: republish_request devuelve published');
 select is((select status::text from public.offers where id = pg_temp.actor(30)),
