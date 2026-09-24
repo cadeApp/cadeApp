@@ -1,63 +1,120 @@
-# Evidencia de Comandos — Ronda 1 — PR #68 [T-104]
+# Evidencia de Comandos — PR #68 (`T-104`) — Ronda 1 (Revisión Independiente)
 
+- **Worktree:** `c:\Users\El Yisus Pai\Desktop\Proyectos\cadeApp-rev68`
+- **SHA verificado:** `e6d0b78d20e7b5622af5705126862ef1a062fc28` (`e6d0b78`)
 - **Fecha:** 2026-09-23
-- **SHA revisado:** `f137ef1c518f816b2e2d03b30e74288dbb88a305`
 
-## 1. Verificación de Typecheck
+## 1. Estado de CI en GitHub Actions
 
 ```bash
-pnpm typecheck
+gh pr checks 68 --json name,state
 ```
-**Salida:**
+
+```json
+[
+  { "name": "bundle-budget", "state": "SUCCESS" },
+  { "name": "unit", "state": "SUCCESS" },
+  { "name": "db-tests", "state": "SUCCESS" },
+  { "name": "typecheck", "state": "SUCCESS" },
+  { "name": "lint", "state": "SUCCESS" },
+  { "name": "build", "state": "SUCCESS" },
+  { "name": "audit", "state": "SUCCESS" },
+  { "name": "approval-policy", "state": "FAILURE" }
+]
 ```
+
+## 2. Checks locales (`typecheck`, `lint`, `test`, `prettier`)
+
+### `pnpm typecheck`
+
+```text
 > cadeapp@0.1.0 typecheck
 > tsc --noEmit && tsc --project .github/workflows/tsconfig.json
-
-(0 errores)
+(exit code 0)
 ```
 
-## 2. Verificación de Linter (ESLint)
+### `pnpm lint`
 
-```bash
-pnpm lint
-```
-**Salida:**
-```
+```text
 > cadeapp@0.1.0 lint
 > next lint --dir src --file middleware.ts --max-warnings 0 && eslint --no-ignore --ext .mjs .github/workflows --max-warnings 0
-
 ✔ No ESLint warnings or errors
+(exit code 0)
 ```
 
-## 3. Verificación de Pruebas Automatizadas (Vitest)
+### `pnpm test`
 
-```bash
-pnpm test
-```
-**Salida:**
-```
- Test Files  27 passed (27)
-      Tests  233 passed (233)
-ℹ tests 19 (workflows)
-ℹ pass 19
-ℹ tests 6 (ADR)
-ℹ pass 6
+```text
+ Test Files  24 passed (24)
+      Tests  208 passed (208)
+# verify-workflows.test.mjs: tests 19, pass 19, fail 0
+# verify-adr.test.mjs: tests 6, pass 6, fail 0
+(exit code 0)
 ```
 
-## 4. Verificación de Alcance (Archivos Modificados)
+### `npx prettier --check`
 
 ```bash
-git diff origin/develop...origin/feat/T-104-cron-sweep --name-only
+npx prettier --check "src/app/api/cron/**" "src/app/api/health/**" "src/server/cron/**" docs/tasks/T-104.md docs/tasks/log/T-104.md
 ```
-**Salida:** 7 archivos modificados, todos dentro de "Archivos permitidos" de `T-104.md`.
 
-## 5. Verificación de Formato de `hallazgos.jsonl`
+```text
+Checking formatting...
+[warn] src/server/cron/sweep.ts
+[warn] docs/tasks/T-104.md
+[warn] docs/tasks/log/T-104.md
+[warn] Code style issues found in 3 files. Run Prettier with --write to fix.
+```
 
-```bash
-node docs/revision-pr/analizar.mjs verificacion
+## 3. Evidencia de hallazgos específicos
+
+### `PR68-H01` — `storage.from('courier-docs').remove()` sin control de `{ error }`
+
+```ts
+// src/server/cron/sweep.ts:65-73
+// Eliminar binarios de Supabase Storage
+await supabase.storage.from('courier-docs').remove(storagePaths);
+
+// Marcar purged_at = now()
+await supabase.from('courier_documents').update({ purged_at: nowIso }).in('id', docIds);
 ```
-**Salida:**
+
+### `PR68-H02` — Fecha UTC vs zona horaria Argentina (`-03:00`) en `sweep.ts`
+
+```ts
+// src/server/cron/sweep.ts:12-13, 122-126
+const nowIso = new Date().toISOString();
+const currentDateIso = nowIso.split('T')[0] ?? '';
+...
+const paidUntilDate = new Date(merchant.paid_until);
+paidUntilDate.setDate(paidUntilDate.getDate() + graceDays);
+const paidUntilWithGraceStr = paidUntilDate.toISOString().split('T')[0] ?? '';
+if (paidUntilWithGraceStr < currentDateIso) {
+  expiredMerchantIds.push(merchant.profile_id);
+}
 ```
-# Verificacion de hallazgos
-Total hallazgos: 0
+
+Contra `src/domain/states/index.ts:79-86`:
+
+```ts
+const paidUntilMs = parseTimestampMs(
+  typeof input.paidUntil === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.paidUntil)
+    ? `${input.paidUntil}T23:59:59.999-03:00`
+    : input.paidUntil
+);
+const graceMs = Math.max(0, input.graceDays ?? 0) * MS_PER_DAY;
+if (paidUntilMs !== null && paidUntilMs + graceMs >= input.now.getTime()) {
+  return ok(true);
+}
+```
+
+### `PR68-H04` — Comparación con `!==` en `src/app/api/cron/sweep/route.ts:9`
+
+```ts
+const authHeader = req.headers.get('authorization');
+const expectedAuth = `Bearer ${serverEnv.CRON_SECRET}`;
+
+if (!authHeader || authHeader !== expectedAuth) {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+}
 ```
