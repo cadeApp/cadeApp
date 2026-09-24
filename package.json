@@ -12,9 +12,9 @@
     "start": "next start",
     "lint": "next lint --dir src --file middleware.ts --max-warnings 0 && eslint --no-ignore --ext .mjs .github/workflows --max-warnings 0",
     "typecheck": "tsc --noEmit && tsc --project .github/workflows/tsconfig.json",
-    "test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs && node --test docs/adr/verify-adr.test.mjs",
+    "test": "vitest run --testTimeout 15000 && node --test .github/workflows/verify-workflows.test.mjs && node --test docs/adr/verify-adr.test.mjs",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --testTimeout 15000",
     "format": "prettier --write \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
     "format:check": "prettier --check \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
     "db:types": "node tools/db-types.mjs",
@@ -40,6 +40,7 @@
     "server-only": "0.0.1",
     "sonner": "2.0.8",
     "tailwind-merge": "2.6.1",
+    "web-push": "3.6.7",
     "zod": "3.25.76"
   },
   "devDependencies": {

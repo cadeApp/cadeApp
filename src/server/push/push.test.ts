@@ -247,4 +247,62 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
       expect(deletedEndpoints).toEqual([]);
     });
   });
+
+  describe('Casos de borde y componentes de infraestructura', () => {
+    it('retorna resultado vacío inmediatamente si userIds es un arreglo vacío', async () => {
+      const result = await sendPushNotification([], {
+        event: 'request_published',
+        requestId: REQ_ID,
+      }, {
+        db: mockDb,
+        transport: mockTransport,
+      });
+
+      expect(result.totalSubscriptions).toBe(0);
+      expect(result.sentCount).toBe(0);
+      expect(mockDb.getSubscriptionsForUsers).not.toHaveBeenCalled();
+    });
+
+    it('captura fallas al consultar la base de datos sin lanzar excepción', async () => {
+      const failingDb: PushDatabaseClient = {
+        getSubscriptionsForUsers: vi.fn().mockRejectedValue(new Error('Supabase database error')),
+        deleteSubscriptionByEndpoint: vi.fn(),
+      };
+
+      const result = await sendPushNotification([USER_1], {
+        event: 'request_published',
+        requestId: REQ_ID,
+      }, {
+        db: failingDb,
+        transport: mockTransport,
+      });
+
+      expect(result.errors.length).toBe(1);
+      expect(result.errors[0]?.message).toContain('Supabase database error');
+    });
+
+    it('captura fallas al eliminar suscripciones sin interrumpir el proceso', async () => {
+      const transport410: PushTransport = {
+        send: vi.fn().mockResolvedValue({ status: 410 }),
+      };
+
+      const failingDeleteDb: PushDatabaseClient = {
+        getSubscriptionsForUsers: vi.fn().mockResolvedValue(mockSubscriptions.slice(0, 1)),
+        deleteSubscriptionByEndpoint: vi.fn().mockRejectedValue(new Error('Delete error in database')),
+      };
+
+      const result = await sendPushNotification([USER_1], {
+        event: 'request_published',
+        requestId: REQ_ID,
+      }, {
+        db: failingDeleteDb,
+        transport: transport410,
+      });
+
+      expect(result.failedCount).toBe(1);
+      expect(result.errors.length).toBe(1);
+      expect(result.errors[0]?.message).toContain('Delete error in database');
+    });
+  });
 });
+
