@@ -617,12 +617,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      accept_offer: { Args: { p_offer_id: string }; Returns: Json }
+      accept_offer: {
+        Args: {
+          p_offer_id: string
+        }
+        Returns: Json
+      }
       admin_decide_courier: {
         Args: {
           p_courier_id: string
           p_decision: string
-          p_reason?: string | null
+          p_reason?: string
         }
         Returns: Json
       }
@@ -630,28 +635,39 @@ export type Database = {
         Args: {
           p_merchant_id: string
           p_subscription_status: string
-          p_paid_until?: string | null
-          p_notes?: string | null
+          p_paid_until?: string
+          p_notes?: string
         }
         Returns: Json
       }
       admin_suspend_courier: {
-        Args: { p_courier_id: string; p_reason: string }
+        Args: {
+          p_courier_id: string
+          p_reason: string
+        }
         Returns: Json
       }
       admin_update_setting: {
-        Args: { p_key: string; p_value: Json }
+        Args: {
+          p_key: string
+          p_value: Json
+        }
         Returns: Json
       }
       admin_verify_document: {
         Args: {
           p_document_id: string
           p_decision: string
-          p_reason?: string | null
+          p_reason?: string
         }
         Returns: Json
       }
-      set_availability: { Args: { p_available: boolean }; Returns: Json }
+      set_availability: {
+        Args: {
+          p_available: boolean
+        }
+        Returns: Json
+      }
       submit_offer: {
         Args: {
           p_amount_ars: number
@@ -661,7 +677,12 @@ export type Database = {
         }
         Returns: Json
       }
-      withdraw_offer: { Args: { p_offer_id: string }; Returns: Json }
+      withdraw_offer: {
+        Args: {
+          p_offer_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       consent_document: "tos" | "privacy" | "courier_contract" | "pilot_terms"

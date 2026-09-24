@@ -281,4 +281,65 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
       expect(RPC_CONTRACTS[name].outputSchema).toBeDefined();
     }
   });
+
+  it('8. H08 / D05: Pruebas de contrato y coincidencia de bordes entre fake y RPC (D03, D04 y NOT_FOUND)', async () => {
+    const fake = createFakeRpcClient({
+      settings: DEFAULT_SETTINGS,
+      initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
+      initialCouriers: [
+        { courierId: COURIER_1_ID, status: 'approved', available: true },
+        { courierId: '00000000-0000-4000-8000-0000000000c2', status: 'suspended', available: false },
+      ],
+      initialDocuments: [
+        {
+          documentId: DOC_1_ID,
+          courierId: COURIER_1_ID,
+          kind: 'license',
+          status: 'verified',
+        },
+      ],
+    });
+
+    // 1. decide approved -> rejected da INVALID_STATE_TRANSITION (D03)
+    const res1 = await fake.admin_decide_courier({
+      courierId: COURIER_1_ID,
+      decision: 'rejected',
+      reason: 'Motivo de rechazo',
+    });
+    expect(res1.ok).toBe(false);
+    if (!res1.ok) expect(res1.code).toBe('INVALID_STATE_TRANSITION');
+
+    // 2. decide suspended -> approved da INVALID_STATE_TRANSITION (D03)
+    const res2 = await fake.admin_decide_courier({
+      courierId: '00000000-0000-4000-8000-0000000000c2',
+      decision: 'approved',
+    });
+    expect(res2.ok).toBe(false);
+    if (!res2.ok) expect(res2.code).toBe('INVALID_STATE_TRANSITION');
+
+    // 3. suspender a un suspendido da OK con 0 ofertas retiradas (idempotente)
+    const res3 = await fake.admin_suspend_courier({
+      courierId: '00000000-0000-4000-8000-0000000000c2',
+      reason: 'Re-suspensión cautelar',
+    });
+    expect(res3.ok).toBe(true);
+    if (res3.ok) expect(res3.data.withdrawnOffersCount).toBe(0);
+
+    // 4. verify de un documento verified da INVALID_STATE_TRANSITION (D04)
+    const res4 = await fake.admin_verify_document({
+      documentId: DOC_1_ID,
+      decision: 'rejected',
+      reason: 'Nuevo intento',
+    });
+    expect(res4.ok).toBe(false);
+    if (!res4.ok) expect(res4.code).toBe('INVALID_STATE_TRANSITION');
+
+    // 5. decide(inexistente, rejected, sin motivo) da REASON_REQUIRED (valida motivo antes de buscar en DB)
+    const res5 = await fake.admin_decide_courier({
+      courierId: '00000000-0000-4000-8000-999999999999',
+      decision: 'rejected',
+    });
+    expect(res5.ok).toBe(false);
+    if (!res5.ok) expect(res5.code).toBe('REASON_REQUIRED');
+  });
 });

@@ -994,6 +994,9 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
 
       // Admin RPCs (decide courier, verify documents, suspend courier withdrawing pending offer3 on REQ_2, set subscription, update setting)
       fake.setActor({ userId: ADMIN_1, role: 'admin', aal: 'aal2' });
+      fake.seedCourier({ courierId: COURIER_1, status: 'pending', available: false });
+      fake.seedDocument({ documentId: DOC_1, courierId: COURIER_1, kind: 'license', status: 'submitted' });
+      fake.seedDocument({ documentId: DOC_2, courierId: COURIER_1, kind: 'insurance', status: 'submitted' });
       expect(
         await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
       ).toEqual({
