@@ -21,7 +21,7 @@ export function getRoleDefaultPath(role: ProfileRole): string {
     case 'courier':
       return '/courier/feed';
     case 'admin':
-      return '/admin';
+      return '/';
     default:
       return '/';
   }

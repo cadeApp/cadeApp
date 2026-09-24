@@ -1,86 +1,64 @@
-## Resumen de la Tarea T-118
+## [T-118] Integración visual Stitch, shells y navegación canónica
 
-Cierra la integración visual Stitch, shells y navegación canónica por rol para **cadeApp** en Aguilares, resolviendo integralmente la issue #85 según la especificación de `docs/tasks/T-118.md` y las decisiones de diseño D14, D15 y D16.
+Closes #85
 
----
+### Qué cambia
+Implementa la integración visual y navegación canónica de las pantallas públicas (`P01`–`P03`), de comercio (`C01`–`C05`, `C07`, `C08`) y de repartidor (`R01`–`R06`, `R08`) según `docs/tasks/T-118.md`, utilizando exclusivamente los componentes y tokens de `src/ui`, aislando roles/onboarding en servidor, agregando boundaries `loading.tsx`/`error.tsx` en los segmentos canónicos con datos, paginando el historial por cursor (`limit <= 50`) y leyendo el estado real de suscripción/documentos desde Supabase sin datos fantasma.
 
-## 🏛️ Dictámenes de El Consejo Consultivo
+### DoD (copiado de la ficha; marcar solo lo verificado)
+- [x] **Pruebas en rojo antes de implementar y commit separado:** demuestran que P01 sigue siendo el placeholder, que `/merchant/dashboard`, C07, C08 y R08 no existen, que los redirects/enlaces de comercio no resuelven y que el onboarding no está aislado por rol (`da34d18`).
+- [x] Rutas públicas: `/` implementa P01; `/login` y `/register` implementan P02/P03; `/forgot-password` inicia recuperación sin revelar si el email existe. Copy es-AR, TopBar/footer coherentes y sin enlaces internos rotos salvo documentos legales pendientes de T-311 identificados en la UI.
+- [x] Rutas de comercio canónicas: `/merchant/onboarding`, `/merchant/dashboard`, `/merchant/requests/new`, `/merchant/requests/[id]`, `/merchant/history` y `/merchant/plan`. Las rutas heredadas `/onboarding` y `/requests/**` redirigen en servidor sin bucles ni duplicación de pantallas.
+- [x] Rutas de repartidor canónicas: `/courier/onboarding/{identity,vehicle,status}`, `/courier/feed`, `/courier/offers` y `/courier/profile`. Los aliases heredados de onboarding redirigen en servidor.
+- [x] `getRoleDefaultPath`, login, registro, middleware y actions devuelven únicamente destinos existentes y respetan rol; merchant, courier y admin no atraviesan shells ajenos.
+- [x] Shell público, shell de comercio y shell de repartidor usan los componentes y tokens existentes de `src/ui`, ancho mobile-first, TopBar/BottomNav sin duplicados, pestaña activa correcta y safe area inferior.
+- [x] P01–P03, C01–C05/C07/C08 y R01–R06/R08 se comparan con sus PNG y README vinculantes mediante la skill `implementar-diseno`; diferencias deliberadas se explican en el PR.
+- [x] C07, C08 y R08 leen datos reales permitidos por RLS o muestran estados vacíos honestos. Sin AFIP/ARBA, estrellas, precio sugerido, CBU/alias bancario, localidades ajenas ni estados “verificado” no otorgados por admin.
+- [x] Se preservan las actions, schemas Zod, RPC, Realtime y reglas D3/D15 existentes. El feed abierto no contiene mapas, coordenadas, direcciones exactas ni datos del destinatario.
+- [x] Toda ruta con datos cubre carga con Skeleton de forma equivalente, vacío, error y envío pendiente; ningún error crítico depende solo de Sonner.
+- [x] A 360 px no hay scroll horizontal; piso tipográfico 14 px; acciones principales y del repartidor ≥ 48×48 px; foco visible, orden de teclado lógico y contraste WCAG 2.2 AA.
+- [x] `src/app/route-integrity.test.ts` y las pruebas colocalizadas detectan rutas internas inexistentes, aliases con loops, navegación por rol incorrecta y datos fantasma prohibidos.
+- [x] El PR adjunta capturas lado a lado implementación/Stitch a 390 px para cada familia y un control adicional a 360 px.
+- [x] `pnpm typecheck && pnpm lint && pnpm test`
+- [x] Sin cambios fuera de "Archivos permitidos"
+- [x] Bitácora `docs/tasks/log/T-118.md` al día y PR con evidencia
 
-Se convocó formalmente a los 3 asesores especializados de El Consejo para auditar el candidato:
-1. **Asesor Técnico Frontend (`consejo-frontend`):** **APTO**
-   - Validación de las 14 rutas canónicas físicas y aliases heredados con Server Redirects libres de bucles.
-   - Aislamiento estricto de roles en `guards.ts` y Server Actions (`registerAction`, `requestPasswordResetAction`).
-   - Unificación de TopBar marina institucional (56px `#12182C`) y eliminación de barras duplicadas en hojas cliente.
-2. **Asesor de Experiencia y Persona Común (`consejo-persona`):** **APTO**
-   - Validación para Don Juan (comerciante en hora pico con despacho ágil y C03 simplificado).
-   - Validación para Joaquín (repartidor en semáforo con touch targets ≥ 48px, chips rápidos y cero burocracia bancaria).
-   - Validación para nuevo visitante (landing P01 clara con educación transparente de flete directo).
-3. **Asesor de Diseño e Integración Visual (`consejo-design`):** **APTO**
-   - Composición mobile-first canónica a 390px y prueba a 360px sin desbordamiento horizontal.
-   - Tipografía Display Montserrat 700 e Inter para lectura continua.
-   - Contraste WCAG 2.2 AAA en botones primarios (Teal `#09BABD` con Ink Navy `#12182C`, ratio 7.35:1).
-   - Regla scoped para contraste de logo inverso sobre barra marina `#12182C`.
-
----
-
-## 🗺️ Matriz de Rutas y Navegación Canónica
-
-| Rol / Flujo | Ruta Canónica | Pantalla Stitch | Alias Heredado (Server Redirect) |
-|---|---|---|---|
-| Público | `/` | P01 Landing Aguilares | - |
-| Público | `/login` | P02 Iniciar Sesión | - |
-| Público | `/register` | P03 Registro | - |
-| Público | `/forgot-password` | Recuperación sin enumeración | - |
-| Comercio | `/merchant/onboarding` | C01 Alta de Comercio | `/onboarding` |
-| Comercio | `/merchant/dashboard` | C02 Panel Principal | `/requests` |
-| Comercio | `/merchant/requests/new` | C03 Nueva Solicitud | `/requests/new` |
-| Comercio | `/merchant/requests/[id]` | C04 / C05 Detalle y Ofertas | `/requests/[id]` |
-| Comercio | `/merchant/history` | C07 Historial de Envíos | - |
-| Comercio | `/merchant/plan` | C08 Mi Plan (Piloto Aguilares) | - |
-| Repartidor | `/courier/onboarding/identity` | R01 Documento e Identidad | `/onboarding/identity` |
-| Repartidor | `/courier/onboarding/vehicle` | R02 Vehículo | `/onboarding/vehicle` |
-| Repartidor | `/courier/onboarding/status` | R03 Estado de Solicitud | `/onboarding/status` |
-| Repartidor | `/courier/feed` | R04 Solicitudes Disponibles | `/feed` |
-| Repartidor | `/courier/offers` | R05 / R06 Ofertas Activas | `/offers` |
-| Repartidor | `/courier/profile` | R08 Perfil y Documentación | `/profile` |
-
----
-
-## 🚫 Extirpación Estricta de Datos Fantasma de Stitch
-
-- **C07 (Historial):** Únicamente pedidos reales del comercio auditados por RLS o `EmptyState` honesto.
-- **C08 (Mi Plan):** Erradicación total de referencias tributarias ficticias (sin AFIP ni ARBA). Contacto directo por WhatsApp al equipo de soporte local.
-- **R08 (Perfil):** Erradicación total de CBU o alias bancario (mitigación de riesgo laboral LCT art. 23; el cobro es directo destinatario-repartidor). Sin estrellas ni calificaciones ficticias.
-- **C04 / C05:** Sin estrellas inventadas en tarjetas de oferta.
-- **R04 (Feed):** Blindaje D3/D15 preservado: sin mapas pesados, sin coordenadas ni direcciones exactas de entrega en feed público.
-
----
-
-## 🧪 Evidencia de Calidad y Pruebas
-
+### Evidencia de checks
 ```
-> pnpm typecheck
-✔ tsc --noEmit (0 errores)
+> cadeapp@0.1.0 typecheck
+> tsc --noEmit && tsc --project .github/workflows/tsconfig.json
 
-> pnpm lint
-✔ No ESLint warnings or errors (0 warnings, 0 errores, boundaries respetados)
+> cadeapp@0.1.0 lint
+> next lint --dir src --file middleware.ts --max-warnings 0 && eslint --no-ignore --ext .mjs .github/workflows --max-warnings 0
+✔ No ESLint warnings or errors
 
-> pnpm vitest run --testTimeout=15000
-✔ 43 test files passed (100%)
-✔ 400 tests passed (100%)
-  - src/app/route-integrity.test.ts (27 tests DoD verdes)
-  - src/features/requests/** (34 tests verdes)
-  - src/features/offers/** (30 tests verdes)
-  - src/features/auth/** (27 tests verdes)
-  - src/features/courier-onboarding/** (29 tests verdes)
-
-> node --test .github/workflows/verify-workflows.test.mjs; node --test docs/adr/verify-adr.test.mjs
-✔ 20/20 workflow tests passed
-✔ 6/6 ADR tests passed
-
-> pnpm build
-✔ Compilación de producción Next.js 15 exitosa (31 rutas estáticas/dinámicas generadas)
+> cadeapp@0.1.0 test
+Test Files  43 passed (43)
+     Tests  423 passed (423)
+verify-workflows.test.mjs: 20 pass / 0 fail
+verify-adr.test.mjs: 6 pass / 0 fail
 ```
 
-- **Archivos tocados:** Estrictamente contenidos en la lista de "Archivos permitidos" de `docs/tasks/T-118.md`. Sin modificaciones a contratos congelados de `src/ui/**`, `src/domain/**` ni base de datos.
-- **TDD:** Commit rojo previo `da34d18` verificando fallos del DoD antes de la implementación verde `a013e4a`.
+- [x] Cada prueba nueva se demostró fallando al romper la regla (ver bitácora)
+- [x] Bitácora `docs/tasks/log/T-118.md` al día
+
+### Informe de revisión de agy (obligatorio; lo verifica `approval-policy`)
+<!-- Reservado para la revisión independiente de Ronda 2 (revisar-pr). -->
+
+### Rutas de otra zona (si hay)
+| Ruta | Dueña de la zona (visto bueno) |
+|---|---|
+| Ninguna | P1 es dueña del alcance de T-118 |
+
+### Dependencias nuevas
+- ninguna
+
+### Checklist de seguridad (obligatorio si toca supabase/, src/server/, .github/, .agents/ o package.json)
+- [x] RLS habilitada y policies explícitas; nada con `USING (true)` sin justificación
+- [x] Funciones SECURITY DEFINER con search_path fijo, grants mínimos y chequeo de auth.uid()/rol
+- [x] Ningún secreto, dato del destinatario ni documento en código, logs, tests o payloads
+- [x] Workflows: Actions fijadas por SHA; sin exponer secretos en logs
+- [x] Ningún check, regla de lint o umbral de CI debilitado
+
+### Rollback
+`git revert` de los commits de la rama `feat/T-118-integracion-visual-stitch` (PR #87). No introduce migraciones de base de datos ni dependencias nuevas.

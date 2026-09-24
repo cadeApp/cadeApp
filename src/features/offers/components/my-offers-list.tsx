@@ -57,8 +57,8 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
       : otherOffers;
 
   return (
-    <div className="space-y-4 p-4">
-      <h1 className="font-display text-xl font-bold text-foreground">
+    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
+      <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
         {OFFERS_COPY.myOffersTitle}
       </h1>
         {/* Pestañas de estado (R06) */}

@@ -22,7 +22,7 @@ export interface MerchantRequestSummary {
   readonly id: string;
   readonly pickupZoneName: string;
   readonly dropoffZoneName: string;
-  readonly approxDistanceKm: string;
+  readonly approxDistanceKm: string | null;
   readonly packageType: PackageType;
   readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;
@@ -38,7 +38,7 @@ export interface MerchantRequestDetail {
   readonly id: string;
   readonly pickupZoneName: string;
   readonly dropoffZoneName: string;
-  readonly approxDistanceKm: string;
+  readonly approxDistanceKm: string | null;
   readonly packageType: PackageType;
   readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;

@@ -21,11 +21,12 @@ export function UnderReview({ onLogout, onCompleteDocs }: UnderReviewProps) {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center p-4 max-w-md mx-auto min-h-[80vh]">
-      {/* Ilustración con icono de reloj */}
-      <div className="relative mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-primary">
-        <Clock className="h-10 w-10 animate-pulse text-primary" aria-hidden="true" />
-      </div>
+    <div className="mx-auto flex min-h-[75vh] w-full max-w-lg flex-col items-center justify-center p-4">
+      <Card className="flex w-full flex-col items-center p-6 sm:p-8">
+        {/* Ilustración sobria con icono de reloj */}
+        <div className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-xl border border-border bg-muted/40 text-primary-dark">
+          <Clock className="h-7 w-7" aria-hidden="true" />
+        </div>
 
       <h1 className="font-display text-2xl font-bold text-center text-foreground mb-2">
         {OFFERS_COPY.underReviewTitle}
@@ -81,12 +82,13 @@ export function UnderReview({ onLogout, onCompleteDocs }: UnderReviewProps) {
           <Button
             variant="ghost"
             onClick={onLogout}
-            className="w-full min-h-12 text-sm text-muted-foreground hover:text-foreground"
+            className="min-h-12 w-full text-sm text-muted-foreground hover:text-foreground"
           >
             {OFFERS_COPY.logoutButton}
           </Button>
         )}
       </div>
+      </Card>
     </div>
   );
 }

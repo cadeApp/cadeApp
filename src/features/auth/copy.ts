@@ -1,6 +1,7 @@
 export const authCopy = {
   login: {
     title: 'Ingresá a tu cuenta',
+    subtitle: 'Logística directa para comercios y repartidores de Aguilares',
     emailLabel: 'Email',
     emailPlaceholder: 'tu@email.com',
     passwordLabel: 'Contraseña',

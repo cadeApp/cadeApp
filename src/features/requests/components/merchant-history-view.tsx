@@ -2,82 +2,79 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Badge, type BadgeProps } from '@/ui/badge';
-import { Card } from '@/ui/card';
-import { EmptyState } from '@/ui/empty-state';
-import { formatDate } from '@/lib/format';
 import { History, ChevronRight } from 'lucide-react';
+import { Card } from '@/ui/card';
+import { Badge } from '@/ui/badge';
+import { EmptyState } from '@/ui/empty-state';
+import { buttonVariants } from '@/ui/button';
+import { cn } from '@/ui/cn';
 import type { MerchantRequestSummary } from '../types';
 
-export interface MerchantHistoryViewProps {
-  readonly requests: readonly MerchantRequestSummary[];
+type FilterTab = 'all' | 'delivered' | 'cancelled' | 'expired';
+
+function getDateGroupLabel(dateIso: string): string {
+  const d = new Date(dateIso);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (target.getTime() === today.getTime()) return 'Hoy';
+  if (target.getTime() === yesterday.getTime()) return 'Ayer';
+
+  return d.toLocaleDateString('es-AR', {
+    day: 'numeric',
+    month: 'long',
+  });
 }
 
-type HistoryTab = 'all' | 'delivered' | 'cancelled' | 'expired';
-
-function getStatusBadgeConfig(status: string): { variant: NonNullable<BadgeProps['variant']>; label: string } {
+function getStatusBadgeConfig(status: MerchantRequestSummary['status']) {
   switch (status) {
     case 'delivered':
-      return { variant: 'delivered', label: 'Entregada' };
+      return { variant: 'verified' as const, label: 'Entregada' };
     case 'cancelled':
-      return { variant: 'cancelled', label: 'Cancelada' };
+      return { variant: 'rejected' as const, label: 'Cancelada' };
     case 'expired':
-      return { variant: 'expired', label: 'Vencida' };
-    case 'in_transit':
-      return { variant: 'in_transit', label: 'En camino' };
+      return { variant: 'outline' as const, label: 'Vencida' };
     case 'matched':
-      return { variant: 'matched', label: 'Asignada' };
-    case 'published':
-      return { variant: 'published', label: 'Publicada' };
+      return { variant: 'matched' as const, label: 'Asignada' };
+    case 'in_transit':
+      return { variant: 'in_transit' as const, label: 'En camino' };
     default:
-      return { variant: 'outline', label: status };
+      return { variant: 'published' as const, label: 'Publicada' };
   }
 }
 
-function groupRequestsByDate(requests: readonly MerchantRequestSummary[]): Record<string, MerchantRequestSummary[]> {
-  const groups: Record<string, MerchantRequestSummary[]> = {};
-  const today = new Date().toDateString();
-  const yesterday = new Date(Date.now() - 86400000).toDateString();
-
-  for (const req of requests) {
-    const reqDate = new Date(req.createdAt).toDateString();
-    let label = formatDate(req.createdAt);
-    if (reqDate === today) {
-      label = 'Hoy';
-    } else if (reqDate === yesterday) {
-      label = 'Ayer';
-    }
-
-    const list = groups[label] ?? [];
-    list.push(req);
-    groups[label] = list;
-  }
-
-  return groups;
-}
-
-export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
-  const [activeTab, setActiveTab] = React.useState<HistoryTab>('all');
+export function MerchantHistoryView({
+  requests,
+  nextCursor = null,
+}: {
+  requests: readonly MerchantRequestSummary[];
+  nextCursor?: { readonly createdAt: string; readonly id: string } | null;
+}) {
+  const [activeTab, setActiveTab] = React.useState<FilterTab>('all');
 
   const filteredRequests = React.useMemo(() => {
-    switch (activeTab) {
-      case 'delivered':
-        return requests.filter((r) => r.status === 'delivered');
-      case 'cancelled':
-        return requests.filter((r) => r.status === 'cancelled');
-      case 'expired':
-        return requests.filter((r) => r.status === 'expired');
-      case 'all':
-      default:
-        return requests;
-    }
+    if (activeTab === 'all') return requests;
+    return requests.filter((r) => r.status === activeTab);
   }, [requests, activeTab]);
 
-  const grouped = React.useMemo(() => groupRequestsByDate(filteredRequests), [filteredRequests]);
+  const grouped = React.useMemo(() => {
+    const groups: Record<string, MerchantRequestSummary[]> = {};
+    for (const req of filteredRequests) {
+      const label = getDateGroupLabel(req.createdAt);
+      if (!groups[label]) {
+        groups[label] = [];
+      }
+      groups[label].push(req);
+    }
+    return groups;
+  }, [filteredRequests]);
+
   const dateKeys = Object.keys(grouped);
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
       <div>
         <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
           Historial de envíos
@@ -87,7 +84,7 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
         </p>
       </div>
 
-      {/* Tabs accesibles */}
+      {/* Tabs accesibles con altura mínima de 48px (min-h-12) */}
       <div
         role="tablist"
         aria-label="Filtro de historial"
@@ -98,7 +95,7 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
           role="tab"
           aria-selected={activeTab === 'all'}
           onClick={() => setActiveTab('all')}
-          className={`min-h-10 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'all'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -111,7 +108,7 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
           role="tab"
           aria-selected={activeTab === 'delivered'}
           onClick={() => setActiveTab('delivered')}
-          className={`min-h-10 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'delivered'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -124,7 +121,7 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
           role="tab"
           aria-selected={activeTab === 'cancelled'}
           onClick={() => setActiveTab('cancelled')}
-          className={`min-h-10 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'cancelled'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -137,7 +134,7 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
           role="tab"
           aria-selected={activeTab === 'expired'}
           onClick={() => setActiveTab('expired')}
-          className={`min-h-10 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-12 flex-1 rounded-lg px-2 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'expired'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -158,7 +155,7 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
         <div className="space-y-5">
           {dateKeys.map((dateLabel) => (
             <div key={dateLabel} className="space-y-2">
-              <h2 className="font-display text-sm font-bold text-muted-foreground uppercase tracking-wider">
+              <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
                 {dateLabel}
               </h2>
               <div className="space-y-2.5">
@@ -168,24 +165,33 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
                     <Link
                       key={req.id}
                       href={`/merchant/requests/${req.id}`}
-                      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl"
+                      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <Card className="flex items-center justify-between p-3.5 transition-colors hover:border-border/80 hover:bg-card/80">
+                      <Card className="flex items-center justify-between p-4 transition-colors hover:border-border/80 hover:bg-card/80">
                         <div className="space-y-1 pr-3">
                           <p className="font-display text-base font-bold text-foreground">
                             {req.pickupZoneName} → {req.dropoffZoneName}
                           </p>
-                          <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                            <span>≈ {req.approxDistanceKm} km</span>
+                          <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+                            <span>
+                              {req.approxDistanceKm
+                                ? `≈ ${req.approxDistanceKm} km`
+                                : 'Distancia no calculada'}
+                            </span>
                             <span>·</span>
                             <span className="capitalize">{req.packageType}</span>
                             <span>·</span>
-                            <span>{new Date(req.createdAt).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>
+                              {new Date(req.createdAt).toLocaleTimeString('es-AR', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
                           </div>
                         </div>
 
                         <div className="flex shrink-0 items-center gap-2">
-                          <Badge variant={badge.variant} className="text-xs">
+                          <Badge variant={badge.variant} className="text-sm">
                             {badge.label}
                           </Badge>
                           <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -197,6 +203,19 @@ export function MerchantHistoryView({ requests }: MerchantHistoryViewProps) {
               </div>
             </div>
           ))}
+
+          {nextCursor ? (
+            <div className="pt-2">
+              <Link
+                href={`/merchant/history?cursorCreatedAt=${encodeURIComponent(
+                  nextCursor.createdAt
+                )}&cursorId=${encodeURIComponent(nextCursor.id)}`}
+                className={cn(buttonVariants({ variant: 'outline', size: 'lg' }), 'w-full')}
+              >
+                Ver siguientes envíos
+              </Link>
+            </div>
+          ) : null}
         </div>
       )}
     </div>

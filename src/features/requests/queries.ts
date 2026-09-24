@@ -24,6 +24,16 @@ export interface MerchantDefaultPickup {
   readonly notes: string | null;
 }
 
+export interface MerchantHistoryCursor {
+  readonly createdAt: string;
+  readonly id: string;
+}
+
+export interface GetMerchantRequestsOptions {
+  readonly limit?: number;
+  readonly cursor?: MerchantHistoryCursor | null;
+}
+
 interface ZoneRow {
   id: string;
   name: string;
@@ -31,9 +41,9 @@ interface ZoneRow {
   centroid_lng: number | null;
 }
 
-function formatApproxDistanceKm(distanceM: number | null): string {
+export function formatApproxDistanceKm(distanceM: number | null): string | null {
   if (!distanceM || distanceM <= 0) {
-    return '1,0';
+    return null;
   }
   const km = distanceM / 1000;
   const rounded = Math.round(km * 2) / 2;
@@ -125,13 +135,18 @@ interface RawOfferItem {
   } | null;
 }
 
-export async function getMerchantRequests(merchantId: string): Promise<{
+export async function getMerchantRequests(
+  merchantId: string,
+  options?: GetMerchantRequestsOptions
+): Promise<{
   requests: MerchantRequestSummary[];
   metrics: MerchantMetrics;
+  nextCursor: MerchantHistoryCursor | null;
 }> {
   const supabase = await createClient();
+  const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
 
-  const { data: requestsData, error } = await supabase
+  let query = supabase
     .from('delivery_requests')
     .select(`
       id,
@@ -148,9 +163,24 @@ export async function getMerchantRequests(merchantId: string): Promise<{
       dropoff_zone:zones!dropoff_zone_id(name)
     `)
     .eq('merchant_id', merchantId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(pageSize + 1);
 
-  const rawRequests = (requestsData as unknown as RawMerchantRequest[] | null) ?? [];
+  if (options?.cursor?.createdAt && options?.cursor?.id) {
+    query = query.or(
+      `created_at.lt.${options.cursor.createdAt},and(created_at.eq.${options.cursor.createdAt},id.lt.${options.cursor.id})`
+    );
+  }
+
+  const { data: requestsData, error } = await query;
+
+  const fetchedRows = (requestsData as unknown as RawMerchantRequest[] | null) ?? [];
+  const hasMore = fetchedRows.length > pageSize;
+  const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
+  const lastItem = rawRequests.at(-1);
+  const nextCursor: MerchantHistoryCursor | null =
+    hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
 
   if (error || !rawRequests.length) {
     return {
@@ -160,10 +190,10 @@ export async function getMerchantRequests(merchantId: string): Promise<{
         avgRateArs: 0,
         activeCount: 0,
       },
+      nextCursor: null,
     };
   }
 
-  // Contar ofertas pendientes para cada solicitud
   const requestIds = rawRequests.map((r) => r.id);
   const offersCountMap = new Map<string, number>();
 
@@ -179,7 +209,6 @@ export async function getMerchantRequests(merchantId: string): Promise<{
     }
   }
 
-  // Calcular métricas
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 
@@ -203,8 +232,8 @@ export async function getMerchantRequests(merchantId: string): Promise<{
 
     return {
       id: req.id,
-      pickupZoneName: pickupZone?.name ?? 'Centro',
-      dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+      pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
+      dropoffZoneName: dropoffZone?.name ?? 'Zona no disponible',
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
       packageType: req.package_type as PackageType,
       recipientPaymentMethod: req.recipient_payment_method as RecipientPaymentMethod,
@@ -222,9 +251,10 @@ export async function getMerchantRequests(merchantId: string): Promise<{
     requests,
     metrics: {
       dispatchedToday,
-      avgRateArs: 1800, // Tarifa promedio de referencia en Aguilares
+      avgRateArs: 0,
       activeCount,
     },
+    nextCursor,
   };
 }
 
@@ -271,8 +301,8 @@ export async function getMerchantRequestWithOffers(
 
   const request: MerchantRequestDetail = {
     id: requestData.id,
-    pickupZoneName: pickupZone?.name ?? 'Centro',
-    dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+    pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
+    dropoffZoneName: dropoffZone?.name ?? 'Zona no disponible',
     approxDistanceKm: formatApproxDistanceKm(requestData.approx_distance_m),
     packageType: requestData.package_type as PackageType,
     recipientPaymentMethod: requestData.recipient_payment_method as RecipientPaymentMethod,
@@ -285,7 +315,6 @@ export async function getMerchantRequestWithOffers(
     acceptedOfferId: requestData.accepted_offer_id,
   };
 
-  // Obtener ofertas de la solicitud
   const { data: offersData } = await supabase
     .from('offers')
     .select(`
@@ -323,7 +352,7 @@ export async function getMerchantRequestWithOffers(
       id: o.id,
       courierId: o.courier_id,
       courierName: displayName,
-      vehicleType: courierObj?.vehicle_type ?? 'motorcycle',
+      vehicleType: courierObj?.vehicle_type ?? null,
       amountArs: o.amount_ars,
       etaMinutes: o.eta_minutes,
       message: o.message,

@@ -32,35 +32,35 @@ export function StatusView({ onGoToFeed }: StatusViewProps) {
   ];
 
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen flex flex-col items-center justify-between bg-background p-4 pb-12">
-      <div className="w-full flex flex-col items-center pt-6">
+    <Card className="mx-auto w-full max-w-lg space-y-6 p-6 sm:p-8">
+      <div className="flex w-full flex-col items-center">
         {/* Status Tracker Pill */}
         <Badge
           variant="outline"
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border-amber-500/30 text-amber-600 text-sm font-semibold mb-6"
+          className="mb-6 inline-flex items-center gap-1.5 rounded-full border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-600"
         >
-          <span className="w-2 h-2 rounded-full bg-amber-600 animate-pulse" />
+          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-600" />
           <span>{COURIER_ONBOARDING_COPY.underReviewBadge}</span>
         </Badge>
 
         {/* Brand Delivery and Clock Motif */}
-        <div className="relative w-28 h-28 flex items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 mb-6 text-primary">
-          <Clock className="w-14 h-14 animate-pulse" aria-hidden="true" />
+        <div className="relative mb-5 flex h-14 w-14 items-center justify-center rounded-xl border border-border bg-muted/40 text-primary-dark">
+          <Clock className="h-7 w-7" aria-hidden="true" />
         </div>
 
         {/* Text Block */}
-        <div className="text-center w-full px-2 mb-6">
-          <h1 className="text-2xl font-bold text-foreground mb-2 leading-tight">
+        <div className="mb-6 w-full px-2 text-center">
+          <h1 className="mb-2 font-display text-2xl font-bold leading-tight text-foreground">
             {COURIER_ONBOARDING_COPY.underReviewTitle}
           </h1>
-          <p className="text-sm text-muted-foreground leading-relaxed">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {COURIER_ONBOARDING_COPY.underReviewSubtitle}
           </p>
         </div>
 
         {/* Verification Bento / Checklist Card */}
-        <Card className="w-full mb-6 shadow-sm bg-card border-border">
-          <CardHeader className="pb-3 border-b border-border/50">
+        <Card className="w-full border-border bg-muted/20 shadow-none">
+          <CardHeader className="border-b border-border/50 pb-3">
             <CardTitle className="text-sm font-bold text-foreground">
               {COURIER_ONBOARDING_COPY.checklistTitle}
             </CardTitle>
@@ -68,7 +68,7 @@ export function StatusView({ onGoToFeed }: StatusViewProps) {
               {COURIER_ONBOARDING_COPY.checklistSubtitle}
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-3 space-y-2.5">
+          <CardContent className="space-y-2.5 pt-3">
             {checklistItems.map((item, idx) => (
               <div
                 key={idx}
@@ -76,9 +76,9 @@ export function StatusView({ onGoToFeed }: StatusViewProps) {
               >
                 <div className="flex items-center gap-2.5">
                   {item.status === 'uploaded' ? (
-                    <CheckCircle2 className="h-4 w-4 text-success shrink-0" aria-hidden="true" />
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
                   ) : (
-                    <ShieldAlert className="h-4 w-4 text-muted-foreground shrink-0" aria-hidden="true" />
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   )}
                   <span className="text-sm font-medium text-foreground">{item.title}</span>
                 </div>
@@ -92,16 +92,15 @@ export function StatusView({ onGoToFeed }: StatusViewProps) {
       </div>
 
       {/* Botón hacia el feed */}
-      <div className="w-full space-y-2">
-        <Button
-          type="button"
-          onClick={handleNavigate}
-          className="w-full h-12 text-sm font-bold flex items-center justify-center gap-2"
-        >
-          <span>{COURIER_ONBOARDING_COPY.btnGoToFeed}</span>
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </div>
-    </div>
+      <Button
+        type="button"
+        size="lg"
+        onClick={handleNavigate}
+        className="w-full font-bold"
+      >
+        <span>{COURIER_ONBOARDING_COPY.btnGoToFeed}</span>
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </Card>
   );
 }

@@ -41,16 +41,18 @@ export function CourierFeed({
   // Estado rechazado
   if (courierStatus === 'rejected') {
     return (
-      <div className="p-4 max-w-md mx-auto min-h-[70vh] flex flex-col justify-center items-center text-center">
-        <div className="h-16 w-16 rounded-full bg-danger/10 text-danger flex items-center justify-center mb-4">
-          <AlertCircle className="h-8 w-8" />
-        </div>
-        <h2 className="font-display text-xl font-bold text-foreground mb-2">
-          No pudimos aprobar tu cuenta
-        </h2>
-        <p className="text-sm text-muted-foreground mb-6">
-          Revisá tu documentación o comunicate con el soporte de cadeApp para más detalles.
-        </p>
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col items-center justify-center p-4 text-center">
+        <Card className="w-full p-6 sm:p-8">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-danger/10 text-danger">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="mb-2 font-display text-xl font-bold text-foreground">
+            No pudimos aprobar tu cuenta
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Revisá tu documentación o comunicate con el soporte de cadeApp para más detalles.
+          </p>
+        </Card>
       </div>
     );
   }
@@ -58,16 +60,18 @@ export function CourierFeed({
   // Estado suspendido
   if (courierStatus === 'suspended') {
     return (
-      <div className="p-4 max-w-md mx-auto min-h-[70vh] flex flex-col justify-center items-center text-center">
-        <div className="h-16 w-16 rounded-full bg-warning/10 text-warning flex items-center justify-center mb-4">
-          <AlertCircle className="h-8 w-8" />
-        </div>
-        <h2 className="font-display text-xl font-bold text-foreground mb-2">
-          Cuenta suspendida temporalmente
-        </h2>
-        <p className="text-sm text-muted-foreground mb-6">
-          Tu cuenta de repartidor se encuentra suspendida. Contactá al soporte para resolver la situación.
-        </p>
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col items-center justify-center p-4 text-center">
+        <Card className="w-full p-6 sm:p-8">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-warning/10 text-warning">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="mb-2 font-display text-xl font-bold text-foreground">
+            Cuenta suspendida temporalmente
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Tu cuenta de repartidor se encuentra suspendida. Contactá al soporte para resolver la situación.
+          </p>
+        </Card>
       </div>
     );
   }
@@ -78,7 +82,7 @@ export function CourierFeed({
   };
 
   return (
-    <div className="space-y-4 p-4">
+    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
         {/* Conmutador de disponibilidad (R04) */}
         <AvailabilitySwitch
           initialAvailable={available}
@@ -88,11 +92,11 @@ export function CourierFeed({
         {/* Encabezado de la lista */}
         <div className="flex items-center justify-between pt-2">
           <div className="flex items-center gap-2">
-            <h2 className="font-display text-lg font-bold text-foreground">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
               {OFFERS_COPY.feedTitle}
-            </h2>
+            </h1>
             {available && (
-              <Badge variant="published" className="text-xs flex items-center gap-1">
+              <Badge variant="published" className="flex items-center gap-1 text-sm">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-dark" />

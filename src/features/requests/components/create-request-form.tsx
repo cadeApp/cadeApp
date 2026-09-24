@@ -22,6 +22,7 @@ import { getDomainErrorMessage } from '@/lib/error-messages';
 import { formatArs } from '@/lib/format';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
+import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { Input } from '@/ui/input';
 import { notify } from '@/ui/notify';
@@ -190,7 +191,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
     <form onSubmit={handleSubmit(onSubmit)} className="mx-auto w-full max-w-xl space-y-6 pb-16">
       {/* Encabezado */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {copy.pageTitle}
         </h1>
         <p className="text-sm text-muted-foreground">{copy.pageSubtitle}</p>
@@ -207,16 +208,14 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
       )}
 
       {/* 1. Punto de retiro (precargado y editable) */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-6">
+      <Card className="space-y-4 p-5 sm:p-6">
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <MapPin className="h-4 w-4" />
-            </div>
-            <h2 className="text-base font-semibold text-foreground">{copy.stepPickup}</h2>
+            <MapPin className="h-4 w-4 text-primary-dark" aria-hidden="true" />
+            <h2 className="font-display text-base font-bold text-foreground">{copy.stepPickup}</h2>
           </div>
           {defaultPickup && (
-            <Badge variant="outline" className="border-primary/30 text-xs font-medium text-primary">
+            <Badge variant="outline" className="border-primary/30 text-sm font-medium text-primary">
               Precargado editable
             </Badge>
           )}
@@ -231,7 +230,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               id="pickup-zone"
               {...register('pickupZoneId')}
               aria-invalid={Boolean(errors.pickupZoneId)}
-              className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-12 w-full rounded-lg border border-input bg-card px-3.5 py-2 text-base text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="" disabled>
                 Seleccioná un barrio de retiro
@@ -259,7 +258,6 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               placeholder={copy.pickupAddressPlaceholder}
               maxLength={200}
               aria-invalid={Boolean(errors.pickupAddress)}
-              className="h-12 text-sm"
             />
             {errors.pickupAddress && (
               <p role="alert" className="text-sm font-medium text-destructive">
@@ -283,7 +281,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               {pickupLocating ? 'Obteniendo GPS...' : copy.useMyLocation}
             </Button>
             {pickupLat != null && pickupLng != null && !pickupCoordsError && (
-              <span className="text-primary ml-3 inline-flex items-center gap-1 text-sm font-medium">
+              <span className="ml-3 inline-flex items-center gap-1 text-sm font-medium text-primary">
                 <CheckCircle2 className="h-4 w-4" /> Pin de retiro fijado
               </span>
             )}
@@ -297,15 +295,13 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             )}
           </div>
         </div>
-      </section>
+      </Card>
 
       {/* 2. Destino y entrega */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-6">
+      <Card className="space-y-4 p-5 sm:p-6">
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Navigation className="h-4 w-4" />
-          </div>
-          <h2 className="text-base font-semibold text-foreground">{copy.stepDropoff}</h2>
+          <Navigation className="h-4 w-4 text-primary-dark" aria-hidden="true" />
+          <h2 className="font-display text-base font-bold text-foreground">{copy.stepDropoff}</h2>
         </div>
 
         <div className="space-y-3">
@@ -317,7 +313,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               id="dropoff-zone"
               {...register('dropoffZoneId')}
               aria-invalid={Boolean(errors.dropoffZoneId)}
-              className="flex h-12 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-12 w-full rounded-lg border border-input bg-card px-3.5 py-2 text-base text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value="" disabled>
                 Seleccioná un barrio de entrega
@@ -345,7 +341,6 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               placeholder={copy.dropoffAddressPlaceholder}
               maxLength={200}
               aria-invalid={Boolean(errors.dropoffAddress)}
-              className="h-12 text-sm"
             />
             {errors.dropoffAddress && (
               <p role="alert" className="text-sm font-medium text-destructive">
@@ -369,7 +364,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               {dropoffLocating ? 'Obteniendo GPS...' : 'Fijar ubicación opcional en Aguilares'}
             </Button>
             {dropoffLat != null && dropoffLng != null && !dropoffCoordsError && (
-              <span className="text-primary ml-3 inline-flex items-center gap-1 text-sm font-medium">
+              <span className="ml-3 inline-flex items-center gap-1 text-sm font-medium text-primary">
                 <CheckCircle2 className="h-4 w-4" /> Pin de entrega fijado
               </span>
             )}
@@ -395,14 +390,14 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                   {copy.recipientNameLabel} <span className="text-destructive">*</span>
                 </label>
                 <div className="relative">
-                  <User className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+                  <User className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
                   <Input
                     id="recipient-name"
                     {...register('recipientName')}
                     placeholder={copy.recipientNamePlaceholder}
                     maxLength={100}
                     aria-invalid={Boolean(errors.recipientName)}
-                    className="h-12 pl-9 text-sm"
+                    className="pl-10"
                   />
                 </div>
                 {errors.recipientName && (
@@ -420,7 +415,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                   {copy.recipientPhoneLabel} <span className="text-destructive">*</span>
                 </label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
+                  <Phone className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
                   <Input
                     id="recipient-phone"
                     type="tel"
@@ -428,7 +423,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                     placeholder={copy.recipientPhonePlaceholder}
                     maxLength={30}
                     aria-invalid={Boolean(errors.recipientPhone)}
-                    className="h-12 pl-9 text-sm"
+                    className="pl-10"
                   />
                 </div>
                 {errors.recipientPhone && (
@@ -463,15 +458,13 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             </div>
           </div>
         </div>
-      </section>
+      </Card>
 
       {/* 3. Detalles del paquete */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-6">
+      <Card className="space-y-4 p-5 sm:p-6">
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Package className="h-4 w-4" />
-          </div>
-          <h2 className="text-base font-semibold text-foreground">{copy.stepPackage}</h2>
+          <Package className="h-4 w-4 text-primary-dark" aria-hidden="true" />
+          <h2 className="font-display text-base font-bold text-foreground">{copy.stepPackage}</h2>
         </div>
 
         <div className="space-y-2">
@@ -501,15 +494,13 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             })}
           </div>
         </div>
-      </section>
+      </Card>
 
       {/* 4. Pago del envío */}
-      <section className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-6">
+      <Card className="space-y-4 p-5 sm:p-6">
         <div className="flex items-center gap-2 border-b border-border pb-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Banknote className="h-4 w-4" />
-          </div>
-          <h2 className="text-base font-semibold text-foreground">{copy.stepPayment}</h2>
+          <Banknote className="h-4 w-4 text-primary-dark" aria-hidden="true" />
+          <h2 className="font-display text-base font-bold text-foreground">{copy.stepPayment}</h2>
         </div>
 
         <div className="space-y-3">
@@ -626,7 +617,6 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                       onChange={(e) => handleCustomChangeChange(e.target.value)}
                       placeholder={copy.changeCustomPlaceholder}
                       aria-invalid={Boolean(errors.cashChangeAmount)}
-                      className="h-12 text-sm"
                     />
                     {cashChangeAmount != null && (
                       <p className="mt-1 text-sm text-muted-foreground">
@@ -647,10 +637,10 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             </div>
           )}
         </div>
-      </section>
+      </Card>
 
       {/* 5. Indicaciones adicionales */}
-      <section className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-6">
+      <Card className="space-y-3 p-5 sm:p-6">
         <label htmlFor="notes" className="block text-base font-semibold text-foreground">
           {copy.notesLabel}
         </label>
@@ -660,14 +650,14 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
           placeholder={copy.notesPlaceholder}
           maxLength={500}
           aria-invalid={Boolean(errors.notes)}
-          className="min-h-[96px] text-sm"
+          className="min-h-[96px]"
         />
         {errors.notes && (
           <p role="alert" className="text-sm font-medium text-destructive">
             {errors.notes.message}
           </p>
         )}
-      </section>
+      </Card>
 
       {/* 6. Botón de envío */}
       <Button

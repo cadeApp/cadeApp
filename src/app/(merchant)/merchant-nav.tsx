@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { usePathname } from 'next/navigation';
 import { BottomNav, type BottomNavItem } from '@/ui/bottom-nav';
-import { Store, History, BadgeDollarSign } from 'lucide-react';
+import { Store, History, User } from 'lucide-react';
 
 export function MerchantNav() {
   const pathname = usePathname();
@@ -34,9 +34,9 @@ export function MerchantNav() {
     },
     {
       id: 'plan',
-      label: 'Mi plan',
+      label: 'Cuenta',
       href: '/merchant/plan',
-      icon: <BadgeDollarSign className="h-5 w-5" aria-hidden="true" />,
+      icon: <User className="h-5 w-5" aria-hidden="true" />,
       active: pathname === '/merchant/plan',
     },
   ];

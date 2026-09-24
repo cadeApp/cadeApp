@@ -2,23 +2,26 @@ import Link from 'next/link';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
+import { TopBar } from '@/ui/top-bar';
 import { Store, Wallet, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 
 export default function HomePage() {
   return (
     <div className="flex min-h-screen w-full flex-col justify-between bg-background text-foreground">
-      {/* TopBar pública responsive */}
-      <header className="sticky top-0 z-40 w-full border-b border-border bg-card/95 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <BrandLogo size="md" showWordmark />
+      <TopBar
+        rightAction={
           <Link href="/login">
-            <Button variant="ghost" size="sm" className="font-semibold text-primary-dark hover:bg-primary/10">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="font-semibold text-background hover:bg-white/10 hover:text-background"
+            >
               Ingresar
             </Button>
           </Link>
-        </div>
-      </header>
+        }
+      />
 
       {/* Contenido principal responsive */}
       <main className="mx-auto flex-1 w-full max-w-5xl space-y-12 px-4 py-8 sm:px-6 md:space-y-16 md:py-12 lg:px-8">
@@ -37,7 +40,7 @@ export default function HomePage() {
             Tu envío, al precio que elijas
           </h1>
           <p className="mx-auto max-w-2xl text-base text-muted-foreground sm:text-lg">
-            Envíos directos entre comercios y repartidores de Aguilares. Publicá lo que necesitás
+            Envíos directos entre comercios y repartidores. Publicá lo que necesitás
             mandar y los repartidores te ofertan en vivo. Vos elegís con quién.
           </p>
 
@@ -142,11 +145,11 @@ export default function HomePage() {
               <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
                 <strong className="text-foreground">Lo paga quien recibe</strong> al momento de la
                 entrega. En efectivo o por transferencia directa al repartidor. cadeApp{' '}
-                <strong className="text-foreground">no cobra comisiones</strong> ni retiene el dinero
-                del viaje.
+                <strong className="text-foreground">no interviene en el cobro</strong> ni retiene el
+                dinero del viaje.
               </p>
             </div>
-            <div className="pt-4 text-xs font-medium text-primary-dark flex items-center gap-1.5">
+            <div className="pt-4 text-sm font-medium text-primary-dark flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4" />
               Trato 100% directo entre comercio y repartidor
             </div>
@@ -188,19 +191,11 @@ export default function HomePage() {
       <footer className="w-full border-t border-border bg-card/40 py-8 text-center text-sm text-muted-foreground">
         <div className="mx-auto max-w-5xl space-y-2 px-4 sm:px-6">
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 font-medium">
-            <Link href="/terms" className="hover:text-foreground transition-colors">
-              Términos
-            </Link>
-            <span>·</span>
-            <Link href="/privacy" className="hover:text-foreground transition-colors">
-              Privacidad
-            </Link>
-            <span>·</span>
-            <Link href="/terms" className="hover:text-foreground transition-colors">
-              Términos del piloto
-            </Link>
+            <span className="text-muted-foreground">
+              Términos y Privacidad del Piloto (documentos legales en publicación · T-311)
+            </span>
           </div>
-          <p className="text-xs text-muted-foreground/80 sm:text-sm">
+          <p className="text-sm text-muted-foreground/80">
             Hecho en Aguilares, Tucumán · cadeApp 2026
           </p>
         </div>

@@ -130,25 +130,25 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
         documents: uploadedPaths as Record<CourierDocumentKind, string>,
       });
     } else {
-      router.push('/onboarding/vehicle');
+      router.push('/courier/onboarding/vehicle');
     }
   };
 
   return (
-    <div className="w-full max-w-[390px] mx-auto min-h-screen flex flex-col bg-background pb-28">
+    <Card className="mx-auto w-full max-w-lg overflow-hidden">
       <StepIndicator currentStep={2} />
 
-      <main className="flex-1 px-4 pt-4 flex flex-col gap-5">
+      <div className="flex flex-col gap-5 p-6 sm:p-8">
         {/* Banner de seguridad y confianza */}
-        <div className="bg-primary/5 border border-primary/20 rounded-xl p-3.5 flex items-start gap-3 relative overflow-hidden">
-          <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0 mt-0.5">
+        <div className="relative flex items-start gap-3 overflow-hidden rounded-xl border border-primary/20 bg-primary/5 p-3.5">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
             <ShieldCheck className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="flex-1">
-            <h2 className="text-sm font-semibold text-foreground mb-0.5">
+            <h2 className="mb-0.5 text-sm font-semibold text-foreground">
               {COURIER_ONBOARDING_COPY.securityBannerTitle}
             </h2>
-            <p className="text-sm text-muted-foreground leading-snug">
+            <p className="text-sm leading-snug text-muted-foreground">
               {COURIER_ONBOARDING_COPY.securityBannerText}
             </p>
           </div>
@@ -173,12 +173,11 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
               } catch {}
             }}
             onBlur={() => setDniTouched(true)}
-            className="h-12 text-sm bg-card"
             aria-invalid={Boolean(dniError)}
             aria-describedby={dniError ? 'dni-error' : 'dni-help'}
           />
           {dniError ? (
-            <span id="dni-error" className="text-sm text-destructive font-medium" role="alert">
+            <span id="dni-error" className="text-sm font-medium text-destructive" role="alert">
               {dniError}
             </span>
           ) : (
@@ -194,7 +193,7 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
             <h3 className="text-sm font-bold text-foreground">
               {COURIER_ONBOARDING_COPY.documentsTitle}
             </h3>
-            <span className="text-sm text-muted-foreground font-medium">
+            <span className="text-sm font-medium text-muted-foreground">
               {COURIER_ONBOARDING_COPY.documentsSubtitle(uploadedCount, REQUIRED_DOCS.length)}
             </span>
           </div>
@@ -207,7 +206,7 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
             return (
               <Card
                 key={doc.kind}
-                className={`p-3.5 transition-colors relative ${
+                className={`relative p-3.5 transition-colors ${
                   status === 'success'
                     ? 'border-border bg-card'
                     : status === 'error'
@@ -217,11 +216,11 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
               >
                 <label
                   htmlFor={`file-input-${doc.kind}`}
-                  className="flex items-center justify-between gap-3 min-h-[56px] cursor-pointer"
+                  className="flex min-h-[56px] cursor-pointer items-center justify-between gap-3"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex min-w-0 items-center gap-3">
                     <div
-                      className={`w-11 h-11 rounded-lg flex items-center justify-center shrink-0 ${
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${
                         status === 'success'
                           ? 'bg-success/15 text-success'
                           : status === 'error'
@@ -237,9 +236,9 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
                         <Camera className="h-6 w-6" aria-hidden="true" />
                       )}
                     </div>
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-sm font-semibold text-foreground truncate">{doc.title}</span>
-                      <span className="text-sm text-muted-foreground truncate">
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-semibold text-foreground">{doc.title}</span>
+                      <span className="truncate text-sm text-muted-foreground">
                         {status === 'success' && fileName
                           ? fileName
                           : isCompress
@@ -253,9 +252,9 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
                     </div>
                   </div>
 
-                  <div className="shrink-0 flex items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-2">
                     {status === 'success' ? (
-                      <span className="text-sm font-semibold text-success flex items-center gap-1">
+                      <span className="flex items-center gap-1 text-sm font-semibold text-success">
                         {COURIER_ONBOARDING_COPY.btnUploaded}
                       </span>
                     ) : status === 'uploading' || isCompress ? (
@@ -288,24 +287,25 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
         </section>
 
         {/* Tip de compresión y formatos */}
-        <div className="p-3 bg-card border border-border/60 rounded-lg text-muted-foreground text-sm leading-snug">
+        <div className="rounded-lg border border-border/60 bg-muted/40 p-3 text-sm leading-snug text-muted-foreground">
           {COURIER_ONBOARDING_COPY.acceptedFormatsTip}
         </div>
-      </main>
 
-      {/* Botón flotante inferior */}
-      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] bg-background/95 backdrop-blur-sm border-t border-border/40 px-4 py-3 z-30 flex flex-col items-center gap-1.5">
-        <Button
-          type="button"
-          onClick={handleContinue}
-          disabled={!isFormComplete}
-          className="w-full h-12 text-sm font-bold flex items-center justify-center gap-2"
-        >
-          <span>{COURIER_ONBOARDING_COPY.btnContinue}</span>
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </Button>
-        <span className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.stepCounter1}</span>
+        {/* Botón de acción inferior */}
+        <div className="flex flex-col items-center gap-2 pt-2">
+          <Button
+            type="button"
+            size="lg"
+            onClick={handleContinue}
+            disabled={!isFormComplete}
+            className="w-full font-bold"
+          >
+            <span>{COURIER_ONBOARDING_COPY.btnContinue}</span>
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <span className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.stepCounter1}</span>
+        </div>
       </div>
-    </div>
+    </Card>
   );
 }

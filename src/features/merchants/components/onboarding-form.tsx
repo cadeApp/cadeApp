@@ -5,6 +5,11 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Store, Phone, MapPin, Crosshair, Info, AlertTriangle, AlertCircle } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
+import { Badge } from '@/ui/badge';
+import { Button } from '@/ui/button';
+import { Card } from '@/ui/card';
+import { Input } from '@/ui/input';
+import { Textarea } from '@/ui/textarea';
 import { merchantOnboardingAction } from '../actions';
 import { merchantCopy } from '../copy';
 import { merchantOnboardingSchema, type MerchantOnboardingInput } from '../schemas';
@@ -106,14 +111,11 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
   };
 
   return (
-    <div className="w-full max-w-lg space-y-6 pb-8">
+    <Card className="mx-auto w-full max-w-lg space-y-6 p-6 sm:p-8">
       {/* Barra de progreso: Paso 2 de 2 */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm font-medium text-muted-foreground">
           <span>{merchantCopy.onboarding.stepIndicator}</span>
-          <span className="font-semibold text-primary-dark">
-            {merchantCopy.onboarding.pilotBadge}
-          </span>
         </div>
         <div
           role="progressbar"
@@ -129,7 +131,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
 
       {/* Encabezado */}
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
           {merchantCopy.onboarding.title}
         </h1>
         <p className="text-sm text-muted-foreground">{merchantCopy.onboarding.subtitle}</p>
@@ -142,14 +144,15 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             {merchantCopy.onboarding.businessNameLabel}
           </label>
           <div className="relative">
-            <input
+            <Input
               id="businessName"
               type="text"
               {...register('businessName')}
               placeholder={merchantCopy.onboarding.businessNamePlaceholder}
-              className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pl-10 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-invalid={Boolean(errors.businessName)}
+              className="pl-10"
             />
-            <Store className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+            <Store className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
           </div>
           {errors.businessName && (
             <p className="text-sm text-destructive">{errors.businessName.message}</p>
@@ -162,14 +165,15 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             {merchantCopy.onboarding.phoneLabel}
           </label>
           <div className="relative">
-            <input
+            <Input
               id="phone"
               type="tel"
               {...register('phone')}
               placeholder={merchantCopy.onboarding.phonePlaceholder}
-              className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pl-10 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-invalid={Boolean(errors.phone)}
+              className="pl-10"
             />
-            <Phone className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+            <Phone className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
           </div>
           {errors.phone ? (
             <p className="text-sm text-destructive">{errors.phone.message}</p>
@@ -188,7 +192,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             {...register('defaultPickupZoneId', {
               setValueAs: (v: string) => (v === '' ? null : v),
             })}
-            className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="flex h-12 w-full rounded-lg border border-input bg-card px-3.5 py-2 text-base text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <option value="">{merchantCopy.onboarding.zonePlaceholder}</option>
             {zones.map((zone) => (
@@ -208,14 +212,15 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             {merchantCopy.onboarding.addressLabel}
           </label>
           <div className="relative">
-            <input
+            <Input
               id="address"
               type="text"
               {...register('defaultPickupAddress')}
               placeholder={merchantCopy.onboarding.addressPlaceholder}
-              className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pl-10 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              aria-invalid={Boolean(errors.defaultPickupAddress)}
+              className="pl-10"
             />
-            <MapPin className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+            <MapPin className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
           </div>
           {errors.defaultPickupAddress ? (
             <p className="text-sm text-destructive">{errors.defaultPickupAddress.message}</p>
@@ -225,7 +230,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         </div>
 
         {/* Ubicación del local en el mapa / Fallback graceful */}
-        <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+        <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
           <div className="flex items-start gap-2">
             <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary-dark" />
             <div className="space-y-1">
@@ -239,25 +244,27 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           </div>
 
           {/* Degradación elegante: aviso informativo si no carga el mapa dinámico */}
-          <div className="flex items-center gap-2 rounded-md bg-muted/60 p-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
             <Info className="h-5 w-5 shrink-0 text-primary-dark" />
             <span>{merchantCopy.onboarding.mapFallbackNotice}</span>
           </div>
 
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="lg"
             onClick={handleUseMyLocation}
             disabled={locating}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            className="w-full"
           >
             <Crosshair className="h-5 w-5 text-primary-dark" />
             <span>
               {locating ? merchantCopy.onboarding.locating : merchantCopy.onboarding.useMyLocation}
             </span>
-          </button>
+          </Button>
 
           {defaultPickupLat != null && defaultPickupLng != null && !coordsError && (
-            <div className="rounded-md bg-primary/10 p-2.5 text-sm text-primary-dark">
+            <div className="rounded-lg bg-primary/10 p-2.5 text-sm text-primary-dark">
               {merchantCopy.onboarding.locationMarked} ({defaultPickupLat.toFixed(4)},{' '}
               {defaultPickupLng.toFixed(4)})
             </div>
@@ -266,7 +273,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           {coordsError && (
             <div
               role="alert"
-              className="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+              className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
             >
               <AlertTriangle className="h-5 w-5 shrink-0" />
               <span>{coordsError}</span>
@@ -275,7 +282,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           {errors.defaultPickupLat && (
             <div
               role="alert"
-              className="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+              className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
             >
               <AlertTriangle className="h-5 w-5 shrink-0" />
               <span>{errors.defaultPickupLat.message}</span>
@@ -288,20 +295,21 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           <label htmlFor="notes" className="text-sm font-medium text-foreground">
             {merchantCopy.onboarding.notesLabel}
           </label>
-          <textarea
+          <Textarea
             id="notes"
             rows={2}
             {...register('notes', {
               setValueAs: (v: string) => (v === '' ? null : v),
             })}
             placeholder={merchantCopy.onboarding.notesPlaceholder}
-            className="flex min-h-20 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-invalid={Boolean(errors.notes)}
+            className="min-h-20"
           />
           {errors.notes && <p className="text-sm text-destructive">{errors.notes.message}</p>}
         </div>
 
         {/* Tarjeta informativa de piloto gratis */}
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-foreground">
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm text-foreground">
           <div className="flex items-center gap-2 font-semibold text-primary-dark">
             <Info className="h-4 w-4" />
             <span>{merchantCopy.onboarding.pilotBadge}</span>
@@ -321,7 +329,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
               id="pilotTerms"
               type="checkbox"
               {...register('acceptPilotTerms')}
-              className="h-4 w-4 rounded border-input text-primary focus:ring-ring"
+              className="h-5 w-5 rounded border-input text-primary focus:ring-ring"
             />
           </label>
           <label
@@ -341,7 +349,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         {errorMessage && (
           <div
             role="alert"
-            className="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
           >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{errorMessage}</span>
@@ -349,16 +357,18 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         )}
 
         {/* Botón principal Empezar (H03: isSubmitting) */}
-        <button
+        <Button
           type="submit"
+          size="lg"
           disabled={isSubmitting || Boolean(coordsError)}
-          className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-base font-semibold text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          className="w-full font-semibold"
         >
           {isSubmitting
             ? merchantCopy.onboarding.loadingButton
             : merchantCopy.onboarding.submitButton}
-        </button>
+        </Button>
       </form>
-    </div>
+    </Card>
   );
 }
+

@@ -3,8 +3,11 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Store, Check, AlertCircle } from 'lucide-react';
+import { Store, Check, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { BrandLogo } from '@/ui/brand-logo';
+import { Button } from '@/ui/button';
+import { Card } from '@/ui/card';
+import { Input } from '@/ui/input';
 import { registerAction } from '../actions';
 import { authCopy } from '../copy';
 import type { SignupRole } from '../schemas';
@@ -14,6 +17,7 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
   const [role, setRole] = useState<SignupRole>(initialRole || 'merchant');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
@@ -54,21 +58,24 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
   };
 
   return (
-    <div className="w-full max-w-sm space-y-6">
-      <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+    <Card className="w-full space-y-6 p-6 sm:p-8">
+      <div className="space-y-1.5 text-center sm:text-left">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {authCopy.register.title}
         </h1>
+        <p className="text-sm text-muted-foreground">
+          Elegí tu perfil para empezar a operar en Aguilares
+        </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         {/* Selector de rol: Comercio vs Repartidor */}
         <div className="space-y-3">
           <button
             type="button"
             aria-pressed={role === 'merchant'}
             onClick={() => setRole('merchant')}
-            className={`relative flex w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors ${
+            className={`relative flex min-h-16 w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors ${
               role === 'merchant'
                 ? 'border-primary-dark bg-card shadow-sm'
                 : 'border-border bg-card/60 hover:bg-card'
@@ -96,7 +103,7 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
             type="button"
             aria-pressed={role === 'courier'}
             onClick={() => setRole('courier')}
-            className={`relative flex w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors ${
+            className={`relative flex min-h-16 w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors ${
               role === 'courier'
                 ? 'border-primary-dark bg-card shadow-sm'
                 : 'border-border bg-card/60 hover:bg-card'
@@ -123,10 +130,10 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
 
         {/* Campo Email */}
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium text-foreground">
+          <label htmlFor="email" className="block text-sm font-semibold text-foreground">
             {authCopy.register.emailLabel}
           </label>
-          <input
+          <Input
             id="email"
             type="email"
             required
@@ -134,30 +141,40 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={authCopy.register.emailPlaceholder}
-            className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
 
         {/* Campo Contraseña */}
         <div className="space-y-2">
-          <label htmlFor="password" className="text-sm font-medium text-foreground">
+          <label htmlFor="password" className="block text-sm font-semibold text-foreground">
             {authCopy.register.passwordLabel}
           </label>
-          <input
-            id="password"
-            type="password"
-            required
-            minLength={8}
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? 'text' : 'password'}
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="pr-12"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-0 top-0 flex h-12 w-12 min-h-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={showPassword ? authCopy.login.hidePassword : authCopy.login.showPassword}
+            >
+              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+            </button>
+          </div>
           <p className="text-sm text-muted-foreground">{authCopy.register.passwordHelper}</p>
         </div>
 
         {/* Checkbox de términos */}
-        <div className="flex items-start space-x-2 pt-1">
+        <div className="flex items-start space-x-2.5 pt-1">
           <input
             id="terms"
             type="checkbox"
@@ -167,44 +184,42 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
           />
           <label htmlFor="terms" className="text-sm leading-relaxed text-muted-foreground">
             Acepto los{' '}
-            <Link href="/terms" className="text-primary-dark underline hover:text-foreground">
-              Términos
-            </Link>{' '}
-            y la{' '}
-            <Link href="/privacy" className="text-primary-dark underline hover:text-foreground">
-              Política de privacidad
-            </Link>
+            <span className="font-semibold text-foreground">
+              Términos y Política de privacidad del Piloto
+            </span>{' '}
+            <span className="text-muted-foreground">(en publicación · T-311)</span>
           </label>
         </div>
 
         {errorMessage && (
           <div
             role="alert"
-            className="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+            className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive"
           >
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{errorMessage}</span>
           </div>
         )}
 
-        <button
+        <Button
           type="submit"
+          size="lg"
           disabled={isPending}
-          className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-base font-semibold text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          className="h-12 min-h-12 w-full font-display text-base font-bold shadow-sm"
         >
           {isPending ? authCopy.register.loadingButton : authCopy.register.submitButton}
-        </button>
+        </Button>
       </form>
 
-      <div className="text-center text-sm text-muted-foreground">
+      <div className="border-t border-border/60 pt-4 text-center text-sm text-muted-foreground">
         <span>{authCopy.register.hasAccount} </span>
         <Link
           href="/login"
-          className="font-medium text-primary-dark hover:underline focus:outline-none focus:ring-1 focus:ring-ring"
+          className="font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
         >
           {authCopy.register.loginLink}
         </Link>
       </div>
-    </div>
+    </Card>
   );
 }

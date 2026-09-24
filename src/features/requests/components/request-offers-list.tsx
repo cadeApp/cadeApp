@@ -26,7 +26,7 @@ export interface RequestOffersListProps {
     id: string;
     pickupZoneName: string;
     dropoffZoneName: string;
-    approxDistanceKm: string;
+    approxDistanceKm: string | null;
     packageType: 'sobre' | 'chico' | 'mediano' | 'grande' | string;
     recipientPaymentMethod: 'cash' | 'transfer' | 'to_agree' | string;
     needsChange: boolean;
@@ -168,7 +168,7 @@ export function RequestOffersList({
     : 'el repartidor';
 
   return (
-    <div className="flex flex-col space-y-6">
+    <div className="mx-auto flex w-full max-w-3xl flex-col space-y-6">
       {/* Resumen de la solicitud */}
       <Card className="border border-border bg-card p-4 sm:p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -249,9 +249,9 @@ export function RequestOffersList({
 
       {/* Lista de ofertas */}
       {sortedOffers.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center p-8 text-center border-dashed border-border bg-card">
-          <div className="rounded-full bg-muted p-3 mb-3">
-            <Clock className="h-6 w-6 text-muted-foreground animate-pulse" />
+        <Card className="flex flex-col items-center justify-center border-dashed border-border bg-card p-8 text-center">
+          <div className="mb-3 rounded-xl border border-border bg-muted/40 p-3">
+            <Clock className="h-6 w-6 text-muted-foreground" />
           </div>
           <h3 className="text-base font-semibold text-foreground">Esperando ofertas</h3>
           <p className="text-sm text-muted-foreground max-w-sm mt-1">

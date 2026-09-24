@@ -89,14 +89,30 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByRole('button', { name: /Enviar para revisión/i })).toBeDefined();
     });
 
-    it('oculta o no exige patente al seleccionar "A pie" o "Bici"', async () => {
+    it('oculta patente, licencia y seguro al seleccionar "A pie" o "Bici"', async () => {
       render(<VehicleForm courierId="test-courier" initialDni="38123456" />);
+
+      // Inicialmente (Moto) están visibles patente, licencia y seguro
+      expect(screen.getByLabelText(/Patente del vehículo/i)).toBeDefined();
+      expect(screen.getByText('Licencia de conducir')).toBeDefined();
+      expect(screen.getByText('Seguro')).toBeDefined();
 
       const walkText = screen.getByText('A pie');
       fireEvent.click(walkText);
 
       await waitFor(() => {
         expect(screen.queryByLabelText(/Patente del vehículo/i)).toBeNull();
+        expect(screen.queryByText('Licencia de conducir')).toBeNull();
+        expect(screen.queryByText('Seguro')).toBeNull();
+      });
+
+      const bikeText = screen.getByText('Bici');
+      fireEvent.click(bikeText);
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText(/Patente del vehículo/i)).toBeNull();
+        expect(screen.queryByText('Licencia de conducir')).toBeNull();
+        expect(screen.queryByText('Seguro')).toBeNull();
       });
     });
 

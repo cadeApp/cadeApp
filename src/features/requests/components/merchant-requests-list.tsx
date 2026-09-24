@@ -83,46 +83,34 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
 
       {/* Métricas C02 (Anti-12px, piso 14px text-sm) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="p-4 border-border bg-card shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
-              <Truck className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Despachos hoy</p>
-              <h3 className="text-xl font-bold font-display text-foreground">
-                {metrics.dispatchedToday}
-              </h3>
-            </div>
+        <Card className="flex flex-col justify-between border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-sm font-medium">Despachos hoy</span>
+            <Truck className="h-4 w-4" aria-hidden="true" />
           </div>
+          <p className="mt-2 font-display text-2xl font-bold text-foreground">
+            {metrics.dispatchedToday}
+          </p>
         </Card>
 
-        <Card className="p-4 border-border bg-card shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Tarifa promedio</p>
-              <h3 className="text-xl font-bold font-display text-foreground">
-                {formatArs(metrics.avgRateArs)}
-              </h3>
-            </div>
+        <Card className="flex flex-col justify-between border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-sm font-medium">Tarifa promedio</span>
+            <TrendingUp className="h-4 w-4" aria-hidden="true" />
           </div>
+          <p className="mt-2 font-display text-2xl font-bold text-foreground">
+            {formatArs(metrics.avgRateArs)}
+          </p>
         </Card>
 
-        <Card className="p-4 border-border bg-card shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
-              <Package className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Solicitudes activas</p>
-              <h3 className="text-xl font-bold font-display text-foreground">
-                {metrics.activeCount}
-              </h3>
-            </div>
+        <Card className="flex flex-col justify-between border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-sm font-medium">Solicitudes activas</span>
+            <Package className="h-4 w-4" aria-hidden="true" />
           </div>
+          <p className="mt-2 font-display text-2xl font-bold text-foreground">
+            {metrics.activeCount}
+          </p>
         </Card>
       </div>
 
@@ -159,7 +147,11 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
 
                     {/* Metadatos operativos */}
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                      <span>{req.approxDistanceKm} km</span>
+                      <span>
+                        {req.approxDistanceKm
+                          ? `${req.approxDistanceKm} km`
+                          : 'Distancia no calculada'}
+                      </span>
                       <span>·</span>
                       <span>Paquete {getPackageLabel(req.packageType)}</span>
                       <span>·</span>

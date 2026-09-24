@@ -191,7 +191,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     const merchantAttempt = evaluateRouteGuard('/merchant/dashboard', adminAal1);
     expect(merchantAttempt.action).toBe('redirect');
     if (merchantAttempt.action === 'redirect') {
-      expect(merchantAttempt.redirectTo).toBe('/admin');
+      expect(merchantAttempt.redirectTo).toBe(getRoleDefaultPath('admin'));
     }
 
     const mfaAttempt = evaluateRouteGuard('/login/mfa', adminAal1);
