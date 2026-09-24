@@ -595,11 +595,20 @@ begin
   return next is((select expires_at from public.delivery_requests where id = pg_temp.actor(20)),
     now() + interval '17 minutes', 'H12 / P2b: republish_request sobre published vencida renueva expires_at al TTL configurado');
 
-  -- P4b: admin con aal1 sobre published vencida recibe REQUEST_EXPIRED según precedencia de paso 3 antes de paso 5
+  -- P4b / H14 / M22: admin con aal1 sobre published vencida recibe REQUEST_EXPIRED antes del chequeo de AAL2
   perform pg_temp.fixture('published');
   update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  return next is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Motivo'))->>'error',
-    'REQUEST_EXPIRED', 'P4b: admin sobre published vencida recibe REQUEST_EXPIRED antes del chequeo de rol/AAL2');
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object(
+    'sub', pg_temp.actor(5)::text, 'role', 'authenticated', 'aal', 'aal1',
+    'app_metadata', json_build_object('role', 'admin')
+  )::text, true);
+  return next throws_ok(
+    format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Motivo'),
+    'P0001', 'REQUEST_EXPIRED',
+    'P4b / H14 / M22: admin con aal1 sobre published vencida recibe REQUEST_EXPIRED antes del chequeo de AAL2'
+  );
+  reset role;
 
   -- Controles C01..C04
   perform pg_temp.fixture('published');
