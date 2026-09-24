@@ -88,3 +88,23 @@ Pedí el `revoke … from anon` (`H07`) sin decir que, a partir de ahí, `anon` 
 
 - **Las dos mutaciones de Vitest se ponen rojas** (`H06`, `H09`): el test del wrapper afirma exactamente lo que el hallazgo pedía. Es el `(a)` y el `(b)` de `AG-66`.
 - **La batería de mutaciones necesitó controles positivos para poder confiar en ella.** Las nueve mutaciones y la base dieron idéntico, que es la forma exacta que `AG-60` manda sospechar. Tres mutaciones de control que **tienen** que dar rojo lo resolvieron en una corrida: el instrumento funcionaba y las nueve eran cegueras reales. Conviene que cualquier batería de mutación incluya al menos un control positivo por defecto.
+
+---
+
+## Ronda 3
+
+### `AG-69` · Un mensaje de commit que enumera hallazgos es una afirmación, y se verifica contra el `--stat`
+
+**Origen:** `H18`.
+
+`c9585ba` se titula «resolve Ronda 2 review findings H04, H05, H08, H11, H16, H17». Cuatro de los seis están resueltos, y bien. Los otros dos —`H08` y `H11`— viven en archivos que **el commit no toca**: `git diff --stat` lo dice en una línea. El cuerpo del PR repite la afirmación («sincronizados mediante CLI»).
+
+Es la forma más barata de `P03`: no hay que leer código para detectarla, alcanza con cruzar la lista de IDs del mensaje con los archivos de cada hallazgo.
+
+> **Regla propuesta.** Cuando un commit dice «resuelve Hxx», cada Hxx tiene un archivo en su registro de `hallazgos.jsonl`, y ese archivo tiene que aparecer en el `--stat` del commit. Es un cruce mecánico que puede hacer la propia revisión al arrancar la ronda, antes de leer el diff, y que el agy puede hacer antes de escribir el mensaje.
+
+### Lo que sí funcionó: entregar la mutación como script
+
+En la ronda 2, `H05` llegó con una tabla de nueve mutaciones **y** con `mut.py`, el script que las aplica. En la ronda 3 las nueve dan rojo en un solo intento, y cada prueba nueva lleva un comentario con la mutación que ataja. Compárese con `H04`, que en la ronda 1 llegó en prosa («reescribir con el patrón de `rpc_accept.sql`») y necesitó dos rondas más.
+
+> **Regla propuesta.** Cuando un hallazgo es «la prueba no ataja X», la revisión entrega **la mutación ejecutable**, no solo su descripción. El arreglo se da por bueno cuando esa misma mutación da rojo, y el autor puede comprobarlo antes de pedir la ronda siguiente.

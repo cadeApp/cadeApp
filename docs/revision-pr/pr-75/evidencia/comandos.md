@@ -216,3 +216,26 @@ pnpm typecheck   exit 0
 pnpm lint        ✔ No ESLint warnings or errors
 pnpm test        Test Files 32 passed (32) · Tests 267 passed (267) · # pass 19/# fail 0 · # pass 6/# fail 0
 ```
+
+---
+
+# Ronda 3 · SHA `c9585ba`
+
+```bash
+pnpm supabase stop --no-backup
+pnpm supabase start -x realtime,storage-api,imgproxy,studio,vector,logflare,edge-runtime,supavisor,mailpit,postgres-meta
+pnpm supabase test db            # ronda-3/testdb-resumen.txt → rpc_admin.sql ok · Files=7, Tests=234 · Result: PASS
+python3 docs/revision-pr/pr-75/evidencia/ronda-2/mut.py supabase/tests/rpc_admin.sql   # ronda-3/mutaciones.out
+```
+
+Mutación extra M10: `grant execute … to anon` para las cinco funciones antes del cuerpo de la suite → `not ok 1, 15, 27, 38, 48`.
+
+Origen del `42501` de `anon`, a mano: `set local role anon; select public.admin_decide_courier(…)` → `ERROR: permission denied for function admin_decide_courier`.
+
+```bash
+pnpm db:types --local; git diff --stat -- src/types/database.types.ts   # 4 insertions(+), 12 deletions(-)  (igual que en la ronda 2)
+git show HEAD:src/types/database.types.ts > src/types/database.types.ts
+git diff b6b5f39 c9585ba -- src/domain/testing/rpc-fake.ts | wc -l      # 0
+git diff --stat a33c5f7 c9585ba                                          # admin.ts, migración, rpc_admin.sql
+pnpm typecheck; pnpm lint; pnpm test    # exit 0 · ✔ · Test Files 32 passed (32), Tests 267 passed (267)
+```
