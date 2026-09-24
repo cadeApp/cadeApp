@@ -1,7 +1,7 @@
 # PR #83 — T-115 · Vista de viaje
 
-> ❌ **Ronda 1: CON BLOQUEANTES · 5 bloqueantes · 1 mejora · 1 decisión resuelta**
-> Revisión independiente sobre `4b4f18b0676cd5c5afb8ab5bb7f4328e28050621`. CI no se consultó porque hay bloqueantes.
+> ❌ **Auditoría completa: CON BLOQUEANTES · 11 bloqueantes · 1 mejora · 1 decisión resuelta**
+> Ronda 2 fue solicitada “como si fuera ronda 1”: se rehizo la revisión desde cero sobre `4c2aded`.
 
 | | |
 |---|---|
@@ -9,46 +9,83 @@
 | **Tarea / issue** | `T-115` · #21 |
 | **Autor** | @asako669 · P2 |
 | **Rama** | `feat/T-115-vista-de-viaje` → `develop` |
-| **Base** | `720e2d4f39ab5b4d5d09a55016072eb8fe940855` |
-| **SHA revisado** | `4b4f18b0676cd5c5afb8ab5bb7f4328e28050621` |
-| **Tamaño al revisar** | 3 archivos · +393 |
-| **Estado** | Draft · fase roja inicial |
+| **Merge-base** | `720e2d4f39ab5b4d5d09a55016072eb8fe940855` |
+| **develop al auditar** | `b6bdac6cfe4c5ac9227e87692b8572e1f6bc2121` |
+| **SHA producto revisado** | `4b4f18b0676cd5c5afb8ab5bb7f4328e28050621` |
+| **SHA head auditado** | `4c2adedbcae27d3b3cb754325a12769cda5e1749` |
+| **Estado de rama** | diverged · ahead 3 · behind 6 |
+| **Estado PR** | Draft · fase roja |
 
 ## Rondas
 
-| Ronda | SHA | Resultado | Informe |
-|---|---|---|---|
-| 1 | `4b4f18b` | ❌ 5 bloqueantes · 1 mejora · D01 aceptada | [ronda-1.md](revisiones/ronda-1.md) |
+| Ronda | SHA | Método | Resultado | Informe |
+|---|---|---|---|---|
+| 1 | `4b4f18b` | revisión inicial | ❌ 5 bloqueantes · 1 mejora · D01 | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `4c2aded` | **auditoría completa desde cero** | ❌ **11 bloqueantes · 1 mejora · D01** | [ronda-2.md](revisiones/ronda-2.md) |
 
-## Estado
+## Estado por hallazgo
 
 | ID | Resumen | Sev. | Estado |
 |---|---|---:|---|
-| PR83-H01 | Actions no prueban RPC/input invocados | alto | abierto |
-| PR83-H02 | Matriz sesión/rol incompleta | alto | abierto |
-| PR83-H03 | no-show omite default y `false → cancelled` | alto | abierto |
-| PR83-H04 | “sin datos de más” usa blacklist | alto | abierto |
-| PR83-H05 | rojo declarado es fallo de import, no mutación | medio | abierto |
-| PR83-H06 | bitácora contradictoria | bajo | abierto |
-| PR83-D01 | `wa.me/<recipient_phone>` para actor autorizado | decisión | aceptado |
+| H01 | RPC/input exactos no observados | alto | abierto |
+| H02 | matriz auth incompleta | alto | abierto |
+| H03 | default de no-show no ejercido | alto | abierto |
+| H04 | privacidad por blacklist | alto | abierto |
+| H05 | rojo de import usado como mutación | medio | abierto |
+| H06 | bitácora contradictoria | bajo | abierto |
+| H07 | ficha vigente no incorporada | alto | abierto |
+| H08 | 5/6 transiciones inválidas sin test | alto | abierto |
+| H09 | sin test de query/datos del viaje | alto | abierto |
+| H10 | sin TDD de C06/R07/T05/estados | alto | abierto |
+| H11 | revalidación de caché ciega | alto | abierto |
+| H12 | borde de teléfono demasiado laxo | medio | abierto |
+| D01 | `wa.me/<recipient_phone>` post-RLS | decisión | aceptado |
 
 Datos: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [comandos.md](evidencia/comandos.md) · Lecciones: [lecciones.md](lecciones.md)
 
-## Verificado como correcto en este SHA
+## Qué cambió entre las dos revisiones
 
-- Los 3 archivos del diff están dentro de “Archivos permitidos” de la ficha T-115 leída desde `develop`.
-- La PR no modifica su ficha.
-- Head comprobado al inicio y antes de cerrar la ronda: `4b4f18b`; 2 commits adelante y 0 detrás de la base revisada.
-- No había comentarios ni threads previos.
-- La lista funcional de actions coincide con el ciclo definido: retirado, entregado, cancelación por repartidor, no-show, cancelación por comercio y republicación.
-- El rojo inicial por módulos aún no implementados es válido como comienzo de TDD; H05 solo corrige la afirmación de que eso ya demuestra cada control por mutación.
+No cambió código de producto: `4c2aded` solo agregó la carpeta de la ronda 1.
+
+Sí cambió **develop**:
+
+- la rama quedó 6 commits atrás;
+- la ficha T-115 pasó de 4 a 8 ítems de DoD;
+- ahora son vinculantes C06, R07, T05 y la directiva visual;
+- los “Archivos permitidos” **no cambiaron**.
+
+Por eso H07 nació después de abrir la rama. H08–H12, en cambio, ya estaban latentes en el primer diff y son
+agujeros de mi propia ronda 1.
+
+## Lo verificado como correcto
+
+- Scope actual: 0 archivos fuera de la ficha.
+- El mapa queda reservado a T-117.
+- El commit rojo inicial `93ee171` está separado de implementación.
+- La lista de actions corresponde a las transiciones previstas.
+- D01 sigue resuelta: `wa.me` puede usar el teléfono cuando el actor ya tiene autorización RLS.
+
+## Bloqueo previo de UI
+
+T05 pide AlertDialog; `src/ui/alert-dialog.tsx` no existe en develop y `src/ui/**` no está permitido por T-115.
+La propia ficha ordena abrir `contract-change` si falta la primitiva. No debe sustituirse silenciosamente.
 
 ## Ejecución
 
-- CI: no consultado, por tener bloqueantes.
-- `pnpm typecheck/lint/test`: no ejecutados independientemente; el entorno no pudo resolver `github.com` al intentar clonar. Se continuó con los blobs exactos del SHA y mutaciones aisladas reproducidas con Node.
-- `test:db`: n.a.; el diff no toca `supabase/` ni `src/server/`.
+- CI: no consultado por tener bloqueantes.
+- `pnpm typecheck/lint/test`: no ejecutados independientemente; el entorno no puede resolver `github.com`
+  para obtener el checkout completo.
+- `test:db`: n.a.
+- H12: reproducido con el algoritmo exacto de `extractNationalTenDigits/whatsappLink`.
+- JSONL: 13 registros parseables; 12 abiertos, 11 bloqueantes, 1 decisión aceptada.
 
-## Qué sigue
+## Próximo orden
 
-Corregir H01–H05, actualizar la bitácora por H06 y volver a revisar en un SHA nuevo. D01 queda resuelta: T-115 puede usar el teléfono en `wa.me` si el actor ya está autorizado por RLS; `AGENTS.md` se corrige fuera de esta tarea.
+1. Rebase sobre develop.
+2. Actualizar PR/bitácora a la ficha vigente.
+3. Resolver la primitiva T05 vía contract-change si corresponde.
+4. Completar toda la fase roja.
+5. Implementar.
+6. Browser 390/360 + capturas.
+7. Checks completos.
+8. Nueva revisión.
