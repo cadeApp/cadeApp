@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { RPC_CONTRACTS, type RpcErrorCode } from '@/domain/rpc-contracts';
 import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
 import {
+  acceptOfferRpc,
   createOffersRpcServerClient,
   mapOfferRpcError,
   setAvailabilityRpc,
@@ -26,6 +27,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       settings: {
         minOfferArs: 1000,
         maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -107,6 +110,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       settings: {
         minOfferArs: 1500,
         maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -403,7 +408,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
     expect(
       mapOfferRpcError('submit_offer', {
         code: '23505',
-        message: 'duplicate key value violates unique constraint "offers_one_active_per_courier_request_idx"',
+        message:
+          'duplicate key value violates unique constraint "offers_one_active_per_courier_request_idx"',
       })
     ).toBe('DUPLICATE_ACTIVE_OFFER');
     expect(
@@ -513,6 +519,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       settings: {
         minOfferArs: 1500,
         maxOffersPerMin: 2,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -642,5 +650,414 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
     expect(
       await fake.submit_offer({ requestId: REQ_EXPIRED_ID, amountArs: 1600, etaMinutes: 15 })
     ).toEqual({ ok: false, code: 'REQUEST_EXPIRED' });
+  });
+});
+
+describe('T-102 · RPC accept_offer atómica e idempotente', () => {
+  it('6. DoD Competencia de 10 ofertas → una sola ganadora y 9 ALREADY_MATCHED; idempotencia preservando matchedAt; repartidor suspendido entre la oferta y la aceptación', async () => {
+    let currentNow = new Date('2026-09-23T10:00:00.000Z');
+    const courierUuid = (idx: number) =>
+      `00000000-0000-4000-8000-000000000c${String(idx).padStart(2, '0')}`;
+    const offerUuid = (idx: number) =>
+      `00000000-0000-4000-8000-000000000a${String(idx).padStart(2, '0')}`;
+
+    const couriers10 = Array.from({ length: 10 }, (_, idx) => ({
+      courierId: courierUuid(idx + 1),
+      status: 'approved' as const,
+      available: true,
+    }));
+    const offers10 = Array.from({ length: 10 }, (_, idx) => ({
+      offerId: offerUuid(idx + 1),
+      requestId: REQ_1_ID,
+      courierId: courierUuid(idx + 1),
+      amountArs: 1500 + idx * 50,
+      status: 'pending' as const,
+    }));
+    const firstOfferId = offerUuid(1);
+    const offerSuspendedId = offerUuid(11);
+    const offerPendingId = offerUuid(12);
+
+    const fake = createFakeRpcClient({
+      now: () => currentNow,
+      settings: {
+        minOfferArs: 1500,
+        maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
+        requestTtlMinutes: 30,
+        pilotActive: true,
+        pilotTermsVersion: 'v1',
+        subscriptionGraceDays: 0,
+      },
+      initialActor: {
+        userId: MERCHANT_ID,
+        role: 'merchant',
+        merchantSubscriptionStatus: 'pilot',
+      },
+      initialMerchants: [{ merchantId: MERCHANT_ID, subscriptionStatus: 'pilot' }],
+      initialCouriers: [
+        ...couriers10,
+        // Entre la oferta y la aceptación, el repartidor 11 fue suspendido y el 12 pasó a pending
+        { courierId: courierUuid(11), status: 'suspended', available: false },
+        { courierId: courierUuid(12), status: 'pending', available: false },
+      ],
+      initialRequests: [
+        {
+          requestId: REQ_1_ID,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T10:30:00.000Z',
+        },
+        {
+          requestId: REQ_2_ID,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T10:30:00.000Z',
+        },
+      ],
+      initialOffers: [
+        ...offers10,
+        {
+          offerId: offerSuspendedId,
+          requestId: REQ_2_ID,
+          courierId: courierUuid(11),
+          amountArs: 1600,
+          status: 'pending',
+        },
+        {
+          offerId: offerPendingId,
+          requestId: REQ_2_ID,
+          courierId: courierUuid(12),
+          amountArs: 1650,
+          status: 'pending',
+        },
+      ],
+    });
+
+    const caller: SupabaseRpcCaller = {
+      rpc: vi.fn(async (fn, args) => {
+        if (fn === 'accept_offer') {
+          const res = await fake.accept_offer({ offerId: String(args.p_offer_id) });
+          return res.ok
+            ? { data: res.data, error: null }
+            : { data: null, error: { code: 'P0001', message: res.code } };
+        }
+        return { data: null, error: { code: '42883', message: 'Unknown RPC' } };
+      }),
+    };
+
+    // 1. Repartidor suspendido o no aprobado entre la oferta y la aceptación
+    const suspendedRes = await acceptOfferRpc(caller, { offerId: offerSuspendedId });
+    expect(suspendedRes).toEqual({ ok: false, code: 'COURIER_SUSPENDED' });
+
+    const pendingCourierRes = await acceptOfferRpc(caller, { offerId: offerPendingId });
+    expect(pendingCourierRes).toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
+
+    // 2. Competencia sobre las 10 ofertas de REQ_1_ID → una sola ganadora y 9 ALREADY_MATCHED
+    const raceResults = await Promise.all(
+      offers10.map((o) => acceptOfferRpc(caller, { offerId: o.offerId }))
+    );
+
+    const winners = raceResults.filter((r) => r.ok);
+    const losers = raceResults.filter((r) => !r.ok);
+
+    expect(winners).toHaveLength(1);
+    expect(losers).toHaveLength(9);
+    expect(winners[0]).toEqual({
+      ok: true,
+      data: {
+        requestId: REQ_1_ID,
+        acceptedOfferId: firstOfferId,
+        status: 'matched',
+        matchedAt: '2026-09-23T10:00:00.000Z',
+        idempotent: false,
+      },
+    });
+    for (const loser of losers) {
+      expect(loser).toEqual({ ok: false, code: 'ALREADY_MATCHED' });
+    }
+
+    // 3. Las 9 ofertas restantes quedaron en rejected en el estado real
+    const snapOffers = offers10.map((o) => fake.getOffer(o.offerId));
+    expect(snapOffers.filter((o) => o?.status === 'accepted')).toHaveLength(1);
+    expect(snapOffers.filter((o) => o?.status === 'rejected')).toHaveLength(9);
+    expect(fake.getRequest(REQ_1_ID)?.status).toBe('matched');
+    expect(fake.getRequest(REQ_1_ID)?.acceptedOfferId).toBe(firstOfferId);
+
+    // 4. Idempotencia: avanzamos el reloj y volvemos a llamar acceptOfferRpc sobre la oferta ganadora
+    currentNow = new Date('2026-09-23T10:05:00.000Z');
+    const idempotentRes = await acceptOfferRpc(caller, { offerId: firstOfferId });
+    expect(idempotentRes).toEqual({
+      ok: true,
+      data: {
+        requestId: REQ_1_ID,
+        acceptedOfferId: firstOfferId,
+        status: 'matched',
+        matchedAt: '2026-09-23T10:00:00.000Z',
+        idempotent: true,
+      },
+    });
+
+    // 5. Validación de entrada, salida e INTERNAL_ERROR en acceptOfferRpc y createOffersRpcServerClient
+    const invalidInput = await acceptOfferRpc(caller, { offerId: 'not-a-uuid' });
+    expect(invalidInput).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+
+    const brokenCaller: SupabaseRpcCaller = {
+      rpc: vi.fn(async () => ({
+        data: null,
+        error: { code: '57014', message: 'statement timeout' },
+      })),
+    };
+    expect(await acceptOfferRpc(brokenCaller, { offerId: firstOfferId })).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+
+    const malformedOutputCaller: SupabaseRpcCaller = {
+      rpc: vi.fn(async () => ({
+        data: { bad: true },
+        error: null,
+      })),
+    };
+    expect(await acceptOfferRpc(malformedOutputCaller, { offerId: firstOfferId })).toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+
+    expect(
+      mapOfferRpcError('accept_offer', {
+        code: '23505',
+        message:
+          'duplicate key value violates unique constraint "idx_offers_one_accepted_per_request"',
+      })
+    ).toBe('ALREADY_MATCHED');
+
+    const serverClient = createOffersRpcServerClient(caller);
+    expect(await serverClient.accept_offer({ offerId: firstOfferId })).toEqual({
+      ok: true,
+      data: expect.objectContaining({ idempotent: true }),
+    });
+  });
+
+  it('7. Precedencia canónica de errores en accept_offer ante fallos simultáneos (CC-003)', async () => {
+    const OTHER_MERCHANT = '00000000-0000-4000-8000-0000000000b9';
+    const COURIER_SUSP = '00000000-0000-4000-8000-000000000c99';
+    const REQ_MATCHED = '00000000-0000-4000-8000-000000000901';
+    const REQ_EXPIRED = '00000000-0000-4000-8000-000000000902';
+    const REQ_CANCELLED = '00000000-0000-4000-8000-000000000903';
+    const REQ_PUB = '00000000-0000-4000-8000-000000000904';
+
+    const OFFER_WON = '00000000-0000-4000-8000-000000000911';
+    const OFFER_REJECTED_ON_MATCHED = '00000000-0000-4000-8000-000000000912';
+    const OFFER_ON_EXPIRED_SUSP = '00000000-0000-4000-8000-000000000913';
+    const OFFER_WITHDRAWN_ON_CANCELLED = '00000000-0000-4000-8000-000000000914';
+    const OFFER_WITHDRAWN_SUSP_ON_PUB = '00000000-0000-4000-8000-000000000915';
+
+    const fake = createFakeRpcClient({
+      now: () => new Date('2026-09-23T12:00:00.000Z'),
+      settings: {
+        minOfferArs: 1500,
+        maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
+        requestTtlMinutes: 30,
+        pilotActive: true,
+        pilotTermsVersion: 'v1',
+        subscriptionGraceDays: 0,
+      },
+      initialActor: {
+        userId: MERCHANT_ID,
+        role: 'merchant',
+        merchantSubscriptionStatus: 'pilot',
+      },
+      initialMerchants: [
+        { merchantId: MERCHANT_ID, subscriptionStatus: 'pilot' },
+        { merchantId: OTHER_MERCHANT, subscriptionStatus: 'pilot' },
+      ],
+      initialCouriers: [
+        { courierId: COURIER_1_ID, status: 'approved', available: true },
+        { courierId: COURIER_SUSP, status: 'suspended', available: false },
+      ],
+      initialRequests: [
+        {
+          requestId: REQ_MATCHED,
+          merchantId: MERCHANT_ID,
+          status: 'matched',
+          acceptedOfferId: OFFER_WON,
+          matchedAt: '2026-09-23T11:50:00.000Z',
+          expiresAt: '2026-09-23T12:30:00.000Z',
+        },
+        {
+          requestId: REQ_EXPIRED,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T11:00:00.000Z',
+        },
+        {
+          requestId: REQ_CANCELLED,
+          merchantId: MERCHANT_ID,
+          status: 'cancelled',
+          expiresAt: '2026-09-23T12:30:00.000Z',
+        },
+        {
+          requestId: REQ_PUB,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T12:30:00.000Z',
+        },
+      ],
+      initialOffers: [
+        {
+          offerId: OFFER_WON,
+          requestId: REQ_MATCHED,
+          courierId: COURIER_SUSP,
+          amountArs: 1500,
+          status: 'accepted',
+        },
+        {
+          offerId: OFFER_REJECTED_ON_MATCHED,
+          requestId: REQ_MATCHED,
+          courierId: COURIER_SUSP,
+          amountArs: 1600,
+          status: 'rejected',
+        },
+        {
+          offerId: OFFER_ON_EXPIRED_SUSP,
+          requestId: REQ_EXPIRED,
+          courierId: COURIER_SUSP,
+          amountArs: 1600,
+          status: 'pending',
+        },
+        {
+          offerId: OFFER_WITHDRAWN_ON_CANCELLED,
+          requestId: REQ_CANCELLED,
+          courierId: COURIER_SUSP,
+          amountArs: 1600,
+          status: 'withdrawn',
+        },
+        {
+          offerId: OFFER_WITHDRAWN_SUSP_ON_PUB,
+          requestId: REQ_PUB,
+          courierId: COURIER_SUSP,
+          amountArs: 1600,
+          status: 'withdrawn',
+        },
+      ],
+    });
+
+    // 1. Comercio ajeno + solicitud matched -> UNAUTHORIZED_ACTOR (paso 4 precede a paso 5)
+    fake.setActor({ userId: OTHER_MERCHANT, role: 'merchant' });
+    expect(await fake.accept_offer({ offerId: OFFER_REJECTED_ON_MATCHED })).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED_ACTOR',
+    });
+
+    // 2. Idempotencia sobre oferta ganadora + repartidor suspendido luego del match -> ok idempotent: true (paso 5 precede a paso 8)
+    fake.setActor({ userId: MERCHANT_ID, role: 'merchant' });
+    expect(await fake.accept_offer({ offerId: OFFER_WON })).toEqual({
+      ok: true,
+      data: expect.objectContaining({ idempotent: true, matchedAt: '2026-09-23T11:50:00.000Z' }),
+    });
+
+    // 3. Solicitud matched con otra oferta + oferta rejected -> ALREADY_MATCHED (paso 5 precede a paso 7 OFFER_NOT_PENDING)
+    expect(await fake.accept_offer({ offerId: OFFER_REJECTED_ON_MATCHED })).toEqual({
+      ok: false,
+      code: 'ALREADY_MATCHED',
+    });
+
+    // 4. Solicitud vencida + repartidor suspendido -> REQUEST_EXPIRED (paso 6 precede a paso 8)
+    expect(await fake.accept_offer({ offerId: OFFER_ON_EXPIRED_SUSP })).toEqual({
+      ok: false,
+      code: 'REQUEST_EXPIRED',
+    });
+
+    // 5. Solicitud cancelada + oferta withdrawn -> INVALID_STATE_TRANSITION (paso 6 precede a paso 7)
+    expect(await fake.accept_offer({ offerId: OFFER_WITHDRAWN_ON_CANCELLED })).toEqual({
+      ok: false,
+      code: 'INVALID_STATE_TRANSITION',
+    });
+
+    // 6. Oferta withdrawn + repartidor suspendido en solicitud publicada -> OFFER_NOT_PENDING (paso 7 precede a paso 8)
+    expect(await fake.accept_offer({ offerId: OFFER_WITHDRAWN_SUSP_ON_PUB })).toEqual({
+      ok: false,
+      code: 'OFFER_NOT_PENDING',
+    });
+  });
+
+  it('8. Contrato SQL de accept_offer: SECURITY DEFINER, search_path, orden jerárquico de locks anclados por sentencia (H01/D01), sin UPDATE revertido en REQUEST_EXPIRED (H03/D02) y coincidencia bidireccional de códigos', () => {
+    const migrationPath = path.resolve(
+      process.cwd(),
+      'supabase/migrations/20260923170000_rpc_accept_offer_v1.sql'
+    );
+    expect(fs.existsSync(migrationPath)).toBe(true);
+    const sql = fs.readFileSync(migrationPath, 'utf8');
+
+    expect(sql).toMatch(
+      /drop\s+policy\s+if\s+exists\s+offers_update_merchant\s+on\s+public\.offers/i
+    );
+
+    const blocks = sql.split(/create\s+or\s+replace\s+function\s+public\./i).slice(1);
+    const acceptBlock = blocks.find((b) => b.trimStart().startsWith('accept_offer('));
+    expect(acceptBlock, 'Falta la función public.accept_offer en la migración').toBeDefined();
+
+    const body = acceptBlock ?? '';
+    expect(body).toMatch(/security\s+definer/i);
+    expect(body).toMatch(/set\s+search_path\s*=\s*public\s*,\s*pg_temp/i);
+
+    // H01 / D01: cada lock debe estar anclado a su propia sentencia SELECT (sin cruzar ';')
+    // y adquirirse en orden jerárquico padre -> hijo: delivery_requests FOR UPDATE < offers FOR UPDATE < couriers FOR SHARE
+    const reqLockRegex = /from\s+public\.delivery_requests\s+dr[^;]*?for\s+update\s*;/i;
+    const offerLockRegex = /from\s+public\.offers\s+o[^;]*?for\s+update\s*;/i;
+    const courierLockRegex = /from\s+public\.couriers\s+c[^;]*?for\s+share\s*;/i;
+
+    const reqLockMatch = body.match(reqLockRegex);
+    const offerLockMatch = body.match(offerLockRegex);
+    const courierLockMatch = body.match(courierLockRegex);
+
+    expect(
+      reqLockMatch,
+      'Falta FOR UPDATE en la sentencia SELECT de public.delivery_requests'
+    ).not.toBeNull();
+    expect(
+      offerLockMatch,
+      'Falta FOR UPDATE en la sentencia SELECT de public.offers'
+    ).not.toBeNull();
+    expect(
+      courierLockMatch,
+      'Falta FOR SHARE en la sentencia SELECT de public.couriers'
+    ).not.toBeNull();
+
+    const reqLockIndex = reqLockMatch?.index ?? -1;
+    const offerLockIndex = offerLockMatch?.index ?? -1;
+    const courierLockIndex = courierLockMatch?.index ?? -1;
+
+    expect(reqLockIndex).toBeGreaterThanOrEqual(0);
+    expect(reqLockIndex).toBeLessThan(offerLockIndex);
+    expect(offerLockIndex).toBeLessThan(courierLockIndex);
+
+    // H01: mutaciones M1 y M2 — quitar el FOR UPDATE individual de offers o de delivery_requests debe fallar su control
+    const m1WithoutOffersLock = body.replace(offerLockRegex, (stmt) =>
+      stmt.replace(/for\s+update\s*;/i, ';')
+    );
+    expect(m1WithoutOffersLock).not.toMatch(offerLockRegex);
+
+    const m2WithoutReqLock = body.replace(reqLockRegex, (stmt) =>
+      stmt.replace(/for\s+update\s*;/i, ';')
+    );
+    expect(m2WithoutReqLock).not.toMatch(reqLockRegex);
+
+    // H03 / D02: no debe existir un UPDATE a status = 'expired' antes de raise exception 'REQUEST_EXPIRED'
+    expect(body).not.toMatch(/set\s+status\s*=\s*'expired'/i);
+
+    const raisedCodes = Array.from(body.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map(
+      (m) => m[1] as RpcErrorCode<'accept_offer'>
+    );
+    const uniqueRaised = Array.from(new Set(raisedCodes)).sort();
+    const expectedContractCodes = RPC_CONTRACTS.accept_offer.errorCodes
+      .filter((c) => c !== 'INTERNAL_ERROR')
+      .slice()
+      .sort();
+
+    expect(uniqueRaised).toEqual(expectedContractCodes);
   });
 });

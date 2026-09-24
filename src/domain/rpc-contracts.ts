@@ -295,6 +295,29 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
 export const RPC_CONTRACTS = {
+  /**
+   * Precedencia canónica del ciclo de solicitudes (CC-006 / D01 / D03 — compartida entre
+   * `supabase/migrations/20260924010124_rpc_requests_v1.sql` y `src/domain/testing/rpc-fake.ts` para
+   * `publish_request`, `cancel_request`, `mark_picked_up`, `mark_delivered`, `report_no_show`,
+   * `courier_cancel_match`, `republish_request` y `report_incident`):
+   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR` si el rol del perfil no está autorizado para la RPC)
+   *   2. Parámetros de entrada (`VALIDATION_ERROR`: `requestId`, longitud de `reason`, `republish`, `kind`, `description`)
+   *   3. Existencia de la solicitud (`NOT_FOUND`)
+   *   4. Titularidad, participación y elegibilidad del actor:
+   *      - Si `role = 'merchant'`: `UNAUTHORIZED_ACTOR` si `merchant_id <> auth.uid()`
+   *      - Si `role = 'courier'` en `report_incident` (CC-002 §4 / H01): primero participación (`UNAUTHORIZED_ACTOR` si no es el repartidor de la oferta `accepted`) → luego elegibilidad (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED`)
+   *      - Si `role = 'courier'` en `mark_picked_up`, `mark_delivered`, `courier_cancel_match` (CC-002 §4): primero elegibilidad (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED`) → luego pertenencia a la oferta `accepted` (`UNAUTHORIZED_ACTOR`)
+   *   5. Estado efectivo (`published` con `expires_at <= now()` se evalúa como `'expired'` — H02) y transición:
+   *      - `cancel_request` sobre solicitud vencida (`status = 'published'` y `expires_at <= now()`): `REQUEST_EXPIRED`
+   *      - Estado efectivo inválido para la RPC y rol: `INVALID_STATE_TRANSITION` (`republish_request` admite `'matched' | 'expired' | 'cancelled'`, por lo que una `'published'` vencida es válida; `report_incident` admite `'published' | 'matched' | 'in_transit' | 'delivered'` vigentes, por lo que una `'published'` vencida da `INVALID_STATE_TRANSITION`)
+   *      - `cancel_request` con `role = 'admin'` (ya en `in_transit`): `AAL2_REQUIRED` si `aal <> 'aal2'` (D03)
+   *      - Motivo obligatorio vacío en `cancel_request` (`matched`/`in_transit`), `republish_request` (`matched`) o `courier_cancel_match`: `REASON_REQUIRED`
+   *      - `report_no_show` sin oferta `accepted` válida: `INVALID_STATE_TRANSITION`
+   *      - `report_incident` en `delivered` con `delivered_at is null` o `now() > delivered_at + 24h`: `INCIDENT_WINDOW_EXPIRED`
+   *   6. Suscripción y gracia del comercio en `publish_request`, `republish_request` y `report_no_show(republish=true)` (`SUBSCRIPTION_INACTIVE`)
+   *   7. Contacto, zonas activas y bordes de Aguilares en `publish_request` (`MISSING_REQUIRED_FIELDS` → `INVALID_ZONE` → `OUT_OF_BOUNDS_AGUILARES`)
+   *   8. Tope por ventana de 1 min en `publish_request`/`republish_request` y `report_incident` (`RATE_LIMITED`)
+   */
   publish_request: {
     inputSchema: publishRequestInputSchema,
     outputSchema: publishRequestOutputSchema,
@@ -318,6 +341,7 @@ export const RPC_CONTRACTS = {
     errorCodes: [
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
       'NOT_FOUND',
       'REQUEST_EXPIRED',
       'REASON_REQUIRED',
@@ -378,6 +402,18 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * Precedencia canónica de errores de `accept_offer` (CC-003 — compartida entre
+   * `supabase/migrations/20260923170000_rpc_accept_offer_v1.sql` y `src/domain/testing/rpc-fake.ts`):
+   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
+   *   2. Parámetros de entrada (`VALIDATION_ERROR`: `offerId`)
+   *   3. Existencia de oferta, solicitud y repartidor (`NOT_FOUND`)
+   *   4. Titularidad del comercio sobre la solicitud (`UNAUTHORIZED_ACTOR` si `merchant_id <> auth.uid()`)
+   *   5. Idempotencia y competencia (`idempotent: true` si `status = 'matched'` y `accepted_offer_id = offerId` → `ALREADY_MATCHED` si `status = 'matched'` con otra oferta)
+   *   6. Solicitud (`REQUEST_EXPIRED` si `status = 'published'` y `expires_at <= now()`, sin persistir transición → `INVALID_STATE_TRANSITION` si `status <> 'published'`)
+   *   7. Estado de la oferta (`OFFER_NOT_PENDING` si `status <> 'pending'`)
+   *   8. Elegibilidad del repartidor al aceptar (`COURIER_SUSPENDED` → `COURIER_NOT_APPROVED`)
+   */
   accept_offer: {
     inputSchema: acceptOfferInputSchema,
     outputSchema: acceptOfferOutputSchema,
@@ -392,6 +428,7 @@ export const RPC_CONTRACTS = {
       'COURIER_SUSPENDED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
   mark_picked_up: {

@@ -45,6 +45,8 @@ import { type FakePlatformSettings, createFakeRpcClient } from './testing/rpc-fa
 const BASE_SETTINGS: FakePlatformSettings = {
   minOfferArs: 1200,
   maxOffersPerMin: 10,
+  maxRequestPublicationsPerMin: 10,
+  maxIncidentsPerMin: 5,
   requestTtlMinutes: 25,
   pilotActive: true,
   pilotTermsVersion: 'v1.0',
@@ -992,6 +994,9 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
 
       // Admin RPCs (decide courier, verify documents, suspend courier withdrawing pending offer3 on REQ_2, set subscription, update setting)
       fake.setActor({ userId: ADMIN_1, role: 'admin', aal: 'aal2' });
+      fake.seedCourier({ courierId: COURIER_1, status: 'pending', available: false });
+      fake.seedDocument({ documentId: DOC_1, courierId: COURIER_1, kind: 'license', status: 'submitted' });
+      fake.seedDocument({ documentId: DOC_2, courierId: COURIER_1, kind: 'insurance', status: 'submitted' });
       expect(
         await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
       ).toEqual({
@@ -1278,6 +1283,18 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
           subscriptionStatus: 'active',
         })
       ).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+      // Admin INVALID_STATE_TRANSITION branches (D03, D04, H19)
+      expect(
+        await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      fake.seedCourier({ courierId: COURIER_2, status: 'suspended', available: false });
+      expect(
+        await fake.admin_suspend_courier({ courierId: COURIER_2, reason: 'Re-suspensión cautelar' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      expect(
+        await fake.admin_verify_document({ documentId: DOC_1, decision: 'verified' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
 
       // Exercise remaining guard branches in rpc-fake (publish out-of-bounds, withdraw non-owner, accept non-owner/suspended/non-pending, mark_picked_up suspended/pending, cancel matched)
       fake.seedRequest({
@@ -1616,6 +1633,184 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
           expect(submitted.data.offerId).not.toBe(seededOfferId);
         }
         expect(fake.getOffer(seededOfferId)?.courierId).toBe(COURIER_1);
+      });
+
+      it('CC-006 (D01 / D03 / H01 / H02): precedencia canónica S01–S15, controles C01–C04 y AAL2_REQUIRED en cancel_request', async () => {
+        const OFFER_1 = '50000000-0000-4000-8000-000000000001';
+        const now = new Date('2026-09-23T15:00:00.000Z');
+        const past = new Date(now.getTime() - 1000).toISOString();
+        const future = new Date(now.getTime() + 30 * 60_000).toISOString();
+        const inc = { requestId: REQ_1, kind: 'demora', description: 'Demora de prueba' };
+
+        type St =
+          | 'draft'
+          | 'published'
+          | 'matched'
+          | 'in_transit'
+          | 'delivered'
+          | 'cancelled'
+          | 'expired';
+        function mk(
+          status: St,
+          actor: { userId: string; role: 'merchant' | 'courier' | 'admin'; aal?: 'aal1' | 'aal2' },
+          opts: {
+            expiresAt?: string;
+            subExpired?: boolean;
+            c2Status?: 'approved' | 'suspended';
+            noC2?: boolean;
+          } = {}
+        ) {
+          const assigned = ['matched', 'in_transit', 'delivered'].includes(status);
+          return createFakeRpcClient({
+            settings: { ...BASE_SETTINGS, pilotActive: !opts.subExpired },
+            now: () => now,
+            initialActor: actor,
+            initialRequests: [
+              {
+                requestId: REQ_1,
+                merchantId: MERCHANT_1,
+                status,
+                expiresAt: opts.expiresAt ?? future,
+                acceptedOfferId: assigned ? OFFER_1 : null,
+                assignedCourierId: assigned ? COURIER_1 : null,
+                deliveredAt: status === 'delivered' ? now.toISOString() : null,
+              },
+            ],
+            initialOffers: assigned
+              ? [
+                  {
+                    offerId: OFFER_1,
+                    requestId: REQ_1,
+                    courierId: COURIER_1,
+                    amountArs: 2500,
+                    status: 'accepted',
+                  },
+                ]
+              : [],
+            initialCouriers: [
+              { courierId: COURIER_1, status: 'approved', available: true },
+              ...(opts.noC2
+                ? []
+                : [{ courierId: COURIER_2, status: opts.c2Status ?? 'approved', available: true }]),
+            ],
+            initialMerchants: [
+              { merchantId: MERCHANT_1, subscriptionStatus: opts.subExpired ? 'expired' : 'pilot' },
+              { merchantId: MERCHANT_2, subscriptionStatus: opts.subExpired ? 'expired' : 'pilot' },
+            ],
+          });
+        }
+
+        const merch = { userId: MERCHANT_1, role: 'merchant' } as const;
+        const merch2 = { userId: MERCHANT_2, role: 'merchant' } as const;
+        const cour1 = { userId: COURIER_1, role: 'courier' } as const;
+        const cour2 = { userId: COURIER_2, role: 'courier' } as const;
+        const adminAal2 = { userId: ADMIN_1, role: 'admin', aal: 'aal2' } as const;
+        const adminAal1 = { userId: ADMIN_1, role: 'admin', aal: 'aal1' } as const;
+        const code = (r: { ok: boolean; code?: string }) => (r.ok ? 'ok' : String(r.code));
+
+        expect(code(await mk('published', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S01
+        expect(code(await mk('matched', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S02
+        expect(code(await mk('in_transit', merch).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S03
+        expect(code(await mk('published', merch2, { expiresAt: past }).cancel_request({ requestId: REQ_1 }))).toBe('UNAUTHORIZED_ACTOR'); // S04
+        expect(code(await mk('published', merch, { expiresAt: past }).report_incident(inc))).toBe('INVALID_STATE_TRANSITION'); // S05
+        expect(code(await mk('matched', cour2, { c2Status: 'suspended' }).report_incident(inc))).toBe('UNAUTHORIZED_ACTOR'); // S06
+        expect(code(await mk('draft', merch, { subExpired: true }).republish_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('INVALID_STATE_TRANSITION'); // S07
+        expect(code(await mk('matched', merch, { subExpired: true }).republish_request({ requestId: REQ_1 }))).toBe('REASON_REQUIRED'); // S08
+        expect(code(await mk('published', merch, { subExpired: true }).report_no_show({ requestId: REQ_1, republish: true }))).toBe('INVALID_STATE_TRANSITION'); // S09
+        expect(code(await mk('matched', merch2, { subExpired: true }).report_no_show({ requestId: REQ_1, republish: true }))).toBe('UNAUTHORIZED_ACTOR'); // S10
+        expect(code(await mk('published', cour2).mark_picked_up({ requestId: REQ_1 }))).toBe('UNAUTHORIZED_ACTOR'); // S11
+        expect(code(await mk('draft', cour2).mark_picked_up({ requestId: REQ_1 }))).toBe('UNAUTHORIZED_ACTOR'); // S12
+        expect(code(await mk('matched', merch).publish_request({ requestId: REQ_1 }))).toBe('INVALID_STATE_TRANSITION'); // S13
+        expect(code(await mk('matched', cour2, { noC2: true }).report_incident(inc))).toBe('UNAUTHORIZED_ACTOR'); // S14
+        expect(code(await mk('published', merch, { expiresAt: past }).republish_request({ requestId: REQ_1 }))).toBe('ok'); // S15 (H02)
+        expect(code(await mk('published', merch).cancel_request({ requestId: REQ_1 }))).toBe('ok'); // C01
+        expect(code(await mk('matched', cour1).mark_picked_up({ requestId: REQ_1 }))).toBe('ok'); // C02
+        expect(code(await mk('draft', merch, { subExpired: true }).publish_request({ requestId: REQ_1 }))).toBe('SUBSCRIPTION_INACTIVE'); // C03
+        expect(code(await mk('expired', merch).republish_request({ requestId: REQ_1 }))).toBe('ok'); // C04
+
+        // D03 y H14 (P4b / T02): admin en in_transit sin aal2 recibe AAL2_REQUIRED; sobre published vencida con aal1 recibe REQUEST_EXPIRED
+        expect(code(await mk('in_transit', adminAal1).cancel_request({ requestId: REQ_1, reason: 'Sin MFA' }))).toBe('AAL2_REQUIRED');
+        expect(code(await mk('in_transit', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('ok');
+        expect(code(await mk('published', adminAal1, { expiresAt: past }).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('REQUEST_EXPIRED'); // P4b / T02 / H14
+        expect(code(await mk('published', merch, { expiresAt: past }).cancel_request({ requestId: REQ_1 }))).toBe('REQUEST_EXPIRED');
+        expect(code(await mk('matched', merch).cancel_request({ requestId: REQ_1 }))).toBe('REASON_REQUIRED');
+
+        // Cobertura directa de ramas de transitionRequest y fecha civil en canMerchantPublishRequest
+        expect(
+          canMerchantPublishRequest({
+            subscriptionStatus: 'active',
+            pilotActive: false,
+            paidUntil: '2026-09-25',
+            graceDays: 0,
+            now,
+          })
+        ).toEqual({ ok: true, data: true });
+        expect(
+          transitionRequest({
+            from: 'published',
+            to: 'cancelled',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'expire_all_pending' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'in_transit',
+            actor: 'courier',
+            isAssignedCourier: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'in_transit', offerSideEffect: 'none' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'published',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            reason: 'No show',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'published', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'published',
+            actor: 'courier',
+            isAssignedCourier: true,
+            reason: 'Pinchadura',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'published', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'matched',
+            to: 'cancelled',
+            actor: 'merchant',
+            isOwnerMerchant: true,
+            reason: 'Cliente canceló',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'delivered',
+            actor: 'courier',
+            isAssignedCourier: true,
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'delivered', offerSideEffect: 'none' } });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'cancelled',
+            actor: 'admin',
+            reason: 'Incidente operativo',
+            now,
+          })
+        ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
       });
     });
   });

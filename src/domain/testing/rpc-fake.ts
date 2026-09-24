@@ -27,14 +27,16 @@ import {
   canCourierBeAccepted,
   canCourierSubmitOffer,
   canMerchantPublishRequest,
+  getEffectiveRequestStatus,
   isRequestExpired,
   transitionOffer,
-  transitionRequest,
 } from '../states';
 
 export interface FakePlatformSettings {
   readonly minOfferArs: number;
   readonly maxOffersPerMin: number;
+  readonly maxRequestPublicationsPerMin: number;
+  readonly maxIncidentsPerMin: number;
   readonly requestTtlMinutes: number;
   readonly pilotActive: boolean;
   readonly pilotTermsVersion: string;
@@ -56,6 +58,7 @@ export interface FakeSeedRequest {
   readonly merchantId: string;
   readonly status: DeliveryRequestStatus;
   readonly expiresAt?: string | null;
+  readonly matchedAt?: string | null;
   readonly deliveredAt?: string | null;
   readonly acceptedOfferId?: string | null;
   readonly assignedCourierId?: string | null;
@@ -72,6 +75,7 @@ export interface FakeRequestRecord {
   readonly merchantId: string;
   status: DeliveryRequestStatus;
   expiresAt: string | null;
+  matchedAt: string | null;
   deliveredAt: string | null;
   acceptedOfferId: string | null;
   assignedCourierId: string | null;
@@ -212,7 +216,7 @@ const INCIDENT_WINDOW_MS = 24 * 3_600_000;
 function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatformSettings {
   if (!options || typeof options !== 'object' || !options.settings) {
     throw new Error(
-      'createFakeRpcClient requires explicit options.settings (minOfferArs, maxOffersPerMin, requestTtlMinutes, pilotActive, pilotTermsVersion, subscriptionGraceDays)'
+      'createFakeRpcClient requires explicit options.settings (minOfferArs, maxOffersPerMin, maxRequestPublicationsPerMin, maxIncidentsPerMin, requestTtlMinutes, pilotActive, pilotTermsVersion, subscriptionGraceDays)'
     );
   }
   const { settings } = options;
@@ -221,6 +225,10 @@ function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatfo
     settings.minOfferArs < 1 ||
     !Number.isInteger(settings.maxOffersPerMin) ||
     settings.maxOffersPerMin < 1 ||
+    !Number.isInteger(settings.maxRequestPublicationsPerMin) ||
+    settings.maxRequestPublicationsPerMin < 1 ||
+    !Number.isInteger(settings.maxIncidentsPerMin) ||
+    settings.maxIncidentsPerMin < 1 ||
     !Number.isInteger(settings.requestTtlMinutes) ||
     settings.requestTtlMinutes < 1 ||
     typeof settings.pilotActive !== 'boolean' ||
@@ -270,6 +278,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     return next;
   }
 
+  function consumeRequestRate(
+    action: 'publish_request' | 'report_incident',
+    limit: number,
+    currentNow: Date
+  ): ActionResult<true, 'RATE_LIMITED'> {
+    if (getWindowRateCount(actor.userId, action, currentNow) >= limit) {
+      return err('RATE_LIMITED');
+    }
+    incrementWindowRateCount(actor.userId, action, currentNow);
+    return ok(true);
+  }
+
   function nextUniqueOfferId(): string {
     while (true) {
       offerSeq += 1;
@@ -286,6 +306,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       merchantId: r.merchantId,
       status: r.status,
       expiresAt: r.expiresAt ?? null,
+      matchedAt: r.matchedAt ?? null,
       deliveredAt: r.deliveredAt ?? null,
       acceptedOfferId: r.acceptedOfferId ?? null,
       assignedCourierId: r.assignedCourierId ?? null,
@@ -455,23 +476,26 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     publish_request: (rawInput) =>
       executeRpc('publish_request', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        const merchant = merchants.get(actor.userId);
-        if (!req || !merchant) return err('NOT_FOUND');
+        if (!req) return err('NOT_FOUND');
+        if (req.merchantId !== actor.userId) return err('UNAUTHORIZED_ACTOR');
 
         const currentNow = nowFn();
-        const transition = transitionRequest({
-          from: req.status,
-          to: 'published',
-          actor: 'merchant',
-          isOwnerMerchant: req.merchantId === actor.userId,
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        if (effectiveStatus !== 'draft') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) return err('SUBSCRIPTION_INACTIVE');
+        const subCheck = canMerchantPublishRequest({
           subscriptionStatus: merchant.subscriptionStatus,
           pilotActive: settings.pilotActive,
           paidUntil: merchant.paidUntil,
           graceDays: settings.subscriptionGraceDays,
           now: currentNow,
         });
-        if (!transition.ok) {
-          return err(transition.code as RpcErrorCode<'publish_request'>);
+        if (!subCheck.ok) {
+          return err(subCheck.code as RpcErrorCode<'publish_request'>);
         }
 
         let routeDistanceM: number | null = null;
@@ -493,6 +517,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           );
         }
 
+        const rate = consumeRequestRate(
+          'publish_request',
+          settings.maxRequestPublicationsPerMin,
+          currentNow
+        );
+        if (!rate.ok) return rate;
         const publishedAt = currentNow.toISOString();
         const expiresAt = new Date(
           currentNow.getTime() + settings.requestTtlMinutes * 60_000
@@ -513,28 +543,39 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       executeRpc('cancel_request', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
         if (!req) return err('NOT_FOUND');
-
-        const currentNow = nowFn();
-        const transition = transitionRequest({
-          from: req.status,
-          to: 'cancelled',
-          actor: actor.role === 'admin' ? 'admin' : 'merchant',
-          isOwnerMerchant: req.merchantId === actor.userId,
-          expiresAt: req.expiresAt,
-          reason: input.reason,
-          now: currentNow,
-        });
-        if (!transition.ok) {
-          return err(transition.code as RpcErrorCode<'cancel_request'>);
+        if (actor.role === 'merchant' && req.merchantId !== actor.userId) {
+          return err('UNAUTHORIZED_ACTOR');
         }
 
-        if (transition.data.offerSideEffect === 'expire_all_pending') {
+        const currentNow = nowFn();
+        if (req.status === 'published' && isRequestExpired(req.status, req.expiresAt, currentNow)) {
+          return err('REQUEST_EXPIRED');
+        }
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        const validForActor =
+          (actor.role === 'merchant' &&
+            (effectiveStatus === 'published' || effectiveStatus === 'matched')) ||
+          (actor.role === 'admin' && effectiveStatus === 'in_transit');
+        if (!validForActor) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        if (actor.role === 'admin' && actor.aal !== 'aal2') {
+          return err('AAL2_REQUIRED');
+        }
+        if (
+          (effectiveStatus === 'matched' || effectiveStatus === 'in_transit') &&
+          (!input.reason || input.reason.trim().length === 0)
+        ) {
+          return err('REASON_REQUIRED');
+        }
+
+        if (effectiveStatus === 'published') {
           for (const offer of offers.values()) {
             if (offer.requestId === req.requestId && offer.status === 'pending') {
               offer.status = 'expired';
             }
           }
-        } else if (transition.data.offerSideEffect === 'cancel_accepted' && req.acceptedOfferId) {
+        } else if (req.acceptedOfferId) {
           const accepted = offers.get(req.acceptedOfferId);
           if (accepted) accepted.status = 'cancelled';
         }
@@ -648,7 +689,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             requestId: offer.requestId,
             acceptedOfferId: input.offerId,
             status: 'matched',
-            matchedAt: currentNow.toISOString(),
+            matchedAt: req.matchedAt ?? currentNow.toISOString(),
             idempotent: true,
           });
         }
@@ -670,6 +711,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err(courierCheck.code as RpcErrorCode<'accept_offer'>);
         }
 
+        const matchedIso = currentNow.toISOString();
         offer.status = 'accepted';
         for (const sibling of offers.values()) {
           if (
@@ -684,12 +726,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         req.status = 'matched';
         req.acceptedOfferId = input.offerId;
         req.assignedCourierId = offer.courierId;
+        req.matchedAt = matchedIso;
 
         return ok({
           requestId: offer.requestId,
           acceptedOfferId: input.offerId,
           status: 'matched',
-          matchedAt: currentNow.toISOString(),
+          matchedAt: matchedIso,
           idempotent: false,
         });
       }),
@@ -700,17 +743,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!req) return err('NOT_FOUND');
         const eligibility = checkCourierEligibility();
         if (!eligibility.ok) return eligibility;
+        if (req.assignedCourierId !== actor.userId) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
 
         const currentNow = nowFn();
-        const transition = transitionRequest({
-          from: req.status,
-          to: 'in_transit',
-          actor: 'courier',
-          isAssignedCourier: req.assignedCourierId === actor.userId,
-          now: currentNow,
-        });
-        if (!transition.ok) {
-          return err(transition.code as RpcErrorCode<'mark_picked_up'>);
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        if (effectiveStatus !== 'matched') {
+          return err('INVALID_STATE_TRANSITION');
         }
 
         req.status = 'in_transit';
@@ -727,17 +767,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!req) return err('NOT_FOUND');
         const eligibility = checkCourierEligibility();
         if (!eligibility.ok) return eligibility;
+        if (req.assignedCourierId !== actor.userId) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
 
         const currentNow = nowFn();
-        const transition = transitionRequest({
-          from: req.status,
-          to: 'delivered',
-          actor: 'courier',
-          isAssignedCourier: req.assignedCourierId === actor.userId,
-          now: currentNow,
-        });
-        if (!transition.ok) {
-          return err(transition.code as RpcErrorCode<'mark_delivered'>);
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        if (effectiveStatus !== 'in_transit') {
+          return err('INVALID_STATE_TRANSITION');
         }
 
         const deliveredAt = currentNow.toISOString();
@@ -753,13 +790,27 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     report_no_show: (rawInput) =>
       executeRpc('report_no_show', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        const merchant = merchants.get(actor.userId);
-        if (!req || !merchant) return err('NOT_FOUND');
+        if (!req) return err('NOT_FOUND');
+        if (req.merchantId !== actor.userId) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+
+        const currentNow = nowFn();
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        if (effectiveStatus !== 'matched') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        const cancelledOfferId = req.acceptedOfferId;
+        const acceptedOffer = cancelledOfferId ? offers.get(cancelledOfferId) : undefined;
+        if (!cancelledOfferId || !acceptedOffer || acceptedOffer.status !== 'accepted') {
+          return err('INVALID_STATE_TRANSITION');
+        }
 
         const nextStatus = input.republish === false ? 'cancelled' : 'published';
-        const currentNow = nowFn();
-
         if (nextStatus === 'published') {
+          const merchant = merchants.get(actor.userId);
+          if (!merchant) return err('SUBSCRIPTION_INACTIVE');
           const subCheck = canMerchantPublishRequest({
             subscriptionStatus: merchant.subscriptionStatus,
             pilotActive: settings.pilotActive,
@@ -772,27 +823,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           }
         }
 
-        const transition = transitionRequest({
-          from: req.status,
-          to: nextStatus,
-          actor: 'merchant',
-          isOwnerMerchant: req.merchantId === actor.userId,
-          reason: 'no_show',
-          now: currentNow,
-        });
-        if (!transition.ok) {
-          return err(transition.code as RpcErrorCode<'report_no_show'>);
-        }
-
-        const cancelledOfferId = req.acceptedOfferId;
-        if (!cancelledOfferId || !offers.has(cancelledOfferId)) {
-          return err('INVALID_STATE_TRANSITION');
-        }
-        const acceptedOffer = offers.get(cancelledOfferId);
-        if (acceptedOffer) {
-          acceptedOffer.status = 'cancelled';
-        }
-
+        acceptedOffer.status = 'cancelled';
         const expiresAt =
           nextStatus === 'published'
             ? new Date(currentNow.getTime() + settings.requestTtlMinutes * 60_000).toISOString()
@@ -817,28 +848,22 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!req) return err('NOT_FOUND');
         const eligibility = checkCourierEligibility();
         if (!eligibility.ok) return eligibility;
+        if (req.assignedCourierId !== actor.userId) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
 
         const currentNow = nowFn();
-        const transition = transitionRequest({
-          from: req.status,
-          to: 'published',
-          actor: 'courier',
-          isAssignedCourier: req.assignedCourierId === actor.userId,
-          reason: input.reason,
-          now: currentNow,
-        });
-        if (!transition.ok) {
-          return err(transition.code as RpcErrorCode<'courier_cancel_match'>);
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        if (effectiveStatus !== 'matched') {
+          return err('INVALID_STATE_TRANSITION');
         }
 
         const cancelledOfferId = req.acceptedOfferId;
-        if (!cancelledOfferId || !offers.has(cancelledOfferId)) {
+        const acceptedOffer = cancelledOfferId ? offers.get(cancelledOfferId) : undefined;
+        if (!cancelledOfferId || !acceptedOffer || acceptedOffer.status !== 'accepted') {
           return err('INVALID_STATE_TRANSITION');
         }
-        const acceptedOffer = offers.get(cancelledOfferId);
-        if (acceptedOffer) {
-          acceptedOffer.status = 'cancelled';
-        }
+        acceptedOffer.status = 'cancelled';
 
         const expiresAt = new Date(
           currentNow.getTime() + settings.requestTtlMinutes * 60_000
@@ -859,13 +884,26 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     republish_request: (rawInput) =>
       executeRpc('republish_request', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
-        const merchant = merchants.get(actor.userId);
-        if (!req || !merchant) return err('NOT_FOUND');
+        if (!req) return err('NOT_FOUND');
         if (req.merchantId !== actor.userId) {
           return err('UNAUTHORIZED_ACTOR');
         }
 
         const currentNow = nowFn();
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        if (
+          effectiveStatus !== 'matched' &&
+          effectiveStatus !== 'expired' &&
+          effectiveStatus !== 'cancelled'
+        ) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        if (effectiveStatus === 'matched' && (!input.reason || input.reason.trim().length === 0)) {
+          return err('REASON_REQUIRED');
+        }
+
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) return err('SUBSCRIPTION_INACTIVE');
         const subCheck = canMerchantPublishRequest({
           subscriptionStatus: merchant.subscriptionStatus,
           pilotActive: settings.pilotActive,
@@ -877,16 +915,20 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err(subCheck.code as RpcErrorCode<'republish_request'>);
         }
 
-        if (req.status === 'matched') {
-          if (!input.reason || input.reason.trim().length === 0) {
-            return err('REASON_REQUIRED');
+        const rate = consumeRequestRate(
+          'publish_request',
+          settings.maxRequestPublicationsPerMin,
+          currentNow
+        );
+        if (!rate.ok) return rate;
+        if (effectiveStatus === 'matched' && req.acceptedOfferId) {
+          const acceptedOffer = offers.get(req.acceptedOfferId);
+          if (acceptedOffer) acceptedOffer.status = 'cancelled';
+        }
+        for (const offer of offers.values()) {
+          if (offer.requestId === req.requestId && offer.status === 'pending') {
+            offer.status = 'expired';
           }
-          if (req.acceptedOfferId) {
-            const acceptedOffer = offers.get(req.acceptedOfferId);
-            if (acceptedOffer) acceptedOffer.status = 'cancelled';
-          }
-        } else if (req.status !== 'expired' && req.status !== 'cancelled') {
-          return err('INVALID_STATE_TRANSITION');
         }
 
         const publishedAt = currentNow.toISOString();
@@ -924,7 +966,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
 
         const currentNow = nowFn();
-        if (req.status === 'delivered') {
+        const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
+        if (effectiveStatus === 'delivered') {
           const deliveredMs = req.deliveredAt ? Date.parse(req.deliveredAt) : Number.NaN;
           if (
             Number.isNaN(deliveredMs) ||
@@ -932,10 +975,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           ) {
             return err('INCIDENT_WINDOW_EXPIRED');
           }
-        } else if (!ACTIVE_INCIDENT_STATUSES.includes(req.status)) {
+        } else if (!ACTIVE_INCIDENT_STATUSES.includes(effectiveStatus)) {
           return err('INVALID_STATE_TRANSITION');
         }
 
+        const rate = consumeRequestRate('report_incident', settings.maxIncidentsPerMin, currentNow);
+        if (!rate.ok) return rate;
         incidentSeq += 1;
         const incidentId = `00000000-0000-4000-8000-${String(10_000 + incidentSeq).padStart(12, '0')}`;
         return ok({
@@ -993,11 +1038,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_decide_courier: (rawInput) =>
       executeRpc('admin_decide_courier', rawInput, true, (input) => {
-        const courier = couriers.get(input.courierId);
-        if (!courier) return err('NOT_FOUND');
         if (input.decision === 'rejected' && (!input.reason || input.reason.trim().length === 0)) {
           return err('REASON_REQUIRED');
         }
+        const courier = couriers.get(input.courierId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status !== 'pending') return err('INVALID_STATE_TRANSITION');
         courier.status = input.decision;
         return ok({
           courierId: input.courierId,
@@ -1008,8 +1054,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_suspend_courier: (rawInput) =>
       executeRpc('admin_suspend_courier', rawInput, true, (input) => {
+        if (!input.reason || input.reason.trim().length === 0) {
+          return err('REASON_REQUIRED');
+        }
         const courier = couriers.get(input.courierId);
         if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'suspended') return err('INVALID_STATE_TRANSITION');
 
         courier.status = 'suspended';
         courier.available = false;
@@ -1032,13 +1082,16 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_verify_document: (rawInput) =>
       executeRpc('admin_verify_document', rawInput, true, (input) => {
-        const doc = documents.get(input.documentId);
-        if (!doc) return err('NOT_FOUND');
-        const courier = couriers.get(doc.courierId);
-        if (!courier) return err('NOT_FOUND');
         if (input.decision === 'rejected' && (!input.reason || input.reason.trim().length === 0)) {
           return err('REASON_REQUIRED');
         }
+        const doc = documents.get(input.documentId);
+        if (!doc) return err('NOT_FOUND');
+        if (doc.status !== 'submitted') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        const courier = couriers.get(doc.courierId);
+        if (!courier) return err('NOT_FOUND');
 
         doc.status = input.decision;
         if (doc.kind === 'license') courier.licenseStatus = input.decision;

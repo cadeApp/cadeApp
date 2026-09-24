@@ -1,0 +1,19 @@
+--- decide approve (admin aal2)
+OK {"status": "approved", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "decidedAt": "2026-09-24T02:09:37.741Z"}
+--- verify_document license (admin aal2)
+ERR 22P02 invalid input value for enum courier_document_kind: "driver_license"
+--- verify_document selfie (admin aal2)
+ERR 22P02 invalid input value for enum courier_document_kind: "driver_license"
+--- suspend (admin aal2)
+ERR 42703 column "withdrawn_at" of relation "offers" does not exist
+--- set_subscription each domain value
+pilot|OK {"paidUntil": null, "merchantId": "aaaaaaaa-0000-4000-8000-000000000002", "subscriptionStatus": "pilot"}
+active|OK {"paidUntil": null, "merchantId": "aaaaaaaa-0000-4000-8000-000000000002", "subscriptionStatus": "active"}
+expired|ERR P0001 VALIDATION_ERROR
+cancelled|ERR P0001 VALIDATION_ERROR
+past_due|ERR 22P02 invalid input value for enum merchant_subscription_status: "past_due"
+canceled|ERR 22P02 invalid input value for enum merchant_subscription_status: "canceled"
+--- update_setting min_offer_ars 1500
+OK {"key": "min_offer_ars", "value": 1500}
+--- update_setting as wrapper sends it: JSON.stringify(1500) => text "1500" -> jsonb
+OK {"key": "pilot_terms_version", "value": "\"v2\""}
