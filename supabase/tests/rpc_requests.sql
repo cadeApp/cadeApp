@@ -91,11 +91,26 @@ insert into rpc_cases values
  ('report_incident', 'uuid,text,text', 'select public.report_incident(%L, ''demora'', ''Demora de prueba'')');
 
 select has_function('public', name, string_to_array(signature, ','), name || ': firma') from rpc_cases;
+select ok(not has_function_privilege('authenticated',
+  'app_private.request_cycle(text,uuid,text,boolean,text,text)', 'EXECUTE'), 'dispatcher privado no invocable');
+select ok(not has_function_privilege('authenticated',
+  'app_private.request_setting_int(text)', 'EXECUTE'), 'lector de settings no invocable');
 select ok(coalesce((select p.prosecdef and p.proconfig @> array['search_path=public, pg_temp']
   and has_function_privilege('authenticated', p.oid, 'EXECUTE')
   and not has_function_privilege('anon', p.oid, 'EXECUTE')
   from pg_proc p where p.oid = to_regprocedure('public.' || c.name || '(' || c.signature || ')')), false),
   name || ': SECURITY DEFINER, search_path y grants') from rpc_cases c;
+
+create temporary table contract_errors (rpc text primary key, codes text[]);
+insert into contract_errors values
+ ('publish_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','MISSING_REQUIRED_FIELDS','OUT_OF_BOUNDS_AGUILARES','INVALID_ZONE','INVALID_STATE_TRANSITION','RATE_LIMITED','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('cancel_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','REQUEST_EXPIRED','REASON_REQUIRED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('mark_picked_up', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('mark_delivered', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('report_no_show', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('courier_cancel_match', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','REASON_REQUIRED','INVALID_STATE_TRANSITION','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('republish_request', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','SUBSCRIPTION_INACTIVE','REASON_REQUIRED','INVALID_STATE_TRANSITION','RATE_LIMITED','VALIDATION_ERROR','INTERNAL_ERROR']),
+ ('report_incident', array['UNAUTHENTICATED','UNAUTHORIZED_ACTOR','NOT_FOUND','COURIER_NOT_APPROVED','COURIER_SUSPENDED','INCIDENT_WINDOW_EXPIRED','INVALID_STATE_TRANSITION','RATE_LIMITED','VALIDATION_ERROR','INTERNAL_ERROR']);
 
 -- Matriz independiente del SQL de producción: actores propios/ajenos/admin/sin sesión x estados.
 create temporary table valid_transitions (rpc text, before_status text, actor integer, after_status text);
@@ -131,6 +146,8 @@ begin
         label := c.name || ' / ' || s || ' / actor ' || a;
         if expected is null then
           return next ok(result->>'sqlstate' = 'P0001', label || ': rechaza con error de dominio');
+          return next ok(result->>'error' = any((select codes from contract_errors where rpc = c.name)::text[]),
+            label || ': código real declarado en contrato');
           return next is((select status::text from public.delivery_requests where id = pg_temp.actor(20)),
             s, label || ': no cambia estado al rechazar');
         else
@@ -138,6 +155,10 @@ begin
           return next is((select status::text from public.delivery_requests where id = pg_temp.actor(20)),
             expected, label || ': estado persistido');
           return next is(result->'data'->>'requestId', pg_temp.actor(20)::text, label || ': requestId de contrato');
+          return next is(result->'data'->>'status', case when c.name = 'report_incident' then 'open' else expected end,
+            label || ': estado de respuesta de contrato');
+          return next ok(not (result->'data' ?| array['pickupLat','pickupLng','dropoffLat','dropoffLng',
+            'recipientName','recipientPhone','pickupAddress','dropoffAddress']), label || ': respuesta sin datos privados');
         end if;
       end loop;
     end loop;
@@ -291,6 +312,92 @@ update public.zones set active = true where id = pg_temp.actor(10);
 update public.platform_settings set value = '"invalid"'::jsonb where key = 'request_ttl_minutes';
 select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
   'INTERNAL_ERROR', 'configuración inválida falla cerrada sin filtrar SQL');
+
+-- Dos conexiones reales: cancelar mantiene el lock hasta commit y retiro revalida
+select pg_temp.fixture('matched');
+update public.delivery_requests set matched_at = now() - interval '10 minutes' where id = pg_temp.actor(20);
+select ok(pg_temp.invoke(1, format('select public.cancel_request(%L, ''Cambio de planes'')', pg_temp.actor(20))) ? 'data',
+  'cancelación de match permitida');
+select is((select matched_at from public.delivery_requests where id = pg_temp.actor(20)),
+  now() - interval '10 minutes', 'cancelar preserva el hito histórico de match');
+
+create function pg_temp.eligibility_errors() returns setof text language plpgsql as $$
+declare c record; a text;
+begin
+  for c in select * from rpc_cases where name in ('mark_picked_up','mark_delivered','courier_cancel_match','report_incident') loop
+    perform pg_temp.fixture(case when c.name = 'mark_delivered' then 'in_transit' else 'matched' end);
+    update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(3);
+    return next is(pg_temp.invoke(3, format(c.call_sql, pg_temp.actor(20)))->>'error',
+      'COURIER_SUSPENDED', c.name || ': suspended');
+    update public.couriers set status = 'pending' where profile_id = pg_temp.actor(3);
+    return next is(pg_temp.invoke(3, format(c.call_sql, pg_temp.actor(20)))->>'error',
+      'COURIER_NOT_APPROVED', c.name || ': pending');
+  end loop;
+  for c in select * from rpc_cases where name in ('publish_request','republish_request','report_no_show') loop
+    perform pg_temp.fixture(case when c.name = 'publish_request' then 'draft' else 'matched' end);
+    update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.actor(1);
+    return next is(pg_temp.invoke(1, format(c.call_sql, pg_temp.actor(20)))->>'error',
+      'SUBSCRIPTION_INACTIVE', c.name || ': suscripción expirada');
+  end loop;
+end;
+$$;
+select * from pg_temp.eligibility_errors();
+
+-- Dos conexiones reales: cancelar mantiene el lock hasta commit y retiro revalida
+-- el estado luego. lock_timeout acota la contención; no hay sleeps ni carreras de reloj.
+create extension if not exists dblink with schema extensions;
+select dblink_connect('t103_a', 'dbname=' || current_database());
+select dblink_connect('t103_b', 'dbname=' || current_database());
+select dblink_exec('t103_a', $seed$
+  insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data) values
+    ('10300000-0000-4000-8000-000000000101', '00000000-0000-0000-0000-000000000000',
+      'authenticated', 'authenticated', 't103-race-merchant@example.test', '{"role":"merchant"}'),
+    ('10300000-0000-4000-8000-000000000103', '00000000-0000-0000-0000-000000000000',
+      'authenticated', 'authenticated', 't103-race-courier@example.test', '{"role":"courier"}');
+  update public.couriers set status = 'approved' where profile_id = '10300000-0000-4000-8000-000000000103';
+  insert into public.zones (id,name,centroid_lat,centroid_lng,active)
+    values ('10300000-0000-4000-8000-000000000110','T103 Carrera',-27.43,-65.62,true);
+  insert into public.delivery_requests (id,merchant_id,status,pickup_zone_id,dropoff_zone_id,package_type,recipient_payment_method)
+    values ('10300000-0000-4000-8000-000000000120','10300000-0000-4000-8000-000000000101','matched',
+      '10300000-0000-4000-8000-000000000110','10300000-0000-4000-8000-000000000110','chico','cash');
+  insert into public.offers (id,request_id,courier_id,amount_ars,eta_minutes,status)
+    values ('10300000-0000-4000-8000-000000000130','10300000-0000-4000-8000-000000000120',
+      '10300000-0000-4000-8000-000000000103',2500,15,'accepted');
+  update public.delivery_requests set accepted_offer_id = '10300000-0000-4000-8000-000000000130'
+    where id = '10300000-0000-4000-8000-000000000120';
+$seed$);
+select dblink_exec('t103_a', $$begin; set local role authenticated;
+  set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000101","role":"authenticated"}'$$);
+select is((select payload->>'status' from dblink('t103_a',
+  $$select public.cancel_request('10300000-0000-4000-8000-000000000120','Incumplimiento')$$) as r(payload jsonb)),
+  'cancelled', 'concurrencia: cancelar gana y conserva transacción abierta');
+select dblink_exec('t103_b', $$set lock_timeout = '100ms'; begin; set local role authenticated;
+  set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000103","role":"authenticated"}'$$);
+select throws_ok($$select * from dblink('t103_b',
+  'select public.mark_picked_up(''10300000-0000-4000-8000-000000000120'')') as r(payload jsonb)$$,
+  '55P03', null, 'concurrencia: retiro compite por el lock de la solicitud');
+select dblink_exec('t103_b', 'rollback');
+select dblink_exec('t103_a', 'commit');
+select dblink_exec('t103_b', $$begin; set local role authenticated;
+  set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000103","role":"authenticated"}'$$);
+select throws_ok($$select * from dblink('t103_b',
+  'select public.mark_picked_up(''10300000-0000-4000-8000-000000000120'')') as r(payload jsonb)$$,
+  'P0001', null, 'concurrencia: retiro revalida después del commit y no revive cancelación');
+select dblink_exec('t103_b', 'rollback');
+select is((select status::text from public.delivery_requests where id = pg_temp.actor(120)),
+  'cancelled', 'concurrencia: solicitud termina cancelada');
+select is((select status::text from public.offers where id = pg_temp.actor(130)),
+  'cancelled', 'concurrencia: oferta y solicitud permanecen consistentes');
+select dblink_exec('t103_a', $$
+  delete from public.audit_log where target_id = '10300000-0000-4000-8000-000000000120';
+  update public.delivery_requests set accepted_offer_id = null where id = '10300000-0000-4000-8000-000000000120';
+  delete from public.offers where id = '10300000-0000-4000-8000-000000000130';
+  delete from public.delivery_requests where id = '10300000-0000-4000-8000-000000000120';
+  delete from public.zones where id = '10300000-0000-4000-8000-000000000110';
+  delete from auth.users where id in ('10300000-0000-4000-8000-000000000101','10300000-0000-4000-8000-000000000103');
+$$);
+select dblink_disconnect('t103_a');
+select dblink_disconnect('t103_b');
 
 select * from finish();
 rollback;

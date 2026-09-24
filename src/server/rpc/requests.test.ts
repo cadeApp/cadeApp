@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { RPC_CONTRACTS } from '@/domain';
 import { callRequestRpc, createRequestsRpcServerClient } from './requests';
 
@@ -63,6 +64,16 @@ const cases = [
 ] as const;
 
 describe('T-103 — Wrapper de RPC de solicitudes', () => {
+  it('la matriz pgTAP contrasta los errores reales con los contratos vigentes', () => {
+    const sql = readFileSync('supabase/tests/rpc_requests.sql', 'utf8');
+    for (const c of cases) {
+      const declaration = sql.match(new RegExp(`\\('${c.name}', array\\[([^\\]]+)\\]\\)`));
+      expect(declaration, c.name).not.toBeNull();
+      const codes = [...(declaration?.[1] ?? '').matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]);
+      expect(codes.sort(), c.name).toEqual([...RPC_CONTRACTS[c.name].errorCodes].sort());
+    }
+    expect(sql).toContain("result->>'error' = any");
+  });
   for (const c of cases) {
     it(`${c.name}: valida, convierte los argumentos y parsea la respuesta`, async () => {
       const rpc = vi.fn().mockResolvedValue({ data: c.output, error: null });
