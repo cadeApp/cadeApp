@@ -99,6 +99,9 @@ begin
     or p_action = 'courier_cancel_match') and coalesce(btrim(p_reason), '') = '' then
     raise exception 'REASON_REQUIRED' using errcode = 'P0001';
   end if;
+  if p_action = 'report_no_show' and (v_offer.id is null or v_offer.status <> 'accepted') then
+    raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
+  end if;
   if p_action = 'report_incident' and v_request.status = 'delivered'
     and (v_request.delivered_at is null or v_now > v_request.delivered_at + interval '24 hours') then
     raise exception 'INCIDENT_WINDOW_EXPIRED' using errcode = 'P0001';
@@ -113,7 +116,7 @@ begin
     v_grace := app_private.request_setting_int('subscription_grace_days');
     if v_merchant.profile_id is null or v_merchant.subscription_status in ('expired','cancelled')
       or not coalesce((v_merchant.subscription_status = 'pilot' and v_pilot = 'true'::jsonb)
-        or (v_merchant.subscription_status = 'active' and v_merchant.paid_until + v_grace >=
+        or (v_merchant.paid_until + v_grace >=
           (v_now at time zone 'America/Argentina/Buenos_Aires')::date), false) then
       raise exception 'SUBSCRIPTION_INACTIVE' using errcode = 'P0001';
     end if;
