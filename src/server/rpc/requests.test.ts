@@ -74,6 +74,98 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     }
     expect(sql).toContain("result->>'error' = any");
   });
+
+  it('la migración SQL cumple SECURITY DEFINER por función, locks anclados por sentencia en orden jerárquico (AG-58/AG-61/AG-63), sin UPDATE antes de RAISE (H03) y preserva hitos al cancelar', () => {
+    const migrationSql = readFileSync(
+      'supabase/migrations/20260924010124_rpc_requests_v1.sql',
+      'utf8'
+    );
+    const fnBlocks = migrationSql.split(/create\s+function\s+/i).slice(1);
+    expect(fnBlocks.length).toBe(10);
+    for (const block of fnBlocks) {
+      const fnName = block.slice(0, block.indexOf('(')).trim();
+      expect(block, `${fnName}: falta security definer`).toMatch(/security\s+definer/i);
+      expect(block, `${fnName}: falta search_path fijo`).toMatch(
+        /set\s+search_path\s*=\s*public\s*,\s*pg_temp/i
+      );
+    }
+
+    const cycleBlock =
+      fnBlocks.find((b) => b.trimStart().startsWith('app_private.request_cycle(')) ?? '';
+    expect(cycleBlock.length).toBeGreaterThan(0);
+
+    // AG-61 / AG-63 (H01): cada lock anclado a su propia sentencia SELECT ([^;]*?) y en orden padre -> hijo
+    const reqLockRegex = /from\s+public\.delivery_requests\b[^;]*?for\s+update\s*;/i;
+    const offerLockRegex = /from\s+public\.offers\b[^;]*?for\s+update\s*;/i;
+    const courierLockRegex = /from\s+public\.couriers\b[^;]*?for\s+share\s*;/i;
+    const merchantLockRegex = /from\s+public\.merchants\b[^;]*?for\s+share\s*;/i;
+
+    const reqLockMatch = cycleBlock.match(reqLockRegex);
+    const offerLockMatch = cycleBlock.match(offerLockRegex);
+    const courierLockMatch = cycleBlock.match(courierLockRegex);
+    const merchantLockMatch = cycleBlock.match(merchantLockRegex);
+
+    expect(reqLockMatch).not.toBeNull();
+    expect(offerLockMatch).not.toBeNull();
+    expect(courierLockMatch).not.toBeNull();
+    expect(merchantLockMatch).not.toBeNull();
+
+    const reqIdx = reqLockMatch?.index ?? -1;
+    const offerIdx = offerLockMatch?.index ?? -1;
+    const courierIdx = courierLockMatch?.index ?? -1;
+    const merchantIdx = merchantLockMatch?.index ?? -1;
+
+    expect(reqIdx).toBeGreaterThanOrEqual(0);
+    expect(reqIdx).toBeLessThan(offerIdx);
+    expect(offerIdx).toBeLessThan(courierIdx);
+    expect(courierIdx).toBeLessThan(merchantIdx);
+
+    // AG-63: mutaciones embebidas M1, M2 y M3 — quitar cada lock individual debe hacer fallar su control
+    const m1WithoutReqLock = cycleBlock.replace(reqLockRegex, (s) =>
+      s.replace(/for\s+update\s*;/i, ';')
+    );
+    expect(m1WithoutReqLock).not.toMatch(reqLockRegex);
+
+    const m2WithoutOfferLock = cycleBlock.replace(offerLockRegex, (s) =>
+      s.replace(/for\s+update\s*;/i, ';')
+    );
+    expect(m2WithoutOfferLock).not.toMatch(offerLockRegex);
+
+    const m3WithoutCourierLock = cycleBlock.replace(courierLockRegex, (s) =>
+      s.replace(/for\s+share\s*;/i, ';')
+    );
+    expect(m3WithoutCourierLock).not.toMatch(courierLockRegex);
+
+    // H03: sin UPDATE muerto en delivery_requests a status = 'expired' y todas las mutaciones de negocio ocurren después del último RAISE EXCEPTION
+    expect(cycleBlock).not.toMatch(
+      /update\s+public\.delivery_requests\b[^;]*?set\s+status\s*=\s*'expired'/i
+    );
+    const lastRaiseIdx = Math.max(
+      ...Array.from(cycleBlock.matchAll(/raise\s+exception/gi)).map((m) => m.index ?? -1)
+    );
+    const firstDomainMutationIdx = Math.min(
+      cycleBlock.search(/insert\s+into\s+public\.incidents/i),
+      cycleBlock.search(/update\s+public\.delivery_requests/i),
+      cycleBlock.search(/update\s+public\.offers/i)
+    );
+    expect(lastRaiseIdx).toBeGreaterThan(0);
+    expect(lastRaiseIdx).toBeLessThan(firstDomainMutationIdx);
+
+    // Preservación de hitos históricos al cancelar (Subtest 1131 / AG-37)
+    expect(cycleBlock).toMatch(
+      /matched_at\s*=\s*case\s+when\s+v_status\s*=\s*'published'\s+then\s+null\s+else\s+matched_at\s+end/i
+    );
+    expect(cycleBlock).toMatch(
+      /picked_up_at\s*=\s*case\s+when\s+v_status\s*=\s*'published'\s+then\s+null\s+else\s+picked_up_at\s+end/i
+    );
+
+    // AG-58: coincidencia bidireccional entre los códigos lanzados en la migración y la unión de RPC_CONTRACTS
+    const raisedInMigration = new Set(
+      Array.from(migrationSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
+    );
+    const declaredInContracts = new Set(cases.flatMap((c) => RPC_CONTRACTS[c.name].errorCodes));
+    expect([...raisedInMigration].sort()).toEqual([...declaredInContracts].sort());
+  });
   for (const c of cases) {
     it(`${c.name}: valida, convierte los argumentos y parsea la respuesta`, async () => {
       const rpc = vi.fn().mockResolvedValue({ data: c.output, error: null });

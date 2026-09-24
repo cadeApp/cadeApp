@@ -1,3 +1,6 @@
+drop role if exists t103_dblink;
+create role t103_dblink with login password 't103_pass';
+grant postgres, authenticated to t103_dblink;
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
@@ -320,6 +323,18 @@ select ok(pg_temp.invoke(1, format('select public.cancel_request(%L, ''Cambio de
 select is((select matched_at from public.delivery_requests where id = pg_temp.actor(20)),
   now() - interval '10 minutes', 'cancelar preserva el hito histórico de match');
 
+select pg_temp.fixture('in_transit');
+update public.delivery_requests
+  set matched_at = now() - interval '20 minutes',
+      picked_up_at = now() - interval '10 minutes'
+  where id = pg_temp.actor(20);
+select ok(pg_temp.invoke(5, format('select public.cancel_request(%L, ''Incidente en tránsito'')', pg_temp.actor(20))) ? 'data',
+  'cancelación admin en tránsito permitida');
+select is((select matched_at from public.delivery_requests where id = pg_temp.actor(20)),
+  now() - interval '20 minutes', 'cancelar en tránsito preserva matched_at');
+select is((select picked_up_at from public.delivery_requests where id = pg_temp.actor(20)),
+  now() - interval '10 minutes', 'cancelar en tránsito preserva picked_up_at');
+
 create function pg_temp.eligibility_errors() returns setof text language plpgsql as $$
 declare c record;
 begin
@@ -353,8 +368,12 @@ select is((select status::text from public.delivery_requests where id = pg_temp.
 -- Dos conexiones reales: cancelar mantiene el lock hasta commit y retiro revalida
 -- el estado luego. lock_timeout acota la contención; no hay sleeps ni carreras de reloj.
 create extension if not exists dblink with schema extensions;
-select dblink_connect('t103_a', 'dbname=' || current_database());
-select dblink_connect('t103_b', 'dbname=' || current_database());
+select dblink_connect('t103_a',
+  'host=127.0.0.1 port=' || current_setting('port') || ' dbname=' || current_database() || ' user=t103_dblink password=t103_pass');
+select dblink_connect('t103_b',
+  'host=127.0.0.1 port=' || current_setting('port') || ' dbname=' || current_database() || ' user=t103_dblink password=t103_pass');
+select dblink_exec('t103_a', 'set role postgres');
+select dblink_exec('t103_b', 'set role postgres');
 select dblink_exec('t103_a', $seed$
   insert into auth.users (id, instance_id, aud, role, email, raw_user_meta_data) values
     ('10300000-0000-4000-8000-000000000101', '00000000-0000-0000-0000-000000000000',
@@ -382,20 +401,21 @@ select dblink_exec('t103_b', $$set lock_timeout = '100ms'; begin; set local role
   set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000103","role":"authenticated"}'$$);
 select throws_ok($$select * from dblink('t103_b',
   'select public.mark_picked_up(''10300000-0000-4000-8000-000000000120'')') as r(payload jsonb)$$,
-  '55P03', null, 'concurrencia: retiro compite por el lock de la solicitud');
+  '55P03'::char(5), null::text, 'concurrencia: retiro compite por el lock de la solicitud');
 select dblink_exec('t103_b', 'rollback');
 select dblink_exec('t103_a', 'commit');
 select dblink_exec('t103_b', $$begin; set local role authenticated;
   set local request.jwt.claims = '{"sub":"10300000-0000-4000-8000-000000000103","role":"authenticated"}'$$);
 select throws_ok($$select * from dblink('t103_b',
   'select public.mark_picked_up(''10300000-0000-4000-8000-000000000120'')') as r(payload jsonb)$$,
-  'P0001', null, 'concurrencia: retiro revalida después del commit y no revive cancelación');
+  'P0001'::char(5), 'INVALID_STATE_TRANSITION', 'concurrencia: retiro revalida después del commit y no revive cancelación');
 select dblink_exec('t103_b', 'rollback');
 select is((select status::text from public.delivery_requests where id = pg_temp.actor(120)),
   'cancelled', 'concurrencia: solicitud termina cancelada');
 select is((select status::text from public.offers where id = pg_temp.actor(130)),
   'cancelled', 'concurrencia: oferta y solicitud permanecen consistentes');
 select dblink_exec('t103_a', $$
+  set role postgres;
   delete from public.audit_log where target_id = '10300000-0000-4000-8000-000000000120';
   update public.delivery_requests set accepted_offer_id = null where id = '10300000-0000-4000-8000-000000000120';
   delete from public.offers where id = '10300000-0000-4000-8000-000000000130';
@@ -408,3 +428,4 @@ select dblink_disconnect('t103_b');
 
 select * from finish();
 rollback;
+drop role if exists t103_dblink;

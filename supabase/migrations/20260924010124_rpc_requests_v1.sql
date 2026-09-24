@@ -183,7 +183,10 @@ begin
     where request_id = p_request_id and status = 'pending';
   update public.delivery_requests set status = v_status, accepted_offer_id = null,
     published_at = case when v_status = 'published' then v_now else published_at end,
-    expires_at = v_expires, matched_at = null, picked_up_at = null, delivered_at = null,
+    expires_at = v_expires,
+    matched_at = case when v_status = 'published' then null else matched_at end,
+    picked_up_at = case when v_status = 'published' then null else picked_up_at end,
+    delivered_at = null,
     cancelled_at = case when v_status = 'cancelled' then v_now end,
     cancel_reason = case when p_action = 'report_no_show' then 'no_show' else nullif(btrim(p_reason), '') end,
     route_distance_m = case when p_action = 'publish_request' then v_distance else route_distance_m end
