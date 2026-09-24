@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -281,4 +289,202 @@ test('Lautaro073 merges his own pull requests: no peer approval is required', as
   });
   assert.equal(sinReviews.ok, true, sinReviews.reason);
   assert.equal(evaluateApprovalPolicy({ author: 'Lautaro073', reviews: [], body: '' }).ok, false);
+});
+
+// T-010: con el repositorio privado, un push de solo docs sobre una corrida en verde
+// se saltea los jobs pesados. Es el unico caso: cualquier otra cosa corre todo.
+
+/** Un push que cumple las siete guardas: el unico que se saltea los jobs pesados. */
+const PUSH_SEGURO = Object.freeze({
+  isPrivate: true,
+  eventName: 'pull_request',
+  action: 'synchronize',
+  isFastForward: true,
+  changedFiles: Object.freeze([
+    'docs/tasks/log/T-010.md',
+    'docs/revision-pr/pr-99/hallazgos.jsonl',
+  ]),
+  previousRunConclusion: 'success',
+  branchContainsBase: true,
+});
+
+test('heavy CI jobs are skipped only for a proven docs-only push', async () => {
+  const { decideSkipHeavy } = await import('./ci-changes.mjs');
+  const decision = decideSkipHeavy(PUSH_SEGURO);
+  assert.equal(decision.skipHeavy, true, decision.reason);
+});
+
+// Cada guarda, rota sola, tiene que forzar el CI completo. Si alguna de estas pruebas
+// sigue en verde con su guarda borrada, esa guarda no protege nada (AG-61, AG-63).
+/** @type {Array<[string, Partial<import('./ci-changes.mjs').SkipInput>]>} */
+const GUARDAS_ROTAS = [
+  ['a public repository', { isPrivate: false }],
+  ['a push to a protected branch', { eventName: 'push', action: undefined }],
+  ['a newly opened pull request', { action: 'opened' }],
+  ['a reopened pull request', { action: 'reopened' }],
+  ['a force push', { isFastForward: false }],
+  ['an empty diff', { changedFiles: [] }],
+  ['a source file next to docs', { changedFiles: ['docs/tasks/log/T-010.md', 'src/app/page.tsx'] }],
+  ['TypeScript under docs, which tsc compiles', { changedFiles: ['docs/notes.ts'] }],
+  ['JSON under docs', { changedFiles: ['docs/data.json'] }],
+  ['the root README', { changedFiles: ['README.md'] }],
+  ['a workflow change', { changedFiles: ['.github/workflows/ci.yml'] }],
+  ['docs over a failed run, like a71ec25 in T-006', { previousRunConclusion: 'failure' }],
+  ['docs over a cancelled run', { previousRunConclusion: 'cancelled' }],
+  ['docs with no previous run found', { previousRunConclusion: null }],
+  ['a branch behind its base', { branchContainsBase: false }],
+];
+
+for (const [caso, cambio] of GUARDAS_ROTAS) {
+  test(`heavy CI jobs run on ${caso}`, async () => {
+    const { decideSkipHeavy } = await import('./ci-changes.mjs');
+    const decision = decideSkipHeavy({ ...PUSH_SEGURO, ...cambio });
+    assert.equal(decision.skipHeavy, false, `se salteo con ${caso}`);
+    assert.ok(decision.reason.length > 0, 'la decision tiene que decir por que');
+  });
+}
+
+/** @param {string} cwd */
+function gitEn(cwd) {
+  /** @param {string[]} args */
+  return (...args) => {
+    const r = spawnSync(
+      'git',
+      [
+        '-c',
+        'user.name=ci',
+        '-c',
+        'user.email=ci@example.invalid',
+        '-c',
+        'commit.gpgsign=false',
+        ...args,
+      ],
+      { cwd, encoding: 'utf8' }
+    );
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+}
+
+test('a move from src to docs is not mistaken for a docs-only change', async () => {
+  // Con deteccion de renames, `git diff --name-only` lista solo el destino: mover
+  // src/x.ts a docs/x.md pareceria un cambio de solo docs y se saltearia el build
+  // que ese movimiento rompe.
+  const { listChangedFiles } = await import('./ci-changes.mjs');
+  const repo = mkdtempSync(join(tmpdir(), 'ci-changes-'));
+  try {
+    const git = gitEn(repo);
+    git('init', '-q');
+    mkdirSync(join(repo, 'src'));
+    mkdirSync(join(repo, 'docs'));
+    writeFileSync(join(repo, 'src', 'x.ts'), 'export const x = 1;\n'.repeat(20));
+    git('add', '-A');
+    git('commit', '-q', '-m', 'antes');
+    const antes = git('rev-parse', 'HEAD');
+    git('mv', 'src/x.ts', 'docs/x.md');
+    git('commit', '-q', '-m', 'despues');
+    const despues = git('rev-parse', 'HEAD');
+    assert.deepEqual(listChangedFiles(antes, despues, repo).sort(), ['docs/x.md', 'src/x.ts']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('ancestry answers false instead of failing on an unknown commit', async () => {
+  // Un push forzado puede dejar la cabeza anterior fuera del clon. La respuesta
+  // segura es "no es ancestro", que obliga a correr todo.
+  const { isAncestor } = await import('./ci-changes.mjs');
+  const repo = mkdtempSync(join(tmpdir(), 'ci-changes-'));
+  try {
+    const git = gitEn(repo);
+    git('init', '-q');
+    writeFileSync(join(repo, 'a.md'), 'a\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'a');
+    const a = git('rev-parse', 'HEAD');
+    writeFileSync(join(repo, 'b.md'), 'b\n');
+    git('add', '-A');
+    git('commit', '-q', '-m', 'b');
+    const b = git('rev-parse', 'HEAD');
+    assert.equal(isAncestor(a, b, repo), true);
+    assert.equal(isAncestor(b, a, repo), false);
+    assert.equal(isAncestor('0'.repeat(40), b, repo), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('the previous run counts only if it is CI on the same branch', async () => {
+  const { previousRunConclusion } = await import('./ci-changes.mjs');
+  /** @param {object[]} runs @param {number} [status] */
+  const api = (runs, status = 200) =>
+    /** @type {typeof fetch} */ (
+      async () => new Response(JSON.stringify({ workflow_runs: runs }), { status })
+    );
+  /** @param {string} conclusion */
+  const ci = (conclusion) => ({
+    conclusion,
+    head_branch: 'feat/T-999-x',
+    path: '.github/workflows/ci.yml',
+  });
+  const q = { repo: 'o/r', token: 't', headSha: 'abc', headRef: 'feat/T-999-x' };
+
+  assert.equal(await previousRunConclusion({ ...q, fetchImpl: api([ci('success')]) }), 'success');
+  assert.equal(await previousRunConclusion({ ...q, fetchImpl: api([ci('failure')]) }), 'failure');
+  // El verde de approval-policy no es un CI en verde.
+  const otroWorkflow = { ...ci('success'), path: '.github/workflows/approval-policy.yml' };
+  assert.equal(await previousRunConclusion({ ...q, fetchImpl: api([otroWorkflow]) }), null);
+  // Tampoco el CI en verde de otra rama que comparte la cabeza.
+  const otraRama = { ...ci('success'), head_branch: 'feat/T-998-y' };
+  assert.equal(await previousRunConclusion({ ...q, fetchImpl: api([otraRama]) }), null);
+  // Si la API falla, no hay evidencia de verde.
+  assert.equal(await previousRunConclusion({ ...q, fetchImpl: api([], 500) }), null);
+});
+
+test('unit always runs: it validates fichas, logs, the plan and the ADRs', () => {
+  const unit = job(workflow('ci.yml'), 'unit');
+  assert.doesNotMatch(unit, /needs:/, 'unit no puede depender de la decision');
+  assert.doesNotMatch(unit, /skip_heavy/);
+});
+
+test('each heavy job runs unless the decision proved a skip', () => {
+  const ci = workflow('ci.yml');
+  for (const nombre of ['typecheck', 'lint', 'build', 'db-tests', 'audit']) {
+    const bloque = job(ci, nombre);
+    assert.match(bloque, /\n {4}needs: changes\n/, `${nombre} tiene que esperar la decision`);
+    // `!cancelled()` hace que un decisor salteado (repositorio publico) o caido signifique
+    // correr todo; comparar con != 'true' hace lo mismo con una salida vacia.
+    assert.ok(
+      bloque.includes("if: ${{ !cancelled() && needs.changes.outputs.skip_heavy != 'true' }}"),
+      `${nombre} no tiene la condicion que corre todo ante la duda`
+    );
+  }
+  const budget = job(ci, 'bundle-budget');
+  assert.match(budget, /\n {4}needs: build\n/);
+  // Sin un if propio, el success() implicito de GitHub mira toda la cadena de needs: con
+  // `changes` salteado (repo publico, PR recien abierta) bundle-budget quedaba salteado
+  // aunque build pasara. No lo vio ninguna prueba local; lo mostro la primera corrida real
+  // de la PR #74 (run 35942161677: build success, bundle-budget skipped).
+  assert.ok(
+    budget.includes("if: ${{ !cancelled() && needs.build.result == 'success' }}"),
+    'bundle-budget tiene que correr siempre que build haya pasado'
+  );
+});
+
+test('the decision job does not start while the repository is public', () => {
+  const changes = job(workflow('ci.yml'), 'changes');
+  // Se mira la linea del if y no el bloque entero: el env IS_PRIVATE tambien nombra
+  // github.event.repository.private y satisfacia la asercion sin proteger nada. Lo
+  // encontro la bateria de mutacion de T-010: el mismo caso que PR64-H01.
+  const condicion = changes.match(/\n {4}if: (.*)\n/)?.[1] ?? '';
+  assert.match(
+    condicion,
+    /github\.event\.repository\.private &&/,
+    'con el repo publico no arranca'
+  );
+  assert.match(condicion, /github\.event\.action == 'synchronize'/);
+  assert.match(changes, /actions: read/);
+  assert.match(changes, /fetch-depth: 0/);
+  // Un error del decisor no puede poner el CI en rojo: se corre todo y listo.
+  assert.match(changes, /continue-on-error: true/);
 });

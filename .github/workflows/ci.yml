@@ -14,8 +14,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # T-010: con el repositorio privado, decide si este push a una PR abierta puede saltearse
+  # los jobs pesados. Con el repositorio público no arranca —los minutos no se cobran— y
+  # todo corre como siempre. Las siete guardas, y por qué hacen falta, en ci-changes.mjs.
+  changes:
+    name: changes
+    if: ${{ github.event.repository.private && github.event_name == 'pull_request' && github.event.action == 'synchronize' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      skip_heavy: ${{ steps.decide.outputs.skip_heavy }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+      # Un error del decisor no pone el CI en rojo: sin salida, los jobs pesados corren.
+      # Todo entra por env y nada se interpola en el script: head.ref lo elige quien abre la PR.
+      - id: decide
+        continue-on-error: true
+        run: node .github/workflows/ci-changes.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          IS_PRIVATE: ${{ github.event.repository.private }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+
   typecheck:
     name: typecheck
+    # T-010: corre salvo que la decisión haya demostrado que puede saltearse. Con el decisor
+    # salteado (repositorio público) o caído, la salida viene vacía y el job corre.
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip_heavy != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -34,6 +74,8 @@ jobs:
 
   lint:
     name: lint
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip_heavy != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -89,6 +131,8 @@ jobs:
 
   db-tests:
     name: db-tests
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip_heavy != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -138,6 +182,8 @@ jobs:
 
   build:
     name: build
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip_heavy != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -163,6 +209,10 @@ jobs:
   bundle-budget:
     name: bundle-budget
     needs: build
+    # T-010: sin un if propio, el success() implícito mira toda la cadena de needs, y un
+    # `changes` salteado (repositorio público, PR recién abierta) salteaba este job aunque
+    # build hubiera pasado. Lo mostró la primera corrida real de la PR #74.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -177,6 +227,8 @@ jobs:
 
   audit:
     name: audit
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.skip_heavy != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
