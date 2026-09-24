@@ -21,7 +21,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('No session') }),
         },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'POST',
@@ -43,7 +43,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } }, error: null }),
         },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'POST',
@@ -68,7 +68,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
         from: vi.fn().mockReturnValue({
           upsert: mockUpsert,
         }),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'POST',
@@ -103,7 +103,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
         from: vi.fn().mockReturnValue({
           upsert: vi.fn().mockResolvedValue({ error: new Error('DB connection lost') }),
         }),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'POST',
@@ -127,7 +127,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('No session') }),
         },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'DELETE',
@@ -147,7 +147,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } }, error: null }),
         },
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'DELETE',
@@ -174,7 +174,7 @@ describe('Route Handlers /api/push/subscriptions (POST y DELETE)', () => {
         from: vi.fn().mockReturnValue({
           delete: mockDelete,
         }),
-      } as any);
+      } as unknown as Awaited<ReturnType<typeof createClient>>);
 
       const req = new NextRequest('http://localhost:3000/api/push/subscriptions', {
         method: 'DELETE',

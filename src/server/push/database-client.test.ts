@@ -52,7 +52,7 @@ describe('DefaultPushDatabaseClient', () => {
 
     vi.mocked(createAdminClient).mockReturnValue({
       from: mockFrom,
-    } as any);
+    } as unknown as ReturnType<typeof createAdminClient>);
 
     const client = new DefaultPushDatabaseClient();
     const subs = await client.getSubscriptionsForUsers([USER_1]);
@@ -82,7 +82,7 @@ describe('DefaultPushDatabaseClient', () => {
 
     vi.mocked(createAdminClient).mockReturnValue({
       from: mockFrom,
-    } as any);
+    } as unknown as ReturnType<typeof createAdminClient>);
 
     const client = new DefaultPushDatabaseClient();
     await expect(client.getSubscriptionsForUsers([USER_1])).rejects.toThrow(
@@ -97,7 +97,7 @@ describe('DefaultPushDatabaseClient', () => {
 
     vi.mocked(createAdminClient).mockReturnValue({
       from: mockFrom,
-    } as any);
+    } as unknown as ReturnType<typeof createAdminClient>);
 
     const client = new DefaultPushDatabaseClient();
     await client.deleteSubscriptionByEndpoint('https://push.example.com/sub/1');
@@ -114,7 +114,7 @@ describe('DefaultPushDatabaseClient', () => {
 
     vi.mocked(createAdminClient).mockReturnValue({
       from: mockFrom,
-    } as any);
+    } as unknown as ReturnType<typeof createAdminClient>);
 
     const client = new DefaultPushDatabaseClient();
     await expect(
