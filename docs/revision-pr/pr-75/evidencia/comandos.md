@@ -239,3 +239,38 @@ git diff b6b5f39 c9585ba -- src/domain/testing/rpc-fake.ts | wc -l      # 0
 git diff --stat a33c5f7 c9585ba                                          # admin.ts, migración, rpc_admin.sql
 pnpm typecheck; pnpm lint; pnpm test    # exit 0 · ✔ · Test Files 32 passed (32), Tests 267 passed (267)
 ```
+
+---
+
+# Ronda 4 · SHA `904e3df`
+
+```bash
+pnpm supabase stop --no-backup; pnpm supabase start -x realtime,storage-api,imgproxy,studio,vector,logflare,edge-runtime,supavisor,mailpit,postgres-meta
+pnpm supabase test db                  # ronda-4/testdb-resumen.txt → Files=7, Tests=234, Result: PASS
+pnpm db:types --local; git diff --stat -- src/types/database.types.ts    # 9 insertions(+), 38 deletions(-) → ronda-4/db-types.diff
+git show HEAD:src/types/database.types.ts > src/types/database.types.ts
+git diff --stat ef09eb1 904e3df        # incluye src/domain/testing/rpc-fake.ts y src/domain/domain.test.ts
+git show origin/develop:docs/tasks/T-105.md | sed -n '/Archivos permitidos/,/Fuera de alcance/p'   # sin src/domain
+```
+
+Probe descartable (Vitest, borrado después) contra el fake de `904e3df`:
+
+```
+FAKE suspend suspended -> {"ok":true,…,"withdrawnOffersCount":0}     # RPC: INVALID_STATE_TRANSITION (pgTAP 2.6)
+```
+
+Código muerto (H20). Script Python que guarda `rpc-fake.ts` en memoria, quita los 7 bloques (validStatuses, PLATFORM_SETTING_KEYS y 5 chequeos de valor), corre el probe y `admin.test.ts` + `domain.test.ts`, y reescribe el original en un `finally`:
+
+```
+MUT set_subscription bogus -> VALIDATION_ERROR
+MUT update_setting min 0   -> INVALID_SETTING_VALUE
+MUT update_setting nope    -> INVALID_SETTING_KEY
+MUT update_setting "   "   -> INVALID_SETTING_VALUE
+Test Files 3 passed (3) · Tests 55 passed (55)
+git status --short   # limpio
+```
+
+```
+pnpm typecheck; pnpm lint; pnpm test   # exit 0 · ✔ · Test Files 32 passed (32), Tests 268 passed (268)
+grep -n "Informe de revisión" .github/workflows/approval-policy.mjs   # :25 split por "### Informe de revisión de agy"
+```

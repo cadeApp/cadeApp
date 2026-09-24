@@ -108,3 +108,29 @@ Es la forma más barata de `P03`: no hay que leer código para detectarla, alcan
 En la ronda 2, `H05` llegó con una tabla de nueve mutaciones **y** con `mut.py`, el script que las aplica. En la ronda 3 las nueve dan rojo en un solo intento, y cada prueba nueva lleva un comentario con la mutación que ataja. Compárese con `H04`, que en la ronda 1 llegó en prosa («reescribir con el patrón de `rpc_accept.sql`») y necesitó dos rondas más.
 
 > **Regla propuesta.** Cuando un hallazgo es «la prueba no ataja X», la revisión entrega **la mutación ejecutable**, no solo su descripción. El arreglo se da por bueno cuando esa misma mutación da rojo, y el autor puede comprobarlo antes de pedir la ronda siguiente.
+
+---
+
+## Ronda 4
+
+### `AG-70` · Un test de contrato con las expectativas escritas a mano afirma lo que el autor cree de la RPC, no lo que la RPC hace
+
+**Origen:** `H19`.
+
+El caso 8 de `admin.test.ts` se llama «coincidencia de bordes entre fake y RPC». Para cada caso escribe a mano el resultado esperado. En el caso 3 escribió «suspender a un suspendido: OK, idempotente», y la RPC de esta misma PR levanta `INVALID_STATE_TRANSITION`, afirmado por la prueba 2.6 de pgTAP. Las dos suites están en verde y dicen cosas opuestas sobre el mismo contrato.
+
+Es `AG-59` con un paso más: allá dos implementaciones divergían sin control; acá hay un control, y **congela la divergencia**. Si alguien alinea el fake, el test se pone rojo.
+
+> **Regla propuesta.** En un test que compara fake con RPC, cada resultado esperado cita la prueba de pgTAP que lo afirma del lado de la RPC (`// = rpc_admin.sql 2.6`). Un caso sin cita es una creencia, no un contrato. Si el costo lo justifica, una tabla de casos única (entrada, código) que consumen las dos suites.
+
+### `AG-71` · Una decisión que nombra un proceso se cumple con el proceso, no con el contenido
+
+**Origen:** `A01`, `D05`.
+
+`D05` decía «contract-change del fake antes del merge». Lo que llegó fue el contenido del cambio, bien encaminado en cuatro de cinco casos, hecho dentro de la rama de la tarea. Y la bitácora dice «se cumplieron D01 a D05». El proceso existe para lo que el contenido no da: que la dueña del contrato (P2) lo valide y que las otras tareas que dependen del fake (T-122, T-123) se enteren por un documento y no por un diff en otra PR.
+
+> **Regla propuesta.** Cuando una decisión o un hallazgo nombra un proceso (contract-change, issue, validación de otra persona), el hallazgo trae **los pasos concretos** de ese proceso, copiados de la skill, y se cierra cuando existe cada artefacto (rama, documento, issue), no cuando el contenido está bien. En esta PR, `D05` no los traía: parte de esto es de la revisión.
+
+### El dato de la ronda
+
+Arreglar `H18` (la bitácora) produjo `H21` (el cuerpo fuera de plantilla). Arreglar `H11` a mano, por tercera vez, lo dejó peor que antes. Los dos hallazgos que se repiten desde la ronda 1 son los únicos que se resuelven con un comando o con una plantilla, no con código. El patrón es el de `AG-65`/`AG-67`: el cierre se declara sin correr lo que lo demostraría (`git diff --exit-code` después de `db:types`).
