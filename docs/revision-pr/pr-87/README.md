@@ -6,58 +6,42 @@
 | **Tarea** | T-118 |
 | **Autor** | @Lautaro073 |
 | **Rama** | feat/T-118-integracion-visual-stitch → develop |
-| **SHA R2 revisado** | \`225cd08f63d92dbaa9e6c5371b54c9ffa0c82e78\` |
-| **develop** | \`b6bdac6cfe4c5ac9227e87692b8572e1f6bc2121\` |
-| **Tamaño actual** | 87 archivos, +3750 / -698 |
+| **SHA R3 revisado** | `6c321d01ad717bddc691a46c921303e092914d39` |
+| **develop** | `b6bdac6cfe4c5ac9227e87692b8572e1f6bc2121` |
+| **Tamaño actual** | 92 archivos, +5038 / -789 |
 | **Estado** | bloqueada |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | \`027f39e\` | 12 bloqueantes | [ronda-1.md](revisiones/ronda-1.md) |
-| 2 | \`225cd08\` | 15 bloqueantes + 1 decisión | [ronda-2.md](revisiones/ronda-2.md) |
+| 1 | `027f39e` | 12 bloqueantes | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `225cd08` | 13 bloqueantes · 0 decisiones pendientes | [ronda-2.md](revisiones/ronda-2.md) |
+| 3 | `6c321d0` | 8 bloqueantes | [ronda-3.md](revisiones/ronda-3.md) |
 
-## Estado resumido
+## Estado resumido después de R3
 
-| ID | Estado R2 |
+| Estado | IDs |
 |---|---|
-| H01 | parcial |
-| H02 | parcial |
-| H03 | parcial |
-| H04 | arreglado-verificado |
-| H05 | arreglado-verificado (regresiones R01/R02 separadas) |
-| H06 | parcial |
-| H07 | parcial |
-| H08 | arreglado-verificado |
-| H09 | parcial |
-| H10 | abierto |
-| H11 | abierto |
-| H12 | arreglado-verificado |
-| A01 | aceptado por decisión P1 |
-| A02 | aceptado por decisión P1 |
-| R01 | abierto |
-| R02 | abierto |
-| H13 | abierto |
-| H14 | abierto |
-| H15 | abierto |
+| Parciales/abiertos | H01, H09, H10, H16, H17, H18, R03, H19 |
+| Arreglados-verificados | H02, H03, H04, H05, H06, H07, H08, H11, H12, R01, R02, H13, H14, H15 |
+| Aceptados por decisión P1 | A01, A02 |
 
 Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [evidencia/comandos.md](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. Resolver los bloqueantes de R2 sin tocar la carpeta de revisión.
-2. Sacar \`src/ui/**\` de T-118 o completar CC separado antes.
-3. Resolver 🔵 A02 para el barrel de requests.
-4. Corregir contratos C08/R08, errores alcanzables, C07 filtro+paginación y C02.
-5. Adjuntar evidencia visual real 390/360 y actualizar el body real del PR.
-6. Sólo después, correr batería independiente + CI.
+1. Cerrar la clase completa de destinos internos: ningún post-login/href/redirect puede terminar en una ruta inexistente y el control debe matar una ruta arbitraria, no sólo cuatro strings conocidos.
+2. Adjuntar al PR real las capturas side-by-side exigidas a 390 px y control 360 px.
+3. Tratar `paid_until` como fecha civil `YYYY-MM-DD`, sin corrimiento por timezone.
+4. Terminar C07: `Todas` sólo sobre historial terminal y cada fila con cadete + monto reales.
+5. Corregir C02 para métricas acotadas/escalables y con día civil de Aguilares; Tarifa promedio debe respetar la semántica de “métricas del día”.
+6. Recién sin bloqueantes: batería independiente + inspección de CI del SHA exacto.
 
 ## Nota de entorno
 
-Como en R1, esta revisión operó sobre el árbol remoto por GitHub API y no dispone de checkout ejecutable. No se atribuye verde independiente a typecheck/lint/test/build y no se abrió CI con bloqueantes presentes.
+La revisión operó sobre el árbol remoto por GitHub API. No se atribuye verde independiente a typecheck/lint/test/build. Sí se ejecutaron probes locales aislados de JavaScript para reproducir las fallas de fecha civil y timezone. CI no se abrió con bloqueantes presentes.
 
+## Decisiones de alcance vigentes
 
-## Corrección de alcance de R2
-
-Lautaro/P1 confirmó que los cambios visuales compartidos en `src/ui/**` y el barrel de History en `src/features/requests/index.ts` fueron pedidos/autorizados por él durante la implementación. No se consideran desvíos del agente. A01/A02 quedan aceptados y H08 cerrado. El resultado vigente de R2 es **13 bloqueantes y ninguna decisión pendiente**.
+A01/A02 siguen aceptadas: Lautaro/P1 autorizó explícitamente los cambios compartidos en `src/ui/**` ya registrados y `src/features/requests/index.ts` para el barrel de History. No deben revertirse.

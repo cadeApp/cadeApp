@@ -298,3 +298,132 @@ src/features/requests/index.ts   # barrel de MerchantHistoryView
 Por tanto estos archivos **no se usan como evidencia de desvío del agente**. A01/A02 pasan a `aceptado`; H08 queda cerrado porque los estilos locales/hex originales sí fueron eliminados.
 
 La siguiente ronda debe comprobar que la autorización quedó documentada como excepción explícita en ficha/bitácora/body, sin ampliar el resto del scope.
+
+
+---
+
+# Ronda 3 — evidencia sobre 6c321d01ad717bddc691a46c921303e092914d39
+
+## Estado remoto y alcance del arreglo
+
+~~~text
+R2 review head: 6ba497ab2c7e3376b2be6b6cf27a2498b9dbbef2
+R3 implementation head: 6c321d01ad717bddc691a46c921303e092914d39
+compare: ahead 2 / behind 0
+agent changes after R2: 24 files
+docs/revision-pr/pr-87/** touched by agent: NO
+PR mergeable: true
+~~~
+
+## H01 / H09 — destino interno arbitrario sigue sin control
+
+`src/features/auth/guards.ts` conserva:
+
+~~~text
+publicPrefixes = ['/terms', '/privacy', '/pilot-terms', '/forgot-password', '/legal']
+...
+if (guardResult.action === 'allow') return rawRedirectTo
+...
+// resto
+return { action: 'allow' }
+~~~
+
+El árbol real de `src/app/(public)` sólo contiene `forgot-password`, `login`, `register` y `layout.tsx`.
+
+El helper de `route-integrity.test.ts` sólo prohíbe:
+
+~~~text
+href="/terms"
+href="/privacy"
+href="/admin"
+href="/admin/mfa"
+redirectTo: /admin o /admin/mfa
+~~~
+
+Mutación mínima que el control actual debe matar y hoy no representa:
+
+~~~text
+<Link href="/ruta-inexistente">X</Link>
+return { action: 'redirect', redirectTo: '/ghost' }
+resolvePostLoginRedirect('/ruta-inexistente', 'merchant')
+~~~
+
+## H10 — adjuntos visuales
+
+Lectura API de body + todos los comentarios del PR:
+
+~~~text
+markdownImages: 0
+htmlImages: 0
+github user-attachments: 0
+image URLs (png/jpeg/webp/gif): 0
+comments total: 2
+~~~
+
+La tabla textual de “Evidencia visual” no es el side-by-side adjunto requerido.
+
+## H16 — paid_until es fecha civil
+
+Contrato real de T-105:
+
+~~~sql
+admin_set_subscription(... p_paid_until date default null ...)
+...
+'paidUntil', to_char(p_paid_until, 'YYYY-MM-DD')
+~~~
+
+Probe independiente:
+
+~~~bash
+TZ=America/Argentina/Buenos_Aires node -e "const d=new Date('2026-12-31'); console.log(d.toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'}))"
+~~~
+
+Salida:
+
+~~~text
+30 de diciembre de 2026
+~~~
+
+El test del autor usa `paid_until: '2026-12-31T23:59:59Z'`, que no es la forma real del `date`.
+
+## H17 / H18 — C07
+
+README vinculante C07:
+
+~~~text
+Tabs: Todas, Entregadas, Canceladas, Vencidas
+Datos clave: Ruta, cadete, monto, hora y badge
+~~~
+
+Código actual:
+- con `status=all`, no aplica filtro de estado;
+- la fila muestra ruta, distancia, paquete, hora y badge;
+- no carga ni muestra cadete/monto de la oferta aceptada.
+
+Pruebas actuales de 51 filas usan sólo `delivered`, por lo que no detectan activas en “Todas”.
+
+## R03 / H19 — métricas C02
+
+Código actual:
+
+~~~text
+metricsQuery = delivery_requests.select(...).eq(merchant_id)   # sin limit/cursor
+todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+acceptedOfferIds += todas las filas con accepted_offer_id
+~~~
+
+Probe del corte de día con proceso UTC:
+
+~~~text
+instant: 2026-09-25T01:30:00.000Z
+America/Argentina/Buenos_Aires: 2026-09-24 22:30
+todayStart actual: 2026-09-25T00:00:00.000Z
+~~~
+
+El README C02 llama a `Despachos hoy` y `Tarifa promedio` “Métricas del día”; la tarifa actual promedia todas las ofertas aceptadas históricas.
+
+## Revalidaciones cerradas en R3
+
+Por inspección del SHA exacto quedaron cerrados: H02, H03, H04, H05, H06, H07, H11, H12, R01, R02, H13, H14, H15.
+
+No se inspeccionó CI porque quedan bloqueantes.

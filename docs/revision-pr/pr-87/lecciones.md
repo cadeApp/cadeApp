@@ -1,6 +1,6 @@
 # Lecciones de la PR #87 para AGENTS.md y las reglas
 
-**Fuente:** 12 hallazgos de R1 + 7 registros nuevos en R2.
+**Fuente:** 12 hallazgos de R1 + 7 registros nuevos en R2 + 5 hallazgos nuevos en R3.
 
 ## Patrón dominante
 
@@ -27,3 +27,16 @@ No hace falta inventar una AG nueva todavía; refuerzan reglas existentes:
 
 - A01/A02 fueron resueltos por decisión explícita de P1; la lección es documentar esa excepción, no revertirla ni reemplazarla con deep imports.
 - H15 sugiere que la evidencia “typecheck verde” del autor no puede tomarse como independiente hasta reejecutarla.
+
+
+## Ronda 3
+
+R3 vuelve a mostrar el mismo patrón dominante, ahora con dos ejemplos muy medibles.
+
+- **P08 / AG-61:** ampliar el scan a “todo el alcance” no sirve si la propiedad que se comprueba sigue siendo una blacklist. El helper de rutas conoce cuatro strings, por eso una ruta arbitraria inexistente sigue pasando; de hecho el código real conserva exactamente ese defecto en `resolvePostLoginRedirect`.
+- **AG-66 reincide:** `paid_until` es un `date` civil y el test lo transformó en timestamp. Eso hizo verde una prueba que no representa el dato real; el probe con `TZ=America/Argentina/Buenos_Aires` muestra el corrimiento al día anterior.
+- **Arreglar un límite no habilita quitar el límite:** R02 dejó de truncar métricas a 50, pero la solución fue una lista sin paginar. La prueba de 60 filas mide exactitud y no el presupuesto/contrato de lectura.
+- **La referencia vinculante también es contrato:** C07 quedó con tabs y paginación correctas, pero el set “Todas” y los campos de cada fila no fueron enumerados contra el README (cadete + monto). Es otra forma de AG-37.
+- **Evidencia visual:** escribir “verificado en /browser” no crea el entregable. El DoD pide adjuntos; el PR tiene cero imágenes.
+
+No hace falta proponer un AG nuevo: H16/H19 refuerzan AG-66 y H01/H09/R03 vuelven a reforzar AG-37/AG-61.
