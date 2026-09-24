@@ -1635,7 +1635,7 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         expect(fake.getOffer(seededOfferId)?.courierId).toBe(COURIER_1);
       });
 
-      it('CC-005 (D01 / D03 / H01 / H02): precedencia canónica S01–S15, controles C01–C04 y AAL2_REQUIRED en cancel_request', async () => {
+      it('CC-006 (D01 / D03 / H01 / H02): precedencia canónica S01–S15, controles C01–C04 y AAL2_REQUIRED en cancel_request', async () => {
         const OFFER_1 = '50000000-0000-4000-8000-000000000001';
         const now = new Date('2026-09-23T15:00:00.000Z');
         const past = new Date(now.getTime() - 1000).toISOString();

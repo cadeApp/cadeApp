@@ -296,7 +296,7 @@ export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
 export const RPC_CONTRACTS = {
   /**
-   * Precedencia canónica del ciclo de solicitudes (CC-005 / D01 / D03 — compartida entre
+   * Precedencia canónica del ciclo de solicitudes (CC-006 / D01 / D03 — compartida entre
    * `supabase/migrations/20260924010124_rpc_requests_v1.sql` y `src/domain/testing/rpc-fake.ts` para
    * `publish_request`, `cancel_request`, `mark_picked_up`, `mark_delivered`, `report_no_show`,
    * `courier_cancel_match`, `republish_request` y `report_incident`):
