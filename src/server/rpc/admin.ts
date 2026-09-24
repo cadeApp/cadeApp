@@ -1,6 +1,7 @@
 import 'server-only';
 
 import {
+  PLATFORM_SETTING_KEYS,
   RPC_CONTRACTS,
   err,
   ok,
@@ -225,14 +226,6 @@ export async function adminSetSubscriptionRpc(
   return ok(parsedOutput.data);
 }
 
-const VALID_SETTING_KEYS = new Set([
-  'min_offer_ars',
-  'request_ttl_minutes',
-  'pilot_active',
-  'pilot_terms_version',
-  'subscription_grace_days',
-]);
-
 /**
  * Typed server wrapper for `public.admin_update_setting(p_key, p_value)`.
  */
@@ -249,7 +242,7 @@ export async function adminUpdateSettingRpc(
     RPC_CONTRACTS.admin_update_setting.inputSchema.safeParse(rawInput);
 
   if (!parsedInput.success) {
-    // H09: Alinear error de parseo con INVALID_SETTING_KEY o INVALID_SETTING_VALUE igual que en el fake
+    // H09 & H16: Alinear error de parseo con INVALID_SETTING_KEY o INVALID_SETTING_VALUE utilizando PLATFORM_SETTING_KEYS
     if (
       typeof rawInput === 'object' &&
       rawInput !== null &&
@@ -257,7 +250,10 @@ export async function adminUpdateSettingRpc(
       typeof (rawInput as { key: unknown }).key === 'string'
     ) {
       const candidateKey = (rawInput as { key: string }).key;
-      if (!VALID_SETTING_KEYS.has(candidateKey)) {
+      const isKnownKey = (PLATFORM_SETTING_KEYS as readonly string[]).includes(
+        candidateKey,
+      );
+      if (!isKnownKey) {
         return err('INVALID_SETTING_KEY');
       }
       return err('INVALID_SETTING_VALUE');

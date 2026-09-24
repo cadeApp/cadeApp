@@ -410,9 +410,11 @@ begin
     raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
   end if;
 
+  -- H17: Usar FOR UPDATE al leer la fila previa para prevenir lecturas desactualizadas en concurrencia
   select value into v_old_value
   from public.platform_settings
-  where key = p_key;
+  where key = p_key
+  for update;
 
   if p_key = 'min_offer_ars' then
     if jsonb_typeof(p_value) <> 'number' or (p_value::text)::numeric < 1 or (p_value::text)::numeric <> trunc((p_value::text)::numeric) then
