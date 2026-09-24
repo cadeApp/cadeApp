@@ -86,6 +86,7 @@ export async function runSweep(): Promise<SweepResult> {
   }
 
   let purgedDocsCount = 0;
+  let pendingStorageError: { message: string } | null = null;
 
   if (docsToPurge && docsToPurge.length > 0) {
     const storagePaths = docsToPurge.map((d) => d.storage_path);
@@ -126,8 +127,8 @@ export async function runSweep(): Promise<SweepResult> {
 
       purgedDocsCount = updatedDocs?.length ?? 0;
     } else {
-      // H01: terminar en error para que la ruta responda 500 y el cron registre la falla
-      throw new Error(`Failed to purge courier documents from storage: ${storageError.message}`);
+      // H01 / H11: diferir el throw para que una falla de Storage no frene el paso 3 de suscripciones
+      pendingStorageError = storageError;
     }
   }
 
@@ -227,6 +228,14 @@ export async function runSweep(): Promise<SweepResult> {
         expiredSubscriptionsCount = updatedMerchants.length;
       }
     }
+  }
+
+  // H01 / H11: si hubo error en Storage, lanzar al final para que la ruta responda 500 y el cron
+  // registre la falla habiendo corrido también la expiración de suscripciones comerciales
+  if (pendingStorageError) {
+    throw new Error(
+      `Failed to purge courier documents from storage: ${pendingStorageError.message}`
+    );
   }
 
   return {

@@ -932,4 +932,118 @@ describe('runSweep logic', () => {
       expect.stringContaining('paid_until.lte.2026-09-21')
     );
   });
+
+  it('ejecuta la expiración de suscripciones comerciales aunque la purga de Storage falle y rechaza al final (H11)', async () => {
+    const mockStorageRemove = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'Supabase Storage temporary downtime' },
+    });
+    const mockDocUpdate = vi.fn();
+    const mockMerchantUpdateSelect = vi.fn().mockResolvedValue({
+      data: [{ profile_id: 'merchant-expired-despite-storage-failure', paid_until: '2026-08-01' }],
+      error: null,
+    });
+    const mockMerchantUpdate = vi.fn().mockReturnValue({
+      in: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          or: vi.fn().mockReturnValue({
+            select: mockMerchantUpdateSelect,
+          }),
+        }),
+      }),
+    });
+    const mockAuditInsert = vi.fn().mockResolvedValue({ error: null });
+
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'courier_documents') {
+        return {
+          select: vi.fn().mockReturnValue({
+            lte: vi.fn().mockReturnValue({
+              is: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 'doc-storage-down',
+                    courier_id: 'courier-storage-down',
+                    storage_path: 'courier-storage-down/dni.jpg',
+                    purge_after: '2026-08-01T00:00:00Z',
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+          update: mockDocUpdate,
+        };
+      }
+      if (table === 'delivery_requests') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              lte: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: { value: '0' }, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'merchants') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({
+              data: [
+                {
+                  profile_id: 'merchant-expired-despite-storage-failure',
+                  paid_until: '2026-08-01',
+                  subscription_status: 'active',
+                },
+              ],
+              error: null,
+            }),
+          }),
+          update: mockMerchantUpdate,
+        };
+      }
+      if (table === 'audit_log') {
+        return { insert: mockAuditInsert };
+      }
+      return {};
+    });
+
+    setAdminClientMock({
+      from: mockFrom,
+      storage: {
+        from: vi.fn().mockReturnValue({
+          remove: mockStorageRemove,
+        }),
+      },
+    });
+
+    // runSweep debe rechazar al final por el error de storage, pero habiendo ejecutado el paso 3
+    await expect(runSweep()).rejects.toThrow(
+      'Failed to purge courier documents from storage: Supabase Storage temporary downtime'
+    );
+
+    // Documentos no actualizados ni auditados
+    expect(mockStorageRemove).toHaveBeenCalledWith(['courier-storage-down/dni.jpg']);
+    expect(mockDocUpdate).not.toHaveBeenCalled();
+
+    // Comercios sí actualizados y auditados (H11)
+    expect(mockMerchantUpdate).toHaveBeenCalledWith({ subscription_status: 'expired' });
+    expect(mockAuditInsert).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target_type: 'merchant',
+          target_id: 'merchant-expired-despite-storage-failure',
+          action: 'subscription_expired',
+        }),
+      ])
+    );
+  });
 });
