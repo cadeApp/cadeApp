@@ -1,0 +1,17 @@
+--- update_setting with what PostgREST builds from {"p_value":"1500"} (jsonb string)
+ERR P0001 INVALID_SETTING_VALUE
+ERR P0001 INVALID_SETTING_VALUE
+--- pilot_terms_version whitespace only
+OK {"key": "pilot_terms_version", "value": "   "}
+--- decide: rejected with reason -> where is reason stored? audit_log rows before/after
+0
+OK {"status": "rejected", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "decidedAt": "2026-09-24T02:11:00.333Z"}
+0
+--- decide: rejected -> approved, approved -> approved (no INVALID_STATE_TRANSITION)
+OK {"status": "approved", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "decidedAt": "2026-09-24T02:11:00.333Z"}
+OK {"status": "rejected", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "decidedAt": "2026-09-24T02:11:00.333Z"}
+--- precedence: rejected without reason on missing courier
+ERR P0001 REASON_REQUIRED
+--- set_subscription active without paid_until clears existing paid_until
+OK {"paidUntil": null, "merchantId": "aaaaaaaa-0000-4000-8000-000000000002", "subscriptionStatus": "active"}
+|n1
