@@ -9,33 +9,55 @@ export const BRAND_ASSET_PATHS = {
   icon512: '/icon-512x512.png',
 } as const;
 
-export const BRAND_LOGO_GEOMETRY = {
-  viewBoxFull: '0 0 220 56',
-  viewBoxIcon: '0 0 62 56',
-  box: { x: 4, y: 14, width: 22, height: 22, rx: 3 },
-  wavyRoadPath:
-    'M4 22H12.5C14.2 22 15.2 23.2 14.8 24.8C14.4 26.4 15.4 27.8 17.2 27.8H22.5C25.5 27.8 27.8 30.2 27.8 33.2V36',
-  boxBasePath: 'M4 35.5H26',
-  helmet: { cx: 38, cy: 13.5, r: 5.2 },
-  visorPath: 'M39.5 12.2L43 13.5L40.5 15.5',
-  riderAndScooterBodyPath:
-    'M31.5 19.5C33 18 35.5 18.5 37.5 20L35.8 23.5H48V27.5C52.5 29.5 56.5 33.5 58 38.5H46.5C47 35 45.5 30.5 41.5 28.5H31.5C29.5 28.5 28.5 26.5 29 24.2L31.5 19.5Z',
-  chassisPath: 'M10 38.5H45C48.5 38.5 50.5 34.5 49.5 31',
-  rearWheel: { cx: 15.5, cy: 41.5, r: 4.8 },
-  frontWheel: { cx: 52.5, cy: 41.5, r: 4.8 },
+export const BRAND_LOGO_PATHS = {
+  viewBoxFull: '70 600 1320 300',
+  viewBoxIcon: '70 600 420 300',
+  riderBody:
+    'M15 106L13 112L14 174L114 174L124 177L134 187L139 200L138 214L132 227L132 235L137 241L155 244L194 243L203 245L223 257L233 267L241 278L246 294L246 313L241 327L333 327L349 319L361 303L367 283L366 267L355 245L339 232L330 228L312 225L227 225L223 222L223 110L217 102L212 100L25 100ZM536 311L520 280L502 259L483 242L464 229L438 217L445 213L444 180L325 178L318 172L317 163L331 136L291 113L278 109L262 115L253 125L246 138L241 164L246 182L256 194L267 200L279 202L361 201L377 207L391 219L399 230L407 248L410 277L404 303L390 327L375 341L362 348L350 350L65 349L61 351L60 358L67 384L82 401L100 411L125 413L141 408L154 399L163 388L171 371L426 371L435 351L448 332L470 315L499 305L519 306ZM14 198L13 314L20 326L24 328L206 327L215 323L220 318L224 301L222 291L216 281L203 271L192 266L139 266L127 262L119 255L112 245L109 233L110 222L117 206L113 198ZM532 335L513 327L500 327L479 334L470 340L454 358L445 381L447 389L457 401L474 411L496 413L515 406L531 390L537 379L540 367L540 351ZM317 24L308 29L293 46L288 62L288 76L291 85L298 93L359 126L372 106L359 100L343 85L342 76L353 64L382 74L383 64L379 47L363 28L354 23L335 20Z',
+  deliveryBox:
+    'M15 104L12 112L12 172L14 175L113 175L121 177L133 187L138 199L138 211L131 227L131 235L135 241L156 245L195 244L209 249L224 260L223 226L226 223L223 218L224 120L223 108L217 101L213 99L25 99ZM13 198L13 311L17 306L224 306L224 294L217 281L195 266L139 265L123 258L113 245L110 234L112 219L117 208L117 202L113 197L15 196Z',
+  glyphP:
+    'M75 -105C85 -105 94 -103 102 -99C110 -94 116 -88 120 -80C125 -72 127 -63 127 -52C127 -41 125 -32 120 -24C116 -16 110 -10 102 -5C94 -1 85 2 75 2C62 2 52 -3 44 -11L44 37L14 37L14 -104L43 -104L43 -92C50 -101 61 -105 75 -105ZM70 -23C78 -23 84 -26 89 -31C94 -36 97 -43 97 -52C97 -61 94 -68 89 -73C84 -78 78 -81 70 -81C62 -81 56 -78 51 -73C46 -68 44 -61 44 -52C44 -43 46 -36 51 -31C56 -26 62 -23 70 -23ZM70 -23',
+  letterC:
+    'M81 2C67 2 54 -1 43 -7C32 -13 23 -21 17 -32C11 -42 8 -54 8 -68C8 -81 11 -93 17 -104C23 -114 32 -123 43 -129C54 -135 67 -138 81 -138C93 -138 103 -135 113 -131C122 -127 130 -121 137 -114L116 -95C107 -106 96 -111 82 -111C74 -111 67 -109 60 -105C54 -102 48 -97 45 -90C41 -83 39 -76 39 -68C39 -59 41 -52 45 -45C48 -39 54 -34 60 -30C67 -26 74 -24 82 -24C96 -24 107 -30 116 -40L137 -22C130 -14 122 -8 113 -4C103 0 92 2 81 2ZM81 2',
+  letterA:
+    'M56 -105C72 -105 84 -102 93 -94C102 -86 106 -75 106 -59L106 0L78 0L78 -13C72 -3 61 2 46 2C38 2 31 0 25 -2C19 -5 15 -9 12 -14C9 -18 7 -24 7 -30C7 -40 11 -47 18 -53C25 -58 37 -61 52 -61L76 -61C76 -68 74 -73 70 -76C66 -80 60 -82 52 -82C46 -82 41 -81 35 -79C30 -77 26 -75 22 -72L11 -93C17 -97 23 -100 31 -102C39 -104 47 -105 56 -105ZM54 -19C59 -19 63 -20 67 -22C71 -25 74 -28 76 -33L76 -43L55 -43C43 -43 36 -39 36 -31C36 -27 38 -24 41 -22C44 -20 48 -19 54 -19ZM54 -19',
+  letterD:
+    'M120 -143L120 0L91 0L91 -12C84 -3 73 2 59 2C49 2 40 -1 32 -5C24 -9 18 -16 13 -24C9 -32 7 -41 7 -52C7 -63 9 -72 13 -80C18 -88 24 -94 32 -99C40 -103 49 -105 59 -105C72 -105 82 -101 90 -93L90 -143ZM64 -23C71 -23 78 -26 83 -31C88 -36 90 -43 90 -52C90 -61 88 -68 83 -73C78 -78 71 -81 64 -81C56 -81 50 -78 45 -73C40 -68 37 -61 37 -52C37 -43 40 -36 45 -31C50 -26 56 -23 64 -23ZM64 -23',
+  letterE:
+    'M116 -52C116 -51 115 -48 115 -43L36 -43C38 -37 41 -32 47 -28C52 -24 58 -23 66 -23C72 -23 76 -23 81 -25C85 -27 89 -29 92 -33L108 -15C99 -4 84 2 65 2C54 2 43 -1 34 -5C25 -10 18 -16 14 -24C9 -32 6 -42 6 -52C6 -62 9 -71 13 -79C18 -88 25 -94 33 -99C42 -103 51 -105 62 -105C72 -105 81 -103 89 -99C97 -94 104 -88 109 -80C113 -72 116 -62 116 -52ZM62 -83C55 -83 49 -81 45 -77C40 -73 37 -68 36 -61L87 -61C86 -68 83 -73 79 -77C74 -81 68 -83 62 -83ZM62 -83',
+  letterCapA:
+    'M105 -29L42 -29L30 0L-2 0L59 -135L89 -135L150 0L117 0ZM95 -53L74 -104L52 -53ZM95 -53',
 } as const;
 
-export const BRAND_LOGO_SVG_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BRAND_LOGO_GEOMETRY.viewBoxFull}" role="img" aria-label="cadeApp">
-  <rect x="${BRAND_LOGO_GEOMETRY.box.x}" y="${BRAND_LOGO_GEOMETRY.box.y}" width="${BRAND_LOGO_GEOMETRY.box.width}" height="${BRAND_LOGO_GEOMETRY.box.height}" rx="${BRAND_LOGO_GEOMETRY.box.rx}" fill="${DESIGN_TOKENS.colors.primary}" />
-  <path d="${BRAND_LOGO_GEOMETRY.wavyRoadPath}" stroke="${DESIGN_TOKENS.colors.background}" stroke-width="2.6" stroke-linecap="round" fill="none" />
-  <path d="${BRAND_LOGO_GEOMETRY.boxBasePath}" stroke="${DESIGN_TOKENS.colors.ink}" stroke-width="2.5" stroke-linecap="round" />
-  <circle cx="${BRAND_LOGO_GEOMETRY.helmet.cx}" cy="${BRAND_LOGO_GEOMETRY.helmet.cy}" r="${BRAND_LOGO_GEOMETRY.helmet.r}" fill="${DESIGN_TOKENS.colors.ink}" />
-  <path d="${BRAND_LOGO_GEOMETRY.visorPath}" fill="${DESIGN_TOKENS.colors.background}" />
-  <path d="${BRAND_LOGO_GEOMETRY.riderAndScooterBodyPath}" fill="${DESIGN_TOKENS.colors.ink}" />
-  <path d="${BRAND_LOGO_GEOMETRY.chassisPath}" stroke="${DESIGN_TOKENS.colors.ink}" stroke-width="3.2" stroke-linecap="round" fill="none" />
-  <circle cx="${BRAND_LOGO_GEOMETRY.rearWheel.cx}" cy="${BRAND_LOGO_GEOMETRY.rearWheel.cy}" r="${BRAND_LOGO_GEOMETRY.rearWheel.r}" fill="${DESIGN_TOKENS.colors.ink}" />
-  <circle cx="${BRAND_LOGO_GEOMETRY.frontWheel.cx}" cy="${BRAND_LOGO_GEOMETRY.frontWheel.cy}" r="${BRAND_LOGO_GEOMETRY.frontWheel.r}" fill="${DESIGN_TOKENS.colors.ink}" />
-  <text x="68" y="38" font-family="${DESIGN_TOKENS.fonts.display}, sans-serif" font-weight="800" font-size="27" fill="${DESIGN_TOKENS.colors.ink}">cadeApp</text>
+export const BRAND_LOGO_GEOMETRY = {
+  viewBoxFull: BRAND_LOGO_PATHS.viewBoxFull,
+  viewBoxIcon: BRAND_LOGO_PATHS.viewBoxIcon,
+  // compatibilidad para llamadas heredadas
+  box: { x: 70, y: 600, width: 420, height: 300, rx: 0 },
+} as const;
+
+export const BRAND_LOGO_SVG_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${BRAND_LOGO_PATHS.viewBoxFull}" role="img" aria-label="cadeApp">
+  <defs>
+    <linearGradient id="cade-brand-grad-markup" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#09BABD" />
+      <stop offset="100%" stop-color="#0B7A7D" />
+    </linearGradient>
+    <path id="cade-glyph-p-markup" d="${BRAND_LOGO_PATHS.glyphP}" />
+  </defs>
+  <g transform="translate(69.75 585.75) scale(.75)">
+    <path fill="${DESIGN_TOKENS.colors.ink}" d="${BRAND_LOGO_PATHS.riderBody}" />
+    <path fill="url(#cade-brand-grad-markup)" d="${BRAND_LOGO_PATHS.deliveryBox}" />
+  </g>
+  <g fill="${DESIGN_TOKENS.colors.ink}">
+    <path transform="translate(523 834)" d="${BRAND_LOGO_PATHS.letterC}" />
+    <path transform="translate(654 834)" d="${BRAND_LOGO_PATHS.letterA}" />
+    <path transform="translate(763 834)" d="${BRAND_LOGO_PATHS.letterD}" />
+    <path transform="translate(886 834)" d="${BRAND_LOGO_PATHS.letterE}" />
+    <path transform="translate(997 834)" d="${BRAND_LOGO_PATHS.letterCapA}" />
+    <use href="#cade-glyph-p-markup" transform="translate(1135 834)" />
+    <use href="#cade-glyph-p-markup" transform="translate(1257 834)" />
+  </g>
 </svg>`;
 
 export interface BrandLogoProps extends React.SVGAttributes<SVGSVGElement> {
@@ -54,75 +76,52 @@ export function BrandLogo({
   ...props
 }: BrandLogoProps) {
   const sizeClass = size === 'sm' ? 'h-8' : size === 'lg' ? 'h-12' : 'h-10';
+  const inkColor = variant === 'inverse' ? '#FFFFFF' : DESIGN_TOKENS.colors.ink;
+  const gradientId = React.useId();
+
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox={showWordmark ? BRAND_LOGO_GEOMETRY.viewBoxFull : BRAND_LOGO_GEOMETRY.viewBoxIcon}
+      viewBox={showWordmark ? BRAND_LOGO_PATHS.viewBoxFull : BRAND_LOGO_PATHS.viewBoxIcon}
       role="img"
       aria-label={label}
       data-variant={variant}
       className={cn(sizeClass, 'w-auto select-none', className)}
       {...props}
     >
-      <rect
-        x={BRAND_LOGO_GEOMETRY.box.x}
-        y={BRAND_LOGO_GEOMETRY.box.y}
-        width={BRAND_LOGO_GEOMETRY.box.width}
-        height={BRAND_LOGO_GEOMETRY.box.height}
-        rx={BRAND_LOGO_GEOMETRY.box.rx}
-        fill={DESIGN_TOKENS.colors.primary}
-      />
-      <path
-        d={BRAND_LOGO_GEOMETRY.wavyRoadPath}
-        stroke={DESIGN_TOKENS.colors.background}
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        fill="none"
-      />
-      <path
-        d={BRAND_LOGO_GEOMETRY.boxBasePath}
-        stroke={DESIGN_TOKENS.colors.ink}
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-      <circle
-        cx={BRAND_LOGO_GEOMETRY.helmet.cx}
-        cy={BRAND_LOGO_GEOMETRY.helmet.cy}
-        r={BRAND_LOGO_GEOMETRY.helmet.r}
-        fill={DESIGN_TOKENS.colors.ink}
-      />
-      <path d={BRAND_LOGO_GEOMETRY.visorPath} fill={DESIGN_TOKENS.colors.background} />
-      <path d={BRAND_LOGO_GEOMETRY.riderAndScooterBodyPath} fill={DESIGN_TOKENS.colors.ink} />
-      <path
-        d={BRAND_LOGO_GEOMETRY.chassisPath}
-        stroke={DESIGN_TOKENS.colors.ink}
-        strokeWidth="3.2"
-        strokeLinecap="round"
-        fill="none"
-      />
-      <circle
-        cx={BRAND_LOGO_GEOMETRY.rearWheel.cx}
-        cy={BRAND_LOGO_GEOMETRY.rearWheel.cy}
-        r={BRAND_LOGO_GEOMETRY.rearWheel.r}
-        fill={DESIGN_TOKENS.colors.ink}
-      />
-      <circle
-        cx={BRAND_LOGO_GEOMETRY.frontWheel.cx}
-        cy={BRAND_LOGO_GEOMETRY.frontWheel.cy}
-        r={BRAND_LOGO_GEOMETRY.frontWheel.r}
-        fill={DESIGN_TOKENS.colors.ink}
-      />
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#09BABD" />
+          <stop offset="100%" stopColor="#0B7A7D" />
+        </linearGradient>
+        <path id={`p-${gradientId}`} d={BRAND_LOGO_PATHS.glyphP} />
+      </defs>
+
+      {/* Isotipo: moto y caja de pedidos auténticos */}
+      <g transform="translate(69.75 585.75) scale(.75)">
+        <path
+          fill={inkColor}
+          d={BRAND_LOGO_PATHS.riderBody}
+          data-brand-part="rider"
+        />
+        <path
+          fill={`url(#${gradientId})`}
+          d={BRAND_LOGO_PATHS.deliveryBox}
+          data-brand-part="box"
+        />
+      </g>
+
+      {/* Wordmark: letras auténticas de cadeApp */}
       {showWordmark ? (
-        <text
-          x="68"
-          y="38"
-          fontFamily={`${DESIGN_TOKENS.fonts.display}, sans-serif`}
-          fontWeight="800"
-          fontSize="27"
-          fill={DESIGN_TOKENS.colors.ink}
-        >
-          cadeApp
-        </text>
+        <g fill={inkColor} data-brand-part="wordmark">
+          <path transform="translate(523 834)" d={BRAND_LOGO_PATHS.letterC} />
+          <path transform="translate(654 834)" d={BRAND_LOGO_PATHS.letterA} />
+          <path transform="translate(763 834)" d={BRAND_LOGO_PATHS.letterD} />
+          <path transform="translate(886 834)" d={BRAND_LOGO_PATHS.letterE} />
+          <path transform="translate(997 834)" d={BRAND_LOGO_PATHS.letterCapA} />
+          <use href={`#p-${gradientId}`} transform="translate(1135 834)" />
+          <use href={`#p-${gradientId}`} transform="translate(1257 834)" />
+        </g>
       ) : null}
     </svg>
   );

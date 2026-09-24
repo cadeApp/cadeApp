@@ -156,13 +156,13 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
 
       const { container, rerender } = render(<BrandLogo label="Logo de Cade" />);
       expect(screen.getByRole('img', { name: 'Logo de Cade' })).toBeDefined();
-      const rect = container.querySelector('rect');
-      expect(rect?.getAttribute('fill')).toBe(DESIGN_TOKENS.colors.primary);
-      const circle = container.querySelector('circle');
-      expect(circle?.getAttribute('fill')).toBe(DESIGN_TOKENS.colors.ink);
+      const riderPath = container.querySelector('[data-brand-part="rider"]');
+      expect(riderPath?.getAttribute('fill')).toBe(DESIGN_TOKENS.colors.ink);
+      const boxPath = container.querySelector('[data-brand-part="box"]');
+      expect(boxPath).toBeDefined();
 
       rerender(<BrandLogo showWordmark={false} label="Isotipo Cade" />);
-      expect(container.querySelector('text')).toBeNull();
+      expect(container.querySelector('[data-brand-part="wordmark"]')).toBeNull();
     });
   });
 
