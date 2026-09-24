@@ -618,6 +618,39 @@ export type Database = {
     }
     Functions: {
       accept_offer: { Args: { p_offer_id: string }; Returns: Json }
+      admin_decide_courier: {
+        Args: {
+          p_courier_id: string
+          p_decision: string
+          p_reason?: string | null
+        }
+        Returns: Json
+      }
+      admin_set_subscription: {
+        Args: {
+          p_merchant_id: string
+          p_subscription_status: string
+          p_paid_until?: string | null
+          p_notes?: string | null
+        }
+        Returns: Json
+      }
+      admin_suspend_courier: {
+        Args: { p_courier_id: string; p_reason: string }
+        Returns: Json
+      }
+      admin_update_setting: {
+        Args: { p_key: string; p_value: Json }
+        Returns: Json
+      }
+      admin_verify_document: {
+        Args: {
+          p_document_id: string
+          p_decision: string
+          p_reason?: string | null
+        }
+        Returns: Json
+      }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
       submit_offer: {
         Args: {

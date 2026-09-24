@@ -57,7 +57,8 @@ begin
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
-  if v_courier_status = 'suspended' then
+  -- D03: admin_decide_courier solo permite transición desde estado 'pending'
+  if v_courier_status <> 'pending' then
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
   end if;
 
@@ -69,6 +70,17 @@ begin
     decided_at = v_decided_at,
     decided_by = v_actor_id
   where profile_id = p_courier_id;
+
+  -- D02 / H10: Registrar evento en audit_log
+  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
+  values (
+    v_actor_id,
+    'admin_decide_courier',
+    'courier',
+    p_courier_id::text,
+    jsonb_build_object('status', v_courier_status),
+    jsonb_build_object('status', v_target_status, 'reason', p_reason)
+  );
 
   return jsonb_build_object(
     'courierId', p_courier_id,
@@ -141,15 +153,24 @@ begin
     deactivated_at = v_deactivated_at
   where profile_id = p_courier_id;
 
-  -- Withdraw all pending offers for this courier
+  -- H02: Actualizar ofertas pending a withdrawn sin la columna inexistente withdrawn_at
   update public.offers
-  set
-    status = 'withdrawn'::public.offer_status,
-    withdrawn_at = v_deactivated_at
+  set status = 'withdrawn'::public.offer_status
   where courier_id = p_courier_id
     and status = 'pending';
 
   get diagnostics v_withdrawn_count = row_count;
+
+  -- D02 / H10: Registrar evento en audit_log
+  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
+  values (
+    v_actor_id,
+    'admin_suspend_courier',
+    'courier',
+    p_courier_id::text,
+    jsonb_build_object('status', v_courier_status),
+    jsonb_build_object('status', 'suspended', 'reason', p_reason, 'withdrawnOffersCount', v_withdrawn_count)
+  );
 
   return jsonb_build_object(
     'courierId', p_courier_id,
@@ -178,6 +199,7 @@ declare
   v_courier_id uuid;
   v_kind public.courier_document_kind;
   v_doc_status public.document_review_status;
+  v_purged_at timestamptz;
   v_target_status public.document_review_status;
   v_doc_level integer;
 begin
@@ -210,7 +232,8 @@ begin
     raise exception using errcode = 'P0001', message = 'REASON_REQUIRED';
   end if;
 
-  select courier_id, kind, status into v_courier_id, v_kind, v_doc_status
+  select courier_id, kind, status, purged_at
+  into v_courier_id, v_kind, v_doc_status, v_purged_at
   from public.courier_documents
   where id = p_document_id
   for update;
@@ -219,17 +242,23 @@ begin
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
+  -- D04: admin_verify_document solo si status = 'submitted' y purged_at is null
+  if v_doc_status <> 'submitted' or v_purged_at is not null then
+    raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
+  end if;
+
   v_target_status := p_decision::public.document_review_status;
 
   update public.courier_documents
   set status = v_target_status
   where id = p_document_id;
 
-  if v_kind = 'driver_license' then
+  -- H01: courier_document_kind usa 'license' e 'insurance' (no 'driver_license' ni 'vehicle_insurance')
+  if v_kind = 'license' then
     update public.couriers
     set license_status = v_target_status
     where profile_id = v_courier_id;
-  elsif v_kind = 'vehicle_insurance' then
+  elsif v_kind = 'insurance' then
     update public.couriers
     set insurance_status = v_target_status
     where profile_id = v_courier_id;
@@ -238,6 +267,17 @@ begin
   select doc_level into v_doc_level
   from public.couriers
   where profile_id = v_courier_id;
+
+  -- D02 / H10: Registrar evento en audit_log
+  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
+  values (
+    v_actor_id,
+    'admin_verify_document',
+    'courier_document',
+    p_document_id::text,
+    jsonb_build_object('status', v_doc_status, 'kind', v_kind, 'courier_id', v_courier_id),
+    jsonb_build_object('status', v_target_status, 'reason', p_reason, 'docLevel', coalesce(v_doc_level, 0))
+  );
 
   return jsonb_build_object(
     'documentId', p_document_id,
@@ -266,6 +306,7 @@ declare
   v_role public.profile_role;
   v_aal text;
   v_current_status public.merchant_subscription_status;
+  v_current_paid_until date;
   v_target_status public.merchant_subscription_status;
 begin
   if v_actor_id is null then
@@ -289,11 +330,12 @@ begin
     raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
   end if;
 
-  if p_subscription_status not in ('pilot', 'active', 'past_due', 'canceled') then
+  -- H03: Valores reales del enum merchant_subscription_status: pilot, active, expired, cancelled
+  if p_subscription_status not in ('pilot', 'active', 'expired', 'cancelled') then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  select subscription_status into v_current_status
+  select subscription_status, paid_until into v_current_status, v_current_paid_until
   from public.merchants
   where profile_id = p_merchant_id
   for update;
@@ -310,6 +352,17 @@ begin
     paid_until = p_paid_until,
     notes = case when p_notes is not null then p_notes else notes end
   where profile_id = p_merchant_id;
+
+  -- D02 / H10: Registrar evento en audit_log
+  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
+  values (
+    v_actor_id,
+    'admin_set_subscription',
+    'merchant',
+    p_merchant_id::text,
+    jsonb_build_object('subscription_status', v_current_status, 'paid_until', v_current_paid_until),
+    jsonb_build_object('subscription_status', v_target_status, 'paid_until', p_paid_until, 'notes', p_notes)
+  );
 
   return jsonb_build_object(
     'merchantId', p_merchant_id,
@@ -333,6 +386,8 @@ declare
   v_actor_id uuid := auth.uid();
   v_role public.profile_role;
   v_aal text;
+  v_old_value jsonb;
+  v_str_val text;
 begin
   if v_actor_id is null then
     raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
@@ -355,6 +410,10 @@ begin
     raise exception using errcode = 'P0001', message = 'AAL2_REQUIRED';
   end if;
 
+  select value into v_old_value
+  from public.platform_settings
+  where key = p_key;
+
   if p_key = 'min_offer_ars' then
     if jsonb_typeof(p_value) <> 'number' or (p_value::text)::numeric < 1 or (p_value::text)::numeric <> trunc((p_value::text)::numeric) then
       raise exception using errcode = 'P0001', message = 'INVALID_SETTING_VALUE';
@@ -368,7 +427,9 @@ begin
       raise exception using errcode = 'P0001', message = 'INVALID_SETTING_VALUE';
     end if;
   elsif p_key = 'pilot_terms_version' then
-    if jsonb_typeof(p_value) <> 'string' or length(trim(both '"' from p_value::text)) = 0 then
+    -- H13: btrim de la versión para rechazar cadenas vacías o compuestas de solo espacios
+    v_str_val := btrim(p_value #>> '{}');
+    if jsonb_typeof(p_value) <> 'string' or v_str_val is null or length(v_str_val) = 0 then
       raise exception using errcode = 'P0001', message = 'INVALID_SETTING_VALUE';
     end if;
   elsif p_key = 'subscription_grace_days' then
@@ -384,9 +445,36 @@ begin
   on conflict (key) do update
   set value = excluded.value;
 
+  -- D02 / H10: Registrar evento en audit_log
+  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
+  values (
+    v_actor_id,
+    'admin_update_setting',
+    'platform_setting',
+    p_key,
+    case when v_old_value is not null then jsonb_build_object('value', v_old_value) else null end,
+    jsonb_build_object('value', p_value)
+  );
+
   return jsonb_build_object(
     'key', p_key,
     'value', p_value
   );
 end;
 $$;
+
+-- H07: Permisos mínimos explícitos en las funciones RPC
+revoke all on function public.admin_decide_courier(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.admin_decide_courier(uuid, text, text) to authenticated;
+
+revoke all on function public.admin_suspend_courier(uuid, text) from public, anon, authenticated;
+grant execute on function public.admin_suspend_courier(uuid, text) to authenticated;
+
+revoke all on function public.admin_verify_document(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.admin_verify_document(uuid, text, text) to authenticated;
+
+revoke all on function public.admin_set_subscription(uuid, text, date, text) from public, anon, authenticated;
+grant execute on function public.admin_set_subscription(uuid, text, date, text) to authenticated;
+
+revoke all on function public.admin_update_setting(text, jsonb) from public, anon, authenticated;
+grant execute on function public.admin_update_setting(text, jsonb) to authenticated;
