@@ -1,4 +1,4 @@
-# cadeApp — Plan de implementación para agentes (agy) · v2.5
+# cadeApp — Plan de implementación para agentes (agy) · v2.6
 
 > Revisado por El Consejo en `revision-3` (2026-09-18). **Estado: APROBADO CON RESOLUCIÓN D16.** El registro está en `.el-consejo/revision-3/`.
 > Qué construir: [master-plan.md](master-plan.md). Reglas y skills de agy: [`.agents/`](../.agents/). Diseños y especificaciones vinculantes: [`docs/design/stitch/exports/`](design/stitch/exports/registro.md).
@@ -218,7 +218,7 @@ El hook ya se probó contra 35 casos: bloquea lo peligroso y deja pasar lo norma
 
 Cada tablero está en orden. `∥` = se puede hacer en paralelo con la anterior.
 
-### 7.1 Persona 1 · Lautaro073 · Datos, servidor y arranque (15 tareas + revisión)
+### 7.1 Persona 1 · Lautaro073 · Datos, servidor y arranque (16 tareas + revisión)
 1. T-000 Scaffold mínimo (máximo 1 día; destraba a todos)
 2. T-001 Kit de agy, CODEOWNERS, Project e issues (con P2 y P3 en el simulacro de traspaso) · ∥ T-002 Supabase local, clientes y proyectos staging/prod (Free Tier)
 3. T-003 CI/CD, protecciones y `approval-policy`
@@ -229,8 +229,9 @@ Cada tablero está en orden. `∥` = se puede hacer en paralelo con la anterior.
 8. T-106 Migración, RLS de coordenadas y RPC `calculate_route_distance` (Haversine × 1.30, bounding box Aguilares, fallback a `zones`)
 9. T-105 RPC de admin (destraba T-122 y T-123 de P3)
 10. T-104 Cron y health
-11. T-203 Emisor de push (destraba T-202 de P3)
-12. T-310 Operación, backups y simulacro de restauración
+11. T-118 Integración visual Stitch, shells y navegación canónica (corrección transversal; sin viajes, mapas ni contratos de UI)
+12. T-203 Emisor de push (destraba T-202 de P3)
+13. T-310 Operación, backups y simulacro de restauración
 
 Siempre: revisar y aprobar los PR de P2 y P3 (§2), y atender las preguntas de §3.8 en los issues. Conviene reservar un bloque diario para revisiones, así nadie queda trabado.
 
@@ -300,6 +301,7 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 | T-115 | P2 | Vista de viaje: contactos tras aceptar, foto/nombre/vehículo, WhatsApp comercio↔repartidor y "Avisar a mi cliente", retirado/entregado, cancelar, no llegó, republicar | T-103, T-113 | `src/features/trips/**`, `src/app/(merchant)/trips/**`, `src/app/(courier)/trips/**`, `src/lib/whatsapp.ts` | Unit de los mensajes (monto aceptado, sin datos de más); tests de actions por transición |
 | T-116 | P2 | Componente de mapa `src/ui/map.tsx` (Google Maps Platform con `@vis.gl/react-google-maps` en import dinámico con `Skeleton`), selector interactivo de pin (crosshair central fijo desplazable, botón "Usar mi ubicación", botones de ajuste fino) para alta de comercio (T-111) y creación de solicitud (T-112), validación Zod de bounding box de Aguilares, y fallback graceful a formulario de texto si la API no carga o está offline | T-008, T-111, T-112, T-106 | `src/ui/map.tsx`, `src/features/merchants/**`, `src/features/requests/**`, `src/app/(merchant)/**` | Tests unitarios de `src/ui/map.tsx` (renderiza fallback si google falla o no hay API key); selección de pin actualiza coordenadas y dirección; Zod rechaza coordenadas fuera de Aguilares; axe AA sin violaciones; first-load bundle JS < 180 KB respetado mediante import dinámico |
 | T-117 | P2 | Mapa de recorrido y botón "Abrir en Google Maps" en vista de viaje (T-115, C06, R07): renderizado interactivo de ruta orientativa entre retiro y entrega revelados ÚNICAMENTE tras la aceptación de la oferta, botón de navegación externa (`https://www.google.com/maps/dir/`), y verificación de que el feed de repartidor (T-114, R04, R05) no contenga mapas ni coordenadas (D3/D15) | T-115, T-106, T-116 | `src/features/trips/**`, `src/features/offers/**`, `src/app/(courier)/**`, `src/app/(merchant)/trips/**` | Test de integración: el feed del repartidor no monta mapa ni filtra coordenadas; la vista de viaje renderiza los dos pines tras matched; el botón "Abrir en Google Maps" genera la URL canónica con `encodeURIComponent`; con mapa caído, el botón externo y las direcciones en texto siguen 100% operativos |
+| T-118 | P1 | Integración visual Stitch y navegación canónica: P01–P03, shells público/comercio/repartidor, rutas por rol, C01–C05/C07/C08 y R01–R06/R08; corrige placeholder, redirects y destinos inexistentes sin modificar viajes, mapas ni contratos de UI | T-008, T-009, T-111, T-112, T-113, T-114, T-121 | `src/app/page.tsx`, subrutas públicas y canónicas de comercio/repartidor detalladas en `docs/tasks/T-118.md`, componentes/copy/queries de auth, merchants, requests, offers, courier-onboarding y availability, `middleware.ts` | **Pruebas en rojo antes de implementar y commit separado:** demuestran que P01 sigue siendo el placeholder, que `/merchant/dashboard`, C07, C08 y R08 no existen, que los redirects/enlaces de comercio no resuelven y que el onboarding no está aislado por rol. |
 | T-121 | P3 | Onboarding del repartidor: DNI, selfie, avatar, vehículo, licencia y seguro opcionales, consentimientos, compresión, progreso y reintento, `dni_hmac` | T-009, T-008 | `src/features/courier-onboarding/**`, `src/app/(courier)/onboarding/**` (visto bueno P2), `src/lib/image-compression.ts` (visto bueno P2) | Unit de compresión; la subida resiste un corte de red; DNI de un rechazado bloqueado |
 | T-122 | P3 | Admin de repartidores: MFA obligatorio, cola, visor de documentos auditado, aprobar/rechazar/suspender, verificar licencia y seguro | T-121, T-105, T-008 | `src/features/admin/**`, `src/app/(admin)/couriers/**` | Sin aal2 no se entra; cada vista de documento crea una fila en `audit_log`; tests de actions |
 | T-123 | P3 | Admin de comercios y plataforma: tabla de comercios sin CUIT (dato fantasma de Stitch extirpado), TopNav institucional blanco con `<BrandLogo variant="horizontal-color" />` y sin solapa "Liquidaciones" (D14), piloto, pago manual y `paid_until`, settings (piso, TTL, gracia, versión de términos) | T-105, T-008 | `src/features/admin/**`, `src/app/(admin)/merchants/**`, `src/app/(admin)/settings/**` | Cambios auditados; tests de actions; sin campo CUIT en vistas ni en types del admin; sin ruta ni vista de liquidaciones en el bundle |
@@ -361,7 +363,7 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
 | Buen código y modularización | Reglas 10 y 20, ESLint de fronteras, `server-only` | Fixtures de lint que fallan (T-000); build roto al importar `server-only` desde cliente |
 | Seguridad con agentes | Regla 00, hook `agent-guard`, sin credenciales remotas en laptops, Code Owners, Actions por SHA, `pnpm audit`, `rls_enabled.sql` | 35 casos del guard (hechos) + prueba en agy (T-001); `rls_enabled.sql` demostrado fallando (T-005) |
 | Selección de pin en mapa de Aguilares, distancia calculada en servidor y recorrido post-aceptación (D15) | T-106, T-116, T-117, T-314 | pgTAP de RLS de coordenadas (repartidor no aceptado recibe NULL); unitarias de bounding box y Haversine × 1.30; E2E T-314 con mock de Google Maps validando que en el feed no viajan coordenadas, revelación tras matched y degradación graceful a texto |
-| Sistema de diseño, tokens shadcn/ui y estrategia de logos (D16) | T-008, T-111 a T-115, T-121 a T-124 | Verificación de tokens HSL, contraste >= 4.5:1 (AAA 6.93:1 en botones primarios), piso tipográfico 14px (Anti-12px), logos optimizados en `public/brand/` (< 5 KB), manifest PWA con PNGs y ausencia de datos fantasma de Stitch en tests unitarios y de integración |
+| Sistema de diseño, tokens shadcn/ui, navegación canónica y estrategia de logos (D16) | T-008, T-111 a T-118, T-121 a T-124 | Verificación de tokens HSL, contraste >= 4.5:1 (AAA 6.93:1 en botones primarios), piso tipográfico 14px (Anti-12px), rutas por rol sin destinos inexistentes, capturas comparativas Stitch 390/360 px, logos optimizados en `public/brand/` (< 5 KB), manifest PWA con PNGs y ausencia de datos fantasma en tests unitarios y de integración |
 | Pruebas que prueban | Regla 40, DoD específico por tarea, umbral de cobertura en `domain` | Cada ficha registra en la bitácora la prueba demostrada fallando; CI con umbral de cobertura |
 | E2E de todos los flujos (D10) | T-301 a T-309, T-313 y T-314 | `e2e-staging` verde como check obligatorio de `main` |
 | Producción controlada | Solo Lautaro073 en `production` y en `staging → main` | Environment `production` con required reviewer (T-003) |
@@ -431,6 +433,11 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
     - Extirpación de 7 datos fantasma generados por Stitch: eliminación de estrellas y contadores de viajes (S4), precios sugeridos en ofertas, CUIT en comercios, pestaña "Liquidaciones" en Admin (D14), facturación AFIP/ARBA (D6), localidades foráneas ajenas a Aguilares (D13) y bultos no tipificados.
     - Refinamientos operativos: pin de entrega en C03 opcional (con centroide como fallback en hora pico) y selector rápido de cambio en efectivo ("Paga con: $ 2.000 / $ 5.000 / $ 10.000") visible en R07.
     - Tareas actualizadas con estos requerimientos: T-008, T-112, T-113, T-114, T-123.
+16. **Integración visual y navegación canónica (v2.6, T-118, 2026-09-24):**
+    - La verificación visual en `develop` confirmó que `/` seguía siendo el placeholder de T-000, P02/P03 carecían del shell público vinculante y el redirect de comercio apuntaba a `/merchant/dashboard` sin una ruta real.
+    - Se incorpora T-118 para implementar P01–P03, shells público/comercio/repartidor, rutas canónicas por rol y las vistas omitidas C07, C08 y R08, preservando la lógica entregada en T-009/T-111–T-114/T-121.
+    - Se fijan aliases de servidor para las rutas heredadas, pruebas de integridad contra 404 y loops, y evidencia comparativa a 390 px y 360 px con los PNG/README de Stitch.
+    - T-118 no absorbe viajes, mapas, admin, legal, PWA ni Realtime: esos alcances permanecen en T-115–T-117, T-122–T-124, T-311, T-201/T-202 y T-204.
 
 ### 11.4 Disensos preservados
 - **Un solo experto.** Backend, DevOps y PM pedían que la revisión no dependiera de una persona. Con el equipo real, Lautaro073 programa la zona más crítica, aprueba todos los PR de P2 y P3 y administra producción.
@@ -537,7 +544,7 @@ Las 36 vistas generadas en Stitch están archivadas en `docs/design/stitch/expor
 
 ### 12.8 Protocolo de implementación para agy y operadores
 
-Al tomar cualquier tarea de UI (T-008, T-111 a T-117, T-121 a T-124):
+Al tomar cualquier tarea de UI (T-008, T-111 a T-118, T-121 a T-124):
 1. **Lectura previa obligatoria:** El agente debe consultar el `README.md` de la carpeta correspondiente en `docs/design/stitch/exports/` antes de escribir código.
 2. **Utilizar componentes de `src/ui/`:** No crear elementos HTML crudos con estilos en línea. Usar las primitivas shadcn/ui (`Button`, `Card`, `Input`, `Dialog`, `Skeleton`, etc.).
 3. **Respetar tokens semánticos:** Usar clases semánticas de Tailwind (`bg-primary`, `text-primary-foreground`, `border-border`, etc.) mapeadas a `src/ui/tokens.css`.
