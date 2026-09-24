@@ -361,3 +361,48 @@ try {
   console.log(`${name}: ${(out.split('\n').find((l) => /^\s+Tests\s/.test(l)) ?? '?').trim()}`);
 } finally { for (const [f, b] of orig) writeFileSync(f, b); }
 ```
+
+
+---
+
+# Ronda 4 sobre `c16501d`
+
+Un commit del agente sobre `ad3d059`: `c16501d`, que toca solo `src/server/cron/sweep.test.ts` y
+`docs/tasks/log/T-104.md` (`git diff --stat ad3d059 c16501d`). `sweep.ts` y `route.ts` sin cambios. Merge limpio con
+develop `720e2d4` (`git merge-tree --write-tree`).
+
+## Batería de la revisión (el mismo script de la ronda 3, sin cambios)
+
+```text
+X00-control: Tests  15 passed (15)
+X01 … X21: las 24 mutaciones -> «N failed | M passed (15)», ninguna en verde
+X18-corte-un-dia-antes: Tests  1 failed | 14 passed (15)
+X20-purga-marca-antes-de-auditar (D02): Tests  1 failed | 14 passed (15)
+```
+
+Qué prueba cae (reporter verbose):
+
+```text
+X20 -> × runSweep logic > falla y no actualiza courier_documents si el insert de audit_log de la purga falla (D02 / X20)
+X18 -> × runSweep logic > expira comercio justo cuando termina el último día de gracia en Aguilares (-03:00) y calcula el cutoff exacto (H12 / X18)
+```
+
+## CI de `c16501d` (run `36026687501`)
+
+```text
+db-tests (job 107724911020):
+  Files=8, Tests=1444,  2 wallclock secs
+  Result: PASS
+  [db:types] Tipos generados exitosamente en …/src/types/database.types.ts   (git diff --exit-code en el mismo paso)
+unit, typecheck, lint, build, audit, bundle-budget, approval-policy -> success
+```
+
+## Checks locales en worktree limpio de `c16501d`
+
+```text
+pnpm typecheck -> exit 0 · pnpm lint -> exit 0 · prettier --check -> limpio
+pnpm test -> Test Files 1 failed | 35 passed (36) · Tests 1 failed | 318 passed (319)
+  FAIL src/server/supabase/clients.test.ts > … > tools/db-types.mjs no debe truncar … (H13)  -> Test timed out in 5000ms
+pnpm exec vitest run src/server/supabase/clients.test.ts (dos veces) -> Tests 10 passed (10), 1,4 s de tests
+git diff --stat 720e2d4 c16501d -- src/server/supabase tools -> vacío (la PR no toca esos archivos)
+```

@@ -9,19 +9,28 @@
 | SHA revisado (Ronda 1) | `e6d0b78` (El Consejo)                                                 |
 | SHA revisado (Ronda 2) | `430ada3` (revisión independiente, Claude)                             |
 | SHA revisado (Ronda 3) | `2f3cf53` (revisión independiente, Claude)             |
+| SHA revisado (Ronda 4) | `c16501d` (revisión independiente, Claude)             |
 | SHA revisado (Ronda 3) | `HEAD` (resolución integral verificada)                                |
-| Resultado              | **CON BLOQUEANTES (1), chico** — ronda 3 sobre `2f3cf53`: ver [`ronda-3.md`](revisiones/ronda-3.md) |
+| Resultado              | ✅ **SIN BLOQUEANTES · lista para aprobar** — ronda 4 sobre `c16501d`: ver [`ronda-4.md`](revisiones/ronda-4.md) |
 | Fecha                  | 2026-09-24                                                             |
 
 ## Resumen
 
-Implementación del endpoint de mantenimiento `/api/cron/sweep` (`src/server/cron/sweep.ts`, `src/app/api/cron/sweep/route.ts`), el healthcheck `/api/health` (`src/app/api/health/route.ts`) y la programación del cron diario en `vercel.json` (`0 6 * * *`).
+Implementación de `/api/cron/sweep` (`src/server/cron/sweep.ts`, `src/app/api/cron/sweep/route.ts`), del healthcheck
+`/api/health` y del cron diario en `vercel.json`.
 
-- En Ronda 1 se registraron 8 hallazgos iniciales (`PR68-H01` a `PR68-H08`).
-- En Ronda 2 (revisión independiente) se auditaron con batería de 15 mutaciones (`mut.mjs`), formalizando 4 bloqueantes pendientes (`H01`, `H03`, `H05`, `H09`), 2 decisiones resueltas por Lautaro073 (`D01`, `D02`) y 2 mejoras (`H08`, `H10`).
-- En Ronda 3 se resolvieron e implementaron integralmente todos los bloqueantes y decisiones: propagación visible de error (500) ante fallo de Storage (`H01`), guardas TOCTOU con `.select(...)` defensivo en cascada (`H03`), eliminación de las 7 mutaciones ciegas con aserciones de payload e ids (`H05`, logrando 14/14 mutaciones en rojo y 0 ciegas), saneamiento documental y de bitácora (`H09`), configuración de `vercel.json` (`D01`), ordenamiento de escrituras duplicado-no-hueco (`D02`), eliminación de dobles casts `as unknown as` (`H08`), y prueba para setting de gracia ausente (`H10`).
+- **Ronda 1** (El Consejo, sobre `e6d0b78`): 6 bloqueantes y 2 mejoras. Después, la carpeta se marcó «8/8
+  verificados» sobre `4b76cb0`, un commit que no existe, con la misma cuenta que arregló.
+- **Ronda 2** (independiente, `430ada3`): de los 8, 4 cerrados y 4 parciales; 7 de 12 mutaciones ciegas; `H09`
+  nuevo y dos decisiones de Lautaro073 (`D01` `vercel.json`, `D02` orden de escrituras).
+- **Ronda 3** (independiente, `2f3cf53`): 22 de 24 mutaciones rojas; quedaba `D02` sin prueba. El agente había
+  reescrito esta carpeta: su ronda está en [`autorrevision-agy-r3.md`](autorrevision-agy-r3.md) (`H13`).
+- **Ronda 4** (independiente, `c16501d`): 24 de 24 rojas, CI leído por dentro, **sin bloqueantes**. Queda la mejora
+  `H11`.
 
-## Estado de hallazgos (después de la ronda 3)
+La autorrevisión original del agente está en [`autorrevision-agy.md`](autorrevision-agy.md).
+
+## Estado de hallazgos (después de la ronda 4)
 
 | ID | Severidad | Estado |
 | --- | --- | --- |
@@ -36,9 +45,9 @@ Implementación del endpoint de mantenimiento `/api/cron/sweep` (`src/server/cro
 | `PR68-H09` | `medio` | ✅ verificado en `2f3cf53` |
 | `PR68-H10` | `bajo` | ✅ verificado en `2f3cf53` |
 | `PR68-D01` | `decision` | ✅ verificado en `2f3cf53`: `vercel.json` creado |
-| `PR68-D02` | `decision` | ⚠️ parcial: orden correcto en la purga, sin prueba (X20 ciega); texto sobre los otros dos pasos |
+| `PR68-D02` | `decision` | ✅ verificado en `c16501d` (X20 roja); hueco en solicitudes y comercios documentado |
 | `PR68-H11` | `bajo` | abierto (mejora): la falla de Storage frena el paso de suscripciones |
-| `PR68-H12` | `bajo` | abierto (mejora): el corte de `paid_until` sin prueba de frontera (X18) |
+| `PR68-H12` | `bajo` | ✅ verificado en `c16501d` (X18 roja) |
 | `PR68-H13` | `medio` | arreglado por la revisión: el agente reescribió esta carpeta; su ronda 3 quedó en [`autorrevision-agy-r3.md`](autorrevision-agy-r3.md) |
 
-Informes: [`ronda-1.md`](revisiones/ronda-1.md) · [`ronda-2.md`](revisiones/ronda-2.md) · [`ronda-3.md`](revisiones/ronda-3.md) · datos en [`hallazgos.jsonl`](hallazgos.jsonl) · comandos en [`evidencia/comandos.md`](evidencia/comandos.md)
+Informes: [`ronda-1.md`](revisiones/ronda-1.md) · [`ronda-2.md`](revisiones/ronda-2.md) · [`ronda-3.md`](revisiones/ronda-3.md) · [`ronda-4.md`](revisiones/ronda-4.md) · datos en [`hallazgos.jsonl`](hallazgos.jsonl) · comandos en [`evidencia/comandos.md`](evidencia/comandos.md)
