@@ -2,7 +2,7 @@
 
 Numeración continua del proyecto. `AG-01`…`AG-63` están en las carpetas de las PRs anteriores.
 
-**Fuente:** 12 registros en la ronda 1 (7 bloqueantes, 3 decisiones, 2 mejoras). Datos crudos en
+**Fuente:** 12 registros en la ronda 1 (7 bloqueantes, 3 decisiones, 2 mejoras) y 6 más en la ronda 2 (5 bloqueantes contando los parciales, 1 desvío aceptado, 1 mejora). Datos crudos en
 [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
@@ -75,6 +75,39 @@ evidencia escrita no había cómo saber qué estaba medido y qué supuesto.
 
 ---
 
+## Ronda 2
+
+### `AG-68` · Nombrar una aserción por la mutación que debe matar no prueba que la mate
+
+**Origen:** `H10`
+
+La ronda 1 dejó una tabla de mutaciones (M02 a M12), y la ronda 2 trajo una aserción por fila, nombrada con el
+ID de cada mutación. Ocho matan a su mutación. Dos, «M06a» y «M06b», no pueden: la fixture ya siembra el valor
+que la RPC produce, y dentro de una transacción `now()` no se mueve. Nadie corrió M06 contra ellas; si alguien lo
+hubiera hecho, en un minuto habría visto 1.196 en verde.
+
+> **Regla propuesta.** Cuando una revisión entrega una mutación junto con el hallazgo, el arreglo no está hecho
+> hasta que esa mutación se corrió contra la prueba nueva y se vio roja, y el rojo quedó en la bitácora. Una
+> aserción que el estado inicial ya satisface es la forma más común de que no pase: antes de afirmar un efecto, se
+> siembra un valor distinto del que el código va a escribir.
+
+### `AG-69` · Un arreglo que abre una transición nueva hereda todas las obligaciones de prueba de una transición
+
+**Origen:** `H11`, `H12`
+
+Los dos arreglos más grandes de la ronda crearon cosas que antes no existían: `H02` abrió «publicada vencida →
+publicada», y `D02` agregó una tabla con RLS. Las dos están bien construidas y las dos llegaron sin la prueba que
+su propia clase exige: los efectos de la transición (`H06`) y la matriz de RLS (`AG-32`). El arreglo se probó
+contra el hallazgo que lo motivó (S15, H03a), no contra la clase a la que pertenece lo que creó.
+
+> **Regla propuesta.** Si un arreglo agrega una transición, una tabla, una policy o una RPC, entra a la lista de
+> su clase y se le aplica la misma enumeración que a las demás: una transición, con sus efectos; una tabla con
+> RLS, con su matriz por rol y operación. Y quien revisa corre la batería de la clase entera sobre el SHA nuevo,
+> no solo las sondas de la ronda anterior: `H11` y `H12` no salieron de las sondas de la ronda 1, salieron de
+> agregar mutaciones para lo nuevo.
+
+---
+
 ## Advertencias
 
 - **Ronda 1 de una PR abierta.** `AG-64` y `AG-65` salen de un solo caso cada una.
@@ -99,3 +132,13 @@ veces.
 
 El reparto de `origen`: 8 `agente`, 3 `ambos` (`D01`, `H02`, `D02`) y 1 `ficha` (`D03`, donde la regla 30 no
 cubre las transiciones de ciclo exclusivas de admin).
+
+### Después de la ronda 2
+
+`P08` suma dos casos más (`H11`, `H12`) y `P04` uno (`H10`). En la ronda 2 **ningún hallazgo es de código**: la
+RPC hace lo correcto en las 15 sondas nuevas y en las 27 combinaciones de doble falla. Todo lo abierto es un
+control que no puede fallar o un texto que no dice lo que hay. Es el patrón dominante de esta PR, ahora sin la
+parte de código.
+
+`R01` repite `H05`: la PR reincidió en describir algo que no es. En la ronda 1 era una prueba que ya no existía;
+en la 2, código con otra forma. Las dos veces el texto se escribió desde la intención y no desde el diff.
