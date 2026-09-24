@@ -1,4 +1,4 @@
-# cadeApp — Plan de implementación para agentes (agy) · v2.6
+# cadeApp — Plan de implementación para agentes (agy) · v2.7
 
 > Revisado por El Consejo en `revision-3` (2026-09-18). **Estado: APROBADO CON RESOLUCIÓN D16.** El registro está en `.el-consejo/revision-3/`.
 > Qué construir: [master-plan.md](master-plan.md). Reglas y skills de agy: [`.agents/`](../.agents/). Diseños y especificaciones vinculantes: [`docs/design/stitch/exports/`](design/stitch/exports/registro.md).
@@ -227,11 +227,11 @@ Cada tablero está en orden. `∥` = se puede hacer en paralelo con la anterior.
 6. T-101 RPC de ofertas → T-103 RPC de solicitudes (no dependen entre sí: hacé primero la que destrabe a quien esté esperando)
 7. T-102 `accept_offer`
 8. T-106 Migración, RLS de coordenadas y RPC `calculate_route_distance` (Haversine × 1.30, bounding box Aguilares, fallback a `zones`)
-9. T-105 RPC de admin (destraba T-122 y T-123 de P3)
+9. T-105 RPC de admin (destraba T-122 y T-123, hoy asignadas a P1)
 10. T-104 Cron y health
 11. T-118 Integración visual Stitch, shells y navegación canónica (corrección transversal; sin viajes, mapas ni contratos de UI)
-12. T-203 Emisor de push (destraba T-202 de P3)
-13. T-310 Operación, backups y simulacro de restauración
+12. T-122 Shell admin, MFA y postulantes · T-123 Admin de comercios, settings y auditoría · T-124 Incidentes (asignadas a P1; después de T-115/T-121 y del contract-change de primitivas)
+13. T-201 PWA, estados transversales y error/404 (asignada a P1) · T-203 Emisor de push · T-310 Operación, backups y simulacro de restauración
 
 Siempre: revisar y aprobar los PR de P2 y P3 (§2), y atender las preguntas de §3.8 en los issues. Conviene reservar un bloque diario para revisiones, así nadie queda trabado.
 
@@ -240,27 +240,27 @@ Siempre: revisar y aprobar los PR de P2 y P3 (§2), y atender las preguntas de �
 2. T-009 Auth base (después de T-004 y T-005)
 3. T-111 Alta de comercio (con pin en mapa de Aguilares y fallback a texto)
 4. T-112 Crear solicitud (con pin de entrega opcional en mapa de Aguilares, retiro precargado y selector de cambio en efectivo)
-5. T-116 Componente de mapa `src/ui/map.tsx` (import dinámico) y selector interactivo de pin para comercio
+5. T-116 Componente de mapa `src/ui/map.tsx` (import dinámico) y selector interactivo de pin para comercio, después de su contract-change
 6. T-114 Panel del repartidor (con el fake hasta T-101; solo barrio y distancia aproximada, sin mapa, sin precio sugerido y sin ciudades ajenas)
 7. T-113 Mis solicitudes, ofertas y aceptar (real después de T-102; sin estrellas ni calificaciones según S4)
 8. T-115 Vista de viaje y WhatsApp
 9. T-117 Mapa de recorrido y botón "Abrir en Google Maps" en viaje activo (C06, R07; post-aceptación)
 10. T-204 Respaldo de tiempo real
-11. T-205 Pasada de accesibilidad
+11. T-205 Pasada final de accesibilidad (asignada a P2), después de T-115–T-118, T-201/T-202 y T-204
 12. T-313 E2E de registro de comercio · ∥ T-303 E2E del flujo principal · ∥ T-304 E2E de estados · ∥ T-307 E2E de notificaciones
 
 Mientras esperás T-000: onboarding (`docs/onboarding.md`) y lectura del master plan. Después: tests de dominio, estados vacíos y de error, y visto bueno cuando otra zona toca `src/ui` o las rutas de comercio y repartidor.
 
-### 7.3 Persona 3 · Admin, PWA y calidad (14 tareas)
-1. T-201 PWA (depende solo de T-000)
-2. T-121 Onboarding del repartidor (después de T-009 y T-008)
-3. T-123 Admin de comercios y plataforma (después de T-105; sin CUIT y sin solapa de liquidaciones en TopNav)
-4. T-122 Admin de repartidores
-5. T-124 Incidentes
-6. T-202 Cliente de push (después de T-203)
+### 7.3 Persona 3 · Admin, PWA y calidad (tablero histórico; las fichas corregidas reflejan la asignación vigente en Project)
+1. T-121 Onboarding del repartidor (después de T-009 y T-008)
+2. T-201 PWA, estados transversales y error/404 (vigente: P1; después de T-118)
+3. T-202 Cliente de push (vigente: P2; después de T-201 y T-203)
+4. T-122 Shell admin, MFA y postulantes (vigente: P1; después de T-121)
+5. T-123 Admin de comercios, plataforma y auditoría (vigente: P1; después de T-122)
+6. T-124 Incidentes (vigente: P1; después de T-115 y T-122)
 7. T-301 Arnés E2E
 8. T-302 E2E de onboarding · ∥ T-305 E2E de autorización · ∥ T-306 E2E de piloto y suscripción · ∥ T-308 E2E de incidentes · ∥ T-309 E2E de cargas y accesibilidad · ∥ T-314 E2E de mapas, privacidad y degradación
-9. T-311 Páginas legales (bloqueante externo: abogado)
+9. T-311 Páginas legales (vigente: P1; bloqueante externo: abogado; después de T-118)
 
 Mientras esperás T-000: onboarding y lectura del master plan. Después: preparar fixtures y page objects para T-301, y visto bueno cuando otra zona toca `(public)`, `(admin)` o `e2e/`.
 
@@ -298,24 +298,24 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 | T-112 | P2 | Crear solicitud (barrios, direcciones, pin de entrega opcional en mapa de Aguilares con fallback a centroide de `zones`, retiro precargado del comercio editable, selector de cambio en efectivo con chips rápidos "Paga con: $ 2.000 / $ 5.000 / $ 10.000", destinatario con declaración, paquete tipificado en enum `['sobre', 'chico', 'mediano', 'grande']`, indicaciones, medio de pago del destinatario) | T-009 (T-103 o fake) | `src/features/requests/**`, `src/app/(merchant)/requests/new/**` | Tests del schema y de la action; contactos y coordenadas opcionales en `delivery_request_contacts`; cálculo de distancia en servidor invocado (con coordenadas o centroide de zona); chips de cambio guardan `cash_change_amount`; bloqueo sin piloto ni suscripción |
 | T-113 | P2 | Mis solicitudes, ofertas en tiempo real (orden por `doc_level` o por precio, insignias de documentación verificada; sin estrellas ni calificaciones de Stitch según S4), aceptar con modal de confirmación y desglose de tarifa y medio de pago | T-112, T-102 | `src/features/requests/**`, `src/features/offers/**`, `src/app/(merchant)/requests/**` | Test de la action de aceptar, incluido `ALREADY_MATCHED`; la oferta nueva aparece sin recargar; verificación de ausencia total de estrellas/reviews ("4.9 ★ 182 viajes") |
 | T-114 | P2 | Panel del repartidor: disponibilidad, lista única sin contactos ni mapa (solo barrio de retiro, barrio de entrega y distancia aproximada redondeada; D3/D15; restringido a Aguilares, sin ciudades de prueba de Stitch), tarjetas con piso 14px e indicador visual de necesidad de cambio, ofertar con piso visible (ofertas libres >= $1.000, sin "precio sugerido" de Stitch), retirar, mis ofertas, pantalla "en revisión" | T-009, T-101 (o fake) | `src/features/availability/**`, `src/features/offers/**`, `src/app/(courier)/**` salvo `onboarding/` | Tests de las actions; un pending ve "en revisión"; una oferta bajo el piso muestra el error del servidor; se valida que no viajen coordenadas ni mapa en el DOM ni en la red; sin textos de precio sugerido |
-| T-115 | P2 | Vista de viaje: contactos tras aceptar, foto/nombre/vehículo, WhatsApp comercio↔repartidor y "Avisar a mi cliente", retirado/entregado, cancelar, no llegó, republicar | T-103, T-113 | `src/features/trips/**`, `src/app/(merchant)/trips/**`, `src/app/(courier)/trips/**`, `src/lib/whatsapp.ts` | Unit de los mensajes (monto aceptado, sin datos de más); tests de actions por transición |
-| T-116 | P2 | Componente de mapa `src/ui/map.tsx` (Google Maps Platform con `@vis.gl/react-google-maps` en import dinámico con `Skeleton`), selector interactivo de pin (crosshair central fijo desplazable, botón "Usar mi ubicación", botones de ajuste fino) para alta de comercio (T-111) y creación de solicitud (T-112), validación Zod de bounding box de Aguilares, y fallback graceful a formulario de texto si la API no carga o está offline | T-008, T-111, T-112, T-106 | `src/ui/map.tsx`, `src/features/merchants/**`, `src/features/requests/**`, `src/app/(merchant)/**` | Tests unitarios de `src/ui/map.tsx` (renderiza fallback si google falla o no hay API key); selección de pin actualiza coordenadas y dirección; Zod rechaza coordenadas fuera de Aguilares; axe AA sin violaciones; first-load bundle JS < 180 KB respetado mediante import dinámico |
-| T-117 | P2 | Mapa de recorrido y botón "Abrir en Google Maps" en vista de viaje (T-115, C06, R07): renderizado interactivo de ruta orientativa entre retiro y entrega revelados ÚNICAMENTE tras la aceptación de la oferta, botón de navegación externa (`https://www.google.com/maps/dir/`), y verificación de que el feed de repartidor (T-114, R04, R05) no contenga mapas ni coordenadas (D3/D15) | T-115, T-106, T-116 | `src/features/trips/**`, `src/features/offers/**`, `src/app/(courier)/**`, `src/app/(merchant)/trips/**` | Test de integración: el feed del repartidor no monta mapa ni filtra coordenadas; la vista de viaje renderiza los dos pines tras matched; el botón "Abrir en Google Maps" genera la URL canónica con `encodeURIComponent`; con mapa caído, el botón externo y las direcciones en texto siguen 100% operativos |
+| T-115 | P2 | Vista de viaje C06/R07 y diálogo transversal T05: contactos tras aceptar, foto/nombre/vehículo, WhatsApp comercio↔repartidor y "Avisar a mi cliente", retirado/entregado, cancelación segura, no llegó y republicar | T-103, T-113 | `src/features/trips/**`, `src/app/(merchant)/trips/**`, `src/app/(courier)/trips/**`, `src/lib/whatsapp.ts` | Pruebas en rojo antes de implementar y commit separado: cubren mensajes sin datos de más, transitions válidas/ inválidas, `report_no_show`, republicación y cancelación con motivo obligatorio; se demuestra que fallan antes del arreglo. |
+| T-116 | P2 | Componente de mapa `src/ui/map.tsx` para C01/C03 y T03-mapa-sin-conexión, con `@vis.gl/react-google-maps` en import dinámico, selector de pin, bounding box de Aguilares y fallback de texto | T-008, T-111, T-112, T-106 y contract-change aprobado | `src/ui/map.tsx`, `src/ui/map.test.tsx`, `src/features/merchants/**`, `src/features/requests/**`, `src/app/(merchant)/**`, `package.json`, `pnpm-lock.yaml` | Pruebas en rojo antes de implementar y commit separado: fallback sin API key o con Google caído, selección de pin, botón de ubicación, ajuste fino y límites de Aguilares. |
+| T-117 | P2 | Mapa de recorrido y botón "Abrir en Google Maps" en C06/R07, únicamente después de aceptar la oferta, sin live tracking y sin mapas/coordenadas en el feed R04/R05 | T-115, T-106, T-116 | `src/features/trips/**`, `src/features/offers/**`, `src/app/(courier)/**`, `src/app/(merchant)/trips/**` | Pruebas en rojo antes de implementar y commit separado: feed sin mapa/coordenadas, mapa visible solamente después de `matched`, URL externa canónica y fallback con mapa caído. |
 | T-118 | P1 | Integración visual Stitch y navegación canónica: P01–P03, shells público/comercio/repartidor, rutas por rol, C01–C05/C07/C08 y R01–R06/R08; corrige placeholder, redirects y destinos inexistentes sin modificar viajes, mapas ni contratos de UI | T-008, T-009, T-111, T-112, T-113, T-114, T-121 | `src/app/page.tsx`, subrutas públicas y canónicas de comercio/repartidor detalladas en `docs/tasks/T-118.md`, componentes/copy/queries de auth, merchants, requests, offers, courier-onboarding y availability, `middleware.ts` | **Pruebas en rojo antes de implementar y commit separado:** demuestran que P01 sigue siendo el placeholder, que `/merchant/dashboard`, C07, C08 y R08 no existen, que los redirects/enlaces de comercio no resuelven y que el onboarding no está aislado por rol. |
 | T-121 | P3 | Onboarding del repartidor: DNI, selfie, avatar, vehículo, licencia y seguro opcionales, consentimientos, compresión, progreso y reintento, `dni_hmac` | T-009, T-008 | `src/features/courier-onboarding/**`, `src/app/(courier)/onboarding/**` (visto bueno P2), `src/lib/image-compression.ts` (visto bueno P2) | Unit de compresión; la subida resiste un corte de red; DNI de un rechazado bloqueado |
-| T-122 | P3 | Admin de repartidores: MFA obligatorio, cola, visor de documentos auditado, aprobar/rechazar/suspender, verificar licencia y seguro | T-121, T-105, T-008 | `src/features/admin/**`, `src/app/(admin)/couriers/**` | Sin aal2 no se entra; cada vista de documento crea una fila en `audit_log`; tests de actions |
-| T-123 | P3 | Admin de comercios y plataforma: tabla de comercios sin CUIT (dato fantasma de Stitch extirpado), TopNav institucional blanco con `<BrandLogo variant="horizontal-color" />` y sin solapa "Liquidaciones" (D14), piloto, pago manual y `paid_until`, settings (piso, TTL, gracia, versión de términos) | T-105, T-008 | `src/features/admin/**`, `src/app/(admin)/merchants/**`, `src/app/(admin)/settings/**` | Cambios auditados; tests de actions; sin campo CUIT en vistas ni en types del admin; sin ruta ni vista de liquidaciones en el bundle |
-| T-124 | P3 | Incidentes: botón en el viaje, bandeja admin, resolución y suspensión cautelar | T-103, T-105, T-115, T-008 | `src/features/incidents/**`, `src/app/(admin)/incidents/**`, botón en `src/app/(merchant)/trips/**` y `src/app/(courier)/trips/**` (visto bueno P2) | El reporte llega al admin; la suspensión cautelar es inmediata |
+| T-122 | P1 | Shell admin, MFA A00 y gestión de repartidores A01/A02: cola, visor de documentos auditado, aprobar/rechazar/suspender, verificar licencia y seguro | T-121, T-105, T-008, T-009 | `src/features/admin/**`, `src/app/(admin)/layout.tsx`, `src/app/(admin)/admin-nav.tsx`, `src/app/(admin)/login/mfa/**`, `src/app/(admin)/applicants/**`, `src/app/(admin)/couriers/**` | Pruebas en rojo antes de implementar y commit separado: sin `aal2` no se entra, un merchant/courier no atraviesa el shell admin, la cola y el detalle no existen y la vista documental no registra auditoría. |
+| T-123 | P1 | Admin de comercios/plataforma A03/A04 y auditoría A06 sobre el shell de T-122: tabla sin CUIT, piloto, pago manual, settings y auditoría paginada | T-105, T-008, T-122 | `src/features/admin/**`, `src/app/(admin)/merchants/**`, `src/app/(admin)/settings/**`, `src/app/(admin)/audit/**` | Pruebas en rojo antes de implementar y commit separado: A03/A04/A06 no existen, las mutaciones no auditan, aparece CUIT o Liquidaciones y la lectura de auditoría no pagina server-side. |
+| T-124 | P1 | Incidentes A05: botón en C06/R07, bandeja admin, resolución y suspensión cautelar | T-103, T-105, T-115, T-008, T-122 | `src/features/incidents/**`, `src/app/(admin)/incidents/**`, `src/app/(merchant)/trips/**`, `src/app/(courier)/trips/**` | Pruebas en rojo antes de implementar y commit separado: el reporte no llega a la bandeja, una persona sin permisos puede resolver y la suspensión cautelar no retira inmediatamente la capacidad de ofertar. |
 
 ### Fase 2 — PWA, notificaciones y accesibilidad
 
 | ID | Quién | Tarea | Depende de | Archivos permitidos | DoD específico |
 |---|---|---|---|---|---|
-| T-201 | P3 | Manifest, íconos maskable, service worker (shell offline, caché de lectura), onboarding de instalación en iOS | T-000 | `public/**`, `src/app/manifest.ts`, `src/app/sw.ts` (o equivalente), `src/features/notifications/install/**` | Instalable en Chrome Android; offline muestra el shell y un aviso |
-| T-202 | P3 | Cliente de push: permiso desde un gesto, alta y baja de la suscripción, handlers `push` y `notificationclick` | T-201, T-203 | `src/features/notifications/**` | Con el permiso denegado el flujo no se rompe; el click abre la pantalla correcta |
+| T-201 | P1 | PWA, T01/T03/T04: manifest, íconos maskable, service worker, shell offline, error/404 y onboarding de instalación en iOS | T-000, T-008, T-118 | `public/**`, `src/app/manifest.ts`, `src/app/sw.ts`, `src/app/sw.test.ts`, `src/app/error.tsx`, `src/app/not-found.tsx`, `src/app/providers.tsx`, `src/features/notifications/install/**`, `src/features/notifications/offline/**` | Pruebas en rojo antes de implementar y commit separado: manifest incompleto, íconos ausentes, offline sin aviso, error/404 sin diseño y guía iOS inexistente. |
+| T-202 | P2 | Cliente de push y T02: soft prompt, alta/baja, handlers `push`/`notificationclick` y destino correcto | T-201, T-203, T-118 | `src/features/notifications/push/**`, `src/app/sw.ts`, `src/app/sw.test.ts`, `src/app/(courier)/courier/profile/**` | Pruebas en rojo antes de implementar y commit separado: T02 no existe, el permiso se solicita fuera de un gesto, una suscripción no se elimina y `notificationclick` abre un destino incorrecto. |
 | T-203 | P1 | Emisor de push (fallo del Juez de revision-1) | T-103 | `src/server/push/**`, `src/app/api/push/**`, `supabase/migrations/**` | El payload no lleva datos personales; una falla del emisor no revierte la transición; un 410 borra la suscripción |
 | T-204 | P2 | Datos en vivo con TanStack Query (`query-keys.ts` por feature, datos iniciales del servidor, `refetchOnWindowFocus` y `refetchOnReconnect`), invalidación por Supabase Realtime (un canal por pantalla, con debounce), polling de 30 s solo en pantallas activas, badges | T-113, T-114 | `src/features/{requests,offers,trips}/hooks/**`, `src/features/{requests,offers,trips}/query-keys.ts`, `src/lib/hooks/use-realtime-invalidation.ts` | Con el push apagado, la oferta nueva aparece al volver a la app; al desmontar la pantalla se cierra el canal; Realtime no escribe la caché a mano |
-| T-205 | P2 | Pasada de accesibilidad y rendimiento en las pantallas de comercio y repartidor | T-115, T-204 | features de P2, `src/ui/**` | axe AA sin violaciones; objetivos de 48 px; `inputmode` numérico; Lighthouse móvil ≥ 80 en rendimiento y ≥ 95 en accesibilidad en crear solicitud, detalle con ofertas, lista del repartidor y viaje; first-load JS dentro del presupuesto de la regla 25 |
+| T-205 | P2 | Pasada final de accesibilidad y rendimiento en comercio, repartidor, onboarding y estados transversales, después de cerrar las tareas visuales | T-115, T-116, T-117, T-118, T-201, T-202, T-204 | `src/features/{auth,merchants,requests,offers,trips,availability}/**`, `src/features/courier-onboarding/**`, `src/features/notifications/**`, `src/app/(merchant)/**`, `src/app/(courier)/**` | Pruebas y auditoría en rojo antes de corregir, con commit separado: al menos una violación axe, un target menor de 48 px, un input sin `inputmode` y una ruta que supera el presupuesto. |
 
 ### Fase 3 — Calidad, operación y salida
 
@@ -331,7 +331,7 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 | T-308 | P3 | E2E de incidentes y suspensión cautelar | T-301, T-124 | `e2e/specs/incidents.spec.ts` | El reporte llega a la bandeja; el suspendido no oferta ni puede ser aceptado; falla si `accept_offer` no revalida |
 | T-309 | P3 | E2E de carga de documentos con red lenta y accesibilidad | T-301, T-121 | `e2e/specs/uploads-a11y.spec.ts` | Con red 3G simulada y un corte, la carga se completa al reintentar; el servidor rechaza un archivo inválido; axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding |
 | T-310 | P1 | Backups y PITR, bucket de documentos fuera del backup, simulacro de restauración en staging, Sentry sin datos personales, uptime y alertas | T-104, T-007 | `docs/adr/**`, `docs/runbooks/**`, `src/server/observability/**` | Acta del simulacro; alerta de prueba recibida |
-| T-311 | P3 | Páginas legales y consentimientos versionados | T-111, T-121 | `src/features/legal/**`, `src/app/(public)/legal/**` | Textos revisados por un abogado (bloqueante externo); versión aceptada registrada |
+| T-311 | P1 | Páginas legales P04 y consentimientos versionados, con contenido revisado por abogado | T-111, T-118, T-121 | `src/features/legal/**`, `src/app/(public)/legal/**` | La tarea permanece bloqueada hasta recibir textos revisados por un abogado. No se implementan textos legales inventados ni placeholders presentados como términos definitivos. |
 | T-312 | Todos | Checklist de release `staging → main` | T-302…T-311, T-313, T-314 | `docs/runbooks/release.md` | E2E completo verde; migraciones aplicadas; variables de producción; nota de rollback; abogado OK; simulacro OK; **revisión de seguridad independiente** de `supabase/migrations` y `src/server` (rol security de El Consejo sobre el diff acumulado, porque no hay un segundo experto); **aprobación de Lautaro073** |
 | T-313 | P2 | E2E de registro de comercio y consentimientos | T-301, T-111 | `e2e/specs/merchant-registration.spec.ts` (visto bueno P3) | Alta completa y panel visible; versión de consentimiento registrada; un courier no entra a `(merchant)`; falla si no se guarda el consentimiento |
 | T-314 | P3 | E2E de mapas, geolocalización, privacidad (D3/D15) y degradación graceful (mock Google Maps) | T-301, T-106, T-116, T-117 | `e2e/specs/map-privacy.spec.ts` | Playwright mockea Maps API (0 llamadas a Google); valida que el feed abierto no tenga tags con coordenadas; valida selección de pin en alta y solicitud; valida error inline con pin fuera de Aguilares; valida que tras matched aparezca el mapa y botón Google Maps; valida degradación cuando Maps falla |
@@ -438,6 +438,12 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
     - Se incorpora T-118 para implementar P01–P03, shells público/comercio/repartidor, rutas canónicas por rol y las vistas omitidas C07, C08 y R08, preservando la lógica entregada en T-009/T-111–T-114/T-121.
     - Se fijan aliases de servidor para las rutas heredadas, pruebas de integridad contra 404 y loops, y evidencia comparativa a 390 px y 360 px con los PNG/README de Stitch.
     - T-118 no absorbe viajes, mapas, admin, legal, PWA ni Realtime: esos alcances permanecen en T-115–T-117, T-122–T-124, T-311, T-201/T-202 y T-204.
+17. **Endurecimiento de las fichas visuales pendientes (v2.7, T-001, 2026-09-24):**
+    - T-115–T-117, T-122–T-124, T-201/T-202, T-205 y T-311 ahora referencian explícitamente sus README de Stitch, `implementar-diseno`, pruebas rojas separadas, navegador, capturas a 390/360 px y estados de carga/vacío/error cuando corresponde.
+    - Se asignan A00/A01/A02 a T-122, A03/A04/A06 a T-123, A05 a T-124 y T01/T03/T04 a T-201; T02 queda en T-202. Se elimina el hueco de Auditoría y error/404 del plan.
+    - T-122 crea el shell admin compartido; T-123 y T-124 dependen de él. T-205 se mueve al final de las tareas móviles para evitar una segunda pasada de accesibilidad.
+    - T-116 exige un `contract-change` previo para `src/ui/map.tsx` y `@vis.gl/react-google-maps`; las primitivas admin faltantes siguen el mismo procedimiento. T-311 permanece bloqueada hasta recibir textos legales aprobados.
+    - Se sincronizan en el plan los dueños vigentes del Project para T-122, T-123, T-124, T-201, T-202 y T-311.
 
 ### 11.4 Disensos preservados
 - **Un solo experto.** Backend, DevOps y PM pedían que la revisión no dependiera de una persona. Con el equipo real, Lautaro073 programa la zona más crítica, aprueba todos los PR de P2 y P3 y administra producción.
