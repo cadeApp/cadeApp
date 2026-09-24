@@ -313,7 +313,6 @@ update public.platform_settings set value = '"invalid"'::jsonb where key = 'requ
 select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
   'INTERNAL_ERROR', 'configuración inválida falla cerrada sin filtrar SQL');
 
--- Dos conexiones reales: cancelar mantiene el lock hasta commit y retiro revalida
 select pg_temp.fixture('matched');
 update public.delivery_requests set matched_at = now() - interval '10 minutes' where id = pg_temp.actor(20);
 select ok(pg_temp.invoke(1, format('select public.cancel_request(%L, ''Cambio de planes'')', pg_temp.actor(20))) ? 'data',
@@ -322,7 +321,7 @@ select is((select matched_at from public.delivery_requests where id = pg_temp.ac
   now() - interval '10 minutes', 'cancelar preserva el hito histórico de match');
 
 create function pg_temp.eligibility_errors() returns setof text language plpgsql as $$
-declare c record; a text;
+declare c record;
 begin
   for c in select * from rpc_cases where name in ('mark_picked_up','mark_delivered','courier_cancel_match','report_incident') loop
     perform pg_temp.fixture(case when c.name = 'mark_delivered' then 'in_transit' else 'matched' end);
@@ -342,6 +341,14 @@ begin
 end;
 $$;
 select * from pg_temp.eligibility_errors();
+
+select pg_temp.fixture('draft');
+insert into public.rate_limits (subject, action, window_start, count)
+values (pg_temp.actor(1)::text, 'publish_request', date_trunc('minute', now()), 1);
+select is(pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)))->>'error',
+  'RATE_LIMITED', 'publicar rechaza contador agotado');
+select is((select status::text from public.delivery_requests where id = pg_temp.actor(20)), 'draft',
+  'publicar limitado conserva borrador');
 
 -- Dos conexiones reales: cancelar mantiene el lock hasta commit y retiro revalida
 -- el estado luego. lock_timeout acota la contención; no hay sleeps ni carreras de reloj.
