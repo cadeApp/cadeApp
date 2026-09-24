@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { TopBar } from '@/ui/top-bar';
 import { Badge } from '@/ui/badge';
 import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
@@ -79,11 +78,7 @@ export function CourierFeed({
   };
 
   return (
-    <div className="max-w-md mx-auto pb-20">
-      {/* Barra superior con logo */}
-      <TopBar title="cadeApp" showLogo={true} />
-
-      <div className="p-4 space-y-4">
+    <div className="space-y-4 p-4">
         {/* Conmutador de disponibilidad (R04) */}
         <AvailabilitySwitch
           initialAvailable={available}
@@ -152,7 +147,6 @@ export function CourierFeed({
             )}
           </>
         )}
-      </div>
 
       {/* Bottom Sheet para ofertar (R05) */}
       <OfferSheet

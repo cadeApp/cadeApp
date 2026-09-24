@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { TopBar } from '@/ui/top-bar';
 import { Card, CardContent } from '@/ui/card';
 import { Button } from '@/ui/button';
 import { Badge } from '@/ui/badge';
@@ -58,10 +57,10 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
       : otherOffers;
 
   return (
-    <div className="max-w-md mx-auto pb-20">
-      <TopBar title={OFFERS_COPY.myOffersTitle} />
-
-      <div className="p-4 space-y-4">
+    <div className="space-y-4 p-4">
+      <h1 className="font-display text-xl font-bold text-foreground">
+        {OFFERS_COPY.myOffersTitle}
+      </h1>
         {/* Pestañas de estado (R06) */}
         <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1">
           <button
@@ -212,7 +211,6 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
             )}
           </>
         )}
-      </div>
 
       {/* Diálogo de confirmación para retirar oferta */}
       <ConfirmDialog

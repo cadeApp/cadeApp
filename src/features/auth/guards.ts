@@ -147,6 +147,80 @@ export function evaluateRouteGuard(
     };
   }
 
+  // 2.b. Redirecciones de aliases heredados a sus rutas canónicas (evita loops y unifica destinos)
+  if (pathname === '/onboarding') {
+    if (session.role === 'merchant') {
+      return { action: 'redirect', redirectTo: '/merchant/onboarding' };
+    }
+    if (session.role === 'courier') {
+      return { action: 'redirect', redirectTo: '/courier/onboarding/identity' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/onboarding/identity') {
+    if (session.role === 'courier') {
+      return { action: 'redirect', redirectTo: '/courier/onboarding/identity' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/onboarding/vehicle') {
+    if (session.role === 'courier') {
+      return { action: 'redirect', redirectTo: '/courier/onboarding/vehicle' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/onboarding/status') {
+    if (session.role === 'courier') {
+      return { action: 'redirect', redirectTo: '/courier/onboarding/status' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/requests') {
+    if (session.role === 'merchant') {
+      return { action: 'redirect', redirectTo: '/merchant/dashboard' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/requests/new') {
+    if (session.role === 'merchant') {
+      return { action: 'redirect', redirectTo: '/merchant/requests/new' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname.startsWith('/requests/')) {
+    if (session.role === 'merchant') {
+      return { action: 'redirect', redirectTo: `/merchant${pathname}` };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/feed') {
+    if (session.role === 'courier') {
+      return { action: 'redirect', redirectTo: '/courier/feed' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/offers') {
+    if (session.role === 'courier') {
+      return { action: 'redirect', redirectTo: '/courier/offers' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
+  if (pathname === '/profile') {
+    if (session.role === 'courier') {
+      return { action: 'redirect', redirectTo: '/courier/profile' };
+    }
+    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+  }
+
   // 3. Rutas protegidas de administrador (admin)
   if (isAdminRoute(pathname)) {
     if (session.role !== 'admin') {

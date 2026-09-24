@@ -8,9 +8,9 @@ import { registerAction } from '../actions';
 import { authCopy } from '../copy';
 import type { SignupRole } from '../schemas';
 
-export function RegisterForm() {
+export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
   const router = useRouter();
-  const [role, setRole] = useState<SignupRole>('merchant');
+  const [role, setRole] = useState<SignupRole>(initialRole || 'merchant');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [acceptTerms, setAcceptTerms] = useState(false);

@@ -33,4 +33,16 @@ export const authCopy = {
     errorAdminRejected: 'El rol solicitado no es válido para el registro público.',
     errorTermsRequired: 'Tenés que aceptar los Términos y la Política de privacidad.',
   },
+  forgotPassword: {
+    title: 'Recuperá tu contraseña',
+    subtitle: 'Ingresá tu email y te mandamos las instrucciones para volver a entrar.',
+    emailLabel: 'Email',
+    emailPlaceholder: 'tu@email.com',
+    submitButton: 'Enviar instrucciones',
+    loadingButton: 'Enviando...',
+    backToLogin: 'Volver al ingreso',
+    successMessage:
+      'Si el email coincide con una cuenta registrada, te enviamos las instrucciones para restablecer tu contraseña. Revisá tu casilla de correo.',
+  },
 } as const;
+

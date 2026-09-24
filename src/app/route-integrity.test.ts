@@ -6,9 +6,9 @@ import {
   getRoleDefaultPath,
   isMerchantRoute,
   isCourierRoute,
+  registerAction,
   type AuthSession,
-} from '@/features/auth/guards';
-import { registerAction } from '@/features/auth/actions';
+} from '@/features/auth';
 import * as serverSupabase from '@/server/supabase/server';
 
 vi.mock('@/server/supabase/server', () => ({

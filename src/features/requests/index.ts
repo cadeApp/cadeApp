@@ -7,4 +7,5 @@ export * from './components/request-offers-list';
 export * from './components/request-offers-skeleton';
 export * from './components/merchant-requests-list';
 export * from './components/merchant-requests-skeleton';
+export * from './components/merchant-history-view';
 export * from './hooks/use-request-offers';
