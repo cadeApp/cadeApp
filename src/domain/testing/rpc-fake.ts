@@ -35,6 +35,8 @@ import {
 export interface FakePlatformSettings {
   readonly minOfferArs: number;
   readonly maxOffersPerMin: number;
+  readonly maxRequestPublicationsPerMin: number;
+  readonly maxIncidentsPerMin: number;
   readonly requestTtlMinutes: number;
   readonly pilotActive: boolean;
   readonly pilotTermsVersion: string;
@@ -214,7 +216,7 @@ const INCIDENT_WINDOW_MS = 24 * 3_600_000;
 function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatformSettings {
   if (!options || typeof options !== 'object' || !options.settings) {
     throw new Error(
-      'createFakeRpcClient requires explicit options.settings (minOfferArs, maxOffersPerMin, requestTtlMinutes, pilotActive, pilotTermsVersion, subscriptionGraceDays)'
+      'createFakeRpcClient requires explicit options.settings (minOfferArs, maxOffersPerMin, maxRequestPublicationsPerMin, maxIncidentsPerMin, requestTtlMinutes, pilotActive, pilotTermsVersion, subscriptionGraceDays)'
     );
   }
   const { settings } = options;
@@ -223,6 +225,10 @@ function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatfo
     settings.minOfferArs < 1 ||
     !Number.isInteger(settings.maxOffersPerMin) ||
     settings.maxOffersPerMin < 1 ||
+    !Number.isInteger(settings.maxRequestPublicationsPerMin) ||
+    settings.maxRequestPublicationsPerMin < 1 ||
+    !Number.isInteger(settings.maxIncidentsPerMin) ||
+    settings.maxIncidentsPerMin < 1 ||
     !Number.isInteger(settings.requestTtlMinutes) ||
     settings.requestTtlMinutes < 1 ||
     typeof settings.pilotActive !== 'boolean' ||
@@ -270,6 +276,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     const next = (rateLimits.get(key) ?? 0) + 1;
     rateLimits.set(key, next);
     return next;
+  }
+
+  function consumeRequestRate(
+    action: 'publish_request' | 'report_incident',
+    limit: number,
+    currentNow: Date
+  ): ActionResult<true, 'RATE_LIMITED'> {
+    if (getWindowRateCount(actor.userId, action, currentNow) >= limit) {
+      return err('RATE_LIMITED');
+    }
+    incrementWindowRateCount(actor.userId, action, currentNow);
+    return ok(true);
   }
 
   function nextUniqueOfferId(): string {
@@ -496,6 +514,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           );
         }
 
+        const rate = consumeRequestRate(
+          'publish_request',
+          settings.maxRequestPublicationsPerMin,
+          currentNow
+        );
+        if (!rate.ok) return rate;
         const publishedAt = currentNow.toISOString();
         const expiresAt = new Date(
           currentNow.getTime() + settings.requestTtlMinutes * 60_000
@@ -886,12 +910,19 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           if (!input.reason || input.reason.trim().length === 0) {
             return err('REASON_REQUIRED');
           }
-          if (req.acceptedOfferId) {
-            const acceptedOffer = offers.get(req.acceptedOfferId);
-            if (acceptedOffer) acceptedOffer.status = 'cancelled';
-          }
         } else if (req.status !== 'expired' && req.status !== 'cancelled') {
           return err('INVALID_STATE_TRANSITION');
+        }
+
+        const rate = consumeRequestRate(
+          'publish_request',
+          settings.maxRequestPublicationsPerMin,
+          currentNow
+        );
+        if (!rate.ok) return rate;
+        if (req.status === 'matched' && req.acceptedOfferId) {
+          const acceptedOffer = offers.get(req.acceptedOfferId);
+          if (acceptedOffer) acceptedOffer.status = 'cancelled';
         }
 
         const publishedAt = currentNow.toISOString();
@@ -941,6 +972,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('INVALID_STATE_TRANSITION');
         }
 
+        const rate = consumeRequestRate('report_incident', settings.maxIncidentsPerMin, currentNow);
+        if (!rate.ok) return rate;
         incidentSeq += 1;
         const incidentId = `00000000-0000-4000-8000-${String(10_000 + incidentSeq).padStart(12, '0')}`;
         return ok({
