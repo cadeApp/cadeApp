@@ -1031,11 +1031,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_decide_courier: (rawInput) =>
       executeRpc('admin_decide_courier', rawInput, true, (input) => {
-        const courier = couriers.get(input.courierId);
-        if (!courier) return err('NOT_FOUND');
         if (input.decision === 'rejected' && (!input.reason || input.reason.trim().length === 0)) {
           return err('REASON_REQUIRED');
         }
+        const courier = couriers.get(input.courierId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status !== 'pending') return err('INVALID_STATE_TRANSITION');
         courier.status = input.decision;
         return ok({
           courierId: input.courierId,
@@ -1046,8 +1047,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_suspend_courier: (rawInput) =>
       executeRpc('admin_suspend_courier', rawInput, true, (input) => {
+        if (!input.reason || input.reason.trim().length === 0) {
+          return err('REASON_REQUIRED');
+        }
         const courier = couriers.get(input.courierId);
         if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'suspended') return err('INVALID_STATE_TRANSITION');
 
         courier.status = 'suspended';
         courier.available = false;
@@ -1070,13 +1075,16 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_verify_document: (rawInput) =>
       executeRpc('admin_verify_document', rawInput, true, (input) => {
-        const doc = documents.get(input.documentId);
-        if (!doc) return err('NOT_FOUND');
-        const courier = couriers.get(doc.courierId);
-        if (!courier) return err('NOT_FOUND');
         if (input.decision === 'rejected' && (!input.reason || input.reason.trim().length === 0)) {
           return err('REASON_REQUIRED');
         }
+        const doc = documents.get(input.documentId);
+        if (!doc) return err('NOT_FOUND');
+        if (doc.status !== 'submitted') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        const courier = couriers.get(doc.courierId);
+        if (!courier) return err('NOT_FOUND');
 
         doc.status = input.decision;
         if (doc.kind === 'license') courier.licenseStatus = input.decision;
