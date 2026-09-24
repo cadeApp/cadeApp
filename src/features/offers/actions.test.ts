@@ -1,7 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { revalidatePath } from 'next/cache';
 import * as serverSupabase from '@/server/supabase/server';
 import * as offersRpc from '@/server/rpc/offers';
-import { submitOfferAction, withdrawOfferAction, acceptOfferAction } from './actions';
+import {
+  submitOfferAction,
+  withdrawOfferAction,
+  acceptOfferAction,
+  type AcceptOfferResult,
+} from './actions';
+
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
@@ -478,7 +485,7 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
       }
     });
 
-    it('retorna error INVALID_STATE si la solicitud no está publicada', async () => {
+    it('retorna error INVALID_STATE_TRANSITION si la solicitud no está publicada', async () => {
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'profiles') {
           return {
@@ -505,15 +512,62 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
 
       vi.mocked(offersRpc.acceptOfferRpc).mockResolvedValue({
         ok: false,
-        code: 'INVALID_STATE',
+        code: 'INVALID_STATE_TRANSITION',
       });
 
       const result = await acceptOfferAction(validAcceptInput);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('INVALID_STATE');
+        expect(result.code).toBe('INVALID_STATE_TRANSITION');
       }
     });
+
+    it.each([
+      ['REQUEST_EXPIRED', 'la solicitud expiró'],
+      ['NOT_FOUND', 'la oferta o solicitud no existe'],
+      ['OFFER_NOT_PENDING', 'la oferta ya no está pendiente'],
+      ['COURIER_SUSPENDED', 'el repartidor está suspendido'],
+      ['COURIER_NOT_APPROVED', 'el repartidor no está aprobado'],
+    ] as const)(
+      'propaga error canónico de la RPC: %s (%s)',
+      async (errorCode, _description) => {
+
+        const mockFrom = vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { role: 'merchant' },
+                error: null,
+              }),
+            };
+          }
+          return {};
+        });
+
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({
+              data: { user: validMerchantUser },
+              error: null,
+            }),
+          },
+          from: mockFrom,
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        vi.mocked(offersRpc.acceptOfferRpc).mockResolvedValue({
+          ok: false,
+          code: errorCode,
+        });
+
+        const result = await acceptOfferAction(validAcceptInput);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe(errorCode);
+        }
+      }
+    );
 
     it('acepta oferta exitosamente, revalida rutas de comercio y devuelve datos del match', async () => {
       const mockFrom = vi.fn().mockImplementation((table: string) => {
@@ -540,12 +594,12 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
         from: mockFrom,
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
-      const matchOutput = {
-        matched: true as const,
+      const matchOutput: AcceptOfferResult = {
         requestId: '22222222-2222-2222-2222-222222222222',
-        offerId: validAcceptInput.offerId,
-        courierId: 'courier-uuid-1',
+        acceptedOfferId: validAcceptInput.offerId,
+        status: 'matched',
         matchedAt: '2026-09-24T01:30:00.000Z',
+        idempotent: false,
       };
 
       vi.mocked(offersRpc.acceptOfferRpc).mockResolvedValue({
@@ -556,10 +610,13 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
       const result = await acceptOfferAction(validAcceptInput);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.data.matched).toBe(true);
+        expect(result.data.status).toBe('matched');
         expect(result.data.requestId).toBe('22222222-2222-2222-2222-222222222222');
-        expect(result.data.courierId).toBe('courier-uuid-1');
+        expect(result.data.acceptedOfferId).toBe(validAcceptInput.offerId);
+        expect(result.data.matchedAt).toBe('2026-09-24T01:30:00.000Z');
+        expect(result.data.idempotent).toBe(false);
       }
+      expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
     });
   });
 });
