@@ -312,3 +312,52 @@ vercel.json: crons[0] = { path: /api/cron/sweep, schedule: "0 6 * * *" }  (06:00
 sweep.ts:130 -> throw en la falla de Storage, antes del paso 3 (H11)
 sweep.test.ts:470 -> prueba de concurrencia de H03 (update devuelve menos filas que el select)
 ```
+
+## Script completo de la ronda 3, listo para copiar a `/tmp/mut.mjs`
+
+Se corre desde la raíz del repo: `node /tmp/mut.mjs 'X20-purga-marca-antes-de-auditar (D02)'`. Muta en disco,
+corre `vitest run src/server/cron src/app/api` y restaura los bytes originales desde memoria.
+
+```js
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+const SW = 'src/server/cron/sweep.ts', RT = 'src/app/api/cron/sweep/route.ts';
+const M = {
+  'X00-control': [],
+  'X01-sin-guarda-published': [[SW, "      .in('id', expiredRequestIds)\n      .eq('status', 'published')\n", "      .in('id', expiredRequestIds)\n"]],
+  'X01b-sin-guarda-expires_at (H03)': [[SW, "      .lte('expires_at', nowIso)\n      .select('id, merchant_id');", "      .select('id, merchant_id');"]],
+  'X02-solicitud-a-cancelled': [[SW, ".update({ status: 'expired' })", ".update({ status: 'cancelled' })"]],
+  'X03-ofertas-a-withdrawn': [[SW, ".update({ status: 'expired', decided_at: nowIso })", ".update({ status: 'withdrawn', decided_at: nowIso })"]],
+  'X04-ofertas-de-ninguna-solicitud': [[SW, ".in('request_id', actuallyExpiredIds)", ".in('request_id', [])"]],
+  'X04b-ofertas-desde-el-select (H03)': [[SW, ".in('request_id', actuallyExpiredIds)", ".in('request_id', expiredRequestIds)"]],
+  'X05-purged_at-null': [[SW, ".update({ purged_at: nowIso })", ".update({ purged_at: null })"]],
+  'X06-comercio-a-cancelled': [[SW, ".update({ subscription_status: 'expired' })", ".update({ subscription_status: 'cancelled' })"]],
+  'X07-ignora-error-storage': [[SW, "if (!storageError) {", "if (true) {"]],
+  'X07b-storage-silencioso (H01)': [[SW, "      throw new Error(`Failed to purge courier documents from storage: ${storageError.message}`);\n", ""]],
+  'X08-gracia-por-defecto-30': [[SW, "let graceDays = 0;", "let graceDays = 30;"]],
+  'X09-comercios-de-nadie': [[SW, ".in('profile_id', expiredProfileIds)", ".in('profile_id', [])"]],
+  'X10-ruta-sin-chequeo-de-largo': [[RT, "authHeaderBuf.length !== expectedAuthBuf.length ||\n    ", ""]],
+  'X11-ruta-500-con-detalle': [[RT, "} catch {\n    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });", "} catch (e) {\n    return NextResponse.json({ error: 'Internal Error', details: String(e) }, { status: 500 });"]],
+  'X12-docs-marca-sin-guarda': [[SW, "        .is('purged_at', null)\n        .select('id');", "        .select('id');"]],
+  'X13-reloj-corrido-3h': [[SW, "now: nowDate,", "now: new Date(nowDate.getTime() + 3 * 3600 * 1000),"]],
+  'X14-ignora-gracia': [[SW, "        graceDays,\n", "        graceDays: 0,\n"]],
+  'X15-audit-solicitudes-desde-el-select (H03)': [[SW, "const auditEntries = updatedRequests.map((r) => ({", "const auditEntries = expiredRequests.map((r) => ({"]],
+  'X16-comercios-sin-corte-paid_until (H03)': [[SW, "        .or(`paid_until.lte.${cutoffDate},paid_until.is.null`)\n", ""]],
+  'X17-audit-comercios-desde-el-select (H03)': [[SW, "const auditEntries = updatedMerchants.map((m) => ({", "const auditEntries = expiredMerchants.map((m) => ({"]],
+  'X18-corte-un-dia-antes': [[SW, "(graceDays + 1) * 86_400_000", "(graceDays + 2) * 86_400_000"]],
+  'X19-contador-comercios-desde-el-select': [[SW, "expiredSubscriptionsCount = updatedMerchants.length;", "expiredSubscriptionsCount = expiredMerchants.length;"]],
+  'X20-purga-marca-antes-de-auditar (D02)': [[SW, "      // D02: audit_log antes de courier_documents.update para que un fallo deje duplicados y no huecos\n      const auditEntries = docsToPurge.map((d) => ({\n        target_type: 'courier_document',\n        target_id: d.id,\n        action: 'purged',\n        before: { purged_at: null },\n        after: { purged_at: nowIso, courier_id: d.courier_id },\n      }));\n\n      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);\n      if (auditError) {\n        throw new Error(`Failed to insert audit_log for purged documents: ${auditError.message}`);\n      }\n\n      // Marcar purged_at = now() solo si el storage remove no dio error\n      const { data: updatedDocs, error: docUpdateError } = await supabase\n        .from('courier_documents')\n        .update({ purged_at: nowIso })\n        .in('id', docIds)\n        .is('purged_at', null)\n        .select('id');\n\n      if (docUpdateError) {\n        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);\n      }\n\n", "      // Marcar purged_at = now() solo si el storage remove no dio error\n      const { data: updatedDocs, error: docUpdateError } = await supabase\n        .from('courier_documents')\n        .update({ purged_at: nowIso })\n        .in('id', docIds)\n        .is('purged_at', null)\n        .select('id');\n\n      if (docUpdateError) {\n        throw new Error(`Failed to update purged courier_documents: ${docUpdateError.message}`);\n      }\n\n      // D02: audit_log antes de courier_documents.update para que un fallo deje duplicados y no huecos\n      const auditEntries = docsToPurge.map((d) => ({\n        target_type: 'courier_document',\n        target_id: d.id,\n        action: 'purged',\n        before: { purged_at: null },\n        after: { purged_at: nowIso, courier_id: d.courier_id },\n      }));\n\n      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);\n      if (auditError) {\n        throw new Error(`Failed to insert audit_log for purged documents: ${auditError.message}`);\n      }\n\n"]],
+  'X21-sin-GET (vercel cron)': [[RT, "export async function GET(req: NextRequest) {", "export async function GET_disabled(req: NextRequest) {"]],
+};
+const name = process.argv[2];
+const orig = new Map([[SW, readFileSync(SW)], [RT, readFileSync(RT)]]);
+try {
+  for (const [f, a, b] of M[name]) {
+    const t = readFileSync(f, 'utf8'); const n = t.split(a).length - 1;
+    if (n !== 1) { console.log(`${name}: SIN OBJETIVO (${n})`); process.exit(2); }
+    writeFileSync(f, t.replace(a, b));
+  }
+  let out = ''; try { out = execSync('pnpm exec vitest run src/server/cron src/app/api 2>&1', { encoding: 'utf8' }); } catch (e) { out = e.stdout ?? String(e); }
+  console.log(`${name}: ${(out.split('\n').find((l) => /^\s+Tests\s/.test(l)) ?? '?').trim()}`);
+} finally { for (const [f, b] of orig) writeFileSync(f, b); }
+```
