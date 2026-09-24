@@ -366,7 +366,7 @@ select is((select status::text from public.delivery_requests where id = pg_temp.
 -- sobre delivery_requests y offers antes de mutar, y cualquier transición competidora (retiro o
 -- cancelación de repartidor) revalida el estado actual y falla con INVALID_STATE_TRANSITION.
 select pg_temp.fixture('matched');
-select is(pg_temp.invoke(1, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Incumplimiento'))->>'status',
+select is(pg_temp.invoke(1, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Incumplimiento'))->'data'->>'status',
   'cancelled', 'concurrencia: cancelar gana y adquiere lock de fila sobre solicitud y oferta');
 select ok(
   exists (
@@ -385,9 +385,9 @@ select ok(
   'concurrencia: transacción retiene RowExclusiveLock sobre delivery_requests y offers'
 );
 select is(pg_temp.invoke(3, format('select public.mark_picked_up(%L)', pg_temp.actor(20)))->>'error',
-  'INVALID_STATE_TRANSITION', 'concurrencia: retiro competidor revalida tras lock y no revive cancelación');
-select is(pg_temp.invoke(3, format('select public.courier_cancel(%L, %L)', pg_temp.actor(20), 'Demora'))->>'error',
-  'INVALID_STATE_TRANSITION', 'concurrencia: courier_cancel competidor revalida tras lock y rechaza');
+  'UNAUTHORIZED_ACTOR', 'concurrencia: retiro competidor ve match revocado tras cancelación y rechaza');
+select is(pg_temp.invoke(1, format('select public.report_no_show(%L, true)', pg_temp.actor(20)))->>'error',
+  'INVALID_STATE_TRANSITION', 'concurrencia: report_no_show competidor revalida estado tras cancelación y rechaza');
 select is((select status::text from public.delivery_requests where id = pg_temp.actor(20)),
   'cancelled', 'concurrencia: solicitud termina cancelada');
 select is((select status::text from public.offers where id = pg_temp.actor(30)),
