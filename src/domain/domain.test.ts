@@ -45,6 +45,8 @@ import { type FakePlatformSettings, createFakeRpcClient } from './testing/rpc-fa
 const BASE_SETTINGS: FakePlatformSettings = {
   minOfferArs: 1200,
   maxOffersPerMin: 10,
+  maxRequestPublicationsPerMin: 10,
+  maxIncidentsPerMin: 5,
   requestTtlMinutes: 25,
   pilotActive: true,
   pilotTermsVersion: 'v1.0',

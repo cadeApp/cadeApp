@@ -27,6 +27,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       settings: {
         minOfferArs: 1000,
         maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -108,6 +110,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       settings: {
         minOfferArs: 1500,
         maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -404,7 +408,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
     expect(
       mapOfferRpcError('submit_offer', {
         code: '23505',
-        message: 'duplicate key value violates unique constraint "offers_one_active_per_courier_request_idx"',
+        message:
+          'duplicate key value violates unique constraint "offers_one_active_per_courier_request_idx"',
       })
     ).toBe('DUPLICATE_ACTIVE_OFFER');
     expect(
@@ -514,6 +519,8 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       settings: {
         minOfferArs: 1500,
         maxOffersPerMin: 2,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -675,6 +682,8 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
       settings: {
         minOfferArs: 1500,
         maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -818,7 +827,8 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     expect(
       mapOfferRpcError('accept_offer', {
         code: '23505',
-        message: 'duplicate key value violates unique constraint "idx_offers_one_accepted_per_request"',
+        message:
+          'duplicate key value violates unique constraint "idx_offers_one_accepted_per_request"',
       })
     ).toBe('ALREADY_MATCHED');
 
@@ -848,6 +858,8 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
       settings: {
         minOfferArs: 1500,
         maxOffersPerMin: 10,
+        maxRequestPublicationsPerMin: 10,
+        maxIncidentsPerMin: 5,
         requestTtlMinutes: 30,
         pilotActive: true,
         pilotTermsVersion: 'v1',
@@ -980,7 +992,9 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     expect(fs.existsSync(migrationPath)).toBe(true);
     const sql = fs.readFileSync(migrationPath, 'utf8');
 
-    expect(sql).toMatch(/drop\s+policy\s+if\s+exists\s+offers_update_merchant\s+on\s+public\.offers/i);
+    expect(sql).toMatch(
+      /drop\s+policy\s+if\s+exists\s+offers_update_merchant\s+on\s+public\.offers/i
+    );
 
     const blocks = sql.split(/create\s+or\s+replace\s+function\s+public\./i).slice(1);
     const acceptBlock = blocks.find((b) => b.trimStart().startsWith('accept_offer('));
@@ -1047,4 +1061,3 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     expect(uniqueRaised).toEqual(expectedContractCodes);
   });
 });
-
