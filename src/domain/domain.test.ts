@@ -994,6 +994,9 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
 
       // Admin RPCs (decide courier, verify documents, suspend courier withdrawing pending offer3 on REQ_2, set subscription, update setting)
       fake.setActor({ userId: ADMIN_1, role: 'admin', aal: 'aal2' });
+      fake.seedCourier({ courierId: COURIER_1, status: 'pending', available: false });
+      fake.seedDocument({ documentId: DOC_1, courierId: COURIER_1, kind: 'license', status: 'submitted' });
+      fake.seedDocument({ documentId: DOC_2, courierId: COURIER_1, kind: 'insurance', status: 'submitted' });
       expect(
         await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
       ).toEqual({
@@ -1280,6 +1283,18 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
           subscriptionStatus: 'active',
         })
       ).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+      // Admin INVALID_STATE_TRANSITION branches (D03, D04, H19)
+      expect(
+        await fake.admin_decide_courier({ courierId: COURIER_1, decision: 'approved' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      fake.seedCourier({ courierId: COURIER_2, status: 'suspended', available: false });
+      expect(
+        await fake.admin_suspend_courier({ courierId: COURIER_2, reason: 'Re-suspensión cautelar' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      expect(
+        await fake.admin_verify_document({ documentId: DOC_1, decision: 'verified' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
 
       // Exercise remaining guard branches in rpc-fake (publish out-of-bounds, withdraw non-owner, accept non-owner/suspended/non-pending, mark_picked_up suspended/pending, cancel matched)
       fake.seedRequest({
