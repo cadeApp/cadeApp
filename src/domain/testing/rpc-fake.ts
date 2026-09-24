@@ -136,7 +136,6 @@ export interface FakeSeedDocument {
   readonly courierId: string;
   readonly kind: CourierDocumentKind;
   readonly status: DocumentReviewStatus;
-  readonly purgedAt?: string | null;
 }
 
 export interface FakeDocumentRecord {
@@ -144,7 +143,6 @@ export interface FakeDocumentRecord {
   readonly courierId: string;
   readonly kind: CourierDocumentKind;
   status: DocumentReviewStatus;
-  purgedAt?: string | null;
 }
 
 export interface FakeRpcOptions {
@@ -1033,15 +1031,11 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_decide_courier: (rawInput) =>
       executeRpc('admin_decide_courier', rawInput, true, (input) => {
-        if (input.decision !== 'approved' && input.decision !== 'rejected') {
-          return err('VALIDATION_ERROR');
-        }
+        const courier = couriers.get(input.courierId);
+        if (!courier) return err('NOT_FOUND');
         if (input.decision === 'rejected' && (!input.reason || input.reason.trim().length === 0)) {
           return err('REASON_REQUIRED');
         }
-        const courier = couriers.get(input.courierId);
-        if (!courier) return err('NOT_FOUND');
-        if (courier.status !== 'pending') return err('INVALID_STATE_TRANSITION');
         courier.status = input.decision;
         return ok({
           courierId: input.courierId,
@@ -1052,9 +1046,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_suspend_courier: (rawInput) =>
       executeRpc('admin_suspend_courier', rawInput, true, (input) => {
-        if (!input.reason || input.reason.trim().length === 0) {
-          return err('REASON_REQUIRED');
-        }
         const courier = couriers.get(input.courierId);
         if (!courier) return err('NOT_FOUND');
 
@@ -1079,19 +1070,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_verify_document: (rawInput) =>
       executeRpc('admin_verify_document', rawInput, true, (input) => {
-        if (input.decision !== 'verified' && input.decision !== 'rejected') {
-          return err('VALIDATION_ERROR');
-        }
+        const doc = documents.get(input.documentId);
+        if (!doc) return err('NOT_FOUND');
+        const courier = couriers.get(doc.courierId);
+        if (!courier) return err('NOT_FOUND');
         if (input.decision === 'rejected' && (!input.reason || input.reason.trim().length === 0)) {
           return err('REASON_REQUIRED');
         }
-        const doc = documents.get(input.documentId);
-        if (!doc) return err('NOT_FOUND');
-        if (doc.status !== 'submitted' || doc.purgedAt != null) {
-          return err('INVALID_STATE_TRANSITION');
-        }
-        const courier = couriers.get(doc.courierId);
-        if (!courier) return err('NOT_FOUND');
 
         doc.status = input.decision;
         if (doc.kind === 'license') courier.licenseStatus = input.decision;
@@ -1109,10 +1094,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_set_subscription: (rawInput) =>
       executeRpc('admin_set_subscription', rawInput, true, (input) => {
-        const validStatuses: MerchantSubscriptionStatus[] = ['pilot', 'active', 'expired', 'cancelled'];
-        if (!validStatuses.includes(input.subscriptionStatus)) {
-          return err('VALIDATION_ERROR');
-        }
         const merchant = merchants.get(input.merchantId);
         if (!merchant) return err('NOT_FOUND');
 
@@ -1128,38 +1109,20 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
     admin_update_setting: (rawInput) =>
       executeRpc('admin_update_setting', rawInput, true, (input) => {
-        if (!PLATFORM_SETTING_KEYS.includes(input.key as PlatformSettingKey)) {
-          return err('INVALID_SETTING_KEY');
-        }
         switch (input.key) {
           case 'min_offer_ars':
-            if (typeof input.value !== 'number' || !Number.isInteger(input.value) || input.value < 1) {
-              return err('INVALID_SETTING_VALUE');
-            }
             settings = { ...settings, minOfferArs: input.value };
             break;
           case 'request_ttl_minutes':
-            if (typeof input.value !== 'number' || !Number.isInteger(input.value) || input.value < 1) {
-              return err('INVALID_SETTING_VALUE');
-            }
             settings = { ...settings, requestTtlMinutes: input.value };
             break;
           case 'pilot_active':
-            if (typeof input.value !== 'boolean') {
-              return err('INVALID_SETTING_VALUE');
-            }
             settings = { ...settings, pilotActive: input.value };
             break;
           case 'pilot_terms_version':
-            if (typeof input.value !== 'string' || input.value.trim().length === 0) {
-              return err('INVALID_SETTING_VALUE');
-            }
             settings = { ...settings, pilotTermsVersion: input.value };
             break;
           case 'subscription_grace_days':
-            if (typeof input.value !== 'number' || !Number.isInteger(input.value) || input.value < 0) {
-              return err('INVALID_SETTING_VALUE');
-            }
             settings = { ...settings, subscriptionGraceDays: input.value };
             break;
         }

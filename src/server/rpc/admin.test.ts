@@ -317,13 +317,13 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
     expect(res2.ok).toBe(false);
     if (!res2.ok) expect(res2.code).toBe('INVALID_STATE_TRANSITION');
 
-    // 3. suspender a un suspendido da OK con 0 ofertas retiradas (idempotente)
+    // 3. suspender a un suspendido da INVALID_STATE_TRANSITION (H19)
     const res3 = await fake.admin_suspend_courier({
       courierId: '00000000-0000-4000-8000-0000000000c2',
       reason: 'Re-suspensión cautelar',
     });
-    expect(res3.ok).toBe(true);
-    if (res3.ok) expect(res3.data.withdrawnOffersCount).toBe(0);
+    expect(res3.ok).toBe(false);
+    if (!res3.ok) expect(res3.code).toBe('INVALID_STATE_TRANSITION');
 
     // 4. verify de un documento verified da INVALID_STATE_TRANSITION (D04)
     const res4 = await fake.admin_verify_document({
