@@ -1,10 +1,11 @@
 # Lecciones — PR #77 (T-121)
 
-Numeración continua del proyecto. `AG-01`…`AG-63` están en las carpetas de las PRs anteriores.
+Numeración continua del proyecto. `AG-01`…`AG-65` están en las carpetas de las PRs anteriores
+(PR #76 usó `AG-64` y `AG-65`; esta PR continúa desde `AG-66`).
 
 ---
 
-## `AG-64` · Mocks declarados en el setup de un test deben ser asertados al final, o la prueba pasa con la funcionalidad omitida
+## `AG-66` · Mocks declarados en el setup de un test deben ser asertados al final, o la prueba pasa con la funcionalidad omitida
 
 **Origen:** `PR77-H03` (pariente de `P08-control-no-cubre-lo-que-dice`)
 
@@ -30,7 +31,7 @@ Consecuencia directa: si la Server Action omite por completo registrar los conse
 
 ---
 
-## `AG-65` · Pruebas de utilidades de cliente (Canvas / DOM / File) requieren configuración explícita de entorno y mocks de APIs ausentes en Node
+## `AG-67` · Pruebas de utilidades de cliente (Canvas / DOM / File) requieren configuración explícita de entorno y mocks de APIs ausentes en Node
 
 **Origen:** `PR77-H04` (pariente de `P01-contrato-de-framework-no-verificado`)
 
