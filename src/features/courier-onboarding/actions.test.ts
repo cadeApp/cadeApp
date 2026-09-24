@@ -15,6 +15,7 @@ vi.mock('@/server/env', () => ({
 
 describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboarding', () => {
   const currentUserId = 'courier-current-user-uuid';
+  const expectedHmac = '593c04e9d598a3bef0bbefa513180b4225b33b31f4682d9d44d81805e15c01e2';
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,7 +26,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
       auth: {
         getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: new Error('No auth') }),
       },
-    } as unknown as ReturnType<typeof serverAuth.createClient>);
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
     const result = await courierOnboardingAction({
       dni: '38123456',
@@ -65,7 +66,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         }
         return { select: vi.fn().mockReturnThis() };
       }),
-    } as unknown as ReturnType<typeof serverAuth.createClient>);
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
     const result = await courierOnboardingAction({
       dni: '38123456',
@@ -106,14 +107,15 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         }
         return { select: vi.fn().mockReturnThis() };
       }),
-    } as unknown as ReturnType<typeof serverAuth.createClient>);
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
     // 2. Cliente administrativo (detecta courier previo con status 'rejected')
+    const mockAdminEq = vi.fn().mockReturnThis();
     const mockAdminFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'couriers') {
         return {
           select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
+          eq: mockAdminEq,
           maybeSingle: vi.fn().mockResolvedValue({
             data: {
               profile_id: 'rejected-courier-uuid',
@@ -149,6 +151,76 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
 
     // Debe retornar DNI_ALREADY_REGISTERED y bloquear el intento de reingreso
     expect(result).toEqual({ ok: false, code: 'DNI_ALREADY_REGISTERED' });
+
+    // PR77-H06: Verificación de que el mock se llame con la columna 'dni_hmac' y su hash HMAC-SHA256
+    expect(mockAdminEq).toHaveBeenCalledWith('dni_hmac', expectedHmac);
+  });
+
+  it('bloquea el registro si el DNI pertenece a un repartidor suspendido (status suspended)', async () => {
+    // 1. Cliente autenticado del courier
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+          };
+        }
+        return { select: vi.fn().mockReturnThis() };
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    // 2. Cliente administrativo (detecta courier previo con status 'suspended')
+    const mockAdminEq = vi.fn().mockReturnThis();
+    const mockAdminFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'couriers') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: mockAdminEq,
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: {
+              profile_id: currentUserId,
+              status: 'suspended',
+            },
+            error: null,
+          }),
+        };
+      }
+      return { select: vi.fn().mockReturnThis() };
+    });
+
+    vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+      from: mockAdminFrom,
+    } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+    const result = await courierOnboardingAction({
+      dni: '38123456',
+      vehicleType: 'moto',
+      vehiclePlate: 'A 123 BCD',
+      documents: {
+        dni_front: 'courier/courier-current-user-uuid/dni_front_1.jpg',
+        dni_back: 'courier/courier-current-user-uuid/dni_back_1.jpg',
+        selfie: 'courier/courier-current-user-uuid/selfie_1.jpg',
+        avatar: 'courier/courier-current-user-uuid/avatar_1.jpg',
+      },
+      consents: {
+        tos: true,
+        privacy: true,
+        courierContract: true,
+      },
+    });
+
+    expect(result).toEqual({ ok: false, code: 'DNI_ALREADY_REGISTERED' });
+
+    // PR77-H06: Verificación de que el mock se llame con la columna 'dni_hmac'
+    expect(mockAdminEq).toHaveBeenCalledWith('dni_hmac', expectedHmac);
   });
 
   it('permite el onboarding si el DNI es nuevo y registra datos, consentimientos y documentos', async () => {
@@ -183,21 +255,23 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         }
         return { select: vi.fn().mockReturnThis() };
       }),
-    } as unknown as ReturnType<typeof serverAuth.createClient>);
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
     // Admin client: no existe courier previo con este dni_hmac
+    const mockAdminEq = vi.fn().mockReturnThis();
+    const mockAdminUpdate = vi.fn().mockReturnValue({
+      eq: mockUpdateCourier,
+    });
     const mockAdminFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'couriers') {
         return {
           select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
+          eq: mockAdminEq,
           maybeSingle: vi.fn().mockResolvedValue({
             data: null,
             error: null,
           }),
-          update: vi.fn().mockReturnValue({
-            eq: mockUpdateCourier,
-          }),
+          update: mockAdminUpdate,
         };
       }
       return { select: vi.fn().mockReturnThis() };
@@ -229,7 +303,51 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
       expect(result.data.redirectTo).toBe('/onboarding/status');
     }
 
+    // Consulta de DNI con dni_hmac
+    expect(mockAdminEq).toHaveBeenCalledWith('dni_hmac', expectedHmac);
+
     // Se actualizó dni_hmac y vehículo mediante admin client
-    expect(mockUpdateCourier).toHaveBeenCalled();
+    expect(mockAdminUpdate).toHaveBeenCalledWith({
+      dni_hmac: expectedHmac,
+      vehicle_type: 'moto',
+      vehicle_plate: 'A 123 BCD',
+    });
+    expect(mockUpdateCourier).toHaveBeenCalledWith('profile_id', currentUserId);
+
+    // PR77-H03: Afirmaciones explícitas de consentimientos y documentos
+    expect(mockInsertConsents).toHaveBeenCalledTimes(1);
+    expect(mockInsertConsents).toHaveBeenCalledWith([
+      { profile_id: currentUserId, document: 'tos', version: '1.0' },
+      { profile_id: currentUserId, document: 'privacy', version: '1.0' },
+      { profile_id: currentUserId, document: 'courier_contract', version: '1.0' },
+    ]);
+
+    expect(mockUpsertDocuments).toHaveBeenCalledTimes(1);
+    expect(mockUpsertDocuments).toHaveBeenCalledWith([
+      {
+        courier_id: currentUserId,
+        kind: 'dni_front',
+        storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg',
+        status: 'submitted',
+      },
+      {
+        courier_id: currentUserId,
+        kind: 'dni_back',
+        storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg',
+        status: 'submitted',
+      },
+      {
+        courier_id: currentUserId,
+        kind: 'selfie',
+        storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg',
+        status: 'submitted',
+      },
+      {
+        courier_id: currentUserId,
+        kind: 'avatar',
+        storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg',
+        status: 'submitted',
+      },
+    ]);
   });
 });
