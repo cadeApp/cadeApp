@@ -365,4 +365,80 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
       },
     ]);
   });
+
+  it.each([
+    ['tosVersion desactualizada', { tosVersion: '0.9', privacyVersion: '1.0', courierContractVersion: '1.0' }],
+    ['privacyVersion desactualizada', { tosVersion: '1.0', privacyVersion: '0.9', courierContractVersion: '1.0' }],
+    ['courierContractVersion desactualizada', { tosVersion: '1.0', privacyVersion: '1.0', courierContractVersion: '0.9' }],
+  ])(
+    'rechaza con VALIDATION_ERROR si %s sin modificar courier ni insertar consents ni documents (H05)',
+    async (_label, consentVersions) => {
+      const mockAdminUpdate = vi.fn();
+      const mockInsertConsents = vi.fn();
+      const mockUpsertDocuments = vi.fn();
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              update: mockAdminUpdate,
+            };
+          }
+          if (table === 'consents') {
+            return {
+              insert: mockInsertConsents,
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              upsert: mockUpsertDocuments,
+            };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction({
+        dni: '38123456',
+        vehicleType: 'moto',
+        vehiclePlate: 'A 123 BCD',
+        documents: {
+          dni_front: 'courier/courier-current-user-uuid/dni_front_1.jpg',
+          dni_back: 'courier/courier-current-user-uuid/dni_back_1.jpg',
+          selfie: 'courier/courier-current-user-uuid/selfie_1.jpg',
+          avatar: 'courier/courier-current-user-uuid/avatar_1.jpg',
+        },
+        consents: {
+          tos: true,
+          privacy: true,
+          courierContract: true,
+          ...consentVersions,
+        },
+      });
+
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+      expect(mockInsertConsents).not.toHaveBeenCalled();
+      expect(mockUpsertDocuments).not.toHaveBeenCalled();
+    }
+  );
 });

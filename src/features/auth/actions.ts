@@ -124,6 +124,11 @@ export async function registerAction(
   const adminClient = createAdminClient();
   const { error: consentError } = await adminClient.from('consents').insert(consentPayload as never);
   if (consentError) {
+    try {
+      await adminClient.auth.admin.deleteUser(data.user.id);
+    } catch {
+      // rollback compensatorio best-effort: si falla la eliminación, se devuelve igualmente INTERNAL_ERROR
+    }
     return err('INTERNAL_ERROR');
   }
 

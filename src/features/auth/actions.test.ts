@@ -19,6 +19,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       from: vi.fn().mockReturnValue({
         insert: vi.fn().mockResolvedValue({ error: null }),
       }),
+      auth: {
+        admin: {
+          deleteUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
+        },
+      },
     } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
   });
 
@@ -181,6 +186,139 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         expect(result.code).toBe('VALIDATION_ERROR');
       }
       expect(mockSignUp).not.toHaveBeenCalled();
+    });
+
+    it('registerAction rechaza versión no vigente (0.9) de TOS con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
+      const mockSignUp = vi.fn();
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'comercio@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '0.9',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+      expect(mockSignUp).not.toHaveBeenCalled();
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it('registerAction rechaza versión no vigente (0.9) de Privacidad con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
+      const mockSignUp = vi.fn();
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'repartidor@test.com',
+        password: 'password123',
+        role: 'courier',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '0.9',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+      expect(mockSignUp).not.toHaveBeenCalled();
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it('registerAction ejecuta rollback compensatorio deleteUser y devuelve INTERNAL_ERROR si la inserción de consentimientos falla (H06)', async () => {
+      const deleteUserSpy = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
+      const insertSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on consents insert' } });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          insert: insertSpy,
+        }),
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-fail-consent-1', email: 'merchant@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INTERNAL_ERROR');
+      }
+      expect(mockSignUp).toHaveBeenCalledTimes(1);
+      expect(insertSpy).toHaveBeenCalledTimes(1);
+      expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-1');
+    });
+
+    it('registerAction jamás invoca deleteUser si la inserción de consentimientos fue exitosa (H06)', async () => {
+      const deleteUserSpy = vi.fn();
+      const insertSpy = vi.fn().mockResolvedValue({ error: null });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          insert: insertSpy,
+        }),
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-success-1', email: 'merchant@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(deleteUserSpy).not.toHaveBeenCalled();
     });
   });
 

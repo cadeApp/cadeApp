@@ -4,6 +4,7 @@ import { createClient } from '@/server/supabase/server';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
+import { getLegalDocument } from '@/features/legal';
 import { merchantOnboardingSchema } from './schemas';
 
 export interface MerchantOnboardingResult {
@@ -74,6 +75,11 @@ export async function merchantOnboardingAction(
 
   const legacyVersion = /^v(\d+)$/.exec(pilotTermsVersion);
   const normalizedPilotTermsVersion = legacyVersion ? `${legacyVersion[1]}.0` : pilotTermsVersion;
+  const publishedPilotTermsVersion = getLegalDocument('pilot_terms').version;
+
+  if (normalizedPilotTermsVersion !== publishedPilotTermsVersion) {
+    return err('INTERNAL_ERROR');
+  }
 
   if (parsed.data.pilotTermsVersion !== normalizedPilotTermsVersion) {
     return err('VALIDATION_ERROR');

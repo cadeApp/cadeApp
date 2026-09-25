@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Store, Phone, MapPin, Crosshair, Info, AlertTriangle, AlertCircle } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
@@ -330,11 +330,12 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             <input
               id="pilotTerms"
               type="checkbox"
+              aria-labelledby="pilot-terms-label"
               {...register('acceptPilotTerms')}
               className="h-5 w-5 rounded border-input text-primary focus:ring-ring"
             />
           </label>
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <p id="pilot-terms-label" className="text-sm leading-relaxed text-muted-foreground">
             {merchantCopy.onboarding.acceptTermsPrefix}{' '}
             <Link
               href="/legal/pilot"

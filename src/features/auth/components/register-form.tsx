@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Store, Check, AlertCircle, Eye, EyeOff } from 'lucide-react';
@@ -183,10 +183,10 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
             type="checkbox"
             checked={acceptTerms}
             onChange={(e) => setAcceptTerms(e.target.checked)}
-            aria-describedby="terms-description"
+            aria-labelledby="terms-label"
             className="mt-1 h-5 w-5 rounded border-input text-primary focus:ring-ring"
           />
-          <p id="terms-description" className="text-sm leading-relaxed text-muted-foreground">
+          <p id="terms-label" className="text-sm leading-relaxed text-muted-foreground">
             Acepto los{' '}
             <Link
               href="/legal/terms"
