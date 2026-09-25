@@ -5,8 +5,8 @@
 | **PR** | https://github.com/cadeApp/cadeApp/pull/101 |
 | **Issue** | #100 |
 | **Rama** | `cc/CC-007-consent-enforcement` → `develop` |
-| **SHA revisado** | `35d139d9fe934703da539cf709a9629edc0397bc` |
-| **Estado** | bloqueada · Ronda 2 |
+| **SHA revisado** | `a99bbf4f40f6ca8f6ec08b122acccbdcbf9e6a51` |
+| **Estado** | sin bloqueantes propios · CI externo/preexistente rojo |
 | **Bloquea** | T-311 / PR #98 |
 
 ## Rondas
@@ -15,13 +15,17 @@
 |---|---|---|---|
 | 1 | `203654e` | 7 bloqueantes + 3 decisiones P1 | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `35d139d` | 6 bloqueantes · 3 cierres | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 3 | `a99bbf4` | 0 bloqueantes propios · 1 bloqueo CI preexistente | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 
-## Estado R2
+## Estado R3
 
-Cerrados: **H01, H04, H05**.
+Cerrados: **H02, H03, H06, H07, H08, H10**.
 
-Abiertos: **H02, H03, H06, H07, H08, H10**.
+Decisiones:
+- **A04 / D09:** se acepta la ventana temporal en develop porque no hay cuentas reales ni staging; no promover hasta integrar T-311.
+- **A05 / D10:** P1 aprueba CC-007 sin requerir visto bueno de P2 para este cambio.
 
-El CI DB de `35d139d` fue inspeccionado por dentro: migración aplicada, `cc007_consent_enforcement.sql .. ok`, **Files=9, Tests=1463, Result: PASS**, y `db:types` se regeneró sin error. Ese verde no cubre los seis puntos abiertos.
+Abierto:
+- **H11:** el job `unit` falla por `verify-fichas` debido a T-300/T-311 ya desincronizadas en `develop`. No es regresión de CC-007.
 
-T-311 permanece bloqueada hasta mergear CC-007.
+Hasta que H11 deje CI verde, la revisión no etiqueta la PR como aprobable bajo el protocolo, aunque el código de CC-007 quedó técnicamente limpio.
