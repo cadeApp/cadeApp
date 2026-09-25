@@ -1,6 +1,6 @@
 # Lecciones de la PR #87 para AGENTS.md y las reglas
 
-**Fuente:** 12 hallazgos de R1 + 7 registros nuevos en R2 + 5 hallazgos nuevos en R3.
+**Fuente:** 12 hallazgos de R1 + 7 registros nuevos en R2 + 5 hallazgos nuevos en R3 + 2 hallazgos nuevos en R4.
 
 ## Patrón dominante
 
@@ -40,3 +40,15 @@ R3 vuelve a mostrar el mismo patrón dominante, ahora con dos ejemplos muy medib
 - **Evidencia visual:** escribir “verificado en /browser” no crea el entregable. El DoD pide adjuntos; el PR tiene cero imágenes.
 
 No hace falta proponer un AG nuevo: H16/H19 refuerzan AG-66 y H01/H09/R03 vuelven a reforzar AG-37/AG-61.
+
+
+## Ronda 4
+
+R4 vuelve a mostrar dos formas del mismo patrón de controles incompletos:
+
+- **H09 / P08:** cambiar una blacklist por un resolutor de filesystem no basta si el extractor sigue leyendo sólo strings literales. El producto usa links dinámicos con template literals; la mutación del prefijo debe entrar al control.
+- **R04 / AG-61:** “cada query está acotada a 50” y “el resultado total es exacto” son propiedades distintas. El test midió la primera y el arreglo rompió la segunda con `MAX_METRICS_BATCHES=10` y `slice(0,50)`.
+- **H20 / AG-37:** separar C07 de C02 corrigió el historial pero no enumeró el conjunto visible de C02. La referencia dice “solicitudes activas”; la query conserva “all”.
+- **H10:** el entregable visual debe compararse contra la matriz exacta, no contra “una muestra por familia”. Tener 23 PNG no cubre C05/R02/R05, y una referencia mal nombrada (P04 legal como forgot-password) da falsa trazabilidad.
+
+No hace falta una AG nueva; son refuerzos de AG-37/AG-61 y del criterio de evidencia ejecutable.

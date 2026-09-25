@@ -427,3 +427,92 @@ El README C02 llama a `Despachos hoy` y `Tarifa promedio` “Métricas del día�
 Por inspección del SHA exacto quedaron cerrados: H02, H03, H04, H05, H06, H07, H11, H12, R01, R02, H13, H14, H15.
 
 No se inspeccionó CI porque quedan bloqueantes.
+
+
+---
+
+# Ronda 4 — evidencia sobre cf6fa22299b4df28982b0babb0ba7bc0aa146526
+
+## Estado remoto
+
+~~~text
+R3 review head: 81d595db2536e99f1a5ecf33762d306eab5afb0c
+R4 implementation head: cf6fa22299b4df28982b0babb0ba7bc0aa146526
+compare: ahead 1 / behind 0
+agent changes after R3: 11 files
+docs/revision-pr/pr-87/** touched by agent: NO
+PR mergeable: true
+~~~
+
+## H09 — el scanner no reconoce template literals
+
+Regex actuales en `assertNoInvalidInternalLinks`:
+
+~~~text
+href="..."
+redirectTo: "..."
+redirect("...")
+router.push("...") / replace("...")
+~~~
+
+Probe con las mismas regex:
+
+~~~text
+<Link href={`/ghost/${id}`}>x</Link> => false
+router.push(`/ghost/${id}`) => false
+return { redirectTo: '/ghost' } => true
+~~~
+
+El árbol real usa `href={`/merchant/requests/${req.id}`}` en `merchant-history-view.tsx`.
+
+## H10 — matriz visual
+
+Commit de evidencia: `bc27f5eea7fbdeb07b224d9b908b1259e8c51a2a` (23 PNG).
+
+Faltantes/errores al contrastar con README vinculante:
+- C05 existe en C00, pero no hay captura/fila C05 de implementación.
+- R02 existe en R00, pero la fila R01/R02 sólo usa referencia R01 + implementación R01.
+- R05 existe en R00, pero no hay captura/fila R05.
+- P04 en P00 es “Términos y Privacidad”; el body usa `P04-documento-legal.png` como referencia de `/forgot-password`.
+- no hay evidencia específica de reduced-motion.
+
+## R04 — topes silenciosos de métricas
+
+Código:
+
+~~~text
+MAX_METRICS_BATCHES = 10
+METRICS_BATCH_LIMIT = 50
+todayAcceptedOfferIds.slice(0, 50)
+~~~
+
+Probe:
+
+~~~text
+51 ofertas: promedio correcto 1176; promedio truncado 1000
+501 solicitudes: 500 alcanzables; 1 omitida
+~~~
+
+La prueba del autor sólo afirma que no existe una query sin `.limit`, no que el total siga siendo exacto.
+
+## H20 — C02 mezcla terminales
+
+~~~text
+getMerchantRequests:
+  status default = all
+  if status !== all -> eq(status)
+  else -> sin filtro
+
+MerchantDashboardPage:
+  getMerchantRequests(profile_id)   # sin status
+
+MerchantRequestsList:
+  requests.map(...)
+  EmptyState: "No tenés solicitudes activas"
+~~~
+
+La referencia C02 exige “Lista de solicitudes activas”. Falta filtrar `published|matched|in_transit` en DB antes del límite.
+
+## CI
+
+No inspeccionado por existir 4 bloqueantes.
