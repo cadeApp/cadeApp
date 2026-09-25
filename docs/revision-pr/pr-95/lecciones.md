@@ -92,3 +92,22 @@ Un test puede mockear un `fetch` colgado y aun así no usarlo. Si falta la confi
 - Aceptados por decisión: H09, H12.
 - Abiertos: H04 (operativo, Lautaro073) y H15 (test técnico, agy).
 - Decisiones pendientes: 0.
+
+
+## Ronda 4
+
+### AG-83 · Un seam de test no debe crear una ruta productiva paralela a la validación de configuración
+
+**Origen:** H16
+
+Para hacer testeable una dependencia se puede inyectar comportamiento, pero no conviene resolverlo leyendo `process.env` directamente en el módulo productivo cuando el proyecto ya tiene una frontera Zod canónica.
+
+> **Regla propuesta.** Los seams de test deben ser explícitos y no modificar el origen/validación de configuración de producción. Si el repo centraliza env en un schema, ningún arreglo de tests puede agregar lecturas `process.env` paralelas ni variables runtime no declaradas.
+
+### Estado al cierre de R4
+
+- H15: cerrado/verificado.
+- H16: abierto técnico.
+- H04: abierto operativo.
+- Todos los demás hallazgos: cerrados o aceptados.
+- Decisiones pendientes: 0.
