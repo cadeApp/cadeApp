@@ -5,8 +5,8 @@
 | **PR** | https://github.com/cadeApp/cadeApp/pull/101 |
 | **Issue** | #100 |
 | **Rama** | `cc/CC-007-consent-enforcement` → `develop` |
-| **SHA revisado** | `a99bbf4f40f6ca8f6ec08b122acccbdcbf9e6a51` |
-| **Estado** | sin bloqueantes propios · CI externo/preexistente rojo |
+| **SHA revisado** | `7e5dc9413c58a0a7e758e3aa229ee280224c5b3b` |
+| **Estado** | técnicamente apta · 1 pendiente documental |
 | **Bloquea** | T-311 / PR #98 |
 
 ## Rondas
@@ -16,16 +16,23 @@
 | 1 | `203654e` | 7 bloqueantes + 3 decisiones P1 | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `35d139d` | 6 bloqueantes · 3 cierres | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `a99bbf4` | 0 bloqueantes propios · 1 bloqueo CI preexistente | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `7e5dc94` | CI final verde · 1 pendiente documental | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 
-## Estado R3
+## Estado R4
 
-Cerrados: **H02, H03, H06, H07, H08, H10**.
+Cerrado: **H11**.
 
-Decisiones:
-- **A04 / D09:** se acepta la ventana temporal en develop porque no hay cuentas reales ni staging; no promover hasta integrar T-311.
-- **A05 / D10:** P1 aprueba CC-007 sin requerir visto bueno de P2 para este cambio.
+Abierto: **H12** — contrato/body todavía muestran P2 pendiente y evidencia CI vieja.
 
-Abierto:
-- **H11:** el job `unit` falla por `verify-fichas` debido a T-300/T-311 ya desincronizadas en `develop`. No es regresión de CC-007.
+### CI final verificado
 
-Hasta que H11 deje CI verde, la revisión no etiqueta la PR como aprobable bajo el protocolo, aunque el código de CC-007 quedó técnicamente limpio.
+Run `36191690199`:
+- audit ✅
+- build ✅
+- unit ✅ — **52/52 suites**
+- lint ✅
+- db-tests ✅ — **9 archivos / 1472 tests**
+- typecheck ✅
+- bundle-budget ✅
+
+No quedan bloqueantes técnicos o de seguridad.
