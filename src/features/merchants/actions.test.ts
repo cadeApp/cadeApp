@@ -20,6 +20,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     defaultPickupLng: -65.61,
     notes: 'Al lado de la plaza',
     acceptPilotTerms: true,
+    pilotTermsVersion: '1.0',
   };
 
   it('rechaza si no hay sesión autenticada con UNAUTHENTICATED', async () => {
@@ -139,7 +140,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
           maybeSingle: vi.fn().mockResolvedValue({
-            data: { key: 'pilot_terms_version', value: '1.2' },
+            data: { key: 'pilot_terms_version', value: '1.0' },
             error: null,
           }),
         };
@@ -202,7 +203,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     expect(insertedConsent).toMatchObject({
       profile_id: 'usr-merchant-1',
       document: 'pilot_terms',
-      version: '1.2',
+      version: '1.0',
     });
 
     // Verificación 3: perfil actualizado con display_name y phone
