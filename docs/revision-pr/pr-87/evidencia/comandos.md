@@ -516,3 +516,75 @@ La referencia C02 exige “Lista de solicitudes activas”. Falta filtrar `publi
 ## CI
 
 No inspeccionado por existir 4 bloqueantes.
+
+
+---
+
+# Ronda 5 — evidencia sobre bdece0f187e0f6d9dd480844c5942008d8391f8d
+
+## Estado remoto
+
+~~~text
+R4 review head: 61c79e27b75e84fde26c5ad05d7e9908cc87681a
+R5 implementation head: bdece0f187e0f6d9dd480844c5942008d8391f8d
+compare: ahead 1 / behind 0
+agent changes after R4: 7 files
+docs/revision-pr/pr-87/** touched by agent: NO
+PR mergeable: true
+~~~
+
+## H09 — residual de navegación indirecta
+
+Regex actuales sí detectan:
+
+~~~text
+<Link href="/ghost">...
+<Link href={`/ghost/${id}`}>...
+redirectTo: '/ghost'
+redirectTo: `/ghost/${id}`
+redirect('/ghost')
+router.push(`/ghost/${id}`)
+~~~
+
+Probe independiente:
+
+~~~text
+jsxLiteral       true
+jsxTemplate      true
+navObject        false   # { href: '/ghost' }
+helperCall       false   # href={buildNextCursorHref(...)}
+helperReturn     false   # return `/ghost?cursor=${...}`
+routerVariable   false   # router.push(targetUrl)
+~~~
+
+El código real usa las cuatro formas indirectas. La mutación mínima pendiente es agregar un navItem extra con `href:'/ghost'`: los checks de “contiene los tres destinos canónicos” siguen verdes y el scanner no lo ve.
+
+## H10
+
+Commit visual `5af9cac26a9dd91bc6ce4a4a77c2c1f7bb5cfd8b`: 28 PNG. Confirmados por API:
+- `c05_confirm_accept_dialog_390.png`
+- `r02_courier_onboarding_vehicle_390.png`
+- `r05_courier_offer_sheet_390.png`
+- `r06_courier_my_offers_390.png`
+- `a11y_reduced_motion_390.png`
+
+El body separa correctamente P04 legal (T-311) de `/forgot-password`.
+
+## R04
+
+Código actual:
+- métricas: `while (true)` + cursor, `.limit(50)`, termina sólo al agotar lote o detectar repetición;
+- ofertas aceptadas: chunks de 50 hasta cubrir todos los IDs;
+- test: 501 solicitudes y 51 ofertas; espera `dispatchedToday=1` y `avgRateArs=1176`.
+
+## H20
+
+C02:
+- `.in('status', ['published','matched','in_transit'])` antes de `.limit(pageSize+1)`;
+- filtro defensivo de filas devueltas;
+- `MerchantRequestsList` vuelve a filtrar activas antes de renderizar;
+- test verifica orden `.in` antes de `.limit` y exclusión de terminales.
+
+## CI
+
+No inspeccionado por H09.

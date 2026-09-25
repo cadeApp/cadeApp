@@ -52,3 +52,10 @@ R4 vuelve a mostrar dos formas del mismo patrón de controles incompletos:
 - **H10:** el entregable visual debe compararse contra la matriz exacta, no contra “una muestra por familia”. Tener 23 PNG no cubre C05/R02/R05, y una referencia mal nombrada (P04 legal como forgot-password) da falsa trazabilidad.
 
 No hace falta una AG nueva; son refuerzos de AG-37/AG-61 y del criterio de evidencia ejecutable.
+
+
+## Ronda 5
+
+H09 muestra una distinción útil para P08/AG-61: **reconocer más sintaxis no equivale a seguir el origen real del destino**. El scanner ya entiende template literals directos, pero las rutas también nacen en arrays de configuración, helpers y resultados de actions. Una prueba que promete “cualquier ruta interna inexistente” debe cubrir esos productores o bajar explícitamente su promesa.
+
+R04/H20 sí demuestran un cierre más robusto: los tests nuevos atacan el umbral exacto que rompía la semántica (501/51) y verifican el filtro activo antes del límite.
