@@ -137,8 +137,12 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
 
     it.each([
       ['AB 123 CD', true],
-      ['A 123 BCD', true],
+      ['AB123CD', true],
       ['ABC 123', true],
+      ['ABC123', true],
+      ['ELA 666', true],
+      ['ELA666', true],
+      ['A 123 BCD', false],
       ['123 ABC', false],
     ])(
       'PR87-R05: la validación UI de %s coincide con el schema servidor',
