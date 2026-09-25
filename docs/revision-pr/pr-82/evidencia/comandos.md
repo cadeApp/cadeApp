@@ -80,3 +80,131 @@ pnpm vitest run src/lib/hooks/use-realtime-invalidation.test.tsx src/features/re
   - `× DoD: Con el push apagado, la oferta nueva aparece al volver a la app (refetchOnWindowFocus)` → `AssertionError: expected [ { id: 'offer-initial-1', …(11) } ] to have a length of 2 but got 1`
   - `✓ DoD: al desmontar la pantalla se cierra el canal`
   - `✓ DoD: Realtime no escribe la caché a mano, solo invalida queries` (**PASA EN VERDE sobre el `use-request-offers.ts` de T-113 que NO usa TanStack Query y muta `offers` a mano con `setOffers`, porque `invalidateSpy` en la línea 130 nunca se afirma**).
+
+---
+
+# Ronda 2 — evidencia por inspección y sondas reproducibles
+
+- **SHA revisado:** `d085677e1a108a09083927fc47cd20008b578a34`
+- **develop observado:** `ac4587f3c76f3ce8d63f3abbafff0847b89d9b54`
+- **Comparación GitHub:** `diverged` · ahead 6 · behind 28 · merge-base `9ab71cb`
+- **PR:** `mergeable=true` según GitHub.
+- **CI:** deliberadamente no inspeccionado porque la ronda tiene bloqueantes.
+- **Carpeta de revisión:** historial desde R1 = solo `ce79858` (Lautaro073); no hubo escritura del autor.
+
+## Limitación de ejecución
+
+El contenedor de esta revisión no contiene el clon del proyecto. El intento de materializarlo con:
+
+```bash
+git clone https://github.com/cadeApp/cadeApp.git /tmp/cadeapp-review
+```
+
+falló con:
+
+```text
+fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/': Could not resolve host: github.com
+```
+
+Por eso esta ronda **no atribuye verificación runtime** a H02–H06 y no inventa mutaciones ejecutadas. Las sondas siguientes son los controles concretos que deben quedar en rojo antes del arreglo y verdes después.
+
+## Sonda S-R2-01 — feed productivo realmente cableado (H09)
+
+Sobre `src/features/offers/courier-panel.test.tsx`, mockear la fuente viva para que el snapshot inicial contenga `req-1` y el refetch produzca `req-2`. Renderizar `CourierFeed`, disparar focus/invalidación y afirmar que `req-2` aparece.
+
+**Estado actual por inspección:** `CourierFeed` no importa ni llama `useAvailableRequests`; el resultado del hook no puede afectar el DOM.
+
+Mutación que el test debe matar después del arreglo: reemplazar temporalmente el resultado vivo por el prop `requests` original. El caso debe quedar rojo.
+
+## Sonda S-R2-02 — `useTrip` no acepta un refetch no-op (H10)
+
+La API final debe impedir o fallar si la query está habilitada sin fuente real. Prueba de frescura:
+
+1. initial status = `matched`;
+2. la fuente devuelve `in_transit`;
+3. focus/Realtime/refetch;
+4. resultado = `in_transit`.
+
+Mutación que debe quedar roja: hacer que `queryFn` vuelva a `return initialTrip ?? null`.
+
+## Sonda S-R2-03 — dos query keys dentro del mismo debounce (H11)
+
+Agregar al test de `useRealtimeInvalidation`:
+
+```ts
+const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+// subs: requests -> ['requests']; offers -> ['offers']
+realtimeCallbacks[0]?.({ eventType: 'UPDATE' });
+vi.advanceTimersByTime(50);
+realtimeCallbacks[1]?.({ eventType: 'INSERT' });
+vi.advanceTimersByTime(300);
+
+expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['requests'] });
+expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['offers'] });
+expect(invalidateSpy).toHaveBeenCalledTimes(2);
+```
+
+**Código actual:** el segundo callback cancela el timeout del primero; solo sobrevive la última key.
+
+Mutación que debe quedar roja tras el arreglo: volver a un único `debounceTimerRef` que guarda una sola `targetKey`.
+
+## Sonda S-R2-04 — rerender con configuración nueva (H12)
+
+```ts
+const { rerender } = renderHook(
+  ({ key }) => useRealtimeInvalidation({
+    channelName: 'same-channel',
+    table: 'offers',
+    filter: `request_id=eq.${key}`,
+    queryKey: ['offers', key],
+  }),
+  { initialProps: { key: 'A' }, wrapper }
+);
+
+rerender({ key: 'B' });
+// disparar el callback de la suscripción vigente
+expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['offers', 'B'] });
+```
+
+Mutación que debe quedar roja tras el arreglo: volver a omitir la firma/configuración de suscripciones de las dependencias del efecto.
+
+## Sonda S-R2-05 — polling de H07
+
+Con fake timers:
+- query visible + 29.999 ms → 0 fetches por polling;
+- +1 ms → 1 fetch;
+- background/hidden → avanzar otros 30 s y demostrar que no agrega un fetch.
+
+Mutación que debe matar: cambiar `refetchInterval` a otro valor o `refetchIntervalInBackground` a `true`.
+
+## Sonda S-R2-06 — callbacks fuera del render (H13)
+
+Pasar `onOfferAdded` que actualice estado de un wrapper padre y hacer que el fetch agregue una oferta. El callback debe ejecutarse después de commit, una vez por cambio observado.
+
+Mutación que debe quedar roja: volver a invocarlo directamente en el cuerpo de `useRequestOffers`.
+
+## Evidencia de drift (H14)
+
+GitHub compare de `develop...feat/T-204-realtime-tanstack`:
+
+```text
+status: diverged
+ahead_by: 6
+behind_by: 28
+merge_base: 9ab71cb
+develop: ac4587f
+PR head: d085677
+```
+
+La ficha `develop:docs/tasks/T-204.md` contiene al final la lectura obligatoria de `docs/design/visual-task-directive.md` y `docs/guia-prompts.md`; la rama conserva la sección anterior `Notas para quien retome`.
+
+## Evidencia del autor vs. bitácora (H15)
+
+El cuerpo del PR marca el ítem “Cada prueba nueva se demostró fallando al romper la regla”. La bitácora final solo registra:
+
+```text
+typecheck ✅ · lint ✅ · test ✅ (46/46 suites, 388/388 tests)
+```
+
+El rojo documentado antes es la fase TDD inicial por módulos inexistentes/desalineados; no hay una línea roja de mutación para H04/H05/H06/H07 ni para los nuevos controles de esta ronda.
+
