@@ -111,3 +111,19 @@ Para hacer testeable una dependencia se puede inyectar comportamiento, pero no c
 - H04: abierto operativo.
 - Todos los demás hallazgos: cerrados o aceptados.
 - Decisiones pendientes: 0.
+
+
+## Ronda 5
+
+### Revalidación de AG-83
+
+H16 confirma una variante más sutil: no alcanza con que `serverEnv` sea la primera opción. Si un `catch` recupera desde `process.env`, sigue existiendo una frontera productiva paralela que oculta la validación fallida.
+
+> **Refinamiento AG-83.** Una frontera de configuración validada no puede tener un fallback productivo a la fuente cruda cuando el parse falla. Los tests que necesitan omitir/configurar una variable deben usar inyección explícita, no depender de que el schema falle.
+
+### Estado al cierre de R5
+
+- H16: abierto técnico (fallback residual).
+- H04: abierto operativo.
+- Todos los demás hallazgos: cerrados o aceptados.
+- Decisiones pendientes: 0.

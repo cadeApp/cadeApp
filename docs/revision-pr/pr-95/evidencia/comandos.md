@@ -1,93 +1,81 @@
 # Evidencia y comandos reproducibles — PR #95
 
-## Ronda 4
+## Ronda 5
 
-**SHA revisado:** `513cad3f4528e5c7befbc0e2d92c31a39bbb7eae`
+**SHA revisado:** `42936d102fa58e4edeea6b8e18b15ed63708e492`
 
-### CI #298
+### Estado de rama
+
+```text
+ahead_by: 18
+behind_by: 0
+changed_files: 28
+```
+
+### CI #301
 
 ```text
 typecheck     success
-lint          success
-unit          success
 audit         success
 build         success
+unit          success
+lint          success
 bundle-budget success
-db-tests      success — Files=8, Tests=1444, Result: PASS
+db-tests      in_progress al momento de registrar R5
 
 unit:
 Test Files 48 passed
 Tests      453 passed
-observability.test.ts: 19 / 164 ms
-requests.test.ts:      37 / 127 ms
-
-db-types: generado exitosamente contra Supabase local de CI
+observability.test.ts: 19 / 155 ms
+requests.test.ts:      37 / 122 ms
 ```
 
-## H15 · cierre
+## H16 · residual exacto
 
-El test corregido:
+Código:
 
 ```ts
-process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token'
-setDiscordTimeoutForTesting(50)
-
-expect(fetchSpy).toHaveBeenCalled()
-expect(signalReceived).toBeDefined()
-expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' })
+try {
+  webhookUrl = serverEnv.DISCORD_ERROR_WEBHOOK_URL || undefined
+  nodeEnv = serverEnv.NODE_ENV || 'development'
+} catch {
+  webhookUrl = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined
+  nodeEnv = process.env.NODE_ENV || 'development'
+}
 ```
 
-y el mock no resuelve hasta recibir `abort`.
-
-La bitácora registra:
-- roja al quitar `signal`;
-- roja por timeout al quitar `controller.abort`;
-- verde al restaurarlos.
-
-**Resultado:** H15 cerrado.
-
-## H16 · frontera env degradada
-
-Contrato del repo:
+Reglas:
 
 ```text
-AGENTS.md: Zod parsea toda frontera, incluidas variables de entorno.
+AGENTS.md § env: Zod parsea toda frontera, incluidas variables de entorno.
 .agents/rules/25-stack-y-patrones.md: variables privadas -> src/server/env.ts.
 ```
 
-Código R4:
+### Mutación de control esperada
+
+Luego del arreglo, reintroducir:
 
 ```ts
-let webhookUrl = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined
-
-const timeoutMs =
-  options?.timeoutMs ??
-  testDiscordTimeoutMs ??
-  (process.env.DISCORD_ALERT_TIMEOUT_MS
-    ? Number.parseInt(process.env.DISCORD_ALERT_TIMEOUT_MS, 10)
-    : DEFAULT_DISCORD_TIMEOUT_MS)
+catch {
+  webhookUrl = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined
+}
 ```
 
-`src/server/env.ts` sí valida `DISCORD_ERROR_WEBHOOK_URL`, pero no contiene `DISCORD_ALERT_TIMEOUT_MS`. `.env.example` tampoco documenta esa variable.
+debe hacer fallar una prueba dedicada.
 
-Prueba independiente de semántica usada para el riesgo:
+### Diseño de seam esperado
 
-```text
-Number.parseInt('abc', 10) -> NaN
-setTimeout(callback, NaN) en Node -> callback ~1 ms
+Un override triestado evita depender de env inválido en tests:
+
+```ts
+// idea de contrato, no implementación obligatoria:
+undefined => sin override / usar serverEnv
+string    => webhook de test
+null      => simular webhook ausente
 ```
 
-### Mutación/control para el arreglo
-
-Después de restaurar `serverEnv` como fuente productiva:
-
-- el test H15 debe seguir configurando el webhook mediante un seam/mock de test;
-- `fetchSpy` debe seguir siendo llamado;
-- `signal` debe existir;
-- quitar `signal` o `abort` debe volver roja la prueba.
-
-No añadir una nueva variable productiva para resolver un problema exclusivamente de test.
+Así H03 puede probar “sin webhook” y H15 un webhook colgado sin crear rutas productivas alternativas.
 
 ## H04
 
-Sin cambio: estado pendiente y DoD desmarcado. Requiere evidencia externa real, no pruebas unitarias.
+Sin cambio. Requiere ejecución real de Lautaro073 y evidencia externa.
