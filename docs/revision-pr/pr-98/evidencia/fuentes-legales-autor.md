@@ -1,8 +1,8 @@
-# T-311 — Fuentes legales verificadas
+> **Material del autor, preservado por la revisión.** Este archivo estaba en `docs/revision-pr/pr-98/evidencia/` antes de Ronda 1. No cuenta como verificación independiente (AG-36). Se conserva para contraste y trazabilidad; el autor no debe editar esta carpeta a partir de la Ronda 1.
 
-Fecha de consulta: 25 de septiembre de 2026.
+# T-311 — Fuentes legales verificadas por el autor
 
-Este archivo documenta fuentes oficiales utilizadas para redactar la versión inicial. No afirma revisión jurídica externa.
+Fecha de consulta declarada: 25 de septiembre de 2026.
 
 ## Protección de datos
 - Ley 25.326: https://www.argentina.gob.ar/normativa/nacional/64790/actualizacion
@@ -24,4 +24,4 @@ Este archivo documenta fuentes oficiales utilizadas para redactar la versión in
 - Ley 27.802: https://www.argentina.gob.ar/normativa/nacional/norma-423680/texto
 - Ley 20.744 actualizada: https://www.argentina.gob.ar/normativa/nacional/25552/actualizacion
 
-Los textos también se contrastaron con D3, D7, D8, D9, D13, D14 y D15 de `docs/master-plan.md` y con la clave primaria vigente de `consents`: `(profile_id, document, version)`.
+El autor declaró haber contrastado también D3, D7, D8, D9, D13, D14 y D15 de `docs/master-plan.md` y la PK de `consents`: `(profile_id, document, version)`.
