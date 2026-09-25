@@ -253,4 +253,65 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       p_republish: false,
     });
   });
+
+  it('H10: debe disparar sendCriticalAlert ante fallo inesperado en publish_request', async () => {
+    const obs = await import('@/server/observability');
+    const alertSpy = vi.spyOn(obs, 'sendCriticalAlert').mockResolvedValue({ ok: true });
+
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: '57P01', message: 'terminating connection due to administrator command' },
+    });
+
+    const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+    expect(result.ok).toBe(false);
+    expect(alertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'publish_request_failed',
+        severity: 'critical',
+      })
+    );
+    alertSpy.mockRestore();
+  });
+
+  it('H15: publish_request completa devolviendo INTERNAL_ERROR aunque el webhook de Discord quede colgado', async () => {
+    const { setDiscordWebhookUrlForTesting, setDiscordTimeoutForTesting } = await import(
+      '@/server/observability'
+    );
+    setDiscordWebhookUrlForTesting('https://discord.com/api/webhooks/test/token');
+    setDiscordTimeoutForTesting(50);
+
+    let signalReceived: AbortSignal | undefined;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+      signalReceived = init?.signal as AbortSignal | undefined;
+      expect(signalReceived).toBeDefined();
+      return new Promise((_resolve, reject) => {
+        signalReceived?.addEventListener('abort', () => {
+          const err = new Error('Discord timeout');
+          err.name = 'TimeoutError';
+          reject(err);
+        });
+      });
+    });
+
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: '57P01', message: 'unexpected connection failure' },
+    });
+
+    try {
+      const startTime = Date.now();
+      const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+      const elapsed = Date.now() - startTime;
+
+      expect(fetchSpy).toHaveBeenCalled();
+      expect(signalReceived).toBeDefined();
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(elapsed).toBeLessThan(1000);
+    } finally {
+      fetchSpy.mockRestore();
+      setDiscordWebhookUrlForTesting(null);
+      setDiscordTimeoutForTesting(null);
+    }
+  }, 1000);
 });

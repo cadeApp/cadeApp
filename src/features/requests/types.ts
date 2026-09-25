@@ -22,7 +22,7 @@ export interface MerchantRequestSummary {
   readonly id: string;
   readonly pickupZoneName: string;
   readonly dropoffZoneName: string;
-  readonly approxDistanceKm: string;
+  readonly approxDistanceKm: string | null;
   readonly packageType: PackageType;
   readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;
@@ -32,13 +32,15 @@ export interface MerchantRequestSummary {
   readonly createdAt: string;
   readonly offersCount: number;
   readonly acceptedOfferId: string | null;
+  readonly acceptedAmountArs?: number | null;
+  readonly acceptedCourierName?: string | null;
 }
 
 export interface MerchantRequestDetail {
   readonly id: string;
   readonly pickupZoneName: string;
   readonly dropoffZoneName: string;
-  readonly approxDistanceKm: string;
+  readonly approxDistanceKm: string | null;
   readonly packageType: PackageType;
   readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;
@@ -56,6 +58,6 @@ export interface MerchantRequestDetail {
 
 export interface MerchantMetrics {
   readonly dispatchedToday: number;
-  readonly avgRateArs: number;
+  readonly avgRateArs: number | null;
   readonly activeCount: number;
 }

@@ -327,3 +327,47 @@ test('board-sync automatically unblocks dependent issues and marks merged PR tas
   assert.deepEqual(t203?.removeLabels, ['bloqueada']);
 });
 
+test('board-sync ignores docs/* PR branches and normalizes Unicode hyphens in issue titles', async () => {
+  const { computeBoardTransitions, extractPrTaskId } = await import('./board-sync.mjs');
+  assert.equal(extractPrTaskId('docs/T-118-integracion-visual-navegacion', 'Crear ficha T-118'), '');
+  assert.equal(extractPrTaskId('feat/T-118-integracion-visual-stitch', '[T-118] Integración'), 'T-118');
+
+  const issues = [
+    {
+      number: 85,
+      title: '[T\u2011118] Integración visual Stitch, shells y navegación canónica',
+      body: '- **Depende de:** T-008',
+      state: 'OPEN',
+      labels: ['lista'],
+    },
+    {
+      number: 28,
+      title: '[T-201] Manifest, íconos maskable, service worker',
+      body: '- **Depende de:** T-000, T-008, T-118',
+      state: 'OPEN',
+      labels: ['lista'],
+    },
+  ];
+  const pullRequests = [
+    {
+      number: 87,
+      title: '[T-118] Integración visual Stitch',
+      headRefName: 'feat/T-118-integracion-visual-stitch',
+      isDraft: false,
+    },
+  ];
+  const transitions = computeBoardTransitions({
+    issues,
+    pullRequests,
+    mergedTaskIds: ['T-000', 'T-008'],
+  });
+  const t118 = transitions.find((item) => item.taskId === 'T-118');
+  const t201 = transitions.find((item) => item.taskId === 'T-201');
+
+  assert.equal(t118?.targetState, 'en-review');
+  assert.equal(t118?.targetColumn, 'En review');
+  assert.equal(t201?.targetState, 'bloqueada');
+  assert.equal(t201?.targetColumn, 'Bloqueada');
+});
+
+

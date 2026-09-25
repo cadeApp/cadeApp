@@ -156,13 +156,13 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
 
       const { container, rerender } = render(<BrandLogo label="Logo de Cade" />);
       expect(screen.getByRole('img', { name: 'Logo de Cade' })).toBeDefined();
-      const rect = container.querySelector('rect');
-      expect(rect?.getAttribute('fill')).toBe(DESIGN_TOKENS.colors.primary);
-      const circle = container.querySelector('circle');
-      expect(circle?.getAttribute('fill')).toBe(DESIGN_TOKENS.colors.ink);
+      const riderPath = container.querySelector('[data-brand-part="rider"]');
+      expect(riderPath?.getAttribute('fill')).toBe(DESIGN_TOKENS.colors.ink);
+      const boxPath = container.querySelector('[data-brand-part="box"]');
+      expect(boxPath).toBeDefined();
 
       rerender(<BrandLogo showWordmark={false} label="Isotipo Cade" />);
-      expect(container.querySelector('text')).toBeNull();
+      expect(container.querySelector('[data-brand-part="wordmark"]')).toBeNull();
     });
   });
 
@@ -821,7 +821,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       const cssText = fs.readFileSync(path.resolve('src/ui/tokens.css'), 'utf8');
       const rootBlockMatch = cssText.match(/:root\s*\{([\s\S]*?)\}/);
       expect(rootBlockMatch).not.toBeNull();
-      const rootBlock = rootBlockMatch ? rootBlockMatch[1] ?? '' : '';
+      const rootBlock = rootBlockMatch ? (rootBlockMatch[1] ?? '') : '';
 
       const cssHslVars = new Map<string, string>();
       const varRegex = /--([a-z0-9-]+):\s*([0-9.]+)\s+([0-9.]+)%\s+([0-9.]+)%\s*;/g;
@@ -856,6 +856,19 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       for (const [cssVar, tokenHex] of expectedPairs) {
         expect(cssHslVars.get(cssVar), `Variable CSS --${cssVar} desincronizada`).toBe(tokenHex);
       }
+    });
+
+    it('BrandLogo renderiza todas sus variantes de tamaño (sm, md, lg), color (default, inverse, mono) e ícono sin wordmark', () => {
+      const { rerender } = render(<BrandLogo size="sm" variant="default" showWordmark={true} />);
+      expect(screen.getByRole('img', { name: 'cadeApp' }).getAttribute('class')).toContain('h-8');
+
+      rerender(<BrandLogo size="md" variant="inverse" showWordmark={true} />);
+      expect(screen.getByRole('img', { name: 'cadeApp' }).getAttribute('class')).toContain('h-10');
+
+      rerender(<BrandLogo size="lg" variant="mono" showWordmark={false} label="Logo cadeApp" />);
+      const lgLogo = screen.getByRole('img', { name: 'Logo cadeApp' });
+      expect(lgLogo.getAttribute('class')).toContain('h-12');
+      expect(lgLogo.getAttribute('data-variant')).toBe('mono');
     });
   });
 });

@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useTransition } from 'react';
 import { Card } from '@/ui/card';
-import { notify } from '@/ui/notify';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import { AVAILABILITY_COPY } from '../copy';
 import { setAvailabilityAction } from '../actions';
@@ -30,14 +29,20 @@ export function AvailabilitySwitch({
       if (!result.ok) {
         // Rollback al estado anterior si falla
         setAvailable(!nextState);
-        notify.error(getDomainErrorMessage(result.code));
+        void import('@/ui/notify')
+          .then(({ notify }) => notify.error(getDomainErrorMessage(result.code)))
+          .catch(() => {});
       } else {
         onAvailabilityChange?.(nextState);
-        if (nextState) {
-          notify.success(AVAILABILITY_COPY.successAvailable);
-        } else {
-          notify.info(AVAILABILITY_COPY.successUnavailable);
-        }
+        void import('@/ui/notify')
+          .then(({ notify }) => {
+            if (nextState) {
+              notify.success(AVAILABILITY_COPY.successAvailable);
+            } else {
+              notify.info(AVAILABILITY_COPY.successUnavailable);
+            }
+          })
+          .catch(() => {});
       }
     });
   };
@@ -49,7 +54,7 @@ export function AvailabilitySwitch({
           <p className="font-display text-base font-bold text-foreground">
             {available ? AVAILABILITY_COPY.titleAvailable : AVAILABILITY_COPY.titleUnavailable}
           </p>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="mt-0.5 text-sm text-muted-foreground">
             {available ? AVAILABILITY_COPY.hintAvailable : AVAILABILITY_COPY.hintUnavailable}
           </p>
         </div>
@@ -62,7 +67,7 @@ export function AvailabilitySwitch({
           aria-label={AVAILABILITY_COPY.toggleAriaLabel}
           disabled={isPending}
           onClick={handleToggle}
-          className="relative inline-flex min-h-12 min-w-12 items-center justify-center p-2 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+          className="relative inline-flex min-h-12 min-w-12 items-center justify-center rounded-full p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
         >
           <span
             className={`inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${

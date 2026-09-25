@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
-import { profileRoleSchema } from '@/domain/schemas';
+import { consentStatusSchema, profileRoleSchema } from '@/domain/schemas';
 import type { AuthSession } from './guards';
 
 /**
@@ -21,7 +21,11 @@ export async function getServerSession(): Promise<AuthSession | null> {
 
   // Lecturas paralelas independientes de perfil y MFA AAL (Regla 25 §6)
   const [profileResult, aalResult] = await Promise.all([
-    supabase.from('profiles').select('role').eq('id', user.id).maybeSingle<{ role: unknown }>(),
+    supabase
+      .from('profiles')
+      .select('role, consent_status')
+      .eq('id', user.id)
+      .maybeSingle<{ role: unknown; consent_status: unknown }>(),
     supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
   ]);
 
@@ -34,6 +38,11 @@ export async function getServerSession(): Promise<AuthSession | null> {
     return null;
   }
 
+  const consentParsed = consentStatusSchema.safeParse(profileResult.data.consent_status);
+  if (!consentParsed.success) {
+    return null;
+  }
+
   const aal = aalResult.data?.currentLevel === 'aal2' ? 'aal2' : 'aal1';
 
   return {
@@ -41,5 +50,6 @@ export async function getServerSession(): Promise<AuthSession | null> {
     email: user.email ?? '',
     role: roleParsed.data,
     aal,
+    consentStatus: consentParsed.data,
   };
 }

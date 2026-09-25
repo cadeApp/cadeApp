@@ -8,6 +8,11 @@ import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/error
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import { courierOnboardingSchema } from './schemas';
+import { logoutAction } from '@/features/auth/server';
+
+export async function logoutCourierAction() {
+  return logoutAction();
+}
 
 export interface CourierOnboardingResult {
   readonly redirectTo: string;
@@ -120,9 +125,7 @@ export async function courierOnboardingAction(
     },
   ];
 
-  const { error: consentsError } = await supabase
-    .from('consents')
-    .insert(consentsPayload as never);
+  const { error: consentsError } = await supabase.from('consents').insert(consentsPayload as never);
 
   if (consentsError) {
     return err('INTERNAL_ERROR');

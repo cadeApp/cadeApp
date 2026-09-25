@@ -6,7 +6,14 @@ import { StepIndicator } from './components/step-indicator';
 import { IdentityForm } from './components/identity-form';
 import { VehicleForm } from './components/vehicle-form';
 import { StatusView } from './components/status-view';
+import {
+  CourierProfileView,
+  combineDniDocumentStatus,
+  getDocumentStatusPresentation,
+  type DocumentReviewStatus,
+} from './components/courier-profile-view';
 import * as actionsModule from './actions';
+import { vehiclePlateSchema } from './schemas';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -89,14 +96,30 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByRole('button', { name: /Enviar para revisión/i })).toBeDefined();
     });
 
-    it('oculta o no exige patente al seleccionar "A pie" o "Bici"', async () => {
+    it('oculta patente, licencia y seguro al seleccionar "A pie" o "Bici"', async () => {
       render(<VehicleForm courierId="test-courier" initialDni="38123456" />);
+
+      // Inicialmente (Moto) están visibles patente, licencia y seguro
+      expect(screen.getByLabelText(/Patente del vehículo/i)).toBeDefined();
+      expect(screen.getByText('Licencia de conducir')).toBeDefined();
+      expect(screen.getByText('Seguro')).toBeDefined();
 
       const walkText = screen.getByText('A pie');
       fireEvent.click(walkText);
 
       await waitFor(() => {
         expect(screen.queryByLabelText(/Patente del vehículo/i)).toBeNull();
+        expect(screen.queryByText('Licencia de conducir')).toBeNull();
+        expect(screen.queryByText('Seguro')).toBeNull();
+      });
+
+      const bikeText = screen.getByText('Bici');
+      fireEvent.click(bikeText);
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText(/Patente del vehículo/i)).toBeNull();
+        expect(screen.queryByText('Licencia de conducir')).toBeNull();
+        expect(screen.queryByText('Seguro')).toBeNull();
       });
     });
 
@@ -111,6 +134,32 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         expect(screen.getByText(/Formato de patente inválido/i)).toBeDefined();
       });
     });
+
+    it.each([
+      ['AB 123 CD', true],
+      ['AB123CD', true],
+      ['ABC 123', true],
+      ['ABC123', true],
+      ['ELA 666', true],
+      ['ELA666', true],
+      ['A 123 BCD', true],
+      ['123 ABC', false],
+    ])(
+      'PR87-R05: la validación UI de %s coincide con el schema servidor',
+      (plate, expectedValid) => {
+        render(<VehicleForm courierId="test-courier" initialDni="38123456" />);
+
+        fireEvent.change(screen.getByLabelText(/Patente del vehículo/i), {
+          target: { value: plate },
+        });
+
+        const submitButton = screen.getByRole('button', { name: /Enviar para revisión/i });
+        const schemaResult = vehiclePlateSchema.safeParse(plate);
+
+        expect(schemaResult.success).toBe(expectedValid);
+        expect((submitButton as HTMLButtonElement).disabled).toBe(!schemaResult.success);
+      }
+    );
 
     it('envía el formulario exitosamente llamando a courierOnboardingAction', async () => {
       const mockAction = vi.spyOn(actionsModule, 'courierOnboardingAction').mockResolvedValue({
@@ -155,6 +204,66 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByText('DNI frente y dorso')).toBeDefined();
       expect(screen.getByText('Selfie de seguridad')).toBeDefined();
       expect(screen.getByRole('button', { name: /Ir al panel de repartidor/i })).toBeDefined();
+    });
+  });
+
+  describe('CourierProfileView (R08) y estados documentales reales (PR87-H03)', () => {
+    it('combineDniDocumentStatus combina frente y dorso con none|submitted|verified|rejected', () => {
+      expect(combineDniDocumentStatus('verified', 'verified')).toBe('verified');
+      expect(combineDniDocumentStatus('verified', 'submitted')).toBe('submitted');
+      expect(combineDniDocumentStatus('submitted', 'none')).toBe('submitted');
+      expect(combineDniDocumentStatus('verified', 'rejected')).toBe('rejected');
+      expect(combineDniDocumentStatus('rejected', 'none')).toBe('rejected');
+      expect(combineDniDocumentStatus('none', 'none')).toBe('none');
+    });
+
+    it('getDocumentStatusPresentation mapea submitted a "En revisión" y verified a "Validado por admin"', () => {
+      expect(getDocumentStatusPresentation('verified')).toEqual({
+        variant: 'verified',
+        label: 'Validado por admin',
+      });
+      expect(getDocumentStatusPresentation('submitted')).toEqual({
+        variant: 'declared',
+        label: 'En revisión',
+      });
+      expect(getDocumentStatusPresentation('rejected')).toEqual({
+        variant: 'destructive',
+        label: 'Observado',
+      });
+      expect(getDocumentStatusPresentation('none')).toEqual({
+        variant: 'outline',
+        label: 'No cargado',
+      });
+      expect(() =>
+        getDocumentStatusPresentation('pending' as unknown as DocumentReviewStatus)
+      ).toThrow(/Estado documental no soportado/);
+    });
+
+    it('renderiza CourierProfileView con los 4 estados documentales reales y EmptyState cuando profile es null', () => {
+      const { unmount } = render(
+        <CourierProfileView
+          profile={{
+            displayName: 'Carlos Gómez',
+            email: 'carlos@test.com',
+            vehicleType: 'motorcycle',
+            plate: 'AB 123 CD',
+            dniStatus: 'verified',
+            selfieStatus: 'submitted',
+            licenseStatus: 'rejected',
+            insuranceStatus: 'none',
+            courierStatus: 'approved',
+          }}
+        />
+      );
+
+      expect(screen.getByText('Validado por admin')).toBeDefined();
+      expect(screen.getByText('En revisión')).toBeDefined();
+      expect(screen.getByText('Observado')).toBeDefined();
+      expect(screen.getByText('No cargado')).toBeDefined();
+      unmount();
+
+      render(<CourierProfileView profile={null} />);
+      expect(screen.getByText(/Todavía no completaste tu legajo de repartidor/i)).toBeDefined();
     });
   });
 });

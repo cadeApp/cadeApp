@@ -1,10 +1,5 @@
-import * as React from 'react';
-import { StatusView } from '@/features/courier-onboarding';
+import { redirect } from 'next/navigation';
 
-export default function CourierOnboardingStatusPage() {
-  return (
-    <main className="min-h-screen bg-background text-foreground flex flex-col justify-start items-center">
-      <StatusView />
-    </main>
-  );
+export default function LegacyCourierStatusPage() {
+  redirect('/courier/onboarding/status');
 }

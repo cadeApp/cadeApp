@@ -39,3 +39,86 @@ export const merchantCopy = {
     errorTermsRequired: 'Tenés que aceptar los Términos del piloto para continuar.',
   },
 } as const;
+
+export type MerchantSubscriptionStatus = 'pilot' | 'active' | 'expired' | 'cancelled';
+
+const MONTHS_ES_AR = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+] as const;
+
+export function formatCivilDateEsAr(civilDateStr: string | null): string {
+  if (!civilDateStr) {
+    return 'Sin fecha de vencimiento asignada';
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(civilDateStr.trim());
+  if (!match) {
+    return 'Sin fecha de vencimiento asignada';
+  }
+  const year = Number(match[1]);
+  const monthIdx = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const monthName = MONTHS_ES_AR[monthIdx];
+  if (!monthName || day < 1 || day > 31) {
+    return 'Sin fecha de vencimiento asignada';
+  }
+  return `${String(day).padStart(2, '0')} de ${monthName} de ${year}`;
+}
+
+export function getSubscriptionDisplay(
+  status: MerchantSubscriptionStatus,
+  paidUntil: string | null
+) {
+  const formattedUntil = formatCivilDateEsAr(paidUntil);
+
+  switch (status) {
+    case 'pilot':
+      return {
+        badgeVariant: 'published' as const,
+        badgeLabel: 'Etapa inicial',
+        headline: 'Suscripción en período de prueba bonificado',
+        description:
+          'Podés publicar todas las entregas que necesites con el abono mensual bonificado.',
+        untilLabel: formattedUntil,
+      };
+    case 'active':
+      return {
+        badgeVariant: 'verified' as const,
+        badgeLabel: 'Suscripción al día',
+        headline: 'Tu abono mensual está activo',
+        description: 'Tu comercio tiene habilitadas las publicaciones ilimitadas de envíos.',
+        untilLabel: formattedUntil,
+      };
+    case 'expired':
+      return {
+        badgeVariant: 'expired' as const,
+        badgeLabel: 'Vencida',
+        headline: 'Tu suscripción está vencida',
+        description:
+          'Contactate con soporte para renovar el abono mensual y mantener el servicio activo.',
+        untilLabel: formattedUntil,
+      };
+    case 'cancelled':
+      return {
+        badgeVariant: 'cancelled' as const,
+        badgeLabel: 'Cancelada',
+        headline: 'Suscripción cancelada',
+        description: 'Tu cuenta de comercio se encuentra pausada. Escribinos para reactivarla.',
+        untilLabel: formattedUntil,
+      };
+    default: {
+      const exhaustiveCheck: never = status;
+      throw new Error(`Estado de suscripción no soportado: ${String(exhaustiveCheck)}`);
+    }
+  }
+}

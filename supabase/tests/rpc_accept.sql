@@ -105,6 +105,12 @@ begin
     );
   end loop;
 
+  -- Todos los usuarios nacen con consentimiento activo para poder operar en esta suite
+  update public.profiles
+  set consent_status = 'active'
+  where id in (pg_temp.merchant_1_id(), pg_temp.merchant_2_id())
+     or id in (select pg_temp.courier_id(g) from generate_series(1, 14) as g);
+
   -- Todos los repartidores nacen aprobados y disponibles para poder ofertar
   update public.couriers
   set status = 'approved',

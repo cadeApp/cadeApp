@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { TopBar } from '@/ui/top-bar';
 import { Badge } from '@/ui/badge';
 import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
@@ -10,10 +9,16 @@ import { AvailabilitySwitch } from '@/features/availability';
 import { Radio, AlertCircle } from 'lucide-react';
 import { OFFERS_COPY } from '../copy';
 import type { AvailableRequestItem, CourierStatus } from '../schemas';
+import dynamic from 'next/dynamic';
 import { UnderReview } from './under-review';
 import { RequestCard } from './request-card';
-import { OfferSheet } from './offer-sheet';
+import type { OfferSheetProps } from './offer-sheet';
 import { FeedSkeleton } from './feed-skeleton';
+
+const OfferSheet = dynamic<OfferSheetProps>(
+  () => import('./offer-sheet').then((mod) => mod.OfferSheet),
+  { ssr: false }
+);
 
 export interface CourierFeedProps {
   courierStatus: CourierStatus;
@@ -42,16 +47,18 @@ export function CourierFeed({
   // Estado rechazado
   if (courierStatus === 'rejected') {
     return (
-      <div className="p-4 max-w-md mx-auto min-h-[70vh] flex flex-col justify-center items-center text-center">
-        <div className="h-16 w-16 rounded-full bg-danger/10 text-danger flex items-center justify-center mb-4">
-          <AlertCircle className="h-8 w-8" />
-        </div>
-        <h2 className="font-display text-xl font-bold text-foreground mb-2">
-          No pudimos aprobar tu cuenta
-        </h2>
-        <p className="text-sm text-muted-foreground mb-6">
-          Revisá tu documentación o comunicate con el soporte de cadeApp para más detalles.
-        </p>
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col items-center justify-center p-4 text-center">
+        <Card className="w-full p-6 sm:p-8">
+          <div className="bg-danger/10 text-danger mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="mb-2 font-display text-xl font-bold text-foreground">
+            No pudimos aprobar tu cuenta
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Revisá tu documentación o comunicate con el soporte de cadeApp para más detalles.
+          </p>
+        </Card>
       </div>
     );
   }
@@ -59,16 +66,19 @@ export function CourierFeed({
   // Estado suspendido
   if (courierStatus === 'suspended') {
     return (
-      <div className="p-4 max-w-md mx-auto min-h-[70vh] flex flex-col justify-center items-center text-center">
-        <div className="h-16 w-16 rounded-full bg-warning/10 text-warning flex items-center justify-center mb-4">
-          <AlertCircle className="h-8 w-8" />
-        </div>
-        <h2 className="font-display text-xl font-bold text-foreground mb-2">
-          Cuenta suspendida temporalmente
-        </h2>
-        <p className="text-sm text-muted-foreground mb-6">
-          Tu cuenta de repartidor se encuentra suspendida. Contactá al soporte para resolver la situación.
-        </p>
+      <div className="mx-auto flex min-h-[70vh] w-full max-w-lg flex-col items-center justify-center p-4 text-center">
+        <Card className="w-full p-6 sm:p-8">
+          <div className="bg-warning/10 text-warning mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full">
+            <AlertCircle className="h-8 w-8" />
+          </div>
+          <h2 className="mb-2 font-display text-xl font-bold text-foreground">
+            Cuenta suspendida temporalmente
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Tu cuenta de repartidor se encuentra suspendida. Contactá al soporte para resolver la
+            situación.
+          </p>
+        </Card>
       </div>
     );
   }
@@ -79,91 +89,80 @@ export function CourierFeed({
   };
 
   return (
-    <div className="max-w-md mx-auto pb-20">
-      {/* Barra superior con logo */}
-      <TopBar title="cadeApp" showLogo={true} />
+    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
+      {/* Conmutador de disponibilidad (R04) */}
+      <AvailabilitySwitch
+        initialAvailable={available}
+        onAvailabilityChange={(next) => setAvailable(next)}
+      />
 
-      <div className="p-4 space-y-4">
-        {/* Conmutador de disponibilidad (R04) */}
-        <AvailabilitySwitch
-          initialAvailable={available}
-          onAvailabilityChange={(next) => setAvailable(next)}
-        />
-
-        {/* Encabezado de la lista */}
-        <div className="flex items-center justify-between pt-2">
-          <div className="flex items-center gap-2">
-            <h2 className="font-display text-lg font-bold text-foreground">
-              {OFFERS_COPY.feedTitle}
-            </h2>
-            {available && (
-              <Badge variant="published" className="text-xs flex items-center gap-1">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary-dark" />
-                </span>
-                {OFFERS_COPY.liveBadge}
-              </Badge>
-            )}
-          </div>
+      {/* Encabezado de la lista */}
+      <div className="flex items-center justify-between pt-2">
+        <div className="flex items-center gap-2">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+            {OFFERS_COPY.feedTitle}
+          </h1>
           {available && (
-            <span className="text-sm font-semibold text-muted-foreground">
-              {requests.length}
-            </span>
+            <Badge variant="published" className="flex items-center gap-1 text-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-dark" />
+              </span>
+              {OFFERS_COPY.liveBadge}
+            </Badge>
           )}
         </div>
-
-        {/* Estado no disponible (R04-no-disponible) */}
-        {!available && (
-          <Card className="p-6 text-center shadow-sm border border-dashed border-border">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-3">
-              <Radio className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <h3 className="font-display text-base font-bold text-foreground mb-1">
-              {OFFERS_COPY.unavailableAlertTitle}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {OFFERS_COPY.unavailableAlertDescription}
-            </p>
-          </Card>
-        )}
-
-        {/* Estado disponible */}
         {available && (
-          <>
-            {isLoading ? (
-              <FeedSkeleton />
-            ) : requests.length === 0 ? (
-              <EmptyState
-                icon={<Radio className="h-8 w-8 text-muted-foreground" />}
-                title={OFFERS_COPY.emptyFeedTitle}
-                description={OFFERS_COPY.emptyFeedDescription}
-              />
-            ) : (
-              <div className="space-y-3">
-                {requests.map((req) => (
-                  <RequestCard
-                    key={req.id}
-                    request={req}
-                    onOfferClick={handleOpenOfferSheet}
-                  />
-                ))}
-              </div>
-            )}
-          </>
+          <span className="text-sm font-semibold text-muted-foreground">{requests.length}</span>
         )}
       </div>
 
+      {/* Estado no disponible (R04-no-disponible) */}
+      {!available && (
+        <Card className="border border-dashed border-border p-6 text-center shadow-sm">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <Radio className="h-6 w-6" aria-hidden="true" />
+          </div>
+          <h3 className="mb-1 font-display text-base font-bold text-foreground">
+            {OFFERS_COPY.unavailableAlertTitle}
+          </h3>
+          <p className="text-sm text-muted-foreground">{OFFERS_COPY.unavailableAlertDescription}</p>
+        </Card>
+      )}
+
+      {/* Estado disponible */}
+      {available && (
+        <>
+          {isLoading ? (
+            <FeedSkeleton />
+          ) : requests.length === 0 ? (
+            <EmptyState
+              icon={<Radio className="h-8 w-8 text-muted-foreground" />}
+              title={OFFERS_COPY.emptyFeedTitle}
+              description={OFFERS_COPY.emptyFeedDescription}
+            />
+          ) : (
+            <div className="space-y-3">
+              {requests.map((req) => (
+                <RequestCard key={req.id} request={req} onOfferClick={handleOpenOfferSheet} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
       {/* Bottom Sheet para ofertar (R05) */}
-      <OfferSheet
-        isOpen={isOfferSheetOpen}
-        onClose={() => {
-          setIsOfferSheetOpen(false);
-          setSelectedRequest(null);
-        }}
-        request={selectedRequest}
-        minOfferArs={minOfferArs}
-      />
+      {(isOfferSheetOpen || selectedRequest !== null) && (
+        <OfferSheet
+          isOpen={isOfferSheetOpen}
+          onClose={() => {
+            setIsOfferSheetOpen(false);
+            setSelectedRequest(null);
+          }}
+          request={selectedRequest}
+          minOfferArs={minOfferArs}
+        />
+      )}
     </div>
   );
 }

@@ -26,3 +26,9 @@ export const registerSchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type { SignupRole };
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email('Ingresá un email válido'),
+});
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;

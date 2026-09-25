@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { serverEnv } from '@/server/env';
 import { runSweep } from '@/server/cron/sweep';
+import { sendCriticalAlert } from '@/server/observability';
 
 export const runtime = 'nodejs';
 
@@ -26,7 +27,15 @@ async function handleSweep(req: NextRequest) {
   try {
     const swept = await runSweep();
     return NextResponse.json({ ok: true, swept });
-  } catch {
+  } catch (error) {
+    await sendCriticalAlert({
+      type: 'cron_sweep_failed',
+      severity: 'critical',
+      message: `Fallo crítico en ejecución de cron sweep: ${error instanceof Error ? error.message : String(error)}`,
+      details: {
+        error: error instanceof Error ? error.stack : String(error),
+      },
+    });
     return NextResponse.json({ error: 'Internal Error' }, { status: 500 });
   }
 }

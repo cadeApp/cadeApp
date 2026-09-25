@@ -4,6 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Button } from '@/ui/button';
+import { Card } from '@/ui/card';
+import { Input } from '@/ui/input';
 import { loginAction } from '../actions';
 import { authCopy } from '../copy';
 import { resolvePostLoginRedirect } from '../guards';
@@ -34,7 +37,11 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
       }
 
       // Sanitiza el destino final previniendo Open Redirect y salto de roles
-      const targetUrl = resolvePostLoginRedirect(initialRedirectTo, result.data.role);
+      const targetUrl = resolvePostLoginRedirect(
+        initialRedirectTo,
+        result.data.role,
+        result.data.consentStatus
+      );
       router.push(targetUrl);
       router.refresh();
     } catch {
@@ -44,19 +51,20 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
   };
 
   return (
-    <div className="w-full max-w-sm space-y-6">
-      <div className="space-y-1 text-center">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+    <Card className="w-full space-y-6 p-6 sm:p-8">
+      <div className="space-y-1.5 text-center sm:text-left">
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {authCopy.login.title}
         </h1>
+        <p className="text-sm text-muted-foreground">{authCopy.login.subtitle}</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium text-foreground">
+          <label htmlFor="email" className="block text-sm font-semibold text-foreground">
             {authCopy.login.emailLabel}
           </label>
-          <input
+          <Input
             id="email"
             type="email"
             required
@@ -64,36 +72,36 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder={authCopy.login.emailPlaceholder}
-            className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
 
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label htmlFor="password" className="text-sm font-medium text-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="password" className="text-sm font-semibold text-foreground">
               {authCopy.login.passwordLabel}
             </label>
             <Link
               href="/forgot-password"
-              className="text-sm text-primary-dark hover:underline focus:outline-none focus:ring-1 focus:ring-ring"
+              className="rounded-sm text-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {authCopy.login.forgotPassword}
             </Link>
           </div>
           <div className="relative">
-            <input
+            <Input
               id="password"
               type={showPassword ? 'text' : 'password'}
               required
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="flex h-12 w-full rounded-md border border-input bg-card px-3 py-2 pr-12 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="••••••••"
+              className="pr-12"
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-0 top-0 flex h-12 w-12 items-center justify-center rounded-r-md text-muted-foreground hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="absolute right-0 top-0 flex h-12 min-h-12 w-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={showPassword ? authCopy.login.hidePassword : authCopy.login.showPassword}
             >
               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -103,7 +111,7 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
           {errorMessage && (
             <div
               role="alert"
-              className="mt-2 flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
+              className="mt-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm font-medium text-destructive"
             >
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{errorMessage}</span>
@@ -111,24 +119,25 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
           )}
         </div>
 
-        <button
+        <Button
           type="submit"
+          size="lg"
           disabled={isPending}
-          className="inline-flex h-12 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-base font-semibold text-primary-foreground shadow transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+          className="h-12 min-h-12 w-full font-display text-base font-bold shadow-sm"
         >
           {isPending ? authCopy.login.loadingButton : authCopy.login.submitButton}
-        </button>
+        </Button>
       </form>
 
-      <div className="text-center text-sm text-muted-foreground">
+      <div className="border-t border-border/60 pt-4 text-center text-sm text-muted-foreground">
         <span>{authCopy.login.noAccount} </span>
         <Link
           href="/register"
-          className="font-medium text-primary-dark hover:underline focus:outline-none focus:ring-1 focus:ring-ring"
+          className="rounded-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {authCopy.login.registerLink}
         </Link>
       </div>
-    </div>
+    </Card>
   );
 }

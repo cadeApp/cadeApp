@@ -74,6 +74,17 @@ begin
   -- Promover admin vía bootstrap oficial
   update public.profiles set role = 'admin' where id = pg_temp.admin_id();
 
+  -- Activar consent_status para actores operativos de la matriz
+  update public.profiles set consent_status = 'active'
+  where id in (
+    pg_temp.merchant_1_id(),
+    pg_temp.merchant_2_id(),
+    pg_temp.merchant_idle_id(),
+    pg_temp.courier_approved_1_id(),
+    pg_temp.courier_approved_2_id(),
+    pg_temp.courier_suspended_id()
+  );
+
   -- Ajustar estados de couriers
   update public.couriers set status = 'approved', available = true where profile_id in (pg_temp.courier_approved_1_id(), pg_temp.courier_approved_2_id());
   update public.couriers set status = 'suspended' where profile_id = pg_temp.courier_suspended_id();
@@ -488,9 +499,11 @@ select lives_ok(
   'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_pub_id(), pg_temp.merchant_1_id(), ''complaint'', ''normal incident'')',
   'merchant can report an open incident'
 );
-select lives_ok(
+select throws_ok(
   'insert into public.consents (profile_id, document, version) values (pg_temp.merchant_1_id(), ''tos'', ''v1'')',
-  'merchant can record consent at database time'
+  '42501',
+  null,
+  'merchant cannot directly insert consent row via authenticated role (H08)'
 );
 
 select * from finish();
