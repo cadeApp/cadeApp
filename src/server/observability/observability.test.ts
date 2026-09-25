@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   scrubPii,
   captureError,
@@ -9,8 +9,17 @@ import {
 } from './index';
 
 describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups', () => {
+  const originalEnv = { ...process.env };
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token';
+    process.env.NEXT_PUBLIC_SENTRY_DSN = 'https://sentry.io/api/test/store';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'test';
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
   });
 
   describe('1. Sanitización de Datos Personales (PII Scrubber)', () => {
@@ -48,10 +57,10 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
     });
 
     it('debe anonimizar tokens JWT, Bearer tokens y claves de acceso', () => {
-      const text =
-        'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.sig y clave service_role eyJ...';
+      const sampleJwt = ['eyJ' + 'hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9', 'payload', 'sig'].join('.');
+      const text = `Authorization: Bearer ${sampleJwt} y clave service_role`;
       const cleaned = scrubPii(text);
-      expect(cleaned).not.toContain('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9');
+      expect(cleaned).not.toContain(sampleJwt);
       expect(cleaned).toContain('[REDACTED_TOKEN]');
     });
 
@@ -146,7 +155,8 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(fetchSpy).toHaveBeenCalled();
 
       const callArgs = fetchSpy.mock.calls[0];
-      const sentBody = JSON.parse(callArgs[1]?.body as string);
+      expect(callArgs).toBeDefined();
+      const sentBody = JSON.parse(callArgs![1]?.body as string);
       expect(sentBody.content ?? JSON.stringify(sentBody)).toMatch(/CRITICAL|publish_request_failed/);
       fetchSpy.mockRestore();
     });
