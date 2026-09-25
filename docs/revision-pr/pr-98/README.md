@@ -7,46 +7,35 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-311-legal-consents` → `develop` |
 | **Base revisada** | `develop@7edcfe0` |
-| **SHA de implementación revisado** | `09082afba1a054ed634514a06ce467e76780cc58` |
-| **Tamaño** | 33 archivos, +939 / -57 |
-| **Estado** | bloqueada · Ronda 1 |
+| **SHA revisado** | `c5c737116a9a55da0dfe78b2fd76c079fcc95520` |
+| **Estado** | bloqueada · Ronda 2 |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `09082af` | 1 decisión aceptada · 9 bloqueantes · 1 proceso | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 1 | `09082af` | 9 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `c5c7371` | 5 bloqueantes · 6 cierres | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---:|---|
-| PR98-A01 | Ampliación mínima de alcance | decisión | aceptado por P1; falta reflejarla al resolver la ficha |
-| PR98-H01 | Rama atrás de develop y documentación legal desincronizada | alto | abierto |
-| PR98-H02 | Política de Privacidad incompleta y contacto inexistente | alto | abierto |
-| PR98-H03 | Los términos del piloto no fijan la duración decidida | medio | abierto |
-| PR98-H04 | Dos fuentes pueden declarar versiones distintas de pilot_terms | alto | abierto |
-| PR98-H05 | Los tres flujos carecen de pruebas de mismatch en la Server Action | alto | abierto |
-| PR98-H06 | Un fallo guardando consentimientos deja una cuenta creada sin aceptación | alto | abierto |
-| PR98-H07 | Dos checkboxes de consentimiento no tienen nombre accesible | medio | abierto |
-| PR98-H08 | P04/axe/capturas se marcan hechos sin evidencia reproducible | alto | abierto |
-| PR98-H09 | Bitácora y cuerpo del PR describen un estado que no está registrado | medio | abierto |
-| PR98-H10 | El autor escribió dentro de la carpeta reservada a revisión | medio | arreglado-sin-verificar por la revisión |
+| PR98-A01 | Ampliación mínima de alcance | decisión | aceptado |
+| PR98-H01 | Sincronía develop/ficha/plan | alto | abierto parcial |
+| PR98-H02 | Privacidad incompleta / soporte ficticio | alto | cerrado R2 |
+| PR98-H03 | Duración del piloto ausente | medio | cerrado R2 |
+| PR98-H04 | Dos autoridades de versión | alto | cerrado R2 |
+| PR98-H05 | Falta mismatch en Server Actions | alto | cerrado R2 |
+| PR98-H06 | Cuenta puede sobrevivir sin consentimientos | alto | abierto parcial |
+| PR98-H07 | Checkboxes sin nombre accesible | medio | cerrado R2 |
+| PR98-H08 | P04/axe/capturas sin evidencia | alto | abierto |
+| PR98-H09 | Bitácora/body incompatibles | medio | abierto parcial |
+| PR98-H10 | Autor escribió carpeta de revisión | medio | cerrado R2 |
+| PR98-H11 | Política contradice obligatoriedad real de schemas | alto | nuevo · abierto |
 
-Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
+Datos: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
-## Decisiones de Lautaro073 incorporadas
+## Qué queda
 
-1. **Alcance:** se acepta ampliar T-311 a los archivos concretos de auth, merchant, courier onboarding, layout público, route-integrity y plan que son necesarios para enlazar P04 y persistir la versión mostrada.
-2. **Responsable de datos:** Lautaro Emanuel Jimenez; domicilio de contacto: **Santa Cruz s/n, Aguilares, Tucumán, Argentina**; WhatsApp **+54 3865 575688**; email **lautarojimenez02@gmail.com**.
-3. **Piloto:** duración prevista de **hasta 7 días desde el alta del comercio**. cadeApp puede finalizarlo antes por decisión operativa, informándolo al comercio; no hay cobro retroactivo y cualquier modalidad paga posterior requiere información y aceptación separadas.
-
-## Qué queda por hacer
-
-1. Resolver H01–H09 siguiendo el prompt de la ronda.
-2. No tocar `docs/revision-pr/pr-98/**`: desde este commit la carpeta es exclusivamente de la revisión.
-3. Luego de los arreglos, actualizar bitácora, push y pedir Ronda 2.
-
-## Para el análisis posterior
-
-No se propone una lección numerada nueva. Esta ronda refuerza dos patrones ya documentados: **AG-36** (quien implementa no firma su propia revisión) y **P08 / AG-61–AG-63** (un control debe matar la regresión concreta que dice cubrir). Ver [`lecciones.md`](lecciones.md).
+Resolver H01, H06, H08, H09 y H11. El autor no toca `docs/revision-pr/**`. Luego pedir Ronda 3.

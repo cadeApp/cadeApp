@@ -158,3 +158,61 @@ git status --short
 ```
 
 No se levanta Supabase ni Docker local.
+
+
+---
+
+# Ronda 2 — SHA c5c7371
+
+## R2-E1 · Restos de gate de abogado
+
+```bash
+rg -n "abogado|abogada" docs/implementation-plan.md docs/tasks/T-311.md
+```
+
+T-312 no debe conservar `abogado OK`.
+
+## R2-P1 · Fallo de rollback
+
+Caso requerido:
+
+```ts
+deleteUser.mockResolvedValue({
+  data: { user: null },
+  error: new Error('delete failed'),
+});
+```
+
+Y, preferentemente:
+
+```ts
+deleteUser.mockRejectedValue(new Error('network failure'));
+```
+
+El test tiene que demostrar estado seguro, no solo `INTERNAL_ERROR`.
+
+## R2-P2 · Matriz de obligatoriedad
+
+```text
+register required: email,password,role,acceptTerms,acceptedTermsVersion,acceptedPrivacyVersion
+register optional: displayName,phone
+
+merchant required: businessName,phone,defaultPickupAddress,acceptPilotTerms,pilotTermsVersion
+merchant optional: defaultPickupZoneId,lat/lng,notes
+
+courier required: dni,vehicleType,dni_front,dni_back,selfie,avatar,consents+versions
+courier conditional: vehiclePlate solo moto/car
+courier optional: license,insurance
+
+request required: pickup/dropoff zone+address, recipientName, recipientPhone,
+                  recipientConsentDeclared, packageType, recipientPaymentMethod, needsChange
+request optional/conditional: coordinates, notes, cashChangeAmount
+```
+
+## R2-E3 · Visual
+
+Necesario: 390×844 y 360×800, `/legal` + documento largo, axe AA en superficies tocadas.
+
+## R2-E4 · Body PR
+
+Debe reflejar H08 pendiente, eliminar autorrevisión “SIN BLOQUEANTES” y cifras/rutas obsoletas.
