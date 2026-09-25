@@ -259,3 +259,94 @@ La rama todavía contiene la versión autoampliada de la ficha, pero el nuevo co
 No existe cambio de producto que pueda cerrar A01/H01-H07. Todos permanecen abiertos por la misma evidencia de ronda 1. La nueva bitácora confirma explícitamente que el agente se detuvo por A01/H01 y que H02-H07 siguen pendientes.
 
 No se ejecutan nuevas mutaciones ni checks sobre producto en ronda 2 porque el SHA de producto no cambió; la ronda no presenta resultados de ejecución inventados. CI final tampoco se inspecciona mientras siguen abiertos los bloqueantes.
+
+
+---
+
+# Ronda 3 — SHA `926ca2e`
+
+## Delta desde la ronda 2
+
+La rama incorporó `develop` con PR #93 y luego el commit de producto `0cae1ef`. Los cambios de producto de la ronda afectan:
+
+```text
+src/server/push/sender.ts
+src/server/push/push.test.ts
+src/server/push/database-client.test.ts
+src/app/api/push/subscriptions/route.ts
+src/app/api/push/subscriptions/route.test.ts
+src/app/api/push/send/route.test.ts
+docs/tasks/log/T-203.md
+```
+
+La ficha oficial en `develop` ya autoriza `package.json`, `pnpm-lock.yaml` y `web-push@3.6.7`, y delega el cableado end-to-end a T-206.
+
+## CI independiente observado
+
+Workflow CI del head `926ca2e`: success.
+
+```text
+unit          success
+typecheck     success
+audit         success
+lint          success
+db-tests      success
+build         success
+bundle-budget success
+```
+
+Unit:
+
+```text
+Test Files 46 passed (46)
+Tests      422 passed (422)
+workflows  20 tests
+ADR        6 tests
+```
+
+DB:
+
+```text
+All tests successful.
+Files=8, Tests=1444
+Result: PASS
+```
+
+## Verificación de hallazgos anteriores
+
+- H02: el test actual contiene `expect(failingTransport.send).toHaveBeenCalledTimes(1)`.
+- H03: hay casos de rejection con `statusCode:410`, `404`, error sin status y éxito 201, más integración 410→delete.
+- H04: `it.each` recorre las 5 variantes con `SENTINEL_PII`.
+- H05: `it.each` recorre 200/201, 404/410 y 429/500/503.
+- H06: `db-tests` ejecutó Supabase/pgTAP realmente en CI.
+- H07: la entrada 20:50 de la bitácora contiene los resúmenes rojo/verde de las cinco mutaciones.
+
+## PR91-H08
+
+Código relevante:
+
+```text
+sender.ts:157 private configureVapid(): void
+sender.ts:163 if (publicKey && privateKey) {
+sender.ts:164   this.client.setVapidDetails(...)
+sender.ts:170 this.configureVapid();
+sender.ts:172 ...sendNotification(...)
+```
+
+`serverEnv.VAPID_PRIVATE_KEY` y `publicEnv.NEXT_PUBLIC_VAPID_PUBLIC_KEY` permiten valor vacío. Si falta una key, no se configura VAPID pero el envío continúa.
+
+La suite actual no afirma `setVapidDetails`; todos sus mocks de entorno contienen keys. Por dependencia directa de assertions, una mutación que convierta `configureVapid` en no-op no es detectada por los casos actuales de status.
+
+## PR91-H09
+
+Diff actual de `package.json`:
+
+```text
+- "test": "vitest run ..."
++ "test": "vitest run --testTimeout 15000 ..."
+
+- "test:coverage": "vitest run --coverage"
++ "test:coverage": "vitest run --coverage --testTimeout 15000"
+```
+
+El job `unit` de CI ejecuta `pnpm test:coverage`, por lo tanto el timeout relajado afecta también el control de CI. La bitácora dice que el motivo fue tolerar latencia/concurrencia en Windows.
