@@ -857,5 +857,18 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
         expect(cssHslVars.get(cssVar), `Variable CSS --${cssVar} desincronizada`).toBe(tokenHex);
       }
     });
+
+    it('BrandLogo renderiza todas sus variantes de tamaño (sm, md, lg), color (default, inverse, mono) e ícono sin wordmark', () => {
+      const { rerender } = render(<BrandLogo size="sm" variant="default" showWordmark={true} />);
+      expect(screen.getByRole('img', { name: 'cadeApp' }).getAttribute('class')).toContain('h-8');
+
+      rerender(<BrandLogo size="md" variant="inverse" showWordmark={true} />);
+      expect(screen.getByRole('img', { name: 'cadeApp' }).getAttribute('class')).toContain('h-10');
+
+      rerender(<BrandLogo size="lg" variant="mono" showWordmark={false} label="Logo cadeApp" />);
+      const lgLogo = screen.getByRole('img', { name: 'Logo cadeApp' });
+      expect(lgLogo.getAttribute('class')).toContain('h-12');
+      expect(lgLogo.getAttribute('data-variant')).toBe('mono');
+    });
   });
 });
