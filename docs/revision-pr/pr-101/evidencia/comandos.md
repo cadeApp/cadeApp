@@ -1,65 +1,35 @@
 # Evidencia y probes — PR #101 / CC-007
 
-## Ronda 4 — SHA 7e5dc94
+## Ronda 5 — SHA 7c46b5f
 
-### Sincronía de fichas
+### H12
+Contrato:
 ```text
-T-300 plan:
-develop está verde y se promueve mediante PR develop → staging...
-
-T-300 ficha:
-develop está verde y se promueve mediante PR develop → staging...
-
-T-311 plan:
-Pruebas en rojo antes de implementar y commit separado...
-
-T-311 ficha:
-Pruebas en rojo antes de implementar y commit separado...
+P1 @Lautaro073 — aprobación final CC-007 / D06–D10
+P2 — N/A para CC-007 por D10
 ```
 
-H11 cerrado.
+Body:
+- contiene D10;
+- referencia run final `36191690199`;
+- P2 aparece como N/A, no como pendiente.
 
-### CI final
-Run `36191690199`:
+### CI tras H12
+
+Run `36194207739`:
 
 ```text
-audit         success
 build         success
-unit          success
-lint          success
-db-tests      success
 typecheck     success
+lint          success
+unit          success
+db-tests      success
+audit         success
 bundle-budget success
 ```
 
-Unit:
-```text
-Test Files 52 passed (52)
-```
+### Estado final
 
-DB:
-```text
-All tests successful.
-Files=9, Tests=1472
-Result: PASS
-db:types -> tipos generados exitosamente
-```
+Todos los hallazgos H01–H12 cerrados.
 
-Build:
-```text
-Compiled successfully
-```
-
-Lint:
-```text
-No ESLint warnings or errors
-```
-
-Warnings no bloqueantes:
-- Prettier: 52 archivos pendientes; workflow lo reporta como warning.
-- bundle-budget: warning de alguna ruta sobre presupuesto; workflow configurado no bloqueante.
-- deprecaciones Node/actions del runner.
-
-### H12
-Contract actual aún muestra P2 `[ ]`.
-Body actual aún cita CI run `36188410458` y P2 `[ ]`.
+No se ejecutó `node docs/revision-pr/analizar.mjs verificacion` localmente porque la revisión opera contra GitHub remoto sin checkout local persistente.
