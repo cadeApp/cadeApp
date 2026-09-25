@@ -3,14 +3,23 @@ import { registerSchema } from './schemas';
 import { registerAction, loginAction, logoutAction } from './actions';
 import { getRoleDefaultPath } from './guards';
 import * as serverSupabase from '@/server/supabase/server';
+import * as adminSupabase from '@/server/supabase/admin';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
+}));
+vi.mock('@/server/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
 }));
 
 describe('T-009: Auth actions y esquemas de registro', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        insert: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
   });
 
   describe('Registro y validación de roles permitidos', () => {
@@ -19,11 +28,17 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       };
       const courierInput = {
         email: 'repartidor@test.com',
         password: 'password123',
         role: 'courier',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       };
 
       expect(registerSchema.safeParse(merchantInput).success).toBe(true);
@@ -65,6 +80,9 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(result.ok).toBe(true);
@@ -99,6 +117,9 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'courier@test.com',
         password: 'password123',
         role: 'courier',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(result.ok).toBe(true);
@@ -150,6 +171,9 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
         acceptTerms: false,
       });
 
