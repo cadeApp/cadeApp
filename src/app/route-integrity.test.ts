@@ -6,6 +6,7 @@ import {
   getRoleDefaultPath,
   isMerchantRoute,
   isCourierRoute,
+  resolvePostLoginRedirect,
   registerAction,
   type AuthSession,
 } from '@/features/auth';
@@ -17,23 +18,47 @@ vi.mock('@/server/supabase/server', () => ({
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 
+function resolveSegmentsInDir(baseDir: string, segments: string[]): string | null {
+  let currentDir = baseDir;
+  for (const seg of segments) {
+    if (!fs.existsSync(currentDir)) return null;
+    const exactChild = path.join(currentDir, seg);
+    if (fs.existsSync(exactChild) && fs.statSync(exactChild).isDirectory()) {
+      currentDir = exactChild;
+      continue;
+    }
+    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    const dynamicChild = entries.find((e) => e.isDirectory() && /^\[.+\]$/.test(e.name));
+    if (dynamicChild) {
+      currentDir = path.join(currentDir, dynamicChild.name);
+      continue;
+    }
+    return null;
+  }
+  const pageCandidate = path.join(currentDir, 'page.tsx');
+  if (fs.existsSync(pageCandidate)) return pageCandidate;
+  const routeCandidate = path.join(currentDir, 'route.ts');
+  if (fs.existsSync(routeCandidate)) return routeCandidate;
+  return null;
+}
+
 function resolveRouteToFilesystemPage(routePath: string): string | null {
-  const clean = routePath.split('?')[0] ?? '/';
+  const clean = (routePath.split('?')[0] ?? '/').split('#')[0] ?? '/';
   if (clean === '/') {
     const p = path.join(ROOT_DIR, 'app/page.tsx');
     return fs.existsSync(p) ? p : null;
   }
-  const candidates = [
-    path.join(ROOT_DIR, 'app', clean, 'page.tsx'),
-    path.join(ROOT_DIR, 'app/(public)', clean, 'page.tsx'),
-    path.join(ROOT_DIR, 'app/(merchant)', clean, 'page.tsx'),
-    path.join(ROOT_DIR, 'app/(courier)', clean, 'page.tsx'),
-    path.join(ROOT_DIR, 'app/(admin)', clean, 'page.tsx'),
+  const segments = clean.split('/').filter(Boolean);
+  const baseDirs = [
+    path.join(ROOT_DIR, 'app'),
+    path.join(ROOT_DIR, 'app/(public)'),
+    path.join(ROOT_DIR, 'app/(merchant)'),
+    path.join(ROOT_DIR, 'app/(courier)'),
+    path.join(ROOT_DIR, 'app/(admin)'),
   ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) {
-      return c;
-    }
+  for (const base of baseDirs) {
+    const resolved = resolveSegmentsInDir(base, segments);
+    if (resolved) return resolved;
   }
   return null;
 }
@@ -83,14 +108,34 @@ function getAllT118ScopeFiles(): string[] {
 }
 
 function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): void {
-  const forbiddenHrefs = ['href="/terms"', 'href="/privacy"', 'href="/admin"', 'href="/admin/mfa"'];
-  for (const token of forbiddenHrefs) {
-    if (sourceCode.includes(token)) {
-      throw new Error(`${fileLabel} contiene enlace roto prohibido: ${token}`);
+  const patterns = [
+    /\bhref\s*=\s*['"](\/[^'"]*)['"]/g,
+    /\bredirectTo\s*:\s*['"](\/[^'"]*)['"]/g,
+    /\bredirect\s*\(\s*['"](\/[^'"]*)['"]\s*\)/g,
+    /\brouter\.(?:push|replace)\s*\(\s*['"](\/[^'"]*)['"]\s*\)/g,
+  ];
+
+  for (const regex of patterns) {
+    let match: RegExpExecArray | null = regex.exec(sourceCode);
+    while (match !== null) {
+      const candidate = match[1];
+      if (candidate && !candidate.startsWith('//')) {
+        if (candidate.startsWith('/brand/') || candidate.startsWith('/icons/')) {
+          const publicAsset = path.resolve(ROOT_DIR, '..', 'public', candidate.slice(1));
+          if (!fs.existsSync(publicAsset)) {
+            throw new Error(`${fileLabel} enlaza a asset público inexistente: ${candidate}`);
+          }
+        } else {
+          const pageFile = resolveRouteToFilesystemPage(candidate);
+          if (!pageFile) {
+            throw new Error(
+              `${fileLabel} referencia una ruta interna inexistente en el filesystem: ${candidate}`
+            );
+          }
+        }
+      }
+      match = regex.exec(sourceCode);
     }
-  }
-  if (/redirectTo:\s*['"]\/admin(\/mfa)?['"]/.test(sourceCode)) {
-    throw new Error(`${fileLabel} emite redirectTo hacia ruta inexistente /admin o /admin/mfa`);
   }
 }
 
@@ -234,6 +279,13 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         expect(guardResult.redirectTo).not.toBe('/admin/mfa');
         expect(resolveRouteToFilesystemPage(guardResult.redirectTo)).not.toBeNull();
       }
+
+      for (const probe of ['/ruta-inexistente', '/ghost', '/terms', '/privacy', '/pilot-terms', '/legal']) {
+        const merchantTarget = resolvePostLoginRedirect(probe, 'merchant');
+        const courierTarget = resolvePostLoginRedirect(probe, 'courier');
+        expect(resolveRouteToFilesystemPage(merchantTarget)).not.toBeNull();
+        expect(resolveRouteToFilesystemPage(courierTarget)).not.toBeNull();
+      }
     });
 
     it('incluye src/app/(public)/layout.tsx en la auditoría, muestra texto explícito "en publicación · T-311" y no emite links rotos (/terms, /privacy, /admin, /admin/mfa)', () => {
@@ -251,16 +303,31 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       }
     });
 
-    it('detecta mutaciones inválidas de href o redirectTo (PR87-H09)', () => {
+    it('detecta mutaciones inválidas de href o redirectTo hacia cualquier ruta interna inexistente como /ghost o /ruta-inexistente (PR87-H09)', () => {
       expect(() =>
         assertNoInvalidInternalLinks('<Link href="/terms">Términos</Link>', 'mutated-layout.tsx')
-      ).toThrow(/enlace roto prohibido/);
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks('<Link href="/ghost">Fantasma</Link>', 'mutated-ghost.tsx')
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href="/ruta-inexistente">No existe</Link>',
+          'mutated-nonexistent.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "return { action: 'redirect', redirectTo: '/ghost' };",
+          'mutated-guards.ts'
+        )
+      ).toThrow(/inexistente/);
       expect(() =>
         assertNoInvalidInternalLinks(
           "return { action: 'redirect', redirectTo: '/admin/mfa' };",
           'mutated-guards.ts'
         )
-      ).toThrow(/ruta inexistente/);
+      ).toThrow(/inexistente/);
     });
 
     it('registerAction redirige a onboarding específico de cada rol para usuarios nuevos', async () => {

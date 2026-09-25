@@ -214,5 +214,24 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
 
     // Valid internal redirect for role
     expect(resolvePostLoginRedirect('/merchant/history', 'merchant')).toBe('/merchant/history');
+    expect(resolvePostLoginRedirect('/merchant/requests/req-123', 'merchant')).toBe(
+      '/merchant/requests/req-123'
+    );
+    expect(resolvePostLoginRedirect('/courier/offers', 'courier')).toBe('/courier/offers');
+    expect(resolvePostLoginRedirect('/', 'merchant')).toBe('/');
+    expect(resolvePostLoginRedirect('/design-system', 'courier')).toBe('/design-system');
+
+    // PR87-H01: ningún redirect post-login puede terminar en 404 (rutas inexistentes o legales pendientes de T-311)
+    expect(resolvePostLoginRedirect('/ruta-inexistente', 'merchant')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/ghost', 'courier')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/terms', 'merchant')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/privacy', 'courier')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/pilot-terms', 'merchant')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/legal', 'courier')).toBe('/courier/feed');
+
+    expect(isPublicRoute('/terms')).toBe(false);
+    expect(isPublicRoute('/privacy')).toBe(false);
+    expect(isPublicRoute('/pilot-terms')).toBe(false);
+    expect(isPublicRoute('/legal')).toBe(false);
   });
 });

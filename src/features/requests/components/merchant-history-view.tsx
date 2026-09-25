@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { History, ChevronRight } from 'lucide-react';
+import { formatArs } from '@/lib/format';
 import { Card } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { EmptyState } from '@/ui/empty-state';
@@ -11,6 +12,7 @@ import { cn } from '@/ui/cn';
 import type { MerchantRequestSummary } from '../types';
 
 type FilterTab = 'all' | 'delivered' | 'cancelled' | 'expired';
+const TERMINAL_STATUSES = new Set(['delivered', 'cancelled', 'expired']);
 
 function getDateGroupLabel(dateIso: string): string {
   const d = new Date(dateIso);
@@ -61,8 +63,9 @@ export function MerchantHistoryView({
   }, [activeStatus]);
 
   const filteredRequests = React.useMemo(() => {
-    if (activeTab === 'all') return requests;
-    return requests.filter((r) => r.status === activeTab);
+    const terminalOnly = requests.filter((r) => TERMINAL_STATUSES.has(r.status));
+    if (activeTab === 'all') return terminalOnly;
+    return terminalOnly.filter((r) => r.status === activeTab);
   }, [requests, activeTab]);
 
   const grouped = React.useMemo(() => {
@@ -177,6 +180,10 @@ export function MerchantHistoryView({
               <div className="space-y-2.5">
                 {grouped[dateLabel]?.map((req) => {
                   const badge = getStatusBadgeConfig(req.status);
+                  const hasAcceptedOffer =
+                    Boolean(req.acceptedOfferId) &&
+                    typeof req.acceptedAmountArs === 'number' &&
+                    req.acceptedAmountArs > 0;
                   return (
                     <Link
                       key={req.id}
@@ -187,6 +194,21 @@ export function MerchantHistoryView({
                         <div className="space-y-1 pr-3">
                           <p className="font-display text-base font-bold text-foreground">
                             {req.pickupZoneName} → {req.dropoffZoneName}
+                          </p>
+                          <p className="text-sm font-medium text-foreground">
+                            {hasAcceptedOffer ? (
+                              <>
+                                <span>{req.acceptedCourierName ?? 'Repartidor asignado'}</span>
+                                <span> · </span>
+                                <span className="font-display font-bold">
+                                  {formatArs(req.acceptedAmountArs!)}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="font-normal text-muted-foreground">
+                                Sin repartidor asignado · Sin tarifa acordada
+                              </span>
+                            )}
                           </p>
                           <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
                             <span>

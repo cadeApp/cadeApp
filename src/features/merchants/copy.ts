@@ -42,17 +42,44 @@ export const merchantCopy = {
 
 export type MerchantSubscriptionStatus = 'pilot' | 'active' | 'expired' | 'cancelled';
 
+const MONTHS_ES_AR = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+] as const;
+
+export function formatCivilDateEsAr(civilDateStr: string | null): string {
+  if (!civilDateStr) {
+    return 'Sin fecha de vencimiento asignada';
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(civilDateStr.trim());
+  if (!match) {
+    return 'Sin fecha de vencimiento asignada';
+  }
+  const year = Number(match[1]);
+  const monthIdx = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  const monthName = MONTHS_ES_AR[monthIdx];
+  if (!monthName || day < 1 || day > 31) {
+    return 'Sin fecha de vencimiento asignada';
+  }
+  return `${String(day).padStart(2, '0')} de ${monthName} de ${year}`;
+}
+
 export function getSubscriptionDisplay(
   status: MerchantSubscriptionStatus,
   paidUntil: string | null
 ) {
-  const formattedUntil = paidUntil
-    ? new Date(paidUntil).toLocaleDateString('es-AR', {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-      })
-    : 'Sin fecha de vencimiento asignada';
+  const formattedUntil = formatCivilDateEsAr(paidUntil);
 
   switch (status) {
     case 'pilot':

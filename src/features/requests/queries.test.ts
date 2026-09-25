@@ -329,10 +329,15 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: allSixtyRows.slice(0, 51), error: null }),
             };
           }
-          // Query global de métricas (60 filas completas)
+          // Queries acotadas de métricas en lotes de 50 (PR87-R03)
+          const batchRows =
+            deliveryCallCount === 2 ? allSixtyRows.slice(0, 50) : allSixtyRows.slice(50, 60);
           return {
             select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockResolvedValue({ data: allSixtyRows, error: null }),
+            eq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            lt: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockResolvedValue({ data: batchRows, error: null }),
           };
         }
         if (table === 'offers') {
@@ -373,7 +378,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
           created_at: todayIso,
           accepted_offer_id: 'off-1',
           pickup_zone: { name: 'Centro' },
-          dropoff_zone: { name: 'Sur' },
+          dropoff_zone: { name: 'Norte' },
         },
         {
           id: 'req-2',
@@ -391,21 +396,14 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         },
       ];
 
-      let deliveryCallCount = 0;
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') {
-          deliveryCallCount += 1;
-          if (deliveryCallCount === 1) {
-            return {
-              select: vi.fn().mockReturnThis(),
-              eq: vi.fn().mockReturnThis(),
-              order: vi.fn().mockReturnThis(),
-              limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
-            };
-          }
           return {
             select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockResolvedValue({ data: rows, error: null }),
+            eq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockReturnThis(),
+            lt: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
           };
         }
         if (table === 'offers') {
@@ -439,6 +437,243 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(result.metrics.avgRateArs).toBe(2100);
       expect(result.metrics.dispatchedToday).toBe(2);
       expect(result.metrics.activeCount).toBe(1);
+    });
+
+    it('PR87-H17: status=all en C07 filtra exclusivamente estados terminales (delivered, cancelled, expired) antes de paginar y excluye activas con >50 filas', async () => {
+      const callLog: string[] = [];
+      const terminalRows = Array.from({ length: 51 }, (_, idx) => ({
+        id: `00000000-0000-4000-8000-${String(idx + 1).padStart(12, '0')}`,
+        approx_distance_m: 1400,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        cash_change_amount: null,
+        status: idx % 2 === 0 ? 'delivered' : 'cancelled',
+        expires_at: null,
+        created_at: `2026-09-24T12:${String(59 - idx).padStart(2, '0')}:00.000Z`,
+        accepted_offer_id: null,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: { name: 'Sur' },
+      }));
+
+      const queryBuilder = {
+        select: vi.fn(() => {
+          callLog.push('select');
+          return queryBuilder;
+        }),
+        eq: vi.fn((col: string, val: string) => {
+          callLog.push(`eq:${col}=${val}`);
+          return queryBuilder;
+        }),
+        in: vi.fn((col: string, vals: string[]) => {
+          callLog.push(`in:${col}=[${vals.join(',')}]`);
+          return queryBuilder;
+        }),
+        order: vi.fn((col: string) => {
+          callLog.push(`order:${col}`);
+          return queryBuilder;
+        }),
+        limit: vi.fn((n: number) => {
+          callLog.push(`limit:${n}`);
+          return Promise.resolve({ data: terminalRows, error: null });
+        }),
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return queryBuilder;
+          return {
+            select: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const res = await getMerchantHistoryRequests('merchant-1', { status: 'all', limit: 50 });
+      const inIdx = callLog.indexOf('in:status=[delivered,cancelled,expired]');
+      const limitIdx = callLog.indexOf('limit:51');
+      expect(inIdx).toBeGreaterThan(-1);
+      expect(limitIdx).toBeGreaterThan(inIdx);
+      expect(res.requests).toHaveLength(50);
+      expect(
+        res.requests.every((r) => ['delivered', 'cancelled', 'expired'].includes(r.status))
+      ).toBe(true);
+    });
+
+    it('PR87-H18: C07 hidrata cadete y monto real cuando hay oferta aceptada y devuelve null honesto cuando fue cancelada/vencida sin oferta aceptada', async () => {
+      const historyRows = [
+        {
+          id: 'req-delivered-1',
+          approx_distance_m: 1800,
+          package_type: 'mediano',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          cash_change_amount: null,
+          status: 'delivered',
+          expires_at: null,
+          created_at: '2026-09-24T14:00:00.000Z',
+          accepted_offer_id: 'off-accepted-99',
+          pickup_zone: { name: 'Barrio Centro' },
+          dropoff_zone: { name: 'Villa Nueva' },
+        },
+        {
+          id: 'req-cancelled-2',
+          approx_distance_m: null,
+          package_type: 'sobre',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          cash_change_amount: null,
+          status: 'cancelled',
+          expires_at: null,
+          created_at: '2026-09-24T13:00:00.000Z',
+          accepted_offer_id: null,
+          pickup_zone: { name: 'Barrio Centro' },
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: historyRows, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn((cols: string) => {
+                if (cols.includes('amount_ars')) {
+                  return {
+                    in: vi.fn().mockResolvedValue({
+                      data: [
+                        {
+                          id: 'off-accepted-99',
+                          amount_ars: 2300,
+                          courier: { profile: { display_name: 'Lucía Fernández' } },
+                        },
+                      ],
+                      error: null,
+                    }),
+                  };
+                }
+                return {
+                  in: vi.fn().mockReturnThis(),
+                  eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+                };
+              }),
+            };
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const res = await getMerchantHistoryRequests('merchant-1', { status: 'all' });
+      expect(res.requests[0]?.acceptedAmountArs).toBe(2300);
+      expect(res.requests[0]?.acceptedCourierName).toBe('Lucía Fernández');
+      expect(res.requests[1]?.acceptedAmountArs).toBeNull();
+      expect(res.requests[1]?.acceptedCourierName).toBeNull();
+    });
+
+    it('PR87-R03 / H19: ninguna query de métricas se ejecuta sin .limit(<=51) y el día civil se calcula en America/Argentina/Buenos_Aires (2026-09-25T01:30:00Z sigue siendo 24/09 en Aguilares, sin contaminar con días previos)', async () => {
+      // Instante borde: 2026-09-25T01:30:00Z = 2026-09-24 22:30 en Aguilares (UTC-3)
+      const borderNow = new Date('2026-09-25T01:30:00.000Z');
+      const reqTodayAguilares = {
+        id: 'req-today-ar',
+        approx_distance_m: 1500,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        cash_change_amount: null,
+        status: 'delivered',
+        expires_at: null,
+        created_at: '2026-09-25T01:15:00.000Z', // 24/09 22:15 en Aguilares -> HOY
+        accepted_offer_id: 'off-today-1',
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: { name: 'Sur' },
+      };
+      const reqYesterdayAguilares = {
+        id: 'req-yesterday-ar',
+        approx_distance_m: 1500,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        cash_change_amount: null,
+        status: 'delivered',
+        expires_at: null,
+        created_at: '2026-09-24T02:15:00.000Z', // 23/09 23:15 en Aguilares -> AYER
+        accepted_offer_id: 'off-yesterday-1',
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: { name: 'Sur' },
+      };
+
+      const unboundedCalls: string[] = [];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') {
+            let hasLimit = false;
+            const builder = {
+              select: vi.fn().mockImplementation(() => builder),
+              eq: vi.fn().mockImplementation(() => {
+                // Si alguien hace await directo a .eq() sin pasar por .limit(), registramos violación R03
+                return builder;
+              }),
+              in: vi.fn().mockImplementation(() => builder),
+              gte: vi.fn().mockImplementation(() => builder),
+              lt: vi.fn().mockImplementation(() => builder),
+              order: vi.fn().mockImplementation(() => builder),
+              or: vi.fn().mockImplementation(() => builder),
+              limit: vi.fn().mockImplementation((n: number) => {
+                if (n <= 51) hasLimit = true;
+                return Promise.resolve({
+                  data: [reqTodayAguilares, reqYesterdayAguilares],
+                  error: null,
+                });
+              }),
+              then: (resolve: (v: unknown) => void) => {
+                if (!hasLimit) {
+                  unboundedCalls.push('unbounded-delivery-requests-query');
+                }
+                resolve({ data: [reqTodayAguilares, reqYesterdayAguilares], error: null });
+              },
+            };
+            return builder;
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn((cols: string) => {
+                if (cols === 'amount_ars') {
+                  return {
+                    in: vi.fn((_col: string, ids: string[]) => ({
+                      limit: vi.fn().mockResolvedValue({
+                        data: ids.map((id) =>
+                          id === 'off-today-1' ? { amount_ars: 2500 } : { amount_ars: 9900 }
+                        ),
+                        error: null,
+                      }),
+                    })),
+                  };
+                }
+                return {
+                  in: vi.fn().mockReturnThis(),
+                  eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+                };
+              }),
+            };
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const res = await getMerchantRequests('merchant-1', { limit: 50, now: borderNow });
+      expect(unboundedCalls).toEqual([]);
+      expect(res.metrics.dispatchedToday).toBe(1); // Solo reqTodayAguilares (24/09 22:15 AR)
+      expect(res.metrics.avgRateArs).toBe(2500); // No contaminado por 9900 de ayer
     });
   });
 });

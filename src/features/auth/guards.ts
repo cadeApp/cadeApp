@@ -85,8 +85,45 @@ export function isPublicRoute(pathname: string): boolean {
   if (pathname === '/' || isAuthRoute(pathname)) {
     return true;
   }
-  const publicPrefixes = ['/terms', '/privacy', '/pilot-terms', '/forgot-password', '/legal'];
+  const publicPrefixes = ['/forgot-password', '/design-system'];
   return publicPrefixes.some((prefix) => matchesSegment(pathname, prefix));
+}
+
+const EXISTING_SHARED_ROUTES = new Set<string>(['/', '/design-system']);
+
+const EXISTING_MERCHANT_EXACT_ROUTES = new Set<string>([
+  '/merchant/dashboard',
+  '/merchant/history',
+  '/merchant/onboarding',
+  '/merchant/plan',
+  '/merchant/requests',
+  '/merchant/requests/new',
+]);
+
+const EXISTING_COURIER_EXACT_ROUTES = new Set<string>([
+  '/courier',
+  '/courier/feed',
+  '/courier/offers',
+  '/courier/profile',
+  '/courier/onboarding/identity',
+  '/courier/onboarding/vehicle',
+  '/courier/onboarding/status',
+]);
+
+export function isKnownExistingRouteForRole(pathname: string, role: ProfileRole): boolean {
+  if (EXISTING_SHARED_ROUTES.has(pathname)) {
+    return true;
+  }
+  if (role === 'merchant') {
+    if (EXISTING_MERCHANT_EXACT_ROUTES.has(pathname)) {
+      return true;
+    }
+    return /^\/merchant\/requests\/[^/]+$/.test(pathname);
+  }
+  if (role === 'courier') {
+    return EXISTING_COURIER_EXACT_ROUTES.has(pathname);
+  }
+  return false;
 }
 
 export function resolvePostLoginRedirect(rawRedirectTo: unknown, role: ProfileRole): string {
@@ -101,8 +138,8 @@ export function resolvePostLoginRedirect(rawRedirectTo: unknown, role: ProfileRo
     return getRoleDefaultPath(role);
   }
 
-  const [pathname] = rawRedirectTo.split('?');
-  if (!pathname || isAuthRoute(pathname)) {
+  const [pathname, query] = rawRedirectTo.split('?');
+  if (!pathname || isAuthRoute(pathname) || pathname === '/forgot-password') {
     return getRoleDefaultPath(role);
   }
 
@@ -114,8 +151,15 @@ export function resolvePostLoginRedirect(rawRedirectTo: unknown, role: ProfileRo
   };
 
   const guardResult = evaluateRouteGuard(pathname, mockSession);
-  if (guardResult.action === 'allow') {
+  if (guardResult.action === 'allow' && isKnownExistingRouteForRole(pathname, role)) {
     return rawRedirectTo;
+  }
+
+  if (guardResult.action === 'redirect') {
+    const [targetPathname] = guardResult.redirectTo.split('?');
+    if (targetPathname && isKnownExistingRouteForRole(targetPathname, role)) {
+      return query ? `${targetPathname}?${query}` : guardResult.redirectTo;
+    }
   }
 
   return getRoleDefaultPath(role);

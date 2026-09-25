@@ -32,6 +32,8 @@ export interface MerchantRequestSummary {
   readonly createdAt: string;
   readonly offersCount: number;
   readonly acceptedOfferId: string | null;
+  readonly acceptedAmountArs?: number | null;
+  readonly acceptedCourierName?: string | null;
 }
 
 export interface MerchantRequestDetail {

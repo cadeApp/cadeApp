@@ -74,7 +74,7 @@ describe('T-111 / T-118: queries de merchants y estado de suscripción (C08)', (
                   default_pickup_zone_id: 'z1',
                   notes: 'Timbre blanco',
                   subscription_status: status,
-                  paid_until: '2026-12-31T23:59:59Z',
+                  paid_until: '2026-12-31',
                   zones: { name: 'Centro' },
                 },
                 error: null,
@@ -95,10 +95,12 @@ describe('T-111 / T-118: queries de merchants y estado de suscripción (C08)', (
       const profile = await getMerchantAccountProfile();
       expect(profile).not.toBeNull();
       expect(profile?.subscriptionStatus).toBe(status);
+      expect(profile?.paidUntil).toBe('2026-12-31');
 
       const display = getSubscriptionDisplay(status, profile?.paidUntil ?? null);
       expect(display.headline.length).toBeGreaterThan(5);
       expect(display.badgeLabel.length).toBeGreaterThan(3);
+      expect(display.untilLabel).toBe('31 de diciembre de 2026');
     }
   );
 

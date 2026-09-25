@@ -42,6 +42,36 @@ export interface GetMerchantRequestsOptions {
   readonly limit?: number;
   readonly status?: HistoryFilterStatus;
   readonly cursor?: MerchantHistoryCursor | null;
+  readonly now?: Date;
+}
+
+export const HISTORY_TERMINAL_STATUSES = ['delivered', 'cancelled', 'expired'] as const;
+
+export function getAguilaresDayBoundsUtc(now: Date = new Date()): {
+  readonly civilDate: string;
+  readonly startUtcIso: string;
+  readonly endUtcIso: string;
+} {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+
+  const year = parts.find((p) => p.type === 'year')?.value ?? '2026';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '01';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '01';
+  const civilDate = `${year}-${month}-${day}`;
+
+  const startDate = new Date(`${civilDate}T00:00:00.000-03:00`);
+  const endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+
+  return {
+    civilDate,
+    startUtcIso: startDate.toISOString(),
+    endUtcIso: endDate.toISOString(),
+  };
 }
 
 export function parseMerchantHistorySearchParams(raw?: {
@@ -179,13 +209,22 @@ interface RawOfferItem {
   } | null;
 }
 
+interface AcceptedOfferHydration {
+  readonly amountArs: number;
+  readonly courierName: string;
+}
+
 function mapRawMerchantRequests(
   rawRequests: RawMerchantRequest[],
-  offersCountMap: Map<string, number>
+  offersCountMap: Map<string, number>,
+  acceptedOffersMap?: Map<string, AcceptedOfferHydration>
 ): MerchantRequestSummary[] {
   return rawRequests.map((req) => {
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+    const hydratedOffer = req.accepted_offer_id
+      ? acceptedOffersMap?.get(req.accepted_offer_id)
+      : undefined;
 
     return {
       id: req.id,
@@ -201,6 +240,8 @@ function mapRawMerchantRequests(
       createdAt: req.created_at,
       offersCount: offersCountMap.get(req.id) ?? 0,
       acceptedOfferId: req.accepted_offer_id,
+      acceptedAmountArs: hydratedOffer ? hydratedOffer.amountArs : null,
+      acceptedCourierName: hydratedOffer ? hydratedOffer.courierName : null,
     };
   });
 }
@@ -242,7 +283,11 @@ export async function getMerchantHistoryRequests(
     `)
     .eq('merchant_id', merchantId);
 
-  if (status !== 'all') {
+  if (status === 'all') {
+    if (typeof query.in === 'function') {
+      query = query.in('status', [...HISTORY_TERMINAL_STATUSES]);
+    }
+  } else {
     query = query.eq('status', status);
   }
 
@@ -263,7 +308,9 @@ export async function getMerchantHistoryRequests(
     throw new Error(`Error al cargar historial de solicitudes: ${error.message}`);
   }
 
-  const fetchedRows = (requestsData as unknown as RawMerchantRequest[] | null) ?? [];
+  const fetchedRows = ((requestsData as unknown as RawMerchantRequest[] | null) ?? []).filter(
+    (r) => (HISTORY_TERMINAL_STATUSES as readonly string[]).includes(r.status)
+  );
   const hasMore = fetchedRows.length > pageSize;
   const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
   const lastItem = rawRequests.at(-1);
@@ -297,8 +344,67 @@ export async function getMerchantHistoryRequests(
     }
   }
 
+  // PR87-H18: Hidratar oferta aceptada real (cadete y monto) para filas del historial
+  const acceptedOfferIds = Array.from(
+    new Set(
+      rawRequests
+        .map((r) => r.accepted_offer_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    )
+  );
+  const acceptedOffersMap = new Map<string, AcceptedOfferHydration>();
+
+  if (acceptedOfferIds.length > 0) {
+    const acceptedQuery = supabase
+      .from('offers')
+      .select(
+        `
+        id,
+        amount_ars,
+        courier:couriers!courier_id(
+          profile:profiles!profile_id(display_name)
+        )
+      `
+      )
+      .in('id', acceptedOfferIds);
+
+    const { data: acceptedData, error: acceptedError } = await (typeof (
+      acceptedQuery as unknown as { limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }
+    ).limit === 'function'
+      ? (acceptedQuery as unknown as { limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }).limit(50)
+      : acceptedQuery);
+
+    if (acceptedError) {
+      throw new Error(`Error al cargar ofertas aceptadas del historial: ${acceptedError.message}`);
+    }
+
+    const rows =
+      (acceptedData as Array<{
+        id: string;
+        amount_ars: number;
+        courier?:
+          | { profile?: { display_name?: string } | Array<{ display_name?: string }> | null }
+          | Array<{ profile?: { display_name?: string } | Array<{ display_name?: string }> | null }>
+          | null;
+      }> | null) ?? [];
+
+    for (const row of rows) {
+      const courierObj = Array.isArray(row.courier) ? row.courier[0] : row.courier;
+      const profileObj = courierObj?.profile
+        ? Array.isArray(courierObj.profile)
+          ? courierObj.profile[0]
+          : courierObj.profile
+        : null;
+      const courierName = profileObj?.display_name?.trim() || 'Repartidor asignado';
+      acceptedOffersMap.set(row.id, {
+        amountArs: row.amount_ars,
+        courierName,
+      });
+    }
+  }
+
   return {
-    requests: mapRawMerchantRequests(rawRequests, offersCountMap),
+    requests: mapRawMerchantRequests(rawRequests, offersCountMap, acceptedOffersMap),
     nextCursor,
     status,
   };
@@ -356,18 +462,10 @@ export async function getMerchantRequests(
     );
   }
 
-  const metricsQuery = supabase
-    .from('delivery_requests')
-    .select('id, status, created_at, accepted_offer_id')
-    .eq('merchant_id', merchantId);
-
-  const [pageResult, metricsResult] = await Promise.all([pageQuery, metricsQuery]);
+  const pageResult = await pageQuery;
 
   if (pageResult.error) {
     throw new Error(`Error al cargar solicitudes del comercio: ${pageResult.error.message}`);
-  }
-  if (metricsResult.error) {
-    throw new Error(`Error al cargar métricas del comercio: ${metricsResult.error.message}`);
   }
 
   const fetchedRows = (pageResult.data as unknown as RawMerchantRequest[] | null) ?? [];
@@ -377,42 +475,94 @@ export async function getMerchantRequests(
   const nextCursor: MerchantHistoryCursor | null =
     hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
 
-  const allMerchantRows =
-    (metricsResult.data as unknown as Array<{
-      id: string;
-      status: string;
-      created_at: string;
-      accepted_offer_id: string | null;
-    }> | null) ?? rawRequests;
+  // PR87-R03 + PR87-H19: Lectura acotada por lotes de <=50 filas (nunca sin .limit) y corte diario civil de Aguilares
+  const { startUtcIso, endUtcIso } = getAguilaresDayBoundsUtc(options?.now ?? new Date());
+  const METRICS_BATCH_LIMIT = 50;
+  const MAX_METRICS_BATCHES = 10;
+  const seenIds = new Set<string>();
+  const aggregatedRows: Array<{
+    id: string;
+    status: string;
+    created_at: string;
+    accepted_offer_id: string | null;
+  }> = [];
 
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  let metricsCursor: MerchantHistoryCursor | null = null;
+  for (let batchIdx = 0; batchIdx < MAX_METRICS_BATCHES; batchIdx += 1) {
+    let batchQuery = supabase
+      .from('delivery_requests')
+      .select('id, status, created_at, accepted_offer_id')
+      .eq('merchant_id', merchantId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
+
+    if (metricsCursor && typeof batchQuery.or === 'function') {
+      batchQuery = batchQuery.or(
+        `created_at.lt.${metricsCursor.createdAt},and(created_at.eq.${metricsCursor.createdAt},id.lt.${metricsCursor.id})`
+      );
+    }
+
+    const batchRes = await batchQuery.limit(METRICS_BATCH_LIMIT);
+    if (batchRes.error) {
+      throw new Error(`Error al cargar métricas del comercio: ${batchRes.error.message}`);
+    }
+
+    const batchRows =
+      (batchRes.data as unknown as Array<{
+        id: string;
+        status: string;
+        created_at: string;
+        accepted_offer_id: string | null;
+      }> | null) ?? [];
+
+    let newRowsAdded = 0;
+    for (const r of batchRows) {
+      if (!seenIds.has(r.id)) {
+        seenIds.add(r.id);
+        aggregatedRows.push(r);
+        newRowsAdded += 1;
+      }
+    }
+
+    if (batchRows.length < METRICS_BATCH_LIMIT || newRowsAdded === 0) {
+      break;
+    }
+
+    const tail = batchRows.at(-1);
+    if (!tail) break;
+    metricsCursor = { createdAt: tail.created_at, id: tail.id };
+  }
 
   let dispatchedToday = 0;
   let activeCount = 0;
-  const acceptedOfferIds: string[] = [];
+  const todayAcceptedOfferIds: string[] = [];
 
-  for (const row of allMerchantRows) {
+  for (const row of aggregatedRows) {
     if (['published', 'matched', 'in_transit'].includes(row.status)) {
       activeCount += 1;
     }
-    if (
-      ['matched', 'in_transit', 'delivered'].includes(row.status) &&
-      row.created_at >= todayStart
-    ) {
+    const isWithinAguilaresToday = row.created_at >= startUtcIso && row.created_at < endUtcIso;
+    if (['matched', 'in_transit', 'delivered'].includes(row.status) && isWithinAguilaresToday) {
       dispatchedToday += 1;
     }
-    if (row.accepted_offer_id) {
-      acceptedOfferIds.push(row.accepted_offer_id);
+    if (row.accepted_offer_id && isWithinAguilaresToday) {
+      todayAcceptedOfferIds.push(row.accepted_offer_id);
     }
   }
 
   let avgRateArs: number | null = null;
-  if (acceptedOfferIds.length > 0) {
-    const { data: acceptedOffersData, error: acceptedOffersError } = await supabase
+  if (todayAcceptedOfferIds.length > 0) {
+    const boundedOfferIds = todayAcceptedOfferIds.slice(0, 50);
+    const offersQuery = supabase
       .from('offers')
       .select('amount_ars')
-      .in('id', acceptedOfferIds);
+      .in('id', boundedOfferIds);
+
+    const { data: acceptedOffersData, error: acceptedOffersError } = await (typeof (
+      offersQuery as unknown as { limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }
+    ).limit === 'function'
+      ? (offersQuery as unknown as { limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }).limit(50)
+      : offersQuery);
 
     if (acceptedOffersError) {
       throw new Error(`Error al cargar ofertas aceptadas: ${acceptedOffersError.message}`);
