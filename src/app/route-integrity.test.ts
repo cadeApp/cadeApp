@@ -115,36 +115,134 @@ function normalizeTemplateRoute(rawCandidate: string): string {
   return rawCandidate.replace(/\$\{[^}]+\}/g, '__dynamic_segment__');
 }
 
+function validateInternalRouteCandidate(rawCandidate: string, fileLabel: string): void {
+  if (!rawCandidate || rawCandidate.startsWith('//')) return;
+  const candidate = normalizeTemplateRoute(rawCandidate);
+  if (candidate.startsWith('/brand/') || candidate.startsWith('/icons/')) {
+    const publicAsset = path.resolve(ROOT_DIR, '..', 'public', candidate.slice(1));
+    if (!fs.existsSync(publicAsset)) {
+      throw new Error(`${fileLabel} enlaza a asset público inexistente: ${rawCandidate}`);
+    }
+    return;
+  }
+  const pageFile = resolveRouteToFilesystemPage(candidate);
+  if (!pageFile) {
+    throw new Error(
+      `${fileLabel} referencia una ruta interna inexistente en el filesystem: ${rawCandidate}`
+    );
+  }
+}
+
 function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): void {
   const patterns = [
-    /\bhref\s*=\s*(?:['"](\/[^'"]*)['"]|\{\s*`(\/[^`]*)`\s*\})/g,
+    /\bhref\s*[:=]\s*(?:['"](\/[^'"]*)['"]|\{\s*`(\/[^`]*)`\s*\}|`(\/[^`]*)`)/g,
+    /\bhref\s*=\s*\{\s*([a-zA-Z_$][\w$]*)\s*\([^}]*\)\s*\}/g,
+    /\breturn\s+(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
+    /\bredirectTo\s*:\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
+    /\bredirect\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`|([a-zA-Z_$][\w$.]*))\s*\)/g,
+    /\brouter\.(?:push|replace)\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`|([^)]+))\s*\)/g,
+  ];
+
+  // 1) Direct route literals, template literals, nav object properties (href: '/...'), and helper returns (return `/...`)
+  const directPatterns = [
+    /\bhref\s*[:=]\s*(?:['"](\/[^'"]*)['"]|\{\s*`(\/[^`]*)`\s*\}|`(\/[^`]*)`)/g,
+    /\breturn\s+(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
     /\bredirectTo\s*:\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
     /\bredirect\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)\s*\)/g,
     /\brouter\.(?:push|replace)\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)\s*\)/g,
   ];
 
-  for (const regex of patterns) {
+  for (const regex of directPatterns) {
     let match: RegExpExecArray | null = regex.exec(sourceCode);
     while (match !== null) {
-      const rawCandidate = match[1] ?? match[2];
-      if (rawCandidate && !rawCandidate.startsWith('//')) {
-        const candidate = normalizeTemplateRoute(rawCandidate);
-        if (candidate.startsWith('/brand/') || candidate.startsWith('/icons/')) {
-          const publicAsset = path.resolve(ROOT_DIR, '..', 'public', candidate.slice(1));
-          if (!fs.existsSync(publicAsset)) {
-            throw new Error(`${fileLabel} enlaza a asset público inexistente: ${rawCandidate}`);
-          }
-        } else {
-          const pageFile = resolveRouteToFilesystemPage(candidate);
-          if (!pageFile) {
-            throw new Error(
-              `${fileLabel} referencia una ruta interna inexistente en el filesystem: ${rawCandidate}`
-            );
-          }
-        }
+      const rawCandidate = match[1] ?? match[2] ?? match[3];
+      if (rawCandidate) {
+        validateInternalRouteCandidate(rawCandidate, fileLabel);
       }
       match = regex.exec(sourceCode);
     }
+  }
+
+  // 2) Indirect JSX helper calls: href={helperName(...)}
+  const helperCallRegex = patterns[1]!;
+  helperCallRegex.lastIndex = 0;
+  let helperMatch: RegExpExecArray | null = helperCallRegex.exec(sourceCode);
+  while (helperMatch !== null) {
+    const helperName = helperMatch[1];
+    if (helperName) {
+      const helperDefRegex = new RegExp(
+        `(?:function\\s+${helperName}|(?:const|let|var)\\s+${helperName}\\s*=)[\\s\\S]*?return\\s+(?:['"](\\/[^'"]*)['"]|\`(\\/[^\`]*)\`)`
+      );
+      const defMatch = helperDefRegex.exec(sourceCode);
+      const returnedRoute = defMatch?.[1] ?? defMatch?.[2];
+      if (!returnedRoute) {
+        throw new Error(
+          `${fileLabel} invoca helper de ruta sin destino interno verificable (inexistente): ${helperName}`
+        );
+      }
+      validateInternalRouteCandidate(returnedRoute, fileLabel);
+    }
+    helperMatch = helperCallRegex.exec(sourceCode);
+  }
+
+  // 3) Indirect router.push / router.replace expressions: router.push(targetUrl) / router.push(result.data.redirectTo)
+  const routerCallRegex = patterns[5]!;
+  routerCallRegex.lastIndex = 0;
+  let routerMatch: RegExpExecArray | null = routerCallRegex.exec(sourceCode);
+  while (routerMatch !== null) {
+    const indirectExpr = routerMatch[3]?.trim();
+    if (indirectExpr) {
+      // Check any fallback string/template literal inside the expression (e.g. || '/courier/onboarding/status')
+      const fallbackMatch = /(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/.exec(indirectExpr);
+      const fallbackRoute = fallbackMatch?.[1] ?? fallbackMatch?.[2];
+      if (fallbackRoute) {
+        validateInternalRouteCandidate(fallbackRoute, fileLabel);
+      }
+
+      if (/^[a-zA-Z_$][\w$]*$/.test(indirectExpr)) {
+        const varDefRegex = new RegExp(
+          `(?:const|let|var)\\s+${indirectExpr}\\s*=\\s*([^;\\n]+)`
+        );
+        const varDefMatch = varDefRegex.exec(sourceCode);
+        const rhs = varDefMatch?.[1]?.trim();
+        if (!rhs) {
+          throw new Error(
+            `${fileLabel} navega a variable sin ruta interna verificable (inexistente): ${indirectExpr}`
+          );
+        }
+        const literalRhs = /^(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/.exec(rhs);
+        const assignedRoute = literalRhs?.[1] ?? literalRhs?.[2];
+        if (assignedRoute) {
+          validateInternalRouteCandidate(assignedRoute, fileLabel);
+        } else if (rhs.includes('resolvePostLoginRedirect(')) {
+          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'merchant'), fileLabel);
+          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'courier'), fileLabel);
+        } else {
+          throw new Error(
+            `${fileLabel} asigna ruta interna inexistente o no verificable a ${indirectExpr}: ${rhs}`
+          );
+        }
+      } else if (indirectExpr.includes('.redirectTo')) {
+        const actionProducerMap: ReadonlyArray< readonly [string, string]> = [
+          ['registerAction', 'features/auth/actions.ts'],
+          ['merchantOnboardingAction', 'features/merchants/actions.ts'],
+          ['createDeliveryRequestAction', 'features/requests/actions.ts'],
+          ['courierOnboardingAction', 'features/courier-onboarding/actions.ts'],
+        ];
+        const matchedProducer = actionProducerMap.find(([actionName]) =>
+          sourceCode.includes(actionName)
+        );
+        if (!matchedProducer) {
+          throw new Error(
+            `${fileLabel} navega a redirectTo indirecto sin productor verificable (inexistente): ${indirectExpr}`
+          );
+        }
+        const actionFilePath = path.join(ROOT_DIR, matchedProducer[1]);
+        const actionContent = fs.readFileSync(actionFilePath, 'utf-8');
+        assertNoInvalidInternalLinks(actionContent, matchedProducer[1]);
+      }
+    }
+    routerMatch = routerCallRegex.exec(sourceCode);
   }
 }
 
@@ -367,6 +465,36 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
           'mutated-guards.ts'
         )
       ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "const navItems = [{ label: 'Solicitudes', href: '/merchant/dashboard' }, { label: 'Ghost', href: '/ghost' }];",
+          'mutated-merchant-nav.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href={buildNextCursorHref(nextCursor)}>Siguiente</Link>',
+          'mutated-orphan-helper-call.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'const buildNextCursorHref = () => `/ghost?${params.toString()}`; <Link href={buildNextCursorHref(nextCursor)}>Siguiente</Link>',
+          'mutated-helper-return.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          "const targetUrl = '/ghost'; router.push(targetUrl);",
+          'mutated-router-variable.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'router.push(targetUrl);',
+          'mutated-unverified-router-variable.tsx'
+        )
+      ).toThrow(/inexistente/);
     });
 
     it('registerAction redirige a onboarding específico de cada rol para usuarios nuevos', async () => {
@@ -408,22 +536,38 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
   });
 
   describe('DoD 5: Integridad de Navegación, 0 text-xs en TODO el alcance T-118 y buttonVariants válidos (PR87-H07, H08, H15)', () => {
-    it('merchant-nav.tsx y courier-nav.tsx definen los 3 destinos canónicos de cada rol', () => {
+    it('merchant-nav.tsx y courier-nav.tsx definen exactamente los 3 destinos canónicos de cada rol sin rutas extra', () => {
+      const extractObjectHrefs = (code: string): string[] => {
+        const regex = /\bhref\s*:\s*(?:['"]([^'"]+)['"]|`([^`]+)`)/g;
+        const found: string[] = [];
+        let m: RegExpExecArray | null = regex.exec(code);
+        while (m !== null) {
+          const href = m[1] ?? m[2];
+          if (href) found.push(href);
+          m = regex.exec(code);
+        }
+        return found;
+      };
+
       const merchantNav = fs.readFileSync(
         path.resolve(ROOT_DIR, 'app/(merchant)/merchant-nav.tsx'),
         'utf-8'
       );
-      expect(merchantNav).toContain('/merchant/dashboard');
-      expect(merchantNav).toContain('/merchant/history');
-      expect(merchantNav).toContain('/merchant/plan');
+      const merchantHrefs = extractObjectHrefs(merchantNav);
+      expect(merchantHrefs).toEqual(['/merchant/dashboard', '/merchant/history', '/merchant/plan']);
+      for (const href of merchantHrefs) {
+        expect(resolveRouteToFilesystemPage(href)).not.toBeNull();
+      }
 
       const courierNav = fs.readFileSync(
         path.resolve(ROOT_DIR, 'app/(courier)/courier-nav.tsx'),
         'utf-8'
       );
-      expect(courierNav).toContain('/courier/feed');
-      expect(courierNav).toContain('/courier/offers');
-      expect(courierNav).toContain('/courier/profile');
+      const courierHrefs = extractObjectHrefs(courierNav);
+      expect(courierHrefs).toEqual(['/courier/feed', '/courier/offers', '/courier/profile']);
+      for (const href of courierHrefs) {
+        expect(resolveRouteToFilesystemPage(href)).not.toBeNull();
+      }
     });
 
     it('0 ocurrencias de text-xs y 0 usos de variant: "primary" en TODO el alcance de T-118', () => {
