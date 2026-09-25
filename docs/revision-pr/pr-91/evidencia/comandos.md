@@ -350,3 +350,102 @@ Diff actual de `package.json`:
 ```
 
 El job `unit` de CI ejecuta `pnpm test:coverage`, por lo tanto el timeout relajado afecta también el control de CI. La bitácora dice que el motivo fue tolerar latencia/concurrencia en Windows.
+
+
+---
+
+# Ronda 4 — SHA `54a996c`
+
+## Delta desde `a7c2460`
+
+```text
+275c4bc fix(push): enforce VAPID credentials and revert test timeouts [T-203]
+54a996c docs(T-203): record commit 275c4bc in session log [T-203]
+```
+
+Archivos:
+
+```text
+docs/tasks/log/T-203.md
+package.json
+src/server/push/push.test.ts
+src/server/push/sender.ts
+```
+
+## H08
+
+Inspección de `sender.ts`:
+
+```text
+configureVapid:
+- trim public/private
+- si falta una: throw "VAPID credentials missing..."
+- setVapidDetails(subject, public, private)
+- vapidConfigured = true
+
+send:
+- configureVapid antes de sendNotification
+- cualquier error de configuración se convierte en status 500
+```
+
+Inspección de `push.test.ts`:
+
+```text
+setVapidDetails -> llamado una vez con subject/public/private
+public key faltante -> status 500 + sendNotification no llamado
+private key faltante -> status 500 + sendNotification no llamado
+ambas faltantes -> status 500 + sendNotification no llamado
+```
+
+Bitácora del autor:
+
+```text
+mutación configureVapid -> no-op:
+Tests 4 failed | 33 passed (37)
+verde restaurado:
+Tests 37 passed (37)
+```
+
+## H09
+
+`package.json` actual:
+
+```text
+"test": "vitest run && ..."
+"test:coverage": "vitest run --coverage"
+```
+
+No existe `--testTimeout 15000` en esos scripts.
+
+## CI observado
+
+Workflow `36076862734` sobre `54a996c`:
+
+```text
+lint          success
+audit         success
+typecheck     success
+build         success
+unit          success
+db-tests      success
+bundle-budget success
+```
+
+Unit:
+
+```text
+Test Files 46 passed (46)
+Tests      426 passed (426)
+workflow tests 20
+ADR tests 6
+```
+
+DB:
+
+```text
+All tests successful.
+Files=8, Tests=1444
+Result: PASS
+```
+
+No se ejecutó checkout local en el entorno del revisor; la ejecución independiente disponible es CI.

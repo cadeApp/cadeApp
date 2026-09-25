@@ -26,3 +26,13 @@ No se crea un AG nuevo.
 - **PR91-H09** refuerza la lección de evidencia/controles: un cambio hecho “para tolerar” una suite no puede modificar globalmente el propio criterio de fallo y luego declarar que ningún umbral fue debilitado. Si el problema es una prueba concreta, la excepción debe ser local y justificada.
 
 La ronda también confirma que separar T-203/T-206 eliminó la contradicción de alcance sin esconder obligaciones del fallo: el cableado sigue trazado en una tarea explícita.
+
+
+## Ronda 4
+
+H08 y H09 quedaron cerrados sin introducir un patrón nuevo.
+
+- H08 confirma el valor de probar el **prerrequisito** de una frontera además de sus respuestas: no basta con mapear 404/410 si VAPID puede no haberse configurado.
+- H09 confirma que la forma correcta de resolver una suite problemática no es ampliar globalmente el criterio de tolerancia. El CI final pasa con el timeout original.
+
+No se propone una regla nueva: ambos casos ya están cubiertos por P08/regla 40 y por la prohibición de debilitar checks de la regla 00.
