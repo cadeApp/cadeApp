@@ -58,6 +58,7 @@ const PHASE_0_TASKS = [
  *   targetColumn: string,
  *   optionId: string,
  *   shouldCloseIssue: boolean,
+ *   shouldReopenIssue?: boolean,
  *   addLabels: string[],
  *   removeLabels: string[],
  * }} BoardTransition
@@ -231,6 +232,7 @@ export function computeBoardTransitions({
       targetColumn: meta.column,
       optionId: meta.optionId,
       shouldCloseIssue: isCompleted && !isClosed,
+      shouldReopenIssue: Boolean(openPr && isClosed),
       addLabels,
       removeLabels,
     });
@@ -454,6 +456,14 @@ async function main() {
   });
 
   for (const transition of transitions) {
+    if (transition.shouldReopenIssue) {
+      await githubApi(repository, token, `/issues/${transition.number}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'open' }),
+      });
+      console.log(`Issue #${transition.number} [${transition.taskId}]: reabierta por PR activo`);
+    }
     if (transition.shouldCloseIssue) {
       await githubApi(repository, token, `/issues/${transition.number}`, {
         method: 'PATCH',
