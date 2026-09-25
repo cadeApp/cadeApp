@@ -42,6 +42,9 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         tos: true,
         privacy: true,
         courierContract: true,
+        tosVersion: '1.0',
+        privacyVersion: '1.0',
+        courierContractVersion: '1.0',
       },
     });
 
@@ -82,6 +85,9 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         tos: true,
         privacy: true,
         courierContract: true,
+        tosVersion: '1.0',
+        privacyVersion: '1.0',
+        courierContractVersion: '1.0',
       },
     });
 
@@ -146,6 +152,9 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         tos: true,
         privacy: true,
         courierContract: true,
+        tosVersion: '1.0',
+        privacyVersion: '1.0',
+        courierContractVersion: '1.0',
       },
     });
 
@@ -214,6 +223,9 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         tos: true,
         privacy: true,
         courierContract: true,
+        tosVersion: '1.0',
+        privacyVersion: '1.0',
+        courierContractVersion: '1.0',
       },
     });
 
@@ -295,6 +307,9 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         tos: true,
         privacy: true,
         courierContract: true,
+        tosVersion: '1.0',
+        privacyVersion: '1.0',
+        courierContractVersion: '1.0',
       },
     });
 
