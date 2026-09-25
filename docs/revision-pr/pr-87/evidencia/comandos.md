@@ -680,3 +680,86 @@ Bundle budget: varias rutas >180 kB; job explícitamente advisory
 ~~~
 
 T-118 no incorpora esos tres advisory como criterios bloqueantes y no agrega dependencias nuevas.
+
+
+---
+
+# Ronda 7 — post-mejoras sobre 25fa07856ac92bfcb8999ce213c71f688290e6c9
+
+## Estado
+
+~~~text
+R6 review head: a3a2fe9a87b8e6e81e3d1418dd11639360a609b2
+R7 implementation head: 25fa07856ac92bfcb8999ce213c71f688290e6c9
+compare: ahead 1 / behind 0
+docs/revision-pr/pr-87/** tocado por agente: NO
+PR mergeable: true
+~~~
+
+## CI exact-head
+
+Run `36102363779`:
+
+~~~text
+build         success — 33/33
+unit          success — 47/47 files, 497/497 tests
+lint          success
+typecheck     success
+db-tests      success — Result: PASS
+audit         success (2 moderate advisory)
+bundle-budget success
+~~~
+
+Approval-policy `36102361748`: success.
+
+## Bundle
+
+~~~text
+/courier/feed                 179 kB OK
+/courier/offers               179 kB OK
+/courier/onboarding/identity  168 kB OK
+/courier/onboarding/status    168 kB OK
+/courier/onboarding/vehicle   168 kB OK
+/courier/profile              168 kB OK
+/merchant/dashboard           164 kB OK
+/merchant/history             164 kB OK
+/merchant/onboarding          130 kB OK
+/merchant/plan                156 kB OK
+/merchant/requests/[id]       164 kB OK
+/merchant/requests/new        164 kB OK
+/design-system                184 kB (fuera del budget específico merchant/courier)
+~~~
+
+## R05 — regex
+
+Probe JS independiente:
+
+~~~text
+plate       schema  VehicleForm
+AB 123 CD   true    true
+A 123 BCD   true    false
+ABC 123     true    true
+123 ABC     false   true
+~~~
+
+## R06 — notify lazy
+
+~~~text
+AvailabilitySwitch:
+Promise.all([setAvailabilityAction(...), import('@/ui/notify')])
+=> fallo de import puede impedir rollback/feedback del ActionResult.
+
+MyOffersList:
+Promise.all([withdrawOfferAction(...), import('@/ui/notify')])
+=> action puede haberse ejecutado pero UI no actualiza si falla el chunk.
+
+OfferSheet:
+await submitOfferAction(...)
+await import('@/ui/notify')  // mismo try
+=> si import falla después del éxito, catch muestra fallo aunque el submit ya ocurrió.
+~~~
+
+## H21
+
+Body: 43 suites / 443 tests / 31 páginas.
+CI head actual: 47 archivos / 497 tests / 33 páginas.

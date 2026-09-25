@@ -6,44 +6,32 @@
 | **Tarea** | T-118 |
 | **Autor** | @Lautaro073 |
 | **Rama** | feat/T-118-integracion-visual-stitch → develop |
-| **SHA R6 implementación revisada** | `feb3c7fc47c50c961505be95fd07cf2635787649` |
+| **SHA R7 revisado** | `25fa07856ac92bfcb8999ce213c71f688290e6c9` |
 | **develop** | `b6bdac6cfe4c5ac9227e87692b8572e1f6bc2121` |
-| **Tamaño actual** | 96 archivos, +6727 / -799 |
-| **Estado** | **SIN BLOQUEANTES** |
+| **Estado** | **CON BLOQUEANTES (3)** |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `027f39e` | 12 bloqueantes | [ronda-1.md](revisiones/ronda-1.md) |
-| 2 | `225cd08` | 13 bloqueantes · 0 decisiones pendientes | [ronda-2.md](revisiones/ronda-2.md) |
+| 2 | `225cd08` | 13 bloqueantes | [ronda-2.md](revisiones/ronda-2.md) |
 | 3 | `6c321d0` | 8 bloqueantes | [ronda-3.md](revisiones/ronda-3.md) |
 | 4 | `cf6fa22` | 4 bloqueantes | [ronda-4.md](revisiones/ronda-4.md) |
 | 5 | `bdece0f` | 1 bloqueante | [ronda-5.md](revisiones/ronda-5.md) |
-| 6 | `feb3c7f` | **SIN BLOQUEANTES** | [ronda-6.md](revisiones/ronda-6.md) |
+| 6 | `feb3c7f` | SIN BLOQUEANTES | [ronda-6.md](revisiones/ronda-6.md) |
+| 7 | `25fa078` | **3 bloqueantes (regresiones post-mejoras)** | [ronda-7.md](revisiones/ronda-7.md) |
 
-## Estado final
+## Estado actual
 
 | Estado | IDs |
 |---|---|
+| Abiertos | R05, R06, H21 |
 | Arreglados-verificados | H01–H20, R01–R04 |
-| Aceptados por decisión P1 | A01, A02 |
-| Abiertos/parciales | ninguno |
-| Decisiones pendientes | ninguna |
+| Aceptados por decisión P1 | A01, A02, A03 |
 
-Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [evidencia/comandos.md](evidencia/comandos.md)
+## Nota
 
-## CI final inspeccionado
+Las mejoras post-R6 sí consiguieron el presupuesto de First Load JS de Regla 25 en todas las rutas merchant/courier, pero introdujeron dos regresiones funcionales y dejaron el body desactualizado. No mergear hasta revalidar esos tres puntos.
 
-Sobre `feb3c7fc47c50c961505be95fd07cf2635787649`:
-- CI run `36097343224`: 7/7 jobs success.
-- unit: 47/47 archivos, 497/497 tests.
-- db-tests: PASS.
-- build: 33/33 páginas.
-- approval-policy run `36097341915`: success.
-
-Advisory no bloqueante: Prettier (89 archivos), 2 vulnerabilidades moderadas, y varias rutas sobre el budget de 180 kB.
-
-## Decisiones de alcance vigentes
-
-A01/A02 siguen aceptadas por decisión explícita de Lautaro/P1.
+Datos: [hallazgos.jsonl](hallazgos.jsonl) · evidencia: [evidencia/comandos.md](evidencia/comandos.md)

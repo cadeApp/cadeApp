@@ -66,3 +66,14 @@ R04/H20 sí demuestran un cierre más robusto: los tests nuevos atacan el umbral
 H09 finalmente quedó cerrado cuando el control dejó de pensar sólo en “formas sintácticas de un link” y empezó a seguir **productores de destinos**: configuración de nav, helpers y variables/resultados de actions. La mutación útil no era otra cadena concreta, sino agregar un destino nuevo por un camino indirecto que antes el scanner no observaba.
 
 El cierre también deja una distinción operativa importante: un warning de CI no es automáticamente un bloqueante. En este repo Prettier, audit de dependencias y bundle budget están configurados explícitamente como advisory. Deben quedar visibles como deuda/mejora, pero no reinterpretarse como DoD bloqueante de una tarea que no fijó esos umbrales.
+
+
+## Ronda 7 — optimizar sin cambiar la semántica
+
+El cierre de R6 fue correcto para ese SHA, pero una optimización posterior introdujo dos regresiones aun con CI verde.
+
+- **R05:** copiar una regla de validación para evitar cargar Zod no es tree-shaking: es crear otra fuente de verdad. Peor, la copia ya nació distinta. Un presupuesto de bundle nunca justifica separar la validación de cliente de la validación de la Server Action.
+- **R06:** lazy-load de UI auxiliar (toast/dialog) es válido sólo si su fallo queda aislado. Cuando `import(notify)` participa del mismo `Promise.all` o `try` que una mutación, una falla de chunk puede cambiar el rollback, dejar estado local viejo o transformar un éxito real en un error.
+- **H21:** `approval-policy` verde no prueba que el informe sea del head actual; sólo valida que exista texto con la forma esperada. Después de cualquier commit semántico, la evidencia del body debe refrescarse.
+
+Lección general: **performance es una propiedad adicional, no una licencia para debilitar contratos o control de flujo**.
