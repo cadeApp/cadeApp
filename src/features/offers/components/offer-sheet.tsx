@@ -98,15 +98,17 @@ export function OfferSheet({
           return;
         }
       }
-
-      const { notify } = await import('@/ui/notify');
-      notify.success(OFFERS_COPY.offerSuccess);
-      onClose();
     } catch {
       setServerError('Ocurrió un inconveniente inesperado. Intentá nuevamente.');
-    } finally {
       setIsSubmitting(false);
+      return;
     }
+
+    setIsSubmitting(false);
+    onClose();
+    void import('@/ui/notify')
+      .then(({ notify }) => notify.success(OFFERS_COPY.offerSuccess))
+      .catch(() => {});
   };
 
   const packageLabel =

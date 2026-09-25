@@ -13,6 +13,7 @@ import {
   type DocumentReviewStatus,
 } from './components/courier-profile-view';
 import * as actionsModule from './actions';
+import { vehiclePlateSchema } from './schemas';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -133,6 +134,28 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         expect(screen.getByText(/Formato de patente inválido/i)).toBeDefined();
       });
     });
+
+    it.each([
+      ['AB 123 CD', true],
+      ['A 123 BCD', true],
+      ['ABC 123', true],
+      ['123 ABC', false],
+    ])(
+      'PR87-R05: la validación UI de %s coincide con el schema servidor',
+      (plate, expectedValid) => {
+        render(<VehicleForm courierId="test-courier" initialDni="38123456" />);
+
+        fireEvent.change(screen.getByLabelText(/Patente del vehículo/i), {
+          target: { value: plate },
+        });
+
+        const submitButton = screen.getByRole('button', { name: /Enviar para revisión/i });
+        const schemaResult = vehiclePlateSchema.safeParse(plate);
+
+        expect(schemaResult.success).toBe(expectedValid);
+        expect((submitButton as HTMLButtonElement).disabled).toBe(!schemaResult.success);
+      }
+    );
 
     it('envía el formulario exitosamente llamando a courierOnboardingAction', async () => {
       const mockAction = vi.spyOn(actionsModule, 'courierOnboardingAction').mockResolvedValue({

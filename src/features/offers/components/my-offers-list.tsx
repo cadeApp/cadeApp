@@ -41,17 +41,18 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
 
     const offerId = offerToWithdraw.offerId;
     startWithdrawTransition(async () => {
-      const [result, { notify }] = await Promise.all([
-        withdrawOfferAction({ offerId }),
-        import('@/ui/notify'),
-      ]);
+      const result = await withdrawOfferAction({ offerId });
       if (!result.ok) {
-        notify.error(getDomainErrorMessage(result.code));
+        void import('@/ui/notify')
+          .then(({ notify }) => notify.error(getDomainErrorMessage(result.code)))
+          .catch(() => {});
       } else {
-        notify.success(OFFERS_COPY.withdrawSuccess);
         setOffers((prev) =>
           prev.map((o) => (o.offerId === offerId ? { ...o, status: 'withdrawn' } : o))
         );
+        void import('@/ui/notify')
+          .then(({ notify }) => notify.success(OFFERS_COPY.withdrawSuccess))
+          .catch(() => {});
       }
       setOfferToWithdraw(null);
     });

@@ -25,21 +25,24 @@ export function AvailabilitySwitch({
     setAvailable(nextState);
 
     startTransition(async () => {
-      const [result, { notify }] = await Promise.all([
-        setAvailabilityAction({ available: nextState }),
-        import('@/ui/notify'),
-      ]);
+      const result = await setAvailabilityAction({ available: nextState });
       if (!result.ok) {
         // Rollback al estado anterior si falla
         setAvailable(!nextState);
-        notify.error(getDomainErrorMessage(result.code));
+        void import('@/ui/notify')
+          .then(({ notify }) => notify.error(getDomainErrorMessage(result.code)))
+          .catch(() => {});
       } else {
         onAvailabilityChange?.(nextState);
-        if (nextState) {
-          notify.success(AVAILABILITY_COPY.successAvailable);
-        } else {
-          notify.info(AVAILABILITY_COPY.successUnavailable);
-        }
+        void import('@/ui/notify')
+          .then(({ notify }) => {
+            if (nextState) {
+              notify.success(AVAILABILITY_COPY.successAvailable);
+            } else {
+              notify.info(AVAILABILITY_COPY.successUnavailable);
+            }
+          })
+          .catch(() => {});
       }
     });
   };

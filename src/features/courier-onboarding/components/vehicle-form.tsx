@@ -22,10 +22,8 @@ import { COURIER_ONBOARDING_COPY } from '../copy';
 import { StepIndicator } from './step-indicator';
 import { type CourierDocumentKind, uploadCourierDocument } from '../upload-manager';
 import { courierOnboardingAction } from '../actions';
+import { ARGENTINA_PLATE_REGEX } from '../schemas';
 import type { VehicleType } from '@/domain/schemas';
-
-const ARGENTINA_PLATE_REGEX =
-  /^(?:[A-Z]{3}\s?\d{3}|[A-Z]{2}\s?\d{3}\s?[A-Z]{2}|\d{3}\s?[A-Z]{3})$/i;
 
 export interface VehicleFormProps {
   courierId?: string;
