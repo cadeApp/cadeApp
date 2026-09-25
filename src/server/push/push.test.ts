@@ -10,6 +10,7 @@ import {
   type PushTransport,
   type PushDatabaseClient,
   type WebPushClient,
+  type WebPushOptions,
 } from './sender';
 
 vi.mock('@/server/env', () => ({
@@ -290,6 +291,78 @@ describe('T-203 · Emisor de Notificaciones Push (DoD)', () => {
       expect(result.failedCount).toBe(1);
       expect(result.deletedSubscriptions).toContain('https://push.example.com/sub/1');
       expect(mockDb.deleteSubscriptionByEndpoint).toHaveBeenCalledWith('https://push.example.com/sub/1');
+    });
+  });
+
+  describe('PR91-H08: Protección y configuración VAPID de WebPushTransport', () => {
+    it('configura VAPID con subject, clave pública y clave privada esperadas en el primer envío y no repite la llamada', async () => {
+      const mockWebpush: WebPushClient = {
+        setVapidDetails: vi.fn(),
+        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
+      };
+
+      const transport = new WebPushTransport(mockWebpush);
+      await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
+      await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
+
+      expect(mockWebpush.setVapidDetails).toHaveBeenCalledTimes(1);
+      expect(mockWebpush.setVapidDetails).toHaveBeenCalledWith(
+        'mailto:test@cadeapp.com',
+        'test-public-key',
+        'test-private-key'
+      );
+      expect(mockWebpush.sendNotification).toHaveBeenCalledTimes(2);
+    });
+
+    it('devuelve fallo técnico determinista 500 y NO llama a sendNotification si falta la clave pública', async () => {
+      const mockWebpush: WebPushClient = {
+        setVapidDetails: vi.fn(),
+        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
+      };
+
+      const transport = new WebPushTransport(mockWebpush, {
+        vapid: { publicKey: '', privateKey: 'test-private-key' },
+      });
+      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
+
+      expect(res.status).toBe(500);
+      expect(res.error).toMatch(/VAPID credentials missing.*NEXT_PUBLIC_VAPID_PUBLIC_KEY/i);
+      expect(mockWebpush.setVapidDetails).not.toHaveBeenCalled();
+      expect(mockWebpush.sendNotification).not.toHaveBeenCalled();
+    });
+
+    it('devuelve fallo técnico determinista 500 y NO llama a sendNotification si falta la clave privada', async () => {
+      const mockWebpush: WebPushClient = {
+        setVapidDetails: vi.fn(),
+        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
+      };
+
+      const transport = new WebPushTransport(mockWebpush, {
+        vapid: { publicKey: 'test-public-key', privateKey: '' },
+      });
+      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
+
+      expect(res.status).toBe(500);
+      expect(res.error).toMatch(/VAPID credentials missing.*VAPID_PRIVATE_KEY/i);
+      expect(mockWebpush.setVapidDetails).not.toHaveBeenCalled();
+      expect(mockWebpush.sendNotification).not.toHaveBeenCalled();
+    });
+
+    it('devuelve fallo técnico determinista 500 y NO llama a sendNotification si faltan ambas claves', async () => {
+      const mockWebpush: WebPushClient = {
+        setVapidDetails: vi.fn(),
+        sendNotification: vi.fn().mockResolvedValue({ statusCode: 201 }),
+      };
+
+      const transport = new WebPushTransport(mockWebpush, {
+        vapid: { publicKey: '', privateKey: '' },
+      });
+      const res = await transport.send(mockSubscriptions[0]!, JSON.stringify({ test: true }));
+
+      expect(res.status).toBe(500);
+      expect(res.error).toMatch(/VAPID credentials missing/i);
+      expect(mockWebpush.setVapidDetails).not.toHaveBeenCalled();
+      expect(mockWebpush.sendNotification).not.toHaveBeenCalled();
     });
   });
 

@@ -146,29 +146,44 @@ export interface WebPushClient {
   ) => Promise<{ statusCode: number }>;
 }
 
+export interface WebPushOptions {
+  vapid?: {
+    subject?: string;
+    publicKey?: string;
+    privateKey?: string;
+  };
+}
+
 export class WebPushTransport implements PushTransport {
   private vapidConfigured = false;
   private client: WebPushClient;
+  private vapidOptions?: WebPushOptions['vapid'];
 
-  constructor(client: WebPushClient = webpush) {
+  constructor(client: WebPushClient = webpush, options?: WebPushOptions) {
     this.client = client;
+    this.vapidOptions = options?.vapid;
   }
 
   private configureVapid(): void {
     if (this.vapidConfigured) return;
-    const publicKey = publicEnv.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-    const privateKey = serverEnv.VAPID_PRIVATE_KEY;
-    const subject = serverEnv.VAPID_SUBJECT || 'mailto:admin@cadeapp.com';
+    const publicKey = this.vapidOptions?.publicKey !== undefined ? this.vapidOptions.publicKey : publicEnv.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const privateKey = this.vapidOptions?.privateKey !== undefined ? this.vapidOptions.privateKey : serverEnv.VAPID_PRIVATE_KEY;
+    const subject = this.vapidOptions?.subject !== undefined ? this.vapidOptions.subject : (serverEnv.VAPID_SUBJECT || 'mailto:admin@cadeapp.com');
 
-    if (publicKey && privateKey) {
-      this.client.setVapidDetails(subject, publicKey, privateKey);
-      this.vapidConfigured = true;
+    const cleanPublic = publicKey?.trim();
+    const cleanPrivate = privateKey?.trim();
+
+    if (!cleanPublic || !cleanPrivate) {
+      throw new Error('VAPID credentials missing: NEXT_PUBLIC_VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are required');
     }
+
+    this.client.setVapidDetails(subject, cleanPublic, cleanPrivate);
+    this.vapidConfigured = true;
   }
 
   async send(subscription: PushSubscriptionRecord, payload: string): Promise<{ status: number; error?: string }> {
-    this.configureVapid();
     try {
+      this.configureVapid();
       const res = await this.client.sendNotification(
         {
           endpoint: subscription.endpoint,
