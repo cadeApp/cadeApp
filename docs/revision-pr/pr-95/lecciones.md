@@ -51,3 +51,26 @@ El procedimiento de PITR asumió que el proveedor crea una instancia nueva, pero
 - H04 afecta el entregable específico de la tarea, no solo documentación cosmética.
 - H09/H12 son decisiones humanas tomadas durante esta revisión; H13 es la consecuencia técnica pendiente: el código actual todavía consume el DSN.
 - H10/H11 ya están decididos y deben ejecutarse sin volver a consultar: integrar ahora y quitar la frecuencia trimestral.
+
+
+## Ronda 2
+
+### AG-81 · Acotá el timeout del propio transporte de observabilidad
+
+**Origen:** H14
+
+Agregar observabilidad dentro del camino de error crea una dependencia nueva: si el sink externo se cuelga y el caller hace `await`, la aplicación puede quedar esperando al sistema que debía observarla.
+
+> **Regla propuesta.** Todo transporte externo de observabilidad/alertas invocado desde un camino de negocio debe tener timeout explícito y prueba de servicio colgado. La prueba debe demostrar que la operación original termina aunque el sink no responda.
+
+### Revalidación de AG-78 y AG-79
+
+- **AG-78** se confirma en H04/H05: reescribir un acta o afirmar “se registraron mutaciones” no sustituye la evidencia.
+- **AG-79** se confirma en H01: cubrir los seis campos detectados inicialmente no equivale a derivar la matriz de privacidad del contrato completo.
+
+## Estado al cierre de R2
+
+- Cerrados/verificados: H02, H03, H06, H07, H08, H10, H11, H13.
+- Aceptados por decisión: H09, H12.
+- Abiertos: H01, H04, H05, H14.
+- Decisiones pendientes: 0.

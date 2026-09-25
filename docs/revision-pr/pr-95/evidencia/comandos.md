@@ -1,214 +1,158 @@
 # Evidencia y comandos reproducibles — PR #95
 
-**SHA revisado:** `56f9c968a797f41f23eaf2dc325e7554006f93f6`  
+## Ronda 2
+
+**SHA revisado:** `369756bd91a9757d3f97b420513e8b423d081881`  
 **Base:** `cd0e69dabd31aa6531fa212d47a90c47e86ef155`
 
-## Estado de rama
-
-Comparación GitHub `develop...feat/T-310-backups-observabilidad`:
-
-- status: `ahead`
-- ahead_by: 4
-- behind_by: 0
-- changed_files: 10
-
-Todos los archivos modificados están dentro de la lista permitida de `docs/tasks/T-310.md`.
-
-## CI del SHA exacto
-
-GitHub Actions run `CI #287`:
+### Estado de rama
 
 ```text
-typecheck: success
-lint: success
-unit: success
-  Test Files 47 passed (47)
-  Tests      440 passed (440)
-db-tests: success
-  Files=8, Tests=1444
-  Result: PASS
-build: success
-bundle-budget: success
+develop...feat/T-310-backups-observabilidad
+ahead_by: 8
+behind_by: 0
+changed_files: 25
 ```
 
-La bitácora dice `454 tests` y `test:db n.a.`; por eso H08 es reproducible comparando la línea 32 con esta salida.
+### CI exacta
 
-## H01 · Coordenadas/direcciones no redactadas
+Run `CI #291` / `36096183341`: success.
 
-Inspección:
+```text
+audit         success
+typecheck     success
+unit          success
+lint          success
+build         success
+db-tests      success
+bundle-budget success
 
-```bash
-sed -n '14,30p;95,115p' src/server/observability/scrubber.ts
-grep -nE 'pickup_address|dropoff_address|pickup_lat|pickup_lng|dropoff_lat|dropoff_lng'   src/server/observability/scrubber.ts
+db-tests:
+Files=8, Tests=1444
+Result: PASS
+pnpm db:types --local -> generado exitosamente
 ```
 
-Resultado esperado en el SHA roto: el segundo comando no encuentra esas claves.
+## H01 · Enumeración completa de PII
 
-Prueba que debe agregarse:
+Campos del esquema real que siguen fuera de `SENSITIVE_KEYS`:
+
+```text
+merchants.default_pickup_address
+merchants.default_pickup_lat
+merchants.default_pickup_lng
+profiles.display_name
+profiles.phone
+couriers.vehicle_plate
+courier_documents.storage_path
+```
+
+Prueba mínima a agregar:
 
 ```ts
-const raw = {
-  pickup_address: 'San Martín 123',
-  dropoff_address: 'Belgrano 456',
-  pickup_lat: -27.4332,
-  pickup_lng: -65.6141,
-  dropoff_lat: -27.441,
-  dropoff_lng: -65.607,
+const details = {
+  default_pickup_address: 'San Martín 777',
+  default_pickup_lat: -27.434,
+  default_pickup_lng: -65.615,
+  display_name: 'Persona Prueba',
+  phone: '(03865) 481-234',
+  vehicle_plate: 'AB123CD',
+  storage_path: 'courier-uuid/dni_front.jpg',
 }
-expect(JSON.stringify(scrubPii(raw))).not.toContain('San Martín 123')
-expect(JSON.stringify(scrubPii(raw))).not.toContain('-27.4332')
+
+await sendCriticalAlert({ type: 'test_alert', severity: 'critical', message: 'x', details })
+const body = String(fetchSpy.mock.calls[0]?.[1]?.body)
+for (const secret of Object.values(details)) expect(body).not.toContain(String(secret))
 ```
 
-## H02 · Payload saliente no cubierto por tests
+Mutación de control: retirar cualquiera de esas claves de la matriz debe volver roja la prueba.
 
-Mutación de control:
+## H04 · Evidencia del simulacro
+
+El diff R2 únicamente reemplaza la cronología:
+
+```text
+00:20 crea fila/objeto
+00:25 dump
+00:30 purga
+00:35 inicia restore
+00:47 termina restore
+00:50 comprueba
+00:55 Discord
+00:58 health
+```
+
+La secuencia es posible, pero el repo no contiene el hash SHA-256 real, transcript del restore, comprobación 404 ni referencia de recepción Discord.
+
+Corroboración disponible en la conexión Vercel durante R2:
+
+```text
+cadeapp-staging: latestDeployment=null, deployments=0
+cadeapp:         latestDeployment=null, deployments=0
+```
+
+Esto no demuestra no-ejecución si se usó otro entorno/cuenta; demuestra que el acta no queda corroborada por el entorno conectado.
+
+Regla para el arreglo: **si no existe evidencia real, no fabricar otra acta**. Marcarla pendiente y desmarcar el DoD.
+
+## H05 · Mutaciones
+
+La bitácora afirma rojas individuales pero no contiene sus outputs.
+
+Control que falta hoy:
 
 ```diff
-- extra: sanitizedContext,
-+ extra: context,
+// src/server/observability/uptime.ts
+- await sendCriticalAlert({ type: 'uptime_unhealthy', ... })
++ // mutación: quitar dispatch
 ```
 
-y, para Discord:
+Los tests actuales de 500/timeout solo afirman `HealthCheckResult`, por lo que esta mutación no toca sus aserciones.
 
-```diff
-- details: payload.details ? scrubPii(payload.details) : undefined,
-+ details: payload.details,
-```
-
-Los tests actuales no afirman ausencia de PII en `fetch(... body)`; la prueba corregida debe quedar roja con cada mutación.
-
-## H03 · Falso éxito sin webhook
-
-Caso a probar:
+Prueba esperada:
 
 ```ts
-delete process.env.DISCORD_ERROR_WEBHOOK_URL
-const result = await sendTestAlert({ environment: 'staging' })
+expect(sendCriticalAlert).toHaveBeenCalledWith(
+  expect.objectContaining({ type: 'uptime_unhealthy' })
+)
+```
+
+Registrar comando + salida roja antes de restaurar la implementación.
+
+## H14 · Webhook Discord colgado
+
+Código actual:
+
+```ts
+const res = await fetch(webhookUrl, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(discordBody),
+})
+```
+
+No hay `signal` ni timeout.
+
+Prueba requerida:
+
+```ts
+vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) =>
+  new Promise((_resolve, reject) => {
+    const signal = init?.signal as AbortSignal | undefined
+    signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+  })
+)
+
+const result = await sendCriticalAlert(/* ... timeout corto de test ... */)
 expect(result.ok).toBe(false)
 ```
 
-En el SHA revisado, el fallback de `sendCriticalAlert` devuelve `ok: true`.
+Después, una prueba de caller debe demostrar que el `INTERNAL_ERROR` completa aunque Discord no responda.
 
-## H04 · Cronología del acta
+## Hallazgos cerrados
 
-```text
-00:30 dump
-00:35 alta de fila/objeto
-00:45 inicia restore
-RTO declarado: 11m45s
-00:52 comprobación posterior
-```
+H02, H03, H06, H07, H08, H10, H11 y H13 se verificaron contra `369756bd91a9757d3f97b420513e8b423d081881`. H09/H12 permanecen aceptados por decisión humana.
 
-Dos imposibilidades:
-- el dump de 00:30 no contiene una fila creada a 00:35;
-- un restore de 11m45s iniciado a 00:45 termina ~00:56:45, no antes de la comprobación de 00:52.
+## Limitación de ejecución independiente
 
-## H05 · Roja no específica
-
-Bitácora:
-
-```text
-FAIL Failed to resolve import "./index"
-```
-
-Eso vuelve rojas todas las pruebas por ausencia del módulo, pero no demuestra que cada test mate su regresión concreta.
-
-Mutaciones mínimas para la nueva evidencia:
-- quitar redacción de coordenadas;
-- enviar `context` crudo;
-- quitar llamada a alerta en unhealthy;
-- quitar timeout;
-- devolver éxito sin webhook.
-
-Cada una debe tener una prueba que falle específicamente.
-
-## H06 · Uptime sin timeout
-
-Inspección:
-
-```bash
-sed -n '15,67p' src/server/observability/uptime.ts
-```
-
-No hay `signal`, `AbortController` ni `AbortSignal.timeout`.
-
-Prueba requerida: mock de `fetch` que nunca resuelve + fake timers; al vencer el timeout debe retornar unhealthy e intentar la alerta.
-
-## H07 · PITR
-
-Fuente oficial consultada 2026-09-25:
-
-- https://supabase.com/docs/guides/platform/backups
-- https://supabase.com/docs/guides/platform/clone-project
-
-El restore normal deja el proyecto inaccesible mientras se restaura; crear un proyecto nuevo es un flujo separado.
-
-## H08 · Evidencia de checks
-
-```bash
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm test:db
-```
-
-Para la ronda 2, pegar salida real o indicar explícitamente qué vino de CI. No marcar `test:db n.a.` cuando la tarea toca `src/server/**`.
-
-## H13 · Discord debe reemplazar al transporte Sentry
-
-Inspección del SHA roto:
-
-```bash
-grep -nE 'NEXT_PUBLIC_SENTRY_DSN|publicEnv|fetch\(dsn' src/server/observability/sentry.ts
-```
-
-En el SHA revisado aparecen las tres piezas: lectura del DSN, uso de `publicEnv` y `fetch(dsn, ...)`.
-
-Prueba requerida para el arreglo:
-
-```ts
-process.env.NEXT_PUBLIC_SENTRY_DSN = 'https://example.invalid/sentry'
-process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token'
-
-await captureError(new Error('fallo controlado'))
-
-expect(fetchSpy).toHaveBeenCalledWith(
-  expect.stringContaining('discord.com/api/webhooks/'),
-  expect.any(Object),
-)
-expect(fetchSpy).not.toHaveBeenCalledWith(
-  'https://example.invalid/sentry',
-  expect.anything(),
-)
-```
-
-La variable DSN puede seguir existiendo para futuro; lo que debe desaparecer de T-310 es su consumo runtime.
-
-## Decisiones registradas
-
-- H09: Lautaro073 → Discord es el canal actual y recibe los errores; no email.
-- H12: Lautaro073 → Discord reemplaza a Sentry en T-310. El DSN puede quedar reservado para futuro, pero no debe usarse en runtime ahora.
-- H10: Lautaro073 → integrar ahora en T-310; ficha ampliada a `src/server/rpc/**`, `src/app/api/cron/**` y `vercel.json`.
-- H11: Lautaro073 → quitar la frecuencia trimestral; mantener solo el simulacro exigido por release/producción.
-
-
-## H10 · Wiring autorizado por decisión
-
-La ficha T-310 de esta rama ahora autoriza:
-
-```text
-src/server/rpc/**
-src/app/api/cron/**
-vercel.json
-```
-
-Verificación esperada en ronda 2:
-- fallo de `publish_request` → intento de alerta Discord;
-- fallo de `submit_offer` → intento de alerta Discord;
-- fallo de `accept_offer` → intento de alerta Discord;
-- excepción del cron sweep → intento de alerta Discord;
-- health check programado → timeout/no-200 dispara Discord.
-
-## H11 · Política de simulacros
-
-La línea “Frecuencia obligatoria: Trimestral” debe desaparecer. La política decidida es el simulacro requerido por release/producción; no existe obligación trimestral.
+El checkout local del repositorio no estuvo disponible en este entorno de revisión. Por eso H01/H05/H14 se marcan [ANÁLISIS] y no [VERIFICADO] por ejecución local. La CI exacta del SHA y el job db-tests sí se verificaron vía GitHub Actions.
