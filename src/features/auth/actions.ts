@@ -3,7 +3,7 @@
 import { createClient } from '@/server/supabase/server';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { SIGNUP_ROLES, profileRoleSchema, type ProfileRole } from '@/domain/schemas';
-import { loginSchema, registerSchema } from './schemas';
+import { loginSchema, registerSchema, forgotPasswordSchema } from './schemas';
 import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
 
 export async function loginAction(
@@ -96,11 +96,28 @@ export async function registerAction(
     return err('INTERNAL_ERROR');
   }
 
+  const redirectTo =
+    parsed.data.role === 'merchant' ? '/merchant/onboarding' : '/courier/onboarding/identity';
+
   return ok({
     userId: data.user.id,
     role: parsed.data.role,
-    redirectTo: getRoleDefaultPath(parsed.data.role),
+    redirectTo,
   });
+}
+
+export async function requestPasswordResetAction(
+  input: unknown
+): Promise<ActionResult<{ sent: true }, DomainErrorCode>> {
+  const parsed = forgotPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const supabase = await createClient();
+  await supabase.auth.resetPasswordForEmail(parsed.data.email);
+
+  return ok({ sent: true });
 }
 
 export async function logoutAction(): Promise<ActionResult<null, DomainErrorCode>> {

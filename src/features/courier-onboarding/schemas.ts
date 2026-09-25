@@ -14,7 +14,7 @@ export const ARGENTINA_PLATE_REGEX =
 export const vehiclePlateSchema = z
   .string({ required_error: 'La patente es obligatoria' })
   .trim()
-  .regex(ARGENTINA_PLATE_REGEX, 'Formato de patente argentina inválido (ej: AB 123 CD o A 123 BCD)');
+  .regex(ARGENTINA_PLATE_REGEX, 'Formato de patente argentina inválido (ej: AB 123 CD, A 123 BCD o ABC 123)');
 
 export const courierOnboardingConsentsSchema = z.object({
   tos: z.literal(true, {
@@ -60,7 +60,7 @@ export const courierOnboardingSchema = z
       } else if (!ARGENTINA_PLATE_REGEX.test(data.vehiclePlate.trim())) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Formato de patente argentina inválido (ej: AB 123 CD o A 123 BCD)',
+          message: 'Formato de patente argentina inválido (ej: AB 123 CD, A 123 BCD o ABC 123)',
           path: ['vehiclePlate'],
         });
       }

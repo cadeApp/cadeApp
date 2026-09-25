@@ -26,7 +26,7 @@ export interface RequestOffersListProps {
     id: string;
     pickupZoneName: string;
     dropoffZoneName: string;
-    approxDistanceKm: string;
+    approxDistanceKm: string | null;
     packageType: 'sobre' | 'chico' | 'mediano' | 'grande' | string;
     recipientPaymentMethod: 'cash' | 'transfer' | 'to_agree' | string;
     needsChange: boolean;
@@ -168,12 +168,12 @@ export function RequestOffersList({
     : 'el repartidor';
 
   return (
-    <div className="flex flex-col space-y-6">
+    <div className="mx-auto flex w-full max-w-3xl flex-col space-y-6">
       {/* Resumen de la solicitud */}
-      <Card className="border border-border bg-card p-4 sm:p-6 shadow-sm">
+      <Card className="border border-border bg-card p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <span>{request.pickupZoneName}</span>
               <ArrowRight className="h-4 w-4" />
               <span>{request.dropoffZoneName}</span>
@@ -249,12 +249,12 @@ export function RequestOffersList({
 
       {/* Lista de ofertas */}
       {sortedOffers.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center p-8 text-center border-dashed border-border bg-card">
-          <div className="rounded-full bg-muted p-3 mb-3">
-            <Clock className="h-6 w-6 text-muted-foreground animate-pulse" />
+        <Card className="flex flex-col items-center justify-center border-dashed border-border bg-card p-8 text-center">
+          <div className="mb-3 rounded-xl border border-border bg-muted/40 p-3">
+            <Clock className="h-6 w-6 text-muted-foreground" />
           </div>
           <h3 className="text-base font-semibold text-foreground">Esperando ofertas</h3>
-          <p className="text-sm text-muted-foreground max-w-sm mt-1">
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
             Los repartidores de Aguilares están viendo tu solicitud. Las ofertas van a aparecer acá
             en tiempo real sin recargar la página.
           </p>
@@ -264,12 +264,12 @@ export function RequestOffersList({
           {sortedOffers.map((offer) => (
             <Card
               key={offer.id}
-              className="flex flex-col justify-between gap-4 p-4 border-border bg-card transition-shadow hover:shadow-md sm:flex-row sm:items-center"
+              className="flex flex-col justify-between gap-4 border-border bg-card p-4 transition-shadow hover:shadow-md sm:flex-row sm:items-center"
             >
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <h4 className="text-base font-bold text-foreground">{offer.courierName}</h4>
-                  <span className="text-sm text-muted-foreground font-medium">
+                  <span className="text-sm font-medium text-muted-foreground">
                     · {getVehicleLabel(offer.vehicleType)}
                   </span>
                 </div>
@@ -289,15 +289,15 @@ export function RequestOffersList({
                     </Badge>
                   )}
                   {offer.docLevel === 0 && (
-                    <Badge variant="declared">
-                      Documentación en revisión
-                    </Badge>
+                    <Badge variant="declared">Documentación en revisión</Badge>
                   )}
                 </div>
 
                 {/* Mensaje opcional del repartidor */}
                 {offer.message && (
-                  <p className="text-sm text-muted-foreground italic">&ldquo;{offer.message}&rdquo;</p>
+                  <p className="text-sm italic text-muted-foreground">
+                    &ldquo;{offer.message}&rdquo;
+                  </p>
                 )}
               </div>
 
@@ -328,9 +328,7 @@ export function RequestOffersList({
       <Dialog open={selectedOffer !== null} onOpenChange={handleCloseAcceptModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              ¿Aceptás la oferta de {selectedOffer?.courierName}?
-            </DialogTitle>
+            <DialogTitle>¿Aceptás la oferta de {selectedOffer?.courierName}?</DialogTitle>
             <DialogDescription className="sr-only">
               Confirmación de aceptación de la oferta de transporte
             </DialogDescription>
@@ -357,13 +355,14 @@ export function RequestOffersList({
                 {request.needsChange && (
                   <div className="text-muted-foreground">
                     El destinatario necesita cambio
-                    {request.cashChangeAmount && ` (paga con ${formatArs(request.cashChangeAmount)})`}
+                    {request.cashChangeAmount &&
+                      ` (paga con ${formatArs(request.cashChangeAmount)})`}
                   </div>
                 )}
               </div>
 
               {/* Texto de revelación progresiva D3 */}
-              <p className="rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground leading-relaxed">
+              <p className="rounded-lg border border-border bg-card p-3 text-sm leading-relaxed text-muted-foreground">
                 Al aceptar, {courierFirstName} va a ver la dirección de retiro, la de entrega y los
                 datos de tu cliente. Las otras ofertas se rechazan.
               </p>
@@ -372,7 +371,7 @@ export function RequestOffersList({
               {acceptError && (
                 <div
                   role="alert"
-                  className="rounded-lg border border-destructive bg-destructive/10 p-3 text-sm font-medium text-destructive flex items-center gap-2"
+                  className="flex items-center gap-2 rounded-lg border border-destructive bg-destructive/10 p-3 text-sm font-medium text-destructive"
                 >
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   <span>{acceptError}</span>

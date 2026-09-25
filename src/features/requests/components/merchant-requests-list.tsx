@@ -61,12 +61,15 @@ function getPackageLabel(packageType: string): string {
 
 export function MerchantRequestsList({ requests, metrics }: MerchantRequestsListProps) {
   const router = useRouter();
+  const activeRequests = requests.filter(
+    (r) => r.status === 'published' || r.status === 'matched' || r.status === 'in_transit'
+  );
   return (
     <div className="flex flex-col space-y-6">
       {/* Encabezado y Acción principal */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold font-display text-foreground">Mis solicitudes</h1>
+          <h1 className="font-display text-2xl font-bold text-foreground">Mis solicitudes</h1>
           <p className="text-sm text-muted-foreground">
             Gestioná tus envíos en tiempo real y revisá las ofertas de repartidores de Aguilares.
           </p>
@@ -83,50 +86,38 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
 
       {/* Métricas C02 (Anti-12px, piso 14px text-sm) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card className="p-4 border-border bg-card shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
-              <Truck className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Despachos hoy</p>
-              <h3 className="text-xl font-bold font-display text-foreground">
-                {metrics.dispatchedToday}
-              </h3>
-            </div>
+        <Card className="flex flex-col justify-between border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-sm font-medium">Despachos hoy</span>
+            <Truck className="h-4 w-4" aria-hidden="true" />
           </div>
+          <p className="mt-2 font-display text-2xl font-bold text-foreground">
+            {metrics.dispatchedToday}
+          </p>
         </Card>
 
-        <Card className="p-4 border-border bg-card shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
-              <TrendingUp className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Tarifa promedio</p>
-              <h3 className="text-xl font-bold font-display text-foreground">
-                {formatArs(metrics.avgRateArs)}
-              </h3>
-            </div>
+        <Card className="flex flex-col justify-between border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-sm font-medium">Tarifa promedio</span>
+            <TrendingUp className="h-4 w-4" aria-hidden="true" />
           </div>
+          <p className="mt-2 font-display text-2xl font-bold text-foreground">
+            {metrics.avgRateArs !== null ? formatArs(metrics.avgRateArs) : 'Sin datos'}
+          </p>
         </Card>
 
-        <Card className="p-4 border-border bg-card shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-primary/10 p-2 text-primary">
-              <Package className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">Solicitudes activas</p>
-              <h3 className="text-xl font-bold font-display text-foreground">
-                {metrics.activeCount}
-              </h3>
-            </div>
+        <Card className="flex flex-col justify-between border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-sm font-medium">Solicitudes activas</span>
+            <Package className="h-4 w-4" aria-hidden="true" />
           </div>
+          <p className="mt-2 font-display text-2xl font-bold text-foreground">
+            {metrics.activeCount}
+          </p>
         </Card>
       </div>
 
-      {requests.length === 0 ? (
+      {activeRequests.length === 0 ? (
         <EmptyState
           title="No tenés solicitudes activas"
           description="Publicá un nuevo envío para recibir ofertas de repartidores disponibles en Aguilares."
@@ -135,13 +126,13 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
         />
       ) : (
         <div className="flex flex-col space-y-3">
-          {requests.map((req) => {
+          {activeRequests.map((req) => {
             const statusConfig = getStatusBadgeConfig(req.status, req.offersCount);
 
             return (
               <Card
                 key={req.id}
-                className="p-4 border-border bg-card transition-all hover:border-primary/40 hover:shadow-sm"
+                className="border-border bg-card p-4 transition-all hover:border-primary/40 hover:shadow-sm"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1.5">
@@ -152,14 +143,16 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                         <span>{req.dropoffZoneName}</span>
                       </div>
-                      <Badge variant={statusConfig.variant}>
-                        {statusConfig.label}
-                      </Badge>
+                      <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
                     </div>
 
                     {/* Metadatos operativos */}
                     <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                      <span>{req.approxDistanceKm} km</span>
+                      <span>
+                        {req.approxDistanceKm
+                          ? `${req.approxDistanceKm} km`
+                          : 'Distancia no calculada'}
+                      </span>
                       <span>·</span>
                       <span>Paquete {getPackageLabel(req.packageType)}</span>
                       <span>·</span>
