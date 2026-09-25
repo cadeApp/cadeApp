@@ -171,10 +171,9 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
-        acceptTerms: true,
+        acceptTerms: false,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
-        acceptTerms: false,
       });
 
       expect(result.ok).toBe(false);
