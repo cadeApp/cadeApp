@@ -1060,4 +1060,57 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
 
     expect(uniqueRaised).toEqual(expectedContractCodes);
   });
+
+  it('H10: debe disparar sendCriticalAlert ante fallo interno en submit_offer', async () => {
+    const obs = await import('@/server/observability');
+    const alertSpy = vi.spyOn(obs, 'sendCriticalAlert').mockResolvedValue({ ok: true });
+
+    const client: SupabaseRpcCaller = {
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: '57P01', message: 'connection terminated' },
+      }),
+    };
+
+    const result = await submitOfferRpc(client, {
+      requestId: REQ_1_ID,
+      amountArs: 1500,
+      etaMinutes: 15,
+      message: 'En camino',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(alertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'submit_offer_failed',
+        severity: 'critical',
+      })
+    );
+    alertSpy.mockRestore();
+  });
+
+  it('H10: debe disparar sendCriticalAlert ante fallo interno en accept_offer', async () => {
+    const obs = await import('@/server/observability');
+    const alertSpy = vi.spyOn(obs, 'sendCriticalAlert').mockResolvedValue({ ok: true });
+
+    const client: SupabaseRpcCaller = {
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: '57P01', message: 'database unavailable' },
+      }),
+    };
+
+    const result = await acceptOfferRpc(client, {
+      offerId: OFFER_1_ID,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(alertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'accept_offer_failed',
+        severity: 'critical',
+      })
+    );
+    alertSpy.mockRestore();
+  });
 });

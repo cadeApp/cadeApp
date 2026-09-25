@@ -3,12 +3,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET, POST } from './route';
 import { createAdminClient } from '@/server/supabase/admin';
+import { sendCriticalAlert } from '@/server/observability';
 
 vi.mock('@/server/env', () => ({
   serverEnv: {
     CRON_SECRET: 'test-cron-secret-12345',
     SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
   },
+}));
+
+vi.mock('@/server/observability', () => ({
+  sendCriticalAlert: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock('@/server/supabase/admin', () => ({
@@ -223,5 +228,11 @@ describe('GET & POST /api/cron/sweep', () => {
     const json = await response.json();
     expect(json).toEqual({ error: 'Internal Error' });
     expect(json.details).toBeUndefined();
+    expect(sendCriticalAlert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'cron_sweep_failed',
+        severity: 'critical',
+      })
+    );
   });
 });
