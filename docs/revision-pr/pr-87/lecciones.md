@@ -77,3 +77,14 @@ El cierre de R6 fue correcto para ese SHA, pero una optimización posterior intr
 - **H21:** `approval-policy` verde no prueba que el informe sea del head actual; sólo valida que exista texto con la forma esperada. Después de cualquier commit semántico, la evidencia del body debe refrescarse.
 
 Lección general: **performance es una propiedad adicional, no una licencia para debilitar contratos o control de flujo**.
+
+
+## Ronda 8 — cierre después de optimizar
+
+R8 valida la corrección de las dos regresiones creadas por performance:
+
+- **R05:** la manera robusta de conservar semántica fue volver a una sola fuente de verdad. El ahorro de bundle seguía cumpliéndose incluso importando el schema compartido desde un componente ya diferido; no hacía falta copiar reglas.
+- **R06:** un módulo de feedback puede ser lazy, pero su fallo debe quedar fuera del camino crítico. Las pruebas útiles simulan precisamente el fallo del chunk y comprueban el estado observable posterior a la mutación.
+- **H21:** cuando hay un commit semántico después de una ronda verde, la evidencia del body tiene que renovarse contra ese SHA. Un commit posterior exclusivamente de revisión no invalida esa evidencia porque no cambia implementación.
+
+La PR termina con una lección clara: **optimizar bundle sin degradar contratos, UX ni trazabilidad exige probar los fallos de la propia optimización, no sólo medir kilobytes**.

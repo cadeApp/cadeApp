@@ -763,3 +763,111 @@ await import('@/ui/notify')  // mismo try
 
 Body: 43 suites / 443 tests / 31 páginas.
 CI head actual: 47 archivos / 497 tests / 33 páginas.
+
+
+---
+
+# Ronda 8 — cierre independiente sobre c33d50b230c47d5492b1e33683a60e1a8b1b8084
+
+## Estado remoto
+
+~~~text
+R7 review head: 0d5b727af372653094dd050341a54f91bcb9bdf5
+R8 implementation head: c33d50b230c47d5492b1e33683a60e1a8b1b8084
+compare: ahead 4 / behind 0
+archivos del delta: 8
+docs/revision-pr/pr-87/** tocado por agy: NO
+PR mergeable: true
+~~~
+
+## R05
+
+Inspección:
+
+~~~text
+VehicleForm -> import { ARGENTINA_PLATE_REGEX } from '../schemas'
+regex local duplicada -> NO
+vehiclePlateSchema -> usa la misma constante
+~~~
+
+Test:
+
+~~~text
+AB 123 CD -> UI/schema válido
+A 123 BCD -> UI/schema válido
+ABC 123   -> UI/schema válido
+123 ABC   -> UI/schema inválido
+~~~
+
+CI:
+
+~~~text
+src/features/courier-onboarding/components.test.tsx (15 tests) PASS
+~~~
+
+## R06
+
+Inspección:
+
+~~~text
+AvailabilitySwitch: action -> rollback/callback -> notify best-effort
+MyOffersList: action -> setOffers -> notify best-effort
+OfferSheet: action -> cerrar/estado éxito -> notify best-effort
+~~~
+
+Pruebas con módulo notify fallando:
+
+~~~text
+availability-switch.test.tsx (2) PASS
+notify-resilience.test.tsx (2) PASS
+~~~
+
+## H21
+
+Body real:
+
+~~~text
+Head definitivo verificado: c33d50b230c47d5492b1e33683a60e1a8b1b8084
+unit/coverage: 49/49 archivos, 505/505
+workflows: 21/21
+ADR: 6/6
+build: 33/33
+~~~
+
+## CI exact-head
+
+Run `36105913564`:
+
+~~~text
+typecheck     success
+db-tests      success — All tests successful / Result: PASS
+lint          success
+audit         success — 2 moderate advisory
+unit          success — 49/49, 505/505
+build         success — 33/33
+bundle-budget success
+~~~
+
+Bundle:
+
+~~~text
+/courier/feed                 179 kB
+/courier/offers               179 kB
+/courier/onboarding/identity  168 kB
+/courier/onboarding/status    168 kB
+/courier/onboarding/vehicle   168 kB
+/courier/profile              168 kB
+/merchant/dashboard           164 kB
+/merchant/history             164 kB
+/merchant/onboarding          130 kB
+/merchant/plan                156 kB
+/merchant/requests/[id]       164 kB
+/merchant/requests/new        164 kB
+~~~
+
+Approval-policy exact-head run `36106219706`:
+
+~~~text
+success
+Informe de revisar-pr completo y sin bloqueantes.
+~~~

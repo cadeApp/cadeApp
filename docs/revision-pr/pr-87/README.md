@@ -6,9 +6,9 @@
 | **Tarea** | T-118 |
 | **Autor** | @Lautaro073 |
 | **Rama** | feat/T-118-integracion-visual-stitch → develop |
-| **SHA R7 revisado** | `25fa07856ac92bfcb8999ce213c71f688290e6c9` |
+| **SHA R8 implementación revisada** | `c33d50b230c47d5492b1e33683a60e1a8b1b8084` |
 | **develop** | `b6bdac6cfe4c5ac9227e87692b8572e1f6bc2121` |
-| **Estado** | **CON BLOQUEANTES (3)** |
+| **Estado** | **SIN BLOQUEANTES** |
 
 ## Rondas
 
@@ -20,18 +20,28 @@
 | 4 | `cf6fa22` | 4 bloqueantes | [ronda-4.md](revisiones/ronda-4.md) |
 | 5 | `bdece0f` | 1 bloqueante | [ronda-5.md](revisiones/ronda-5.md) |
 | 6 | `feb3c7f` | SIN BLOQUEANTES | [ronda-6.md](revisiones/ronda-6.md) |
-| 7 | `25fa078` | **3 bloqueantes (regresiones post-mejoras)** | [ronda-7.md](revisiones/ronda-7.md) |
+| 7 | `25fa078` | 3 bloqueantes | [ronda-7.md](revisiones/ronda-7.md) |
+| 8 | `c33d50b` | **SIN BLOQUEANTES** | [ronda-8.md](revisiones/ronda-8.md) |
 
-## Estado actual
+## Estado final
 
 | Estado | IDs |
 |---|---|
-| Abiertos | R05, R06, H21 |
-| Arreglados-verificados | H01–H20, R01–R04 |
+| Arreglados-verificados | H01–H21, R01–R06 |
 | Aceptados por decisión P1 | A01, A02, A03 |
+| Abiertos/parciales | ninguno |
+| Decisiones pendientes | ninguna |
 
-## Nota
+## CI final inspeccionado
 
-Las mejoras post-R6 sí consiguieron el presupuesto de First Load JS de Regla 25 en todas las rutas merchant/courier, pero introdujeron dos regresiones funcionales y dejaron el body desactualizado. No mergear hasta revalidar esos tres puntos.
+Sobre `c33d50b230c47d5492b1e33683a60e1a8b1b8084`:
+- CI `36105913564`: 7/7 jobs success.
+- unit/coverage: 49/49 archivos, 505/505 tests.
+- db-tests: PASS.
+- build: 33/33 páginas.
+- rutas merchant/courier: todas <=180 kB.
+- approval-policy `36106219706`: success.
+
+Advisory no bloqueante: Prettier global 48 archivos, 2 vulnerabilidades moderadas y `/design-system` 184 kB.
 
 Datos: [hallazgos.jsonl](hallazgos.jsonl) · evidencia: [evidencia/comandos.md](evidencia/comandos.md)
