@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,20 +65,58 @@ const PHASE_0_TASKS = [
 
 /** @param {string} text */
 export function extractTaskId(text) {
-  const match = text.match(/(?:\[(T-\d+|CC-\d+)\]|^(T-\d+|CC-\d+):|\b(T-\d+|CC-\d+)\b)/i);
-  const raw = match?.[1] ?? match?.[2] ?? match?.[3] ?? '';
-  return raw.toUpperCase();
+  const normalized = text.replace(/[\u2010-\u2015]/g, '-');
+  const bracketMatch = normalized.match(/\[(T-\d+|CC-\d+)\]/i);
+  if (bracketMatch?.[1]) return bracketMatch[1].toUpperCase();
+
+  const prefixMatch = normalized.match(/^(?:feat\/|cc\/)?(T-\d+|CC-\d+)(?:[:\s-]|$)/i);
+  if (prefixMatch?.[1]) return prefixMatch[1].toUpperCase();
+
+  const fallbackMatch = normalized.match(/\b(T-\d+|CC-\d+)\b/i);
+  return fallbackMatch?.[1]?.toUpperCase() ?? '';
+}
+
+/**
+ * Extracts task ID from a Pull Request only when it represents the actual implementation
+ * (`feat/T-xxx...` or `cc/CC-xxx...`), ignoring `docs/T-xxx...` or `fix/...` branches
+ * that only create or adjust markdown task cards.
+ *
+ * @param {string} headRefName
+ * @param {string} title
+ */
+export function extractPrTaskId(headRefName, title) {
+  const normalizedRef = headRefName.replace(/[\u2010-\u2015]/g, '-').trim();
+  const branchMatch = normalizedRef.match(/^(?:feat|cc)\/(T-\d+|CC-\d+)\b/i);
+  if (branchMatch?.[1]) return branchMatch[1].toUpperCase();
+  if (/^(?:docs|chore|fix|ci)\//i.test(normalizedRef)) return '';
+  return extractTaskId(title);
 }
 
 /** @param {string} body */
 export function parseDependencies(body) {
-  const depLineMatch = body.match(/\*\*Depende de:\*\*\s*([^\n\r]+)/i);
+  const normalized = body.replace(/[\u2010-\u2015]/g, '-');
+  const depLineMatch = normalized.match(
+    /(?:\*\*Depende de:\*\*|\*\*Dependencias[^*]*\*\*)\s*([^\n\r]+)/i
+  );
   if (!depLineMatch?.[1]) return [];
-  const raw = depLineMatch[1].trim();
+  // Truncate if the line was ever collapsed into subsequent markdown sections
+  const raw = (depLineMatch[1].split(/\s+---\s+|\s+###?\s+/)[0] ?? '').trim();
   if (/^(ninguna|nada|none|-|—)(\s|$|\.)/i.test(raw)) return [];
 
   /** @type {Set<string>} */
   const deps = new Set();
+
+  // Expand ranges like T-302…T-311 or T-302..T-311
+  for (const rangeMatch of raw.matchAll(/T-(\d{3})\s*(?:…|\.\.+|-)\s*T-(\d{3})/gi)) {
+    const start = Number(rangeMatch[1]);
+    const end = Number(rangeMatch[2]);
+    if (Number.isInteger(start) && Number.isInteger(end) && end >= start && end - start <= 50) {
+      for (let n = start; n <= end; n += 1) {
+        deps.add(`T-${String(n).padStart(3, '0')}`);
+      }
+    }
+  }
+
   for (const match of raw.matchAll(/T-\d+/gi)) {
     deps.add(match[0].toUpperCase());
   }
@@ -93,22 +132,52 @@ export function parseDependencies(body) {
   return [...deps];
 }
 
+/** @param {string} taskId */
+function loadTaskCardDependencies(taskId) {
+  const cardPath = resolve(process.cwd(), 'docs', 'tasks', `${taskId}.md`);
+  if (!existsSync(cardPath)) return null;
+  try {
+    const content = readFileSync(cardPath, 'utf8');
+    const parsed = parseDependencies(content);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * @param {{
  *   issues: IssueSnapshot[],
  *   pullRequests: PullRequestSnapshot[],
  *   mergedTaskIds?: string[],
+ *   useLocalTaskCards?: boolean,
  * }} input
  * @returns {BoardTransition[]}
  */
-export function computeBoardTransitions({ issues, pullRequests, mergedTaskIds = [] }) {
+export function computeBoardTransitions({
+  issues,
+  pullRequests,
+  mergedTaskIds = [],
+  useLocalTaskCards = false,
+}) {
   /** @type {Set<string>} */
   const completedTasks = new Set(mergedTaskIds.map((id) => id.toUpperCase()));
+
+  /** @type {Map<string, PullRequestSnapshot>} */
+  const openPrByTask = new Map();
+  for (const pr of pullRequests) {
+    const taskId = extractPrTaskId(pr.headRefName, pr.title);
+    if (taskId) {
+      openPrByTask.set(taskId, pr);
+      // If an implementation PR is still open, the task is NOT completed yet
+      completedTasks.delete(taskId);
+    }
+  }
 
   for (const issue of issues) {
     const taskId = extractTaskId(issue.title);
     if (!taskId) continue;
-    if (issue.state.toUpperCase() === 'CLOSED') {
+    if (issue.state.toUpperCase() === 'CLOSED' && !openPrByTask.has(taskId)) {
       completedTasks.add(taskId);
     }
   }
@@ -124,15 +193,6 @@ export function computeBoardTransitions({ issues, pullRequests, mergedTaskIds = 
     completedTasks.add('Fase 1');
   }
 
-  /** @type {Map<string, PullRequestSnapshot>} */
-  const openPrByTask = new Map();
-  for (const pr of pullRequests) {
-    const taskId = extractTaskId(pr.headRefName) || extractTaskId(pr.title);
-    if (taskId) {
-      openPrByTask.set(taskId, pr);
-    }
-  }
-
   /** @type {BoardTransition[]} */
   const transitions = [];
 
@@ -143,14 +203,15 @@ export function computeBoardTransitions({ issues, pullRequests, mergedTaskIds = 
     let targetState = 'lista';
     const openPr = openPrByTask.get(taskId);
     const isClosed = issue.state.toUpperCase() === 'CLOSED';
-    const isCompleted = isClosed || completedTasks.has(taskId);
+    const isCompleted = (isClosed || completedTasks.has(taskId)) && !openPr;
 
     if (isCompleted) {
       targetState = 'hecha';
     } else if (openPr) {
       targetState = openPr.isDraft ? 'en-curso' : 'en-review';
     } else {
-      const deps = parseDependencies(issue.body);
+      const cardDeps = useLocalTaskCards ? loadTaskCardDependencies(taskId) : null;
+      const deps = cardDeps ?? parseDependencies(issue.body);
       const unblocked = deps.every((dep) => completedTasks.has(dep));
       targetState = unblocked ? 'lista' : 'bloqueada';
     }
@@ -377,7 +438,7 @@ async function main() {
     if (!Array.isArray(closedPullsRaw) || closedPullsRaw.length === 0) break;
     for (const pr of closedPullsRaw) {
       if (!pr.merged_at) continue;
-      const taskId = extractTaskId(pr.head?.ref ?? '') || extractTaskId(pr.title ?? '');
+      const taskId = extractPrTaskId(pr.head?.ref ?? '', pr.title ?? '');
       if (taskId) {
         mergedTaskIds.push(taskId);
       }
@@ -385,7 +446,12 @@ async function main() {
     if (closedPullsRaw.length < 100) break;
   }
 
-  const transitions = computeBoardTransitions({ issues, pullRequests, mergedTaskIds });
+  const transitions = computeBoardTransitions({
+    issues,
+    pullRequests,
+    mergedTaskIds,
+    useLocalTaskCards: true,
+  });
 
   for (const transition of transitions) {
     if (transition.shouldCloseIssue) {
