@@ -258,9 +258,9 @@ Mientras esperás T-000: onboarding (`docs/onboarding.md`) y lectura del master 
 4. T-122 Shell admin, MFA y postulantes (vigente: P1; después de T-121)
 5. T-123 Admin de comercios, plataforma y auditoría (vigente: P1; después de T-122)
 6. T-124 Incidentes (vigente: P1; después de T-115 y T-122)
-7. T-301 Arnés E2E
-8. T-302 E2E de onboarding · ∥ T-305 E2E de autorización · ∥ T-306 E2E de piloto y suscripción · ∥ T-308 E2E de incidentes · ∥ T-309 E2E de cargas y accesibilidad · ∥ T-314 E2E de mapas, privacidad y degradación
-9. T-311 Páginas legales (vigente: P1; bloqueante externo: abogado; después de T-118)
+7. T-300 Promoción inicial `develop → staging` · 8. T-301 Arnés E2E
+9. T-302 E2E de onboarding · ∥ T-305 E2E de autorización · ∥ T-306 E2E de piloto y suscripción · ∥ T-308 E2E de incidentes · ∥ T-309 E2E de cargas y accesibilidad · ∥ T-314 E2E de mapas, privacidad y degradación
+10. T-311 Páginas legales (vigente: P1; bloqueante externo: abogado; después de T-118)
 
 Mientras esperás T-000: onboarding y lectura del master plan. Después: preparar fixtures y page objects para T-301, y visto bueno cuando otra zona toca `(public)`, `(admin)` o `e2e/`.
 
@@ -322,7 +322,8 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 
 | ID | Quién | Tarea | Depende de | Archivos permitidos | DoD específico |
 |---|---|---|---|---|---|
-| T-301 | P3 | Arnés E2E: Playwright (con `reducedMotion: 'reduce'`), fixtures por rol, seed y limpieza en staging, page objects, proyecto `global-settings`, `e2e-staging.yml` | T-003 y Fase 1 | `e2e/**`, `playwright.config.ts`, `.github/workflows/e2e-staging.yml` | Un spec de humo corre en CI; dos corridas no se superponen; un helper espera a que desaparezcan los skeletons en lugar de usar tiempos fijos |
+| T-300 | P1 | Checkpoint operativo: promoción inicial `develop → staging`, ejecución verde de `migrate-staging`, verificación de drift de tipos, deployment de staging y `/api/health` 200 | T-003 y Fase 1 | `docs/tasks/T-300.md`, `docs/tasks/log/T-300.md` | T-301 no se desbloquea hasta cerrar #96 con migraciones, deploy y health verificados; no se aplican migraciones manualmente |
+| T-301 | P3 | Arnés E2E: Playwright (con `reducedMotion: 'reduce'`), fixtures por rol, seed y limpieza en staging, page objects, proyecto `global-settings`, `e2e-staging.yml` | T-300, T-003 y Fase 1 | `e2e/**`, `playwright.config.ts`, `.github/workflows/e2e-staging.yml` | Un spec de humo corre en CI; dos corridas no se superponen; un helper espera a que desaparezcan los skeletons en lugar de usar tiempos fijos |
 | T-302 | P3 | E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado | T-301, T-122 | `e2e/specs/courier-onboarding.spec.ts` | Falla si se quita el chequeo de MFA o la deduplicación |
 | T-303 | P2 | E2E del flujo principal: publicar, ofertar (piso), retirar, aceptar en dos pestañas, revelación progresiva, orden por documentación, medio de pago y "Avisar a mi cliente" | T-301, T-115 | `e2e/specs/main-flow.spec.ts` | Falla si el repartidor no aceptado ve el teléfono o si se aceptan dos ofertas |
 | T-304 | P2 | E2E de estados: cancelaciones por actor y estado, no llegó y republicar, expiración, entregado | T-301, T-115 | `e2e/specs/request-states.spec.ts` | Cubre cada fila de §5.1; falla si se permite cancelar después de entregado |
