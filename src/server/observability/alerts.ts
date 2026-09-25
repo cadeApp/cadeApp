@@ -29,6 +29,16 @@ export interface AlertOptions {
 
 export const DEFAULT_DISCORD_TIMEOUT_MS = 2500;
 
+let testDiscordTimeoutMs: number | null = null;
+
+/**
+ * Seam de test para inyectar un timeout de Discord en tests sin alterar
+ * el valor productivo por defecto de 2500 ms.
+ */
+export function setDiscordTimeoutForTesting(ms: number | null): void {
+  testDiscordTimeoutMs = ms;
+}
+
 /**
  * Envía una alerta crítica al canal de operaciones (Discord Webhook o fallback)
  * garantizando que los datos incluidos pasen previamente por sanitización PII
@@ -45,15 +55,16 @@ export async function sendCriticalAlert(
     timestamp: payload.timestamp ?? new Date().toISOString(),
   };
 
-  let webhookUrl: string | undefined;
-  let nodeEnv = 'development';
+  let webhookUrl: string | undefined = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined;
+  let nodeEnv = process.env.NODE_ENV || 'development';
 
-  try {
-    webhookUrl = serverEnv.DISCORD_ERROR_WEBHOOK_URL || undefined;
-    nodeEnv = serverEnv.NODE_ENV || 'development';
-  } catch {
-    webhookUrl = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined;
-    nodeEnv = process.env.NODE_ENV || 'development';
+  if (!webhookUrl) {
+    try {
+      webhookUrl = serverEnv.DISCORD_ERROR_WEBHOOK_URL || undefined;
+      nodeEnv = serverEnv.NODE_ENV || nodeEnv;
+    } catch {
+      // Ignorar error si serverEnv no está disponible
+    }
   }
 
   // Si no hay webhook configurado, no se puede informar entrega exitosa (H03)
@@ -97,7 +108,12 @@ export async function sendCriticalAlert(
     ],
   };
 
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_DISCORD_TIMEOUT_MS;
+  const timeoutMs =
+    options?.timeoutMs ??
+    testDiscordTimeoutMs ??
+    (process.env.DISCORD_ALERT_TIMEOUT_MS
+      ? Number.parseInt(process.env.DISCORD_ALERT_TIMEOUT_MS, 10)
+      : DEFAULT_DISCORD_TIMEOUT_MS);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort(new Error(`Timeout superado al contactar Discord webhook (${timeoutMs}ms)`));

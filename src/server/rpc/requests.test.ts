@@ -274,17 +274,23 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     alertSpy.mockRestore();
   });
 
-  it('H14: publish_request completa devolviendo INTERNAL_ERROR aunque el webhook de Discord quede colgado', async () => {
+  it('H15: publish_request completa devolviendo INTERNAL_ERROR aunque el webhook de Discord quede colgado', async () => {
+    const previousWebhook = process.env.DISCORD_ERROR_WEBHOOK_URL;
+    process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token';
+
+    const { setDiscordTimeoutForTesting } = await import('@/server/observability');
+    setDiscordTimeoutForTesting(50);
+
+    let signalReceived: AbortSignal | undefined;
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+      signalReceived = init?.signal as AbortSignal | undefined;
+      expect(signalReceived).toBeDefined();
       return new Promise((_resolve, reject) => {
-        const signal = init?.signal as AbortSignal | undefined;
-        if (signal) {
-          signal.addEventListener('abort', () => {
-            const err = new Error('Discord timeout');
-            err.name = 'TimeoutError';
-            reject(err);
-          });
-        }
+        signalReceived?.addEventListener('abort', () => {
+          const err = new Error('Discord timeout');
+          err.name = 'TimeoutError';
+          reject(err);
+        });
       });
     });
 
@@ -293,15 +299,23 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       error: { code: '57P01', message: 'unexpected connection failure' },
     });
 
-    const startTime = Date.now();
-    const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
-    const elapsed = Date.now() - startTime;
+    try {
+      const startTime = Date.now();
+      const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+      const elapsed = Date.now() - startTime;
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe('INTERNAL_ERROR');
+      expect(fetchSpy).toHaveBeenCalled();
+      expect(signalReceived).toBeDefined();
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(elapsed).toBeLessThan(1000);
+    } finally {
+      fetchSpy.mockRestore();
+      setDiscordTimeoutForTesting(null);
+      if (previousWebhook !== undefined) {
+        process.env.DISCORD_ERROR_WEBHOOK_URL = previousWebhook;
+      } else {
+        delete process.env.DISCORD_ERROR_WEBHOOK_URL;
+      }
     }
-    expect(elapsed).toBeLessThan(4000);
-    fetchSpy.mockRestore();
-  });
+  }, 1000);
 });
