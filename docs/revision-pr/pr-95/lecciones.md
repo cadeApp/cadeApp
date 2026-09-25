@@ -74,3 +74,21 @@ Agregar observabilidad dentro del camino de error crea una dependencia nueva: si
 - Aceptados por decisión: H09, H12.
 - Abiertos: H01, H04, H05, H14.
 - Decisiones pendientes: 0.
+
+
+## Ronda 3
+
+### AG-82 · Un test de integración debe demostrar que entró en la dependencia que afirma degradar
+
+**Origen:** H15
+
+Un test puede mockear un `fetch` colgado y aun así no usarlo. Si falta la configuración que habilita esa ruta, el caso pasa por un fallback temprano y produce un falso verde.
+
+> **Regla propuesta.** Cuando una prueba diga que un caller tolera una dependencia externa caída/colgada, debe afirmar que la dependencia fue efectivamente invocada y que se alcanzó su mecanismo de timeout/fallo. No basta con comprobar que el resultado final llegó rápido.
+
+### Estado al cierre de R3
+
+- Cerrados/verificados: H01, H02, H03, H05, H06, H07, H08, H10, H11, H13, H14.
+- Aceptados por decisión: H09, H12.
+- Abiertos: H04 (operativo, Lautaro073) y H15 (test técnico, agy).
+- Decisiones pendientes: 0.
