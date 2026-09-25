@@ -61,6 +61,9 @@ function getPackageLabel(packageType: string): string {
 
 export function MerchantRequestsList({ requests, metrics }: MerchantRequestsListProps) {
   const router = useRouter();
+  const activeRequests = requests.filter(
+    (r) => r.status === 'published' || r.status === 'matched' || r.status === 'in_transit'
+  );
   return (
     <div className="flex flex-col space-y-6">
       {/* Encabezado y Acción principal */}
@@ -114,7 +117,7 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
         </Card>
       </div>
 
-      {requests.length === 0 ? (
+      {activeRequests.length === 0 ? (
         <EmptyState
           title="No tenés solicitudes activas"
           description="Publicá un nuevo envío para recibir ofertas de repartidores disponibles en Aguilares."
@@ -123,7 +126,7 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
         />
       ) : (
         <div className="flex flex-col space-y-3">
-          {requests.map((req) => {
+          {activeRequests.map((req) => {
             const statusConfig = getStatusBadgeConfig(req.status, req.offersCount);
 
             return (

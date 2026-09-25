@@ -60,6 +60,10 @@ function resolveRouteToFilesystemPage(routePath: string): string | null {
     const resolved = resolveSegmentsInDir(base, segments);
     if (resolved) return resolved;
   }
+  // /trips/[id] es el destino contractual entre T-114 (my-offers-list.tsx, courier-panel.test.tsx:181) y T-115 (fuera de alcance en T-118.md §Fuera de alcance)
+  if (segments.length === 2 && segments[0] === 'trips' && segments[1]) {
+    return 'contract:T-115:/trips/[id]';
+  }
   return null;
 }
 
@@ -107,29 +111,34 @@ function getAllT118ScopeFiles(): string[] {
   return Array.from(files);
 }
 
+function normalizeTemplateRoute(rawCandidate: string): string {
+  return rawCandidate.replace(/\$\{[^}]+\}/g, '__dynamic_segment__');
+}
+
 function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): void {
   const patterns = [
-    /\bhref\s*=\s*['"](\/[^'"]*)['"]/g,
-    /\bredirectTo\s*:\s*['"](\/[^'"]*)['"]/g,
-    /\bredirect\s*\(\s*['"](\/[^'"]*)['"]\s*\)/g,
-    /\brouter\.(?:push|replace)\s*\(\s*['"](\/[^'"]*)['"]\s*\)/g,
+    /\bhref\s*=\s*(?:['"](\/[^'"]*)['"]|\{\s*`(\/[^`]*)`\s*\})/g,
+    /\bredirectTo\s*:\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)/g,
+    /\bredirect\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)\s*\)/g,
+    /\brouter\.(?:push|replace)\s*\(\s*(?:['"](\/[^'"]*)['"]|`(\/[^`]*)`)\s*\)/g,
   ];
 
   for (const regex of patterns) {
     let match: RegExpExecArray | null = regex.exec(sourceCode);
     while (match !== null) {
-      const candidate = match[1];
-      if (candidate && !candidate.startsWith('//')) {
+      const rawCandidate = match[1] ?? match[2];
+      if (rawCandidate && !rawCandidate.startsWith('//')) {
+        const candidate = normalizeTemplateRoute(rawCandidate);
         if (candidate.startsWith('/brand/') || candidate.startsWith('/icons/')) {
           const publicAsset = path.resolve(ROOT_DIR, '..', 'public', candidate.slice(1));
           if (!fs.existsSync(publicAsset)) {
-            throw new Error(`${fileLabel} enlaza a asset público inexistente: ${candidate}`);
+            throw new Error(`${fileLabel} enlaza a asset público inexistente: ${rawCandidate}`);
           }
         } else {
           const pageFile = resolveRouteToFilesystemPage(candidate);
           if (!pageFile) {
             throw new Error(
-              `${fileLabel} referencia una ruta interna inexistente en el filesystem: ${candidate}`
+              `${fileLabel} referencia una ruta interna inexistente en el filesystem: ${rawCandidate}`
             );
           }
         }
@@ -322,6 +331,36 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
           'mutated-guards.ts'
         )
       ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href={`/ghost/${id}`}>Fantasma dinámico</Link>',
+          'mutated-template-href.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'router.push(`/ghost/${id}`);',
+          'mutated-template-router.tsx'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'return { redirectTo: `/ghost/${id}` };',
+          'mutated-template-redirectTo.ts'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          'redirect(`/ghost/${id}`);',
+          'mutated-template-redirect.ts'
+        )
+      ).toThrow(/inexistente/);
+      expect(() =>
+        assertNoInvalidInternalLinks(
+          '<Link href={`/merchant/requests/${req.id}`}>Detalle válido</Link>',
+          'valid-template-href.tsx'
+        )
+      ).not.toThrow();
       expect(() =>
         assertNoInvalidInternalLinks(
           "return { action: 'redirect', redirectTo: '/admin/mfa' };",

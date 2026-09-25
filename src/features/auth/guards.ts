@@ -238,8 +238,9 @@ export function evaluateRouteGuard(
   }
 
   if (pathname.startsWith('/requests/')) {
-    if (session.role === 'merchant') {
-      return { action: 'redirect', redirectTo: `/merchant${pathname}` };
+    const requestId = pathname.slice('/requests/'.length);
+    if (session.role === 'merchant' && requestId && !requestId.includes('/')) {
+      return { action: 'redirect', redirectTo: `/merchant/requests/${requestId}` };
     }
     return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
   }

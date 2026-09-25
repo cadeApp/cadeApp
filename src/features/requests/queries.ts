@@ -447,8 +447,12 @@ export async function getMerchantRequests(
     `)
     .eq('merchant_id', merchantId);
 
+  const ACTIVE_C02_STATUSES = ['published', 'matched', 'in_transit'] as const;
+
   if (status !== 'all') {
     pageQuery = pageQuery.eq('status', status);
+  } else if (typeof (pageQuery as unknown as { in?: unknown }).in === 'function') {
+    pageQuery = pageQuery.in('status', [...ACTIVE_C02_STATUSES]);
   }
 
   pageQuery = pageQuery
@@ -468,17 +472,21 @@ export async function getMerchantRequests(
     throw new Error(`Error al cargar solicitudes del comercio: ${pageResult.error.message}`);
   }
 
-  const fetchedRows = (pageResult.data as unknown as RawMerchantRequest[] | null) ?? [];
+  const rawFetchedRows = (pageResult.data as unknown as RawMerchantRequest[] | null) ?? [];
+  const activeStatusSet = new Set<string>(ACTIVE_C02_STATUSES);
+  const fetchedRows =
+    status === 'all'
+      ? rawFetchedRows.filter((r) => activeStatusSet.has(r.status))
+      : rawFetchedRows;
   const hasMore = fetchedRows.length > pageSize;
   const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
   const lastItem = rawRequests.at(-1);
   const nextCursor: MerchantHistoryCursor | null =
     hasMore && lastItem ? { createdAt: lastItem.created_at, id: lastItem.id } : null;
 
-  // PR87-R03 + PR87-H19: Lectura acotada por lotes de <=50 filas (nunca sin .limit) y corte diario civil de Aguilares
+  // PR87-R03 + PR87-R04 + PR87-H19: Lectura acotada por lotes de <=50 filas hasta agotamiento (sin tope global arbitrario) y corte diario civil de Aguilares
   const { startUtcIso, endUtcIso } = getAguilaresDayBoundsUtc(options?.now ?? new Date());
   const METRICS_BATCH_LIMIT = 50;
-  const MAX_METRICS_BATCHES = 10;
   const seenIds = new Set<string>();
   const aggregatedRows: Array<{
     id: string;
@@ -488,7 +496,7 @@ export async function getMerchantRequests(
   }> = [];
 
   let metricsCursor: MerchantHistoryCursor | null = null;
-  for (let batchIdx = 0; batchIdx < MAX_METRICS_BATCHES; batchIdx += 1) {
+  while (true) {
     let batchQuery = supabase
       .from('delivery_requests')
       .select('id, status, created_at, accepted_offer_id')
@@ -552,29 +560,41 @@ export async function getMerchantRequests(
 
   let avgRateArs: number | null = null;
   if (todayAcceptedOfferIds.length > 0) {
-    const boundedOfferIds = todayAcceptedOfferIds.slice(0, 50);
-    const offersQuery = supabase
-      .from('offers')
-      .select('amount_ars')
-      .in('id', boundedOfferIds);
+    const allValidAmounts: number[] = [];
 
-    const { data: acceptedOffersData, error: acceptedOffersError } = await (typeof (
-      offersQuery as unknown as { limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }
-    ).limit === 'function'
-      ? (offersQuery as unknown as { limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }).limit(50)
-      : offersQuery);
+    for (let offset = 0; offset < todayAcceptedOfferIds.length; offset += METRICS_BATCH_LIMIT) {
+      const boundedOfferIds = todayAcceptedOfferIds.slice(offset, offset + METRICS_BATCH_LIMIT);
+      const offersQuery = supabase
+        .from('offers')
+        .select('amount_ars')
+        .in('id', boundedOfferIds);
 
-    if (acceptedOffersError) {
-      throw new Error(`Error al cargar ofertas aceptadas: ${acceptedOffersError.message}`);
+      const { data: acceptedOffersData, error: acceptedOffersError } = await (typeof (
+        offersQuery as unknown as {
+          limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+        }
+      ).limit === 'function'
+        ? (
+            offersQuery as unknown as {
+              limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+            }
+          ).limit(METRICS_BATCH_LIMIT)
+        : offersQuery);
+
+      if (acceptedOffersError) {
+        throw new Error(`Error al cargar ofertas aceptadas: ${acceptedOffersError.message}`);
+      }
+
+      for (const item of (acceptedOffersData as Array<{ amount_ars: number }> | null) ?? []) {
+        if (typeof item.amount_ars === 'number' && item.amount_ars > 0) {
+          allValidAmounts.push(item.amount_ars);
+        }
+      }
     }
 
-    const validAmounts = (
-      (acceptedOffersData as Array<{ amount_ars: number }> | null) ?? []
-    ).filter((o) => typeof o.amount_ars === 'number' && o.amount_ars > 0);
-
-    if (validAmounts.length > 0) {
-      const sum = validAmounts.reduce((acc, item) => acc + item.amount_ars, 0);
-      avgRateArs = Math.round(sum / validAmounts.length);
+    if (allValidAmounts.length > 0) {
+      const sum = allValidAmounts.reduce((acc, amount) => acc + amount, 0);
+      avgRateArs = Math.round(sum / allValidAmounts.length);
     }
   }
 

@@ -120,6 +120,36 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
     const emptyAction = screen.getByRole('button', { name: /nueva solicitud/i });
     expect(emptyAction).toBeDefined();
   });
+
+  it('muestra EmptyState "No tenés solicitudes activas" si sólo existen solicitudes terminales (PR87-H20)', () => {
+    const onlyTerminalRequests: MerchantRequestSummary[] = [
+      {
+        id: 'req-deliv-only',
+        pickupZoneName: 'Zona Terminal Intrusa',
+        dropoffZoneName: 'Barrio Sur',
+        approxDistanceKm: '1,5',
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        cashChangeAmount: null,
+        status: 'delivered',
+        expiresAt: null,
+        createdAt: '2026-09-24T09:30:00Z',
+        offersCount: 1,
+        acceptedOfferId: 'off-1',
+      },
+    ];
+
+    render(
+      <MerchantRequestsList
+        requests={onlyTerminalRequests}
+        metrics={{ dispatchedToday: 1, avgRateArs: 2100, activeCount: 0 }}
+      />
+    );
+
+    expect(screen.queryByText(/Zona Terminal Intrusa/i)).toBeNull();
+    expect(screen.getByText(/No tenés solicitudes activas/i)).toBeDefined();
+  });
 });
 
 describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {
