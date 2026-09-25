@@ -234,4 +234,109 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(isPublicRoute('/pilot-terms')).toBe(false);
     expect(isPublicRoute('/legal')).toBe(false);
   });
+
+  describe('CC-007: Invariante de consentimiento legal obligatorio en guards', () => {
+    it('bloquea a merchant con consentStatus = pending redirigiéndolo fuera de rutas protegidas', () => {
+      const pendingMerchant: AuthSession = {
+        userId: 'usr-m-pending',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'pending',
+      };
+      const result = evaluateRouteGuard('/merchant/dashboard', pendingMerchant);
+      expect(result.action).toBe('redirect');
+      if (result.action === 'redirect') {
+        expect(result.redirectTo).toContain('/login?consentRequired=1');
+      }
+    });
+
+    it('bloquea a courier con consentStatus = reconsent_required en rutas protegidas', () => {
+      const reconsentCourier: AuthSession = {
+        userId: 'usr-c-reconsent',
+        email: 'c@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'reconsent_required',
+      };
+      const result = evaluateRouteGuard('/courier/feed', reconsentCourier);
+      expect(result.action).toBe('redirect');
+      if (result.action === 'redirect') {
+        expect(result.redirectTo).toContain('/login?consentRequired=1');
+      }
+    });
+
+    it('permite acceso normal a merchant con consentStatus = active', () => {
+      const activeMerchant: AuthSession = {
+        userId: 'usr-m-active',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'active',
+      };
+      const result = evaluateRouteGuard('/merchant/dashboard', activeMerchant);
+      expect(result.action).toBe('allow');
+    });
+
+    it('admin queda exento del gate de consentimiento operativo', () => {
+      const adminPending: AuthSession = {
+        userId: 'usr-admin',
+        email: 'admin@test.com',
+        role: 'admin',
+        aal: 'aal2',
+        consentStatus: 'pending',
+      };
+      const result = evaluateRouteGuard('/admin', adminPending);
+      expect(result.action).toBe('allow');
+    });
+
+    it('resolvePostLoginRedirect no envía a dashboard a usuarios pending o reconsent_required', () => {
+      expect(resolvePostLoginRedirect('/merchant/dashboard', 'merchant', 'pending')).toBe(
+        '/login?consentRequired=1'
+      );
+      expect(resolvePostLoginRedirect('/courier/feed', 'courier', 'reconsent_required')).toBe(
+        '/login?consentRequired=1'
+      );
+      expect(resolvePostLoginRedirect('/merchant/dashboard', 'merchant', 'active')).toBe(
+        '/merchant/dashboard'
+      );
+    });
+
+    it('permite rutas públicas y login a usuarios pending para regularización', () => {
+      const pendingUser: AuthSession = {
+        userId: 'usr-pending',
+        email: 'p@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'pending',
+      };
+      expect(evaluateRouteGuard('/', pendingUser).action).toBe('allow');
+      expect(evaluateRouteGuard('/login', pendingUser).action).toBe('allow');
+      expect(evaluateRouteGuard('/register', pendingUser).action).toBe('allow');
+    });
+
+    it('mutación adversarial: si se omite el bloqueo de consent_status en el guard, se produce acceso indebido', () => {
+      // Simula un guard mutado donde se omite la validación de consent_status
+      function mutantEvaluateRouteGuard(pathname: string, session: AuthSession | null) {
+        if (session && session.role === 'merchant') {
+          return { action: 'allow' as const };
+        }
+        return evaluateRouteGuard(pathname, session);
+      }
+
+      const pendingMerchant: AuthSession = {
+        userId: 'usr-m-pending',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'pending',
+      };
+
+      const realResult = evaluateRouteGuard('/merchant/dashboard', pendingMerchant);
+      const mutantResult = mutantEvaluateRouteGuard('/merchant/dashboard', pendingMerchant);
+
+      expect(realResult.action).toBe('redirect');
+      expect(mutantResult.action).toBe('allow');
+    });
+  });
 });

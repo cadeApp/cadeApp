@@ -4,7 +4,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { publicEnv } from '@/lib/env.public';
 import type { Database } from '@/types/database.types';
-import { profileRoleSchema } from '@/domain/schemas';
+import { consentStatusSchema, profileRoleSchema } from '@/domain/schemas';
 import { evaluateRouteGuard, type AuthSession } from './guards';
 
 export * from './queries';
@@ -50,12 +50,17 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   if (user) {
     // Lecturas paralelas independientes de perfil y MFA AAL (Regla 25 §6)
     const [profileResult, aalResult] = await Promise.all([
-      supabase.from('profiles').select('role').eq('id', user.id).maybeSingle<{ role: unknown }>(),
+      supabase
+        .from('profiles')
+        .select('role, consent_status')
+        .eq('id', user.id)
+        .maybeSingle<{ role: unknown; consent_status: unknown }>(),
       supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
     ]);
 
     if (!profileResult.error && profileResult.data) {
       const roleParsed = profileRoleSchema.safeParse(profileResult.data.role);
+      const consentParsed = consentStatusSchema.safeParse(profileResult.data.consent_status);
       if (roleParsed.success) {
         const aal = aalResult.data?.currentLevel === 'aal2' ? 'aal2' : 'aal1';
         session = {
@@ -63,6 +68,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
           email: user.email ?? '',
           role: roleParsed.data,
           aal,
+          consentStatus: consentParsed.success ? consentParsed.data : 'pending',
         };
       }
     }

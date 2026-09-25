@@ -1,10 +1,11 @@
-import type { ProfileRole } from '@/domain/schemas';
+import type { ConsentStatus, ProfileRole } from '@/domain/schemas';
 
 export interface AuthSession {
   readonly userId: string;
   readonly email: string;
   readonly role: ProfileRole;
   readonly aal: 'aal1' | 'aal2';
+  readonly consentStatus?: ConsentStatus;
 }
 
 export type RouteGuardAction =
@@ -126,7 +127,15 @@ export function isKnownExistingRouteForRole(pathname: string, role: ProfileRole)
   return false;
 }
 
-export function resolvePostLoginRedirect(rawRedirectTo: unknown, role: ProfileRole): string {
+export function resolvePostLoginRedirect(
+  rawRedirectTo: unknown,
+  role: ProfileRole,
+  consentStatus?: ConsentStatus
+): string {
+  if (role !== 'admin' && consentStatus && consentStatus !== 'active') {
+    return '/login?consentRequired=1';
+  }
+
   if (
     typeof rawRedirectTo !== 'string' ||
     !rawRedirectTo.startsWith('/') ||
@@ -148,6 +157,7 @@ export function resolvePostLoginRedirect(rawRedirectTo: unknown, role: ProfileRo
     email: '',
     role,
     aal: 'aal1',
+    consentStatus: consentStatus ?? 'active',
   };
 
   const guardResult = evaluateRouteGuard(pathname, mockSession);
@@ -172,6 +182,9 @@ export function evaluateRouteGuard(
   // 1. Rutas de autenticación pública (login / register)
   if (isAuthRoute(pathname)) {
     if (session) {
+      if (session.role !== 'admin' && session.consentStatus && session.consentStatus !== 'active') {
+        return { action: 'allow' };
+      }
       return {
         action: 'redirect',
         redirectTo: getRoleDefaultPath(session.role),
@@ -189,6 +202,27 @@ export function evaluateRouteGuard(
       action: 'redirect',
       redirectTo: `/login?redirectTo=${encodeURIComponent(pathname)}`,
     };
+  }
+
+  // 2.a. Bloqueo operativo por consent_status (CC-007 / D06 / D07 / D08)
+  // Perfiles merchant o courier en pending o reconsent_required no tienen acceso operativo a rutas protegidas
+  if (session.role !== 'admin' && session.consentStatus && session.consentStatus !== 'active') {
+    if (
+      isMerchantRoute(pathname) ||
+      isCourierRoute(pathname) ||
+      pathname === '/onboarding' ||
+      pathname.startsWith('/onboarding/') ||
+      pathname === '/requests' ||
+      pathname.startsWith('/requests/') ||
+      pathname === '/feed' ||
+      pathname === '/offers' ||
+      pathname === '/profile'
+    ) {
+      return {
+        action: 'redirect',
+        redirectTo: `/login?consentRequired=1&redirectTo=${encodeURIComponent(pathname)}`,
+      };
+    }
   }
 
   // 2.b. Redirecciones de aliases heredados a sus rutas canónicas (evita loops y unifica destinos)

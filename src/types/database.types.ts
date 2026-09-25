@@ -504,6 +504,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          consent_status: Database["public"]["Enums"]["consent_status"]
           created_at: string
           display_name: string
           id: string
@@ -511,6 +512,7 @@ export type Database = {
           role: Database["public"]["Enums"]["profile_role"]
         }
         Insert: {
+          consent_status?: Database["public"]["Enums"]["consent_status"]
           created_at?: string
           display_name?: string
           id: string
@@ -518,6 +520,7 @@ export type Database = {
           role: Database["public"]["Enums"]["profile_role"]
         }
         Update: {
+          consent_status?: Database["public"]["Enums"]["consent_status"]
           created_at?: string
           display_name?: string
           id?: string
@@ -670,6 +673,14 @@ export type Database = {
     }
     Functions: {
       accept_offer: { Args: { p_offer_id: string }; Returns: Json }
+      activate_account_consents: {
+        Args: {
+          p_privacy_version: string
+          p_tos_version: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       admin_decide_courier: {
         Args: { p_courier_id: string; p_decision: string; p_reason?: string }
         Returns: Json
@@ -732,6 +743,7 @@ export type Database = {
     }
     Enums: {
       consent_document: "tos" | "privacy" | "courier_contract" | "pilot_terms"
+      consent_status: "pending" | "active" | "reconsent_required"
       courier_document_kind:
         | "dni_front"
         | "dni_back"
@@ -889,6 +901,7 @@ export const Constants = {
   public: {
     Enums: {
       consent_document: ["tos", "privacy", "courier_contract", "pilot_terms"],
+      consent_status: ["pending", "active", "reconsent_required"],
       courier_document_kind: [
         "dni_front",
         "dni_back",
