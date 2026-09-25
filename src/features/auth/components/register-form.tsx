@@ -194,14 +194,14 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
             >
               Términos
             </Link>{' '}
-            (v{getLegalDocument('tos').version}) y la{' '}
+            y la{' '}
             <Link
               href="/legal/privacy"
               className="rounded-sm font-semibold text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Política de Privacidad
-            </Link>{' '}
-            (v{getLegalDocument('privacy').version}).
+            </Link>
+            .
           </p>
         </div>
 

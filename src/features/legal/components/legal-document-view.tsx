@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
-import { Badge } from '@/ui/badge';
 import { Card } from '@/ui/card';
 import { TopBar } from '@/ui/top-bar';
 import type { LegalDocumentDescriptor } from '../documents';
@@ -21,15 +20,12 @@ export function LegalDocumentView({ document }: { readonly document: LegalDocume
       />
 
       <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 sm:px-6 sm:py-8">
-        <header className="space-y-3">
-          <Badge variant="outline">Versión {document.version}</Badge>
-          <div className="space-y-2">
-            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-              {document.title}
-            </h1>
-            <p className="text-base leading-relaxed text-muted-foreground">{document.intro}</p>
-          </div>
-          <p className="text-sm text-muted-foreground">Vigente desde el {document.updatedLabel}</p>
+        <header className="space-y-2">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            {document.title}
+          </h1>
+          <p className="text-base leading-relaxed text-muted-foreground">{document.intro}</p>
+          <p className="text-sm text-muted-foreground">Última actualización: {document.updatedLabel}</p>
         </header>
 
         <Card className="p-5 sm:p-6">
@@ -65,10 +61,9 @@ export function LegalDocumentView({ document }: { readonly document: LegalDocume
           ))}
         </article>
 
-        <Card className="space-y-2 p-5 text-sm leading-relaxed text-muted-foreground sm:p-6">
+        <Card className="space-y-3 p-5 text-sm leading-relaxed text-muted-foreground sm:p-6">
           <p>
-            Documento <strong className="text-foreground">{document.version}</strong>. Una versión
-            nueva se registra por separado y no reemplaza el historial anterior.
+            Para consultas o dudas sobre estos términos, podés comunicarte por los canales oficiales de contacto de cadeApp.
           </p>
           <Link
             href="/legal"

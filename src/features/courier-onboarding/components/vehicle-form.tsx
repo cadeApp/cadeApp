@@ -413,8 +413,7 @@ export function VehicleForm({
                 className="rounded-sm font-medium text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {COURIER_ONBOARDING_COPY.consentTosLink}
-              </Link>{' '}
-              (v{getLegalDocument('tos').version})
+              </Link>
             </span>
           </label>
 
@@ -434,7 +433,7 @@ export function VehicleForm({
               >
                 {COURIER_ONBOARDING_COPY.consentPrivacyLink}
               </Link>{' '}
-              (v{getLegalDocument('privacy').version}) {COURIER_ONBOARDING_COPY.consentPrivacySuffix}
+              {COURIER_ONBOARDING_COPY.consentPrivacySuffix}
             </span>
           </label>
 
@@ -453,8 +452,8 @@ export function VehicleForm({
                 className="rounded-sm text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Condiciones para repartidores
-              </Link>{' '}
-              (v{getLegalDocument('courier_contract').version}).{' '}
+              </Link>
+              .{' '}
               {COURIER_ONBOARDING_COPY.consentContractText}
             </span>
           </label>

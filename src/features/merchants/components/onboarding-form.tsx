@@ -342,8 +342,8 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
               className="rounded-sm font-semibold text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {merchantCopy.onboarding.pilotTermsLink}
-            </Link>{' '}
-            (v{getLegalDocument('pilot_terms').version}).
+            </Link>
+            .
           </p>
         </div>
         {errors.acceptPilotTerms && (

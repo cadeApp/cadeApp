@@ -25,8 +25,7 @@ export default function LegalIndexPage() {
             Documentos legales
           </h1>
           <p className="text-base leading-relaxed text-muted-foreground">
-            Consultá la versión vigente antes de aceptar. Cada aceptación queda asociada a la
-            versión que viste.
+            Términos, condiciones y políticas de uso de cadeApp.
           </p>
         </header>
         <div className="space-y-3">
@@ -39,7 +38,7 @@ export default function LegalIndexPage() {
                 <div className="min-w-0 flex-1">
                   <h2 className="font-semibold text-foreground">{document.shortTitle}</h2>
                   <p className="text-sm text-muted-foreground">
-                    Versión {document.version} · {document.updatedLabel}
+                    Actualizado: {document.updatedLabel}
                   </p>
                 </div>
               </Card>
