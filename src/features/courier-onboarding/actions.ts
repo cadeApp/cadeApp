@@ -9,6 +9,7 @@ import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import { courierOnboardingSchema } from './schemas';
 import { logoutAction } from '@/features/auth/server';
+import { areCurrentLegalVersions } from '@/features/legal';
 
 export async function logoutCourierAction() {
   return logoutAction();
@@ -57,6 +58,16 @@ export async function courierOnboardingAction(
   // 3. Validación de datos de entrada
   const parsed = courierOnboardingSchema.safeParse(input);
   if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  if (
+    !areCurrentLegalVersions([
+      { document: 'tos', version: parsed.data.consents.tosVersion },
+      { document: 'privacy', version: parsed.data.consents.privacyVersion },
+      { document: 'courier_contract', version: parsed.data.consents.courierContractVersion },
+    ])
+  ) {
     return err('VALIDATION_ERROR');
   }
 
@@ -111,17 +122,17 @@ export async function courierOnboardingAction(
     {
       profile_id: user.id,
       document: 'tos',
-      version: '1.0',
+      version: parsed.data.consents.tosVersion,
     },
     {
       profile_id: user.id,
       document: 'privacy',
-      version: '1.0',
+      version: parsed.data.consents.privacyVersion,
     },
     {
       profile_id: user.id,
       document: 'courier_contract',
-      version: '1.0',
+      version: parsed.data.consents.courierContractVersion,
     },
   ];
 

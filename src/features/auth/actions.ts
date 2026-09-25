@@ -1,10 +1,13 @@
 'use server';
 
 import { createClient } from '@/server/supabase/server';
+import { createAdminClient } from '@/server/supabase/admin';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { SIGNUP_ROLES, profileRoleSchema, type ProfileRole } from '@/domain/schemas';
 import { loginSchema, registerSchema, forgotPasswordSchema } from './schemas';
 import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
+import { areCurrentLegalVersions } from '@/features/legal';
+import type { TablesInsert } from '@/types/database.types';
 
 export async function loginAction(
   input: unknown
@@ -72,6 +75,15 @@ export async function registerAction(
     return err('VALIDATION_ERROR');
   }
 
+  if (
+    !areCurrentLegalVersions([
+      { document: 'tos', version: parsed.data.acceptedTermsVersion },
+      { document: 'privacy', version: parsed.data.acceptedPrivacyVersion },
+    ])
+  ) {
+    return err('VALIDATION_ERROR');
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
@@ -93,6 +105,25 @@ export async function registerAction(
   }
 
   if (!data.user) {
+    return err('INTERNAL_ERROR');
+  }
+
+  const consentPayload: TablesInsert<'consents'>[] = [
+    {
+      profile_id: data.user.id,
+      document: 'tos',
+      version: parsed.data.acceptedTermsVersion,
+    },
+    {
+      profile_id: data.user.id,
+      document: 'privacy',
+      version: parsed.data.acceptedPrivacyVersion,
+    },
+  ];
+
+  const adminClient = createAdminClient();
+  const { error: consentError } = await adminClient.from('consents').insert(consentPayload as never);
+  if (consentError) {
     return err('INTERNAL_ERROR');
   }
 

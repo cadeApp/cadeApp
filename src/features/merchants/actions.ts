@@ -72,11 +72,18 @@ export async function merchantOnboardingAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 4. Registro de consentimiento de términos del piloto
+  const legacyVersion = /^v(\d+)$/.exec(pilotTermsVersion);
+  const normalizedPilotTermsVersion = legacyVersion ? `${legacyVersion[1]}.0` : pilotTermsVersion;
+
+  if (parsed.data.pilotTermsVersion !== normalizedPilotTermsVersion) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // 4. Registro de la versión que el comercio vio y aceptó
   const consentPayload: TablesInsert<'consents'> = {
     profile_id: user.id,
     document: 'pilot_terms',
-    version: pilotTermsVersion,
+    version: parsed.data.pilotTermsVersion,
   };
 
   const { error: consentError } = await supabase.from('consents').insert(consentPayload as never);

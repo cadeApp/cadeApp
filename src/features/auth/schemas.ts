@@ -16,12 +16,11 @@ export const registerSchema = z.object({
   role: signupRoleSchema,
   displayName: z.string().trim().max(100).optional(),
   phone: z.string().trim().max(30).optional(),
-  acceptTerms: z
-    .boolean()
-    .optional()
-    .refine((val) => val !== false, {
-      message: authCopy.register.errorTermsRequired,
-    }),
+  acceptTerms: z.literal(true, {
+    errorMap: () => ({ message: authCopy.register.errorTermsRequired }),
+  }),
+  acceptedTermsVersion: z.string().trim().min(1),
+  acceptedPrivacyVersion: z.string().trim().min(1),
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

@@ -24,8 +24,11 @@ export const courierOnboardingConsentsSchema = z.object({
     errorMap: () => ({ message: 'Debés aceptar la Política de Privacidad' }),
   }),
   courierContract: z.literal(true, {
-    errorMap: () => ({ message: 'Debés aceptar el Contrato de Repartidor Independiente' }),
+    errorMap: () => ({ message: 'Debés aceptar las Condiciones para repartidores' }),
   }),
+  tosVersion: z.string().trim().min(1),
+  privacyVersion: z.string().trim().min(1),
+  courierContractVersion: z.string().trim().min(1),
 });
 
 export type CourierOnboardingConsentsInput = z.infer<typeof courierOnboardingConsentsSchema>;

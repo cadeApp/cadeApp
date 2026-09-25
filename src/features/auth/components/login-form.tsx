@@ -125,6 +125,21 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
         </Button>
       </form>
 
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+        <Link
+          href="/legal/terms"
+          className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Términos
+        </Link>
+        <Link
+          href="/legal/privacy"
+          className="rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Privacidad
+        </Link>
+      </div>
+
       <div className="border-t border-border/60 pt-4 text-center text-sm text-muted-foreground">
         <span>{authCopy.login.noAccount} </span>
         <Link
