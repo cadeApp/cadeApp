@@ -34,7 +34,7 @@ describe('T-009 / PR60-H03: server.ts updateSession y preservación de cookies r
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
           maybeSingle: vi.fn().mockResolvedValue({
-            data: { role: 'courier' },
+            data: { role: 'courier', consent_status: 'active' },
             error: null,
           }),
         }),
@@ -69,6 +69,84 @@ describe('T-009 / PR60-H03: server.ts updateSession y preservación de cookies r
     // PR60-H03: Las cookies rotadas DEBEN estar en la respuesta de redirección
     const setCookieHeader = response.headers.get('set-cookie');
     expect(setCookieHeader).toContain('sb-refresh-token=new-rotated-token-123');
+  });
+
+  it('updateSession bloquea a usuarios con consent_status = pending redirigiendo a regularizacion (CC-007)', async () => {
+    const mockRequest = new NextRequest('http://localhost:3000/merchant/dashboard');
+
+    const mockGetUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'usr-merchant-pending', email: 'pending@test.com' } },
+      error: null,
+    });
+
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant', consent_status: 'pending' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    const mockGetAal = vi.fn().mockResolvedValue({
+      data: { currentLevel: 'aal1' },
+      error: null,
+    });
+
+    vi.mocked(ssr.createServerClient).mockImplementation(() => {
+      return {
+        auth: {
+          getUser: mockGetUser,
+          mfa: { getAuthenticatorAssuranceLevel: mockGetAal },
+        },
+        from: mockFrom,
+      } as unknown as ReturnType<typeof ssr.createServerClient>;
+    });
+
+    const response = await updateSession(mockRequest);
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('/login?consentRequired=1');
+  });
+
+  it('updateSession bloquea a usuarios con consent_status = reconsent_required (CC-007)', async () => {
+    const mockRequest = new NextRequest('http://localhost:3000/courier/feed');
+
+    const mockGetUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'usr-courier-reconsent', email: 'reconsent@test.com' } },
+      error: null,
+    });
+
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'courier', consent_status: 'reconsent_required' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    const mockGetAal = vi.fn().mockResolvedValue({
+      data: { currentLevel: 'aal1' },
+      error: null,
+    });
+
+    vi.mocked(ssr.createServerClient).mockImplementation(() => {
+      return {
+        auth: {
+          getUser: mockGetUser,
+          mfa: { getAuthenticatorAssuranceLevel: mockGetAal },
+        },
+        from: mockFrom,
+      } as unknown as ReturnType<typeof ssr.createServerClient>;
+    });
+
+    const response = await updateSession(mockRequest);
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('/login?consentRequired=1');
   });
 
   it('updateSession degrada a null si profiles devuelve null o error (PR60-H01)', async () => {

@@ -79,6 +79,15 @@ begin
     (pg_temp.courier_unavailable_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c-unav-t101@example.test', 'pwd', '{"role": "courier"}');
 
   update public.profiles set role = 'admin' where id = pg_temp.admin_id();
+  update public.profiles set consent_status = 'active' where id in (
+    pg_temp.merchant_1_id(),
+    pg_temp.courier_approved_1_id(),
+    pg_temp.courier_approved_2_id(),
+    pg_temp.courier_pending_id(),
+    pg_temp.courier_rejected_id(),
+    pg_temp.courier_suspended_id(),
+    pg_temp.courier_unavailable_id()
+  );
 
   update public.couriers set status = 'approved', available = true
   where profile_id in (pg_temp.courier_approved_1_id(), pg_temp.courier_approved_2_id());
