@@ -5,8 +5,8 @@
 | **PR** | https://github.com/cadeApp/cadeApp/pull/101 |
 | **Issue** | #100 |
 | **Rama** | `cc/CC-007-consent-enforcement` → `develop` |
-| **SHA revisado** | `203654e6d8e7857da12295f3ef83a7b0a9282713` |
-| **Estado** | bloqueada · Ronda 1 |
+| **SHA revisado** | `35d139d9fe934703da539cf709a9629edc0397bc` |
+| **Estado** | bloqueada · Ronda 2 |
 | **Bloquea** | T-311 / PR #98 |
 
 ## Rondas
@@ -14,15 +14,14 @@
 | Ronda | SHA | Resultado | Informe |
 |---|---|---|---|
 | 1 | `203654e` | 7 bloqueantes + 3 decisiones P1 | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `35d139d` | 6 bloqueantes · 3 cierres | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
-## Decisiones P1
+## Estado R2
 
-- **A01 / D06:** doble barrera completa: estado en perfil + activación atómica DB + RLS/RPC como autoridad + auth server/guards como UX.
-- **A02 / D07:** merchant/courier sujetos al gate; admin exento; backfill solo activo con TOS+Privacy existentes.
-- **A03 / D08:** estados `pending | active | reconsent_required`; una versión nueva solo fuerza reconsentimiento si el cambio es material.
+Cerrados: **H01, H04, H05**.
 
-## Bloqueantes
+Abiertos: **H02, H03, H06, H07, H08, H10**.
 
-H01–H07 permanecen abiertos. El más importante es H05: PR #101 no puede mergearse como documento solamente; debe implementar el contrato compartido antes de desbloquear T-311.
+El CI DB de `35d139d` fue inspeccionado por dentro: migración aplicada, `cc007_consent_enforcement.sql .. ok`, **Files=9, Tests=1463, Result: PASS**, y `db:types` se regeneró sin error. Ese verde no cubre los seis puntos abiertos.
 
-No se inspecciona CI final mientras existan estos bloqueantes.
+T-311 permanece bloqueada hasta mergear CC-007.

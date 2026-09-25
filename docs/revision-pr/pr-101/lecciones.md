@@ -1,13 +1,14 @@
 # Lecciones — PR #101 / CC-007
 
-## P08 · El middleware no es una frontera de seguridad para Supabase
+## Ronda 2
 
-Cuando el cliente puede hablar directamente con Postgres vía Supabase, un guard de Next mejora UX pero no impone el invariante. Si la regla es de autorización, RLS/RPC debe ser autoridad.
+### SECURITY DEFINER forma su propia clase de bypass
+Endurecer RLS no protege una RPC `SECURITY DEFINER` que implementa autorización por su cuenta. Al revisar un invariante, hay que enumerar **todas** las funciones definer de la clase, no solo las reescritas por la tarea.
 
-## Contract-change debe ser ejecutable
+### Evidencia legal también necesita autoridad de escritura
+Bloquear el estado `active` no alcanza si el cliente puede fabricar filas en `consents`. La provenance del consentimiento es parte del contrato: documento y versión deben validarse en una frontera confiable.
 
-Un CC que solo documenta el nuevo contrato no desbloquea una tarea si la propia skill exige mergear primero el PR del contrato. El precedente CC-005 confirma el patrón: contrato + implementación + tests en la rama `cc/*`.
+### “Mutación” significa ejecutar la suite mutada
+Cambiar un string y demostrar que una regex desapareció no es mutation testing. La mutación debe modificar la fuente real temporalmente, correr el test y producir rojo.
 
-## No se propone AG nueva
-
-Las dos observaciones son instancias de reglas existentes: autoridad en DB/RLS y controles que realmente cubren lo declarado.
+No se propone AG nueva: refuerza P08/AG-61–63 y la regla existente de autoridad DB/RLS.
