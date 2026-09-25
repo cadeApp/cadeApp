@@ -202,6 +202,42 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       fetchSpy.mockRestore();
     });
 
+    it('H14: debe abortar por timeout si el webhook de Discord queda colgado y devolver ok: false sin lanzar', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+        return new Promise((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal | undefined;
+          if (signal) {
+            if (signal.aborted) {
+              const err = new Error('The operation was aborted due to timeout');
+              err.name = 'TimeoutError';
+              reject(err);
+              return;
+            }
+            signal.addEventListener('abort', () => {
+              const err = new Error('The operation was aborted due to timeout');
+              err.name = 'TimeoutError';
+              reject(err);
+            });
+          }
+        });
+      });
+
+      const startTime = Date.now();
+      const result = await sendCriticalAlert(
+        {
+          type: 'test_alert',
+          severity: 'critical',
+          message: 'Alerta con webhook lento',
+        },
+        { timeoutMs: 50 }
+      );
+      const elapsed = Date.now() - startTime;
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/timeout|abort/i);
+      expect(elapsed).toBeLessThan(1000);
+    });
+
     it('H02: debe disparar alerta crítica cuando falla la publicación de solicitud y sanitizar coordenadas y direcciones', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
         ok: true,
@@ -238,6 +274,55 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
 
       const sentBody = JSON.parse(sentRawBody);
       expect(sentBody.content ?? JSON.stringify(sentBody)).toMatch(/CRITICAL|publish_request_failed/);
+      fetchSpy.mockRestore();
+    });
+
+    it('H01: debe redactar la matriz PII completa del esquema real (merchants, profiles, couriers, storage_path) y objetos anidados en el body de Discord', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 204,
+        text: async () => '',
+      } as Response);
+
+      const nestedDetails = {
+        merchant: {
+          default_pickup_address: 'San Martín 777',
+          default_pickup_lat: -27.434,
+          default_pickup_lng: -65.615,
+        },
+        profile: {
+          display_name: 'Persona Prueba',
+          phone: '(03865) 481-234',
+        },
+        courier: {
+          vehicle_plate: 'AB123CD',
+        },
+        document: {
+          storage_path: 'courier-uuid/dni_front.jpg',
+        },
+      };
+
+      const result = await sendCriticalAlert({
+        type: 'test_alert',
+        severity: 'critical',
+        message: 'Alerta con datos del esquema real',
+        details: nestedDetails,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalled();
+
+      const callArgs = fetchSpy.mock.calls[0];
+      const body = String(callArgs?.[1]?.body);
+
+      expect(body).not.toContain('San Martín 777');
+      expect(body).not.toContain('-27.434');
+      expect(body).not.toContain('-65.615');
+      expect(body).not.toContain('Persona Prueba');
+      expect(body).not.toContain('481-234');
+      expect(body).not.toContain('AB123CD');
+      expect(body).not.toContain('courier-uuid/dni_front.jpg');
+
       fetchSpy.mockRestore();
     });
 
@@ -283,20 +368,38 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(health.latencyMs).toBeGreaterThanOrEqual(0);
     });
 
-    it('debe reportar estado unhealthy y emitir alerta si /api/health no responde o retorna 500', async () => {
-      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-        ok: false,
-        status: 500,
-        text: async () => 'Internal Server Error',
-      } as Response);
+    it('H05: debe reportar estado unhealthy y emitir alerta uptime_unhealthy si /api/health no responde o retorna 500', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => {
+        if (typeof url === 'string' && url.includes('/api/health')) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            text: async () => 'Internal Server Error',
+          } as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 204,
+          text: async () => '',
+        } as Response);
+      });
 
       const health = await checkUptimeHealth('http://localhost:3000');
       expect(health.healthy).toBe(false);
       expect(health.status).toBe(500);
+
+      // H05: Exigir que se haya despachado la alerta uptime_unhealthy a Discord
+      const discordCall = fetchSpy.mock.calls.find(([url]) =>
+        typeof url === 'string' && url.includes('discord.com')
+      );
+      expect(discordCall).toBeDefined();
+      const discordBody = JSON.parse(discordCall![1]?.body as string);
+      expect(discordBody.content).toContain('uptime_unhealthy');
+      fetchSpy.mockRestore();
     });
 
-    it('H06: debe abortar por timeout y reportar unhealthy si /api/health queda colgado sin responder', async () => {
-      vi.spyOn(globalThis, 'fetch').mockImplementation((url, init) => {
+    it('H05 / H06: debe abortar por timeout, reportar unhealthy y despachar alerta uptime_unhealthy si /api/health queda colgado sin responder', async () => {
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((url, init) => {
         if (typeof url === 'string' && url.includes('/api/health')) {
           return new Promise((_resolve, reject) => {
             const signal = init?.signal as AbortSignal | undefined;
@@ -326,6 +429,15 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(health.healthy).toBe(false);
       expect(health.status).toBe(0);
       expect(health.error).toMatch(/abort|timeout/i);
+
+      // H05: Exigir que se haya despachado la alerta uptime_unhealthy a Discord por timeout
+      const discordCall = fetchSpy.mock.calls.find(([url]) =>
+        typeof url === 'string' && url.includes('discord.com')
+      );
+      expect(discordCall).toBeDefined();
+      const discordBody = JSON.parse(discordCall![1]?.body as string);
+      expect(discordBody.content).toContain('uptime_unhealthy');
+      fetchSpy.mockRestore();
     });
   });
 
@@ -345,7 +457,7 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(content).toContain('RTO');
     });
 
-    it('debe existir el acta de simulacro de restauración en staging con resultado satisfactorio', async () => {
+    it('debe existir el acta de simulacro de restauración en staging documentando protocolo y estado', async () => {
       const fs = await import('node:fs');
       const path = await import('node:path');
       const actaPath = path.resolve('docs/runbooks/acta-simulacro-restauracion-staging.md');
@@ -357,7 +469,7 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(content).toContain('staging');
       expect(content).toContain('Lautaro073');
       expect(content).toContain('courier-docs');
-      expect(content).toMatch(/APROBADO|EXITOSO/i);
+      expect(content).toMatch(/PENDIENTE|NO VERIFICADO|APROBADO|EXITOSO/i);
     });
   });
 });

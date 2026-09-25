@@ -19,15 +19,22 @@ const SENSITIVE_KEYS = new Set([
   'dropoff_address',
   'destination_address',
   'origin_address',
+  'default_pickup_address',
   'address',
   'pickup_lat',
   'pickup_lng',
   'dropoff_lat',
   'dropoff_lng',
+  'default_pickup_lat',
+  'default_pickup_lng',
   'lat',
   'lng',
   'latitude',
   'longitude',
+  'display_name',
+  'phone',
+  'vehicle_plate',
+  'storage_path',
   'notes',
   'dni',
   'document_number',
@@ -109,18 +116,23 @@ export function scrubPii<T>(target: T): T {
       const lowerKey = key.toLowerCase();
 
       // Si la clave es sensible por contrato, aplicar redacción específica
-      if (
+      const isCoordKey =
         lowerKey === 'pickup_lat' ||
         lowerKey === 'pickup_lng' ||
         lowerKey === 'dropoff_lat' ||
         lowerKey === 'dropoff_lng' ||
+        lowerKey === 'default_pickup_lat' ||
+        lowerKey === 'default_pickup_lng' ||
         lowerKey === 'lat' ||
         lowerKey === 'lng' ||
         lowerKey === 'latitude' ||
-        lowerKey === 'longitude'
-      ) {
+        lowerKey === 'longitude' ||
+        lowerKey.endsWith('_lat') ||
+        lowerKey.endsWith('_lng');
+
+      if (isCoordKey) {
         sanitizedObj[key] = '[REDACTED_COORD]';
-      } else if (lowerKey === 'recipient_phone') {
+      } else if (lowerKey === 'recipient_phone' || lowerKey === 'phone') {
         sanitizedObj[key] = '[REDACTED_PHONE]';
       } else if (lowerKey === 'dni' || lowerKey === 'document_number') {
         sanitizedObj[key] = '[REDACTED_DNI]';

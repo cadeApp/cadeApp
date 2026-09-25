@@ -273,4 +273,35 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     );
     alertSpy.mockRestore();
   });
+
+  it('H14: publish_request completa devolviendo INTERNAL_ERROR aunque el webhook de Discord quede colgado', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            const err = new Error('Discord timeout');
+            err.name = 'TimeoutError';
+            reject(err);
+          });
+        }
+      });
+    });
+
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: '57P01', message: 'unexpected connection failure' },
+    });
+
+    const startTime = Date.now();
+    const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+    const elapsed = Date.now() - startTime;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INTERNAL_ERROR');
+    }
+    expect(elapsed).toBeLessThan(4000);
+    fetchSpy.mockRestore();
+  });
 });

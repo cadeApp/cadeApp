@@ -23,11 +23,21 @@ export interface AlertResult {
   error?: string;
 }
 
+export interface AlertOptions {
+  timeoutMs?: number;
+}
+
+export const DEFAULT_DISCORD_TIMEOUT_MS = 2500;
+
 /**
  * Envía una alerta crítica al canal de operaciones (Discord Webhook o fallback)
- * garantizando que los datos incluidos pasen previamente por sanitización PII.
+ * garantizando que los datos incluidos pasen previamente por sanitización PII
+ * y con timeout explícito para no bloquear el camino de ejecución ante caídas del webhook.
  */
-export async function sendCriticalAlert(payload: AlertPayload): Promise<AlertResult> {
+export async function sendCriticalAlert(
+  payload: AlertPayload,
+  options?: AlertOptions
+): Promise<AlertResult> {
   const sanitizedPayload: AlertPayload = {
     ...payload,
     message: scrubPii(payload.message),
@@ -87,12 +97,20 @@ export async function sendCriticalAlert(payload: AlertPayload): Promise<AlertRes
     ],
   };
 
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_DISCORD_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new Error(`Timeout superado al contactar Discord webhook (${timeoutMs}ms)`));
+  }, timeoutMs);
+
   try {
     const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(discordBody),
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!res.ok && res.status !== 204) {
       return { ok: false, error: `Webhook respondió con status ${res.status}` };
@@ -100,7 +118,22 @@ export async function sendCriticalAlert(payload: AlertPayload): Promise<AlertRes
 
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    clearTimeout(timeoutId);
+    const isTimeout =
+      controller.signal.aborted ||
+      (err instanceof Error &&
+        (err.name === 'TimeoutError' ||
+          err.name === 'AbortError' ||
+          err.message.toLowerCase().includes('timeout') ||
+          err.message.toLowerCase().includes('aborted')));
+
+    const errorMsg = isTimeout
+      ? `Timeout superado al contactar Discord webhook (${timeoutMs}ms)`
+      : err instanceof Error
+        ? err.message
+        : String(err);
+
+    return { ok: false, error: errorMsg };
   }
 }
 
