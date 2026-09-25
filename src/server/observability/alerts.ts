@@ -29,12 +29,17 @@ export interface AlertOptions {
 
 export const DEFAULT_DISCORD_TIMEOUT_MS = 2500;
 
+let testDiscordWebhookUrl: string | null = null;
 let testDiscordTimeoutMs: number | null = null;
 
 /**
- * Seam de test para inyectar un timeout de Discord en tests sin alterar
- * el valor productivo por defecto de 2500 ms.
+ * Seams de test para inyectar configuración en tests unitarios sin alterar
+ * los valores productivos validados por serverEnv.
  */
+export function setDiscordWebhookUrlForTesting(url: string | null): void {
+  testDiscordWebhookUrl = url;
+}
+
 export function setDiscordTimeoutForTesting(ms: number | null): void {
   testDiscordTimeoutMs = ms;
 }
@@ -55,15 +60,16 @@ export async function sendCriticalAlert(
     timestamp: payload.timestamp ?? new Date().toISOString(),
   };
 
-  let webhookUrl: string | undefined = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined;
-  let nodeEnv = process.env.NODE_ENV || 'development';
+  let webhookUrl: string | undefined = testDiscordWebhookUrl || undefined;
+  let nodeEnv = 'development';
 
   if (!webhookUrl) {
     try {
       webhookUrl = serverEnv.DISCORD_ERROR_WEBHOOK_URL || undefined;
-      nodeEnv = serverEnv.NODE_ENV || nodeEnv;
+      nodeEnv = serverEnv.NODE_ENV || 'development';
     } catch {
-      // Ignorar error si serverEnv no está disponible
+      webhookUrl = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined;
+      nodeEnv = process.env.NODE_ENV || 'development';
     }
   }
 
@@ -108,12 +114,7 @@ export async function sendCriticalAlert(
     ],
   };
 
-  const timeoutMs =
-    options?.timeoutMs ??
-    testDiscordTimeoutMs ??
-    (process.env.DISCORD_ALERT_TIMEOUT_MS
-      ? Number.parseInt(process.env.DISCORD_ALERT_TIMEOUT_MS, 10)
-      : DEFAULT_DISCORD_TIMEOUT_MS);
+  const timeoutMs = options?.timeoutMs ?? testDiscordTimeoutMs ?? DEFAULT_DISCORD_TIMEOUT_MS;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort(new Error(`Timeout superado al contactar Discord webhook (${timeoutMs}ms)`));

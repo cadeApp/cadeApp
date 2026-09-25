@@ -275,10 +275,10 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
   });
 
   it('H15: publish_request completa devolviendo INTERNAL_ERROR aunque el webhook de Discord quede colgado', async () => {
-    const previousWebhook = process.env.DISCORD_ERROR_WEBHOOK_URL;
-    process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token';
-
-    const { setDiscordTimeoutForTesting } = await import('@/server/observability');
+    const { setDiscordWebhookUrlForTesting, setDiscordTimeoutForTesting } = await import(
+      '@/server/observability'
+    );
+    setDiscordWebhookUrlForTesting('https://discord.com/api/webhooks/test/token');
     setDiscordTimeoutForTesting(50);
 
     let signalReceived: AbortSignal | undefined;
@@ -310,12 +310,8 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       expect(elapsed).toBeLessThan(1000);
     } finally {
       fetchSpy.mockRestore();
+      setDiscordWebhookUrlForTesting(null);
       setDiscordTimeoutForTesting(null);
-      if (previousWebhook !== undefined) {
-        process.env.DISCORD_ERROR_WEBHOOK_URL = previousWebhook;
-      } else {
-        delete process.env.DISCORD_ERROR_WEBHOOK_URL;
-      }
     }
   }, 1000);
 });
