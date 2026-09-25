@@ -371,4 +371,3 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
     </Card>
   );
 }
-

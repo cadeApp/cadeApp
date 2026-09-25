@@ -208,13 +208,7 @@ describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {
   ];
 
   it('muestra repartidor y monto aceptado real cuando existe oferta aceptada, y fallback honesto cuando no (PR87-H18)', () => {
-    render(
-      <MerchantHistoryView
-        requests={historyRequests}
-        activeStatus="all"
-        nextCursor={null}
-      />
-    );
+    render(<MerchantHistoryView requests={historyRequests} activeStatus="all" nextCursor={null} />);
 
     expect(screen.getByText('Lucas Gómez')).toBeDefined();
     expect(screen.getByText('$ 2.300')).toBeDefined();
@@ -223,4 +217,3 @@ describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {
     expect(screen.queryByText(/Zona Activa Intrusa/i)).toBeNull();
   });
 });
-

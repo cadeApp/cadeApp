@@ -76,9 +76,12 @@ export function StatusView({ onGoToFeed }: StatusViewProps) {
               >
                 <div className="flex items-center gap-2.5">
                   {item.status === 'uploaded' ? (
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />
+                    <CheckCircle2 className="text-success h-4 w-4 shrink-0" aria-hidden="true" />
                   ) : (
-                    <ShieldAlert className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <ShieldAlert
+                      className="h-4 w-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
                   )}
                   <span className="text-sm font-medium text-foreground">{item.title}</span>
                 </div>
@@ -92,12 +95,7 @@ export function StatusView({ onGoToFeed }: StatusViewProps) {
       </div>
 
       {/* Botón hacia el feed */}
-      <Button
-        type="button"
-        size="lg"
-        onClick={handleNavigate}
-        className="w-full font-bold"
-      >
+      <Button type="button" size="lg" onClick={handleNavigate} className="w-full font-bold">
         <span>{COURIER_ONBOARDING_COPY.btnGoToFeed}</span>
         <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </Button>

@@ -15,9 +15,7 @@ export default function MerchantOnboardingError({
         <h2 className="font-display text-lg font-bold text-foreground">
           No pudimos cargar el alta del comercio
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Verificá tu conexión y volvé a intentarlo.
-        </p>
+        <p className="text-sm text-muted-foreground">Verificá tu conexión y volvé a intentarlo.</p>
         <Button type="button" size="lg" onClick={reset} className="w-full sm:w-auto">
           Reintentar
         </Button>

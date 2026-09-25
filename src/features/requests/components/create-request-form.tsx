@@ -36,7 +36,7 @@ import {
   type CreateDeliveryRequestOutput,
 } from '../schemas';
 
-interface CreateRequestFormProps {
+export interface CreateRequestFormProps {
   readonly zones: ZoneOption[];
   readonly defaultPickup?: MerchantDefaultPickup | null;
 }

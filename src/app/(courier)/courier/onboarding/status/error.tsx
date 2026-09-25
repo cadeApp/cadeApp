@@ -15,9 +15,7 @@ export default function CourierStatusError({
         <h2 className="font-display text-lg font-bold text-foreground">
           No pudimos consultar el estado de tu revisión
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Verificá tu conexión y volvé a intentar.
-        </p>
+        <p className="text-sm text-muted-foreground">Verificá tu conexión y volvé a intentar.</p>
         <Button type="button" size="lg" onClick={reset} className="w-full sm:w-auto">
           Reintentar
         </Button>

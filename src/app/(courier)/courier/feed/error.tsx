@@ -15,9 +15,7 @@ export default function CourierFeedError({
         <h2 className="font-display text-lg font-bold text-foreground">
           No pudimos actualizar las solicitudes abiertas
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Comprobá tu conexión e intentá nuevamente.
-        </p>
+        <p className="text-sm text-muted-foreground">Comprobá tu conexión e intentá nuevamente.</p>
         <Button type="button" size="lg" onClick={reset} className="w-full sm:w-auto">
           Reintentar
         </Button>

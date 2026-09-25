@@ -200,9 +200,7 @@ function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): vo
       }
 
       if (/^[a-zA-Z_$][\w$]*$/.test(indirectExpr)) {
-        const varDefRegex = new RegExp(
-          `(?:const|let|var)\\s+${indirectExpr}\\s*=\\s*([^;\\n]+)`
-        );
+        const varDefRegex = new RegExp(`(?:const|let|var)\\s+${indirectExpr}\\s*=\\s*([^;\\n]+)`);
         const varDefMatch = varDefRegex.exec(sourceCode);
         const rhs = varDefMatch?.[1]?.trim();
         if (!rhs) {
@@ -223,7 +221,7 @@ function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): vo
           );
         }
       } else if (indirectExpr.includes('.redirectTo')) {
-        const actionProducerMap: ReadonlyArray< readonly [string, string]> = [
+        const actionProducerMap: ReadonlyArray<readonly [string, string]> = [
           ['registerAction', 'features/auth/actions.ts'],
           ['merchantOnboardingAction', 'features/merchants/actions.ts'],
           ['createDeliveryRequestAction', 'features/requests/actions.ts'],
@@ -387,7 +385,14 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         expect(resolveRouteToFilesystemPage(guardResult.redirectTo)).not.toBeNull();
       }
 
-      for (const probe of ['/ruta-inexistente', '/ghost', '/terms', '/privacy', '/pilot-terms', '/legal']) {
+      for (const probe of [
+        '/ruta-inexistente',
+        '/ghost',
+        '/terms',
+        '/privacy',
+        '/pilot-terms',
+        '/legal',
+      ]) {
         const merchantTarget = resolvePostLoginRedirect(probe, 'merchant');
         const courierTarget = resolvePostLoginRedirect(probe, 'courier');
         expect(resolveRouteToFilesystemPage(merchantTarget)).not.toBeNull();
@@ -436,10 +441,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         )
       ).toThrow(/inexistente/);
       expect(() =>
-        assertNoInvalidInternalLinks(
-          'router.push(`/ghost/${id}`);',
-          'mutated-template-router.tsx'
-        )
+        assertNoInvalidInternalLinks('router.push(`/ghost/${id}`);', 'mutated-template-router.tsx')
       ).toThrow(/inexistente/);
       expect(() =>
         assertNoInvalidInternalLinks(
@@ -448,10 +450,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         )
       ).toThrow(/inexistente/);
       expect(() =>
-        assertNoInvalidInternalLinks(
-          'redirect(`/ghost/${id}`);',
-          'mutated-template-redirect.ts'
-        )
+        assertNoInvalidInternalLinks('redirect(`/ghost/${id}`);', 'mutated-template-redirect.ts')
       ).toThrow(/inexistente/);
       expect(() =>
         assertNoInvalidInternalLinks(

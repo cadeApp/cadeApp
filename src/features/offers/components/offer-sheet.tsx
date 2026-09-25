@@ -14,7 +14,6 @@ import { Button } from '@/ui/button';
 import { Input } from '@/ui/input';
 import { Textarea } from '@/ui/textarea';
 import { Badge } from '@/ui/badge';
-import { notify } from '@/ui/notify';
 import { formatArs } from '@/lib/format';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import { OFFERS_COPY } from '../copy';
@@ -58,11 +57,7 @@ export function OfferSheet({
     return null;
   }
 
-  const chips = [
-    minOfferArs + 200,
-    minOfferArs + 500,
-    minOfferArs + 1000,
-  ];
+  const chips = [minOfferArs + 200, minOfferArs + 500, minOfferArs + 1000];
 
   const handleChipClick = (amount: number) => {
     setAmountStr(String(amount));
@@ -89,7 +84,8 @@ export function OfferSheet({
       if (onSubmitOffer) {
         const res = await onSubmitOffer(payload);
         if (!res.ok) {
-          const msg = res.message ?? (res.code ? getDomainErrorMessage(res.code) : 'Error al enviar oferta');
+          const msg =
+            res.message ?? (res.code ? getDomainErrorMessage(res.code) : 'Error al enviar oferta');
           setServerError(msg);
           setIsSubmitting(false);
           return;
@@ -103,6 +99,7 @@ export function OfferSheet({
         }
       }
 
+      const { notify } = await import('@/ui/notify');
       notify.success(OFFERS_COPY.offerSuccess);
       onClose();
     } catch {
@@ -116,8 +113,8 @@ export function OfferSheet({
     request.packageType === 'small'
       ? OFFERS_COPY.packageSmall
       : request.packageType === 'medium'
-      ? OFFERS_COPY.packageMedium
-      : OFFERS_COPY.packageLarge;
+        ? OFFERS_COPY.packageMedium
+        : OFFERS_COPY.packageLarge;
 
   const paymentLabel =
     request.recipientPaymentMethod === 'cash'
@@ -127,7 +124,7 @@ export function OfferSheet({
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto">
-        <SheetHeader className="pb-3 border-b border-border/50">
+        <SheetHeader className="border-b border-border/50 pb-3">
           <SheetTitle className="text-xl font-bold">{OFFERS_COPY.offerSheetTitle}</SheetTitle>
           <SheetDescription className="text-sm font-semibold text-foreground">
             {request.pickupZoneName} → {request.dropoffZoneName}
@@ -148,7 +145,7 @@ export function OfferSheet({
             )}
           </div>
           {request.notes && (
-            <p className="text-sm italic text-muted-foreground pt-1">
+            <p className="pt-1 text-sm italic text-muted-foreground">
               Indicaciones: {request.notes}
             </p>
           )}
@@ -157,7 +154,7 @@ export function OfferSheet({
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           {/* Monto de la oferta */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
+            <div className="mb-1.5 flex items-center justify-between">
               <label htmlFor="amount-input" className="text-sm font-bold text-foreground">
                 {OFFERS_COPY.amountLabel}
               </label>
@@ -167,7 +164,7 @@ export function OfferSheet({
             </div>
             <div className="relative flex items-center">
               <span
-                className="absolute left-3 font-display text-lg font-bold text-muted-foreground pointer-events-none"
+                className="pointer-events-none absolute left-3 font-display text-lg font-bold text-muted-foreground"
                 aria-hidden="true"
               >
                 $
@@ -183,7 +180,7 @@ export function OfferSheet({
                   setAmountStr(e.target.value.replace(/\D/g, ''));
                   setServerError(null);
                 }}
-                className={`pl-8 font-display text-lg font-bold min-h-12 ${
+                className={`min-h-12 pl-8 font-display text-lg font-bold ${
                   serverError ? 'border-danger focus-visible:ring-danger' : ''
                 }`}
                 placeholder={OFFERS_COPY.amountPlaceholder}
@@ -192,22 +189,19 @@ export function OfferSheet({
 
             {/* Error del servidor al ofertar bajo el piso */}
             {serverError && (
-              <p
-                role="alert"
-                className="text-sm font-semibold text-danger mt-1.5 transition-all"
-              >
+              <p role="alert" className="text-danger mt-1.5 text-sm font-semibold transition-all">
                 {serverError}
               </p>
             )}
 
             {/* Chips rápidos */}
-            <div className="flex items-center gap-2 mt-2.5">
+            <div className="mt-2.5 flex items-center gap-2">
               {chips.map((chipAmount) => (
                 <button
                   key={chipAmount}
                   type="button"
                   onClick={() => handleChipClick(chipAmount)}
-                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors"
+                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {formatArs(chipAmount)}
                 </button>
@@ -217,7 +211,7 @@ export function OfferSheet({
 
           {/* Tiempo estimado de llegada */}
           <div>
-            <label htmlFor="eta-select" className="text-sm font-bold text-foreground block mb-1.5">
+            <label htmlFor="eta-select" className="mb-1.5 block text-sm font-bold text-foreground">
               {OFFERS_COPY.etaLabel}
             </label>
             <select
@@ -225,7 +219,7 @@ export function OfferSheet({
               aria-label={OFFERS_COPY.etaLabel}
               value={etaMinutes}
               onChange={(e) => setEtaMinutes(Number(e.target.value))}
-              className="w-full min-h-12 rounded-lg border border-input bg-card px-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-12 w-full rounded-lg border border-input bg-card px-3 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <option value={10}>10 min</option>
               <option value={15}>15 min</option>
@@ -238,7 +232,10 @@ export function OfferSheet({
 
           {/* Mensaje opcional */}
           <div>
-            <label htmlFor="message-input" className="text-sm font-bold text-foreground block mb-1.5">
+            <label
+              htmlFor="message-input"
+              className="mb-1.5 block text-sm font-bold text-foreground"
+            >
               {OFFERS_COPY.messageLabel}
             </label>
             <Textarea
@@ -254,7 +251,7 @@ export function OfferSheet({
           </div>
 
           {/* Nota de privacidad D3/D15 */}
-          <p className="text-sm text-muted-foreground leading-relaxed pt-1">
+          <p className="pt-1 text-sm leading-relaxed text-muted-foreground">
             {OFFERS_COPY.privacyNotice}
           </p>
 
@@ -262,7 +259,7 @@ export function OfferSheet({
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="w-full min-h-12 text-sm font-bold"
+              className="min-h-12 w-full text-sm font-bold"
             >
               {isSubmitting ? OFFERS_COPY.submittingOffer : OFFERS_COPY.submitOfferButton}
             </Button>
@@ -271,7 +268,7 @@ export function OfferSheet({
               variant="ghost"
               onClick={onClose}
               disabled={isSubmitting}
-              className="w-full min-h-12 text-sm text-muted-foreground hover:text-foreground"
+              className="min-h-12 w-full text-sm text-muted-foreground hover:text-foreground"
             >
               {OFFERS_COPY.cancelButton}
             </Button>

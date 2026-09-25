@@ -821,7 +821,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       const cssText = fs.readFileSync(path.resolve('src/ui/tokens.css'), 'utf8');
       const rootBlockMatch = cssText.match(/:root\s*\{([\s\S]*?)\}/);
       expect(rootBlockMatch).not.toBeNull();
-      const rootBlock = rootBlockMatch ? rootBlockMatch[1] ?? '' : '';
+      const rootBlock = rootBlockMatch ? (rootBlockMatch[1] ?? '') : '';
 
       const cssHslVars = new Map<string, string>();
       const varRegex = /--([a-z0-9-]+):\s*([0-9.]+)\s+([0-9.]+)%\s+([0-9.]+)%\s*;/g;

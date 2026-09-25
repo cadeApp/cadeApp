@@ -28,66 +28,66 @@ export function UnderReview({ onLogout, onCompleteDocs }: UnderReviewProps) {
           <Clock className="h-7 w-7" aria-hidden="true" />
         </div>
 
-      <h1 className="font-display text-2xl font-bold text-center text-foreground mb-2">
-        {OFFERS_COPY.underReviewTitle}
-      </h1>
-      <p className="text-sm text-center text-muted-foreground mb-6">
-        {OFFERS_COPY.underReviewDescription}
-      </p>
+        <h1 className="mb-2 text-center font-display text-2xl font-bold text-foreground">
+          {OFFERS_COPY.underReviewTitle}
+        </h1>
+        <p className="mb-6 text-center text-sm text-muted-foreground">
+          {OFFERS_COPY.underReviewDescription}
+        </p>
 
-      {/* Tarjeta de verificación de documentación */}
-      <Card className="w-full mb-6 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Estado de tus documentos</CardTitle>
-          <CardDescription>
-            Revisión manual por el equipo administrativo de cadeApp
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {documents.map((doc, idx) => (
-            <div
-              key={idx}
-              className="flex items-center justify-between border-b border-border/50 pb-2.5 last:border-0 last:pb-0"
-            >
-              <div className="flex items-center gap-2.5">
-                {doc.uploaded ? (
-                  <CheckCircle2 className="h-4 w-4 text-success shrink-0" aria-hidden="true" />
-                ) : (
-                  <ShieldAlert
-                    className="h-4 w-4 text-muted-foreground shrink-0"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className="text-sm font-medium text-foreground">{doc.label}</span>
+        {/* Tarjeta de verificación de documentación */}
+        <Card className="mb-6 w-full shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">Estado de tus documentos</CardTitle>
+            <CardDescription>
+              Revisión manual por el equipo administrativo de cadeApp
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {documents.map((doc, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between border-b border-border/50 pb-2.5 last:border-0 last:pb-0"
+              >
+                <div className="flex items-center gap-2.5">
+                  {doc.uploaded ? (
+                    <CheckCircle2 className="text-success h-4 w-4 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <ShieldAlert
+                      className="h-4 w-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="text-sm font-medium text-foreground">{doc.label}</span>
+                </div>
+                <Badge variant={doc.uploaded ? 'verified' : 'outline'} className="text-sm">
+                  {doc.uploaded ? OFFERS_COPY.docUploaded : OFFERS_COPY.docNotUploaded}
+                </Badge>
               </div>
-              <Badge variant={doc.uploaded ? 'verified' : 'outline'} className="text-sm">
-                {doc.uploaded ? OFFERS_COPY.docUploaded : OFFERS_COPY.docNotUploaded}
-              </Badge>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+            ))}
+          </CardContent>
+        </Card>
 
-      <div className="w-full flex flex-col gap-3">
-        {onCompleteDocs && (
-          <Button
-            variant="outline"
-            onClick={onCompleteDocs}
-            className="w-full min-h-12 text-sm font-semibold"
-          >
-            {OFFERS_COPY.completeDocsButton}
-          </Button>
-        )}
-        {onLogout && (
-          <Button
-            variant="ghost"
-            onClick={onLogout}
-            className="min-h-12 w-full text-sm text-muted-foreground hover:text-foreground"
-          >
-            {OFFERS_COPY.logoutButton}
-          </Button>
-        )}
-      </div>
+        <div className="flex w-full flex-col gap-3">
+          {onCompleteDocs && (
+            <Button
+              variant="outline"
+              onClick={onCompleteDocs}
+              className="min-h-12 w-full text-sm font-semibold"
+            >
+              {OFFERS_COPY.completeDocsButton}
+            </Button>
+          )}
+          {onLogout && (
+            <Button
+              variant="ghost"
+              onClick={onLogout}
+              className="min-h-12 w-full text-sm text-muted-foreground hover:text-foreground"
+            >
+              {OFFERS_COPY.logoutButton}
+            </Button>
+          )}
+        </div>
       </Card>
     </div>
   );

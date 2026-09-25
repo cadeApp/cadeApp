@@ -164,7 +164,7 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-0 top-0 flex h-12 w-12 min-h-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute right-0 top-0 flex h-12 min-h-12 w-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={showPassword ? authCopy.login.hidePassword : authCopy.login.showPassword}
             >
               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -215,7 +215,7 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
         <span>{authCopy.register.hasAccount} </span>
         <Link
           href="/login"
-          className="font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+          className="rounded-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {authCopy.register.loginLink}
         </Link>

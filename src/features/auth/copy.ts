@@ -46,4 +46,3 @@ export const authCopy = {
       'Si el email coincide con una cuenta registrada, te enviamos las instrucciones para restablecer tu contraseña. Revisá tu casilla de correo.',
   },
 } as const;
-

@@ -240,4 +240,3 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
     });
   });
 });
-

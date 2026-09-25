@@ -99,16 +99,8 @@ export function BrandLogo({
 
       {/* Isotipo: moto y caja de pedidos auténticos */}
       <g transform="translate(69.75 585.75) scale(.75)">
-        <path
-          fill={inkColor}
-          d={BRAND_LOGO_PATHS.riderBody}
-          data-brand-part="rider"
-        />
-        <path
-          fill={`url(#${gradientId})`}
-          d={BRAND_LOGO_PATHS.deliveryBox}
-          data-brand-part="box"
-        />
+        <path fill={inkColor} d={BRAND_LOGO_PATHS.riderBody} data-brand-part="rider" />
+        <path fill={`url(#${gradientId})`} d={BRAND_LOGO_PATHS.deliveryBox} data-brand-part="box" />
       </g>
 
       {/* Wordmark: letras auténticas de cadeApp */}

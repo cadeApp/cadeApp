@@ -28,10 +28,7 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header
-      className={cn(
-        'sticky top-0 z-40 w-full bg-foreground text-background shadow-sm',
-        className
-      )}
+      className={cn('sticky top-0 z-40 w-full bg-foreground text-background shadow-sm', className)}
       {...props}
     >
       <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -41,7 +38,7 @@ export function TopBar({
             <Link
               href={logoHref}
               aria-label="Ir al inicio de cadeApp"
-              className="inline-flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+              className="inline-flex items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <BrandLogo size="md" variant="inverse" showWordmark={!title} />
             </Link>

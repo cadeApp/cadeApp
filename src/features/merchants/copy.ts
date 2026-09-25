@@ -96,8 +96,7 @@ export function getSubscriptionDisplay(
         badgeVariant: 'verified' as const,
         badgeLabel: 'Suscripción al día',
         headline: 'Tu abono mensual está activo',
-        description:
-          'Tu comercio tiene habilitadas las publicaciones ilimitadas de envíos.',
+        description: 'Tu comercio tiene habilitadas las publicaciones ilimitadas de envíos.',
         untilLabel: formattedUntil,
       };
     case 'expired':
@@ -114,8 +113,7 @@ export function getSubscriptionDisplay(
         badgeVariant: 'cancelled' as const,
         badgeLabel: 'Cancelada',
         headline: 'Suscripción cancelada',
-        description:
-          'Tu cuenta de comercio se encuentra pausada. Escribinos para reactivarla.',
+        description: 'Tu cuenta de comercio se encuentra pausada. Escribinos para reactivarla.',
         untilLabel: formattedUntil,
       };
     default: {
@@ -124,4 +122,3 @@ export function getSubscriptionDisplay(
     }
   }
 }
-

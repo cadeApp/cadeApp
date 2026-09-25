@@ -5,7 +5,6 @@ import { Card } from '@/ui/card';
 import { TopBar } from '@/ui/top-bar';
 import { Store, Wallet, ArrowRight, CheckCircle2 } from 'lucide-react';
 
-
 export default function HomePage() {
   return (
     <div className="flex min-h-screen w-full flex-col justify-between bg-background text-foreground">
@@ -24,7 +23,7 @@ export default function HomePage() {
       />
 
       {/* Contenido principal responsive */}
-      <main className="mx-auto flex-1 w-full max-w-5xl space-y-12 px-4 py-8 sm:px-6 md:space-y-16 md:py-12 lg:px-8">
+      <main className="mx-auto w-full max-w-5xl flex-1 space-y-12 px-4 py-8 sm:px-6 md:space-y-16 md:py-12 lg:px-8">
         {/* Hero Section */}
         <section className="mx-auto max-w-3xl space-y-5 text-center">
           {/* Logo oficial auténtico destacado en el Hero */}
@@ -32,7 +31,7 @@ export default function HomePage() {
             <BrandLogo
               size="lg"
               showWordmark={false}
-              className="h-16 sm:h-20 w-auto transition-transform hover:scale-105"
+              className="h-16 w-auto transition-transform hover:scale-105 sm:h-20"
             />
           </div>
 
@@ -40,8 +39,8 @@ export default function HomePage() {
             Tu envío, al precio que elijas
           </h1>
           <p className="mx-auto max-w-2xl text-base text-muted-foreground sm:text-lg">
-            Envíos directos entre comercios y repartidores. Publicá lo que necesitás
-            mandar y los repartidores te ofertan en vivo. Vos elegís con quién.
+            Envíos directos entre comercios y repartidores. Publicá lo que necesitás mandar y los
+            repartidores te ofertan en vivo. Vos elegís con quién.
           </p>
 
           {/* Acciones duales (mobile: vertical, desktop: horizontal) */}
@@ -50,7 +49,7 @@ export default function HomePage() {
               <Button
                 variant="default"
                 size="lg"
-                className="w-full min-h-12 h-12 font-display text-base font-bold shadow-sm transition-all hover:shadow sm:px-8"
+                className="h-12 min-h-12 w-full font-display text-base font-bold shadow-sm transition-all hover:shadow sm:px-8"
               >
                 <span className="inline-flex items-center justify-center gap-2.5">
                   <Store className="h-5 w-5 shrink-0" aria-hidden="true" />
@@ -62,7 +61,7 @@ export default function HomePage() {
               <Button
                 variant="outline"
                 size="lg"
-                className="w-full min-h-12 h-12 font-display text-base font-bold border-2 border-primary-dark/25 transition-all hover:border-primary-dark hover:bg-primary/5 sm:px-8"
+                className="h-12 min-h-12 w-full border-2 border-primary-dark/25 font-display text-base font-bold transition-all hover:border-primary-dark hover:bg-primary/5 sm:px-8"
               >
                 <span className="inline-flex items-center justify-center gap-2.5">
                   <BrandLogo showWordmark={false} className="h-6 w-auto shrink-0" />
@@ -149,7 +148,7 @@ export default function HomePage() {
                 dinero del viaje.
               </p>
             </div>
-            <div className="pt-4 text-sm font-medium text-primary-dark flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 pt-4 text-sm font-medium text-primary-dark">
               <CheckCircle2 className="h-4 w-4" />
               Trato 100% directo entre comercio y repartidor
             </div>
@@ -167,14 +166,18 @@ export default function HomePage() {
                 </h2>
               </div>
               <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Sumate como repartidor independiente en Aguilares. Subís tu DNI y selfie, y en cuanto
-                el equipo audita tu perfil ya podés empezar a ofertar en pedidos de comercios.
+                Sumate como repartidor independiente en Aguilares. Subís tu DNI y selfie, y en
+                cuanto el equipo audita tu perfil ya podés empezar a ofertar en pedidos de
+                comercios.
               </p>
             </div>
 
             <Link href="/register?role=courier" className="block w-full">
-              <Button variant="outline" className="w-full min-h-12 h-12 border-2 border-border hover:border-primary-dark hover:bg-primary/5">
-                <span className="inline-flex items-center w-full justify-between gap-2 font-semibold">
+              <Button
+                variant="outline"
+                className="h-12 min-h-12 w-full border-2 border-border hover:border-primary-dark hover:bg-primary/5"
+              >
+                <span className="inline-flex w-full items-center justify-between gap-2 font-semibold">
                   <span className="inline-flex items-center gap-2.5">
                     <BrandLogo showWordmark={false} className="h-5 w-auto shrink-0" />
                     <span>Quiero repartir</span>

@@ -1,10 +1,15 @@
-import {
-  COURIER_DOCUMENT_KINDS,
-  type CourierDocumentKind,
-} from '@/domain/schemas';
-import { createClient } from '@/lib/supabase/browser';
+import type { CourierDocumentKind } from '@/domain/schemas';
 
-export { COURIER_DOCUMENT_KINDS, type CourierDocumentKind };
+export const COURIER_DOCUMENT_KINDS = [
+  'dni_front',
+  'dni_back',
+  'selfie',
+  'avatar',
+  'license',
+  'insurance',
+] as const satisfies readonly CourierDocumentKind[];
+
+export { type CourierDocumentKind };
 
 export const COURIER_DOCS_BUCKET = 'courier-docs' as const;
 
@@ -15,10 +20,7 @@ export const REQUIRED_COURIER_DOCUMENT_KINDS = [
   'avatar',
 ] as const;
 
-export const OPTIONAL_COURIER_DOCUMENT_KINDS = [
-  'license',
-  'insurance',
-] as const;
+export const OPTIONAL_COURIER_DOCUMENT_KINDS = ['license', 'insurance'] as const;
 
 export type DocumentUploadStatus = 'idle' | 'uploading' | 'success' | 'error';
 
@@ -163,17 +165,17 @@ export async function uploadCourierDocument(
     throw new Error('file es requerido para subir documentos del repartidor');
   }
 
-  const client = supabase ?? (createClient() as unknown as StorageClientLike);
+  const client =
+    supabase ??
+    ((await import('@/lib/supabase/browser')).createClient() as unknown as StorageClientLike);
   const path = buildCourierStoragePath(courierId, kind, file, timestamp);
 
   onProgress?.(10);
 
-  const { data, error } = await client.storage
-    .from(COURIER_DOCS_BUCKET)
-    .upload(path, file, {
-      contentType: file.type || undefined,
-      upsert: false,
-    });
+  const { data, error } = await client.storage.from(COURIER_DOCS_BUCKET).upload(path, file, {
+    contentType: file.type || undefined,
+    upsert: false,
+  });
 
   if (error) {
     throw new Error(error.message);
@@ -291,9 +293,7 @@ export function createDocumentUploadManager(
           onProgress: uploaderOpts?.onProgress,
         });
     }
-    throw new Error(
-      'createDocumentUploadManager requiere una función uploader o un courierId'
-    );
+    throw new Error('createDocumentUploadManager requiere una función uploader o un courierId');
   }
 
   async function performUpload(

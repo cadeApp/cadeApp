@@ -9,6 +9,7 @@ import { evaluateRouteGuard, type AuthSession } from './guards';
 
 export * from './queries';
 export * from './guards';
+export { logoutAction } from './actions';
 
 /**
  * Función de middleware de sesión para actualizar el token de Supabase Auth

@@ -267,7 +267,8 @@ export async function getMerchantHistoryRequests(
 
   let query = supabase
     .from('delivery_requests')
-    .select(`
+    .select(
+      `
       id,
       approx_distance_m,
       package_type,
@@ -280,7 +281,8 @@ export async function getMerchantHistoryRequests(
       accepted_offer_id,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
-    `)
+    `
+    )
     .eq('merchant_id', merchantId);
 
   if (status === 'all') {
@@ -308,8 +310,8 @@ export async function getMerchantHistoryRequests(
     throw new Error(`Error al cargar historial de solicitudes: ${error.message}`);
   }
 
-  const fetchedRows = ((requestsData as unknown as RawMerchantRequest[] | null) ?? []).filter(
-    (r) => (HISTORY_TERMINAL_STATUSES as readonly string[]).includes(r.status)
+  const fetchedRows = ((requestsData as unknown as RawMerchantRequest[] | null) ?? []).filter((r) =>
+    (HISTORY_TERMINAL_STATUSES as readonly string[]).includes(r.status)
   );
   const hasMore = fetchedRows.length > pageSize;
   const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
@@ -369,9 +371,15 @@ export async function getMerchantHistoryRequests(
       .in('id', acceptedOfferIds);
 
     const { data: acceptedData, error: acceptedError } = await (typeof (
-      acceptedQuery as unknown as { limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }
+      acceptedQuery as unknown as {
+        limit?: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+      }
     ).limit === 'function'
-      ? (acceptedQuery as unknown as { limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }> }).limit(50)
+      ? (
+          acceptedQuery as unknown as {
+            limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          }
+        ).limit(50)
       : acceptedQuery);
 
     if (acceptedError) {
@@ -431,7 +439,8 @@ export async function getMerchantRequests(
 
   let pageQuery = supabase
     .from('delivery_requests')
-    .select(`
+    .select(
+      `
       id,
       approx_distance_m,
       package_type,
@@ -444,7 +453,8 @@ export async function getMerchantRequests(
       accepted_offer_id,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
-    `)
+    `
+    )
     .eq('merchant_id', merchantId);
 
   const ACTIVE_C02_STATUSES = ['published', 'matched', 'in_transit'] as const;
@@ -475,9 +485,7 @@ export async function getMerchantRequests(
   const rawFetchedRows = (pageResult.data as unknown as RawMerchantRequest[] | null) ?? [];
   const activeStatusSet = new Set<string>(ACTIVE_C02_STATUSES);
   const fetchedRows =
-    status === 'all'
-      ? rawFetchedRows.filter((r) => activeStatusSet.has(r.status))
-      : rawFetchedRows;
+    status === 'all' ? rawFetchedRows.filter((r) => activeStatusSet.has(r.status)) : rawFetchedRows;
   const hasMore = fetchedRows.length > pageSize;
   const rawRequests = hasMore ? fetchedRows.slice(0, pageSize) : fetchedRows;
   const lastItem = rawRequests.at(-1);
@@ -564,10 +572,7 @@ export async function getMerchantRequests(
 
     for (let offset = 0; offset < todayAcceptedOfferIds.length; offset += METRICS_BATCH_LIMIT) {
       const boundedOfferIds = todayAcceptedOfferIds.slice(offset, offset + METRICS_BATCH_LIMIT);
-      const offersQuery = supabase
-        .from('offers')
-        .select('amount_ars')
-        .in('id', boundedOfferIds);
+      const offersQuery = supabase.from('offers').select('amount_ars').in('id', boundedOfferIds);
 
       const { data: acceptedOffersData, error: acceptedOffersError } = await (typeof (
         offersQuery as unknown as {
@@ -651,7 +656,8 @@ export async function getMerchantRequestWithOffers(
 
   const { data: requestData, error: requestError } = await supabase
     .from('delivery_requests')
-    .select(`
+    .select(
+      `
       id,
       approx_distance_m,
       package_type,
@@ -665,7 +671,8 @@ export async function getMerchantRequestWithOffers(
       accepted_offer_id,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
-    `)
+    `
+    )
     .eq('id', requestId)
     .eq('merchant_id', merchantId)
     .maybeSingle<RawMerchantRequest & { notes: string | null }>();
@@ -703,7 +710,8 @@ export async function getMerchantRequestWithOffers(
 
   const { data: offersData, error: offersError } = await supabase
     .from('offers')
-    .select(`
+    .select(
+      `
       id,
       courier_id,
       amount_ars,
@@ -718,7 +726,8 @@ export async function getMerchantRequestWithOffers(
         doc_level,
         profile:profiles!profile_id(display_name)
       )
-    `)
+    `
+    )
     .eq('request_id', requestId)
     .order('created_at', { ascending: false });
 

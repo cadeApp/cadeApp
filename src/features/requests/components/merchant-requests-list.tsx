@@ -69,7 +69,7 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
       {/* Encabezado y Acción principal */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold font-display text-foreground">Mis solicitudes</h1>
+          <h1 className="font-display text-2xl font-bold text-foreground">Mis solicitudes</h1>
           <p className="text-sm text-muted-foreground">
             Gestioná tus envíos en tiempo real y revisá las ofertas de repartidores de Aguilares.
           </p>
@@ -132,7 +132,7 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
             return (
               <Card
                 key={req.id}
-                className="p-4 border-border bg-card transition-all hover:border-primary/40 hover:shadow-sm"
+                className="border-border bg-card p-4 transition-all hover:border-primary/40 hover:shadow-sm"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1.5">
@@ -143,9 +143,7 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                         <span>{req.dropoffZoneName}</span>
                       </div>
-                      <Badge variant={statusConfig.variant}>
-                        {statusConfig.label}
-                      </Badge>
+                      <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
                     </div>
 
                     {/* Metadatos operativos */}

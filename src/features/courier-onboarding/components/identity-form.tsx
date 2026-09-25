@@ -50,14 +50,26 @@ const REQUIRED_DOCS: DocConfig[] = [
   },
 ];
 
-export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', onNext }: IdentityFormProps) {
+export function IdentityForm({
+  courierId = 'temp-courier-id',
+  initialDni = '',
+  onNext,
+}: IdentityFormProps) {
   const router = useRouter();
   const [dni, setDni] = React.useState(initialDni);
   const [dniTouched, setDniTouched] = React.useState(false);
-  const [compressing, setCompressing] = React.useState<Partial<Record<CourierDocumentKind, boolean>>>({});
-  const [uploadedPaths, setUploadedPaths] = React.useState<Partial<Record<CourierDocumentKind, string>>>({});
-  const [statuses, setStatuses] = React.useState<Partial<Record<CourierDocumentKind, 'idle' | 'uploading' | 'success' | 'error'>>>({});
-  const [fileNames, setFileNames] = React.useState<Partial<Record<CourierDocumentKind, string>>>({});
+  const [compressing, setCompressing] = React.useState<
+    Partial<Record<CourierDocumentKind, boolean>>
+  >({});
+  const [uploadedPaths, setUploadedPaths] = React.useState<
+    Partial<Record<CourierDocumentKind, string>>
+  >({});
+  const [statuses, setStatuses] = React.useState<
+    Partial<Record<CourierDocumentKind, 'idle' | 'uploading' | 'success' | 'error'>>
+  >({});
+  const [fileNames, setFileNames] = React.useState<Partial<Record<CourierDocumentKind, string>>>(
+    {}
+  );
 
   // Cargar estado previo de sessionStorage si existe
   React.useEffect(() => {
@@ -70,7 +82,9 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
       if (savedDocs) {
         const parsed = JSON.parse(savedDocs);
         setUploadedPaths(parsed);
-        const initialStatuses: Partial<Record<CourierDocumentKind, 'idle' | 'uploading' | 'success' | 'error'>> = {};
+        const initialStatuses: Partial<
+          Record<CourierDocumentKind, 'idle' | 'uploading' | 'success' | 'error'>
+        > = {};
         for (const k of Object.keys(parsed) as CourierDocumentKind[]) {
           initialStatuses[k] = 'success';
         }
@@ -210,8 +224,8 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
                   status === 'success'
                     ? 'border-border bg-card'
                     : status === 'error'
-                    ? 'border-destructive bg-destructive/5'
-                    : 'border-2 border-dashed border-primary/40 bg-card hover:bg-primary/5'
+                      ? 'border-destructive bg-destructive/5'
+                      : 'border-2 border-dashed border-primary/40 bg-card hover:bg-primary/5'
                 }`}
               >
                 <label
@@ -224,8 +238,8 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
                         status === 'success'
                           ? 'bg-success/15 text-success'
                           : status === 'error'
-                          ? 'bg-destructive/15 text-destructive'
-                          : 'bg-primary/15 text-primary'
+                            ? 'bg-destructive/15 text-destructive'
+                            : 'bg-primary/15 text-primary'
                       }`}
                     >
                       {status === 'success' ? (
@@ -237,28 +251,33 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
                       )}
                     </div>
                     <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-sm font-semibold text-foreground">{doc.title}</span>
+                      <span className="truncate text-sm font-semibold text-foreground">
+                        {doc.title}
+                      </span>
                       <span className="truncate text-sm text-muted-foreground">
                         {status === 'success' && fileName
                           ? fileName
                           : isCompress
-                          ? COURIER_ONBOARDING_COPY.btnCompressing
-                          : status === 'uploading'
-                          ? COURIER_ONBOARDING_COPY.btnUploading
-                          : status === 'error'
-                          ? 'Error al subir. Tocá para reintentar.'
-                          : doc.subtitle}
+                            ? COURIER_ONBOARDING_COPY.btnCompressing
+                            : status === 'uploading'
+                              ? COURIER_ONBOARDING_COPY.btnUploading
+                              : status === 'error'
+                                ? 'Error al subir. Tocá para reintentar.'
+                                : doc.subtitle}
                       </span>
                     </div>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
                     {status === 'success' ? (
-                      <span className="flex items-center gap-1 text-sm font-semibold text-success">
+                      <span className="text-success flex items-center gap-1 text-sm font-semibold">
                         {COURIER_ONBOARDING_COPY.btnUploaded}
                       </span>
                     ) : status === 'uploading' || isCompress ? (
-                      <RotateCw className="h-5 w-5 animate-spin text-primary" aria-label="Cargando" />
+                      <RotateCw
+                        className="h-5 w-5 animate-spin text-primary"
+                        aria-label="Cargando"
+                      />
                     ) : status === 'error' ? (
                       <span className="text-sm font-semibold text-destructive">
                         {COURIER_ONBOARDING_COPY.btnRetry}
@@ -303,7 +322,9 @@ export function IdentityForm({ courierId = 'temp-courier-id', initialDni = '', o
             <span>{COURIER_ONBOARDING_COPY.btnContinue}</span>
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Button>
-          <span className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.stepCounter1}</span>
+          <span className="text-sm text-muted-foreground">
+            {COURIER_ONBOARDING_COPY.stepCounter1}
+          </span>
         </div>
       </div>
     </Card>

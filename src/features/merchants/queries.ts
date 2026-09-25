@@ -66,23 +66,21 @@ export async function getMerchantAccountProfile(): Promise<MerchantAccountProfil
     readonly phone: string | null;
   }
 
-  const [
-    { data: merchant, error: merchantError },
-    { data: profile, error: profileError },
-  ] = await Promise.all([
-    supabase
-      .from('merchants')
-      .select(
-        'business_name, default_pickup_address, default_pickup_zone_id, notes, subscription_status, paid_until, zones:default_pickup_zone_id(name)'
-      )
-      .eq('profile_id', user.id)
-      .maybeSingle<MerchantQueryRow>(),
-    supabase
-      .from('profiles')
-      .select('display_name, phone')
-      .eq('id', user.id)
-      .maybeSingle<ProfileQueryRow>(),
-  ]);
+  const [{ data: merchant, error: merchantError }, { data: profile, error: profileError }] =
+    await Promise.all([
+      supabase
+        .from('merchants')
+        .select(
+          'business_name, default_pickup_address, default_pickup_zone_id, notes, subscription_status, paid_until, zones:default_pickup_zone_id(name)'
+        )
+        .eq('profile_id', user.id)
+        .maybeSingle<MerchantQueryRow>(),
+      supabase
+        .from('profiles')
+        .select('display_name, phone')
+        .eq('id', user.id)
+        .maybeSingle<ProfileQueryRow>(),
+    ]);
 
   if (merchantError) {
     throw new Error(`Error al consultar comercio: ${merchantError.message}`);

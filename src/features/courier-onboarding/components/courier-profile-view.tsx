@@ -21,7 +21,7 @@ import { Button, buttonVariants } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { BrandLogo } from '@/ui/brand-logo';
 import { cn } from '@/ui/cn';
-import { logoutAction } from '@/features/auth';
+import { logoutCourierAction } from '../actions';
 import type { Database } from '@/types/database.types';
 
 export type DocumentReviewStatus = Database['public']['Enums']['document_review_status'];
@@ -89,7 +89,10 @@ function getVehicleInfo(type: string | null) {
     case 'walk':
       return { label: 'A pie', icon: <Footprints className="h-5 w-5" aria-hidden="true" /> };
     default:
-      return { label: 'Sin vehículo declarado', icon: <User className="h-5 w-5" aria-hidden="true" /> };
+      return {
+        label: 'Sin vehículo declarado',
+        icon: <User className="h-5 w-5" aria-hidden="true" />,
+      };
   }
 }
 
@@ -143,7 +146,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await logoutAction();
+      await logoutCourierAction();
       router.push('/login');
     } catch {
       setIsLoggingOut(false);
@@ -263,16 +266,14 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           <h2 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
             Documentación
           </h2>
-          <span className="text-sm font-semibold text-primary-dark">
-            Estado en legajo
-          </span>
+          <span className="text-sm font-semibold text-primary-dark">Estado en legajo</span>
         </div>
 
         <div className="divide-y divide-border/60 text-sm">
           <div className="flex items-center justify-between py-3">
             <div className="flex items-center gap-2">
               {profile.dniStatus === 'verified' ? (
-                <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
+                <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
               ) : (
                 <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               )}
@@ -284,7 +285,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           <div className="flex items-center justify-between py-3">
             <div className="flex items-center gap-2">
               {profile.selfieStatus === 'verified' ? (
-                <CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />
+                <CheckCircle2 className="text-success h-4 w-4" aria-hidden="true" />
               ) : (
                 <Clock className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
               )}

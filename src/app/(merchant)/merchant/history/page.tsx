@@ -50,11 +50,7 @@ export default async function MerchantHistoryPage({
 
   return (
     <div className="px-4 py-4">
-      <MerchantHistoryView
-        requests={requests}
-        nextCursor={nextCursor}
-        activeStatus={status}
-      />
+      <MerchantHistoryView requests={requests} nextCursor={nextCursor} activeStatus={status} />
     </div>
   );
 }

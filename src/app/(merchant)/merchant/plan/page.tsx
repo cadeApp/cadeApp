@@ -5,18 +5,9 @@ import { Badge } from '@/ui/badge';
 import { Button, buttonVariants } from '@/ui/button';
 import { EmptyState } from '@/ui/empty-state';
 import { cn } from '@/ui/cn';
-import {
-  Store,
-  MapPin,
-  Phone,
-  MessageCircle,
-  Info,
-  CheckCircle2,
-  LogOut,
-} from 'lucide-react';
-import { getMerchantAccountProfile } from '@/features/merchants/server';
-import { getSubscriptionDisplay } from '@/features/merchants';
-import { logoutAction } from '@/features/auth';
+import { Store, MapPin, Phone, MessageCircle, Info, CheckCircle2, LogOut } from 'lucide-react';
+import { getMerchantAccountProfile, getSubscriptionDisplay } from '@/features/merchants/server';
+import { logoutAction } from '@/features/auth/server';
 
 export default async function MerchantPlanPage() {
   const profile = await getMerchantAccountProfile();
@@ -31,9 +22,7 @@ export default async function MerchantPlanPage() {
     return (
       <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            Cuenta
-          </h1>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">Cuenta</h1>
           <p className="text-sm text-muted-foreground">
             Datos de tu comercio y estado de tu suscripción.
           </p>
@@ -73,9 +62,7 @@ export default async function MerchantPlanPage() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6 sm:px-6">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-          Cuenta
-        </h1>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">Cuenta</h1>
         <p className="text-sm text-muted-foreground">
           Datos de tu comercio y condiciones de tu suscripción.
         </p>
@@ -138,10 +125,11 @@ export default async function MerchantPlanPage() {
       {/* Sección 2: Mi plan (C08) */}
       <div className="space-y-3 pt-1">
         <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold tracking-tight text-foreground">
-            Mi plan
-          </h2>
-          <Badge variant={subscription.badgeVariant} className="px-2.5 py-0.5 text-sm font-semibold">
+          <h2 className="font-display text-lg font-bold tracking-tight text-foreground">Mi plan</h2>
+          <Badge
+            variant={subscription.badgeVariant}
+            className="px-2.5 py-0.5 text-sm font-semibold"
+          >
             {subscription.badgeLabel}
           </Badge>
         </div>
@@ -204,7 +192,7 @@ export default async function MerchantPlanPage() {
               'w-full font-semibold'
             )}
           >
-            <MessageCircle className="h-5 w-5 text-success" aria-hidden="true" />
+            <MessageCircle className="text-success h-5 w-5" aria-hidden="true" />
             <span>Hablar con cadeApp</span>
           </a>
         </Card>

@@ -97,9 +97,7 @@ export async function registerAction(
   }
 
   const redirectTo =
-    parsed.data.role === 'merchant'
-      ? '/merchant/onboarding'
-      : '/courier/onboarding/identity';
+    parsed.data.role === 'merchant' ? '/merchant/onboarding' : '/courier/onboarding/identity';
 
   return ok({
     userId: data.user.id,
@@ -127,4 +125,3 @@ export async function logoutAction(): Promise<ActionResult<null, DomainErrorCode
   await supabase.auth.signOut();
   return ok(null);
 }
-

@@ -20,13 +20,12 @@ import { BrandLogo } from '@/ui/brand-logo';
 import { compressImage } from '@/lib/image-compression';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import { StepIndicator } from './step-indicator';
-import {
-  type CourierDocumentKind,
-  uploadCourierDocument,
-} from '../upload-manager';
+import { type CourierDocumentKind, uploadCourierDocument } from '../upload-manager';
 import { courierOnboardingAction } from '../actions';
-import { type VehicleType } from '@/domain/schemas';
-import { ARGENTINA_PLATE_REGEX } from '../schemas';
+import type { VehicleType } from '@/domain/schemas';
+
+const ARGENTINA_PLATE_REGEX =
+  /^(?:[A-Z]{3}\s?\d{3}|[A-Z]{2}\s?\d{3}\s?[A-Z]{2}|\d{3}\s?[A-Z]{3})$/i;
 
 export interface VehicleFormProps {
   courierId?: string;
@@ -61,8 +60,12 @@ export function VehicleForm({
   const [plateTouched, setPlateTouched] = React.useState(false);
 
   // Documentos opcionales (licencia y seguro)
-  const [optionalDocs, setOptionalDocs] = React.useState<Partial<Record<'license' | 'insurance', string>>>({});
-  const [uploadingOptional, setUploadingOptional] = React.useState<Partial<Record<'license' | 'insurance', boolean>>>({});
+  const [optionalDocs, setOptionalDocs] = React.useState<
+    Partial<Record<'license' | 'insurance', string>>
+  >({});
+  const [uploadingOptional, setUploadingOptional] = React.useState<
+    Partial<Record<'license' | 'insurance', boolean>>
+  >({});
 
   // Consentimientos obligatorios
   const [tosAccepted, setTosAccepted] = React.useState(true);
@@ -75,10 +78,14 @@ export function VehicleForm({
 
   const requiresPlate = vehicleType === 'moto' || vehicleType === 'car';
   const isPlateValid = !requiresPlate || ARGENTINA_PLATE_REGEX.test(vehiclePlate.trim());
-  const plateError = plateTouched && requiresPlate && !isPlateValid ? 'Formato de patente inválido (ej: AB 123 CD)' : null;
+  const plateError =
+    plateTouched && requiresPlate && !isPlateValid
+      ? 'Formato de patente inválido (ej: AB 123 CD)'
+      : null;
 
   const areConsentsValid = tosAccepted && privacyAccepted && contractAccepted;
-  const isFormValid = (!requiresPlate || (vehiclePlate.trim().length > 0 && isPlateValid)) && areConsentsValid;
+  const isFormValid =
+    (!requiresPlate || (vehiclePlate.trim().length > 0 && isPlateValid)) && areConsentsValid;
 
   const handleOptionalUpload = async (kind: 'license' | 'insurance', file: File | null) => {
     if (!file) return;
@@ -128,7 +135,9 @@ export function VehicleForm({
         } else if (result.code === 'UNAUTHORIZED_ACTOR') {
           setServerError('Tu cuenta no tiene rol de repartidor habilitado.');
         } else {
-          setServerError('Ocurrió un error al procesar tu solicitud. Por favor verificá los datos.');
+          setServerError(
+            'Ocurrió un error al procesar tu solicitud. Por favor verificá los datos.'
+          );
         }
         setIsSubmitting(false);
         return;
@@ -164,14 +173,15 @@ export function VehicleForm({
           <h1 className="font-display text-xl font-bold text-foreground">
             {COURIER_ONBOARDING_COPY.vehicleHeadline}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {COURIER_ONBOARDING_COPY.vehicleSubtitle}
-          </p>
+          <p className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.vehicleSubtitle}</p>
         </section>
 
         {/* Error de servidor si existe */}
         {serverError && (
-          <div className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-destructive" role="alert">
+          <div
+            className="flex items-start gap-2.5 rounded-xl border border-destructive/30 bg-destructive/10 p-3.5 text-destructive"
+            role="alert"
+          >
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <span className="text-sm font-medium">{serverError}</span>
           </div>
@@ -180,10 +190,30 @@ export function VehicleForm({
         {/* Selector de vehículo 2x2 */}
         <fieldset aria-label="Selección de transporte" className="grid grid-cols-2 gap-3">
           {[
-            { id: 'walk', label: COURIER_ONBOARDING_COPY.transportWalk, sub: COURIER_ONBOARDING_COPY.transportWalkSub, icon: Footprints },
-            { id: 'bike', label: COURIER_ONBOARDING_COPY.transportBike, sub: COURIER_ONBOARDING_COPY.transportBikeSub, icon: Bike },
-            { id: 'moto', label: COURIER_ONBOARDING_COPY.transportMoto, sub: COURIER_ONBOARDING_COPY.transportMotoSub, icon: null },
-            { id: 'car', label: COURIER_ONBOARDING_COPY.transportCar, sub: COURIER_ONBOARDING_COPY.transportCarSub, icon: Car },
+            {
+              id: 'walk',
+              label: COURIER_ONBOARDING_COPY.transportWalk,
+              sub: COURIER_ONBOARDING_COPY.transportWalkSub,
+              icon: Footprints,
+            },
+            {
+              id: 'bike',
+              label: COURIER_ONBOARDING_COPY.transportBike,
+              sub: COURIER_ONBOARDING_COPY.transportBikeSub,
+              icon: Bike,
+            },
+            {
+              id: 'moto',
+              label: COURIER_ONBOARDING_COPY.transportMoto,
+              sub: COURIER_ONBOARDING_COPY.transportMotoSub,
+              icon: null,
+            },
+            {
+              id: 'car',
+              label: COURIER_ONBOARDING_COPY.transportCar,
+              sub: COURIER_ONBOARDING_COPY.transportCarSub,
+              icon: Car,
+            },
           ].map((item) => {
             const isSelected = vehicleType === item.id;
             const IconComponent = item.icon;
@@ -226,9 +256,14 @@ export function VehicleForm({
         {requiresPlate && (
           <>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="plate-input" className="flex items-center justify-between text-sm font-semibold text-foreground">
+              <label
+                htmlFor="plate-input"
+                className="flex items-center justify-between text-sm font-semibold text-foreground"
+              >
                 <span>{COURIER_ONBOARDING_COPY.plateLabel}</span>
-                <span className="text-sm font-normal text-primary">{COURIER_ONBOARDING_COPY.plateRequiredSub}</span>
+                <span className="text-sm font-normal text-primary">
+                  {COURIER_ONBOARDING_COPY.plateRequiredSub}
+                </span>
               </label>
               <Input
                 id="plate-input"
@@ -242,7 +277,11 @@ export function VehicleForm({
                 aria-describedby={plateError ? 'plate-error' : 'plate-help'}
               />
               {plateError ? (
-                <span id="plate-error" className="text-sm font-medium text-destructive" role="alert">
+                <span
+                  id="plate-error"
+                  className="text-sm font-medium text-destructive"
+                  role="alert"
+                >
                   {plateError}
                 </span>
               ) : (
@@ -278,8 +317,12 @@ export function VehicleForm({
                     <FileCheck className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-foreground">{COURIER_ONBOARDING_COPY.licenseTitle}</span>
-                    <span className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.licenseSub}</span>
+                    <span className="text-sm font-semibold text-foreground">
+                      {COURIER_ONBOARDING_COPY.licenseTitle}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {COURIER_ONBOARDING_COPY.licenseSub}
+                    </span>
                   </div>
                 </div>
                 <label
@@ -299,7 +342,9 @@ export function VehicleForm({
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   className="sr-only"
-                  onChange={(e) => void handleOptionalUpload('license', e.target.files?.[0] || null)}
+                  onChange={(e) =>
+                    void handleOptionalUpload('license', e.target.files?.[0] || null)
+                  }
                 />
               </Card>
 
@@ -310,8 +355,12 @@ export function VehicleForm({
                     <Shield className="h-5 w-5" aria-hidden="true" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-foreground">{COURIER_ONBOARDING_COPY.insuranceTitle}</span>
-                    <span className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.insuranceSub}</span>
+                    <span className="text-sm font-semibold text-foreground">
+                      {COURIER_ONBOARDING_COPY.insuranceTitle}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {COURIER_ONBOARDING_COPY.insuranceSub}
+                    </span>
                   </div>
                 </div>
                 <label
@@ -331,7 +380,9 @@ export function VehicleForm({
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   className="sr-only"
-                  onChange={(e) => void handleOptionalUpload('insurance', e.target.files?.[0] || null)}
+                  onChange={(e) =>
+                    void handleOptionalUpload('insurance', e.target.files?.[0] || null)
+                  }
                 />
               </Card>
             </section>
@@ -353,7 +404,9 @@ export function VehicleForm({
             />
             <span className="text-sm leading-snug text-foreground">
               {COURIER_ONBOARDING_COPY.consentTosPrefix}{' '}
-              <span className="font-medium text-primary underline">{COURIER_ONBOARDING_COPY.consentTosLink}</span>
+              <span className="font-medium text-primary underline">
+                {COURIER_ONBOARDING_COPY.consentTosLink}
+              </span>
             </span>
           </label>
 
@@ -366,7 +419,9 @@ export function VehicleForm({
             />
             <span className="text-sm leading-snug text-foreground">
               {COURIER_ONBOARDING_COPY.consentPrivacyPrefix}{' '}
-              <span className="font-medium text-primary underline">{COURIER_ONBOARDING_COPY.consentPrivacyLink}</span>{' '}
+              <span className="font-medium text-primary underline">
+                {COURIER_ONBOARDING_COPY.consentPrivacyLink}
+              </span>{' '}
               {COURIER_ONBOARDING_COPY.consentPrivacySuffix}
             </span>
           </label>
@@ -404,7 +459,9 @@ export function VehicleForm({
               </>
             )}
           </Button>
-          <span className="text-sm text-muted-foreground">{COURIER_ONBOARDING_COPY.stepCounter2}</span>
+          <span className="text-sm text-muted-foreground">
+            {COURIER_ONBOARDING_COPY.stepCounter2}
+          </span>
         </div>
       </form>
     </Card>

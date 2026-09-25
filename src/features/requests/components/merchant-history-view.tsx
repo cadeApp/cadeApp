@@ -232,7 +232,10 @@ export function MerchantHistoryView({
                           <Badge variant={badge.variant} className="text-sm">
                             {badge.label}
                           </Badge>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                          <ChevronRight
+                            className="h-4 w-4 text-muted-foreground"
+                            aria-hidden="true"
+                          />
                         </div>
                       </Card>
                     </Link>

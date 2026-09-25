@@ -52,9 +52,7 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
         <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           {authCopy.login.title}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          {authCopy.login.subtitle}
-        </p>
+        <p className="text-sm text-muted-foreground">{authCopy.login.subtitle}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
@@ -80,7 +78,7 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
             </label>
             <Link
               href="/forgot-password"
-              className="text-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+              className="rounded-sm text-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {authCopy.login.forgotPassword}
             </Link>
@@ -99,7 +97,7 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-0 top-0 flex h-12 w-12 min-h-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute right-0 top-0 flex h-12 min-h-12 w-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={showPassword ? authCopy.login.hidePassword : authCopy.login.showPassword}
             >
               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -131,7 +129,7 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
         <span>{authCopy.login.noAccount} </span>
         <Link
           href="/register"
-          className="font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+          className="rounded-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {authCopy.login.registerLink}
         </Link>

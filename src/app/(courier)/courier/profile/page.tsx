@@ -40,10 +40,7 @@ export default async function CourierProfilePage() {
         insurance_status: DocumentReviewStatus;
         status: CourierReviewStatus;
       }>(),
-    supabase
-      .from('courier_documents')
-      .select('kind, status')
-      .eq('courier_id', user.id),
+    supabase.from('courier_documents').select('kind, status').eq('courier_id', user.id),
   ]);
 
   if (profileResult.error) {

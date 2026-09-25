@@ -42,14 +42,12 @@ export function ForgotPasswordForm() {
 
   if (isSuccess) {
     return (
-      <Card className="space-y-4 border-success/30 bg-success/5 p-6 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <Card className="border-success/30 bg-success/5 space-y-4 p-6 text-center">
+        <div className="bg-success/10 text-success mx-auto flex h-12 w-12 items-center justify-center rounded-full">
           <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
         </div>
         <div className="space-y-2">
-          <h2 className="font-display text-lg font-bold text-foreground">
-            Instrucciones enviadas
-          </h2>
+          <h2 className="font-display text-lg font-bold text-foreground">Instrucciones enviadas</h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
             {authCopy.forgotPassword.successMessage}
           </p>
@@ -68,7 +66,10 @@ export function ForgotPasswordForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
       {errorMessage ? (
-        <Card className="border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
+        <Card
+          className="border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+          role="alert"
+        >
           {errorMessage}
         </Card>
       ) : null}
@@ -88,7 +89,10 @@ export function ForgotPasswordForm() {
             aria-describedby={errors.email ? 'forgot-email-error' : undefined}
             {...register('email')}
           />
-          <Mail className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          <Mail
+            className="absolute left-3 top-3.5 h-5 w-5 text-muted-foreground"
+            aria-hidden="true"
+          />
         </div>
         {errors.email ? (
           <p id="forgot-email-error" className="text-sm font-medium text-destructive">
@@ -109,7 +113,7 @@ export function ForgotPasswordForm() {
           : authCopy.forgotPassword.submitButton}
       </Button>
 
-      <div className="text-center pt-2">
+      <div className="pt-2 text-center">
         <Link
           href="/login"
           className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary-dark hover:underline"
