@@ -100,14 +100,14 @@ Hasta entonces T-310 no cumple el DoD completo.
 
 Run GitHub Actions **CI #298** sobre `513cad3f`.
 
-Al momento de redactar esta ronda:
+Resultado final del run exacto:
 - typecheck ✅
 - lint ✅
 - unit ✅ — 48 archivos / 453 tests
 - audit ✅
 - build ✅
 - bundle-budget ✅
-- db-tests ⏳ aún ejecutándose
+- db-tests ✅ — 8 archivos / 1444 tests, Result: PASS
 
 Dato relevante de H15:
 - `observability.test.ts`: 19 tests / 164 ms
@@ -117,7 +117,7 @@ La rama de implementación revisada sigue mergeable y el diff R4 solo tocó arch
 
 ## Veredicto
 
-**No mergear todavía.**
+La CI completa del SHA de implementación quedó verde. **No mergear todavía** por H16 y H04.
 
 - agy: H16;
 - Lautaro073: H04;

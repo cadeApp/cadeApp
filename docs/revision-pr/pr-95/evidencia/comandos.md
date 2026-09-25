@@ -13,13 +13,15 @@ unit          success
 audit         success
 build         success
 bundle-budget success
-db-tests      in_progress al momento de la revisión
+db-tests      success — Files=8, Tests=1444, Result: PASS
 
 unit:
 Test Files 48 passed
 Tests      453 passed
 observability.test.ts: 19 / 164 ms
 requests.test.ts:      37 / 127 ms
+
+db-types: generado exitosamente contra Supabase local de CI
 ```
 
 ## H15 · cierre
