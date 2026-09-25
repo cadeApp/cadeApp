@@ -170,4 +170,41 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('PR82-H10: refetch no es un no-op y consulta la fuente viva de datos en vez de devolver initialTrip', async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { id: 'trip-1', status: 'in_transit' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    vi.spyOn(browserClient, 'createClient').mockReturnValue({
+      channel: vi.fn().mockReturnValue(mockChannel),
+      removeChannel: mockRemoveChannel,
+      from: mockFrom,
+    } as unknown as ReturnType<typeof browserClient.createClient>);
+
+    const { result } = renderHook(
+      () => useTrip('trip-1', initialTrip),
+      { wrapper }
+    );
+
+    expect(result.current.trip?.status).toBe('matched');
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.trip?.status).toBe('in_transit');
+    });
+
+    expect(mockFrom).toHaveBeenCalledWith('delivery_requests');
+  });
 });
+

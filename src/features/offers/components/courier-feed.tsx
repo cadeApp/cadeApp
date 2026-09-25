@@ -14,6 +14,7 @@ import { UnderReview } from './under-review';
 import { RequestCard } from './request-card';
 import type { OfferSheetProps } from './offer-sheet';
 import { FeedSkeleton } from './feed-skeleton';
+import { useAvailableRequests } from '../hooks/use-available-requests';
 
 const OfferSheet = dynamic<OfferSheetProps>(
   () => import('./offer-sheet').then((mod) => mod.OfferSheet),
@@ -31,13 +32,18 @@ export interface CourierFeedProps {
 export function CourierFeed({
   courierStatus,
   isAvailable: initialAvailable,
-  requests,
+  requests: initialRequests,
   minOfferArs,
   isLoading = false,
 }: CourierFeedProps) {
   const [available, setAvailable] = useState<boolean>(initialAvailable);
   const [selectedRequest, setSelectedRequest] = useState<AvailableRequestItem | null>(null);
   const [isOfferSheetOpen, setIsOfferSheetOpen] = useState<boolean>(false);
+
+  const { requests: liveRequests } = useAvailableRequests(initialRequests, {
+    enabled: available && courierStatus === 'approved',
+  });
+  const requests = liveRequests ?? initialRequests;
 
   // DoD 1: Repartidor en estado pending ve "En revisión" (R03)
   if (courierStatus === 'pending') {

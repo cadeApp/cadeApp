@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState, useContext } from 'react';
+import { useCallback, useRef, useState, useContext, useEffect } from 'react';
 import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
 import { requestKeys } from '../query-keys';
 import { useRealtimeInvalidation } from '@/lib/hooks/use-realtime-invalidation';
@@ -181,22 +181,24 @@ export function useRequestOffers(
   const [localOffers, setLocalOffersState] = useState<MerchantOfferItem[]>([...initialOffers]);
   const currentOffers = query.data ?? localOffers;
 
-  // Notificar callbacks si las ofertas cambian
+  // PR82-H13: Notificar callbacks desde useEffect posterior al render (no durante el render)
   const previousOffersRef = useRef<readonly MerchantOfferItem[]>(initialOffers);
 
-  if (previousOffersRef.current !== currentOffers) {
-    if (options?.onOfferAdded || options?.onOfferUpdated) {
-      for (const offer of currentOffers) {
-        const prev = previousOffersRef.current.find((o) => o.id === offer.id);
-        if (!prev) {
-          options.onOfferAdded?.(offer);
-        } else if (JSON.stringify(prev) !== JSON.stringify(offer)) {
-          options.onOfferUpdated?.(offer);
+  useEffect(() => {
+    if (previousOffersRef.current !== currentOffers) {
+      if (options?.onOfferAdded || options?.onOfferUpdated) {
+        for (const offer of currentOffers) {
+          const prev = previousOffersRef.current.find((o) => o.id === offer.id);
+          if (!prev) {
+            options.onOfferAdded?.(offer);
+          } else if (JSON.stringify(prev) !== JSON.stringify(offer)) {
+            options.onOfferUpdated?.(offer);
+          }
         }
       }
+      previousOffersRef.current = currentOffers;
     }
-    previousOffersRef.current = currentOffers;
-  }
+  }, [currentOffers, options]);
 
   // Invalidación en tiempo real: NO muta la caché a mano; solo invalida con debounce
   useRealtimeInvalidation({

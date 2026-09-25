@@ -150,4 +150,106 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     expect(mockOn).toHaveBeenCalledTimes(2);
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
   });
+
+  it('PR82-H11: debounce multi-key acumula queryKeys distintas e invalida todas al vencer la ventana', () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    renderHook(
+      () =>
+        useRealtimeInvalidation({
+          channelName: 'merchant-dashboard',
+          subscriptions: [
+            { table: 'delivery_requests', queryKey: ['requests'] },
+            { table: 'offers', queryKey: ['offers'] },
+          ],
+          debounceMs: 300,
+        }),
+      { wrapper }
+    );
+
+    expect(realtimeCallbacks.length).toBe(2);
+    const cbA = realtimeCallbacks[0]!; // delivery_requests -> ['requests']
+    const cbB = realtimeCallbacks[1]!; // offers -> ['offers']
+
+    // Disparar callback A ['requests']
+    cbA({ eventType: 'INSERT', new: { id: 'req-1' } });
+    vi.advanceTimersByTime(50);
+
+    // +50ms: Disparar callback B ['offers']
+    cbB({ eventType: 'INSERT', new: { id: 'off-1' } });
+
+    // Aún en la ventana: no hay invalidaciones
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    // +300ms: Vence la ventana
+    vi.advanceTimersByTime(300);
+
+    // Ambas invalidaciones deben ejecutarse, exactamente una por cada key
+    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['requests'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['offers'] });
+  });
+
+  it('PR82-H12: reconfigura la suscripción cuando cambian filtro/key con el mismo channelName', () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    type HookProps = {
+      channelName: string;
+      table: string;
+      filter: string;
+      queryKey: string[];
+    };
+
+    const initialProps: HookProps = {
+      channelName: 'reconfig-channel',
+      table: 'offers',
+      filter: 'request_id=eq.req-A',
+      queryKey: ['offers', 'req-A'],
+    };
+
+    const { rerender } = renderHook(
+      (props: HookProps) =>
+        useRealtimeInvalidation({
+          ...props,
+          debounceMs: 300,
+        }),
+      {
+        wrapper,
+        initialProps,
+      }
+    );
+
+    // Al montar se suscribe con filtro A
+    expect(mockOn).toHaveBeenLastCalledWith(
+      'postgres_changes',
+      expect.objectContaining({ filter: 'request_id=eq.req-A' }),
+      expect.any(Function)
+    );
+
+    // Rerender con nuevo filtro y nueva key (mismo canal)
+    rerender({
+      channelName: 'reconfig-channel',
+      table: 'offers',
+      filter: 'request_id=eq.req-B',
+      queryKey: ['offers', 'req-B'],
+    });
+
+    // Se debe haber reconfigurado la suscripción con filtro B
+    expect(mockOn).toHaveBeenLastCalledWith(
+      'postgres_changes',
+      expect.objectContaining({ filter: 'request_id=eq.req-B' }),
+      expect.any(Function)
+    );
+
+    // Obtener el callback de la nueva suscripción B y disparar evento
+    const latestCallback = realtimeCallbacks[realtimeCallbacks.length - 1]!;
+    latestCallback({ eventType: 'INSERT', new: { id: 'off-b' } });
+
+    vi.advanceTimersByTime(300);
+
+    // Debe invalidar la nueva key ['offers', 'req-B'], nunca la vieja ['offers', 'req-A']
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['offers', 'req-B'] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['offers', 'req-A'] });
+  });
 });
+

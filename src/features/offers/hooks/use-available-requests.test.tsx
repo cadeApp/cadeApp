@@ -211,4 +211,57 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
       vi.useRealTimers();
     }
   });
+
+  it('PR82-H07: polling periódico de 30 s activo solo en primer plano y detenido en background', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(initialRequests);
+
+      renderHook(
+        () =>
+          useAvailableRequests(initialRequests, {
+            fetcher: fetchMock,
+          }),
+        { wrapper }
+      );
+
+      const initialCount = fetchMock.mock.calls.length;
+
+      // Avanzar 29 segundos: no debe haber polling todavía
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(29_000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(initialCount);
+
+      // Completar los 30 segundos en primer plano: se dispara el polling (+1)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(initialCount + 1);
+
+      // Simular cambio a background (pantalla oculta)
+      const originalVisibilityState = document.visibilityState;
+      Object.defineProperty(document, 'visibilityState', {
+        value: 'hidden',
+        configurable: true,
+      });
+      window.dispatchEvent(new Event('visibilitychange'));
+
+      // Avanzar otros 30 segundos en background: NO debe ejecutarse polling
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(initialCount + 1); // Sigue en initialCount + 1, no polled en background
+
+      // Restaurar visibilidad
+      Object.defineProperty(document, 'visibilityState', {
+        value: originalVisibilityState,
+        configurable: true,
+      });
+      window.dispatchEvent(new Event('visibilitychange'));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
+

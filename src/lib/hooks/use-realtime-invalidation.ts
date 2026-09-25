@@ -40,6 +40,7 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
   const queryClient = options.queryClient ?? contextClient ?? fallbackClient!;
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingKeysRef = useRef<Map<string, readonly unknown[]>>(new Map());
 
   // Mantener referencias actualizadas de las opciones
   const optionsRef = useRef(options);
@@ -49,12 +50,27 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
   const channelName = options.channelName;
   const debounceMs = options.debounceMs ?? 300;
 
+  // Serializar la configuración de suscripción para detectar cambios aunque el channelName no varíe
+  const serializedConfig = JSON.stringify({
+    table: options.table,
+    schema: options.schema,
+    filter: options.filter,
+    event: options.event,
+    subscriptions: options.subscriptions,
+    queryKey: options.queryKey,
+  });
+
   useEffect(() => {
     if (!enabled || !channelName) {
       return;
     }
 
-    const supabase = createClient();
+    let supabase: ReturnType<typeof createClient>;
+    try {
+      supabase = createClient();
+    } catch {
+      return;
+    }
     const currentOptions = optionsRef.current;
 
     const subs: readonly RealtimeSubscriptionConfig[] =
@@ -77,13 +93,19 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
     }
 
     const triggerInvalidation = (targetKey?: readonly unknown[]) => {
+      const key = targetKey ?? optionsRef.current.queryKey;
+      if (key) {
+        pendingKeysRef.current.set(JSON.stringify(key), key);
+      }
+
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
       debounceTimerRef.current = setTimeout(() => {
-        const key = targetKey ?? optionsRef.current.queryKey;
-        if (key) {
-          void queryClient.invalidateQueries({ queryKey: key });
+        const keysToInvalidate = Array.from(pendingKeysRef.current.values());
+        pendingKeysRef.current.clear();
+        for (const k of keysToInvalidate) {
+          void queryClient.invalidateQueries({ queryKey: k });
         }
       }, debounceMs);
     };
@@ -108,12 +130,14 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
 
     channel.subscribe();
 
+    const pendingKeys = pendingKeysRef.current;
     return () => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
+      pendingKeys.clear();
       supabase.removeChannel(channel);
     };
-  }, [channelName, enabled, debounceMs, queryClient]);
+  }, [channelName, enabled, debounceMs, queryClient, serializedConfig]);
 }

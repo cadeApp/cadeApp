@@ -4,7 +4,31 @@ import { useContext, useState } from 'react';
 import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
 import { offerKeys } from '../query-keys';
 import { useRealtimeInvalidation } from '@/lib/hooks/use-realtime-invalidation';
+import { createClient } from '@/lib/supabase/browser';
 import type { AvailableRequestItem } from '../schemas';
+
+function formatApproxDistanceKm(distanceM: number | null): string {
+  if (!distanceM || distanceM <= 0) {
+    return '1,0';
+  }
+  const km = distanceM / 1000;
+  const rounded = Math.round(km * 2) / 2;
+  return rounded.toFixed(1).replace('.', ',');
+}
+
+interface RawAvailableRequestDbRow {
+  id: string;
+  approx_distance_m: number | null;
+  package_type: string;
+  recipient_payment_method: string;
+  needs_change: boolean;
+  cash_change_amount: number | null;
+  notes: string | null;
+  published_at: string | null;
+  expires_at: string | null;
+  pickup_zone?: { name: string } | Array<{ name: string }> | null;
+  dropoff_zone?: { name: string } | Array<{ name: string }> | null;
+}
 
 export interface UseAvailableRequestsOptions {
   readonly filters?: Record<string, unknown>;
@@ -39,7 +63,62 @@ export function useAvailableRequests(
         if (options?.fetcher) {
           return options.fetcher();
         }
-        return [...initialRequests];
+
+        let supabase: ReturnType<typeof createClient>;
+        try {
+          supabase = createClient();
+        } catch {
+          return [...initialRequests];
+        }
+        if (!supabase || typeof supabase.from !== 'function') {
+          return [...initialRequests];
+        }
+
+        const { data, error } = await supabase
+          .from('delivery_requests')
+          .select(`
+            id,
+            approx_distance_m,
+            package_type,
+            recipient_payment_method,
+            needs_change,
+            cash_change_amount,
+            notes,
+            published_at,
+            expires_at,
+            pickup_zone:zones!pickup_zone_id(name),
+            dropoff_zone:zones!dropoff_zone_id(name)
+          `)
+          .eq('status', 'published')
+          .order('published_at', { ascending: false });
+
+        if (error || !data) {
+          return [];
+        }
+
+        const rows = data as unknown as RawAvailableRequestDbRow[];
+        return rows.map((req) => {
+          const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
+          const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+
+          return {
+            id: req.id,
+            pickupZoneName: pickupZone?.name ?? 'Centro',
+            dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+            approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
+            packageType: (req.package_type as AvailableRequestItem['packageType']) ?? 'small',
+            recipientPaymentMethod:
+              (req.recipient_payment_method as AvailableRequestItem['recipientPaymentMethod']) ??
+              'cash',
+            needsChange: Boolean(req.needs_change),
+            cashChangeAmount: req.cash_change_amount,
+            notes: req.notes,
+            publishedAt: req.published_at ?? new Date().toISOString(),
+            expiresAt: req.expires_at,
+            hasMyOffer: false,
+            myOfferAmountArs: null,
+          };
+        });
       },
       initialData: initialRequests ? [...initialRequests] : undefined,
       initialDataUpdatedAt: 0,

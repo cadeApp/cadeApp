@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
+import * as browserClient from '@/lib/supabase/browser';
 import { CourierFeed } from './components/courier-feed';
 import { UnderReview } from './components/under-review';
 import { OfferSheet } from './components/offer-sheet';
@@ -17,6 +18,25 @@ vi.mock('next/navigation', () => ({
     forward: vi.fn(),
     refresh: vi.fn(),
   }),
+}));
+
+const mockChannel = {
+  on: vi.fn().mockReturnThis(),
+  subscribe: vi.fn().mockReturnThis(),
+};
+
+vi.mock('@/lib/supabase/browser', () => ({
+  createClient: vi.fn(() => ({
+    channel: vi.fn(() => mockChannel),
+    removeChannel: vi.fn(),
+    from: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+      }),
+    }),
+  })),
 }));
 
 describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
@@ -201,5 +221,67 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     const textXsElements = container.querySelectorAll('.text-xs');
     expect(textXsElements.length).toBe(0);
   });
+
+  it('PR82-H09: CourierFeed consume useAvailableRequests y ante foco/invalidación muestra solicitudes vivas', async () => {
+    const mockChannel = {
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnThis(),
+    };
+
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          order: vi.fn().mockResolvedValue({
+            data: [
+              {
+                id: 'req-live-2',
+                approx_distance_m: 1500,
+                package_type: 'medium',
+                recipient_payment_method: 'transfer',
+                needs_change: false,
+                cash_change_amount: null,
+                notes: 'Urgente',
+                published_at: new Date().toISOString(),
+                expires_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+                pickup_zone: { name: 'Plaza' },
+                dropoff_zone: { name: 'Barrio Sur' },
+              },
+            ],
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    vi.spyOn(browserClient, 'createClient').mockReturnValue({
+      channel: vi.fn().mockReturnValue(mockChannel),
+      removeChannel: vi.fn(),
+      from: mockFrom,
+    } as unknown as ReturnType<typeof browserClient.createClient>);
+
+    render(
+      <CourierFeed
+        courierStatus="approved"
+        isAvailable={true}
+        requests={[sampleRequest]}
+        minOfferArs={1000}
+      />
+    );
+
+    // Inicialmente se ve sampleRequest (req-uuid-1: Barrio Norte) y NO req-live-2 (Barrio Sur)
+    expect(screen.getByText(/Barrio Norte/i)).toBeDefined();
+    expect(screen.queryByText(/Barrio Sur/i)).toBeNull();
+
+    // Disparar evento window focus para simular volver a la app con push apagado
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    // La solicitud viva req-live-2 debe aparecer en el DOM
+    await waitFor(() => {
+      expect(screen.getByText(/Barrio Sur/i)).toBeDefined();
+    });
+  });
 });
+
 

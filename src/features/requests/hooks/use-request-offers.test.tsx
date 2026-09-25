@@ -214,4 +214,63 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       vi.useRealTimers();
     }
   });
+
+  it('PR82-H13: onOfferAdded y onOfferUpdated se ejecutan en useEffect posterior al render (no durante el render)', async () => {
+    const executionPhases: string[] = [];
+    const addedOffers: MerchantOfferItem[] = [];
+
+    const newOffer: MerchantOfferItem = {
+      id: 'offer-effect-test',
+      courierId: 'courier-99',
+      courierName: 'Laura T.',
+      vehicleType: 'bicycle',
+      amountArs: 1400,
+      etaMinutes: 12,
+      message: null,
+      licenseStatus: 'none',
+      insuranceStatus: 'none',
+      docLevel: 0,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    };
+
+    let fetchResults = [...initialOffers];
+
+    const { result } = renderHook(
+      () => {
+        executionPhases.push('start-render');
+        const res = useRequestOffers('req-123', initialOffers, {
+          fetcher: async () => fetchResults,
+          onOfferAdded: (offer) => {
+            executionPhases.push('callback');
+            addedOffers.push(offer);
+          },
+        });
+        executionPhases.push('end-render');
+        return res;
+      },
+      { wrapper }
+    );
+
+    // Monte inicial: no dispara onOfferAdded
+    expect(addedOffers).toHaveLength(0);
+    executionPhases.length = 0; // Limpiar para el update
+
+    // Simular llegada de nueva oferta mediante refetch de TanStack Query
+    fetchResults = [...initialOffers, newOffer];
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    await waitFor(() => {
+      expect(result.current.offers).toHaveLength(2);
+    });
+
+    // En useEffect, 'callback' DEBE ejecutarse estrictamente después de 'end-render'.
+    // Si se ejecutara en el cuerpo del hook (durante render), 'callback' aparecería antes de 'end-render'.
+    expect(executionPhases).toEqual(['start-render', 'end-render', 'callback']);
+    expect(addedOffers).toHaveLength(1);
+    expect(addedOffers[0]?.id).toBe('offer-effect-test');
+  });
 });
+
