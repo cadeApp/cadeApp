@@ -61,14 +61,14 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     if (!profileResult.error && profileResult.data) {
       const roleParsed = profileRoleSchema.safeParse(profileResult.data.role);
       const consentParsed = consentStatusSchema.safeParse(profileResult.data.consent_status);
-      if (roleParsed.success) {
+      if (roleParsed.success && consentParsed.success) {
         const aal = aalResult.data?.currentLevel === 'aal2' ? 'aal2' : 'aal1';
         session = {
           userId: user.id,
           email: user.email ?? '',
           role: roleParsed.data,
           aal,
-          consentStatus: consentParsed.success ? consentParsed.data : 'pending',
+          consentStatus: consentParsed.data,
         };
       }
     }

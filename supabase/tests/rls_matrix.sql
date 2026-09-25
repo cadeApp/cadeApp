@@ -499,9 +499,11 @@ select lives_ok(
   'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_pub_id(), pg_temp.merchant_1_id(), ''complaint'', ''normal incident'')',
   'merchant can report an open incident'
 );
-select lives_ok(
+select throws_ok(
   'insert into public.consents (profile_id, document, version) values (pg_temp.merchant_1_id(), ''tos'', ''v1'')',
-  'merchant can record consent at database time'
+  '42501',
+  null,
+  'merchant cannot directly insert consent row via authenticated role (H08)'
 );
 
 select * from finish();

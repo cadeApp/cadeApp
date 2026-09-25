@@ -60,6 +60,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'courier@test.com',
       role: 'courier',
       aal: 'aal1',
+      consentStatus: 'active',
     };
 
     const guardResult = evaluateRouteGuard('/merchant/dashboard', courierSession);
@@ -75,6 +76,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'comercio@test.com',
       role: 'merchant',
       aal: 'aal1',
+      consentStatus: 'active',
     };
 
     const guardResult = evaluateRouteGuard('/courier/feed', merchantSession);
@@ -90,6 +92,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'comercio@test.com',
       role: 'merchant',
       aal: 'aal1',
+      consentStatus: 'active',
     };
 
     const guardResult = evaluateRouteGuard('/merchant/dashboard', merchantSession);
@@ -102,6 +105,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'courier@test.com',
       role: 'courier',
       aal: 'aal1',
+      consentStatus: 'active',
     };
 
     const guardResult = evaluateRouteGuard('/courier/feed', courierSession);
@@ -114,6 +118,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'admin@test.com',
       role: 'admin',
       aal: 'aal1',
+      consentStatus: 'active',
     };
 
     const adminWithAal2: AuthSession = {
@@ -121,6 +126,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'admin@test.com',
       role: 'admin',
       aal: 'aal2',
+      consentStatus: 'active',
     };
 
     const aal1Result = evaluateRouteGuard('/admin/couriers', adminWithoutAal2);
@@ -139,12 +145,14 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'comercio@test.com',
       role: 'merchant',
       aal: 'aal1',
+      consentStatus: 'active',
     };
     const courierSession: AuthSession = {
       userId: 'usr-courier',
       email: 'courier@test.com',
       role: 'courier',
       aal: 'aal1',
+      consentStatus: 'active',
     };
 
     const loginMerchant = evaluateRouteGuard('/login', merchantSession);
@@ -186,6 +194,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
       email: 'admin@test.com',
       role: 'admin',
       aal: 'aal1',
+      consentStatus: 'active',
     };
 
     const merchantAttempt = evaluateRouteGuard('/merchant/dashboard', adminAal1);
@@ -200,34 +209,34 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
 
   it('PR60-H04: resolvePostLoginRedirect previene Open Redirect y respeta rol', () => {
     // Open redirect attempts
-    expect(resolvePostLoginRedirect('https://evil.com', 'merchant')).toBe('/merchant/dashboard');
-    expect(resolvePostLoginRedirect('//evil.com', 'courier')).toBe('/courier/feed');
-    expect(resolvePostLoginRedirect('/login', 'merchant')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('https://evil.com', 'merchant', 'active')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('//evil.com', 'courier', 'active')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/login', 'merchant', 'active')).toBe('/merchant/dashboard');
 
     // PR60-H08: rechazo de barras invertidas para evitar bypass con normalización WHATWG
-    expect(resolvePostLoginRedirect('/\\evil.com', 'merchant')).toBe('/merchant/dashboard');
-    expect(resolvePostLoginRedirect('/foo\\bar', 'courier')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/\\evil.com', 'merchant', 'active')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/foo\\bar', 'courier', 'active')).toBe('/courier/feed');
 
     // Cross-role redirect attempt
-    expect(resolvePostLoginRedirect('/merchant/dashboard', 'courier')).toBe('/courier/feed');
-    expect(resolvePostLoginRedirect('/courier/feed', 'merchant')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/merchant/dashboard', 'courier', 'active')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/courier/feed', 'merchant', 'active')).toBe('/merchant/dashboard');
 
     // Valid internal redirect for role
-    expect(resolvePostLoginRedirect('/merchant/history', 'merchant')).toBe('/merchant/history');
-    expect(resolvePostLoginRedirect('/merchant/requests/req-123', 'merchant')).toBe(
+    expect(resolvePostLoginRedirect('/merchant/history', 'merchant', 'active')).toBe('/merchant/history');
+    expect(resolvePostLoginRedirect('/merchant/requests/req-123', 'merchant', 'active')).toBe(
       '/merchant/requests/req-123'
     );
-    expect(resolvePostLoginRedirect('/courier/offers', 'courier')).toBe('/courier/offers');
-    expect(resolvePostLoginRedirect('/', 'merchant')).toBe('/');
-    expect(resolvePostLoginRedirect('/design-system', 'courier')).toBe('/design-system');
+    expect(resolvePostLoginRedirect('/courier/offers', 'courier', 'active')).toBe('/courier/offers');
+    expect(resolvePostLoginRedirect('/', 'merchant', 'active')).toBe('/');
+    expect(resolvePostLoginRedirect('/design-system', 'courier', 'active')).toBe('/design-system');
 
     // PR87-H01: ningún redirect post-login puede terminar en 404 (rutas inexistentes o legales pendientes de T-311)
-    expect(resolvePostLoginRedirect('/ruta-inexistente', 'merchant')).toBe('/merchant/dashboard');
-    expect(resolvePostLoginRedirect('/ghost', 'courier')).toBe('/courier/feed');
-    expect(resolvePostLoginRedirect('/terms', 'merchant')).toBe('/merchant/dashboard');
-    expect(resolvePostLoginRedirect('/privacy', 'courier')).toBe('/courier/feed');
-    expect(resolvePostLoginRedirect('/pilot-terms', 'merchant')).toBe('/merchant/dashboard');
-    expect(resolvePostLoginRedirect('/legal', 'courier')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/ruta-inexistente', 'merchant', 'active')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/ghost', 'courier', 'active')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/terms', 'merchant', 'active')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/privacy', 'courier', 'active')).toBe('/courier/feed');
+    expect(resolvePostLoginRedirect('/pilot-terms', 'merchant', 'active')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect('/legal', 'courier', 'active')).toBe('/courier/feed');
 
     expect(isPublicRoute('/terms')).toBe(false);
     expect(isPublicRoute('/privacy')).toBe(false);

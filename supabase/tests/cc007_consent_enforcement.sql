@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(19);
+select plan(28);
 
 -- 1. IDs para los actores de prueba
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000000aa'::uuid $$;
@@ -24,6 +24,9 @@ begin
   if role_name = 'anon' then
     set local role anon;
     perform set_config('request.jwt.claims', '{"role": "anon"}', true);
+  elsif role_name = 'service_role' then
+    set local role service_role;
+    perform set_config('request.jwt.claims', '{"role": "service_role"}', true);
   else
     set local role authenticated;
     perform set_config(
@@ -160,7 +163,22 @@ select throws_ok(
   'submit_offer rejects pending courier with UNAUTHORIZED_ACTOR'
 );
 
--- PRUEBA 9: RPC publish_request rechaza a pending merchant con UNAUTHORIZED_ACTOR
+-- PRUEBA 9: RPC submit_offer rechaza a reconsent_required courier con UNAUTHORIZED_ACTOR
+select pg_temp.act_as('authenticated', pg_temp.reconsent_courier_id());
+select throws_ok(
+  $$
+    select public.submit_offer(
+      gen_random_uuid(),
+      1500,
+      20
+    )
+  $$,
+  'P0001',
+  'UNAUTHORIZED_ACTOR',
+  'submit_offer rejects reconsent courier with UNAUTHORIZED_ACTOR'
+);
+
+-- PRUEBA 10: H02 conductual: RPC publish_request (via request_cycle) rechaza a pending merchant
 select pg_temp.act_as('authenticated', pg_temp.pending_merchant_id());
 select throws_ok(
   $$
@@ -171,7 +189,82 @@ select throws_ok(
   'publish_request rejects pending merchant with UNAUTHORIZED_ACTOR'
 );
 
--- PRUEBA 10: activate_account_consents no es ejecutable por authenticated
+-- PRUEBA 11: H02 conductual: RPC cancel_request (via request_cycle) rechaza a reconsent merchant
+select pg_temp.act_as('authenticated', pg_temp.reconsent_merchant_id());
+select throws_ok(
+  $$
+    select public.cancel_request(gen_random_uuid(), 'motivo')
+  $$,
+  'P0001',
+  'UNAUTHORIZED_ACTOR',
+  'cancel_request rejects reconsent merchant with UNAUTHORIZED_ACTOR'
+);
+
+-- PRUEBA 12: H02 conductual: RPC mark_picked_up (via request_cycle) rechaza a pending courier
+select pg_temp.act_as('authenticated', pg_temp.pending_courier_id());
+select throws_ok(
+  $$
+    select public.mark_picked_up(gen_random_uuid())
+  $$,
+  'P0001',
+  'UNAUTHORIZED_ACTOR',
+  'mark_picked_up rejects pending courier with UNAUTHORIZED_ACTOR'
+);
+
+-- PRUEBA 13: H02 conductual: RPC mark_picked_up (via request_cycle) rechaza a reconsent courier
+select pg_temp.act_as('authenticated', pg_temp.reconsent_courier_id());
+select throws_ok(
+  $$
+    select public.mark_picked_up(gen_random_uuid())
+  $$,
+  'P0001',
+  'UNAUTHORIZED_ACTOR',
+  'mark_picked_up rejects reconsent courier with UNAUTHORIZED_ACTOR'
+);
+
+-- PRUEBA 14: H02 conductual: Admin pasa gate en request_cycle y no es rechazado con UNAUTHORIZED_ACTOR
+select pg_temp.act_as('authenticated', pg_temp.admin_id());
+select throws_ok(
+  $$
+    select public.cancel_request(gen_random_uuid(), 'admin cancel')
+  $$,
+  'P0001',
+  'NOT_FOUND',
+  'admin passes authorization gate in request_cycle and fails on NOT_FOUND'
+);
+
+-- PRUEBA 15: H08: Un usuario authenticated no puede hacer INSERT directo en public.consents
+select pg_temp.act_as('authenticated', pg_temp.active_merchant_id());
+select throws_ok(
+  $$
+    insert into public.consents (profile_id, document, version)
+    values (pg_temp.active_merchant_id(), 'tos', '99.0')
+  $$,
+  '42501',
+  null,
+  'authenticated cannot directly insert into public.consents'
+);
+
+-- PRUEBA 16: H03: anon no tiene permiso EXECUTE en activate_account_consents
+select ok(
+  not has_function_privilege('anon', 'public.activate_account_consents(uuid, text, text)', 'execute'),
+  'anon lacks execute privilege on activate_account_consents'
+);
+
+-- PRUEBA 17: H03: authenticated no tiene permiso EXECUTE en activate_account_consents
+select ok(
+  not has_function_privilege('authenticated', 'public.activate_account_consents(uuid, text, text)', 'execute'),
+  'authenticated lacks execute privilege on activate_account_consents'
+);
+
+-- PRUEBA 18: H03: service_role sí tiene permiso EXECUTE en activate_account_consents
+select ok(
+  has_function_privilege('service_role', 'public.activate_account_consents(uuid, text, text)', 'execute'),
+  'service_role has execute privilege on activate_account_consents'
+);
+
+-- PRUEBA 19: H03: Intento de invocacion directa como authenticated lanza 42501
+select pg_temp.act_as('authenticated', pg_temp.pending_merchant_id());
 select throws_ok(
   $$
     select public.activate_account_consents(
@@ -185,7 +278,7 @@ select throws_ok(
   'activate_account_consents cannot be executed by authenticated role'
 );
 
--- PRUEBA 11: activate_account_consents no es ejecutable por anon
+-- PRUEBA 20: H03: Intento de invocacion directa como anon lanza 42501
 select pg_temp.act_as('anon');
 select throws_ok(
   $$
@@ -200,8 +293,8 @@ select throws_ok(
   'activate_account_consents cannot be executed by anon role'
 );
 
--- PRUEBA 12: activacion atomica como superusuario / service_role
-select pg_temp.reset_actor();
+-- PRUEBA 21: H03: Invocacion exitosa bajo service_role
+select pg_temp.act_as('service_role');
 select lives_ok(
   $$
     select public.activate_account_consents(
@@ -210,24 +303,25 @@ select lives_ok(
       '1.0'
     )
   $$,
-  'superuser can activate account consents atomically'
+  'service_role can execute activate_account_consents atomically'
 );
 
--- PRUEBA 13: tras activacion atomica, el perfil queda active
+-- PRUEBA 22: tras activacion atomica, el perfil queda active
 select is(
   (select consent_status::text from public.profiles where id = pg_temp.pending_merchant_id()),
   'active',
   'profile consent_status transitioned to active'
 );
 
--- PRUEBA 14: y ambas filas (tos y privacy) existen en public.consents
+-- PRUEBA 23: y ambas filas (tos y privacy) existen en public.consents
 select is(
   (select count(*)::integer from public.consents where profile_id = pg_temp.pending_merchant_id() and document in ('tos', 'privacy')),
   2,
   'both tos and privacy consents exist for activated profile'
 );
 
--- PRUEBA 15: atomicidad: activate_account_consents rechaza admin (ADMIN_EXEMPT)
+-- PRUEBA 24: atomicidad: activate_account_consents rechaza admin (ADMIN_EXEMPT)
+select pg_temp.act_as('service_role');
 select throws_ok(
   $$
     select public.activate_account_consents(
@@ -241,7 +335,7 @@ select throws_ok(
   'activate_account_consents rejects admin role'
 );
 
--- PRUEBA 16: atomicidad: si faltan parametros, revierte sin tocar nada
+-- PRUEBA 25: atomicidad: si faltan parametros, revierte sin tocar nada
 select throws_ok(
   $$
     select public.activate_account_consents(
@@ -255,13 +349,17 @@ select throws_ok(
   'activate_account_consents validates version strings'
 );
 
+-- PRUEBA 26: el estado reconsent_required no fue alterado tras error de validacion
 select is(
   (select consent_status::text from public.profiles where id = pg_temp.reconsent_merchant_id()),
   'reconsent_required',
   'reconsent_required status unchanged after failed validation'
 );
 
--- PRUEBA 17: Backfill completo: perfil con ambos consentimientos pasa a active
+-- Reset para pruebas de backfill (superusuario)
+select pg_temp.reset_actor();
+
+-- PRUEBA 27: Backfill completo: perfil con ambos consentimientos pasa a active
 do $$
 begin
   insert into public.consents (profile_id, document, version)
@@ -292,7 +390,7 @@ select is(
   'backfill with both consents results in active'
 );
 
--- PRUEBA 18: Backfill incompleto: perfil con solo un consentimiento pasa a pending
+-- PRUEBA 28: Backfill incompleto: perfil con solo un consentimiento pasa a pending
 do $$
 begin
   delete from public.consents where profile_id = pg_temp.backfill_test_id() and document = 'privacy';

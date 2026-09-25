@@ -5,7 +5,7 @@ export interface AuthSession {
   readonly email: string;
   readonly role: ProfileRole;
   readonly aal: 'aal1' | 'aal2';
-  readonly consentStatus?: ConsentStatus;
+  readonly consentStatus: ConsentStatus;
 }
 
 export type RouteGuardAction =
@@ -130,9 +130,9 @@ export function isKnownExistingRouteForRole(pathname: string, role: ProfileRole)
 export function resolvePostLoginRedirect(
   rawRedirectTo: unknown,
   role: ProfileRole,
-  consentStatus?: ConsentStatus
+  consentStatus: ConsentStatus
 ): string {
-  if (role !== 'admin' && consentStatus && consentStatus !== 'active') {
+  if (role !== 'admin' && consentStatus !== 'active') {
     return '/login?consentRequired=1';
   }
 
@@ -157,7 +157,7 @@ export function resolvePostLoginRedirect(
     email: '',
     role,
     aal: 'aal1',
-    consentStatus: consentStatus ?? 'active',
+    consentStatus,
   };
 
   const guardResult = evaluateRouteGuard(pathname, mockSession);
@@ -182,7 +182,7 @@ export function evaluateRouteGuard(
   // 1. Rutas de autenticación pública (login / register)
   if (isAuthRoute(pathname)) {
     if (session) {
-      if (session.role !== 'admin' && session.consentStatus && session.consentStatus !== 'active') {
+      if (session.role !== 'admin' && session.consentStatus !== 'active') {
         return { action: 'allow' };
       }
       return {
@@ -206,7 +206,7 @@ export function evaluateRouteGuard(
 
   // 2.a. Bloqueo operativo por consent_status (CC-007 / D06 / D07 / D08)
   // Perfiles merchant o courier en pending o reconsent_required no tienen acceso operativo a rutas protegidas
-  if (session.role !== 'admin' && session.consentStatus && session.consentStatus !== 'active') {
+  if (session.role !== 'admin' && session.consentStatus !== 'active') {
     if (
       isMerchantRoute(pathname) ||
       isCourierRoute(pathname) ||
