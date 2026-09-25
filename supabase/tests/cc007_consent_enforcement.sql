@@ -49,46 +49,27 @@ $$;
 do $$
 begin
   -- Usuarios en auth.users
-  insert into auth.users (id, email)
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
   values
-    (pg_temp.admin_id(), 'admin@test.com'),
-    (pg_temp.active_merchant_id(), 'active.m@test.com'),
-    (pg_temp.pending_merchant_id(), 'pending.m@test.com'),
-    (pg_temp.reconsent_merchant_id(), 'reconsent.m@test.com'),
-    (pg_temp.active_courier_id(), 'active.c@test.com'),
-    (pg_temp.pending_courier_id(), 'pending.c@test.com'),
-    (pg_temp.reconsent_courier_id(), 'reconsent.c@test.com'),
-    (pg_temp.backfill_test_id(), 'backfill@test.com')
+    (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@test.com', 'pwd', '{"role":"merchant"}'::jsonb),
+    (pg_temp.active_merchant_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'active.m@test.com', 'pwd', '{"role":"merchant"}'::jsonb),
+    (pg_temp.pending_merchant_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'pending.m@test.com', 'pwd', '{"role":"merchant"}'::jsonb),
+    (pg_temp.reconsent_merchant_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'reconsent.m@test.com', 'pwd', '{"role":"merchant"}'::jsonb),
+    (pg_temp.active_courier_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'active.c@test.com', 'pwd', '{"role":"courier"}'::jsonb),
+    (pg_temp.pending_courier_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'pending.c@test.com', 'pwd', '{"role":"courier"}'::jsonb),
+    (pg_temp.reconsent_courier_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'reconsent.c@test.com', 'pwd', '{"role":"courier"}'::jsonb),
+    (pg_temp.backfill_test_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'backfill@test.com', 'pwd', '{"role":"merchant"}'::jsonb)
   on conflict (id) do nothing;
 
   -- Perfiles
-  insert into public.profiles (id, role, display_name, consent_status)
-  values
-    (pg_temp.admin_id(), 'admin', 'Admin', 'active'),
-    (pg_temp.active_merchant_id(), 'merchant', 'Active Merchant', 'active'),
-    (pg_temp.pending_merchant_id(), 'merchant', 'Pending Merchant', 'pending'),
-    (pg_temp.reconsent_merchant_id(), 'merchant', 'Reconsent Merchant', 'reconsent_required'),
-    (pg_temp.active_courier_id(), 'courier', 'Active Courier', 'active'),
-    (pg_temp.pending_courier_id(), 'courier', 'Pending Courier', 'pending'),
-    (pg_temp.reconsent_courier_id(), 'courier', 'Reconsent Courier', 'reconsent_required'),
-    (pg_temp.backfill_test_id(), 'merchant', 'Backfill Merchant', 'pending')
-  on conflict (id) do update set consent_status = excluded.consent_status;
+  update public.profiles set role = 'admin', consent_status = 'active' where id = pg_temp.admin_id();
+  update public.profiles set consent_status = 'active' where id in (pg_temp.active_merchant_id(), pg_temp.active_courier_id());
+  update public.profiles set consent_status = 'reconsent_required' where id in (pg_temp.reconsent_merchant_id(), pg_temp.reconsent_courier_id());
+  update public.profiles set consent_status = 'pending' where id in (pg_temp.pending_merchant_id(), pg_temp.pending_courier_id(), pg_temp.backfill_test_id());
 
   -- Tablas operativas
-  insert into public.merchants (profile_id, business_name)
-  values
-    (pg_temp.active_merchant_id(), 'Active Store'),
-    (pg_temp.pending_merchant_id(), 'Pending Store'),
-    (pg_temp.reconsent_merchant_id(), 'Reconsent Store'),
-    (pg_temp.backfill_test_id(), 'Backfill Store')
-  on conflict (profile_id) do nothing;
-
-  insert into public.couriers (profile_id, status)
-  values
-    (pg_temp.active_courier_id(), 'approved'),
-    (pg_temp.pending_courier_id(), 'pending'),
-    (pg_temp.reconsent_courier_id(), 'approved')
-  on conflict (profile_id) do nothing;
+  update public.couriers set status = 'approved', available = true where profile_id in (pg_temp.active_courier_id(), pg_temp.reconsent_courier_id());
+  update public.couriers set status = 'pending', available = false where profile_id = pg_temp.pending_courier_id();
 
   -- Consentimientos para el active merchant
   insert into public.consents (profile_id, document, version)

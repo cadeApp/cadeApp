@@ -14,6 +14,7 @@ select pg_temp.actor(n), '00000000-0000-0000-0000-000000000000',
   jsonb_build_object('role', case when n in (3, 4) then 'courier' else 'merchant' end)
 from generate_series(1, 5) n;
 update public.profiles set role = 'admin' where id = pg_temp.actor(5);
+update public.profiles set consent_status = 'active' where id in (pg_temp.actor(1), pg_temp.actor(2), pg_temp.actor(3), pg_temp.actor(4));
 update public.couriers set status = 'approved', available = true
 where profile_id in (pg_temp.actor(3), pg_temp.actor(4));
 insert into public.zones (id, name, centroid_lat, centroid_lng, active) values
