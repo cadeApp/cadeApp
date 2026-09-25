@@ -57,24 +57,32 @@ export async function callRequestRpc<K extends RequestRpcName>(
         return err(code as RpcErrorCode<K>);
       }
       if (rpcName === 'publish_request') {
-        await sendCriticalAlert({
-          type: 'publish_request_failed',
-          severity: 'critical',
-          message: `Fallo en RPC publish_request: ${error.message}`,
-          details: { error: error.message, code: error.code, input: args },
-        });
+        try {
+          await sendCriticalAlert({
+            type: 'publish_request_failed',
+            severity: 'critical',
+            message: `Fallo en RPC publish_request: ${error.message}`,
+            details: { error: error.message, code: error.code, input: args },
+          });
+        } catch {
+          // Fallo de observabilidad no debe interrumpir el retorno al caller
+        }
       }
       return err('INTERNAL_ERROR');
     }
     const output = contract.outputSchema.safeParse(data);
     if (!output.success) {
       if (rpcName === 'publish_request') {
-        await sendCriticalAlert({
-          type: 'publish_request_failed',
-          severity: 'critical',
-          message: 'Error de validación en respuesta de RPC publish_request',
-          details: { zodErrors: output.error.issues, data },
-        });
+        try {
+          await sendCriticalAlert({
+            type: 'publish_request_failed',
+            severity: 'critical',
+            message: 'Error de validación en respuesta de RPC publish_request',
+            details: { zodErrors: output.error.issues, data },
+          });
+        } catch {
+          // Fallo de observabilidad no debe interrumpir el retorno al caller
+        }
       }
       return err('INTERNAL_ERROR');
     }
@@ -82,12 +90,16 @@ export async function callRequestRpc<K extends RequestRpcName>(
     return ok(output.data as RpcOutput<K>);
   } catch (ex) {
     if (rpcName === 'publish_request') {
-      await sendCriticalAlert({
-        type: 'publish_request_failed',
-        severity: 'critical',
-        message: `Excepción inesperada en RPC publish_request: ${ex instanceof Error ? ex.message : String(ex)}`,
-        details: { error: ex instanceof Error ? ex.stack : String(ex), input: args },
-      });
+      try {
+        await sendCriticalAlert({
+          type: 'publish_request_failed',
+          severity: 'critical',
+          message: `Excepción inesperada en RPC publish_request: ${ex instanceof Error ? ex.message : String(ex)}`,
+          details: { error: ex instanceof Error ? ex.stack : String(ex), input: args },
+        });
+      } catch {
+        // Fallo de observabilidad no debe interrumpir el retorno al caller
+      }
     }
     return err('INTERNAL_ERROR');
   }

@@ -5,6 +5,8 @@ import {
   sendCriticalAlert,
   sendTestAlert,
   checkUptimeHealth,
+  setDiscordWebhookUrlForTesting,
+  setDiscordTimeoutForTesting,
   type AlertPayload,
 } from './index';
 
@@ -13,12 +15,14 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token';
+    setDiscordWebhookUrlForTesting('https://discord.com/api/webhooks/test/token');
     process.env.NEXT_PUBLIC_SENTRY_DSN = 'https://sentry.io/api/test/store';
     (process.env as Record<string, string | undefined>).NODE_ENV = 'test';
   });
 
   afterEach(() => {
+    setDiscordWebhookUrlForTesting(undefined);
+    setDiscordTimeoutForTesting(undefined);
     process.env = { ...originalEnv };
   });
 
@@ -164,7 +168,7 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
 
   describe('3. Alertas Críticas (Webhook Discord / Alerta al Admin)', () => {
     it('H03: no debe reportar éxito en sendTestAlert ni sendCriticalAlert si no hay webhook configurado', async () => {
-      delete process.env.DISCORD_ERROR_WEBHOOK_URL;
+      setDiscordWebhookUrlForTesting(null);
 
       const testAlertResult = await sendTestAlert({ environment: 'staging' });
       expect(testAlertResult.ok).toBe(false);
@@ -177,6 +181,34 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       });
       expect(criticalAlertResult.ok).toBe(false);
       expect(criticalAlertResult.error).toBeDefined();
+    });
+
+    it('H16: produccion debe obtener webhook y NODE_ENV solo desde serverEnv sin fallback a process.env', async () => {
+      // 1. Quitar override de test para forzar la ruta productiva (serverEnv)
+      setDiscordWebhookUrlForTesting(undefined);
+
+      // 2. Colocar una variable en process.env que un fallback no autorizado intentaría leer
+      process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/unauthorized/fallback';
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+      try {
+        // 3. Sin variables privadas completas en el entorno, serverEnv lanza por la frontera Zod.
+        // sendCriticalAlert NO debe capturar el error ni hacer fallback a process.env.
+        await expect(
+          sendCriticalAlert({
+            type: 'test_alert',
+            severity: 'critical',
+            message: 'Alerta cuando serverEnv no es válido',
+          })
+        ).rejects.toThrow(/SUPABASE_SERVICE_ROLE_KEY es obligatoria/);
+
+        // 4. El fetch de Discord NO debe haber sido invocado con la URL de process.env
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } finally {
+        fetchSpy.mockRestore();
+        setDiscordWebhookUrlForTesting('https://discord.com/api/webhooks/test/token');
+      }
     });
 
     it('H02: debe enviar una alerta de prueba válida y el payload no debe contener datos sin sanitizar', async () => {

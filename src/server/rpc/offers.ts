@@ -134,23 +134,31 @@ export async function submitOfferRpc(
 
     const parsedOutput = RPC_CONTRACTS.submit_offer.outputSchema.safeParse(data);
     if (!parsedOutput.success) {
-      await sendCriticalAlert({
-        type: 'submit_offer_failed',
-        severity: 'critical',
-        message: 'Error de validación en respuesta de RPC submit_offer',
-        details: { zodErrors: parsedOutput.error.issues },
-      });
+      try {
+        await sendCriticalAlert({
+          type: 'submit_offer_failed',
+          severity: 'critical',
+          message: 'Error de validación en respuesta de RPC submit_offer',
+          details: { zodErrors: parsedOutput.error.issues },
+        });
+      } catch {
+        // Fallo de observabilidad no debe interrumpir el retorno al caller
+      }
       return err('INTERNAL_ERROR');
     }
 
     return ok(parsedOutput.data);
   } catch (ex) {
-    await sendCriticalAlert({
-      type: 'submit_offer_failed',
-      severity: 'critical',
-      message: `Excepción inesperada en RPC submit_offer: ${ex instanceof Error ? ex.message : String(ex)}`,
-      details: { error: ex instanceof Error ? ex.stack : String(ex), input: { requestId, amountArs, etaMinutes } },
-    });
+    try {
+      await sendCriticalAlert({
+        type: 'submit_offer_failed',
+        severity: 'critical',
+        message: `Excepción inesperada en RPC submit_offer: ${ex instanceof Error ? ex.message : String(ex)}`,
+        details: { error: ex instanceof Error ? ex.stack : String(ex), input: { requestId, amountArs, etaMinutes } },
+      });
+    } catch {
+      // Fallo de observabilidad no debe interrumpir el retorno al caller
+    }
     return err('INTERNAL_ERROR');
   }
 }
@@ -210,35 +218,47 @@ export async function acceptOfferRpc(
     if (error) {
       const mapped = mapOfferRpcError('accept_offer', error);
       if (mapped === 'INTERNAL_ERROR') {
-        await sendCriticalAlert({
-          type: 'accept_offer_failed',
-          severity: 'critical',
-          message: `Fallo en RPC accept_offer: ${error.message}`,
-          details: { error: error.message, code: error.code, offerId },
-        });
+        try {
+          await sendCriticalAlert({
+            type: 'accept_offer_failed',
+            severity: 'critical',
+            message: `Fallo en RPC accept_offer: ${error.message}`,
+            details: { error: error.message, code: error.code, offerId },
+          });
+        } catch {
+          // Fallo de observabilidad no debe interrumpir el retorno al caller
+        }
       }
       return err(mapped);
     }
 
     const parsedOutput = RPC_CONTRACTS.accept_offer.outputSchema.safeParse(data);
     if (!parsedOutput.success) {
-      await sendCriticalAlert({
-        type: 'accept_offer_failed',
-        severity: 'critical',
-        message: 'Error de validación en respuesta de RPC accept_offer',
-        details: { zodErrors: parsedOutput.error.issues, offerId },
-      });
+      try {
+        await sendCriticalAlert({
+          type: 'accept_offer_failed',
+          severity: 'critical',
+          message: 'Error de validación en respuesta de RPC accept_offer',
+          details: { zodErrors: parsedOutput.error.issues, offerId },
+        });
+      } catch {
+        // Fallo de observabilidad no debe interrumpir el retorno al caller
+      }
       return err('INTERNAL_ERROR');
     }
 
     return ok(parsedOutput.data);
   } catch (ex) {
-    await sendCriticalAlert({
-      type: 'accept_offer_failed',
-      severity: 'critical',
-      message: `Excepción inesperada en RPC accept_offer: ${ex instanceof Error ? ex.message : String(ex)}`,
-      details: { error: ex instanceof Error ? ex.stack : String(ex), offerId },
-    });
+    try {
+      await sendCriticalAlert({
+        type: 'accept_offer_failed',
+        severity: 'critical',
+        message: `Excepción inesperada en RPC accept_offer: ${ex instanceof Error ? ex.message : String(ex)}`,
+        details: { error: ex instanceof Error ? ex.stack : String(ex), offerId },
+      });
+    } catch {
+      // Fallo de observabilidad no debe interrumpir el retorno al caller
+    }
     return err('INTERNAL_ERROR');
   }
 }

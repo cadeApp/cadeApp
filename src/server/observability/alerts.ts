@@ -29,18 +29,21 @@ export interface AlertOptions {
 
 export const DEFAULT_DISCORD_TIMEOUT_MS = 2500;
 
-let testDiscordWebhookUrl: string | null = null;
-let testDiscordTimeoutMs: number | null = null;
+let testDiscordWebhookUrl: string | null | undefined = undefined;
+let testDiscordTimeoutMs: number | null | undefined = undefined;
 
 /**
  * Seams de test para inyectar configuración en tests unitarios sin alterar
  * los valores productivos validados por serverEnv.
+ * - undefined: sin override (lee de serverEnv en producción)
+ * - string: webhook simulado para test
+ * - null: ausencia explícita de webhook (para probar H03 sin depender de serverEnv)
  */
-export function setDiscordWebhookUrlForTesting(url: string | null): void {
+export function setDiscordWebhookUrlForTesting(url: string | null | undefined): void {
   testDiscordWebhookUrl = url;
 }
 
-export function setDiscordTimeoutForTesting(ms: number | null): void {
+export function setDiscordTimeoutForTesting(ms: number | null | undefined): void {
   testDiscordTimeoutMs = ms;
 }
 
@@ -60,17 +63,15 @@ export async function sendCriticalAlert(
     timestamp: payload.timestamp ?? new Date().toISOString(),
   };
 
-  let webhookUrl: string | undefined = testDiscordWebhookUrl || undefined;
-  let nodeEnv = 'development';
+  let webhookUrl: string | undefined;
+  let nodeEnv: string;
 
-  if (!webhookUrl) {
-    try {
-      webhookUrl = serverEnv.DISCORD_ERROR_WEBHOOK_URL || undefined;
-      nodeEnv = serverEnv.NODE_ENV || 'development';
-    } catch {
-      webhookUrl = process.env.DISCORD_ERROR_WEBHOOK_URL || undefined;
-      nodeEnv = process.env.NODE_ENV || 'development';
-    }
+  if (testDiscordWebhookUrl !== undefined) {
+    webhookUrl = testDiscordWebhookUrl === null ? undefined : testDiscordWebhookUrl;
+    nodeEnv = 'test';
+  } else {
+    webhookUrl = serverEnv.DISCORD_ERROR_WEBHOOK_URL || undefined;
+    nodeEnv = serverEnv.NODE_ENV;
   }
 
   // Si no hay webhook configurado, no se puede informar entrega exitosa (H03)
@@ -162,12 +163,7 @@ export async function sendTestAlert(options?: {
   environment?: string;
   triggeredBy?: string;
 }): Promise<AlertResult> {
-  let defaultEnv = 'development';
-  try {
-    defaultEnv = serverEnv.NODE_ENV || 'development';
-  } catch {
-    defaultEnv = process.env.NODE_ENV || 'development';
-  }
+  const defaultEnv = testDiscordWebhookUrl !== undefined ? 'test' : serverEnv.NODE_ENV;
   const env = options?.environment ?? defaultEnv;
   const operator = options?.triggeredBy ?? 'Operador';
 
