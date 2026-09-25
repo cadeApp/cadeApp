@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRequestOffers } from './use-request-offers';
+import { requestKeys } from '../query-keys';
 import * as browserClient from '@/lib/supabase/browser';
 import type { MerchantOfferItem } from '../types';
 
@@ -11,6 +12,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
   let mockRemoveChannel: ReturnType<typeof vi.fn>;
   let mockSubscribe: ReturnType<typeof vi.fn>;
   let mockOn: ReturnType<typeof vi.fn>;
+  let mockChannel: { on: typeof mockOn; subscribe: typeof mockSubscribe };
   let realtimeCallback: ((payload: unknown) => void) | null = null;
 
   const initialOffers: MerchantOfferItem[] = [
@@ -31,12 +33,14 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
   ];
 
   beforeEach(() => {
+    // PR82-H06: Emular providers.tsx con staleTime: 60s
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
           retry: false,
-          refetchOnWindowFocus: true,
-          refetchOnReconnect: true,
+          staleTime: 60 * 1000,
+          refetchOnWindowFocus: false,
+          refetchOnReconnect: false,
         },
       },
     });
@@ -46,14 +50,16 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
     mockSubscribe = vi.fn().mockReturnThis();
     mockOn = vi.fn().mockImplementation((_event, _filter, callback) => {
       realtimeCallback = callback;
-      return { subscribe: mockSubscribe };
+      return mockChannel;
     });
 
+    mockChannel = {
+      on: mockOn,
+      subscribe: mockSubscribe,
+    };
+
     vi.spyOn(browserClient, 'createClient').mockReturnValue({
-      channel: vi.fn().mockReturnValue({
-        on: mockOn,
-        subscribe: mockSubscribe,
-      }),
+      channel: vi.fn().mockReturnValue(mockChannel),
       removeChannel: mockRemoveChannel,
     } as unknown as ReturnType<typeof browserClient.createClient>);
   });
@@ -66,7 +72,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  it('DoD: Con el push apagado, la oferta nueva aparece al volver a la app (refetchOnWindowFocus)', async () => {
+  it('DoD: Con el push apagado, la oferta nueva aparece al volver a la app (refetchOnWindowFocus: always)', async () => {
     const updatedOffers: MerchantOfferItem[] = [
       ...initialOffers,
       {
@@ -85,10 +91,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       },
     ];
 
-    const fetchOffersMock = vi
-      .fn()
-      .mockResolvedValueOnce(initialOffers)
-      .mockResolvedValueOnce(updatedOffers);
+    const fetchOffersMock = vi.fn().mockResolvedValue(updatedOffers);
 
     const { result } = renderHook(
       () =>
@@ -110,8 +113,49 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       expect(result.current.offers).toHaveLength(2);
     });
 
-    expect(result.current.offers.some((o) => o.id === 'offer-new-2')).toBe(true);
-    expect(fetchOffersMock).toHaveBeenCalledTimes(2);
+    expect(result.current.offers.some((o: MerchantOfferItem) => o.id === 'offer-new-2')).toBe(true);
+    expect(fetchOffersMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('DoD: reconexión de red (online) refetchea ofertas en vivo (refetchOnReconnect: always)', async () => {
+    const updatedOffers: MerchantOfferItem[] = [
+      ...initialOffers,
+      {
+        id: 'offer-reconnect',
+        courierId: 'courier-3',
+        courierName: 'Pedro Acosta',
+        vehicleType: 'auto',
+        amountArs: 1800,
+        etaMinutes: 10,
+        message: null,
+        licenseStatus: 'verified',
+        insuranceStatus: 'none',
+        docLevel: 1,
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+      },
+    ];
+
+    const fetchOffersMock = vi.fn().mockResolvedValue(updatedOffers);
+
+    const { result } = renderHook(
+      () =>
+        useRequestOffers('req-123', initialOffers, {
+          fetcher: fetchOffersMock,
+        }),
+      { wrapper }
+    );
+
+    expect(result.current.offers).toHaveLength(1);
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.offers).toHaveLength(2);
+    });
+    expect(fetchOffersMock).toHaveBeenCalledTimes(1);
   });
 
   it('DoD: al desmontar la pantalla se cierra el canal', () => {
@@ -125,26 +169,49 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
     expect(mockRemoveChannel).toHaveBeenCalled();
   });
 
-  it('DoD: Realtime no escribe la caché a mano, solo invalida queries', async () => {
-    const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData');
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+  it('DoD: Realtime no escribe la caché a mano, solo invalida queries tras debounce (PR82-H04)', async () => {
+    vi.useFakeTimers();
+    try {
+      const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
-    renderHook(
-      () => useRequestOffers('req-123', initialOffers),
-      { wrapper }
-    );
+      const { result } = renderHook(
+        () => useRequestOffers('req-123', initialOffers),
+        { wrapper }
+      );
 
-    // Si llega un evento de Realtime
-    act(() => {
-      if (realtimeCallback) {
-        realtimeCallback({
-          eventType: 'INSERT',
-          new: { id: 'offer-3', amount_ars: 1700 },
-        });
-      }
-    });
+      // Si llega un evento de Realtime con nueva oferta
+      act(() => {
+        if (realtimeCallback) {
+          realtimeCallback({
+            eventType: 'INSERT',
+            new: { id: 'offer-3', amount_ars: 1700 },
+          });
+        }
+      });
 
-    // Invariante dura: Realtime no escribe a mano la caché
-    expect(setQueryDataSpy).not.toHaveBeenCalled();
+      // Invariantes inmediatas tras el evento Realtime:
+      // 1. La caché NO se muta a mano con setQueryData
+      expect(setQueryDataSpy).not.toHaveBeenCalled();
+      // 2. El estado devuelto NO inyecta el payload crudo de Realtime
+      expect(result.current.offers).toHaveLength(1);
+      // 3. Aún no se invalida porque está dentro de la ventana de debounce (300ms)
+      expect(invalidateSpy).not.toHaveBeenCalled();
+
+      // Avanzar reloj para superar el debounce
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      // Tras el debounce, se invalida exactamente con la query key canónica
+      expect(invalidateSpy).toHaveBeenCalledTimes(1);
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: requestKeys.offers('req-123'),
+      });
+      // Sigue sin mutar manualmente la caché
+      expect(setQueryDataSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

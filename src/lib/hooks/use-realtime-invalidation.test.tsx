@@ -11,7 +11,7 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
   let mockSubscribe: ReturnType<typeof vi.fn>;
   let mockOn: ReturnType<typeof vi.fn>;
   let mockChannel: { on: typeof mockOn; subscribe: typeof mockSubscribe };
-  let realtimeCallback: ((payload: unknown) => void) | null = null;
+  let realtimeCallbacks: Array<(payload: unknown) => void> = [];
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -23,12 +23,12 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       },
     });
 
-    realtimeCallback = null;
+    realtimeCallbacks = [];
     mockRemoveChannel = vi.fn();
     mockSubscribe = vi.fn().mockReturnThis();
     mockOn = vi.fn().mockImplementation((_event, _filter, callback) => {
-      realtimeCallback = callback;
-      return { subscribe: mockSubscribe };
+      realtimeCallbacks.push(callback);
+      return mockChannel;
     });
 
     mockChannel = {
@@ -51,7 +51,9 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  it('DoD 1: al desmontar la pantalla se cierra el canal', () => {
+  it('DoD 1: al desmontar la pantalla se cierra el canal y se cancela el debounce pendiente', () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
     const { unmount } = renderHook(
       () =>
         useRealtimeInvalidation({
@@ -59,6 +61,7 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
           table: 'offers',
           filter: 'request_id=eq.req-123',
           queryKey: ['requests', 'detail', 'req-123', 'offers'],
+          debounceMs: 300,
         }),
       { wrapper }
     );
@@ -66,9 +69,19 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
     expect(mockRemoveChannel).not.toHaveBeenCalled();
 
+    // Disparar evento Realtime previo a desmontar
+    expect(realtimeCallbacks.length).toBeGreaterThan(0);
+    realtimeCallbacks[0]?.({ eventType: 'INSERT', new: { id: 'offer-temp' } });
+
+    // Desmontar antes de que venza el debounce (300ms)
     unmount();
 
     expect(mockRemoveChannel).toHaveBeenCalledTimes(1);
+    expect(mockRemoveChannel).toHaveBeenCalledWith(mockChannel);
+
+    // Avanzar reloj: el debounce cancelado no debe disparar invalidateQueries
+    vi.advanceTimersByTime(300);
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 
   it('DoD 2: Realtime no escribe la caché a mano, solo invalida queries con debounce', async () => {
@@ -87,14 +100,15 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       { wrapper }
     );
 
-    expect(realtimeCallback).toBeDefined();
+    expect(realtimeCallbacks.length).toBeGreaterThan(0);
+    const cb = realtimeCallbacks[0]!;
 
     // Simular 3 eventos Realtime en ráfaga (50ms entre cada uno)
-    realtimeCallback!({ eventType: 'INSERT', new: { id: 'offer-1', amount_ars: 1500 } });
+    cb({ eventType: 'INSERT', new: { id: 'offer-1', amount_ars: 1500 } });
     vi.advanceTimersByTime(50);
-    realtimeCallback!({ eventType: 'INSERT', new: { id: 'offer-2', amount_ars: 2000 } });
+    cb({ eventType: 'INSERT', new: { id: 'offer-2', amount_ars: 2000 } });
     vi.advanceTimersByTime(50);
-    realtimeCallback!({ eventType: 'UPDATE', new: { id: 'offer-2', amount_ars: 1800 } });
+    cb({ eventType: 'UPDATE', new: { id: 'offer-2', amount_ars: 1800 } });
 
     // Aún dentro del debounce: ninguna llamada a invalidar
     expect(invalidateSpy).not.toHaveBeenCalled();
@@ -123,13 +137,17 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       () =>
         useRealtimeInvalidation({
           channelName: 'merchant-dashboard',
-          table: 'offers',
-          queryKey: ['offers'],
+          subscriptions: [
+            { table: 'delivery_requests', queryKey: ['requests'] },
+            { table: 'offers', queryKey: ['offers'] },
+          ],
         }),
       { wrapper }
     );
 
     expect(channelSpy).toHaveBeenCalledTimes(1);
     expect(channelSpy).toHaveBeenCalledWith('merchant-dashboard');
+    expect(mockOn).toHaveBeenCalledTimes(2);
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
   });
 });

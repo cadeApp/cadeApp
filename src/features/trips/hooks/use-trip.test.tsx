@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useTrip } from './use-trip';
+import { tripKeys } from '../query-keys';
 import * as browserClient from '@/lib/supabase/browser';
 
 describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
@@ -10,6 +11,8 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
   let mockRemoveChannel: ReturnType<typeof vi.fn>;
   let mockSubscribe: ReturnType<typeof vi.fn>;
   let mockOn: ReturnType<typeof vi.fn>;
+  let mockChannel: { on: typeof mockOn; subscribe: typeof mockSubscribe };
+  let realtimeCallback: ((payload: unknown) => void) | null = null;
 
   const initialTrip = {
     id: 'trip-1',
@@ -21,25 +24,33 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
   };
 
   beforeEach(() => {
+    // PR82-H06: Emular providers.tsx con staleTime: 60s
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
           retry: false,
-          refetchOnWindowFocus: true,
-          refetchOnReconnect: true,
+          staleTime: 60 * 1000,
+          refetchOnWindowFocus: false,
+          refetchOnReconnect: false,
         },
       },
     });
 
+    realtimeCallback = null;
     mockRemoveChannel = vi.fn();
     mockSubscribe = vi.fn().mockReturnThis();
-    mockOn = vi.fn().mockReturnValue({ subscribe: mockSubscribe });
+    mockOn = vi.fn().mockImplementation((_event, _filter, callback) => {
+      realtimeCallback = callback;
+      return mockChannel;
+    });
+
+    mockChannel = {
+      on: mockOn,
+      subscribe: mockSubscribe,
+    };
 
     vi.spyOn(browserClient, 'createClient').mockReturnValue({
-      channel: vi.fn().mockReturnValue({
-        on: mockOn,
-        subscribe: mockSubscribe,
-      }),
+      channel: vi.fn().mockReturnValue(mockChannel),
       removeChannel: mockRemoveChannel,
     } as unknown as ReturnType<typeof browserClient.createClient>);
   });
@@ -58,10 +69,7 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
       status: 'in_transit' as const,
     };
 
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(initialTrip)
-      .mockResolvedValueOnce(updatedTrip);
+    const fetchMock = vi.fn().mockResolvedValue(updatedTrip);
 
     const { result } = renderHook(
       () =>
@@ -80,6 +88,35 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
     await waitFor(() => {
       expect(result.current.trip?.status).toBe('in_transit');
     });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('DoD: reconexión de red (online) refetchea estado del viaje', async () => {
+    const updatedTrip = {
+      ...initialTrip,
+      status: 'delivered' as const,
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue(updatedTrip);
+
+    const { result } = renderHook(
+      () =>
+        useTrip('trip-1', initialTrip, {
+          fetcher: fetchMock,
+        }),
+      { wrapper }
+    );
+
+    expect(result.current.trip?.status).toBe('matched');
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.trip?.status).toBe('delivered');
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('DoD: al desmontar la pantalla se cierra el canal', () => {
@@ -91,5 +128,46 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
     expect(mockSubscribe).toHaveBeenCalled();
     unmount();
     expect(mockRemoveChannel).toHaveBeenCalled();
+  });
+
+  it('DoD: Realtime no escribe la caché a mano, solo invalida queries tras debounce (PR82-H04)', async () => {
+    vi.useFakeTimers();
+    try {
+      const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData');
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      const { result } = renderHook(
+        () => useTrip('trip-1', initialTrip),
+        { wrapper }
+      );
+
+      // Simular evento Realtime
+      act(() => {
+        if (realtimeCallback) {
+          realtimeCallback({
+            eventType: 'UPDATE',
+            new: { id: 'trip-1', status: 'in_transit' },
+          });
+        }
+      });
+
+      // No muta la caché a mano ni inyecta en el estado
+      expect(setQueryDataSpy).not.toHaveBeenCalled();
+      expect(result.current.trip?.status).toBe('matched');
+      expect(invalidateSpy).not.toHaveBeenCalled();
+
+      // Superar debounce
+      act(() => {
+        vi.advanceTimersByTime(300);
+      });
+
+      expect(invalidateSpy).toHaveBeenCalledTimes(1);
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: tripKeys.detail('trip-1'),
+      });
+      expect(setQueryDataSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
