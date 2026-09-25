@@ -124,10 +124,25 @@ export async function registerAction(
   const adminClient = createAdminClient();
   const { error: consentError } = await adminClient.from('consents').insert(consentPayload as never);
   if (consentError) {
+    let deleted = false;
     try {
-      await adminClient.auth.admin.deleteUser(data.user.id);
+      const deleteResult = await adminClient.auth.admin.deleteUser(data.user.id);
+      deleted = !deleteResult?.error;
     } catch {
-      // rollback compensatorio best-effort: si falla la eliminación, se devuelve igualmente INTERNAL_ERROR
+      deleted = false;
+    }
+
+    if (!deleted) {
+      // H06: Si la eliminación completa en Auth falla o devuelve error, neutralizar
+      // la cuenta inmediatamente para que no quede utilizable sin consentimientos:
+      // eliminar el registro en profiles (lo que en cascada anula roles/permisos)
+      // y aplicar ban_duration en Auth para bloquear cualquier autenticación.
+      await Promise.allSettled([
+        adminClient.from('profiles').delete().eq('id', data.user.id),
+        adminClient.auth.admin.updateUserById(data.user.id, {
+          ban_duration: '876000h',
+        }),
+      ]);
     }
     return err('INTERNAL_ERROR');
   }

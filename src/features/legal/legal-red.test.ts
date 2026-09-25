@@ -62,4 +62,23 @@ describe('T-311 · DoD rojo antes de implementar', () => {
     expect(consent?.isCurrentLegalVersion('tos', '0.9')).toBe(false);
     expect(consent?.isCurrentLegalVersion('tos', '1.0')).toBe(true);
   });
+
+  it('la Política de Privacidad distingue obligatoriedad según los schemas actuales (H11)', async () => {
+    const legalDocuments = await loadRuntimeModule<DocumentsModule>('./documents');
+    const privacy = legalDocuments?.getLegalDocument('privacy');
+    expect(privacy).toBeDefined();
+    const section = (privacy as any)?.sections?.find((s: any) => s.id === 'obligatoriedad-consecuencias');
+    expect(section).toBeDefined();
+    const text = section?.paragraphs?.join(' ') ?? '';
+    expect(text).toMatch(/displayName.*facultativo/i);
+    expect(text).toMatch(/businessName/);
+    expect(text).toMatch(/defaultPickupAddress/);
+    expect(text).toMatch(/defaultPickupZoneId.*facultativ/i);
+    expect(text).toMatch(/vehicleType/);
+    expect(text).toMatch(/patente.*moto o auto.*condicional/i);
+    expect(text).toMatch(/licencia.*seguro.*facultativ/i);
+    expect(text).toMatch(/pickupZoneId.*pickupAddress/);
+    expect(text).toMatch(/recipientConsentDeclared/);
+    expect(text).toMatch(/needsChange/);
+  });
 });

@@ -282,6 +282,120 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-1');
     });
 
+    it('registerAction neutraliza la cuenta y devuelve INTERNAL_ERROR si deleteUser devuelve { error } (H06 / R2-P1)', async () => {
+      const deleteUserSpy = vi.fn().mockResolvedValue({
+        data: { user: null },
+        error: new Error('delete failed'),
+      });
+      const updateUserByIdSpy = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
+      const deleteProfileSpy = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      });
+      const insertSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on consents insert' } });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: vi.fn((table: string) => {
+          if (table === 'consents') {
+            return { insert: insertSpy };
+          }
+          if (table === 'profiles') {
+            return { delete: deleteProfileSpy };
+          }
+          return { insert: vi.fn(), delete: vi.fn() };
+        }),
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+            updateUserById: updateUserByIdSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-fail-consent-2', email: 'merchant2@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant2@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INTERNAL_ERROR');
+      }
+      expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-2');
+      // Debe neutralizar la cuenta eliminando perfil y/o baneando en Auth para que no quede utilizable
+      expect(deleteProfileSpy).toHaveBeenCalledTimes(1);
+      expect(updateUserByIdSpy).toHaveBeenCalledWith('usr-fail-consent-2', expect.objectContaining({ ban_duration: expect.any(String) }));
+    });
+
+    it('registerAction neutraliza la cuenta y devuelve INTERNAL_ERROR si deleteUser rechaza con error de red (H06 / R2-P1)', async () => {
+      const deleteUserSpy = vi.fn().mockRejectedValue(new Error('network failure'));
+      const updateUserByIdSpy = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
+      const deleteProfileSpy = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      });
+      const insertSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on consents insert' } });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: vi.fn((table: string) => {
+          if (table === 'consents') {
+            return { insert: insertSpy };
+          }
+          if (table === 'profiles') {
+            return { delete: deleteProfileSpy };
+          }
+          return { insert: vi.fn(), delete: vi.fn() };
+        }),
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+            updateUserById: updateUserByIdSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-fail-consent-3', email: 'merchant3@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant3@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INTERNAL_ERROR');
+      }
+      expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-3');
+      expect(deleteProfileSpy).toHaveBeenCalledTimes(1);
+      expect(updateUserByIdSpy).toHaveBeenCalledWith('usr-fail-consent-3', expect.objectContaining({ ban_duration: expect.any(String) }));
+    });
+
     it('registerAction jamás invoca deleteUser si la inserción de consentimientos fue exitosa (H06)', async () => {
       const deleteUserSpy = vi.fn();
       const insertSpy = vi.fn().mockResolvedValue({ error: null });
