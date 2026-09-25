@@ -21,13 +21,15 @@ build         success
 unit          success
 lint          success
 bundle-budget success
-db-tests      in_progress al momento de registrar R5
+db-tests      success — Files=8, Tests=1444, Result: PASS
 
 unit:
 Test Files 48 passed
 Tests      453 passed
 observability.test.ts: 19 / 155 ms
 requests.test.ts:      37 / 122 ms
+
+db-types: generado exitosamente contra Supabase local de CI
 ```
 
 ## H16 · residual exacto

@@ -99,14 +99,14 @@ Solo Lautaro073 puede cerrarlo ejecutando el simulacro real con evidencia.
 
 GitHub Actions **CI #301** sobre `42936d10`.
 
-Al momento del cierre técnico de la ronda:
+Resultado final del run exacto:
 - typecheck ✅
 - audit ✅
 - build ✅
 - unit ✅ — 48 archivos / 453 tests
 - lint ✅
 - bundle-budget ✅
-- db-tests ⏳ aún ejecutándose
+- db-tests ✅ — 8 archivos / 1444 tests, Result: PASS
 
 Tiempos relevantes:
 - `observability.test.ts`: 19 tests / 155 ms
@@ -116,7 +116,7 @@ La rama está 18 commits ahead y 0 behind respecto de la base auditada.
 
 ## Veredicto
 
-**No mergear todavía.**
+La CI completa del SHA quedó verde. **No mergear todavía.**
 
 - H16 sigue abierto para agy.
 - H04 sigue abierto para Lautaro073.
