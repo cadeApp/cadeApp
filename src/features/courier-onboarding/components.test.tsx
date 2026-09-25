@@ -142,7 +142,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       ['ABC123', true],
       ['ELA 666', true],
       ['ELA666', true],
-      ['A 123 BCD', false],
+      ['A 123 BCD', true],
       ['123 ABC', false],
     ])(
       'PR87-R05: la validación UI de %s coincide con el schema servidor',

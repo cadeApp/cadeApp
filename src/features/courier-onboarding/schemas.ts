@@ -9,12 +9,12 @@ export const dniSchema = z
   .regex(DNI_REGEX, 'El DNI debe tener 7 u 8 dígitos numéricos');
 
 export const ARGENTINA_PLATE_REGEX =
-  /^(?:[A-Z]{2}\s?\d{3}\s?[A-Z]{2}|[A-Z]{3}\s?\d{3})$/i;
+  /^(?:[A-Z]{2}\s?\d{3}\s?[A-Z]{2}|[A-Z]\s?\d{3}\s?[A-Z]{3}|[A-Z]{3}\s?\d{3})$/i;
 
 export const vehiclePlateSchema = z
   .string({ required_error: 'La patente es obligatoria' })
   .trim()
-  .regex(ARGENTINA_PLATE_REGEX, 'Formato de patente argentina inválido (ej: AB 123 CD o ABC 123)');
+  .regex(ARGENTINA_PLATE_REGEX, 'Formato de patente argentina inválido (ej: AB 123 CD, A 123 BCD o ABC 123)');
 
 export const courierOnboardingConsentsSchema = z.object({
   tos: z.literal(true, {
@@ -60,7 +60,7 @@ export const courierOnboardingSchema = z
       } else if (!ARGENTINA_PLATE_REGEX.test(data.vehiclePlate.trim())) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Formato de patente argentina inválido (ej: AB 123 CD o ABC 123)',
+          message: 'Formato de patente argentina inválido (ej: AB 123 CD, A 123 BCD o ABC 123)',
           path: ['vehiclePlate'],
         });
       }
