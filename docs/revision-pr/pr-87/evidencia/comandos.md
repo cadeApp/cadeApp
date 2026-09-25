@@ -588,3 +588,95 @@ C02:
 ## CI
 
 No inspeccionado por H09.
+
+
+---
+
+# Ronda 6 — cierre sobre feb3c7fc47c50c961505be95fd07cf2635787649
+
+## H09
+
+Inspección del control final:
+- `href:` de objetos de navegación incluido;
+- template literals normalizados;
+- helper call + helper return seguidos;
+- `router.push/replace` con variables seguido hasta literal, `resolvePostLoginRedirect` o productor de Server Action;
+- DoD 5 exige exactamente los 3 href canónicos de cada BottomNav.
+
+Mutaciones incluidas en el test:
+~~~text
+/ghost literal
+/ghost/${id} template
+navItems + href:'/ghost'
+helper huérfano
+helper retorna /ghost
+targetUrl='/ghost'; router.push(targetUrl)
+router.push(variable sin productor verificable)
+~~~
+
+CI exact-head:
+~~~text
+src/app/route-integrity.test.ts (50 tests) PASS
+Test Files 47 passed
+Tests 497 passed
+~~~
+
+## CI exact-head
+
+Implementación revisada: `feb3c7fc47c50c961505be95fd07cf2635787649`.
+
+### CI 36097343224
+~~~text
+lint          success
+build         success
+db-tests      success
+typecheck     success
+unit          success
+audit         success
+bundle-budget success
+~~~
+
+### DB
+~~~text
+rls_enabled.sql  ok
+rls_matrix.sql   ok
+rpc_accept.sql   ok
+rpc_admin.sql    ok
+rpc_offers.sql   ok
+rpc_requests.sql ok
+All tests successful.
+Result: PASS
+~~~
+
+### Unit / coverage
+~~~text
+route-integrity.test.ts 50 tests PASS
+ui-system.test.tsx      25 tests PASS
+Test Files 47 passed (47)
+Tests      497 passed (497)
+verify-workflows: 21/21
+verify-adr: 6/6
+~~~
+
+### Build
+~~~text
+Compiled successfully
+Generating static pages (33/33)
+~~~
+
+### Approval policy
+Run `36097341915` sobre head `feb3c7fc47c50c961505be95fd07cf2635787649`:
+~~~text
+approval-policy success
+Informe de revisar-pr completo y sin bloqueantes.
+~~~
+
+## Advisory observados
+
+~~~text
+Prettier: Code style issues found in 89 files (job explícitamente advisory)
+Audit: 2 vulnerabilities found; Severity: 2 moderate (advisory)
+Bundle budget: varias rutas >180 kB; job explícitamente advisory
+~~~
+
+T-118 no incorpora esos tres advisory como criterios bloqueantes y no agrega dependencias nuevas.

@@ -59,3 +59,10 @@ No hace falta una AG nueva; son refuerzos de AG-37/AG-61 y del criterio de evide
 H09 muestra una distinción útil para P08/AG-61: **reconocer más sintaxis no equivale a seguir el origen real del destino**. El scanner ya entiende template literals directos, pero las rutas también nacen en arrays de configuración, helpers y resultados de actions. Una prueba que promete “cualquier ruta interna inexistente” debe cubrir esos productores o bajar explícitamente su promesa.
 
 R04/H20 sí demuestran un cierre más robusto: los tests nuevos atacan el umbral exacto que rompía la semántica (501/51) y verifican el filtro activo antes del límite.
+
+
+## Ronda 6 — cierre
+
+H09 finalmente quedó cerrado cuando el control dejó de pensar sólo en “formas sintácticas de un link” y empezó a seguir **productores de destinos**: configuración de nav, helpers y variables/resultados de actions. La mutación útil no era otra cadena concreta, sino agregar un destino nuevo por un camino indirecto que antes el scanner no observaba.
+
+El cierre también deja una distinción operativa importante: un warning de CI no es automáticamente un bloqueante. En este repo Prettier, audit de dependencias y bundle budget están configurados explícitamente como advisory. Deben quedar visibles como deuda/mejora, pero no reinterpretarse como DoD bloqueante de una tarea que no fijó esos umbrales.
