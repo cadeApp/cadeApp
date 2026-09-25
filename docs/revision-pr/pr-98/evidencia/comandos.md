@@ -216,3 +216,48 @@ Necesario: 390×844 y 360×800, `/legal` + documento largo, axe AA en superficie
 ## R2-E4 · Body PR
 
 Debe reflejar H08 pendiente, eliminar autorrevisión “SIN BLOQUEANTES” y cifras/rutas obsoletas.
+
+
+---
+
+# Ronda 3 — SHA c47aee4
+
+## R3-E1 · Scope excepcional T-312
+
+Decisión P1 D04=A: solo se acepta el diff que reemplaza `abogado OK` en `docs/tasks/T-312.md`.
+
+## R3-P1 · Falla total de compensaciones H06
+
+El código actual no inspecciona los resultados de:
+
+```ts
+await Promise.allSettled([
+  adminClient.from('profiles').delete().eq('id', userId),
+  adminClient.auth.admin.updateUserById(userId, { ban_duration: '876000h' }),
+]);
+```
+
+Probe conceptual antes de CC-007:
+- `deleteUser` falla;
+- delete profile falla;
+- ban falla;
+- demostrar que registerAction solo devuelve INTERNAL_ERROR y no existe evidencia de un guard compartido que impida usar esa identidad.
+
+No agregar otra compensación best-effort en T-311: resolver el invariante mediante CC-007.
+
+## R3-E2 · H12
+
+```bash
+rg -n "\bas any\b|:\s*any\b" src/features/legal/legal-red.test.ts
+```
+
+Debe dar cero al retomar T-311.
+
+El test de deriva debe importar/ejecutar schemas reales, no limitarse a regex sobre el copy.
+
+## R3-E3 · Visual pendiente
+
+Después de CC-007:
+- 390×844: /legal + documento largo;
+- 360×800: /legal + documento largo;
+- axe AA: legal + registro + merchant + courier afectados.

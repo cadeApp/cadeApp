@@ -1,13 +1,17 @@
-# Lecciones de la PR #98 para `AGENTS.md` y las reglas
+# Lecciones de la PR #98
 
-## Patrón dominante
+## Ronda 3
 
-R2 refuerza patrones existentes:
+### P08 · Una cadena de compensaciones no reemplaza un invariante
 
-- **P03:** el documento legal es parte del comportamiento del producto; si dice “obligatorio” y el schema dice “opcional”, la documentación contradice el código.
-- **P08:** una compensación no está cubierta si el test solo prueba el camino en que la compensación funciona.
-- **AG-36:** confirmado el cierre de separación implementador/revisor: el autor no tocó la carpeta de revisión tras R1.
+H06 muestra el límite de apilar rollback sobre rollback: si cada compensación puede fallar, agregar otra llamada best-effort no demuestra estado seguro. Cuando el requisito es “nunca utilizable sin consentimiento”, corresponde elevarlo a contrato de autorización/activación. P1 autorizó CC-007.
 
-## No se propone AG nueva
+### P08 + AGENTS · Un test textual no vigila el schema
 
-H11 es un caso específico de P03 y H06 un caso de P08. Primero observar recurrencia en otras PR antes de agregar reglas globales.
+H12: buscar `displayName` o `vehicleType` en el texto legal no detecta que el schema cambió. El control debe ejecutar/importar la fuente de verdad que dice vigilar. Además `any` está prohibido por AGENTS.
+
+### P10 · Excepción de scope explícita
+
+A02 confirma el procedimiento correcto: un path fuera de la ficha puede tocarse solo tras decisión P1 concreta y limitada; la excepción no amplía implícitamente el resto del scope.
+
+No se propone una regla AG nueva: P08/P10 ya cubren las clases observadas.

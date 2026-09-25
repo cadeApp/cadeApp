@@ -7,35 +7,31 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-311-legal-consents` → `develop` |
 | **Base revisada** | `develop@7edcfe0` |
-| **SHA revisado** | `c5c737116a9a55da0dfe78b2fd76c079fcc95520` |
-| **Estado** | bloqueada · Ronda 2 |
+| **SHA revisado** | `c47aee486cf87c491ce62b231eda8795e34aa722` |
+| **Estado** | **bloqueada por contract-change CC-007 · Ronda 3** |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA | Resultado | Informe |
 |---|---|---|---|
 | 1 | `09082af` | 9 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
-| 2 | `c5c7371` | 5 bloqueantes · 6 cierres | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 2 | `c5c7371` | 5 bloqueantes | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 3 | `c47aee4` | 3 bloqueantes de PR + CC-007 requerido | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 
-## Estado por hallazgo
+## Estado
 
-| ID | Título | Sev. | Estado |
-|---|---|---:|---|
-| PR98-A01 | Ampliación mínima de alcance | decisión | aceptado |
-| PR98-H01 | Sincronía develop/ficha/plan | alto | abierto parcial |
-| PR98-H02 | Privacidad incompleta / soporte ficticio | alto | cerrado R2 |
-| PR98-H03 | Duración del piloto ausente | medio | cerrado R2 |
-| PR98-H04 | Dos autoridades de versión | alto | cerrado R2 |
-| PR98-H05 | Falta mismatch en Server Actions | alto | cerrado R2 |
-| PR98-H06 | Cuenta puede sobrevivir sin consentimientos | alto | abierto parcial |
-| PR98-H07 | Checkboxes sin nombre accesible | medio | cerrado R2 |
-| PR98-H08 | P04/axe/capturas sin evidencia | alto | abierto |
-| PR98-H09 | Bitácora/body incompatibles | medio | abierto parcial |
-| PR98-H10 | Autor escribió carpeta de revisión | medio | cerrado R2 |
-| PR98-H11 | Política contradice obligatoriedad real de schemas | alto | nuevo · abierto |
+Cerrados en R3: **H01, H11**.  
+Decisiones aceptadas: **A02** (excepción T-312) y **A03** (contract-change).  
+Abiertos: **H06, H08, H09, H12**.
 
-Datos: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
+H06 no se corrige dentro de PR #98: T-311 debe detenerse hasta que **CC-007** se mergee.
 
-## Qué queda
+## Próximo flujo
 
-Resolver H01, H06, H08, H09 y H11. El autor no toca `docs/revision-pr/**`. Luego pedir Ronda 3.
+1. AGY hace `git pull` de esta revisión.
+2. Ejecuta `cerrar-sesion` para T-311 y la deja bloqueada por CC-007.
+3. Crea `cc/CC-007-consent-enforcement` desde `develop` siguiendo `contract-change`.
+4. CC-007 se revisa/mergea primero.
+5. Se retoma T-311 con `retomar-tarea`.
+6. Se integran el nuevo contrato, H08, H09 y H12.
+7. Recién entonces Ronda 4 + CI final.
