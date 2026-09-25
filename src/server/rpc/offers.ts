@@ -9,6 +9,7 @@ import {
   type RpcErrorCode,
   type RpcOutput,
 } from '@/domain';
+import { sendCriticalAlert } from '@/server/observability';
 
 export interface SupabaseRpcErrorLike {
   readonly code?: string;
@@ -110,23 +111,48 @@ export async function submitOfferRpc(
   }
 
   const { requestId, amountArs, etaMinutes, message } = parsedInput.data;
-  const { data, error } = await client.rpc('submit_offer', {
-    p_request_id: requestId,
-    p_amount_ars: amountArs,
-    p_eta_minutes: etaMinutes,
-    p_message: message ?? null,
-  });
+  try {
+    const { data, error } = await client.rpc('submit_offer', {
+      p_request_id: requestId,
+      p_amount_ars: amountArs,
+      p_eta_minutes: etaMinutes,
+      p_message: message ?? null,
+    });
 
-  if (error) {
-    return err(mapOfferRpcError('submit_offer', error));
-  }
+    if (error) {
+      const mapped = mapOfferRpcError('submit_offer', error);
+      if (mapped === 'INTERNAL_ERROR') {
+        await sendCriticalAlert({
+          type: 'submit_offer_failed',
+          severity: 'critical',
+          message: `Fallo en RPC submit_offer: ${error.message}`,
+          details: { error: error.message, code: error.code, input: { requestId, amountArs, etaMinutes } },
+        });
+      }
+      return err(mapped);
+    }
 
-  const parsedOutput = RPC_CONTRACTS.submit_offer.outputSchema.safeParse(data);
-  if (!parsedOutput.success) {
+    const parsedOutput = RPC_CONTRACTS.submit_offer.outputSchema.safeParse(data);
+    if (!parsedOutput.success) {
+      await sendCriticalAlert({
+        type: 'submit_offer_failed',
+        severity: 'critical',
+        message: 'Error de validación en respuesta de RPC submit_offer',
+        details: { zodErrors: parsedOutput.error.issues },
+      });
+      return err('INTERNAL_ERROR');
+    }
+
+    return ok(parsedOutput.data);
+  } catch (ex) {
+    await sendCriticalAlert({
+      type: 'submit_offer_failed',
+      severity: 'critical',
+      message: `Excepción inesperada en RPC submit_offer: ${ex instanceof Error ? ex.message : String(ex)}`,
+      details: { error: ex instanceof Error ? ex.stack : String(ex), input: { requestId, amountArs, etaMinutes } },
+    });
     return err('INTERNAL_ERROR');
   }
-
-  return ok(parsedOutput.data);
 }
 
 /**
@@ -176,20 +202,45 @@ export async function acceptOfferRpc(
   }
 
   const { offerId } = parsedInput.data;
-  const { data, error } = await client.rpc('accept_offer', {
-    p_offer_id: offerId,
-  });
+  try {
+    const { data, error } = await client.rpc('accept_offer', {
+      p_offer_id: offerId,
+    });
 
-  if (error) {
-    return err(mapOfferRpcError('accept_offer', error));
-  }
+    if (error) {
+      const mapped = mapOfferRpcError('accept_offer', error);
+      if (mapped === 'INTERNAL_ERROR') {
+        await sendCriticalAlert({
+          type: 'accept_offer_failed',
+          severity: 'critical',
+          message: `Fallo en RPC accept_offer: ${error.message}`,
+          details: { error: error.message, code: error.code, offerId },
+        });
+      }
+      return err(mapped);
+    }
 
-  const parsedOutput = RPC_CONTRACTS.accept_offer.outputSchema.safeParse(data);
-  if (!parsedOutput.success) {
+    const parsedOutput = RPC_CONTRACTS.accept_offer.outputSchema.safeParse(data);
+    if (!parsedOutput.success) {
+      await sendCriticalAlert({
+        type: 'accept_offer_failed',
+        severity: 'critical',
+        message: 'Error de validación en respuesta de RPC accept_offer',
+        details: { zodErrors: parsedOutput.error.issues, offerId },
+      });
+      return err('INTERNAL_ERROR');
+    }
+
+    return ok(parsedOutput.data);
+  } catch (ex) {
+    await sendCriticalAlert({
+      type: 'accept_offer_failed',
+      severity: 'critical',
+      message: `Excepción inesperada en RPC accept_offer: ${ex instanceof Error ? ex.message : String(ex)}`,
+      details: { error: ex instanceof Error ? ex.stack : String(ex), offerId },
+    });
     return err('INTERNAL_ERROR');
   }
-
-  return ok(parsedOutput.data);
 }
 
 /**

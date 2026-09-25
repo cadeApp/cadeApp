@@ -46,15 +46,18 @@ export async function sendCriticalAlert(payload: AlertPayload): Promise<AlertRes
     nodeEnv = process.env.NODE_ENV || 'development';
   }
 
-  // Si no hay webhook configurado, en desarrollo registramos en consola de forma segura
+  // Si no hay webhook configurado, no se puede informar entrega exitosa (H03)
   if (!webhookUrl) {
     if (nodeEnv !== 'test') {
       console.warn(
-        `[ALERT-FALLBACK] [${sanitizedPayload.severity.toUpperCase()}] ${sanitizedPayload.type}: ${sanitizedPayload.message}`,
+        `[ALERT-SIN-WEBHOOK] [${sanitizedPayload.severity.toUpperCase()}] ${sanitizedPayload.type}: ${sanitizedPayload.message}`,
         sanitizedPayload.details
       );
     }
-    return { ok: true, message: 'Alerta registrada localmente (sin webhook configurado)' };
+    return {
+      ok: false,
+      error: 'DISCORD_ERROR_WEBHOOK_URL no está configurada; alerta no entregada a Discord',
+    };
   }
 
   const colorMap: Record<string, number> = {
@@ -129,8 +132,16 @@ export async function sendTestAlert(options?: {
     },
   });
 
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error,
+      message: `Fallo al despachar alerta de prueba a Discord: ${result.error}`,
+    };
+  }
+
   return {
-    ok: result.ok,
-    message: `Alerta de prueba despachada: ${result.ok ? 'éxito' : result.error}`,
+    ok: true,
+    message: `Alerta de prueba recibida exitosamente en Discord (${env})`,
   };
 }

@@ -10,11 +10,24 @@ const DNI_TEXT_REGEX = /\b(?:DNI|dni|documento)?\s*([1-9]\d{6,7})\b/g;
 const JWT_BEARER_REGEX = /Bearer\s+[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g;
 const GENERIC_JWT_REGEX = /\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g;
 
-// Claves de objetos que contienen PII o datos sensibles del destinatario
+// Claves de objetos que contienen PII, direcciones o coordenadas del contrato real
 const SENSITIVE_KEYS = new Set([
   'recipient_name',
   'recipient_phone',
   'delivery_address',
+  'pickup_address',
+  'dropoff_address',
+  'destination_address',
+  'origin_address',
+  'address',
+  'pickup_lat',
+  'pickup_lng',
+  'dropoff_lat',
+  'dropoff_lng',
+  'lat',
+  'lng',
+  'latitude',
+  'longitude',
   'notes',
   'dni',
   'document_number',
@@ -96,7 +109,18 @@ export function scrubPii<T>(target: T): T {
       const lowerKey = key.toLowerCase();
 
       // Si la clave es sensible por contrato, aplicar redacción específica
-      if (lowerKey === 'recipient_phone') {
+      if (
+        lowerKey === 'pickup_lat' ||
+        lowerKey === 'pickup_lng' ||
+        lowerKey === 'dropoff_lat' ||
+        lowerKey === 'dropoff_lng' ||
+        lowerKey === 'lat' ||
+        lowerKey === 'lng' ||
+        lowerKey === 'latitude' ||
+        lowerKey === 'longitude'
+      ) {
+        sanitizedObj[key] = '[REDACTED_COORD]';
+      } else if (lowerKey === 'recipient_phone') {
         sanitizedObj[key] = '[REDACTED_PHONE]';
       } else if (lowerKey === 'dni' || lowerKey === 'document_number') {
         sanitizedObj[key] = '[REDACTED_DNI]';

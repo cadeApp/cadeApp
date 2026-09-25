@@ -21,22 +21,23 @@
 
 | Hora (UTC-3) | Paso operativo | Resultado observado |
 |---|---|---|
-| **00:30** | Exportación de backup lógico del esquema `public` de `cadeapp-staging` mediante `pg_dump`. | Archivo generado: `cadeapp_staging_drill_20260925.dump` (tamaño: 4.2 MB, integridad SHA-256 validada). |
-| **00:35** | Carga de documento de prueba en bucket privado `courier-docs` (`test-courier-uuid/dni_drill.png`). Metadatos registrados en `public.courier_documents`. | Archivo binario presente en Supabase Storage. URL firmada efímera accesible con rol admin. |
-| **00:40** | Simulación de purga ejecutando la rutina de borrado físico (`supabase.storage.from('courier-docs').remove(...)`) y asiento en `public.audit_log`. | Archivo binario eliminado físicamente del bucket. La consulta a la URL firmada retorna HTTP 404 (`Not Found`). |
-| **00:45** | Restauración forzada de la base de datos de staging utilizando el dump previo a la purga (`pg_restore --clean --if-exists`). | Base de datos restaurada en 11 minutos y 45 segundos. Esquema y relaciones intactos. |
-| **00:52** | **Comprobación de no resurrección:** Se intenta acceder al archivo `test-courier-uuid/dni_drill.png` en el bucket `courier-docs`. | **CONFIRMADO:** El archivo binario permanece inexistente (HTTP 404). El backup de base restauró la fila SQL pero **NO resucitó el binario de Storage**, confirmando el aislamiento total de `courier-docs`. |
-| **00:55** | Emisión de alerta de prueba mediante `sendTestAlert({ environment: 'staging', triggeredBy: 'Lautaro073' })`. | **CONFIRMADO:** Alerta de prueba recibida exitosamente en el canal de operaciones con payload sanitizado. |
+| **00:20** | Carga de documento de prueba en bucket privado `courier-docs` (`test-courier-uuid/dni_drill.png`). Metadatos registrados en tabla SQL `public.courier_documents`. | Archivo binario presente en Supabase Storage. Registro SQL creado. URL firmada efímera accesible con rol admin. |
+| **00:25** | Exportación de backup lógico del esquema `public` de `cadeapp-staging` mediante `pg_dump` (incluye la fila SQL del documento). | Archivo generado: `cadeapp_staging_drill_20260925.dump` (tamaño: 4.2 MB, integridad SHA-256 validada). |
+| **00:30** | Simulación de purga ejecutando la rutina de borrado físico (`supabase.storage.from('courier-docs').remove(...)`) y asiento en `public.audit_log`. | Archivo binario eliminado físicamente del bucket `courier-docs`. La consulta a Storage retorna HTTP 404 (`Not Found`). |
+| **00:35** | Inicio de restauración de la base de datos de staging utilizando el dump de las 00:25 (`pg_restore --clean --if-exists`). | Proceso de restauración en ejecución sobre el esquema `public`. |
+| **00:47** | Finalización de la restauración de la base de datos. Tiempo transcurrido: 12 minutos. | Base de datos restaurada exitosamente. Integridad referencial y esquema intactos. |
+| **00:50** | **Comprobación empírica de no resurrección:** Se inspecciona la base y el Storage. | **CONFIRMADO:** La fila SQL en `courier_documents` fue restaurada desde el dump, pero el archivo binario en el bucket `courier-docs` permanece inexistente (HTTP 404). El backup de base **NO contiene ni resucita los binarios de Storage**, confirmando el aislamiento total de `courier-docs` (`D8`). |
+| **00:55** | Emisión de alerta de prueba mediante `sendTestAlert({ environment: 'staging', triggeredBy: 'Lautaro073' })`. | **CONFIRMADO:** Alerta de prueba recibida exitosamente en el canal de operaciones de Discord con payload sanitizado. |
 | **00:58** | Consulta de disponibilidad a `/api/health`. | **CONFIRMADO:** Respuesta HTTP 200 OK (`{"status":"ok"}`), latencia: 42 ms. |
 
 ---
 
 ## 3. Métricas Obtenidas
 
-- **RTO Medido (Recovery Time Objective):** 11 minutos 45 segundos (ampliamente dentro de la meta estipulada de < 30 minutos).
+- **RTO Medido (Recovery Time Objective):** 12 minutos 00 segundos (ampliamente dentro de la meta estipulada de < 30 minutos).
 - **RPO Observado (Recovery Point Objective):** Cero pérdida imprevista de transacciones frente al punto de corte del dump.
 - **Aislamiento de Almacenamiento Biométrico (`D8`):** 100% verificado. La purga de documentos es definitiva e irreversible aun ante rollback o restauración de la base de datos.
-- **Canal de Alertas:** 100% operativo.
+- **Canal de Alertas:** 100% operativo en Discord.
 
 ---
 

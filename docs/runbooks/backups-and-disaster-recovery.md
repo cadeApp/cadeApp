@@ -54,9 +54,9 @@ pg_dump \
 
 ### 3.2. Point-in-Time Recovery (PITR) en Supabase Pro
 1. Ingresar a la consola de Supabase: `https://supabase.com/dashboard/project/<project-ref>/database/backups/pitr`.
-2. Seleccionar el punto exacto en el tiempo al que se desea retornar (hasta 7 días de antigüedad).
-3. Confirmar la restauración. Supabase creará una nueva instancia con los datos reproducidos hasta el timestamp seleccionado.
-4. Actualizar la variable de entorno `NEXT_PUBLIC_SUPABASE_URL` y las credenciales en Vercel si se generó un nuevo proyecto de recuperación.
+2. Seleccionar el punto exacto en el tiempo al que se desea retornar (hasta 7 días de antigüedad en planes Pro).
+3. Confirmar la restauración in-place en el proyecto existente. Durante el proceso de restauración, la base de datos permanece temporalmente inaccesible mientras se reproducen los registros WAL.
+4. Una vez finalizada la restauración, las credenciales, la URL del proyecto (`NEXT_PUBLIC_SUPABASE_URL`) y los keys se mantienen idénticos, sin requerir reconfiguración de variables en Vercel. (Nota: La opción "Clone to a new project" se reserva únicamente si se desea una instancia paralela para auditoría o investigación forense sin interrumpir el proyecto activo).
 
 ---
 
@@ -88,6 +88,6 @@ pg_dump \
 
 ---
 
-## 5. Pruebas y Simulacros Periódicos
-- Frecuencia obligatoria: Trimestral y previa a cada salida mayor a producción (`T-312`).
+## 5. Pruebas y Simulacros
+- Frecuencia obligatoria: Requerida previa a cada salida a producción / release mayor (`T-312`).
 - Toda ejecución debe quedar documentada mediante su respectiva **Acta de Simulacro de Restauración** en `docs/runbooks/acta-simulacro-restauracion-staging.md`.

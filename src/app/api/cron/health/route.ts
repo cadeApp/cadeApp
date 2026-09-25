@@ -1,12 +1,11 @@
 import crypto from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { serverEnv } from '@/server/env';
-import { runSweep } from '@/server/cron/sweep';
-import { sendCriticalAlert } from '@/server/observability';
+import { checkUptimeHealth } from '@/server/observability';
 
 export const runtime = 'nodejs';
 
-async function handleSweep(req: NextRequest) {
+async function handleHealthCron(req: NextRequest) {
   const authHeader = req.headers.get('authorization');
   const expectedAuth = `Bearer ${serverEnv.CRON_SECRET}`;
 
@@ -25,25 +24,30 @@ async function handleSweep(req: NextRequest) {
   }
 
   try {
-    const swept = await runSweep();
-    return NextResponse.json({ ok: true, swept });
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin || 'http://localhost:3000';
+    const result = await checkUptimeHealth(baseUrl);
+
+    if (!result.healthy) {
+      return NextResponse.json({ ok: false, result }, { status: 503 });
+    }
+
+    return NextResponse.json({ ok: true, result });
   } catch (error) {
-    await sendCriticalAlert({
-      type: 'cron_sweep_failed',
-      severity: 'critical',
-      message: `Fallo crítico en ejecución de cron sweep: ${error instanceof Error ? error.message : String(error)}`,
-      details: {
-        error: error instanceof Error ? error.stack : String(error),
+    return NextResponse.json(
+      {
+        error: 'Internal Error',
+        message: error instanceof Error ? error.message : String(error),
       },
-    });
-    return NextResponse.json({ error: 'Internal Error' }, { status: 500 });
+      { status: 500 }
+    );
   }
 }
 
 export async function GET(req: NextRequest) {
-  return handleSweep(req);
+  return handleHealthCron(req);
 }
 
 export async function POST(req: NextRequest) {
-  return handleSweep(req);
+  return handleHealthCron(req);
 }

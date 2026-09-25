@@ -79,15 +79,38 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(cleaned.notes).toBe('[REDACTED_PII]');
       expect(cleaned.request_id).toBe('req-abc-123');
     });
+
+    it('H01: debe redactar pickup_address, dropoff_address y coordenadas numéricas exactas (pickup/dropoff_lat/lng)', () => {
+      const raw = {
+        pickup_address: 'San Martín 123',
+        dropoff_address: 'Belgrano 456',
+        pickup_lat: -27.4332,
+        pickup_lng: -65.6141,
+        dropoff_lat: -27.441,
+        dropoff_lng: -65.607,
+      };
+      const cleaned = scrubPii(raw);
+      const jsonStr = JSON.stringify(cleaned);
+
+      expect(jsonStr).not.toContain('San Martín 123');
+      expect(jsonStr).not.toContain('Belgrano 456');
+      expect(jsonStr).not.toContain('-27.4332');
+      expect(jsonStr).not.toContain('-65.6141');
+      expect(jsonStr).not.toContain('-27.441');
+      expect(jsonStr).not.toContain('-65.607');
+    });
   });
 
-  describe('2. Captura de Errores (Sentry / Logger Seguro sin PII)', () => {
-    it('debe capturar excepciones sanitizando el mensaje y stack trace antes de despachar', async () => {
+  describe('2. Captura de Errores (Discord como Sink de Observabilidad sin PII — H13)', () => {
+    it('H13: debe despachar errores sanitizados a Discord y NUNCA enviar a Sentry DSN en runtime', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
         ok: true,
-        status: 200,
-        json: async () => ({ id: 'event-123' }),
+        status: 204,
+        text: async () => '',
       } as Response);
+
+      process.env.NEXT_PUBLIC_SENTRY_DSN = 'https://example.invalid/sentry';
+      process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token';
 
       const errorWithPii = new Error(
         'Fallo procesando pedido para juan@gmail.com con tel 3865445566'
@@ -95,17 +118,39 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       const result = await captureError(errorWithPii, {
         context: 'payment_webhook',
         userEmail: 'juan@gmail.com',
+        pickup_address: 'Alberdi 100, Aguilares',
+        pickup_lat: -27.435,
       });
 
       expect(result.handled).toBe(true);
-      expect(result.sanitizedMessage).not.toContain('juan@gmail.com');
-      expect(result.sanitizedMessage).not.toContain('3865445566');
       expect(result.sanitizedMessage).toContain('[REDACTED_EMAIL]');
       expect(result.sanitizedMessage).toContain('[REDACTED_PHONE]');
+
+      // H13: Debe haber llamado a Discord, NO al DSN de Sentry
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.stringContaining('discord.com/api/webhooks/'),
+        expect.any(Object)
+      );
+      expect(fetchSpy).not.toHaveBeenCalledWith(
+        'https://example.invalid/sentry',
+        expect.anything()
+      );
+
+      // H02: Inspección del payload REAL enviado a la red
+      const discordCall = fetchSpy.mock.calls.find((call) =>
+        String(call[0]).includes('discord.com')
+      );
+      expect(discordCall).toBeDefined();
+      const sentBody = String(discordCall![1]?.body);
+      expect(sentBody).not.toContain('juan@gmail.com');
+      expect(sentBody).not.toContain('3865445566');
+      expect(sentBody).not.toContain('Alberdi 100');
+      expect(sentBody).not.toContain('-27.435');
+
       fetchSpy.mockRestore();
     });
 
-    it('debe degradar limpiamente y no lanzar error si el servicio externo falla', async () => {
+    it('debe degradar limpiamente y no lanzar error si el webhook de Discord falla', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network offline'));
 
       const result = await captureError(new Error('Simulated crash'), {
@@ -118,7 +163,23 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
   });
 
   describe('3. Alertas Críticas (Webhook Discord / Alerta al Admin)', () => {
-    it('debe enviar una alerta de prueba válida ("alerta de prueba recibida" DoD)', async () => {
+    it('H03: no debe reportar éxito en sendTestAlert ni sendCriticalAlert si no hay webhook configurado', async () => {
+      delete process.env.DISCORD_ERROR_WEBHOOK_URL;
+
+      const testAlertResult = await sendTestAlert({ environment: 'staging' });
+      expect(testAlertResult.ok).toBe(false);
+      expect(testAlertResult.message).toMatch(/no configurad|error|fall/i);
+
+      const criticalAlertResult = await sendCriticalAlert({
+        type: 'test_alert',
+        severity: 'critical',
+        message: 'Alerta sin webhook',
+      });
+      expect(criticalAlertResult.ok).toBe(false);
+      expect(criticalAlertResult.error).toBeDefined();
+    });
+
+    it('H02: debe enviar una alerta de prueba válida y el payload no debe contener datos sin sanitizar', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
         ok: true,
         status: 204,
@@ -133,10 +194,15 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(response.ok).toBe(true);
       expect(response.message).toContain('Alerta de prueba');
       expect(fetchSpy).toHaveBeenCalled();
+
+      // H02: Inspección de body enviado
+      const callArgs = fetchSpy.mock.calls[0];
+      const body = JSON.parse(callArgs![1]?.body as string);
+      expect(body.content).toContain('CRITICAL ALERT');
       fetchSpy.mockRestore();
     });
 
-    it('debe disparar alerta crítica cuando falla la publicación de solicitud', async () => {
+    it('H02: debe disparar alerta crítica cuando falla la publicación de solicitud y sanitizar coordenadas y direcciones', async () => {
       const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
         ok: true,
         status: 204,
@@ -146,8 +212,15 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       const alertPayload: AlertPayload = {
         type: 'publish_request_failed',
         severity: 'critical',
-        message: 'Error en RPC publish_request: base de datos bloqueada',
-        details: { merchantId: 'm-123', requestId: 'req-456' },
+        message: 'Error en RPC publish_request: base de datos bloqueada para cliente contacto@comercio.com',
+        details: {
+          merchantId: 'm-123',
+          requestId: 'req-456',
+          pickup_address: 'Av. Mitre 500',
+          dropoff_address: 'Gorriti 120',
+          pickup_lat: -27.431,
+          pickup_lng: -65.612,
+        },
       };
 
       const result = await sendCriticalAlert(alertPayload);
@@ -156,7 +229,14 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
 
       const callArgs = fetchSpy.mock.calls[0];
       expect(callArgs).toBeDefined();
-      const sentBody = JSON.parse(callArgs![1]?.body as string);
+      const sentRawBody = callArgs![1]?.body as string;
+      expect(sentRawBody).not.toContain('contacto@comercio.com');
+      expect(sentRawBody).not.toContain('Av. Mitre 500');
+      expect(sentRawBody).not.toContain('Gorriti 120');
+      expect(sentRawBody).not.toContain('-27.431');
+      expect(sentRawBody).not.toContain('-65.612');
+
+      const sentBody = JSON.parse(sentRawBody);
       expect(sentBody.content ?? JSON.stringify(sentBody)).toMatch(/CRITICAL|publish_request_failed/);
       fetchSpy.mockRestore();
     });
@@ -213,6 +293,39 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       const health = await checkUptimeHealth('http://localhost:3000');
       expect(health.healthy).toBe(false);
       expect(health.status).toBe(500);
+    });
+
+    it('H06: debe abortar por timeout y reportar unhealthy si /api/health queda colgado sin responder', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation((url, init) => {
+        if (typeof url === 'string' && url.includes('/api/health')) {
+          return new Promise((_resolve, reject) => {
+            const signal = init?.signal as AbortSignal | undefined;
+            if (signal) {
+              if (signal.aborted) {
+                const err = new Error('The operation was aborted due to timeout');
+                err.name = 'TimeoutError';
+                reject(err);
+                return;
+              }
+              signal.addEventListener('abort', () => {
+                const err = new Error('The operation was aborted due to timeout');
+                err.name = 'TimeoutError';
+                reject(err);
+              });
+            }
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 204,
+          text: async () => '',
+        } as Response);
+      });
+
+      const health = await checkUptimeHealth('http://localhost:3000', 50);
+      expect(health.healthy).toBe(false);
+      expect(health.status).toBe(0);
+      expect(health.error).toMatch(/abort|timeout/i);
     });
   });
 

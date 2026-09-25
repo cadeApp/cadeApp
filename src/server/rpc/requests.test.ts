@@ -253,4 +253,24 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       p_republish: false,
     });
   });
+
+  it('H10: debe disparar sendCriticalAlert ante fallo inesperado en publish_request', async () => {
+    const obs = await import('@/server/observability');
+    const alertSpy = vi.spyOn(obs, 'sendCriticalAlert').mockResolvedValue({ ok: true });
+
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: '57P01', message: 'terminating connection due to administrator command' },
+    });
+
+    const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+    expect(result.ok).toBe(false);
+    expect(alertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'publish_request_failed',
+        severity: 'critical',
+      })
+    );
+    alertSpy.mockRestore();
+  });
 });
