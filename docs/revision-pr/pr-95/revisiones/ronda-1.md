@@ -4,7 +4,7 @@
 **Head SHA revisado:** `56f9c968a797f41f23eaf2dc325e7554006f93f6`  
 **Base:** `develop` @ `cd0e69dabd31aa6531fa212d47a90c47e86ef155`  
 **Fecha:** 2026-09-25  
-**Resultado:** **CON BLOQUEANTES (8)** · 2 decisiones aceptadas por Lautaro073 · 2 decisiones pendientes
+**Resultado:** **CON BLOQUEANTES (9)** · 2 decisiones aceptadas por Lautaro073 · 2 decisiones pendientes
 
 ## Alcance comprobado
 
@@ -29,7 +29,8 @@
 | H09 | decisión | `docs/master-plan.md:305` | email vs Discord | ACEPTADA: Discord |
 | H10 | decisión | ficha / callers existentes | objetivo end-to-end no cabe en archivos permitidos | PENDIENTE |
 | H11 | decisión | `docs/runbooks/backups-and-disaster-recovery.md:91-93` | se agregó frecuencia trimestral | PENDIENTE |
-| H12 | decisión | regla 25 vs ficha | `@sentry/nextjs` vs ninguna dependencia nueva | ACEPTADA: no Sentry ahora |
+| H12 | decisión | regla 25 vs ficha | Discord reemplaza a Sentry para recepción de errores | ACEPTADA |
+| H13 | alto | `src/server/observability/sentry.ts:18-79` | `captureError` todavía envía errores a un DSN/Sentry en vez de Discord | BLOQUEANTE |
 
 ---
 
@@ -88,7 +89,7 @@ Es el mismo patrón P08 ya observado en revisiones anteriores: el control verifi
 
 ### Arreglo
 
-Afirmar el body exacto de cada transporte. Una mutación mínima como reemplazar `extra: sanitizedContext` por `extra: context`, o usar `payload.details` sin scrub, debe poner la prueba roja.
+Afirmar el body exacto que sale hacia Discord. En el SHA auditado también existe un transporte Sentry que debe eliminarse por H13; el resultado final debe demostrar que el único sink operativo de errores es Discord y que su body no contiene PII.
 
 ---
 
@@ -113,7 +114,7 @@ Además, el test actual solo mockea un HTTP 204; demuestra que el código acepta
 
 Separar “fallback local” de “entregada al canal”. En staging/producción, ausencia de webhook no puede cerrar el DoD. `sendTestAlert` debe exponer si hubo entrega real y el acta debe guardar evidencia operativa verificable de la recepción.
 
-**Decisión ya tomada:** el canal es **Discord**, no email ni Sentry.
+**Decisión ya tomada:** **Discord es el destino de observabilidad de errores y reemplaza a email/Sentry en T-310.**
 
 ---
 
@@ -220,9 +221,42 @@ Actualizar la bitácora con la salida real y distinguir qué se corrió localmen
 
 ---
 
+## H13 · `captureError` todavía envía errores a Sentry/DSN en vez de Discord
+
+**Archivo:** `src/server/observability/sentry.ts:18-79`  
+**Estado:** [ANÁLISIS]
+
+### Diagnóstico
+
+Lautaro073 aclaró durante esta misma ronda que **Discord ocupa el lugar de Sentry**: ahí deben recibirse los errores y eventos operativos. Sin embargo, el SHA revisado todavía implementa otro transporte:
+
+- lee `NEXT_PUBLIC_SENTRY_DSN`;
+- construye un payload con `message`, `extra` y `environment`;
+- hace `fetch(dsn, ...)`;
+- considera ese envío como `dispatched`.
+
+Eso no es un “fallback futuro”: es una ruta de ejecución activa si el DSN está configurado. Contradice la decisión humana ya cerrada.
+
+Las variables de entorno de Sentry pueden permanecer donde ya existen para una integración futura/open-source fuera de T-310; **esta tarea no necesita tocarlas**. El problema está en que el runtime actual las consume.
+
+### Arreglo
+
+Mantener `captureError` como API genérica si resulta útil, pero hacer que el error sanitizado llegue al transporte Discord (`sendCriticalAlert` o una abstracción equivalente) y eliminar la salida Sentry/DSN de T-310. No instalar `@sentry/nextjs`.
+
+El nombre `sentry.ts` también debería dejar de sugerir un proveedor que no se usa; dentro de los archivos permitidos puede renombrarse/reorganizarse si hace falta.
+
+### Cómo verificar
+
+Con `NEXT_PUBLIC_SENTRY_DSN` definido y Discord configurado, provocar un error y afirmar que:
+1. el request saliente va al webhook de Discord;
+2. no se realiza ningún request al DSN;
+3. el body de Discord está sanitizado.
+
+---
+
 # Decisiones
 
-## H09 · Discord reemplaza al email del master plan
+## H09 · Discord reemplaza al email del master plan y es el sink operativo de errores
 
 **Estado:** **ACEPTADO por Lautaro073 en la sesión de revisión (2026-09-25).**
 
@@ -230,7 +264,7 @@ El master plan decía “alerta al admin por email”. La implementación usa Di
 
 - canal operativo actual: **Discord**;
 - no cambiar esta PR a email;
-- Sentry/alternativa compatible puede existir en el futuro, pero no es requisito actual.
+- Discord recibe los errores y ocupa el lugar de Sentry en T-310. Una integración Sentry/compatible podrá agregarse en el futuro, pero no participa del runtime actual.
 
 Residual: el master plan queda desactualizado hasta que se actualice por una vía/PR autorizada. No ampliar T-310 fuera de sus archivos para corregirlo silenciosamente.
 
@@ -259,16 +293,17 @@ El runbook agrega “Frecuencia obligatoria: Trimestral y previa a cada salida m
 
 Quitar “trimestral” si no fue una decisión operativa; si se desea esa cadencia, registrarla como política explícita.
 
-## H12 · No instalar Sentry ahora
+## H12 · Discord reemplaza a Sentry en T-310
 
 **Estado:** **ACEPTADO por Lautaro073 en la sesión de revisión (2026-09-25).**
 
-La regla 25 menciona `@sentry/nextjs (T-310)`, pero la ficha prohíbe dependencias nuevas. Lautaro073 decidió que **Sentry no se usa ahora**: Discord es el único canal operativo; el env/DSN puede quedar opcional para una alternativa futura compatible.
+La regla 25 menciona `@sentry/nextjs (T-310)`, pero la ficha prohíbe dependencias nuevas. Lautaro073 aclaró que **Discord ocupa el lugar de Sentry**: los errores deben llegar por Discord. Las variables DSN ya existentes pueden quedar reservadas para una futura integración Sentry/compatible, pero T-310 no debe consumirlas.
 
 Por lo tanto:
 - no instalar `@sentry/nextjs` en esta tarea;
 - no tratar una integración Sentry como condición del DoD;
-- alinear PR/bitácora/código para que no declaren Sentry “operativo” si solo queda un adaptador opcional/futuro.
+- eliminar/reemplazar la ruta de ejecución que hoy hace `fetch(dsn)`; Discord debe ser el sink operativo de errores;
+- no hace falta tocar las variables DSN existentes si están fuera del alcance de la ficha.
 
 ---
 
@@ -280,7 +315,7 @@ Por lo tanto:
 | Hay archivos fuera de alcance | No: los 10 paths del PR están permitidos por la ficha de `develop`. |
 | La rama está desactualizada | No: está 0 commits detrás de `develop` en la ronda 1. |
 | Hay que reemplazar Discord por email | No: Lautaro073 decidió Discord durante esta revisión. |
-| Hay que instalar Sentry | No: Lautaro073 decidió no usar Sentry ahora. |
+| Hay que instalar/usar Sentry | No: Lautaro073 decidió que Discord reemplaza a Sentry en T-310. |
 
 ## Por qué los checks verdes no alcanzan
 
@@ -318,4 +353,5 @@ Esto **no** convierte H01–H08 en verificados: son huecos que los checks actual
 - [x] H09: Discord decidido por Lautaro073
 - [ ] H10: decisión de wiring
 - [ ] H11: decisión de frecuencia
-- [x] H12: no Sentry ahora, decidido por Lautaro073
+- [x] H12: Discord reemplaza a Sentry, decidido por Lautaro073
+- [ ] H13: `captureError` no usa DSN/Sentry y entrega errores sanitizados por Discord

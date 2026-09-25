@@ -15,7 +15,7 @@
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
-| 1 | `56f9c968` | 8 bloqueantes técnicos + 4 decisiones (2 aceptadas, 2 pendientes) | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 1 | `56f9c968` | 9 bloqueantes técnicos + 4 decisiones (2 aceptadas, 2 pendientes) | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 
 ## Estado por hallazgo
 
@@ -32,14 +32,15 @@
 | H09 | Canal de alertas: Discord vs email del master plan | decisión | aceptado por Lautaro073: Discord |
 | H10 | Wiring end-to-end fuera de los archivos permitidos | decisión | decision-pendiente |
 | H11 | Frecuencia trimestral de simulacros no estaba decidida | decisión | decision-pendiente |
-| H12 | Sentry/@sentry/nextjs vs “sin dependencias nuevas” | decisión | aceptado por Lautaro073: no Sentry ahora |
+| H12 | Discord reemplaza a Sentry para recepción de errores | decisión | aceptado por Lautaro073 |
+| H13 | captureError todavía envía errores a un DSN/Sentry | alto | abierto |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Evidencia: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. Corregir H01–H08 con pruebas que fallen antes y pasen después.
-2. No reemplazar Discord por email ni instalar Sentry: Lautaro073 decidió Discord-only por ahora; un DSN compatible queda opcional/futuro.
+1. Corregir H01–H08 y H13 con pruebas que fallen antes y pasen después.
+2. Discord es la observabilidad operativa de errores y ocupa el lugar de Sentry en T-310. No usar Sentry/DSN en runtime; las variables existentes pueden quedar reservadas para una integración futura fuera de esta tarea.
 3. Resolver H10: integrar ahora los callers/scheduler ampliando alcance, o declarar esta tarea como infraestructura y abrir una tarea de wiring obligatoria.
 4. Resolver H11: quitar “trimestral” o aprobar formalmente esa cadencia.
 5. Repetir la revisión independiente sobre el nuevo SHA.

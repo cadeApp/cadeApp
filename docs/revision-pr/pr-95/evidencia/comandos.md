@@ -154,8 +154,38 @@ pnpm test:db
 
 Para la ronda 2, pegar salida real o indicar explícitamente qué vino de CI. No marcar `test:db n.a.` cuando la tarea toca `src/server/**`.
 
+## H13 · Discord debe reemplazar al transporte Sentry
+
+Inspección del SHA roto:
+
+```bash
+grep -nE 'NEXT_PUBLIC_SENTRY_DSN|publicEnv|fetch\(dsn' src/server/observability/sentry.ts
+```
+
+En el SHA revisado aparecen las tres piezas: lectura del DSN, uso de `publicEnv` y `fetch(dsn, ...)`.
+
+Prueba requerida para el arreglo:
+
+```ts
+process.env.NEXT_PUBLIC_SENTRY_DSN = 'https://example.invalid/sentry'
+process.env.DISCORD_ERROR_WEBHOOK_URL = 'https://discord.com/api/webhooks/test/token'
+
+await captureError(new Error('fallo controlado'))
+
+expect(fetchSpy).toHaveBeenCalledWith(
+  expect.stringContaining('discord.com/api/webhooks/'),
+  expect.any(Object),
+)
+expect(fetchSpy).not.toHaveBeenCalledWith(
+  'https://example.invalid/sentry',
+  expect.anything(),
+)
+```
+
+La variable DSN puede seguir existiendo para futuro; lo que debe desaparecer de T-310 es su consumo runtime.
+
 ## Decisiones registradas
 
-- H09: Lautaro073 → Discord es el canal actual; no email.
-- H12: Lautaro073 → no Sentry ahora; DSN/alternativa futura opcional.
+- H09: Lautaro073 → Discord es el canal actual y recibe los errores; no email.
+- H12: Lautaro073 → Discord reemplaza a Sentry en T-310. El DSN puede quedar reservado para futuro, pero no debe usarse en runtime ahora.
 - H10 y H11 siguen pendientes.
