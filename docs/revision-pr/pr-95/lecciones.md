@@ -127,3 +127,20 @@ H16 confirma una variante más sutil: no alcanza con que `serverEnv` sea la prim
 - H04: abierto operativo.
 - Todos los demás hallazgos: cerrados o aceptados.
 - Decisiones pendientes: 0.
+
+
+## Ronda 6
+
+### Cierre de AG-83
+
+H16 quedó corregido con una frontera única de configuración productiva (`serverEnv`) y seams explícitos para tests. La mutación de reintroducir `process.env` ahora queda cubierta por una prueba dedicada.
+
+### Estado al cierre de R6
+
+- Bloqueantes técnicos: **0**.
+- H16: cerrado/verificado.
+- H04: único hallazgo abierto, de naturaleza operativa.
+- Todos los demás hallazgos: cerrados o aceptados.
+- Decisiones pendientes: 0.
+
+La PR no debe declararse completa hasta que la evidencia externa de H04 exista.
