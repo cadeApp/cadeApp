@@ -430,38 +430,52 @@ begin
     raise exception using errcode = 'P0001', message = 'COURIER_NOT_APPROVED';
   end if;
 
-  if p_request_id is null or p_amount_ars is null or p_eta_minutes is null then
+  if not v_courier_available then
+    raise exception using errcode = 'P0001', message = 'COURIER_UNAVAILABLE';
+  end if;
+
+  if p_request_id is null
+     or p_amount_ars is null
+     or p_eta_minutes is null
+     or p_eta_minutes < 1
+     or p_eta_minutes > 240
+  then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  if p_eta_minutes <= 0 then
-    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  if p_message is not null then
+    v_clean_message := nullif(btrim(p_message), '');
+    if v_clean_message is not null and char_length(v_clean_message) > 280 then
+      raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+    end if;
+  else
+    v_clean_message := null;
   end if;
 
-  select coalesce((value #>> '{}')::integer, 1000)
-  into v_min_offer_ars
-  from public.platform_settings
-  where key = 'min_offer_ars';
-
-  if v_min_offer_ars is null then
-    v_min_offer_ars := 1000;
-  end if;
-
-  if p_amount_ars < v_min_offer_ars then
-    raise exception using errcode = 'P0001', message = 'OFFER_BELOW_MINIMUM';
-  end if;
-
-  select coalesce((value #>> '{}')::integer, 10)
+  select (value #>> '{}')::integer
   into v_max_offers_per_min
   from public.platform_settings
   where key = 'max_offers_per_min';
 
-  if v_max_offers_per_min is null then
-    v_max_offers_per_min := 10;
+  if v_max_offers_per_min is null or v_max_offers_per_min < 1 then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  select (value #>> '{}')::integer
+  into v_min_offer_ars
+  from public.platform_settings
+  where key = 'min_offer_ars';
+
+  if v_min_offer_ars is null or v_min_offer_ars < 1 then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  if p_amount_ars < 1 or p_amount_ars < v_min_offer_ars then
+    raise exception using errcode = 'P0001', message = 'OFFER_BELOW_MINIMUM';
   end if;
 
   insert into public.rate_limits (subject, action, window_start, count)
-  values (v_actor_id, 'submit_offer', date_trunc('minute', now()), 1)
+  values (v_actor_id::text, 'submit_offer', date_trunc('minute', now()), 1)
   on conflict (subject, action, window_start)
   do update set count = public.rate_limits.count + 1
   returning count into v_rate_count;
@@ -470,15 +484,19 @@ begin
     raise exception using errcode = 'P0001', message = 'RATE_LIMITED';
   end if;
 
-  select * into v_req
+  select *
+  into v_req
   from public.delivery_requests
-  where id = p_request_id;
+  where id = p_request_id
+  for update;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
-  if v_req.status = 'published' and v_req.expires_at is not null and v_req.expires_at <= now() then
+  if v_req.status = 'expired'
+     or (v_req.status = 'published' and v_req.expires_at is not null and v_req.expires_at <= now())
+  then
     raise exception using errcode = 'P0001', message = 'REQUEST_EXPIRED';
   end if;
 
@@ -487,15 +505,14 @@ begin
   end if;
 
   if exists (
-    select 1 from public.offers
+    select 1
+    from public.offers
     where request_id = p_request_id
       and courier_id = v_actor_id
       and status in ('pending', 'accepted')
   ) then
-    raise exception using errcode = 'P0001', message = 'DUPLICATE_OFFER';
+    raise exception using errcode = 'P0001', message = 'DUPLICATE_ACTIVE_OFFER';
   end if;
-
-  v_clean_message := nullif(trim(p_message), '');
 
   insert into public.offers (
     request_id,
@@ -515,15 +532,13 @@ begin
   )
   returning * into v_offer;
 
-  return json_build_object(
+  return jsonb_build_object(
     'offerId', v_offer.id,
     'requestId', v_offer.request_id,
-    'courierId', v_offer.courier_id,
-    'amountArs', v_offer.amount_ars,
-    'etaMinutes', v_offer.eta_minutes,
     'status', v_offer.status,
+    'amountArs', v_offer.amount_ars,
     'createdAt', to_char(v_offer.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
-  )::jsonb;
+  );
 end;
 $$;
 
@@ -563,7 +578,17 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  select * into v_offer
+  select (value #>> '{}')::integer
+  into v_max_offers_per_min
+  from public.platform_settings
+  where key = 'max_offers_per_min';
+
+  if v_max_offers_per_min is null or v_max_offers_per_min < 1 then
+    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+
+  select *
+  into v_offer
   from public.offers
   where id = p_offer_id
   for update;
@@ -580,17 +605,8 @@ begin
     raise exception using errcode = 'P0001', message = 'OFFER_NOT_PENDING';
   end if;
 
-  select coalesce((value #>> '{}')::integer, 10)
-  into v_max_offers_per_min
-  from public.platform_settings
-  where key = 'max_offers_per_min';
-
-  if v_max_offers_per_min is null then
-    v_max_offers_per_min := 10;
-  end if;
-
   insert into public.rate_limits (subject, action, window_start, count)
-  values (v_actor_id, 'withdraw_offer', date_trunc('minute', now()), 1)
+  values (v_actor_id::text, 'withdraw_offer', date_trunc('minute', now()), 1)
   on conflict (subject, action, window_start)
   do update set count = public.rate_limits.count + 1
   returning count into v_rate_count;
@@ -601,15 +617,16 @@ begin
 
   update public.offers
   set status = 'withdrawn',
+      decided_at = now(),
       updated_at = now()
   where id = p_offer_id
   returning * into v_offer;
 
-  return json_build_object(
+  return jsonb_build_object(
     'offerId', v_offer.id,
     'status', v_offer.status,
-    'updatedAt', to_char(v_offer.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
-  )::jsonb;
+    'decidedAt', to_char(v_offer.decided_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+  );
 end;
 $$;
 
@@ -630,7 +647,6 @@ declare
   v_role public.profile_role;
   v_consent_status public.consent_status;
   v_courier_status public.courier_status;
-  v_updated_courier public.couriers%rowtype;
 begin
   if v_actor_id is null then
     raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
@@ -648,7 +664,8 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  select status into v_courier_status
+  select status
+  into v_courier_status
   from public.couriers
   where profile_id = v_actor_id
   for update;
@@ -667,14 +684,12 @@ begin
 
   update public.couriers
   set available = p_available
-  where profile_id = v_actor_id
-  returning * into v_updated_courier;
+  where profile_id = v_actor_id;
 
-  return json_build_object(
-    'courierId', v_updated_courier.profile_id,
-    'available', v_updated_courier.available,
-    'status', v_updated_courier.status
-  )::jsonb;
+  return jsonb_build_object(
+    'courierId', v_actor_id,
+    'available', p_available
+  );
 end;
 $$;
 
@@ -694,17 +709,6 @@ declare
   v_actor_id uuid := auth.uid();
   v_role public.profile_role;
   v_consent_status public.consent_status;
-  v_req public.delivery_requests%rowtype;
-  v_max_publications_per_min integer;
-  v_rate_count integer;
-  v_ttl_minutes integer;
-  v_now timestamptz := now();
-  v_expires_at timestamptz;
-  v_p_lat numeric(9,6);
-  v_p_lng numeric(9,6);
-  v_d_lat numeric(9,6);
-  v_d_lng numeric(9,6);
-  v_calculated_dist integer;
 begin
   if v_actor_id is null then
     raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
@@ -719,83 +723,7 @@ begin
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
 
-  if p_request_id is null then
-    raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
-  end if;
-
-  select * into v_req
-  from public.delivery_requests
-  where id = p_request_id
-  for update;
-
-  if not found then
-    raise exception using errcode = 'P0001', message = 'NOT_FOUND';
-  end if;
-
-  if v_role <> 'admin' and v_req.merchant_id <> v_actor_id then
-    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
-  end if;
-
-  if v_req.status <> 'draft' then
-    raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
-  end if;
-
-  select coalesce((value #>> '{}')::integer, 10)
-  into v_max_publications_per_min
-  from public.platform_settings
-  where key = 'max_request_publications_per_min';
-
-  if v_max_publications_per_min is null then
-    v_max_publications_per_min := 10;
-  end if;
-
-  insert into public.rate_limits (subject, action, window_start, count)
-  values (v_actor_id, 'publish_request', date_trunc('minute', v_now), 1)
-  on conflict (subject, action, window_start)
-  do update set count = public.rate_limits.count + 1
-  returning count into v_rate_count;
-
-  if v_rate_count > v_max_publications_per_min then
-    raise exception using errcode = 'P0001', message = 'RATE_LIMITED';
-  end if;
-
-  select coalesce((value #>> '{}')::integer, 30)
-  into v_ttl_minutes
-  from public.platform_settings
-  where key = 'request_ttl_minutes';
-
-  if v_ttl_minutes is null then
-    v_ttl_minutes := 30;
-  end if;
-
-  v_expires_at := v_now + (v_ttl_minutes || ' minutes')::interval;
-
-  select pickup_lat, pickup_lng, dropoff_lat, dropoff_lng
-  into v_p_lat, v_p_lng, v_d_lat, v_d_lng
-  from public.delivery_request_contacts
-  where request_id = p_request_id;
-
-  v_calculated_dist := public.calculate_route_distance(
-    v_p_lat, v_p_lng, v_d_lat, v_d_lng,
-    v_req.pickup_zone_id, v_req.dropoff_zone_id
-  );
-
-  update public.delivery_requests
-  set status = 'published',
-      published_at = v_now,
-      expires_at = v_expires_at,
-      route_distance_m = v_calculated_dist,
-      updated_at = v_now
-  where id = p_request_id
-  returning * into v_req;
-
-  return json_build_object(
-    'requestId', v_req.id,
-    'status', v_req.status,
-    'publishedAt', to_char(v_req.published_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-    'expiresAt', to_char(v_req.expires_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-    'routeDistanceM', v_req.route_distance_m
-  )::jsonb;
+  return app_private.request_cycle('publish_request', p_request_id);
 end;
 $$;
 

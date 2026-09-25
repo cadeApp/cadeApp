@@ -81,10 +81,10 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
     expect(sql).toMatch(/accept_offer[\s\S]*?v_consent_status\s*<>\s*'active'/i);
   });
 
-  it('7. Existe la suite pgTAP con al menos 18 aserciones de invariante', () => {
+  it('7. Existe la suite pgTAP con al menos 19 aserciones de invariante', () => {
     expect(fs.existsSync(pgtapTestPath)).toBe(true);
     const sql = fs.readFileSync(pgtapTestPath, 'utf8');
-    expect(sql).toMatch(/select\s+plan\(18\);/);
+    expect(sql).toMatch(/select\s+plan\(19\);/);
     expect(sql).toMatch(/activate_account_consents\s+cannot\s+be\s+executed\s+by\s+authenticated\s+role/i);
     expect(sql).toMatch(/pending\s+merchant\s+denied\s+operational\s+access/i);
   });
