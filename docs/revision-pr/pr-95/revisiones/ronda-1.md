@@ -4,7 +4,7 @@
 **Head SHA revisado:** `56f9c968a797f41f23eaf2dc325e7554006f93f6`  
 **Base:** `develop` @ `cd0e69dabd31aa6531fa212d47a90c47e86ef155`  
 **Fecha:** 2026-09-25  
-**Resultado:** **CON BLOQUEANTES (9)** · 2 decisiones aceptadas por Lautaro073 · 2 decisiones pendientes
+**Resultado:** **CON BLOQUEANTES (11)** · 2 decisiones aceptadas por Lautaro073 · **0 decisiones pendientes**
 
 ## Alcance comprobado
 
@@ -27,8 +27,8 @@
 | H07 | alto | `docs/runbooks/backups-and-disaster-recovery.md:55-59` | procedimiento PITR describe un proyecto nuevo, no el restore real | BLOQUEANTE |
 | H08 | medio | `docs/tasks/log/T-310.md:32` | “454 tests / test:db n.a.” contradice CI y AGENTS | BLOQUEANTE |
 | H09 | decisión | `docs/master-plan.md:305` | email vs Discord | ACEPTADA: Discord |
-| H10 | decisión | ficha / callers existentes | objetivo end-to-end no cabe en archivos permitidos | PENDIENTE |
-| H11 | decisión | `docs/runbooks/backups-and-disaster-recovery.md:91-93` | se agregó frecuencia trimestral | PENDIENTE |
+| H10 | alto | `src/server/rpc/**`, `src/app/api/cron/**`, `vercel.json` | integrar alertas/uptime end-to-end ahora | BLOQUEANTE |
+| H11 | medio | `docs/runbooks/backups-and-disaster-recovery.md:91-93` | quitar obligación trimestral no decidida | BLOQUEANTE |
 | H12 | decisión | regla 25 vs ficha | Discord reemplaza a Sentry para recepción de errores | ACEPTADA |
 | H13 | alto | `src/server/observability/sentry.ts:18-79` | `captureError` todavía envía errores a un DSN/Sentry en vez de Discord | BLOQUEANTE |
 
@@ -268,9 +268,9 @@ El master plan decía “alerta al admin por email”. La implementación usa Di
 
 Residual: el master plan queda desactualizado hasta que se actualice por una vía/PR autorizada. No ampliar T-310 fuera de sus archivos para corregirlo silenciosamente.
 
-## H10 · ¿T-310 integra alertas/uptime end-to-end o solo entrega infraestructura?
+## H10 · Integrar alertas/uptime end-to-end dentro de T-310
 
-**Estado:** **DECISIÓN PENDIENTE.**
+**Estado:** **DECIDIDO por Lautaro073: integrar ahora. BLOQUEANTE hasta implementarlo.**
 
 El master plan exige alertar cuando fallen publicación, ofertas, aceptación o cron, y chequear `/api/health`. Sin embargo, T-310 solo permite `src/server/observability/**` y docs.
 
@@ -281,17 +281,20 @@ En el SHA revisado:
 - `src/app/api/cron/sweep/route.ts` captura y devuelve 500 sin alertar;
 - `checkUptimeHealth` no está cableado a ningún scheduler.
 
-No es razonable pedirle al agy que rompa el alcance para arreglarlo. Lautaro073 debe elegir:
-1. ampliar formalmente archivos permitidos e integrar ahora; o
-2. declarar T-310 como infraestructura y abrir una tarea obligatoria de wiring.
+Lautaro073 eligió la opción A: **integrar ahora en T-310**. La ficha de esta rama queda ampliada formalmente para permitir:
+- `src/server/rpc/**`
+- `src/app/api/cron/**`
+- `vercel.json`
 
-## H11 · Frecuencia trimestral de simulacros
+El arreglo debe conectar errores reales de publicación/ofertas/aceptación/cron a Discord y programar el chequeo de `/api/health`.
 
-**Estado:** **DECISIÓN PENDIENTE.**
+## H11 · Quitar la frecuencia trimestral del runbook
+
+**Estado:** **DECIDIDO por Lautaro073: quitarla. BLOQUEANTE documental hasta corregir el runbook.**
 
 El runbook agrega “Frecuencia obligatoria: Trimestral y previa a cada salida mayor”. El plan/ADR solo exigen el simulacro antes de producción / como precondición de release.
 
-Quitar “trimestral” si no fue una decisión operativa; si se desea esa cadencia, registrarla como política explícita.
+Lautaro073 eligió quitar la obligación trimestral. El runbook debe conservar únicamente el simulacro requerido por release/producción según el plan vigente.
 
 ## H12 · Discord reemplaza a Sentry en T-310
 
@@ -338,7 +341,7 @@ No hubo checkout local disponible en esta sesión de revisión; se verificó el 
 - build ✅
 - bundle-budget ✅
 
-Esto **no** convierte H01–H08 en verificados: son huecos que los checks actuales no cubren.
+Esto **no** convierte H01–H08 ni H10–H13 en verificados: son huecos que los checks actuales no cubren.
 
 ## Checklist para ronda 2
 
@@ -351,7 +354,7 @@ Esto **no** convierte H01–H08 en verificados: son huecos que los checks actual
 - [ ] H07: runbook PITR corregido según proveedor
 - [ ] H08: bitácora coincide con outputs reales
 - [x] H09: Discord decidido por Lautaro073
-- [ ] H10: decisión de wiring
-- [ ] H11: decisión de frecuencia
+- [ ] H10: wiring real de errores/uptime a Discord implementado en los archivos ahora autorizados
+- [ ] H11: runbook sin obligación trimestral
 - [x] H12: Discord reemplaza a Sentry, decidido por Lautaro073
 - [ ] H13: `captureError` no usa DSN/Sentry y entrega errores sanitizados por Discord

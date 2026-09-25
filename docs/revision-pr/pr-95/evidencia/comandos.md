@@ -188,4 +188,27 @@ La variable DSN puede seguir existiendo para futuro; lo que debe desaparecer de 
 
 - H09: Lautaro073 → Discord es el canal actual y recibe los errores; no email.
 - H12: Lautaro073 → Discord reemplaza a Sentry en T-310. El DSN puede quedar reservado para futuro, pero no debe usarse en runtime ahora.
-- H10 y H11 siguen pendientes.
+- H10: Lautaro073 → integrar ahora en T-310; ficha ampliada a `src/server/rpc/**`, `src/app/api/cron/**` y `vercel.json`.
+- H11: Lautaro073 → quitar la frecuencia trimestral; mantener solo el simulacro exigido por release/producción.
+
+
+## H10 · Wiring autorizado por decisión
+
+La ficha T-310 de esta rama ahora autoriza:
+
+```text
+src/server/rpc/**
+src/app/api/cron/**
+vercel.json
+```
+
+Verificación esperada en ronda 2:
+- fallo de `publish_request` → intento de alerta Discord;
+- fallo de `submit_offer` → intento de alerta Discord;
+- fallo de `accept_offer` → intento de alerta Discord;
+- excepción del cron sweep → intento de alerta Discord;
+- health check programado → timeout/no-200 dispara Discord.
+
+## H11 · Política de simulacros
+
+La línea “Frecuencia obligatoria: Trimestral” debe desaparecer. La política decidida es el simulacro requerido por release/producción; no existe obligación trimestral.

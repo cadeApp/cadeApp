@@ -1,6 +1,6 @@
 # Lecciones de la PR #95 para `AGENTS.md` y las reglas
 
-**Fuente:** 13 registros en ronda 1: 9 bloqueantes técnicos, 2 decisiones aceptadas y 2 decisiones pendientes.
+**Fuente:** 13 registros en ronda 1: 11 bloqueantes técnicos derivados/confirmados y 2 decisiones humanas aceptadas; no quedan decisiones pendientes.
 
 ## Patrón dominante
 
@@ -36,8 +36,8 @@ El procedimiento de PITR asumió que el proveedor crea una instancia nueva, pero
 
 - **Discord:** Lautaro073 decidió que es el sistema operativo de recepción de errores/alertas y ocupa el lugar de email/Sentry en T-310.
 - **Sentry:** no participa del runtime actual. No instalar `@sentry/nextjs` ni hacer `fetch` a un DSN; las variables ya existentes pueden quedar reservadas para una futura integración.
-- **Pendiente:** wiring end-to-end de alertas/uptime vs alcance de T-310.
-- **Pendiente:** cadencia trimestral del simulacro.
+- **Wiring:** Lautaro073 decidió integrarlo ahora dentro de T-310; se amplió formalmente la ficha.
+- **Simulacros:** Lautaro073 decidió quitar la cadencia trimestral y mantener el requisito de release/producción.
 
 ## Qué cambiar, en orden de impacto
 
@@ -50,4 +50,4 @@ El procedimiento de PITR asumió que el proveedor crea una instancia nueva, pero
 
 - H04 afecta el entregable específico de la tarea, no solo documentación cosmética.
 - H09/H12 son decisiones humanas tomadas durante esta revisión; H13 es la consecuencia técnica pendiente: el código actual todavía consume el DSN.
-- H10/H11 siguen pendientes y no deben ser resueltos por el agy sin decisión de Lautaro073.
+- H10/H11 ya están decididos y deben ejecutarse sin volver a consultar: integrar ahora y quitar la frecuencia trimestral.
