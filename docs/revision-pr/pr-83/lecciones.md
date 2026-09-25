@@ -106,3 +106,58 @@ y builders como proxy de la procedencia de datos sensibles/económicos.
 - Antes de implementar T05, `src/ui/alert-dialog.tsx` no existe en `develop`. La ficha ya prescribe qué hacer:
   abrir `contract-change` si esa primitiva es la requerida; no sustituirla silenciosamente dentro de T-115.
 - D01 sigue resuelta por Lautaro073 y no autoriza tocar `AGENTS.md` dentro de T-115.
+
+
+---
+
+## Ronda 3
+
+> Numeración: `AG-88`…`AG-90` ya fueron observadas en otra revisión activa; esta ronda continúa en `AG-91` para evitar colisión conocida.
+
+### AG-91 · Un mock de Supabase que ignora `.select()` puede certificar filas imposibles
+
+**Origen:** H13.
+
+Si el mock devuelve `rowData` sin mirar la proyección, una query con columnas inexistentes queda tan verde como la correcta. Para queries PostgREST sensibles, el test tiene que observar la proyección o usar una frontera tipada/integradora que falle cuando el esquema no existe.
+
+### AG-92 · Los teléfonos de participantes distintos nunca comparten un campo semántico
+
+**Origen:** H14.
+
+`recipientPhone`, `courierPhone` y `merchantPhone` representan actores diferentes. Reutilizar el único teléfono disponible para “hacer funcionar” un CTA convierte una ausencia de contrato en contacto a la persona equivocada. El tipo debe impedirlo.
+
+### AG-93 · El corte entre tareas también necesita tests negativos
+
+**Origen:** H15.
+
+Que una feature figure en el master plan no significa que pertenezca a la tarea actual. Cuando T-115 reserva mapa/coordenadas a T-117, la suite de T-115 debe poder detectar que aparezca `google.com/maps`, coordenadas o SDK de mapa antes de tiempo.
+
+### AG-94 · Un route group organiza archivos; no crea un segmento de URL
+
+**Origen:** H16.
+
+Dos `page.tsx` equivalentes bajo `(merchant)` y `(courier)` no son dos rutas. La ruta canónica es un contrato que debe probarse desde quien navega hacia ella y desde el filesystem de App Router.
+
+### AG-95 · Los fixtures visuales se derivan del enum, no de las palabras de Stitch
+
+**Origen:** H17.
+
+Un fixture `motorcycle` puede hacer verde una UI mientras producción entrega `moto`. Para cada enum de dominio, el test enumera todos sus miembros canónicos; ningún `else` genérico debe representar valores conocidos.
+
+### AG-96 · La auditoría visual empieza por controles mecánicos antes de mirar capturas
+
+**Origen:** H18, H19.
+
+Antes del navegador, un barrido barato debe detectar `text-xs`, colores hex arbitrarios y sustituciones de primitivas compartidas. Si falta token/primitiva, el resultado correcto es CC, no un workaround local.
+
+### AG-97 · “Verificado en navegador” es un artefacto, no una casilla
+
+**Origen:** H20.
+
+Un DoD de 390/360 solo está cerrado si quedan capturas/enlaces y diferencias registradas. Tests de componente y una casilla `[x]` no sustituyen esa evidencia.
+
+### AG-98 · Un dato económico obligatorio no tiene fallback numérico
+
+**Origen:** H21.
+
+Si el monto aceptado es condición de un viaje matched, el tipo/loader debe hacerlo obligatorio. `?? 0` transforma una inconsistencia de datos en una afirmación económica falsa y puede terminar enviada por WhatsApp al cliente.

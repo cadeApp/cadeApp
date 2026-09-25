@@ -241,3 +241,110 @@ lecciones AG-76..AG-87
 La validación con `node docs/revision-pr/analizar.mjs verificacion` sobre el checkout completo queda pendiente
 porque el checkout no está disponible en esta sesión; no se afirma haberla ejecutado.
 
+
+
+---
+
+# Ronda 3 · verificación de implementación
+
+**SHA:** `8bc4ee282c11f193c117885404fc2652b8ae820f`
+
+## Preflight
+
+```text
+head remoto: 8bc4ee282c11f193c117885404fc2652b8ae820f
+PR: Draft
+threads: 0
+comentarios previos: 2 informes de Lautaro073
+compare develop...branch: diverged · ahead 13 · behind 13
+último ancestro funcional usado para aislar scope: 2a096317fa1cea1e0c112b2f785907679cf86713
+```
+
+La historia extraña viene del rebase pedido por la Ronda 2 y del merge posterior del remoto viejo. No se abrió hallazgo contra P2 por eso.
+
+## Estado de arreglos anteriores
+
+```text
+H01 rpcNames exactos presentes: 6/6
+H01 toHaveBeenCalledTimes(1): 6
+H02 matriz auth: 6 unauth + 6 wrong-role
+H03 input omitido para report_no_show: sí
+H04 SENTINEL_ADDR/NOTE/COORDS/ID/DNI/PHONE: presentes
+H08 INVALID_STATE_TRANSITION: caso por 6 actions
+H09 query tests: 6
+H10 component tests: 15; aserciones de foco: 0
+H11 revalidatePath assertions: 12
+H12 bordes <10/>10 y +54/549/0/15: presentes
+```
+
+No se ejecutó Vitest, por lo que H01–H04/H07–H09/H11/H12 quedan `arreglado-sin-verificar`.
+
+## Mutaciones / reproducciones independientes
+
+```text
+H13 query-mock: GREEN con 3 proyecciones, incluidas 2 inválidas
+H14 contacto: GREEN usando recipientPhone como teléfono del cadete
+H17 vehicle walk => Bicicleta
+H17 vehicle bike => Bicicleta
+H17 vehicle moto => Bicicleta
+H17 vehicle car => Bicicleta
+H17 payment cash => Efectivo
+H17 payment transfer => Transferencia
+H17 payment to_agree => Transferencia
+H18 anti-12px: 18 ocurrencias text-xs enumeradas
+```
+
+H13 usó las proyecciones `id,code,pickup_address`, `columna_que_no_existe` y `totally_invalid(*)`; las tres devuelven el mismo `rowData` porque el mock actual ignora el argumento de `.select()`.
+
+## Contrato de esquema comprobado en develop
+
+```text
+delivery_requests: sin code, pickup_address, pickup_lat/lng, dropoff_lat/lng
+delivery_request_contacts: pickup/dropoff exactos + recipient_name/phone; sin delivery_notes
+offers_courier_id_fkey: offers.courier_id -> couriers.profile_id
+profiles: sin vehicle_type, vehicle_plate, avatar_url
+```
+
+## Alcance / rutas
+
+T-115 dice “mapa reservado para T-117”, pero el head transporta coordenadas, genera `google.com/maps/dir` y lo exige en tests.
+
+Next.js documenta que route groups `(...)` no afectan la URL:
+https://nextjs.org/docs/app/api-reference/file-conventions/route-groups
+
+T-114 ya navega a `/trips/${offer.requestId}` y `src/app/route-integrity.test.ts` documenta `/trips/[id]` como contrato de T-115.
+
+## Visual
+
+```text
+text-xs total: 18
+hex arbitrarios: #25D366, #20ba5a
+src/ui/alert-dialog.tsx: no existe
+PR body: ítem 390/360 marcado [x]
+capturas/enlaces de implementación en PR/bitácora: 0
+```
+
+## Monto
+
+```text
+TripMerchantView: amountArs: trip.amountArs ?? 0
+TripCourierView: amountArs ? formatArs(amountArs) : '$ 0'
+components.test.tsx: fixtures con amountArs=1800; sin caso null
+```
+
+## Validación estructurada
+
+El `hallazgos.jsonl` de Ronda 3 se validó línea por línea con `JSON.parse` y con la vista `verificacion` de `analizar.mjs` en un árbol aislado de revisión:
+
+```text
+26 hallazgos
+9 corregidos SIN verificar
+5 decisiones aceptadas
+0 decisiones pendientes
+12 otros (incluye H06 no bloqueante)
+11 bloqueantes actuales
+```
+
+## Checks no ejecutados
+
+No se inspeccionó CI porque hay bloqueantes. No se ejecutaron `pnpm typecheck`, `pnpm lint` ni `pnpm test` de forma independiente por falta de checkout/pnpm del repo. No se usaron `.env*`, secretos ni servicios remotos.
