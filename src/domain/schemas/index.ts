@@ -71,6 +71,10 @@ export const CONSENT_DOCUMENTS = ['tos', 'privacy', 'courier_contract', 'pilot_t
 export type ConsentDocument = (typeof CONSENT_DOCUMENTS)[number];
 export const consentDocumentSchema = z.enum(CONSENT_DOCUMENTS);
 
+export const CONSENT_STATUSES = ['pending', 'active', 'reconsent_required'] as const;
+export type ConsentStatus = (typeof CONSENT_STATUSES)[number];
+export const consentStatusSchema = z.enum(CONSENT_STATUSES);
+
 export const INCIDENT_STATUSES = ['open', 'reviewing', 'resolved', 'dismissed'] as const;
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
 export const incidentStatusSchema = z.enum(INCIDENT_STATUSES);

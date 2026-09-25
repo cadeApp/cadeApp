@@ -21,7 +21,7 @@ describe('T-009 / H16: Queries de sesión y consumo asíncrono de createClient()
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
           maybeSingle: vi.fn().mockResolvedValue({
-            data: { role: 'merchant' },
+            data: { role: 'merchant', consent_status: 'active' },
             error: null,
           }),
         }),
@@ -54,6 +54,7 @@ describe('T-009 / H16: Queries de sesión y consumo asíncrono de createClient()
     expect(session?.userId).toBe('usr-test-1');
     expect(session?.role).toBe('merchant');
     expect(session?.aal).toBe('aal1');
+    expect(session?.consentStatus).toBe('active');
   });
 
   it('getServerSession retorna null si no hay usuario autenticado', async () => {
@@ -84,6 +85,42 @@ describe('T-009 / H16: Queries de sesión y consumo asíncrono de createClient()
         eq: vi.fn().mockReturnValue({
           maybeSingle: vi.fn().mockResolvedValue({
             data: null,
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    const mockGetAal = vi.fn().mockResolvedValue({
+      data: { currentLevel: 'aal1' },
+      error: null,
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: mockGetUser,
+        mfa: {
+          getAuthenticatorAssuranceLevel: mockGetAal,
+        },
+      },
+      from: mockFrom,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const session = await getServerSession();
+    expect(session).toBeNull();
+  });
+
+  it('getServerSession retorna null si consent_status es inválido o no existe (H06)', async () => {
+    const mockGetUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'usr-test-1', email: 'test@example.com' } },
+      error: null,
+    });
+
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant', consent_status: 'invalido' },
             error: null,
           }),
         }),

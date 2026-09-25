@@ -3,7 +3,13 @@
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
-import { SIGNUP_ROLES, profileRoleSchema, type ProfileRole } from '@/domain/schemas';
+import {
+  SIGNUP_ROLES,
+  consentStatusSchema,
+  profileRoleSchema,
+  type ConsentStatus,
+  type ProfileRole,
+} from '@/domain/schemas';
 import { loginSchema, registerSchema, forgotPasswordSchema } from './schemas';
 import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
 import { areCurrentLegalVersions } from '@/features/legal';
@@ -12,7 +18,10 @@ import type { TablesInsert } from '@/types/database.types';
 export async function loginAction(
   input: unknown
 ): Promise<
-  ActionResult<{ userId: string; role: ProfileRole; redirectTo: string }, DomainErrorCode>
+  ActionResult<
+    { userId: string; role: ProfileRole; consentStatus: ConsentStatus; redirectTo: string },
+    DomainErrorCode
+  >
 > {
   const parsed = loginSchema.safeParse(input);
   if (!parsed.success) {
@@ -31,9 +40,9 @@ export async function loginAction(
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, consent_status')
     .eq('id', data.user.id)
-    .maybeSingle<{ role: unknown }>();
+    .maybeSingle<{ role: unknown; consent_status: unknown }>();
 
   if (profileError || !profile) {
     return err('UNAUTHORIZED_ACTOR');
@@ -44,12 +53,19 @@ export async function loginAction(
     return err('UNAUTHORIZED_ACTOR');
   }
 
+  const consentParsed = consentStatusSchema.safeParse(profile.consent_status);
+  if (!consentParsed.success) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
   const role = roleParsed.data;
-  const redirectTo = resolvePostLoginRedirect(parsed.data.redirectTo, role);
+  const consentStatus = consentParsed.data;
+  const redirectTo = resolvePostLoginRedirect(parsed.data.redirectTo, role, consentStatus);
 
   return ok({
     userId: data.user.id,
     role,
+    consentStatus,
     redirectTo,
   });
 }

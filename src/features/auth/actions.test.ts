@@ -450,7 +450,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
             maybeSingle: vi.fn().mockResolvedValue({
-              data: { role: 'merchant' },
+              data: { role: 'merchant', consent_status: 'active' },
               error: null,
             }),
           }),
@@ -484,6 +484,44 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       }
     });
 
+    it('loginAction redirige a regularización cuando consent_status es pending (H06)', async () => {
+      const mockSignIn = vi.fn().mockResolvedValue({
+        data: {
+          user: { id: 'usr-merchant-pending', email: 'pending@test.com' },
+          session: { access_token: 'jwt' },
+        },
+        error: null,
+      });
+
+      const mockFrom = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'merchant', consent_status: 'pending' },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signInWithPassword: mockSignIn,
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await loginAction({
+        email: 'pending@test.com',
+        password: 'password123',
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.redirectTo).toBe('/login?consentRequired=1');
+      }
+    });
+
     it('loginAction rechaza con UNAUTHORIZED_ACTOR cuando profiles devuelve null o error (PR60-H01)', async () => {
       const mockSignIn = vi.fn().mockResolvedValue({
         data: {
@@ -498,6 +536,44 @@ describe('T-009: Auth actions y esquemas de registro', () => {
           eq: vi.fn().mockReturnValue({
             maybeSingle: vi.fn().mockResolvedValue({
               data: null,
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signInWithPassword: mockSignIn,
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await loginAction({
+        email: 'courier@test.com',
+        password: 'password123',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('UNAUTHORIZED_ACTOR');
+      }
+    });
+
+    it('loginAction rechaza con UNAUTHORIZED_ACTOR cuando consent_status es inválido (H06)', async () => {
+      const mockSignIn = vi.fn().mockResolvedValue({
+        data: {
+          user: { id: 'usr-courier-1', email: 'courier@test.com' },
+          session: { access_token: 'jwt' },
+        },
+        error: null,
+      });
+
+      const mockFrom = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'courier', consent_status: 'invalido' },
               error: null,
             }),
           }),

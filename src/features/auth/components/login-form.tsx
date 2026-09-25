@@ -37,7 +37,11 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
       }
 
       // Sanitiza el destino final previniendo Open Redirect y salto de roles
-      const targetUrl = resolvePostLoginRedirect(initialRedirectTo, result.data.role);
+      const targetUrl = resolvePostLoginRedirect(
+        initialRedirectTo,
+        result.data.role,
+        result.data.consentStatus
+      );
       router.push(targetUrl);
       router.refresh();
     } catch {

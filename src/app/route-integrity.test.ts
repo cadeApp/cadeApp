@@ -217,8 +217,8 @@ function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): vo
         if (assignedRoute) {
           validateInternalRouteCandidate(assignedRoute, fileLabel);
         } else if (rhs.includes('resolvePostLoginRedirect(')) {
-          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'merchant'), fileLabel);
-          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'courier'), fileLabel);
+          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'merchant', 'active'), fileLabel);
+          validateInternalRouteCandidate(resolvePostLoginRedirect('/ghost', 'courier', 'active'), fileLabel);
         } else {
           throw new Error(
             `${fileLabel} asigna ruta interna inexistente o no verificable a ${indirectExpr}: ${rhs}`
@@ -337,6 +337,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         email: 'courier@test.com',
         role: 'courier',
         aal: 'aal1',
+        consentStatus: 'active',
       };
 
       const result = evaluateRouteGuard('/merchant/onboarding', courierSession);
@@ -352,6 +353,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         email: 'merchant@test.com',
         role: 'merchant',
         aal: 'aal1',
+        consentStatus: 'active',
       };
 
       const result = evaluateRouteGuard('/courier/onboarding/identity', merchantSession);
@@ -380,6 +382,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         email: 'adm@cade.app',
         role: 'admin',
         aal: 'aal1',
+        consentStatus: 'active',
       };
       const guardResult = evaluateRouteGuard('/admin/settings', adminAal1);
       expect(guardResult.action).toBe('redirect');
@@ -397,8 +400,8 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         '/pilot-terms',
         '/legal',
       ]) {
-        const merchantTarget = resolvePostLoginRedirect(probe, 'merchant');
-        const courierTarget = resolvePostLoginRedirect(probe, 'courier');
+        const merchantTarget = resolvePostLoginRedirect(probe, 'merchant', 'active');
+        const courierTarget = resolvePostLoginRedirect(probe, 'courier', 'active');
         expect(resolveRouteToFilesystemPage(merchantTarget)).not.toBeNull();
         expect(resolveRouteToFilesystemPage(courierTarget)).not.toBeNull();
       }
