@@ -69,7 +69,9 @@ import {
   SelectValue,
   Table,
   TableBody,
+  TableCaption,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -325,9 +327,10 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
   });
 
   describe('4C. CC-010 Table, Tabs e InputOTP oficiales de shadcn', () => {
-    it('Table conserva semántica nativa y piso tipográfico text-sm', () => {
-      render(
+    it('Table conserva semántica nativa, todos sus exports y piso tipográfico text-sm', () => {
+      const { container } = render(
         <Table>
+          <TableCaption>Postulantes recientes</TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead>Postulante</TableHead>
@@ -338,6 +341,11 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
               <TableCell>Lautaro</TableCell>
             </TableRow>
           </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell>Total: 1</TableCell>
+            </TableRow>
+          </TableFooter>
         </Table>
       );
 
@@ -345,6 +353,10 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       expect(table.className).toContain('text-sm');
       expect(screen.getByRole('columnheader', { name: 'Postulante' })).toBeDefined();
       expect(screen.getByRole('cell', { name: 'Lautaro' })).toBeDefined();
+      expect(screen.getByText('Postulantes recientes')).toBeDefined();
+      expect(screen.getByText('Total: 1')).toBeDefined();
+      expect(container.querySelector('caption')).not.toBeNull();
+      expect(container.querySelector('tfoot')).not.toBeNull();
     });
 
     it('Tabs expone tabs accesibles y cambia el estado activo al seleccionar', () => {
@@ -367,6 +379,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       fireEvent.mouseDown(approved, { button: 0, ctrlKey: false });
       expect(approved.getAttribute('data-state')).toBe('active');
       expect(pending.getAttribute('data-state')).toBe('inactive');
+      expect(approved.className).toContain('data-[state=active]:bg-background');
     });
 
     it('InputOTP mantiene un único textbox accesible y refleja seis dígitos en slots controlados', () => {
