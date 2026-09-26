@@ -192,8 +192,16 @@ select is(
 -- 11. H03: courier approved ve comercios con solicitudes activas pero NO ve comercio ocioso
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
 select ok(
-  exists (select 1 from public.merchants where profile_id = pg_temp.merchant_1_id())
-  and not exists (select 1 from public.merchants where profile_id = pg_temp.merchant_idle_id()),
+  exists (
+    select 1
+    from public.merchant_public
+    where profile_id = pg_temp.merchant_1_id()
+  )
+  and not exists (
+    select 1
+    from public.merchant_public
+    where profile_id = pg_temp.merchant_idle_id()
+  ),
   'courier sees active merchants with requests but cannot see idle merchant'
 );
 
