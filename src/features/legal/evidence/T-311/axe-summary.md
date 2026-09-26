@@ -2,7 +2,7 @@
 
 **Herramienta:** axe-core 4.13.0 (motor real en navegador Chromium/Edge headless)
 **Estándar:** WCAG 2.0 / 2.1 Niveles A y AA (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`)
-**Fecha de ejecución:** 2026-09-26T02:02:38.774Z
+**Fecha de ejecución:** 2026-09-26T02:24:15.462Z
 
 | Pantalla | URL | Pases | Violaciones WCAG AA | Incompletas | Estado |
 |---|---|---|---|---|---|
@@ -14,7 +14,7 @@
 | **Inicio de Sesión (/login)** | `http://localhost:3000/login` | 26 | 0 | 0 | ✅ 0 violaciones |
 | **Registro con Enlaces Legales (/register)** | `http://localhost:3000/register` | 26 | 0 | 0 | ✅ 0 violaciones |
 | **Onboarding Comercio (/merchant/onboarding)** | `http://localhost:3000/merchant/onboarding` | 21 | 0 | 0 | ✅ 0 violaciones |
-| **Onboarding Repartidor (/onboarding/vehicle)** | `http://localhost:3000/onboarding/vehicle` | 25 | 1 | 0 | ⚠️ 1 violaciones |
+| **Onboarding Repartidor (/onboarding/vehicle)** | `http://localhost:3000/onboarding/vehicle` | 25 | 0 | 0 | ✅ 0 violaciones |
 
 ## Detalle de Hallazgos por Pantalla
 
@@ -60,16 +60,8 @@
 
 ### Onboarding Repartidor (/onboarding/vehicle)
 
-- **Violaciones encontradas (1):**
-  - **[SERIOUS] color-contrast**: Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds ([Documentación](https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=axeAPI))
-    - Nodo: `.gap-1.flex-1.flex-col:nth-child(1) > .gap-0\.5.text-primary.font-semibold`
-    - HTML: `<span class="flex items-center gap-0.5 text-sm font-semibold text-primary">`
-    - Causa: Fix any of the following:
-  Element has insufficient color contrast of 2.39 (foreground color: #09babd, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1
-    - Nodo: `.gap-1.flex-1.flex-col:nth-child(2) > .gap-0\.5.text-primary.font-semibold`
-    - HTML: `<span class="flex items-center gap-0.5 text-sm font-semibold text-primary">`
-    - Causa: Fix any of the following:
-  Element has insufficient color contrast of 2.39 (foreground color: #09babd, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1
+- **Violaciones:** 0 (cumple 100% WCAG 2.0/2.1 AA)
+- **Reglas satisfechas (passes):** 25
 
 ## Capturas Responsive Asociadas (390×844 y 360×800)
 

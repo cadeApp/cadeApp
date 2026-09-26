@@ -697,7 +697,85 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     });
   });
 
-  it('mutación adversarial: si la acción usara insert en vez de upsert con ignoreDuplicates en reintento, falla con INTERNAL_ERROR por duplicate key (H13)', async () => {
+  interface FakeConsentRow {
+    profile_id: string;
+    document: string;
+    version: string;
+    accepted_at: string;
+  }
+
+  function createConsentsStatefulFake(
+    initialRows: Array<{ profile_id: string; document: string; version: string; accepted_at?: string }> = []
+  ) {
+    const store = new Map<string, FakeConsentRow>();
+    for (const r of initialRows) {
+      store.set(`${r.profile_id}:${r.document}:${r.version}`, {
+        profile_id: r.profile_id,
+        document: r.document,
+        version: r.version,
+        accepted_at: r.accepted_at || '2026-09-01T00:00:00.000Z',
+      });
+    }
+
+    const queryBuilder = {
+      insert: vi.fn(async (payload: unknown) => {
+        const rows = Array.isArray(payload) ? payload : [payload];
+        for (const row of rows as Array<{ profile_id: string; document: string; version: string }>) {
+          const key = `${row.profile_id}:${row.document}:${row.version}`;
+          if (store.has(key)) {
+            return {
+              data: null,
+              error: {
+                code: '23505',
+                message: 'duplicate key value violates unique constraint "consents_pkey"',
+              },
+            };
+          }
+        }
+        for (const row of rows as Array<{ profile_id: string; document: string; version: string }>) {
+          const key = `${row.profile_id}:${row.document}:${row.version}`;
+          store.set(key, { ...row, accepted_at: new Date().toISOString() });
+        }
+        return { data: rows, error: null };
+      }),
+
+      upsert: vi.fn(async (payload: unknown, options?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
+        const rows = Array.isArray(payload) ? payload : [payload];
+        for (const row of rows as Array<{ profile_id: string; document: string; version: string }>) {
+          const key = `${row.profile_id}:${row.document}:${row.version}`;
+          if (store.has(key)) {
+            if (!options?.ignoreDuplicates) {
+              return {
+                data: null,
+                error: {
+                  code: '23505',
+                  message: 'duplicate key value violates unique constraint "consents_pkey"',
+                },
+              };
+            }
+            // ignoreDuplicates: true -> conserva fila existente intacta sin reescribir accepted_at
+            continue;
+          }
+          store.set(key, { ...row, accepted_at: new Date().toISOString() });
+        }
+        return { data: rows, error: null };
+      }),
+    };
+
+    return { store, queryBuilder };
+  }
+
+  it('reintento merchant con consentimientos preexistentes: no falla por duplicado y preserva accepted_at original (H13/H14)', async () => {
+    const originalAcceptedAt = '2026-09-01T12:00:00.000Z';
+    const fakeConsents = createConsentsStatefulFake([
+      {
+        profile_id: 'usr-merchant-1',
+        document: 'pilot_terms',
+        version: '1.0',
+        accepted_at: originalAcceptedAt,
+      },
+    ]);
+
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
         return {
@@ -723,25 +801,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
         };
       }
       if (table === 'consents') {
-        return {
-          insert: vi.fn().mockResolvedValue({
-            error: {
-              code: '23505',
-              message: 'duplicate key value violates unique constraint "consents_pkey"',
-            },
-          }),
-          upsert: vi.fn().mockImplementation((_payload, options) => {
-            if (options?.ignoreDuplicates) {
-              return Promise.resolve({ data: null, error: null });
-            }
-            return Promise.resolve({
-              error: {
-                code: '23505',
-                message: 'duplicate key value violates unique constraint "consents_pkey"',
-              },
-            });
-          }),
-        };
+        return fakeConsents.queryBuilder;
       }
       if (table === 'merchants') {
         return {
@@ -766,33 +826,15 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       from: mockFrom,
     } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
-    // Verificamos que la acción real (que usa upsert con ignoreDuplicates) triunfa:
     const result = await merchantOnboardingAction(validFormInput);
+
     expect(result.ok).toBe(true);
-
-    // Demostración de mutación roja:
-    // Si un mutante cambiara el write a insert() o a upsert sin ignoreDuplicates, arrojando código 23505:
-    const mutatedMockFrom = vi.fn().mockImplementation((table: string) => {
-      if (table === 'consents') {
-        return {
-          upsert: vi.fn().mockResolvedValue({
-            error: {
-              code: '23505',
-              message: 'duplicate key value violates unique constraint "consents_pkey"',
-            },
-          }),
-        };
-      }
-      return mockFrom(table);
-    });
-    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
-      from: mutatedMockFrom,
-    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
-
-    const mutatedResult = await merchantOnboardingAction(validFormInput);
-    expect(mutatedResult.ok).toBe(false);
-    if (!mutatedResult.ok) {
-      expect(mutatedResult.code).toBe('INTERNAL_ERROR');
+    if (result.ok) {
+      expect(result.data.redirectTo).toBe('/merchant/dashboard');
     }
+    // Verifica que el consentimiento preexistente NO fue sobreescrito (conserva su accepted_at original)
+    const storedRow = fakeConsents.store.get('usr-merchant-1:pilot_terms:1.0');
+    expect(storedRow).toBeDefined();
+    expect(storedRow?.accepted_at).toBe(originalAcceptedAt);
   });
 });

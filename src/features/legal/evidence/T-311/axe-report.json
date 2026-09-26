@@ -2,7 +2,7 @@
   "legal_hub": {
     "title": "Hub Legal (/legal)",
     "url": "http://localhost:3000/legal",
-    "timestamp": "2026-09-26T02:02:13.961Z",
+    "timestamp": "2026-09-26T02:23:41.631Z",
     "violationsCount": 0,
     "passesCount": 20,
     "inapplicableCount": 42,
@@ -12,7 +12,7 @@
   "legal_terms": {
     "title": "Términos y Condiciones (/legal/terms)",
     "url": "http://localhost:3000/legal/terms",
-    "timestamp": "2026-09-26T02:02:17.030Z",
+    "timestamp": "2026-09-26T02:23:46.525Z",
     "violationsCount": 0,
     "passesCount": 22,
     "inapplicableCount": 40,
@@ -22,7 +22,7 @@
   "legal_privacy": {
     "title": "Política de Privacidad (/legal/privacy)",
     "url": "http://localhost:3000/legal/privacy",
-    "timestamp": "2026-09-26T02:02:19.834Z",
+    "timestamp": "2026-09-26T02:23:49.515Z",
     "violationsCount": 0,
     "passesCount": 22,
     "inapplicableCount": 40,
@@ -32,7 +32,7 @@
   "legal_courier": {
     "title": "Condiciones Repartidores (/legal/courier)",
     "url": "http://localhost:3000/legal/courier",
-    "timestamp": "2026-09-26T02:02:22.929Z",
+    "timestamp": "2026-09-26T02:23:53.415Z",
     "violationsCount": 0,
     "passesCount": 22,
     "inapplicableCount": 40,
@@ -42,7 +42,7 @@
   "legal_pilot": {
     "title": "Términos Piloto (/legal/pilot)",
     "url": "http://localhost:3000/legal/pilot",
-    "timestamp": "2026-09-26T02:02:25.823Z",
+    "timestamp": "2026-09-26T02:23:56.347Z",
     "violationsCount": 0,
     "passesCount": 22,
     "inapplicableCount": 40,
@@ -52,7 +52,7 @@
   "login": {
     "title": "Inicio de Sesión (/login)",
     "url": "http://localhost:3000/login",
-    "timestamp": "2026-09-26T02:02:29.121Z",
+    "timestamp": "2026-09-26T02:24:00.462Z",
     "violationsCount": 0,
     "passesCount": 26,
     "inapplicableCount": 36,
@@ -62,7 +62,7 @@
   "register": {
     "title": "Registro con Enlaces Legales (/register)",
     "url": "http://localhost:3000/register",
-    "timestamp": "2026-09-26T02:02:32.112Z",
+    "timestamp": "2026-09-26T02:24:04.906Z",
     "violationsCount": 0,
     "passesCount": 26,
     "inapplicableCount": 36,
@@ -72,7 +72,7 @@
   "merchant_onboarding": {
     "title": "Onboarding Comercio (/merchant/onboarding)",
     "url": "http://localhost:3000/merchant/onboarding",
-    "timestamp": "2026-09-26T02:02:34.279Z",
+    "timestamp": "2026-09-26T02:24:09.647Z",
     "violationsCount": 0,
     "passesCount": 21,
     "inapplicableCount": 41,
@@ -82,36 +82,11 @@
   "courier_onboarding": {
     "title": "Onboarding Repartidor (/onboarding/vehicle)",
     "url": "http://localhost:3000/onboarding/vehicle",
-    "timestamp": "2026-09-26T02:02:38.773Z",
-    "violationsCount": 1,
+    "timestamp": "2026-09-26T02:24:15.461Z",
+    "violationsCount": 0,
     "passesCount": 25,
     "inapplicableCount": 37,
     "incompleteCount": 0,
-    "violations": [
-      {
-        "id": "color-contrast",
-        "impact": "serious",
-        "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=axeAPI",
-        "nodesCount": 2,
-        "nodeDetails": [
-          {
-            "target": [
-              ".gap-1.flex-1.flex-col:nth-child(1) > .gap-0\\.5.text-primary.font-semibold"
-            ],
-            "html": "<span class=\"flex items-center gap-0.5 text-sm font-semibold text-primary\">",
-            "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.39 (foreground color: #09babd, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
-          },
-          {
-            "target": [
-              ".gap-1.flex-1.flex-col:nth-child(2) > .gap-0\\.5.text-primary.font-semibold"
-            ],
-            "html": "<span class=\"flex items-center gap-0.5 text-sm font-semibold text-primary\">",
-            "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 2.39 (foreground color: #09babd, background color: #ffffff, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1"
-          }
-        ]
-      }
-    ]
+    "violations": []
   }
 }
