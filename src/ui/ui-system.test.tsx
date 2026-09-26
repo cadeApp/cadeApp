@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('sonner', () => ({
@@ -241,8 +241,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       // Presionar Escape cierra el modal y restaura el foco al disparador (H18)
       fireEvent.keyDown(dialog, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(trigger);
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
     });
   });
 
@@ -284,14 +283,12 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
 
       fireEvent.keyDown(alert, { key: 'Escape' });
       expect(screen.queryByRole('alertdialog')).toBeNull();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(trigger);
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
 
       fireEvent.click(trigger);
       fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
       expect(screen.queryByRole('alertdialog')).toBeNull();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(trigger);
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
 
       fireEvent.click(trigger);
       fireEvent.click(screen.getByRole('button', { name: 'Sí, cancelar' }));
@@ -668,8 +665,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
 
       fireEvent.keyDown(sheetDialog, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(trigger);
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
     });
 
     it('D04: ejercita todas las ramas de BottomNav, Button, TopBar, EmptyState, Form, Select, Dialog, Sheet y auditDomAccessibilityStructure (>= 80% por archivo)', () => {
