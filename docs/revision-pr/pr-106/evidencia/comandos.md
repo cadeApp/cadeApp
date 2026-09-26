@@ -489,4 +489,4 @@ Código actual:
 
 ## Rerun independiente
 
-Se solicitó rerun del job unit `108457287688` sobre este mismo SHA. Al redactar esta ronda el workflow aparece `in_progress`; no se declara un resultado que todavía no existe.
+Rerun independiente del job unit sobre este mismo SHA: job `108458559773` → PASS, 66/66 archivos y 732/732 tests.
