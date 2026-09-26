@@ -6,6 +6,7 @@ import { Button } from '@/ui/button';
 import { Card, CardContent } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { formatArs } from '@/lib/format';
+import { formatRecipientPaymentMethod } from '../format';
 import {
   MapPin,
   Navigation,
@@ -30,19 +31,17 @@ export function TripCourierView({
   const isInTransit = trip.status === 'in_transit';
   const isDelivered = trip.status === 'delivered';
 
-  const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${trip.pickupLat ?? -27.435},${trip.pickupLng ?? -65.615}&destination=${trip.dropoffLat ?? -27.445},${trip.dropoffLng ?? -65.625}`;
-
   return (
     <div className="space-y-4 p-4 max-w-[390px] mx-auto pb-32">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+          <span className="text-sm font-mono uppercase tracking-wider text-muted-foreground">
             {trip.code}
           </span>
           <h1 className="font-display text-xl font-bold text-foreground">Viaje en curso</h1>
         </div>
-        <Badge variant={isDelivered ? 'secondary' : 'default'} className="rounded-full text-xs font-medium">
+        <Badge variant={isDelivered ? 'secondary' : 'default'} className="rounded-full text-sm font-medium">
           {isDelivered ? 'Entregado' : isInTransit ? 'En camino' : 'Por retirar'}
         </Badge>
       </div>
@@ -51,16 +50,16 @@ export function TripCourierView({
       <Card className="border-primary/30 bg-primary/5 shadow-card">
         <CardContent className="p-4 space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-primary flex items-center gap-1 uppercase tracking-wider">
+            <span className="text-sm font-bold text-primary flex items-center gap-1 uppercase tracking-wider">
               <DollarSign className="w-3.5 h-3.5" />
               Cobrás al entregar
             </span>
             <span className="font-display text-2xl font-bold text-foreground">
-              {trip.amountArs ? formatArs(trip.amountArs) : '$ 0'}
+              {trip.amountArs ? formatArs(trip.amountArs) : 'Monto a confirmar'}
             </span>
           </div>
-          <p className="text-xs text-muted-foreground pt-1">
-            {trip.recipientPaymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
+          <p className="text-sm text-muted-foreground pt-1">
+            {formatRecipientPaymentMethod(trip.recipientPaymentMethod)}
             {trip.needsChange && trip.cashChangeAmount && ` · necesita cambio de ${formatArs(trip.cashChangeAmount)}`}
           </p>
         </CardContent>
@@ -70,40 +69,28 @@ export function TripCourierView({
       <Card className="border-border bg-card shadow-card">
         <CardContent className="p-4 space-y-4">
           <div className="space-y-1">
-            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
               <MapPin className="w-3.5 h-3.5 text-primary" />
               Retiro en local
             </span>
             <p className="text-sm font-semibold text-foreground">{trip.pickupAddress}</p>
-            <p className="text-xs text-muted-foreground">{trip.pickupZoneName}</p>
+            <p className="text-sm text-muted-foreground">{trip.pickupZoneName}</p>
           </div>
 
           <div className="border-t border-border/60 pt-3 space-y-1">
-            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <span className="text-sm font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
               <Navigation className="w-3.5 h-3.5 text-primary" />
               Entrega en destino
             </span>
             <p className="text-sm font-semibold text-foreground">{trip.dropoffAddress ?? 'Dirección protegida'}</p>
-            <p className="text-xs text-muted-foreground">{trip.dropoffZoneName}</p>
+            <p className="text-sm text-muted-foreground">{trip.dropoffZoneName}</p>
             {trip.deliveryNotes && (
-              <p className="text-xs italic text-muted-foreground pt-0.5">&quot;{trip.deliveryNotes}&quot;</p>
+              <p className="text-sm italic text-muted-foreground pt-0.5">&quot;{trip.deliveryNotes}&quot;</p>
             )}
             {trip.recipientName && (
-              <p className="text-xs font-medium text-foreground pt-1">Cliente: {trip.recipientName}</p>
+              <p className="text-sm font-medium text-foreground pt-1">Cliente: {trip.recipientName}</p>
             )}
           </div>
-
-          {/* Botón universal Abrir en Google Maps (48px) */}
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl border border-primary/30 bg-primary/10 text-primary font-medium text-sm hover:bg-primary/20 transition-colors"
-            role="link"
-          >
-            <Navigation className="w-4 h-4" />
-            Abrir en Google Maps
-          </a>
         </CardContent>
       </Card>
 
@@ -135,7 +122,7 @@ export function TripCourierView({
           >
             {isMatched
               ? 'Marcar como retirado'
-              : `Confirmar entrega (${trip.amountArs ? formatArs(trip.amountArs) : ''})`}
+              : `Confirmar entrega${trip.amountArs ? ` (${formatArs(trip.amountArs)})` : ''}`}
           </Button>
         </div>
       )}

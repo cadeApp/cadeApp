@@ -59,6 +59,7 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
       <TripMerchantView
         trip={trip}
         onReportNoShow={handleReportNoShow}
+        isReportingNoShow={isPending}
         onCancelTrip={handleOpenCancelModal}
       />
       <TripCancelDialog

@@ -25,7 +25,7 @@ export function TripErrorState({
       <div className="space-y-1">
         <h3 className="font-display text-lg font-bold text-foreground">{title}</h3>
         <p className="text-sm text-muted-foreground">{message}</p>
-        <p className="text-xs text-muted-foreground font-mono pt-1">Código: {code}</p>
+        <p className="text-sm text-muted-foreground font-mono pt-1">Código: {code}</p>
       </div>
       {onRetry && (
         <Button

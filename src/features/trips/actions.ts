@@ -68,7 +68,7 @@ export async function markTripPickedUpAction(
   const rpcResult = await callRequestRpc(auth.supabase, 'mark_picked_up', parsed.data);
   if (!rpcResult.ok) return err(rpcResult.code);
 
-  revalidatePath(`/courier/trips/${parsed.data.requestId}`);
+  revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/courier/feed');
   return ok(rpcResult.data);
 }
@@ -88,7 +88,7 @@ export async function markTripDeliveredAction(
   const rpcResult = await callRequestRpc(auth.supabase, 'mark_delivered', parsed.data);
   if (!rpcResult.ok) return err(rpcResult.code);
 
-  revalidatePath(`/courier/trips/${parsed.data.requestId}`);
+  revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/courier/feed');
   return ok(rpcResult.data);
 }
@@ -108,7 +108,7 @@ export async function courierCancelTripAction(
   const rpcResult = await callRequestRpc(auth.supabase, 'courier_cancel_match', parsed.data);
   if (!rpcResult.ok) return err(rpcResult.code);
 
-  revalidatePath(`/courier/trips/${parsed.data.requestId}`);
+  revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/courier/feed');
   return ok(rpcResult.data);
 }
@@ -129,7 +129,7 @@ export async function merchantReportNoShowAction(
   const rpcResult = await callRequestRpc(auth.supabase, 'report_no_show', parsed.data);
   if (!rpcResult.ok) return err(rpcResult.code);
 
-  revalidatePath(`/merchant/trips/${parsed.data.requestId}`);
+  revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/merchant/requests');
   return ok(rpcResult.data);
 }
@@ -149,7 +149,7 @@ export async function merchantCancelTripAction(
   const rpcResult = await callRequestRpc(auth.supabase, 'cancel_request', parsed.data);
   if (!rpcResult.ok) return err(rpcResult.code);
 
-  revalidatePath(`/merchant/trips/${parsed.data.requestId}`);
+  revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/merchant/requests');
   return ok(rpcResult.data);
 }
@@ -169,7 +169,7 @@ export async function republishTripAction(
   const rpcResult = await callRequestRpc(auth.supabase, 'republish_request', parsed.data);
   if (!rpcResult.ok) return err(rpcResult.code);
 
-  revalidatePath(`/merchant/trips/${parsed.data.requestId}`);
+  revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/merchant/requests');
   return ok(rpcResult.data);
 }

@@ -2,12 +2,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
+import fs from 'node:fs';
+import path from 'node:path';
 import { TripMerchantView } from './components/trip-merchant-view';
 import { TripCourierView } from './components/trip-courier-view';
 import { TripCancelDialog } from './components/trip-cancel-dialog';
 import { TripSkeleton } from './components/trip-skeleton';
 import { TripErrorState } from './components/trip-error-state';
 import { TripEmptyState } from './components/trip-empty-state';
+import { formatVehicleType, formatRecipientPaymentMethod } from './format';
 import type { TripDetails } from './types';
 
 describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
@@ -18,7 +21,7 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     merchantId: 'merchant-1',
     courierId: 'courier-1',
     courierName: 'Carlos Benítez',
-    vehicleType: 'motorcycle',
+    vehicleType: 'moto',
     licensePlate: 'AB 123 CD',
     avatarUrl: null,
     amountArs: 1800,
@@ -32,10 +35,6 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     recipientPaymentMethod: 'cash',
     needsChange: true,
     cashChangeAmount: 5000,
-    pickupLat: -27.435,
-    pickupLng: -65.615,
-    dropoffLat: -27.445,
-    dropoffLng: -65.625,
     createdAt: '2026-09-24T10:00:00Z',
     matchedAt: '2026-09-24T10:05:00Z',
     pickedUpAt: null,
@@ -102,6 +101,37 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       fireEvent.click(cancelBtn);
       expect(onCancel).toHaveBeenCalled();
     });
+
+    it('muestra estado pendiente y deshabilitado en contingencia cuando se está reportando no show (H10)', () => {
+      render(
+        <TripMerchantView
+          trip={baseTrip}
+          onReportNoShow={vi.fn()}
+          isReportingNoShow={true}
+        />
+      );
+
+      const noShowBtn = screen.getByRole('button', { name: /Reportando\.\.\./i });
+      expect((noShowBtn as HTMLButtonElement).disabled).toBe(true);
+      expect(noShowBtn.getAttribute('aria-busy')).toBe('true');
+    });
+
+    it('soporta navegación y foco visible en los botones interactivos (H10)', () => {
+      const onCancel = vi.fn();
+      render(<TripMerchantView trip={baseTrip} onCancelTrip={onCancel} />);
+
+      const cancelBtn = screen.getByRole('button', { name: /Cancelar envío/i });
+      cancelBtn.focus();
+      expect(document.activeElement).toBe(cancelBtn);
+    });
+
+    it('no renderiza "$ 0" cuando amountArs es null o inválido en el viaje (H21)', () => {
+      const tripWithoutAmount: TripDetails = { ...baseTrip, amountArs: null };
+      render(<TripMerchantView trip={tripWithoutAmount} />);
+
+      expect(screen.queryByText(/\$\s*0\b/)).toBeNull();
+      expect(screen.getByText(/Monto a confirmar/i)).toBeDefined();
+    });
   });
 
   // =========================================================================
@@ -125,15 +155,11 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(screen.getByText(/Frente a la plaza/i)).toBeDefined();
     });
 
-    it('provee botón prominente "Abrir en Google Maps" con coordenadas universales', () => {
+    it('no incluye botón "Abrir en Google Maps" ni coordenadas en T-115 (H15)', () => {
       render(<TripCourierView trip={baseTrip} />);
 
-      const mapsLink = screen.getByRole('link', { name: /Abrir en Google Maps/i });
-      expect(mapsLink).toBeDefined();
-      expect(mapsLink.getAttribute('href')).toContain('google.com/maps/dir');
-      expect(mapsLink.getAttribute('href')).toContain('-27.435');
-      expect(mapsLink.getAttribute('href')).toContain('-27.445');
-      expect(mapsLink.className).toContain('min-h-[48px]');
+      const mapsLink = screen.queryByRole('link', { name: /Abrir en Google Maps/i });
+      expect(mapsLink).toBeNull();
     });
 
     it('tiene botón sticky gigante de 56px de avance de viaje: "Marcar como retirado" en matched', () => {
@@ -148,6 +174,14 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(onAdvance).toHaveBeenCalled();
     });
 
+    it('soporta navegación y foco en el botón de avance de viaje (H10)', () => {
+      render(<TripCourierView trip={baseTrip} onAdvanceTrip={vi.fn()} />);
+
+      const advanceBtn = screen.getByRole('button', { name: /Marcar como retirado/i });
+      advanceBtn.focus();
+      expect(document.activeElement).toBe(advanceBtn);
+    });
+
     it('tiene botón sticky gigante de 56px: "Confirmar entrega ($ 1.800)" en in_transit', () => {
       const onAdvance = vi.fn();
       const inTransitTrip: TripDetails = { ...baseTrip, status: 'in_transit' };
@@ -156,6 +190,14 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       const deliveredBtn = screen.getByRole('button', { name: /Confirmar entrega \(\$ 1\.800\)/i });
       expect(deliveredBtn).toBeDefined();
       expect(deliveredBtn.className).toContain('min-h-[56px]');
+    });
+
+    it('no renderiza "$ 0" cuando amountArs es null o no disponible (H21)', () => {
+      const tripWithoutAmount: TripDetails = { ...baseTrip, amountArs: null };
+      render(<TripCourierView trip={tripWithoutAmount} />);
+
+      expect(screen.queryByText(/\$\s*0\b/)).toBeNull();
+      expect(screen.getByText(/Monto a confirmar/i)).toBeDefined();
     });
   });
 
@@ -252,4 +294,62 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(screen.getByText(/Viaje no encontrado/i)).toBeDefined();
     });
   });
+
+  // =========================================================================
+  // H17: Mapeo exhaustivo de enums
+  // =========================================================================
+  describe('H17: Mapeo exhaustivo de enums (vehicleType y recipientPaymentMethod)', () => {
+    it('mapea correctamente todos los tipos de vehículo a es-AR', () => {
+      expect(formatVehicleType('walk')).toBe('A pie');
+      expect(formatVehicleType('bike')).toBe('Bicicleta');
+      expect(formatVehicleType('moto')).toBe('Moto');
+      expect(formatVehicleType('car')).toBe('Auto');
+      expect(formatVehicleType(null)).toBe('Repartidor');
+      expect(formatVehicleType(undefined)).toBe('Repartidor');
+    });
+
+    it('mapea correctamente todos los métodos de pago a es-AR', () => {
+      expect(formatRecipientPaymentMethod('cash')).toBe('Efectivo');
+      expect(formatRecipientPaymentMethod('transfer')).toBe('Transferencia');
+      expect(formatRecipientPaymentMethod('to_agree')).toBe('A coordinar');
+      expect(formatRecipientPaymentMethod(null)).toBe('A coordinar');
+      expect(formatRecipientPaymentMethod(undefined)).toBe('A coordinar');
+    });
+
+    it('muestra el vehículo correcto en TripMerchantView según el enum', () => {
+      const tripWalk: TripDetails = { ...baseTrip, vehicleType: 'walk' };
+      const { rerender } = render(<TripMerchantView trip={tripWalk} />);
+      expect(screen.getByText('A pie')).toBeDefined();
+
+      rerender(<TripMerchantView trip={{ ...baseTrip, vehicleType: 'car' }} />);
+      expect(screen.getByText('Auto')).toBeDefined();
+    });
+  });
+
+  // =========================================================================
+  // H18: Anti-12px — Erradicación total de text-xs
+  // =========================================================================
+  describe('H18: Anti-12px — Erradicación de text-xs en componentes de viaje', () => {
+    it('no contiene ninguna clase text-xs en src/features/trips/components', () => {
+      const componentsDir = path.resolve(__dirname, 'components');
+      const files = fs.readdirSync(componentsDir).filter((f) => f.endsWith('.tsx'));
+
+      const violations: string[] = [];
+      const textXsRegex = /\btext-xs\b/;
+
+      for (const file of files) {
+        const fullPath = path.join(componentsDir, file);
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+          if (textXsRegex.test(line)) {
+            violations.push(`${file}:${idx + 1}: ${line.trim()}`);
+          }
+        });
+      }
+
+      expect(violations).toEqual([]);
+    });
+  });
 });
+

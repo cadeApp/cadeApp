@@ -262,7 +262,7 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       );
 
       // H11: Revalidación de caché
-      expect(revalidatePath).toHaveBeenCalledWith(`/courier/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
       expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
     });
 
@@ -290,7 +290,7 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       );
 
       // H11: Revalidación
-      expect(revalidatePath).toHaveBeenCalledWith(`/courier/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
       expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
     });
 
@@ -322,7 +322,7 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       );
 
       // H11: Revalidación
-      expect(revalidatePath).toHaveBeenCalledWith(`/courier/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
       expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
     });
 
@@ -354,7 +354,7 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       );
 
       // H11: Revalidación
-      expect(revalidatePath).toHaveBeenCalledWith(`/merchant/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
       expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
     });
 
@@ -385,7 +385,7 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       );
 
       // H11: Revalidación
-      expect(revalidatePath).toHaveBeenCalledWith(`/merchant/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
       expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
     });
 
@@ -417,7 +417,7 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       );
 
       // H11: Revalidación
-      expect(revalidatePath).toHaveBeenCalledWith(`/merchant/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
       expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
     });
   });

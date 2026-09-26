@@ -21,10 +21,6 @@ export interface TripDetails {
   recipientPaymentMethod: RecipientPaymentMethod;
   needsChange: boolean;
   cashChangeAmount: number | null;
-  pickupLat: number | null;
-  pickupLng: number | null;
-  dropoffLat: number | null;
-  dropoffLng: number | null;
   createdAt: string;
   matchedAt: string | null;
   pickedUpAt: string | null;

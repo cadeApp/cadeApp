@@ -6,7 +6,7 @@ vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
-describe('T-115 DoD: queries de viaje (revelación progresiva, identidad y cobro en mano) (H09)', () => {
+describe('T-115 DoD: queries de viaje (revelación progresiva, esquema real y cobro en mano) (H09, H13, H15, H21)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -14,38 +14,33 @@ describe('T-115 DoD: queries de viaje (revelación progresiva, identidad y cobro
   const merchantUserId = 'merchant-uuid-1111';
   const courierUserId = 'courier-uuid-2222';
   const otherUserId = 'other-uuid-3333';
-  const requestId = 'req-uuid-1234';
+  const requestId = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d';
   const acceptedOfferId = 'offer-uuid-accepted-999';
   const otherOfferId = 'offer-uuid-other-888';
 
   const mockDbTripRow = {
     id: requestId,
-    code: 'REQ-5544',
     merchant_id: merchantUserId,
     status: 'matched' as const,
-    pickup_address: 'San Martín 450, Aguilares',
     pickup_zone_id: 'zone-1',
     dropoff_zone_id: 'zone-2',
     pickup_zone: { name: 'Centro' },
     dropoff_zone: { name: 'Barrio San Martín' },
     package_type: 'chico',
-    recipient_payment_method: 'cash',
+    recipient_payment_method: 'cash' as const,
     needs_change: true,
     cash_change_amount: 5000,
+    notes: 'Casa con reja negra',
     accepted_offer_id: acceptedOfferId,
-    pickup_lat: -27.435,
-    pickup_lng: -65.615,
-    dropoff_lat: -27.445,
-    dropoff_lng: -65.625,
     created_at: '2026-09-24T10:00:00.000Z',
     matched_at: '2026-09-24T10:05:00.000Z',
     picked_up_at: null,
     delivered_at: null,
     contacts: {
+      pickup_address: 'San Martín 450, Aguilares',
       recipient_name: 'Laura Gómez',
       recipient_phone: '3865123456',
       dropoff_address: 'Belgrano 1220',
-      delivery_notes: 'Casa con reja negra',
     },
     offers: [
       {
@@ -53,24 +48,12 @@ describe('T-115 DoD: queries de viaje (revelación progresiva, identidad y cobro
         courier_id: 'courier-uuid-other',
         amount_ars: 2500,
         status: 'rejected',
-        courier: {
-          display_name: 'Ignacio R.',
-          vehicle_type: 'bicycle',
-          vehicle_plate: null,
-          avatar_url: null,
-        },
       },
       {
         id: acceptedOfferId,
         courier_id: courierUserId,
         amount_ars: 1800,
         status: 'accepted',
-        courier: {
-          display_name: 'Carlos Benítez',
-          vehicle_type: 'motorcycle',
-          vehicle_plate: 'AB 123 CD',
-          avatar_url: 'https://example.com/avatar.jpg',
-        },
       },
     ],
   };
@@ -81,10 +64,21 @@ describe('T-115 DoD: queries de viaje (revelación progresiva, identidad y cobro
       error: null,
     });
 
-    const mockSelect = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        maybeSingle: mockMaybeSingle,
-      }),
+    const mockSelect = vi.fn().mockImplementation((projection: string) => {
+      // H13: El mock valida que no se pidan columnas inexistentes en delivery_requests
+      const rootProjection = projection.split('contacts:')[0] ?? '';
+      const forbiddenColumns = ['code', 'pickup_address', 'pickup_lat', 'pickup_lng', 'dropoff_lat', 'dropoff_lng'];
+      for (const col of forbiddenColumns) {
+        if (new RegExp(`\\b${col}\\b`).test(rootProjection)) {
+          throw new Error(`H13: Columna inexistente '${col}' solicitada en delivery_requests`);
+        }
+      }
+
+      return {
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: mockMaybeSingle,
+        }),
+      };
     });
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
@@ -113,15 +107,13 @@ describe('T-115 DoD: queries de viaje (revelación progresiva, identidad y cobro
     expect(trip).toBeNull();
   });
 
-  it('H09: el monto acordado proviene estrictamente de la oferta accepted_offer_id ($ 1.800 y no 2.500)', async () => {
+  it('H09 & H13: el monto acordado proviene de accepted_offer_id y el código se deriva del UUID (D04)', async () => {
     mockSupabase(merchantUserId, mockDbTripRow);
     const trip = await getTripDetails(requestId);
     expect(trip).not.toBeNull();
     if (trip) {
       expect(trip.amountArs).toBe(1800);
-      expect(trip.courierName).toBe('Carlos Benítez');
-      expect(trip.vehicleType).toBe('motorcycle');
-      expect(trip.licensePlate).toBe('AB 123 CD');
+      expect(trip.code).toBe('REQ-1A2B3C4D');
     }
   });
 
@@ -173,5 +165,16 @@ describe('T-115 DoD: queries de viaje (revelación progresiva, identidad y cobro
       expect(trip.needsChange).toBe(true);
       expect(trip.cashChangeAmount).toBe(5000);
     }
+  });
+
+  it('H21: retorna null si el viaje está en matched pero falta oferta aceptada válida o monto <= 0', async () => {
+    const invalidMatchedRow = {
+      ...mockDbTripRow,
+      accepted_offer_id: 'missing-offer-id',
+      offers: [],
+    };
+    mockSupabase(merchantUserId, invalidMatchedRow);
+    const trip = await getTripDetails(requestId);
+    expect(trip).toBeNull();
   });
 });

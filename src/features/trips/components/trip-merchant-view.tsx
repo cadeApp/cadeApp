@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { buildWhatsAppUrl, buildNotifyCustomerWhatsAppMessage } from '@/lib/whatsapp';
 import { formatArs } from '@/lib/format';
+import { formatVehicleType } from '../format';
 import {
   CheckCircle2,
   Clock,
@@ -21,12 +22,14 @@ import {
 export interface TripMerchantViewProps {
   trip: TripDetails;
   onReportNoShow?: () => void;
+  isReportingNoShow?: boolean;
   onCancelTrip?: () => void;
 }
 
 export function TripMerchantView({
   trip,
   onReportNoShow,
+  isReportingNoShow = false,
   onCancelTrip,
 }: TripMerchantViewProps) {
   const isMatched = trip.status === 'matched';
@@ -37,15 +40,19 @@ export function TripMerchantView({
     ? buildWhatsAppUrl(trip.recipientPhone, `Hola ${trip.courierName ?? ''}, te escribo por el envío ${trip.code}.`)
     : '#';
 
-  const customerMsg = buildNotifyCustomerWhatsAppMessage({
-    amountArs: trip.amountArs ?? 0,
-    courierName: trip.courierName ?? 'el repartidor',
-    recipientPaymentMethod: trip.recipientPaymentMethod,
-    needsChange: trip.needsChange,
-    cashChangeAmount: trip.cashChangeAmount,
-  });
+  const hasValidAmount = typeof trip.amountArs === 'number' && trip.amountArs > 0;
 
-  const customerWaUrl = trip.recipientPhone
+  const customerMsg = hasValidAmount
+    ? buildNotifyCustomerWhatsAppMessage({
+        amountArs: trip.amountArs!,
+        courierName: trip.courierName ?? 'el repartidor',
+        recipientPaymentMethod: trip.recipientPaymentMethod,
+        needsChange: trip.needsChange,
+        cashChangeAmount: trip.cashChangeAmount,
+      })
+    : 'Monto pendiente de confirmación';
+
+  const customerWaUrl = trip.recipientPhone && hasValidAmount
     ? buildWhatsAppUrl(trip.recipientPhone, customerMsg)
     : '#';
 
@@ -54,18 +61,18 @@ export function TripMerchantView({
       {/* Header y código */}
       <div className="flex items-center justify-between">
         <div>
-          <span className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+          <span className="text-sm font-mono uppercase tracking-wider text-muted-foreground">
             {trip.code}
           </span>
           <h1 className="font-display text-xl font-bold text-foreground">Viaje en curso</h1>
         </div>
-        <Badge variant={isDelivered ? 'secondary' : 'default'} className="rounded-full text-xs font-medium">
+        <Badge variant={isDelivered ? 'secondary' : 'default'} className="rounded-full text-sm font-medium">
           {isDelivered ? 'Entregado' : isInTransit ? 'En camino' : 'Asignado'}
         </Badge>
       </div>
 
       {/* Stepper C06: Asignada -> Retirado -> Entregado */}
-      <div className="flex items-center justify-between gap-1 p-3 bg-card border border-border rounded-xl shadow-card text-xs">
+      <div className="flex items-center justify-between gap-1 p-3 bg-card border border-border rounded-xl shadow-card text-sm">
         <div className="flex items-center gap-1.5 font-medium text-foreground">
           <CheckCircle2 className="w-4 h-4 text-primary" />
           <span>Asignada</span>
@@ -98,15 +105,19 @@ export function TripMerchantView({
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <h3 className="font-bold text-base text-foreground">{trip.courierName ?? 'Repartidor'}</h3>
-              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
                 <Bike className="w-3.5 h-3.5" />
-                <span>{trip.vehicleType === 'motorcycle' ? 'Moto' : 'Bicicleta'}</span>
+                <span>{formatVehicleType(trip.vehicleType)}</span>
                 {trip.licensePlate && <span>· Patente: <strong className="text-foreground">{trip.licensePlate}</strong></span>}
               </p>
             </div>
-            {trip.amountArs && (
+            {hasValidAmount ? (
               <span className="font-display text-lg font-bold text-foreground">
-                {formatArs(trip.amountArs)}
+                {formatArs(trip.amountArs!)}
+              </span>
+            ) : (
+              <span className="font-display text-sm font-semibold text-muted-foreground">
+                Monto a confirmar
               </span>
             )}
           </div>
@@ -116,7 +127,7 @@ export function TripMerchantView({
               href={courierWaUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl bg-[#25D366] text-white font-medium text-sm hover:bg-[#20ba5a] transition-colors"
+              className="flex-1 inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
               role="link"
             >
               <MessageCircle className="w-4 h-4" />
@@ -141,19 +152,20 @@ export function TripMerchantView({
         <CardContent className="p-4 space-y-3">
           <div>
             <h4 className="text-sm font-bold text-foreground">Avisale a tu cliente</h4>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Destinatario: <strong className="text-foreground">{trip.recipientName ?? 'Cliente'}</strong>
             </p>
           </div>
-          <div className="p-2.5 rounded-lg bg-background/80 border border-border/50 text-xs text-muted-foreground italic">
+          <div className="p-2.5 rounded-lg bg-background/80 border border-border/50 text-sm text-muted-foreground italic">
             &quot;{customerMsg}&quot;
           </div>
           <a
             href={customerWaUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors shadow-sm"
+            className={`w-full inline-flex items-center justify-center gap-2 min-h-[48px] rounded-xl bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors shadow-sm ${!hasValidAmount ? 'pointer-events-none opacity-50' : ''}`}
             role="link"
+            aria-disabled={!hasValidAmount}
           >
             <MessageCircle className="w-4 h-4" />
             Avisar a mi cliente
@@ -168,11 +180,13 @@ export function TripMerchantView({
             <Button
               type="button"
               variant="outline"
+              disabled={isReportingNoShow}
+              aria-busy={isReportingNoShow ? 'true' : undefined}
               onClick={onReportNoShow}
               className="w-full min-h-[48px] text-destructive hover:bg-destructive/10 border-destructive/30"
             >
               <AlertTriangle className="w-4 h-4 mr-2" />
-              El repartidor no llegó
+              {isReportingNoShow ? 'Reportando...' : 'El repartidor no llegó'}
             </Button>
           )}
 
