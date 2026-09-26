@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { Card } from '@/ui/card';
 import { Button } from '@/ui/button';
+import { ADMIN_COPY } from '@/features/admin';
 
 export default function ApplicantDetailError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string };
@@ -15,18 +15,18 @@ export default function ApplicantDetailError({
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <Card role="alert" className="space-y-4 p-6 text-center">
         <h2 className="text-lg font-bold text-foreground">
-          No pudimos cargar el detalle del postulante
+          {ADMIN_COPY.errors.detail.title}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {error.message || 'Ocurrió un inconveniente al consultar la documentación del repartidor.'}
+          {ADMIN_COPY.errors.detail.description}
         </p>
         <div className="flex justify-center gap-3">
           <Button type="button" onClick={reset} className="w-full sm:w-auto">
-            Reintentar
+            {ADMIN_COPY.errors.detail.retry}
           </Button>
           <Link href="/admin/applicants">
             <Button variant="outline" type="button" className="w-full sm:w-auto">
-              Volver a la cola
+              {ADMIN_COPY.errors.detail.back}
             </Button>
           </Link>
         </div>
