@@ -348,3 +348,77 @@ El `hallazgos.jsonl` de Ronda 3 se validó línea por línea con `JSON.parse` y 
 ## Checks no ejecutados
 
 No se inspeccionó CI porque hay bloqueantes. No se ejecutaron `pnpm typecheck`, `pnpm lint` ni `pnpm test` de forma independiente por falta de checkout/pnpm del repo. No se usaron `.env*`, secretos ni servicios remotos.
+
+
+---
+
+# Ronda 4 · SHA 6a42a26675a8f6bb584e2eaa66c7fdf854bbf49e
+
+## Preflight
+
+```text
+head: 6a42a26675a8f6bb584e2eaa66c7fdf854bbf49e
+develop: ac4587f3c76f3ce8d63f3abbafff0847b89d9b54
+threads inline: 0
+CC-008: PR #103 abierta
+CC-009: PR #104 abierta
+```
+
+## Autorrevisión
+
+```text
+commit: b805c947e0631f68172eef26a65dc164b38deb23
+author: asako669
+path: docs/revision-pr/pr-83/**
+```
+
+Se conserva como `revisiones/autorrevision-agy-r4.md`; sus estados verificados no se usan.
+
+## H13
+
+```text
+query:
+pickup_zone:pickup_zone_id(name)
+dropoff_zone:dropoff_zone_id(name)
+
+mock:
+solo rechaza code,pickup_address,pickup_lat,pickup_lng,dropoff_lat,dropoff_lng
+```
+
+Mutación que el próximo control debe matar: relación/FK inexistente. Si queda verde, el test sigue midiendo un proxy.
+
+## H14
+
+```text
+courierWaUrl -> trip.recipientPhone
+tel del repartidor -> trip.recipientPhone
+TripDetails -> sin courierPhone/merchantPhone
+TripCourierView -> sin contacto al comercio
+```
+
+## H18 · corrección del revisor
+
+```text
+tailwind.config.ts:
+xs = 0.875rem
+sm = 0.875rem
+=> ambos 14px
+```
+
+## H20/H23
+
+```text
+PR body: todavía menciona Google Maps + rutas (merchant)/(courier)
+PR body: 55 suites / 596 tests
+bitácora posterior: 56 suites / 630 tests
+capturas/enlaces 390/360: ausentes
+```
+
+## H24
+
+```text
+amountArs: trip.amountArs!
+formatArs(trip.amountArs!)
+```
+
+CI no consultado por bloqueantes. No se ejecutó suite completa independiente.

@@ -161,3 +161,26 @@ Un DoD de 390/360 solo está cerrado si quedan capturas/enlaces y diferencias re
 **Origen:** H21.
 
 Si el monto aceptado es condición de un viaje matched, el tipo/loader debe hacerlo obligatorio. `?? 0` transforma una inconsistencia de datos en una afirmación económica falsa y puede terminar enviada por WhatsApp al cliente.
+
+
+---
+
+## Ronda 4
+
+### AG-105 · Una blacklist de columnas no valida la gramática de una query PostgREST
+
+**Origen:** H13.
+
+Un mock puede rechazar `pickup_address` y aun aceptar `pickup_zone:relacion_inexistente(name)`. Para relaciones, el control se deriva del esquema/tipo generado o ejercita una frontera real; validar tokens de columna repite P08.
+
+### AG-106 · Los teléfonos se tipan por participante
+
+**Origen:** H14.
+
+Si la UI necesita cliente, comercio y cadete, el DTO usa `recipientPhone`, `merchantPhone` y `courierPhone`. Reusar “el teléfono disponible” convierte una ausencia de contrato en una acción contra la persona equivocada.
+
+### AG-107 · El PR body es evidencia versionada aunque Git no lo sea
+
+**Origen:** H23.
+
+Cuando el código elimina una feature o cambia rutas/checks, el cuerpo del PR se actualiza en la misma sesión. Un body viejo puede pasar CI y describir otro producto.
