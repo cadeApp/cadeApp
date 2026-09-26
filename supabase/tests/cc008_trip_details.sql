@@ -40,17 +40,32 @@ values
   (pg_temp.courier_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc008.c@test.com', 'pwd', '{"role":"courier"}'::jsonb),
   (pg_temp.other_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc008.o@test.com', 'pwd', '{"role":"merchant"}'::jsonb);
 
-insert into public.profiles (id, role, display_name, phone, consent_status)
-values
-  (pg_temp.merchant_id(), 'merchant', 'Comercio Perfil', '3865222222', 'active'),
-  (pg_temp.courier_id(), 'courier', 'Cadete Uno', '3865111111', 'active'),
-  (pg_temp.other_id(), 'merchant', 'Tercero', '3865333333', 'active');
+-- handle_new_user ya creó profiles + merchants/couriers al insertar auth.users.
+update public.profiles
+set display_name = case
+      when id = pg_temp.merchant_id() then 'Comercio Perfil'
+      when id = pg_temp.courier_id() then 'Cadete Uno'
+      else 'Tercero'
+    end,
+    phone = case
+      when id = pg_temp.merchant_id() then '3865222222'
+      when id = pg_temp.courier_id() then '3865111111'
+      else '3865333333'
+    end,
+    consent_status = 'active'
+where id in (pg_temp.merchant_id(), pg_temp.courier_id(), pg_temp.other_id());
 
-insert into public.merchants (profile_id, business_name, subscription_status)
-values (pg_temp.merchant_id(), 'Kiosco Centro', 'pilot');
+update public.merchants
+set business_name = 'Kiosco Centro',
+    subscription_status = 'pilot'
+where profile_id = pg_temp.merchant_id();
 
-insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
-values (pg_temp.courier_id(), 'approved', true, 'moto', 'AA123BB');
+update public.couriers
+set status = 'approved',
+    available = true,
+    vehicle_type = 'moto',
+    vehicle_plate = 'AA123BB'
+where profile_id = pg_temp.courier_id();
 
 insert into public.zones (id, name, active)
 values
