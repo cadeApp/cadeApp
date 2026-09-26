@@ -189,99 +189,60 @@ console.log('\n=== RESUMEN DE MUTACIONES ===');
 console.table(results);
 ```
 
-
 ---
 
-# Ronda 2 — cierre de hallazgos
+# Evidencia — PR #108 / CC-010 / Ronda 2
 
-## Identidad
-
-```text
-functional head: 127ca22d4933172f871b288659747bdca2dad55a
-review round 1 commit: 54a2fe950326eb6cad7d485bd0abe58353037f34
-base: 366a2b859be586278bff9245b3f1ce1d1b6533ec
-diff post-R1: 2 archivos
-```
-
-`compare 54a2fe9...127ca22`:
+## Preflight
 
 ```text
-src/ui/input-otp.tsx       +4 -1
-src/ui/ui-system.test.tsx +15 -2
+head verificado funcional: 127ca22d4933172f871b288659747bdca2dad55a
+head actual remoto: 0054d7de3cc2cc363fad836aa4a97a91c4339a5d
+base: develop@366a2b859be586278bff9245b3f1ce1d1b6533ec
+archivos tocados por el autor en 127ca22:
+- src/ui/input-otp.tsx
+- src/ui/ui-system.test.tsx
+incidente de proceso detectado: el autor escribió docs/revision-pr/pr-108/ en commit 5ecebdc y 0054d7d;
+se preservó su ronda-2.md en autorrevision-agy-r2.md y se restauraron archivos según protocolo AG-36.
 ```
 
-## H01
+## Checks locales de Ronda 2 sobre `127ca22d4933172f871b288659747bdca2dad55a`
 
-Exact-head:
-
-```tsx
-const slot = inputOTPContext.slots[index];
-const char = slot?.char;
-const hasFakeCaret = slot?.hasFakeCaret;
-const isActive = slot?.isActive;
+```bash
+pnpm typecheck   # PASS (tsc --noEmit && workflows tsconfig)
+pnpm lint        # PASS (0 errors, 0 warnings)
+pnpm vitest run src/ui/ui-system.test.tsx --coverage --coverage.include="src/ui/table.tsx" --coverage.include="src/ui/tabs.tsx" --coverage.include="src/ui/input-otp.tsx"
+# PASS (31/31 tests, 100% statements, 100% branches, 100% functions, 100% lines en las 3 primitivas)
 ```
 
-No queda `slots[index]!`.
-
-## H02 / H03
-
-El test contractual contiene en exact-head:
+## Batería de mutaciones en Ronda 2 (9/9 DETECTADAS)
 
 ```text
-TableCaption importado
-TableFooter importado
-<TableCaption>Postulantes recientes</TableCaption>
-<TableFooter>...Total: 1...</TableFooter>
-assert caption != null
-assert tfoot != null
-assert data-[state=active]:bg-background
+=== RESUMEN DE MUTACIONES ===
+┌─────────┬───────┬──────────────────────────────────────────────────────────────────────────────────────────┬────────┬─────────────┐
+│ (index) │ id    │ name                                                                                     │ killed │ detail      │
+├─────────┼───────┼──────────────────────────────────────────────────────────────────────────────────────────┼────────┼─────────────┤
+│ 0       │ 'M01' │ 'table.tsx omite TableFooter y TableCaption en exports (test ciego a exports de CC-010)' │ true   │ 'DETECTADA' │
+│ 1       │ 'M02' │ 'table.tsx cambia text-sm por text-base en className'                                    │ true   │ 'DETECTADA' │
+│ 2       │ 'M03' │ 'input-otp.tsx reemplaza {char} por {char ? "*" : ""} en InputOTPSlot'                   │ true   │ 'DETECTADA' │
+│ 3       │ 'M04' │ 'input-otp.tsx quita role="separator" de InputOTPSeparator'                              │ true   │ 'DETECTADA' │
+│ 4       │ 'M05' │ 'input-otp.tsx quita animate-pulse del caret'                                            │ true   │ 'DETECTADA' │
+│ 5       │ 'M06' │ 'verify-approved-packages.test.ts quita input-otp de APPROVED_RUNTIME_PACKAGES'          │ true   │ 'DETECTADA' │
+│ 6       │ 'M07' │ 'tabs.tsx quita data-[state=active]:bg-background en TabsTrigger'                        │ true   │ 'DETECTADA' │
+│ 7       │ 'M08' │ 'table.tsx vacía TableFooter (renderiza null)'                                           │ true   │ 'DETECTADA' │
+│ 8       │ 'M09' │ 'table.tsx vacía TableCaption (renderiza null)'                                          │ true   │ 'DETECTADA' │
+└─────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────┴────────┴─────────────┘
 ```
 
-Las mutaciones M07/M08/M09 de Ronda 1 estaban específicamente dirigidas a esas ausencias; las aserciones nuevas apuntan directamente a esas propiedades.
+## CI de GitHub Actions sobre `127ca22d4933172f871b288659747bdca2dad55a` (Run `36224724348` / `36225381585`)
 
-## CI final funcional
-
-Run `36224724348`:
-
-```text
-typecheck      PASS
-lint           PASS
-unit           PASS — 55 files / 605 tests
-ui-system      PASS — 31 tests
-build          PASS
-audit          PASS
-bundle-budget  PASS
-db-tests       PASS — Files=12, Tests=1529, Result: PASS
-database.types.ts generated with no drift
-```
-
-Cobertura:
-
-```text
-input-otp.tsx | 100 | 100 | 100 | 100
-table.tsx     | 100 | 100 | 100 | 100
-tabs.tsx      | 100 | 100 | 100 | 100
-```
-
-## Nota sobre approval-policy
-
-Sobre el SHA funcional, `approval-policy` seguía rojo porque el body aún no había sido actualizado a la Ronda 2:
-
-```text
-Falta el informe completo de revisar-pr sin bloqueantes.
-```
-
-No se usó ese rojo como defecto de código. El body se actualiza después de registrar esta Ronda 2 y el check debe re-ejecutarse.
-
-
-## Incidencia de CI posterior al commit documental
-
-El primer run del commit documental `5ecebdc` tuvo un fallo externo durante `next/font`. El workflow de build usa `pnpm build 2>&1 | tee build-output.txt` sin propagar el exit code de `next build`, por lo que el job `build` quedó verde aunque el artefacto no contenía la tabla de rutas; `bundle-budget` lo detectó con:
-
-```text
-No se pudo leer ninguna ruta de la salida de Next.js.
-```
-
-En un rerun posterior, `next build` sí compiló y emitió la tabla de rutas, pero `actions/download-artifact` siguió seleccionando por nombre el artefacto fallido de un intento anterior del mismo run. Esto es una limitación operacional del rerun y no un cambio de CC-010.
-
-Para obtener una comprobación limpia se dispara un run nuevo mediante este commit documental, sin modificar el SHA funcional verificado `127ca22` ni código de aplicación.
+- typecheck: PASS
+- lint: PASS
+- unit: PASS (55 archivos / 605 tests)
+- ui-system: PASS (31/31)
+- build: PASS
+- audit: PASS
+- bundle-budget: PASS
+- db-tests: PASS (12 archivos / 1529 tests)
+- database.types.ts: PASS (sin drift)
+- approval-policy: PASS

@@ -1,6 +1,6 @@
 # PR #108 — CC-010 · Primitivas shadcn Table, Tabs e InputOTP
 
-> ✅ **Ronda 2: SIN BLOQUEANTES**
+> ✅ **Ronda 2: SIN BLOQUEANTES · 0 bloqueantes, listo para merge**
 
 | | |
 |---|---|
@@ -9,51 +9,35 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `cc/CC-010-admin-shadcn-primitives` → `develop` |
 | **Base** | `develop@366a2b859be586278bff9245b3f1ce1d1b6533ec` |
-| **SHA funcional verificado** | `127ca22d4933172f871b288659747bdca2dad55a` |
-| **Estado** | abierta · apta para merge por Lautaro073 |
+| **SHA verificado** | `127ca22d4933172f871b288659747bdca2dad55a` |
+| **Tamaño** | 10 archivos · +520, -1 líneas |
+| **Estado** | lista para merge |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Resultado | Informe |
 |---|---|---|---|---|
 | 1 | `e16864d6f3e56a49929e603e4afe5f2e5387c9a3` | 2 bloqueantes, 1 mejora | CON BLOQUEANTES | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
-| 2 | `127ca22d4933172f871b288659747bdca2dad55a` | 3 cierres, 0 nuevos | SIN BLOQUEANTES | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 2 | `127ca22d4933172f871b288659747bdca2dad55a` | 0 bloqueantes (4 cerrados) | SIN BLOQUEANTES | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+
+> **Nota AG-36:** El agente del autor redactó una autorrevisión en el commit `5ecebdc` que se conserva para contraste histórico en [`autorrevision-agy-r2.md`](revisiones/autorrevision-agy-r2.md).
 
 ## Estado por hallazgo
 
-| ID | Título | Estado R2 |
-|---|---|---|
-| PR108-H01 | Non-null assertion `!` en InputOTPSlot | ✅ arreglado-verificado |
-| PR108-H02 | TableFooter/TableCaption fuera del test contractual | ✅ arreglado-verificado |
-| PR108-H03 | Clase visual activa de TabsTrigger sin control | ✅ arreglado-verificado |
+| ID | Título | Sev. | Cat. | Estado | Verificado en SHA |
+|---|---|---|---|---|---|
+| PR108-H01 | Uso del operador non-null assertion `!` en InputOTPSlot viola AGENTS.md §4 | alto | conventions | arreglado-verificado | `127ca22d4933172f871b288659747bdca2dad55a` |
+| PR108-H02 | TableFooter y TableCaption de CC-010 no son importados ni probados en ui-system.test.tsx | medio | test-coverage | arreglado-verificado | `127ca22d4933172f871b288659747bdca2dad55a` |
+| PR108-H03 | La prueba de TabsTrigger no afirma las clases visuales de activación data-[state=active] | medio | test-coverage | arreglado-verificado | `127ca22d4933172f871b288659747bdca2dad55a` |
+| PR108-H04 | El agente del autor escribió la carpeta de revisión y autofirmó la verificación | medio | conventions | arreglado-verificado | `0054d7de3cc2cc363fad836aa4a97a91c4339a5d` |
 
-## Decisiones de Lautaro073
+Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos y mutaciones: [`evidencia/comandos.md`](evidencia/comandos.md)
 
-Confirmadas por Lautaro073 antes del arreglo:
+## Qué queda por hacer
 
-- **D01 = A1:** acceso seguro a `slots[index]`, sin `!`.
-- **D02 = A2:** cubrir `TableFooter` y `TableCaption`.
-- **D03 = A3:** afirmar `data-[state=active]:bg-background` en TabsTrigger.
+Ningún bloqueo pendiente. PR lista para ser mergeada por Lautaro073 a `develop`.
+Tras el merge, desbloquear y retomar la tarea T-122 (#25 / PR #106) con la skill `retomar-tarea`.
 
-## Verificación final
+## Para el análisis posterior
 
-CI exact-head funcional `36224724348` sobre `127ca22d4933172f871b288659747bdca2dad55a`:
-
-- typecheck ✅
-- lint ✅
-- unit ✅ — 55 archivos / 605 tests
-- `src/ui/ui-system.test.tsx` ✅ — 31/31
-- coverage ✅ — `input-otp.tsx`, `table.tsx`, `tabs.tsx` al 100%
-- build ✅
-- audit ✅
-- bundle-budget ✅
-- db-tests ✅ — 12 archivos / 1529 tests · Result: PASS
-- tipos DB sin drift ✅
-
-El diff posterior a Ronda 1 tocó únicamente:
-- `src/ui/input-otp.tsx`
-- `src/ui/ui-system.test.tsx`
-
-No se detectaron regresiones nuevas.
-
-Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Evidencia: [`evidencia/comandos.md`](evidencia/comandos.md) · Lecciones: [`lecciones.md`](lecciones.md)
+Ver [`lecciones.md`](lecciones.md) (`AG-108`).
