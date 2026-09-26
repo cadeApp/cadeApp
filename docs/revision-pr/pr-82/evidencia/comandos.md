@@ -464,3 +464,59 @@ Lautaro073 respondió `1-A`: paginación completa ahora en T-204. La decisión i
 ## Limitación
 
 El checkout local del reviewer sigue sin estar disponible; no se inventan mutaciones runtime. H28 se demuestra por inspección estructural y regla raíz. Las mutaciones obligatorias para el arreglo quedan especificadas en el prompt de R6.
+---
+
+# Ronda 7 — evidencia sobre `10e25ff`
+
+## Preflight
+```text
+develop actual: ef09bb8
+branch: 10e25ff
+ahead 24 / behind 2
+commits nuevos: e221c46 + 10e25ff
+```
+
+## CI run 36270647334
+```text
+unit       SUCCESS — 75 files / 834 tests
+typecheck  SUCCESS
+lint       SUCCESS
+db-tests   SUCCESS — migración T-204 aplicada, rls_coordinates/rls_enabled/rls_matrix PASS
+audit      SUCCESS
+bundle-budget FAILURE
+```
+
+El job build está falsamente verde por `pnpm build 2>&1 | tee build-output.txt`. Su log real:
+```text
+Failed to compile.
+src/app/api/live/available-requests/route.ts
+Type error: ... NextRequest | Request | undefined is not a valid type for the function's first argument.
+Next.js build worker exited with code: 1
+```
+
+## R02 — barrido del diff H28
+Coincidencias nuevas reales:
+```text
+src/server/live/t204.test.ts:
+- explicit any en MockBuilder/thenable
+- const builder: any
+- rows51[49]!
+- rows51[50]!.id
+- offers51[49]!
+```
+
+Las coincidencias `!` dentro de regex de otros tests no son non-null assertions.
+
+## H29 — mutación A
+`createMockQueryBuilder` registra `.limit(...)` pero su `then` siempre resuelve `{data: resolvedData}` sin recortar por el argumento. Por eso cambiar producción de `.limit(51)` a `.limit(50)` no puede, por sí solo, hacer que `rows.length` pase de 51 a 50 ni que `nextCursor` se vuelva null. La prueba válida para esa mutación es la aserción de call-log `limit === [[51]]`.
+
+## H29 — mutación F
+SQL actual:
+```sql
+create index delivery_requests_published_cursor_idx
+  on public.delivery_requests (created_at desc, id desc)
+  where status = 'published';
+create index offers_request_created_cursor_idx
+  on public.offers (request_id, created_at desc, id desc);
+```
+La bitácora menciona otros nombres + `IF NOT EXISTS`; no corresponde al árbol revisado.
