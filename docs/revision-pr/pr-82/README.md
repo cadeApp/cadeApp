@@ -8,7 +8,7 @@
 - **SHA revisado (Ronda 1):** `a2ab69a01eaec4b6b6a918e7298023cfa03ea373`
 - **SHA revisado (Ronda 2):** `d085677e1a108a09083927fc47cd20008b578a34`
 - **`develop` al abrir Ronda 2:** `ac4587f3c76f3ce8d63f3abbafff0847b89d9b54`
-- **Estado actual:** ❌ **CON BLOQUEANTES** (6 bloqueantes · 2 mejoras/residuales · 0 decisiones pendientes)
+- **Estado actual:** ❌ **CON BLOQUEANTES** (Ronda 3: 3 bloqueantes, 0 decisiones pendientes)
 
 ## Resumen de la Ronda 2
 
@@ -33,4 +33,5 @@ Decisiones de Lautaro073 resueltas antes de cerrar la ronda:
 | Ronda | Fecha | SHA revisado | Resultado | Bloqueantes | Mejoras | Decisiones |
 |---|---|---|---|---:|---:|---:|
 | [Ronda 1](revisiones/ronda-1.md) | 2026-09-24 | `a2ab69a` | ❌ CON BLOQUEANTES | 6 | 2 | 0 |
-| [Ronda 2](revisiones/ronda-2.md) | 2026-09-25 | `d085677` | ❌ CON BLOQUEANTES | 6 | 2 | 2 resueltas (D01, D02) |
+| [Ronda 2](revisiones/ronda-2.md) | 2026-09-25 | `d085677` | ❌ CON BLOQUEANTES | 6 | 2 | 2 resueltas |
+| [Ronda 3](revisiones/ronda-3.md) | 2026-09-25 | `d439457` | ❌ CON BLOQUEANTES | 3 | 0 | 0 |
