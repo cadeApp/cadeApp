@@ -66,6 +66,9 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
   it('1. renderiza los tabs de documentos usando roles y primitivas oficiales (@/ui/tabs)', () => {
     render(<ApplicantDetailView applicant={mockApplicant} />);
 
+    const tablist = screen.getByRole('tablist');
+    expect(tablist.getAttribute('aria-orientation')).toBe('vertical');
+
     const tabs = screen.getAllByRole('tab');
     expect(tabs.length).toBe(2);
     expect(tabs[0]?.textContent).toContain('DNI Frente');
@@ -255,4 +258,65 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
       expect(refresh).toHaveBeenCalled();
     });
   });
+
+  it('7. Escape cierra el Dialog de rechazo y devuelve el foco al botón disparador', async () => {
+    vi.mocked(viewCourierDocumentAction).mockResolvedValue({
+      ok: true,
+      data: {
+        signedUrl: 'https://example.com/signed/dni_front.webp',
+        expiresInSeconds: 60,
+      },
+    });
+
+    render(<ApplicantDetailView applicant={mockApplicant} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /cargar documento seguro/i }));
+    await screen.findByRole('img', { name: /documento dni frente/i });
+
+    const rejectButton = screen.getByRole('button', { name: /rechazar documento/i });
+    rejectButton.focus();
+    expect(document.activeElement).toBe(rejectButton);
+
+    fireEvent.click(rejectButton);
+    expect(screen.getByRole('dialog')).toBeDefined();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(rejectButton);
+    });
+  });
+
+  it('8. rota el visor en cuatro pasos usando solo utilidades Tailwind válidas', async () => {
+    vi.mocked(viewCourierDocumentAction).mockResolvedValue({
+      ok: true,
+      data: {
+        signedUrl: 'https://example.com/signed/dni_front.webp',
+        expiresInSeconds: 60,
+      },
+    });
+
+    render(<ApplicantDetailView applicant={mockApplicant} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /cargar documento seguro/i }));
+    const image = await screen.findByRole('img', { name: /documento dni frente/i });
+    const rotateButton = screen.getByRole('button', { name: /rotar 90 grados/i });
+
+    fireEvent.click(rotateButton);
+    expect(image.className).toContain('rotate-90');
+
+    fireEvent.click(rotateButton);
+    expect(image.className).toContain('rotate-180');
+
+    fireEvent.click(rotateButton);
+    expect(image.className).toContain('-rotate-90');
+    expect(image.className).not.toContain('rotate-270');
+
+    fireEvent.click(rotateButton);
+    expect(image.className).toContain('rotate-0');
+  });
+
 });
