@@ -7,24 +7,18 @@ import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-} from '@/ui/table';
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/ui/tabs';
+import { formatDate } from '@/lib/format';
+import { ADMIN_COPY } from '../copy';
 import type { AdminApplicantTab, ApplicantListItem } from '../types';
 
 export interface ApplicantsQueueProps {
   readonly initialTab: AdminApplicantTab;
   readonly applicants: readonly ApplicantListItem[];
-  readonly page?: number;
   readonly pageSize?: number;
-  readonly totalCount?: number;
-  readonly totalPages?: number;
+  readonly nextCursor?: string | null;
+  readonly hasNextPage?: boolean;
 }
 
 const TABS_CONFIG: Array<{ id: AdminApplicantTab; label: string }> = [
@@ -53,10 +47,9 @@ function getVehicleLabel(type: string): string {
 export function ApplicantsQueue({
   initialTab,
   applicants,
-  page = 1,
   pageSize = 20,
-  totalCount = 0,
-  totalPages = 1,
+  nextCursor = null,
+  hasNextPage = false,
 }: ApplicantsQueueProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -65,13 +58,15 @@ export function ApplicantsQueue({
   function handleTabChange(tab: AdminApplicantTab) {
     const params = new URLSearchParams(searchParams);
     params.set('tab', tab);
+    params.delete('cursor');
     params.delete('page');
     router.push(`/admin/applicants?${params.toString()}`);
   }
 
-  function handlePageChange(newPage: number) {
+  function handleNextPage() {
+    if (!nextCursor) return;
     const params = new URLSearchParams(searchParams);
-    params.set('page', String(newPage));
+    params.set('cursor', nextCursor);
     router.push(`/admin/applicants?${params.toString()}`);
   }
 
@@ -114,7 +109,7 @@ export function ApplicantsQueue({
           ) : (
             <Card className="overflow-hidden border border-border shadow-sm">
               <Table>
-                <TableHeader className="bg-slate-100/70">
+                <TableHeader className="bg-muted/70">
                   <TableRow>
                     <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
                       Postulante
@@ -138,7 +133,7 @@ export function ApplicantsQueue({
                 </TableHeader>
                 <TableBody className="bg-card">
                   {applicants.map((a) => (
-                    <TableRow key={a.id} className="transition-colors hover:bg-slate-50/50">
+                    <TableRow key={a.id} className="transition-colors hover:bg-muted/50">
                       <TableCell className="px-6 py-4">
                         <div className="font-medium text-foreground text-sm">{a.fullName}</div>
                         <div className="text-sm text-muted-foreground">
@@ -170,16 +165,12 @@ export function ApplicantsQueue({
                         </div>
                       </TableCell>
                       <TableCell className="px-6 py-4">
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-800">
+                        <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-sm font-semibold text-foreground">
                           Nivel {a.docLevel}
                         </span>
                       </TableCell>
                       <TableCell className="px-6 py-4 text-muted-foreground whitespace-nowrap text-sm">
-                        {new Date(a.createdAt).toLocaleDateString('es-AR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                        })}
+                        {formatDate(a.createdAt, 'date')}
                       </TableCell>
                       <TableCell className="px-6 py-4 text-right">
                         <Link href={`/admin/applicants/${a.id}`}>
@@ -195,29 +186,15 @@ export function ApplicantsQueue({
             </Card>
           )}
 
-          {totalPages > 1 ? (
-            <div className="flex items-center justify-between px-2 pt-2">
-              <p className="text-sm text-muted-foreground">
-                Página {page} de {totalPages} ({totalCount} postulantes)
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => handlePageChange(page - 1)}
-                >
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages}
-                  onClick={() => handlePageChange(page + 1)}
-                >
-                  Siguiente
-                </Button>
-              </div>
+          {hasNextPage && nextCursor ? (
+            <div className="flex items-center justify-end px-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleNextPage}
+              >
+                Siguiente
+              </Button>
             </div>
           ) : null}
         </TabsContent>

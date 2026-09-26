@@ -1,5 +1,23 @@
-import type { AdminApplicantTab } from './schemas';
-export type { AdminApplicantTab } from './schemas';
+import type {
+  AdminApplicantTab,
+  AdminMfaInput,
+  ViewCourierDocumentInput,
+  DecideCourierInput,
+  SuspendCourierInput,
+  VerifyCourierDocumentInput,
+  RejectDocumentFormInput,
+  DecisionFormInput,
+} from './schemas';
+export type {
+  AdminApplicantTab,
+  AdminMfaInput,
+  ViewCourierDocumentInput,
+  DecideCourierInput,
+  SuspendCourierInput,
+  VerifyCourierDocumentInput,
+  RejectDocumentFormInput,
+  DecisionFormInput,
+} from './schemas';
 
 export type CourierDocLevel = 0 | 1 | 2;
 

@@ -12,7 +12,7 @@ interface AdminMfaPageProps {
 export default async function AdminMfaPage({ searchParams }: AdminMfaPageProps) {
   const resolvedParams = await searchParams;
   return (
-    <div className="flex min-h-[70vh] items-center justify-center p-4">
+    <div className="flex min-h-96 items-center justify-center p-4 py-12">
       <MfaForm redirectTo={resolvedParams.redirectTo} />
     </div>
   );

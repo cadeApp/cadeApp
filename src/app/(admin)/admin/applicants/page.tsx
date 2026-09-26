@@ -7,22 +7,21 @@ export const metadata = {
 };
 
 interface ApplicantsPageProps {
-  searchParams: Promise<{ tab?: string; page?: string }>;
+  searchParams: Promise<{ tab?: string; cursor?: string }>;
 }
 
 export default async function ApplicantsPage({ searchParams }: ApplicantsPageProps) {
   const resolvedParams = await searchParams;
-  const { tab, page } = parseAdminApplicantsSearchParams(resolvedParams);
-  const queueResult = await getApplicantsQueue(tab, { page, pageSize: 20 });
+  const { tab, cursor } = parseAdminApplicantsSearchParams(resolvedParams);
+  const queueResult = await getApplicantsQueue(tab, { cursor, pageSize: 20 });
 
   return (
     <ApplicantsQueue
       initialTab={tab}
       applicants={queueResult.items}
-      page={queueResult.page}
       pageSize={queueResult.pageSize}
-      totalCount={queueResult.totalCount}
-      totalPages={queueResult.totalPages}
+      nextCursor={queueResult.nextCursor}
+      hasNextPage={queueResult.hasNextPage}
     />
   );
 }

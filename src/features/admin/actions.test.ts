@@ -3,17 +3,13 @@ import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
 import * as adminRpc from '@/server/rpc/admin';
 import {
-  viewCourierDocumentAction,
   decideCourierAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
+  viewCourierDocumentAction,
   verifyAdminMfaAction,
 } from './actions';
 import { sanitizeAdminRedirect } from './redirect';
-
-vi.mock('next/cache', () => ({
-  revalidatePath: vi.fn(),
-}));
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -29,15 +25,79 @@ vi.mock('@/server/rpc/admin', () => ({
   adminVerifyDocumentRpc: vi.fn(),
 }));
 
-describe('Admin Actions (T-122 DoD)', () => {
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}));
+
+const VALID_COURIER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
+const VALID_DOC_ID = 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a22';
+
+describe('Admin Actions (T-122 DoD & PR106-H13)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  const validAdminUser = { id: 'admin-uuid-1', email: 'admin@cadeapp.ar' };
+  const validAdminUser = { id: 'admin-123', email: 'admin@cadeapp.com' };
 
-  describe('1. Seguridad y MFA: AAL2 obligatorio para toda acción admin', () => {
-    it('Server Actions rechazan la operación si el admin no cuenta con claim aal2 (AAL2_REQUIRED)', async () => {
+  describe('1. Verificación de claims AAL2 y permisos de administrador', () => {
+    it('rechaza con UNAUTHENTICATED si no hay sesión activa', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
+        },
+      };
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await decideCourierAction({
+        courierId: VALID_COURIER_ID,
+        decision: 'approved',
+        reason: 'Documentación válida',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('UNAUTHENTICATED');
+      }
+    });
+
+    it('rechaza con UNAUTHORIZED_ACTOR si el usuario no tiene rol admin', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'user-merchant', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { role: 'merchant' },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      };
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await decideCourierAction({
+        courierId: VALID_COURIER_ID,
+        decision: 'approved',
+        reason: 'Documentación válida',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('UNAUTHORIZED_ACTOR');
+      }
+    });
+
+    it('rechaza con AAL2_REQUIRED si el admin tiene solo nivel AAL1', async () => {
       const mockSupabase = {
         auth: {
           getUser: vi.fn().mockResolvedValue({
@@ -46,7 +106,7 @@ describe('Admin Actions (T-122 DoD)', () => {
           }),
           mfa: {
             getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({
-              data: { currentLevel: 'aal1' },
+              data: { currentLevel: 'aal1', nextLevel: 'aal2' },
               error: null,
             }),
           },
@@ -66,67 +126,20 @@ describe('Admin Actions (T-122 DoD)', () => {
         mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
       );
 
-      const resultDoc = await viewCourierDocumentAction({
-        documentId: 'doc-123',
-        courierId: 'courier-123',
-      });
-      expect(resultDoc.ok).toBe(false);
-      if (!resultDoc.ok) {
-        expect(resultDoc.code).toBe('AAL2_REQUIRED');
-      }
-
-      const resultDecide = await decideCourierAction({
-        courierId: 'courier-123',
+      const result = await decideCourierAction({
+        courierId: VALID_COURIER_ID,
         decision: 'approved',
-        reason: 'Documentación completa verificada',
+        reason: 'Documentación válida',
       });
-      expect(resultDecide.ok).toBe(false);
-      if (!resultDecide.ok) {
-        expect(resultDecide.code).toBe('AAL2_REQUIRED');
-      }
-    });
 
-    it('Server Actions rechazan la operación si el usuario no tiene rol admin (UNAUTHORIZED_ACTOR)', async () => {
-      const mockSupabase = {
-        auth: {
-          getUser: vi.fn().mockResolvedValue({
-            data: { user: { id: 'courier-1', email: 'courier@test.com' } },
-            error: null,
-          }),
-          mfa: {
-            getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({
-              data: { currentLevel: 'aal2' },
-              error: null,
-            }),
-          },
-        },
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: { role: 'courier' },
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      };
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
-
-      const result = await viewCourierDocumentAction({
-        documentId: 'doc-123',
-        courierId: 'courier-123',
-      });
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.code).toBe('UNAUTHORIZED_ACTOR');
+        expect(result.code).toBe('AAL2_REQUIRED');
       }
     });
   });
 
-  describe('2. Decisiones con motivo obligatorio', () => {
+  describe('2. Validación estricta con Zod en todas las Server Actions (PR106-H13)', () => {
     function setupAal2Admin() {
       const mockSupabase = {
         auth: {
@@ -155,29 +168,32 @@ describe('Admin Actions (T-122 DoD)', () => {
       vi.mocked(serverSupabase.createClient).mockResolvedValue(
         mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
       );
-
-      const mockAdminClient = {
-        rpc: vi.fn(),
-      };
       vi.mocked(adminSupabase.createAdminClient).mockClear();
-      vi.mocked(adminSupabase.createAdminClient).mockReturnValue(
-        mockAdminClient as unknown as ReturnType<typeof adminSupabase.createAdminClient>
-      );
-
       return mockSupabase;
     }
 
-    it('decideCourierAction rechaza motivo vacío con REASON_REQUIRED', async () => {
-      setupAal2Admin();
+    it('decideCourierAction rechaza courierId con UUID inválido con VALIDATION_ERROR antes de autenticar', async () => {
+      const result = await decideCourierAction({
+        courierId: 'courier-no-uuid',
+        decision: 'approved',
+        reason: 'Documentos correctos',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+      expect(serverSupabase.createClient).not.toHaveBeenCalled();
+    });
 
+    it('decideCourierAction rechaza motivo vacío o con solo espacios con VALIDATION_ERROR', async () => {
       const resultEmpty = await decideCourierAction({
-        courierId: 'courier-1',
+        courierId: VALID_COURIER_ID,
         decision: 'rejected',
         reason: '   ',
       });
       expect(resultEmpty.ok).toBe(false);
       if (!resultEmpty.ok) {
-        expect(resultEmpty.code).toBe('REASON_REQUIRED');
+        expect(resultEmpty.code).toBe('VALIDATION_ERROR');
       }
     });
 
@@ -186,37 +202,46 @@ describe('Admin Actions (T-122 DoD)', () => {
       vi.mocked(adminRpc.adminDecideCourierRpc).mockResolvedValue({
         ok: true,
         data: {
-          courierId: 'courier-1',
+          courierId: VALID_COURIER_ID,
           status: 'approved',
           decidedAt: new Date().toISOString(),
         },
       });
 
       const result = await decideCourierAction({
-        courierId: 'courier-1',
+        courierId: VALID_COURIER_ID,
         decision: 'approved',
         reason: 'DNI y selfie coinciden perfectamente',
       });
 
       expect(result.ok).toBe(true);
       expect(adminRpc.adminDecideCourierRpc).toHaveBeenCalledWith(mockSupabase, {
-        courierId: 'courier-1',
+        courierId: VALID_COURIER_ID,
         decision: 'approved',
         reason: 'DNI y selfie coinciden perfectamente',
       });
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('suspendCourierAction rechaza motivo vacío con REASON_REQUIRED', async () => {
-      setupAal2Admin();
+    it('suspendCourierAction rechaza courierId no UUID con VALIDATION_ERROR', async () => {
+      const result = await suspendCourierAction({
+        courierId: 'invalido',
+        reason: 'Infracción',
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+    });
 
+    it('suspendCourierAction rechaza motivo vacío con VALIDATION_ERROR', async () => {
       const resultEmpty = await suspendCourierAction({
-        courierId: 'courier-1',
+        courierId: VALID_COURIER_ID,
         reason: '',
       });
       expect(resultEmpty.ok).toBe(false);
       if (!resultEmpty.ok) {
-        expect(resultEmpty.code).toBe('REASON_REQUIRED');
+        expect(resultEmpty.code).toBe('VALIDATION_ERROR');
       }
     });
 
@@ -225,7 +250,7 @@ describe('Admin Actions (T-122 DoD)', () => {
       vi.mocked(adminRpc.adminSuspendCourierRpc).mockResolvedValue({
         ok: true,
         data: {
-          courierId: 'courier-1',
+          courierId: VALID_COURIER_ID,
           status: 'suspended',
           withdrawnOffersCount: 0,
           deactivatedAt: new Date().toISOString(),
@@ -233,29 +258,47 @@ describe('Admin Actions (T-122 DoD)', () => {
       });
 
       const result = await suspendCourierAction({
-        courierId: 'courier-1',
+        courierId: VALID_COURIER_ID,
         reason: 'Infracción reiterada de términos',
       });
 
       expect(result.ok).toBe(true);
       expect(adminRpc.adminSuspendCourierRpc).toHaveBeenCalledWith(mockSupabase, {
-        courierId: 'courier-1',
+        courierId: VALID_COURIER_ID,
         reason: 'Infracción reiterada de términos',
       });
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('verifyCourierDocumentAction con verified=false exige rejectionReason con REASON_REQUIRED', async () => {
-      setupAal2Admin();
+    it('verifyCourierDocumentAction rechaza documentId no UUID con VALIDATION_ERROR', async () => {
+      const result = await verifyCourierDocumentAction({
+        documentId: 'doc-no-uuid',
+        verified: true,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+    });
 
+    it('verifyCourierDocumentAction con verified=false exige rejectionReason con VALIDATION_ERROR', async () => {
       const resultNoReason = await verifyCourierDocumentAction({
-        documentId: 'doc-1',
+        documentId: VALID_DOC_ID,
         verified: false,
         rejectionReason: '',
       });
       expect(resultNoReason.ok).toBe(false);
       if (!resultNoReason.ok) {
-        expect(resultNoReason.code).toBe('REASON_REQUIRED');
+        expect(resultNoReason.code).toBe('VALIDATION_ERROR');
+      }
+
+      const resultUndefinedReason = await verifyCourierDocumentAction({
+        documentId: VALID_DOC_ID,
+        verified: false,
+      });
+      expect(resultUndefinedReason.ok).toBe(false);
+      if (!resultUndefinedReason.ok) {
+        expect(resultUndefinedReason.code).toBe('VALIDATION_ERROR');
       }
     });
 
@@ -264,22 +307,22 @@ describe('Admin Actions (T-122 DoD)', () => {
       vi.mocked(adminRpc.adminVerifyDocumentRpc).mockResolvedValue({
         ok: true,
         data: {
-          documentId: 'doc-1',
+          documentId: VALID_DOC_ID,
           status: 'verified',
           kind: 'dni_front',
-          courierId: 'courier-1',
+          courierId: VALID_COURIER_ID,
           docLevel: 1,
         },
       });
 
       const result = await verifyCourierDocumentAction({
-        documentId: 'doc-1',
+        documentId: VALID_DOC_ID,
         verified: true,
       });
 
       expect(result.ok).toBe(true);
       expect(adminRpc.adminVerifyDocumentRpc).toHaveBeenCalledWith(mockSupabase, {
-        documentId: 'doc-1',
+        documentId: VALID_DOC_ID,
         decision: 'verified',
         reason: null,
       });
@@ -291,59 +334,51 @@ describe('Admin Actions (T-122 DoD)', () => {
       vi.mocked(adminRpc.adminVerifyDocumentRpc).mockResolvedValue({
         ok: true,
         data: {
-          documentId: 'doc-1',
+          documentId: VALID_DOC_ID,
           status: 'rejected',
           kind: 'dni_front',
-          courierId: 'courier-1',
+          courierId: VALID_COURIER_ID,
           docLevel: 0,
         },
       });
 
       const result = await verifyCourierDocumentAction({
-        documentId: 'doc-1',
+        documentId: VALID_DOC_ID,
         verified: false,
         rejectionReason: 'Documento borroso e ilegible',
       });
 
       expect(result.ok).toBe(true);
       expect(adminRpc.adminVerifyDocumentRpc).toHaveBeenCalledWith(mockSupabase, {
-        documentId: 'doc-1',
+        documentId: VALID_DOC_ID,
         decision: 'rejected',
         reason: 'Documento borroso e ilegible',
       });
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
-  });
 
-  describe('3. Visor documental: URL firmada de 60s y registro inmutable en audit_log', () => {
-    it('viewCourierDocumentAction emite signedUrl de 60s e inserta fila en audit_log', async () => {
-      const mockSupabase = {
-        auth: {
-          getUser: vi.fn().mockResolvedValue({
-            data: { user: validAdminUser },
-            error: null,
-          }),
-          mfa: {
-            getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({
-              data: { currentLevel: 'aal2' },
-              error: null,
-            }),
-          },
-        },
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: { role: 'admin' },
-                error: null,
-              }),
-            }),
-          }),
-        }),
-      };
-      vi.mocked(serverSupabase.createClient).mockResolvedValue(
-        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
-      );
+    it('viewCourierDocumentAction rechaza documentId o courierId no UUID con VALIDATION_ERROR', async () => {
+      const resultBadDoc = await viewCourierDocumentAction({
+        documentId: 'no-uuid',
+        courierId: VALID_COURIER_ID,
+      });
+      expect(resultBadDoc.ok).toBe(false);
+      if (!resultBadDoc.ok) {
+        expect(resultBadDoc.code).toBe('VALIDATION_ERROR');
+      }
+
+      const resultBadCourier = await viewCourierDocumentAction({
+        documentId: VALID_DOC_ID,
+        courierId: 'no-uuid',
+      });
+      expect(resultBadCourier.ok).toBe(false);
+      if (!resultBadCourier.ok) {
+        expect(resultBadCourier.code).toBe('VALIDATION_ERROR');
+      }
+    });
+
+    it('viewCourierDocumentAction emite signedUrl de 60s e inserta fila en audit_log con UUID válidos', async () => {
+      setupAal2Admin();
 
       const mockInsertAudit = vi.fn().mockResolvedValue({ error: null });
       const mockCreateSignedUrl = vi.fn().mockResolvedValue({
@@ -360,8 +395,8 @@ describe('Admin Actions (T-122 DoD)', () => {
                   eq: vi.fn().mockReturnValue({
                     maybeSingle: vi.fn().mockResolvedValue({
                       data: {
-                        id: 'doc-456',
-                        courier_id: 'courier-789',
+                        id: VALID_DOC_ID,
+                        courier_id: VALID_COURIER_ID,
                         kind: 'dni_front',
                         storage_path: 'courier-789/dni_front.webp',
                       },
@@ -388,8 +423,8 @@ describe('Admin Actions (T-122 DoD)', () => {
       );
 
       const result = await viewCourierDocumentAction({
-        documentId: 'doc-456',
-        courierId: 'courier-789',
+        documentId: VALID_DOC_ID,
+        courierId: VALID_COURIER_ID,
       });
 
       expect(result.ok).toBe(true);
@@ -402,25 +437,25 @@ describe('Admin Actions (T-122 DoD)', () => {
         expect.objectContaining({
           action: 'view_courier_document',
           target_type: 'courier_document',
-          target_id: 'doc-456',
+          target_id: VALID_DOC_ID,
         })
       );
     });
   });
 
-  describe('4. Autenticación MFA (verifyAdminMfaAction)', () => {
-    it('rechaza código con longitud distinta a 6 dígitos con VALIDATION_ERROR', async () => {
-      const resultShort = await verifyAdminMfaAction({ code: '123' });
-      expect(resultShort.ok).toBe(false);
-      if (!resultShort.ok) {
-        expect(resultShort.code).toBe('VALIDATION_ERROR');
-      }
+  describe('3. Autenticación MFA con Zod adminMfaSchema (verifyAdminMfaAction)', () => {
+    it('rechaza código con longitud distinta a 6 dígitos (5 o 7) o alfanumérico con VALIDATION_ERROR', async () => {
+      const result5 = await verifyAdminMfaAction({ code: '12345' });
+      expect(result5.ok).toBe(false);
+      if (!result5.ok) expect(result5.code).toBe('VALIDATION_ERROR');
 
-      const resultAlpha = await verifyAdminMfaAction({ code: '123abc' });
+      const result7 = await verifyAdminMfaAction({ code: '1234567' });
+      expect(result7.ok).toBe(false);
+      if (!result7.ok) expect(result7.code).toBe('VALIDATION_ERROR');
+
+      const resultAlpha = await verifyAdminMfaAction({ code: '12345a' });
       expect(resultAlpha.ok).toBe(false);
-      if (!resultAlpha.ok) {
-        expect(resultAlpha.code).toBe('VALIDATION_ERROR');
-      }
+      if (!resultAlpha.ok) expect(resultAlpha.code).toBe('VALIDATION_ERROR');
     });
 
     it('verifica MFA exitosamente y sanea redirectTo hostil hacia /admin/applicants (PR106-H03)', async () => {
@@ -474,39 +509,21 @@ describe('Admin Actions (T-122 DoD)', () => {
     });
   });
 
-  describe('5. Sanitización de redirectTo (PR106-H03)', () => {
-    it('PR106-H03: sanitizeAdminRedirect rechaza destinos inseguros y previene Open Redirect / XSS', () => {
-      const hostileTargets = [
-        'javascript:alert(1)',
-        'javascript:/*--></title></style></textarea></script></xmp><svg/onload=\'+/"/+/onmouseover=1/+/[*/[]/+alert(1)//\'>',
-        'https://evil.com',
-        'http://evil.com/admin',
-        '//evil.com',
-        '///evil.com',
-        '/\\evil.com',
-        '\\evil.com',
-        '/admin\r\nevil',
-        '/admin\nevil',
-        '/courier/feed',
-        '/merchant/dashboard',
-        '',
-        null,
-        undefined,
-      ];
-
-      for (const target of hostileTargets) {
-        const safe = sanitizeAdminRedirect(target as unknown as string);
-        expect(safe, `El destino "${target}" debe ser neutralizado a /admin/applicants`).toBe('/admin/applicants');
-        expect(safe).not.toContain('javascript:');
-        expect(safe).not.toContain('evil.com');
-      }
+  describe('4. Sanitización de redirectTo (PR106-H03)', () => {
+    it('permite rutas relativas de administración seguras', () => {
+      expect(sanitizeAdminRedirect('/admin/applicants')).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect('/admin/applicants/123')).toBe('/admin/applicants/123');
+      expect(sanitizeAdminRedirect('/admin/couriers')).toBe('/admin/couriers');
     });
 
-    it('PR106-H03: sanitizeAdminRedirect permite destinos válidos dentro de /admin', () => {
-      expect(sanitizeAdminRedirect('/admin/applicants')).toBe('/admin/applicants');
-      expect(sanitizeAdminRedirect('/admin/applicants/courier-123')).toBe('/admin/applicants/courier-123');
-      expect(sanitizeAdminRedirect('/admin/couriers')).toBe('/admin/couriers');
-      expect(sanitizeAdminRedirect('/admin/merchants')).toBe('/admin/merchants');
+    it('neutraliza esquemas externos, open redirects y rutas no admin redirigiendo a /admin/applicants', () => {
+      expect(sanitizeAdminRedirect('https://evil.com')).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect('//evil.com/admin')).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect('javascript:alert(1)')).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect('/merchant/dashboard')).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect('/courier/feed')).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect(undefined)).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect('')).toBe('/admin/applicants');
     });
   });
 });

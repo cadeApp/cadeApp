@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getApplicantDetail } from '@/features/admin/server';
-import { ApplicantDetailView } from '@/features/admin';
+import { ApplicantDetailView, adminApplicantIdSchema } from '@/features/admin';
 
 export const metadata = {
   title: 'Detalle de Postulante | cadeApp Admin',
@@ -13,7 +13,12 @@ interface ApplicantDetailPageProps {
 
 export default async function ApplicantDetailPage({ params }: ApplicantDetailPageProps) {
   const resolvedParams = await params;
-  const applicant = await getApplicantDetail(resolvedParams.id);
+  const parsedId = adminApplicantIdSchema.safeParse(resolvedParams.id);
+  if (!parsedId.success) {
+    notFound();
+  }
+
+  const applicant = await getApplicantDetail(parsedId.data);
 
   if (!applicant) {
     notFound();

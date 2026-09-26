@@ -11,6 +11,18 @@ import {
 } from '@/server/rpc/admin';
 import type { ViewDocumentResult } from './types';
 import { sanitizeAdminRedirect } from './redirect';
+import {
+  adminMfaSchema,
+  viewCourierDocumentSchema,
+  decideCourierSchema,
+  suspendCourierSchema,
+  verifyCourierDocumentSchema,
+  type AdminMfaInput,
+  type ViewCourierDocumentInput,
+  type DecideCourierInput,
+  type SuspendCourierInput,
+  type VerifyCourierDocumentInput,
+} from './schemas';
 
 interface AuthenticatedAdmin {
   readonly id: string;
@@ -63,12 +75,11 @@ async function requireAdminAal2(): Promise<ActionResult<AuthenticatedAdmin, Doma
 /**
  * Verifica el código TOTP ingresado por el administrador para elevar su sesión a AAL2.
  */
-export async function verifyAdminMfaAction(input: {
-  code: string;
-  redirectTo?: string;
-}): Promise<ActionResult<{ success: true; redirectTo: string }, DomainErrorCode>> {
-  const cleanCode = input.code?.trim();
-  if (!cleanCode || cleanCode.length !== 6 || !/^\d{6}$/.test(cleanCode)) {
+export async function verifyAdminMfaAction(
+  input: AdminMfaInput
+): Promise<ActionResult<{ success: true; redirectTo: string }, DomainErrorCode>> {
+  const parsed = adminMfaSchema.safeParse(input);
+  if (!parsed.success) {
     return err('VALIDATION_ERROR');
   }
 
@@ -94,7 +105,6 @@ export async function verifyAdminMfaAction(input: {
 
   const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
   if (factorsError || !factors?.totp?.length) {
-    // Si no tiene TOTP configurado, error de configuración interna
     return err('INTERNAL_ERROR');
   }
   const factor = factors?.totp?.[0];
@@ -114,7 +124,7 @@ export async function verifyAdminMfaAction(input: {
   const { error: verifyError } = await supabase.auth.mfa.verify({
     factorId,
     challengeId: challenge.id,
-    code: cleanCode,
+    code: parsed.data.code,
   });
 
   if (verifyError) {
@@ -123,7 +133,7 @@ export async function verifyAdminMfaAction(input: {
 
   return ok({
     success: true,
-    redirectTo: sanitizeAdminRedirect(input.redirectTo),
+    redirectTo: sanitizeAdminRedirect(parsed.data.redirectTo),
   });
 }
 
@@ -131,10 +141,14 @@ export async function verifyAdminMfaAction(input: {
  * Genera una URL firmada de 60 segundos para visualizar un documento confidencial
  * del repartidor (DNI, selfie, licencia, seguro) y registra una fila inmutable en audit_log.
  */
-export async function viewCourierDocumentAction(input: {
-  documentId: string;
-  courierId: string;
-}): Promise<ActionResult<ViewDocumentResult, DomainErrorCode>> {
+export async function viewCourierDocumentAction(
+  input: ViewCourierDocumentInput
+): Promise<ActionResult<ViewDocumentResult, DomainErrorCode>> {
+  const parsed = viewCourierDocumentSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
   const authResult = await requireAdminAal2();
   if (!authResult.ok) {
     return authResult;
@@ -147,8 +161,8 @@ export async function viewCourierDocumentAction(input: {
   const { data: doc, error: docError } = await adminClient
     .from('courier_documents')
     .select('id, courier_id, kind, storage_path')
-    .eq('id', input.documentId)
-    .eq('courier_id', input.courierId)
+    .eq('id', parsed.data.documentId)
+    .eq('courier_id', parsed.data.courierId)
     .maybeSingle();
 
   if (docError || !doc) {
@@ -179,7 +193,6 @@ export async function viewCourierDocumentAction(input: {
   });
 
   if (auditError) {
-    // Si falla el log de auditoría no se concede la visualización (seguridad innegociable)
     return err('INTERNAL_ERROR');
   }
 
@@ -193,26 +206,24 @@ export async function viewCourierDocumentAction(input: {
  * Aprueba o rechaza la postulación de un repartidor.
  * El motivo es obligatorio para garantizar trazabilidad.
  */
-export async function decideCourierAction(input: {
-  courierId: string;
-  decision: 'approved' | 'rejected';
-  reason: string;
-}): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+export async function decideCourierAction(
+  input: DecideCourierInput
+): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+  const parsed = decideCourierSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
   const authResult = await requireAdminAal2();
   if (!authResult.ok) {
     return authResult;
   }
 
-  const trimmedReason = input.reason?.trim() ?? '';
-  if (!trimmedReason) {
-    return err('REASON_REQUIRED');
-  }
-
   // PR106-H04: Invocar RPC usando cliente de sesión autenticada con AAL2, NUNCA createAdminClient
   const rpcResult = await adminDecideCourierRpc(authResult.data.supabase, {
-    courierId: input.courierId,
-    decision: input.decision,
-    reason: trimmedReason,
+    courierId: parsed.data.courierId,
+    decision: parsed.data.decision,
+    reason: parsed.data.reason,
   });
 
   if (!rpcResult.ok) {
@@ -224,7 +235,7 @@ export async function decideCourierAction(input: {
   }
 
   revalidatePath('/admin/applicants');
-  revalidatePath(`/admin/applicants/${input.courierId}`);
+  revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true });
 }
 
@@ -232,24 +243,23 @@ export async function decideCourierAction(input: {
  * Suspende a un repartidor aprobado previamente.
  * El motivo de suspensión es obligatorio.
  */
-export async function suspendCourierAction(input: {
-  courierId: string;
-  reason: string;
-}): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+export async function suspendCourierAction(
+  input: SuspendCourierInput
+): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+  const parsed = suspendCourierSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
   const authResult = await requireAdminAal2();
   if (!authResult.ok) {
     return authResult;
   }
 
-  const trimmedReason = input.reason?.trim() ?? '';
-  if (!trimmedReason) {
-    return err('REASON_REQUIRED');
-  }
-
   // PR106-H04: Invocar RPC usando cliente de sesión autenticada con AAL2, NUNCA createAdminClient
   const rpcResult = await adminSuspendCourierRpc(authResult.data.supabase, {
-    courierId: input.courierId,
-    reason: trimmedReason,
+    courierId: parsed.data.courierId,
+    reason: parsed.data.reason,
   });
 
   if (!rpcResult.ok) {
@@ -261,38 +271,32 @@ export async function suspendCourierAction(input: {
   }
 
   revalidatePath('/admin/applicants');
-  revalidatePath(`/admin/applicants/${input.courierId}`);
+  revalidatePath(`/admin/applicants/${parsed.data.courierId}`);
   return ok({ success: true });
 }
 
 /**
  * Verifica o rechaza un documento individual del repartidor (licencia, seguro, etc.).
  */
-export async function verifyCourierDocumentAction(input: {
-  documentId: string;
-  verified: boolean;
-  rejectionReason?: string | null;
-}): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+export async function verifyCourierDocumentAction(
+  input: VerifyCourierDocumentInput
+): Promise<ActionResult<{ success: true }, DomainErrorCode>> {
+  const parsed = verifyCourierDocumentSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
   const authResult = await requireAdminAal2();
   if (!authResult.ok) {
     return authResult;
   }
 
-  let reason: string | null = null;
-  if (!input.verified) {
-    const trimmedReason = input.rejectionReason?.trim() ?? '';
-    if (!trimmedReason) {
-      return err('REASON_REQUIRED');
-    }
-    reason = trimmedReason;
-  }
-
   // PR106-H04: Invocar RPC usando cliente de sesión autenticada con AAL2
   // PR106-H05: Usar contrato canónico { documentId, decision: 'verified' | 'rejected', reason }
   const rpcResult = await adminVerifyDocumentRpc(authResult.data.supabase, {
-    documentId: input.documentId,
-    decision: input.verified ? 'verified' : 'rejected',
-    reason,
+    documentId: parsed.data.documentId,
+    decision: parsed.data.verified ? 'verified' : 'rejected',
+    reason: parsed.data.verified ? null : parsed.data.rejectionReason ?? null,
   });
 
   if (!rpcResult.ok) {

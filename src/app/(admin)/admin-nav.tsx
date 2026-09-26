@@ -22,8 +22,8 @@ export function AdminNav() {
   }
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-[#E4E7EC] bg-white shadow-sm">
-      <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between px-6">
+    <header className="sticky top-0 z-40 w-full border-b border-border bg-card shadow-sm">
+      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
         <div className="flex items-center gap-8">
           <Link
             href="/admin/applicants"
@@ -56,7 +56,7 @@ export function AdminNav() {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="hidden sm:inline-block rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+          <span className="hidden sm:inline-block rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground">
             Admin (Aguilares)
           </span>
           <Button

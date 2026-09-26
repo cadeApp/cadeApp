@@ -2,36 +2,64 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/ui/input-otp';
 import { notify } from '@/ui/notify';
 import { verifyAdminMfaAction } from '../actions';
+import { adminMfaSchema } from '../schemas';
 
 export interface MfaFormProps {
   redirectTo?: string;
 }
 
+const mfaCodeSchema = adminMfaSchema.pick({ code: true });
+type MfaFormData = { code: string };
+
+function getTotpSecondsRemaining(nowMs = Date.now()): number {
+  const seconds = Math.floor(nowMs / 1000);
+  const elapsed = seconds % 30;
+  return elapsed === 0 ? 30 : 30 - elapsed;
+}
+
 export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {}) {
   const router = useRouter();
-
-  const [code, setCode] = React.useState('');
-  const [loading, setLoading] = React.useState(false);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
-  async function handleVerify(e: React.FormEvent) {
-    e.preventDefault();
-    const cleanCode = code.trim();
-    if (cleanCode.length !== 6) {
-      setErrorMsg('Ingresá los 6 dígitos numéricos de tu app autenticadora.');
-      return;
-    }
+  const [secondsRemaining, setSecondsRemaining] = React.useState(() =>
+    getTotpSecondsRemaining()
+  );
 
-    setLoading(true);
+  React.useEffect(() => {
+    const update = () => {
+      setSecondsRemaining(getTotpSecondsRemaining());
+    };
+
+    update();
+    const timer = window.setInterval(update, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const {
+    watch,
+    setValue,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<MfaFormData>({
+    resolver: zodResolver(mfaCodeSchema),
+    defaultValues: { code: '' },
+  });
+
+  const code = watch('code');
+
+  const onSubmit = handleSubmit(async (data) => {
     setErrorMsg(null);
 
     try {
-      const res = await verifyAdminMfaAction({ code: cleanCode, redirectTo });
+      const res = await verifyAdminMfaAction({ code: data.code, redirectTo });
 
       if (!res.ok) {
         if (res.code === 'VALIDATION_ERROR') {
@@ -49,10 +77,8 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
       router.refresh();
     } catch {
       setErrorMsg('Error de conexión al verificar el segundo factor.');
-    } finally {
-      setLoading(false);
     }
-  }
+  });
 
   return (
     <Card className="w-full max-w-md shadow-md">
@@ -73,15 +99,21 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
             />
           </svg>
         </div>
-        <CardTitle className="text-xl font-bold tracking-tight">Verificación en dos pasos</CardTitle>
+        <CardTitle className="font-display text-xl font-bold tracking-tight">
+          Verificación en dos pasos
+        </CardTitle>
         <CardDescription className="text-sm text-muted-foreground">
           Ingresá el código de 6 dígitos generado por tu app autenticadora (Google Authenticator, Authy, etc.).
         </CardDescription>
       </CardHeader>
+
       <CardContent>
-        <form onSubmit={handleVerify} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-3">
-            <label htmlFor="totp-code" className="block text-center text-sm font-medium text-foreground">
+            <label
+              htmlFor="totp-code"
+              className="block text-center text-sm font-medium text-foreground"
+            >
               Código de seguridad
             </label>
             <div className="flex justify-center">
@@ -89,8 +121,8 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
                 id="totp-code"
                 maxLength={6}
                 value={code}
-                onChange={(val) => setCode(val.replace(/\D/g, ''))}
-                autoFocus
+                onChange={(val) => setValue('code', val, { shouldValidate: true })}
+                disabled={isSubmitting}
               >
                 <InputOTPGroup>
                   <InputOTPSlot index={0} />
@@ -102,15 +134,31 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
                 </InputOTPGroup>
               </InputOTP>
             </div>
-            {errorMsg ? (
-              <p role="alert" className="text-center text-sm text-destructive font-medium">
-                {errorMsg}
+            <p className="text-center text-sm text-muted-foreground" aria-live="polite">
+              {`Expira en 00:${String(secondsRemaining).padStart(2, '0')}`}
+            </p>
+            {errors.code ? (
+              <p className="text-center text-sm text-destructive font-medium" role="alert">
+                {errors.code.message ?? 'Ingresá los 6 dígitos numéricos.'}
               </p>
             ) : null}
           </div>
 
-          <Button type="submit" className="w-full h-11 text-base font-semibold" disabled={loading || code.length !== 6}>
-            {loading ? 'Verificando...' : 'Verificar código'}
+          {errorMsg ? (
+            <div
+              className="rounded-lg bg-destructive/10 p-3 text-center text-sm font-medium text-destructive"
+              role="alert"
+            >
+              {errorMsg}
+            </div>
+          ) : null}
+
+          <Button
+            type="submit"
+            className="w-full h-11 text-base font-semibold"
+            disabled={isSubmitting || code.length !== 6}
+          >
+            {isSubmitting ? 'Verificando...' : 'Verificar código'}
           </Button>
 
           <div className="pt-2 text-center text-sm text-muted-foreground">

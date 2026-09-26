@@ -192,5 +192,123 @@ describe('T-122: DoD - Admin Shell y Route Guard A00', () => {
       expect(content).toMatch(/logoutAction/);
     });
   });
+
+  describe('7. PR106-H16: Convenciones UI, tokens, skeletons y copy centralizado', () => {
+    const rootDir = process.cwd();
+    const adminDirs = [
+      path.join(rootDir, 'src', 'app', '(admin)'),
+      path.join(rootDir, 'src', 'features', 'admin'),
+    ];
+
+    function getAdminFiles(dirs: string[]): string[] {
+      const files: string[] = [];
+      for (const dir of dirs) {
+        if (!fs.existsSync(dir)) continue;
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            files.push(...getAdminFiles([fullPath]));
+          } else if (
+            (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) &&
+            !entry.name.includes('.test.')
+          ) {
+            files.push(fullPath);
+          }
+        }
+      }
+      return files;
+    }
+
+    it('A. (admin)/layout.tsx no incluye Toaster duplicado', () => {
+      const layoutPath = path.join(rootDir, 'src', 'app', '(admin)', 'layout.tsx');
+      const content = fs.readFileSync(layoutPath, 'utf-8');
+      expect(content).not.toContain('<Toaster');
+      expect(content).not.toContain('@/ui/toaster');
+    });
+
+    it('B. No existen colores fuera de tokens (hexadecimales arbitrarios, slate, amber) en admin', () => {
+      const files = getAdminFiles(adminDirs);
+      const forbiddenPattern = /(#[0-9a-fA-F]{3,6}|(?<![a-zA-Z0-9_-])(?:bg|text|border)-slate-(?:50|100|200|700|800)|(?<![a-zA-Z0-9_-])(?:bg|text|border)-amber-(?:50|200|600|900))/;
+      const violations: string[] = [];
+
+      for (const file of files) {
+        const content = fs.readFileSync(file, 'utf-8');
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+          if (forbiddenPattern.test(line)) {
+            violations.push(`${path.relative(rootDir, file)}:${idx + 1}: ${line.trim()}`);
+          }
+        });
+      }
+
+      expect(violations).toEqual([]);
+    });
+
+    it('C. No existen medidas arbitrarias en corchetes ni transform inline en componentes admin', () => {
+      const files = getAdminFiles(adminDirs);
+      const forbiddenClassPattern = /(min-h-\[[^\]]+\]|max-h-\[[^\]]+\]|max-w-\[1280px\])/;
+      const violations: string[] = [];
+
+      for (const file of files) {
+        const content = fs.readFileSync(file, 'utf-8');
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+          if (forbiddenClassPattern.test(line)) {
+            violations.push(`${path.relative(rootDir, file)}:${idx + 1}: ${line.trim()}`);
+          }
+          if (line.includes('style={{') && line.includes('transform')) {
+            violations.push(`${path.relative(rootDir, file)}:${idx + 1}: inline transform`);
+          }
+        });
+      }
+
+      expect(violations).toEqual([]);
+    });
+
+    it('D. Los skeletons se exportan desde features/admin y las rutas loading no importan @/ui/skeleton directamente', async () => {
+      const adminModule = await import('./index');
+      expect(adminModule.ApplicantsQueueSkeleton).toBeDefined();
+      expect(adminModule.ApplicantDetailSkeleton).toBeDefined();
+
+      const loadingFiles = [
+        path.join(rootDir, 'src', 'app', '(admin)', 'admin', 'applicants', 'loading.tsx'),
+        path.join(rootDir, 'src', 'app', '(admin)', 'admin', 'applicants', '[id]', 'loading.tsx'),
+      ];
+
+      for (const lf of loadingFiles) {
+        const content = fs.readFileSync(lf, 'utf-8');
+        expect(content).not.toContain("from '@/ui/skeleton'");
+        expect(content).toContain("from '@/features/admin'");
+      }
+    });
+
+    it('E. Las fechas en componentes admin se formatean con formatDate de @/lib/format y no con toLocaleDateString/toLocaleString', () => {
+      const files = getAdminFiles(adminDirs);
+      const violations: string[] = [];
+
+      for (const file of files) {
+        const content = fs.readFileSync(file, 'utf-8');
+        const lines = content.split('\n');
+        lines.forEach((line, idx) => {
+          if (line.includes('.toLocaleDateString') || line.includes('.toLocaleString')) {
+            violations.push(`${path.relative(rootDir, file)}:${idx + 1}: ${line.trim()}`);
+          }
+        });
+      }
+
+      expect(violations).toEqual([]);
+    });
+
+    it('F. copy.ts existe, centraliza los textos y está exportado en index.ts', () => {
+      const copyPath = path.join(rootDir, 'src', 'features', 'admin', 'copy.ts');
+      expect(fs.existsSync(copyPath)).toBe(true);
+
+      const indexPath = path.join(rootDir, 'src', 'features', 'admin', 'index.ts');
+      const indexContent = fs.readFileSync(indexPath, 'utf-8');
+      expect(indexContent).toContain("from './copy'");
+    });
+  });
 });
+
 

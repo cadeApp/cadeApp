@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { createAdminClient } from '@/server/supabase/admin';
+import { createClient } from '@/server/supabase/server';
 import type {
   AdminApplicantTab,
   ApplicantDetail,
@@ -10,16 +10,15 @@ import type {
 } from './types';
 
 export interface GetApplicantsQueueOptions {
-  page?: number;
-  pageSize?: number;
+  readonly cursor?: string;
+  readonly pageSize?: number;
 }
 
 export interface ApplicantsQueueResult {
   readonly items: readonly ApplicantListItem[];
-  readonly totalCount: number;
-  readonly page: number;
   readonly pageSize: number;
-  readonly totalPages: number;
+  readonly nextCursor: string | null;
+  readonly hasNextPage: boolean;
 }
 
 interface ProfileRow {
@@ -64,21 +63,19 @@ interface CourierDetailRow {
 /**
  * Obtiene la lista de repartidores postulantes filtrados por estado.
  * Se asegura de que no se expongan datos bancarios ni PII no autorizada.
- * PR106-H07: Paginación acotada con máximo 50 por página (por defecto 20).
+ * PR106-H07: Paginación por cursor estable por profile_id con máximo 50 por página (por defecto 20).
  * PR106-H08: Propagación de fallos de DB a través de excepciones hacia error boundaries.
+ * PR106-H12: Utiliza el cliente de sesión autenticada con RLS (createClient), no service_role.
  */
 export async function getApplicantsQueue(
   tab: AdminApplicantTab = 'pending',
   options?: GetApplicantsQueueOptions
 ): Promise<ApplicantsQueueResult> {
-  const page = Math.max(1, Math.floor(options?.page ?? 1));
   const pageSize = Math.min(Math.max(1, Math.floor(options?.pageSize ?? 20)), 50);
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
 
-  const supabase = createAdminClient();
+  const supabase = await createClient();
 
-  const { data: couriers, error, count } = await supabase
+  let query = supabase
     .from('couriers')
     .select(
       `
@@ -99,20 +96,32 @@ export async function getApplicantsQueue(
         kind,
         status
       )
-    `,
-      { count: 'exact' }
+    `
     )
     .eq('status', tab)
-    .order('profile_id', { ascending: false })
-    .range(from, to);
+    .order('profile_id', { ascending: false });
+
+  if (options?.cursor) {
+    query = query.lt('profile_id', options.cursor);
+  }
+
+  query = query.limit(pageSize + 1);
+
+  const { data: couriers, error } = await query;
 
   if (error) {
     throw new Error(`Error al consultar la cola de postulantes: ${error.message}`);
   }
 
   const typedCouriers = (couriers ?? []) as unknown as CourierQueueRow[];
+  const hasNextPage = typedCouriers.length > pageSize;
+  const visibleRows = typedCouriers.slice(0, pageSize);
+  const nextCursor =
+    hasNextPage && visibleRows.length > 0
+      ? visibleRows[visibleRows.length - 1]?.profile_id ?? null
+      : null;
 
-  const items: ApplicantListItem[] = typedCouriers.map((c) => {
+  const items: ApplicantListItem[] = visibleRows.map((c) => {
     const profile = c.profiles;
     const docs = c.courier_documents ?? [];
 
@@ -143,15 +152,11 @@ export async function getApplicantsQueue(
     };
   });
 
-  const totalCount = count ?? items.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-
   return {
     items,
-    totalCount,
-    page,
     pageSize,
-    totalPages,
+    nextCursor,
+    hasNextPage,
   };
 }
 
@@ -159,11 +164,12 @@ export async function getApplicantsQueue(
  * Obtiene el detalle completo del postulante para el visor documental A02.
  * INVARIANTE: CBU / Alias bancario queda terminantemente extirpado de la respuesta.
  * PR106-H08: Propagación de fallos de DB a través de excepciones hacia error boundaries.
+ * PR106-H12: Utiliza el cliente de sesión autenticada con RLS (createClient), no service_role.
  */
 export async function getApplicantDetail(
   courierId: string
 ): Promise<ApplicantDetail | null> {
-  const supabase = createAdminClient();
+  const supabase = await createClient();
 
   const [courierResult, docsResult] = await Promise.all([
     supabase
@@ -210,7 +216,16 @@ export async function getApplicantDetail(
   const c = courierResult.data as unknown as CourierDetailRow;
   const profile = c.profiles;
 
-  const documents: ApplicantDocumentDetail[] = (docsResult.data ?? []).map((d) => ({
+  interface CourierDocDetailRow {
+    id: string;
+    kind: 'dni_front' | 'dni_back' | 'selfie' | 'avatar' | 'license' | 'insurance';
+    storage_path: string;
+    status: 'none' | 'submitted' | 'verified' | 'rejected';
+    uploaded_at: string;
+  }
+
+  const rawDocs = (docsResult.data ?? []) as unknown as CourierDocDetailRow[];
+  const documents: ApplicantDocumentDetail[] = rawDocs.map((d) => ({
     id: d.id,
     documentType: d.kind,
     storagePath: d.storage_path,
