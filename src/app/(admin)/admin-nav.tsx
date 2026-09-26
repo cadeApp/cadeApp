@@ -59,11 +59,15 @@ export function AdminNav() {
           <span className="hidden sm:inline-block rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
             Admin (Aguilares)
           </span>
-          <form action={handleLogout}>
-            <Button variant="ghost" size="sm" type="submit" className="text-muted-foreground text-sm">
-              Salir
-            </Button>
-          </form>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={handleLogout}
+            className="text-muted-foreground text-sm"
+          >
+            Salir
+          </Button>
         </div>
       </div>
     </header>

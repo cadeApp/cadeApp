@@ -422,6 +422,56 @@ describe('Admin Actions (T-122 DoD)', () => {
         expect(resultAlpha.code).toBe('VALIDATION_ERROR');
       }
     });
+
+    it('verifica MFA exitosamente y sanea redirectTo hostil hacia /admin/applicants (PR106-H03)', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: validAdminUser },
+            error: null,
+          }),
+          mfa: {
+            listFactors: vi.fn().mockResolvedValue({
+              data: { totp: [{ id: 'factor-1' }] },
+              error: null,
+            }),
+            challenge: vi.fn().mockResolvedValue({
+              data: { id: 'challenge-1' },
+              error: null,
+            }),
+            verify: vi.fn().mockResolvedValue({
+              data: {},
+              error: null,
+            }),
+          },
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { role: 'admin' },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await verifyAdminMfaAction({
+        code: '123456',
+        redirectTo: 'javascript:alert(1)',
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.redirectTo).toBe('/admin/applicants');
+        expect(result.data.redirectTo).not.toContain('javascript:');
+      }
+    });
   });
 
   describe('5. Sanitización de redirectTo (PR106-H03)', () => {

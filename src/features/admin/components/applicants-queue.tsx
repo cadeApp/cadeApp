@@ -60,7 +60,7 @@ export function ApplicantsQueue({
 }: ApplicantsQueueProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const currentTab = (searchParams.get('tab') as AdminApplicantTab) || initialTab;
+  const currentTab = initialTab;
 
   function handleTabChange(tab: AdminApplicantTab) {
     const params = new URLSearchParams(searchParams);

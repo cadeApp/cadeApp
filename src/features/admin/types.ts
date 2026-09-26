@@ -1,4 +1,5 @@
-export type AdminApplicantTab = 'pending' | 'approved' | 'rejected' | 'suspended';
+import type { AdminApplicantTab } from './schemas';
+export type { AdminApplicantTab } from './schemas';
 
 export type CourierDocLevel = 0 | 1 | 2;
 
