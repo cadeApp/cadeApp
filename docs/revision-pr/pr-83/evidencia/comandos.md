@@ -422,3 +422,94 @@ formatArs(trip.amountArs!)
 ```
 
 CI no consultado por bloqueantes. No se ejecutó suite completa independiente.
+
+
+---
+
+# Ronda 5 · SHA 2f9cf91fb6f9534b8d60e6f716a6d607239f6dc3
+
+## Preflight
+
+```text
+head: 2f9cf91fb6f9534b8d60e6f716a6d607239f6dc3
+author final comment: "T-115 lista para Ronda 5 independiente"
+docs/revision-pr después de R4: sin nuevos commits del autor
+delta 86229cba..2f9cf91f: solo docs/tasks/log/T-115.md (+1/-1)
+```
+
+## H05 · reproducción independiente
+
+```text
+H14 current courier phone assertion = true
+H14 mutated recipient phone assertion = false
+
+H13 current exact requestId input = true
+H13 mutated requestId+"-mutated" input = false
+
+H19 current alertdialog role = true
+H19 mutated generic dialog role = false
+```
+
+Se contrastó además con los asserts exactos presentes en `components.test.tsx` y `queries.test.ts`.
+
+## H20 · inspección visual
+
+Se abrieron las seis PNG directamente desde los blobs del SHA revisado:
+
+```text
+c06_merchant_390x844.png
+c06_merchant_360x800.png
+r07_courier_390x844.png
+r07_courier_360x800.png
+t05_cancel_390x844.png
+t05_cancel_360x800.png
+```
+
+Resultado:
+
+- C06: sin overflow visible; contactos principales legibles; faltan contingencias porque preview no pasa callbacks.
+- R07: sin overflow visible; datos correctos; CTA inferior visible pero disabled en 390 y 360.
+- T05: modal completo y legible en ambas medidas.
+
+Causa confirmada en `render-previews.test.tsx`: render server-side de vistas sin containers/handlers.
+
+La directiva `docs/design/visual-task-directive.md` exige “navegador real con la app corriendo”; el método actual no cumple esa cláusula.
+
+## CI #423
+
+```text
+build          success
+unit           success — 60 files / 671 tests
+audit          success
+db-tests       success
+typecheck      success
+lint           success
+bundle-budget  success
+```
+
+Metadata del workflow:
+
+```text
+event: pull_request
+head_sha: 2f9cf91f...
+base_sha: 6ac32e77...
+```
+
+Develop al cerrar Ronda 5:
+
+```text
+bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+```
+
+Commits faltantes en la rama:
+
+```text
+366a2b85 [T-106]
+bdafee8f [CC-010]
+```
+
+## Ficha
+
+La ficha oficial de develop aún lista los route groups viejos. La rama agrega `src/app/trips/**` y CC-008/009. Esa modificación está respaldada por las decisiones D02–D05 ya tomadas por Lautaro073; no se abre un nuevo hallazgo de scope.
+
+No se leyeron secretos ni .env.

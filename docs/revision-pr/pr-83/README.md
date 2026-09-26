@@ -1,39 +1,38 @@
 # PR #83 — T-115 · Vista de viaje
 
-> ❌ **Ronda 4 independiente: CON BLOQUEANTES · 8 bloqueantes · 1 mejora residual · sin decisiones pendientes**
+> ❌ **Ronda 5 independiente: CON 2 BLOQUEANTES · sin decisiones pendientes**
 
 | | |
 |---|---|
 | PR | #83 |
 | Tarea | T-115 |
 | Autor | @asako669 · P2 |
-| SHA revisado | `6a42a26675a8f6bb584e2eaa66c7fdf854bbf49e` |
+| SHA revisado | `2f9cf91fb6f9534b8d60e6f716a6d607239f6dc3` |
 | Estado PR | Draft |
-| develop al revisar | `ac4587f3c76f3ce8d63f3abbafff0847b89d9b54` |
-| CI | no consultado por bloqueantes |
+| develop actual | `bdafee8ff04d6b620eb46dd885b62fe0d675ca49` |
+| CI revisado | #423 · verde, pero base vieja `6ac32e77…` |
 
 ## Rondas
 
 | Ronda | SHA | Resultado |
 |---|---|---|
 | 1 | `4b4f18b` | con bloqueantes |
-| 2 | `4c2aded` | auditoría completa con bloqueantes |
+| 2 | `4c2aded` | auditoría completa |
 | 3 | `8bc4ee2` | 11 bloqueantes |
-| 4 | `6a42a266` | **8 bloqueantes** |
+| 4 | `6a42a266` | 8 bloqueantes |
+| 5 | `2f9cf91` | **2 bloqueantes** |
 
-La `ronda-4.md` escrita por agy en `b805c947` se conserva como [autorrevision-agy-r4.md](revisiones/autorrevision-agy-r4.md). Sus estados verificados quedan anulados por AG-36.
+## Ronda 5
 
-## Abiertos
+Cerrados por revisión independiente: H05, H06, H10, H13, H14, H19, H22, H23 y H24.
 
-H05, H13, H14, H19, H20, H22, H23 y H24.
+H05 quedó reproducido por segunda vía: las tres propiedades quedan verdes en el estado actual y rojas con la mutación descrita.
 
-H06 queda como mejora residual.
+### Bloqueantes
 
-## Cierres relevantes
+- **H20:** las capturas son de HTML estático, no de la app corriendo. R07 se capturó sin handlers y el CTA aparece disabled.
+- **H25:** la rama está dos commits detrás de develop y el CI #423 usó base `6ac32e77`, no el develop actual.
 
-- H10, H15, H16, H17 y H21: corregidos por inspección, pendientes de ejecución independiente.
-- **H18 se retira por error de la revisión:** `text-xs` ya era 14px en este repo.
-- D01–D05 siguen aceptadas.
-- CC-008 = PR #103 y CC-009 = PR #104 tienen sus propias rondas y todavía no están listos para merge.
+No hay decisiones nuevas para Lautaro073.
 
-Ver [ronda-4.md](revisiones/ronda-4.md).
+Ver [ronda-5.md](revisiones/ronda-5.md).

@@ -184,3 +184,20 @@ Si la UI necesita cliente, comercio y cadete, el DTO usa `recipientPhone`, `merc
 **Origen:** H23.
 
 Cuando el código elimina una feature o cambia rutas/checks, el cuerpo del PR se actualiza en la misma sesión. Un body viejo puede pasar CI y describir otro producto.
+
+
+---
+
+## Ronda 5
+
+### AG-109 · Una captura de componente estático no sustituye “la app corriendo”
+
+**Origen:** H20.
+
+Si la directiva exige navegador real con la app corriendo, renderizar el componente a HTML y abrir ese archivo no prueba wiring, handlers, navegación ni estado real. La evidencia puede verse bonita y aun mostrar un CTA disabled que en la ruta real está habilitado.
+
+### AG-110 · CI verde también tiene un SHA de base
+
+**Origen:** H25.
+
+En una PR larga no alcanza con mirar el círculo verde. Antes de cerrar, comparar el `base.sha` del workflow con el `develop` actual. Si develop avanzó, un CI verde contra la base anterior no certifica la combinación que se va a mergear.
