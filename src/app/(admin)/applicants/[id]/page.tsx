@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { notFound } from 'next/navigation';
-import { getApplicantDetail, ApplicantDetailView } from '@/features/admin';
+import { getApplicantDetail } from '@/features/admin/server';
+import { ApplicantDetailView } from '@/features/admin';
 
 export const metadata = {
   title: 'Detalle de Postulante | cadeApp Admin',

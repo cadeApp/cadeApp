@@ -5,10 +5,15 @@ export const metadata = {
   description: 'Verificación en dos pasos para administradores',
 };
 
-export default function AdminMfaPage() {
+interface AdminMfaPageProps {
+  searchParams: Promise<{ redirectTo?: string }>;
+}
+
+export default async function AdminMfaPage({ searchParams }: AdminMfaPageProps) {
+  const resolvedParams = await searchParams;
   return (
     <div className="flex min-h-[70vh] items-center justify-center p-4">
-      <MfaForm />
+      <MfaForm redirectTo={resolvedParams.redirectTo} />
     </div>
   );
 }

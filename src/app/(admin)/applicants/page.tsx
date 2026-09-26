@@ -1,5 +1,5 @@
-import * as React from 'react';
-import { getApplicantsQueue, ApplicantsQueue } from '@/features/admin';
+import { getApplicantsQueue } from '@/features/admin/server';
+import { ApplicantsQueue } from '@/features/admin';
 import type { AdminApplicantTab } from '@/features/admin';
 
 export const metadata = {

@@ -1,16 +1,18 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card';
 import { notify } from '@/ui/notify';
 import { verifyAdminMfaAction } from '../actions';
 
-export function MfaForm() {
+export interface MfaFormProps {
+  redirectTo?: string;
+}
+
+export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {}) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const redirectTo = searchParams.get('redirectTo') || '/admin/applicants';
 
   const [code, setCode] = React.useState('');
   const [loading, setLoading] = React.useState(false);
