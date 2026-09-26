@@ -207,4 +207,69 @@ typecheck ✅ · lint ✅ · test ✅ (46/46 suites, 388/388 tests)
 ```
 
 El rojo documentado antes es la fase TDD inicial por módulos inexistentes/desalineados; no hay una línea roja de mutación para H04/H05/H06/H07 ni para los nuevos controles de esta ronda.
+ 
+---
 
+# Ronda 3 — controles reviewer sobre `d439457`
+
+## Preflight
+
+```text
+PR head revisado: d439457ae681b7af660eac3f68b8146973e9874f
+develop: ac4587f3c76f3ce8d63f3abbafff0847b89d9b54
+develop...branch: ahead 10 / behind 0
+fixes propios tras merge b6e7774: 12 archivos, todos dentro del scope D01
+```
+
+## H09 — paridad SSR vs fetch vivo
+
+Control estático comparando `src/features/offers/queries.ts#getAvailableRequests` con `use-available-requests.ts`:
+
+```json
+{
+  "serverTracksOwnOffer": true,
+  "liveTracksOwnOffer": false,
+  "noInitialSnapshotFallback": false
+}
+```
+
+El servidor consulta usuario + ofertas pendientes y deriva `hasMyOffer`; el hook vivo hardcodea `false/null` y aún contiene `return [...initialRequests]` en caminos de fallback.
+
+Test requerido: solicitud SSR con `hasMyOffer=true`; refetch vivo devuelve la misma solicitud + oferta pending del usuario; después del refetch la UI debe seguir mostrando “ya ofertaste” y nunca el botón “Ofertar”.
+
+## H10 — shape y stale fallback
+
+Control estático:
+
+```json
+{
+  "defaultFetchPreservesShape": false,
+  "noStaleInitialFallback": false
+}
+```
+
+Causa: `.select('id, status')` + `return data as unknown as T`, y salida `query.data ?? initialTrip`.
+
+Test requerido: `initialTrip` con campos extra permitidos; fuente actualiza `status`; después del refetch esos campos deben conservarse. Segunda prueba: fuente devuelve `null`; el resultado no debe revivir silenciosamente el snapshot como si fuera fresco.
+
+## H18 — non-null assertions
+
+Control reviewer, excluyendo `!` dentro de strings SQL/Supabase:
+
+```text
+use-available-requests.ts:54           fallbackClient!
+use-request-offers.ts:97               fallbackClient!
+use-trip.ts:40                         fallbackClient!
+use-realtime-invalidation.ts:40        fallbackClient!
+use-realtime-invalidation.test.tsx:104 realtimeCallbacks[0]!
+use-realtime-invalidation.test.tsx:171 realtimeCallbacks[0]!
+use-realtime-invalidation.test.tsx:172 realtimeCallbacks[1]!
+use-realtime-invalidation.test.tsx:245 latest callback !
+TOTAL: 8
+```
+
+`AGENTS.md §4` prohíbe explícitamente non-null assertions.
+
+## CI
+
+No inspeccionado en Ronda 3 porque la ronda conserva bloqueantes; se difiere hasta una ronda sin defectos estáticos abiertos.
