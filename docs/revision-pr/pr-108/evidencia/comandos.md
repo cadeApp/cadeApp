@@ -272,3 +272,16 @@ Falta el informe completo de revisar-pr sin bloqueantes.
 ```
 
 No se usó ese rojo como defecto de código. El body se actualiza después de registrar esta Ronda 2 y el check debe re-ejecutarse.
+
+
+## Incidencia de CI posterior al commit documental
+
+El primer run del commit documental `5ecebdc` tuvo un fallo externo durante `next/font`. El workflow de build usa `pnpm build 2>&1 | tee build-output.txt` sin propagar el exit code de `next build`, por lo que el job `build` quedó verde aunque el artefacto no contenía la tabla de rutas; `bundle-budget` lo detectó con:
+
+```text
+No se pudo leer ninguna ruta de la salida de Next.js.
+```
+
+En un rerun posterior, `next build` sí compiló y emitió la tabla de rutas, pero `actions/download-artifact` siguió seleccionando por nombre el artefacto fallido de un intento anterior del mismo run. Esto es una limitación operacional del rerun y no un cambio de CC-010.
+
+Para obtener una comprobación limpia se dispara un run nuevo mediante este commit documental, sin modificar el SHA funcional verificado `127ca22` ni código de aplicación.
