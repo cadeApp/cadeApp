@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
-import * as browserClient from '@/lib/supabase/browser';
 import { CourierFeed } from './components/courier-feed';
 import { UnderReview } from './components/under-review';
 import { OfferSheet } from './components/offer-sheet';
 import { MyOffersList } from './components/my-offers-list';
+import { OFFERS_COPY } from './copy';
 import type { AvailableRequestItem, CourierOfferItem } from './schemas';
 
 const pushMock = vi.fn();
@@ -21,27 +21,30 @@ vi.mock('next/navigation', () => ({
 }));
 
 const mockChannel = {
-  on: vi.fn().mockReturnThis(),
-  subscribe: vi.fn().mockReturnThis(),
+  on: vi.fn(),
+  subscribe: vi.fn(),
 };
 
 vi.mock('@/lib/supabase/browser', () => ({
   createClient: vi.fn(() => ({
     channel: vi.fn(() => mockChannel),
     removeChannel: vi.fn(),
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          order: vi.fn().mockResolvedValue({ data: [], error: null }),
-        }),
-      }),
-    }),
   })),
 }));
 
 describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockChannel.on.mockReturnValue(mockChannel);
+    mockChannel.subscribe.mockReturnValue(mockChannel);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const sampleRequest: AvailableRequestItem = {
-    id: 'req-uuid-1',
+    id: '11111111-1111-1111-1111-111111111111',
     pickupZoneName: 'Centro',
     dropoffZoneName: 'Barrio Norte',
     approxDistanceKm: '2,5',
@@ -68,7 +71,6 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
 
     expect(screen.getByText(/estamos revisando tus datos/i)).toBeDefined();
     expect(screen.getByText(/te avisamos por acá y por notificación/i)).toBeDefined();
-    // No debe mostrar la lista de solicitudes abiertas
     expect(screen.queryByText(/solicitudes abiertas/i)).toBeNull();
   });
 
@@ -89,7 +91,6 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       />
     );
 
-    // Muestra el piso visible en el formulario
     expect(screen.getByText(/mínimo \$ 1\.000/i)).toBeDefined();
 
     const input = screen.getByLabelText(/monto de la oferta/i);
@@ -113,13 +114,11 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       />
     );
 
-    // 1. No debe existir ningún iframe, canvas ni contenedor de mapa
     expect(container.querySelector('iframe')).toBeNull();
     expect(container.querySelector('canvas')).toBeNull();
     expect(container.querySelector('[data-testid="map"]')).toBeNull();
     expect(container.querySelector('.gm-style')).toBeNull();
 
-    // 2. Ninguna coordenada lat/lng de Aguilares (-27.xx, -65.xx) en el DOM
     const htmlContent = container.innerHTML;
     expect(htmlContent).not.toMatch(/-27\.\d+/);
     expect(htmlContent).not.toMatch(/-65\.\d+/);
@@ -162,10 +161,8 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       />
     );
 
-    // Indicador visual de necesidad de cambio presente
     expect(screen.getByText(/necesita cambio/i)).toBeDefined();
 
-    // Piso tipográfico de 14px: ninguna clase text-xs (12px) en los textos de la tarjeta
     const cardElement = container.querySelector('[data-testid="request-card"]');
     expect(cardElement).not.toBeNull();
     const textXsElements = cardElement?.querySelectorAll('.text-xs');
@@ -223,41 +220,29 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
   });
 
   it('PR82-H09: CourierFeed consume useAvailableRequests y ante foco/invalidación muestra solicitudes vivas', async () => {
-    const mockChannel = {
-      on: vi.fn().mockReturnThis(),
-      subscribe: vi.fn().mockReturnThis(),
+    const reqLive2: AvailableRequestItem = {
+      id: '22222222-2222-2222-2222-222222222222',
+      approxDistanceKm: '1,5',
+      packageType: 'medium',
+      recipientPaymentMethod: 'transfer',
+      needsChange: false,
+      cashChangeAmount: null,
+      notes: 'Urgente',
+      publishedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+      pickupZoneName: 'Plaza',
+      dropoffZoneName: 'Barrio Sur',
+      hasMyOffer: false,
+      myOfferAmountArs: null,
     };
 
-    const mockFrom = vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          order: vi.fn().mockResolvedValue({
-            data: [
-              {
-                id: 'req-live-2',
-                approx_distance_m: 1500,
-                package_type: 'medium',
-                recipient_payment_method: 'transfer',
-                needs_change: false,
-                cash_change_amount: null,
-                notes: 'Urgente',
-                published_at: new Date().toISOString(),
-                expires_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
-                pickup_zone: { name: 'Plaza' },
-                dropoff_zone: { name: 'Barrio Sur' },
-              },
-            ],
-            error: null,
-          }),
-        }),
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [reqLive2],
       }),
-    });
-
-    vi.spyOn(browserClient, 'createClient').mockReturnValue({
-      channel: vi.fn().mockReturnValue(mockChannel),
-      removeChannel: vi.fn(),
-      from: mockFrom,
-    } as unknown as ReturnType<typeof browserClient.createClient>);
+    } as Response);
 
     render(
       <CourierFeed
@@ -268,20 +253,80 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       />
     );
 
-    // Inicialmente se ve sampleRequest (req-uuid-1: Barrio Norte) y NO req-live-2 (Barrio Sur)
     expect(screen.getByText(/Barrio Norte/i)).toBeDefined();
     expect(screen.queryByText(/Barrio Sur/i)).toBeNull();
 
-    // Disparar evento window focus para simular volver a la app con push apagado
     act(() => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    // La solicitud viva req-live-2 debe aparecer en el DOM
     await waitFor(() => {
       expect(screen.getByText(/Barrio Sur/i)).toBeDefined();
     });
   });
+
+  it('PR82-H20: ante HTTP 500 conserva las solicitudes previas y muestra alerta con botón Reintentar', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'DATABASE_ERROR' }),
+    } as Response);
+
+    render(
+      <CourierFeed
+        courierStatus="approved"
+        isAvailable={true}
+        requests={[sampleRequest]}
+        minOfferArs={1000}
+      />
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+
+    // Muestra alerta accesible y botón de reintento
+    expect(screen.getByText(OFFERS_COPY.feedErrorTitle)).toBeDefined();
+    expect(screen.getByText(OFFERS_COPY.feedErrorDescription)).toBeDefined();
+    expect(screen.getByRole('button', { name: OFFERS_COPY.retryButton })).toBeDefined();
+
+    // La solicitud previa no desaparece
+    expect(screen.getByText(/Barrio Norte/i)).toBeDefined();
+  });
+
+  it('PR82-H20: ante HTTP 500 sin datos previos muestra alerta de error y NO el EmptyState de esperando pedidos', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'DATABASE_ERROR' }),
+    } as Response);
+
+    render(
+      <CourierFeed
+        courierStatus="approved"
+        isAvailable={true}
+        requests={[]}
+        minOfferArs={1000}
+      />
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+
+    // Muestra el error
+    expect(screen.getByText(OFFERS_COPY.feedErrorTitle)).toBeDefined();
+    expect(screen.getByRole('button', { name: OFFERS_COPY.retryButton })).toBeDefined();
+
+    // NO debe mostrar el empty state común de feed vacío
+    expect(screen.queryByText(OFFERS_COPY.emptyFeedTitle)).toBeNull();
+  });
 });
-
-

@@ -1,13 +1,15 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
+import fs from 'node:fs';
+import path from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRequestOffers } from './use-request-offers';
 import { requestKeys } from '../query-keys';
 import * as browserClient from '@/lib/supabase/browser';
 import type { MerchantOfferItem } from '../types';
 
-describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
+describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/live', () => {
   let queryClient: QueryClient;
   let mockRemoveChannel: ReturnType<typeof vi.fn>;
   let mockSubscribe: ReturnType<typeof vi.fn>;
@@ -17,8 +19,8 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
 
   const initialOffers: MerchantOfferItem[] = [
     {
-      id: 'offer-initial-1',
-      courierId: 'courier-1',
+      id: '11111111-1111-1111-1111-111111111111',
+      courierId: '22222222-2222-2222-2222-222222222222',
       courierName: 'Carlos Gómez',
       vehicleType: 'motorcycle',
       amountArs: 1500,
@@ -33,7 +35,6 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
   ];
 
   beforeEach(() => {
-    // PR82-H06: Emular providers.tsx con staleTime: 60s
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -72,12 +73,23 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
+  it('PR82-H19 (Control Estático): use-request-offers.ts no tiene imports de supabase/browser ni .from(', () => {
+    const hookPath = path.resolve(__dirname, 'use-request-offers.ts');
+    const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+    expect(sourceCode).not.toContain('@/lib/supabase/browser');
+    expect(sourceCode).not.toContain('.from(');
+    expect(sourceCode).toContain('/api/live/requests/');
+    const nonNullAssertionPattern = new RegExp('[a-zA-Z0-9_\\)\\]]!(?!=)');
+    expect(sourceCode).not.toMatch(nonNullAssertionPattern);
+  });
+
   it('DoD: Con el push apagado, la oferta nueva aparece al volver a la app (refetchOnWindowFocus: always)', async () => {
     const updatedOffers: MerchantOfferItem[] = [
       ...initialOffers,
       {
-        id: 'offer-new-2',
-        courierId: 'courier-2',
+        id: '33333333-3333-3333-3333-333333333333',
+        courierId: '44444444-4444-4444-4444-444444444444',
         courierName: 'María López',
         vehicleType: 'bicycle',
         amountArs: 1200,
@@ -95,14 +107,14 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
 
     const { result } = renderHook(
       () =>
-        useRequestOffers('req-123', initialOffers, {
+        useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers, {
           fetcher: fetchOffersMock,
         }),
       { wrapper }
     );
 
     expect(result.current.offers).toHaveLength(1);
-    expect(result.current.offers[0]?.id).toBe('offer-initial-1');
+    expect(result.current.offers[0]?.id).toBe('11111111-1111-1111-1111-111111111111');
 
     // Simular que el usuario vuelve a la app (evento window focus) sin push
     act(() => {
@@ -113,7 +125,11 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       expect(result.current.offers).toHaveLength(2);
     });
 
-    expect(result.current.offers.some((o: MerchantOfferItem) => o.id === 'offer-new-2')).toBe(true);
+    expect(
+      result.current.offers.some(
+        (o: MerchantOfferItem) => o.id === '33333333-3333-3333-3333-333333333333'
+      )
+    ).toBe(true);
     expect(fetchOffersMock).toHaveBeenCalledTimes(1);
   });
 
@@ -121,8 +137,8 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
     const updatedOffers: MerchantOfferItem[] = [
       ...initialOffers,
       {
-        id: 'offer-reconnect',
-        courierId: 'courier-3',
+        id: '55555555-5555-5555-5555-555555555555',
+        courierId: '66666666-6666-6666-6666-666666666666',
         courierName: 'Pedro Acosta',
         vehicleType: 'auto',
         amountArs: 1800,
@@ -140,7 +156,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
 
     const { result } = renderHook(
       () =>
-        useRequestOffers('req-123', initialOffers, {
+        useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers, {
           fetcher: fetchOffersMock,
         }),
       { wrapper }
@@ -160,7 +176,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
 
   it('DoD: al desmontar la pantalla se cierra el canal', () => {
     const { unmount } = renderHook(
-      () => useRequestOffers('req-123', initialOffers),
+      () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
       { wrapper }
     );
 
@@ -176,7 +192,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
       const { result } = renderHook(
-        () => useRequestOffers('req-123', initialOffers),
+        () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
         { wrapper }
       );
 
@@ -191,11 +207,8 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       });
 
       // Invariantes inmediatas tras el evento Realtime:
-      // 1. La caché NO se muta a mano con setQueryData
       expect(setQueryDataSpy).not.toHaveBeenCalled();
-      // 2. El estado devuelto NO inyecta el payload crudo de Realtime
       expect(result.current.offers).toHaveLength(1);
-      // 3. Aún no se invalida porque está dentro de la ventana de debounce (300ms)
       expect(invalidateSpy).not.toHaveBeenCalled();
 
       // Avanzar reloj para superar el debounce
@@ -203,12 +216,10 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
         vi.advanceTimersByTime(300);
       });
 
-      // Tras el debounce, se invalida exactamente con la query key canónica
       expect(invalidateSpy).toHaveBeenCalledTimes(1);
       expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: requestKeys.offers('req-123'),
+        queryKey: requestKeys.offers('11111111-1111-1111-1111-111111111111'),
       });
-      // Sigue sin mutar manualmente la caché
       expect(setQueryDataSpy).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
@@ -220,8 +231,8 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
     const addedOffers: MerchantOfferItem[] = [];
 
     const newOffer: MerchantOfferItem = {
-      id: 'offer-effect-test',
-      courierId: 'courier-99',
+      id: '77777777-7777-7777-7777-777777777777',
+      courierId: '88888888-8888-8888-8888-888888888888',
       courierName: 'Laura T.',
       vehicleType: 'bicycle',
       amountArs: 1400,
@@ -239,7 +250,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
     const { result } = renderHook(
       () => {
         executionPhases.push('start-render');
-        const res = useRequestOffers('req-123', initialOffers, {
+        const res = useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers, {
           fetcher: async () => fetchResults,
           onOfferAdded: (offer) => {
             executionPhases.push('callback');
@@ -252,11 +263,9 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       { wrapper }
     );
 
-    // Monte inicial: no dispara onOfferAdded
     expect(addedOffers).toHaveLength(0);
-    executionPhases.length = 0; // Limpiar para el update
+    executionPhases.length = 0;
 
-    // Simular llegada de nueva oferta mediante refetch de TanStack Query
     fetchResults = [...initialOffers, newOffer];
     await act(async () => {
       await result.current.refetch();
@@ -266,11 +275,76 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime', () => {
       expect(result.current.offers).toHaveLength(2);
     });
 
-    // En useEffect, 'callback' DEBE ejecutarse estrictamente después de 'end-render'.
-    // Si se ejecutara en el cuerpo del hook (durante render), 'callback' aparecería antes de 'end-render'.
     expect(executionPhases).toEqual(['start-render', 'end-render', 'callback']);
     expect(addedOffers).toHaveLength(1);
-    expect(addedOffers[0]?.id).toBe('offer-effect-test');
+    expect(addedOffers[0]?.id).toBe('77777777-7777-7777-7777-777777777777');
+  });
+
+  it('PR82-H19: el fetch por defecto consume /api/live/requests/[requestId]/offers', async () => {
+    const liveApiPayload = {
+      data: [
+        {
+          id: '99999999-9999-9999-9999-999999999999',
+          courierId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          courierName: 'Roberto M.',
+          vehicleType: 'motorcycle',
+          amountArs: 2000,
+          etaMinutes: 10,
+          message: null,
+          licenseStatus: 'verified',
+          insuranceStatus: 'verified',
+          docLevel: 2,
+          createdAt: new Date().toISOString(),
+          status: 'pending',
+        },
+      ],
+    };
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => liveApiPayload,
+    } as Response);
+
+    const { result } = renderHook(
+      () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+      { wrapper }
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.offers[0]?.id).toBe('99999999-9999-9999-9999-999999999999');
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/live/requests/11111111-1111-1111-1111-111111111111/offers'
+    );
+  });
+
+  it('PR82-H20: cuando /api/live/requests/.../offers responde con HTTP 500, expone isError: true', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'DATABASE_ERROR' }),
+    } as Response);
+
+    const { result } = renderHook(
+      () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+      { wrapper }
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    expect(result.current.offers).toHaveLength(1);
+    expect(result.current.error?.message).toContain('HTTP 500');
   });
 });
-

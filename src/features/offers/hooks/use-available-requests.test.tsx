@@ -1,13 +1,15 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
+import fs from 'node:fs';
+import path from 'node:path';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAvailableRequests } from './use-available-requests';
 import { offerKeys } from '../query-keys';
 import * as browserClient from '@/lib/supabase/browser';
 import type { AvailableRequestItem } from '../schemas';
 
-describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtime)', () => {
+describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtime via /api/live)', () => {
   let queryClient: QueryClient;
   let mockRemoveChannel: ReturnType<typeof vi.fn>;
   let mockSubscribe: ReturnType<typeof vi.fn>;
@@ -17,7 +19,7 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
 
   const initialRequests: AvailableRequestItem[] = [
     {
-      id: 'req-1',
+      id: '11111111-1111-1111-1111-111111111111',
       pickupZoneName: 'Centro',
       dropoffZoneName: 'Barrio Norte',
       approxDistanceKm: '2,0',
@@ -34,7 +36,6 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
   ];
 
   beforeEach(() => {
-    // PR82-H06: Emular providers.tsx con staleTime: 60s
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -73,11 +74,23 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
+  it('PR82-H19 (Control Estático): use-available-requests.ts no tiene imports de supabase/browser ni .from(', () => {
+    const hookPath = path.resolve(__dirname, 'use-available-requests.ts');
+    const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+    expect(sourceCode).not.toContain('@/lib/supabase/browser');
+    expect(sourceCode).not.toContain('.from(');
+    expect(sourceCode).toContain('/api/live/available-requests');
+    // Sin non-null assertions (!)
+    const nonNullAssertionPattern = new RegExp('[a-zA-Z0-9_\\)\\]]!(?!=)');
+    expect(sourceCode).not.toMatch(nonNullAssertionPattern);
+  });
+
   it('DoD: Con push apagado, nuevas solicitudes aparecen al volver a la app (focus)', async () => {
     const updatedRequests: AvailableRequestItem[] = [
       ...initialRequests,
       {
-        id: 'req-2',
+        id: '22222222-2222-2222-2222-222222222222',
         pickupZoneName: 'Plaza',
         dropoffZoneName: 'Sur',
         approxDistanceKm: '3,0',
@@ -114,7 +127,11 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
       expect(result.current.requests).toHaveLength(2);
     });
 
-    expect(result.current.requests.some((r: AvailableRequestItem) => r.id === 'req-2')).toBe(true);
+    expect(
+      result.current.requests.some(
+        (r: AvailableRequestItem) => r.id === '22222222-2222-2222-2222-222222222222'
+      )
+    ).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -122,7 +139,7 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     const updatedRequests: AvailableRequestItem[] = [
       ...initialRequests,
       {
-        id: 'req-online-3',
+        id: '33333333-3333-3333-3333-333333333333',
         pickupZoneName: 'Estación',
         dropoffZoneName: 'Centro',
         approxDistanceKm: '1,5',
@@ -251,7 +268,7 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
       await act(async () => {
         await vi.advanceTimersByTimeAsync(30_000);
       });
-      expect(fetchMock).toHaveBeenCalledTimes(initialCount + 1); // Sigue en initialCount + 1, no polled en background
+      expect(fetchMock).toHaveBeenCalledTimes(initialCount + 1);
 
       // Restaurar visibilidad
       Object.defineProperty(document, 'visibilityState', {
@@ -264,69 +281,39 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     }
   });
 
-  it('PR82-H09: el fetch por defecto consulta ofertas pendientes del courier y mapea hasMyOffer y myOfferAmountArs', async () => {
-    const mockFrom = vi.fn().mockImplementation((table: string) => {
-      if (table === 'delivery_requests') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    id: 'req-live-1',
-                    approx_distance_m: 2000,
-                    package_type: 'small',
-                    recipient_payment_method: 'cash',
-                    needs_change: false,
-                    cash_change_amount: null,
-                    notes: null,
-                    published_at: '2026-09-26T00:00:00Z',
-                    expires_at: null,
-                    pickup_zone: { name: 'Centro' },
-                    dropoff_zone: { name: 'Aguilares' },
-                  },
-                ],
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
-      if (table === 'offers') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              in: vi.fn().mockReturnValue({
-                eq: vi.fn().mockResolvedValue({
-                  data: [{ request_id: 'req-live-1', amount_ars: 1500 }],
-                  error: null,
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-      return {};
-    });
+  it('PR82-H09 / H19: el fetch consume /api/live/available-requests y mapea hasMyOffer y myOfferAmountArs', async () => {
+    const liveApiPayload = {
+      data: [
+        {
+          id: '11111111-1111-1111-1111-111111111111',
+          pickupZoneName: 'Centro',
+          dropoffZoneName: 'Aguilares',
+          approxDistanceKm: '2,0',
+          packageType: 'small',
+          recipientPaymentMethod: 'cash',
+          needsChange: false,
+          cashChangeAmount: null,
+          notes: null,
+          publishedAt: '2026-09-26T00:00:00Z',
+          expiresAt: null,
+          hasMyOffer: true,
+          myOfferAmountArs: 1500,
+        },
+      ],
+    };
 
-    vi.spyOn(browserClient, 'createClient').mockReturnValue({
-      channel: vi.fn().mockReturnValue(mockChannel),
-      removeChannel: mockRemoveChannel,
-      auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: { user: { id: 'courier-user-1' } },
-          error: null,
-        }),
-      },
-      from: mockFrom,
-    } as unknown as ReturnType<typeof browserClient.createClient>);
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => liveApiPayload,
+    } as Response);
 
     const { result } = renderHook(
       () => useAvailableRequests(initialRequests),
       { wrapper }
     );
 
-    // Al inicio muestra initialRequests (hasMyOffer: false)
+    // Inicialmente initialRequests tiene hasMyOffer: false
     expect(result.current.requests[0]?.hasMyOffer).toBe(false);
 
     // Disparar refetch vía focus
@@ -335,42 +322,19 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     });
 
     await waitFor(() => {
-      expect(result.current.requests[0]?.id).toBe('req-live-1');
+      expect(result.current.requests[0]?.hasMyOffer).toBe(true);
     });
 
-    expect(result.current.requests[0]?.hasMyOffer).toBe(true);
     expect(result.current.requests[0]?.myOfferAmountArs).toBe(1500);
-    expect(mockFrom).toHaveBeenCalledWith('offers');
+    expect(global.fetch).toHaveBeenCalledWith('/api/live/available-requests');
   });
 
-  it('PR82-H09: no hace fallback silencioso a initialRequests cuando la consulta viva falla', async () => {
-    const mockFrom = vi.fn().mockImplementation((table: string) => {
-      if (table === 'delivery_requests') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({
-                data: null,
-                error: new Error('Database connection failed'),
-              }),
-            }),
-          }),
-        };
-      }
-      return {};
-    });
-
-    vi.spyOn(browserClient, 'createClient').mockReturnValue({
-      channel: vi.fn().mockReturnValue(mockChannel),
-      removeChannel: mockRemoveChannel,
-      auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: { user: null },
-          error: null,
-        }),
-      },
-      from: mockFrom,
-    } as unknown as ReturnType<typeof browserClient.createClient>);
+  it('PR82-H20: cuando /api/live falla (HTTP 500), expone isError: true sin fallback silencioso', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'DATABASE_ERROR' }),
+    } as Response);
 
     const { result } = renderHook(
       () => useAvailableRequests(initialRequests),
@@ -383,9 +347,11 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     });
 
     await waitFor(() => {
-      expect(result.current.requests).toEqual([]);
+      expect(result.current.isError).toBe(true);
     });
+
+    // Mantiene initialRequests en cache pero marca error para que la UI informe
+    expect(result.current.requests).toHaveLength(1);
+    expect(result.current.error?.message).toContain('HTTP 500');
   });
 });
-
-

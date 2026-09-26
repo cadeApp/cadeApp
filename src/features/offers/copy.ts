@@ -5,6 +5,9 @@ export const OFFERS_COPY = {
   emptyFeedTitle: 'No hay pedidos disponibles',
   emptyFeedDescription: 'Cuando un comercio de Aguilares publique una solicitud, la vas a ver acá.',
   loadingFeed: 'Cargando solicitudes disponibles...',
+  feedErrorTitle: 'No se pudieron actualizar los pedidos',
+  feedErrorDescription: 'Ocurrió un problema de conexión al cargar los pedidos en vivo.',
+  retryButton: 'Reintentar',
 
   // Disponibilidad en feed
   unavailableAlertTitle: 'No estás disponible',

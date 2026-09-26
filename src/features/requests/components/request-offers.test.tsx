@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { RequestOffersList } from './request-offers-list';
+import { requestsCopy } from '../copy';
 import type { MerchantOfferItem } from '../types';
 
 // Mock server actions
@@ -48,6 +49,10 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
     realtimeCallback = null;
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   const mockRequest = {
     id: 'req-11111111-1111-1111-1111-111111111111',
     pickupZoneName: 'Centro',
@@ -63,8 +68,8 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
   const initialOffers: MerchantOfferItem[] = [
     {
-      id: 'off-1',
-      courierId: 'courier-1',
+      id: '11111111-1111-1111-1111-111111111111',
+      courierId: '22222222-2222-2222-2222-222222222222',
       courierName: 'Joaquín R.',
       vehicleType: 'motorcycle',
       amountArs: 1800,
@@ -76,8 +81,8 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       createdAt: '2026-09-24T01:00:00.000Z',
     },
     {
-      id: 'off-2',
-      courierId: 'courier-2',
+      id: '33333333-3333-3333-3333-333333333333',
+      courierId: '44444444-4444-4444-4444-444444444444',
       courierName: 'Micaela T.',
       vehicleType: 'bicycle',
       amountArs: 1400,
@@ -89,8 +94,8 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       createdAt: '2026-09-24T01:05:00.000Z',
     },
     {
-      id: 'off-3',
-      courierId: 'courier-3',
+      id: '55555555-5555-5555-5555-555555555555',
+      courierId: '66666666-6666-6666-6666-666666666666',
       courierName: 'Carlos P.',
       vehicleType: 'auto',
       amountArs: 2000,
@@ -110,13 +115,11 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
     const renderedText = container.textContent ?? '';
 
-    // Verificación estricta: ninguna estrella ni mención a calificaciones (S4)
     expect(renderedText).not.toMatch(/★|☆|⭐/);
     expect(renderedText).not.toMatch(/4\.9/);
     expect(renderedText).not.toMatch(/182 viajes/i);
     expect(renderedText).not.toMatch(/reseñas?|reviews?|calificaciones?/i);
 
-    // En cambio, las insignias de documentación verificada SÍ deben mostrarse
     expect(screen.getAllByText(/Licencia verificada/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Seguro verificado/i).length).toBeGreaterThan(0);
   });
@@ -124,17 +127,14 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
   it('DoD: Ordenamiento por doc_level (por defecto) y por precio', () => {
     render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
 
-    // Por defecto doc_level: Joaquín (docLevel 2), Micaela (docLevel 1), Carlos (docLevel 0)
     let cards = screen.getAllByRole('heading', { level: 4 });
     expect(cards[0]?.textContent).toContain('Joaquín R.');
     expect(cards[1]?.textContent).toContain('Micaela T.');
     expect(cards[2]?.textContent).toContain('Carlos P.');
 
-    // Conmutar a "Precio"
     const priceButton = screen.getByRole('button', { name: /precio/i });
     fireEvent.click(priceButton);
 
-    // Por precio ascendente: Micaela ($ 1.400), Joaquín ($ 1.800), Carlos ($ 2.000)
     cards = screen.getAllByRole('heading', { level: 4 });
     expect(cards[0]?.textContent).toContain('Micaela T.');
     expect(cards[1]?.textContent).toContain('Joaquín R.');
@@ -147,7 +147,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       data: {
         status: 'matched',
         requestId: mockRequest.id,
-        acceptedOfferId: 'off-1',
+        acceptedOfferId: '11111111-1111-1111-1111-111111111111',
         matchedAt: '2026-09-24T01:30:00Z',
         idempotent: false,
       },
@@ -155,7 +155,6 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
     render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
 
-    // Click en aceptar la primera oferta (Joaquín R.)
     const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
     const firstAcceptButton = acceptButtons[0];
     expect(firstAcceptButton).toBeDefined();
@@ -163,36 +162,32 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       fireEvent.click(firstAcceptButton);
     }
 
-    // Modal abierto con título C05
     expect(
       screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
     ).toBeDefined();
 
-    // Desglose de tarifa acordada
     expect(screen.getAllByText(/\$ 1\.800/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Tarifa acordada/i)).toBeDefined();
 
-    // Desglose de medio de pago y cambio
     expect(screen.getAllByText(/Efectivo/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/necesita cambio/i)).toBeDefined();
 
-    // Texto de revelación progresiva D3
     expect(
       screen.getByText(
         /Al aceptar, Joaquín va a ver la dirección de retiro, la de entrega y los datos de tu cliente\. Las otras ofertas se rechazan\./i
       )
     ).toBeDefined();
 
-    // Ausencia de estrellas dentro del modal
     const dialog = screen.getByRole('dialog');
     expect(dialog.textContent).not.toMatch(/★|⭐|4\.9|viajes/i);
 
-    // Confirmar en el modal
     const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(mockAcceptOfferAction).toHaveBeenCalledWith({ offerId: 'off-1' });
+      expect(mockAcceptOfferAction).toHaveBeenCalledWith({
+        offerId: '11111111-1111-1111-1111-111111111111',
+      });
     });
   });
 
@@ -222,29 +217,9 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
   });
 
   it('DoD: La oferta nueva aparece sin recargar la página (Realtime)', async () => {
-    // Componente monta y suscribe a Supabase Realtime real (PR76-H05)
-    const { unmount } = render(
-      <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
-    );
-
-    // Verificamos que la nueva oferta no está todavía
-    expect(screen.queryByText('Lucas G.')).toBeNull();
-
-    // Verificamos suscripción real de Supabase Realtime (channel postgres_changes con filter)
-    expect(mockChannel.subscribe).toHaveBeenCalled();
-    expect(mockChannel.on).toHaveBeenCalledWith(
-      'postgres_changes',
-      expect.objectContaining({
-        table: 'offers',
-        filter: `request_id=eq.${mockRequest.id}`,
-      }),
-      expect.any(Function)
-    );
-
-    // Se simula la llegada en vivo de una oferta vía canal Realtime
     const incomingOffer: MerchantOfferItem = {
-      id: 'off-4',
-      courierId: 'courier-4',
+      id: '77777777-7777-7777-7777-777777777777',
+      courierId: '88888888-8888-8888-8888-888888888888',
       courierName: 'Lucas G.',
       vehicleType: 'motorcycle',
       amountArs: 1600,
@@ -256,23 +231,87 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       createdAt: '2026-09-24T01:10:00.000Z',
     };
 
+    vi.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [...initialOffers, incomingOffer],
+      }),
+    } as Response);
+
+    const { unmount } = render(
+      <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+    );
+
+    expect(screen.queryByText('Lucas G.')).toBeNull();
+    expect(mockChannel.subscribe).toHaveBeenCalled();
+
     expect(realtimeCallback).toBeTypeOf('function');
-    await waitFor(() => {
-      realtimeCallback!({
-        eventType: 'INSERT',
-        new: incomingOffer,
-        old: null,
-      });
+    await act(async () => {
+      if (realtimeCallback) {
+        realtimeCallback({
+          eventType: 'INSERT',
+          new: incomingOffer,
+          old: null,
+        });
+      }
     });
 
-    // La oferta nueva aparece en el DOM sin recargar la página
     await waitFor(() => {
       expect(screen.getByText('Lucas G.')).toBeDefined();
       expect(screen.getByText('$ 1.600')).toBeDefined();
     });
 
-    // Verificamos cleanup al desmontar (PR76-H05)
     unmount();
     expect(mockRemoveChannel).toHaveBeenCalledWith(mockChannel);
+  });
+
+  it('PR82-H20: ante HTTP 500 conserva las ofertas previas y muestra alerta con botón Reintentar', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'DATABASE_ERROR' }),
+    } as Response);
+
+    render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+
+    expect(screen.getByText(requestsCopy.offers.errorLoadingOffers)).toBeDefined();
+    expect(screen.getByText(requestsCopy.offers.errorDescription)).toBeDefined();
+    expect(screen.getByRole('button', { name: requestsCopy.offers.retryButton })).toBeDefined();
+
+    // Las ofertas previas se mantienen en pantalla
+    expect(screen.getByText('Joaquín R.')).toBeDefined();
+  });
+
+  it('PR82-H20: ante HTTP 500 sin ofertas previas muestra alerta de error y NO el mensaje de esperando ofertas', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'DATABASE_ERROR' }),
+    } as Response);
+
+    render(<RequestOffersList request={mockRequest} initialOffers={[]} />);
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+
+    expect(screen.getByText(requestsCopy.offers.errorLoadingOffers)).toBeDefined();
+    expect(screen.getByRole('button', { name: requestsCopy.offers.retryButton })).toBeDefined();
+
+    // NO debe mostrar la tarjeta de esperando ofertas
+    expect(screen.queryByText(requestsCopy.offers.waitingOffers)).toBeNull();
   });
 });

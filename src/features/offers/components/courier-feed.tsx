@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { Badge } from '@/ui/badge';
+import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
 import { AvailabilitySwitch } from '@/features/availability';
@@ -40,7 +41,11 @@ export function CourierFeed({
   const [selectedRequest, setSelectedRequest] = useState<AvailableRequestItem | null>(null);
   const [isOfferSheetOpen, setIsOfferSheetOpen] = useState<boolean>(false);
 
-  const { requests: liveRequests } = useAvailableRequests(initialRequests, {
+  const {
+    requests: liveRequests,
+    isError,
+    refetch,
+  } = useAvailableRequests(initialRequests, {
     enabled: available && courierStatus === 'approved',
   });
   const requests = liveRequests ?? initialRequests;
@@ -141,6 +146,40 @@ export function CourierFeed({
         <>
           {isLoading ? (
             <FeedSkeleton />
+          ) : isError ? (
+            <div className="space-y-4">
+              <div
+                role="alert"
+                className="flex flex-col gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-foreground">{OFFERS_COPY.feedErrorTitle}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {OFFERS_COPY.feedErrorDescription}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetch()}
+                  className="self-end sm:self-center"
+                >
+                  {OFFERS_COPY.retryButton}
+                </Button>
+              </div>
+
+              {requests.length > 0 && (
+                <div className="space-y-3">
+                  {requests.map((req) => (
+                    <RequestCard key={req.id} request={req} onOfferClick={handleOpenOfferSheet} />
+                  ))}
+                </div>
+              )}
+            </div>
           ) : requests.length === 0 ? (
             <EmptyState
               icon={<Radio className="h-8 w-8 text-muted-foreground" />}
