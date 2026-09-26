@@ -25,7 +25,7 @@ approval-policy FAIL esperado — el body aún dice CON BLOQUEANTES
 
 El body mencionaba 2 fallos locales de suite completa, pero no se reproducen en CI: el mismo SHA ejecuta 66/66 archivos y 732/732 tests en verde. No se consideran bloqueante.
 
-La revisión relanzó además el job unit de este SHA para una segunda ejecución independiente; al redactar esta ronda el rerun está en curso.
+La revisión relanzó además el job unit del mismo SHA. El job reviewer-triggered `108458559773` volvió a pasar: 66/66 archivos y 732/732 tests.
 
 ## Cerrados
 
