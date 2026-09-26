@@ -327,3 +327,111 @@ No hay comentarios/capturas nuevas en PR #106. El body mantiene correctamente el
 ## Limitación de mutaciones
 
 No se ejecutó una batería local porque el entorno de revisión no dispone de checkout reproducible. No se fabrican resultados. Las mutaciones que deben ejecutarse en la siguiente corrección quedan especificadas en `revisiones/ronda-2.md`.
+
+
+---
+
+# Ronda 3 — SHA f3144add41b4c493897c4a78323445cf4545637b
+
+## Preflight
+
+```text
+PR #106
+Head funcional: f3144add41b4c493897c4a78323445cf4545637b
+Base: bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+Mergeable: true
+Changed files: 38
+CI run funcional: 36254939942
+```
+
+## Decisiones
+
+- D03-A: Lautaro073 autoriza `src/app/(admin)/admin-nav.test.tsx`; se agrega a la ficha.
+- D04-B: H11 se difiere a T-300/staging y deja de bloquear T-122. No se convierte en verificado.
+
+## Rerun independiente
+
+La revisión solicitó reejecutar el job unit ya verde del SHA funcional.
+
+```text
+Reviewer-triggered job: 108447348012
+src/features/admin/actions.test.ts             14 PASS
+src/features/admin/schemas.test.ts              8 PASS
+src/features/admin/components/mfa-form.test.tsx 1 PASS
+src/app/(admin)/admin-nav.test.tsx              1 PASS
+Test Files 61 passed
+Tests      647 passed
+```
+
+Esto cierra H03 y H10. En H07 demuestra que la validación de searchParams quedó protegida, pero no cambia el hecho de que la lectura sigue siendo offset-based.
+
+## H07 residual
+
+```text
+getApplicantsQueue:
+  from=(page-1)*pageSize
+  to=from+pageSize-1
+  .range(from,to)
+```
+
+Regla 25 exige cursor por created_at/id.
+
+## H12 · RLS
+
+```text
+queries.ts:3   import createAdminClient
+queries.ts:79  const supabase = createAdminClient()
+queries.ts:166 const supabase = createAdminClient()
+```
+
+La migración RLS ya contiene:
+- couriers_select_admin
+- courier_documents_select_admin
+- profiles_select_admin
+
+La documentación actual de Supabase señala que service/secret keys bypass RLS. Regla 20 del repo exige lecturas de `queries.ts` con cliente server/RLS.
+
+## H13 · fronteras
+
+`actions.ts` no contiene `safeParse`/Zod en las acciones de T-122. La validación parcial del wrapper RPC llega demasiado tarde y no cubre `viewCourierDocumentAction`.
+
+También `params.id` de la ruta detalle entra directo a la query.
+
+## H14 · A02
+
+README vinculante:
+- Tabs documentales.
+- primitivas shadcn/ui.
+- decisiones con motivo.
+
+Export A02:
+- tabs para DNI frente/dorso/selfie/licencia/seguro;
+- “Rechazar comprobante” abre textarea de motivo.
+
+Implementación:
+- botones manuales para documentos;
+- overlay manual para decisión;
+- motivo de rechazo documental hardcodeado.
+
+## H15 · A00
+
+README: “Conteo regresivo y botón primario Verificar”.  
+Implementación: sin contador.
+
+Supabase Auth TOTP documenta intervalo de 30 s.
+
+## H16 · barrido de convenciones
+
+Detectados:
+- segundo Toaster en `src/app/(admin)/layout.tsx`;
+- color arbitrario en `admin-nav.tsx`;
+- heights arbitrarios + style inline en A02;
+- skeletons definidos directamente en route boundaries;
+- fechas con `toLocale*`;
+- sin `copy.ts`.
+
+Se excluye `max-w-[1280px]` del barrido porque A00 lo exige literalmente.
+
+## Limitación
+
+No se ejecutaron mutaciones reviewer-owned de H12–H16 porque requieren modificar el checkout y este entorno de revisión opera por GitHub sin checkout privado materializable. No se inventa RED. El prompt de corrección exige mutaciones reales al agente y la siguiente ronda las contrastará.

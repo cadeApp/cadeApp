@@ -23,3 +23,13 @@ El RED inicial no fue una declaración retrospectiva: el job unit del commit ini
 - **Regla 25 frontera URL:** un type cast no valida `searchParams`; H07 demuestra que incluso con paginación server-side correcta pueden entrar `Infinity` o enums inexistentes.
 - **Control conductual vs búsqueda de texto:** H10 muestra que encontrar `logoutAction` en el source no prueba que el usuario al hacer click cierre sesión.
 - H11 mejoró en honestidad: el DoD visual se dejó sin marcar, pero la evidencia sigue siendo requisito de cierre.
+
+
+## Ronda 3
+
+- **Alcance lo decide Lautaro:** la revisión no puede “autorizar” por sí sola un archivo fuera de ficha. D03 corrige ese error de proceso y formaliza `admin-nav.test.tsx`.
+- **Aceptado ≠ verificado:** D04-B mueve H11 a T-300; el estado correcto es `aceptado`, con seguimiento, no `arreglado-verificado`.
+- **Service role en lecturas es una señal roja:** si existen policies RLS para el actor, `queries.ts` no debe convertirlas en decoración usando un cliente privilegiado.
+- **Revisar el diseño pantalla por pantalla:** comprobar solo los hallazgos anteriores dejó escapar Tabs/Dialog/motivo en A02 y countdown en A00.
+- **Green CI no sustituye reglas de arquitectura/UI:** Toaster duplicado, estilos inline y ausencia de RHF/Zod pueden convivir con 647 tests verdes.
+- **Clase completa, no instancia:** después del primer valor arbitrario se barrió todo el alcance admin y se enumeraron Toaster, estilos, skeletons, formateadores y copy.
