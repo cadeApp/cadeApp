@@ -85,7 +85,6 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
 
   // Diálogo y formulario de rechazo documental específico
   const [rejectDocDialogOpen, setRejectDocDialogOpen] = React.useState(false);
-  const rejectDocTriggerRef = React.useRef<HTMLButtonElement>(null);
 
   const rejectDocForm = useForm<RejectDocumentFormInput>({
     resolver: zodResolver(rejectDocumentFormSchema),
@@ -535,7 +534,6 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                           </span>
                           <div className="flex gap-2">
                             <Button
-                              ref={rejectDocTriggerRef}
                               size="sm"
                               variant="outline"
                               onClick={() => {
@@ -652,12 +650,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           }
         }}
       >
-        <DialogContent
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            rejectDocTriggerRef.current?.focus();
-          }}
-        >
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{ADMIN_COPY.detail.rejectDialogTitle}</DialogTitle>
             <DialogDescription>
