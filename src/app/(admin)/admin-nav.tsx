@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
-import { ADMIN_NAV_TABS } from '@/features/admin';
+import { ADMIN_COPY, ADMIN_NAV_TABS } from '@/features/admin';
 import { cn } from '@/ui/cn';
 import { logoutAction } from '@/features/auth';
 
@@ -27,23 +27,24 @@ export function AdminNav() {
         <div className="flex items-center gap-8">
           <Link
             href="/admin/applicants"
-            aria-label="Panel de Administración cadeApp"
+            aria-label={ADMIN_COPY.nav.brandLabel}
             className="inline-flex items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <BrandLogo size="md" variant="default" showWordmark={true} />
           </Link>
 
-          <nav aria-label="Navegación principal de administración" className="hidden md:flex items-center gap-1">
+          <nav aria-label={ADMIN_COPY.nav.ariaLabel} className="hidden items-center gap-1 md:flex">
             {ADMIN_NAV_TABS.map((tab) => {
               const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+
               return (
                 <Link
                   key={tab.href}
                   href={tab.href}
                   className={cn(
-                    'relative px-4 py-5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    'relative px-4 py-5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     isActive
-                      ? 'text-primary font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary'
+                      ? 'font-semibold text-primary after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary'
                       : 'text-muted-foreground hover:text-foreground'
                   )}
                   aria-current={isActive ? 'page' : undefined}
@@ -56,17 +57,17 @@ export function AdminNav() {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="hidden sm:inline-block rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground">
-            Admin (Aguilares)
+          <span className="hidden rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground sm:inline-block">
+            {ADMIN_COPY.nav.badgeText}
           </span>
           <Button
             variant="ghost"
             size="sm"
             type="button"
             onClick={handleLogout}
-            className="text-muted-foreground text-sm"
+            className="text-sm text-muted-foreground"
           >
-            Salir
+            {ADMIN_COPY.nav.logoutButton}
           </Button>
         </div>
       </div>
