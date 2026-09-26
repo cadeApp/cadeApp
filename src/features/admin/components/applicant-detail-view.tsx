@@ -21,6 +21,7 @@ import { Textarea } from '@/ui/textarea';
 import { notify } from '@/ui/notify';
 import { cn } from '@/ui/cn';
 import { formatDate } from '@/lib/format';
+import { getDomainErrorMessage } from '@/lib/error-messages';
 import {
   viewCourierDocumentAction,
   decideCourierAction,
@@ -40,20 +41,11 @@ interface ApplicantDetailViewProps {
   readonly applicant: ApplicantDetail;
 }
 
-const DOC_KIND_LABELS: Record<string, string> = {
-  dni_front: 'DNI Frente',
-  dni_back: 'DNI Dorso',
-  selfie: 'Selfie con DNI',
-  license: 'Licencia de Conducir',
-  insurance: 'Seguro de Vehículo',
-  avatar: 'Foto de Perfil',
-};
-
 const ROTATION_CLASSES: Record<number, string> = {
   0: 'rotate-0',
   90: 'rotate-90',
   180: 'rotate-180',
-  270: 'rotate-270',
+  270: '-rotate-90',
 };
 
 const ZOOM_CLASSES: Record<number, string> = {
@@ -93,6 +85,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
 
   // Diálogo y formulario de rechazo documental específico
   const [rejectDocDialogOpen, setRejectDocDialogOpen] = React.useState(false);
+  const rejectDocTriggerRef = React.useRef<HTMLButtonElement>(null);
 
   const rejectDocForm = useForm<RejectDocumentFormInput>({
     resolver: zodResolver(rejectDocumentFormSchema),
@@ -135,15 +128,15 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
       });
 
       if (!res.ok) {
-        notify.error('No se pudo generar la URL firmada para el documento.');
+        notify.error(getDomainErrorMessage(res.code));
         return;
       }
 
       setSignedUrl(res.data.signedUrl);
       setExpiresIn(res.data.expiresInSeconds);
-      notify.success('Documento cargado bajo sesión auditada.');
+      notify.success(ADMIN_COPY.detail.success.documentLoaded);
     } catch {
-      notify.error('Error al solicitar visualización del documento.');
+      notify.error(ADMIN_COPY.detail.errors.loadDocumentConnection);
     } finally {
       setLoadingDoc(false);
     }
@@ -160,14 +153,14 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
       });
 
       if (!res.ok) {
-        notify.error('Error al actualizar el estado del documento.');
+        notify.error(getDomainErrorMessage(res.code));
         return;
       }
 
-      notify.success('Documento verificado correctamente.');
+      notify.success(ADMIN_COPY.detail.success.documentVerified);
       router.refresh();
     } catch {
-      notify.error('Error de conexión al verificar documento.');
+      notify.error(ADMIN_COPY.detail.errors.verifyDocumentConnection);
     } finally {
       setVerifyingDoc(false);
     }
@@ -183,16 +176,16 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
       });
 
       if (!res.ok) {
-        notify.error('Error al actualizar el estado del documento.');
+        notify.error(getDomainErrorMessage(res.code));
         return;
       }
 
-      notify.success('Documento marcado como rechazado.');
+      notify.success(ADMIN_COPY.detail.success.documentRejected);
       setRejectDocDialogOpen(false);
       rejectDocForm.reset();
       router.refresh();
     } catch {
-      notify.error('Error de conexión al verificar documento.');
+      notify.error(ADMIN_COPY.detail.errors.verifyDocumentConnection);
     }
   });
 
@@ -206,10 +199,10 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           reason: data.reason,
         });
         if (!res.ok) {
-          notify.error('No se pudo suspender al repartidor.');
+          notify.error(getDomainErrorMessage(res.code));
           return;
         }
-        notify.success('Repartidor suspendido con éxito.');
+        notify.success(ADMIN_COPY.detail.success.courierSuspended);
       } else {
         const res = await decideCourierAction({
           courierId: applicant.id,
@@ -217,13 +210,13 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           reason: data.reason,
         });
         if (!res.ok) {
-          notify.error('No se pudo registrar la decisión sobre el postulante.');
+          notify.error(getDomainErrorMessage(res.code));
           return;
         }
         notify.success(
           decisionModal === 'approved'
-            ? 'Postulante aprobado como repartidor activo.'
-            : 'Postulación rechazada.'
+            ? ADMIN_COPY.detail.success.applicantApproved
+            : ADMIN_COPY.detail.success.applicantRejected
         );
       }
 
@@ -231,7 +224,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
       decisionForm.reset();
       router.refresh();
     } catch {
-      notify.error('Error al procesar la decisión.');
+      notify.error(ADMIN_COPY.detail.errors.decisionConnection);
     }
   });
 
@@ -261,24 +254,24 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                   : 'secondary'
               }
             >
-              {applicant.status.toUpperCase()}
+              {ADMIN_COPY.applicantStatus[applicant.status]}
             </Badge>
           </div>
           <div className="mt-1 flex flex-wrap gap-4 text-sm text-muted-foreground">
             <div>
-              DNI Hash: <span className="font-mono text-foreground">{applicant.dniHash}</span>
+              {ADMIN_COPY.detail.labels.dniHash}: <span className="font-mono text-foreground">{applicant.dniHash}</span>
             </div>
             {applicant.phone ? (
               <div>
-                Teléfono: <span className="font-medium text-foreground">{applicant.phone}</span>
+                {ADMIN_COPY.detail.labels.phone}: <span className="font-medium text-foreground">{applicant.phone}</span>
               </div>
             ) : null}
             <div>
-              Vehículo: <span className="font-medium text-foreground">{applicant.vehicleType.toUpperCase()}</span>
+              {ADMIN_COPY.detail.labels.vehicle}: <span className="font-medium text-foreground">{ADMIN_COPY.vehicleType[applicant.vehicleType]}</span>
               {applicant.vehiclePlate ? ` (${applicant.vehiclePlate})` : ''}
             </div>
             <div>
-              Nivel: <span className="font-semibold text-foreground">Nivel {applicant.docLevel}</span>
+              {ADMIN_COPY.detail.labels.level}: <span className="font-semibold text-foreground">{ADMIN_COPY.queue.level(applicant.docLevel)}</span>
             </div>
           </div>
         </div>
@@ -292,14 +285,14 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                 size="sm"
                 onClick={() => setDecisionModal('rejected')}
               >
-                Rechazar postulación
+                {ADMIN_COPY.detail.applicantActions.reject}
               </Button>
               <Button
                 variant="default"
                 size="sm"
                 onClick={() => setDecisionModal('approved')}
               >
-                Aprobar repartidor
+                {ADMIN_COPY.detail.applicantActions.approve}
               </Button>
             </>
           ) : applicant.status === 'approved' ? (
@@ -308,7 +301,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               size="sm"
               onClick={() => setDecisionModal('suspended')}
             >
-              Suspender repartidor
+              {ADMIN_COPY.detail.applicantActions.suspend}
             </Button>
           ) : applicant.status === 'suspended' ? (
             <Button
@@ -316,7 +309,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               size="sm"
               onClick={() => setDecisionModal('approved')}
             >
-              Reactivar repartidor
+              {ADMIN_COPY.detail.applicantActions.reactivate}
             </Button>
           ) : (
             <Button
@@ -324,7 +317,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               size="sm"
               onClick={() => setDecisionModal('approved')}
             >
-              Reconsiderar aprobación
+              {ADMIN_COPY.detail.applicantActions.reconsider}
             </Button>
           )}
         </div>
@@ -356,6 +349,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
       <Tabs
         value={selectedDocId}
         onValueChange={setSelectedDocId}
+        orientation="vertical"
         className="w-full"
       >
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -363,16 +357,16 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           <Card className="lg:col-span-1 border border-border shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">
-                Documentación ({applicant.documents.length})
+                {ADMIN_COPY.detail.documentationTitle(applicant.documents.length)}
               </CardTitle>
               <CardDescription className="text-sm">
-                Seleccioná un archivo para revisarlo.
+                {ADMIN_COPY.detail.documentationDescription}
               </CardDescription>
             </CardHeader>
             <CardContent className="p-2">
               <TabsList
                 className="flex flex-col h-auto w-full bg-transparent p-0 gap-1"
-                aria-label="Documentos del postulante"
+                aria-label={ADMIN_COPY.detail.documentsAriaLabel}
               >
                 {applicant.documents.map((doc) => (
                   <TabsTrigger
@@ -381,7 +375,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                     className="w-full justify-between p-3 rounded-md text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground font-medium text-left"
                   >
                     <span className="truncate">
-                      {DOC_KIND_LABELS[doc.documentType] || doc.documentType}
+                      {ADMIN_COPY.documentKind[doc.documentType]}
                     </span>
                     <span className="text-sm shrink-0 ml-2">
                       {doc.status === 'verified' ? '✓' : doc.status === 'rejected' ? '✕' : '•'}
@@ -397,7 +391,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             {applicant.documents.length === 0 ? (
               <Card className="border border-border shadow-sm">
                 <CardContent className="p-6 text-center text-sm text-muted-foreground">
-                  No hay documentos registrados para este postulante.
+                  {ADMIN_COPY.detail.emptyDocuments}
                 </CardContent>
               </Card>
             ) : (
@@ -409,14 +403,14 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                       <CardHeader className="flex flex-row items-center justify-between border-b border-border py-3">
                         <div>
                           <CardTitle className="text-base font-semibold">
-                            {DOC_KIND_LABELS[doc.documentType] || doc.documentType}
+                            {ADMIN_COPY.documentKind[doc.documentType]}
                           </CardTitle>
                           <CardDescription className="text-sm">
-                            Estado:{' '}
+                            {ADMIN_COPY.detail.labels.state}:{' '}
                             <span className="font-medium text-foreground">
-                              {doc.status.toUpperCase()}
+                              {ADMIN_COPY.documentStatus[doc.status]}
                             </span>{' '}
-                            · Subido el {formatDate(doc.uploadedAt, 'dateTime')}
+                            · {ADMIN_COPY.detail.labels.uploadedAt} {formatDate(doc.uploadedAt, 'dateTime')}
                           </CardDescription>
                         </div>
 
@@ -427,8 +421,8 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                               variant="outline"
                               size="sm"
                               onClick={() => setZoomLevel((z) => Math.max(0, z - 1))}
-                              aria-label="Reducir zoom"
-                              title="Reducir zoom"
+                              aria-label={ADMIN_COPY.detail.viewer.zoomOut}
+                              title={ADMIN_COPY.detail.viewer.zoomOut}
                             >
                               -
                             </Button>
@@ -436,8 +430,8 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                               variant="outline"
                               size="sm"
                               onClick={() => setZoomLevel((z) => Math.min(3, z + 1))}
-                              aria-label="Aumentar zoom"
-                              title="Aumentar zoom"
+                              aria-label={ADMIN_COPY.detail.viewer.zoomIn}
+                              title={ADMIN_COPY.detail.viewer.zoomIn}
                             >
                               +
                             </Button>
@@ -449,8 +443,8 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                                   (r) => ((r + 90) % 360) as 0 | 90 | 180 | 270
                                 )
                               }
-                              aria-label="Rotar 90 grados"
-                              title="Rotar 90°"
+                              aria-label={ADMIN_COPY.detail.viewer.rotate}
+                              title={ADMIN_COPY.detail.viewer.rotateTitle}
                             >
                               ↻
                             </Button>
@@ -461,9 +455,9 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                                 setZoomLevel(1);
                                 setRotation(0);
                               }}
-                              title="Restablecer vista"
+                              title={ADMIN_COPY.detail.viewer.reset}
                             >
-                              Reset
+                              {ADMIN_COPY.detail.viewer.resetButton}
                             </Button>
                           </div>
                         ) : null}
@@ -473,16 +467,15 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                         {signedUrl ? (
                           <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden">
                             <div className="mb-2 text-sm font-mono text-muted-foreground">
-                              URL temporal expira en:{' '}
-                              <span className="font-bold text-foreground">{expiresIn}s</span>
+                              {ADMIN_COPY.detail.viewer.expiry(expiresIn)}
                             </div>
                             <div className="overflow-auto max-h-96 w-full flex items-center justify-center p-4">
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={signedUrl}
-                                alt={`Documento ${DOC_KIND_LABELS[doc.documentType] || doc.documentType}`}
+                                alt={ADMIN_COPY.detail.viewer.imageAlt(ADMIN_COPY.documentKind[doc.documentType])}
                                 className={cn(
-                                  'max-h-96 max-w-full object-contain rounded-md shadow-md bg-card border border-border transition-transform duration-200',
+                                  'max-h-96 max-w-full rounded-md border border-border bg-card object-contain shadow-md',
                                   ZOOM_CLASSES[zoomLevel],
                                   ROTATION_CLASSES[rotation]
                                 )}
@@ -515,11 +508,10 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                             </div>
                             <div>
                               <h3 className="text-sm font-semibold text-foreground">
-                                Documento protegido
+                                {ADMIN_COPY.detail.viewer.protectedTitle}
                               </h3>
                               <p className="text-sm text-muted-foreground mt-1">
-                                Hacé clic para generar un enlace temporal firmado de 60 segundos y
-                                registrar el evento en auditoría.
+                                {ADMIN_COPY.detail.viewer.protectedDescription}
                               </p>
                             </div>
                             <Button
@@ -539,10 +531,11 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                       {signedUrl ? (
                         <div className="border-t border-border p-4 bg-card flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">
-                            ¿El documento es legible y válido?
+                            {ADMIN_COPY.detail.viewer.validityQuestion}
                           </span>
                           <div className="flex gap-2">
                             <Button
+                              ref={rejectDocTriggerRef}
                               size="sm"
                               variant="outline"
                               onClick={() => {
@@ -559,7 +552,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                               onClick={handleApproveDocument}
                               disabled={verifyingDoc || doc.status === 'verified'}
                             >
-                              {verifyingDoc ? 'Verificando...' : ADMIN_COPY.detail.verifyDocument}
+                              {verifyingDoc ? ADMIN_COPY.detail.verifyingDocument : ADMIN_COPY.detail.verifyDocument}
                             </Button>
                           </div>
                         </div>
@@ -588,7 +581,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
             <DialogTitle>
               {decisionModal
                 ? ADMIN_COPY.detail.decisionDialogTitle(decisionModal)
-                : 'Decisión sobre postulante'}
+                : ADMIN_COPY.detail.decisionDialogTitle(null)}
             </DialogTitle>
             <DialogDescription>
               {ADMIN_COPY.detail.decisionDialogDescription}
@@ -610,10 +603,10 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                 {...decisionForm.register('reason')}
                 placeholder={
                   decisionModal === 'approved'
-                    ? 'Ej: Documentación DNI y selfie verificada. Cumple con los requisitos del piloto.'
+                    ? ADMIN_COPY.detail.decisionPlaceholder('approved')
                     : decisionModal === 'rejected'
-                    ? 'Ej: Documento DNI ilegible o vencido.'
-                    : 'Ej: Reclamo reiterado de comercios por demora injustificada.'
+                    ? ADMIN_COPY.detail.decisionPlaceholder('rejected')
+                    : ADMIN_COPY.detail.decisionPlaceholder('suspended')
                 }
               />
               {decisionForm.formState.errors.reason ? (
@@ -659,12 +652,17 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            rejectDocTriggerRef.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{ADMIN_COPY.detail.rejectDialogTitle}</DialogTitle>
             <DialogDescription>
               {ADMIN_COPY.detail.rejectDialogDescription(
-                currentDoc ? DOC_KIND_LABELS[currentDoc.documentType] || currentDoc.documentType : ''
+                currentDoc ? ADMIN_COPY.documentKind[currentDoc.documentType] : ''
               )}
             </DialogDescription>
           </DialogHeader>
