@@ -1,16 +1,25 @@
 -- T-106: Migración, RLS de coordenadas, vista merchant_public (PR56-H13), freeze created_at (PR56-H22)
 -- y RPC calculate_route_distance(lat1, lng1, lat2, lng2) con Haversine x 1.30, redondeo a 500m y fallback a zones
 
--- 1. Vista merchant_public para restringir lectura de columnas de comercios a repartidores (PR56-H13)
+-- 1. Cerrar acceso directo de couriers sobre public.merchants y definir merchant_public (PR56-H13 / PR105-H01)
+drop policy if exists merchants_select_courier on public.merchants;
+
 create or replace view public.merchant_public
-with (security_invoker = true)
+with (security_barrier = true)
 as
 select
-  profile_id,
-  business_name,
-  default_pickup_zone_id,
-  default_pickup_address
-from public.merchants;
+  m.profile_id,
+  m.business_name,
+  m.default_pickup_zone_id,
+  m.default_pickup_address
+from public.merchants m
+where
+  m.profile_id = auth.uid()
+  or app_private.is_admin()
+  or (
+    app_private.is_approved_courier()
+    and app_private.is_merchant_visible_to_courier(m.profile_id, auth.uid())
+  );
 
 revoke all on public.merchant_public from public, anon;
 grant select on public.merchant_public to authenticated;
