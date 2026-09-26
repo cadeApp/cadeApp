@@ -676,5 +676,17 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       expect(requestsQueries).toContain('getMerchantHistoryRequests');
       expect(requestsQueries).toContain('avgRateArs: number | null = null');
     });
+
+    it('PR106-H01: El filesystem publica las rutas canónicas del panel admin (/admin/applicants, /admin/applicants/[id], /admin/couriers)', () => {
+      const canonicalAdminRoutes = [
+        '/admin/applicants',
+        '/admin/applicants/test-id',
+        '/admin/couriers',
+      ];
+      for (const route of canonicalAdminRoutes) {
+        const resolved = resolveRouteToFilesystemPage(route);
+        expect(resolved, `La ruta canónica ${route} debe resolver a un archivo de página en el filesystem`).not.toBeNull();
+      }
+    });
   });
 });
