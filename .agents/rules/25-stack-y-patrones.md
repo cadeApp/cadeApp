@@ -10,7 +10,7 @@ Lautaro073 en la ficha (regla 00).
 | Datos y auth | `@supabase/supabase-js`, `@supabase/ssr`, `server-only` |
 | Esquemas | `zod` |
 | Estilos | `tailwindcss` (+ plugin PostCSS), `clsx`, `tailwind-merge`, `class-variance-authority` |
-| Componentes base | shadcn/ui (se copia a `src/ui`, usa primitivas Radix) y `lucide-react` para íconos |
+| Componentes base | shadcn/ui (se copia a `src/ui`, usa primitivas Radix), `@radix-ui/react-tabs`, `input-otp` y `lucide-react` para íconos |
 | Animaciones | `motion` (Motion para React, `motion/react`), con presets en `src/ui/motion/` |
 | Toasts | `sonner` (a través del componente `Toaster` de shadcn/ui y el helper `notify` de `src/ui`) |
 | Estados de carga | `Skeleton` de shadcn/ui en `src/ui` (sin librería extra) |

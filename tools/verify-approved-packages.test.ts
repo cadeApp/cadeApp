@@ -25,6 +25,8 @@ const APPROVED_RUNTIME_PACKAGES = new Set([
   '@radix-ui/react-select',
   '@radix-ui/react-label',
   '@radix-ui/react-slot',
+  '@radix-ui/react-tabs',
+  'input-otp',
   '@tanstack/react-query',
   'date-fns',
   '@vis.gl/react-google-maps',
