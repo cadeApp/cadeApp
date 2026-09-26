@@ -188,3 +188,87 @@ for (const m of mutations) {
 console.log('\n=== RESUMEN DE MUTACIONES ===');
 console.table(results);
 ```
+
+
+---
+
+# Ronda 2 — cierre de hallazgos
+
+## Identidad
+
+```text
+functional head: 127ca22d4933172f871b288659747bdca2dad55a
+review round 1 commit: 54a2fe950326eb6cad7d485bd0abe58353037f34
+base: 366a2b859be586278bff9245b3f1ce1d1b6533ec
+diff post-R1: 2 archivos
+```
+
+`compare 54a2fe9...127ca22`:
+
+```text
+src/ui/input-otp.tsx       +4 -1
+src/ui/ui-system.test.tsx +15 -2
+```
+
+## H01
+
+Exact-head:
+
+```tsx
+const slot = inputOTPContext.slots[index];
+const char = slot?.char;
+const hasFakeCaret = slot?.hasFakeCaret;
+const isActive = slot?.isActive;
+```
+
+No queda `slots[index]!`.
+
+## H02 / H03
+
+El test contractual contiene en exact-head:
+
+```text
+TableCaption importado
+TableFooter importado
+<TableCaption>Postulantes recientes</TableCaption>
+<TableFooter>...Total: 1...</TableFooter>
+assert caption != null
+assert tfoot != null
+assert data-[state=active]:bg-background
+```
+
+Las mutaciones M07/M08/M09 de Ronda 1 estaban específicamente dirigidas a esas ausencias; las aserciones nuevas apuntan directamente a esas propiedades.
+
+## CI final funcional
+
+Run `36224724348`:
+
+```text
+typecheck      PASS
+lint           PASS
+unit           PASS — 55 files / 605 tests
+ui-system      PASS — 31 tests
+build          PASS
+audit          PASS
+bundle-budget  PASS
+db-tests       PASS — Files=12, Tests=1529, Result: PASS
+database.types.ts generated with no drift
+```
+
+Cobertura:
+
+```text
+input-otp.tsx | 100 | 100 | 100 | 100
+table.tsx     | 100 | 100 | 100 | 100
+tabs.tsx      | 100 | 100 | 100 | 100
+```
+
+## Nota sobre approval-policy
+
+Sobre el SHA funcional, `approval-policy` seguía rojo porque el body aún no había sido actualizado a la Ronda 2:
+
+```text
+Falta el informe completo de revisar-pr sin bloqueantes.
+```
+
+No se usó ese rojo como defecto de código. El body se actualiza después de registrar esta Ronda 2 y el check debe re-ejecutarse.
