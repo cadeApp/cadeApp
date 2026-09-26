@@ -58,6 +58,7 @@ import {
   Input,
   InputOTP,
   InputOTPGroup,
+  InputOTPSeparator,
   InputOTPSlot,
   MOTION_PRESETS,
   MotionProvider,
@@ -396,6 +397,42 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
 
       expect(screen.getByTestId('otp-slot-0').textContent).toContain('1');
       expect(screen.getByTestId('otp-slot-5').textContent).toContain('6');
+    });
+
+    it('InputOTP cubre foco/caret activo, disabled y separator sin degradar accesibilidad', () => {
+      const { container } = render(
+        <InputOTP maxLength={2} aria-label="Código corto" disabled>
+          <InputOTPGroup>
+            <InputOTPSlot index={0} data-testid="otp-empty-slot" />
+            <InputOTPSeparator data-testid="otp-separator" />
+            <InputOTPSlot index={1} />
+          </InputOTPGroup>
+        </InputOTP>
+      );
+
+      const disabledInput = screen.getByRole('textbox', { name: 'Código corto' });
+      expect(disabledInput).toBeDisabled();
+      expect(screen.getByTestId('otp-separator').getAttribute('role')).toBe('separator');
+
+      cleanup();
+
+      render(
+        <InputOTP maxLength={2} aria-label="Código activo" autoFocus>
+          <InputOTPGroup>
+            <InputOTPSlot index={0} data-testid="otp-active-slot" />
+            <InputOTPSlot index={1} />
+          </InputOTPGroup>
+        </InputOTP>
+      );
+
+      const activeInput = screen.getByRole('textbox', { name: 'Código activo' });
+      activeInput.focus();
+      fireEvent.focus(activeInput);
+
+      const activeSlot = screen.getByTestId('otp-active-slot');
+      expect(activeSlot.className).toContain('ring-2');
+      expect(activeSlot.querySelector('.animate-pulse')).not.toBeNull();
+      expect(container).toBeDefined();
     });
   });
 
