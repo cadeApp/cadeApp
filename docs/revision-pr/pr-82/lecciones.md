@@ -102,3 +102,12 @@ Guardar `options` en un ref mantiene callbacks frescos, pero no reconfigura una 
 - `PR82-H07` no está cerrado: reconnect y query keys sí mejoraron, pero polling/background siguen sin prueba.
 - El entorno de esta ronda no pudo clonar GitHub por resolución de red; por eso H02–H06 permanecen `arreglado-sin-verificar` hasta ejecución independiente.
 
+---
+
+## Ronda 3
+
+No se agrega numeración AG nueva.
+
+- H09/H10 son una aplicación directa de **AG-88**: “refetch ejecutado” no equivale a “estado vivo correcto”. En esta ronda aparece la variante de **paridad semántica y de shape** entre SSR y fetch vivo.
+- H18 no necesita regla nueva: `AGENTS.md §4` ya prohíbe explícitamente los non-null assertions. El fallo fue de enumeración de la revisión anterior, no ausencia de norma.
+- H11/H12 quedaron corregidos conforme a **AG-89/AG-90** por inspección; no se detectó residual en esas clases.
