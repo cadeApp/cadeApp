@@ -206,5 +206,78 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime)', () => {
 
     expect(mockFrom).toHaveBeenCalledWith('delivery_requests');
   });
+
+  it('PR82-H10: preserva el shape completo de T al actualizar el status sin recortar campos de initialTrip', async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { id: 'trip-1', status: 'in_transit' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    vi.spyOn(browserClient, 'createClient').mockReturnValue({
+      channel: vi.fn().mockReturnValue(mockChannel),
+      removeChannel: mockRemoveChannel,
+      from: mockFrom,
+    } as unknown as ReturnType<typeof browserClient.createClient>);
+
+    const { result } = renderHook(
+      () => useTrip('trip-1', initialTrip),
+      { wrapper }
+    );
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.trip?.status).toBe('in_transit');
+    });
+
+    // Los campos adicionales de initialTrip no se deben perder al sincronizar el estado
+    expect(result.current.trip?.pickupAddress).toBe('San Martín 123');
+    expect(result.current.trip?.dropoffAddress).toBe('Belgrano 456');
+    expect(result.current.trip?.recipientName).toBe('Juan Pérez');
+    expect(result.current.trip?.recipientPhone).toBe('3865123456');
+  });
+
+  it('PR82-H10: no revive initialTrip cuando la consulta viva resuelve a null', async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: null,
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    vi.spyOn(browserClient, 'createClient').mockReturnValue({
+      channel: vi.fn().mockReturnValue(mockChannel),
+      removeChannel: mockRemoveChannel,
+      from: mockFrom,
+    } as unknown as ReturnType<typeof browserClient.createClient>);
+
+    const { result } = renderHook(
+      () => useTrip('trip-1', initialTrip),
+      { wrapper }
+    );
+
+    expect(result.current.trip?.status).toBe('matched');
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.trip).toBeNull();
+    });
+  });
 });
+
 

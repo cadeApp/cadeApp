@@ -263,5 +263,129 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
       vi.useRealTimers();
     }
   });
+
+  it('PR82-H09: el fetch por defecto consulta ofertas pendientes del courier y mapea hasMyOffer y myOfferAmountArs', async () => {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'delivery_requests') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: [
+                  {
+                    id: 'req-live-1',
+                    approx_distance_m: 2000,
+                    package_type: 'small',
+                    recipient_payment_method: 'cash',
+                    needs_change: false,
+                    cash_change_amount: null,
+                    notes: null,
+                    published_at: '2026-09-26T00:00:00Z',
+                    expires_at: null,
+                    pickup_zone: { name: 'Centro' },
+                    dropoff_zone: { name: 'Aguilares' },
+                  },
+                ],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'offers') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              in: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: [{ request_id: 'req-live-1', amount_ars: 1500 }],
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      return {};
+    });
+
+    vi.spyOn(browserClient, 'createClient').mockReturnValue({
+      channel: vi.fn().mockReturnValue(mockChannel),
+      removeChannel: mockRemoveChannel,
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'courier-user-1' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as ReturnType<typeof browserClient.createClient>);
+
+    const { result } = renderHook(
+      () => useAvailableRequests(initialRequests),
+      { wrapper }
+    );
+
+    // Al inicio muestra initialRequests (hasMyOffer: false)
+    expect(result.current.requests[0]?.hasMyOffer).toBe(false);
+
+    // Disparar refetch vía focus
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.requests[0]?.id).toBe('req-live-1');
+    });
+
+    expect(result.current.requests[0]?.hasMyOffer).toBe(true);
+    expect(result.current.requests[0]?.myOfferAmountArs).toBe(1500);
+    expect(mockFrom).toHaveBeenCalledWith('offers');
+  });
+
+  it('PR82-H09: no hace fallback silencioso a initialRequests cuando la consulta viva falla', async () => {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'delivery_requests') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({
+                data: null,
+                error: new Error('Database connection failed'),
+              }),
+            }),
+          }),
+        };
+      }
+      return {};
+    });
+
+    vi.spyOn(browserClient, 'createClient').mockReturnValue({
+      channel: vi.fn().mockReturnValue(mockChannel),
+      removeChannel: mockRemoveChannel,
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as ReturnType<typeof browserClient.createClient>);
+
+    const { result } = renderHook(
+      () => useAvailableRequests(initialRequests),
+      { wrapper }
+    );
+
+    // Disparar refetch vía focus
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    await waitFor(() => {
+      expect(result.current.requests).toEqual([]);
+    });
+  });
 });
+
 

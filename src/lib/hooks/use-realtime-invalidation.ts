@@ -36,8 +36,8 @@ export interface UseRealtimeInvalidationOptions {
  */
 export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions): void {
   const contextClient = useContext(QueryClientContext);
-  const [fallbackClient] = useState(() => (contextClient ? null : new QueryClient()));
-  const queryClient = options.queryClient ?? contextClient ?? fallbackClient!;
+  const [fallbackClient] = useState(() => new QueryClient());
+  const queryClient = options.queryClient ?? contextClient ?? fallbackClient;
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingKeysRef = useRef<Map<string, readonly unknown[]>>(new Map());

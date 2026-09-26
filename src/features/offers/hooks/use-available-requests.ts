@@ -50,8 +50,8 @@ export function useAvailableRequests(
   options?: UseAvailableRequestsOptions
 ) {
   const contextClient = useContext(QueryClientContext);
-  const [fallbackClient] = useState(() => (contextClient ? null : new QueryClient()));
-  const queryClient = contextClient ?? fallbackClient!;
+  const [fallbackClient] = useState(() => new QueryClient());
+  const queryClient = contextClient ?? fallbackClient;
 
   const queryKey = offerKeys.availableRequests(options?.filters);
   const enabled = options?.enabled ?? true;
@@ -68,10 +68,10 @@ export function useAvailableRequests(
         try {
           supabase = createClient();
         } catch {
-          return [...initialRequests];
+          return [];
         }
         if (!supabase || typeof supabase.from !== 'function') {
-          return [...initialRequests];
+          return [];
         }
 
         const { data, error } = await supabase
@@ -97,9 +97,40 @@ export function useAvailableRequests(
         }
 
         const rows = data as unknown as RawAvailableRequestDbRow[];
+        const requestIds = rows.map((r) => r.id);
+        const myOffersMap = new Map<string, number>();
+
+        if (requestIds.length > 0 && supabase.auth && typeof supabase.auth.getUser === 'function') {
+          try {
+            const authRes = await supabase.auth.getUser();
+            const user = authRes.data.user;
+            if (user) {
+              const { data: userOffers } = await supabase
+                .from('offers')
+                .select('request_id, amount_ars')
+                .eq('courier_id', user.id)
+                .in('request_id', requestIds)
+                .eq('status', 'pending');
+
+              if (userOffers) {
+                const rawUserOffers = userOffers as unknown as Array<{
+                  request_id: string;
+                  amount_ars: number;
+                }>;
+                for (const off of rawUserOffers) {
+                  myOffersMap.set(off.request_id, off.amount_ars);
+                }
+              }
+            }
+          } catch {
+            // Error al consultar auth u offers: se continúa sin ofertas activas
+          }
+        }
+
         return rows.map((req) => {
           const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
           const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+          const myOfferAmount = myOffersMap.get(req.id) ?? null;
 
           return {
             id: req.id,
@@ -115,8 +146,8 @@ export function useAvailableRequests(
             notes: req.notes,
             publishedAt: req.published_at ?? new Date().toISOString(),
             expiresAt: req.expires_at,
-            hasMyOffer: false,
-            myOfferAmountArs: null,
+            hasMyOffer: myOfferAmount !== null,
+            myOfferAmountArs: myOfferAmount,
           };
         });
       },

@@ -101,14 +101,15 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     );
 
     expect(realtimeCallbacks.length).toBeGreaterThan(0);
-    const cb = realtimeCallbacks[0]!;
+    const cb = realtimeCallbacks[0];
+    expect(cb).toBeDefined();
 
     // Simular 3 eventos Realtime en ráfaga (50ms entre cada uno)
-    cb({ eventType: 'INSERT', new: { id: 'offer-1', amount_ars: 1500 } });
+    cb?.({ eventType: 'INSERT', new: { id: 'offer-1', amount_ars: 1500 } });
     vi.advanceTimersByTime(50);
-    cb({ eventType: 'INSERT', new: { id: 'offer-2', amount_ars: 2000 } });
+    cb?.({ eventType: 'INSERT', new: { id: 'offer-2', amount_ars: 2000 } });
     vi.advanceTimersByTime(50);
-    cb({ eventType: 'UPDATE', new: { id: 'offer-2', amount_ars: 1800 } });
+    cb?.({ eventType: 'UPDATE', new: { id: 'offer-2', amount_ars: 1800 } });
 
     // Aún dentro del debounce: ninguna llamada a invalidar
     expect(invalidateSpy).not.toHaveBeenCalled();
@@ -168,15 +169,17 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     );
 
     expect(realtimeCallbacks.length).toBe(2);
-    const cbA = realtimeCallbacks[0]!; // delivery_requests -> ['requests']
-    const cbB = realtimeCallbacks[1]!; // offers -> ['offers']
+    const cbA = realtimeCallbacks[0]; // delivery_requests -> ['requests']
+    const cbB = realtimeCallbacks[1]; // offers -> ['offers']
+    expect(cbA).toBeDefined();
+    expect(cbB).toBeDefined();
 
     // Disparar callback A ['requests']
-    cbA({ eventType: 'INSERT', new: { id: 'req-1' } });
+    cbA?.({ eventType: 'INSERT', new: { id: 'req-1' } });
     vi.advanceTimersByTime(50);
 
     // +50ms: Disparar callback B ['offers']
-    cbB({ eventType: 'INSERT', new: { id: 'off-1' } });
+    cbB?.({ eventType: 'INSERT', new: { id: 'off-1' } });
 
     // Aún en la ventana: no hay invalidaciones
     expect(invalidateSpy).not.toHaveBeenCalled();
@@ -242,8 +245,9 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     );
 
     // Obtener el callback de la nueva suscripción B y disparar evento
-    const latestCallback = realtimeCallbacks[realtimeCallbacks.length - 1]!;
-    latestCallback({ eventType: 'INSERT', new: { id: 'off-b' } });
+    const latestCallback = realtimeCallbacks[realtimeCallbacks.length - 1];
+    expect(latestCallback).toBeDefined();
+    latestCallback?.({ eventType: 'INSERT', new: { id: 'off-b' } });
 
     vi.advanceTimersByTime(300);
 

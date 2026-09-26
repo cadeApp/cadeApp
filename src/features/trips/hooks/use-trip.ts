@@ -36,8 +36,8 @@ export function useTrip<T extends TripDetailItem = TripDetailItem>(
   options?: UseTripOptions<T>
 ) {
   const contextClient = useContext(QueryClientContext);
-  const [fallbackClient] = useState(() => (contextClient ? null : new QueryClient()));
-  const queryClient = contextClient ?? fallbackClient!;
+  const [fallbackClient] = useState(() => new QueryClient());
+  const queryClient = contextClient ?? fallbackClient;
 
   const queryKey = tripKeys.detail(tripId);
   const enabled = Boolean(tripId) && (options?.enabled ?? true);
@@ -65,7 +65,16 @@ export function useTrip<T extends TripDetailItem = TripDetailItem>(
           return null;
         }
 
-        return data as unknown as T;
+        const freshData = data as unknown as { id: string; status: TripDetailItem['status'] };
+        if (initialTrip) {
+          return {
+            ...initialTrip,
+            id: freshData.id,
+            status: freshData.status,
+          };
+        }
+
+        return freshData as unknown as T;
       },
       initialData: initialTrip ?? undefined,
       initialDataUpdatedAt: 0,
@@ -93,7 +102,7 @@ export function useTrip<T extends TripDetailItem = TripDetailItem>(
   });
 
   return {
-    trip: query.data ?? initialTrip ?? null,
+    trip: query.data !== undefined ? query.data : (initialTrip ?? null),
     isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     refetch: query.refetch,

@@ -93,8 +93,8 @@ export function useRequestOffers(
   options?: UseRequestOffersOptions
 ) {
   const contextClient = useContext(QueryClientContext);
-  const [fallbackClient] = useState(() => (contextClient ? null : new QueryClient()));
-  const queryClient = contextClient ?? fallbackClient!;
+  const [fallbackClient] = useState(() => new QueryClient());
+  const queryClient = contextClient ?? fallbackClient;
 
   const queryKey = requestKeys.offers(requestId);
   const enabled = Boolean(requestId) && (options?.enabled ?? true);
