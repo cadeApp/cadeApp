@@ -319,6 +319,13 @@ export type Database = {
             foreignKeyName: "delivery_requests_merchant_id_fkey"
             columns: ["merchant_id"]
             isOneToOne: false
+            referencedRelation: "merchant_public"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "delivery_requests_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
             referencedRelation: "merchants"
             referencedColumns: ["profile_id"]
           },
@@ -671,10 +678,22 @@ export type Database = {
     Views: {
       merchant_public: {
         Row: {
-          business_name: string
+          business_name: string | null
           default_pickup_address: string | null
           default_pickup_zone_id: string | null
-          profile_id: string
+          profile_id: string | null
+        }
+        Insert: {
+          business_name?: string | null
+          default_pickup_address?: string | null
+          default_pickup_zone_id?: string | null
+          profile_id?: string | null
+        }
+        Update: {
+          business_name?: string | null
+          default_pickup_address?: string | null
+          default_pickup_zone_id?: string | null
+          profile_id?: string | null
         }
         Relationships: [
           {
@@ -731,14 +750,14 @@ export type Database = {
       }
       calculate_route_distance: {
         Args: {
-          p_dropoff_lat?: number | null
-          p_dropoff_lng?: number | null
-          p_dropoff_zone_id?: string | null
-          p_dropoff_zone_name?: string | null
-          p_pickup_lat?: number | null
-          p_pickup_lng?: number | null
-          p_pickup_zone_id?: string | null
-          p_pickup_zone_name?: string | null
+          p_dropoff_lat?: number
+          p_dropoff_lng?: number
+          p_dropoff_zone_id?: string
+          p_dropoff_zone_name?: string
+          p_pickup_lat?: number
+          p_pickup_lng?: number
+          p_pickup_zone_id?: string
+          p_pickup_zone_name?: string
         }
         Returns: Json
       }
