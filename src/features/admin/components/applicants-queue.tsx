@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Badge } from '@/ui/badge';
@@ -21,33 +20,11 @@ export interface ApplicantsQueueProps {
   readonly hasNextPage?: boolean;
 }
 
-const TABS_CONFIG: Array<{ id: AdminApplicantTab; label: string }> = [
-  { id: 'pending', label: 'Pendientes' },
-  { id: 'approved', label: 'Aprobados' },
-  { id: 'rejected', label: 'Rechazados' },
-  { id: 'suspended', label: 'Suspendidos' },
-];
-
-function getVehicleLabel(type: string): string {
-  switch (type) {
-    case 'moto':
-      return 'Moto';
-    case 'bike':
-      return 'Bicicleta';
-    case 'auto':
-    case 'car':
-      return 'Automóvil';
-    case 'walk':
-      return 'A pie';
-    default:
-      return type;
-  }
-}
+const TAB_IDS: readonly AdminApplicantTab[] = ['pending', 'approved', 'rejected', 'suspended'];
 
 export function ApplicantsQueue({
   initialTab,
   applicants,
-  pageSize = 20,
   nextCursor = null,
   hasNextPage = false,
 }: ApplicantsQueueProps) {
@@ -74,10 +51,10 @@ export function ApplicantsQueue({
     <div className="space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Postulantes</h1>
-          <p className="text-sm text-muted-foreground">
-            Bandeja de verificación de documentación y aprobación de repartidores en Aguilares.
-          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {ADMIN_COPY.queue.title}
+          </h1>
+          <p className="text-sm text-muted-foreground">{ADMIN_COPY.queue.description}</p>
         </div>
       </div>
 
@@ -87,14 +64,14 @@ export function ApplicantsQueue({
         className="w-full space-y-4"
       >
         <div className="border-b border-border">
-          <TabsList className="h-auto p-0 bg-transparent gap-2">
-            {TABS_CONFIG.map((t) => (
+          <TabsList className="h-auto gap-2 bg-transparent p-0">
+            {TAB_IDS.map((tabId) => (
               <TabsTrigger
-                key={t.id}
-                value={t.id}
-                className="relative px-4 py-3 text-sm font-medium rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent"
+                key={tabId}
+                value={tabId}
+                className="relative rounded-none border-b-2 border-transparent px-4 py-3 text-sm font-medium data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
               >
-                {t.label}
+                {ADMIN_COPY.queue.tabs[tabId]}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -103,79 +80,110 @@ export function ApplicantsQueue({
         <TabsContent value={currentTab} className="mt-0 space-y-4">
           {applicants.length === 0 ? (
             <EmptyState
-              title={`No hay postulantes en estado "${TABS_CONFIG.find((t) => t.id === currentTab)?.label}"`}
-              description="Cuando un repartidor complete su registro o cambie de estado, aparecerá en esta lista."
+              title={ADMIN_COPY.queue.emptyTitle(ADMIN_COPY.queue.tabs[currentTab])}
+              description={ADMIN_COPY.queue.emptyDescription}
             />
           ) : (
             <Card className="overflow-hidden border border-border shadow-sm">
               <Table>
                 <TableHeader className="bg-muted/70">
                   <TableRow>
-                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
-                      Postulante
+                    <TableHead className="px-6 py-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                      {ADMIN_COPY.queue.columns.applicant}
                     </TableHead>
-                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
-                      Vehículo
+                    <TableHead className="px-6 py-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                      {ADMIN_COPY.queue.columns.vehicle}
                     </TableHead>
-                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
-                      Documentación
+                    <TableHead className="px-6 py-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                      {ADMIN_COPY.queue.columns.documents}
                     </TableHead>
-                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
-                      Nivel
+                    <TableHead className="px-6 py-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                      {ADMIN_COPY.queue.columns.level}
                     </TableHead>
-                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
-                      Fecha
+                    <TableHead className="px-6 py-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                      {ADMIN_COPY.queue.columns.date}
                     </TableHead>
-                    <TableHead className="px-6 py-4 text-right font-semibold uppercase tracking-wider text-muted-foreground text-sm">
-                      Acción
+                    <TableHead className="px-6 py-4 text-right text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                      {ADMIN_COPY.queue.columns.action}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody className="bg-card">
                   {applicants.map((a) => (
-                    <TableRow key={a.id} className="transition-colors hover:bg-muted/50">
+                    <TableRow key={a.id} className="hover:bg-muted/50">
                       <TableCell className="px-6 py-4">
-                        <div className="font-medium text-foreground text-sm">{a.fullName}</div>
+                        <div className="text-sm font-medium text-foreground">{a.fullName}</div>
                         <div className="text-sm text-muted-foreground">
-                          DNI Hash: <span className="font-mono">{a.dniHash}</span>
+                          {ADMIN_COPY.queue.dniHashLabel}:{' '}
+                          <span className="font-mono">{a.dniHash}</span>
                         </div>
-                        {a.phone ? <div className="text-sm text-muted-foreground">{a.phone}</div> : null}
+                        {a.phone ? (
+                          <div className="text-sm text-muted-foreground">{a.phone}</div>
+                        ) : null}
                       </TableCell>
                       <TableCell className="px-6 py-4">
-                        <span className="font-medium text-sm">{getVehicleLabel(a.vehicleType)}</span>
+                        <span className="text-sm font-medium">
+                          {ADMIN_COPY.vehicleType[a.vehicleType]}
+                        </span>
                       </TableCell>
                       <TableCell className="px-6 py-4">
                         <div className="flex flex-wrap gap-1.5">
-                          <Badge variant={a.documentsSummary.hasDniFront && a.documentsSummary.hasDniBack ? 'secondary' : 'outline'}>
-                            DNI {a.documentsSummary.hasDniFront && a.documentsSummary.hasDniBack ? '✓' : '—'}
+                          <Badge
+                            variant={
+                              a.documentsSummary.hasDniFront && a.documentsSummary.hasDniBack
+                                ? 'secondary'
+                                : 'outline'
+                            }
+                          >
+                            {ADMIN_COPY.queue.dniBadge}{' '}
+                            {a.documentsSummary.hasDniFront && a.documentsSummary.hasDniBack
+                              ? '✓'
+                              : '—'}
                           </Badge>
-                          <Badge variant={a.documentsSummary.hasSelfie ? 'secondary' : 'outline'}>
-                            Selfie {a.documentsSummary.hasSelfie ? '✓' : '—'}
+                          <Badge
+                            variant={a.documentsSummary.hasSelfie ? 'secondary' : 'outline'}
+                          >
+                            {ADMIN_COPY.queue.selfieBadge}{' '}
+                            {a.documentsSummary.hasSelfie ? '✓' : '—'}
                           </Badge>
                           {a.documentsSummary.hasLicense ? (
-                            <Badge variant={a.licenseStatus === 'verified' ? 'default' : 'secondary'}>
-                              Licencia {a.licenseStatus === 'verified' ? '✓' : 'subida'}
+                            <Badge
+                              variant={
+                                a.licenseStatus === 'verified' ? 'default' : 'secondary'
+                              }
+                            >
+                              {ADMIN_COPY.queue.licenseBadge}{' '}
+                              {a.licenseStatus === 'verified'
+                                ? '✓'
+                                : ADMIN_COPY.queue.uploadedFeminine}
                             </Badge>
                           ) : null}
                           {a.documentsSummary.hasInsurance ? (
-                            <Badge variant={a.insuranceStatus === 'verified' ? 'default' : 'secondary'}>
-                              Seguro {a.insuranceStatus === 'verified' ? '✓' : 'subido'}
+                            <Badge
+                              variant={
+                                a.insuranceStatus === 'verified' ? 'default' : 'secondary'
+                              }
+                            >
+                              {ADMIN_COPY.queue.insuranceBadge}{' '}
+                              {a.insuranceStatus === 'verified'
+                                ? '✓'
+                                : ADMIN_COPY.queue.uploadedMasculine}
                             </Badge>
                           ) : null}
                         </div>
                       </TableCell>
                       <TableCell className="px-6 py-4">
                         <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-sm font-semibold text-foreground">
-                          Nivel {a.docLevel}
+                          {ADMIN_COPY.queue.level(a.docLevel)}
                         </span>
                       </TableCell>
-                      <TableCell className="px-6 py-4 text-muted-foreground whitespace-nowrap text-sm">
+                      <TableCell className="whitespace-nowrap px-6 py-4 text-sm text-muted-foreground">
                         {formatDate(a.createdAt, 'date')}
                       </TableCell>
                       <TableCell className="px-6 py-4 text-right">
                         <Link href={`/admin/applicants/${a.id}`}>
                           <Button size="sm" variant="default" className="text-sm font-semibold">
-                            Revisar
+                            {ADMIN_COPY.queue.reviewButton}
                           </Button>
                         </Link>
                       </TableCell>
@@ -188,12 +196,8 @@ export function ApplicantsQueue({
 
           {hasNextPage && nextCursor ? (
             <div className="flex items-center justify-end px-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleNextPage}
-              >
-                Siguiente
+              <Button variant="outline" size="sm" onClick={handleNextPage}>
+                {ADMIN_COPY.queue.nextButton}
               </Button>
             </div>
           ) : null}
