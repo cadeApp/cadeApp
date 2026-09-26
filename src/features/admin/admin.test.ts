@@ -311,4 +311,72 @@ describe('T-122: DoD - Admin Shell y Route Guard A00', () => {
   });
 });
 
+describe('T-122 Ronda 4: guardas H14/H16', () => {
+  const rootDir = process.cwd();
+
+  function collectSourceFiles(dir: string): string[] {
+    if (!fs.existsSync(dir)) return [];
+    const files: string[] = [];
+
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+
+      if (entry.isDirectory()) {
+        files.push(...collectSourceFiles(fullPath));
+      } else if (
+        (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) &&
+        !entry.name.includes('.test.')
+      ) {
+        files.push(fullPath);
+      }
+    }
+
+    return files;
+  }
+
+  it('H16: no introduce animaciones Tailwind locales en app/feature admin', () => {
+    const sourceFiles = [
+      ...collectSourceFiles(path.join(rootDir, 'src', 'app', '(admin)')),
+      ...collectSourceFiles(path.join(rootDir, 'src', 'features', 'admin')),
+    ];
+    const violations: string[] = [];
+
+    for (const file of sourceFiles) {
+      const lines = fs.readFileSync(file, 'utf-8').split('\n');
+
+      lines.forEach((line, index) => {
+        if (/\b(?:transition|duration|animate)-/.test(line)) {
+          violations.push(
+            `${path.relative(rootDir, file)}:${index + 1}: ${line.trim()}`
+          );
+        }
+      });
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  it('H16: los componentes admin consumen ADMIN_COPY y no exponen enums/copy literal', () => {
+    const targets = [
+      path.join(rootDir, 'src', 'app', '(admin)', 'admin-nav.tsx'),
+      path.join(rootDir, 'src', 'features', 'admin', 'components', 'applicants-queue.tsx'),
+      path.join(rootDir, 'src', 'features', 'admin', 'components', 'mfa-form.tsx'),
+      path.join(rootDir, 'src', 'features', 'admin', 'components', 'applicant-detail-view.tsx'),
+    ];
+
+    for (const file of targets) {
+      const content = fs.readFileSync(file, 'utf-8');
+      expect(content).toContain('ADMIN_COPY');
+      expect(content).not.toMatch(/notify\.(?:success|error)\(\s*['"`]/);
+    }
+
+    const detail = fs.readFileSync(targets[3]!, 'utf-8');
+    expect(detail).not.toContain('const DOC_KIND_LABELS');
+    expect(detail).not.toContain('.status.toUpperCase()');
+    expect(detail).not.toContain('.vehicleType.toUpperCase()');
+    expect(detail).toContain('getDomainErrorMessage(res.code)');
+    expect(detail).not.toContain('rotate-270');
+    expect(detail).toContain("270: '-rotate-90'");
+  });
+});
 
