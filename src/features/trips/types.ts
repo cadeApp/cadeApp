@@ -1,23 +1,31 @@
-import type { DeliveryRequestStatus, RecipientPaymentMethod } from '@/domain';
+import type {
+  RecipientPaymentMethod,
+  VehicleType,
+} from '@/domain';
+
+export type TripStatus = 'matched' | 'in_transit' | 'delivered';
 
 export interface TripDetails {
   id: string;
   code: string;
-  status: DeliveryRequestStatus;
+  status: TripStatus;
   merchantId: string;
-  courierId: string | null;
-  courierName: string | null;
-  vehicleType: string | null;
+  merchantName: string;
+  merchantPhone: string | null;
+  courierId: string;
+  courierName: string;
+  courierPhone: string | null;
+  vehicleType: VehicleType | null;
   licensePlate: string | null;
   avatarUrl: string | null;
-  amountArs: number | null;
+  amountArs: number;
   pickupAddress: string;
   pickupZoneName: string;
-  dropoffAddress: string | null;
+  dropoffAddress: string;
   dropoffZoneName: string;
   deliveryNotes: string | null;
-  recipientName: string | null;
-  recipientPhone: string | null;
+  recipientName: string;
+  recipientPhone: string;
   recipientPaymentMethod: RecipientPaymentMethod;
   needsChange: boolean;
   cashChangeAmount: number | null;

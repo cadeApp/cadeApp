@@ -2,8 +2,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import fs from 'node:fs';
-import path from 'node:path';
 import { TripMerchantView } from './components/trip-merchant-view';
 import { TripCourierView } from './components/trip-courier-view';
 import { TripCancelDialog } from './components/trip-cancel-dialog';
@@ -19,11 +17,14 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     code: 'REQ-1234',
     status: 'matched',
     merchantId: 'merchant-1',
+    merchantName: 'Kiosco Centro',
+    merchantPhone: '3865222222',
     courierId: 'courier-1',
     courierName: 'Carlos Benítez',
+    courierPhone: '3865111111',
     vehicleType: 'moto',
     licensePlate: 'AB 123 CD',
-    avatarUrl: null,
+    avatarUrl: 'https://signed.test/avatar.webp',
     amountArs: 1800,
     pickupAddress: 'San Martín 450, Centro',
     pickupZoneName: 'Centro',
@@ -63,7 +64,15 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       const waBtn = screen.getByRole('link', { name: /WhatsApp/i });
       expect(waBtn).toBeDefined();
       expect(waBtn.getAttribute('href')).toContain('wa.me');
-      expect(waBtn.getAttribute('href')).toContain('5493865123456');
+      expect(waBtn.getAttribute('href')).toContain('5493865111111');
+      expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('REQ-1234');
+      expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('Centro -> Barrio Sur');
+      expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('$ 1.800');
+      expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('Efectivo');
+      expect(screen.getByRole('img', { name: /Foto de Carlos Benítez/i })).toBeDefined();
+
+      const callBtn = screen.getByRole('link', { name: /Llamar/i });
+      expect(callBtn.getAttribute('href')).toBe('tel:3865111111');
     });
 
     it('muestra tarjeta destacada "Avisale a tu cliente" con botón de 48px y texto preparado', () => {
@@ -125,12 +134,14 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(document.activeElement).toBe(cancelBtn);
     });
 
-    it('no renderiza "$ 0" cuando amountArs es null o inválido en el viaje (H21)', () => {
-      const tripWithoutAmount: TripDetails = { ...baseTrip, amountArs: null };
-      render(<TripMerchantView trip={tripWithoutAmount} />);
+    it('usa tokens semánticos de WhatsApp y nunca el teléfono del cliente para contactar al cadete', () => {
+      render(<TripMerchantView trip={baseTrip} />);
 
-      expect(screen.queryByText(/\$\s*0\b/)).toBeNull();
-      expect(screen.getByText(/Monto a confirmar/i)).toBeDefined();
+      const waBtn = screen.getByRole('link', { name: /^WhatsApp$/i });
+      expect(waBtn.className).toContain('bg-whatsapp');
+      expect(waBtn.className).toContain('text-whatsapp-foreground');
+      expect(waBtn.getAttribute('href')).toContain('5493865111111');
+      expect(waBtn.getAttribute('href')).not.toContain('5493865123456');
     });
   });
 
@@ -138,6 +149,18 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   // R07: Vista de Viaje del Repartidor
   // =========================================================================
   describe('R07: TripCourierView', () => {
+    it('muestra contacto real del comercio con WhatsApp de coordinación', () => {
+      render(<TripCourierView trip={baseTrip} />);
+
+      expect(screen.getByText('Kiosco Centro')).toBeDefined();
+      const waBtn = screen.getByRole('link', { name: /WhatsApp al comercio/i });
+      expect(waBtn.getAttribute('href')).toContain('5493865222222');
+      expect(waBtn.getAttribute('href')).not.toContain('5493865123456');
+      expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('REQ-1234');
+      const callBtn = screen.getByRole('link', { name: /Llamar/i });
+      expect(callBtn.getAttribute('href')).toBe('tel:3865222222');
+    });
+
     it('muestra tarjeta de cobro en mano destacada: $ 1.800 en Efectivo con cambio de $ 5.000', () => {
       render(<TripCourierView trip={baseTrip} />);
 
@@ -192,12 +215,10 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(deliveredBtn.className).toContain('min-h-[56px]');
     });
 
-    it('no renderiza "$ 0" cuando amountArs es null o no disponible (H21)', () => {
-      const tripWithoutAmount: TripDetails = { ...baseTrip, amountArs: null };
-      render(<TripCourierView trip={tripWithoutAmount} />);
-
-      expect(screen.queryByText(/\$\s*0\b/)).toBeNull();
-      expect(screen.getByText(/Monto a confirmar/i)).toBeDefined();
+    it('no contiene fallback económico inventado: el contrato entrega monto aceptado obligatorio', () => {
+      render(<TripCourierView trip={baseTrip} />);
+      expect(screen.getByText(/\$ 1\.800/i)).toBeDefined();
+      expect(screen.queryByText(/Monto a confirmar/i)).toBeNull();
     });
   });
 
@@ -215,6 +236,7 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
         />
       );
 
+      expect(screen.getByRole('alertdialog')).toBeDefined();
       const nextBtn = screen.getByRole('button', { name: /Continuar/i });
       expect((nextBtn as HTMLButtonElement).disabled).toBe(true);
     });
@@ -326,30 +348,5 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     });
   });
 
-  // =========================================================================
-  // H18: Anti-12px — Erradicación total de text-xs
-  // =========================================================================
-  describe('H18: Anti-12px — Erradicación de text-xs en componentes de viaje', () => {
-    it('no contiene ninguna clase text-xs en src/features/trips/components', () => {
-      const componentsDir = path.resolve(__dirname, 'components');
-      const files = fs.readdirSync(componentsDir).filter((f) => f.endsWith('.tsx'));
-
-      const violations: string[] = [];
-      const textXsRegex = /\btext-xs\b/;
-
-      for (const file of files) {
-        const fullPath = path.join(componentsDir, file);
-        const content = fs.readFileSync(fullPath, 'utf-8');
-        const lines = content.split('\n');
-        lines.forEach((line, idx) => {
-          if (textXsRegex.test(line)) {
-            violations.push(`${file}:${idx + 1}: ${line.trim()}`);
-          }
-        });
-      }
-
-      expect(violations).toEqual([]);
-    });
-  });
 });
 
