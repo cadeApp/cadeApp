@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Store, Phone, MapPin, Crosshair, Info, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Store, Phone, MapPin, AlertTriangle, AlertCircle, Info } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { Input } from '@/ui/input';
+import { MapSkeleton } from '@/ui/map';
 import { Textarea } from '@/ui/textarea';
 import { merchantOnboardingAction } from '../actions';
 import { merchantCopy } from '../copy';
@@ -16,6 +18,14 @@ import { useForm, zodResolver } from './form-hooks';
 import type { ZoneOption } from '../queries';
 import Link from 'next/link';
 import { getLegalDocument } from '@/features/legal';
+
+const MapPicker = dynamic(
+  () => import('@/ui/map').then((mod) => mod.MapPicker),
+  {
+    ssr: false,
+    loading: () => <MapSkeleton className="h-64 w-full" />,
+  }
+);
 
 interface MerchantOnboardingFormProps {
   readonly zones: ZoneOption[];
@@ -231,7 +241,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           )}
         </div>
 
-        {/* Ubicación del local en el mapa / Fallback graceful */}
+        {/* Ubicación del local en el mapa / Selector interactivo T-116 */}
         <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
           <div className="flex items-start gap-2">
             <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary-dark" />
@@ -245,42 +255,22 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             </div>
           </div>
 
-          {/* Degradación elegante: aviso informativo si no carga el mapa dinámico */}
-          <div className="flex items-center gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
-            <Info className="h-5 w-5 shrink-0 text-primary-dark" />
-            <span>{merchantCopy.onboarding.mapFallbackNotice}</span>
-          </div>
+          <MapPicker
+            value={
+              defaultPickupLat != null && defaultPickupLng != null
+                ? { lat: defaultPickupLat, lng: defaultPickupLng }
+                : null
+            }
+            onChange={(coords) => {
+              setValue('defaultPickupLat', coords ? coords.lat : null, { shouldValidate: true });
+              setValue('defaultPickupLng', coords ? coords.lng : null, { shouldValidate: true });
+            }}
+            addressText={watch('defaultPickupAddress')}
+            onAddressSelect={(addr) => {
+              setValue('defaultPickupAddress', addr, { shouldValidate: true });
+            }}
+          />
 
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            onClick={handleUseMyLocation}
-            disabled={locating}
-            className="w-full"
-          >
-            <Crosshair className="h-5 w-5 text-primary-dark" />
-            <span>
-              {locating ? merchantCopy.onboarding.locating : merchantCopy.onboarding.useMyLocation}
-            </span>
-          </Button>
-
-          {defaultPickupLat != null && defaultPickupLng != null && !coordsError && (
-            <div className="rounded-lg bg-primary/10 p-2.5 text-sm text-primary-dark">
-              {merchantCopy.onboarding.locationMarked} ({defaultPickupLat.toFixed(4)},{' '}
-              {defaultPickupLng.toFixed(4)})
-            </div>
-          )}
-
-          {coordsError && (
-            <div
-              role="alert"
-              className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              <AlertTriangle className="h-5 w-5 shrink-0" />
-              <span>{coordsError}</span>
-            </div>
-          )}
           {errors.defaultPickupLat && (
             <div
               role="alert"

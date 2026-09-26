@@ -311,7 +311,7 @@ describe('T-116 DoD: Componente de mapa src/ui/map.tsx', () => {
       });
     });
 
-    it('ajusta la longitud hacia el este en pasos finos de aprox 10m (0.0001 deg)', async () => {
+    it('ajusta la latitud hacia el sur en pasos finos de aprox 10m (0.0001 deg)', async () => {
       const onChange = vi.fn();
 
       render(
@@ -321,15 +321,167 @@ describe('T-116 DoD: Componente de mapa src/ui/map.tsx', () => {
         />
       );
 
-      const btnEste = screen.getByRole('button', { name: /ajustar al este|mover al este/i });
-      fireEvent.click(btnEste);
+      const btnSur = screen.getByRole('button', { name: /ajustar al sur|mover al sur/i });
+      fireEvent.click(btnSur);
+
+      await waitFor(() => {
+        expect(onChange).toHaveBeenCalledWith({
+          lat: expect.closeTo(CENTER_AGUILARES.lat - 0.0001, 5),
+          lng: expect.closeTo(CENTER_AGUILARES.lng, 5),
+        });
+      });
+    });
+
+    it('ajusta la longitud hacia el oeste en pasos finos de aprox 10m (0.0001 deg)', async () => {
+      const onChange = vi.fn();
+
+      render(
+        <MapPicker
+          value={CENTER_AGUILARES}
+          onChange={onChange}
+        />
+      );
+
+      const btnOeste = screen.getByRole('button', { name: /ajustar al oeste|mover al oeste/i });
+      fireEvent.click(btnOeste);
 
       await waitFor(() => {
         expect(onChange).toHaveBeenCalledWith({
           lat: expect.closeTo(CENTER_AGUILARES.lat, 5),
-          lng: expect.closeTo(CENTER_AGUILARES.lng + 0.0001, 5),
+          lng: expect.closeTo(CENTER_AGUILARES.lng - 0.0001, 5),
         });
       });
+    });
+
+    it('responde a las flechas del teclado en el contenedor del mapa', async () => {
+      const onChange = vi.fn();
+
+      render(
+        <MapPicker
+          value={CENTER_AGUILARES}
+          onChange={onChange}
+        />
+      );
+
+      const container = screen.getByTestId('map-container');
+
+      fireEvent.keyDown(container, { key: 'ArrowDown' });
+      expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+        lat: expect.closeTo(CENTER_AGUILARES.lat - 0.0001, 5),
+      }));
+
+      fireEvent.keyDown(container, { key: 'ArrowLeft' });
+      expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+        lng: expect.closeTo(CENTER_AGUILARES.lng - 0.0001, 5),
+      }));
+
+      fireEvent.keyDown(container, { key: 'ArrowRight' });
+      expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+        lng: expect.closeTo(CENTER_AGUILARES.lng + 0.0001, 5),
+      }));
+    });
+
+    it('no permite ajustar ni mover cuando el componente está deshabilitado', () => {
+      const onChange = vi.fn();
+
+      render(
+        <MapPicker
+          value={CENTER_AGUILARES}
+          onChange={onChange}
+          disabled
+        />
+      );
+
+      const btnNorte = screen.getByRole('button', { name: /ajustar al norte/i });
+      expect(btnNorte).toHaveProperty('disabled', true);
+
+      const container = screen.getByTestId('map-container');
+      fireEvent.keyDown(container, { key: 'ArrowUp' });
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('4b. Casos adicionales de geolocalización y conectividad', () => {
+    it('muestra error cuando la geolocalización no está soportada en el navegador', async () => {
+      Object.defineProperty(navigator, 'geolocation', {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MapPicker value={CENTER_AGUILARES} />);
+
+      const btn = screen.getByRole('button', { name: /usar mi ubicación/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert').textContent).toMatch(/no está disponible en este dispositivo/i);
+      });
+    });
+
+    it('muestra error genérico cuando el error de geolocalización no es de permiso (ej: código 2)', async () => {
+      const mockGeolocation = {
+        getCurrentPosition: vi.fn((_success: PositionCallback, error?: PositionErrorCallback) => {
+          if (error) {
+            error({
+              code: 2, // POSITION_UNAVAILABLE
+              message: 'Position unavailable',
+              PERMISSION_DENIED: 1,
+              POSITION_UNAVAILABLE: 2,
+              TIMEOUT: 3,
+            } as GeolocationPositionError);
+          }
+        }),
+        watchPosition: vi.fn(),
+        clearWatch: vi.fn(),
+      };
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: mockGeolocation,
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MapPicker value={CENTER_AGUILARES} />);
+
+      const btn = screen.getByRole('button', { name: /usar mi ubicación/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert').textContent).toMatch(/no pudimos obtener tu ubicación actual/i);
+      });
+    });
+
+    it('escucha eventos de online y offline en window y alterna el modo', () => {
+      render(<MapPicker value={CENTER_AGUILARES} />);
+
+      // Simular offline
+      fireEvent(window, new Event('offline'));
+      expect(screen.getByText(/modo sin conexión/i)).toBeDefined();
+
+      // Simular online
+      fireEvent(window, new Event('online'));
+      expect(screen.queryByText(/modo sin conexión/i)).toBeNull();
+    });
+
+    it('renderiza label y helperText opcionales', () => {
+      render(
+        <MapPicker
+          value={CENTER_AGUILARES}
+          label="Ubicación de tu local"
+          helperText="Arrastrá el mapa para centrar el pin en tu puerta"
+        />
+      );
+
+      expect(screen.getByText('Ubicación de tu local')).toBeDefined();
+      expect(screen.getByText('Arrastrá el mapa para centrar el pin en tu puerta')).toBeDefined();
+    });
+
+    it('utiliza defaultZoneCenter cuando value es nulo', () => {
+      const ZONE_COORD: MapCoordinates = { lat: -27.42, lng: -65.61 };
+      render(<MapPicker value={null} defaultZoneCenter={ZONE_COORD} />);
+
+      expect(screen.getByText(new RegExp(`${ZONE_COORD.lat.toFixed(4)}, ${ZONE_COORD.lng.toFixed(4)}`))).toBeDefined();
     });
   });
 
