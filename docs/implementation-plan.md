@@ -260,7 +260,7 @@ Mientras esperás T-000: onboarding (`docs/onboarding.md`) y lectura del master 
 6. T-124 Incidentes (vigente: P1; después de T-115 y T-122)
 7. T-300 Promoción inicial `develop → staging` · 8. T-301 Arnés E2E
 9. T-302 E2E de onboarding · ∥ T-305 E2E de autorización · ∥ T-306 E2E de piloto y suscripción · ∥ T-308 E2E de incidentes · ∥ T-309 E2E de cargas y accesibilidad · ∥ T-314 E2E de mapas, privacidad y degradación
-10. T-311 Páginas legales (vigente: P1; bloqueante externo: abogado; después de T-118)
+10. T-311 Páginas legales (vigente: P1; después de T-118; textos contrastados con normativa argentina vigente y fuentes oficiales)
 
 Mientras esperás T-000: onboarding y lectura del master plan. Después: preparar fixtures y page objects para T-301, y visto bueno cuando otra zona toca `(public)`, `(admin)` o `e2e/`.
 
@@ -334,7 +334,7 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 | T-309 | P3 | E2E de carga de documentos con red lenta y accesibilidad | T-301, T-121 | `e2e/specs/uploads-a11y.spec.ts` | Con red 3G simulada y un corte, la carga se completa al reintentar; el servidor rechaza un archivo inválido; axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding |
 | T-310 | P1 | Backups y PITR, bucket de documentos fuera del backup, simulacro de restauración en staging, Sentry sin datos personales, uptime y alertas | T-104, T-007 | `docs/adr/**`, `docs/runbooks/**`, `src/server/observability/**` | Acta del simulacro; alerta de prueba recibida |
 | T-311 | P1 | Páginas legales P04 y consentimientos versionados | T-111, T-118, T-121 | `src/features/legal/**`, `src/app/(public)/legal/**` | Pruebas en rojo antes de implementar y commit separado: rutas legales inexistentes, versión no registrada y consentimiento aceptado con una versión que no coincide. |
-| T-312 | Todos | Checklist de release `staging → main` | T-302…T-311, T-313, T-314 | `docs/runbooks/release.md` | E2E completo verde; migraciones aplicadas; variables de producción; nota de rollback; abogado OK; simulacro OK; **revisión de seguridad independiente** de `supabase/migrations` y `src/server` (rol security de El Consejo sobre el diff acumulado, porque no hay un segundo experto); **aprobación de Lautaro073** |
+| T-312 | Todos | Checklist de release `staging → main` | T-302…T-311, T-313, T-314 | `docs/runbooks/release.md` | E2E completo verde; migraciones aplicadas; variables de producción; nota de rollback; textos legales T-311 publicados contra normativa vigente; simulacro OK; **revisión de seguridad independiente** de `supabase/migrations` y `src/server` (rol security de El Consejo sobre el diff acumulado, porque no hay un segundo experto); **aprobación de Lautaro073** |
 | T-313 | P2 | E2E de registro de comercio y consentimientos | T-301, T-111 | `e2e/specs/merchant-registration.spec.ts` (visto bueno P3) | Alta completa y panel visible; versión de consentimiento registrada; un courier no entra a `(merchant)`; falla si no se guarda el consentimiento |
 | T-314 | P3 | E2E de mapas, geolocalización, privacidad (D3/D15) y degradación graceful (mock Google Maps) | T-301, T-106, T-116, T-117 | `e2e/specs/map-privacy.spec.ts` | Playwright mockea Maps API (0 llamadas a Google); valida que el feed abierto no tenga tags con coordenadas; valida selección de pin en alta y solicitud; valida error inline con pin fuera de Aguilares; valida que tras matched aparezca el mapa y botón Google Maps; valida degradación cuando Maps falla |
 
@@ -444,7 +444,7 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
     - T-115–T-117, T-122–T-124, T-201/T-202, T-205 y T-311 ahora referencian explícitamente sus README de Stitch, `implementar-diseno`, pruebas rojas separadas, navegador, capturas a 390/360 px y estados de carga/vacío/error cuando corresponde.
     - Se asignan A00/A01/A02 a T-122, A03/A04/A06 a T-123, A05 a T-124 y T01/T03/T04 a T-201; T02 queda en T-202. Se elimina el hueco de Auditoría y error/404 del plan.
     - T-122 crea el shell admin compartido; T-123 y T-124 dependen de él. T-205 se mueve al final de las tareas móviles para evitar una segunda pasada de accesibilidad.
-    - T-116 exige un `contract-change` previo para `src/ui/map.tsx` y `@vis.gl/react-google-maps`; las primitivas admin faltantes siguen el mismo procedimiento. T-311 permanece bloqueada hasta recibir textos legales aprobados.
+    - T-116 exige un `contract-change` previo para `src/ui/map.tsx` y `@vis.gl/react-google-maps`; las primitivas admin faltantes siguen el mismo procedimiento. T-311 se redacta contra normativa argentina vigente y fuentes oficiales sin bloqueo de abogado.
     - Se sincronizan en el plan los dueños vigentes del Project para T-122, T-123, T-124, T-201, T-202 y T-311.
 
 ### 11.4 Disensos preservados

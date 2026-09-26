@@ -25,6 +25,7 @@ export const merchantOnboardingSchema = z
     acceptPilotTerms: z.literal(true, {
       errorMap: () => ({ message: 'Tenés que aceptar los Términos del piloto' }),
     }),
+    pilotTermsVersion: z.string().trim().min(1),
   })
   .refine((data) => (data.defaultPickupLat == null) === (data.defaultPickupLng == null), {
     message: 'Las coordenadas de latitud y longitud deben enviarse juntas o ambas nulas.',
