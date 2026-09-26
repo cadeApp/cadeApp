@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/server/supabase/server';
+import { createAdminClient } from '@/server/supabase/admin';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import {
   SIGNUP_ROLES,
@@ -11,6 +12,7 @@ import {
 } from '@/domain/schemas';
 import { loginSchema, registerSchema, forgotPasswordSchema } from './schemas';
 import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
+import { areCurrentLegalVersions } from '@/features/legal';
 
 export async function loginAction(
   input: unknown
@@ -88,6 +90,15 @@ export async function registerAction(
     return err('VALIDATION_ERROR');
   }
 
+  if (
+    !areCurrentLegalVersions([
+      { document: 'tos', version: parsed.data.acceptedTermsVersion },
+      { document: 'privacy', version: parsed.data.acceptedPrivacyVersion },
+    ])
+  ) {
+    return err('VALIDATION_ERROR');
+  }
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
@@ -109,6 +120,25 @@ export async function registerAction(
   }
 
   if (!data.user) {
+    return err('INTERNAL_ERROR');
+  }
+
+  const adminClient = createAdminClient();
+  const { error: activationError } = await adminClient.rpc('activate_account_consents', {
+    p_user_id: data.user.id,
+    p_tos_version: parsed.data.acceptedTermsVersion,
+    p_privacy_version: parsed.data.acceptedPrivacyVersion,
+  });
+
+  if (activationError) {
+    // Best-effort cleanup si la activación atómica falla.
+    // El invariante de seguridad no depende de esta compensación: la cuenta permanece
+    // en consent_status = 'pending' y queda inoperativa por guard, RLS y RPC (CC-007).
+    try {
+      await adminClient.auth.admin.deleteUser(data.user.id);
+    } catch {
+      // Best-effort; el usuario no tiene acceso funcional.
+    }
     return err('INTERNAL_ERROR');
   }
 
