@@ -323,3 +323,80 @@ Lautaro073 respondió `1-A`: mover lecturas/refetch a server/API, usar CC-008 pa
 ## CI
 
 No inspeccionado en R4: H19/H20/H21 bloquean antes de CI.
+---
+
+# Ronda 5 — evidencia sobre `a2845da`
+
+## Sincronización/scope
+
+```text
+develop...branch: ahead 20 / behind 0
+merge-base: bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+arreglo propio tras merge: 24 archivos, todos dentro del scope D03
+```
+
+## CI exact-head — run 36253768272
+
+```text
+unit       SUCCESS — 64 files / 669 tests
+typecheck  SUCCESS
+lint       SUCCESS
+db-tests   SUCCESS
+audit      SUCCESS
+bundle-budget FAILURE
+```
+
+El log de `build` contiene:
+
+```text
+Failed to compile.
+src/app/api/live/requests/[requestId]/offers/route.ts
+Type error: Route ... has an invalid "GET" export:
+Expected "Promise<any>", got "Promise<{ requestId: string; }> | { requestId: string; }".
+Next.js build worker exited with code: 1
+```
+
+El bundle-budget falla luego con `No se pudo leer ninguna ruta de la salida de Next.js`. En el SHA R4 (`4af4186`) el mismo job sí generaba tabla de rutas, por lo que no es el antiguo warning de `/design-system`.
+
+## H19/H20/H21
+
+- Barrido independiente de los 3 hooks: 0 browser Supabase reads / 0 `.from(`.
+- CI unit ejecutó verdes `t204.test` (14), feed hook (8), offers hook (8), trip hook (9), live contracts (8) y los 3 route tests.
+- GitHub compare: behind 0.
+
+## H23
+
+```text
+use-trip.ts:74  return parsed.data as unknown as T;
+coverage exact-head: use-trip.ts uncovered line 74
+```
+
+## H24
+
+Rojo registrado por el autor al quitar ownership:
+
+```text
+TypeError: supabase.from(...).select(...).eq(...).order is not a function
+```
+
+El fallo ocurre antes de la aserción de autorización: mock incompleto.
+
+## H25
+
+`getTripDetailsServer` llama `getTripDetailsRpc` y luego `createAdminClient()`, consulta `courier_documents` y `createSignedUrl`. T-204 descarta todo salvo status mientras `useTrip` sondea cada 30 s.
+
+## H26
+
+```text
+use-request-offers.ts:103  const setOffers = ...
+use-request-offers.ts:105  queryClient.setQueryData(...)
+request-offers-list.tsx:39 onRegisterRealtime?: ...
+```
+
+## H27
+
+Los tres callers usan `fetch(url)` sin `{ cache: 'no-store' }`.
+
+## Limitación
+
+No se ejecutaron mutaciones reviewer en un checkout local porque el entorno de revisión no pudo materializar el repo por resolución de red. No se inventa evidencia runtime; los datos runtime anteriores salen del CI exact-head.
