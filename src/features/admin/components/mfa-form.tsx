@@ -8,8 +8,10 @@ import { Button } from '@/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/ui/input-otp';
 import { notify } from '@/ui/notify';
+import { getDomainErrorMessage } from '@/lib/error-messages';
 import { verifyAdminMfaAction } from '../actions';
 import { adminMfaSchema } from '../schemas';
+import { ADMIN_COPY } from '../copy';
 
 export interface MfaFormProps {
   redirectTo?: string;
@@ -27,7 +29,6 @@ function getTotpSecondsRemaining(nowMs = Date.now()): number {
 export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {}) {
   const router = useRouter();
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
-
   const [secondsRemaining, setSecondsRemaining] = React.useState(() =>
     getTotpSecondsRemaining()
   );
@@ -62,21 +63,19 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
       const res = await verifyAdminMfaAction({ code: data.code, redirectTo });
 
       if (!res.ok) {
-        if (res.code === 'VALIDATION_ERROR') {
-          setErrorMsg('Código incorrecto o expirado. Verificá tu app e intentá de nuevo.');
-        } else if (res.code === 'UNAUTHORIZED_ACTOR') {
-          setErrorMsg('No tenés permisos de administrador para realizar esta acción.');
-        } else {
-          setErrorMsg('No se pudo verificar el código MFA en este momento.');
-        }
+        setErrorMsg(
+          res.code === 'VALIDATION_ERROR'
+            ? ADMIN_COPY.mfa.invalidCode
+            : getDomainErrorMessage(res.code)
+        );
         return;
       }
 
-      notify.success('Identidad verificada con éxito.');
+      notify.success(ADMIN_COPY.mfa.success);
       router.push(res.data.redirectTo);
       router.refresh();
     } catch {
-      setErrorMsg('Error de conexión al verificar el segundo factor.');
+      setErrorMsg(ADMIN_COPY.mfa.connectionError);
     }
   });
 
@@ -100,10 +99,10 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
           </svg>
         </div>
         <CardTitle className="font-display text-xl font-bold tracking-tight">
-          Verificación en dos pasos
+          {ADMIN_COPY.mfa.title}
         </CardTitle>
         <CardDescription className="text-sm text-muted-foreground">
-          Ingresá el código de 6 dígitos generado por tu app autenticadora (Google Authenticator, Authy, etc.).
+          {ADMIN_COPY.mfa.description}
         </CardDescription>
       </CardHeader>
 
@@ -114,7 +113,7 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
               htmlFor="totp-code"
               className="block text-center text-sm font-medium text-foreground"
             >
-              Código de seguridad
+              {ADMIN_COPY.mfa.codeLabel}
             </label>
             <div className="flex justify-center">
               <InputOTP
@@ -135,11 +134,11 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
               </InputOTP>
             </div>
             <p className="text-center text-sm text-muted-foreground" aria-live="polite">
-              {`Expira en 00:${String(secondsRemaining).padStart(2, '0')}`}
+              {ADMIN_COPY.mfa.countdown(secondsRemaining)}
             </p>
             {errors.code ? (
-              <p className="text-center text-sm text-destructive font-medium" role="alert">
-                {errors.code.message ?? 'Ingresá los 6 dígitos numéricos.'}
+              <p className="text-center text-sm font-medium text-destructive" role="alert">
+                {errors.code.message ?? ADMIN_COPY.mfa.validationFallback}
               </p>
             ) : null}
           </div>
@@ -155,16 +154,14 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
 
           <Button
             type="submit"
-            className="w-full h-11 text-base font-semibold"
+            className="h-11 w-full text-base font-semibold"
             disabled={isSubmitting || code.length !== 6}
           >
-            {isSubmitting ? 'Verificando...' : 'Verificar código'}
+            {isSubmitting ? ADMIN_COPY.mfa.verifyingButton : ADMIN_COPY.mfa.verifyButton}
           </Button>
 
           <div className="pt-2 text-center text-sm text-muted-foreground">
-            <p className="text-sm">
-              ¿Problemas con el código de tu app autenticadora? Asegurate de que la hora de tu dispositivo esté sincronizada automáticamente.
-            </p>
+            <p className="text-sm">{ADMIN_COPY.mfa.troubleshoot}</p>
           </div>
         </form>
       </CardContent>
