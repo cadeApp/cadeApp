@@ -5,7 +5,7 @@
 - **Autor / Zona:** `asako669` (P2)
 - **Rama:** `feat/T-204-realtime-tanstack` → `develop`
 - **Ubicación vigente de la revisión:** rama `docs/revisiones` (PR de P2; desde R4 se aplica `COMO-ENTREGAR.md` vigente).
-- **Estado actual:** ❌ **CON BLOQUEANTES** (Ronda 6: 1 bloqueante, 0 decisiones pendientes)
+- **Estado actual:** ❌ **CON BLOQUEANTES** (Ronda 7: 4 bloqueantes, 0 decisiones pendientes)
 
 ## Decisiones de Lautaro073
 
@@ -28,3 +28,4 @@ Rondas 1–3 quedaron históricamente también en la rama del autor por el proce
 | [Ronda 4](revisiones/ronda-4.md) | 2026-09-26 | `4af4186` | ❌ | 3 | 1 resuelta |
 | [Ronda 5](revisiones/ronda-5.md) | 2026-09-26 | `a2845da` | ❌ | 5 | 0 |
 | [Ronda 6](revisiones/ronda-6.md) | 2026-09-26 | `6c52a31` | ❌ | 1 | 1 resuelta |
+| [Ronda 7](revisiones/ronda-7.md) | 2026-09-26 | `10e25ff` | ❌ | 4 | 0 |
