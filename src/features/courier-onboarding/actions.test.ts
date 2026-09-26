@@ -286,6 +286,11 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
           update: mockAdminUpdate,
         };
       }
+      if (table === 'consents') {
+        return {
+          insert: mockInsertConsents,
+        };
+      }
       return { select: vi.fn().mockReturnThis() };
     });
 

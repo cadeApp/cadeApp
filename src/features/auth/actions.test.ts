@@ -19,6 +19,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       from: vi.fn().mockReturnValue({
         insert: vi.fn().mockResolvedValue({ error: null }),
       }),
+      rpc: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
       auth: {
         admin: {
           deleteUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
@@ -238,14 +239,12 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('registerAction ejecuta rollback compensatorio deleteUser y devuelve INTERNAL_ERROR si la inserción de consentimientos falla (H06)', async () => {
+    it('registerAction invoca activate_account_consents y ejecuta cleanup deleteUser si la activación falla (H06 / CC-007)', async () => {
       const deleteUserSpy = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
-      const insertSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on consents insert' } });
+      const rpcSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on activate_account_consents' } });
 
       vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          insert: insertSpy,
-        }),
+        rpc: rpcSpy,
         auth: {
           admin: {
             deleteUser: deleteUserSpy,
@@ -278,35 +277,26 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         expect(result.code).toBe('INTERNAL_ERROR');
       }
       expect(mockSignUp).toHaveBeenCalledTimes(1);
-      expect(insertSpy).toHaveBeenCalledTimes(1);
+      expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
+        p_user_id: 'usr-fail-consent-1',
+        p_tos_version: '1.0',
+        p_privacy_version: '1.0',
+      });
       expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-1');
     });
 
-    it('registerAction neutraliza la cuenta y devuelve INTERNAL_ERROR si deleteUser devuelve { error } (H06 / R2-P1)', async () => {
+    it('registerAction devuelve INTERNAL_ERROR y no lanza excepción si deleteUser devuelve { error } (H06 / CC-007)', async () => {
       const deleteUserSpy = vi.fn().mockResolvedValue({
         data: { user: null },
         error: new Error('delete failed'),
       });
-      const updateUserByIdSpy = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
-      const deleteProfileSpy = vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      });
-      const insertSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on consents insert' } });
+      const rpcSpy = vi.fn().mockResolvedValue({ error: { message: 'RPC failure' } });
 
       vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
-        from: vi.fn((table: string) => {
-          if (table === 'consents') {
-            return { insert: insertSpy };
-          }
-          if (table === 'profiles') {
-            return { delete: deleteProfileSpy };
-          }
-          return { insert: vi.fn(), delete: vi.fn() };
-        }),
+        rpc: rpcSpy,
         auth: {
           admin: {
             deleteUser: deleteUserSpy,
-            updateUserById: updateUserByIdSpy,
           },
         },
       } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
@@ -336,33 +326,17 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         expect(result.code).toBe('INTERNAL_ERROR');
       }
       expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-2');
-      // Debe neutralizar la cuenta eliminando perfil y/o baneando en Auth para que no quede utilizable
-      expect(deleteProfileSpy).toHaveBeenCalledTimes(1);
-      expect(updateUserByIdSpy).toHaveBeenCalledWith('usr-fail-consent-2', expect.objectContaining({ ban_duration: expect.any(String) }));
     });
 
-    it('registerAction neutraliza la cuenta y devuelve INTERNAL_ERROR si deleteUser rechaza con error de red (H06 / R2-P1)', async () => {
+    it('registerAction devuelve INTERNAL_ERROR y no lanza excepción si deleteUser rechaza con error de red (H06 / CC-007)', async () => {
       const deleteUserSpy = vi.fn().mockRejectedValue(new Error('network failure'));
-      const updateUserByIdSpy = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
-      const deleteProfileSpy = vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-      });
-      const insertSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on consents insert' } });
+      const rpcSpy = vi.fn().mockResolvedValue({ error: { message: 'RPC failure' } });
 
       vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
-        from: vi.fn((table: string) => {
-          if (table === 'consents') {
-            return { insert: insertSpy };
-          }
-          if (table === 'profiles') {
-            return { delete: deleteProfileSpy };
-          }
-          return { insert: vi.fn(), delete: vi.fn() };
-        }),
+        rpc: rpcSpy,
         auth: {
           admin: {
             deleteUser: deleteUserSpy,
-            updateUserById: updateUserByIdSpy,
           },
         },
       } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
@@ -392,18 +366,14 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         expect(result.code).toBe('INTERNAL_ERROR');
       }
       expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-3');
-      expect(deleteProfileSpy).toHaveBeenCalledTimes(1);
-      expect(updateUserByIdSpy).toHaveBeenCalledWith('usr-fail-consent-3', expect.objectContaining({ ban_duration: expect.any(String) }));
     });
 
-    it('registerAction jamás invoca deleteUser si la inserción de consentimientos fue exitosa (H06)', async () => {
+    it('registerAction jamás invoca deleteUser si activate_account_consents fue exitoso (H06 / CC-007)', async () => {
       const deleteUserSpy = vi.fn();
-      const insertSpy = vi.fn().mockResolvedValue({ error: null });
+      const rpcSpy = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
 
       vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          insert: insertSpy,
-        }),
+        rpc: rpcSpy,
         auth: {
           admin: {
             deleteUser: deleteUserSpy,
@@ -432,6 +402,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       });
 
       expect(result.ok).toBe(true);
+      expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
+        p_user_id: 'usr-success-1',
+        p_tos_version: '1.0',
+        p_privacy_version: '1.0',
+      });
       expect(deleteUserSpy).not.toHaveBeenCalled();
     });
   });

@@ -136,7 +136,7 @@ export async function courierOnboardingAction(
     },
   ];
 
-  const { error: consentsError } = await supabase.from('consents').insert(consentsPayload as never);
+  const { error: consentsError } = await adminClient.from('consents').insert(consentsPayload as never);
 
   if (consentsError) {
     return err('INTERNAL_ERROR');

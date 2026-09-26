@@ -1,3 +1,4 @@
+import * as React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { Card } from '@/ui/card';

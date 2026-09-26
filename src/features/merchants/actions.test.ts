@@ -1,14 +1,29 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
+import * as adminSupabase from '@/server/supabase/admin';
 import { merchantOnboardingAction } from './actions';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
+vi.mock('@/server/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
+}));
+
 describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'consents') {
+          return {
+            insert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        return {};
+      }),
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
   });
 
   const validFormInput = {
@@ -179,6 +194,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
       ? T
       : never);
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
     const result = await merchantOnboardingAction(validFormInput);
     expect(result.ok).toBe(true);
@@ -267,6 +285,65 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
       ? T
       : never);
+
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+    const result = await merchantOnboardingAction(validFormInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INTERNAL_ERROR');
+    }
+  });
+
+  it('devuelve INTERNAL_ERROR si la inserción de consentimientos falla en adminClient (H08)', async () => {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { value: '1.0' },
+            error: null,
+          }),
+        };
+      }
+      return {};
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1', email: 'comercio@test.com' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
+      ? T
+      : never);
+
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'consents') {
+          return {
+            insert: vi.fn().mockResolvedValue({ error: { message: 'Insert consent error' } }),
+          };
+        }
+        return {};
+      }),
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
     const result = await merchantOnboardingAction(validFormInput);
     expect(result.ok).toBe(false);
@@ -386,6 +463,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
       ? T
       : never);
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
     const result = await merchantOnboardingAction(validFormInput);
     expect(result.ok).toBe(true);
@@ -445,6 +525,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
       ? T
       : never);
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
     const result = await merchantOnboardingAction({
       ...validFormInput,
@@ -509,6 +592,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
       ? T
       : never);
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
     const result = await merchantOnboardingAction({
       ...validFormInput,

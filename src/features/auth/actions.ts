@@ -13,7 +13,6 @@ import {
 import { loginSchema, registerSchema, forgotPasswordSchema } from './schemas';
 import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
 import { areCurrentLegalVersions } from '@/features/legal';
-import type { TablesInsert } from '@/types/database.types';
 
 export async function loginAction(
   input: unknown
@@ -124,41 +123,21 @@ export async function registerAction(
     return err('INTERNAL_ERROR');
   }
 
-  const consentPayload: TablesInsert<'consents'>[] = [
-    {
-      profile_id: data.user.id,
-      document: 'tos',
-      version: parsed.data.acceptedTermsVersion,
-    },
-    {
-      profile_id: data.user.id,
-      document: 'privacy',
-      version: parsed.data.acceptedPrivacyVersion,
-    },
-  ];
-
   const adminClient = createAdminClient();
-  const { error: consentError } = await adminClient.from('consents').insert(consentPayload as never);
-  if (consentError) {
-    let deleted = false;
-    try {
-      const deleteResult = await adminClient.auth.admin.deleteUser(data.user.id);
-      deleted = !deleteResult?.error;
-    } catch {
-      deleted = false;
-    }
+  const { error: activationError } = await adminClient.rpc('activate_account_consents', {
+    p_user_id: data.user.id,
+    p_tos_version: parsed.data.acceptedTermsVersion,
+    p_privacy_version: parsed.data.acceptedPrivacyVersion,
+  });
 
-    if (!deleted) {
-      // H06: Si la eliminación completa en Auth falla o devuelve error, neutralizar
-      // la cuenta inmediatamente para que no quede utilizable sin consentimientos:
-      // eliminar el registro en profiles (lo que en cascada anula roles/permisos)
-      // y aplicar ban_duration en Auth para bloquear cualquier autenticación.
-      await Promise.allSettled([
-        adminClient.from('profiles').delete().eq('id', data.user.id),
-        adminClient.auth.admin.updateUserById(data.user.id, {
-          ban_duration: '876000h',
-        }),
-      ]);
+  if (activationError) {
+    // Best-effort cleanup si la activación atómica falla.
+    // El invariante de seguridad no depende de esta compensación: la cuenta permanece
+    // en consent_status = 'pending' y queda inoperativa por guard, RLS y RPC (CC-007).
+    try {
+      await adminClient.auth.admin.deleteUser(data.user.id);
+    } catch {
+      // Best-effort; el usuario no tiene acceso funcional.
     }
     return err('INTERNAL_ERROR');
   }

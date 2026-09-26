@@ -510,6 +510,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       const mockInsertConsents = vi.fn().mockResolvedValue({ error: null });
       vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
         from: vi.fn().mockReturnValue({ insert: mockInsertConsents }),
+        rpc: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
       } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
       const mockSignUp = vi.fn().mockImplementation(async () => ({

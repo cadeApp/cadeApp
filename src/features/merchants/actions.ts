@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/server/supabase/server';
+import { createAdminClient } from '@/server/supabase/admin';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
@@ -92,7 +93,8 @@ export async function merchantOnboardingAction(
     version: parsed.data.pilotTermsVersion,
   };
 
-  const { error: consentError } = await supabase.from('consents').insert(consentPayload as never);
+  const adminClient = createAdminClient();
+  const { error: consentError } = await adminClient.from('consents').insert(consentPayload as never);
 
   if (consentError) {
     return err('INTERNAL_ERROR');
