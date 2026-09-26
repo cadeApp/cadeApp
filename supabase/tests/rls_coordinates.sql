@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(21);
+select plan(24);
 
 -- IDs de prueba para actores
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000061a1'::uuid $$;
@@ -266,20 +266,43 @@ from (values
   ('default_pickup_address')
 ) as expected(expected_col);
 
--- 14. Repartidor aprobado ve comercio activo a través de merchant_public
+-- 14. PR105-H01: Repartidor aprobado NO puede leer la fila directamente en public.merchants
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select ok(
+  not exists (select 1 from public.merchants where profile_id = pg_temp.merchant_1_id()),
+  'approved courier cannot directly query public.merchants table'
+);
+
+-- 15. Repartidor aprobado SÍ ve comercio activo a través de la superficie segura merchant_public
 select ok(
   exists (select 1 from public.merchant_public where profile_id = pg_temp.merchant_1_id()),
   'approved courier sees active merchant with published requests in merchant_public'
 );
 
--- 15. Repartidor aprobado NO ve comercio ocioso a través de merchant_public
+-- 16. Repartidor aprobado NO ve comercio ocioso a través de merchant_public
 select ok(
   not exists (select 1 from public.merchant_public where profile_id = pg_temp.merchant_idle_id()),
   'approved courier does NOT see idle merchant in merchant_public'
 );
 
--- 16. PR56-H22: profiles_update_self congela created_at contra reescritura
+-- 17. Merchant dueño conserva acceso directo correspondiente a public.merchants
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select is(
+  (select business_name from public.merchants where profile_id = pg_temp.merchant_1_id()),
+  'Empanadas Aguilares',
+  'owner merchant can directly query public.merchants table'
+);
+
+-- 18. Admin conserva acceso directo correspondiente a public.merchants
+select pg_temp.act_as('authenticated', pg_temp.admin_id());
+select is(
+  (select business_name from public.merchants where profile_id = pg_temp.merchant_1_id()),
+  'Empanadas Aguilares',
+  'admin can directly query public.merchants table'
+);
+
+-- 19. PR56-H22: profiles_update_self congela created_at contra reescritura
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
 select throws_ok(
   format('update public.profiles set created_at = ''2020-01-01T00:00:00Z'' where id = ''%s''', pg_temp.courier_approved_1_id()),
   '42501',
@@ -287,7 +310,7 @@ select throws_ok(
   'PR56-H22: profiles_update_self forbids altering created_at timestamp'
 );
 
--- 17. Modificación legítima de display_name y phone en profiles respetando created_at
+-- 20. Modificación legítima de display_name y phone en profiles respetando created_at
 select lives_ok(
   format(
     'update public.profiles set display_name = ''Repartidor Uno Actualizado'', phone = ''3815559999'' where id = ''%s''',
