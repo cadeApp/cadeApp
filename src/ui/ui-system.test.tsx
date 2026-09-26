@@ -363,7 +363,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       expect(pending.getAttribute('data-state')).toBe('active');
       expect(approved.getAttribute('data-state')).toBe('inactive');
 
-      fireEvent.click(approved);
+      fireEvent.mouseDown(approved, { button: 0, ctrlKey: false });
       expect(approved.getAttribute('data-state')).toBe('active');
       expect(pending.getAttribute('data-state')).toBe('inactive');
     });
