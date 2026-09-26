@@ -411,7 +411,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       );
 
       const disabledInput = screen.getByRole('textbox', { name: 'Código corto' });
-      expect(disabledInput).toBeDisabled();
+      expect((disabledInput as HTMLInputElement).disabled).toBe(true);
       expect(screen.getByTestId('otp-separator').getAttribute('role')).toBe('separator');
 
       cleanup();
