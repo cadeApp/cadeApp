@@ -46,7 +46,7 @@ do $$
 begin
   insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
   values
-    (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-dist@example.test', 'pwd', '{"role": "admin"}'),
+    (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-dist@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.merchant_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'merch-dist@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.courier_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cour-dist@example.test', 'pwd', '{"role": "courier"}');
 

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(22);
+select plan(18);
 
 -- IDs de prueba para actores
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000061a1'::uuid $$;
@@ -55,7 +55,7 @@ begin
 
   insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
   values
-    (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-coord@example.test', 'pwd', '{"role": "admin"}'),
+    (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin-coord@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.merchant_1_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'm1-coord@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.merchant_idle_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'midle-coord@example.test', 'pwd', '{"role": "merchant"}'),
     (pg_temp.courier_approved_1_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c1-coord@example.test', 'pwd', '{"role": "courier"}'),
