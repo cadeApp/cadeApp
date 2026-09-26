@@ -42,7 +42,9 @@ export function useAvailableRequests(
           return options.fetcher();
         }
 
-        const res = await fetch('/api/live/available-requests');
+        const res = await fetch('/api/live/available-requests', {
+          cache: 'no-store',
+        });
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }

@@ -36,7 +36,6 @@ export interface RequestOffersListProps {
     expiresAt: string | null;
   };
   initialOffers: readonly MerchantOfferItem[];
-  onRegisterRealtime?: (callback: (newOffer: MerchantOfferItem) => void) => void;
   onAcceptSuccess?: (offerId: string) => void;
 }
 
@@ -71,30 +70,14 @@ function getPackageLabel(packageType: string): string {
 export function RequestOffersList({
   request,
   initialOffers,
-  onRegisterRealtime,
   onAcceptSuccess,
 }: RequestOffersListProps) {
-  const { offers, setOffers, isError, refetch } = useRequestOffers(request.id, initialOffers);
+  const { offers, isError, refetch } = useRequestOffers(request.id, initialOffers);
   const [sortOrder, setSortOrder] = useState<OfferSortOrder>('doc_level');
   const [selectedOffer, setSelectedOffer] = useState<MerchantOfferItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
-
-  // Soporte para callback artificial de tests previos si se proporciona
-  useEffect(() => {
-    if (onRegisterRealtime) {
-      onRegisterRealtime((newOffer: MerchantOfferItem) => {
-        setOffers((prev) => {
-          const exists = prev.some((o) => o.id === newOffer.id);
-          if (exists) {
-            return prev.map((o) => (o.id === newOffer.id ? newOffer : o));
-          }
-          return [...prev, newOffer];
-        });
-      });
-    }
-  }, [onRegisterRealtime, setOffers]);
 
   // Cronómetro de vencimiento sin non-null assertions
   useEffect(() => {

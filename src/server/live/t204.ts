@@ -1,8 +1,7 @@
 import 'server-only';
-
 import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
-import { getTripDetailsServer } from '@/server/rpc/trips';
+import { getTripDetailsRpc } from '@/server/rpc/trips';
 import type {
   LiveAvailableRequestItem,
   LiveMerchantOfferItem,
@@ -251,7 +250,7 @@ export async function getRequestOffersLiveServer(
 
 /**
  * 3.3 Consulta de estado vivo del viaje activo.
- * - Llama exclusivamente a la fuente canónica CC-008 getTripDetailsServer.
+ * - Llama exclusivamente a la función RPC getTripDetailsRpc.
  * - Desecha cualquier PII, contacto, dirección, teléfono o avatar.
  * - Retorna SOLO { id: requestId, status } con status en 'matched' | 'in_transit' | 'delivered'.
  * - NOT_FOUND -> { ok: true, data: null }.
@@ -264,8 +263,12 @@ export async function getTripLiveStateServer(
     return { ok: false, error: 'INVALID_TRIP_ID', status: 400 };
   }
 
-  const rpcResult = await getTripDetailsServer({ requestId: parsedId.data });
+  const supabase = await createClient();
+  const rpcResult = await getTripDetailsRpc(supabase, { requestId: parsedId.data });
   if (!rpcResult.ok) {
+    if (rpcResult.code === 'UNAUTHENTICATED') {
+      return { ok: false, error: 'UNAUTHENTICATED', status: 401 };
+    }
     if (rpcResult.code === 'NOT_FOUND') {
       return { ok: true, data: null };
     }

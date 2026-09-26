@@ -39,7 +39,7 @@ describe('GET /api/live/trips/[tripId]', () => {
     });
 
     const response = await GET({} as NextRequest, {
-      params: { tripId: validUuid },
+      params: Promise.resolve({ tripId: validUuid }),
     });
 
     expect(response.status).toBe(200);
@@ -55,7 +55,7 @@ describe('GET /api/live/trips/[tripId]', () => {
     });
 
     const response = await GET({} as NextRequest, {
-      params: { tripId: validUuid },
+      params: Promise.resolve({ tripId: validUuid }),
     });
 
     expect(response.status).toBe(403);

@@ -55,7 +55,7 @@ describe('GET /api/live/requests/[requestId]/offers', () => {
     });
 
     const response = await GET({} as NextRequest, {
-      params: { requestId: validUuid },
+      params: Promise.resolve({ requestId: validUuid }),
     });
 
     expect(response.status).toBe(404);

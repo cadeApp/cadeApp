@@ -9,10 +9,10 @@ const NO_CACHE_HEADERS = {
 
 export async function GET(
   _request: NextRequest,
-  context: { params: Promise<{ tripId: string }> | { tripId: string } }
+  { params }: { params: Promise<{ tripId: string }> }
 ) {
-  const params = await Promise.resolve(context.params);
-  const result = await getTripLiveStateServer(params.tripId);
+  const { tripId } = await params;
+  const result = await getTripLiveStateServer(tripId);
 
   if (!result.ok) {
     return NextResponse.json(

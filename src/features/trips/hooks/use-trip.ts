@@ -16,8 +16,8 @@ export interface TripDetailItem {
   readonly [key: string]: unknown;
 }
 
-export interface UseTripOptions<T = TripDetailItem> {
-  readonly fetcher?: () => Promise<T | null>;
+export interface UseTripOptions {
+  readonly fetcher?: () => Promise<TripDetailItem | null>;
   readonly enabled?: boolean;
 }
 
@@ -31,10 +31,10 @@ export interface UseTripOptions<T = TripDetailItem> {
  * 4. Polling de 30 s activo solo en pantallas visibles.
  * 5. Desuscripción de canal al desmontar.
  */
-export function useTrip<T extends TripDetailItem = TripDetailItem>(
+export function useTrip(
   tripId: string,
-  initialTrip?: T | null,
-  options?: UseTripOptions<T>
+  initialTrip?: TripDetailItem | null,
+  options?: UseTripOptions
 ) {
   const contextClient = useContext(QueryClientContext);
   const [fallbackClient] = useState(() => new QueryClient());
@@ -46,12 +46,14 @@ export function useTrip<T extends TripDetailItem = TripDetailItem>(
   const query = useQuery(
     {
       queryKey,
-      queryFn: async (): Promise<T | null> => {
+      queryFn: async (): Promise<TripDetailItem | null> => {
         if (options?.fetcher) {
           return options.fetcher();
         }
 
-        const res = await fetch(`/api/live/trips/${encodeURIComponent(tripId)}`);
+        const res = await fetch(`/api/live/trips/${encodeURIComponent(tripId)}`, {
+          cache: 'no-store',
+        });
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
@@ -71,7 +73,7 @@ export function useTrip<T extends TripDetailItem = TripDetailItem>(
           };
         }
 
-        return parsed.data as unknown as T;
+        return parsed.data;
       },
       initialData: initialTrip ?? undefined,
       initialDataUpdatedAt: 0,

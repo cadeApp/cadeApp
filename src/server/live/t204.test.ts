@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   getAvailableRequestsLiveServer,
@@ -223,21 +225,41 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     });
 
     it('retorna 404 si la solicitud no pertenece al merchant autenticado', async () => {
-      const otherMerchantUser = { id: 'other-user-uuid' };
+      const otherMerchantId = '99999999-9999-9999-9999-999999999999';
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: validUuid, merchant_id: otherMerchantId },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockResolvedValue({
+                  data: [],
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
         },
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              maybeSingle: vi.fn().mockResolvedValue({
-                data: { id: validUuid, merchant_id: otherMerchantUser.id },
-                error: null,
-              }),
-            }),
-          }),
-        }),
+        from: mockFrom,
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getRequestOffersLiveServer(validUuid);
@@ -246,6 +268,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         expect(result.status).toBe(404);
         expect(result.error).toBe('NOT_FOUND');
       }
+      expect(mockFrom).not.toHaveBeenCalledWith('offers');
     });
 
     it('happy path: retorna ofertas de la solicitud perteneciente al merchant', async () => {
@@ -315,6 +338,30 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
   });
 
   describe('3.3 getTripLiveStateServer', () => {
+    it('control estático: usa getTripDetailsRpc y no getTripDetailsServer', () => {
+      const sourceCode = readFileSync(resolve(__dirname, 't204.ts'), 'utf-8');
+      expect(sourceCode).toContain('getTripDetailsRpc');
+      expect(sourceCode).not.toContain('getTripDetailsServer');
+    });
+
+    it('pasa la instancia de createClient a getTripDetailsRpc', async () => {
+      const mockSupabase = { auth: { getUser: vi.fn() } };
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        mockSupabase as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+      vi.mocked(tripsRpc.getTripDetailsRpc).mockResolvedValue(
+        ok({
+          requestId: validUuid,
+          status: 'matched',
+        } as unknown as tripsRpc.TripDetailsServerOutput)
+      );
+
+      await getTripLiveStateServer(validUuid);
+      expect(tripsRpc.getTripDetailsRpc).toHaveBeenCalledWith(mockSupabase, {
+        requestId: validUuid,
+      });
+    });
+
     it('retorna 400 si tripId no es UUID', async () => {
       const result = await getTripLiveStateServer('invalid');
       expect(result.ok).toBe(false);
@@ -323,8 +370,19 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
-    it('retorna data: null si getTripDetailsServer devuelve NOT_FOUND', async () => {
-      vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue(err('NOT_FOUND'));
+    it('retorna 401 si getTripDetailsRpc devuelve UNAUTHENTICATED', async () => {
+      vi.mocked(tripsRpc.getTripDetailsRpc).mockResolvedValue(err('UNAUTHENTICATED'));
+
+      const result = await getTripLiveStateServer(validUuid);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(401);
+        expect(result.error).toBe('UNAUTHENTICATED');
+      }
+    });
+
+    it('retorna data: null si getTripDetailsRpc devuelve NOT_FOUND', async () => {
+      vi.mocked(tripsRpc.getTripDetailsRpc).mockResolvedValue(err('NOT_FOUND'));
 
       const result = await getTripLiveStateServer(validUuid);
       expect(result.ok).toBe(true);
@@ -333,8 +391,8 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
-    it('retorna 403 si getTripDetailsServer devuelve UNAUTHORIZED_ACTOR', async () => {
-      vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue(err('UNAUTHORIZED_ACTOR'));
+    it('retorna 403 si getTripDetailsRpc devuelve UNAUTHORIZED_ACTOR', async () => {
+      vi.mocked(tripsRpc.getTripDetailsRpc).mockResolvedValue(err('UNAUTHORIZED_ACTOR'));
 
       const result = await getTripLiveStateServer(validUuid);
       expect(result.ok).toBe(false);
@@ -343,8 +401,8 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
-    it('retorna 409 si getTripDetailsServer devuelve INVALID_STATE_TRANSITION', async () => {
-      vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue(err('INVALID_STATE_TRANSITION'));
+    it('retorna 409 si getTripDetailsRpc devuelve INVALID_STATE_TRANSITION', async () => {
+      vi.mocked(tripsRpc.getTripDetailsRpc).mockResolvedValue(err('INVALID_STATE_TRANSITION'));
 
       const result = await getTripLiveStateServer(validUuid);
       expect(result.ok).toBe(false);
@@ -354,7 +412,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     });
 
     it('happy path: retorna solo id y status, descartando contactos y avatar', async () => {
-      vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue(
+      vi.mocked(tripsRpc.getTripDetailsRpc).mockResolvedValue(
         ok({
           requestId: validUuid,
           courierId: 'courier-uuid',
@@ -375,7 +433,6 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           pickupZoneName: 'Centro',
           dropoffZoneName: 'Aguilares',
           approxDistanceKm: '1,5',
-          avatarUrl: 'https://storage/private-avatar.png',
         } as unknown as tripsRpc.TripDetailsServerOutput)
       );
 

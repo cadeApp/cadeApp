@@ -326,7 +326,9 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     });
 
     expect(result.current.requests[0]?.myOfferAmountArs).toBe(1500);
-    expect(global.fetch).toHaveBeenCalledWith('/api/live/available-requests');
+    expect(global.fetch).toHaveBeenCalledWith('/api/live/available-requests', {
+      cache: 'no-store',
+    });
   });
 
   it('PR82-H20: cuando /api/live falla (HTTP 500), expone isError: true sin fallback silencioso', async () => {

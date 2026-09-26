@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState, useContext, useEffect } from 'react';
+import { useCallback, useRef, useState, useContext, useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
 import { requestKeys } from '../query-keys';
 import { useRealtimeInvalidation } from '@/lib/hooks/use-realtime-invalidation';
@@ -41,7 +41,9 @@ export function useRequestOffers(
       return options.fetcher();
     }
 
-    const res = await fetch(`/api/live/requests/${encodeURIComponent(requestId)}/offers`);
+    const res = await fetch(`/api/live/requests/${encodeURIComponent(requestId)}/offers`, {
+      cache: 'no-store',
+    });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
     }
@@ -68,8 +70,10 @@ export function useRequestOffers(
     queryClient
   );
 
-  const [localOffers, setLocalOffersState] = useState<MerchantOfferItem[]>([...initialOffers]);
-  const currentOffers = query.data ?? localOffers;
+  const currentOffers = useMemo(
+    () => query.data ?? [...initialOffers],
+    [query.data, initialOffers]
+  );
 
   // PR82-H13: Notificar callbacks desde useEffect posterior al render (no durante el render)
   const previousOffersRef = useRef<readonly MerchantOfferItem[]>(initialOffers);
@@ -100,21 +104,8 @@ export function useRequestOffers(
     queryClient,
   });
 
-  const setOffers = useCallback(
-    (updater: React.SetStateAction<MerchantOfferItem[]>) => {
-      queryClient.setQueryData<MerchantOfferItem[]>(queryKey, (old) => {
-        const current = old ?? localOffers;
-        const next = typeof updater === 'function' ? updater(current) : updater;
-        setLocalOffersState(next);
-        return next;
-      });
-    },
-    [queryClient, queryKey, localOffers]
-  );
-
   return {
     offers: currentOffers,
-    setOffers,
     isLoading: query.isLoading,
     isRefetching: query.isRefetching,
     isError: query.isError,

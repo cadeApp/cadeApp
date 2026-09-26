@@ -84,6 +84,15 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
     expect(sourceCode).not.toMatch(nonNullAssertionPattern);
   });
 
+  it('PR82-H26 (Control Estático): use-request-offers.ts no expone setOffers ni llama a setQueryData', () => {
+    const hookPath = path.resolve(__dirname, 'use-request-offers.ts');
+    const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+    expect(sourceCode).not.toContain('setQueryData');
+    expect(sourceCode).not.toContain('setOffers');
+    expect(sourceCode).not.toContain('setLocalOffersState');
+  });
+
   it('DoD: Con el push apagado, la oferta nueva aparece al volver a la app (refetchOnWindowFocus: always)', async () => {
     const updatedOffers: MerchantOfferItem[] = [
       ...initialOffers,
@@ -320,7 +329,8 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
     });
 
     expect(global.fetch).toHaveBeenCalledWith(
-      '/api/live/requests/11111111-1111-1111-1111-111111111111/offers'
+      '/api/live/requests/11111111-1111-1111-1111-111111111111/offers',
+      { cache: 'no-store' }
     );
   });
 

@@ -9,10 +9,10 @@ const NO_CACHE_HEADERS = {
 
 export async function GET(
   _request: NextRequest,
-  context: { params: Promise<{ requestId: string }> | { requestId: string } }
+  { params }: { params: Promise<{ requestId: string }> }
 ) {
-  const params = await Promise.resolve(context.params);
-  const result = await getRequestOffersLiveServer(params.requestId);
+  const { requestId } = await params;
+  const result = await getRequestOffersLiveServer(requestId);
 
   if (!result.ok) {
     return NextResponse.json(

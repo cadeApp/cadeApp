@@ -64,15 +64,47 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime vía /api/li
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  it('PR82-H19 (Control Estático): use-trip.ts no tiene imports de supabase/browser ni .from(', () => {
+  it('PR82-H19 & PR82-H23 (Control Estático): use-trip.ts sin supabase/browser, sin .from(, sin generic T ni as unknown as T', () => {
     const hookPath = path.resolve(__dirname, 'use-trip.ts');
     const sourceCode = fs.readFileSync(hookPath, 'utf8');
 
     expect(sourceCode).not.toContain('@/lib/supabase/browser');
     expect(sourceCode).not.toContain('.from(');
     expect(sourceCode).toContain('/api/live/trips/');
+    expect(sourceCode).not.toContain('as unknown as T');
+    expect(sourceCode).not.toContain('<T extends TripDetailItem');
     const nonNullAssertionPattern = new RegExp('[a-zA-Z0-9_\\)\\]]!(?!=)');
     expect(sourceCode).not.toMatch(nonNullAssertionPattern);
+  });
+
+  it('PR82-H23 (Nuevo Obligatorio): sin initialTrip ni fetcher, carga directo parsed.data como LiveTripState sin casteo genérico', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          id: '11111111-1111-1111-1111-111111111111',
+          status: 'in_transit',
+        },
+      }),
+    } as Response);
+
+    const { result } = renderHook(
+      () => useTrip('11111111-1111-1111-1111-111111111111', undefined),
+      { wrapper }
+    );
+
+    await waitFor(() => {
+      expect(result.current.trip).toEqual({
+        id: '11111111-1111-1111-1111-111111111111',
+        status: 'in_transit',
+      });
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/live/trips/11111111-1111-1111-1111-111111111111',
+      { cache: 'no-store' }
+    );
   });
 
   it('DoD: Con push apagado, el cambio de estado se actualiza al volver a la app (focus)', async () => {
@@ -183,7 +215,7 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime vía /api/li
     }
   });
 
-  it('PR82-H10 / H19: refetch consume /api/live/trips/[tripId] en vez de devolver siempre initialTrip', async () => {
+  it('PR82-H10 / H19 / H27: refetch consume /api/live/trips/[tripId] con cache: no-store', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -210,10 +242,13 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime vía /api/li
       expect(result.current.trip?.status).toBe('in_transit');
     });
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/live/trips/11111111-1111-1111-1111-111111111111');
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/live/trips/11111111-1111-1111-1111-111111111111',
+      { cache: 'no-store' }
+    );
   });
 
-  it('PR82-H10: preserva el shape completo de T al actualizar el status sin recortar campos de initialTrip', async () => {
+  it('PR82-H10: preserva el shape completo al actualizar el status sin recortar campos de initialTrip', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({
       ok: true,
       status: 200,
