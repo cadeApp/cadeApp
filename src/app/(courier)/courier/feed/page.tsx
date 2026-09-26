@@ -8,7 +8,7 @@ import {
 } from '@/features/offers/server';
 
 export default async function CourierFeedPage() {
-  const [statusInfo, minOfferArs, requests] = await Promise.all([
+  const [statusInfo, minOfferArs, feedPage] = await Promise.all([
     getCourierStatusAndAvailability(),
     getPlatformMinOfferArs(),
     getAvailableRequests(),
@@ -18,7 +18,8 @@ export default async function CourierFeedPage() {
     <CourierFeed
       courierStatus={statusInfo.status}
       isAvailable={statusInfo.available}
-      requests={requests}
+      requests={feedPage.requests}
+      initialNextCursor={feedPage.nextCursor}
       minOfferArs={minOfferArs}
     />
   );

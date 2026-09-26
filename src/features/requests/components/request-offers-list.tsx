@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
-import { Clock, ShieldCheck, Bike, Car, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Clock, ShieldCheck, AlertCircle, AlertTriangle, ArrowRight } from 'lucide-react';
 import { sortOffersForMerchant, type OfferSortOrder } from '@/domain/priority';
 import { formatArs } from '@/lib/format';
 import { Badge } from '@/ui/badge';
@@ -18,8 +18,10 @@ import {
 } from '@/ui/dialog';
 import { notify } from '@/ui/notify';
 import { acceptOfferAction } from '@/features/offers';
+import { requestsCopy } from '../copy';
 import { useRequestOffers } from '../hooks/use-request-offers';
 import type { MerchantOfferItem } from '../types';
+import type { LivePageCursor } from '@/lib/live-contracts';
 
 export interface RequestOffersListProps {
   request: {
@@ -35,7 +37,7 @@ export interface RequestOffersListProps {
     expiresAt: string | null;
   };
   initialOffers: readonly MerchantOfferItem[];
-  onRegisterRealtime?: (callback: (newOffer: MerchantOfferItem) => void) => void;
+  initialNextCursor?: LivePageCursor | null;
   onAcceptSuccess?: (offerId: string) => void;
 }
 
@@ -70,37 +72,31 @@ function getPackageLabel(packageType: string): string {
 export function RequestOffersList({
   request,
   initialOffers,
-  onRegisterRealtime,
+  initialNextCursor,
   onAcceptSuccess,
 }: RequestOffersListProps) {
-  const { offers, setOffers } = useRequestOffers(request.id, initialOffers);
+  const {
+    offers,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isError,
+    refetch,
+  } = useRequestOffers(request.id, initialOffers, initialNextCursor ?? null);
   const [sortOrder, setSortOrder] = useState<OfferSortOrder>('doc_level');
   const [selectedOffer, setSelectedOffer] = useState<MerchantOfferItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
-  // Soporte para callback artificial de tests previos si se proporciona
+  // Cronómetro de vencimiento sin non-null assertions
   useEffect(() => {
-    if (onRegisterRealtime) {
-      onRegisterRealtime((newOffer: MerchantOfferItem) => {
-        setOffers((prev) => {
-          const exists = prev.some((o) => o.id === newOffer.id);
-          if (exists) {
-            return prev.map((o) => (o.id === newOffer.id ? newOffer : o));
-          }
-          return [...prev, newOffer];
-        });
-      });
-    }
-  }, [onRegisterRealtime, setOffers]);
-
-  // Cronómetro de vencimiento
-  useEffect(() => {
-    if (!request.expiresAt) return;
+    const expiresAt = request.expiresAt;
+    if (!expiresAt) return;
+    const targetExpiresAt: string = expiresAt;
 
     function updateTimer() {
-      const expiresTime = new Date(request.expiresAt!).getTime();
+      const expiresTime = new Date(targetExpiresAt).getTime();
       const diffMs = expiresTime - Date.now();
 
       if (diffMs <= 0) {
@@ -247,18 +243,50 @@ export function RequestOffersList({
         </div>
       </div>
 
-      {/* Lista de ofertas */}
-      {sortedOffers.length === 0 ? (
-        <Card className="flex flex-col items-center justify-center border-dashed border-border bg-card p-8 text-center">
-          <div className="mb-3 rounded-xl border border-border bg-muted/40 p-3">
-            <Clock className="h-6 w-6 text-muted-foreground" />
+      {/* Estado de error si la sincronización en vivo falla */}
+      {isError && (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-center gap-2 text-sm text-destructive">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold text-foreground">
+                {requestsCopy.offers.errorLoadingOffers}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {requestsCopy.offers.errorDescription}
+              </p>
+            </div>
           </div>
-          <h3 className="text-base font-semibold text-foreground">Esperando ofertas</h3>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Los repartidores de Aguilares están viendo tu solicitud. Las ofertas van a aparecer acá
-            en tiempo real sin recargar la página.
-          </p>
-        </Card>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void refetch()}
+            className="self-end sm:self-center"
+          >
+            {requestsCopy.offers.retryButton}
+          </Button>
+        </div>
+      )}
+
+      {/* Lista de ofertas o Empty State */}
+      {sortedOffers.length === 0 ? (
+        !isError && (
+          <Card className="flex flex-col items-center justify-center border-dashed border-border bg-card p-8 text-center">
+            <div className="mb-3 rounded-xl border border-border bg-muted/40 p-3">
+              <Clock className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">
+              {requestsCopy.offers.waitingOffers}
+            </h3>
+            <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+              {requestsCopy.offers.waitingOffersDescription}
+            </p>
+          </Card>
+        )
       ) : (
         <div className="flex flex-col space-y-3">
           {sortedOffers.map((offer) => (
@@ -321,6 +349,20 @@ export function RequestOffersList({
               </div>
             </Card>
           ))}
+          {hasNextPage && !isError && (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage
+                  ? requestsCopy.offers.loadingMore
+                  : requestsCopy.offers.loadMore}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

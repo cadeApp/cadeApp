@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { Badge } from '@/ui/badge';
+import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
 import { AvailabilitySwitch } from '@/features/availability';
@@ -14,6 +15,9 @@ import { UnderReview } from './under-review';
 import { RequestCard } from './request-card';
 import type { OfferSheetProps } from './offer-sheet';
 import { FeedSkeleton } from './feed-skeleton';
+import { useAvailableRequests } from '../hooks/use-available-requests';
+
+import type { LivePageCursor } from '@/lib/live-contracts';
 
 const OfferSheet = dynamic<OfferSheetProps>(
   () => import('./offer-sheet').then((mod) => mod.OfferSheet),
@@ -24,6 +28,7 @@ export interface CourierFeedProps {
   courierStatus: CourierStatus;
   isAvailable: boolean;
   requests: AvailableRequestItem[];
+  initialNextCursor?: LivePageCursor | null;
   minOfferArs: number;
   isLoading?: boolean;
 }
@@ -31,13 +36,26 @@ export interface CourierFeedProps {
 export function CourierFeed({
   courierStatus,
   isAvailable: initialAvailable,
-  requests,
+  requests: initialRequests,
+  initialNextCursor,
   minOfferArs,
   isLoading = false,
 }: CourierFeedProps) {
   const [available, setAvailable] = useState<boolean>(initialAvailable);
   const [selectedRequest, setSelectedRequest] = useState<AvailableRequestItem | null>(null);
   const [isOfferSheetOpen, setIsOfferSheetOpen] = useState<boolean>(false);
+
+  const {
+    requests: liveRequests,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isError,
+    refetch,
+  } = useAvailableRequests(initialRequests, initialNextCursor ?? null, {
+    enabled: available && courierStatus === 'approved',
+  });
+  const requests = liveRequests ?? initialRequests;
 
   // DoD 1: Repartidor en estado pending ve "En revisión" (R03)
   if (courierStatus === 'pending') {
@@ -135,6 +153,40 @@ export function CourierFeed({
         <>
           {isLoading ? (
             <FeedSkeleton />
+          ) : isError ? (
+            <div className="space-y-4">
+              <div
+                role="alert"
+                className="flex flex-col gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-foreground">{OFFERS_COPY.feedErrorTitle}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {OFFERS_COPY.feedErrorDescription}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void refetch()}
+                  className="self-end sm:self-center"
+                >
+                  {OFFERS_COPY.retryButton}
+                </Button>
+              </div>
+
+              {requests.length > 0 && (
+                <div className="space-y-3">
+                  {requests.map((req) => (
+                    <RequestCard key={req.id} request={req} onOfferClick={handleOpenOfferSheet} />
+                  ))}
+                </div>
+              )}
+            </div>
           ) : requests.length === 0 ? (
             <EmptyState
               icon={<Radio className="h-8 w-8 text-muted-foreground" />}
@@ -146,6 +198,18 @@ export function CourierFeed({
               {requests.map((req) => (
                 <RequestCard key={req.id} request={req} onOfferClick={handleOpenOfferSheet} />
               ))}
+              {hasNextPage && !isError && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                  >
+                    {isFetchingNextPage ? OFFERS_COPY.loadingMore : OFFERS_COPY.loadMore}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </>

@@ -9,6 +9,7 @@ import type {
   MerchantMetrics,
 } from './types';
 import type { PackageType, RecipientPaymentMethod, DeliveryRequestStatus } from '@/domain/schemas';
+import type { LivePageCursor } from '@/lib/live-contracts';
 
 export const historyFilterStatusSchema = z.enum(['all', 'delivered', 'cancelled', 'expired']);
 export type HistoryFilterStatus = z.infer<typeof historyFilterStatusSchema>;
@@ -651,6 +652,7 @@ export async function getMerchantRequestWithOffers(
 ): Promise<{
   request: MerchantRequestDetail;
   offers: MerchantOfferItem[];
+  nextOffersCursor: LivePageCursor | null;
 } | null> {
   const supabase = await createClient();
 
@@ -729,15 +731,19 @@ export async function getMerchantRequestWithOffers(
     `
     )
     .eq('request_id', requestId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(51);
 
   if (offersError) {
     throw new Error(`Error al cargar ofertas de la solicitud: ${offersError.message}`);
   }
 
   const rawOffers = (offersData as unknown as RawOfferItem[] | null) ?? [];
+  const hasMore = rawOffers.length > 50;
+  const pageRows = rawOffers.slice(0, 50);
 
-  const offers: MerchantOfferItem[] = rawOffers.map((o) => {
+  const offers: MerchantOfferItem[] = pageRows.map((o) => {
     const courierObj = Array.isArray(o.courier) ? o.courier[0] : o.courier;
     const profileObj = courierObj?.profile
       ? Array.isArray(courierObj.profile)
@@ -764,5 +770,9 @@ export async function getMerchantRequestWithOffers(
     };
   });
 
-  return { request, offers };
+  const tail = pageRows.at(-1);
+  const nextOffersCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { request, offers, nextOffersCursor };
 }
