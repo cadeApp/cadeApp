@@ -7,10 +7,12 @@ export interface ApplicantListItem {
   readonly fullName: string;
   readonly dniHash: string;
   readonly phone: string;
-  readonly vehicleType: string;
+  readonly vehicleType: 'walk' | 'bike' | 'moto' | 'car';
   readonly status: AdminApplicantTab;
   readonly docLevel: CourierDocLevel;
   readonly createdAt: string;
+  readonly licenseStatus: 'none' | 'submitted' | 'verified' | 'rejected';
+  readonly insuranceStatus: 'none' | 'submitted' | 'verified' | 'rejected';
   readonly documentsSummary: {
     readonly hasDniFront: boolean;
     readonly hasDniBack: boolean;
@@ -22,11 +24,10 @@ export interface ApplicantListItem {
 
 export interface ApplicantDocumentDetail {
   readonly id: string;
-  readonly documentType: 'dni_front' | 'dni_back' | 'selfie' | 'driver_license' | 'vehicle_insurance';
+  readonly documentType: 'dni_front' | 'dni_back' | 'selfie' | 'avatar' | 'license' | 'insurance';
   readonly storagePath: string;
-  readonly verified: boolean;
-  readonly verifiedAt: string | null;
-  readonly rejectionReason: string | null;
+  readonly status: 'none' | 'submitted' | 'verified' | 'rejected';
+  readonly uploadedAt: string;
 }
 
 export interface ApplicantDetail {
@@ -34,11 +35,15 @@ export interface ApplicantDetail {
   readonly fullName: string;
   readonly dniHash: string;
   readonly phone: string;
-  readonly vehicleType: string;
+  readonly vehicleType: 'walk' | 'bike' | 'moto' | 'car';
   readonly vehiclePlate: string | null;
   readonly status: AdminApplicantTab;
-  readonly rejectionReason: string | null;
-  readonly suspensionReason: string | null;
+  readonly docLevel: CourierDocLevel;
+  readonly licenseStatus: 'none' | 'submitted' | 'verified' | 'rejected';
+  readonly insuranceStatus: 'none' | 'submitted' | 'verified' | 'rejected';
+  readonly decidedAt: string | null;
+  readonly decidedBy: string | null;
+  readonly deactivatedAt: string | null;
   readonly createdAt: string;
   readonly documents: readonly ApplicantDocumentDetail[];
 }
