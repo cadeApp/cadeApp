@@ -1,17 +1,17 @@
 # Lecciones de la PR #98
 
-## Ronda 3
+## Ronda 4
 
-### P08 · Una cadena de compensaciones no reemplaza un invariante
+### Un mock de INSERT no prueba constraints reales de la DB
 
-H06 muestra el límite de apilar rollback sobre rollback: si cada compensación puede fallar, agregar otra llamada best-effort no demuestra estado seguro. Cuando el requisito es “nunca utilizable sin consentimiento”, corresponde elevarlo a contrato de autorización/activación. P1 autorizó CC-007.
+H13 muestra que un unit test puede afirmar un payload inválido y quedar verde porque el mock nunca ejecuta la PK real. Cuando un contract-change modifica precondiciones compartidas, hay que revisar los writes posteriores contra constraints reales.
 
-### P08 + AGENTS · Un test textual no vigila el schema
+### Consentimientos deben ser idempotentes en reintentos
 
-H12: buscar `displayName` o `vehicleType` en el texto legal no detecta que el schema cambió. El control debe ejecutar/importar la fuente de verdad que dice vigilar. Además `any` está prohibido por AGENTS.
+Persistir evidencia antes de otros pasos del onboarding es válido, pero reintentar no puede fallar por volver a aceptar la misma versión. La clave `profile_id + document + version` permite un write idempotente que preserve el timestamp original.
 
-### P10 · Excepción de scope explícita
+### Axe no es sinónimo de un checker estructural propio
 
-A02 confirma el procedimiento correcto: un path fuera de la ficha puede tocarse solo tras decisión P1 concreta y limitada; la excepción no amplía implícitamente el resto del scope.
+Un auditor DOM interno suma cobertura, pero no sustituye una exigencia explícita de axe. Si el DoD pide capturas y axe, deben existir artefactos reproducibles asociados al SHA.
 
-No se propone una regla AG nueva: P08/P10 ya cubren las clases observadas.
+No se propone una regla AG nueva: AG-61/63 y AG-70 ya cubren test efectivo y evidencia verificable.

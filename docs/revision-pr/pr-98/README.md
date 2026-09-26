@@ -6,9 +6,9 @@
 | **Tarea** | T-311 (Fase 3) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-311-legal-consents` → `develop` |
-| **Base revisada** | `develop@7edcfe0` |
-| **SHA revisado** | `c47aee486cf87c491ce62b231eda8795e34aa722` |
-| **Estado** | **bloqueada por contract-change CC-007 · Ronda 3** |
+| **Base revisada** | `develop@ac4587f` |
+| **SHA revisado** | `cccb88c460a858d85d15b77e6df5d19a20596aea` |
+| **Estado** | **con bloqueantes · Ronda 4** |
 
 ## Rondas
 
@@ -16,22 +16,16 @@
 |---|---|---|---|
 | 1 | `09082af` | 9 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `c5c7371` | 5 bloqueantes | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
-| 3 | `c47aee4` | 3 bloqueantes de PR + CC-007 requerido | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 3 | `c47aee4` | bloqueada por CC-007 | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `cccb88c` | 2 bloqueantes + 1 estado documental | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 
-## Estado
+## Estado R4
 
-Cerrados en R3: **H01, H11**.  
-Decisiones aceptadas: **A02** (excepción T-312) y **A03** (contract-change).  
-Abiertos: **H06, H08, H09, H12**.
+Cerrados: **H06, H12**.
 
-H06 no se corrige dentro de PR #98: T-311 debe detenerse hasta que **CC-007** se mergee.
+Abiertos:
+- **H08:** falta evidencia reproducible de capturas + axe real.
+- **H09:** body/bitácora sobredeclaran H08 mientras siga sin evidencia.
+- **H13:** el onboarding courier re-inserta TOS/Privacy y rompe por la PK de `consents`; las escrituras tampoco son idempotentes en reintentos.
 
-## Próximo flujo
-
-1. AGY hace `git pull` de esta revisión.
-2. Ejecuta `cerrar-sesion` para T-311 y la deja bloqueada por CC-007.
-3. Crea `cc/CC-007-consent-enforcement` desde `develop` siguiendo `contract-change`.
-4. CC-007 se revisa/mergea primero.
-5. Se retoma T-311 con `retomar-tarea`.
-6. Se integran el nuevo contrato, H08, H09 y H12.
-7. Recién entonces Ronda 4 + CI final.
+No se inspecciona CI final mientras existan H08/H13.
