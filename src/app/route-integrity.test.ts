@@ -11,9 +11,13 @@ import {
   type AuthSession,
 } from '@/features/auth';
 import * as serverSupabase from '@/server/supabase/server';
+import * as adminSupabase from '@/server/supabase/admin';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
+}));
+vi.mock('@/server/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
 }));
 
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -403,10 +407,13 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       }
     });
 
-    it('incluye src/app/(public)/layout.tsx en la auditoría, muestra texto explícito "en publicación · T-311" y no emite links rotos (/terms, /privacy, /admin, /admin/mfa)', () => {
+    it('incluye src/app/(public)/layout.tsx en la auditoría y enlaza documentos legales publicados sin destinos rotos', () => {
       const publicLayoutPath = path.join(ROOT_DIR, 'app/(public)/layout.tsx');
       const publicLayoutContent = fs.readFileSync(publicLayoutPath, 'utf-8');
-      expect(publicLayoutContent).toContain('en publicación · T-311');
+      expect(publicLayoutContent).toContain('/legal/terms');
+      expect(publicLayoutContent).toContain('/legal/privacy');
+      expect(publicLayoutContent).toContain('/legal/courier');
+      expect(publicLayoutContent).toContain('/legal/pilot');
 
       const allScopeFiles = getAllT118ScopeFiles();
       expect(allScopeFiles).toContain(publicLayoutPath);
@@ -500,6 +507,12 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
     });
 
     it('registerAction redirige a onboarding específico de cada rol para usuarios nuevos', async () => {
+      const mockInsertConsents = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: vi.fn().mockReturnValue({ insert: mockInsertConsents }),
+        rpc: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
       const mockSignUp = vi.fn().mockImplementation(async () => ({
         data: { user: { id: 'usr-new-1', email: 'test@test.com' }, session: null },
         error: null,
@@ -516,6 +529,8 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         password: 'password123',
         role: 'merchant',
         acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(merchantRes.ok).toBe(true);
@@ -528,6 +543,8 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         password: 'password123',
         role: 'courier',
         acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(courierRes.ok).toBe(true);

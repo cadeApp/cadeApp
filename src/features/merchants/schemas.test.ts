@@ -12,6 +12,7 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
     defaultPickupLng: -65.61,
     notes: 'Portón verde al lado de la farmacia',
     acceptPilotTerms: true,
+    pilotTermsVersion: '1.0',
   };
 
   it('valida exitosamente un alta completa con coordenadas dentro de Aguilares', () => {

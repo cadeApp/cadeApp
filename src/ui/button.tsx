@@ -13,6 +13,7 @@ export const buttonVariants = cva(
         outline: 'border border-border bg-card text-foreground hover:bg-muted',
         ghost: 'text-foreground hover:bg-muted',
         destructive: 'bg-destructive text-destructive-foreground hover:opacity-95',
+        whatsapp: 'bg-whatsapp text-whatsapp-foreground hover:bg-whatsapp-hover',
         link: 'text-primary-dark underline-offset-4 hover:underline',
       },
       size: {

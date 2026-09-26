@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Store, Phone, MapPin, Crosshair, Info, AlertTriangle, AlertCircle } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
@@ -14,6 +14,8 @@ import { merchantCopy } from '../copy';
 import { merchantOnboardingSchema, type MerchantOnboardingInput } from '../schemas';
 import { useForm, zodResolver } from './form-hooks';
 import type { ZoneOption } from '../queries';
+import Link from 'next/link';
+import { getLegalDocument } from '@/features/legal';
 
 interface MerchantOnboardingFormProps {
   readonly zones: ZoneOption[];
@@ -43,6 +45,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
       defaultPickupLng: null,
       notes: '',
       acceptPilotTerms: false as unknown as true,
+      pilotTermsVersion: getLegalDocument('pilot_terms').version,
     },
   });
 
@@ -327,20 +330,21 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             <input
               id="pilotTerms"
               type="checkbox"
+              aria-labelledby="pilot-terms-label"
               {...register('acceptPilotTerms')}
               className="h-5 w-5 rounded border-input text-primary focus:ring-ring"
             />
           </label>
-          <label
-            htmlFor="pilotTerms"
-            className="cursor-pointer text-sm leading-relaxed text-muted-foreground"
-          >
+          <p id="pilot-terms-label" className="text-sm leading-relaxed text-muted-foreground">
             {merchantCopy.onboarding.acceptTermsPrefix}{' '}
-            <span className="font-semibold text-foreground">
+            <Link
+              href="/legal/pilot"
+              className="rounded-sm font-semibold text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               {merchantCopy.onboarding.pilotTermsLink}
-            </span>{' '}
-            <span className="text-muted-foreground">(en publicación · T-311)</span>
-          </label>
+            </Link>
+            .
+          </p>
         </div>
         {errors.acceptPilotTerms && (
           <p className="text-sm text-destructive">{errors.acceptPilotTerms.message}</p>

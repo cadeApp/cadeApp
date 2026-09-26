@@ -3,14 +3,29 @@ import { registerSchema } from './schemas';
 import { registerAction, loginAction, logoutAction } from './actions';
 import { getRoleDefaultPath } from './guards';
 import * as serverSupabase from '@/server/supabase/server';
+import * as adminSupabase from '@/server/supabase/admin';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
+}));
+vi.mock('@/server/supabase/admin', () => ({
+  createAdminClient: vi.fn(),
 }));
 
 describe('T-009: Auth actions y esquemas de registro', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        insert: vi.fn().mockResolvedValue({ error: null }),
+      }),
+      rpc: vi.fn().mockResolvedValue({ data: { success: true }, error: null }),
+      auth: {
+        admin: {
+          deleteUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
+        },
+      },
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
   });
 
   describe('Registro y validación de roles permitidos', () => {
@@ -19,11 +34,17 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       };
       const courierInput = {
         email: 'repartidor@test.com',
         password: 'password123',
         role: 'courier',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       };
 
       expect(registerSchema.safeParse(merchantInput).success).toBe(true);
@@ -65,6 +86,9 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(result.ok).toBe(true);
@@ -99,6 +123,9 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'courier@test.com',
         password: 'password123',
         role: 'courier',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(result.ok).toBe(true);
@@ -151,6 +178,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         password: 'password123',
         role: 'merchant',
         acceptTerms: false,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(result.ok).toBe(false);
@@ -158,6 +187,227 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         expect(result.code).toBe('VALIDATION_ERROR');
       }
       expect(mockSignUp).not.toHaveBeenCalled();
+    });
+
+    it('registerAction rechaza versión no vigente (0.9) de TOS con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
+      const mockSignUp = vi.fn();
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'comercio@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '0.9',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+      expect(mockSignUp).not.toHaveBeenCalled();
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it('registerAction rechaza versión no vigente (0.9) de Privacidad con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
+      const mockSignUp = vi.fn();
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'repartidor@test.com',
+        password: 'password123',
+        role: 'courier',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '0.9',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+      expect(mockSignUp).not.toHaveBeenCalled();
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it('registerAction invoca activate_account_consents y ejecuta cleanup deleteUser si la activación falla (H06 / CC-007)', async () => {
+      const deleteUserSpy = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
+      const rpcSpy = vi.fn().mockResolvedValue({ error: { message: 'Database failure on activate_account_consents' } });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        rpc: rpcSpy,
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-fail-consent-1', email: 'merchant@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INTERNAL_ERROR');
+      }
+      expect(mockSignUp).toHaveBeenCalledTimes(1);
+      expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
+        p_user_id: 'usr-fail-consent-1',
+        p_tos_version: '1.0',
+        p_privacy_version: '1.0',
+      });
+      expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-1');
+    });
+
+    it('registerAction devuelve INTERNAL_ERROR y no lanza excepción si deleteUser devuelve { error } (H06 / CC-007)', async () => {
+      const deleteUserSpy = vi.fn().mockResolvedValue({
+        data: { user: null },
+        error: new Error('delete failed'),
+      });
+      const rpcSpy = vi.fn().mockResolvedValue({ error: { message: 'RPC failure' } });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        rpc: rpcSpy,
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-fail-consent-2', email: 'merchant2@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant2@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INTERNAL_ERROR');
+      }
+      expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-2');
+    });
+
+    it('registerAction devuelve INTERNAL_ERROR y no lanza excepción si deleteUser rechaza con error de red (H06 / CC-007)', async () => {
+      const deleteUserSpy = vi.fn().mockRejectedValue(new Error('network failure'));
+      const rpcSpy = vi.fn().mockResolvedValue({ error: { message: 'RPC failure' } });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        rpc: rpcSpy,
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-fail-consent-3', email: 'merchant3@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant3@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INTERNAL_ERROR');
+      }
+      expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-3');
+    });
+
+    it('registerAction jamás invoca deleteUser si activate_account_consents fue exitoso (H06 / CC-007)', async () => {
+      const deleteUserSpy = vi.fn();
+      const rpcSpy = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        rpc: rpcSpy,
+        auth: {
+          admin: {
+            deleteUser: deleteUserSpy,
+          },
+        },
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-success-1', email: 'merchant@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'merchant@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
+        p_user_id: 'usr-success-1',
+        p_tos_version: '1.0',
+        p_privacy_version: '1.0',
+      });
+      expect(deleteUserSpy).not.toHaveBeenCalled();
     });
   });
 
