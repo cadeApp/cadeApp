@@ -90,7 +90,7 @@ select ok(
 );
 
 -- 3. UNAUTHENTICATED cuando no hay sesión
-select pg_temp.act_as('anon');
+select pg_temp.act_as('authenticated', null);
 select throws_ok(
   $$select public.calculate_route_distance(-27.432000, -65.615000, -27.425000, -65.608000)$$,
   'P0001',
