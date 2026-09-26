@@ -1,9 +1,11 @@
 'use server';
 
 import { createClient } from '@/server/supabase/server';
+import { createAdminClient } from '@/server/supabase/admin';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
+import { getLegalDocument } from '@/features/legal';
 import { merchantOnboardingSchema } from './schemas';
 
 export interface MerchantOnboardingResult {
@@ -72,14 +74,32 @@ export async function merchantOnboardingAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 4. Registro de consentimiento de términos del piloto
+  const legacyVersion = /^v(\d+)$/.exec(pilotTermsVersion);
+  const normalizedPilotTermsVersion = legacyVersion ? `${legacyVersion[1]}.0` : pilotTermsVersion;
+  const publishedPilotTermsVersion = getLegalDocument('pilot_terms').version;
+
+  if (normalizedPilotTermsVersion !== publishedPilotTermsVersion) {
+    return err('INTERNAL_ERROR');
+  }
+
+  if (parsed.data.pilotTermsVersion !== normalizedPilotTermsVersion) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // 4. Registro de la versión que el comercio vio y aceptó
   const consentPayload: TablesInsert<'consents'> = {
     profile_id: user.id,
     document: 'pilot_terms',
-    version: pilotTermsVersion,
+    version: parsed.data.pilotTermsVersion,
   };
 
-  const { error: consentError } = await supabase.from('consents').insert(consentPayload as never);
+  const adminClient = createAdminClient();
+  const { error: consentError } = await adminClient
+    .from('consents')
+    .upsert(consentPayload as never, {
+      onConflict: 'profile_id,document,version',
+      ignoreDuplicates: true,
+    });
 
   if (consentError) {
     return err('INTERNAL_ERROR');
