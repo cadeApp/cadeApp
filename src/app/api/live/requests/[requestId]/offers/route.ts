@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { getRequestOffersLiveServer } from '@/server/live/t204';
+import { livePageCursorSchema, type LivePageCursor } from '@/lib/live-contracts';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,11 +9,36 @@ const NO_CACHE_HEADERS = {
 };
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest | Request,
   { params }: { params: Promise<{ requestId: string }> }
 ) {
   const { requestId } = await params;
-  const result = await getRequestOffersLiveServer(requestId);
+  const url = request?.url ? new URL(request.url) : null;
+  const cursorCreatedAt = url?.searchParams.get('cursorCreatedAt') ?? null;
+  const cursorId = url?.searchParams.get('cursorId') ?? null;
+
+  let cursor: LivePageCursor | null = null;
+  if (cursorCreatedAt || cursorId) {
+    if (!cursorCreatedAt || !cursorId) {
+      return NextResponse.json(
+        { error: 'INVALID_CURSOR' },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
+    }
+    const parsed = livePageCursorSchema.safeParse({
+      createdAt: cursorCreatedAt,
+      id: cursorId,
+    });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'INVALID_CURSOR' },
+        { status: 400, headers: NO_CACHE_HEADERS }
+      );
+    }
+    cursor = parsed.data;
+  }
+
+  const result = await getRequestOffersLiveServer(requestId, cursor);
 
   if (!result.ok) {
     return NextResponse.json(
@@ -24,11 +50,9 @@ export async function GET(
     );
   }
 
-  return NextResponse.json(
-    { data: result.data },
-    {
-      status: 200,
-      headers: NO_CACHE_HEADERS,
-    }
-  );
+  return NextResponse.json(result.data, {
+    status: 200,
+    headers: NO_CACHE_HEADERS,
+  });
 }
+

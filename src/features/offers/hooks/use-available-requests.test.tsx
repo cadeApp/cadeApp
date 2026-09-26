@@ -300,6 +300,7 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
           myOfferAmountArs: 1500,
         },
       ],
+      nextCursor: null,
     };
 
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({
@@ -356,4 +357,138 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     expect(result.current.requests).toHaveLength(1);
     expect(result.current.error?.message).toContain('HTTP 500');
   });
+
+  describe('PR82-H28: Paginación keyset en feed de solicitudes', () => {
+    const cursor = {
+      createdAt: '2026-09-26T12:00:00.000Z',
+      id: '11111111-1111-1111-1111-111111111111',
+    };
+
+    it('render inicial con initialData expone initialRequests y hasNextPage booleano según cursor', () => {
+      const { result: withoutCursor } = renderHook(
+        () => useAvailableRequests(initialRequests, null),
+        { wrapper }
+      );
+      expect(withoutCursor.current.requests).toHaveLength(1);
+      expect(withoutCursor.current.hasNextPage).toBe(false);
+
+      queryClient.clear();
+
+      const { result: withCursor } = renderHook(
+        () => useAvailableRequests(initialRequests, cursor),
+        { wrapper }
+      );
+      expect(withCursor.current.requests).toHaveLength(1);
+      expect(withCursor.current.hasNextPage).toBe(true);
+    });
+
+    it('fetchNextPage llama a /api/live/available-requests con cursorCreatedAt y cursorId en searchParams', async () => {
+      const page2Item: AvailableRequestItem = {
+        id: '22222222-2222-2222-2222-222222222222',
+        pickupZoneName: 'Sur',
+        dropoffZoneName: 'Centro',
+        approxDistanceKm: '1,0',
+        packageType: 'small',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        cashChangeAmount: null,
+        notes: null,
+        publishedAt: '2026-09-26T11:00:00.000Z',
+        expiresAt: null,
+        hasMyOffer: false,
+        myOfferAmountArs: null,
+      };
+
+      const { result } = renderHook(
+        () => useAvailableRequests(initialRequests, cursor),
+        { wrapper }
+      );
+
+      expect(result.current.hasNextPage).toBe(true);
+
+      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [page2Item],
+          nextCursor: null,
+        }),
+      } as Response);
+
+      await act(async () => {
+        await result.current.fetchNextPage();
+      });
+
+      await waitFor(() => {
+        expect(result.current.requests).toHaveLength(2);
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `/api/live/available-requests?cursorCreatedAt=${encodeURIComponent(
+          cursor.createdAt
+        )}&cursorId=${cursor.id}`,
+        { cache: 'no-store' }
+      );
+      expect(result.current.hasNextPage).toBe(false);
+    });
+
+    it('los ítems de la siguiente página se concatenan y deduplican por id sin mutar la caché', async () => {
+      const duplicateFirstItem = { ...initialRequests[0] };
+      const uniqueSecondItem: AvailableRequestItem = {
+        id: '33333333-3333-3333-3333-333333333333',
+        pickupZoneName: 'Oeste',
+        dropoffZoneName: 'Este',
+        approxDistanceKm: '2,5',
+        packageType: 'medium',
+        recipientPaymentMethod: 'transfer',
+        needsChange: false,
+        cashChangeAmount: null,
+        notes: null,
+        publishedAt: '2026-09-26T10:00:00.000Z',
+        expiresAt: null,
+        hasMyOffer: false,
+        myOfferAmountArs: null,
+      };
+
+      const { result } = renderHook(
+        () => useAvailableRequests(initialRequests, cursor),
+        { wrapper }
+      );
+
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [duplicateFirstItem, uniqueSecondItem],
+          nextCursor: null,
+        }),
+      } as Response);
+
+      await act(async () => {
+        await result.current.fetchNextPage();
+      });
+
+      await waitFor(() => {
+        // Deben ser 2, no 3, porque duplicateFirstItem ya existía en la página inicial
+        expect(result.current.requests).toHaveLength(2);
+      });
+
+      const firstId = initialRequests[0]?.id;
+      expect(result.current.requests.map((r) => r.id)).toEqual([
+        firstId,
+        uniqueSecondItem.id,
+      ]);
+    });
+
+    it('control estático: use-available-requests.ts no tiene setQueryData, no tiene setOffers y no tiene non-null assertions', () => {
+      const hookPath = path.resolve(__dirname, 'use-available-requests.ts');
+      const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+      expect(sourceCode).not.toContain('setQueryData');
+      expect(sourceCode).not.toContain('setOffers');
+      const nonNullAssertionPattern = new RegExp('[a-zA-Z0-9_\\)\\]]!(?!=)');
+      expect(sourceCode).not.toMatch(nonNullAssertionPattern);
+    });
+  });
 });
+

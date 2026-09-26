@@ -5,6 +5,7 @@ import {
   getMerchantDefaultPickup,
   getMerchantHistoryRequests,
   getMerchantRequests,
+  getMerchantRequestWithOffers,
   parseMerchantHistorySearchParams,
 } from './queries';
 
@@ -867,6 +868,120 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(limitIdx).toBeGreaterThan(-1);
       expect(inIdx).toBeLessThan(limitIdx);
       expect(res.requests.map((r) => r.id)).toEqual(['req-active-1', 'req-active-2']);
+    });
+  });
+
+  describe('getMerchantRequestWithOffers', () => {
+    const validUuid = '11111111-1111-1111-1111-111111111111';
+    const mockRequestRow = {
+      id: validUuid,
+      approx_distance_m: 1500,
+      package_type: 'small',
+      recipient_payment_method: 'cash',
+      needs_change: false,
+      cash_change_amount: null,
+      notes: null,
+      status: 'published',
+      expires_at: null,
+      created_at: '2026-09-26T12:00:00.000Z',
+      accepted_offer_id: null,
+      pickup_zone: { name: 'Centro' },
+      dropoff_zone: { name: 'Aguilares' },
+    };
+
+    it('retorna request, offers y nextOffersCursor null cuando hay <= 50 ofertas', async () => {
+      const mockOffers = [
+        {
+          id: '22222222-2222-2222-2222-222222222222',
+          courier_id: 'courier-1',
+          amount_ars: 2000,
+          eta_minutes: 15,
+          message: null,
+          status: 'pending',
+          created_at: '2026-09-26T12:05:00.000Z',
+          courier: {
+            vehicle_type: 'motorcycle',
+            license_status: 'verified',
+            insurance_status: 'verified',
+            doc_level: 2,
+            profile: { display_name: 'Carlos' },
+          },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: mockRequestRow, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: mockOffers, error: null }),
+            };
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(result).not.toBeNull();
+      expect(result?.offers).toHaveLength(1);
+      expect(result?.nextOffersCursor).toBeNull();
+    });
+
+    it('pagina ofertas con limit(51), retorna 50 ítems y nextOffersCursor con datos de fila 50', async () => {
+      const fiftyOneOffers = Array.from({ length: 51 }, (_, i) => ({
+        id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
+        courier_id: `courier-${i + 1}`,
+        amount_ars: 2000 + i * 10,
+        eta_minutes: 15,
+        message: null,
+        status: 'pending',
+        created_at: `2026-09-26T12:${String(59 - i).padStart(2, '0')}:00.000Z`,
+        courier: {
+          vehicle_type: 'motorcycle',
+          license_status: 'verified',
+          insurance_status: 'none',
+          doc_level: 1,
+          profile: { display_name: `Courier ${i + 1}` },
+        },
+      }));
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: mockRequestRow, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: fiftyOneOffers, error: null }),
+            };
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(result).not.toBeNull();
+      expect(result?.offers).toHaveLength(50);
+      const targetOffer = fiftyOneOffers[49];
+      expect(result?.nextOffersCursor).toEqual(
+        targetOffer ? { createdAt: targetOffer.created_at, id: targetOffer.id } : null
+      );
     });
   });
 });

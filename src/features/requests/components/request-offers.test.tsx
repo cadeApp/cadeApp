@@ -236,6 +236,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       status: 200,
       json: async () => ({
         data: [...initialOffers, incomingOffer],
+        nextCursor: null,
       }),
     } as Response);
 
@@ -313,5 +314,89 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
     // NO debe mostrar la tarjeta de esperando ofertas
     expect(screen.queryByText(requestsCopy.offers.waitingOffers)).toBeNull();
+  });
+
+  it('PR82-H28: muestra el botón "Cargar más" si initialNextCursor existe y lo oculta si es null', () => {
+    const cursor = {
+      createdAt: '2026-09-26T12:00:00.000Z',
+      id: '22222222-2222-2222-2222-222222222222',
+    };
+
+    const { unmount } = render(
+      <RequestOffersList
+        request={mockRequest}
+        initialOffers={initialOffers}
+        initialNextCursor={null}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: requestsCopy.offers.loadMore })).toBeNull();
+    unmount();
+
+    render(
+      <RequestOffersList
+        request={mockRequest}
+        initialOffers={initialOffers}
+        initialNextCursor={cursor}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: requestsCopy.offers.loadMore })).toBeDefined();
+  });
+
+  it('PR82-H28: al hacer clic en "Cargar más" recupera ofertas y el ordenamiento aplica sobre todas las ofertas cargadas', async () => {
+    const cursor = {
+      createdAt: '2026-09-26T12:00:00.000Z',
+      id: '22222222-2222-2222-2222-222222222222',
+    };
+
+    const page2Offer: MerchantOfferItem = {
+      id: '99999999-9999-9999-9999-999999999999',
+      courierId: '88888888-8888-8888-8888-888888888888',
+      courierName: 'Esteban Q.',
+      vehicleType: 'auto',
+      amountArs: 900,
+      etaMinutes: 10,
+      message: null,
+      licenseStatus: 'verified',
+      insuranceStatus: 'none',
+      docLevel: 1,
+      createdAt: '2026-09-26T11:40:00.000Z',
+    };
+
+    render(
+      <RequestOffersList
+        request={mockRequest}
+        initialOffers={initialOffers}
+        initialNextCursor={cursor}
+      />
+    );
+
+    const loadMoreBtn = screen.getByRole('button', { name: requestsCopy.offers.loadMore });
+    expect(loadMoreBtn).toBeDefined();
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [page2Offer],
+        nextCursor: null,
+      }),
+    } as Response);
+
+    await act(async () => {
+      fireEvent.click(loadMoreBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Esteban Q.')).toBeDefined();
+    });
+
+    // Ordenar por precio: Esteban Q. ($ 900) debe estar primero
+    const priceSortBtn = screen.getByRole('button', { name: /precio/i });
+    fireEvent.click(priceSortBtn);
+
+    const offerHeadings = screen.getAllByRole('heading', { level: 4 });
+    expect(offerHeadings[0]?.textContent).toBe('Esteban Q.');
   });
 });

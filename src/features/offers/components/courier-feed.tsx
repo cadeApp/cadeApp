@@ -17,6 +17,8 @@ import type { OfferSheetProps } from './offer-sheet';
 import { FeedSkeleton } from './feed-skeleton';
 import { useAvailableRequests } from '../hooks/use-available-requests';
 
+import type { LivePageCursor } from '@/lib/live-contracts';
+
 const OfferSheet = dynamic<OfferSheetProps>(
   () => import('./offer-sheet').then((mod) => mod.OfferSheet),
   { ssr: false }
@@ -26,6 +28,7 @@ export interface CourierFeedProps {
   courierStatus: CourierStatus;
   isAvailable: boolean;
   requests: AvailableRequestItem[];
+  initialNextCursor?: LivePageCursor | null;
   minOfferArs: number;
   isLoading?: boolean;
 }
@@ -34,6 +37,7 @@ export function CourierFeed({
   courierStatus,
   isAvailable: initialAvailable,
   requests: initialRequests,
+  initialNextCursor,
   minOfferArs,
   isLoading = false,
 }: CourierFeedProps) {
@@ -43,9 +47,12 @@ export function CourierFeed({
 
   const {
     requests: liveRequests,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
     isError,
     refetch,
-  } = useAvailableRequests(initialRequests, {
+  } = useAvailableRequests(initialRequests, initialNextCursor ?? null, {
     enabled: available && courierStatus === 'approved',
   });
   const requests = liveRequests ?? initialRequests;
@@ -191,6 +198,18 @@ export function CourierFeed({
               {requests.map((req) => (
                 <RequestCard key={req.id} request={req} onOfferClick={handleOpenOfferSheet} />
               ))}
+              {hasNextPage && !isError && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                  >
+                    {isFetchingNextPage ? OFFERS_COPY.loadingMore : OFFERS_COPY.loadMore}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </>

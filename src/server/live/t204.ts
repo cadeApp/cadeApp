@@ -4,9 +4,14 @@ import { createClient } from '@/server/supabase/server';
 import { getTripDetailsRpc } from '@/server/rpc/trips';
 import type {
   LiveAvailableRequestItem,
+  LiveFeedResponse,
   LiveMerchantOfferItem,
+  LiveOffersResponse,
+  LivePageCursor,
   LiveTripState,
 } from '@/lib/live-contracts';
+
+const LIVE_PAGE_SIZE = 50;
 
 export type LiveServerResult<T> =
   | { readonly ok: true; readonly data: T }
@@ -23,6 +28,7 @@ function formatApproxDistanceKm(distanceM: number | null): string {
 
 interface RawAvailableRequestRow {
   readonly id: string;
+  readonly created_at: string;
   readonly approx_distance_m: number | null;
   readonly package_type: string;
   readonly recipient_payment_method: string;
@@ -65,7 +71,9 @@ interface RawOfferRow {
  * - Consulta ofertas pendientes del courier para computar hasMyOffer y myOfferAmountArs.
  * - Jamás lee contactos, direcciones exactas ni coordenadas.
  */
-export async function getAvailableRequestsLiveServer(): Promise<LiveServerResult<LiveAvailableRequestItem[]>> {
+export async function getAvailableRequestsLiveServer(
+  cursor: LivePageCursor | null = null
+): Promise<LiveServerResult<LiveFeedResponse>> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -76,10 +84,11 @@ export async function getAvailableRequestsLiveServer(): Promise<LiveServerResult
     return { ok: false, error: 'UNAUTHENTICATED', status: 401 };
   }
 
-  const { data: requestsData, error: requestsError } = await supabase
+  let query = supabase
     .from('delivery_requests')
     .select(`
       id,
+      created_at,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -92,7 +101,17 @@ export async function getAvailableRequestsLiveServer(): Promise<LiveServerResult
       dropoff_zone:zones!dropoff_zone_id(name)
     `)
     .eq('status', 'published')
-    .order('published_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(LIVE_PAGE_SIZE + 1);
+
+  if (cursor) {
+    query = query.or(
+      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+    );
+  }
+
+  const { data: requestsData, error: requestsError } = await query;
 
   if (requestsError || !requestsData) {
     return { ok: false, error: 'DATABASE_ERROR', status: 500 };
@@ -100,10 +119,13 @@ export async function getAvailableRequestsLiveServer(): Promise<LiveServerResult
 
   const rows = requestsData as unknown as readonly RawAvailableRequestRow[];
   if (rows.length === 0) {
-    return { ok: true, data: [] };
+    return { ok: true, data: { data: [], nextCursor: null } };
   }
 
-  const requestIds = rows.map((r) => r.id);
+  const hasMore = rows.length > LIVE_PAGE_SIZE;
+  const pageRows = rows.slice(0, LIVE_PAGE_SIZE);
+
+  const requestIds = pageRows.map((r) => r.id);
   const myOffersMap = new Map<string, number>();
 
   const { data: userOffers, error: offersError } = await supabase
@@ -127,7 +149,7 @@ export async function getAvailableRequestsLiveServer(): Promise<LiveServerResult
     }
   }
 
-  const mapped: LiveAvailableRequestItem[] = rows.map((req) => {
+  const mapped: LiveAvailableRequestItem[] = pageRows.map((req) => {
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
@@ -150,7 +172,11 @@ export async function getAvailableRequestsLiveServer(): Promise<LiveServerResult
     };
   });
 
-  return { ok: true, data: mapped };
+  const tail = pageRows.at(-1);
+  const nextCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { ok: true, data: { data: mapped, nextCursor } };
 }
 
 /**
@@ -161,8 +187,9 @@ export async function getAvailableRequestsLiveServer(): Promise<LiveServerResult
  * - Si DB falla -> error controlado.
  */
 export async function getRequestOffersLiveServer(
-  requestId: string
-): Promise<LiveServerResult<LiveMerchantOfferItem[]>> {
+  requestId: string,
+  cursor: LivePageCursor | null = null
+): Promise<LiveServerResult<LiveOffersResponse>> {
   const parsedId = z.string().uuid().safeParse(requestId);
   if (!parsedId.success) {
     return { ok: false, error: 'INVALID_REQUEST_ID', status: 400 };
@@ -194,7 +221,7 @@ export async function getRequestOffersLiveServer(
     return { ok: false, error: 'NOT_FOUND', status: 404 };
   }
 
-  const { data: offersData, error: offersError } = await supabase
+  let offersQuery = supabase
     .from('offers')
     .select(`
       id,
@@ -213,14 +240,27 @@ export async function getRequestOffersLiveServer(
       )
     `)
     .eq('request_id', parsedId.data)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(LIVE_PAGE_SIZE + 1);
+
+  if (cursor) {
+    offersQuery = offersQuery.or(
+      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+    );
+  }
+
+  const { data: offersData, error: offersError } = await offersQuery;
 
   if (offersError) {
     return { ok: false, error: 'DATABASE_ERROR', status: 500 };
   }
 
   const rawOffers = (offersData as unknown as readonly RawOfferRow[] | null) ?? [];
-  const mapped: LiveMerchantOfferItem[] = rawOffers.map((o) => {
+  const hasMore = rawOffers.length > LIVE_PAGE_SIZE;
+  const pageRows = rawOffers.slice(0, LIVE_PAGE_SIZE);
+
+  const mapped: LiveMerchantOfferItem[] = pageRows.map((o) => {
     const courierObj = Array.isArray(o.courier) ? o.courier[0] : o.courier;
     const profileObj = courierObj?.profile
       ? Array.isArray(courierObj.profile)
@@ -245,7 +285,11 @@ export async function getRequestOffersLiveServer(
     };
   });
 
-  return { ok: true, data: mapped };
+  const tail = pageRows.at(-1);
+  const nextCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { ok: true, data: { data: mapped, nextCursor } };
 }
 
 /**

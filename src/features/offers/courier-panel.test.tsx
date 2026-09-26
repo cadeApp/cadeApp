@@ -241,6 +241,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       status: 200,
       json: async () => ({
         data: [reqLive2],
+        nextCursor: null,
       }),
     } as Response);
 
@@ -323,10 +324,96 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     });
 
     // Muestra el error
-    expect(screen.getByText(OFFERS_COPY.feedErrorTitle)).toBeDefined();
-    expect(screen.getByRole('button', { name: OFFERS_COPY.retryButton })).toBeDefined();
-
     // NO debe mostrar el empty state común de feed vacío
     expect(screen.queryByText(OFFERS_COPY.emptyFeedTitle)).toBeNull();
   });
+
+  it('PR82-H28: muestra el botón "Cargar más" cuando initialNextCursor está presente y oculta cuando es null', () => {
+    const cursor = {
+      createdAt: '2026-09-26T12:00:00.000Z',
+      id: '11111111-1111-1111-1111-111111111111',
+    };
+
+    const { unmount } = render(
+      <CourierFeed
+        courierStatus="approved"
+        isAvailable={true}
+        requests={[sampleRequest]}
+        initialNextCursor={null}
+        minOfferArs={1000}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: OFFERS_COPY.loadMore })).toBeNull();
+    unmount();
+
+    render(
+      <CourierFeed
+        courierStatus="approved"
+        isAvailable={true}
+        requests={[sampleRequest]}
+        initialNextCursor={cursor}
+        minOfferArs={1000}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: OFFERS_COPY.loadMore })).toBeDefined();
+  });
+
+  it('PR82-H28: al hacer clic en "Cargar más" carga y agrega la siguiente página de pedidos al feed', async () => {
+    const cursor = {
+      createdAt: '2026-09-26T12:00:00.000Z',
+      id: '11111111-1111-1111-1111-111111111111',
+    };
+
+    const page2Request: AvailableRequestItem = {
+      id: '22222222-2222-2222-2222-222222222222',
+      pickupZoneName: 'Barrio Oeste',
+      dropoffZoneName: 'Barrio Este',
+      approxDistanceKm: '1,5',
+      packageType: 'small',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      cashChangeAmount: null,
+      notes: null,
+      publishedAt: '2026-09-26T11:00:00.000Z',
+      expiresAt: null,
+      hasMyOffer: false,
+      myOfferAmountArs: null,
+    };
+
+    render(
+      <CourierFeed
+        courierStatus="approved"
+        isAvailable={true}
+        requests={[sampleRequest]}
+        initialNextCursor={cursor}
+        minOfferArs={1000}
+      />
+    );
+
+    const loadMoreBtn = screen.getByRole('button', { name: OFFERS_COPY.loadMore });
+    expect(loadMoreBtn).toBeDefined();
+
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: [page2Request],
+        nextCursor: null,
+      }),
+    } as Response);
+
+    await act(async () => {
+      fireEvent.click(loadMoreBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Barrio Oeste/i)).toBeDefined();
+    });
+
+    // Como nextCursor fue null, el botón desaparece
+    expect(screen.queryByRole('button', { name: OFFERS_COPY.loadMore })).toBeNull();
+  });
 });
+

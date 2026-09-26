@@ -21,6 +21,7 @@ import { acceptOfferAction } from '@/features/offers';
 import { requestsCopy } from '../copy';
 import { useRequestOffers } from '../hooks/use-request-offers';
 import type { MerchantOfferItem } from '../types';
+import type { LivePageCursor } from '@/lib/live-contracts';
 
 export interface RequestOffersListProps {
   request: {
@@ -36,6 +37,7 @@ export interface RequestOffersListProps {
     expiresAt: string | null;
   };
   initialOffers: readonly MerchantOfferItem[];
+  initialNextCursor?: LivePageCursor | null;
   onAcceptSuccess?: (offerId: string) => void;
 }
 
@@ -70,9 +72,17 @@ function getPackageLabel(packageType: string): string {
 export function RequestOffersList({
   request,
   initialOffers,
+  initialNextCursor,
   onAcceptSuccess,
 }: RequestOffersListProps) {
-  const { offers, isError, refetch } = useRequestOffers(request.id, initialOffers);
+  const {
+    offers,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+    isError,
+    refetch,
+  } = useRequestOffers(request.id, initialOffers, initialNextCursor ?? null);
   const [sortOrder, setSortOrder] = useState<OfferSortOrder>('doc_level');
   const [selectedOffer, setSelectedOffer] = useState<MerchantOfferItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -339,6 +349,20 @@ export function RequestOffersList({
               </div>
             </Card>
           ))}
+          {hasNextPage && !isError && (
+            <div className="flex justify-center pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
+              >
+                {isFetchingNextPage
+                  ? requestsCopy.offers.loadingMore
+                  : requestsCopy.offers.loadMore}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

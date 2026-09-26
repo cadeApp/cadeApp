@@ -28,7 +28,11 @@ export default async function CanonicalMerchantRequestDetailPage({
 
   return (
     <div className="px-4 py-4">
-      <RequestOffersList request={result.request} initialOffers={result.offers} />
+      <RequestOffersList
+        request={result.request}
+        initialOffers={result.offers}
+        initialNextCursor={result.nextOffersCursor}
+      />
     </div>
   );
 }

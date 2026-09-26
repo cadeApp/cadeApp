@@ -70,5 +70,7 @@ export const requestsCopy = {
     errorLoadingOffers: 'No se pudieron cargar las ofertas',
     errorDescription: 'Ocurrió un problema de conexión al sincronizar las ofertas en vivo.',
     retryButton: 'Reintentar',
+    loadMore: 'Cargar más',
+    loadingMore: 'Cargando…',
   },
 } as const;

@@ -42,14 +42,23 @@ export const liveTripStateSchema = z.object({
 
 export type LiveTripState = z.infer<typeof liveTripStateSchema>;
 
+export const livePageCursorSchema = z.object({
+  createdAt: z.string().datetime({ offset: true }),
+  id: z.string().uuid(),
+});
+
+export type LivePageCursor = z.infer<typeof livePageCursorSchema>;
+
 export const liveFeedResponseSchema = z.object({
   data: z.array(liveAvailableRequestItemSchema),
+  nextCursor: livePageCursorSchema.nullable(),
 });
 
 export type LiveFeedResponse = z.infer<typeof liveFeedResponseSchema>;
 
 export const liveOffersResponseSchema = z.object({
   data: z.array(liveMerchantOfferItemSchema),
+  nextCursor: livePageCursorSchema.nullable(),
 });
 
 export type LiveOffersResponse = z.infer<typeof liveOffersResponseSchema>;

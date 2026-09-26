@@ -307,6 +307,7 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
           status: 'pending',
         },
       ],
+      nextCursor: null,
     };
 
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({
@@ -357,4 +358,136 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
     expect(result.current.offers).toHaveLength(1);
     expect(result.current.error?.message).toContain('HTTP 500');
   });
+
+  describe('PR82-H28: Paginación keyset en ofertas de la solicitud', () => {
+    const requestId = '11111111-1111-1111-1111-111111111111';
+    const cursor = {
+      createdAt: '2026-09-26T12:00:00.000Z',
+      id: '22222222-2222-2222-2222-222222222222',
+    };
+
+    it('render inicial con initialData expone initialOffers y hasNextPage según cursor', () => {
+      const { result: withoutCursor } = renderHook(
+        () => useRequestOffers(requestId, initialOffers, null),
+        { wrapper }
+      );
+      expect(withoutCursor.current.offers).toHaveLength(1);
+      expect(withoutCursor.current.hasNextPage).toBe(false);
+
+      queryClient.clear();
+
+      const { result: withCursor } = renderHook(
+        () => useRequestOffers(requestId, initialOffers, cursor),
+        { wrapper }
+      );
+      expect(withCursor.current.offers).toHaveLength(1);
+      expect(withCursor.current.hasNextPage).toBe(true);
+    });
+
+    it('fetchNextPage llama a endpoint con cursorCreatedAt y cursorId en searchParams', async () => {
+      const page2Offer: MerchantOfferItem = {
+        id: '44444444-4444-4444-4444-444444444444',
+        courierId: '55555555-5555-5555-5555-555555555555',
+        courierName: 'Lucas B.',
+        vehicleType: 'motorcycle',
+        amountArs: 1900,
+        etaMinutes: 12,
+        message: null,
+        licenseStatus: 'verified',
+        insuranceStatus: 'none',
+        docLevel: 1,
+        createdAt: '2026-09-26T11:55:00.000Z',
+        status: 'pending',
+      };
+
+      const { result } = renderHook(
+        () => useRequestOffers(requestId, initialOffers, cursor),
+        { wrapper }
+      );
+
+      expect(result.current.hasNextPage).toBe(true);
+
+      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [page2Offer],
+          nextCursor: null,
+        }),
+      } as Response);
+
+      await act(async () => {
+        await result.current.fetchNextPage();
+      });
+
+      await waitFor(() => {
+        expect(result.current.offers).toHaveLength(2);
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `/api/live/requests/${requestId}/offers?cursorCreatedAt=${encodeURIComponent(
+          cursor.createdAt
+        )}&cursorId=${cursor.id}`,
+        { cache: 'no-store' }
+      );
+      expect(result.current.hasNextPage).toBe(false);
+    });
+
+    it('los ítems de la siguiente página se concatenan y deduplican por id sin mutar la caché', async () => {
+      const duplicateFirstItem = { ...initialOffers[0] };
+      const uniqueSecondItem: MerchantOfferItem = {
+        id: '66666666-6666-6666-6666-666666666666',
+        courierId: '77777777-7777-7777-7777-777777777777',
+        courierName: 'Ana V.',
+        vehicleType: 'bicycle',
+        amountArs: 1300,
+        etaMinutes: 25,
+        message: null,
+        licenseStatus: 'none',
+        insuranceStatus: 'none',
+        docLevel: 0,
+        createdAt: '2026-09-26T11:50:00.000Z',
+        status: 'pending',
+      };
+
+      const { result } = renderHook(
+        () => useRequestOffers(requestId, initialOffers, cursor),
+        { wrapper }
+      );
+
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [duplicateFirstItem, uniqueSecondItem],
+          nextCursor: null,
+        }),
+      } as Response);
+
+      await act(async () => {
+        await result.current.fetchNextPage();
+      });
+
+      await waitFor(() => {
+        expect(result.current.offers).toHaveLength(2);
+      });
+
+      const firstOfferId = initialOffers[0]?.id;
+      expect(result.current.offers.map((o) => o.id)).toEqual([
+        firstOfferId,
+        uniqueSecondItem.id,
+      ]);
+    });
+
+    it('control estático: use-request-offers.ts no tiene setQueryData, no tiene setOffers y no tiene non-null assertions', () => {
+      const hookPath = path.resolve(__dirname, 'use-request-offers.ts');
+      const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+      expect(sourceCode).not.toContain('setQueryData');
+      expect(sourceCode).not.toContain('setOffers');
+      const nonNullAssertionPattern = new RegExp('[a-zA-Z0-9_\\)\\]]!(?!=)');
+      expect(sourceCode).not.toMatch(nonNullAssertionPattern);
+    });
+  });
 });
+

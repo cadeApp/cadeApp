@@ -8,6 +8,8 @@ export const OFFERS_COPY = {
   feedErrorTitle: 'No se pudieron actualizar los pedidos',
   feedErrorDescription: 'Ocurrió un problema de conexión al cargar los pedidos en vivo.',
   retryButton: 'Reintentar',
+  loadMore: 'Cargar más',
+  loadingMore: 'Cargando…',
 
   // Disponibilidad en feed
   unavailableAlertTitle: 'No estás disponible',
