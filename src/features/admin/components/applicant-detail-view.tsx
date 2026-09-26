@@ -85,11 +85,20 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
 
   // Diálogo y formulario de rechazo documental específico
   const [rejectDocDialogOpen, setRejectDocDialogOpen] = React.useState(false);
+  const rejectDocTriggerRef = React.useRef<HTMLButtonElement>(null);
 
   const rejectDocForm = useForm<RejectDocumentFormInput>({
     resolver: zodResolver(rejectDocumentFormSchema),
     defaultValues: { rejectionReason: '' },
   });
+
+  function closeRejectDocDialog() {
+    setRejectDocDialogOpen(false);
+    rejectDocForm.reset();
+    queueMicrotask(() => {
+      rejectDocTriggerRef.current?.focus();
+    });
+  }
 
   // Verificación de documento individual (aprobación)
   const [verifyingDoc, setVerifyingDoc] = React.useState(false);
@@ -180,8 +189,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
       }
 
       notify.success(ADMIN_COPY.detail.success.documentRejected);
-      setRejectDocDialogOpen(false);
-      rejectDocForm.reset();
+      closeRejectDocDialog();
       router.refresh();
     } catch {
       notify.error(ADMIN_COPY.detail.errors.verifyDocumentConnection);
@@ -534,6 +542,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                           </span>
                           <div className="flex gap-2">
                             <Button
+                              ref={rejectDocTriggerRef}
                               size="sm"
                               variant="outline"
                               onClick={() => {
@@ -645,8 +654,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         open={rejectDocDialogOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setRejectDocDialogOpen(false);
-            rejectDocForm.reset();
+            closeRejectDocDialog();
           }
         }}
       >
@@ -686,10 +694,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => {
-                  setRejectDocDialogOpen(false);
-                  rejectDocForm.reset();
-                }}
+                onClick={closeRejectDocDialog}
                 disabled={rejectDocForm.formState.isSubmitting}
               >
                 {ADMIN_COPY.detail.cancelButton}
