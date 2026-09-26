@@ -40,7 +40,8 @@ describe('GET /api/live/available-requests', () => {
       data: { data: mockData, nextCursor: null },
     });
 
-    const response = await GET();
+    const req = new NextRequest('http://localhost/api/live/available-requests');
+    const response = await GET(req);
     expect(response.status).toBe(200);
 
     const json = await response.json();
@@ -101,7 +102,8 @@ describe('GET /api/live/available-requests', () => {
       status: 401,
     });
 
-    const response = await GET();
+    const req = new NextRequest('http://localhost/api/live/available-requests');
+    const response = await GET(req);
     expect(response.status).toBe(401);
 
     const json = await response.json();

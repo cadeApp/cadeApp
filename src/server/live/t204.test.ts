@@ -31,7 +31,12 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     maybeSingle: unknown[][];
   }
 
-  interface MockBuilder {
+  interface MockQueryResult<T> {
+    readonly data: T;
+    readonly error: unknown;
+  }
+
+  interface MockBuilder<T> {
     _calls: MockCallLog;
     select: ReturnType<typeof vi.fn>;
     eq: ReturnType<typeof vi.fn>;
@@ -40,10 +45,13 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     or: ReturnType<typeof vi.fn>;
     in: ReturnType<typeof vi.fn>;
     maybeSingle: ReturnType<typeof vi.fn>;
-    then: (resolve: (val: any) => any, reject?: (reason: any) => any) => Promise<any>;
+    then: (
+      resolve: (value: MockQueryResult<T>) => unknown,
+      reject?: (reason: unknown) => unknown
+    ) => Promise<unknown>;
   }
 
-  function createMockQueryBuilder<T>(resolvedData: T, resolvedError: unknown = null): MockBuilder {
+  function createMockQueryBuilder<T>(resolvedData: T, resolvedError: unknown = null): MockBuilder<T> {
     const calls: MockCallLog = {
       select: [],
       eq: [],
@@ -54,7 +62,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       maybeSingle: [],
     };
 
-    const builder: any = {
+    const builder: MockBuilder<T> = {
       _calls: calls,
       select: vi.fn((...args: unknown[]) => {
         calls.select.push(args);
@@ -84,7 +92,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         calls.maybeSingle.push(args);
         return Promise.resolve({ data: resolvedData, error: resolvedError });
       }),
-      then: (resolve: (val: any) => any, reject?: (reason: any) => any) => {
+      then: (
+        resolve: (value: MockQueryResult<T>) => unknown,
+        reject?: (reason: unknown) => unknown
+      ): Promise<unknown> => {
         return Promise.resolve({ data: resolvedData, error: resolvedError }).then(resolve, reject);
       },
     };
@@ -260,7 +271,12 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.data).toHaveLength(50);
-        const row50 = rows51[49]!;
+        const row50 = rows51.at(49);
+        const row51 = rows51.at(50);
+        expect(row50).toBeDefined();
+        expect(row51).toBeDefined();
+        if (!row50 || !row51) throw new Error('Fixture de 51 filas inválido');
+
         expect(result.data.nextCursor).toEqual({
           createdAt: row50.created_at,
           id: row50.id,
@@ -269,7 +285,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         // Test E: hasMyOffer consulta SOLO los 50 requestIds devueltos, jamás el #51
         const requestedOfferIds = offersBuilder._calls.in[0]?.[1] as string[];
         expect(requestedOfferIds).toHaveLength(50);
-        expect(requestedOfferIds).not.toContain(rows51[50]!.id);
+        expect(requestedOfferIds).not.toContain(row51.id);
       }
     });
 
@@ -440,7 +456,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.data).toHaveLength(50);
-        const offer50 = offers51[49]!;
+        const offer50 = offers51.at(49);
+        expect(offer50).toBeDefined();
+        if (!offer50) throw new Error('Fixture de 51 ofertas inválido');
+
         expect(result.data.nextCursor).toEqual({
           createdAt: offer50.created_at,
           id: offer50.id,
@@ -605,6 +624,27 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         expect(result.data).not.toHaveProperty('pickupAddress');
         expect(result.data).not.toHaveProperty('recipientPhone');
       }
+    });
+  });
+
+  describe('3.4 Índices de paginación keyset (H28 / D04 / Mutación F)', () => {
+    it('la migración define exactamente los índices de cursor para delivery_requests y offers', () => {
+      const migrationPath = resolve(
+        process.cwd(),
+        'supabase/migrations/20260926173000_t204_live_pagination_indexes.sql'
+      );
+      const sqlContent = readFileSync(migrationPath, 'utf8');
+      const normalizedSql = sqlContent
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      expect(normalizedSql).toContain(
+        'create index delivery_requests_published_cursor_idx on public.delivery_requests (created_at desc, id desc) where status = \'published\';'
+      );
+      expect(normalizedSql).toContain(
+        'create index offers_request_created_cursor_idx on public.offers (request_id, created_at desc, id desc);'
+      );
     });
   });
 });

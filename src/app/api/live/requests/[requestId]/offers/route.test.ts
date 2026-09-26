@@ -40,7 +40,10 @@ describe('GET /api/live/requests/[requestId]/offers', () => {
       data: { data: mockOffers, nextCursor: null },
     });
 
-    const response = await GET({} as NextRequest, {
+    const req = new NextRequest(
+      `http://localhost/api/live/requests/${validUuid}/offers`
+    );
+    const response = await GET(req, {
       params: Promise.resolve({ requestId: validUuid }),
     });
 
@@ -112,7 +115,10 @@ describe('GET /api/live/requests/[requestId]/offers', () => {
       status: 404,
     });
 
-    const response = await GET({} as NextRequest, {
+    const req = new NextRequest(
+      `http://localhost/api/live/requests/${validUuid}/offers`
+    );
+    const response = await GET(req, {
       params: Promise.resolve({ requestId: validUuid }),
     });
 

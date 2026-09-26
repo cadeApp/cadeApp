@@ -9,13 +9,12 @@ const NO_CACHE_HEADERS = {
 };
 
 export async function GET(
-  request: NextRequest | Request,
+  request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
 ) {
   const { requestId } = await params;
-  const url = request?.url ? new URL(request.url) : null;
-  const cursorCreatedAt = url?.searchParams.get('cursorCreatedAt') ?? null;
-  const cursorId = url?.searchParams.get('cursorId') ?? null;
+  const cursorCreatedAt = request.nextUrl.searchParams.get('cursorCreatedAt');
+  const cursorId = request.nextUrl.searchParams.get('cursorId');
 
   let cursor: LivePageCursor | null = null;
   if (cursorCreatedAt || cursorId) {
