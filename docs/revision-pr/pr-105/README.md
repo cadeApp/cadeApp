@@ -1,41 +1,44 @@
-# PR #105 — T-106 · Coordenadas y calculate_route_distance
+# PR #105 — T-106 · Coordenadas y `calculate_route_distance`
 
-> ❌ **Ronda 1: CON BLOQUEANTES · 2 bloqueantes**
+> ✅ **Ronda 2: SIN BLOQUEANTES · H01/H02 cerrados**
 
 | | |
 |---|---|
 | PR | #105 |
 | Rama | `feat/T-106-coordenadas-distancia` → `develop` |
-| SHA revisado | `c25589c68160dd569ce645026f799312c443228e` |
+| SHA revisado en R2 | `e275613eb0b022932ab17c4333ddc1cf8625b105` |
 | Base actual | `develop@6ac32e77f6995bec82a0c2957d6b59739cbe096b` |
-| Merge ref actual | `25665537447b0de08fa0c137ea9a1fac5d6fe097` |
-| Diff | 7 archivos · +1002 / -5 · 0 fuera de alcance |
-| CI | por haber bloqueantes, solo se inspeccionó `db-tests`: 12 archivos / 1526 tests / PASS; tipos sin diff |
-
-La RPC de distancia, el freeze de `created_at` y el aislamiento de coordenadas en `delivery_request_contacts` van en la dirección del DoD. Quedan dos bloqueantes antes de aceptar: el acceso directo de couriers a `public.merchants` sigue abierto, y la fase roja declarada en la bitácora no se reproduce.
+| Merge ref verificado | `058a373f1c93736e8832251fef1d4bc08ba09d19` |
+| Diff funcional | T-106 + correcciones R1; `rls_matrix.sql` autorizado explícitamente por Lautaro073 |
+| CI R2 | código 7/7 verde + `approval-policy` verde |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `c25589c68160dd569ce645026f799312c443228e` | 2 bloqueantes | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `e275613eb0b022932ab17c4333ddc1cf8625b105` | 0 nuevos · H01/H02 cerrados | [ronda-2.md](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR105-H01 | `merchant_public` no cierra el acceso directo a `merchants` | alto | abierto |
-| PR105-H02 | La fase roja declarada abortó antes de ejecutar aserciones | medio | abierto |
+| PR105-H01 | `merchant_public` no cerraba el acceso directo a `merchants` | alto | arreglado-verificado |
+| PR105-H02 | La fase roja declarada abortó antes de ejecutar aserciones | medio | arreglado-verificado |
 
 Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [comandos.md](evidencia/comandos.md)
 
-## Qué queda por hacer
+## Estado de cierre
 
-1. Cerrar el bypass directo de `merchants_select_courier` conservando para couriers únicamente la superficie segura de `merchant_public`.
-2. Agregar pgTAP que pruebe el acceso **directo** a `public.merchants`, y demostrar que restaurar temporalmente la policy vieja pone el control en rojo.
-3. Corregir la evidencia histórica sin reescribirla: agregar una entrada de bitácora que reconozca que el rojo inicial fue inválido por el fixture y actualizar el cuerpo del PR para no afirmar una demostración que no ocurrió.
-4. Reejecutar `db-tests` y regeneración de tipos contra el `develop` vigente.
+- `merchants_select_courier` queda eliminado.
+- Courier aprobado relacionado: no obtiene la fila por `public.merchants` y sí la superficie segura por `merchant_public`.
+- Comercio dueño y admin conservan acceso directo.
+- `rls_matrix.sql` consulta la nueva superficie, según autorización explícita de Lautaro073.
+- La evidencia histórica queda corregida sin reescribir la sesión original.
+- `db-tests`: 12 archivos, 1529 tests, PASS; tipos sin diff.
+- Unit: 55 archivos, 601 tests, PASS.
+- `approval-policy`: run 36219348596, PASS tras publicar el informe R2 sin bloqueantes.
 
 ## Para el análisis posterior
 
-No se propone AG nueva. H01 reincide en **P08** y aplica `pr-56/AG-37`: revisar la clase completa de vías de acceso, no solo la vista nueva. H02 reincide en `pr-63/AG-70`: el rojo se registra desde la salida real, no desde lo que se esperaba que fallara.
+No se agrega AG nueva: H01 queda cubierto por `pr-56/AG-37` y H02 por `pr-63/AG-70`.

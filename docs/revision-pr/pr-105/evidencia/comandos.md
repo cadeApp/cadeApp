@@ -1,104 +1,167 @@
-# Evidencia — PR #105 / T-106 / Ronda 1
+# Evidencia — PR #105 / T-106
 
-## Preflight remoto
+## Ronda 1
 
-```text
-head: c25589c68160dd569ce645026f799312c443228e
-develop actual: 6ac32e77f6995bec82a0c2957d6b59739cbe096b
-ahead/behind: +9 / -2
-merge ref: 25665537447b0de08fa0c137ea9a1fac5d6fe097
-merge ref message: Merge c25589c... into 6ac32e7...
-changed files: 7
-fuera de alcance: 0
-comments: 0
-review threads: 0
-```
+Ver el informe [ronda-1.md](../revisiones/ronda-1.md). Evidencia base:
 
-El entorno de revisión no pudo resolver `github.com` al intentar un checkout local. No se inventa salida de `git merge-tree`; se usó el merge ref real generado por GitHub contra el `develop` vigente.
+- SHA: `c25589c68160dd569ce645026f799312c443228e`.
+- H01: la policy heredada seguía viva con `db-tests` verde.
+- H02: run `36215443077`, job `108330380086`, ambas suites nuevas ejecutaron 0 aserciones por `INVALID_SIGNUP_ROLE`.
 
-## H01 · Vía directa de merchants sigue abierta
-
-En `develop`, la policy heredada es:
-
-```sql
-create policy merchants_select_courier on public.merchants
-  for select to authenticated
-  using (
-    app_private.is_approved_courier()
-    and app_private.is_merchant_visible_to_courier(profile_id, auth.uid())
-  );
-```
-
-La migración T-106 crea:
-
-```sql
-create or replace view public.merchant_public
-with (security_invoker = true)
-as
-select profile_id, business_name, default_pickup_zone_id, default_pickup_address
-from public.merchants;
-```
-
-y no hace `drop policy merchants_select_courier` ni reemplaza su condición.
-
-Los controles finales de `rls_coordinates.sql` revisan el catálogo de columnas de la vista y consultas contra la vista, no una consulta directa a `public.merchants`.
-
-Contraejemplo del control: el código vulnerable es el propio SHA revisado y el DB job sigue verde.
+## Ronda 2 — preflight
 
 ```text
-run: 36216846664
-job db-tests: 108334387875
-Applying migration 20260926003900_coordinates_and_distance_rpc.sql...
-Applying migration 20260926010000_cc008_trip_details.sql...
-rls_coordinates.sql ............ ok
-rpc_distance.sql ............... ok
-Files=12, Tests=1526
-Result: PASS
-db:types generado; git diff --exit-code limpio
+head revisado: e275613eb0b022932ab17c4333ddc1cf8625b105
+develop:       6ac32e77f6995bec82a0c2957d6b59739cbe096b
+merge ref:     058a373f1c93736e8832251fef1d4bc08ba09d19
+desde R1:      4 commits de autor
+archivos desde R1:
+  docs/tasks/log/T-106.md
+  supabase/migrations/20260926003900_coordinates_and_distance_rpc.sql
+  supabase/tests/rls_coordinates.sql
+  supabase/tests/rls_matrix.sql
+docs/revision-pr/** tocado por autor: no
 ```
 
-### Mutación que debe matar el arreglo
+## H01 · RED real
 
-Después de cerrar H01, restaurar **temporalmente en la implementación** la policy courier anterior y ejecutar la suite DB. El nuevo caso que consulta `public.merchants` debe quedar rojo.
-
-No modificar el test, su expectativa, el fixture ni `plan(...)` para obtener ese resultado. Revertir la mutación antes de commit.
-
-## H02 · La fase roja histórica no ejerció las reglas
-
-Commit de fase roja declarado: `81e08b08653deee704a3f50765f5996c95882141`.
-
-GitHub Actions:
+Commit: `2c696d7b7eb603186d7073b2efefe8ba62925ffc`.
 
 ```text
-run: 36215443077
-job db-tests: 108330380086
+Run 36217637214
+Job db-tests 108336688266
 
-rls_coordinates.sql: ERROR: INVALID_SIGNUP_ROLE
-Failed 22/22 subtests
-Parse errors: Bad plan. You planned 22 tests but ran 0.
+rls_coordinates.sql
+# Failed test 18: "approved courier cannot directly query public.merchants table"
+Failed 1/24 subtests
 
-rpc_distance.sql: ERROR: INVALID_SIGNUP_ROLE
-Failed 20/20 subtests
-Parse errors: Bad plan. You planned 20 tests but ran 0.
-
-Files=11, Tests=1472
+Files=12, Tests=1529
 Result: FAIL
 ```
 
-La evidencia contradice `docs/tasks/log/T-106.md:9`, que atribuye ese rojo a la inexistencia de RPC/vista.
+El fallo es el contracaso pedido en R1 y no proviene de cambiar expectativas, fixtures o `plan(...)` para fabricar resultado.
 
-## Falsos positivos comprobados
+## H01 · GREEN final
 
-### Observabilidad del wrapper
-
-`calculateRouteDistanceRpc` incluye los argumentos en `details.input` al alertar, pero la ruta real es:
+SHA: `e275613eb0b022932ab17c4333ddc1cf8625b105`.
 
 ```text
-calculateRouteDistanceRpc
-  -> sendCriticalAlert(payload)
-  -> scrubPii(payload.details)
-  -> scrubber: *_lat / *_lng => [REDACTED_COORD]
-  -> Discord / fallback
+Run 36218778268
+Job db-tests 108339947304
+
+Applying migration 20260926003900_coordinates_and_distance_rpc.sql...
+Applying migration 20260926010000_cc008_trip_details.sql...
+rls_coordinates.sql ............ ok
+rls_matrix.sql ................. ok
+rpc_distance.sql ............... ok
+Files=12, Tests=1529
+Result: PASS
+[db:types] Tipos generados exitosamente
+git diff --exit-code -- src/types/database.types.ts: limpio
 ```
 
-Por eso no se reporta fuga de coordenadas desde ese bloque.
+Implementación verificada por inspección:
+
+```sql
+drop policy if exists merchants_select_courier on public.merchants;
+
+create or replace view public.merchant_public
+with (security_barrier = true)
+as
+select
+  m.profile_id,
+  m.business_name,
+  m.default_pickup_zone_id,
+  m.default_pickup_address
+from public.merchants m
+where
+  m.profile_id = auth.uid()
+  or app_private.is_admin()
+  or (
+    app_private.is_approved_courier()
+    and app_private.is_merchant_visible_to_courier(m.profile_id, auth.uid())
+  );
+```
+
+Controles asociados:
+
+- courier aprobado relacionado: `public.merchants` → 0 fila;
+- courier aprobado relacionado: `merchant_public` → fila segura;
+- courier: comercio ocioso → no visible;
+- merchant dueño: acceso directo preservado;
+- admin: acceso directo preservado;
+- catálogo de la vista: sin `notes`, `paid_until`, `subscription_status`, `default_pickup_lat/lng`.
+
+## `rls_matrix.sql` autorizado
+
+El único cambio de la R2 en esa suite reemplaza el origen del test 11:
+
+```text
+public.merchants  ->  public.merchant_public
+```
+
+Mantiene la misma aserción funcional: ve comercio activo y no ve comercio ocioso.
+
+En el commit de arreglo previo, antes de esa adaptación:
+
+```text
+Run 36218143479 · db-tests 108338133127
+rls_coordinates.sql ... ok
+rls_matrix.sql:
+# Failed test 11: "courier sees active merchants with requests but cannot see idle merchant"
+Files=12, Tests=1529
+Result: FAIL
+```
+
+Eso confirma que el cambio de matriz responde exactamente a la arquitectura nueva y no oculta un fallo distinto.
+
+## H02 · corrección de evidencia
+
+Comparación `d8b85230abbdfc09ab4d025e37b2c9fad2d49a92..e275613eb0b022932ab17c4333ddc1cf8625b105`:
+
+- no edita la sesión inicial;
+- elimina solo tres líneas en blanco al final;
+- añade la sesión correctiva que cita el run/job original y 0 aserciones;
+- registra RED real de H01 y el arreglo posterior.
+
+El body del PR deja sin marcar:
+
+```text
+[ ] Cada prueba nueva se demostró fallando al romper la regla
+```
+
+y documenta por qué.
+
+## CI completo del SHA revisado
+
+```text
+CI run 36218778268
+typecheck      success
+lint           success
+unit           success — 55 Test Files, 601 Tests
+build          success
+audit          success
+bundle-budget  success
+db-tests       success — Files=12, Tests=1529, Result: PASS
+```
+
+El build mantiene `/design-system = 184 kB`, warning preexistente ya tratado en T-311; no es parte de T-106.
+
+## approval-policy
+
+Antes de actualizar el informe del body:
+
+```text
+Falta el informe completo de revisar-pr sin bloqueantes.
+```
+
+Después del informe R2:
+
+```text
+Run 36219348596
+approval-policy: success
+```
+
+## Instrumento local
+
+El entorno de revisión no resuelve `github.com` desde el contenedor, por lo que no se inventa salida de `git merge-tree` ni de `node docs/revision-pr/analizar.mjs verificacion`. La estructura JSONL fue validada al construirla y la integración se contrastó con el merge ref real de GitHub y sus jobs.
