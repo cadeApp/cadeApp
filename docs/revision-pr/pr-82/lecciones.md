@@ -121,3 +121,13 @@ No se agrega numeración AG nueva.
 - **H20** es la aplicación de la regla de revisión existente «pantalla con datos sin estado de error → bloqueante»: `[]`/snapshot/null no pueden representar a la vez ausencia válida y fallo de infraestructura.
 - **H21** repite **AG-71**: cuando develop cambia durante una PR larga, cada ronda debe volver a mirar el target; en este caso el cambio no es cosmético porque agrega la fuente canónica CC-008.
 - La decisión D03/1-A evita otra ronda ambigua: se especifican endpoint, capa server, contratos Zod, semántica de error, UI y mutaciones antes de devolver el trabajo al agy.
+---
+
+## Ronda 5
+
+No se agrega numeración AG nueva.
+
+- **H22** refuerza `P01`: `tsc` verde no valida todos los contratos especiales de Next App Router. Para Route Handlers nuevos, `next build` es parte del contrato.
+- **H24** refuerza **AG-70**: una mutación en rojo no sirve si cae por un `TypeError` del mock antes de la aserción que debía proteger.
+- **H25** corrige una instrucción de la propia revisión: «usar la fuente canónica» no significa elegir el wrapper más alto si ese wrapper añade trabajo privilegiado ajeno al dato requerido. Para polling, usar la frontera más baja que preserve autorización y contrato.
+- El CI mostró otra defensa útil: el job `build` quedó falsamente verde porque `tee` ocultó el exit de `next build`, pero `bundle-budget` falló al no encontrar rutas. Es un follow-up de CI fuera de T-204; no debe arreglarse desde esta PR.
