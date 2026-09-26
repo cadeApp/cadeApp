@@ -1,61 +1,68 @@
 # Comandos reproducibles — PR #98
 
-## Ronda 4 — SHA cccb88c
+## Ronda 5 — SHA f8f11c3
 
-### E4-1 · PK que rompe courier onboarding
+### H13 · source productivo
 
-En `supabase/migrations/20260922031435_schema_v1.sql`:
+Merchant y courier usan:
 
-```sql
-create table public.consents (
-  ...
-  primary key (profile_id, document, version)
-);
+```ts
+.upsert(payload, {
+  onConflict: 'profile_id,document,version',
+  ignoreDuplicates: true,
+})
 ```
 
-Registro/CC-007 persiste TOS + Privacy. Courier onboarding vuelve a insertar TOS + Privacy + courier_contract con plain INSERT.
+La implementación es compatible con idempotencia de misma versión sin reescribir la fila histórica.
 
-Criterio: con las dos primeras filas ya existentes, el statement real debe producir unique violation.
+### H14 · mutation proof inválida
 
-### E4-2 · Idempotencia esperada
+Los tests actuales no editan `actions.ts`.
 
-Después del arreglo:
-1. onboarding escribe consentimiento;
-2. simular fallo en paso posterior;
-3. reintentar misma versión;
-4. no debe fallar por duplicado;
-5. `accepted_at` existente no debe reescribirse.
+En lugar de eso crean un segundo mock que devuelve manualmente:
 
-Mutación:
-- reemplazar temporalmente el upsert idempotente por insert;
-- el test dirigido de reintento debe quedar rojo.
-
-### E4-3 · H12
-
-```bash
-rg -n "\\bas any\\b|:\\s*any\\b" src/features/legal/legal-red.test.ts
-```
-
-Esperado: cero usos de tipos/casts any.
-
-### E4-4 · H08
-
-Árbol del SHA revisado:
 ```text
-sin evidence/*.png
-sin legal_390/register_390
-sin salida axe
+code: 23505
+duplicate key value violates unique constraint consents_pkey
 ```
 
-`components-a11y.test.tsx` usa `auditDomAccessibilityStructure`, no axe.
+y luego verifican `INTERNAL_ERROR`.
 
-Requerido:
+Criterio de R6:
+- mismo test/fake;
+- source correcto => verde;
+- mutar realmente `upsert` a `insert` => rojo;
+- restauración source en finally si se usa harness.
+
+### H08 · axe real
+
+`src/features/legal/evidence/T-311/axe-summary.md`:
+
 ```text
-390x844 /legal + documento largo
-360x800 /legal + documento largo
-axe AA: legal/auth/merchant/courier onboarding
+/onboarding/vehicle
+Violaciones WCAG AA: 1
+SERIOUS color-contrast
+ratio 2.39:1
+expected 4.5:1
 ```
+
+`axe-report.json`:
+```text
+courier_onboarding.violationsCount = 1
+```
+
+Source causal:
+```tsx
+src/features/courier-onboarding/components/step-indicator.tsx
+isDone ? 'text-primary' : ...
+```
+
+D06=A autoriza ese archivo.
+
+### Artefactos
+
+Existen 18 PNG no vacíos para 390x844 y 360x800 más los dos reportes axe.
 
 ### CI
 
-No se inspecciona CI final mientras H08/H13 sigan abiertos.
+No se inspecciona CI final mientras H08/H14 estén abiertos.

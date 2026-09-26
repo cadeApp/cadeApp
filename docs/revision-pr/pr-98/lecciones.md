@@ -1,17 +1,17 @@
 # Lecciones de la PR #98
 
-## Ronda 4
+## Ronda 5
 
-### Un mock de INSERT no prueba constraints reales de la DB
+### Una mutation proof debe mutar la implementación
 
-H13 muestra que un unit test puede afirmar un payload inválido y quedar verde porque el mock nunca ejecuta la PK real. Cuando un contract-change modifica precondiciones compartidas, hay que revisar los writes posteriores contra constraints reales.
+Cambiar el mock para que devuelva el error que produciría una regresión no demuestra que el test detecte esa regresión. El test debe permanecer igual; lo que cambia es el source o el estado realista que ejerce la constraint.
 
-### Consentimientos deben ser idempotentes en reintentos
+### La evidencia generada puede contradecir el resumen humano
 
-Persistir evidencia antes de otros pasos del onboarding es válido, pero reintentar no puede fallar por volver a aceptar la misma versión. La clave `profile_id + document + version` permite un write idempotente que preserve el timestamp original.
+H08 mejoró porque ahora existen artefactos reales. Precisamente esos artefactos permitieron detectar que el body decía “0 violaciones” mientras axe-report registraba una SERIOUS. La fuente de verdad es la salida de la herramienta, no el resumen del agente.
 
-### Axe no es sinónimo de un checker estructural propio
+### Scope mínimo para una corrección visual
 
-Un auditor DOM interno suma cobertura, pero no sustituye una exigencia explícita de axe. Si el DoD pide capturas y axe, deben existir artefactos reproducibles asociados al SHA.
+D06/A04 autoriza solo StepIndicator porque axe localizó allí el nodo defectuoso. No hace falta ampliar todo courier-onboarding.
 
-No se propone una regla AG nueva: AG-61/63 y AG-70 ya cubren test efectivo y evidencia verificable.
+No se propone AG nueva; P08/AG-61/63 y AG-70 ya cubren la clase. La regla anti-tests-falsos se incorpora explícitamente a los prompts de remediación.

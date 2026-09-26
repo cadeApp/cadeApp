@@ -7,8 +7,8 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-311-legal-consents` → `develop` |
 | **Base revisada** | `develop@ac4587f` |
-| **SHA revisado** | `cccb88c460a858d85d15b77e6df5d19a20596aea` |
-| **Estado** | **con bloqueantes · Ronda 4** |
+| **SHA revisado** | `f8f11c3c7ff94d8b4f192036f325786f814357f9` |
+| **Estado** | **con bloqueantes · Ronda 5** |
 
 ## Rondas
 
@@ -17,15 +17,15 @@
 | 1 | `09082af` | 9 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `c5c7371` | 5 bloqueantes | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `c47aee4` | bloqueada por CC-007 | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
-| 4 | `cccb88c` | 2 bloqueantes + 1 estado documental | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
+| 4 | `cccb88c` | H08/H09/H13 abiertos | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
+| 5 | `f8f11c3` | H08/H14 bloquean; H13 parcial | [`revisiones/ronda-5.md`](revisiones/ronda-5.md) |
 
-## Estado R4
+## Estado R5
 
-Cerrados: **H06, H12**.
+- **H08 abierto:** la evidencia axe existe, pero registra 1 violación SERIOUS en courier onboarding.
+- **H09 abierto:** body/bitácora siguen sobredeclarando cierre.
+- **H13 parcial:** código productivo idempotente correcto por inspección; falta prueba real de regresión.
+- **H14 abierto:** la “mutation proof” cambia mocks, no el código.
+- **A04 / D06 aceptada:** se autoriza solo `src/features/courier-onboarding/components/step-indicator.tsx` para corregir el contraste.
 
-Abiertos:
-- **H08:** falta evidencia reproducible de capturas + axe real.
-- **H09:** body/bitácora sobredeclaran H08 mientras siga sin evidencia.
-- **H13:** el onboarding courier re-inserta TOS/Privacy y rompe por la PK de `consents`; las escrituras tampoco son idempotentes en reintentos.
-
-No se inspecciona CI final mientras existan H08/H13.
+No se inspecciona CI final mientras H08/H14 sigan abiertos.
