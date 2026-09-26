@@ -8,6 +8,8 @@ import {
   incidentStatusSchema,
   merchantSubscriptionStatusSchema,
   platformSettingKeySchema,
+  recipientPaymentMethodSchema,
+  vehicleTypeSchema,
 } from './schemas';
 
 export const uuidSchema = z.string().uuid();
@@ -218,7 +220,41 @@ export const calculateRouteDistanceOutputSchema = z.union([
   }),
 ]);
 
-// 14. admin_decide_courier
+// 14. get_trip_details (CC-008)
+export const getTripDetailsInputSchema = z.object({
+  requestId: uuidSchema,
+});
+
+export const getTripDetailsOutputSchema = z.object({
+  requestId: uuidSchema,
+  code: z.string().regex(/^REQ-[0-9A-F]{8}$/),
+  status: z.enum(['matched', 'in_transit', 'delivered']),
+  merchantId: uuidSchema,
+  merchantName: z.string().trim().min(1).max(160),
+  merchantPhone: z.string().trim().min(1).nullable(),
+  courierId: uuidSchema,
+  courierName: z.string().trim().min(1).max(160),
+  courierPhone: z.string().trim().min(1).nullable(),
+  vehicleType: vehicleTypeSchema.nullable(),
+  vehiclePlate: z.string().trim().min(1).max(32).nullable(),
+  amountArs: z.number().int().min(1),
+  pickupAddress: z.string().trim().min(1),
+  pickupZoneName: z.string().trim().min(1).max(120),
+  dropoffAddress: z.string().trim().min(1),
+  dropoffZoneName: z.string().trim().min(1).max(120),
+  deliveryNotes: z.string().nullable(),
+  recipientName: z.string().trim().min(1),
+  recipientPhone: z.string().trim().min(1),
+  recipientPaymentMethod: recipientPaymentMethodSchema,
+  needsChange: z.boolean(),
+  cashChangeAmount: z.number().int().positive().nullable(),
+  createdAt: isoTimestampSchema,
+  matchedAt: isoTimestampSchema.nullable(),
+  pickedUpAt: isoTimestampSchema.nullable(),
+  deliveredAt: isoTimestampSchema.nullable(),
+});
+
+// 15. admin_decide_courier
 export const adminDecideCourierInputSchema = z.object({
   courierId: uuidSchema,
   decision: z.enum(['approved', 'rejected']),
@@ -549,6 +585,18 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  get_trip_details: {
+    inputSchema: getTripDetailsInputSchema,
+    outputSchema: getTripDetailsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_decide_courier: {
     inputSchema: adminDecideCourierInputSchema,
     outputSchema: adminDecideCourierOutputSchema,
@@ -627,6 +675,7 @@ export const ALL_RPC_NAMES = [
   'report_incident',
   'set_availability',
   'calculate_route_distance',
+  'get_trip_details',
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_verify_document',
