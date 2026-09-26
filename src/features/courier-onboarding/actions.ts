@@ -136,7 +136,12 @@ export async function courierOnboardingAction(
     },
   ];
 
-  const { error: consentsError } = await adminClient.from('consents').insert(consentsPayload as never);
+  const { error: consentsError } = await adminClient
+    .from('consents')
+    .upsert(consentsPayload as never, {
+      onConflict: 'profile_id,document,version',
+      ignoreDuplicates: true,
+    });
 
   if (consentsError) {
     return err('INTERNAL_ERROR');

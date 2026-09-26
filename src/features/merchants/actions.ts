@@ -94,7 +94,12 @@ export async function merchantOnboardingAction(
   };
 
   const adminClient = createAdminClient();
-  const { error: consentError } = await adminClient.from('consents').insert(consentPayload as never);
+  const { error: consentError } = await adminClient
+    .from('consents')
+    .upsert(consentPayload as never, {
+      onConflict: 'profile_id,document,version',
+      ignoreDuplicates: true,
+    });
 
   if (consentError) {
     return err('INTERNAL_ERROR');

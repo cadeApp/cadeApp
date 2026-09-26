@@ -131,6 +131,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
   it('alta exitosa: el comercio queda en pilot, se guarda versión de consentimiento y actualiza perfil', async () => {
     let insertedMerchant: unknown = null;
     let insertedConsent: unknown = null;
+    let upsertOptions: unknown = null;
     let updatedProfile: unknown = null;
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
@@ -164,6 +165,11 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
         return {
           insert: vi.fn().mockImplementation((payload) => {
             insertedConsent = payload;
+            return Promise.resolve({ error: null });
+          }),
+          upsert: vi.fn().mockImplementation((payload, options) => {
+            insertedConsent = payload;
+            upsertOptions = options;
             return Promise.resolve({ error: null });
           }),
         };
@@ -217,11 +223,15 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       notes: 'Al lado de la plaza',
     });
 
-    // Verificación 2: versión de consentimiento guardada en consents
+    // Verificación 2: versión de consentimiento guardada en consents mediante upsert idempotente
     expect(insertedConsent).toMatchObject({
       profile_id: 'usr-merchant-1',
       document: 'pilot_terms',
       version: '1.0',
+    });
+    expect(upsertOptions).toEqual({
+      onConflict: 'profile_id,document,version',
+      ignoreDuplicates: true,
     });
 
     // Verificación 3: perfil actualizado con display_name y phone
@@ -259,6 +269,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       if (table === 'consents') {
         return {
           insert: vi.fn().mockResolvedValue({ error: null }),
+          upsert: vi.fn().mockResolvedValue({ error: null }),
         };
       }
       if (table === 'merchants') {
@@ -339,6 +350,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
         if (table === 'consents') {
           return {
             insert: vi.fn().mockResolvedValue({ error: { message: 'Insert consent error' } }),
+            upsert: vi.fn().mockResolvedValue({ error: { message: 'Upsert consent error' } }),
           };
         }
         return {};
@@ -441,6 +453,10 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
             insertedConsent = payload;
             return Promise.resolve({ error: null });
           }),
+          upsert: vi.fn().mockImplementation((payload) => {
+            insertedConsent = payload;
+            return Promise.resolve({ error: null });
+          }),
         };
       }
       if (table === 'merchants') {
@@ -503,6 +519,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       if (table === 'consents') {
         return {
           insert: insertConsentSpy,
+          upsert: insertConsentSpy,
         };
       }
       if (table === 'merchants') {
@@ -570,6 +587,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       if (table === 'consents') {
         return {
           insert: insertConsentSpy,
+          upsert: insertConsentSpy,
         };
       }
       if (table === 'merchants') {
@@ -607,5 +625,174 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     }
     expect(insertConsentSpy).not.toHaveBeenCalled();
     expect(upsertMerchantSpy).not.toHaveBeenCalled();
+  });
+
+  it('reintento merchant después de fallo posterior: no falla aunque pilot_terms ya exista y no reescribe accepted_at (H13)', async () => {
+    let upsertCalledWithOptions: unknown = null;
+
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+          update: vi.fn().mockImplementation(() => ({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { key: 'pilot_terms_version', value: '1.0' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'consents') {
+        return {
+          upsert: vi.fn().mockImplementation((_payload, options) => {
+            upsertCalledWithOptions = options;
+            return Promise.resolve({ data: null, error: null });
+          }),
+        };
+      }
+      if (table === 'merchants') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      return {};
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1', email: 'comercio@test.com' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
+      ? T
+      : never);
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+    const result = await merchantOnboardingAction(validFormInput);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.redirectTo).toBe('/merchant/dashboard');
+    }
+    expect(upsertCalledWithOptions).toEqual({
+      onConflict: 'profile_id,document,version',
+      ignoreDuplicates: true,
+    });
+  });
+
+  it('mutación adversarial: si la acción usara insert en vez de upsert con ignoreDuplicates en reintento, falla con INTERNAL_ERROR por duplicate key (H13)', async () => {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+          update: vi.fn().mockImplementation(() => ({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          })),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { key: 'pilot_terms_version', value: '1.0' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'consents') {
+        return {
+          insert: vi.fn().mockResolvedValue({
+            error: {
+              code: '23505',
+              message: 'duplicate key value violates unique constraint "consents_pkey"',
+            },
+          }),
+          upsert: vi.fn().mockImplementation((_payload, options) => {
+            if (options?.ignoreDuplicates) {
+              return Promise.resolve({ data: null, error: null });
+            }
+            return Promise.resolve({
+              error: {
+                code: '23505',
+                message: 'duplicate key value violates unique constraint "consents_pkey"',
+              },
+            });
+          }),
+        };
+      }
+      if (table === 'merchants') {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      return {};
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1', email: 'comercio@test.com' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
+      ? T
+      : never);
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+    // Verificamos que la acción real (que usa upsert con ignoreDuplicates) triunfa:
+    const result = await merchantOnboardingAction(validFormInput);
+    expect(result.ok).toBe(true);
+
+    // Demostración de mutación roja:
+    // Si un mutante cambiara el write a insert() o a upsert sin ignoreDuplicates, arrojando código 23505:
+    const mutatedMockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'consents') {
+        return {
+          upsert: vi.fn().mockResolvedValue({
+            error: {
+              code: '23505',
+              message: 'duplicate key value violates unique constraint "consents_pkey"',
+            },
+          }),
+        };
+      }
+      return mockFrom(table);
+    });
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mutatedMockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+    const mutatedResult = await merchantOnboardingAction(validFormInput);
+    expect(mutatedResult.ok).toBe(false);
+    if (!mutatedResult.ok) {
+      expect(mutatedResult.code).toBe('INTERNAL_ERROR');
+    }
   });
 });

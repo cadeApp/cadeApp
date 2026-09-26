@@ -170,7 +170,7 @@ export function VehicleForm({
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 p-6 sm:p-8">
         {/* Encabezado */}
         <section className="flex flex-col gap-1.5">
-          <span className="text-sm font-semibold uppercase tracking-wide text-primary">
+          <span className="text-sm font-semibold uppercase tracking-wide text-primary-dark">
             {COURIER_ONBOARDING_COPY.vehicleTitle}
           </span>
           <h1 className="font-display text-xl font-bold text-foreground">
@@ -264,7 +264,7 @@ export function VehicleForm({
                 className="flex items-center justify-between text-sm font-semibold text-foreground"
               >
                 <span>{COURIER_ONBOARDING_COPY.plateLabel}</span>
-                <span className="text-sm font-normal text-primary">
+                <span className="text-sm font-normal text-primary-dark">
                   {COURIER_ONBOARDING_COPY.plateRequiredSub}
                 </span>
               </label>

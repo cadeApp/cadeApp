@@ -13,7 +13,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
             <Link href="/legal/courier" className="inline-flex min-h-12 items-center px-2 py-1 rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Repartidores</Link>
             <Link href="/legal/pilot" className="inline-flex min-h-12 items-center px-2 py-1 rounded-sm underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Piloto</Link>
           </nav>
-          <p className="text-sm text-muted-foreground/80">Hecho en Aguilares, Tucumán · cadeApp 2026</p>
+          <p className="text-sm text-muted-foreground">Hecho en Aguilares, Tucumán · cadeApp 2026</p>
         </div>
       </footer>
     </div>
