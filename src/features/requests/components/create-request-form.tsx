@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,6 +26,7 @@ import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { Input } from '@/ui/input';
+import { MapSkeleton } from '@/ui/map';
 import { notify } from '@/ui/notify';
 import { Textarea } from '@/ui/textarea';
 import { createDeliveryRequestAction } from '../actions';
@@ -35,6 +37,14 @@ import {
   type CreateDeliveryRequestInput,
   type CreateDeliveryRequestOutput,
 } from '../schemas';
+
+const MapPicker = dynamic(
+  () => import('@/ui/map').then((mod) => mod.MapPicker),
+  {
+    ssr: false,
+    loading: () => <MapSkeleton className="h-64 w-full" />,
+  }
+);
 
 export interface CreateRequestFormProps {
   readonly zones: ZoneOption[];
@@ -51,6 +61,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
 
   const [dropoffLocating, setDropoffLocating] = React.useState(false);
   const [dropoffCoordsError, setDropoffCoordsError] = React.useState<string | null>(null);
+  const [showDropoffMap, setShowDropoffMap] = React.useState(false);
 
   const [customChangeInput, setCustomChangeInput] = React.useState('');
   const [serverError, setServerError] = React.useState<string | null>(null);
@@ -350,24 +361,58 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
           </div>
 
           <div className="pt-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleUseMyLocationDropoff}
-              disabled={dropoffLocating}
-              className="min-h-[44px] gap-2 text-sm"
-            >
-              <Navigation
-                className={cn('h-4 w-4 text-primary', dropoffLocating && 'animate-spin')}
-              />
-              {dropoffLocating ? 'Obteniendo GPS...' : 'Fijar ubicación opcional en Aguilares'}
-            </Button>
-            {dropoffLat != null && dropoffLng != null && !dropoffCoordsError && (
-              <span className="ml-3 inline-flex items-center gap-1 text-sm font-medium text-primary">
-                <CheckCircle2 className="h-4 w-4" /> Pin de entrega fijado
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDropoffMap((prev) => !prev)}
+                className="min-h-12 gap-2 text-sm"
+              >
+                <MapPin className="h-4 w-4 text-primary-dark" />
+                {showDropoffMap ? 'Ocultar mapa' : 'Fijar en mapa interactivo'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleUseMyLocationDropoff}
+                disabled={dropoffLocating}
+                className="min-h-12 gap-2 text-sm"
+              >
+                <Navigation
+                  className={cn('h-4 w-4 text-primary', dropoffLocating && 'animate-spin')}
+                />
+                {dropoffLocating ? 'Obteniendo GPS...' : 'Usar mi ubicación'}
+              </Button>
+              {dropoffLat != null && dropoffLng != null && !dropoffCoordsError && (
+                <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-dark">
+                  <CheckCircle2 className="h-4 w-4" /> Pin fijado
+                </span>
+              )}
+            </div>
+
+            {showDropoffMap && (
+              <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
+                <MapPicker
+                  value={
+                    dropoffLat != null && dropoffLng != null
+                      ? { lat: dropoffLat, lng: dropoffLng }
+                      : null
+                  }
+                  onChange={(coords) => {
+                    setValue('dropoffLat', coords ? coords.lat : null, { shouldValidate: true });
+                    setValue('dropoffLng', coords ? coords.lng : null, { shouldValidate: true });
+                    if (coords) setDropoffCoordsError(null);
+                  }}
+                  addressText={watch('dropoffAddress')}
+                  onAddressSelect={(addr) => {
+                    setValue('dropoffAddress', addr, { shouldValidate: true });
+                  }}
+                />
+              </div>
             )}
+
             {dropoffCoordsError && (
               <p className="mt-2 text-sm text-destructive">{dropoffCoordsError}</p>
             )}

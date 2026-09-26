@@ -122,5 +122,18 @@ describe('T-112: CreateRequestForm', () => {
     expect(pinBadge?.className).toContain('text-primary');
     expect(pinBadge?.className).not.toContain('text-success');
   });
+
+  it('T-116: permite alternar la vista del mapa interactivo para fijar el pin de entrega', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    const toggleBtn = screen.getByRole('button', { name: /fijar en mapa interactivo/i });
+    expect(toggleBtn).toBeDefined();
+
+    fireEvent.click(toggleBtn);
+    expect(screen.getByRole('button', { name: /ocultar mapa/i })).toBeDefined();
+
+    fireEvent.click(screen.getByRole('button', { name: /ocultar mapa/i }));
+    expect(screen.getByRole('button', { name: /fijar en mapa interactivo/i })).toBeDefined();
+  });
 });
 
