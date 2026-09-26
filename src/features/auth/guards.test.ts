@@ -132,11 +132,40 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     const aal1Result = evaluateRouteGuard('/admin/couriers', adminWithoutAal2);
     expect(aal1Result.action).toBe('redirect');
     if (aal1Result.action === 'redirect') {
-      expect(aal1Result.redirectTo).toContain('/login?mfaRequired=1');
+      expect(aal1Result.redirectTo).toBe('/login/mfa?redirectTo=%2Fadmin%2Fcouriers');
     }
 
     const aal2Result = evaluateRouteGuard('/admin/couriers', adminWithAal2);
     expect(aal2Result.action).toBe('allow');
+  });
+
+  it('PR106-H02: Flujo MFA completo - admin aal1 intenta entrar a /admin/... -> directo a /login/mfa?redirectTo=... -> permite MFA -> con aal2 accede al destino original', () => {
+    const adminAal1: AuthSession = {
+      userId: 'admin-1',
+      email: 'admin@cadeapp.ar',
+      role: 'admin',
+      aal: 'aal1',
+      consentStatus: 'active',
+    };
+
+    // Paso 1: Admin intenta acceder a ruta protegida admin con aal1
+    const step1 = evaluateRouteGuard('/admin/applicants', adminAal1);
+    expect(step1.action).toBe('redirect');
+    if (step1.action === 'redirect') {
+      expect(step1.redirectTo).toBe('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+    }
+
+    // Paso 2: Admin aal1 llega a la pantalla /login/mfa
+    const step2 = evaluateRouteGuard('/login/mfa', adminAal1);
+    expect(step2.action).toBe('allow');
+
+    // Paso 3: Tras verificar TOTP, la sesión pasa a aal2 y accede a la ruta original
+    const adminAal2: AuthSession = {
+      ...adminAal1,
+      aal: 'aal2',
+    };
+    const step3 = evaluateRouteGuard('/admin/applicants', adminAal2);
+    expect(step3.action).toBe('allow');
   });
 
   it('usuario autenticado en /login o /register es redirigido a su panel según rol', () => {

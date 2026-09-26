@@ -322,7 +322,7 @@ export function evaluateRouteGuard(
     if (session.aal !== 'aal2') {
       return {
         action: 'redirect',
-        redirectTo: `/login?mfaRequired=1&redirectTo=${encodeURIComponent(pathname)}`,
+        redirectTo: `/login/mfa?redirectTo=${encodeURIComponent(pathname)}`,
       };
     }
     return { action: 'allow' };
