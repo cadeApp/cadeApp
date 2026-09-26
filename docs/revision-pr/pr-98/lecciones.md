@@ -1,17 +1,13 @@
 # Lecciones de la PR #98
 
-## Ronda 5
+## Ronda 6
 
-### Una mutation proof debe mutar la implementación
+### Un fake stateful puede ser una mutation proof válida
 
-Cambiar el mock para que devuelva el error que produciría una regresión no demuestra que el test detecte esa regresión. El test debe permanecer igual; lo que cambia es el source o el estado realista que ejerce la constraint.
+No hace falta fabricar un segundo mock mutado. Si el mismo fake modela la constraint real y expone la operación segura y la insegura sobre el mismo estado, una mutación de producción cambia naturalmente el camino ejecutado y rompe las expectativas existentes.
 
-### La evidencia generada puede contradecir el resumen humano
+### La salida de herramientas manda sobre los resúmenes
 
-H08 mejoró porque ahora existen artefactos reales. Precisamente esos artefactos permitieron detectar que el body decía “0 violaciones” mientras axe-report registraba una SERIOUS. La fuente de verdad es la salida de la herramienta, no el resumen del agente.
+Axe y bundle-budget mostraron que los resúmenes humanos deben derivar de los artefactos, no al revés.
 
-### Scope mínimo para una corrección visual
-
-D06/A04 autoriza solo StepIndicator porque axe localizó allí el nodo defectuoso. No hace falta ampliar todo courier-onboarding.
-
-No se propone AG nueva; P08/AG-61/63 y AG-70 ya cubren la clase. La regla anti-tests-falsos se incorpora explícitamente a los prompts de remediación.
+No se propone AG nueva; las reglas y patrones actuales ya cubren ambas clases.

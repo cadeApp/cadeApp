@@ -1,68 +1,39 @@
 # Comandos reproducibles — PR #98
 
-## Ronda 5 — SHA f8f11c3
+## Ronda 6 — SHA 293284d
 
-### H13 · source productivo
+### H08
 
-Merchant y courier usan:
+`step-indicator.tsx`: `isDone ? 'text-primary-dark' : ...`
 
-```ts
-.upsert(payload, {
-  onConflict: 'profile_id,document,version',
-  ignoreDuplicates: true,
-})
-```
+`axe-report.json`: 9 superficies, `violationsCount = 0` e `incompleteCount = 0` en todas.
 
-La implementación es compatible con idempotencia de misma versión sin reescribir la fila histórica.
+### H13/H14
 
-### H14 · mutation proof inválida
-
-Los tests actuales no editan `actions.ts`.
-
-En lugar de eso crean un segundo mock que devuelve manualmente:
-
+Fake stateful:
 ```text
-code: 23505
-duplicate key value violates unique constraint consents_pkey
+store = Map(profile_id:document:version -> row)
+insert(existing key) -> 23505
+upsert(existing key, ignoreDuplicates=true) -> no-op, conserva accepted_at
 ```
 
-y luego verifican `INTERNAL_ERROR`.
-
-Criterio de R6:
-- mismo test/fake;
-- source correcto => verde;
-- mutar realmente `upsert` a `insert` => rojo;
-- restauración source en finally si se usa harness.
-
-### H08 · axe real
-
-`src/features/legal/evidence/T-311/axe-summary.md`:
-
-```text
-/onboarding/vehicle
-Violaciones WCAG AA: 1
-SERIOUS color-contrast
-ratio 2.39:1
-expected 4.5:1
-```
-
-`axe-report.json`:
-```text
-courier_onboarding.violationsCount = 1
-```
-
-Source causal:
-```tsx
-src/features/courier-onboarding/components/step-indicator.tsx
-isDone ? 'text-primary' : ...
-```
-
-D06=A autoriza ese archivo.
-
-### Artefactos
-
-Existen 18 PNG no vacíos para 390x844 y 360x800 más los dos reportes axe.
+Los tests inicializan filas preexistentes y esperan action ok + accepted_at original intacto. Una regresión productiva `upsert -> insert` usa el mismo `fake.insert` y rompe esas expectativas.
 
 ### CI
 
-No se inspecciona CI final mientras H08/H14 estén abiertos.
+Run `36212781987`:
+```text
+lint          success
+unit          success
+db-tests      success
+build         success
+typecheck     success
+audit         success
+bundle-budget success
+```
+
+Unit: 54/54 files, 593/593 tests; workflow 21/21; ADR 6/6.
+
+DB: Files=9, Tests=1472, Result=PASS; tipos generados exitosamente.
+
+Bundle: `/design-system` 184 kB sobre límite; rutas T-311 OK; job success con warning no bloqueante.
