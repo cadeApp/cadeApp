@@ -1,49 +1,38 @@
 # PR #106 — T-122 · Admin de repartidores
 
-> 🔴 **Ronda 3: CON BLOQUEANTES (6)**
+> 🔴 **Ronda 4: CON BLOQUEANTES (2)**
 
 | | |
 |---|---|
 | PR | #106 |
 | Rama | `feat/T-122-admin-repartidores` → `develop` |
-| Base | `develop@bdafee8ff04d6b620eb46dd885b62fe0d675ca49` |
-| SHA funcional R3 | `f3144add41b4c493897c4a78323445cf4545637b` |
-| Resultado | H03/H10 cerrados · H11 aceptado/diferido · H07 parcial · H12–H16 abiertos |
+| SHA funcional R4 | `e4d0ddffdbfdac9e224c7d93539c01e5eef577fa` |
+| Resultado | H07/H12/H13/H15 cerrados · H14/H16 parciales · H11 diferido |
 
 ## Decisiones de Lautaro073
 
 - **D01 / 1-A:** URLs canónicas `/admin/...`.
-- **D02 / 2-A:** primitivas oficiales shadcn vía CC-010.
-- **D03 / A:** autorizado `src/app/(admin)/admin-nav.test.tsx` y agregado formalmente a la ficha.
-- **D04 / B:** evidencia visual H11 diferida a staging/T-300; no se declara verificada en T-122.
+- **D02 / 2-A:** primitivas shadcn vía CC-010.
+- **D03 / A:** `admin-nav.test.tsx` autorizado.
+- **D04 / B:** evidencia visual H11 diferida a T-300/staging.
 
 ## Rondas
 
-| Ronda | SHA | Resultado | Informe |
-|---|---|---|---|
-| 1 | `085d2c3d85c49c17d950c217353b91d4a6ffbdd6` | CON BLOQUEANTES (11) | [ronda-1.md](revisiones/ronda-1.md) |
-| 2 | `0c2da538cedca58d1a583d7b8c8c685e3baba7ed` | CON BLOQUEANTES (4) | [ronda-2.md](revisiones/ronda-2.md) |
-| 3 | `f3144add41b4c493897c4a78323445cf4545637b` | CON BLOQUEANTES (6) | [ronda-3.md](revisiones/ronda-3.md) |
+| Ronda | SHA | Resultado |
+|---|---|---|
+| 1 | `085d2c3d85c49c17d950c217353b91d4a6ffbdd6` | CON BLOQUEANTES (11) |
+| 2 | `0c2da538cedca58d1a583d7b8c8c685e3baba7ed` | CON BLOQUEANTES (4) |
+| 3 | `f3144add41b4c493897c4a78323445cf4545637b` | CON BLOQUEANTES (6) |
+| 4 | `e4d0ddffdbfdac9e224c7d93539c01e5eef577fa` | CON BLOQUEANTES (2) |
 
 ## Estado actual
 
-| ID | Estado |
-|---|---|
-| H01 | ✅ arreglado-verificado |
-| H02 | ✅ arreglado-verificado |
-| H03 | ✅ arreglado-verificado |
-| H04 | ✅ arreglado-verificado |
-| H05 | ✅ arreglado-verificado |
-| H06 | ✅ arreglado-verificado |
-| H07 | 🟠 parcial — falta cursor por id |
-| H08 | ✅ arreglado-verificado |
-| H09 | ✅ arreglado-verificado |
-| H10 | ✅ arreglado-verificado |
-| H11 | 🟦 aceptado — diferido a T-300 |
-| H12 | 🔴 abierto — queries con service role |
-| H13 | 🔴 abierto — Zod/RHF faltante |
-| H14 | 🔴 abierto — A02 Tabs/Dialog/motivo |
-| H15 | 🔴 abierto — countdown TOTP |
-| H16 | 🔴 abierto — convenciones UI/feature |
+- H01–H10: ✅ arreglado-verificado
+- H11: 🟦 aceptado/diferido T-300
+- H12: ✅ arreglado-verificado
+- H13: ✅ arreglado-verificado
+- H14: 🟠 parcial — orientación Tabs + Escape/foco + rotación 270°
+- H15: ✅ arreglado-verificado
+- H16: 🟠 parcial — copy/DomainError/animaciones locales
 
-Detalle: [revisiones/ronda-3.md](revisiones/ronda-3.md) · Datos: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [evidencia/comandos.md](evidencia/comandos.md)
+Detalle: [revisiones/ronda-4.md](revisiones/ronda-4.md)

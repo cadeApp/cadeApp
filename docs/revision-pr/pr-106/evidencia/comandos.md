@@ -435,3 +435,58 @@ Se excluye `max-w-[1280px]` del barrido porque A00 lo exige literalmente.
 ## Limitación
 
 No se ejecutaron mutaciones reviewer-owned de H12–H16 porque requieren modificar el checkout y este entorno de revisión opera por GitHub sin checkout privado materializable. No se inventa RED. El prompt de corrección exige mutaciones reales al agente y la siguiente ronda las contrastará.
+
+
+---
+
+# Ronda 4 — SHA e4d0ddffdbfdac9e224c7d93539c01e5eef577fa
+
+## CI
+
+Run `36261220403`:
+
+```text
+unit: 66 / 66 files · 732 / 732 tests PASS
+typecheck: PASS
+lint: PASS
+build: PASS
+audit: PASS
+db-tests: Files=12 · Tests=1529 · PASS
+bundle-budget: success con warnings
+approval-policy: FAIL esperado por informe CON BLOQUEANTES
+```
+
+El body del autor registró 2 fallos locales intermitentes, pero el CI del mismo SHA ejecutó la suite completa sin reproducirlos.
+
+## Cierres R4
+
+- H07: keyset real por `profile_id`, sin range/offset.
+- H12: queries con cliente de sesión/RLS.
+- H13: Zod en fronteras + RHF/zodResolver + UUID route param.
+- H15: countdown TOTP con fake timers.
+
+## H14 residual
+
+- Tabs verticales sin `orientation="vertical"`.
+- applicant-detail-view.test.tsx no contiene prueba de Escape ni focus return.
+- `ROTATION_CLASSES[270] = 'rotate-270'`.
+- Tailwind del repo: 3.4.19; `tailwind.config.ts` no extiende `rotate`.
+
+## H16 residual
+
+Regla 60 y 25:
+- UI en es-AR desde copy.ts.
+- mensajes de Action por DomainErrorCode.
+- animaciones solo Motion/presets.
+
+Código actual:
+- ApplicantsQueue importa ADMIN_COPY pero no lo usa.
+- AdminNav/MfaForm no importan ADMIN_COPY.
+- A02 muestra estados/vehicle type mediante `.toUpperCase()`.
+- A02 mantiene múltiples notify literals.
+- transition-colors en nav/queue.
+- transition-transform + duration-200 en visor.
+
+## Rerun independiente
+
+Se solicitó rerun del job unit `108457287688` sobre este mismo SHA. Al redactar esta ronda el workflow aparece `in_progress`; no se declara un resultado que todavía no existe.

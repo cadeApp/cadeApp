@@ -33,3 +33,11 @@ El RED inicial no fue una declaración retrospectiva: el job unit del commit ini
 - **Revisar el diseño pantalla por pantalla:** comprobar solo los hallazgos anteriores dejó escapar Tabs/Dialog/motivo en A02 y countdown en A00.
 - **Green CI no sustituye reglas de arquitectura/UI:** Toaster duplicado, estilos inline y ausencia de RHF/Zod pueden convivir con 647 tests verdes.
 - **Clase completa, no instancia:** después del primer valor arbitrario se barrió todo el alcance admin y se enumeraron Toaster, estilos, skeletons, formateadores y copy.
+
+
+## Ronda 4
+
+- Un archivo `copy.ts` no cumple por sí solo la regla: hay que comprobar que la UI realmente lo consuma y que no exponga enums internos en inglés.
+- Las primitivas correctas no bastan si el wiring específico no se prueba: un Dialog controlado sin DialogTrigger necesita verificar Escape y retorno de foco en la feature.
+- Las clases Tailwind dinámicas deben pertenecer a la escala real del repo. `rotate-270` pasó typecheck/build porque Tailwind simplemente no genera una utilidad inexistente.
+- Al corregir estilos inline no hay que sustituirlos por transiciones locales si Regla 60 reserva las animaciones a Motion.
