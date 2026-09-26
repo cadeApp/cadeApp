@@ -141,3 +141,18 @@ No se agrega numeración AG nueva.
 - En una lista live, el cursor también forma parte del contrato de cache: `useInfiniteQuery` permite conservar páginas cargadas sin volver a introducir escrituras manuales de caché.
 - El índice debe seguir el mismo orden keyset (`created_at DESC, id DESC`) y el filtro principal; de lo contrario se cumple la UI pero no la intención de la regla de performance.
 - D04/1-A resuelve la contradicción de scope de una vez: snapshot, endpoints, hooks, componentes e índices se corrigen juntos.
+---
+
+## Ronda 7
+
+## `AG-91` · No adaptes una API de framework a una llamada inválida del test
+
+**Origen:** `PR82-R01`.
+
+Un Route Handler válido necesita un `Request` real, pero el test de «sin cursor» llamaba `GET()` directamente. Para conservar ese test se hizo opcional el argumento de producción. TypeScript y Vitest quedaron verdes; el validador especial de Next lo rechazó.
+
+> **Regla propuesta:** cuando un framework entrega un argumento obligatorio (Request, params, context), el test debe construir ese argumento. Nunca se hace opcional en producción solo para facilitar una llamada unitaria.
+
+- **R02** repite H18: los helpers de test también están sujetos a la prohibición de `any` y non-null assertions.
+- **H29** refuerza AG-70: un texto «RED» no es evidencia si la mutación descrita no puede causar esa salida con el mock actual. El comando/control debe ser reproducible sobre el árbol que se entrega.
+- **H30** repite AG-71: cerrar sesión no congela develop; el target se compara otra vez justo antes de declarar readiness.
