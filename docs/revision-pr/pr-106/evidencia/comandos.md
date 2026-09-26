@@ -490,3 +490,47 @@ Código actual:
 ## Rerun independiente
 
 Rerun independiente del job unit sobre este mismo SHA: job `108458559773` → PASS, 66/66 archivos y 732/732 tests.
+
+
+---
+
+# Ronda 5 — SHA 9c603f331a211b4a4f6c0de27c370210e0dde363
+
+## CI funcional
+
+Run `36263140658`:
+
+```text
+unit: 66 / 66 files · 736 / 736 tests PASS
+typecheck: PASS
+lint: PASS
+build: PASS
+audit: PASS
+db-tests: Files=12 · Tests=1529 · PASS
+bundle-budget: success con warnings
+```
+
+## H14
+
+Inspección final:
+- Tabs: `orientation="vertical"`.
+- Test: `aria-orientation="vertical"`.
+- Test de Escape + retorno de foco al trigger.
+- Rotación: `270: '-rotate-90'`.
+- Test de rotación completo y prohibición de `rotate-270`.
+- `applicant-detail-view.test.tsx`: 8/8 PASS.
+
+## H16
+
+Inspección final:
+- ADMIN_COPY consumido por nav/queue/MFA/detail.
+- Estados y vehículos es-AR.
+- ActionResult error → `getDomainErrorMessage(res.code)`.
+- Sin copy literal en notify success/error.
+- Sin `transition-`, `duration-`, `animate-` locales en alcance admin.
+- Error boundaries con copy seguro.
+- `admin.test.ts`: 18/18 PASS.
+
+## Resultado
+
+SIN BLOQUEANTES. H11 permanece aceptado/diferido a T-300; no se falsea como verificado.

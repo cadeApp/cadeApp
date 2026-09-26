@@ -41,3 +41,12 @@ El RED inicial no fue una declaración retrospectiva: el job unit del commit ini
 - Las primitivas correctas no bastan si el wiring específico no se prueba: un Dialog controlado sin DialogTrigger necesita verificar Escape y retorno de foco en la feature.
 - Las clases Tailwind dinámicas deben pertenecer a la escala real del repo. `rotate-270` pasó typecheck/build porque Tailwind simplemente no genera una utilidad inexistente.
 - Al corregir estilos inline no hay que sustituirlos por transiciones locales si Regla 60 reserva las animaciones a Motion.
+
+
+## Ronda 5
+
+- H14 confirmó que la accesibilidad de una primitiva no se presume: el wiring real debe probar orientación, Escape y retorno de foco.
+- Las clases dinámicas de Tailwind deben validarse contra la escala instalada; una clase inexistente puede compilar y fallar solo visualmente.
+- Centralizar copy significa consumirlo de verdad en la UI, no solo crear el archivo.
+- Los códigos de dominio deben conservar semántica hasta la UI mediante `getDomainErrorMessage`; un mensaje genérico borra información útil.
+- Con H14/H16 cerrados y CI completo verde, no quedan bloqueantes técnicos en T-122.

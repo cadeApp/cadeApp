@@ -1,13 +1,14 @@
 # PR #106 — T-122 · Admin de repartidores
 
-> 🔴 **Ronda 4: CON BLOQUEANTES (2)**
+> 🟢 **Ronda 5: SIN BLOQUEANTES**
 
 | | |
 |---|---|
 | PR | #106 |
 | Rama | `feat/T-122-admin-repartidores` → `develop` |
-| SHA funcional R4 | `e4d0ddffdbfdac9e224c7d93539c01e5eef577fa` |
-| Resultado | H07/H12/H13/H15 cerrados · H14/H16 parciales · H11 diferido |
+| SHA funcional final revisado | `9c603f331a211b4a4f6c0de27c370210e0dde363` |
+| Resultado | SIN BLOQUEANTES |
+| Carry-over | H11 → T-300/staging por D04-B |
 
 ## Decisiones de Lautaro073
 
@@ -24,15 +25,12 @@
 | 2 | `0c2da538cedca58d1a583d7b8c8c685e3baba7ed` | CON BLOQUEANTES (4) |
 | 3 | `f3144add41b4c493897c4a78323445cf4545637b` | CON BLOQUEANTES (6) |
 | 4 | `e4d0ddffdbfdac9e224c7d93539c01e5eef577fa` | CON BLOQUEANTES (2) |
+| 5 | `9c603f331a211b4a4f6c0de27c370210e0dde363` | SIN BLOQUEANTES |
 
-## Estado actual
+## Estado final
 
 - H01–H10: ✅ arreglado-verificado
-- H11: 🟦 aceptado/diferido T-300
-- H12: ✅ arreglado-verificado
-- H13: ✅ arreglado-verificado
-- H14: 🟠 parcial — orientación Tabs + Escape/foco + rotación 270°
-- H15: ✅ arreglado-verificado
-- H16: 🟠 parcial — copy/DomainError/animaciones locales
+- H11: 🟦 aceptado/diferido a T-300
+- H12–H16: ✅ arreglado-verificado
 
-Detalle: [revisiones/ronda-4.md](revisiones/ronda-4.md)
+Detalle final: [revisiones/ronda-5.md](revisiones/ronda-5.md)
