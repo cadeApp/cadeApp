@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('sonner', () => ({
@@ -25,6 +25,15 @@ import { formatArs, formatDate, formatPhone } from '@/lib/format';
 import {
   BRAND_ASSET_PATHS,
   BRAND_LOGO_SVG_MARKUP,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
   BottomNav,
   BrandLogo,
   Button,
@@ -133,6 +142,15 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       expect(matrix.badgeSuccessAA).toBe(true);
       expect(matrix.warningBadgeAA).toBe(true);
       expect(matrix.dangerBadgeAA).toBe(true);
+      expect(matrix.whatsappButtonAA).toBe(true);
+
+      expect(getContrastRatio('#FFFFFF', DESIGN_TOKENS.colors.whatsapp)).toBeLessThan(4.5);
+      expect(
+        getContrastRatio(DESIGN_TOKENS.colors.whatsappForeground, DESIGN_TOKENS.colors.whatsapp)
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        getContrastRatio(DESIGN_TOKENS.colors.whatsappForeground, DESIGN_TOKENS.colors.whatsappHover)
+      ).toBeGreaterThanOrEqual(4.5);
     });
 
     it('respeta la cláusula Anti-12px (piso tipográfico >= 14px / 0.875rem) y targets táctiles >= 48px', () => {
@@ -223,8 +241,72 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
       // Presionar Escape cierra el modal y restaura el foco al disparador (H18)
       fireEvent.keyDown(dialog, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(trigger);
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+    });
+  });
+
+  describe('4B. CC-009 AlertDialog y token semántico WhatsApp', () => {
+    it('AlertDialog usa role alertdialog, foco inicial seguro, focus trap, Escape/cancel y retorno al trigger', async () => {
+      const onAction = vi.fn();
+      render(
+        <AlertDialog>
+          <AlertDialogTrigger>Abrir alerta</AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Cancelar envío</AlertDialogTitle>
+              <AlertDialogDescription>Esta acción es irreversible.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Volver</AlertDialogCancel>
+              <AlertDialogAction onClick={onAction}>Sí, cancelar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      );
+
+      const trigger = screen.getByRole('button', { name: 'Abrir alerta' });
+      trigger.focus();
+      fireEvent.click(trigger);
+
+      const alert = screen.getByRole('alertdialog');
+      const cancel = screen.getByRole('button', { name: 'Volver' });
+      const action = screen.getByRole('button', { name: 'Sí, cancelar' });
+      expect(alert.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement).toBe(cancel);
+
+      action.focus();
+      fireEvent.keyDown(alert, { key: 'Tab' });
+      expect(document.activeElement).toBe(cancel);
+
+      fireEvent.keyDown(alert, { key: 'Tab', shiftKey: true });
+      expect(document.activeElement).toBe(action);
+
+      fireEvent.keyDown(alert, { key: 'Escape' });
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+      fireEvent.click(trigger);
+      fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+
+      fireEvent.click(trigger);
+      fireEvent.click(screen.getByRole('button', { name: 'Sí, cancelar' }));
+      expect(onAction).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    it('el token WhatsApp está sincronizado y Button consume clases semánticas sin hex arbitrarios', () => {
+      expect(DESIGN_TOKENS.colors.whatsapp).toBe('#25D366');
+      expect(DESIGN_TOKENS.colors.whatsappHover).toBe('#20BA5A');
+      expect(DESIGN_TOKENS.colors.whatsappForeground).toBe('#12182C');
+
+      const { container } = render(<Button variant="whatsapp">WhatsApp</Button>);
+      const btn = container.querySelector('button');
+      expect(btn?.className).toContain('bg-whatsapp');
+      expect(btn?.className).toContain('text-whatsapp-foreground');
+      expect(btn?.className).toContain('hover:bg-whatsapp-hover');
+      expect(btn?.className).not.toMatch(/#[0-9a-fA-F]{6}/);
     });
   });
 
@@ -583,8 +665,7 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
 
       fireEvent.keyDown(sheetDialog, { key: 'Escape' });
       expect(screen.queryByRole('dialog')).toBeNull();
-      await Promise.resolve();
-      expect(document.activeElement).toBe(trigger);
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
     });
 
     it('D04: ejercita todas las ramas de BottomNav, Button, TopBar, EmptyState, Form, Select, Dialog, Sheet y auditDomAccessibilityStructure (>= 80% por archivo)', () => {
@@ -851,6 +932,9 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
         ['warning', DESIGN_TOKENS.colors.warning],
         ['warning-surface', DESIGN_TOKENS.colors.warningSurface],
         ['destructive', DESIGN_TOKENS.colors.danger],
+        ['whatsapp', DESIGN_TOKENS.colors.whatsapp],
+        ['whatsapp-hover', DESIGN_TOKENS.colors.whatsappHover],
+        ['whatsapp-foreground', DESIGN_TOKENS.colors.whatsappForeground],
       ];
 
       for (const [cssVar, tokenHex] of expectedPairs) {

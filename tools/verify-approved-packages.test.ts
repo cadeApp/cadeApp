@@ -20,6 +20,7 @@ const APPROVED_RUNTIME_PACKAGES = new Set([
   'sonner',
   'react-hook-form',
   '@hookform/resolvers',
+  '@radix-ui/react-alert-dialog',
   '@radix-ui/react-dialog',
   '@radix-ui/react-select',
   '@radix-ui/react-label',

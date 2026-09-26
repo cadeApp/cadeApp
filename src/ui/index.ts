@@ -12,6 +12,7 @@ export * from './empty-state';
 export * from './top-bar';
 export * from './bottom-nav';
 export * from './dialog';
+export * from './alert-dialog';
 export * from './sheet';
 export * from './form';
 export * from './toaster';
