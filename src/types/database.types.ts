@@ -669,7 +669,30 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      merchant_public: {
+        Row: {
+          business_name: string
+          default_pickup_address: string | null
+          default_pickup_zone_id: string | null
+          profile_id: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchants_default_pickup_zone_id_fkey"
+            columns: ["default_pickup_zone_id"]
+            isOneToOne: false
+            referencedRelation: "zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchants_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       accept_offer: { Args: { p_offer_id: string }; Returns: Json }
@@ -704,6 +727,19 @@ export type Database = {
       }
       admin_verify_document: {
         Args: { p_decision: string; p_document_id: string; p_reason?: string }
+        Returns: Json
+      }
+      calculate_route_distance: {
+        Args: {
+          p_dropoff_lat?: number | null
+          p_dropoff_lng?: number | null
+          p_dropoff_zone_id?: string | null
+          p_dropoff_zone_name?: string | null
+          p_pickup_lat?: number | null
+          p_pickup_lng?: number | null
+          p_pickup_zone_id?: string | null
+          p_pickup_zone_name?: string | null
+        }
         Returns: Json
       }
       cancel_request: {
