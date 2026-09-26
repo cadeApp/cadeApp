@@ -15,3 +15,11 @@ No se propone número AG nuevo todavía. Los problemas encontrados ya caen en re
 ### Qué salió bien
 
 El RED inicial no fue una declaración retrospectiva: el job unit del commit inicial ejecutó 13 tests y dejó 7 fallos concretos. Conviene preservar esa forma de evidencia en las correcciones de R2: salida real + mutación reviewer-owned, sin tests falsos ni expectativas debilitadas.
+
+
+## Ronda 2
+
+- **P08 confirmado otra vez:** probar un helper aislado no verifica el cableado que protege. H03 ya tiene sanitizer correcto, pero falta demostrar que la action lo usa y que el componente navega con el retorno de la action.
+- **Regla 25 frontera URL:** un type cast no valida `searchParams`; H07 demuestra que incluso con paginación server-side correcta pueden entrar `Infinity` o enums inexistentes.
+- **Control conductual vs búsqueda de texto:** H10 muestra que encontrar `logoutAction` en el source no prueba que el usuario al hacer click cierre sesión.
+- H11 mejoró en honestidad: el DoD visual se dejó sin marcar, pero la evidencia sigue siendo requisito de cierre.

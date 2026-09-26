@@ -240,3 +240,90 @@ No aceptar como verificación una batería escrita solo por el autor. La R2 debe
 8. convertir error DB a `[]`/`null` → error-state test rojo;
 9. insertar un `text-xs` → control tipográfico rojo;
 10. quitar signOut → logout test rojo.
+
+
+---
+
+# Ronda 2 — SHA 0c2da538cedca58d1a583d7b8c8c685e3baba7ed
+
+## Preflight
+
+```text
+PR: #106
+Base: bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+Head funcional: 0c2da538cedca58d1a583d7b8c8c685e3baba7ed
+Merge ref: 56eccaaef7976f253ed68ea029347bfc3898d1a0
+Mergeable: true
+Comentarios antes de R2: 1 (solo informe R1)
+```
+
+El merge de develop incorporó CC-010 y su documentación; no se trata como desvío de alcance del autor de T-122.
+
+## CI
+
+Run `36228469893`:
+
+```text
+typecheck: PASS
+lint: PASS
+unit: PASS — 58 / 58 files, 636 / 636 tests
+build: PASS
+audit: PASS
+bundle-budget: success con warnings
+db-tests: PASS — Files=12, Tests=1529, Result: PASS
+```
+
+Rutas del build:
+
+```text
+/admin/applicants       189 kB
+/admin/applicants/[id]  189 kB
+/admin/couriers         103 kB
+/login/mfa              189 kB
+```
+
+Bundle checker:
+
+```text
+/admin/applicants       189 kB | Supera el límite
+/admin/applicants/[id]  189 kB | Supera el límite
+/login/mfa              189 kB | Supera el límite
+/design-system          185 kB | Supera el límite
+warning: Alguna ruta supera el presupuesto de First Load JS.
+```
+
+La regla 25 explicita el presupuesto de 180 kB para comercio/repartidor; se deja como observación no bloqueante para admin.
+
+## Verificaciones cerradas
+
+- H01: build + route-integrity 51/51.
+- H02: guards.test 20/20.
+- H04/H05: actions.test 13/13 con cliente exacto y payload canónico.
+- H06: primitivas CC-010 consumidas desde src/ui.
+- H08: queries.test 6/6 + loading/error presentes.
+- H09: admin.test 10/10 y barrido de 0 text-xs.
+
+## Residuos
+
+### H03
+`sanitizeAdminRedirect` está probado como helper, pero no hay test exitoso de `verifyAdminMfaAction` con redirect hostil ni test de MfaForm/router. El wiring sigue sin control independiente.
+
+### H07
+Código actual de la page:
+
+```ts
+const tab = (resolvedParams.tab as AdminApplicantTab) || 'pending';
+const page = Math.max(1, Number(resolvedParams.page) || 1);
+```
+
+`page=Infinity` no cae al fallback. `tab=ghost` atraviesa el cast. No cumple parseo Zod de searchParams.
+
+### H10
+El test actual exige solo que el archivo contenga el texto `logoutAction`. No demuestra click → signOut.
+
+### H11
+No hay comentarios/capturas nuevas en PR #106. El body mantiene correctamente el checkbox visual sin marcar.
+
+## Limitación de mutaciones
+
+No se ejecutó una batería local porque el entorno de revisión no dispone de checkout reproducible. No se fabrican resultados. Las mutaciones que deben ejecutarse en la siguiente corrección quedan especificadas en `revisiones/ronda-2.md`.
