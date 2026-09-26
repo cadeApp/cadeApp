@@ -131,3 +131,13 @@ No se agrega numeración AG nueva.
 - **H24** refuerza **AG-70**: una mutación en rojo no sirve si cae por un `TypeError` del mock antes de la aserción que debía proteger.
 - **H25** corrige una instrucción de la propia revisión: «usar la fuente canónica» no significa elegir el wrapper más alto si ese wrapper añade trabajo privilegiado ajeno al dato requerido. Para polling, usar la frontera más baja que preserve autorización y contrato.
 - El CI mostró otra defensa útil: el job `build` quedó falsamente verde porque `tee` ocultó el exit de `next build`, pero `bundle-budget` falló al no encontrar rutas. Es un follow-up de CI fuera de T-204; no debe arreglarse desde esta PR.
+---
+
+## Ronda 6
+
+No se agrega numeración AG nueva.
+
+- **H28** es una falla de enumeración de clase: validar que una query sea fresca, segura y con error state no alcanza si la lista sigue sin cota. La regla 25 §7 debe revisarse en pareja **SSR inicial + refetch live**, porque paginar solo uno deja la misma pantalla incumpliendo.
+- En una lista live, el cursor también forma parte del contrato de cache: `useInfiniteQuery` permite conservar páginas cargadas sin volver a introducir escrituras manuales de caché.
+- El índice debe seguir el mismo orden keyset (`created_at DESC, id DESC`) y el filtro principal; de lo contrario se cumple la UI pero no la intención de la regla de performance.
+- D04/1-A resuelve la contradicción de scope de una vez: snapshot, endpoints, hooks, componentes e índices se corrigen juntos.
