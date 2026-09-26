@@ -400,3 +400,67 @@ Los tres callers usan `fetch(url)` sin `{ cache: 'no-store' }`.
 ## Limitación
 
 No se ejecutaron mutaciones reviewer en un checkout local porque el entorno de revisión no pudo materializar el repo por resolución de red. No se inventa evidencia runtime; los datos runtime anteriores salen del CI exact-head.
+---
+
+# Ronda 6 — evidencia sobre `6c52a31`
+
+## Sincronización
+
+```text
+develop...branch: ahead 22 / behind 0
+merge-base: bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+commits desde R5: 092edad + 6c52a31
+```
+
+## CI exact-head — run 36258029324
+
+```text
+unit          SUCCESS — 64 files / 674 tests
+typecheck     SUCCESS
+lint          SUCCESS
+db-tests      SUCCESS
+audit         SUCCESS
+build         SUCCESS — Next.js genera /api/live/available-requests, /api/live/requests/[requestId]/offers y /api/live/trips/[tripId]
+bundle-budget SUCCESS
+```
+
+## H22–H27
+
+- H22: firmas `params: Promise<...>` en ambas routes; build real verde.
+- H23: 0 `as unknown as T` / 0 generic T en useTrip; test sin initialTrip verde.
+- H24: mock ownership contiene cadena offers.order y la guarda correcta evita consultarla.
+- H25: `t204.ts` importa/usa `getTripDetailsRpc`; no contiene `getTripDetailsServer`.
+- H26: `use-request-offers.ts` no publica setOffers ni llama setQueryData; componente sin onRegisterRealtime.
+- H27: los tres fetch incluyen `{ cache: 'no-store' }`.
+
+## H28 — enumeración completa
+
+Regla raíz: `.agents/rules/25-stack-y-patrones.md:77`: toda lista paginada, máximo 50, cursor created_at/id e índice.
+
+```text
+FEED SSR:  getAvailableRequests()                 -> order published_at; sin limit/cursor
+FEED LIVE: getAvailableRequestsLiveServer()       -> order published_at; sin limit/cursor
+OFFERS SSR: getMerchantRequestWithOffers()        -> order created_at; sin limit/cursor
+OFFERS LIVE:getRequestOffersLiveServer()          -> order created_at; sin limit/cursor
+HOOKS:      useAvailableRequests/useRequestOffers -> useQuery; sin fetchNextPage
+UI:         CourierFeed/RequestOffersList         -> sin Cargar más
+TRIP:       recurso singular; excluido
+```
+
+Índices observados en schema v1:
+
+```text
+delivery_requests_published_idx ON delivery_requests (created_at desc) WHERE status='published'
+offers_courier_idx ON offers (courier_id, created_at desc)
+offers_one_active_per_courier_request_idx ON offers (request_id, courier_id) WHERE status in ('pending','accepted')
+```
+
+No existe el desempate `id` para published ni `(request_id, created_at, id)` para lista de ofertas.
+
+## Decisión D04
+
+Lautaro073 respondió `1-A`: paginación completa ahora en T-204. La decisión incluye los dos índices mínimos necesarios para cumplir la misma regla; no se abre una segunda decisión de scope.
+
+## Limitación
+
+El checkout local del reviewer sigue sin estar disponible; no se inventan mutaciones runtime. H28 se demuestra por inspección estructural y regla raíz. Las mutaciones obligatorias para el arreglo quedan especificadas en el prompt de R6.
