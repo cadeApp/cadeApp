@@ -1,4 +1,3 @@
-import * as React from 'react';
 import { notFound } from 'next/navigation';
 import { getApplicantDetail } from '@/features/admin/server';
 import { ApplicantDetailView } from '@/features/admin';

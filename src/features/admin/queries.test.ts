@@ -12,35 +12,40 @@ describe('Admin Queries (T-122 DoD)', () => {
   });
 
   describe('Cola de postulantes (getApplicantsQueue)', () => {
-    it('retorna lista mapeada de postulantes y resume documentos correctamente', async () => {
+    it('retorna lista mapeada de postulantes con paginación server-side y resume documentos (PR106-H07)', async () => {
+      const mockRange = vi.fn().mockResolvedValue({
+        data: [
+          {
+            profile_id: 'courier-1',
+            status: 'pending',
+            vehicle_type: 'moto',
+            vehicle_plate: 'A123BCD',
+            dni_hmac: 'abcdef123456',
+            doc_level: 1,
+            license_status: 'submitted',
+            insurance_status: 'none',
+            profiles: {
+              display_name: 'Juan Perez',
+              phone: '3865123456',
+              created_at: '2026-09-25T10:00:00Z',
+            },
+            courier_documents: [
+              { kind: 'dni_front', status: 'submitted' },
+              { kind: 'dni_back', status: 'submitted' },
+              { kind: 'selfie', status: 'submitted' },
+            ],
+          },
+        ],
+        count: 1,
+        error: null,
+      });
+
       const mockAdminSupabase = {
         from: vi.fn().mockReturnValue({
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({
-                data: [
-                  {
-                    profile_id: 'courier-1',
-                    status: 'pending',
-                    vehicle_type: 'moto',
-                    vehicle_plate: 'A123BCD',
-                    dni_hmac: 'abcdef123456',
-                    doc_level: 1,
-                    license_status: 'submitted',
-                    insurance_status: 'none',
-                    profiles: {
-                      display_name: 'Juan Perez',
-                      phone: '3865123456',
-                      created_at: '2026-09-25T10:00:00Z',
-                    },
-                    courier_documents: [
-                      { kind: 'dni_front', status: 'submitted' },
-                      { kind: 'dni_back', status: 'submitted' },
-                      { kind: 'selfie', status: 'submitted' },
-                    ],
-                  },
-                ],
-                error: null,
+              order: vi.fn().mockReturnValue({
+                range: mockRange,
               }),
             }),
           }),
@@ -50,26 +55,35 @@ describe('Admin Queries (T-122 DoD)', () => {
         mockAdminSupabase as unknown as ReturnType<typeof adminSupabase.createAdminClient>
       );
 
-      const queue = await getApplicantsQueue('pending');
-      expect(Array.isArray(queue)).toBe(true);
-      expect(queue).toHaveLength(1);
-      expect(queue[0]?.fullName).toBe('Juan Perez');
-      expect(queue[0]?.phone).toBe('3865123456');
-      expect(queue[0]?.vehicleType).toBe('moto');
-      expect(queue[0]?.documentsSummary.hasDniFront).toBe(true);
-      expect(queue[0]?.documentsSummary.hasDniBack).toBe(true);
-      expect(queue[0]?.documentsSummary.hasSelfie).toBe(true);
-      expect(queue[0]?.documentsSummary.hasLicense).toBe(false);
+      const result = await getApplicantsQueue('pending');
+      expect(mockRange).toHaveBeenCalledWith(0, 19);
+      expect(result.page).toBe(1);
+      expect(result.pageSize).toBe(20);
+      expect(result.totalCount).toBe(1);
+      expect(result.totalPages).toBe(1);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]?.fullName).toBe('Juan Perez');
+      expect(result.items[0]?.phone).toBe('3865123456');
+      expect(result.items[0]?.vehicleType).toBe('moto');
+      expect(result.items[0]?.documentsSummary.hasDniFront).toBe(true);
+      expect(result.items[0]?.documentsSummary.hasDniBack).toBe(true);
+      expect(result.items[0]?.documentsSummary.hasSelfie).toBe(true);
+      expect(result.items[0]?.documentsSummary.hasLicense).toBe(false);
     });
 
-    it('retorna array vacío ante error en la consulta', async () => {
+    it('respeta parámetros de paginación y acota pageSize a máximo 50 (PR106-H07)', async () => {
+      const mockRange = vi.fn().mockResolvedValue({
+        data: [],
+        count: 100,
+        error: null,
+      });
+
       const mockAdminSupabase = {
         from: vi.fn().mockReturnValue({
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              order: vi.fn().mockResolvedValue({
-                data: null,
-                error: { message: 'Database error' },
+              order: vi.fn().mockReturnValue({
+                range: mockRange,
               }),
             }),
           }),
@@ -79,8 +93,36 @@ describe('Admin Queries (T-122 DoD)', () => {
         mockAdminSupabase as unknown as ReturnType<typeof adminSupabase.createAdminClient>
       );
 
-      const queue = await getApplicantsQueue('pending');
-      expect(queue).toEqual([]);
+      // Solicitando pageSize=100 (debe acotarse a 50) en página 2 -> range(50, 99)
+      const result = await getApplicantsQueue('pending', { page: 2, pageSize: 100 });
+      expect(mockRange).toHaveBeenCalledWith(50, 99);
+      expect(result.page).toBe(2);
+      expect(result.pageSize).toBe(50);
+      expect(result.totalCount).toBe(100);
+      expect(result.totalPages).toBe(2);
+    });
+
+    it('propaga y lanza excepción ante error de DB en getApplicantsQueue (PR106-H08)', async () => {
+      const mockAdminSupabase = {
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              order: vi.fn().mockReturnValue({
+                range: vi.fn().mockResolvedValue({
+                  data: null,
+                  count: null,
+                  error: { message: 'Database connection failed' },
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue(
+        mockAdminSupabase as unknown as ReturnType<typeof adminSupabase.createAdminClient>
+      );
+
+      await expect(getApplicantsQueue('pending')).rejects.toThrow('Database connection failed');
     });
   });
 
@@ -191,6 +233,40 @@ describe('Admin Queries (T-122 DoD)', () => {
 
       const detail = await getApplicantDetail('inexistente');
       expect(detail).toBeNull();
+    });
+
+    it('propaga y lanza excepción ante error de DB en getApplicantDetail (PR106-H08)', async () => {
+      const mockAdminSupabase = {
+        from: vi.fn((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: { message: 'DB connection timeout' },
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                order: vi.fn().mockResolvedValue({
+                  data: [],
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }),
+      };
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue(
+        mockAdminSupabase as unknown as ReturnType<typeof adminSupabase.createAdminClient>
+      );
+
+      await expect(getApplicantDetail('courier-1')).rejects.toThrow('DB connection timeout');
     });
   });
 });

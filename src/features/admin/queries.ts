@@ -1,3 +1,5 @@
+import 'server-only';
+
 import { createAdminClient } from '@/server/supabase/admin';
 import type {
   AdminApplicantTab,
@@ -6,6 +8,19 @@ import type {
   ApplicantListItem,
   CourierDocLevel,
 } from './types';
+
+export interface GetApplicantsQueueOptions {
+  page?: number;
+  pageSize?: number;
+}
+
+export interface ApplicantsQueueResult {
+  readonly items: readonly ApplicantListItem[];
+  readonly totalCount: number;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly totalPages: number;
+}
 
 interface ProfileRow {
   display_name: string | null;
@@ -49,15 +64,24 @@ interface CourierDetailRow {
 /**
  * Obtiene la lista de repartidores postulantes filtrados por estado.
  * Se asegura de que no se expongan datos bancarios ni PII no autorizada.
+ * PR106-H07: Paginación acotada con máximo 50 por página (por defecto 20).
+ * PR106-H08: Propagación de fallos de DB a través de excepciones hacia error boundaries.
  */
 export async function getApplicantsQueue(
-  tab: AdminApplicantTab = 'pending'
-): Promise<ApplicantListItem[]> {
+  tab: AdminApplicantTab = 'pending',
+  options?: GetApplicantsQueueOptions
+): Promise<ApplicantsQueueResult> {
+  const page = Math.max(1, Math.floor(options?.page ?? 1));
+  const pageSize = Math.min(Math.max(1, Math.floor(options?.pageSize ?? 20)), 50);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
   const supabase = createAdminClient();
 
-  const { data: couriers, error } = await supabase
+  const { data: couriers, error, count } = await supabase
     .from('couriers')
-    .select(`
+    .select(
+      `
       profile_id,
       status,
       vehicle_type,
@@ -75,17 +99,20 @@ export async function getApplicantsQueue(
         kind,
         status
       )
-    `)
+    `,
+      { count: 'exact' }
+    )
     .eq('status', tab)
-    .order('profile_id', { ascending: false });
+    .order('profile_id', { ascending: false })
+    .range(from, to);
 
-  if (error || !couriers) {
-    return [];
+  if (error) {
+    throw new Error(`Error al consultar la cola de postulantes: ${error.message}`);
   }
 
-  const typedCouriers = couriers as unknown as CourierQueueRow[];
+  const typedCouriers = (couriers ?? []) as unknown as CourierQueueRow[];
 
-  return typedCouriers.map((c) => {
+  const items: ApplicantListItem[] = typedCouriers.map((c) => {
     const profile = c.profiles;
     const docs = c.courier_documents ?? [];
 
@@ -115,11 +142,23 @@ export async function getApplicantsQueue(
       },
     };
   });
+
+  const totalCount = count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    items,
+    totalCount,
+    page,
+    pageSize,
+    totalPages,
+  };
 }
 
 /**
  * Obtiene el detalle completo del postulante para el visor documental A02.
  * INVARIANTE: CBU / Alias bancario queda terminantemente extirpado de la respuesta.
+ * PR106-H08: Propagación de fallos de DB a través de excepciones hacia error boundaries.
  */
 export async function getApplicantDetail(
   courierId: string
@@ -156,7 +195,15 @@ export async function getApplicantDetail(
       .order('uploaded_at', { ascending: true }),
   ]);
 
-  if (courierResult.error || !courierResult.data) {
+  if (courierResult.error) {
+    throw new Error(`Error al consultar el postulante: ${courierResult.error.message}`);
+  }
+
+  if (docsResult.error) {
+    throw new Error(`Error al consultar los documentos del postulante: ${docsResult.error.message}`);
+  }
+
+  if (!courierResult.data) {
     return null;
   }
 

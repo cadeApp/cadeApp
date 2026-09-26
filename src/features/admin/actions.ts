@@ -10,10 +10,12 @@ import {
   adminVerifyDocumentRpc,
 } from '@/server/rpc/admin';
 import type { ViewDocumentResult } from './types';
+import { sanitizeAdminRedirect } from './redirect';
 
 interface AuthenticatedAdmin {
   readonly id: string;
   readonly email: string;
+  readonly supabase: Awaited<ReturnType<typeof createClient>>;
 }
 
 /**
@@ -54,6 +56,7 @@ async function requireAdminAal2(): Promise<ActionResult<AuthenticatedAdmin, Doma
   return ok({
     id: user.id,
     email: user.email ?? '',
+    supabase,
   });
 }
 
@@ -62,6 +65,7 @@ async function requireAdminAal2(): Promise<ActionResult<AuthenticatedAdmin, Doma
  */
 export async function verifyAdminMfaAction(input: {
   code: string;
+  redirectTo?: string;
 }): Promise<ActionResult<{ success: true; redirectTo: string }, DomainErrorCode>> {
   const cleanCode = input.code?.trim();
   if (!cleanCode || cleanCode.length !== 6 || !/^\d{6}$/.test(cleanCode)) {
@@ -119,7 +123,7 @@ export async function verifyAdminMfaAction(input: {
 
   return ok({
     success: true,
-    redirectTo: '/admin/applicants',
+    redirectTo: sanitizeAdminRedirect(input.redirectTo),
   });
 }
 
@@ -204,8 +208,8 @@ export async function decideCourierAction(input: {
     return err('REASON_REQUIRED');
   }
 
-  const adminClient = createAdminClient();
-  const rpcResult = await adminDecideCourierRpc(adminClient, {
+  // PR106-H04: Invocar RPC usando cliente de sesión autenticada con AAL2, NUNCA createAdminClient
+  const rpcResult = await adminDecideCourierRpc(authResult.data.supabase, {
     courierId: input.courierId,
     decision: input.decision,
     reason: trimmedReason,
@@ -242,8 +246,8 @@ export async function suspendCourierAction(input: {
     return err('REASON_REQUIRED');
   }
 
-  const adminClient = createAdminClient();
-  const rpcResult = await adminSuspendCourierRpc(adminClient, {
+  // PR106-H04: Invocar RPC usando cliente de sesión autenticada con AAL2, NUNCA createAdminClient
+  const rpcResult = await adminSuspendCourierRpc(authResult.data.supabase, {
     courierId: input.courierId,
     reason: trimmedReason,
   });
@@ -274,18 +278,21 @@ export async function verifyCourierDocumentAction(input: {
     return authResult;
   }
 
+  let reason: string | null = null;
   if (!input.verified) {
     const trimmedReason = input.rejectionReason?.trim() ?? '';
     if (!trimmedReason) {
       return err('REASON_REQUIRED');
     }
+    reason = trimmedReason;
   }
 
-  const adminClient = createAdminClient();
-  const rpcResult = await adminVerifyDocumentRpc(adminClient, {
+  // PR106-H04: Invocar RPC usando cliente de sesión autenticada con AAL2
+  // PR106-H05: Usar contrato canónico { documentId, decision: 'verified' | 'rejected', reason }
+  const rpcResult = await adminVerifyDocumentRpc(authResult.data.supabase, {
     documentId: input.documentId,
-    verified: input.verified,
-    rejectionReason: input.verified ? null : (input.rejectionReason?.trim() ?? null),
+    decision: input.verified ? 'verified' : 'rejected',
+    reason,
   });
 
   if (!rpcResult.ok) {

@@ -301,7 +301,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
         <Card className="lg:col-span-1 border border-border shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Documentación ({applicant.documents.length})</CardTitle>
-            <CardDescription className="text-xs">Seleccioná un archivo para revisarlo.</CardDescription>
+            <CardDescription className="text-sm">Seleccioná un archivo para revisarlo.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1">
             {applicant.documents.map((doc) => {
@@ -318,7 +318,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                   }`}
                 >
                   <span className="truncate">{DOC_KIND_LABELS[doc.documentType] || doc.documentType}</span>
-                  <span className="text-xs shrink-0 ml-2">
+                  <span className="text-sm shrink-0 ml-2">
                     {doc.status === 'verified' ? '✓' : doc.status === 'rejected' ? '✕' : '•'}
                   </span>
                 </button>
@@ -335,7 +335,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                 {currentDoc ? (DOC_KIND_LABELS[currentDoc.documentType] || currentDoc.documentType) : 'Sin documento'}
               </CardTitle>
               {currentDoc ? (
-                <CardDescription className="text-xs">
+                <CardDescription className="text-sm">
                   Estado: <span className="font-medium text-foreground">{currentDoc.status.toUpperCase()}</span> · Subido el{' '}
                   {new Date(currentDoc.uploadedAt).toLocaleString('es-AR')}
                 </CardDescription>
@@ -392,7 +392,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
               <p className="text-sm text-muted-foreground">No hay documentos registrados para este postulante.</p>
             ) : signedUrl ? (
               <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden">
-                <div className="mb-2 text-xs font-mono text-muted-foreground">
+                <div className="mb-2 text-sm font-mono text-muted-foreground">
                   URL temporal expira en: <span className="font-bold text-foreground">{expiresIn}s</span>
                 </div>
                 <div className="overflow-auto max-h-[500px] w-full flex items-center justify-center p-4">
@@ -434,7 +434,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
                 </div>
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Documento protegido</h3>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     Hacé clic para generar un enlace temporal firmado de 60 segundos y registrar el evento en auditoría.
                   </p>
                 </div>
@@ -452,7 +452,7 @@ export function ApplicantDetailView({ applicant }: ApplicantDetailViewProps) {
           {/* Barra inferior de verificación del documento actual */}
           {currentDoc && signedUrl ? (
             <div className="border-t border-border p-4 bg-white flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">¿El documento es legible y válido?</span>
+              <span className="text-sm text-muted-foreground">¿El documento es legible y válido?</span>
               <div className="flex gap-2">
                 <Button
                   size="sm"

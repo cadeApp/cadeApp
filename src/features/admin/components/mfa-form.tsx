@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/ui/card';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/ui/input-otp';
 import { notify } from '@/ui/notify';
 import { verifyAdminMfaAction } from '../actions';
 
@@ -30,7 +31,7 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
     setErrorMsg(null);
 
     try {
-      const res = await verifyAdminMfaAction({ code: cleanCode });
+      const res = await verifyAdminMfaAction({ code: cleanCode, redirectTo });
 
       if (!res.ok) {
         if (res.code === 'VALIDATION_ERROR') {
@@ -44,7 +45,7 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
       }
 
       notify.success('Identidad verificada con éxito.');
-      router.push(redirectTo);
+      router.push(res.data.redirectTo);
       router.refresh();
     } catch {
       setErrorMsg('Error de conexión al verificar el segundo factor.');
@@ -79,24 +80,28 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
       </CardHeader>
       <CardContent>
         <form onSubmit={handleVerify} className="space-y-4">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <label htmlFor="totp-code" className="block text-center text-sm font-medium text-foreground">
               Código de seguridad
             </label>
-            <input
-              id="totp-code"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-              autoComplete="one-time-code"
-              autoFocus
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              className="w-full text-center text-2xl font-mono tracking-widest h-12 rounded-md border border-input bg-background px-3 py-2 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              required
-            />
+            <div className="flex justify-center">
+              <InputOTP
+                id="totp-code"
+                maxLength={6}
+                value={code}
+                onChange={(val) => setCode(val.replace(/\D/g, ''))}
+                autoFocus
+              >
+                <InputOTPGroup>
+                  <InputOTPSlot index={0} />
+                  <InputOTPSlot index={1} />
+                  <InputOTPSlot index={2} />
+                  <InputOTPSlot index={3} />
+                  <InputOTPSlot index={4} />
+                  <InputOTPSlot index={5} />
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
             {errorMsg ? (
               <p role="alert" className="text-center text-sm text-destructive font-medium">
                 {errorMsg}
@@ -109,7 +114,7 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
           </Button>
 
           <div className="pt-2 text-center text-sm text-muted-foreground">
-            <p className="text-xs">
+            <p className="text-sm">
               ¿Problemas con el código de tu app autenticadora? Asegurate de que la hora de tu dispositivo esté sincronizada automáticamente.
             </p>
           </div>

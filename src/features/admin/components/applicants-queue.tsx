@@ -5,13 +5,26 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
-import { Card, CardContent } from '@/ui/card';
+import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from '@/ui/table';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/ui/tabs';
 import type { AdminApplicantTab, ApplicantListItem } from '../types';
 
-interface ApplicantsQueueProps {
+export interface ApplicantsQueueProps {
   readonly initialTab: AdminApplicantTab;
   readonly applicants: readonly ApplicantListItem[];
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly totalCount?: number;
+  readonly totalPages?: number;
 }
 
 const TABS_CONFIG: Array<{ id: AdminApplicantTab; label: string }> = [
@@ -37,7 +50,14 @@ function getVehicleLabel(type: string): string {
   }
 }
 
-export function ApplicantsQueue({ initialTab, applicants }: ApplicantsQueueProps) {
+export function ApplicantsQueue({
+  initialTab,
+  applicants,
+  page = 1,
+  pageSize = 20,
+  totalCount = 0,
+  totalPages = 1,
+}: ApplicantsQueueProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentTab = (searchParams.get('tab') as AdminApplicantTab) || initialTab;
@@ -45,6 +65,13 @@ export function ApplicantsQueue({ initialTab, applicants }: ApplicantsQueueProps
   function handleTabChange(tab: AdminApplicantTab) {
     const params = new URLSearchParams(searchParams);
     params.set('tab', tab);
+    params.delete('page');
+    router.push(`/admin/applicants?${params.toString()}`);
+  }
+
+  function handlePageChange(newPage: number) {
+    const params = new URLSearchParams(searchParams);
+    params.set('page', String(newPage));
     router.push(`/admin/applicants?${params.toString()}`);
   }
 
@@ -59,73 +86,70 @@ export function ApplicantsQueue({ initialTab, applicants }: ApplicantsQueueProps
         </div>
       </div>
 
-      {/* Tabs accesibles con role="tablist" */}
-      <div className="border-b border-border">
-        <div role="tablist" aria-label="Estados de postulación" className="flex gap-2">
-          {TABS_CONFIG.map((t) => {
-            const isSelected = currentTab === t.id;
-            return (
-              <button
+      <Tabs
+        value={currentTab}
+        onValueChange={(val) => handleTabChange(val as AdminApplicantTab)}
+        className="w-full space-y-4"
+      >
+        <div className="border-b border-border">
+          <TabsList className="h-auto p-0 bg-transparent gap-2">
+            {TABS_CONFIG.map((t) => (
+              <TabsTrigger
                 key={t.id}
-                role="tab"
-                type="button"
-                aria-selected={isSelected}
-                aria-controls={`panel-${t.id}`}
-                id={`tab-${t.id}`}
-                onClick={() => handleTabChange(t.id)}
-                className={`relative px-4 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                  isSelected
-                    ? 'text-primary font-semibold border-b-2 border-primary'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
+                value={t.id}
+                className="relative px-4 py-3 text-sm font-medium rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:shadow-none data-[state=active]:bg-transparent"
               >
                 {t.label}
-              </button>
-            );
-          })}
+              </TabsTrigger>
+            ))}
+          </TabsList>
         </div>
-      </div>
 
-      {/* Tabla / Lista de Postulantes A01 */}
-      <div
-        id={`panel-${currentTab}`}
-        role="tabpanel"
-        aria-labelledby={`tab-${currentTab}`}
-        className="space-y-4"
-      >
-        {applicants.length === 0 ? (
-          <EmptyState
-            title={`No hay postulantes en estado "${TABS_CONFIG.find((t) => t.id === currentTab)?.label}"`}
-            description="Cuando un repartidor complete su registro o cambie de estado, aparecerá en esta lista."
-          />
-        ) : (
-          <Card className="overflow-hidden border border-border shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm" role="table">
-                <thead className="border-b border-border bg-slate-100/70 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    <th scope="col" className="px-6 py-4">Postulante</th>
-                    <th scope="col" className="px-6 py-4">Vehículo</th>
-                    <th scope="col" className="px-6 py-4">Documentación</th>
-                    <th scope="col" className="px-6 py-4">Nivel</th>
-                    <th scope="col" className="px-6 py-4">Fecha</th>
-                    <th scope="col" className="px-6 py-4 text-right">Acción</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border bg-card">
+        <TabsContent value={currentTab} className="mt-0 space-y-4">
+          {applicants.length === 0 ? (
+            <EmptyState
+              title={`No hay postulantes en estado "${TABS_CONFIG.find((t) => t.id === currentTab)?.label}"`}
+              description="Cuando un repartidor complete su registro o cambie de estado, aparecerá en esta lista."
+            />
+          ) : (
+            <Card className="overflow-hidden border border-border shadow-sm">
+              <Table>
+                <TableHeader className="bg-slate-100/70">
+                  <TableRow>
+                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
+                      Postulante
+                    </TableHead>
+                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
+                      Vehículo
+                    </TableHead>
+                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
+                      Documentación
+                    </TableHead>
+                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
+                      Nivel
+                    </TableHead>
+                    <TableHead className="px-6 py-4 font-semibold uppercase tracking-wider text-muted-foreground text-sm">
+                      Fecha
+                    </TableHead>
+                    <TableHead className="px-6 py-4 text-right font-semibold uppercase tracking-wider text-muted-foreground text-sm">
+                      Acción
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="bg-card">
                   {applicants.map((a) => (
-                    <tr key={a.id} className="transition-colors hover:bg-slate-50/50">
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-foreground">{a.fullName}</div>
-                        <div className="text-xs text-muted-foreground">
+                    <TableRow key={a.id} className="transition-colors hover:bg-slate-50/50">
+                      <TableCell className="px-6 py-4">
+                        <div className="font-medium text-foreground text-sm">{a.fullName}</div>
+                        <div className="text-sm text-muted-foreground">
                           DNI Hash: <span className="font-mono">{a.dniHash}</span>
                         </div>
-                        {a.phone ? <div className="text-xs text-muted-foreground">{a.phone}</div> : null}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="font-medium">{getVehicleLabel(a.vehicleType)}</span>
-                      </td>
-                      <td className="px-6 py-4">
+                        {a.phone ? <div className="text-sm text-muted-foreground">{a.phone}</div> : null}
+                      </TableCell>
+                      <TableCell className="px-6 py-4">
+                        <span className="font-medium text-sm">{getVehicleLabel(a.vehicleType)}</span>
+                      </TableCell>
+                      <TableCell className="px-6 py-4">
                         <div className="flex flex-wrap gap-1.5">
                           <Badge variant={a.documentsSummary.hasDniFront && a.documentsSummary.hasDniBack ? 'secondary' : 'outline'}>
                             DNI {a.documentsSummary.hasDniFront && a.documentsSummary.hasDniBack ? '✓' : '—'}
@@ -144,34 +168,60 @@ export function ApplicantsQueue({ initialTab, applicants }: ApplicantsQueueProps
                             </Badge>
                           ) : null}
                         </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-800">
+                      </TableCell>
+                      <TableCell className="px-6 py-4">
+                        <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-800">
                           Nivel {a.docLevel}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 text-muted-foreground whitespace-nowrap">
+                      </TableCell>
+                      <TableCell className="px-6 py-4 text-muted-foreground whitespace-nowrap text-sm">
                         {new Date(a.createdAt).toLocaleDateString('es-AR', {
                           day: '2-digit',
                           month: '2-digit',
                           year: 'numeric',
                         })}
-                      </td>
-                      <td className="px-6 py-4 text-right">
+                      </TableCell>
+                      <TableCell className="px-6 py-4 text-right">
                         <Link href={`/admin/applicants/${a.id}`}>
-                          <Button size="sm" variant="default" className="text-xs font-semibold">
+                          <Button size="sm" variant="default" className="text-sm font-semibold">
                             Revisar
                           </Button>
                         </Link>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
+            </Card>
+          )}
+
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-between px-2 pt-2">
+              <p className="text-sm text-muted-foreground">
+                Página {page} de {totalPages} ({totalCount} postulantes)
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => handlePageChange(page - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => handlePageChange(page + 1)}
+                >
+                  Siguiente
+                </Button>
+              </div>
             </div>
-          </Card>
-        )}
-      </div>
+          ) : null}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

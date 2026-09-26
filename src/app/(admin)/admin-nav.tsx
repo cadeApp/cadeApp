@@ -2,16 +2,24 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
 import { ADMIN_NAV_TABS } from '@/features/admin';
 import { cn } from '@/ui/cn';
+import { logoutAction } from '@/features/auth';
 
 export { ADMIN_NAV_TABS };
 
 export function AdminNav() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await logoutAction();
+    router.push('/login');
+    router.refresh();
+  }
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-[#E4E7EC] bg-white shadow-sm">
@@ -48,10 +56,10 @@ export function AdminNav() {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="hidden sm:inline-block rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+          <span className="hidden sm:inline-block rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
             Admin (Aguilares)
           </span>
-          <form action="/login">
+          <form action={handleLogout}>
             <Button variant="ghost" size="sm" type="submit" className="text-muted-foreground text-sm">
               Salir
             </Button>

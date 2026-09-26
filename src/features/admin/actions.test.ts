@@ -9,6 +9,7 @@ import {
   verifyCourierDocumentAction,
   verifyAdminMfaAction,
 } from './actions';
+import { sanitizeAdminRedirect } from './redirect';
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
@@ -158,9 +159,12 @@ describe('Admin Actions (T-122 DoD)', () => {
       const mockAdminClient = {
         rpc: vi.fn(),
       };
+      vi.mocked(adminSupabase.createAdminClient).mockClear();
       vi.mocked(adminSupabase.createAdminClient).mockReturnValue(
         mockAdminClient as unknown as ReturnType<typeof adminSupabase.createAdminClient>
       );
+
+      return mockSupabase;
     }
 
     it('decideCourierAction rechaza motivo vacío con REASON_REQUIRED', async () => {
@@ -177,8 +181,8 @@ describe('Admin Actions (T-122 DoD)', () => {
       }
     });
 
-    it('decideCourierAction invoca adminDecideCourierRpc cuando el motivo es válido', async () => {
-      setupAal2Admin();
+    it('decideCourierAction invoca adminDecideCourierRpc con cliente de sesión autenticada (PR106-H04)', async () => {
+      const mockSupabase = setupAal2Admin();
       vi.mocked(adminRpc.adminDecideCourierRpc).mockResolvedValue({
         ok: true,
         data: {
@@ -195,11 +199,12 @@ describe('Admin Actions (T-122 DoD)', () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(adminRpc.adminDecideCourierRpc).toHaveBeenCalledWith(expect.anything(), {
+      expect(adminRpc.adminDecideCourierRpc).toHaveBeenCalledWith(mockSupabase, {
         courierId: 'courier-1',
         decision: 'approved',
         reason: 'DNI y selfie coinciden perfectamente',
       });
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
     it('suspendCourierAction rechaza motivo vacío con REASON_REQUIRED', async () => {
@@ -215,8 +220,8 @@ describe('Admin Actions (T-122 DoD)', () => {
       }
     });
 
-    it('suspendCourierAction invoca adminSuspendCourierRpc cuando el motivo es válido', async () => {
-      setupAal2Admin();
+    it('suspendCourierAction invoca adminSuspendCourierRpc con cliente de sesión autenticada (PR106-H04)', async () => {
+      const mockSupabase = setupAal2Admin();
       vi.mocked(adminRpc.adminSuspendCourierRpc).mockResolvedValue({
         ok: true,
         data: {
@@ -233,10 +238,11 @@ describe('Admin Actions (T-122 DoD)', () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(adminRpc.adminSuspendCourierRpc).toHaveBeenCalledWith(expect.anything(), {
+      expect(adminRpc.adminSuspendCourierRpc).toHaveBeenCalledWith(mockSupabase, {
         courierId: 'courier-1',
         reason: 'Infracción reiterada de términos',
       });
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
     it('verifyCourierDocumentAction con verified=false exige rejectionReason con REASON_REQUIRED', async () => {
@@ -253,8 +259,8 @@ describe('Admin Actions (T-122 DoD)', () => {
       }
     });
 
-    it('verifyCourierDocumentAction con verified=true invoca adminVerifyDocumentRpc sin requerir motivo', async () => {
-      setupAal2Admin();
+    it('verifyCourierDocumentAction con verified=true invoca adminVerifyDocumentRpc con decision="verified" y cliente de sesión (PR106-H04, PR106-H05)', async () => {
+      const mockSupabase = setupAal2Admin();
       vi.mocked(adminRpc.adminVerifyDocumentRpc).mockResolvedValue({
         ok: true,
         data: {
@@ -272,11 +278,40 @@ describe('Admin Actions (T-122 DoD)', () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(adminRpc.adminVerifyDocumentRpc).toHaveBeenCalledWith(expect.anything(), {
+      expect(adminRpc.adminVerifyDocumentRpc).toHaveBeenCalledWith(mockSupabase, {
         documentId: 'doc-1',
-        verified: true,
-        rejectionReason: null,
+        decision: 'verified',
+        reason: null,
       });
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    });
+
+    it('verifyCourierDocumentAction con verified=false invoca adminVerifyDocumentRpc con decision="rejected" y reason (PR106-H04, PR106-H05)', async () => {
+      const mockSupabase = setupAal2Admin();
+      vi.mocked(adminRpc.adminVerifyDocumentRpc).mockResolvedValue({
+        ok: true,
+        data: {
+          documentId: 'doc-1',
+          status: 'rejected',
+          kind: 'dni_front',
+          courierId: 'courier-1',
+          docLevel: 0,
+        },
+      });
+
+      const result = await verifyCourierDocumentAction({
+        documentId: 'doc-1',
+        verified: false,
+        rejectionReason: 'Documento borroso e ilegible',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(adminRpc.adminVerifyDocumentRpc).toHaveBeenCalledWith(mockSupabase, {
+        documentId: 'doc-1',
+        decision: 'rejected',
+        reason: 'Documento borroso e ilegible',
+      });
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
   });
 
@@ -386,6 +421,42 @@ describe('Admin Actions (T-122 DoD)', () => {
       if (!resultAlpha.ok) {
         expect(resultAlpha.code).toBe('VALIDATION_ERROR');
       }
+    });
+  });
+
+  describe('5. Sanitización de redirectTo (PR106-H03)', () => {
+    it('PR106-H03: sanitizeAdminRedirect rechaza destinos inseguros y previene Open Redirect / XSS', () => {
+      const hostileTargets = [
+        'javascript:alert(1)',
+        'javascript:/*--></title></style></textarea></script></xmp><svg/onload=\'+/"/+/onmouseover=1/+/[*/[]/+alert(1)//\'>',
+        'https://evil.com',
+        'http://evil.com/admin',
+        '//evil.com',
+        '///evil.com',
+        '/\\evil.com',
+        '\\evil.com',
+        '/admin\r\nevil',
+        '/admin\nevil',
+        '/courier/feed',
+        '/merchant/dashboard',
+        '',
+        null,
+        undefined,
+      ];
+
+      for (const target of hostileTargets) {
+        const safe = sanitizeAdminRedirect(target as unknown as string);
+        expect(safe, `El destino "${target}" debe ser neutralizado a /admin/applicants`).toBe('/admin/applicants');
+        expect(safe).not.toContain('javascript:');
+        expect(safe).not.toContain('evil.com');
+      }
+    });
+
+    it('PR106-H03: sanitizeAdminRedirect permite destinos válidos dentro de /admin', () => {
+      expect(sanitizeAdminRedirect('/admin/applicants')).toBe('/admin/applicants');
+      expect(sanitizeAdminRedirect('/admin/applicants/courier-123')).toBe('/admin/applicants/courier-123');
+      expect(sanitizeAdminRedirect('/admin/couriers')).toBe('/admin/couriers');
+      expect(sanitizeAdminRedirect('/admin/merchants')).toBe('/admin/merchants');
     });
   });
 });
