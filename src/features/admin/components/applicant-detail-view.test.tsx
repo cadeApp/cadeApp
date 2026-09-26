@@ -278,9 +278,10 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     expect(document.activeElement).toBe(rejectButton);
 
     fireEvent.click(rejectButton);
-    expect(screen.getByRole('dialog')).toBeDefined();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeDefined();
 
-    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
 
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).toBeNull();
