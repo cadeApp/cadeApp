@@ -67,10 +67,10 @@ set status = 'approved',
     vehicle_plate = 'AA123BB'
 where profile_id = pg_temp.courier_id();
 
-insert into public.zones (id, name, active)
+insert into public.zones (id, name, centroid_lat, centroid_lng, active)
 values
-  (pg_temp.zone_a(), 'Centro', true),
-  (pg_temp.zone_b(), 'Barrio San Martín', true);
+  (pg_temp.zone_a(), 'Centro', -27.430000, -65.620000, true),
+  (pg_temp.zone_b(), 'Barrio San Martín', -27.435000, -65.615000, true);
 
 insert into public.delivery_requests (
   id, merchant_id, status, pickup_zone_id, dropoff_zone_id, package_type,
