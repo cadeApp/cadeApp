@@ -13,6 +13,9 @@ export const DESIGN_TOKENS = {
     warning: '#B45309',
     warningSurface: '#FFF4E0',
     danger: '#C62828',
+    whatsapp: '#25D366',
+    whatsappHover: '#20BA5A',
+    whatsappForeground: '#12182C',
   },
   fonts: {
     display: 'Montserrat',
@@ -76,6 +79,7 @@ export interface TokenContrastReport {
   badgeSuccessAA: boolean;
   warningBadgeAA: boolean;
   dangerBadgeAA: boolean;
+  whatsappButtonAA: boolean;
 }
 
 export function verifyTokenContrastMatrix(): TokenContrastReport {
@@ -91,5 +95,8 @@ export function verifyTokenContrastMatrix(): TokenContrastReport {
     badgeSuccessAA: getContrastRatio(c.success, c.accent) >= 4.5,
     warningBadgeAA: getContrastRatio(c.warning, c.warningSurface) >= 4.5,
     dangerBadgeAA: getContrastRatio(c.surface, c.danger) >= 4.5,
+    whatsappButtonAA:
+      getContrastRatio(c.whatsappForeground, c.whatsapp) >= 4.5 &&
+      getContrastRatio(c.whatsappForeground, c.whatsappHover) >= 4.5,
   };
 }

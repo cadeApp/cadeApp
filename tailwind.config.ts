@@ -35,6 +35,11 @@ const config: Config = {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
+        whatsapp: {
+          DEFAULT: 'hsl(var(--whatsapp))',
+          hover: 'hsl(var(--whatsapp-hover))',
+          foreground: 'hsl(var(--whatsapp-foreground))',
+        },
         muted: {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
