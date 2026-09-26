@@ -319,6 +319,13 @@ export type Database = {
             foreignKeyName: "delivery_requests_merchant_id_fkey"
             columns: ["merchant_id"]
             isOneToOne: false
+            referencedRelation: "merchant_public"
+            referencedColumns: ["profile_id"]
+          },
+          {
+            foreignKeyName: "delivery_requests_merchant_id_fkey"
+            columns: ["merchant_id"]
+            isOneToOne: false
             referencedRelation: "merchants"
             referencedColumns: ["profile_id"]
           },
@@ -669,7 +676,42 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      merchant_public: {
+        Row: {
+          business_name: string | null
+          default_pickup_address: string | null
+          default_pickup_zone_id: string | null
+          profile_id: string | null
+        }
+        Insert: {
+          business_name?: string | null
+          default_pickup_address?: string | null
+          default_pickup_zone_id?: string | null
+          profile_id?: string | null
+        }
+        Update: {
+          business_name?: string | null
+          default_pickup_address?: string | null
+          default_pickup_zone_id?: string | null
+          profile_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "merchants_default_pickup_zone_id_fkey"
+            columns: ["default_pickup_zone_id"]
+            isOneToOne: false
+            referencedRelation: "zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "merchants_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       accept_offer: { Args: { p_offer_id: string }; Returns: Json }
@@ -706,6 +748,19 @@ export type Database = {
         Args: { p_decision: string; p_document_id: string; p_reason?: string }
         Returns: Json
       }
+      calculate_route_distance: {
+        Args: {
+          p_dropoff_lat?: number
+          p_dropoff_lng?: number
+          p_dropoff_zone_id?: string
+          p_dropoff_zone_name?: string
+          p_pickup_lat?: number
+          p_pickup_lng?: number
+          p_pickup_zone_id?: string
+          p_pickup_zone_name?: string
+        }
+        Returns: Json
+      }
       cancel_request: {
         Args: { p_reason?: string; p_request_id: string }
         Returns: Json
@@ -714,6 +769,7 @@ export type Database = {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
       }
+      get_trip_details: { Args: { p_request_id: string }; Returns: Json }
       mark_delivered: { Args: { p_request_id: string }; Returns: Json }
       mark_picked_up: { Args: { p_request_id: string }; Returns: Json }
       publish_request: { Args: { p_request_id: string }; Returns: Json }

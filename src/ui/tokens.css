@@ -30,6 +30,10 @@
   --destructive: 0 66.39% 46.67%; /* #C62828 */
   --destructive-foreground: 0 0% 100%; /* #FFFFFF */
 
+  --whatsapp: 142.41 70.16% 48.63%; /* #25D366 */
+  --whatsapp-hover: 142.6 70.64% 42.75%; /* #20BA5A */
+  --whatsapp-foreground: 226.15 41.94% 12.16%; /* #12182C - AA/AAA sobre verde oficial */
+
   --border: 217.5 17.39% 90.98%; /* #E4E7EC */
   --input: 217.5 17.39% 90.98%; /* #E4E7EC */
   --ring: 181 90.91% 38.82%; /* #09BABD */

@@ -91,6 +91,9 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByText(/Términos para repartidores/i)).toBeDefined();
       expect(screen.getByText(/Política de privacidad/i)).toBeDefined();
       expect(screen.getByText(/cadeApp no me emplea ni cobra por mí/i)).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: /términos para repartidores/i })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: /política de privacidad/i })).toBeDefined();
+      expect(screen.getByRole('checkbox', { name: /cadeapp no me emplea ni cobra por mí/i })).toBeDefined();
 
       // Botón de envío
       expect(screen.getByRole('button', { name: /Enviar para revisión/i })).toBeDefined();
@@ -153,6 +156,9 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
           target: { value: plate },
         });
 
+        for (const checkbox of screen.getAllByRole('checkbox')) {
+          fireEvent.click(checkbox);
+        }
         const submitButton = screen.getByRole('button', { name: /Enviar para revisión/i });
         const schemaResult = vehiclePlateSchema.safeParse(plate);
 
@@ -185,6 +191,9 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       const plateInput = screen.getByLabelText(/Patente del vehículo/i);
       fireEvent.change(plateInput, { target: { value: 'AB 123 CD' } });
 
+      for (const checkbox of screen.getAllByRole('checkbox')) {
+        fireEvent.click(checkbox);
+      }
       const submitBtn = screen.getByRole('button', { name: /Enviar para revisión/i });
       fireEvent.click(submitBtn);
 

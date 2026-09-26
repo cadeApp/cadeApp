@@ -24,6 +24,8 @@ import { type CourierDocumentKind, uploadCourierDocument } from '../upload-manag
 import { courierOnboardingAction } from '../actions';
 import { ARGENTINA_PLATE_REGEX } from '../schemas';
 import type { VehicleType } from '@/domain/schemas';
+import Link from 'next/link';
+import { getLegalDocument } from '@/features/legal';
 
 export interface VehicleFormProps {
   courierId?: string;
@@ -66,9 +68,9 @@ export function VehicleForm({
   >({});
 
   // Consentimientos obligatorios
-  const [tosAccepted, setTosAccepted] = React.useState(true);
-  const [privacyAccepted, setPrivacyAccepted] = React.useState(true);
-  const [contractAccepted, setContractAccepted] = React.useState(true);
+  const [tosAccepted, setTosAccepted] = React.useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = React.useState(false);
+  const [contractAccepted, setContractAccepted] = React.useState(false);
 
   // Estados de envío y error
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -119,9 +121,12 @@ export function VehicleForm({
         insurance: requiresPlate ? optionalDocs.insurance : undefined,
       },
       consents: {
-        tos: true,
-        privacy: true,
-        courierContract: true,
+        tos: tosAccepted,
+        privacy: privacyAccepted,
+        courierContract: contractAccepted,
+        tosVersion: getLegalDocument('tos').version,
+        privacyVersion: getLegalDocument('privacy').version,
+        courierContractVersion: getLegalDocument('courier_contract').version,
       },
     };
 
@@ -165,7 +170,7 @@ export function VehicleForm({
       <form onSubmit={handleSubmit} className="flex flex-col gap-6 p-6 sm:p-8">
         {/* Encabezado */}
         <section className="flex flex-col gap-1.5">
-          <span className="text-sm font-semibold uppercase tracking-wide text-primary">
+          <span className="text-sm font-semibold uppercase tracking-wide text-primary-dark">
             {COURIER_ONBOARDING_COPY.vehicleTitle}
           </span>
           <h1 className="font-display text-xl font-bold text-foreground">
@@ -259,7 +264,7 @@ export function VehicleForm({
                 className="flex items-center justify-between text-sm font-semibold text-foreground"
               >
                 <span>{COURIER_ONBOARDING_COPY.plateLabel}</span>
-                <span className="text-sm font-normal text-primary">
+                <span className="text-sm font-normal text-primary-dark">
                   {COURIER_ONBOARDING_COPY.plateRequiredSub}
                 </span>
               </label>
@@ -402,9 +407,13 @@ export function VehicleForm({
             />
             <span className="text-sm leading-snug text-foreground">
               {COURIER_ONBOARDING_COPY.consentTosPrefix}{' '}
-              <span className="font-medium text-primary underline">
+              <Link
+                href="/legal/terms"
+                onClick={(event) => event.stopPropagation()}
+                className="rounded-sm font-medium text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 {COURIER_ONBOARDING_COPY.consentTosLink}
-              </span>
+              </Link>
             </span>
           </label>
 
@@ -417,9 +426,13 @@ export function VehicleForm({
             />
             <span className="text-sm leading-snug text-foreground">
               {COURIER_ONBOARDING_COPY.consentPrivacyPrefix}{' '}
-              <span className="font-medium text-primary underline">
+              <Link
+                href="/legal/privacy"
+                onClick={(event) => event.stopPropagation()}
+                className="rounded-sm font-medium text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 {COURIER_ONBOARDING_COPY.consentPrivacyLink}
-              </span>{' '}
+              </Link>{' '}
               {COURIER_ONBOARDING_COPY.consentPrivacySuffix}
             </span>
           </label>
@@ -432,6 +445,15 @@ export function VehicleForm({
               className="mt-0.5 h-5 w-5 rounded border-border text-primary focus:ring-primary"
             />
             <span className="text-sm font-medium leading-snug text-foreground">
+              Acepto las{' '}
+              <Link
+                href="/legal/courier"
+                onClick={(event) => event.stopPropagation()}
+                className="rounded-sm text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Condiciones para repartidores
+              </Link>
+              .{' '}
               {COURIER_ONBOARDING_COPY.consentContractText}
             </span>
           </label>

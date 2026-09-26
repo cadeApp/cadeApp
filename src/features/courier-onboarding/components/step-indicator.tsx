@@ -34,7 +34,7 @@ export function StepIndicator({ currentStep }: StepIndicatorProps) {
               <span
                 className={`flex items-center gap-0.5 text-sm font-semibold ${
                   isDone
-                    ? 'text-primary'
+                    ? 'text-primary-dark'
                     : isActive
                       ? 'text-foreground'
                       : 'font-medium text-muted-foreground'

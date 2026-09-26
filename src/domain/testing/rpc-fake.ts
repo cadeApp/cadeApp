@@ -10,6 +10,7 @@ import {
   validateOfferAmountAgainstFloor,
 } from '../rpc-contracts';
 import {
+  type ConsentStatus,
   type CourierDocumentKind,
   type CourierStatus,
   type DeliveryRequestStatus,
@@ -19,6 +20,8 @@ import {
   PLATFORM_SETTING_KEYS,
   type PlatformSettingKey,
   type ProfileRole,
+  type RecipientPaymentMethod,
+  type VehicleType,
   calculateHaversineRouteDistanceM,
   formatZoneToZoneDisplayLabel,
   isWithinAguilaresBounds,
@@ -46,6 +49,7 @@ export interface FakePlatformSettings {
 export interface FakeActorContext {
   readonly userId: string;
   readonly role: ProfileRole | null;
+  readonly consentStatus?: ConsentStatus;
   readonly aal: 'aal1' | 'aal2';
   readonly courierStatus: CourierStatus;
   readonly courierAvailable: boolean;
@@ -68,6 +72,16 @@ export interface FakeSeedRequest {
   readonly dropoffLng?: number | null;
   readonly pickupZoneName?: string;
   readonly dropoffZoneName?: string;
+  readonly pickupAddress?: string;
+  readonly dropoffAddress?: string;
+  readonly recipientName?: string;
+  readonly recipientPhone?: string;
+  readonly recipientPaymentMethod?: RecipientPaymentMethod;
+  readonly needsChange?: boolean;
+  readonly cashChangeAmount?: number | null;
+  readonly notes?: string | null;
+  readonly createdAt?: string;
+  readonly pickedUpAt?: string | null;
 }
 
 export interface FakeRequestRecord {
@@ -85,6 +99,16 @@ export interface FakeRequestRecord {
   dropoffLng: number | null;
   pickupZoneName: string;
   dropoffZoneName: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  recipientName: string;
+  recipientPhone: string;
+  recipientPaymentMethod: RecipientPaymentMethod;
+  needsChange: boolean;
+  cashChangeAmount: number | null;
+  notes: string | null;
+  createdAt: string;
+  pickedUpAt: string | null;
 }
 
 export interface FakeSeedOffer {
@@ -109,6 +133,10 @@ export interface FakeSeedCourier {
   readonly available: boolean;
   readonly licenseStatus?: DocumentReviewStatus;
   readonly insuranceStatus?: DocumentReviewStatus;
+  readonly displayName?: string;
+  readonly phone?: string | null;
+  readonly vehicleType?: VehicleType | null;
+  readonly vehiclePlate?: string | null;
 }
 
 export interface FakeCourierRecord {
@@ -117,18 +145,26 @@ export interface FakeCourierRecord {
   available: boolean;
   licenseStatus: DocumentReviewStatus;
   insuranceStatus: DocumentReviewStatus;
+  displayName: string;
+  phone: string | null;
+  vehicleType: VehicleType | null;
+  vehiclePlate: string | null;
 }
 
 export interface FakeSeedMerchant {
   readonly merchantId: string;
   readonly subscriptionStatus: MerchantSubscriptionStatus;
   readonly paidUntil?: string | null;
+  readonly businessName?: string;
+  readonly phone?: string | null;
 }
 
 export interface FakeMerchantRecord {
   readonly merchantId: string;
   subscriptionStatus: MerchantSubscriptionStatus;
   paidUntil: string | null;
+  businessName: string;
+  phone: string | null;
 }
 
 export interface FakeSeedDocument {
@@ -177,6 +213,7 @@ export interface FakeRpcClient extends RpcClientContract {
 const DEFAULT_ACTOR: FakeActorContext = {
   userId: '00000000-0000-4000-8000-000000000001',
   role: 'courier',
+  consentStatus: 'active',
   aal: 'aal2',
   courierStatus: 'approved',
   courierAvailable: true,
@@ -198,6 +235,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   report_incident: ['merchant', 'courier', 'admin'],
   set_availability: ['courier'],
   calculate_route_distance: ['merchant', 'courier', 'admin'],
+  get_trip_details: ['merchant', 'courier'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_verify_document: ['admin'],
@@ -316,6 +354,16 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       dropoffLng: r.dropoffLng ?? null,
       pickupZoneName: r.pickupZoneName ?? 'Centro',
       dropoffZoneName: r.dropoffZoneName ?? 'Villa Nueva',
+      pickupAddress: r.pickupAddress ?? 'San Martín 450',
+      dropoffAddress: r.dropoffAddress ?? 'Belgrano 1220',
+      recipientName: r.recipientName ?? 'Cliente',
+      recipientPhone: r.recipientPhone ?? '3865123456',
+      recipientPaymentMethod: r.recipientPaymentMethod ?? 'cash',
+      needsChange: r.needsChange ?? false,
+      cashChangeAmount: r.cashChangeAmount ?? null,
+      notes: r.notes ?? null,
+      createdAt: r.createdAt ?? '2026-09-22T14:00:00.000Z',
+      pickedUpAt: r.pickedUpAt ?? null,
     });
   }
 
@@ -327,6 +375,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       available: c.available,
       licenseStatus: c.licenseStatus ?? prev?.licenseStatus ?? 'none',
       insuranceStatus: c.insuranceStatus ?? prev?.insuranceStatus ?? 'none',
+      displayName: c.displayName ?? prev?.displayName ?? 'Cadete',
+      phone: c.phone ?? prev?.phone ?? '3865111111',
+      vehicleType: c.vehicleType ?? prev?.vehicleType ?? 'moto',
+      vehiclePlate: c.vehiclePlate ?? prev?.vehiclePlate ?? 'AA123BB',
     });
   }
 
@@ -335,6 +387,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       merchantId: m.merchantId,
       subscriptionStatus: m.subscriptionStatus,
       paidUntil: m.paidUntil ?? null,
+      businessName: m.businessName ?? 'Comercio',
+      phone: m.phone ?? '3865222222',
     });
   }
 
@@ -387,6 +441,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       return err('UNAUTHENTICATED' as RpcErrorCode<K>);
     }
     if (!ALLOWED_ROLES_BY_RPC[rpcName].includes(actor.role)) {
+      return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
+    }
+    if (rpcName === 'get_trip_details' && (actor.consentStatus ?? 'active') !== 'active') {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
     }
     if (requireAdminAal2 && actor.aal !== 'aal2') {
@@ -1003,6 +1060,56 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         return ok({
           courierId: actor.userId,
           available: input.available,
+        });
+      }),
+
+    get_trip_details: (rawInput) =>
+      executeRpc('get_trip_details', rawInput, false, (input) => {
+        const req = requests.get(input.requestId);
+        if (!req) return err('NOT_FOUND');
+        if (!['matched', 'in_transit', 'delivered'].includes(req.status)) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        const offer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : undefined;
+        if (!offer || offer.status !== 'accepted' || offer.requestId !== req.requestId) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        if (
+          (actor.role === 'merchant' && req.merchantId !== actor.userId) ||
+          (actor.role === 'courier' && offer.courierId !== actor.userId)
+        ) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+        const merchant = merchants.get(req.merchantId);
+        const courier = couriers.get(offer.courierId);
+        if (!merchant || !courier || offer.amountArs < 1) return err('NOT_FOUND');
+        return ok({
+          requestId: req.requestId,
+          code: `REQ-${req.requestId.slice(0, 8).toUpperCase()}`,
+          status: req.status as 'matched' | 'in_transit' | 'delivered',
+          merchantId: req.merchantId,
+          merchantName: merchant.businessName,
+          merchantPhone: merchant.phone,
+          courierId: offer.courierId,
+          courierName: courier.displayName,
+          courierPhone: courier.phone,
+          vehicleType: courier.vehicleType,
+          vehiclePlate: courier.vehiclePlate,
+          amountArs: offer.amountArs,
+          pickupAddress: req.pickupAddress,
+          pickupZoneName: req.pickupZoneName,
+          dropoffAddress: req.dropoffAddress,
+          dropoffZoneName: req.dropoffZoneName,
+          deliveryNotes: req.notes,
+          recipientName: req.recipientName,
+          recipientPhone: req.recipientPhone,
+          recipientPaymentMethod: req.recipientPaymentMethod,
+          needsChange: req.needsChange,
+          cashChangeAmount: req.cashChangeAmount,
+          createdAt: req.createdAt,
+          matchedAt: req.matchedAt,
+          pickedUpAt: req.pickedUpAt,
+          deliveredAt: req.deliveredAt,
         });
       }),
 

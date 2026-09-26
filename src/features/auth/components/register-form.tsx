@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Store, Check, AlertCircle, Eye, EyeOff } from 'lucide-react';
@@ -11,6 +11,7 @@ import { Input } from '@/ui/input';
 import { registerAction } from '../actions';
 import { authCopy } from '../copy';
 import type { SignupRole } from '../schemas';
+import { getLegalDocument } from '@/features/legal';
 
 export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
   const router = useRouter();
@@ -37,6 +38,8 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
         password,
         role,
         acceptTerms,
+        acceptedTermsVersion: getLegalDocument('tos').version,
+        acceptedPrivacyVersion: getLegalDocument('privacy').version,
       });
 
       if (!result.ok) {
@@ -180,15 +183,26 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
             type="checkbox"
             checked={acceptTerms}
             onChange={(e) => setAcceptTerms(e.target.checked)}
-            className="mt-1 h-4 w-4 rounded border-input text-primary focus:ring-ring"
+            aria-labelledby="terms-label"
+            className="mt-1 h-5 w-5 rounded border-input text-primary focus:ring-ring"
           />
-          <label htmlFor="terms" className="text-sm leading-relaxed text-muted-foreground">
+          <p id="terms-label" className="text-sm leading-relaxed text-muted-foreground">
             Acepto los{' '}
-            <span className="font-semibold text-foreground">
-              Términos y Política de privacidad del Piloto
-            </span>{' '}
-            <span className="text-muted-foreground">(en publicación · T-311)</span>
-          </label>
+            <Link
+              href="/legal/terms"
+              className="rounded-sm font-semibold text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Términos
+            </Link>{' '}
+            y la{' '}
+            <Link
+              href="/legal/privacy"
+              className="rounded-sm font-semibold text-primary-dark underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Política de Privacidad
+            </Link>
+            .
+          </p>
         </div>
 
         {errorMessage && (
