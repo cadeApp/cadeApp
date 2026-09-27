@@ -5,7 +5,7 @@
 - **Autor / Zona:** `asako669` (P2)
 - **Rama:** `feat/T-204-realtime-tanstack` → `develop`
 - **Ubicación vigente de la revisión:** rama `docs/revisiones` (PR de P2; desde R4 se aplica `COMO-ENTREGAR.md` vigente).
-- **Estado actual:** ❌ **CON BLOQUEANTES** (Ronda 9: 2 bloqueantes, decisión D05 resuelta 1-A)
+- **Estado actual:** ❌ **CON BLOQUEANTES** (Ronda 10: 1 bloqueante, 0 decisiones pendientes)
 
 ## Decisiones de Lautaro073
 
