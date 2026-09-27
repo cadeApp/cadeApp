@@ -210,3 +210,13 @@ La ruta directa a componentes bajaba el bundle pero violaba el entry point. Al v
 R11 ordenó detener la optimización completa si aparecía cualquier consumidor runtime extra. La enumeración encontró `acceptOfferAction`, que efectivamente debe preservarse; sin embargo, eso no impide eliminar otros exports sin consumidores externos.
 
 > **Regla propuesta:** al adelgazar un barrel, la aparición de un consumidor inesperado obliga a preservar ese símbolo y prohibir cambios en ese consumidor, pero no necesariamente a abortar la poda de los demás exports si la enumeración completa ya demuestra que son privados/no usados.
+---
+## Ronda 14
+
+## `AG-97` · Un log append-only no puede auto-referenciar su propio SHA mediante un commit posterior
+
+**Origen:** `PR82-R03` y `PR82-H35`.
+
+Una sesión no conoce el SHA del commit que todavía no existe. Intentar “completarlo” después crea necesariamente un segundo commit que reescribe la sesión ya cerrada. La misma tensión aparece en evidencia de PR: copiar conteos históricos y etiquetarlos luego como exact-head produce datos falsos aunque CI esté verde.
+
+> **Regla propuesta:** una sesión cerrada conserva el marcador disponible en ese momento (`pendiente`, `por commitear` o SHA anterior) y nunca se backfillea. Los datos etiquetados como exact-head se copian del run del SHA actual, no de la sesión previa.
