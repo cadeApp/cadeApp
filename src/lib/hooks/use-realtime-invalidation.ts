@@ -2,7 +2,11 @@
 
 import { useContext, useEffect, useRef, useState } from 'react';
 import { QueryClient, QueryClientContext } from '@tanstack/react-query';
-import { createClient } from '@/lib/supabase/browser';
+
+type BrowserSupabaseClient = ReturnType<
+  (typeof import('@/lib/supabase/browser'))['createClient']
+>;
+type BrowserRealtimeChannel = ReturnType<BrowserSupabaseClient['channel']>;
 
 export interface RealtimeSubscriptionConfig {
   readonly table: string;
@@ -65,12 +69,6 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
       return;
     }
 
-    let supabase: ReturnType<typeof createClient>;
-    try {
-      supabase = createClient();
-    } catch {
-      return;
-    }
     const currentOptions = optionsRef.current;
 
     const subs: readonly RealtimeSubscriptionConfig[] =
@@ -110,34 +108,54 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
       }, debounceMs);
     };
 
-    let channel = supabase.channel(channelName);
+    let disposed = false;
+    let supabase: BrowserSupabaseClient | null = null;
+    let channel: BrowserRealtimeChannel | null = null;
 
-    for (const sub of subs) {
-      channel = channel.on(
-        'postgres_changes',
-        {
-          event: sub.event ?? '*',
-          schema: sub.schema ?? 'public',
-          table: sub.table,
-          ...(sub.filter ? { filter: sub.filter } : {}),
-        },
-        (payload: unknown) => {
-          optionsRef.current.onEvent?.(payload);
-          triggerInvalidation(sub.queryKey ?? currentOptions.queryKey);
+    void import('@/lib/supabase/browser')
+      .then(({ createClient }) => {
+        if (disposed) return;
+        try {
+          supabase = createClient();
+        } catch {
+          return;
         }
-      );
-    }
-
-    channel.subscribe();
+        if (disposed || !supabase) return;
+        let nextChannel = supabase.channel(channelName);
+        for (const sub of subs) {
+          nextChannel = nextChannel.on(
+            'postgres_changes',
+            {
+              event: sub.event ?? '*',
+              schema: sub.schema ?? 'public',
+              table: sub.table,
+              ...(sub.filter ? { filter: sub.filter } : {}),
+            },
+            (payload: unknown) => {
+              optionsRef.current.onEvent?.(payload);
+              triggerInvalidation(sub.queryKey ?? currentOptions.queryKey);
+            }
+          );
+        }
+        channel = nextChannel;
+        channel.subscribe();
+      })
+      .catch(() => {
+        // mismo comportamiento tolerante que el catch previo de createClient;
+        // no fabricar estado ni mutar cache.
+      });
 
     const pendingKeys = pendingKeysRef.current;
     return () => {
+      disposed = true;
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
       pendingKeys.clear();
-      supabase.removeChannel(channel);
+      if (supabase && channel) {
+        supabase.removeChannel(channel);
+      }
     };
   }, [channelName, enabled, debounceMs, queryClient, serializedConfig]);
 }

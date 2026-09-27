@@ -1,9 +1,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRealtimeInvalidation } from './use-realtime-invalidation';
 import * as browserClient from '@/lib/supabase/browser';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('T-204 DoD: useRealtimeInvalidation', () => {
   let queryClient: QueryClient;
@@ -51,7 +53,14 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  it('DoD 1: al desmontar la pantalla se cierra el canal y se cancela el debounce pendiente', () => {
+  async function flushRealtimeSetup() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it('DoD 1: al desmontar la pantalla se cierra el canal y se cancela el debounce pendiente', async () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     const { unmount } = renderHook(
@@ -65,6 +74,8 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
         }),
       { wrapper }
     );
+
+    await flushRealtimeSetup();
 
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
     expect(mockRemoveChannel).not.toHaveBeenCalled();
@@ -100,6 +111,8 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       { wrapper }
     );
 
+    await flushRealtimeSetup();
+
     expect(realtimeCallbacks.length).toBeGreaterThan(0);
     const cb = realtimeCallbacks[0];
     expect(cb).toBeDefined();
@@ -130,7 +143,7 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     expect(setQueryDataSpy).not.toHaveBeenCalled();
   });
 
-  it('DoD 3: un canal por pantalla aunque se escuchen múltiples tablas o eventos', () => {
+  it('DoD 3: un canal por pantalla aunque se escuchen múltiples tablas o eventos', async () => {
     const supabaseMock = browserClient.createClient();
     const channelSpy = vi.spyOn(supabaseMock, 'channel');
 
@@ -146,13 +159,15 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       { wrapper }
     );
 
+    await flushRealtimeSetup();
+
     expect(channelSpy).toHaveBeenCalledTimes(1);
     expect(channelSpy).toHaveBeenCalledWith('merchant-dashboard');
     expect(mockOn).toHaveBeenCalledTimes(2);
     expect(mockSubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('PR82-H11: debounce multi-key acumula queryKeys distintas e invalida todas al vencer la ventana', () => {
+  it('PR82-H11: debounce multi-key acumula queryKeys distintas e invalida todas al vencer la ventana', async () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     renderHook(
@@ -167,6 +182,8 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
         }),
       { wrapper }
     );
+
+    await flushRealtimeSetup();
 
     expect(realtimeCallbacks.length).toBe(2);
     const cbA = realtimeCallbacks[0]; // delivery_requests -> ['requests']
@@ -193,7 +210,7 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['offers'] });
   });
 
-  it('PR82-H12: reconfigura la suscripción cuando cambian filtro/key con el mismo channelName', () => {
+  it('PR82-H12: reconfigura la suscripción cuando cambian filtro/key con el mismo channelName', async () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
 
     type HookProps = {
@@ -222,6 +239,8 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       }
     );
 
+    await flushRealtimeSetup();
+
     // Al montar se suscribe con filtro A
     expect(mockOn).toHaveBeenLastCalledWith(
       'postgres_changes',
@@ -236,6 +255,8 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       filter: 'request_id=eq.req-B',
       queryKey: ['offers', 'req-B'],
     });
+
+    await flushRealtimeSetup();
 
     // Se debe haber reconfigurado la suscripción con filtro B
     expect(mockOn).toHaveBeenLastCalledWith(
@@ -255,5 +276,43 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['offers', 'req-B'] });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['offers', 'req-A'] });
   });
-});
 
+  it('PR82-H31 (Control Estático): no existe import estático runtime desde @/lib/supabase/browser y sí existe lazy import()', () => {
+    const hookPath = resolve(__dirname, 'use-realtime-invalidation.ts');
+    const sourceCode = readFileSync(hookPath, 'utf8');
+
+    expect(sourceCode).not.toMatch(
+      /import\s+[^;]*from\s+['"]@\/lib\/supabase\/browser['"]/m
+    );
+    expect(sourceCode).toContain("import('@/lib/supabase/browser')");
+  });
+
+  it('PR82-H31: carrera unmount-before-import no suscribe canales ni dispara invalidaciones tardías', async () => {
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    const { unmount } = renderHook(
+      () =>
+        useRealtimeInvalidation({
+          channelName: 'race-channel',
+          table: 'offers',
+          queryKey: ['offers'],
+          debounceMs: 300,
+        }),
+      { wrapper }
+    );
+
+    // Desmontar INMEDIATAMENTE antes de flushRealtimeSetup
+    unmount();
+
+    // Ahora permitir que resuelva el import() diferido
+    await flushRealtimeSetup();
+
+    // El canal no debió ser suscrito porque disposed era true
+    expect(mockSubscribe).not.toHaveBeenCalled();
+    expect(mockRemoveChannel).not.toHaveBeenCalled();
+
+    // Avanzar temporizadores: ninguna invalidación tardía
+    vi.advanceTimersByTime(500);
+    expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+});
