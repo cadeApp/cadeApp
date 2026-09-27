@@ -11,3 +11,9 @@ Que el ejemplo oficial use style={{...}} no habilita inline styles si la convenc
 
 ## AG-123 · Un prop label público tiene que producir nombre accesible real
 Un <label> visual sin asociación no cumple el contrato semántico. Si el target no es labelable, usar aria-labelledby sobre un rol nombrable o simplificar el contrato.
+
+---
+
+## Ronda 2
+
+No apareció un patrón nuevo. La ronda confirma AG-120 a AG-123: la cámara quedó realmente controlada, el gate de coverage oficial pasó, la regla de UI se respetó y el nombre accesible se prueba sobre el DOM renderizado.

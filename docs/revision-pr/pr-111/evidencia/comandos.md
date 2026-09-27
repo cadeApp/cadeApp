@@ -43,3 +43,61 @@ any 0
 @ts-ignore 0
 process.env NEXT_PUBLIC direct 0
 hex arbitrary 0
+
+---
+
+# Evidencia — Ronda 2
+
+head: 36306c36150cb99c376ac4ebbc0bce1b061e512c
+develop: ef09bb8ec9fa2335aa6e9e7ae11165301841a61d
+compare: ahead 3 / behind 0
+
+## CI #458
+
+```text
+event: pull_request
+head: 36306c36150cb99c376ac4ebbc0bce1b061e512c
+base: ef09bb8ec9fa2335aa6e9e7ae11165301841a61d
+conclusion: success
+
+lint           success
+unit           success
+db-tests       success
+build          success
+audit          success
+typecheck      success
+bundle-budget  success
+```
+
+## Unit / coverage
+
+```text
+67 files / 768 tests
+map.tsx 99.45 statements / 90.21 branches / 100 funcs / 99.45 lines
+```
+
+## Build
+
+```text
+/merchant/onboarding 9.87 kB / 145 kB
+/merchant/requests/new 135 B / 163 kB
+```
+
+## Source
+
+map.tsx:
+- center={activeCoords}
+- no defaultCenter
+- no style prop
+- publicEnv para Google key/map id
+- React.useId + role=region + aria-labelledby/aria-label
+
+## Mutación H01
+
+Los tests de zona/value/GPS afirman capturedMapProps.center. Volver de center a defaultCenter deja center undefined y rompe los tres controles.
+
+## Barrido
+
+0 .only/.skip, sleeps, @ts-ignore, process.env NEXT_PUBLIC direct, inline styles en código.
+
+No se detectaron hallazgos nuevos.
