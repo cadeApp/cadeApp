@@ -63,4 +63,14 @@ export const requestsCopy = {
     errorSubscription:
       'Tu cuenta no cuenta con una suscripción activa ni período piloto para publicar envíos. Contactate con soporte.',
   },
+  offers: {
+    waitingOffers: 'Esperando ofertas',
+    waitingOffersDescription:
+      'Los repartidores de Aguilares están viendo tu solicitud. Las ofertas van a aparecer acá en tiempo real sin recargar la página.',
+    errorLoadingOffers: 'No se pudieron cargar las ofertas',
+    errorDescription: 'Ocurrió un problema de conexión al sincronizar las ofertas en vivo.',
+    retryButton: 'Reintentar',
+    loadMore: 'Cargar más',
+    loadingMore: 'Cargando…',
+  },
 } as const;
