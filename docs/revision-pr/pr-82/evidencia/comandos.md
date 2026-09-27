@@ -611,3 +611,54 @@ Tests      7 failed | 830 passed (837)
 ```
 
 Los 7 rojos son consumidores de useRealtimeInvalidation que no esperan el setup async introducido por el lazy import.
+---
+# Ronda 10 — SHA 8cf71ed
+
+## Sincronización
+```text
+develop = 7f392e9
+branch behind develop = 0
+merge develop = bd519acc
+fix T-204 = 39b8dd2
+```
+
+## CI exact-head — run 36302911020
+
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 76 files / 872 tests
+db-tests SUCCESS
+audit SUCCESS
+build SUCCESS
+bundle-budget SUCCESS
+```
+
+Build real:
+```text
+✓ Compiled successfully in 21.2s
+✓ Generating static pages (42/42)
+/courier/feed   175 kB
+/courier/offers 159 kB
+```
+
+Bundle:
+```text
+/courier/feed   175 kB | OK
+/courier/offers 159 kB | OK
+```
+
+## H33
+Exact-head:
+```text
+src/app/(courier)/courier/feed/page.tsx
+// eslint-disable-next-line boundaries/entry-point
+import { CourierFeed } from '@/features/offers/components/courier-feed';
+
+src/app/(courier)/courier/offers/page.tsx
+// eslint-disable-next-line boundaries/entry-point
+import { MyOffersList } from '@/features/offers/components/my-offers-list';
+```
+
+AGENTS.md §4 prohíbe desactivar reglas de lint/checks.
+.eslintrc.json permite entry points de feature solo index.ts/server.ts.
