@@ -662,3 +662,32 @@ import { MyOffersList } from '@/features/offers/components/my-offers-list';
 
 AGENTS.md §4 prohíbe desactivar reglas de lint/checks.
 .eslintrc.json permite entry points de feature solo index.ts/server.ts.
+---
+# Ronda 11 — SHA 828671b
+
+## H33
+```text
+0 eslint-disable boundaries/entry-point
+0 imports @/features/offers/components/* en páginas courier
+lint SUCCESS
+```
+
+## CI exact-head — run 36303492221
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 76 files / 872 tests
+db-tests SUCCESS
+audit SUCCESS
+build SUCCESS — 42/42
+bundle-budget SUCCESS (advisory)
+```
+
+## Bundle real
+```text
+/courier/feed   192 kB | Supera el límite
+/courier/offers 192 kB | Supera el límite
+```
+
+## D06
+Lautaro073 elige 1-A: ampliar scope a `src/features/offers/index.ts`, conservar entry point legal y optimizar la API pública cliente; no se autoriza aumentar 180 kB.
