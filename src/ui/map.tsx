@@ -265,9 +265,15 @@ export function MapPicker({
     );
   }, [disabled, locating, onLocationError, onLocationFound]);
 
+  const labelId = React.useId();
+
   return (
     <div className={cn('w-full space-y-3', className)} data-testid="map-picker">
-      {label && <label className="text-sm font-medium text-foreground">{label}</label>}
+      {label && (
+        <p id={labelId} className="text-sm font-medium text-foreground">
+          {label}
+        </p>
+      )}
       {helperText && <p className="text-sm text-muted-foreground">{helperText}</p>}
 
       {!isOnline && (
@@ -335,14 +341,16 @@ export function MapPicker({
 
       {/* Contenedor del mapa */}
       <div
+        role="region"
         data-testid="map-container"
         tabIndex={disabled ? -1 : 0}
         onKeyDown={handleKeyDown}
+        aria-labelledby={label ? labelId : undefined}
+        aria-label={label ? undefined : ariaLabel}
         className={cn(
           'relative h-64 sm:h-72 w-full overflow-hidden rounded-xl border border-border bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           !isMapAvailable && 'bg-muted/60'
         )}
-        aria-label={ariaLabel}
       >
         {isMapAvailable ? (
           <APIProvider
@@ -353,8 +361,7 @@ export function MapPicker({
           >
             <MapStatusWatcher onFailed={() => setApiLoadFailed(true)} />
             <GoogleMap
-              style={{ width: '100%', height: '100%' }}
-              defaultCenter={activeCoords}
+              center={activeCoords}
               defaultZoom={15}
               gestureHandling={disabled ? 'none' : 'greedy'}
               disableDefaultUI

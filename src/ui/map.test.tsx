@@ -14,23 +14,32 @@ import {
 } from './map';
 import { MapSkeleton } from './map-skeleton';
 
-// Configuración de mocks
+// Configuración dinámica de mocks
 let mockLoadingStatus = 'LOADED';
+let mockPublicApiKey = 'test-google-maps-api-key';
+let mockPublicMapId = 'test-map-id';
+
 let capturedMapProps: {
-  onCameraChanged?: (ev: { detail: { center: { lat: number; lng: number } } }) => void;
+  center?: MapCoordinates;
   defaultCenter?: MapCoordinates;
+  style?: React.CSSProperties;
+  onCameraChanged?: (ev: { detail: { center: { lat: number; lng: number } } }) => void;
   disabled?: boolean;
 } | null = null;
 let mockOnError: (() => void) | null = null;
 
 vi.mock('@/lib/env.public', () => ({
   publicEnv: {
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: 'test-google-maps-api-key',
-    NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: 'test-map-id',
+    get NEXT_PUBLIC_GOOGLE_MAPS_API_KEY() {
+      return mockPublicApiKey;
+    },
+    get NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID() {
+      return mockPublicMapId;
+    },
   },
   getPublicEnv: () => ({
-    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: 'test-google-maps-api-key',
-    NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: 'test-map-id',
+    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: mockPublicApiKey,
+    NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID: mockPublicMapId,
   }),
 }));
 
@@ -53,8 +62,10 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     return <div data-testid="mock-api-provider">{children}</div>;
   },
   Map: (props: {
-    onCameraChanged?: (ev: { detail: { center: { lat: number; lng: number } } }) => void;
+    center?: MapCoordinates;
     defaultCenter?: MapCoordinates;
+    style?: React.CSSProperties;
+    onCameraChanged?: (ev: { detail: { center: { lat: number; lng: number } } }) => void;
     disabled?: boolean;
   }) => {
     capturedMapProps = props;
@@ -67,12 +78,16 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     cleanup();
     vi.restoreAllMocks();
     mockLoadingStatus = 'LOADED';
+    mockPublicApiKey = 'test-google-maps-api-key';
+    mockPublicMapId = 'test-map-id';
     capturedMapProps = null;
     mockOnError = null;
   });
 
   beforeEach(() => {
     mockLoadingStatus = 'LOADED';
+    mockPublicApiKey = 'test-google-maps-api-key';
+    mockPublicMapId = 'test-map-id';
     capturedMapProps = null;
     mockOnError = null;
 
@@ -83,8 +98,70 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     });
   });
 
-  describe('1. H02 — Fallback graceful ante Google realmente caído', () => {
-    it('muestra aviso visible de fallback cuando APILoadingStatus es FAILED con key válida y online', async () => {
+  describe('1. H01 — Cámara controlada ante cambios externos y GPS', () => {
+    const ZONE_A: MapCoordinates = { lat: -27.4300, lng: -65.6150 };
+    const ZONE_B: MapCoordinates = { lat: -27.4400, lng: -65.6200 };
+    const VALUE_A: MapCoordinates = { lat: -27.4320, lng: -65.6160 };
+    const VALUE_B: MapCoordinates = { lat: -27.4380, lng: -65.6190 };
+    const GPS_COORDS: MapCoordinates = { lat: -27.4345, lng: -65.6175 };
+
+    it('A. actualiza la cámara controlada cuando defaultZoneCenter cambia', () => {
+      const { rerender } = render(<MapPicker defaultZoneCenter={ZONE_A} />);
+      expect(capturedMapProps?.center).toEqual(ZONE_A);
+
+      rerender(<MapPicker defaultZoneCenter={ZONE_B} />);
+      expect(capturedMapProps?.center).toEqual(ZONE_B);
+    });
+
+    it('B. actualiza la cámara controlada cuando value externo cambia', () => {
+      const { rerender } = render(<MapPicker value={VALUE_A} />);
+      expect(capturedMapProps?.center).toEqual(VALUE_A);
+
+      rerender(<MapPicker value={VALUE_B} />);
+      expect(capturedMapProps?.center).toEqual(VALUE_B);
+    });
+
+    it('C. recentra la cámara controlada cuando el GPS obtiene nueva ubicación', async () => {
+      const onChange = vi.fn();
+      const onLocationFound = vi.fn();
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((success) =>
+            success({
+              coords: {
+                latitude: GPS_COORDS.lat,
+                longitude: GPS_COORDS.lng,
+              },
+            })
+          ),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(
+        <MapPicker
+          showLocationButton
+          onChange={onChange}
+          onLocationFound={onLocationFound}
+        />
+      );
+
+      const btn = screen.getByRole('button', { name: /usar mi ubicación/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(onChange).toHaveBeenCalledWith(GPS_COORDS);
+        expect(onLocationFound).toHaveBeenCalledWith(GPS_COORDS);
+      });
+
+      expect(capturedMapProps?.center).toEqual(GPS_COORDS);
+    });
+  });
+
+  describe('2. H02 — Fallback graceful ante Google caído, sin key y offline', () => {
+    it('muestra fallback cuando APILoadingStatus es FAILED con key válida y online', async () => {
       mockLoadingStatus = 'FAILED';
 
       render(<MapPicker value={AGUILARES_CENTER} />);
@@ -95,17 +172,15 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
 
       expect(screen.getByText(/no pudimos conectar con google maps/i)).toBeDefined();
       expect(screen.getByTestId('map-fallback')).toBeDefined();
-      // El mapa nativo no se renderiza
       expect(screen.queryByTestId('mock-google-map')).toBeNull();
     });
 
-    it('muestra aviso de fallback cuando APIProvider invoca onError directamente', async () => {
+    it('muestra fallback cuando APIProvider invoca onError directamente', async () => {
       render(<MapPicker value={AGUILARES_CENTER} />);
 
       expect(screen.getByTestId('mock-google-map')).toBeDefined();
       expect(mockOnError).toBeTypeOf('function');
 
-      // Disparar error de carga de API
       act(() => {
         mockOnError?.();
       });
@@ -113,6 +188,16 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       await waitFor(() => {
         expect(screen.getByTestId('map-load-error-banner')).toBeDefined();
       });
+      expect(screen.queryByTestId('mock-google-map')).toBeNull();
+    });
+
+    it('muestra banner y fallback cuando no hay API key configurada', () => {
+      mockPublicApiKey = '';
+
+      render(<MapPicker value={AGUILARES_CENTER} />);
+
+      expect(screen.getByTestId('map-no-key-banner')).toBeDefined();
+      expect(screen.getByTestId('map-fallback')).toBeDefined();
       expect(screen.queryByTestId('mock-google-map')).toBeNull();
     });
 
@@ -127,6 +212,8 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
 
       expect(screen.getByTestId('map-offline-banner')).toBeDefined();
       expect(screen.getByText(/modo sin conexión/i)).toBeDefined();
+      expect(screen.getByTestId('map-fallback')).toBeDefined();
+      expect(screen.queryByTestId('mock-google-map')).toBeNull();
     });
 
     it('escucha eventos de online y offline dinámicos en window', () => {
@@ -140,98 +227,22 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     });
   });
 
-  describe('2. H06 — Callback real de onCameraChanged', () => {
-    it('captura onCameraChanged de GoogleMap y entrega coordenadas redondeadas a onChange', async () => {
-      const onChange = vi.fn();
-
-      render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
-
-      expect(capturedMapProps).not.toBeNull();
-      expect(capturedMapProps?.onCameraChanged).toBeTypeOf('function');
-
-      // Simular evento real de arrastre de cámara con detail.center
-      act(() => {
-        capturedMapProps?.onCameraChanged?.({
-          detail: {
-            center: {
-              lat: -27.4356789,
-              lng: -65.6189123,
-            },
-          },
-        });
-      });
-
-      expect(onChange).toHaveBeenCalledTimes(1);
-      expect(onChange).toHaveBeenCalledWith({
-        lat: -27.435679,
-        lng: -65.618912,
-      });
-
-      // El badge visual refleja las nuevas coordenadas
-      expect(screen.getByTestId('map-coords-badge').textContent).toContain('-27.4357, -65.6189');
-    });
-
-    it('ignora onCameraChanged cuando el componente está deshabilitado', () => {
-      const onChange = vi.fn();
-
-      render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} disabled />);
-
-      act(() => {
-        capturedMapProps?.onCameraChanged?.({
-          detail: {
-            center: {
-              lat: -27.435,
-              lng: -65.618,
-            },
-          },
-        });
-      });
-
-      expect(onChange).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('3. H09 — Composición sin controles duplicados', () => {
-    it('NO renderiza un input de texto de dirección dentro de MapPicker', () => {
-      render(<MapPicker value={AGUILARES_CENTER} />);
-
-      // No debe haber ningún input de texto para evitar duplicar C01/C03
-      expect(screen.queryByRole('textbox')).toBeNull();
-    });
-
-    it('por defecto NO renderiza el botón Usar mi ubicación para evitar duplicación con el form anfitrión', () => {
-      render(<MapPicker value={AGUILARES_CENTER} />);
-
-      expect(screen.queryByRole('button', { name: /usar mi ubicación/i })).toBeNull();
-    });
-
-    it('renderiza el botón Usar mi ubicación solo cuando showLocationButton es true', () => {
-      render(<MapPicker value={AGUILARES_CENTER} showLocationButton />);
-
-      expect(screen.getByRole('button', { name: /usar mi ubicación/i })).toBeDefined();
-    });
-
-    it('permite usar geolocalización cuando showLocationButton es true', async () => {
-      const onChange = vi.fn();
-      const mockCoords = { latitude: -27.4345, longitude: -65.6175 };
-
+  describe('3. H02 — Errores y variantes de Geolocation', () => {
+    it('muestra error y notifica onLocationError cuando navigator.geolocation es undefined', async () => {
       Object.defineProperty(navigator, 'geolocation', {
-        value: {
-          getCurrentPosition: vi.fn((success) =>
-            success({
-              coords: mockCoords,
-            })
-          ),
-        },
+        value: undefined,
         writable: true,
         configurable: true,
       });
 
+      const onLocationError = vi.fn();
+      const onChange = vi.fn();
+
       render(
         <MapPicker
-          value={AGUILARES_CENTER}
-          onChange={onChange}
           showLocationButton
+          onLocationError={onLocationError}
+          onChange={onChange}
         />
       );
 
@@ -239,15 +250,81 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       fireEvent.click(btn);
 
       await waitFor(() => {
-        expect(onChange).toHaveBeenCalledWith({
-          lat: -27.4345,
-          lng: -65.6175,
-        });
+        expect(screen.getByRole('alert')).toBeDefined();
       });
+
+      expect(screen.getByRole('alert').textContent).toMatch(/no está disponible en este dispositivo/i);
+      expect(onLocationError).toHaveBeenCalledWith(
+        expect.stringMatching(/no está disponible en este dispositivo/i)
+      );
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('muestra error de permiso denegado cuando geolocation error code es 1', async () => {
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((_success, error) =>
+            error({
+              code: 1, // PERMISSION_DENIED
+              message: 'User denied geolocation',
+            })
+          ),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      const onLocationError = vi.fn();
+
+      render(<MapPicker showLocationButton onLocationError={onLocationError} />);
+
+      const btn = screen.getByRole('button', { name: /usar mi ubicación/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeDefined();
+      });
+
+      expect(screen.getByRole('alert').textContent).toMatch(/permiso de ubicación denegado/i);
+      expect(onLocationError).toHaveBeenCalledWith(
+        expect.stringMatching(/permiso de ubicación denegado/i)
+      );
+    });
+
+    it('muestra error genérico cuando geolocation falla con otro código (ej: code 2)', async () => {
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((_success, error) =>
+            error({
+              code: 2, // POSITION_UNAVAILABLE
+              message: 'Position unavailable',
+            })
+          ),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      const onLocationError = vi.fn();
+
+      render(<MapPicker showLocationButton onLocationError={onLocationError} />);
+
+      const btn = screen.getByRole('button', { name: /usar mi ubicación/i });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeDefined();
+      });
+
+      expect(screen.getByRole('alert').textContent).toMatch(/no pudimos obtener tu ubicación actual/i);
+      expect(onLocationError).toHaveBeenCalledWith(
+        expect.stringMatching(/no pudimos obtener tu ubicación actual/i)
+      );
     });
 
     it('muestra alerta si la geolocalización devuelve una ubicación fuera de Aguilares', async () => {
       const onChange = vi.fn();
+      const onLocationError = vi.fn();
       const outOfBoundsCoords = { latitude: -26.83, longitude: -65.20 }; // San Miguel de Tucumán
 
       Object.defineProperty(navigator, 'geolocation', {
@@ -266,6 +343,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
         <MapPicker
           value={AGUILARES_CENTER}
           onChange={onChange}
+          onLocationError={onLocationError}
           showLocationButton
         />
       );
@@ -276,55 +354,161 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       await waitFor(() => {
         expect(screen.getByRole('alert').textContent).toMatch(/fuera de aguilares/i);
       });
+      expect(onLocationError).toHaveBeenCalledWith(
+        expect.stringMatching(/fuera de aguilares/i)
+      );
       expect(onChange).not.toHaveBeenCalled();
     });
   });
 
-  describe('4. Selector de pin, crosshair y D-pad de ajuste fino', () => {
-    it('renderiza el crosshair central fijo cuando el mapa está disponible', () => {
+  describe('4. H02 — Comportamiento con disabled=true', () => {
+    it('desactiva interacciones, controles y atajos de teclado cuando disabled es true', () => {
+      const onChange = vi.fn();
+
+      render(
+        <MapPicker
+          value={AGUILARES_CENTER}
+          onChange={onChange}
+          disabled
+          showLocationButton
+        />
+      );
+
+      // D-pad no se renderiza
+      expect(screen.queryByTestId('map-fine-adjustment')).toBeNull();
+
+      // Botón GPS deshabilitado
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación/i });
+      expect(gpsBtn).toHaveProperty('disabled', true);
+
+      // onCameraChanged ignorado
+      act(() => {
+        capturedMapProps?.onCameraChanged?.({
+          detail: { center: { lat: -27.435, lng: -65.618 } },
+        });
+      });
+      expect(onChange).not.toHaveBeenCalled();
+
+      // Teclado ignorado
+      const container = screen.getByTestId('map-container');
+      fireEvent.keyDown(container, { key: 'ArrowUp' });
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('5. H03 — Sin style inline en GoogleMap', () => {
+    it('no pasa propiedad style inline al componente GoogleMap', () => {
+      render(<MapPicker value={AGUILARES_CENTER} />);
+
+      expect(capturedMapProps).not.toBeNull();
+      expect(capturedMapProps?.style).toBeUndefined();
+    });
+  });
+
+  describe('6. H04 — Asociación accesible de label', () => {
+    it('asocia el label al contenedor focusable mediante aria-labelledby', () => {
+      render(<MapPicker label="Ubicación del local" value={AGUILARES_CENTER} />);
+
+      const region = screen.getByRole('region', { name: 'Ubicación del local' });
+      expect(region).toBeDefined();
+      expect(region.getAttribute('data-testid')).toBe('map-container');
+    });
+
+    it('usa aria-label cuando label no está presente', () => {
+      render(<MapPicker ariaLabel="Selector de entrega" value={AGUILARES_CENTER} />);
+
+      const region = screen.getByRole('region', { name: 'Selector de entrega' });
+      expect(region).toBeDefined();
+      expect(region.getAttribute('data-testid')).toBe('map-container');
+    });
+
+    it('usa nombre accesible por defecto cuando no se pasa ni label ni ariaLabel', () => {
+      render(<MapPicker value={AGUILARES_CENTER} />);
+
+      const region = screen.getByRole('region', {
+        name: 'Selector interactivo de ubicación en el mapa',
+      });
+      expect(region).toBeDefined();
+    });
+  });
+
+  describe('7. H06 — Callback real de onCameraChanged', () => {
+    it('captura onCameraChanged de GoogleMap y entrega coordenadas redondeadas a onChange', () => {
+      const onChange = vi.fn();
+
+      render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
+
+      expect(capturedMapProps).not.toBeNull();
+      expect(capturedMapProps?.onCameraChanged).toBeTypeOf('function');
+
+      act(() => {
+        capturedMapProps?.onCameraChanged?.({
+          detail: {
+            center: {
+              lat: -27.4356789,
+              lng: -65.6189123,
+            },
+          },
+        });
+      });
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith({
+        lat: -27.435679,
+        lng: -65.618912,
+      });
+
+      expect(screen.getByTestId('map-coords-badge').textContent).toContain('-27.4357, -65.6189');
+    });
+  });
+
+  describe('8. H09 — Composición sin controles duplicados', () => {
+    it('NO renderiza un input de texto de dirección dentro de MapPicker', () => {
+      render(<MapPicker value={AGUILARES_CENTER} />);
+      expect(screen.queryByRole('textbox')).toBeNull();
+    });
+
+    it('por defecto NO renderiza el botón Usar mi ubicación para evitar duplicación con el form anfitrión', () => {
+      render(<MapPicker value={AGUILARES_CENTER} />);
+      expect(screen.queryByRole('button', { name: /usar mi ubicación/i })).toBeNull();
+    });
+
+    it('renderiza el botón Usar mi ubicación solo cuando showLocationButton es true', () => {
+      render(<MapPicker value={AGUILARES_CENTER} showLocationButton />);
+      expect(screen.getByRole('button', { name: /usar mi ubicación/i })).toBeDefined();
+    });
+  });
+
+  describe('9. Controles D-pad de ajuste fino y teclado', () => {
+    it('renderiza crosshair central fijo y los 4 controles del D-pad', () => {
       render(<MapPicker value={AGUILARES_CENTER} />);
 
       expect(screen.getByTestId('map-crosshair')).toBeDefined();
-    });
-
-    it('renderiza los 4 controles direccionales del D-pad', () => {
-      render(<MapPicker value={AGUILARES_CENTER} />);
-
       expect(screen.getByTestId('nudge-north')).toBeDefined();
       expect(screen.getByTestId('nudge-south')).toBeDefined();
       expect(screen.getByTestId('nudge-east')).toBeDefined();
       expect(screen.getByTestId('nudge-west')).toBeDefined();
     });
 
-    it('ajusta la latitud hacia el norte en ~10 m (0.0001 deg)', async () => {
+    it('ajusta latitud norte y sur en ~10 m (0.0001 deg)', () => {
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
 
-      const btnNorte = screen.getByTestId('nudge-north');
-      fireEvent.click(btnNorte);
-
-      expect(onChange).toHaveBeenCalledWith({
+      fireEvent.click(screen.getByTestId('nudge-north'));
+      expect(onChange).toHaveBeenLastCalledWith({
         lat: Number((AGUILARES_CENTER.lat + 0.0001).toFixed(6)),
         lng: AGUILARES_CENTER.lng,
       });
-    });
 
-    it('ajusta la latitud hacia el sur en ~10 m', () => {
-      const onChange = vi.fn();
-
-      render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
-
-      const btnSur = screen.getByTestId('nudge-south');
-      fireEvent.click(btnSur);
-
-      expect(onChange).toHaveBeenCalledWith({
+      fireEvent.click(screen.getByTestId('nudge-south'));
+      expect(onChange).toHaveBeenLastCalledWith({
         lat: Number((AGUILARES_CENTER.lat - 0.0001).toFixed(6)),
         lng: AGUILARES_CENTER.lng,
       });
     });
 
-    it('ajusta la longitud hacia el este y oeste en ~10 m', () => {
+    it('ajusta longitud este y oeste en ~10 m (0.0001 deg)', () => {
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
@@ -342,7 +526,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       });
     });
 
-    it('responde a las flechas del teclado en el contenedor del mapa', () => {
+    it('responde a las 4 flechas del teclado en el contenedor del mapa y omite otras teclas', () => {
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
@@ -350,30 +534,43 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       const container = screen.getByTestId('map-container');
 
       fireEvent.keyDown(container, { key: 'ArrowUp' });
-      expect(onChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          lat: Number((AGUILARES_CENTER.lat + 0.0001).toFixed(6)),
-        })
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ lat: Number((AGUILARES_CENTER.lat + 0.0001).toFixed(6)) })
+      );
+
+      fireEvent.keyDown(container, { key: 'ArrowDown' });
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ lat: Number((AGUILARES_CENTER.lat - 0.0001).toFixed(6)) })
       );
 
       fireEvent.keyDown(container, { key: 'ArrowLeft' });
-      expect(onChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          lng: Number((AGUILARES_CENTER.lng - 0.0001).toFixed(6)),
-        })
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ lng: Number((AGUILARES_CENTER.lng - 0.0001).toFixed(6)) })
       );
+
+      fireEvent.keyDown(container, { key: 'ArrowRight' });
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ lng: Number((AGUILARES_CENTER.lng + 0.0001).toFixed(6)) })
+      );
+
+      // Tecla no direccional
+      onChange.mockClear();
+      fireEvent.keyDown(container, { key: 'Enter' });
+      expect(onChange).not.toHaveBeenCalled();
     });
   });
 
-  describe('5. Validación Zod de límites de Aguilares', () => {
-    it('valida coordenadas céntricas válidas', () => {
+  describe('10. Validación Zod de límites de Aguilares', () => {
+    it('valida coordenadas céntricas dentro de AGUILARES_BOUNDS', () => {
       const res = aguilaresCoordinatesSchema.safeParse(AGUILARES_CENTER);
       expect(res.success).toBe(true);
+      expect(isWithinAguilaresBounds(AGUILARES_CENTER.lat, AGUILARES_CENTER.lng)).toBe(true);
     });
 
     it('rechaza coordenadas fuera de Aguilares', () => {
       const res = aguilaresCoordinatesSchema.safeParse({ lat: -27.50, lng: -65.70 });
       expect(res.success).toBe(false);
+      expect(isWithinAguilaresBounds(-27.50, -65.70)).toBe(false);
     });
 
     it('muestra role="alert" cuando value está fuera del bounding box', () => {
@@ -384,7 +581,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     });
   });
 
-  describe('6. H03 — MapSkeleton desacoplado', () => {
+  describe('11. MapSkeleton y aislamiento de bundles', () => {
     it('renderiza MapSkeleton con accesibilidad role="status"', () => {
       render(<MapSkeleton />);
 
@@ -394,17 +591,25 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       expect(skeleton.getAttribute('aria-label')).toBe('Cargando mapa...');
     });
 
-    it('map-skeleton.tsx no importa @vis.gl/react-google-maps', () => {
+    it('renderiza helperText opcional si se provee', () => {
+      render(
+        <MapPicker
+          value={AGUILARES_CENTER}
+          helperText="Mové el mapa para marcar la puerta exacta"
+        />
+      );
+      expect(screen.getByText('Mové el mapa para marcar la puerta exacta')).toBeDefined();
+    });
+
+    it('map-skeleton.tsx no importa @vis.gl/react-google-maps ni SDKs externos', () => {
       const skeletonFile = path.resolve(__dirname, './map-skeleton.tsx');
       const content = fs.readFileSync(skeletonFile, 'utf8');
 
       expect(content).not.toMatch(/@vis\.gl\/react-google-maps/);
       expect(content).not.toMatch(/google/i);
     });
-  });
 
-  describe('7. Invariante D3/D15: Privacidad y aislamiento de bundles', () => {
-    it('el feed del repartidor no monta ni importa MapPicker', () => {
+    it('D3/D15: el feed del repartidor no monta ni importa MapPicker', () => {
       const feedPage = path.resolve('src/app/(courier)/courier/feed/page.tsx');
       if (fs.existsSync(feedPage)) {
         const content = fs.readFileSync(feedPage, 'utf8');
