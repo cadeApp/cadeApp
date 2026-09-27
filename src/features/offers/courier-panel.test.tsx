@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
@@ -414,6 +416,31 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
 
     // Como nextCursor fue null, el botón desaparece
     expect(screen.queryByRole('button', { name: OFFERS_COPY.loadMore })).toBeNull();
+  });
+
+  it('PR82-H31 / D06 (Control Estático): src/features/offers/index.ts es un slim barrel sin runtime Zod ni exports sin consumidor', () => {
+    const indexPath = path.resolve(__dirname, 'index.ts');
+    const sourceCode = fs.readFileSync(indexPath, 'utf8');
+
+    expect(sourceCode).not.toContain("export * from './schemas'");
+    expect(sourceCode).not.toContain("export * from './copy'");
+    expect(sourceCode).not.toContain('submitOfferAction');
+    expect(sourceCode).not.toContain('withdrawOfferAction');
+
+    expect(sourceCode).toContain('export type {');
+    expect(sourceCode).toContain("from './schemas'");
+
+    expect(sourceCode).toContain('acceptOfferAction');
+    expect(sourceCode).toContain("from './actions'");
+
+    expect(sourceCode).toContain('CourierFeed');
+    expect(sourceCode).toContain('MyOffersList');
+
+    expect(sourceCode).not.toContain('OfferSheet');
+    expect(sourceCode).not.toContain('RequestCard');
+    expect(sourceCode).not.toContain('UnderReview');
+    expect(sourceCode).not.toContain('FeedSkeleton');
+    expect(sourceCode).not.toContain('OFFERS_COPY');
   });
 });
 
