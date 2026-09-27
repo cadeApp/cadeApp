@@ -1,5 +1,3 @@
-'use client';
-
 import type { IncidentDetail } from '../types';
 
 export interface IncidentDetailPanelProps {

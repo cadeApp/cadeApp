@@ -1,16 +1,17 @@
 import 'server-only';
 
+import type { IncidentsCursor } from '@/domain';
 import type { IncidentInboxTab } from './schemas';
 import type { IncidentDetail, IncidentsQueueResult } from './types';
 
 export interface GetIncidentsQueueOptions {
   readonly tab?: IncidentInboxTab;
-  readonly cursor?: string;
+  readonly cursor?: IncidentsCursor;
   readonly pageSize?: number;
 }
 
 /**
- * A05: bandeja de incidentes paginada server-side, con el cliente de sesión (RLS del admin).
+ * A05: bandeja paginada vía `admin_list_incidents` (CC-012) con el cliente de sesión; el keyset vive en Postgres.
  */
 export async function getIncidentsQueue(
   _options?: GetIncidentsQueueOptions

@@ -1,51 +1,57 @@
-import type { IncidentStatus } from '@/domain';
+import { z } from 'zod';
+import {
+  incidentKindSchema,
+  incidentStatusSchema,
+  isoTimestampSchema,
+  profileRoleSchema,
+  uuidSchema,
+  type IncidentsCursor,
+  type RpcOutput,
+} from '@/domain';
 
-export type IncidentReporterRole = 'merchant' | 'courier' | 'admin';
-
-export interface IncidentListItem {
-  readonly id: string;
-  readonly requestId: string;
-  readonly kind: string;
-  readonly excerpt: string;
-  readonly status: IncidentStatus;
-  readonly createdAt: string;
-  readonly reporterRole: IncidentReporterRole;
-  readonly reporterName: string;
-}
+/** Ítem de la bandeja A05 tal como lo devuelve `admin_list_incidents` (CC-012). */
+export type IncidentListItem = RpcOutput<'admin_list_incidents'>['items'][number];
 
 export interface IncidentsQueueResult {
   readonly items: readonly IncidentListItem[];
   readonly pageSize: number;
-  readonly nextCursor: string | null;
-  readonly hasNextPage: boolean;
+  /** Cursor compuesto `{ createdAt, id }` de la página siguiente; `null` si no hay más. */
+  readonly nextCursor: IncidentsCursor | null;
 }
 
 /** Parte del viaje (comercio o repartidor) para mediación manual. Nunca datos del destinatario. */
-export interface IncidentParty {
-  readonly id: string;
-  readonly name: string;
-  readonly phone: string | null;
-}
+export const incidentPartySchema = z.object({
+  id: uuidSchema,
+  name: z.string(),
+  phone: z.string().nullable(),
+});
+export type IncidentParty = z.infer<typeof incidentPartySchema>;
 
-export interface IncidentTimeline {
-  readonly publishedAt: string | null;
-  readonly matchedAt: string | null;
-  readonly pickedUpAt: string | null;
-  readonly deliveredAt: string | null;
-}
+export const incidentTimelineSchema = z.object({
+  publishedAt: isoTimestampSchema.nullable(),
+  matchedAt: isoTimestampSchema.nullable(),
+  pickedUpAt: isoTimestampSchema.nullable(),
+  deliveredAt: isoTimestampSchema.nullable(),
+  cancelledAt: isoTimestampSchema.nullable(),
+});
+export type IncidentTimeline = z.infer<typeof incidentTimelineSchema>;
 
-export interface IncidentDetail {
-  readonly id: string;
-  readonly requestId: string;
-  readonly kind: string;
-  readonly description: string;
-  readonly status: IncidentStatus;
-  readonly resolution: string | null;
-  readonly createdAt: string;
-  readonly reporterRole: IncidentReporterRole;
-  readonly reporterName: string;
-  readonly merchant: IncidentParty;
-  readonly courier: IncidentParty | null;
-  readonly courierSuspended: boolean;
-  readonly timeline: IncidentTimeline;
-}
+/** A05: detalle que ve el admin. Se parsea en `getIncidentDetail`; no tiene campos del destinatario. */
+export const incidentDetailSchema = z
+  .object({
+    id: uuidSchema,
+    requestId: uuidSchema,
+    kind: incidentKindSchema,
+    description: z.string(),
+    status: incidentStatusSchema,
+    resolution: z.string().nullable(),
+    createdAt: isoTimestampSchema,
+    reporterRole: profileRoleSchema,
+    reporterName: z.string(),
+    merchant: incidentPartySchema,
+    courier: incidentPartySchema.nullable(),
+    courierSuspended: z.boolean(),
+    timeline: incidentTimelineSchema,
+  })
+  .strict();
+export type IncidentDetail = z.infer<typeof incidentDetailSchema>;

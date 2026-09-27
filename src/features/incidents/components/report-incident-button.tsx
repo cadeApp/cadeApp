@@ -1,7 +1,11 @@
 'use client';
 
+/** Quién puede reportar desde el viaje (D05-A). El admin nunca recibe este camino. */
+export type IncidentReporterRole = 'merchant' | 'courier';
+
 export interface ReportIncidentButtonProps {
   readonly requestId: string;
+  readonly actorRole: IncidentReporterRole;
   readonly tripStatus: string;
   readonly deliveredAt: string | null;
 }

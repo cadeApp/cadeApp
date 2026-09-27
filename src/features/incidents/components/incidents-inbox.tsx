@@ -1,10 +1,12 @@
+import type { IncidentsCursor } from '@/domain';
 import type { IncidentInboxTab } from '../schemas';
 import type { IncidentsQueueResult } from '../types';
 
 export interface IncidentsInboxProps {
   readonly result: IncidentsQueueResult;
   readonly tab: IncidentInboxTab;
-  readonly currentCursor?: string;
+  /** Cursor de la página actual; si existe, se ofrece volver al inicio. */
+  readonly currentCursor?: IncidentsCursor;
 }
 
 /**

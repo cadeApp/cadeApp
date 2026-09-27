@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetails } from '@/features/trips/server';

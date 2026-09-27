@@ -56,17 +56,16 @@ describe('T-124 DoD: bandeja A05 publicada en /admin/incidents (D01)', () => {
 });
 
 describe('T-124 DoD: el botón de reporte vive en el viaje (D02)', () => {
-  it('la vista de viaje renderiza ReportIncidentButton de @/features/incidents para comercio y repartidor', () => {
+  // El cableado real (actor, estado y entrega) lo prueba `_tests/trip-report-wiring.test.tsx` renderizando la page.
+  it('la vista de viaje importa ReportIncidentButton de @/features/incidents', () => {
     const page = fs.readFileSync(tripPage, 'utf-8');
     expect(page).toMatch(
       /import\s*\{[^}]*\bReportIncidentButton\b[^}]*\}\s*from\s*'@\/features\/incidents'/
     );
-    expect((page.match(/<ReportIncidentButton\b/g) ?? []).length).toBeGreaterThanOrEqual(2);
-    expect(page).toMatch(/requestId=\{trip\.id\}/);
   });
 });
 
-describe('T-124 DoD: mutaciones solo por RPC auditadas (D03)', () => {
+describe('T-124 DoD: mutaciones solo por RPC auditadas (D03, D06-A)', () => {
   const sources = () => readAll([...collectSourceFiles(featureDir), ...collectSourceFiles(inboxDir)]);
 
   it('la feature nunca escribe incidents, audit_log, couriers ni offers directo', () => {
@@ -75,15 +74,26 @@ describe('T-124 DoD: mutaciones solo por RPC auditadas (D03)', () => {
     );
   });
 
-  it('actions.ts reporta con report_incident y suspende con admin_suspend_courier', () => {
+  it('actions.ts reporta con report_incident y resuelve solo con admin_resolve_incident', () => {
     const actions = fs.readFileSync(path.join(featureDir, 'actions.ts'), 'utf-8');
     expect(actions).toMatch(/callRequestRpc\([^)]*'report_incident'/);
-    expect(actions).toMatch(/adminSuspendCourierRpc\(/);
+    expect(actions).toMatch(/adminResolveIncidentRpc\(/);
   });
 
-  it('actions.ts resuelve con admin_resolve_incident (pendiente del contract-change D03)', () => {
-    const actions = fs.readFileSync(path.join(featureDir, 'actions.ts'), 'utf-8');
-    expect(actions).toMatch(/adminResolveIncidentRpc\(/);
+  it('PR113-H03: no queda el camino separado de suspensión ni un courierId elegido por la UI', () => {
+    const actionsAndComponents = readAll([
+      path.join(featureDir, 'actions.ts'),
+      ...collectSourceFiles(path.join(featureDir, 'components')),
+    ]);
+    expect(actionsAndComponents).not.toMatch(
+      /suspendCourierForIncidentAction|adminSuspendCourierRpc|admin_suspend_courier|courierId/
+    );
+  });
+
+  it('PR113-H06: la bandeja usa admin_list_incidents y no arma un keyset propio por created_at', () => {
+    const queries = fs.readFileSync(path.join(featureDir, 'queries.ts'), 'utf-8');
+    expect(queries).toMatch(/adminListIncidentsRpc\(/);
+    expect(queries).not.toMatch(/\.lt\(\s*['"]created_at['"]|\.order\(\s*['"]created_at['"]/);
   });
 
   it('la feature no usa service role', () => {

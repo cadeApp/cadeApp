@@ -1,35 +1,23 @@
 'use server';
 
 import type { ActionResult, DomainErrorCode, RpcOutput } from '@/domain';
-import type {
-  ReportIncidentInput,
-  ResolveIncidentInput,
-  SuspendCourierForIncidentInput,
-} from './schemas';
+import type { ReportIncidentFormInput, ResolveIncidentInput } from './schemas';
 
 /**
  * C06/R07: el comercio o el repartidor del viaje reporta un incidente vía `report_incident`.
  */
 export async function reportIncidentAction(
-  _input: ReportIncidentInput
+  _input: ReportIncidentFormInput
 ): Promise<ActionResult<RpcOutput<'report_incident'>, DomainErrorCode>> {
   throw new Error('T-124: sin implementar');
 }
 
 /**
- * A05: suspensión cautelar inmediata del repartidor involucrado, vía `admin_suspend_courier` (aal2).
- */
-export async function suspendCourierForIncidentAction(
-  _input: SuspendCourierForIncidentInput
-): Promise<ActionResult<RpcOutput<'admin_suspend_courier'>, DomainErrorCode>> {
-  throw new Error('T-124: sin implementar');
-}
-
-/**
- * A05: resolución auditada del incidente vía `admin_resolve_incident` (contract-change pendiente, D03).
+ * A05 (D06-A): resolución auditada vía `admin_resolve_incident`. `preventive_suspension` suspende en Postgres al
+ * repartidor de la oferta aceptada; la action nunca recibe ni envía `courierId`.
  */
 export async function resolveIncidentAction(
   _input: ResolveIncidentInput
-): Promise<ActionResult<{ readonly incidentId: string }, DomainErrorCode>> {
+): Promise<ActionResult<RpcOutput<'admin_resolve_incident'>, DomainErrorCode>> {
   throw new Error('T-124: sin implementar');
 }
