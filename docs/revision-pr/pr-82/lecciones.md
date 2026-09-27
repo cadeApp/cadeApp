@@ -200,3 +200,13 @@ La Ronda 9 pidió imports directos de componentes internos para aislar chunks, p
 La ruta directa a componentes bajaba el bundle pero violaba el entry point. Al volver al barrel legal, ambas rutas quedaron en 192 kB. El barrel cliente además reexporta actions server-side, schemas runtime con Zod y componentes sin necesidad demostrada fuera de la feature, mientras la propia regla 20 declara `server.ts` como API pública de actions/queries.
 
 > **Regla propuesta:** para optimizar un entry point de feature, primero enumerar consumidores externos; conservar solo la API realmente pública y usar exports type-only para tipos. Nunca resolver el peso saltando boundaries ni eliminando exports sin prueba de consumidores.
+---
+## Ronda 12
+
+## `AG-96` · Una precondición de seguridad debe distinguir “preservar el símbolo” de “abortar toda la optimización”
+
+**Origen:** ejecución D06.
+
+R11 ordenó detener la optimización completa si aparecía cualquier consumidor runtime extra. La enumeración encontró `acceptOfferAction`, que efectivamente debe preservarse; sin embargo, eso no impide eliminar otros exports sin consumidores externos.
+
+> **Regla propuesta:** al adelgazar un barrel, la aparición de un consumidor inesperado obliga a preservar ese símbolo y prohibir cambios en ese consumidor, pero no necesariamente a abortar la poda de los demás exports si la enumeración completa ya demuestra que son privados/no usados.
