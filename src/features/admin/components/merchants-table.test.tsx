@@ -152,4 +152,26 @@ describe('T-123: MerchantsTable (A03)', () => {
     expect(setMerchantSubscriptionAction).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
+
+  it('cierra «Editar plan» con Escape y devuelve el foco al botón que lo abrió', async () => {
+    render(<MerchantsTable result={result} />);
+
+    const trigger = screen.getByRole('button', { name: /editar plan/i });
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeTruthy();
+
+    fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
 });
