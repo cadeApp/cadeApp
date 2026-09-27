@@ -75,29 +75,81 @@ describe('T-123: MerchantsTable (A03)', () => {
     expect(screen.getByText(/no hay comercios/i)).toBeTruthy();
   });
 
-  it('registra un pago manual con paid_until desde la hoja de edición', async () => {
+  /**
+   * PR112-H01: el modo se elige de forma explícita dentro del Dialog. La opción puede exponerse
+   * como radio (radiogroup) o como tab (Tabs de src/ui); en ambos casos debe quedar seleccionada.
+   */
+  function chooseMode(dialog: HTMLElement, name: RegExp): void {
+    const option =
+      within(dialog).queryByRole('radio', { name }) ?? within(dialog).getByRole('tab', { name });
+    fireEvent.mouseDown(option);
+    fireEvent.click(option);
+    const selected =
+      option.getAttribute('aria-checked') === 'true' ||
+      option.getAttribute('aria-selected') === 'true';
+    expect(selected).toBe(true);
+  }
+
+  async function openPlanDialog(): Promise<HTMLElement> {
+    fireEvent.click(screen.getByRole('button', { name: /editar plan/i }));
+    return screen.findByRole('dialog');
+  }
+
+  it('«Marcar mes pagado» activa la suscripción con paid_until (pilot → active)', async () => {
     vi.mocked(setMerchantSubscriptionAction).mockResolvedValue({
       ok: true,
-      data: { merchantId: MERCHANT_ID, subscriptionStatus: 'pilot', paidUntil: '2026-10-31' },
+      data: {
+        merchantId: MERCHANT_ID,
+        subscriptionStatus: 'active',
+        paidUntil: '2026-10-31',
+      },
     });
     render(<MerchantsTable result={result} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /editar plan/i }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/pagado hasta/i), {
+    const dialog = await openPlanDialog();
+    chooseMode(dialog, /marcar mes pagado/i);
+    fireEvent.change(within(dialog).getByLabelText(/hasta/i), {
       target: { value: '2026-10-31' },
     });
     fireEvent.click(within(dialog).getByRole('button', { name: /guardar/i }));
 
     await waitFor(() => {
-      expect(setMerchantSubscriptionAction).toHaveBeenCalledWith(
-        expect.objectContaining({
-          merchantId: MERCHANT_ID,
-          subscriptionStatus: 'pilot',
-          paidUntil: '2026-10-31',
-        })
-      );
+      expect(setMerchantSubscriptionAction).toHaveBeenCalledWith({
+        merchantId: MERCHANT_ID,
+        subscriptionStatus: 'active',
+        paidUntil: '2026-10-31',
+      });
     });
+    expect(setMerchantSubscriptionAction).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('«Extender piloto» conserva subscriptionStatus pilot y fija paid_until', async () => {
+    vi.mocked(setMerchantSubscriptionAction).mockResolvedValue({
+      ok: true,
+      data: {
+        merchantId: MERCHANT_ID,
+        subscriptionStatus: 'pilot',
+        paidUntil: '2026-10-31',
+      },
+    });
+    render(<MerchantsTable result={result} />);
+
+    const dialog = await openPlanDialog();
+    chooseMode(dialog, /extender piloto/i);
+    fireEvent.change(within(dialog).getByLabelText(/hasta/i), {
+      target: { value: '2026-10-31' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /guardar/i }));
+
+    await waitFor(() => {
+      expect(setMerchantSubscriptionAction).toHaveBeenCalledWith({
+        merchantId: MERCHANT_ID,
+        subscriptionStatus: 'pilot',
+        paidUntil: '2026-10-31',
+      });
+    });
+    expect(setMerchantSubscriptionAction).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 });

@@ -142,6 +142,34 @@ describe('T-123 DoD: las mutaciones solo pasan por RPC auditadas (D02)', () => {
   });
 });
 
+describe('T-123 DoD: A04 carga parámetros y «Últimos cambios» server-side (D04, PR112-H02)', () => {
+  const settingsPage = path.join(adminAppDir, 'admin', 'settings', 'page.tsx');
+
+  it('/admin/settings existe', () => {
+    expect(fs.existsSync(settingsPage)).toBe(true);
+  });
+
+  it('/admin/settings importa las queries desde @/features/admin/server y el panel desde @/features/admin', () => {
+    const page = fs.readFileSync(settingsPage, 'utf-8');
+    expect(page).toMatch(
+      /import\s*\{[^}]*\bgetPlatformSettings\b[^}]*\}\s*from\s*'@\/features\/admin\/server'/
+    );
+    expect(page).toMatch(
+      /import\s*\{[^}]*\bgetRecentSettingChanges\b[^}]*\}\s*from\s*'@\/features\/admin\/server'/
+    );
+    expect(page).toMatch(
+      /import\s*\{[^}]*\bRecentSettingChanges\b[^}]*\}\s*from\s*'@\/features\/admin'/
+    );
+  });
+
+  it('/admin/settings invoca ambas queries y renderiza RecentSettingChanges', () => {
+    const page = fs.readFileSync(settingsPage, 'utf-8');
+    expect(page).toMatch(/getPlatformSettings\s*\(/);
+    expect(page).toMatch(/getRecentSettingChanges\s*\(/);
+    expect(page).toMatch(/<RecentSettingChanges/);
+  });
+});
+
 describe('T-123 DoD: parámetros sin valores de negocio hardcodeados', () => {
   it('las vistas de parámetros no hardcodean el piso de oferta (1000 / 1.000)', () => {
     const files = [

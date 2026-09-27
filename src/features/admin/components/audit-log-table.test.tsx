@@ -53,22 +53,38 @@ describe('T-123: AuditLogTable (A06)', () => {
     expect(screen.queryByRole('button', { name: /editar|eliminar|borrar/i })).toBeNull();
   });
 
-  it('pagina server-side con cursor y conserva los filtros en el link', () => {
+  it('pagina server-side con cursor y conserva todos los filtros en el link', () => {
     render(
       <AuditLogTable
         result={result}
-        filters={{ actorId: ACTOR_ID, targetType: 'platform_setting' }}
+        filters={{
+          actorId: ACTOR_ID,
+          action: 'admin_update_setting',
+          targetType: 'platform_setting',
+        }}
         actors={[{ id: ACTOR_ID, name: 'Lautaro' }]}
       />
     );
 
-    const href = screen.getByRole('link', { name: /siguiente/i }).getAttribute('href') ?? '';
+    const href =
+      screen.getByRole('link', { name: /siguiente/i }).getAttribute('href') ?? '';
+
     const url = new URL(href, 'http://localhost');
+
     expect(url.pathname).toBe('/admin/audit');
     expect(url.searchParams.get('cursor')).toBe('89');
     expect(url.searchParams.get('actor')).toBe(ACTOR_ID);
+    expect(url.searchParams.get('action')).toBe('admin_update_setting');
     expect(url.searchParams.get('entity')).toBe('platform_setting');
   });
+
+  function fieldValue(form: HTMLElement, name: string): string | null {
+    const field = form.querySelector(`[name="${name}"]`);
+    if (field instanceof HTMLInputElement || field instanceof HTMLSelectElement) {
+      return field.value;
+    }
+    return null;
+  }
 
   it('los filtros se envían por GET a la misma ruta (filtrado en el servidor)', () => {
     render(<AuditLogTable result={result} filters={{}} actors={[{ id: ACTOR_ID, name: 'Lautaro' }]} />);
@@ -79,6 +95,25 @@ describe('T-123: AuditLogTable (A06)', () => {
     for (const name of ['actor', 'action', 'entity']) {
       expect(form.querySelector(`[name="${name}"]`)).not.toBeNull();
     }
+  });
+
+  it('con filtros activos, los controles del formulario reflejan operador, evento y entidad', () => {
+    render(
+      <AuditLogTable
+        result={result}
+        filters={{
+          actorId: ACTOR_ID,
+          action: 'admin_update_setting',
+          targetType: 'platform_setting',
+        }}
+        actors={[{ id: ACTOR_ID, name: 'Lautaro' }]}
+      />
+    );
+
+    const form = screen.getByRole('search');
+    expect(fieldValue(form, 'actor')).toBe(ACTOR_ID);
+    expect(fieldValue(form, 'action')).toBe('admin_update_setting');
+    expect(fieldValue(form, 'entity')).toBe('platform_setting');
   });
 
   it('muestra un estado vacío sin link de siguiente página', () => {

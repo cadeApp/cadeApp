@@ -10,5 +10,6 @@ export * from './components/applicant-detail-view';
 export * from './components/applicant-detail-skeleton';
 export * from './components/merchants-table';
 export * from './components/platform-settings-form';
+export * from './components/recent-setting-changes';
 export * from './components/audit-log-table';
 export * from './copy';
