@@ -115,3 +115,73 @@ fatal: Could not resolve host: github.com
 ```
 
 No se fabrica evidencia de mutación. Las mutaciones H01/H02/H03 quedan exigidas durante la implementación GREEN.
+
+---
+
+## Ronda 3 — SHA `da4c103c4e4ab874b0f64250f78c64800d9c07ad`
+
+### CI
+
+Run `36304479891`:
+
+```text
+typecheck       PASS
+lint            PASS
+unit            PASS
+build           PASS
+audit           PASS
+db-tests        PASS
+bundle-budget   PASS
+
+Test Files      73 passed (73)
+Tests           886 passed (886)
+
+db-tests:
+Files=12, Tests=1529
+Result: PASS
+
+build:
+Compiled successfully
+45/45 páginas
+```
+
+La corrida corresponde al SHA revisado y es posterior al commit funcional.
+
+### H04 — inspección
+
+Archivo: `src/features/admin/components/merchants-table.test.tsx`.
+
+La suite cubre:
+- columnas y datos;
+- paginación;
+- estado vacío;
+- “Marcar mes pagado”;
+- “Extender piloto”.
+
+No cubre:
+1. enfocar el botón “Editar plan”;
+2. abrir el Dialog;
+3. cerrarlo con `Escape`;
+4. esperar que desaparezca;
+5. comprobar que el foco vuelve exactamente al mismo botón.
+
+La implementación actual de A03 usa `<Dialog open={merchant !== null} onOpenChange=...>` sin `DialogTrigger` dentro de `MerchantsTable`. `src/ui/dialog.tsx` intenta recuperar el elemento activo, pero ese contrato no está blindado por un test de A03.
+
+### Mutación RED exigida al arreglo
+
+No se declara como ejecutada por esta revisión.
+
+El autor debe demostrar que el test nuevo detecta una regresión real. Mutación concreta sobre `src/features/admin/components/merchants-table.tsx`:
+
+```tsx
+onClick={(event) => {
+  event.currentTarget.blur();
+  setEditing(merchant);
+}}
+```
+
+en lugar del handler actual que solo hace `setEditing(merchant)`.
+
+La mutación debe hacer fallar **solo el control de retorno de foco** (o, como mínimo, ese control debe figurar entre los fallos). Después se restaura el archivo byte por byte y el test vuelve a verde.
+
+No tocar `src/ui/**` para resolver H04.
