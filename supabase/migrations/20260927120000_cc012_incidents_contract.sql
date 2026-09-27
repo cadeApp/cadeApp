@@ -66,7 +66,7 @@ begin
   select role, consent_status into v_role, v_consent_status
   from public.profiles
   where id = v_uid;
-  if v_role is null or v_role not in ('merchant', 'courier') then
+  if v_role is null or v_role not in ('merchant', 'courier', 'admin') then
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
   if v_consent_status <> 'active' then
