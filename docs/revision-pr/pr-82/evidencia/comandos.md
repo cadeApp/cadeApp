@@ -796,3 +796,68 @@ bundle-budget SUCCESS
 /courier/feed 176 kB OK
 /courier/offers 176 kB OK
 ```
+---
+# Ronda 15 — SHA funcional b43d023
+
+## R03
+Compare `832c959...b43d023` sobre `docs/tasks/log/T-204.md`:
+```text
+8 additions
+0 deletions
+```
+
+Sesión 05:45:
+```text
+- **Último commit:** por commitear
+```
+
+Sesión 06:05:
+```text
+- **Último commit:** pendiente de commit de esta sesión
+```
+
+## H35
+PR body:
+```text
+CI exact-head run 36308321955
+unit: 82 suites / 992 tests
+```
+
+Log exact-head:
+```text
+Test Files 82 passed (82)
+Tests      992 passed (992)
+```
+
+## Suites usadas para revalidar H04–H13
+```text
+use-request-offers.test.tsx          14/14
+use-available-requests.test.tsx      13/13
+use-trip.test.tsx                    11/11
+use-realtime-invalidation.test.tsx    7/7
+courier-panel.test.tsx               13/13
+```
+
+Inspección exact-head:
+- H04: invalidateQueries positivo + no setQueryData/setOffers.
+- H05: removeChannel(mockChannel) + debounce cancelado tras unmount.
+- H06: staleTime 60 s en tests + focus/reconnect false; hooks usan 'always'.
+- H07: query keys + online + polling 30 s / background.
+- H09: API live available-requests + hasMyOffer.
+- H10: API live trip + shape/null/error.
+- H11: dos keys dentro del debounce -> dos invalidaciones.
+- H12: rerender de filtro/key -> solo configuración nueva.
+- H13: callbacks post-render.
+
+## CI exact-head — run 36308321955
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 82 files / 992 tests
+db-tests SUCCESS — Files=12, Tests=1529, Result: PASS
+audit SUCCESS
+build SUCCESS — 45/45
+bundle-budget SUCCESS
+/courier/feed 176 kB OK
+/courier/offers 176 kB OK
+```
