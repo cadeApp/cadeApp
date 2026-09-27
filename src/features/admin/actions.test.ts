@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { revalidatePath } from 'next/cache';
 import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
 import * as adminRpc from '@/server/rpc/admin';
@@ -8,6 +9,8 @@ import {
   verifyCourierDocumentAction,
   viewCourierDocumentAction,
   verifyAdminMfaAction,
+  setMerchantSubscriptionAction,
+  updatePlatformSettingAction,
 } from './actions';
 import { sanitizeAdminRedirect } from './redirect';
 
@@ -23,10 +26,13 @@ vi.mock('@/server/rpc/admin', () => ({
   adminDecideCourierRpc: vi.fn(),
   adminSuspendCourierRpc: vi.fn(),
   adminVerifyDocumentRpc: vi.fn(),
+  adminSetSubscriptionRpc: vi.fn(),
+  adminUpdateSettingRpc: vi.fn(),
 }));
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
 }));
 
 const VALID_COURIER_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
@@ -526,4 +532,262 @@ describe('Admin Actions (T-122 DoD & PR106-H13)', () => {
       expect(sanitizeAdminRedirect('')).toBe('/admin/applicants');
     });
   });
+});
+
+// T-123: A03/A04
+const MERCHANT_ID = 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33';
+const ADMIN_USER = { id: 'admin-123', email: 'admin@cadeapp.com' };
+
+type ServerClient = Awaited<ReturnType<typeof serverSupabase.createClient>>;
+
+function mockSession(options: {
+  user?: typeof ADMIN_USER | null;
+  role?: string;
+  aal?: 'aal1' | 'aal2';
+}) {
+  const from = vi.fn().mockReturnValue({
+    select: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: options.role ? { role: options.role } : null,
+          error: null,
+        }),
+      }),
+    }),
+  });
+  const client = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: options.user === undefined ? ADMIN_USER : options.user },
+        error: null,
+      }),
+      mfa: {
+        getAuthenticatorAssuranceLevel: vi.fn().mockResolvedValue({
+          data: { currentLevel: options.aal ?? 'aal2', nextLevel: 'aal2' },
+          error: null,
+        }),
+      },
+    },
+    from,
+    rpc: vi.fn(),
+  };
+  vi.mocked(serverSupabase.createClient).mockResolvedValue(client as unknown as ServerClient);
+  return client;
+}
+
+function tablesTouched(client: ReturnType<typeof mockSession>): string[] {
+  return client.from.mock.calls.map((call: unknown[]) => String(call[0]));
+}
+
+describe('T-123: setMerchantSubscriptionAction (A03, pago manual y paid_until)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const validInput = {
+    merchantId: MERCHANT_ID,
+    subscriptionStatus: 'active' as const,
+    paidUntil: '2026-10-31',
+    notes: 'Pagó en efectivo',
+  };
+
+  it('rechaza payload inválido con VALIDATION_ERROR sin llamar a la RPC', async () => {
+    mockSession({ role: 'admin' });
+    const result = await setMerchantSubscriptionAction({
+      ...validInput,
+      merchantId: 'no-es-uuid',
+    });
+    expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(adminRpc.adminSetSubscriptionRpc).not.toHaveBeenCalled();
+  });
+
+  it('rechaza paid_until con formato inválido', async () => {
+    mockSession({ role: 'admin' });
+    const result = await setMerchantSubscriptionAction({ ...validInput, paidUntil: '31/10/2026' });
+    expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(adminRpc.adminSetSubscriptionRpc).not.toHaveBeenCalled();
+  });
+
+  it('sin sesión devuelve UNAUTHENTICATED y no llama a la RPC', async () => {
+    mockSession({ user: null });
+    const result = await setMerchantSubscriptionAction(validInput);
+    expect(result).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
+    expect(adminRpc.adminSetSubscriptionRpc).not.toHaveBeenCalled();
+  });
+
+  it('un comercio no puede cambiar planes (UNAUTHORIZED_ACTOR)', async () => {
+    mockSession({ role: 'merchant' });
+    const result = await setMerchantSubscriptionAction(validInput);
+    expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    expect(adminRpc.adminSetSubscriptionRpc).not.toHaveBeenCalled();
+  });
+
+  it('un admin con aal1 recibe AAL2_REQUIRED y no llama a la RPC', async () => {
+    mockSession({ role: 'admin', aal: 'aal1' });
+    const result = await setMerchantSubscriptionAction(validInput);
+    expect(result).toEqual({ ok: false, code: 'AAL2_REQUIRED' });
+    expect(adminRpc.adminSetSubscriptionRpc).not.toHaveBeenCalled();
+  });
+
+  it('con aal2 invoca admin_set_subscription con el cliente de sesión y nunca con service role', async () => {
+    const client = mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminSetSubscriptionRpc).mockResolvedValue({
+      ok: true,
+      data: { merchantId: MERCHANT_ID, subscriptionStatus: 'active', paidUntil: '2026-10-31' },
+    });
+
+    const result = await setMerchantSubscriptionAction(validInput);
+
+    expect(result).toEqual({
+      ok: true,
+      data: { merchantId: MERCHANT_ID, subscriptionStatus: 'active', paidUntil: '2026-10-31' },
+    });
+    expect(adminRpc.adminSetSubscriptionRpc).toHaveBeenCalledTimes(1);
+    expect(adminRpc.adminSetSubscriptionRpc).toHaveBeenCalledWith(client, validInput);
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('la mutación queda auditada por la RPC: la action no escribe merchants ni audit_log directo', async () => {
+    const client = mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminSetSubscriptionRpc).mockResolvedValue({
+      ok: true,
+      data: { merchantId: MERCHANT_ID, subscriptionStatus: 'pilot', paidUntil: null },
+    });
+
+    await setMerchantSubscriptionAction({ merchantId: MERCHANT_ID, subscriptionStatus: 'pilot' });
+
+    expect(tablesTouched(client)).not.toContain('merchants');
+    expect(tablesTouched(client)).not.toContain('audit_log');
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('revalida A03 y A06 tras el cambio', async () => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminSetSubscriptionRpc).mockResolvedValue({
+      ok: true,
+      data: { merchantId: MERCHANT_ID, subscriptionStatus: 'active', paidUntil: '2026-10-31' },
+    });
+
+    await setMerchantSubscriptionAction(validInput);
+
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/merchants');
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/audit');
+  });
+
+  it.each(['AAL2_REQUIRED', 'NOT_FOUND', 'UNAUTHORIZED_ACTOR', 'VALIDATION_ERROR'] as const)(
+    'propaga el código %s de la RPC sin revalidar',
+    async (code) => {
+      mockSession({ role: 'admin' });
+      vi.mocked(adminRpc.adminSetSubscriptionRpc).mockResolvedValue({ ok: false, code });
+
+      const result = await setMerchantSubscriptionAction(validInput);
+
+      expect(result).toEqual({ ok: false, code });
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+  );
+
+  it('un error no contemplado de la RPC se devuelve como INTERNAL_ERROR', async () => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminSetSubscriptionRpc).mockResolvedValue({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+    const result = await setMerchantSubscriptionAction(validInput);
+    expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+  });
+});
+
+describe('T-123: updatePlatformSettingAction (A04, admin_update_setting con aal2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('un admin con aal1 recibe AAL2_REQUIRED y no llama a admin_update_setting', async () => {
+    mockSession({ role: 'admin', aal: 'aal1' });
+    const result = await updatePlatformSettingAction({ key: 'min_offer_ars', value: 1500 });
+    expect(result).toEqual({ ok: false, code: 'AAL2_REQUIRED' });
+    expect(adminRpc.adminUpdateSettingRpc).not.toHaveBeenCalled();
+  });
+
+  it('un repartidor no puede cambiar parámetros', async () => {
+    mockSession({ role: 'courier' });
+    const result = await updatePlatformSettingAction({ key: 'pilot_active', value: false });
+    expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    expect(adminRpc.adminUpdateSettingRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { key: 'min_offer_ars', value: 0 },
+    { key: 'min_offer_ars', value: 1500.5 },
+    { key: 'request_ttl_minutes', value: 0 },
+    { key: 'subscription_grace_days', value: -1 },
+    { key: 'pilot_terms_version', value: '   ' },
+    { key: 'pilot_active', value: 'true' },
+  ])('rechaza $key=$value con INVALID_SETTING_VALUE sin llamar a la RPC', async (input) => {
+    mockSession({ role: 'admin' });
+    const result = await updatePlatformSettingAction(
+      input as unknown as Parameters<typeof updatePlatformSettingAction>[0]
+    );
+    expect(result).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
+    expect(adminRpc.adminUpdateSettingRpc).not.toHaveBeenCalled();
+  });
+
+  it('rechaza una clave desconocida con INVALID_SETTING_KEY', async () => {
+    mockSession({ role: 'admin' });
+    const result = await updatePlatformSettingAction({
+      key: 'max_offer_ars',
+      value: 5000,
+    } as unknown as Parameters<typeof updatePlatformSettingAction>[0]);
+    expect(result).toEqual({ ok: false, code: 'INVALID_SETTING_KEY' });
+    expect(adminRpc.adminUpdateSettingRpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { key: 'min_offer_ars', value: 1500 },
+    { key: 'request_ttl_minutes', value: 45 },
+    { key: 'pilot_active', value: false },
+    { key: 'pilot_terms_version', value: '1.1' },
+    { key: 'subscription_grace_days', value: 3 },
+  ] as const)(
+    'con aal2 invoca admin_update_setting para $key con el cliente de sesión',
+    async (input) => {
+      const client = mockSession({ role: 'admin' });
+      vi.mocked(adminRpc.adminUpdateSettingRpc).mockResolvedValue({ ok: true, data: input });
+
+      const result = await updatePlatformSettingAction(input);
+
+      expect(result).toEqual({ ok: true, data: input });
+      expect(adminRpc.adminUpdateSettingRpc).toHaveBeenCalledWith(client, input);
+      expect(tablesTouched(client)).not.toContain('platform_settings');
+      expect(tablesTouched(client)).not.toContain('audit_log');
+      expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+    }
+  );
+
+  it('revalida A04 y A06 tras guardar', async () => {
+    mockSession({ role: 'admin' });
+    vi.mocked(adminRpc.adminUpdateSettingRpc).mockResolvedValue({
+      ok: true,
+      data: { key: 'min_offer_ars', value: 1500 },
+    });
+
+    await updatePlatformSettingAction({ key: 'min_offer_ars', value: 1500 });
+
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/settings');
+    expect(revalidatePath).toHaveBeenCalledWith('/admin/audit');
+  });
+
+  it.each(['AAL2_REQUIRED', 'INVALID_SETTING_VALUE', 'INVALID_SETTING_KEY', 'UNAUTHORIZED_ACTOR'] as const)(
+    'propaga el código %s de la RPC sin revalidar',
+    async (code) => {
+      mockSession({ role: 'admin' });
+      vi.mocked(adminRpc.adminUpdateSettingRpc).mockResolvedValue({ ok: false, code });
+
+      const result = await updatePlatformSettingAction({ key: 'request_ttl_minutes', value: 30 });
+
+      expect(result).toEqual({ ok: false, code });
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+  );
 });
