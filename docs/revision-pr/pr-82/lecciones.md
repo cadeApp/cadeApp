@@ -156,3 +156,16 @@ Un Route Handler válido necesita un `Request` real, pero el test de «sin curso
 - **R02** repite H18: los helpers de test también están sujetos a la prohibición de `any` y non-null assertions.
 - **H29** refuerza AG-70: un texto «RED» no es evidencia si la mutación descrita no puede causar esa salida con el mock actual. El comando/control debe ser reproducible sobre el árbol que se entrega.
 - **H30** repite AG-71: cerrar sesión no congela develop; el target se compara otra vez justo antes de declarar readiness.
+---
+
+## Ronda 8
+
+## `AG-92` · Un check verde puede contener una violación explícita si el presupuesto está configurado como warning
+
+**Origen:** `PR82-H31`.
+
+`bundle-budget` termina SUCCESS mientras su propia tabla dice `Supera el límite`. Si la revisión mira solo la conclusión del job, pierde una regresión de +94 kB en una ruta crítica.
+
+> **Regla propuesta:** para presupuestos cuantitativos, la evidencia es el valor medido por ruta, no el color del job. Si el control es advisory, la revisión compara el número con la regla y bloquea manualmente.
+
+Además, una dependencia de Realtime puede ser correcta funcionalmente y aun así ser incorrecta como import eager. Las integraciones pesadas que solo se necesitan después de mount deben evaluarse para carga diferida y verificarse contra el bundle real.
