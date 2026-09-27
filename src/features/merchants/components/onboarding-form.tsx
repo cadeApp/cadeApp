@@ -3,13 +3,13 @@
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Store, Phone, MapPin, AlertTriangle, AlertCircle, Info } from 'lucide-react';
+import { Store, Phone, MapPin, AlertTriangle, AlertCircle, Info, Crosshair } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { Input } from '@/ui/input';
-import { MapSkeleton } from '@/ui/map';
+import { MapSkeleton } from '@/ui/map-skeleton';
 import { Textarea } from '@/ui/textarea';
 import { merchantOnboardingAction } from '../actions';
 import { merchantCopy } from '../copy';
@@ -61,6 +61,13 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
 
   const defaultPickupLat = watch('defaultPickupLat');
   const defaultPickupLng = watch('defaultPickupLng');
+  const selectedZoneId = watch('defaultPickupZoneId');
+
+  const selectedZone = zones.find((z) => z.id === selectedZoneId);
+  const selectedZoneCenter =
+    selectedZone?.centroidLat != null && selectedZone?.centroidLng != null
+      ? { lat: selectedZone.centroidLat, lng: selectedZone.centroidLng }
+      : null;
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
@@ -92,10 +99,13 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
   };
 
   const onSubmit = async (data: MerchantOnboardingInput) => {
+    const finalLat = data.defaultPickupLat ?? selectedZoneCenter?.lat ?? null;
+    const finalLng = data.defaultPickupLng ?? selectedZoneCenter?.lng ?? null;
+
     if (
-      data.defaultPickupLat != null &&
-      data.defaultPickupLng != null &&
-      !isWithinAguilaresBounds(data.defaultPickupLat, data.defaultPickupLng)
+      finalLat != null &&
+      finalLng != null &&
+      !isWithinAguilaresBounds(finalLat, finalLng)
     ) {
       setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);
       return;
@@ -106,6 +116,8 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
     try {
       const result = await merchantOnboardingAction({
         ...data,
+        defaultPickupLat: finalLat,
+        defaultPickupLng: finalLng,
         defaultPickupZoneId: data.defaultPickupZoneId || undefined,
         notes: data.notes || undefined,
       });
@@ -255,6 +267,27 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             </div>
           </div>
 
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={handleUseMyLocation}
+            disabled={locating}
+            className="w-full"
+          >
+            <Crosshair className="h-5 w-5 text-primary-dark" />
+            <span>
+              {locating ? merchantCopy.onboarding.locating : merchantCopy.onboarding.useMyLocation}
+            </span>
+          </Button>
+
+          {defaultPickupLat != null && defaultPickupLng != null && !coordsError && (
+            <div className="rounded-lg bg-primary/10 p-2.5 text-sm text-primary-dark">
+              {merchantCopy.onboarding.locationMarked} ({defaultPickupLat.toFixed(4)},{' '}
+              {defaultPickupLng.toFixed(4)})
+            </div>
+          )}
+
           <MapPicker
             value={
               defaultPickupLat != null && defaultPickupLng != null
@@ -262,14 +295,22 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
                 : null
             }
             onChange={(coords) => {
-              setValue('defaultPickupLat', coords ? coords.lat : null, { shouldValidate: true });
-              setValue('defaultPickupLng', coords ? coords.lng : null, { shouldValidate: true });
+              setValue('defaultPickupLat', coords.lat, { shouldValidate: true });
+              setValue('defaultPickupLng', coords.lng, { shouldValidate: true });
+              setCoordsError(null);
             }}
-            addressText={watch('defaultPickupAddress')}
-            onAddressSelect={(addr) => {
-              setValue('defaultPickupAddress', addr, { shouldValidate: true });
-            }}
+            defaultZoneCenter={selectedZoneCenter}
           />
+
+          {coordsError && (
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <span>{coordsError}</span>
+            </div>
+          )}
 
           {errors.defaultPickupLat && (
             <div
