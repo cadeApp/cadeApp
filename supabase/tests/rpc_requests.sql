@@ -93,7 +93,7 @@ insert into rpc_cases values
  ('report_no_show', 'uuid,boolean', 'select public.report_no_show(%L, true)'),
  ('courier_cancel_match', 'uuid,text', 'select public.courier_cancel_match(%L, ''Pinchadura'')'),
  ('republish_request', 'uuid,text', 'select public.republish_request(%L, ''Motivo de prueba'')'),
- ('report_incident', 'uuid,text,text', 'select public.report_incident(%L, ''demora'', ''Demora de prueba'')');
+ ('report_incident', 'uuid,text,text', 'select public.report_incident(%L, ''other'', ''Demora de prueba'')');
 
 select has_function('public', name, string_to_array(signature, ','), name || ': firma') from rpc_cases;
 select ok(not has_function_privilege('authenticated',
@@ -131,12 +131,12 @@ insert into valid_transitions values
  ('republish_request', 'matched', 1, 'published'),
  ('republish_request', 'expired', 1, 'published'),
  ('republish_request', 'cancelled', 1, 'published');
+-- CC-012 / D05-A: comercio dueño en matched, in_transit y delivered (≤ 24 h); repartidor asignado solo en
+-- matched e in_transit; el admin nunca reporta. Reemplaza la matriz anterior (published, admin y courier en delivered).
 insert into valid_transitions
-select 'report_incident', s, a, s
-from unnest(array['published','matched','in_transit','delivered']) s
-cross join unnest(array[1,5]) a;
+select 'report_incident', s, 1, s from unnest(array['matched','in_transit','delivered']) s;
 insert into valid_transitions
-select 'report_incident', s, 3, s from unnest(array['matched','in_transit','delivered']) s;
+select 'report_incident', s, 3, s from unnest(array['matched','in_transit']) s;
 
 create function pg_temp.matrix() returns setof text language plpgsql as $$
 declare c record; s text; a integer; expected text; result jsonb; label text;
@@ -229,7 +229,7 @@ select pg_temp.fixture('in_transit');
 update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(3);
 select is(pg_temp.invoke(3, format('select public.mark_delivered(%L)', pg_temp.actor(20)))->>'error',
   'COURIER_SUSPENDED', 'suspensión entre retiro y entrega se revalida');
-select is(pg_temp.invoke(3, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20)))->>'error',
+select is(pg_temp.invoke(3, format('select public.report_incident(%L, ''other'', ''Demora de prueba'')', pg_temp.actor(20)))->>'error',
   'COURIER_SUSPENDED', 'incidente revalida suspensión');
 update public.couriers set status = 'rejected' where profile_id = pg_temp.actor(3);
 select is(pg_temp.invoke(3, format('select public.mark_delivered(%L)', pg_temp.actor(20)))->>'error',
@@ -240,13 +240,13 @@ select ok(pg_temp.invoke(3, format('select public.mark_delivered(%L)', pg_temp.a
   'entrega persiste delivered_at real');
 select is((select delivered_at from public.delivery_requests where id = pg_temp.actor(20)), now(),
   'M02: mark_delivered escribe delivered_at');
-select ok(pg_temp.invoke(1, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
+select ok(pg_temp.invoke(1, format('select public.report_incident(%L, ''other'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
   'incidente permitido sobre delivered_at escrito por mark_delivered');
 update public.delivery_requests set delivered_at = now() - interval '24 hours' where id = pg_temp.actor(20);
-select ok(pg_temp.invoke(1, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
+select ok(pg_temp.invoke(1, format('select public.report_incident(%L, ''other'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
   'incidente permitido exactamente a las 24 horas');
 update public.delivery_requests set delivered_at = now() - interval '24 hours 1 second' where id = pg_temp.actor(20);
-select is(pg_temp.invoke(1, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20)))->>'error',
+select is(pg_temp.invoke(1, format('select public.report_incident(%L, ''other'', ''Demora de prueba'')', pg_temp.actor(20)))->>'error',
   'INCIDENT_WINDOW_EXPIRED', 'incidente rechazado después de 24 horas');
 
 select pg_temp.fixture('draft');
@@ -276,13 +276,14 @@ select is((select status::text from public.delivery_requests where id = pg_temp.
 
 select pg_temp.fixture('matched');
 update public.platform_settings set value = '1'::jsonb where key = 'max_incidents_per_min';
-select ok(pg_temp.invoke(1, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
+select ok(pg_temp.invoke(1, format('select public.report_incident(%L, ''other'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
   'primer incidente dentro del cupo');
-select is(pg_temp.invoke(1, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20)))->>'error',
+select is(pg_temp.invoke(1, format('select public.report_incident(%L, ''other'', ''Demora de prueba'')', pg_temp.actor(20)))->>'error',
   'RATE_LIMITED', 'segundo incidente excede configuración dinámica');
 select is((select count(*)::integer from public.incidents where request_id = pg_temp.actor(20)), 1,
   'incidente rechazado no se persiste');
-select ok(pg_temp.invoke(5, format('select public.report_incident(%L, ''demora'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
+-- CC-012 / D05-A: el admin ya no reporta; el otro actor con cupo propio es el repartidor asignado.
+select ok(pg_temp.invoke(3, format('select public.report_incident(%L, ''other'', ''Demora de prueba'')', pg_temp.actor(20))) ? 'data',
   'otro actor conserva su propio cupo');
 
 select pg_temp.fixture('draft');
@@ -531,13 +532,13 @@ begin
   -- S05: incidente sobre published vencida -> INVALID_STATE_TRANSITION (expiración perezosa)
   perform pg_temp.fixture('published');
   update public.delivery_requests set expires_at = now() - interval '1 minute' where id = pg_temp.actor(20);
-  return next is(pg_temp.invoke(1, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Demora de prueba'))->>'error',
+  return next is(pg_temp.invoke(1, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'other', 'Demora de prueba'))->>'error',
     'INVALID_STATE_TRANSITION', 'S05: report_incident sobre published vencida -> INVALID_STATE_TRANSITION');
 
   -- S06 (H01a): courier ajeno y suspendido reporta incidente sobre matched -> UNAUTHORIZED_ACTOR
   perform pg_temp.fixture('matched');
   update public.couriers set status = 'suspended' where profile_id = pg_temp.actor(4);
-  return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Demora de prueba'))->>'error',
+  return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'other', 'Demora de prueba'))->>'error',
     'UNAUTHORIZED_ACTOR', 'S06 / H01a: courier ajeno suspendido en report_incident -> UNAUTHORIZED_ACTOR');
 
   -- S07: republish_request con suscripción vencida sobre draft -> INVALID_STATE_TRANSITION
@@ -582,7 +583,7 @@ begin
   -- S14 (H01b): courier ajeno sin registro en couriers reporta incidente sobre matched -> UNAUTHORIZED_ACTOR
   perform pg_temp.fixture('matched');
   delete from public.couriers where profile_id = pg_temp.actor(4);
-  return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'demora', 'Demora de prueba'))->>'error',
+  return next is(pg_temp.invoke(4, format('select public.report_incident(%L, %L, %L)', pg_temp.actor(20), 'other', 'Demora de prueba'))->>'error',
     'UNAUTHORIZED_ACTOR', 'S14 / H01b: courier ajeno sin registro en couriers en report_incident -> UNAUTHORIZED_ACTOR');
 
   -- S15 (H02 / H12): republish_request sobre published con expires_at vencido republica, expira ofertas pending previas y renueva expires_at
@@ -631,6 +632,73 @@ begin
 end;
 $$;
 select * from pg_temp.check_d01();
+
+-- CC-012 / D05-A: matriz explícita de report_incident, validación en Postgres y alta solo por RPC.
+-- El admin queda con consentimiento activo y aal2: si se lo rechaza, es por rol (M1).
+update public.profiles set consent_status = 'active' where id = pg_temp.actor(5);
+update public.platform_settings set value = '5'::jsonb where key = 'max_incidents_per_min';
+
+create function pg_temp.cc012_report(p_actor integer, p_kind text, p_description text)
+returns jsonb language sql as $$
+  select pg_temp.invoke(p_actor, format('select public.report_incident(%L, %L, %L)',
+    pg_temp.actor(20), p_kind, p_description));
+$$;
+create function pg_temp.cc012_incidents() returns integer language sql as $$
+  select count(*)::integer from public.incidents where request_id = pg_temp.actor(20);
+$$;
+
+select pg_temp.fixture('matched');
+select ok(pg_temp.cc012_report(1, 'other', 'Demora en el retiro del pedido') ? 'data',
+  'CC-012: merchant dueño en matched -> OK');
+select is((select kind from public.incidents where request_id = pg_temp.actor(20)), 'other',
+  'CC-012: el alta persiste el tipo canónico');
+select is(pg_temp.cc012_report(5, 'other', 'Demora en el retiro del pedido')->>'error',
+  'UNAUTHORIZED_ACTOR', 'CC-012 M1: admin (activo, aal2) en report_incident -> UNAUTHORIZED_ACTOR');
+select ok(pg_temp.cc012_report(3, 'no_show', 'El comercio no tenía el pedido listo') ? 'data',
+  'CC-012: courier asignado en matched -> OK');
+select is(pg_temp.cc012_report(4, 'other', 'Demora en el retiro del pedido')->>'error',
+  'UNAUTHORIZED_ACTOR', 'CC-012: courier ajeno -> UNAUTHORIZED_ACTOR');
+select is(pg_temp.cc012_report(1, 'demora', 'Demora en el retiro del pedido')->>'error',
+  'VALIDATION_ERROR', 'CC-012: kind fuera de INCIDENT_KINDS -> VALIDATION_ERROR');
+select is(pg_temp.cc012_report(1, 'other', 'Llamame al 3865 44-1122 para ver qué pasó.')->>'error',
+  'VALIDATION_ERROR', 'CC-012: relato con teléfono -> VALIDATION_ERROR');
+select is(pg_temp.cc012_report(1, 'other', 'El cliente atiende en +54 9 3865 441122 siempre.')->>'error',
+  'VALIDATION_ERROR', 'CC-012: relato con teléfono internacional -> VALIDATION_ERROR');
+select is(pg_temp.cc012_report(1, 'other', 'Escribime a juan.perez@correo.com por el reclamo.')->>'error',
+  'VALIDATION_ERROR', 'CC-012: relato con email -> VALIDATION_ERROR');
+select is(pg_temp.cc012_report(1, 'other', 'Mal')->>'error',
+  'VALIDATION_ERROR', 'CC-012: relato demasiado corto -> VALIDATION_ERROR');
+select ok(pg_temp.cc012_report(3, 'payment_issue', 'Pagó con $ 2.000 y no tenía cambio para $ 500 del envío.') ? 'data',
+  'CC-012: relato con montos ($ 2.000 / $ 500) -> OK');
+select is(pg_temp.cc012_incidents(), 3, 'CC-012: solo persisten los tres reportes válidos');
+
+select pg_temp.fixture('in_transit');
+select ok(pg_temp.cc012_report(1, 'damaged_goods', 'La caja se golpeó en el viaje') ? 'data',
+  'CC-012: merchant dueño en in_transit -> OK');
+select ok(pg_temp.cc012_report(3, 'safety', 'Calle cortada con obra en el camino') ? 'data',
+  'CC-012: courier asignado en in_transit -> OK');
+
+select pg_temp.fixture('delivered');
+select ok(pg_temp.cc012_report(1, 'damaged_goods', 'Llegó con la caja abierta') ? 'data',
+  'CC-012: merchant dueño en delivered dentro de 24 h -> OK');
+select is(pg_temp.cc012_report(3, 'other', 'El destinatario tardó en salir')->>'error',
+  'INVALID_STATE_TRANSITION', 'CC-012: courier en delivered -> INVALID_STATE_TRANSITION');
+update public.delivery_requests set delivered_at = now() - interval '24 hours 1 second'
+where id = pg_temp.actor(20);
+select is(pg_temp.cc012_report(1, 'damaged_goods', 'Llegó con la caja abierta')->>'error',
+  'INCIDENT_WINDOW_EXPIRED', 'CC-012: merchant dueño en delivered después de 24 h -> INCIDENT_WINDOW_EXPIRED');
+
+select pg_temp.fixture('published');
+select is(pg_temp.cc012_report(1, 'other', 'Nadie tomó el pedido todavía')->>'error',
+  'INVALID_STATE_TRANSITION', 'CC-012: merchant en published -> INVALID_STATE_TRANSITION');
+
+select pg_temp.fixture('matched');
+update public.platform_settings set value = '1'::jsonb where key = 'max_incidents_per_min';
+select ok(pg_temp.cc012_report(1, 'other', 'Primer reporte del minuto') ? 'data',
+  'CC-012: primer reporte dentro del cupo');
+select is(pg_temp.cc012_report(1, 'other', 'Segundo reporte del minuto')->>'error',
+  'RATE_LIMITED', 'CC-012: el tope por minuto sigue vigente');
+update public.platform_settings set value = '5'::jsonb where key = 'max_incidents_per_min';
 
 select * from finish();
 rollback;

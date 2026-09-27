@@ -88,16 +88,29 @@ describe('CC-004 — Límites configurables de solicitudes', () => {
     expect(fake.getOffer(offerId)?.status).toBe('accepted');
   });
 
+  // CC-012 / D05-A: los incidentes se reportan desde matched (no published) y el admin nunca reporta;
+  // el segundo actor que demuestra el cupo aislado es el repartidor asignado.
   it('incidentes tienen cupo independiente de publicar y aislado por actor', async () => {
     let now = new Date('2026-09-23T18:00:30Z');
+    const courier = '20000000-0000-4000-8000-000000000001';
     const fake = createFakeRpcClient({
       settings,
       now: () => now,
       initialActor: { userId: merchant, role: 'merchant' },
-      initialRequests: [{ requestId: request, merchantId: merchant, status: 'draft' }],
+      initialRequests: [
+        { requestId: request, merchantId: merchant, status: 'draft' },
+        {
+          requestId: secondRequest,
+          merchantId: merchant,
+          status: 'matched',
+          assignedCourierId: courier,
+        },
+      ],
+      initialCouriers: [{ courierId: courier, status: 'approved', available: true }],
     });
-    const input = { requestId: request, kind: 'demora', description: 'Demora de prueba' };
-    expect(await fake.report_incident(input)).toEqual({
+    const onDraft = { requestId: request, kind: 'other' as const, description: 'Demora de prueba' };
+    const input = { requestId: secondRequest, kind: 'other' as const, description: 'Demora de prueba' };
+    expect(await fake.report_incident(onDraft)).toEqual({
       ok: false,
       code: 'INVALID_STATE_TRANSITION',
     });
@@ -105,7 +118,7 @@ describe('CC-004 — Límites configurables de solicitudes', () => {
     expect(await fake.report_incident(input)).toMatchObject({ ok: true });
     expect(await fake.report_incident(input)).toMatchObject({ ok: true });
     expect(await fake.report_incident(input)).toEqual({ ok: false, code: 'RATE_LIMITED' });
-    fake.setActor({ userId: '90000000-0000-4000-8000-000000000001', role: 'admin' });
+    fake.setActor({ userId: courier, role: 'courier' });
     expect(await fake.report_incident(input)).toMatchObject({ ok: true });
     fake.setActor({ userId: merchant, role: 'merchant' });
     now = new Date('2026-09-23T18:01:00Z');

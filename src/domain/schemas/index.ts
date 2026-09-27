@@ -79,6 +79,37 @@ export const INCIDENT_STATUSES = ['open', 'reviewing', 'resolved', 'dismissed'] 
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
 export const incidentStatusSchema = z.enum(INCIDENT_STATUSES);
 
+// CC-012: única fuente canónica de tipos de incidente. `report_incident` y la restricción
+// `incidents_kind_valid` aceptan exactamente estos valores.
+export const INCIDENT_KINDS = [
+  'no_show',
+  'payment_issue',
+  'damaged_goods',
+  'safety',
+  'other',
+] as const;
+export type IncidentKind = (typeof INCIDENT_KINDS)[number];
+export const incidentKindSchema = z.enum(INCIDENT_KINDS);
+
+// CC-012 (D04/D06-A): decisión tipificada de `admin_resolve_incident`.
+export const INCIDENT_DECISIONS = ['no_action', 'warning', 'preventive_suspension'] as const;
+export type IncidentDecision = (typeof INCIDENT_DECISIONS)[number];
+export const incidentDecisionSchema = z.enum(INCIDENT_DECISIONS);
+
+// CC-012: el relato de un incidente no puede traer datos de contacto. Mismo criterio que
+// `app_private.incident_description_has_contact` en SQL: 7 o más dígitos seguidos (con espacios,
+// puntos, guiones o paréntesis entre medio) o una dirección de correo. Los montos como `$ 2.000`
+// no alcanzan los 7 dígitos.
+export const INCIDENT_CONTACT_PHONE_PATTERN = /\+?\d(?:[\s.()-]*\d){6,}/;
+export const INCIDENT_CONTACT_EMAIL_PATTERN = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
+
+export function incidentDescriptionHasContact(description: string): boolean {
+  return (
+    INCIDENT_CONTACT_PHONE_PATTERN.test(description) ||
+    INCIDENT_CONTACT_EMAIL_PATTERN.test(description)
+  );
+}
+
 export const PLATFORM_SETTING_KEYS = [
   'min_offer_ars',
   'request_ttl_minutes',

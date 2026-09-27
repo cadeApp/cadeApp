@@ -5,9 +5,13 @@ import {
   aguilaresLngSchema,
   courierDocumentKindSchema,
   documentReviewStatusSchema,
+  incidentDecisionSchema,
+  incidentDescriptionHasContact,
+  incidentKindSchema,
   incidentStatusSchema,
   merchantSubscriptionStatusSchema,
   platformSettingKeySchema,
+  profileRoleSchema,
   recipientPaymentMethodSchema,
   vehicleTypeSchema,
 } from './schemas';
@@ -160,10 +164,18 @@ export const republishRequestOutputSchema = z.object({
 });
 
 // 11. report_incident
+// CC-012: tipo canónico y relato sin datos de contacto; la RPC valida lo mismo en Postgres.
 export const reportIncidentInputSchema = z.object({
   requestId: uuidSchema,
-  kind: z.string().trim().min(2).max(80),
-  description: z.string().trim().min(5).max(1000),
+  kind: incidentKindSchema,
+  description: z
+    .string()
+    .trim()
+    .min(5)
+    .max(1000)
+    .refine((description) => !incidentDescriptionHasContact(description), {
+      message: 'VALIDATION_ERROR',
+    }),
 });
 export const reportIncidentOutputSchema = z.object({
   incidentId: uuidSchema,
@@ -330,14 +342,58 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
 ]);
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
+// 19. admin_resolve_incident (CC-012, D06-A): la RPC deriva el repartidor desde el incidente.
+export const adminResolveIncidentInputSchema = z.object({
+  incidentId: uuidSchema,
+  decision: incidentDecisionSchema,
+  reason: z.string().trim().min(1).max(500),
+});
+export const adminResolveIncidentOutputSchema = z.object({
+  incidentId: uuidSchema,
+  status: z.enum(['resolved', 'dismissed']),
+  decision: incidentDecisionSchema,
+  courierId: uuidSchema.nullable(),
+  withdrawnOffersCount: z.number().int().nonnegative(),
+});
+
+// 20. admin_list_incidents (CC-012): bandeja A05 con keyset estable (created_at DESC, id DESC).
+export const incidentsCursorSchema = z.object({
+  createdAt: isoTimestampSchema,
+  id: uuidSchema,
+});
+export type IncidentsCursor = z.infer<typeof incidentsCursorSchema>;
+export const adminListIncidentsInputSchema = z.object({
+  statuses: z.array(incidentStatusSchema).min(1).max(4),
+  cursor: incidentsCursorSchema.nullable().optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+export const adminIncidentListItemSchema = z.object({
+  id: uuidSchema,
+  requestId: uuidSchema,
+  kind: incidentKindSchema,
+  description: z.string(),
+  status: incidentStatusSchema,
+  resolution: z.string().nullable(),
+  createdAt: isoTimestampSchema,
+  reporterId: uuidSchema,
+  reporterRole: profileRoleSchema,
+  reporterName: z.string(),
+});
+export const adminListIncidentsOutputSchema = z.object({
+  items: z.array(adminIncidentListItemSchema),
+  nextCursor: incidentsCursorSchema.nullable(),
+});
+
 export const RPC_CONTRACTS = {
   /**
    * Precedencia canónica del ciclo de solicitudes (CC-006 / D01 / D03 — compartida entre
    * `supabase/migrations/20260924010124_rpc_requests_v1.sql` y `src/domain/testing/rpc-fake.ts` para
    * `publish_request`, `cancel_request`, `mark_picked_up`, `mark_delivered`, `report_no_show`,
    * `courier_cancel_match`, `republish_request` y `report_incident`):
-   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR` si el rol del perfil no está autorizado para la RPC)
-   *   2. Parámetros de entrada (`VALIDATION_ERROR`: `requestId`, longitud de `reason`, `republish`, `kind`, `description`)
+   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR` si el rol del perfil no está autorizado para la RPC;
+   *      desde CC-012 `report_incident` rechaza siempre al admin y vive en su propia función SQL con esta misma precedencia)
+   *   2. Parámetros de entrada (`VALIDATION_ERROR`: `requestId`, longitud de `reason`, `republish`, `kind` canónico,
+   *      `description` sin datos de contacto — CC-012)
    *   3. Existencia de la solicitud (`NOT_FOUND`)
    *   4. Titularidad, participación y elegibilidad del actor:
    *      - Si `role = 'merchant'`: `UNAUTHORIZED_ACTOR` si `merchant_id <> auth.uid()`
@@ -345,7 +401,7 @@ export const RPC_CONTRACTS = {
    *      - Si `role = 'courier'` en `mark_picked_up`, `mark_delivered`, `courier_cancel_match` (CC-002 §4): primero elegibilidad (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED`) → luego pertenencia a la oferta `accepted` (`UNAUTHORIZED_ACTOR`)
    *   5. Estado efectivo (`published` con `expires_at <= now()` se evalúa como `'expired'` — H02) y transición:
    *      - `cancel_request` sobre solicitud vencida (`status = 'published'` y `expires_at <= now()`): `REQUEST_EXPIRED`
-   *      - Estado efectivo inválido para la RPC y rol: `INVALID_STATE_TRANSITION` (`republish_request` admite `'matched' | 'expired' | 'cancelled'`, por lo que una `'published'` vencida es válida; `report_incident` admite `'published' | 'matched' | 'in_transit' | 'delivered'` vigentes, por lo que una `'published'` vencida da `INVALID_STATE_TRANSITION`)
+   *      - Estado efectivo inválido para la RPC y rol: `INVALID_STATE_TRANSITION` (`republish_request` admite `'matched' | 'expired' | 'cancelled'`, por lo que una `'published'` vencida es válida; `report_incident` admite, por CC-012 / D05-A, `'matched' | 'in_transit' | 'delivered'` al comercio dueño y `'matched' | 'in_transit'` al repartidor asignado)
    *      - `cancel_request` con `role = 'admin'` (ya en `in_transit`): `AAL2_REQUIRED` si `aal <> 'aal2'` (D03)
    *      - Motivo obligatorio vacío en `cancel_request` (`matched`/`in_transit`), `republish_request` (`matched`) o `courier_cancel_match`: `REASON_REQUIRED`
    *      - `report_no_show` sin oferta `accepted` válida: `INVALID_STATE_TRANSITION`
@@ -659,6 +715,34 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * CC-012. Precedencia: UNAUTHENTICATED → UNAUTHORIZED_ACTOR → AAL2_REQUIRED → VALIDATION_ERROR →
+   * REASON_REQUIRED → NOT_FOUND → INVALID_STATE_TRANSITION (incidente ya cerrado, o
+   * `preventive_suspension` sin repartidor aceptado o con el repartidor ya suspendido).
+   */
+  admin_resolve_incident: {
+    inputSchema: adminResolveIncidentInputSchema,
+    outputSchema: adminResolveIncidentOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+      'REASON_REQUIRED',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  admin_list_incidents: {
+    inputSchema: adminListIncidentsInputSchema,
+    outputSchema: adminListIncidentsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'AAL2_REQUIRED',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
 } as const;
 
 export const ALL_RPC_NAMES = [
@@ -681,6 +765,8 @@ export const ALL_RPC_NAMES = [
   'admin_verify_document',
   'admin_set_subscription',
   'admin_update_setting',
+  'admin_resolve_incident',
+  'admin_list_incidents',
 ] as const satisfies readonly (keyof typeof RPC_CONTRACTS)[];
 
 export type RpcName = (typeof ALL_RPC_NAMES)[number];

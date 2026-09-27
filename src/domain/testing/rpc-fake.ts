@@ -15,6 +15,8 @@ import {
   type CourierStatus,
   type DeliveryRequestStatus,
   type DocumentReviewStatus,
+  type IncidentKind,
+  type IncidentStatus,
   type MerchantSubscriptionStatus,
   type OfferStatus,
   PLATFORM_SETTING_KEYS,
@@ -181,6 +183,32 @@ export interface FakeDocumentRecord {
   status: DocumentReviewStatus;
 }
 
+export interface FakeSeedIncident {
+  readonly incidentId: string;
+  readonly requestId: string;
+  readonly reporterId: string;
+  readonly reporterRole: ProfileRole;
+  readonly reporterName?: string;
+  readonly kind: IncidentKind;
+  readonly description: string;
+  readonly status?: IncidentStatus;
+  readonly resolution?: string | null;
+  readonly createdAt: string;
+}
+
+export interface FakeIncidentRecord {
+  readonly incidentId: string;
+  readonly requestId: string;
+  readonly reporterId: string;
+  readonly reporterRole: ProfileRole;
+  readonly reporterName: string;
+  readonly kind: IncidentKind;
+  readonly description: string;
+  status: IncidentStatus;
+  resolution: string | null;
+  readonly createdAt: string;
+}
+
 export interface FakeRpcOptions {
   readonly settings: FakePlatformSettings;
   readonly now?: () => Date;
@@ -190,6 +218,7 @@ export interface FakeRpcOptions {
   readonly initialCouriers?: readonly FakeSeedCourier[];
   readonly initialMerchants?: readonly FakeSeedMerchant[];
   readonly initialDocuments?: readonly FakeSeedDocument[];
+  readonly initialIncidents?: readonly FakeSeedIncident[];
 }
 
 export interface FakeRpcClient extends RpcClientContract {
@@ -201,6 +230,8 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedCourier: (courier: FakeSeedCourier) => void;
   readonly seedMerchant: (merchant: FakeSeedMerchant) => void;
   readonly seedDocument: (doc: FakeSeedDocument) => void;
+  readonly seedIncident: (incident: FakeSeedIncident) => void;
+  readonly getIncident: (incidentId: string) => FakeIncidentRecord | undefined;
   readonly getRequest: (requestId: string) => FakeRequestRecord | undefined;
   readonly getOffer: (offerId: string) => FakeOfferRecord | undefined;
   readonly getCourier: (courierId: string) => FakeCourierRecord | undefined;
@@ -232,7 +263,8 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   report_no_show: ['merchant'],
   courier_cancel_match: ['courier'],
   republish_request: ['merchant'],
-  report_incident: ['merchant', 'courier', 'admin'],
+  // CC-012 / D05-A: el admin nunca reporta incidentes.
+  report_incident: ['merchant', 'courier'],
   set_availability: ['courier'],
   calculate_route_distance: ['merchant', 'courier', 'admin'],
   get_trip_details: ['merchant', 'courier'],
@@ -241,13 +273,15 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   admin_verify_document: ['admin'],
   admin_set_subscription: ['admin'],
   admin_update_setting: ['admin'],
+  admin_resolve_incident: ['admin'],
+  admin_list_incidents: ['admin'],
 };
 
-const ACTIVE_INCIDENT_STATUSES: readonly DeliveryRequestStatus[] = [
-  'published',
-  'matched',
-  'in_transit',
-];
+// CC-012 / D05-A: el comercio dueño reporta en matched, in_transit y delivered (≤ 24 h);
+// el repartidor asignado solo en matched e in_transit.
+const ACTIVE_INCIDENT_STATUSES: readonly DeliveryRequestStatus[] = ['matched', 'in_transit'];
+
+const DEFAULT_INCIDENTS_PAGE_SIZE = 20;
 
 const INCIDENT_WINDOW_MS = 24 * 3_600_000;
 
@@ -298,6 +332,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const couriers = new Map<string, FakeCourierRecord>();
   const merchants = new Map<string, FakeMerchantRecord>();
   const documents = new Map<string, FakeDocumentRecord>();
+  const incidents = new Map<string, FakeIncidentRecord>();
   const rateLimits = new Map<string, number>();
 
   function getWindowBucketKey(subject: string, action: string, currentNow: Date): string {
@@ -392,6 +427,21 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     });
   }
 
+  function putIncident(i: FakeSeedIncident) {
+    incidents.set(i.incidentId, {
+      incidentId: i.incidentId,
+      requestId: i.requestId,
+      reporterId: i.reporterId,
+      reporterRole: i.reporterRole,
+      reporterName: i.reporterName ?? '',
+      kind: i.kind,
+      description: i.description,
+      status: i.status ?? 'open',
+      resolution: i.resolution ?? null,
+      createdAt: i.createdAt,
+    });
+  }
+
   function syncActorRecords(currentActor: FakeActorContext) {
     if (currentActor.role === 'courier') {
       putCourier({
@@ -414,6 +464,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   (options.initialCouriers ?? []).forEach(putCourier);
   (options.initialMerchants ?? []).forEach(putMerchant);
   (options.initialDocuments ?? []).forEach((d) => documents.set(d.documentId, { ...d }));
+  (options.initialIncidents ?? []).forEach(putIncident);
 
   function checkCourierEligibility(): ActionResult<
     FakeCourierRecord,
@@ -524,6 +575,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     seedCourier: putCourier,
     seedMerchant: putMerchant,
     seedDocument: (d) => documents.set(d.documentId, { ...d }),
+    seedIncident: putIncident,
+    getIncident: (incidentId) => incidents.get(incidentId),
     getRequest: (requestId) => requests.get(requestId),
     getOffer: (offerId) => offers.get(offerId),
     getCourier: (courierId) => couriers.get(courierId),
@@ -1011,7 +1064,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!req) return err('NOT_FOUND');
 
         const isParticipant =
-          actor.role === 'admin' ||
           (actor.role === 'merchant' && req.merchantId === actor.userId) ||
           (actor.role === 'courier' && req.assignedCourierId === actor.userId);
         if (!isParticipant) {
@@ -1024,7 +1076,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
         const currentNow = nowFn();
         const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
-        if (effectiveStatus === 'delivered') {
+        if (effectiveStatus === 'delivered' && actor.role === 'merchant') {
           const deliveredMs = req.deliveredAt ? Date.parse(req.deliveredAt) : Number.NaN;
           if (
             Number.isNaN(deliveredMs) ||
@@ -1040,11 +1092,25 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         if (!rate.ok) return rate;
         incidentSeq += 1;
         const incidentId = `00000000-0000-4000-8000-${String(10_000 + incidentSeq).padStart(12, '0')}`;
+        const createdAt = currentNow.toISOString();
+        putIncident({
+          incidentId,
+          requestId: input.requestId,
+          reporterId: actor.userId,
+          reporterRole: actor.role === 'merchant' ? 'merchant' : 'courier',
+          reporterName:
+            actor.role === 'merchant'
+              ? (merchants.get(actor.userId)?.businessName ?? '')
+              : (couriers.get(actor.userId)?.displayName ?? ''),
+          kind: input.kind,
+          description: input.description,
+          createdAt,
+        });
         return ok({
           incidentId,
           requestId: input.requestId,
           status: 'open',
-          createdAt: currentNow.toISOString(),
+          createdAt,
         });
       }),
 
@@ -1249,6 +1315,93 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             break;
         }
         return ok(input);
+      }),
+
+    // CC-012 / D06-A: la suspensión preventiva deriva el repartidor desde la oferta accepted de la
+    // solicitud del incidente. Todas las comprobaciones ocurren antes de mutar (atomicidad).
+    admin_resolve_incident: (rawInput) =>
+      executeRpc('admin_resolve_incident', rawInput, true, (input) => {
+        const incident = incidents.get(input.incidentId);
+        if (!incident) return err('NOT_FOUND');
+        if (incident.status !== 'open' && incident.status !== 'reviewing') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        let suspendedCourier: FakeCourierRecord | null = null;
+        if (input.decision === 'preventive_suspension') {
+          const acceptedOffer = [...offers.values()].find(
+            (offer) => offer.requestId === incident.requestId && offer.status === 'accepted'
+          );
+          if (!acceptedOffer) return err('INVALID_STATE_TRANSITION');
+          const courier = couriers.get(acceptedOffer.courierId);
+          if (!courier) return err('NOT_FOUND');
+          if (courier.status === 'suspended') return err('INVALID_STATE_TRANSITION');
+          suspendedCourier = courier;
+        }
+
+        let withdrawnOffersCount = 0;
+        if (suspendedCourier) {
+          suspendedCourier.status = 'suspended';
+          suspendedCourier.available = false;
+          for (const offer of offers.values()) {
+            if (offer.courierId === suspendedCourier.courierId && offer.status === 'pending') {
+              offer.status = 'withdrawn';
+              withdrawnOffersCount += 1;
+            }
+          }
+        }
+
+        const status = input.decision === 'no_action' ? 'dismissed' : 'resolved';
+        incident.status = status;
+        incident.resolution = `${input.decision}: ${input.reason}`;
+
+        return ok({
+          incidentId: incident.incidentId,
+          status,
+          decision: input.decision,
+          courierId: suspendedCourier ? suspendedCourier.courierId : null,
+          withdrawnOffersCount,
+        });
+      }),
+
+    // CC-012: keyset estable ORDER BY created_at DESC, id DESC, igual que la función SQL.
+    admin_list_incidents: (rawInput) =>
+      executeRpc('admin_list_incidents', rawInput, true, (input) => {
+        const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
+        const cursor = input.cursor ?? null;
+        const cursorMs = cursor ? Date.parse(cursor.createdAt) : Number.NaN;
+
+        const ordered = [...incidents.values()]
+          .filter((incident) => input.statuses.includes(incident.status))
+          .sort((a, b) => {
+            const byTime = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+            if (byTime !== 0) return byTime;
+            return a.incidentId < b.incidentId ? 1 : a.incidentId > b.incidentId ? -1 : 0;
+          })
+          .filter((incident) => {
+            if (!cursor) return true;
+            const ms = Date.parse(incident.createdAt);
+            return ms < cursorMs || (ms === cursorMs && incident.incidentId < cursor.id);
+          });
+
+        const page = ordered.slice(0, limit);
+        const last = page[page.length - 1];
+        return ok({
+          items: page.map((incident) => ({
+            id: incident.incidentId,
+            requestId: incident.requestId,
+            kind: incident.kind,
+            description: incident.description,
+            status: incident.status,
+            resolution: incident.resolution,
+            createdAt: incident.createdAt,
+            reporterId: incident.reporterId,
+            reporterRole: incident.reporterRole,
+            reporterName: incident.reporterName,
+          })),
+          nextCursor:
+            ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
+        });
       }),
   };
 }
