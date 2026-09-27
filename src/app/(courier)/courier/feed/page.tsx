@@ -1,5 +1,4 @@
-// eslint-disable-next-line boundaries/entry-point
-import { CourierFeed } from '@/features/offers/components/courier-feed';
+import { CourierFeed } from '@/features/offers';
 import {
   getAvailableRequests,
   getCourierStatusAndAvailability,
