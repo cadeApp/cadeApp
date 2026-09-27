@@ -691,3 +691,33 @@ bundle-budget SUCCESS (advisory)
 
 ## D06
 Lautaro073 elige 1-A: ampliar scope a `src/features/offers/index.ts`, conservar entry point legal y optimizar la API pública cliente; no se autoriza aumentar 180 kB.
+---
+# Ronda 12 — SHA cb7eab9
+
+## D06 precondición
+Enumeración local registrada por P2:
+```text
+courier/feed/page.tsx -> CourierFeed
+courier/offers/page.tsx -> MyOffersList
+requests/components/request-offers-list.tsx -> acceptOfferAction
+requests/components/request-offers.test.tsx -> mock acceptOfferAction
+```
+
+El agente detuvo correctamente la poda del barrel porque R11 ordenaba parar ante cualquier consumidor runtime adicional.
+
+## CI exact-head run 36304405258
+```text
+build SUCCESS
+unit SUCCESS
+db-tests SUCCESS
+audit SUCCESS
+lint SUCCESS
+typecheck SUCCESS
+bundle-budget SUCCESS (advisory)
+```
+
+Residual:
+```text
+/courier/feed   192 kB
+/courier/offers 192 kB
+```
