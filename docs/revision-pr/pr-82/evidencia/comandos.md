@@ -520,3 +520,57 @@ create index offers_request_created_cursor_idx
   on public.offers (request_id, created_at desc, id desc);
 ```
 La bitácora menciona otros nombres + `IF NOT EXISTS`; no corresponde al árbol revisado.
+---
+
+# Ronda 8 — evidencia sobre `a340745`
+
+## R7 revalidado
+```text
+develop...branch: ahead 27 / behind 0
+merge develop: 1321f2d
+fix propio: a7e713a
+```
+
+CI run 36272584952:
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 75 files / 835 tests
+db-tests SUCCESS
+audit SUCCESS
+bundle-budget SUCCESS
+```
+
+Log real build:
+```text
+✓ Compiled successfully in 20.2s
+✓ Generating static pages (42/42)
+/api/live/available-requests          103 kB
+/api/live/requests/[requestId]/offers 103 kB
+/api/live/trips/[tripId]              103 kB
+```
+
+## H31 — baseline vs T-204
+
+PR #106 CI run 36264052134 (sin T-204):
+```text
+/courier/feed   179 kB | OK
+/courier/offers 179 kB | OK
+```
+
+T-204 CI run 36272584952:
+```text
+/courier/feed   273 kB | Supera el límite
+/courier/offers 273 kB | Supera el límite
+```
+
+El mismo job termina SUCCESS y solo emite warning. Regla 25 §6 exige hasta 180 kB.
+
+Inspección exact-head:
+```text
+src/lib/hooks/use-realtime-invalidation.ts:5
+import { createClient } from '@/lib/supabase/browser';
+
+CourierFeed -> useAvailableRequests -> useRealtimeInvalidation
+courier/offers/page.tsx -> barrel '@/features/offers', que exporta CourierFeed
+```
