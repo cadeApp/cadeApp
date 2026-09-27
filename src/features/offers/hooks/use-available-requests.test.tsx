@@ -86,6 +86,23 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     expect(sourceCode).not.toMatch(nonNullAssertionPattern);
   });
 
+  async function flushRealtimeSetup() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it('PR82-H31 (Control Estático): use-available-requests.ts no tiene import estático runtime desde live-contracts y usa dynamic import', () => {
+    const hookPath = path.resolve(__dirname, 'use-available-requests.ts');
+    const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+    expect(sourceCode).not.toMatch(
+      /import\s*\{[^}]*liveFeedResponseSchema[^}]*\}\s*from\s*['"]@\/lib\/live-contracts['"]/m
+    );
+    expect(sourceCode).toContain("import('@/lib/live-contracts')");
+  });
+
   it('DoD: Con push apagado, nuevas solicitudes aparecen al volver a la app (focus)', async () => {
     const updatedRequests: AvailableRequestItem[] = [
       ...initialRequests,
@@ -177,12 +194,13 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('DoD: al desmontar la pantalla se cierra el canal', () => {
+  it('DoD: al desmontar la pantalla se cierra el canal', async () => {
     const { unmount } = renderHook(
       () => useAvailableRequests(initialRequests),
       { wrapper }
     );
 
+    await flushRealtimeSetup();
     expect(mockSubscribe).toHaveBeenCalled();
     unmount();
     expect(mockRemoveChannel).toHaveBeenCalled();
@@ -198,6 +216,10 @@ describe('T-204 DoD: useAvailableRequests (Courier Feed TanStack Query & Realtim
         () => useAvailableRequests(initialRequests),
         { wrapper }
       );
+
+      await flushRealtimeSetup();
+
+      expect(realtimeCallback).toBeTypeOf('function');
 
       // Simular evento Realtime
       act(() => {

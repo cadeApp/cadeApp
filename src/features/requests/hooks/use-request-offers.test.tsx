@@ -93,6 +93,23 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
     expect(sourceCode).not.toContain('setLocalOffersState');
   });
 
+  async function flushRealtimeSetup() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it('PR82-H31 (Control Estático): use-request-offers.ts no tiene import estático runtime desde live-contracts y usa dynamic import', () => {
+    const hookPath = path.resolve(__dirname, 'use-request-offers.ts');
+    const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+    expect(sourceCode).not.toMatch(
+      /import\s*\{[^}]*liveOffersResponseSchema[^}]*\}\s*from\s*['"]@\/lib\/live-contracts['"]/m
+    );
+    expect(sourceCode).toContain("import('@/lib/live-contracts')");
+  });
+
   it('DoD: Con el push apagado, la oferta nueva aparece al volver a la app (refetchOnWindowFocus: always)', async () => {
     const updatedOffers: MerchantOfferItem[] = [
       ...initialOffers,
@@ -183,12 +200,13 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
     expect(fetchOffersMock).toHaveBeenCalledTimes(1);
   });
 
-  it('DoD: al desmontar la pantalla se cierra el canal', () => {
+  it('DoD: al desmontar la pantalla se cierra el canal', async () => {
     const { unmount } = renderHook(
       () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
       { wrapper }
     );
 
+    await flushRealtimeSetup();
     expect(mockSubscribe).toHaveBeenCalled();
     unmount();
     expect(mockRemoveChannel).toHaveBeenCalled();
@@ -204,6 +222,10 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
         () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
         { wrapper }
       );
+
+      await flushRealtimeSetup();
+
+      expect(realtimeCallback).toBeTypeOf('function');
 
       // Si llega un evento de Realtime con nueva oferta
       act(() => {

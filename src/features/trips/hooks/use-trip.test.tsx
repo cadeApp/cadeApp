@@ -77,6 +77,23 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime vía /api/li
     expect(sourceCode).not.toMatch(nonNullAssertionPattern);
   });
 
+  async function flushRealtimeSetup() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  it('PR82-H31 (Control Estático): use-trip.ts no tiene import estático runtime desde live-contracts y usa dynamic import', () => {
+    const hookPath = path.resolve(__dirname, 'use-trip.ts');
+    const sourceCode = fs.readFileSync(hookPath, 'utf8');
+
+    expect(sourceCode).not.toMatch(
+      /import\s*\{[^}]*liveTripResponseSchema[^}]*\}\s*from\s*['"]@\/lib\/live-contracts['"]/m
+    );
+    expect(sourceCode).toContain("import('@/lib/live-contracts')");
+  });
+
   it('PR82-H23 (Nuevo Obligatorio): sin initialTrip ni fetcher, carga directo parsed.data como LiveTripState sin casteo genérico', async () => {
     vi.spyOn(global, 'fetch').mockResolvedValueOnce({
       ok: true,
@@ -163,12 +180,13 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime vía /api/li
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('DoD: al desmontar la pantalla se cierra el canal', () => {
+  it('DoD: al desmontar la pantalla se cierra el canal', async () => {
     const { unmount } = renderHook(
       () => useTrip('11111111-1111-1111-1111-111111111111', initialTrip),
       { wrapper }
     );
 
+    await flushRealtimeSetup();
     expect(mockSubscribe).toHaveBeenCalled();
     unmount();
     expect(mockRemoveChannel).toHaveBeenCalled();
@@ -184,6 +202,10 @@ describe('T-204 DoD: useTrip (Active Trip TanStack Query & Realtime vía /api/li
         () => useTrip('11111111-1111-1111-1111-111111111111', initialTrip),
         { wrapper }
       );
+
+      await flushRealtimeSetup();
+
+      expect(realtimeCallback).toBeTypeOf('function');
 
       // Simular evento Realtime
       act(() => {

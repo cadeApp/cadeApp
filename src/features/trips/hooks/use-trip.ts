@@ -4,7 +4,6 @@ import { useContext, useState } from 'react';
 import { QueryClient, QueryClientContext, useQuery } from '@tanstack/react-query';
 import { tripKeys } from '../query-keys';
 import { useRealtimeInvalidation } from '@/lib/hooks/use-realtime-invalidation';
-import { liveTripResponseSchema } from '@/lib/live-contracts';
 
 export interface TripDetailItem {
   readonly id: string;
@@ -59,6 +58,7 @@ export function useTrip(
         }
 
         const json: unknown = await res.json();
+        const { liveTripResponseSchema } = await import('@/lib/live-contracts');
         const parsed = liveTripResponseSchema.parse(json);
 
         if (!parsed.data) {

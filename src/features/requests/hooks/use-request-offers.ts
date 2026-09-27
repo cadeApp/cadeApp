@@ -4,10 +4,9 @@ import { useRef, useState, useContext, useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientContext, useInfiniteQuery } from '@tanstack/react-query';
 import { requestKeys } from '../query-keys';
 import { useRealtimeInvalidation } from '@/lib/hooks/use-realtime-invalidation';
-import {
-  liveOffersResponseSchema,
-  type LiveOffersResponse,
-  type LivePageCursor,
+import type {
+  LiveOffersResponse,
+  LivePageCursor,
 } from '@/lib/live-contracts';
 import type { MerchantOfferItem } from '../types';
 
@@ -90,6 +89,7 @@ export function useRequestOffers(
         }
 
         const json: unknown = await res.json();
+        const { liveOffersResponseSchema } = await import('@/lib/live-contracts');
         return liveOffersResponseSchema.parse(json);
       },
       initialPageParam: null as LivePageCursor | null,

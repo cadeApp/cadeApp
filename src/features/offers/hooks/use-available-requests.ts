@@ -4,10 +4,9 @@ import { useContext, useMemo, useState } from 'react';
 import { QueryClient, QueryClientContext, useInfiniteQuery } from '@tanstack/react-query';
 import { offerKeys } from '../query-keys';
 import { useRealtimeInvalidation } from '@/lib/hooks/use-realtime-invalidation';
-import {
-  liveFeedResponseSchema,
-  type LiveFeedResponse,
-  type LivePageCursor,
+import type {
+  LiveFeedResponse,
+  LivePageCursor,
 } from '@/lib/live-contracts';
 import type { AvailableRequestItem } from '../schemas';
 
@@ -87,6 +86,7 @@ export function useAvailableRequests(
         }
 
         const json: unknown = await res.json();
+        const { liveFeedResponseSchema } = await import('@/lib/live-contracts');
         return liveFeedResponseSchema.parse(json);
       },
       initialPageParam: null as LivePageCursor | null,

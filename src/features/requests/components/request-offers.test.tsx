@@ -53,6 +53,13 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
     vi.restoreAllMocks();
   });
 
+  async function flushRealtimeSetup() {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
   const mockRequest = {
     id: 'req-11111111-1111-1111-1111-111111111111',
     pickupZoneName: 'Centro',
@@ -243,6 +250,8 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
     const { unmount } = render(
       <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
     );
+
+    await flushRealtimeSetup();
 
     expect(screen.queryByText('Lucas G.')).toBeNull();
     expect(mockChannel.subscribe).toHaveBeenCalled();
