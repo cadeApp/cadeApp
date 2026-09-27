@@ -759,3 +759,40 @@ Compare `cb7eab9...9b6ea30`:
 ```
 
 El invariante append-only está roto mientras CI sigue verde; no existe control automático que lo detecte.
+---
+# Ronda 14 — SHA c6b6d81
+
+## H34 verificado
+La sesión 04:55 recuperó exactamente su Próximo paso y su Último commit histórico.
+
+## R03
+Compare `832c959...c6b6d81`:
+```diff
+- **Último commit:** por commitear
++ **Último commit:** 832c959 (docs(T-204): restore append-only traceability in session log [T-204])
+```
+
+## H35
+Run exact-head `36307209638`, job unit:
+```text
+Test Files 82 passed (82)
+Tests      992 passed (992)
+```
+
+Body actual:
+```text
+unit: SUCCESS (... 76 suites / 873 tests)
+```
+
+## CI exact-head
+```text
+build SUCCESS — 45/45
+typecheck SUCCESS
+db-tests SUCCESS — Files=12, Tests=1529, Result: PASS
+unit SUCCESS — 82 files / 992 tests
+audit SUCCESS
+lint SUCCESS
+bundle-budget SUCCESS
+/courier/feed 176 kB OK
+/courier/offers 176 kB OK
+```
