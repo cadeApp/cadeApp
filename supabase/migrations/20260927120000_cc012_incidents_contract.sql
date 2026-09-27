@@ -386,3 +386,19 @@ revoke all on function public.admin_resolve_incident(uuid, text, text) from publ
 grant execute on function public.admin_resolve_incident(uuid, text, text) to authenticated;
 revoke all on function public.admin_list_incidents(text[], timestamptz, uuid, integer) from public, anon, authenticated;
 grant execute on function public.admin_list_incidents(text[], timestamptz, uuid, integer) to authenticated;
+
+-- MUTACION M2 (temporal): reabre el INSERT directo previo a CC-012.
+create policy incidents_insert_authenticated on public.incidents
+  for insert to authenticated
+  with check (
+    reporter_id = auth.uid()
+    and app_private.is_active_operational_actor()
+    and status = 'open'
+    and resolution is null
+    and (
+      app_private.is_request_merchant(request_id, auth.uid())
+      or app_private.is_courier_assigned_to_request(request_id, auth.uid())
+      or app_private.is_admin()
+    )
+  );
+grant insert on table public.incidents to authenticated;
