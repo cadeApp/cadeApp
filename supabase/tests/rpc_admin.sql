@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(59);
+select plan(110);
 
 -- IDs fijos válidos (hexadecimal estricto) para pruebas de T-105
 create or replace function pg_temp.admin_id() returns uuid language sql immutable as $$
@@ -517,6 +517,315 @@ select results_eq(
 select results_eq(
   $$ select action from public.audit_log where target_id = 'min_offer_ars' order by created_at desc limit 1 $$,
   $$ values ('admin_update_setting') $$
+);
+
+-- 6. CC-012: admin_resolve_incident y admin_list_incidents
+set local role postgres;
+select set_config('request.jwt.claim.sub', '', true);
+select set_config('request.jwt.claims', '', true);
+
+create or replace function pg_temp.courier_a_id() returns uuid language sql immutable as $$
+  select '00000000-0000-4000-8000-0000000000c5'::uuid
+$$;
+create or replace function pg_temp.courier_b_id() returns uuid language sql immutable as $$
+  select '00000000-0000-4000-8000-0000000000c6'::uuid
+$$;
+create or replace function pg_temp.inc(p_suffix text) returns uuid language sql immutable as $$
+  select ('00000000-0000-4000-8000-000000000' || p_suffix)::uuid
+$$;
+
+do $$
+declare
+  v_zone_id uuid;
+begin
+  select id into v_zone_id from public.zones where active limit 1;
+
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+  values
+    (pg_temp.courier_a_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc012-a@example.test', 'pwd', '{"role":"courier"}'),
+    (pg_temp.courier_b_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc012-b@example.test', 'pwd', '{"role":"courier"}');
+  update public.couriers set status = 'approved', available = true, deactivated_at = null
+  where profile_id in (pg_temp.courier_a_id(), pg_temp.courier_b_id());
+
+  -- e3: viaje matched con la oferta accepted de A y una oferta no aceptada de B (control M3).
+  -- e4/e5: publicadas con ofertas pending de A (a retirar); B tiene una pending en e4 que no se toca.
+  -- e6: publicada sin oferta accepted.
+  insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, status)
+  values
+    ('00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), v_zone_id, v_zone_id, 'chico', 'cash', 'matched'),
+    ('00000000-0000-4000-8000-0000000000e4', pg_temp.merchant_id(), v_zone_id, v_zone_id, 'chico', 'cash', 'published'),
+    ('00000000-0000-4000-8000-0000000000e5', pg_temp.merchant_id(), v_zone_id, v_zone_id, 'chico', 'cash', 'published'),
+    ('00000000-0000-4000-8000-0000000000e6', pg_temp.merchant_id(), v_zone_id, v_zone_id, 'chico', 'cash', 'published');
+  insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
+  values
+    ('00000000-0000-4000-8000-0000000000f3', '00000000-0000-4000-8000-0000000000e3', pg_temp.courier_a_id(), 1500, 15, 'accepted'),
+    ('00000000-0000-4000-8000-0000000000f4', '00000000-0000-4000-8000-0000000000e3', pg_temp.courier_b_id(), 1400, 20, 'rejected'),
+    ('00000000-0000-4000-8000-0000000000f5', '00000000-0000-4000-8000-0000000000e4', pg_temp.courier_a_id(), 1500, 15, 'pending'),
+    ('00000000-0000-4000-8000-0000000000f6', '00000000-0000-4000-8000-0000000000e5', pg_temp.courier_a_id(), 1500, 15, 'pending'),
+    ('00000000-0000-4000-8000-0000000000f7', '00000000-0000-4000-8000-0000000000e4', pg_temp.courier_b_id(), 1600, 25, 'pending');
+  update public.delivery_requests set accepted_offer_id = '00000000-0000-4000-8000-0000000000f3'
+  where id = '00000000-0000-4000-8000-0000000000e3';
+
+  insert into public.incidents (id, request_id, reporter_id, kind, description, status, resolution)
+  values
+    (pg_temp.inc('a01'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'other', 'Demora en el retiro', 'open', null),
+    (pg_temp.inc('a02'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'no_show', 'No apareció a tiempo', 'open', null),
+    (pg_temp.inc('a03'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'safety', 'Maltrato al comercio', 'open', null),
+    (pg_temp.inc('a04'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'other', 'Ya resuelto', 'resolved', 'warning: listo'),
+    (pg_temp.inc('a05'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'other', 'Ya desestimado', 'dismissed', 'no_action: listo'),
+    (pg_temp.inc('a06'), '00000000-0000-4000-8000-0000000000e6', pg_temp.merchant_id(), 'other', 'Sin repartidor asignado', 'open', null),
+    (pg_temp.inc('a07'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'safety', 'Segundo reclamo', 'open', null);
+
+  -- Keyset: dos incidentes con EXACTAMENTE el mismo created_at y uno anterior (estado aislado 'reviewing').
+  insert into public.incidents (id, request_id, reporter_id, kind, description, status, created_at)
+  values
+    (pg_temp.inc('b00'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'other', 'Anterior', 'reviewing', '2026-09-27 11:00:00+00'),
+    (pg_temp.inc('b01'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'other', 'Empate bajo', 'reviewing', '2026-09-27 12:00:00.123456+00'),
+    (pg_temp.inc('b02'), '00000000-0000-4000-8000-0000000000e3', pg_temp.merchant_id(), 'other', 'Empate alto', 'reviewing', '2026-09-27 12:00:00.123456+00');
+end;
+$$;
+
+-- 6.1 Firmas, SECURITY DEFINER, search_path y grants mínimos
+select has_function('public', 'admin_resolve_incident', array['uuid', 'text', 'text']);
+select ok(coalesce((select p.prosecdef and p.proconfig @> array['search_path=public, pg_temp']
+  and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+  and not has_function_privilege('anon', p.oid, 'EXECUTE')
+  from pg_proc p where p.oid = to_regprocedure('public.admin_resolve_incident(uuid,text,text)')), false),
+  'CC-012: admin_resolve_incident es SECURITY DEFINER con grants mínimos');
+select has_function('public', 'admin_list_incidents', array['text[]', 'timestamp with time zone', 'uuid', 'integer']);
+select ok(coalesce((select p.prosecdef and p.proconfig @> array['search_path=public, pg_temp']
+  and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+  and not has_function_privilege('anon', p.oid, 'EXECUTE')
+  from pg_proc p where p.oid = to_regprocedure('public.admin_list_incidents(text[],timestamptz,uuid,integer)')), false),
+  'CC-012: admin_list_incidents es SECURITY DEFINER con grants mínimos');
+select ok(
+  (select indexdef from pg_indexes where schemaname = 'public' and indexname = 'incidents_status_created_cursor_idx')
+    like '%(status, created_at DESC, id DESC)',
+  'CC-012: índice de la bandeja (status, created_at DESC, id DESC)'
+);
+
+-- 6.2 Precedencia de admin_resolve_incident
+select pg_temp.act_as('anon');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', 'Motivo') $$, '42501');
+select pg_temp.act_as('authenticated', null, 'aal2');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', 'Motivo') $$, 'UNAUTHENTICATED');
+select pg_temp.act_as('authenticated', pg_temp.merchant_id(), 'aal2');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', 'Motivo') $$, 'UNAUTHORIZED_ACTOR');
+select pg_temp.act_as('authenticated', pg_temp.courier_a_id(), 'aal2');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', 'Motivo') $$, 'UNAUTHORIZED_ACTOR');
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal1');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', 'Motivo') $$, 'AAL2_REQUIRED');
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal2');
+select throws_ok($$ select public.admin_resolve_incident(null, 'no_action', 'Motivo') $$, 'VALIDATION_ERROR');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'ban_forever', 'Motivo') $$, 'VALIDATION_ERROR');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', '   ') $$, 'REASON_REQUIRED');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', repeat('x', 501)) $$, 'VALIDATION_ERROR');
+select throws_ok($$ select public.admin_resolve_incident('00000000-0000-4000-8000-999999999999'::uuid, 'no_action', 'Motivo') $$, 'NOT_FOUND');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a04'), 'warning', 'Motivo') $$, 'INVALID_STATE_TRANSITION');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a05'), 'warning', 'Motivo') $$, 'INVALID_STATE_TRANSITION');
+select throws_ok($$ select public.admin_resolve_incident(pg_temp.inc('a06'), 'preventive_suspension', 'Motivo') $$, 'INVALID_STATE_TRANSITION');
+
+-- 6.3 no_action -> dismissed; warning -> resolved
+select results_eq(
+  $$ select r->>'status', r->>'decision', r->>'courierId', (r->>'withdrawnOffersCount')::integer
+     from (select public.admin_resolve_incident(pg_temp.inc('a01'), 'no_action', 'Se habló con las partes') as r) x $$,
+  $$ values ('dismissed'::text, 'no_action'::text, null::text, 0) $$,
+  'CC-012: no_action resuelve como dismissed sin repartidor'
+);
+select results_eq(
+  $$ select r->>'status', r->>'decision' from (select public.admin_resolve_incident(pg_temp.inc('a02'), 'warning', 'Primera advertencia') as r) x $$,
+  $$ values ('resolved'::text, 'warning'::text) $$,
+  'CC-012: warning resuelve como resolved'
+);
+set local role postgres;
+select set_config('request.jwt.claims', '', true);
+select results_eq(
+  $$ select status, resolution from public.incidents where id = pg_temp.inc('a01') $$,
+  $$ values ('dismissed'::text, 'no_action: Se habló con las partes'::text) $$,
+  'CC-012: no_action persiste estado y resolución'
+);
+select results_eq(
+  $$ select status, resolution from public.incidents where id = pg_temp.inc('a02') $$,
+  $$ values ('resolved'::text, 'warning: Primera advertencia'::text) $$,
+  'CC-012: warning persiste estado y resolución'
+);
+select results_eq(
+  $$ select actor_id, target_type, after->>'decision' from public.audit_log
+     where action = 'admin_resolve_incident' and target_id = pg_temp.inc('a01')::text $$,
+  $$ values (pg_temp.admin_id(), 'incident'::text, 'no_action'::text) $$,
+  'CC-012: la resolución queda auditada con actor, target y decisión'
+);
+
+-- 6.4 Atomicidad: si la auditoría falla, no queda suspensión, ni ofertas retiradas, ni incidente resuelto.
+create function public.cc012_test_fail_resolve_audit() returns trigger language plpgsql as $fn$
+begin
+  if new.action = 'admin_resolve_incident' then
+    raise exception using errcode = 'P0001', message = 'CC012_FORCED_AUDIT_FAILURE';
+  end if;
+  return new;
+end;
+$fn$;
+create trigger cc012_test_fail_resolve_audit before insert on public.audit_log
+  for each row execute function public.cc012_test_fail_resolve_audit();
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal2');
+select throws_ok(
+  $$ select public.admin_resolve_incident(pg_temp.inc('a03'), 'preventive_suspension', 'Reclamo grave') $$,
+  'CC012_FORCED_AUDIT_FAILURE'
+);
+set local role postgres;
+select set_config('request.jwt.claims', '', true);
+drop trigger cc012_test_fail_resolve_audit on public.audit_log;
+drop function public.cc012_test_fail_resolve_audit();
+select results_eq(
+  $$ select status::text, available from public.couriers where profile_id = pg_temp.courier_a_id() $$,
+  $$ values ('approved'::text, true) $$,
+  'CC-012 atomicidad: el repartidor sigue approved y disponible'
+);
+select results_eq(
+  $$ select count(*)::integer from public.offers where courier_id = pg_temp.courier_a_id() and status = 'pending' $$,
+  $$ values (2) $$,
+  'CC-012 atomicidad: las ofertas pending no se retiraron'
+);
+select results_eq(
+  $$ select status from public.incidents where id = pg_temp.inc('a03') $$,
+  $$ values ('open'::text) $$,
+  'CC-012 atomicidad: el incidente sigue abierto'
+);
+select results_eq(
+  $$ select count(*)::integer from public.audit_log where target_id = pg_temp.inc('a03')::text $$,
+  $$ values (0) $$,
+  'CC-012 atomicidad: no quedó auditoría parcial'
+);
+
+-- 6.5 preventive_suspension: deriva el repartidor de la oferta accepted y aplica los efectos completos.
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal2');
+select results_eq(
+  $$ select r->>'status', r->>'decision', r->>'courierId', (r->>'withdrawnOffersCount')::integer
+     from (select public.admin_resolve_incident(pg_temp.inc('a03'), 'preventive_suspension', 'Reclamo grave') as r) x $$,
+  $$ values ('resolved'::text, 'preventive_suspension'::text, pg_temp.courier_a_id()::text, 2) $$,
+  'CC-012: preventive_suspension devuelve el repartidor derivado y la cuenta exacta de ofertas retiradas'
+);
+set local role postgres;
+select set_config('request.jwt.claims', '', true);
+select results_eq(
+  $$ select status::text, available, deactivated_at is not null from public.couriers where profile_id = pg_temp.courier_a_id() $$,
+  $$ values ('suspended'::text, false, true) $$,
+  'CC-012 M4: el repartidor queda suspended, no disponible y con deactivated_at'
+);
+select results_eq(
+  $$ select id::text, status::text from public.offers where courier_id = pg_temp.courier_a_id() order by id $$,
+  $$ values ('00000000-0000-4000-8000-0000000000f3'::text, 'accepted'::text),
+            ('00000000-0000-4000-8000-0000000000f5'::text, 'withdrawn'::text),
+            ('00000000-0000-4000-8000-0000000000f6'::text, 'withdrawn'::text) $$,
+  'CC-012 M4: sus ofertas pending quedan withdrawn y la accepted no se toca'
+);
+select results_eq(
+  $$ select status::text, available from public.couriers where profile_id = pg_temp.courier_b_id() $$,
+  $$ values ('approved'::text, true) $$,
+  'CC-012 M3: el repartidor de una oferta no aceptada no se suspende'
+);
+select results_eq(
+  $$ select id::text, status::text from public.offers where courier_id = pg_temp.courier_b_id() order by id $$,
+  $$ values ('00000000-0000-4000-8000-0000000000f4'::text, 'rejected'::text),
+            ('00000000-0000-4000-8000-0000000000f7'::text, 'pending'::text) $$,
+  'CC-012 M3: las ofertas del otro repartidor no cambian'
+);
+select results_eq(
+  $$ select status, resolution from public.incidents where id = pg_temp.inc('a03') $$,
+  $$ values ('resolved'::text, 'preventive_suspension: Reclamo grave'::text) $$,
+  'CC-012: el incidente queda resolved con la decisión y el motivo'
+);
+select results_eq(
+  $$ select after->>'courierId', (after->>'courierSuspended')::boolean, (after->>'withdrawnOffersCount')::integer,
+       before->>'status', after->>'status'
+     from public.audit_log where action = 'admin_resolve_incident' and target_id = pg_temp.inc('a03')::text $$,
+  $$ values (pg_temp.courier_a_id()::text, true, 2, 'open'::text, 'resolved'::text) $$,
+  'CC-012: la auditoría prueba la suspensión y la cantidad de ofertas retiradas'
+);
+select ok(
+  not exists (
+    select 1 from public.audit_log
+    where action = 'admin_resolve_incident'
+      and (after ?| array['recipientName', 'recipientPhone', 'dropoffAddress', 'pickupAddress'])
+  ),
+  'CC-012: la auditoría no guarda datos del destinatario'
+);
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal2');
+select throws_ok(
+  $$ select public.admin_resolve_incident(pg_temp.inc('a07'), 'preventive_suspension', 'Segundo reclamo') $$,
+  'INVALID_STATE_TRANSITION'
+);
+
+-- 6.6 admin_list_incidents: precedencia y validación
+select pg_temp.act_as('anon');
+select throws_ok($$ select public.admin_list_incidents(array['open']) $$, '42501');
+select pg_temp.act_as('authenticated', pg_temp.merchant_id(), 'aal2');
+select throws_ok($$ select public.admin_list_incidents(array['open']) $$, 'UNAUTHORIZED_ACTOR');
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal1');
+select throws_ok($$ select public.admin_list_incidents(array['open']) $$, 'AAL2_REQUIRED');
+select pg_temp.act_as('authenticated', pg_temp.admin_id(), 'aal2');
+select throws_ok($$ select public.admin_list_incidents(array['closed']) $$, 'VALIDATION_ERROR');
+select throws_ok($$ select public.admin_list_incidents(array['open'], now(), null) $$, 'VALIDATION_ERROR');
+select throws_ok($$ select public.admin_list_incidents(array['open'], null, null, 51) $$, 'VALIDATION_ERROR');
+
+-- 6.7 Keyset estable con empate exacto de created_at: no se pierde ni se duplica ninguno y el orden es determinista.
+select results_eq(
+  $$ select x->>'id' from jsonb_array_elements(public.admin_list_incidents(array['reviewing'], null, null, 3)->'items') with ordinality t(x, n) order by n $$,
+  $$ values ('00000000-0000-4000-8000-000000000b02'::text), ('00000000-0000-4000-8000-000000000b01'::text), ('00000000-0000-4000-8000-000000000b00'::text) $$,
+  'CC-012 M5: orden created_at DESC, id DESC'
+);
+select results_eq(
+  $$ select x->>'id' from jsonb_array_elements(public.admin_list_incidents(array['reviewing'], null, null, 1)->'items') x $$,
+  $$ values ('00000000-0000-4000-8000-000000000b02'::text) $$,
+  'CC-012 M5: página 1'
+);
+select is(
+  public.admin_list_incidents(array['reviewing'], null, null, 1)->'nextCursor'->>'createdAt',
+  '2026-09-27T12:00:00.123456Z',
+  'CC-012 M5: el cursor conserva microsegundos'
+);
+select results_eq(
+  $$ with p1 as (select public.admin_list_incidents(array['reviewing'], null, null, 1) as r)
+     select x->>'id' from p1, jsonb_array_elements(public.admin_list_incidents(array['reviewing'],
+       (p1.r->'nextCursor'->>'createdAt')::timestamptz, (p1.r->'nextCursor'->>'id')::uuid, 1)->'items') x $$,
+  $$ values ('00000000-0000-4000-8000-000000000b01'::text) $$,
+  'CC-012 M5: página 2 trae el otro incidente del empate'
+);
+select results_eq(
+  $$ with p1 as (select public.admin_list_incidents(array['reviewing'], null, null, 1) as r),
+          p2 as (select public.admin_list_incidents(array['reviewing'],
+            (p1.r->'nextCursor'->>'createdAt')::timestamptz, (p1.r->'nextCursor'->>'id')::uuid, 1) as r from p1)
+     select x->>'id' from p2, jsonb_array_elements(public.admin_list_incidents(array['reviewing'],
+       (p2.r->'nextCursor'->>'createdAt')::timestamptz, (p2.r->'nextCursor'->>'id')::uuid, 1)->'items') x $$,
+  $$ values ('00000000-0000-4000-8000-000000000b00'::text) $$,
+  'CC-012 M5: página 3 trae el anterior'
+);
+select ok(
+  (with p1 as (select public.admin_list_incidents(array['reviewing'], null, null, 1) as r),
+        p2 as (select public.admin_list_incidents(array['reviewing'],
+          (p1.r->'nextCursor'->>'createdAt')::timestamptz, (p1.r->'nextCursor'->>'id')::uuid, 1) as r from p1),
+        p3 as (select public.admin_list_incidents(array['reviewing'],
+          (p2.r->'nextCursor'->>'createdAt')::timestamptz, (p2.r->'nextCursor'->>'id')::uuid, 1) as r from p2)
+   select p3.r->'nextCursor' = 'null'::jsonb from p3),
+  'CC-012 M5: la última página no tiene nextCursor'
+);
+select results_eq(
+  $$ select count(distinct x->>'id')::integer from (
+       select public.admin_list_incidents(array['reviewing'], null, null, 2) as r) p1,
+       lateral (
+         select x from jsonb_array_elements(p1.r->'items') x
+         union all
+         select x from jsonb_array_elements(public.admin_list_incidents(array['reviewing'],
+           (p1.r->'nextCursor'->>'createdAt')::timestamptz, (p1.r->'nextCursor'->>'id')::uuid, 2)->'items') x
+       ) pages $$,
+  $$ values (3) $$,
+  'CC-012 M5: con páginas de 2 se ven los tres, sin duplicados'
+);
+select results_eq(
+  $$ select x->>'reporterRole', x->>'kind', x->>'status'
+     from jsonb_array_elements(public.admin_list_incidents(array['reviewing'], null, null, 1)->'items') x $$,
+  $$ values ('merchant'::text, 'other'::text, 'reviewing'::text) $$,
+  'CC-012: cada item trae rol del reportero, tipo y estado'
 );
 
 select * from finish();

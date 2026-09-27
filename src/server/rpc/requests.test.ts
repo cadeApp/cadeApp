@@ -57,8 +57,9 @@ const cases = [
   },
   {
     name: 'report_incident',
-    input: { requestId, kind: ' demora ', description: ' Demora de prueba ' },
-    args: { p_request_id: requestId, p_kind: 'demora', p_description: 'Demora de prueba' },
+    // CC-012: `kind` es un tipo canónico; el relato se sigue recortando en la frontera.
+    input: { requestId, kind: 'other', description: ' Demora de prueba ' },
+    args: { p_request_id: requestId, p_kind: 'other', p_description: 'Demora de prueba' },
     output: { requestId, incidentId: offerId, status: 'open', createdAt: time },
   },
 ] as const;

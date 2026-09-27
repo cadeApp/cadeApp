@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(55);
+select plan(61);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -329,11 +329,13 @@ select throws_ok(
   'unrelated courier cannot create incident on request'
 );
 
--- 28. H08: incidents insert permitido a courier asignado a la solicitud
+-- 28. CC-012 / D07-A: el courier asignado ya no inserta directo; el alta es solo por report_incident.
+-- (Antes de CC-012 esta prueba exigía que el INSERT directo funcionara.)
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
-select lives_ok(
-  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), ''delay'', ''pincho rueda'')',
-  'assigned courier can create incident on its matched request'
+select throws_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.courier_approved_1_id(), ''other'', ''pincho rueda'')',
+  '42501'::char(5), null::text,
+  'CC-012: assigned courier cannot insert an incident directly'
 );
 
 -- 29. H11: courier cannot change the amount of an already accepted offer
@@ -502,16 +504,58 @@ select lives_ok(
   'insert into public.courier_documents (courier_id, kind, storage_path) values (pg_temp.courier_approved_2_id(), ''license'', ''courier/c3/license/normal-upload.jpg'')',
   'courier can submit a document for review'
 );
+-- CC-012 / D07-A: el comercio dueño tampoco inserta directo (antes esta prueba exigía que pudiera).
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
-select lives_ok(
-  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_pub_id(), pg_temp.merchant_1_id(), ''complaint'', ''normal incident'')',
-  'merchant can report an open incident'
+select throws_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.merchant_1_id(), ''other'', ''normal incident'')',
+  '42501'::char(5), null::text,
+  'CC-012: related merchant cannot insert an incident directly'
 );
 select throws_ok(
   'insert into public.consents (profile_id, document, version) values (pg_temp.merchant_1_id(), ''tos'', ''v1'')',
   '42501',
   null,
   'merchant cannot directly insert consent row via authenticated role (H08)'
+);
+
+-- CC-012 / D07-A: incidents solo se escribe por RPC. Ni el admin inserta, modifica ni borra directo;
+-- las lecturas necesarias (admin y reportero) siguen funcionando.
+select pg_temp.reset_actor();
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values ('00000000-0000-0000-0000-000000000301', pg_temp.req_m1_matched_id(), pg_temp.merchant_1_id(),
+  'other', 'incidente sembrado por el test');
+
+select pg_temp.act_as('authenticated', pg_temp.admin_id());
+select throws_ok(
+  'insert into public.incidents (request_id, reporter_id, kind, description) values (pg_temp.req_m1_matched_id(), pg_temp.admin_id(), ''other'', ''admin forged incident'')',
+  '42501'::char(5), null::text,
+  'CC-012: admin cannot insert an incident directly'
+);
+select throws_ok(
+  'update public.incidents set status = ''resolved'', resolution = ''closed by hand'' where id = ''00000000-0000-0000-0000-000000000301''',
+  '42501'::char(5), null::text,
+  'CC-012: admin cannot update an incident directly'
+);
+select throws_ok(
+  'delete from public.incidents where id = ''00000000-0000-0000-0000-000000000301''',
+  '42501'::char(5), null::text,
+  'CC-012: admin cannot delete an incident directly'
+);
+select is(
+  (select count(*) from public.incidents where id = '00000000-0000-0000-0000-000000000301'),
+  1::bigint,
+  'CC-012: admin still reads incidents'
+);
+
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
+select is(
+  (select count(*) from public.incidents where id = '00000000-0000-0000-0000-000000000301'),
+  1::bigint,
+  'CC-012: reporter still reads its own incident'
+);
+select lives_ok(
+  'select public.report_incident(pg_temp.req_m1_matched_id(), ''other'', ''Demora en el retiro del pedido'')',
+  'CC-012: related merchant reports through report_incident'
 );
 
 select * from finish();

@@ -7,6 +7,8 @@ import type {
   CourierStatusInfo,
 } from './schemas';
 
+import type { LivePageCursor } from '@/lib/live-contracts';
+
 function formatApproxDistanceKm(distanceM: number | null): string {
   if (!distanceM || distanceM <= 0) {
     return '1,0';
@@ -19,6 +21,7 @@ function formatApproxDistanceKm(distanceM: number | null): string {
 
 interface RawAvailableRequest {
   id: string;
+  created_at: string;
   approx_distance_m: number | null;
   package_type: string;
   recipient_payment_method: string;
@@ -66,7 +69,10 @@ interface RawOfferWithRequest {
  * CUMPLE REGLAS D3 y D15: No solicita ni expone coordenadas (lat/lng) ni datos
  * de contacto del destinatario (nombre, teléfono, dirección exacta).
  */
-export async function getAvailableRequests(): Promise<AvailableRequestItem[]> {
+export async function getAvailableRequests(): Promise<{
+  requests: AvailableRequestItem[];
+  nextCursor: LivePageCursor | null;
+}> {
   const supabase = await createClient();
 
   const {
@@ -77,6 +83,7 @@ export async function getAvailableRequests(): Promise<AvailableRequestItem[]> {
     .from('delivery_requests')
     .select(`
       id,
+      created_at,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -89,15 +96,20 @@ export async function getAvailableRequests(): Promise<AvailableRequestItem[]> {
       dropoff_zone:zones!dropoff_zone_id(name)
     `)
     .eq('status', 'published')
-    .order('published_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(51);
 
   const rawRequests = requests as unknown as RawAvailableRequest[] | null;
-  if (error || !rawRequests) {
-    return [];
+  if (error || !rawRequests || rawRequests.length === 0) {
+    return { requests: [], nextCursor: null };
   }
 
+  const hasMore = rawRequests.length > 50;
+  const pageRows = rawRequests.slice(0, 50);
+
   // Verificar si el repartidor autenticado ya tiene ofertas activas en estas solicitudes
-  const requestIds = rawRequests.map((r) => r.id);
+  const requestIds = pageRows.map((r) => r.id);
   const myOffersMap = new Map<string, number>();
 
   if (user && requestIds.length > 0) {
@@ -116,7 +128,7 @@ export async function getAvailableRequests(): Promise<AvailableRequestItem[]> {
     }
   }
 
-  return rawRequests.map((req) => {
+  const mapped = pageRows.map((req) => {
     const pickupZone = Array.isArray(req.pickup_zone)
       ? req.pickup_zone[0]
       : req.pickup_zone;
@@ -143,6 +155,12 @@ export async function getAvailableRequests(): Promise<AvailableRequestItem[]> {
       myOfferAmountArs: myOfferAmount,
     };
   });
+
+  const tail = pageRows.at(-1);
+  const nextCursor: LivePageCursor | null =
+    hasMore && tail ? { createdAt: tail.created_at, id: tail.id } : null;
+
+  return { requests: mapped, nextCursor };
 }
 
 /**
