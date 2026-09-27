@@ -169,3 +169,14 @@ Un Route Handler válido necesita un `Request` real, pero el test de «sin curso
 > **Regla propuesta:** para presupuestos cuantitativos, la evidencia es el valor medido por ruta, no el color del job. Si el control es advisory, la revisión compara el número con la regla y bloquea manualmente.
 
 Además, una dependencia de Realtime puede ser correcta funcionalmente y aun así ser incorrecta como import eager. Las integraciones pesadas que solo se necesitan después de mount deben evaluarse para carga diferida y verificarse contra el bundle real.
+---
+
+## Ronda 9
+
+## `AG-93` · Cambiar una dependencia síncrona a lazy exige revalidar todas las suites consumidoras
+
+**Origen:** `PR82-H32`.
+
+El hook aislado quedó 7/7 verde, pero cuatro suites consumidoras conservaron supuestos de inicialización síncrona y CI terminó con 7 fallos.
+
+> **Regla propuesta:** cuando una corrección cambia el timing observable (sync -> async), el cierre no se limita a la suite del módulo modificado; deben enumerarse y ejecutar todas las suites que espían, mockean o dependen del side effect cambiado.
