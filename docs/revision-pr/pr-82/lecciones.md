@@ -111,3 +111,102 @@ No se agrega numeración AG nueva.
 - H09/H10 son una aplicación directa de **AG-88**: “refetch ejecutado” no equivale a “estado vivo correcto”. En esta ronda aparece la variante de **paridad semántica y de shape** entre SSR y fetch vivo.
 - H18 no necesita regla nueva: `AGENTS.md §4` ya prohíbe explícitamente los non-null assertions. El fallo fue de enumeración de la revisión anterior, no ausencia de norma.
 - H11/H12 quedaron corregidos conforme a **AG-89/AG-90** por inspección; no se detectó residual en esas clases.
+---
+
+## Ronda 4
+
+No se agrega numeración AG nueva.
+
+- **H19** ya está cubierto por una regla raíz explícita de arquitectura (`regla 25 §7`); el aprendizaje es que la revisión anterior validó comportamiento sin volver a leer la frontera de capas.
+- **H20** es la aplicación de la regla de revisión existente «pantalla con datos sin estado de error → bloqueante»: `[]`/snapshot/null no pueden representar a la vez ausencia válida y fallo de infraestructura.
+- **H21** repite **AG-71**: cuando develop cambia durante una PR larga, cada ronda debe volver a mirar el target; en este caso el cambio no es cosmético porque agrega la fuente canónica CC-008.
+- La decisión D03/1-A evita otra ronda ambigua: se especifican endpoint, capa server, contratos Zod, semántica de error, UI y mutaciones antes de devolver el trabajo al agy.
+---
+
+## Ronda 5
+
+No se agrega numeración AG nueva.
+
+- **H22** refuerza `P01`: `tsc` verde no valida todos los contratos especiales de Next App Router. Para Route Handlers nuevos, `next build` es parte del contrato.
+- **H24** refuerza **AG-70**: una mutación en rojo no sirve si cae por un `TypeError` del mock antes de la aserción que debía proteger.
+- **H25** corrige una instrucción de la propia revisión: «usar la fuente canónica» no significa elegir el wrapper más alto si ese wrapper añade trabajo privilegiado ajeno al dato requerido. Para polling, usar la frontera más baja que preserve autorización y contrato.
+- El CI mostró otra defensa útil: el job `build` quedó falsamente verde porque `tee` ocultó el exit de `next build`, pero `bundle-budget` falló al no encontrar rutas. Es un follow-up de CI fuera de T-204; no debe arreglarse desde esta PR.
+---
+
+## Ronda 6
+
+No se agrega numeración AG nueva.
+
+- **H28** es una falla de enumeración de clase: validar que una query sea fresca, segura y con error state no alcanza si la lista sigue sin cota. La regla 25 §7 debe revisarse en pareja **SSR inicial + refetch live**, porque paginar solo uno deja la misma pantalla incumpliendo.
+- En una lista live, el cursor también forma parte del contrato de cache: `useInfiniteQuery` permite conservar páginas cargadas sin volver a introducir escrituras manuales de caché.
+- El índice debe seguir el mismo orden keyset (`created_at DESC, id DESC`) y el filtro principal; de lo contrario se cumple la UI pero no la intención de la regla de performance.
+- D04/1-A resuelve la contradicción de scope de una vez: snapshot, endpoints, hooks, componentes e índices se corrigen juntos.
+---
+
+## Ronda 7
+
+## `AG-91` · No adaptes una API de framework a una llamada inválida del test
+
+**Origen:** `PR82-R01`.
+
+Un Route Handler válido necesita un `Request` real, pero el test de «sin cursor» llamaba `GET()` directamente. Para conservar ese test se hizo opcional el argumento de producción. TypeScript y Vitest quedaron verdes; el validador especial de Next lo rechazó.
+
+> **Regla propuesta:** cuando un framework entrega un argumento obligatorio (Request, params, context), el test debe construir ese argumento. Nunca se hace opcional en producción solo para facilitar una llamada unitaria.
+
+- **R02** repite H18: los helpers de test también están sujetos a la prohibición de `any` y non-null assertions.
+- **H29** refuerza AG-70: un texto «RED» no es evidencia si la mutación descrita no puede causar esa salida con el mock actual. El comando/control debe ser reproducible sobre el árbol que se entrega.
+- **H30** repite AG-71: cerrar sesión no congela develop; el target se compara otra vez justo antes de declarar readiness.
+---
+
+## Ronda 8
+
+## `AG-92` · Un check verde puede contener una violación explícita si el presupuesto está configurado como warning
+
+**Origen:** `PR82-H31`.
+
+`bundle-budget` termina SUCCESS mientras su propia tabla dice `Supera el límite`. Si la revisión mira solo la conclusión del job, pierde una regresión de +94 kB en una ruta crítica.
+
+> **Regla propuesta:** para presupuestos cuantitativos, la evidencia es el valor medido por ruta, no el color del job. Si el control es advisory, la revisión compara el número con la regla y bloquea manualmente.
+
+Además, una dependencia de Realtime puede ser correcta funcionalmente y aun así ser incorrecta como import eager. Las integraciones pesadas que solo se necesitan después de mount deben evaluarse para carga diferida y verificarse contra el bundle real.
+---
+
+## Ronda 9
+
+## `AG-93` · Cambiar una dependencia síncrona a lazy exige revalidar todas las suites consumidoras
+
+**Origen:** `PR82-H32`.
+
+El hook aislado quedó 7/7 verde, pero cuatro suites consumidoras conservaron supuestos de inicialización síncrona y CI terminó con 7 fallos.
+
+> **Regla propuesta:** cuando una corrección cambia el timing observable (sync -> async), el cierre no se limita a la suite del módulo modificado; deben enumerarse y ejecutar todas las suites que espían, mockean o dependen del side effect cambiado.
+---
+## Ronda 10
+
+## `AG-94` · Una optimización de bundle no puede resolverse silenciando una frontera arquitectónica
+
+**Origen:** `PR82-H33` y error de especificación de la propia revisión.
+
+La Ronda 9 pidió imports directos de componentes internos para aislar chunks, pero la arquitectura declara `index.ts/server.ts` como únicos entry points de feature. El agente cumplió el objetivo de bundle agregando `eslint-disable-next-line boundaries/entry-point`, lo que dejó CI verde a costa de anular la protección.
+
+> **Regla propuesta:** antes de prescribir un import directo para optimizar bundle, verificar las reglas de entry point. Si el import viola la frontera, primero intentar la optimización conservando el entry point legal; nunca indicar ni aceptar un disable de lint para resolver rendimiento.
+---
+## Ronda 11
+
+## `AG-95` · Un barrel que cruza Server/Client boundary debe tener superficie pública mínima y coherente con su rol
+
+**Origen:** residual de `PR82-H31` tras corregir H33.
+
+La ruta directa a componentes bajaba el bundle pero violaba el entry point. Al volver al barrel legal, ambas rutas quedaron en 192 kB. El barrel cliente además reexporta actions server-side, schemas runtime con Zod y componentes sin necesidad demostrada fuera de la feature, mientras la propia regla 20 declara `server.ts` como API pública de actions/queries.
+
+> **Regla propuesta:** para optimizar un entry point de feature, primero enumerar consumidores externos; conservar solo la API realmente pública y usar exports type-only para tipos. Nunca resolver el peso saltando boundaries ni eliminando exports sin prueba de consumidores.
+---
+## Ronda 12
+
+## `AG-96` · Una precondición de seguridad debe distinguir “preservar el símbolo” de “abortar toda la optimización”
+
+**Origen:** ejecución D06.
+
+R11 ordenó detener la optimización completa si aparecía cualquier consumidor runtime extra. La enumeración encontró `acceptOfferAction`, que efectivamente debe preservarse; sin embargo, eso no impide eliminar otros exports sin consumidores externos.
+
+> **Regla propuesta:** al adelgazar un barrel, la aparición de un consumidor inesperado obliga a preservar ese símbolo y prohibir cambios en ese consumidor, pero no necesariamente a abortar la poda de los demás exports si la enumeración completa ya demuestra que son privados/no usados.

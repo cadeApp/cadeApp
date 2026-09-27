@@ -273,3 +273,489 @@ TOTAL: 8
 ## CI
 
 No inspeccionado en Ronda 3 porque la ronda conserva bloqueantes; se difiere hasta una ronda sin defectos estáticos abiertos.
+---
+
+# Ronda 4 — evidencia por inspección sobre `4af4186`
+
+## Preflight
+
+```text
+PR head: 4af41865f55f59d2da1595ee2c180801bb993841
+develop: bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+develop...branch: diverged · ahead 17 · behind 5
+commits nuevos desde R3 docs: 2
+```
+
+## H18 — barrido non-null
+
+El barrido independiente sobre los archivos T-204 revisados encontró 0 non-null assertions TypeScript. Las coincidencias restantes con `!` pertenecen a strings de joins Supabase (`zones!pickup_zone_id`, etc.) o a `expect.any`, no al operador non-null.
+
+## H19 — clase completa de lecturas browser en features
+
+```text
+use-available-requests.ts  -> import createClient(browser) + .from('delivery_requests') + .from('offers')
+use-request-offers.ts      -> import createClient(browser) + .from('offers')
+use-trip.ts                -> import createClient(browser) + .from('delivery_requests')
+use-realtime-invalidation  -> excluido: src/lib + suscripción Realtime, no lectura de feature
+```
+
+Regla aplicable: `.agents/rules/25-stack-y-patrones.md §7`: «Sin SQL ni clientes Supabase en features: todo pasa por src/server».
+
+## H20 — clase completa de errores silenciosos
+
+```text
+useAvailableRequests: client/from/query error -> []
+useAvailableRequests: auth/offers error -> continúa sin ofertas propias
+useRequestOffers: query error -> initialOffers
+useTrip: query error -> null
+CourierFeed: [] -> empty state
+RequestOffersList: [] -> «Esperando ofertas»
+```
+
+## H21 — drift relevante
+
+Los 5 commits de develop agregan, entre otros, `docs/contracts/CC-008.md`, `src/server/rpc/trips.ts`, `src/domain/rpc-contracts.ts` y tipos/migraciones de `get_trip_details`. D03 depende de esa fuente y por eso el merge debe ocurrir antes del arreglo.
+
+## Decisión
+
+Lautaro073 respondió `1-A`: mover lecturas/refetch a server/API, usar CC-008 para viaje y tratar fallos como error de Query conservando el último dato válido.
+
+## CI
+
+No inspeccionado en R4: H19/H20/H21 bloquean antes de CI.
+---
+
+# Ronda 5 — evidencia sobre `a2845da`
+
+## Sincronización/scope
+
+```text
+develop...branch: ahead 20 / behind 0
+merge-base: bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+arreglo propio tras merge: 24 archivos, todos dentro del scope D03
+```
+
+## CI exact-head — run 36253768272
+
+```text
+unit       SUCCESS — 64 files / 669 tests
+typecheck  SUCCESS
+lint       SUCCESS
+db-tests   SUCCESS
+audit      SUCCESS
+bundle-budget FAILURE
+```
+
+El log de `build` contiene:
+
+```text
+Failed to compile.
+src/app/api/live/requests/[requestId]/offers/route.ts
+Type error: Route ... has an invalid "GET" export:
+Expected "Promise<any>", got "Promise<{ requestId: string; }> | { requestId: string; }".
+Next.js build worker exited with code: 1
+```
+
+El bundle-budget falla luego con `No se pudo leer ninguna ruta de la salida de Next.js`. En el SHA R4 (`4af4186`) el mismo job sí generaba tabla de rutas, por lo que no es el antiguo warning de `/design-system`.
+
+## H19/H20/H21
+
+- Barrido independiente de los 3 hooks: 0 browser Supabase reads / 0 `.from(`.
+- CI unit ejecutó verdes `t204.test` (14), feed hook (8), offers hook (8), trip hook (9), live contracts (8) y los 3 route tests.
+- GitHub compare: behind 0.
+
+## H23
+
+```text
+use-trip.ts:74  return parsed.data as unknown as T;
+coverage exact-head: use-trip.ts uncovered line 74
+```
+
+## H24
+
+Rojo registrado por el autor al quitar ownership:
+
+```text
+TypeError: supabase.from(...).select(...).eq(...).order is not a function
+```
+
+El fallo ocurre antes de la aserción de autorización: mock incompleto.
+
+## H25
+
+`getTripDetailsServer` llama `getTripDetailsRpc` y luego `createAdminClient()`, consulta `courier_documents` y `createSignedUrl`. T-204 descarta todo salvo status mientras `useTrip` sondea cada 30 s.
+
+## H26
+
+```text
+use-request-offers.ts:103  const setOffers = ...
+use-request-offers.ts:105  queryClient.setQueryData(...)
+request-offers-list.tsx:39 onRegisterRealtime?: ...
+```
+
+## H27
+
+Los tres callers usan `fetch(url)` sin `{ cache: 'no-store' }`.
+
+## Limitación
+
+No se ejecutaron mutaciones reviewer en un checkout local porque el entorno de revisión no pudo materializar el repo por resolución de red. No se inventa evidencia runtime; los datos runtime anteriores salen del CI exact-head.
+---
+
+# Ronda 6 — evidencia sobre `6c52a31`
+
+## Sincronización
+
+```text
+develop...branch: ahead 22 / behind 0
+merge-base: bdafee8ff04d6b620eb46dd885b62fe0d675ca49
+commits desde R5: 092edad + 6c52a31
+```
+
+## CI exact-head — run 36258029324
+
+```text
+unit          SUCCESS — 64 files / 674 tests
+typecheck     SUCCESS
+lint          SUCCESS
+db-tests      SUCCESS
+audit         SUCCESS
+build         SUCCESS — Next.js genera /api/live/available-requests, /api/live/requests/[requestId]/offers y /api/live/trips/[tripId]
+bundle-budget SUCCESS
+```
+
+## H22–H27
+
+- H22: firmas `params: Promise<...>` en ambas routes; build real verde.
+- H23: 0 `as unknown as T` / 0 generic T en useTrip; test sin initialTrip verde.
+- H24: mock ownership contiene cadena offers.order y la guarda correcta evita consultarla.
+- H25: `t204.ts` importa/usa `getTripDetailsRpc`; no contiene `getTripDetailsServer`.
+- H26: `use-request-offers.ts` no publica setOffers ni llama setQueryData; componente sin onRegisterRealtime.
+- H27: los tres fetch incluyen `{ cache: 'no-store' }`.
+
+## H28 — enumeración completa
+
+Regla raíz: `.agents/rules/25-stack-y-patrones.md:77`: toda lista paginada, máximo 50, cursor created_at/id e índice.
+
+```text
+FEED SSR:  getAvailableRequests()                 -> order published_at; sin limit/cursor
+FEED LIVE: getAvailableRequestsLiveServer()       -> order published_at; sin limit/cursor
+OFFERS SSR: getMerchantRequestWithOffers()        -> order created_at; sin limit/cursor
+OFFERS LIVE:getRequestOffersLiveServer()          -> order created_at; sin limit/cursor
+HOOKS:      useAvailableRequests/useRequestOffers -> useQuery; sin fetchNextPage
+UI:         CourierFeed/RequestOffersList         -> sin Cargar más
+TRIP:       recurso singular; excluido
+```
+
+Índices observados en schema v1:
+
+```text
+delivery_requests_published_idx ON delivery_requests (created_at desc) WHERE status='published'
+offers_courier_idx ON offers (courier_id, created_at desc)
+offers_one_active_per_courier_request_idx ON offers (request_id, courier_id) WHERE status in ('pending','accepted')
+```
+
+No existe el desempate `id` para published ni `(request_id, created_at, id)` para lista de ofertas.
+
+## Decisión D04
+
+Lautaro073 respondió `1-A`: paginación completa ahora en T-204. La decisión incluye los dos índices mínimos necesarios para cumplir la misma regla; no se abre una segunda decisión de scope.
+
+## Limitación
+
+El checkout local del reviewer sigue sin estar disponible; no se inventan mutaciones runtime. H28 se demuestra por inspección estructural y regla raíz. Las mutaciones obligatorias para el arreglo quedan especificadas en el prompt de R6.
+---
+
+# Ronda 7 — evidencia sobre `10e25ff`
+
+## Preflight
+```text
+develop actual: ef09bb8
+branch: 10e25ff
+ahead 24 / behind 2
+commits nuevos: e221c46 + 10e25ff
+```
+
+## CI run 36270647334
+```text
+unit       SUCCESS — 75 files / 834 tests
+typecheck  SUCCESS
+lint       SUCCESS
+db-tests   SUCCESS — migración T-204 aplicada, rls_coordinates/rls_enabled/rls_matrix PASS
+audit      SUCCESS
+bundle-budget FAILURE
+```
+
+El job build está falsamente verde por `pnpm build 2>&1 | tee build-output.txt`. Su log real:
+```text
+Failed to compile.
+src/app/api/live/available-requests/route.ts
+Type error: ... NextRequest | Request | undefined is not a valid type for the function's first argument.
+Next.js build worker exited with code: 1
+```
+
+## R02 — barrido del diff H28
+Coincidencias nuevas reales:
+```text
+src/server/live/t204.test.ts:
+- explicit any en MockBuilder/thenable
+- const builder: any
+- rows51[49]!
+- rows51[50]!.id
+- offers51[49]!
+```
+
+Las coincidencias `!` dentro de regex de otros tests no son non-null assertions.
+
+## H29 — mutación A
+`createMockQueryBuilder` registra `.limit(...)` pero su `then` siempre resuelve `{data: resolvedData}` sin recortar por el argumento. Por eso cambiar producción de `.limit(51)` a `.limit(50)` no puede, por sí solo, hacer que `rows.length` pase de 51 a 50 ni que `nextCursor` se vuelva null. La prueba válida para esa mutación es la aserción de call-log `limit === [[51]]`.
+
+## H29 — mutación F
+SQL actual:
+```sql
+create index delivery_requests_published_cursor_idx
+  on public.delivery_requests (created_at desc, id desc)
+  where status = 'published';
+create index offers_request_created_cursor_idx
+  on public.offers (request_id, created_at desc, id desc);
+```
+La bitácora menciona otros nombres + `IF NOT EXISTS`; no corresponde al árbol revisado.
+---
+
+# Ronda 8 — evidencia sobre `a340745`
+
+## R7 revalidado
+```text
+develop...branch: ahead 27 / behind 0
+merge develop: 1321f2d
+fix propio: a7e713a
+```
+
+CI run 36272584952:
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 75 files / 835 tests
+db-tests SUCCESS
+audit SUCCESS
+bundle-budget SUCCESS
+```
+
+Log real build:
+```text
+✓ Compiled successfully in 20.2s
+✓ Generating static pages (42/42)
+/api/live/available-requests          103 kB
+/api/live/requests/[requestId]/offers 103 kB
+/api/live/trips/[tripId]              103 kB
+```
+
+## H31 — baseline vs T-204
+
+PR #106 CI run 36264052134 (sin T-204):
+```text
+/courier/feed   179 kB | OK
+/courier/offers 179 kB | OK
+```
+
+T-204 CI run 36272584952:
+```text
+/courier/feed   273 kB | Supera el límite
+/courier/offers 273 kB | Supera el límite
+```
+
+El mismo job termina SUCCESS y solo emite warning. Regla 25 §6 exige hasta 180 kB.
+
+Inspección exact-head:
+```text
+src/lib/hooks/use-realtime-invalidation.ts:5
+import { createClient } from '@/lib/supabase/browser';
+
+CourierFeed -> useAvailableRequests -> useRealtimeInvalidation
+courier/offers/page.tsx -> barrel '@/features/offers', que exporta CourierFeed
+```
+---
+
+# Ronda 9 — SHA 754161b
+
+## Decisión D05
+`1-A`: mantener First Load JS <=180 kB. No se autoriza excepción de 205 kB.
+
+## Bundle
+```text
+PR #106 baseline:
+/courier/feed   179 kB
+/courier/offers 179 kB
+
+R8 a340745:
+/courier/feed   273 kB
+/courier/offers 273 kB
+
+R9 754161b:
+/courier/feed   205 kB
+/courier/offers 205 kB
+```
+
+## CI exact-head run 36299955270
+```text
+typecheck SUCCESS
+lint SUCCESS
+db-tests SUCCESS
+audit SUCCESS
+build SUCCESS
+bundle-budget SUCCESS (advisory)
+unit FAILURE
+
+Test Files 4 failed | 71 passed (75)
+Tests      7 failed | 830 passed (837)
+```
+
+Los 7 rojos son consumidores de useRealtimeInvalidation que no esperan el setup async introducido por el lazy import.
+---
+# Ronda 10 — SHA 8cf71ed
+
+## Sincronización
+```text
+develop = 7f392e9
+branch behind develop = 0
+merge develop = bd519acc
+fix T-204 = 39b8dd2
+```
+
+## CI exact-head — run 36302911020
+
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 76 files / 872 tests
+db-tests SUCCESS
+audit SUCCESS
+build SUCCESS
+bundle-budget SUCCESS
+```
+
+Build real:
+```text
+✓ Compiled successfully in 21.2s
+✓ Generating static pages (42/42)
+/courier/feed   175 kB
+/courier/offers 159 kB
+```
+
+Bundle:
+```text
+/courier/feed   175 kB | OK
+/courier/offers 159 kB | OK
+```
+
+## H33
+Exact-head:
+```text
+src/app/(courier)/courier/feed/page.tsx
+// eslint-disable-next-line boundaries/entry-point
+import { CourierFeed } from '@/features/offers/components/courier-feed';
+
+src/app/(courier)/courier/offers/page.tsx
+// eslint-disable-next-line boundaries/entry-point
+import { MyOffersList } from '@/features/offers/components/my-offers-list';
+```
+
+AGENTS.md §4 prohíbe desactivar reglas de lint/checks.
+.eslintrc.json permite entry points de feature solo index.ts/server.ts.
+---
+# Ronda 11 — SHA 828671b
+
+## H33
+```text
+0 eslint-disable boundaries/entry-point
+0 imports @/features/offers/components/* en páginas courier
+lint SUCCESS
+```
+
+## CI exact-head — run 36303492221
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 76 files / 872 tests
+db-tests SUCCESS
+audit SUCCESS
+build SUCCESS — 42/42
+bundle-budget SUCCESS (advisory)
+```
+
+## Bundle real
+```text
+/courier/feed   192 kB | Supera el límite
+/courier/offers 192 kB | Supera el límite
+```
+
+## D06
+Lautaro073 elige 1-A: ampliar scope a `src/features/offers/index.ts`, conservar entry point legal y optimizar la API pública cliente; no se autoriza aumentar 180 kB.
+---
+# Ronda 12 — SHA cb7eab9
+
+## D06 precondición
+Enumeración local registrada por P2:
+```text
+courier/feed/page.tsx -> CourierFeed
+courier/offers/page.tsx -> MyOffersList
+requests/components/request-offers-list.tsx -> acceptOfferAction
+requests/components/request-offers.test.tsx -> mock acceptOfferAction
+```
+
+El agente detuvo correctamente la poda del barrel porque R11 ordenaba parar ante cualquier consumidor runtime adicional.
+
+## CI exact-head run 36304405258
+```text
+build SUCCESS
+unit SUCCESS
+db-tests SUCCESS
+audit SUCCESS
+lint SUCCESS
+typecheck SUCCESS
+bundle-budget SUCCESS (advisory)
+```
+
+Residual:
+```text
+/courier/feed   192 kB
+/courier/offers 192 kB
+```
+---
+# Ronda 13 — SHA 9b6ea30
+
+## CI exact-head — run 36305536007
+```text
+typecheck SUCCESS
+lint SUCCESS
+unit SUCCESS — 76 files / 873 tests
+audit SUCCESS
+build SUCCESS — 42/42
+bundle-budget SUCCESS
+db-tests SUCCESS — Files=12, Tests=1529, Result: PASS
+```
+
+Build:
+```text
+/courier/feed   176 kB | OK
+/courier/offers 176 kB | OK
+```
+
+Baseline independiente previo a T-204, run 36264052134:
+```text
+/courier/feed   179 kB
+/courier/offers 179 kB
+/trips/[id]     186 kB
+```
+
+Por lo tanto `/trips/[id]=186 kB` no es regresión de T-204.
+
+## H34 — rojo de proceso
+Compare `cb7eab9...9b6ea30`:
+```diff
+-- **Próximo paso:** Presentar informe de enumeración y activar decisión en PR #82.
+-- **Último commit:** b6fa759 (docs(T-204): formalize D06 scope expansion in task sheet [T-204])
++- **Último commit:** cb7eab9 (docs(T-204): session log [T-204])
+```
+
+El invariante append-only está roto mientras CI sigue verde; no existe control automático que lo detecte.
