@@ -327,7 +327,7 @@ begin
       and (
         p_cursor_created_at is null
         or i.created_at < p_cursor_created_at
-        or (i.created_at = p_cursor_created_at and i.id < p_cursor_id)
+        
       )
     order by i.created_at desc, i.id desc
     limit v_limit + 1
