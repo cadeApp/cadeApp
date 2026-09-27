@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { adminSetSubscriptionInputSchema, adminUpdateSettingInputSchema } from '@/domain';
 
 export const adminApplicantTabSchema = z
   .enum(['pending', 'approved', 'rejected', 'suspended'])
@@ -70,6 +71,41 @@ export const decisionFormSchema = z.object({
 
 export const adminApplicantIdSchema = z.string().uuid();
 
+// T-123: las mutaciones de A03/A04 reutilizan exactamente los schemas de entrada de las RPC.
+export const setMerchantSubscriptionSchema = adminSetSubscriptionInputSchema;
+export const updatePlatformSettingSchema = adminUpdateSettingInputSchema;
+
+export const AUDIT_TARGET_TYPES = [
+  'courier',
+  'courier_document',
+  'merchant',
+  'platform_setting',
+  'delivery_request',
+] as const;
+export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
+
+export interface AdminAuditFilters {
+  readonly cursor?: number;
+  readonly actorId?: string;
+  readonly action?: string;
+  readonly targetType?: AuditTargetType;
+}
+
+export function parseAdminMerchantsSearchParams(_raw: { cursor?: unknown }): {
+  cursor?: string;
+} {
+  throw new Error('T-123: sin implementar');
+}
+
+export function parseAdminAuditSearchParams(_raw: {
+  cursor?: unknown;
+  actor?: unknown;
+  action?: unknown;
+  entity?: unknown;
+}): AdminAuditFilters {
+  throw new Error('T-123: sin implementar');
+}
+
 export type AdminMfaInput = z.infer<typeof adminMfaSchema>;
 export type ViewCourierDocumentInput = z.infer<typeof viewCourierDocumentSchema>;
 export type DecideCourierInput = z.infer<typeof decideCourierSchema>;
@@ -77,3 +113,5 @@ export type SuspendCourierInput = z.infer<typeof suspendCourierSchema>;
 export type VerifyCourierDocumentInput = z.infer<typeof verifyCourierDocumentSchema>;
 export type RejectDocumentFormInput = z.infer<typeof rejectDocumentFormSchema>;
 export type DecisionFormInput = z.infer<typeof decisionFormSchema>;
+export type SetMerchantSubscriptionInput = z.infer<typeof setMerchantSubscriptionSchema>;
+export type UpdatePlatformSettingInput = z.infer<typeof updatePlatformSettingSchema>;

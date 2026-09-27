@@ -1,3 +1,4 @@
+import type { MerchantSubscriptionStatus } from '@/domain';
 import type {
   AdminApplicantTab,
   AdminMfaInput,
@@ -70,4 +71,61 @@ export interface ApplicantDetail {
 export interface ViewDocumentResult {
   readonly signedUrl: string;
   readonly expiresInSeconds: number;
+}
+
+export interface AdminMerchantListItem {
+  readonly id: string;
+  readonly businessName: string;
+  readonly ownerName: string;
+  readonly phone: string;
+  readonly pickupZoneName: string | null;
+  readonly subscriptionStatus: MerchantSubscriptionStatus;
+  readonly paidUntil: string | null;
+  readonly deliveredCount: number;
+}
+
+export interface AdminMerchantsResult {
+  readonly items: readonly AdminMerchantListItem[];
+  readonly pageSize: number;
+  readonly nextCursor: string | null;
+  readonly hasNextPage: boolean;
+}
+
+export interface PlatformSettingsSnapshot {
+  readonly minOfferArs: number;
+  readonly requestTtlMinutes: number;
+  readonly pilotActive: boolean;
+  readonly pilotTermsVersion: string;
+  readonly subscriptionGraceDays: number;
+}
+
+export type AuditChangeValue = string | number | boolean | null;
+
+export interface AuditChange {
+  readonly field: string;
+  readonly before: AuditChangeValue;
+  readonly after: AuditChangeValue;
+}
+
+export interface AuditLogItem {
+  readonly id: number;
+  readonly createdAt: string;
+  readonly actorName: string | null;
+  readonly action: string;
+  readonly targetType: string;
+  readonly targetRef: string;
+  readonly changes: readonly AuditChange[];
+  readonly hasReason: boolean;
+}
+
+export interface AuditLogResult {
+  readonly items: readonly AuditLogItem[];
+  readonly pageSize: number;
+  readonly nextCursor: number | null;
+  readonly hasNextPage: boolean;
+}
+
+export interface AuditActorOption {
+  readonly id: string;
+  readonly name: string;
 }

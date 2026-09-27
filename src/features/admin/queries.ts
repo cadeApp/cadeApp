@@ -1,8 +1,14 @@
 import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
+import type { AdminAuditFilters } from './schemas';
 import type {
   AdminApplicantTab,
+  AdminMerchantsResult,
+  AuditActorOption,
+  AuditLogItem,
+  AuditLogResult,
+  PlatformSettingsSnapshot,
   ApplicantDetail,
   ApplicantDocumentDetail,
   ApplicantListItem,
@@ -250,4 +256,50 @@ export async function getApplicantDetail(
     createdAt: profile?.created_at ?? new Date().toISOString(),
     documents,
   };
+}
+
+export interface GetAdminMerchantsOptions {
+  readonly cursor?: string;
+  readonly pageSize?: number;
+}
+
+/**
+ * A03: comercios paginados por cursor; se identifican por nombre del local y teléfono.
+ */
+export async function getAdminMerchants(
+  _options?: GetAdminMerchantsOptions
+): Promise<AdminMerchantsResult> {
+  throw new Error('T-123: sin implementar');
+}
+
+/**
+ * A04: valores vigentes de `platform_settings`. Nunca usa valores por defecto hardcodeados.
+ */
+export async function getPlatformSettings(): Promise<PlatformSettingsSnapshot> {
+  throw new Error('T-123: sin implementar');
+}
+
+export interface GetAuditLogOptions extends AdminAuditFilters {
+  readonly pageSize?: number;
+}
+
+/**
+ * A06: lectura de `audit_log` paginada server-side por cursor de `id`, con detalle saneado.
+ */
+export async function getAuditLog(_options?: GetAuditLogOptions): Promise<AuditLogResult> {
+  throw new Error('T-123: sin implementar');
+}
+
+/**
+ * A04: últimos cambios de parámetros para el panel lateral.
+ */
+export async function getRecentSettingChanges(_limit?: number): Promise<readonly AuditLogItem[]> {
+  throw new Error('T-123: sin implementar');
+}
+
+/**
+ * A06: operadores para el filtro de auditoría.
+ */
+export async function getAuditActors(): Promise<readonly AuditActorOption[]> {
+  throw new Error('T-123: sin implementar');
 }

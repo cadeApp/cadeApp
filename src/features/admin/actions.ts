@@ -22,7 +22,10 @@ import {
   type DecideCourierInput,
   type SuspendCourierInput,
   type VerifyCourierDocumentInput,
+  type SetMerchantSubscriptionInput,
+  type UpdatePlatformSettingInput,
 } from './schemas';
+import type { RpcOutput } from '@/domain';
 
 interface AuthenticatedAdmin {
   readonly id: string;
@@ -309,4 +312,22 @@ export async function verifyCourierDocumentAction(
 
   revalidatePath('/admin/applicants');
   return ok({ success: true });
+}
+
+/**
+ * A03: cambia el plan de un comercio (piloto, pago manual, `paid_until`) vía `admin_set_subscription`.
+ */
+export async function setMerchantSubscriptionAction(
+  _input: SetMerchantSubscriptionInput
+): Promise<ActionResult<RpcOutput<'admin_set_subscription'>, DomainErrorCode>> {
+  throw new Error('T-123: sin implementar');
+}
+
+/**
+ * A04: actualiza un parámetro de `platform_settings` vía `admin_update_setting`.
+ */
+export async function updatePlatformSettingAction(
+  _input: UpdatePlatformSettingInput
+): Promise<ActionResult<RpcOutput<'admin_update_setting'>, DomainErrorCode>> {
+  throw new Error('T-123: sin implementar');
 }
