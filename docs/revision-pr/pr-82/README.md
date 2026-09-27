@@ -5,7 +5,7 @@
 - **Autor / Zona:** `asako669` (P2)
 - **Rama:** `feat/T-204-realtime-tanstack` → `develop`
 - **Ubicación vigente de la revisión:** esta misma rama del PR, según la instrucción de revisión vigente de Lautaro073.
-- **Estado actual:** ❌ **CON BLOQUEANTES** (Ronda 13: 1 bloqueante, 0 decisiones pendientes)
+- **Estado actual:** ❌ **CON BLOQUEANTES** (Ronda 14: 2 bloqueantes, 0 decisiones pendientes)
 
 ## Decisiones de Lautaro073
 
@@ -37,3 +37,4 @@ Rondas 4–12 se escribieron inicialmente en `docs/revisiones` bajo el criterio 
 | [Ronda 11](revisiones/ronda-11.md) | 2026-09-27 | `828671b` | ❌ | 1 | 1 |
 | [Ronda 12](revisiones/ronda-12.md) | 2026-09-27 | `cb7eab9` | ❌ | 1 | 0 |
 | [Ronda 13](revisiones/ronda-13.md) | 2026-09-27 | `9b6ea30` | ❌ | 1 | 0 |
+| [Ronda 14](revisiones/ronda-14.md) | 2026-09-27 | `c6b6d81` | ❌ | 2 | 0 |
