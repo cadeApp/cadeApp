@@ -210,7 +210,7 @@ begin
   if p_decision = 'preventive_suspension' then
     select * into v_offer
     from public.offers
-    where request_id = v_incident.request_id and status <> 'accepted'
+    where request_id = v_incident.request_id and status = 'accepted'
     for update;
     if not found then
       raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
