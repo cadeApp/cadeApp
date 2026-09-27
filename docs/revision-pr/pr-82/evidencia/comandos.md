@@ -574,3 +574,40 @@ import { createClient } from '@/lib/supabase/browser';
 CourierFeed -> useAvailableRequests -> useRealtimeInvalidation
 courier/offers/page.tsx -> barrel '@/features/offers', que exporta CourierFeed
 ```
+---
+
+# Ronda 9 — SHA 754161b
+
+## Decisión D05
+`1-A`: mantener First Load JS <=180 kB. No se autoriza excepción de 205 kB.
+
+## Bundle
+```text
+PR #106 baseline:
+/courier/feed   179 kB
+/courier/offers 179 kB
+
+R8 a340745:
+/courier/feed   273 kB
+/courier/offers 273 kB
+
+R9 754161b:
+/courier/feed   205 kB
+/courier/offers 205 kB
+```
+
+## CI exact-head run 36299955270
+```text
+typecheck SUCCESS
+lint SUCCESS
+db-tests SUCCESS
+audit SUCCESS
+build SUCCESS
+bundle-budget SUCCESS (advisory)
+unit FAILURE
+
+Test Files 4 failed | 71 passed (75)
+Tests      7 failed | 830 passed (837)
+```
+
+Los 7 rojos son consumidores de useRealtimeInvalidation que no esperan el setup async introducido por el lazy import.
