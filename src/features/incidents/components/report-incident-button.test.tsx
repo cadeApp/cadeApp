@@ -97,6 +97,20 @@ describe('PR113-H05: ReportIncidentButton aplica D05-A según actor, estado y en
   );
 });
 
+describe('ReportIncidentButton evalúa la ventana con el instante del servidor', () => {
+  it('usa `now` en lugar del reloj local para que SSR e hidratación coincidan', () => {
+    const serverNow = NOW.getTime();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(serverNow + 48 * HOUR));
+    try {
+      renderButton({ tripStatus: 'delivered', deliveredAt: hoursAgo(23), now: serverNow });
+      expect(reportTrigger()).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('T-124: formulario de ReportIncidentButton (C06/R07)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -123,6 +137,16 @@ describe('T-124: formulario de ReportIncidentButton (C06/R07)', () => {
       'Problema de seguridad',
       'Otro',
     ]);
+  });
+
+  it('al elegir «Problema de seguridad» avisa que no es atención inmediata y remite al 911', async () => {
+    renderButton();
+    const dialog = await openForm();
+    expect(within(dialog).queryByText(/911/)).toBeNull();
+
+    chooseKind(dialog, /problema de seguridad/i);
+
+    expect(within(dialog).getByText(/llam[aá] al 911/i).textContent).toMatch(/no es atenci[oó]n inmediata/i);
   });
 
   it('envía tipo y relato con el payload exacto, cierra el Dialog y deja la confirmación en pantalla', async () => {

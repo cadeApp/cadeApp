@@ -8,6 +8,7 @@ import IncidentsLoading from '../loading';
 import IncidentsError from '../error';
 import IncidentDetailLoading from '../[id]/loading';
 import IncidentDetailError from '../[id]/error';
+import IncidentNotFound from '../[id]/not-found';
 
 const routeDir = path.join(process.cwd(), 'src', 'app', '(admin)', 'admin', 'incidents');
 
@@ -53,6 +54,16 @@ describe('PR113-H08: loading.tsx de /admin/incidents/[id] imita el detalle con S
       expect(skeletonsIn(container, zone).length, zone).toBeGreaterThanOrEqual(1);
     }
     expect(container.querySelector('.animate-spin')).toBeNull();
+  });
+});
+
+describe('A05: not-found.tsx de /admin/incidents/[id]', () => {
+  it('explica que el incidente no existe y ofrece volver a la bandeja', () => {
+    render(<IncidentNotFound />);
+    expect(screen.getByRole('heading', { name: /no encontramos el incidente/i })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /volver a incidentes/i }).getAttribute('href')).toBe(
+      '/admin/incidents'
+    );
   });
 });
 

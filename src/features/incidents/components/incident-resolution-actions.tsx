@@ -112,7 +112,7 @@ function ResolutionDialog({
       <DialogTrigger className={cn(buttonVariants({ variant: TRIGGER_VARIANT[decision] }), 'w-full')}>
         {COPY.actions[decision]}
       </DialogTrigger>
-      <DialogContent preventCloseOnEscape={isSubmitting}>
+      <DialogContent preventCloseOnEscape={isSubmitting} className="max-h-full overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{COPY.titles[decision]}</DialogTitle>
           <DialogDescription>{COPY.descriptions[decision]}</DialogDescription>

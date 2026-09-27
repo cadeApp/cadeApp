@@ -2,6 +2,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import type { IncidentsCursor } from '@/domain';
 import { formatDate } from '@/lib/format';
+import { Badge } from '@/ui/badge';
 import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { EmptyState } from '@/ui/empty-state';
@@ -66,7 +67,11 @@ export function IncidentsInbox({ result, tab, currentCursor }: IncidentsInboxPro
                 <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-base font-semibold text-foreground">{kind}</span>
+                      {item.kind === 'safety' ? (
+                        <Badge variant="destructive">{kind}</Badge>
+                      ) : (
+                        <span className="text-base font-semibold text-foreground">{kind}</span>
+                      )}
                       <IncidentStatusBadge status={item.status} />
                     </div>
                     <p className="text-sm text-muted-foreground">{COPY.reportedBy(role, item.reporterName)}</p>

@@ -33,6 +33,10 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
   }
 
   const trip = await getTripDetails(id);
+
+  // Mismo instante para el render del servidor y la hidratación del botón de reporte (ventana de 24 h).
+
+  const renderedAt = Date.now();
   if (!trip) {
     notFound();
   }
@@ -49,6 +53,7 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
           actorRole={profile.role}
           tripStatus={trip.status}
           deliveredAt={trip.deliveredAt}
+          now={renderedAt}
         />
       </div>
     );
@@ -66,6 +71,7 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
           actorRole={profile.role}
           tripStatus={trip.status}
           deliveredAt={trip.deliveredAt}
+          now={renderedAt}
         />
       </div>
     );

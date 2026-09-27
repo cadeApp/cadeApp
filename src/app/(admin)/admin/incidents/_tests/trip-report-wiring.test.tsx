@@ -118,6 +118,7 @@ describe('PR113-H05: trips/[id]/page.tsx cablea ReportIncidentButton con datos r
           actorRole: 'merchant',
           tripStatus: status,
           deliveredAt,
+          now: expect.any(Number),
         },
       ]);
     }
@@ -142,6 +143,7 @@ describe('PR113-H05: trips/[id]/page.tsx cablea ReportIncidentButton con datos r
           actorRole: 'courier',
           tripStatus: status,
           deliveredAt,
+          now: expect.any(Number),
         },
       ]);
     }

@@ -34,6 +34,11 @@ export interface ReportIncidentButtonProps {
   readonly actorRole: IncidentReporterRole;
   readonly tripStatus: string;
   readonly deliveredAt: string | null;
+  /**
+   * Instante (ms) con el que se evalúa la ventana de 24 h. La page lo fija en el servidor para que el render SSR y la
+   * hidratación decidan lo mismo; sin él se usa el reloj local.
+   */
+  readonly now?: number;
 }
 
 function descriptionErrorMessage(type: string | undefined): string {
@@ -46,7 +51,13 @@ function descriptionErrorMessage(type: string | undefined): string {
  * C06/R07: botón «Reportar un problema» con su formulario en un Dialog. Muestra el botón según D05-A; Postgres vuelve
  * a validar actor, ventana y relato en `report_incident`.
  */
-export function ReportIncidentButton({ requestId, actorRole, tripStatus, deliveredAt }: ReportIncidentButtonProps) {
+export function ReportIncidentButton({
+  requestId,
+  actorRole,
+  tripStatus,
+  deliveredAt,
+  now,
+}: ReportIncidentButtonProps) {
   const [open, setOpen] = React.useState(false);
   const [serverError, setServerError] = React.useState<string | null>(null);
   const [submitted, setSubmitted] = React.useState(false);
@@ -61,7 +72,7 @@ export function ReportIncidentButton({ requestId, actorRole, tripStatus, deliver
   const selectedKind = form.watch('kind');
   const { errors, isSubmitting } = form.formState;
 
-  if (!canReportIncident({ actorRole, tripStatus, deliveredAt }, Date.now())) {
+  if (!canReportIncident({ actorRole, tripStatus, deliveredAt }, now ?? Date.now())) {
     return null;
   }
 
@@ -79,7 +90,9 @@ export function ReportIncidentButton({ requestId, actorRole, tripStatus, deliver
   }
 
   function handleKindKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, current: IncidentKind) {
-    const step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0;
+    const forward = event.key === 'ArrowDown' || event.key === 'ArrowRight';
+    const backward = event.key === 'ArrowUp' || event.key === 'ArrowLeft';
+    const step = forward ? 1 : backward ? -1 : 0;
     if (step === 0) return;
     event.preventDefault();
     const index = INCIDENT_KINDS.indexOf(current);
@@ -113,6 +126,7 @@ export function ReportIncidentButton({ requestId, actorRole, tripStatus, deliver
   const descriptionId = `${ids}-description`;
   const descriptionHelpId = `${ids}-description-help`;
   const descriptionErrorId = `${ids}-description-error`;
+  const safetyNoticeId = `${ids}-safety-notice`;
   const focusableKind = selectedKind ?? INCIDENT_KINDS[0];
 
   return (
@@ -122,7 +136,7 @@ export function ReportIncidentButton({ requestId, actorRole, tripStatus, deliver
           <AlertTriangle className="h-5 w-5" aria-hidden="true" />
           {COPY.trigger}
         </DialogTrigger>
-        <DialogContent preventCloseOnEscape={isSubmitting}>
+        <DialogContent preventCloseOnEscape={isSubmitting} className="max-h-full overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{COPY.title}</DialogTitle>
             <DialogDescription>{COPY.description}</DialogDescription>
@@ -136,7 +150,11 @@ export function ReportIncidentButton({ requestId, actorRole, tripStatus, deliver
               <div
                 role="radiogroup"
                 aria-labelledby={kindLabelId}
-                aria-describedby={errors.kind ? kindErrorId : undefined}
+                aria-describedby={
+                  [errors.kind ? kindErrorId : null, selectedKind === 'safety' ? safetyNoticeId : null]
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
                 aria-invalid={errors.kind ? true : undefined}
                 className="grid grid-cols-1 gap-2 sm:grid-cols-2"
               >
@@ -168,6 +186,16 @@ export function ReportIncidentButton({ requestId, actorRole, tripStatus, deliver
                   {COPY.errors.kind}
                 </p>
               ) : null}
+              <div aria-live="polite">
+                {selectedKind === 'safety' ? (
+                  <p
+                    id={safetyNoticeId}
+                    className="rounded-lg border border-destructive p-3 text-sm font-semibold text-foreground"
+                  >
+                    {COPY.safetyNotice}
+                  </p>
+                ) : null}
+              </div>
             </fieldset>
 
             <div className="space-y-2">

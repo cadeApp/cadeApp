@@ -25,8 +25,10 @@ export const INCIDENTS_COPY = {
     trigger: 'Reportar un problema',
     title: 'Reportar un problema',
     description:
-      'Contanos qué pasó en este envío. Lo revisa la administración de cadeApp y te contacta si hace falta.',
+      'Contanos qué pasó en este envío. El envío sigue su curso; la administración de cadeApp lo revisa y te contacta si hace falta.',
     kindLabel: '¿Qué tipo de problema fue?',
+    safetyNotice:
+      'Si estás en peligro ahora, llamá al 911. Este reporte lo revisa la administración y no es atención inmediata.',
     descriptionLabel: '¿Qué pasó?',
     descriptionHelp: 'No incluyas teléfonos, correos ni datos de contacto. Podés mencionar montos.',
     cancel: 'Cancelar',
@@ -136,6 +138,11 @@ export const INCIDENTS_COPY = {
       title: 'No pudimos cargar los incidentes',
       description: 'Ocurrió un inconveniente al consultar la bandeja. Probá de nuevo en unos segundos.',
       retry: 'Reintentar',
+    },
+    notFound: {
+      title: 'No encontramos el incidente',
+      description: 'Puede que el enlace esté mal o que el incidente no exista.',
+      back: 'Volver a incidentes',
     },
     detail: {
       title: 'No pudimos cargar el incidente',

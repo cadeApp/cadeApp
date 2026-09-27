@@ -5,7 +5,7 @@ import { INCIDENTS_COPY } from '../copy';
 
 const STATUS_VARIANT: Record<IncidentStatus, BadgeProps['variant']> = {
   open: 'in_transit',
-  reviewing: 'secondary',
+  reviewing: 'with_offers',
   resolved: 'delivered',
   dismissed: 'expired',
 };
