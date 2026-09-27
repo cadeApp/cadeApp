@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { ReportIncidentButton, type ReportIncidentButtonProps } from './report-incident-button';
 import { reportIncidentAction } from '../actions';
@@ -14,6 +14,12 @@ vi.mock('next/navigation', () => ({
 vi.mock('../actions', () => ({
   reportIncidentAction: vi.fn(),
 }));
+
+// El formulario es un chunk diferido: se transforma una vez antes de las pruebas para que abrir el Dialog no dependa
+// del tiempo de compilación en frío de Vitest.
+beforeAll(async () => {
+  await import('./report-incident-form');
+});
 
 const REQUEST_ID = 'd0000000-0000-4000-8000-000000000001';
 const NOW = new Date('2026-09-27T15:00:00.000Z');
@@ -43,7 +49,10 @@ async function openForm(): Promise<HTMLElement> {
   const trigger = reportTrigger();
   if (!trigger) throw new Error('El botón «Reportar un problema» no está visible');
   fireEvent.click(trigger);
-  return screen.findByRole('dialog');
+  const dialog = await screen.findByRole('dialog');
+  // El formulario se carga de forma diferida al abrir el Dialog.
+  await within(dialog).findByRole('radiogroup');
+  return dialog;
 }
 
 function chooseKind(dialog: HTMLElement, name: RegExp) {

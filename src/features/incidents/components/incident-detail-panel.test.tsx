@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import type { IncidentDecision } from '@/domain';
 import { IncidentDetailPanel } from './incident-detail-panel';
@@ -16,6 +16,12 @@ vi.mock('next/navigation', () => ({
 vi.mock('../actions', () => ({
   resolveIncidentAction: vi.fn(),
 }));
+
+// El formulario del motivo es un chunk diferido: se transforma una vez antes de las pruebas para que abrir el Dialog
+// no dependa del tiempo de compilación en frío de Vitest.
+beforeAll(async () => {
+  await import('./incident-resolution-form');
+});
 
 const INCIDENT_ID = 'e0000000-0000-4000-8000-000000000002';
 const COURIER_ID = 'c0000000-0000-4000-8000-000000000003';
@@ -77,6 +83,8 @@ async function openDecision(button: RegExp): Promise<{ trigger: HTMLElement; dia
   expect(document.activeElement).toBe(trigger);
   fireEvent.click(trigger);
   const dialog = await screen.findByRole('dialog');
+  // El formulario del motivo se carga de forma diferida al abrir el Dialog.
+  await within(dialog).findByLabelText(/motivo/i);
   return { trigger, dialog };
 }
 

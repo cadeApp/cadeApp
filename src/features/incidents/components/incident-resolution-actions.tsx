@@ -1,29 +1,20 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
 import type { IncidentDecision } from '@/domain';
-import { getDomainErrorMessage } from '@/lib/error-messages';
-import { Button, buttonVariants, type ButtonProps } from '@/ui/button';
+import { buttonVariants, type ButtonProps } from '@/ui/button';
 import { cn } from '@/ui/cn';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/ui/dialog';
-import { notify } from '@/ui/notify';
-import { Textarea } from '@/ui/textarea';
-import { resolveIncidentAction } from '../actions';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/ui/dialog';
+import { Skeleton } from '@/ui/skeleton';
 import { INCIDENTS_COPY } from '../copy';
-import { resolveIncidentFormSchema, type ResolveIncidentFormInput } from '../schemas';
 
 const COPY = INCIDENTS_COPY.resolve;
+
+// El formulario del motivo se descarga al abrir el Dialog, igual que el de reporte: así el barrel de la feature no suma
+// react-hook-form ni Zod a la carga inicial de otras rutas.
+const IncidentResolutionForm = React.lazy(() =>
+  import('./incident-resolution-form').then((module) => ({ default: module.IncidentResolutionForm }))
+);
 
 const TRIGGER_VARIANT: Record<IncidentDecision, NonNullable<ButtonProps['variant']>> = {
   no_action: 'default',
@@ -55,6 +46,17 @@ export function IncidentResolutionActions({ incidentId, canSuspend }: IncidentRe
   );
 }
 
+function ResolutionFormSkeleton() {
+  return (
+    <div role="status" aria-busy="true" className="mt-4 space-y-3">
+      <span className="sr-only">{COPY.loading}</span>
+      <Skeleton className="h-5 w-24" />
+      <Skeleton className="h-20 w-full" />
+      <Skeleton className="h-12 w-full" />
+    </div>
+  );
+}
+
 function ResolutionDialog({
   incidentId,
   decision,
@@ -62,107 +64,33 @@ function ResolutionDialog({
   readonly incidentId: string;
   readonly decision: IncidentDecision;
 }) {
-  const router = useRouter();
   const [open, setOpen] = React.useState(false);
-  const [serverError, setServerError] = React.useState<string | null>(null);
-  const ids = React.useId();
-
-  const form = useForm<ResolveIncidentFormInput>({
-    resolver: zodResolver(resolveIncidentFormSchema),
-    defaultValues: { reason: '' },
-  });
-  const { errors, isSubmitting } = form.formState;
+  const [pending, setPending] = React.useState(false);
 
   function handleOpenChange(next: boolean) {
-    if (!next && isSubmitting) return;
+    if (!next && pending) return;
     setOpen(next);
-    if (!next) {
-      form.reset({ reason: '' });
-      setServerError(null);
-    }
   }
-
-  const onSubmit = form.handleSubmit(async ({ reason }) => {
-    setServerError(null);
-    try {
-      const result = await resolveIncidentAction({ incidentId, decision, reason });
-      if (!result.ok) {
-        const message = getDomainErrorMessage(result.code);
-        setServerError(message);
-        notify.error(message);
-        return;
-      }
-      notify.success(COPY.success[decision]);
-      setOpen(false);
-      form.reset({ reason: '' });
-      router.refresh();
-    } catch {
-      setServerError(COPY.connection);
-      notify.error(COPY.connection);
-    }
-  });
-
-  const reasonId = `${ids}-reason`;
-  const reasonHelpId = `${ids}-reason-help`;
-  const reasonErrorId = `${ids}-reason-error`;
-  const isSuspension = decision === 'preventive_suspension';
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger className={cn(buttonVariants({ variant: TRIGGER_VARIANT[decision] }), 'w-full')}>
         {COPY.actions[decision]}
       </DialogTrigger>
-      <DialogContent preventCloseOnEscape={isSubmitting} className="max-h-full overflow-y-auto">
+      <DialogContent preventCloseOnEscape={pending} className="max-h-full overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{COPY.titles[decision]}</DialogTitle>
           <DialogDescription>{COPY.descriptions[decision]}</DialogDescription>
         </DialogHeader>
-
-        <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>
-          <div className="space-y-2">
-            <label htmlFor={reasonId} className="block text-sm font-semibold text-foreground">
-              {COPY.reasonLabel}
-            </label>
-            <p id={reasonHelpId} className="text-sm text-muted-foreground">
-              {COPY.reasonHelp}
-            </p>
-            <Textarea
-              id={reasonId}
-              rows={3}
-              maxLength={500}
-              placeholder={COPY.reasonPlaceholder}
-              disabled={isSubmitting}
-              aria-invalid={errors.reason ? true : undefined}
-              aria-describedby={errors.reason ? `${reasonHelpId} ${reasonErrorId}` : reasonHelpId}
-              {...form.register('reason')}
-            />
-            {errors.reason ? (
-              <p id={reasonErrorId} role="alert" className="text-sm font-medium text-destructive">
-                {errors.reason.type === 'too_big' ? COPY.reasonTooLong : COPY.reasonRequired}
-              </p>
-            ) : null}
-          </div>
-
-          {serverError ? (
-            <p role="alert" className="text-sm font-medium text-destructive">
-              {serverError}
-            </p>
-          ) : null}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => handleOpenChange(false)}>
-              {COPY.cancel}
-            </Button>
-            <Button
-              type="submit"
-              variant={isSuspension ? 'destructive' : 'default'}
-              isPending={isSubmitting}
-              pendingText={COPY.processing}
-            >
-              {COPY.confirm[decision]}
-            </Button>
-          </DialogFooter>
-        </form>
+        <React.Suspense fallback={<ResolutionFormSkeleton />}>
+          <IncidentResolutionForm
+            incidentId={incidentId}
+            decision={decision}
+            onPendingChange={setPending}
+            onCancel={() => handleOpenChange(false)}
+            onResolved={() => setOpen(false)}
+          />
+        </React.Suspense>
       </DialogContent>
     </Dialog>
   );

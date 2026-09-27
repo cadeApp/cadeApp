@@ -34,6 +34,7 @@ export const INCIDENTS_COPY = {
     cancel: 'Cancelar',
     submit: 'Enviar reporte',
     submitting: 'Enviando reporte...',
+    loading: 'Cargando el formulario',
     success: 'Recibimos tu reporte. La administración lo va a revisar.',
     errors: {
       kind: 'Elegí qué tipo de problema fue.',
@@ -126,6 +127,7 @@ export const INCIDENTS_COPY = {
     reasonTooLong: 'El motivo puede tener hasta 500 caracteres.',
     cancel: 'Cancelar',
     processing: 'Procesando...',
+    loading: 'Cargando el formulario',
     success: {
       no_action: 'Incidente cerrado sin sanción.',
       warning: 'Advertencia registrada.',
