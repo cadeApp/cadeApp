@@ -5,6 +5,8 @@ import { RPC_CONTRACTS } from '@/domain/rpc-contracts';
 import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
 import {
   adminDecideCourierRpc,
+  adminListIncidentsRpc,
+  adminResolveIncidentRpc,
   adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
   adminUpdateSettingRpc,
@@ -400,5 +402,204 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
     });
     expect(res5.ok).toBe(false);
     if (!res5.ok) expect(res5.code).toBe('REASON_REQUIRED');
+  });
+
+  describe('CC-012 · admin_resolve_incident y admin_list_incidents', () => {
+    const INCIDENT_ID = 'e0000000-0000-4000-8000-000000000a01';
+    const COURIER_A = '00000000-0000-4000-8000-0000000000c5';
+
+    it('9. adminResolveIncidentRpc valida con Zod, envía solo incidentId/decision/reason y parsea la salida', async () => {
+      const calls: Array<{ fn: string; args: Record<string, unknown> | undefined }> = [];
+      const caller: SupabaseRpcCaller = {
+        async rpc(fn, args) {
+          calls.push({ fn, args });
+          return {
+            data: {
+              incidentId: INCIDENT_ID,
+              status: 'resolved',
+              decision: 'preventive_suspension',
+              courierId: COURIER_A,
+              withdrawnOffersCount: 2,
+            },
+            error: null,
+          };
+        },
+      };
+
+      for (const bad of [
+        { incidentId: 'x', decision: 'warning', reason: 'Motivo' },
+        { incidentId: INCIDENT_ID, decision: 'ban_forever', reason: 'Motivo' },
+        { incidentId: INCIDENT_ID, decision: 'warning', reason: '   ' },
+        { incidentId: INCIDENT_ID, decision: 'warning', reason: 'x'.repeat(501) },
+      ]) {
+        expect(await adminResolveIncidentRpc(caller, bad)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      }
+      expect(calls).toHaveLength(0);
+
+      const res = await adminResolveIncidentRpc(caller, {
+        incidentId: INCIDENT_ID,
+        decision: 'preventive_suspension',
+        reason: '  Reclamo grave  ',
+        courierId: '00000000-0000-4000-8000-0000000000c6',
+      });
+      expect(res).toEqual({
+        ok: true,
+        data: {
+          incidentId: INCIDENT_ID,
+          status: 'resolved',
+          decision: 'preventive_suspension',
+          courierId: COURIER_A,
+          withdrawnOffersCount: 2,
+        },
+      });
+      // D06-A: aunque el caller intente mandar un courierId, nunca viaja a la RPC.
+      expect(calls).toEqual([
+        {
+          fn: 'admin_resolve_incident',
+          args: { p_incident_id: INCIDENT_ID, p_decision: 'preventive_suspension', p_reason: 'Reclamo grave' },
+        },
+      ]);
+    });
+
+    it('10. adminResolveIncidentRpc mapea errores de la RPC y rechaza salidas mal formadas', async () => {
+      const failing: SupabaseRpcCaller = {
+        async rpc() {
+          return { data: null, error: { message: 'INVALID_STATE_TRANSITION' } };
+        },
+      };
+      expect(
+        await adminResolveIncidentRpc(failing, { incidentId: INCIDENT_ID, decision: 'warning', reason: 'Motivo' })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      const malformed: SupabaseRpcCaller = {
+        async rpc() {
+          return { data: { incidentId: INCIDENT_ID, status: 'open' }, error: null };
+        },
+      };
+      expect(
+        await adminResolveIncidentRpc(malformed, { incidentId: INCIDENT_ID, decision: 'warning', reason: 'Motivo' })
+      ).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    });
+
+    it('11. adminListIncidentsRpc envía el cursor compuesto y funciona contra el fake', async () => {
+      const calls: Array<Record<string, unknown> | undefined> = [];
+      const fake = createFakeRpcClient({
+        settings: DEFAULT_SETTINGS,
+        initialActor: { userId: ADMIN_ID, role: 'admin', aal: 'aal2' },
+        initialIncidents: [
+          {
+            incidentId: INCIDENT_ID,
+            requestId: '00000000-0000-4000-8000-0000000000e3',
+            reporterId: MERCHANT_ID,
+            reporterRole: 'merchant',
+            reporterName: 'Comercio',
+            kind: 'other',
+            description: 'Demora',
+            createdAt: '2026-09-27T12:00:00.000Z',
+          },
+        ],
+      });
+      const caller: SupabaseRpcCaller = {
+        async rpc(fn, args) {
+          calls.push(args);
+          if (fn !== 'admin_list_incidents') return { data: null, error: { message: 'UNEXPECTED' } };
+          const res = await fake.admin_list_incidents({
+            statuses: args?.p_statuses as ['open'],
+            cursor:
+              args?.p_cursor_created_at && args?.p_cursor_id
+                ? { createdAt: args.p_cursor_created_at as string, id: args.p_cursor_id as string }
+                : null,
+            limit: (args?.p_limit as number | null) ?? undefined,
+          });
+          return res.ok ? { data: res.data, error: null } : { data: null, error: { message: res.code } };
+        },
+      };
+
+      const first = await adminListIncidentsRpc(caller, { statuses: ['open', 'reviewing'] });
+      expect(first.ok && first.data.items.map((item) => item.id)).toEqual([INCIDENT_ID]);
+      expect(calls[0]).toEqual({
+        p_statuses: ['open', 'reviewing'],
+        p_cursor_created_at: null,
+        p_cursor_id: null,
+        p_limit: null,
+      });
+
+      await adminListIncidentsRpc(caller, {
+        statuses: ['open'],
+        cursor: { createdAt: '2026-09-27T12:00:00.123456Z', id: INCIDENT_ID },
+        limit: 10,
+      });
+      expect(calls[1]).toEqual({
+        p_statuses: ['open'],
+        p_cursor_created_at: '2026-09-27T12:00:00.123456Z',
+        p_cursor_id: INCIDENT_ID,
+        p_limit: 10,
+      });
+
+      expect(await adminListIncidentsRpc(caller, { statuses: ['closed'] })).toEqual({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      });
+      expect(calls).toHaveLength(2);
+    });
+
+    it('12. los códigos que levanta la SQL de CC-012 coinciden con RPC_CONTRACTS en los dos sentidos', () => {
+      const cc012 = fs.readFileSync(
+        path.resolve(process.cwd(), 'supabase/migrations/20260927120000_cc012_incidents_contract.sql'),
+        'utf8',
+      );
+      const preamble = fs.readFileSync(
+        path.resolve(process.cwd(), 'supabase/migrations/20260924013700_rpc_admin_v1.sql'),
+        'utf8',
+      );
+      const bodyOf = (text: string, fn: string): string => {
+        const body = text.split(/create or replace function /i).find((b) => b.startsWith(fn + '('));
+        if (!body) throw new Error(`sin objetivo: no encontré ${fn}`);
+        return body;
+      };
+      const codesOf = (body: string) => new Set([...body.matchAll(/message = '([A-Z0-9_]+)'/g)].map((m) => m[1] ?? ''));
+      const raised = (fn: string, text: string = cc012): Set<string> => {
+        const body = bodyOf(text, fn);
+        const codes = codesOf(body);
+        if (/perform app_private\.assert_admin_aal2\(\)/.test(body)) {
+          for (const c of codesOf(bodyOf(preamble, 'app_private.assert_admin_aal2'))) codes.add(c);
+        }
+        return codes;
+      };
+      // Códigos que no levanta la función en sí: Zod en el wrapper o la infraestructura (settings).
+      const extra = {
+        admin_resolve_incident: [],
+        admin_list_incidents: [],
+        report_incident: ['INTERNAL_ERROR'],
+      } as const;
+      const check = (name: keyof typeof extra, text: string = cc012) => {
+        const got = raised(`public.${name}`, text);
+        for (const c of extra[name]) got.add(c);
+        const declared = new Set<string>(RPC_CONTRACTS[name].errorCodes);
+        return {
+          missing: [...declared].filter((c) => !got.has(c)),
+          undeclared: [...got].filter((c) => !declared.has(c)),
+        };
+      };
+
+      for (const name of ['admin_resolve_incident', 'admin_list_incidents', 'report_incident'] as const) {
+        expect({ name, ...check(name) }).toEqual({ name, missing: [], undeclared: [] });
+      }
+
+      // D06-A: la firma pública no recibe courierId.
+      expect(bodyOf(cc012, 'public.admin_resolve_incident')).toMatch(
+        /^public\.admin_resolve_incident\(\s*p_incident_id uuid,\s*p_decision text,\s*p_reason text\s*\)/,
+      );
+
+      // El control detecta una regresión en una copia en memoria.
+      const withoutPreamble = cc012.replace(
+        /(create or replace function public\.admin_resolve_incident[\s\S]*?)perform app_private\.assert_admin_aal2\(\);/i,
+        '$1',
+      );
+      expect(withoutPreamble).not.toBe(cc012);
+      expect(check('admin_resolve_incident', withoutPreamble).missing).toEqual(
+        expect.arrayContaining(['UNAUTHENTICATED', 'UNAUTHORIZED_ACTOR', 'AAL2_REQUIRED']),
+      );
+    });
   });
 });

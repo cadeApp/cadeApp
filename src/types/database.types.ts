@@ -727,6 +727,19 @@ export type Database = {
         Args: { p_courier_id: string; p_decision: string; p_reason?: string }
         Returns: Json
       }
+      admin_list_incidents: {
+        Args: {
+          p_cursor_created_at?: string
+          p_cursor_id?: string
+          p_limit?: number
+          p_statuses: string[]
+        }
+        Returns: Json
+      }
+      admin_resolve_incident: {
+        Args: { p_decision: string; p_incident_id: string; p_reason: string }
+        Returns: Json
+      }
       admin_set_subscription: {
         Args: {
           p_merchant_id: string

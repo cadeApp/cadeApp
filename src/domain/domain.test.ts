@@ -84,32 +84,46 @@ describe('CC-002 — Contratos del ciclo de solicitudes', () => {
   const offerId = '50000000-0000-4000-8000-000000000001';
   const now = new Date('2026-09-23T15:00:00.000Z');
 
-  it.each(['merchant', 'admin'] as const)(
-    'report_incident permite al %s sin exigir un registro de repartidor',
-    async (role) => {
-      const fake = createFakeRpcClient({
-        settings: BASE_SETTINGS,
-        now: () => now,
-        initialActor: { userId: role === 'merchant' ? MERCHANT_1 : ADMIN_1, role },
-        initialRequests: [{ requestId: REQ_1, merchantId: MERCHANT_1, status: 'matched' }],
-      });
-      expect(
-        await fake.report_incident({
-          requestId: REQ_1,
-          kind: 'demora',
-          description: 'Demora en el retiro',
-        })
-      ).toEqual({
-        ok: true,
-        data: {
-          incidentId: expect.any(String),
-          requestId: REQ_1,
-          status: 'open',
-          createdAt: now.toISOString(),
-        },
-      });
-    }
-  );
+  it('report_incident permite al merchant dueño sin exigir un registro de repartidor', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => now,
+      initialActor: { userId: MERCHANT_1, role: 'merchant' },
+      initialRequests: [{ requestId: REQ_1, merchantId: MERCHANT_1, status: 'matched' }],
+    });
+    expect(
+      await fake.report_incident({
+        requestId: REQ_1,
+        kind: 'other',
+        description: 'Demora en el retiro',
+      })
+    ).toEqual({
+      ok: true,
+      data: {
+        incidentId: expect.any(String),
+        requestId: REQ_1,
+        status: 'open',
+        createdAt: now.toISOString(),
+      },
+    });
+  });
+
+  // CC-012 / D05-A: el admin nunca reporta incidentes (antes estaba permitido).
+  it('report_incident rechaza al admin con UNAUTHORIZED_ACTOR aunque tenga aal2', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => now,
+      initialActor: { userId: ADMIN_1, role: 'admin', aal: 'aal2' },
+      initialRequests: [{ requestId: REQ_1, merchantId: MERCHANT_1, status: 'matched' }],
+    });
+    expect(
+      await fake.report_incident({
+        requestId: REQ_1,
+        kind: 'other',
+        description: 'Demora en el retiro',
+      })
+    ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+  });
 
   for (const rpc of courierRpcs) {
     it.each(['COURIER_NOT_APPROVED', 'COURIER_SUSPENDED'] as const)(`${rpc} declara %s`, (code) =>
@@ -153,7 +167,7 @@ describe('CC-002 — Contratos del ciclo de solicitudes', () => {
               ? await fake.courier_cancel_match({ requestId: REQ_1, reason: 'Pinchadura' })
               : await fake.report_incident({
                   requestId: REQ_1,
-                  kind: 'demora',
+                  kind: 'other',
                   description: 'Demora en el retiro',
                 });
 
@@ -734,7 +748,7 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         () =>
           fake.report_incident({
             requestId: REQ_1,
-            kind: 'delay',
+            kind: 'no_show',
             description: 'Demora en el retiro',
           }),
         () => fake.set_availability({ available: true }),
@@ -957,9 +971,18 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       expect(fake.getRequest(REQ_1)?.status).toBe('delivered');
 
       // Incident report & route distance calculation (with coords & zone-only)
+      // CC-012 / D05-A: el repartidor ya no reporta sobre delivered; el comercio dueño sí (≤ 24 h).
+      expect(
+        await fake.report_incident({
+          requestId: REQ_1,
+          kind: 'damaged_goods',
+          description: 'Paquete entregado con observación',
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
       const incident = await fake.report_incident({
         requestId: REQ_1,
-        kind: 'package_issue',
+        kind: 'damaged_goods',
         description: 'Paquete entregado con observación',
       });
       expect(incident.ok).toBe(true);
@@ -1187,7 +1210,7 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       expect(
         await fake.report_incident({
           requestId: REQ_MISSING,
-          kind: 'delay',
+          kind: 'no_show',
           description: 'No existe',
         })
       ).toEqual({ ok: false, code: 'NOT_FOUND' });
@@ -1374,7 +1397,7 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
       expect(
         await fake.report_incident({
           requestId: REQ_2,
-          kind: 'delay',
+          kind: 'no_show',
           description: 'No soy participante',
         })
       ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
@@ -1547,7 +1570,18 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
               requestId: REQ_2,
               merchantId: MERCHANT_1,
               status: 'in_transit',
+              // CC-012 / PR115-H03: como en Postgres, un viaje en curso tiene su oferta accepted real.
+              acceptedOfferId: '50000000-0000-4000-8000-000000000074',
               assignedCourierId: COURIER_1,
+            },
+          ],
+          initialOffers: [
+            {
+              offerId: '50000000-0000-4000-8000-000000000074',
+              requestId: REQ_2,
+              courierId: COURIER_1,
+              amountArs: BASE_SETTINGS.minOfferArs,
+              status: 'accepted',
             },
           ],
         });
@@ -1566,12 +1600,22 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
           data: expect.objectContaining({ status: 'delivered' }),
         });
 
-        // Within 24h window -> ok
+        // CC-012 / D05-A: el repartidor no reporta sobre delivered; la ventana de 24 h es del comercio.
         currentNow = new Date('2026-09-23T14:00:00.000Z');
         expect(
           await fake.report_incident({
             requestId: REQ_2,
-            kind: 'damage',
+            kind: 'damaged_goods',
+            description: 'Dentro de las 24 horas',
+          })
+        ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+        fake.setActor({ userId: MERCHANT_1, role: 'merchant' });
+
+        // Within 24h window -> ok
+        expect(
+          await fake.report_incident({
+            requestId: REQ_2,
+            kind: 'damaged_goods',
             description: 'Dentro de las 24 horas',
           })
         ).toEqual({
@@ -1584,7 +1628,7 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         expect(
           await fake.report_incident({
             requestId: REQ_2,
-            kind: 'damage',
+            kind: 'damaged_goods',
             description: 'Fuera de las 24 horas',
           })
         ).toEqual({ ok: false, code: 'INCIDENT_WINDOW_EXPIRED' });
@@ -1640,7 +1684,7 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         const now = new Date('2026-09-23T15:00:00.000Z');
         const past = new Date(now.getTime() - 1000).toISOString();
         const future = new Date(now.getTime() + 30 * 60_000).toISOString();
-        const inc = { requestId: REQ_1, kind: 'demora', description: 'Demora de prueba' };
+        const inc = { requestId: REQ_1, kind: 'other' as const, description: 'Demora de prueba' };
 
         type St =
           | 'draft'

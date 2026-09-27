@@ -34,7 +34,9 @@ type AdminRpcName =
   | 'admin_suspend_courier'
   | 'admin_verify_document'
   | 'admin_set_subscription'
-  | 'admin_update_setting';
+  | 'admin_update_setting'
+  | 'admin_resolve_incident'
+  | 'admin_list_incidents';
 
 function isAllowedAdminRpcError<K extends AdminRpcName>(
   rpcName: K,
@@ -274,6 +276,86 @@ export async function adminUpdateSettingRpc(
 
   const parsedOutput =
     RPC_CONTRACTS.admin_update_setting.outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return ok(parsedOutput.data);
+}
+
+/**
+ * CC-012: typed server wrapper for `public.admin_resolve_incident(p_incident_id, p_decision, p_reason)`.
+ * The courier affected by `preventive_suspension` is derived inside Postgres; it is never an input.
+ */
+export async function adminResolveIncidentRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<
+  ActionResult<
+    RpcOutput<'admin_resolve_incident'>,
+    RpcErrorCode<'admin_resolve_incident'> | 'INTERNAL_ERROR'
+  >
+> {
+  const parsedInput =
+    RPC_CONTRACTS.admin_resolve_incident.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { incidentId, decision, reason } = parsedInput.data;
+  const { data, error } = await client.rpc('admin_resolve_incident', {
+    p_incident_id: incidentId,
+    p_decision: decision,
+    p_reason: reason,
+  });
+
+  if (error) {
+    return err(mapAdminRpcError('admin_resolve_incident', error));
+  }
+
+  const parsedOutput =
+    RPC_CONTRACTS.admin_resolve_incident.outputSchema.safeParse(data);
+  if (!parsedOutput.success) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return ok(parsedOutput.data);
+}
+
+/**
+ * CC-012: typed server wrapper for
+ * `public.admin_list_incidents(p_statuses, p_cursor_created_at, p_cursor_id, p_limit)`.
+ * Keyset pagination (created_at DESC, id DESC) lives in Postgres.
+ */
+export async function adminListIncidentsRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<
+  ActionResult<
+    RpcOutput<'admin_list_incidents'>,
+    RpcErrorCode<'admin_list_incidents'> | 'INTERNAL_ERROR'
+  >
+> {
+  const parsedInput =
+    RPC_CONTRACTS.admin_list_incidents.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { statuses, cursor, limit } = parsedInput.data;
+  const { data, error } = await client.rpc('admin_list_incidents', {
+    p_statuses: statuses,
+    p_cursor_created_at: cursor?.createdAt ?? null,
+    p_cursor_id: cursor?.id ?? null,
+    p_limit: limit ?? null,
+  });
+
+  if (error) {
+    return err(mapAdminRpcError('admin_list_incidents', error));
+  }
+
+  const parsedOutput =
+    RPC_CONTRACTS.admin_list_incidents.outputSchema.safeParse(data);
   if (!parsedOutput.success) {
     return err('INTERNAL_ERROR');
   }

@@ -337,7 +337,7 @@ begin
   insert into public.incidents (
     id, request_id, reporter_id, kind, description, updated_at
   ) values (
-    incident_a, req_a, merchant_id, 'delay', 'initial report', old_ts
+    incident_a, req_a, merchant_id, 'other', 'initial report', old_ts
   );
 
   update public.delivery_requests set notes = 'updated' where id = req_a returning updated_at into req_ts;
