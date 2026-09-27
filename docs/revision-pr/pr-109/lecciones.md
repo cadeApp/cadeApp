@@ -23,3 +23,11 @@ Si la UI promete centroide de barrio, la query debe traerlo y el flujo debe usar
 
 ## AG-119 · Un componente compartido no debe duplicar controles del formulario anfitrión
 El mapa debe componerse sin crear una segunda dirección o una segunda acción de geolocalización salvo diseño explícito.
+
+---
+
+## Ronda 2
+
+No se agrega un patrón nuevo. H05 vuelve a confirmar AG-115: un test correcto debe además demostrar que la mutación que rompe el wiring queda roja cuando la ronda lo exige.
+
+H07 vuelve a confirmar AG-97 y la directiva visual: navegador real no significa “un navegador mostrando un harness”. La URL, el estado offline y los artefactos tienen que representar la ruta real de producto.

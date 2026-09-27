@@ -79,3 +79,56 @@ hex arbitrarios 0
 Direct env detectado en src/ui/map.tsx.
 
 CI #455 se consultó puntualmente como evidencia; no se usa su verde como cierre.
+
+---
+
+# Evidencia — PR #109 / T-116 / Ronda 2
+
+head: df73adac155a3b34db60d6a126ac85e53209e8e5
+develop: 47d65c41dc22e1f6b5bebbfb5473c3e89b2d820a
+
+## Shared contract
+Los 6 archivos compartidos CC-011 son idénticos entre PR head y develop actual.
+
+## CI #487
+Actions checkout:
+```text
+HEAD = a9a69b20de7cacbda0118ecf012747d8646a39e2
+Merge df73adac... into 47d65c41...
+```
+
+Jobs todos success.
+Unit: 74 files / 898 tests.
+
+Build:
+```text
+/merchant/onboarding   147 kB
+/merchant/requests/new 163 kB
+/courier/feed          179 kB
+```
+
+## H04/H05/H09
+CI ejecutó:
+- onboarding-form.test.tsx: 8 tests;
+- create-request-form.test.tsx: 8 tests;
+- H04 centroide A/B/pin/null;
+- H05 payload exacto de pin C01/C03;
+- H09 unicidad de dirección/GPS.
+
+No se encontró salida de mutación `onChange={() => {}}` en bitácora, commits ni comentarios.
+
+## H07
+Se abrieron las 12 PNG.
+
+Observación:
+- `c01_offline_*` muestra mapa activo, sin fallback offline;
+- `c03_offline_*` muestra mapa activo, sin fallback offline;
+- `google_failed_*` sí muestra fallback.
+
+`axe-report.json` usa URLs localhost:4567 con query page/state.
+Búsqueda repo `4567` y `page=c01`: sin resultados.
+
+Varios reportes tienen incompleteCount=1, pero los summary afirman “cumple al 100%”.
+
+## Barrido
+0 only/skip/sleeps/any/ts-ignore/hex/direct-env/inline-style/direct-sonner/static-MapPicker.
