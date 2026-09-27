@@ -87,6 +87,11 @@ export const INCIDENTS_COPY = {
     resolutionTitle: 'Resolución de mediación',
     resolutionHelp: 'Elegí cómo cerrar el incidente. Toda decisión exige un motivo y queda en la auditoría.',
     closedTitle: 'Incidente cerrado',
+    decisionLabels: {
+      no_action: 'Decisión: sin sanción',
+      warning: 'Decisión: advertencia',
+      preventive_suspension: 'Decisión: suspensión preventiva',
+    } satisfies Record<IncidentDecision, string>,
     noResolution: 'Sin resolución registrada.',
     loading: 'Cargando incidente',
   },

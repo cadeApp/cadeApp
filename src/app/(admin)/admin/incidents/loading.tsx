@@ -1,4 +1,6 @@
-/** A05: estado de carga de la bandeja. Pendiente de implementación (T-124). */
+import * as React from 'react';
+import { IncidentsInboxSkeleton } from '@/features/incidents';
+
 export default function IncidentsLoading() {
-  return null;
+  return <IncidentsInboxSkeleton />;
 }

@@ -1,4 +1,6 @@
-/** A05: estado de carga del detalle. Pendiente de implementación (T-124). */
+import * as React from 'react';
+import { IncidentDetailSkeleton } from '@/features/incidents';
+
 export default function IncidentDetailLoading() {
-  return null;
+  return <IncidentDetailSkeleton />;
 }
