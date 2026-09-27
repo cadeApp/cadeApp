@@ -180,3 +180,13 @@ Además, una dependencia de Realtime puede ser correcta funcionalmente y aun as�
 El hook aislado quedó 7/7 verde, pero cuatro suites consumidoras conservaron supuestos de inicialización síncrona y CI terminó con 7 fallos.
 
 > **Regla propuesta:** cuando una corrección cambia el timing observable (sync -> async), el cierre no se limita a la suite del módulo modificado; deben enumerarse y ejecutar todas las suites que espían, mockean o dependen del side effect cambiado.
+---
+## Ronda 10
+
+## `AG-94` · Una optimización de bundle no puede resolverse silenciando una frontera arquitectónica
+
+**Origen:** `PR82-H33` y error de especificación de la propia revisión.
+
+La Ronda 9 pidió imports directos de componentes internos para aislar chunks, pero la arquitectura declara `index.ts/server.ts` como únicos entry points de feature. El agente cumplió el objetivo de bundle agregando `eslint-disable-next-line boundaries/entry-point`, lo que dejó CI verde a costa de anular la protección.
+
+> **Regla propuesta:** antes de prescribir un import directo para optimizar bundle, verificar las reglas de entry point. Si el import viola la frontera, primero intentar la optimización conservando el entry point legal; nunca indicar ni aceptar un disable de lint para resolver rendimiento.
