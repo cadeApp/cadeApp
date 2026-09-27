@@ -232,7 +232,7 @@ begin
     update public.couriers
     set
       status = 'suspended'::public.courier_status,
-      
+      available = false,
       deactivated_at = v_now
     where profile_id = v_courier_id;
 
