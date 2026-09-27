@@ -2,9 +2,23 @@
 
 ## Ronda 1
 
-- **El contrato canónico debe barrer fixtures viejos.** Agregar un CHECK correcto y actualizar los tests focales no alcanza si una suite estructural todavía inserta un valor histórico fuera de la nueva enumeración.
-- **Un fake stateful solo vale como prueba de contrato si conserva las mismas precondiciones que Postgres.** PR98 ya mostraba que puede ser una mutation proof válida; H03/H04 muestran la condición inversa: si simplifica participación o consentimiento, fabrica falsos verdes.
-- **La precisión temporal es parte del contrato de keyset.** Si SQL usa microsegundos y el fake usa `Date.parse`, dos filas distintas pueden colapsar al mismo milisegundo. El test debe atacar ese borde explícitamente.
-- **CI verde del estado final no sustituye una mutation battery.** M1–M5 deben existir como resultados RED reales y reproducibles; “pendiente” en el documento es un entregable faltante, no una formalidad.
-- **Los checks focales correctos pueden coexistir con un suite completo rojo.** En este SHA, RLS/RPC nuevos pasan y `structure.sql` falla. El criterio de merge sigue siendo el conjunto completo.
-- **Trazabilidad del bloqueo también es contrato operativo.** #27 quedó corregida a `bloqueada` mientras el CC esté abierto; al mergear el CC deberá volver a estado activo antes de retomar GREEN.
+- El contrato canónico debe barrer fixtures viejos.
+- Un fake stateful solo vale como prueba de contrato si conserva las mismas precondiciones que Postgres.
+- La precisión temporal es parte del contrato de keyset.
+- CI verde del estado final no sustituye una mutation battery.
+- Los checks focales correctos pueden coexistir con una suite completa roja.
+- La trazabilidad de bloqueo/desbloqueo también es contrato operativo.
+
+## Ronda 2
+
+No aparece un patrón nuevo; se confirman lecciones anteriores.
+
+- **P08:** el fake quedó útil recién cuando participación y consentimiento reproducen las fronteras SQL reales, no una aproximación.
+- **P01:** la diferencia de precisión entre `Date` y `timestamptz` quedó cubierta por un test de dos valores dentro del mismo milisegundo.
+- **P15 / Regla 40:** la evidencia de mutaciones es verificable cuando cada commit RED tiene una falla específica y su revert vuelve a GREEN. Los logs M1–M5 muestran exactamente esa cadena.
+- El cambio de fixture `delay → other` es una actualización legítima por cambio explícito de contrato, no adulteración: el CHECK, la enum y los controles no fueron debilitados.
+- Para contract-changes, el criterio de cierre debe incluir siempre la regeneración local de tipos dentro del CI del schema nuevo. R2 alcanzó `db:types --local` y terminó sin drift.
+
+## Cierre
+
+R2 termina con 0 bloqueantes sobre `391697a`.

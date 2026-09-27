@@ -2,157 +2,138 @@
 
 ## Ronda 1
 
-SHA funcional revisado: `c4b8734e55b46bbdc0cf35d905ee7191dd7c0b03`
+SHA funcional: `c4b8734e55b46bbdc0cf35d905ee7191dd7c0b03`.
 
-Base: `develop@5772cb3b1eef7a91a5d0a5a61d2d8cbb0fa5ae28`
+La R1 detectó 5 bloqueantes y un `db-tests` rojo por `structure.sql`.
 
-### Preflight
+## Ronda 2 — SHA `391697a482c542a7306700599bad8b67909a4468`
 
-```text
-branch: cc/CC-012-incidents
-ahead of develop: 1
-behind develop: 0
-changed files: 15
-reviewer folder before review: absent
-```
+### Diff de corrección
 
-No se observó contaminación de `docs/revision-pr/pr-115/**` por parte del autor.
+Desde el commit reviewer R1 `1cc52c0` hasta el SHA funcional R2:
+- 12 commits adelante;
+- 0 detrás;
+- archivos funcionales/documentales del CC modificados: 7;
+- **ningún archivo de `docs/revision-pr/pr-115/**` fue tocado por el autor**.
 
-### CI — run 36310359422
+### CI final — run 36350483451
 
 ```text
-audit           PASS
-unit            PASS
 lint            PASS
 typecheck       PASS
+unit            PASS
 build           PASS
+db-tests        PASS
+audit           PASS
 bundle-budget   PASS
-db-tests        FAIL
 ```
 
-En `db-tests`:
+Unit:
+
+```text
+src/domain/cc012-incidents.test.ts  (37 tests) PASS
+Test Files 83 passed
+Tests      1033 passed
+```
+
+DB:
 
 ```text
 rls_matrix.sql   ok
 rpc_admin.sql    ok
 rpc_requests.sql ok
+structure.sql    ok
 
-structure.sql:
-ERROR: new row for relation "incidents" violates check constraint "incidents_kind_valid"
-Failing row ... kind = delay ...
+Files=12, Tests=1601
+Result: PASS
 
-Files=12, Tests=1593
+pnpm db:types --local
+Tipos generados exitosamente en src/types/database.types.ts
+git diff --exit-code -- src/types/database.types.ts
+→ sin drift
+```
+
+### Mutaciones verificadas en CI
+
+#### M1 — admin en report_incident
+Run `36348386744` / db-tests:
+```text
+Failed test 1199: admin ... -> UNAUTHORIZED_ACTOR
+have: NULL
+want: UNAUTHORIZED_ACTOR
+Failed test 1208: solo persisten los tres reportes válidos
+have: 4
+want: 3
 Result: FAIL
 ```
 
-El fixture responsable está en `supabase/tests/structure.sql` y conserva `'delay'`.
-
-Como `pnpm supabase test db` aborta, el paso siguiente del job:
-
-```bash
-pnpm db:types --local
-git diff --exit-code -- src/types/database.types.ts
-```
-
-no llega a completar. Por tanto los tipos commiteados aún no tienen la comparación CI definitiva.
-
-### Inspección de SQL
-
-Se verificó por inspección que el SHA revisado:
-
-- restringe `report_incident` a merchant/courier y exige consentimiento activo;
-- aplica D05-A;
-- valida kind/description/contacto en Postgres;
-- deriva el courier de la oferta accepted en `admin_resolve_incident`;
-- hace suspensión + retiro de ofertas + resolución + auditoría en una transacción;
-- elimina escritura directa RLS/grants sobre `incidents`;
-- agrega `admin_list_incidents` con `ORDER BY created_at DESC, id DESC`;
-- agrega `incidents_status_created_cursor_idx(status, created_at DESC, id DESC)`.
-
-Los pgTAP focales nuevos alcanzan esas rutas y pasan hasta que la suite llega a `structure.sql`.
-
-### H03 — deriva del courier en fake vs SQL
-
-SQL:
-
+#### M2 — INSERT directo RLS
+Run `36348780179`:
 ```text
-delivery_requests.accepted_offer_id
-→ offers.id
-→ offers.status = accepted
-→ offers.courier_id
+Failed tests 28, 54, 56
+assigned courier / related merchant / admin cannot insert
+caught: no exception
+wanted: 42501
+Result: FAIL
 ```
 
-Fake:
-
-```ts
-actor.role === 'courier' &&
-req.assignedCourierId === actor.userId
+#### M3 — courier incorrecto
+Run `36349156881`:
+```text
+Failed tests 88-92, 94
+resultado devuelve courier c6 en vez de c5
+courier no accepted termina suspended
+su oferta pending termina withdrawn
+Result: FAIL
 ```
 
-El helper unitario `reporter()` no siembra `acceptedOfferId` ni `initialOffers` y aun así el courier reporta exitosamente. Esa unidad no representa un estado válido de la RPC real.
+#### M4 — available no se apaga
+Run `36349577554`:
+```text
+Failed test 89
+have: (suspended,t,t)
+want: (suspended,f,t)
+Result: FAIL
+```
+
+#### M5 — keyset sin id
+Run `36349970611`:
+```text
+Failed tests 106-108
+página 2 salta el otro incidente empatado
+páginas siguientes/cursor quedan incorrectos
+Result: FAIL
+```
+
+Cada mutación fue restaurada por commit posterior; el SHA final integra las restauraciones y CI completo verde.
+
+### H03 — fake vs SQL
+
+El fake R2 exige:
+```text
+acceptedOfferId existente
+offer.requestId == req.requestId
+offer.status == accepted
+offer.courierId == actor.userId
+```
+
+Los cuatro negativos focales quedan verdes en CI.
 
 ### H04 — consentimiento
 
-SQL CC-012:
-
-```text
-consent_status <> active → UNAUTHORIZED_ACTOR
-```
-
-Fake:
-
-```ts
-if (rpcName === 'get_trip_details' &&
-    (actor.consentStatus ?? 'active') !== 'active') ...
-```
-
-No hay control equivalente para `report_incident`.
+El fake aplica el gate a `get_trip_details || report_incident`. El pgTAP standalone cubre merchant/courier `pending` y `reconsent_required`, prueba que no persiste reporte y luego recupera el happy path al volver a `active`.
 
 ### H05 — microsegundos
 
-El SQL serializa cursor con:
-
+`isoTimestampToEpochMicros` compara con `BigInt` y preserva hasta 6 dígitos de fracción. El test focal distingue:
 ```text
-YYYY-MM-DD"T"HH24:MI:SS.US"Z"
-```
-
-y compara `timestamptz` nativo.
-
-El fake hace `Date.parse(createdAt)`. JavaScript `Date` conserva milisegundos, no los seis decimales del cursor SQL. Dos valores como:
-
-```text
-2026-09-27T12:00:00.123456Z
 2026-09-27T12:00:00.123789Z
+2026-09-27T12:00:00.123456Z
 ```
+con `limit=1`, cursor exacto y sin pérdidas/duplicados.
 
-colapsan al mismo milisegundo; el fixture actual usa solo timestamps exactamente iguales a `.123Z`.
+La mutación local del fake a `Date.parse` está documentada por el autor; no se usa como única evidencia de cierre. La propiedad de keyset también tiene M5 SQL reproducida en CI remoto.
 
-### Mutation battery
+### Resultado
 
-El propio `docs/contracts/CC-012.md` del SHA revisado dice:
-
-```text
-Pendiente de completar con el SHA del PR, las corridas de CI y las mutaciones M1–M5
-```
-
-Por tanto M1–M5 no se consideran ejecutadas ni verificadas.
-
-### Limitación del reviewer
-
-El intento de preparar un checkout local independiente falló por DNS del entorno:
-
-```text
-Could not resolve host: github.com
-```
-
-No se inventa ejecución local. La revisión se apoya en CI remoto del SHA exacto e inspección del contenido publicado.
-
-### Metadata de T-124
-
-Al revisar #27 se encontró `P1 · fase-1 · en-curso` pese a que CC-012 la declara bloqueada. La revisión corrigió únicamente esa metadata a:
-
-```text
-P1 · fase-1 · bloqueada
-```
-
-No se cambió código de producto.
+0 bloqueantes.
