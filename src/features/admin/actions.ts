@@ -6,7 +6,9 @@ import { createAdminClient } from '@/server/supabase/admin';
 import { err, ok, type ActionResult, type DomainErrorCode } from '@/domain/errors';
 import {
   adminDecideCourierRpc,
+  adminSetSubscriptionRpc,
   adminSuspendCourierRpc,
+  adminUpdateSettingRpc,
   adminVerifyDocumentRpc,
 } from '@/server/rpc/admin';
 import type { ViewDocumentResult } from './types';
@@ -22,10 +24,12 @@ import {
   type DecideCourierInput,
   type SuspendCourierInput,
   type VerifyCourierDocumentInput,
+  setMerchantSubscriptionSchema,
+  updatePlatformSettingSchema,
   type SetMerchantSubscriptionInput,
   type UpdatePlatformSettingInput,
 } from './schemas';
-import type { RpcOutput } from '@/domain';
+import { platformSettingKeySchema, type RpcOutput } from '@/domain';
 
 interface AuthenticatedAdmin {
   readonly id: string;
@@ -318,16 +322,55 @@ export async function verifyCourierDocumentAction(
  * A03: cambia el plan de un comercio (piloto, pago manual, `paid_until`) vía `admin_set_subscription`.
  */
 export async function setMerchantSubscriptionAction(
-  _input: SetMerchantSubscriptionInput
+  input: SetMerchantSubscriptionInput
 ): Promise<ActionResult<RpcOutput<'admin_set_subscription'>, DomainErrorCode>> {
-  throw new Error('T-123: sin implementar');
+  const parsed = setMerchantSubscriptionSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  // La RPC valida aal2 otra vez y registra before/after en audit_log; la action nunca escribe tablas.
+  const rpcResult = await adminSetSubscriptionRpc(authResult.data.supabase, parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath('/admin/merchants');
+  revalidatePath('/admin/audit');
+  return ok(rpcResult.data);
 }
 
 /**
  * A04: actualiza un parámetro de `platform_settings` vía `admin_update_setting`.
  */
 export async function updatePlatformSettingAction(
-  _input: UpdatePlatformSettingInput
+  input: UpdatePlatformSettingInput
 ): Promise<ActionResult<RpcOutput<'admin_update_setting'>, DomainErrorCode>> {
-  throw new Error('T-123: sin implementar');
+  const parsed = updatePlatformSettingSchema.safeParse(input);
+  if (!parsed.success) {
+    const candidateKey: unknown =
+      typeof input === 'object' && input !== null && 'key' in input ? input.key : undefined;
+    const isKnownKey = platformSettingKeySchema.safeParse(candidateKey).success;
+    return err(isKnownKey ? 'INVALID_SETTING_VALUE' : 'INVALID_SETTING_KEY');
+  }
+
+  const authResult = await requireAdminAal2();
+  if (!authResult.ok) {
+    return authResult;
+  }
+
+  // La RPC valida aal2 otra vez y registra before/after en audit_log; la action nunca escribe tablas.
+  const rpcResult = await adminUpdateSettingRpc(authResult.data.supabase, parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath('/admin/settings');
+  revalidatePath('/admin/audit');
+  return ok(rpcResult.data);
 }
