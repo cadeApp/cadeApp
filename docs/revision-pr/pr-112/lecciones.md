@@ -21,3 +21,9 @@
 - Un Dialog puede estar cubierto funcionalmente y seguir teniendo un agujero de accesibilidad: apertura y submit no demuestran cierre por Escape ni retorno de foco.
 - En un Dialog controlado abierto desde fuera de `DialogTrigger`, el test debe conservar la referencia al disparador y exigir `document.activeElement === trigger` después del cierre.
 - Las evidencias visuales diferidas deben registrarse como aceptadas/diferidas, nunca transformarse en “verificadas” por ausencia de entorno.
+
+## Ronda 4
+
+- Para una regresión de foco, conservar la referencia DOM del disparador y asertar `document.activeElement` después de desmontar el Dialog cubre la propiedad relevante mejor que comprobar solo que el modal desaparece.
+- Si el código base ya implementa correctamente el comportamiento, un hallazgo de cobertura puede cerrarse agregando únicamente el test; no hay que forzar un cambio de producción innecesario.
+- Una limitación del entorno de revisión debe quedar separada de la evidencia que sí se verificó: CI e inspección del SHA pueden ser verificables aunque una mutación local no pueda reejecutarse.

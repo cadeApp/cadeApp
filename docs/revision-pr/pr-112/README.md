@@ -1,17 +1,18 @@
 # PR #112 — T-123 · Admin de comercios y plataforma
 
-> 🔴 **Ronda 3 — implementación GREEN: CON BLOQUEANTES (1)**
+> 🟢 **Ronda 4 — SIN BLOQUEANTES**
 
 | | |
 |---|---|
 | PR | #112 |
 | Rama | `feat/T-123-admin-comercios-plataforma` → `develop` |
-| SHA funcional revisado | `da4c103c4e4ab874b0f64250f78c64800d9c07ad` |
+| SHA funcional revisado | `b1a48e908f83a604496bd1168bb1e152763c74b2` |
 | Base | `develop@7f392e9f0fc020f9dcf6838d1638cbbe4004d7ac` |
-| Estado de la PR | Draft / implementación GREEN |
+| Estado de la PR | Draft |
 | CI | typecheck ✅ · lint ✅ · unit ✅ · build ✅ · audit ✅ · db-tests ✅ · bundle-budget ✅ |
-| Unit | 73/73 archivos · 886/886 tests |
-| Resultado | H04 bloquea cierre; H01–H03 siguen cerrados |
+| Unit | 73/73 archivos · 887/887 tests |
+| DB | 12/12 archivos · 1529 tests · PASS |
+| Resultado | H01–H04 cerrados; sin bloqueantes de revisión |
 
 ## Decisiones
 
@@ -25,12 +26,16 @@
 - **H01:** ✅ arreglado-verificado — payloads distintos para “Marcar mes pagado” y “Extender piloto”.
 - **H02:** ✅ arreglado-verificado — cinco settings + switch piloto + “Últimos cambios” server-side.
 - **H03:** ✅ arreglado-verificado — paginación conserva actor/action/entity.
-- **H04:** 🔴 abierto — A03 no prueba Escape + devolución de foco al botón “Editar plan”.
+- **H04:** ✅ arreglado-verificado — Escape cierra “Editar plan” y el foco vuelve al mismo botón disparador.
 
-## Importante
+## Limitación de la Ronda 4
 
-La implementación y el CI del SHA revisado están verdes, pero la PR **NO está lista para merge** hasta cerrar H04 con un control que falle ante una regresión real de devolución de foco.
+La revisión verificó el test nuevo por inspección sobre el SHA exacto y confirmó su GREEN en CI. El agy registró la mutación RED pedida en Ronda 3 (blur del disparador → 1 fallo / 6 verdes) y GREEN restaurado (7/7). El entorno del reviewer volvió a fallar al clonar por DNS (`Could not resolve host: github.com`), por lo que esa mutación no se declara como reejecutada localmente por la revisión.
 
-Las capturas de D07-A no bloquean T-123 porque quedaron explícitamente diferidas a T-300; no deben marcarse como verificadas aquí.
+Esto no cambia el estado de H04: el control faltante existe, ejerce la propiedad correcta y el SHA revisado pasa la suite completa.
 
-Detalle: [revisiones/ronda-3.md](revisiones/ronda-3.md)
+## Estado de merge
+
+**Sin bloqueantes de revisión.** La PR sigue Draft y no fue aprobada ni mergeada automáticamente. D07-A continúa como carry-over obligatorio para T-300/staging.
+
+Detalle: [revisiones/ronda-4.md](revisiones/ronda-4.md)

@@ -185,3 +185,112 @@ en lugar del handler actual que solo hace `setEditing(merchant)`.
 La mutación debe hacer fallar **solo el control de retorno de foco** (o, como mínimo, ese control debe figurar entre los fallos). Después se restaura el archivo byte por byte y el test vuelve a verde.
 
 No tocar `src/ui/**` para resolver H04.
+
+---
+
+## Ronda 4 — SHA `b1a48e908f83a604496bd1168bb1e152763c74b2`
+
+### Delta desde la Ronda 3
+
+Comparación `f03c877...b1a48e9`:
+
+```text
+docs/tasks/log/T-123.md                                  +33
+src/features/admin/components/merchants-table.test.tsx  +22
+```
+
+No se modificaron:
+- `src/features/admin/components/merchants-table.tsx`;
+- `src/ui/**`;
+- fixtures o mocks existentes;
+- dependencias;
+- `docs/revision-pr/**` por parte del autor.
+
+### H04 — control agregado
+
+El test nuevo:
+1. obtiene el botón real “Editar plan”;
+2. le da foco;
+3. abre el Dialog real;
+4. envía `Escape`;
+5. espera que desaparezca `role="dialog"`;
+6. exige `document.activeElement === trigger`.
+
+No usa mocks de foco ni reemplaza el Dialog.
+
+### Evidencia RED → GREEN registrada por el agy
+
+La mutación pedida por la Ronda 3 fue:
+
+```tsx
+onClick={(event) => {
+  event.currentTarget.blur();
+  setEditing(merchant);
+}}
+```
+
+Resultado registrado:
+
+```text
+RED:   Tests  1 failed | 6 passed (7)
+       falla: “cierra «Editar plan» con Escape y devuelve el foco al botón que lo abrió”
+       foco observado: <body>, no el <button>
+
+GREEN restaurado:
+       Tests  7 passed (7)
+```
+
+El archivo de producción quedó sin diff, porque la implementación existente ya satisface la propiedad.
+
+### Reproducción independiente del reviewer
+
+Se intentó preparar un checkout propio del SHA:
+
+```text
+git clone --filter=blob:none --no-checkout https://github.com/cadeApp/cadeApp.git /tmp/cadeapp-pr112-r4
+fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/':
+Could not resolve host: github.com
+```
+
+Por lo tanto:
+- no se declara la mutación como reejecutada localmente por el reviewer;
+- sí se inspeccionó el test y el código exactos del SHA mediante GitHub;
+- sí se comprobó el CI remoto del SHA exacto.
+
+### CI del SHA
+
+Run `36305816327`:
+
+```text
+typecheck       PASS
+lint            PASS
+unit            PASS
+build           PASS
+audit           PASS
+db-tests        PASS
+bundle-budget   PASS
+
+Test Files      73 passed (73)
+Tests           887 passed (887)
+
+db-tests:
+Files=12, Tests=1529
+Result: PASS
+
+build:
+Compiled successfully
+45/45 páginas
+/admin/audit      268 B · 235 kB First Load JS
+/admin/merchants  268 B · 235 kB First Load JS
+/admin/settings   268 B · 235 kB First Load JS
+```
+
+El job de bundle-budget sigue reportando advertencias preexistentes en algunas rutas, pero concluye PASS. No apareció un fallo nuevo atribuible a H04/T-123.
+
+### Conclusión H04
+
+El hueco de cobertura detectado en Ronda 3 queda cerrado:
+- la propiedad está expresada por un test conductual real;
+- el SHA exacto pasa CI completo;
+- la mutación requerida fue registrada RED por el agy y el código restaurado vuelve a GREEN;
+- no fue necesario cambiar código de producción ni `src/ui`.
