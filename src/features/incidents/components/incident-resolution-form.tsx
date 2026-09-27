@@ -87,6 +87,8 @@ export function IncidentResolutionForm({
           rows={3}
           maxLength={500}
           placeholder={COPY.reasonPlaceholder}
+          // El formulario llega después de que Radix enfocó el Dialog: el foco pasa al motivo al montarse.
+          autoFocus
           disabled={isSubmitting}
           aria-invalid={errors.reason ? true : undefined}
           aria-describedby={errors.reason ? `${reasonHelpId} ${reasonErrorId}` : reasonHelpId}

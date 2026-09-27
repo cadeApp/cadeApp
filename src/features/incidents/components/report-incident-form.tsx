@@ -120,6 +120,8 @@ export function ReportIncidentForm({ requestId, onPendingChange, onCancel, onSub
                 role="radio"
                 aria-checked={checked}
                 tabIndex={kind === focusableKind ? 0 : -1}
+                // El formulario llega después de que Radix enfocó el Dialog: el foco pasa al primer campo al montarse.
+                autoFocus={kind === INCIDENT_KINDS[0]}
                 variant={checked ? 'default' : 'outline'}
                 size="sm"
                 className="w-full"
