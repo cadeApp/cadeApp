@@ -93,6 +93,7 @@ describe('CC-004 — Límites configurables de solicitudes', () => {
   it('incidentes tienen cupo independiente de publicar y aislado por actor', async () => {
     let now = new Date('2026-09-23T18:00:30Z');
     const courier = '20000000-0000-4000-8000-000000000001';
+    const acceptedOffer = '50000000-0000-4000-8000-000000000001';
     const fake = createFakeRpcClient({
       settings,
       now: () => now,
@@ -103,8 +104,13 @@ describe('CC-004 — Límites configurables de solicitudes', () => {
           requestId: secondRequest,
           merchantId: merchant,
           status: 'matched',
+          // CC-012 / PR115-H03: el repartidor participa por la oferta accepted real, como en Postgres.
+          acceptedOfferId: acceptedOffer,
           assignedCourierId: courier,
         },
+      ],
+      initialOffers: [
+        { offerId: acceptedOffer, requestId: secondRequest, courierId: courier, amountArs: 1500, status: 'accepted' },
       ],
       initialCouriers: [{ courierId: courier, status: 'approved', available: true }],
     });

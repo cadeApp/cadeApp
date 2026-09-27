@@ -1570,7 +1570,18 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
               requestId: REQ_2,
               merchantId: MERCHANT_1,
               status: 'in_transit',
+              // CC-012 / PR115-H03: como en Postgres, un viaje en curso tiene su oferta accepted real.
+              acceptedOfferId: '50000000-0000-4000-8000-000000000074',
               assignedCourierId: COURIER_1,
+            },
+          ],
+          initialOffers: [
+            {
+              offerId: '50000000-0000-4000-8000-000000000074',
+              requestId: REQ_2,
+              courierId: COURIER_1,
+              amountArs: BASE_SETTINGS.minOfferArs,
+              status: 'accepted',
             },
           ],
         });

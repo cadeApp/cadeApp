@@ -283,6 +283,46 @@ const ACTIVE_INCIDENT_STATUSES: readonly DeliveryRequestStatus[] = ['matched', '
 
 const DEFAULT_INCIDENTS_PAGE_SIZE = 20;
 
+const ISO_TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+/**
+ * CC-012: epoch en microsegundos de un timestamp ISO, sin pasar por `Date.parse` (que trunca a
+ * milisegundos). Así el keyset del fake compara con la misma precisión que `timestamptz` en Postgres.
+ */
+export function isoTimestampToEpochMicros(iso: string): bigint {
+  const match = ISO_TIMESTAMP_PATTERN.exec(iso);
+  if (!match) {
+    throw new Error(`Timestamp ISO inválido para el keyset: ${iso}`);
+  }
+  const [, year, month, day, hour, minute, second, fraction = '', zone, sign, offsetHour, offsetMinute] = match;
+  const wholeSecondsMs = Date.UTC(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second)
+  );
+  const offsetMinutes =
+    zone === 'Z' ? 0 : (sign === '-' ? -1 : 1) * (Number(offsetHour) * 60 + Number(offsetMinute));
+  return (
+    BigInt(wholeSecondsMs) * 1000n +
+    BigInt(fraction.padEnd(6, '0')) -
+    BigInt(offsetMinutes) * 60_000_000n
+  );
+}
+
+function compareIncidentKeysetDesc(
+  a: { readonly createdAt: string; readonly incidentId: string },
+  b: { readonly createdAt: string; readonly incidentId: string }
+): number {
+  const aMicros = isoTimestampToEpochMicros(a.createdAt);
+  const bMicros = isoTimestampToEpochMicros(b.createdAt);
+  if (aMicros !== bMicros) return aMicros > bMicros ? -1 : 1;
+  return a.incidentId < b.incidentId ? 1 : a.incidentId > b.incidentId ? -1 : 0;
+}
+
 const INCIDENT_WINDOW_MS = 24 * 3_600_000;
 
 function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatformSettings {
@@ -494,7 +534,12 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (!ALLOWED_ROLES_BY_RPC[rpcName].includes(actor.role)) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
     }
-    if (rpcName === 'get_trip_details' && (actor.consentStatus ?? 'active') !== 'active') {
+    // CC-007: RPC operativas de comercio/repartidor que exigen consentimiento activo antes de validar
+    // parámetros. CC-012 conserva el gate en la función standalone `report_incident`.
+    if (
+      (rpcName === 'get_trip_details' || rpcName === 'report_incident') &&
+      (actor.consentStatus ?? 'active') !== 'active'
+    ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
     }
     if (requireAdminAal2 && actor.aal !== 'aal2') {
@@ -1063,13 +1108,21 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const req = requests.get(input.requestId);
         if (!req) return err('NOT_FOUND');
 
-        const isParticipant =
-          (actor.role === 'merchant' && req.merchantId === actor.userId) ||
-          (actor.role === 'courier' && req.assignedCourierId === actor.userId);
-        if (!isParticipant) {
-          return err('UNAUTHORIZED_ACTOR');
-        }
-        if (actor.role === 'courier') {
+        if (actor.role === 'merchant') {
+          if (req.merchantId !== actor.userId) return err('UNAUTHORIZED_ACTOR');
+        } else {
+          // Igual que Postgres: el repartidor es el de la oferta delivery_requests.accepted_offer_id,
+          // que tiene que existir, pertenecer a la solicitud y estar accepted. Recién después se evalúa
+          // su elegibilidad.
+          const offer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : undefined;
+          if (
+            !offer ||
+            offer.requestId !== req.requestId ||
+            offer.status !== 'accepted' ||
+            offer.courierId !== actor.userId
+          ) {
+            return err('UNAUTHORIZED_ACTOR');
+          }
           const eligibility = checkCourierEligibility();
           if (!eligibility.ok) return eligibility;
         }
@@ -1369,20 +1422,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       executeRpc('admin_list_incidents', rawInput, true, (input) => {
         const limit = input.limit ?? DEFAULT_INCIDENTS_PAGE_SIZE;
         const cursor = input.cursor ?? null;
-        const cursorMs = cursor ? Date.parse(cursor.createdAt) : Number.NaN;
+        const cursorKey = cursor ? { createdAt: cursor.createdAt, incidentId: cursor.id } : null;
 
+        // created_at DESC, id DESC con precisión de microsegundos; página siguiente:
+        // created_at < c.createdAt OR (created_at = c.createdAt AND id < c.id).
         const ordered = [...incidents.values()]
           .filter((incident) => input.statuses.includes(incident.status))
-          .sort((a, b) => {
-            const byTime = Date.parse(b.createdAt) - Date.parse(a.createdAt);
-            if (byTime !== 0) return byTime;
-            return a.incidentId < b.incidentId ? 1 : a.incidentId > b.incidentId ? -1 : 0;
-          })
-          .filter((incident) => {
-            if (!cursor) return true;
-            const ms = Date.parse(incident.createdAt);
-            return ms < cursorMs || (ms === cursorMs && incident.incidentId < cursor.id);
-          });
+          .sort(compareIncidentKeysetDesc)
+          .filter((incident) => !cursorKey || compareIncidentKeysetDesc(incident, cursorKey) > 0);
 
         const page = ordered.slice(0, limit);
         const last = page[page.length - 1];

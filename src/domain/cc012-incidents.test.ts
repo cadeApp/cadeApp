@@ -5,7 +5,12 @@ import {
   incidentDescriptionHasContact,
   incidentKindSchema,
 } from './index';
-import { type FakePlatformSettings, type FakeSeedIncident, createFakeRpcClient } from './testing/rpc-fake';
+import {
+  type FakePlatformSettings,
+  type FakeSeedIncident,
+  createFakeRpcClient,
+  isoTimestampToEpochMicros,
+} from './testing/rpc-fake';
 
 const SETTINGS: FakePlatformSettings = {
   minOfferArs: 1200,
@@ -114,13 +119,32 @@ describe('CC-012: tipos canónicos y relato sin datos de contacto', () => {
 });
 
 describe('CC-012: report_incident en el fake sigue la matriz D05-A', () => {
-  function reporter(role: 'merchant' | 'courier', status: 'matched' | 'in_transit' | 'delivered', deliveredAt?: string) {
+  // Como en Postgres: el repartidor participa por la oferta delivery_requests.accepted_offer_id.
+  function reporter(
+    role: 'merchant' | 'courier',
+    status: 'matched' | 'in_transit' | 'delivered',
+    deliveredAt?: string,
+    consentStatus: 'pending' | 'active' | 'reconsent_required' = 'active'
+  ) {
     return createFakeRpcClient({
       settings: SETTINGS,
       now: () => NOW,
-      initialActor: role === 'merchant' ? { userId: MERCHANT, role } : { userId: COURIER_A, role },
+      initialActor:
+        role === 'merchant'
+          ? { userId: MERCHANT, role, consentStatus }
+          : { userId: COURIER_A, role, consentStatus },
       initialRequests: [
-        { requestId: REQ_MATCHED, merchantId: MERCHANT, status, assignedCourierId: COURIER_A, deliveredAt: deliveredAt ?? null },
+        {
+          requestId: REQ_MATCHED,
+          merchantId: MERCHANT,
+          status,
+          acceptedOfferId: OFFER_ACCEPTED_A,
+          assignedCourierId: COURIER_A,
+          deliveredAt: deliveredAt ?? null,
+        },
+      ],
+      initialOffers: [
+        { offerId: OFFER_ACCEPTED_A, requestId: REQ_MATCHED, courierId: COURIER_A, amountArs: 1500, status: 'accepted' },
       ],
       initialCouriers: [{ courierId: COURIER_A, status: 'approved', available: true }],
     });
@@ -150,6 +174,66 @@ describe('CC-012: report_incident en el fake sigue la matriz D05-A', () => {
     fake.setActor({ userId: ADMIN, role: 'admin', aal: 'aal2' });
     const inbox = await fake.admin_list_incidents({ statuses: ['open', 'reviewing'] });
     expect(inbox.ok && inbox.data.items.map((item) => item.id)).toEqual([created.data.incidentId]);
+  });
+
+  // PR115-H03: assignedCourierId no alcanza; sin oferta accepted válida, la SQL real rechaza por participación.
+  it.each([
+    { name: 'sin acceptedOfferId', acceptedOfferId: null, offer: null },
+    {
+      name: 'con la oferta cancelled',
+      acceptedOfferId: OFFER_ACCEPTED_A,
+      offer: { offerId: OFFER_ACCEPTED_A, requestId: REQ_MATCHED, courierId: COURIER_A, amountArs: 1500, status: 'cancelled' as const },
+    },
+    {
+      name: 'con la oferta de otra solicitud',
+      acceptedOfferId: OFFER_ACCEPTED_A,
+      offer: { offerId: OFFER_ACCEPTED_A, requestId: REQ_PUBLISHED_1, courierId: COURIER_A, amountArs: 1500, status: 'accepted' as const },
+    },
+    {
+      name: 'con la oferta accepted de otro repartidor',
+      acceptedOfferId: OFFER_ACCEPTED_A,
+      offer: { offerId: OFFER_ACCEPTED_A, requestId: REQ_MATCHED, courierId: COURIER_B, amountArs: 1500, status: 'accepted' as const },
+    },
+  ])('courier con assignedCourierId propio pero $name -> UNAUTHORIZED_ACTOR', async ({ acceptedOfferId, offer }) => {
+    const fake = createFakeRpcClient({
+      settings: SETTINGS,
+      now: () => NOW,
+      initialActor: { userId: COURIER_A, role: 'courier' },
+      initialRequests: [
+        { requestId: REQ_MATCHED, merchantId: MERCHANT, status: 'matched', acceptedOfferId, assignedCourierId: COURIER_A },
+      ],
+      initialOffers: offer ? [offer] : [],
+      initialCouriers: [{ courierId: COURIER_A, status: 'approved', available: true }],
+    });
+    expect(await fake.report_incident(report)).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    // El primer id que generaría el fake: no se persistió ningún incidente.
+    expect(fake.getIncident('00000000-0000-4000-8000-000000010001')).toBeUndefined();
+  });
+
+  // PR115-H04: la función standalone conserva el gate CC-007 (consentimiento activo) antes de validar.
+  it.each([
+    ['merchant', 'pending'],
+    ['merchant', 'reconsent_required'],
+    ['courier', 'pending'],
+    ['courier', 'reconsent_required'],
+  ] as const)('%s con consentimiento %s -> UNAUTHORIZED_ACTOR', async (role, consentStatus) => {
+    expect(await reporter(role, 'matched', undefined, consentStatus).report_incident(report)).toEqual({
+      ok: false,
+      code: 'UNAUTHORIZED_ACTOR',
+    });
+  });
+
+  it.each(['merchant', 'courier'] as const)('%s con consentimiento active conserva el happy path', async (role) => {
+    expect((await reporter(role, 'matched', undefined, 'active').report_incident(report)).ok).toBe(true);
+  });
+
+  it('el gate de consentimiento va antes que la validación del relato (misma precedencia que la SQL)', async () => {
+    expect(
+      await reporter('merchant', 'matched', undefined, 'pending').report_incident({
+        ...report,
+        description: 'Llamame al 3865 44-1122',
+      })
+    ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
   });
 
   it('el courier que reporta queda identificado como tal en la bandeja', async () => {
@@ -290,6 +374,45 @@ describe('CC-012: admin_list_incidents en el fake usa keyset estable', () => {
     }
     expect(seen).toEqual([id('b02'), id('b01'), id('a05'), id('b00')]);
     expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  // PR115-H05: dos timestamps distintos dentro del MISMO milisegundo. El id del más nuevo es el menor,
+  // así que truncar a milisegundos (y desempatar por id) invertiría el orden.
+  it('conserva microsegundos: .123789Z va antes que .123456Z y el cursor es exacto', async () => {
+    const newer = incident('c01', { status: 'reviewing', createdAt: '2026-09-27T12:00:00.123789Z' });
+    const older = incident('c02', { status: 'reviewing', createdAt: '2026-09-27T12:00:00.123456Z' });
+    const fake = createFakeRpcClient({
+      settings: SETTINGS,
+      initialActor: { userId: ADMIN, role: 'admin', aal: 'aal2' },
+      initialIncidents: [older, newer],
+    });
+
+    const page1 = await fake.admin_list_incidents({ statuses: ['reviewing'], limit: 1 });
+    if (!page1.ok) throw new Error('página 1');
+    expect(page1.data.items.map((item) => item.id)).toEqual([newer.incidentId]);
+    expect(page1.data.nextCursor).toEqual({ createdAt: '2026-09-27T12:00:00.123789Z', id: newer.incidentId });
+
+    const page2 = await fake.admin_list_incidents({ statuses: ['reviewing'], cursor: page1.data.nextCursor, limit: 1 });
+    if (!page2.ok) throw new Error('página 2');
+    expect(page2.data.items.map((item) => item.id)).toEqual([older.incidentId]);
+    expect(page2.data.nextCursor).toBeNull();
+
+    const seen = [...page1.data.items, ...page2.data.items].map((item) => item.id);
+    expect(seen).toEqual([newer.incidentId, older.incidentId]);
+    expect(new Set(seen).size).toBe(2);
+  });
+
+  it('isoTimestampToEpochMicros compara offsets y fracciones sin perder precisión', () => {
+    expect(isoTimestampToEpochMicros('2026-09-27T12:00:00.123789Z')).toBe(
+      isoTimestampToEpochMicros('2026-09-27T09:00:00.123789-03:00')
+    );
+    expect(isoTimestampToEpochMicros('2026-09-27T12:00:00.123789Z')).toBe(
+      isoTimestampToEpochMicros('2026-09-27T12:00:00.123456Z') + 333n
+    );
+    expect(isoTimestampToEpochMicros('2026-09-27T12:00:00Z')).toBe(
+      isoTimestampToEpochMicros('2026-09-27T14:00:00+02:00')
+    );
+    expect(() => isoTimestampToEpochMicros('27/09/2026')).toThrow();
   });
 
   it('filtra por estado y usa 20 por defecto', async () => {

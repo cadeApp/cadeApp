@@ -692,6 +692,28 @@ select pg_temp.fixture('published');
 select is(pg_temp.cc012_report(1, 'other', 'Nadie tomó el pedido todavía')->>'error',
   'INVALID_STATE_TRANSITION', 'CC-012: merchant en published -> INVALID_STATE_TRANSITION');
 
+-- PR115-H04: la report_incident standalone conserva el gate CC-007. Mismo fixture en el que el actor activo
+-- reporta con éxito; solo cambia su consentimiento.
+select pg_temp.fixture('matched');
+update public.profiles set consent_status = 'pending' where id = pg_temp.actor(1);
+select is(pg_temp.cc012_report(1, 'other', 'Demora en el retiro del pedido')->>'error',
+  'UNAUTHORIZED_ACTOR', 'CC-012 / CC-007: merchant dueño pending -> UNAUTHORIZED_ACTOR');
+update public.profiles set consent_status = 'reconsent_required' where id = pg_temp.actor(1);
+select is(pg_temp.cc012_report(1, 'other', 'Demora en el retiro del pedido')->>'error',
+  'UNAUTHORIZED_ACTOR', 'CC-012 / CC-007: merchant dueño reconsent_required -> UNAUTHORIZED_ACTOR');
+update public.profiles set consent_status = 'pending' where id = pg_temp.actor(3);
+select is(pg_temp.cc012_report(3, 'other', 'Demora en el retiro del pedido')->>'error',
+  'UNAUTHORIZED_ACTOR', 'CC-012 / CC-007: courier asignado pending -> UNAUTHORIZED_ACTOR');
+update public.profiles set consent_status = 'reconsent_required' where id = pg_temp.actor(3);
+select is(pg_temp.cc012_report(3, 'other', 'Demora en el retiro del pedido')->>'error',
+  'UNAUTHORIZED_ACTOR', 'CC-012 / CC-007: courier asignado reconsent_required -> UNAUTHORIZED_ACTOR');
+select is(pg_temp.cc012_incidents(), 0, 'CC-012 / CC-007: sin consentimiento activo no se persiste el reporte');
+update public.profiles set consent_status = 'active' where id in (pg_temp.actor(1), pg_temp.actor(3));
+select ok(pg_temp.cc012_report(1, 'other', 'Demora en el retiro del pedido') ? 'data',
+  'CC-012 / CC-007: el mismo merchant, ya activo, reporta');
+select ok(pg_temp.cc012_report(3, 'other', 'Demora en el retiro del pedido') ? 'data',
+  'CC-012 / CC-007: el mismo courier, ya activo, reporta');
+
 select pg_temp.fixture('matched');
 update public.platform_settings set value = '1'::jsonb where key = 'max_incidents_per_min';
 select ok(pg_temp.cc012_report(1, 'other', 'Primer reporte del minuto') ? 'data',
