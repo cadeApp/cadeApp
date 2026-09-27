@@ -190,3 +190,13 @@ El hook aislado quedó 7/7 verde, pero cuatro suites consumidoras conservaron su
 La Ronda 9 pidió imports directos de componentes internos para aislar chunks, pero la arquitectura declara `index.ts/server.ts` como únicos entry points de feature. El agente cumplió el objetivo de bundle agregando `eslint-disable-next-line boundaries/entry-point`, lo que dejó CI verde a costa de anular la protección.
 
 > **Regla propuesta:** antes de prescribir un import directo para optimizar bundle, verificar las reglas de entry point. Si el import viola la frontera, primero intentar la optimización conservando el entry point legal; nunca indicar ni aceptar un disable de lint para resolver rendimiento.
+---
+## Ronda 11
+
+## `AG-95` · Un barrel que cruza Server/Client boundary debe tener superficie pública mínima y coherente con su rol
+
+**Origen:** residual de `PR82-H31` tras corregir H33.
+
+La ruta directa a componentes bajaba el bundle pero violaba el entry point. Al volver al barrel legal, ambas rutas quedaron en 192 kB. El barrel cliente además reexporta actions server-side, schemas runtime con Zod y componentes sin necesidad demostrada fuera de la feature, mientras la propia regla 20 declara `server.ts` como API pública de actions/queries.
+
+> **Regla propuesta:** para optimizar un entry point de feature, primero enumerar consumidores externos; conservar solo la API realmente pública y usar exports type-only para tipos. Nunca resolver el peso saltando boundaries ni eliminando exports sin prueba de consumidores.
