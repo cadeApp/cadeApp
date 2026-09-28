@@ -18,3 +18,7 @@
 ## Ronda 4
 - Una guarda compuesta con varios términos no queda completamente probada por mutar solo uno: si se agregan tests nuevos para términos independientes, cada propiedad nueva debe demostrar su RED correspondiente.
 - No actualizar evidencia CI con cifras de un SHA anterior después de agregar tests; esperar el run del HEAD y distinguir explícitamente jobs todavía pendientes.
+
+## Ronda 5
+- Sin lección AG nueva. Se reutilizan `pr-63/AG-68` y `pr-63/AG-70`: cuando dos defensas redundantes conservan la misma conducta pública, una mutación de una sola defensa puede quedar verde legítimamente; la batería debe romper la propiedad observable sin adulterar el test.
+- Una autorrevisión no sustituye el estado de la revisión independiente: mientras haya hallazgos abiertos, el body no debe autofirmar `SIN BLOQUEANTES`.

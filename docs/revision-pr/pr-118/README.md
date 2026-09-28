@@ -1,28 +1,30 @@
 # Revisión independiente — PR #118 · T-206
 
-- **Ronda actual:** 4
-- **SHA revisado:** `71cce94818fa5fb4cace69921cf0181a8e3871d9`
+- **Ronda actual:** 5
+- **SHA revisado:** `f53d8856b99c359d14982a7ceee5ff905115c04a`
 - **develop:** `c91ec4e304de0d983cd31be3c77acecf374304bf`
-- **Sincronización:** 11 ahead / 0 behind.
+- **Sync:** 13 ahead / 0 behind.
 - **Estado:** **CON BLOQUEANTES**
 - **Decisiones:** D01=1-A · D02=2-A.
 - **Aprobación/merge:** no realizados.
 
-## Cerrados
-- H04, H06, H07 y R01: implementación y casos funcionales requeridos presentes.
-- A01/D02: excepción test-only documentada correctamente.
-- Sincronización con develop: resuelta.
+## Producto
 
-## Abiertos
-- **H05 residual:** se agregaron tres tests nuevos para `data:null,error:null` (audit, request, offers) y un control de array vacío, pero la bitácora solo demuestra RED al quitar la guarda de `actor_id`. La regla de T-206 exige demostrar cada prueba nueva en rojo al romper su propiedad. Faltan mutaciones independientes para merchant/request data y offers data. El control de array vacío no requiere una mutación propia si no es una prueba nueva de una regla distinta, pero debe permanecer verde.
-- **M02:** el body todavía presenta como evidencia el CI de `6980fb` (93/1275). El CI del HEAD actual ya reporta unit **93/93 · 1280/1280**. El job db-tests del HEAD seguía en ejecución al cerrar esta inspección, por lo que no se puede declarar evidencia final del nuevo SHA todavía.
+No apareció un defecto nuevo de producto. H07 está implementado de forma fail-closed y el delta de esta ronda es únicamente la bitácora.
 
-## CI HEAD
-Run `36465381165`:
-- unit: 93/93 files · 1280/1280 tests ✅
-- verify-workflows: 22 ✅
-- verify-adr: 6 ✅
-- typecheck/lint/build/audit/bundle-budget: ✅
-- db-tests: **en ejecución durante la revisión**
+## CI del SHA revisado
 
-CI parcial verde no basta para cierre mientras db-tests no finalice.
+Run `36466803301` — **success**:
+- unit: 93/93 files · 1280/1280 tests;
+- verify-workflows: 22;
+- verify-adr: 6;
+- db-tests: Files=12 · Tests=1601 · PASS;
+- typecheck/lint/build/audit/bundle-budget: success.
+
+## Bloqueantes restantes
+
+1. **PR118-H05-R4 — parcial.** La mutación de `merchant_id` reproduce un RED semántico real. La mutación de `offersRes.data == null` queda GREEN porque el `catch` best-effort es una segunda defensa y conserva exactamente la conducta observable. No es evidencia falsa: la bitácora lo reportó correctamente. Falta una mutación semántica propia de revisión que rompa la propiedad observable desactivando ambas defensas redundantes, sin tocar test/mocks/expectativas.
+2. **PR118-M02.** El body cita run `36465838994` (SHA `4afa194`), no el run del SHA revisado. Los números coinciden, pero la referencia SHA/run no.
+3. **PR118-M03.** El body vuelve a declarar `Resultado: SIN BLOQUEANTES` desde la autorrevisión de Kira aunque la revisión independiente todavía no cerró H05. Debe quedar pendiente/CON BLOQUEANTES hasta el cierre independiente.
+
+No hay decisiones 🔵 pendientes.
