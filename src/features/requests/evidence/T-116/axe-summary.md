@@ -1,5 +1,8 @@
 # Reporte de Accesibilidad axe-core (WCAG AA) — T-116 (C03 Nueva Solicitud de Envío)
 
+> [!WARNING]
+> **EVIDENCIA PRELIMINAR — NO VÁLIDA PARA CERRAR H07.** La evidencia final se reemplazará en T-300 / staging sobre las rutas reales.
+
 **Herramienta:** axe-core 4.13.0 (motor real en navegador Chromium/Edge headless)
 **Estándar:** WCAG 2.0 / 2.1 Niveles A y AA (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`)
 **Fecha de ejecución:** 2026-09-27T09:09:45.044Z
@@ -15,7 +18,7 @@
 
 ## Detalle de Hallazgos
 
-En los 3 estados operativos (mapa interactivo disponible, fallo de Google Maps y modo sin conexión) y en ambos viewports móviles (390×844 y 360×800), el formulario C03 cumple al 100% con los criterios de accesibilidad WCAG 2.1 AA:
+En los 3 estados operativos (mapa interactivo disponible, fallo de Google Maps y modo sin conexión) y en ambos viewports móviles (390×844 y 360×800), este harness registró 0 violaciones automáticas, pero contiene resultados incompletos y no acredita cumplimiento WCAG AA final:
 - Botón de alternancia de mapa "Fijar en mapa interactivo" con tamaño táctil >= 48px y texto descriptivo.
 - Botones de geolocalización sin duplicación de controles dentro del mapa.
 - Selector de pin interactivo con controles de ajuste fino D-pad accesibles.

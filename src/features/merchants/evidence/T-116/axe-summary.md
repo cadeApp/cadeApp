@@ -1,5 +1,8 @@
 # Reporte de Accesibilidad axe-core (WCAG AA) — T-116 (C01 Alta de Comercio)
 
+> [!WARNING]
+> **EVIDENCIA PRELIMINAR — NO VÁLIDA PARA CERRAR H07.** La evidencia final se reemplazará en T-300 / staging sobre las rutas reales.
+
 **Herramienta:** axe-core 4.13.0 (motor real en navegador Chromium/Edge headless)
 **Estándar:** WCAG 2.0 / 2.1 Niveles A y AA (`wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`)
 **Fecha de ejecución:** 2026-09-27T09:09:45.043Z
@@ -15,7 +18,7 @@
 
 ## Detalle de Hallazgos
 
-En los 3 estados operativos (mapa disponible, fallo de Google Maps y modo sin conexión) y en ambos viewports móviles (390×844 y 360×800), el formulario C01 cumple al 100% con los criterios de accesibilidad WCAG 2.1 AA:
+En los 3 estados operativos (mapa disponible, fallo de Google Maps y modo sin conexión) y en ambos viewports móviles (390×844 y 360×800), este harness registró 0 violaciones automáticas, pero contiene resultados incompletos y no acredita cumplimiento WCAG AA final:
 - Jerarquía de encabezados e inputs accesibles con labels asociados.
 - Botón "Usar mi ubicación actual" con tamaño táctil >= 48px y contraste AA.
 - Controles de ajuste fino (D-pad) con atributos `aria-label` descriptivos.
