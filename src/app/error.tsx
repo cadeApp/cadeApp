@@ -1,7 +1,10 @@
 'use client';
 
 import React from 'react';
-import { ErrorView } from '@/features/notifications';
+import dynamic from 'next/dynamic';
+import { loadErrorView } from '@/features/notifications';
+
+const ErrorView = dynamic(loadErrorView);
 
 export interface RootErrorProps {
   error: Error & { digest?: string };

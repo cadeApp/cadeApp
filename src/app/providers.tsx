@@ -6,17 +6,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionProvider, Toaster } from '@/ui';
 import {
   isIosSafariNonStandalone,
-  OfflineBanner,
-  OfflineFloatingCard,
+  loadIosInstallGuideSheet,
+  loadOfflineBanner,
+  loadOfflineFloatingCard,
 } from '@/features/notifications';
 
-const LazyIosInstallGuideSheet = dynamic(
-  () =>
-    import('@/features/notifications').then((m) => ({
-      default: m.IosInstallGuideSheet,
-    })),
-  { ssr: false },
-);
+const OfflineBanner = dynamic(loadOfflineBanner);
+const OfflineFloatingCard = dynamic(loadOfflineFloatingCard);
+const LazyIosInstallGuideSheet = dynamic(loadIosInstallGuideSheet, {
+  ssr: false,
+});
 
 const IOS_DISMISS_KEY = 'cadeapp_ios_install_guide_dismissed';
 

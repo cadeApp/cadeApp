@@ -1,5 +1,8 @@
 import React from 'react';
-import { NotFoundView } from '@/features/notifications';
+import dynamic from 'next/dynamic';
+import { loadNotFoundView } from '@/features/notifications';
+
+const NotFoundView = dynamic(loadNotFoundView);
 
 export default function NotFound() {
   return <NotFoundView />;
