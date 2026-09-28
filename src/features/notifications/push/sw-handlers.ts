@@ -1,14 +1,19 @@
+import { PUSH_COPY } from './copy';
+import { PushNotificationPayloadSchema } from './schemas';
+import type {
+  NotificationActionData,
+  NotificationEventLike,
+  PushEventLike,
+  ServiceWorkerClientLike,
+  ServiceWorkerGlobalScopeLike,
+} from './types';
+
 export interface PushEventNotificationConfig {
   title: string;
   body: string;
   icon: string;
   badge: string;
-  data: {
-    url: string;
-    event?: string;
-    requestId?: string;
-    offerId?: string;
-  };
+  data: NotificationActionData;
 }
 
 export function getNotificationDataForEvent(
@@ -18,26 +23,25 @@ export function getNotificationDataForEvent(
   const icon = '/icons/icon-192.png';
   const badge = '/icons/icon-192.png';
 
-  if (!payload || typeof payload !== 'object') {
+  const parsed = PushNotificationPayloadSchema.safeParse(payload);
+  if (!parsed.success) {
     return {
-      title: 'cadeApp',
-      body: 'Tenés una nueva notificación en cadeApp.',
+      title: PUSH_COPY.notifications.fallbackTitle,
+      body: PUSH_COPY.notifications.fallbackBody,
       icon,
       badge,
-      data: { url: `${baseOrigin}/` },
+      data: { url: `${baseOrigin}/`, event: 'unknown' },
     };
   }
 
-  const p = payload as Record<string, unknown>;
-  const event = typeof p['event'] === 'string' ? p['event'] : '';
-  const requestId = typeof p['requestId'] === 'string' ? p['requestId'] : '';
-  const offerId = typeof p['offerId'] === 'string' ? p['offerId'] : undefined;
+  const { event, requestId } = parsed.data;
+  const offerId = 'offerId' in parsed.data ? parsed.data.offerId : undefined;
 
   switch (event) {
     case 'request_published':
       return {
-        title: 'Nueva solicitud disponible',
-        body: 'Hay un nuevo envío disponible en Aguilares.',
+        title: PUSH_COPY.notifications.requestPublishedTitle,
+        body: PUSH_COPY.notifications.requestPublishedBody,
         icon,
         badge,
         data: {
@@ -49,8 +53,8 @@ export function getNotificationDataForEvent(
 
     case 'offer_submitted':
       return {
-        title: 'Nueva oferta recibida',
-        body: 'Un repartidor envió una oferta para tu pedido.',
+        title: PUSH_COPY.notifications.offerSubmittedTitle,
+        body: PUSH_COPY.notifications.offerSubmittedBody,
         icon,
         badge,
         data: {
@@ -65,8 +69,8 @@ export function getNotificationDataForEvent(
 
     case 'offer_accepted':
       return {
-        title: '¡Oferta aceptada!',
-        body: 'Se confirmó la oferta para el envío.',
+        title: PUSH_COPY.notifications.offerAcceptedTitle,
+        body: PUSH_COPY.notifications.offerAcceptedBody,
         icon,
         badge,
         data: {
@@ -81,8 +85,8 @@ export function getNotificationDataForEvent(
 
     case 'request_cancelled':
       return {
-        title: 'Solicitud cancelada',
-        body: 'La solicitud de envío fue cancelada.',
+        title: PUSH_COPY.notifications.requestCancelledTitle,
+        body: PUSH_COPY.notifications.requestCancelledBody,
         icon,
         badge,
         data: {
@@ -94,8 +98,8 @@ export function getNotificationDataForEvent(
 
     case 'request_expired':
       return {
-        title: 'Solicitud vencida',
-        body: 'La solicitud de envío expiró sin confirmación.',
+        title: PUSH_COPY.notifications.requestExpiredTitle,
+        body: PUSH_COPY.notifications.requestExpiredBody,
         icon,
         badge,
         data: {
@@ -107,16 +111,16 @@ export function getNotificationDataForEvent(
 
     default:
       return {
-        title: 'cadeApp',
-        body: 'Tenés una actualización en la aplicación.',
+        title: PUSH_COPY.notifications.fallbackTitle,
+        body: PUSH_COPY.notifications.fallbackUpdateBody,
         icon,
         badge,
-        data: { url: `${baseOrigin}/` },
+        data: { url: `${baseOrigin}/`, event: 'unknown' },
       };
   }
 }
 
-export function handlePushEvent(event: any, sw: any): void {
+export function handlePushEvent(event: PushEventLike, sw: ServiceWorkerGlobalScopeLike): void {
   let payload: unknown = null;
   try {
     if (event.data) {
@@ -130,7 +134,7 @@ export function handlePushEvent(event: any, sw: any): void {
     }
   }
 
-  const origin = (sw.location && sw.location.origin) || 'https://cadeapp.ar';
+  const origin = sw.location?.origin || 'https://cadeapp.ar';
   const config = getNotificationDataForEvent(payload, origin);
 
   const promise = sw.registration.showNotification(config.title, {
@@ -145,13 +149,16 @@ export function handlePushEvent(event: any, sw: any): void {
   }
 }
 
-export function handleNotificationClickEvent(event: any, sw: any): void {
+export function handleNotificationClickEvent(
+  event: NotificationEventLike,
+  sw: ServiceWorkerGlobalScopeLike
+): void {
   if (event.notification && typeof event.notification.close === 'function') {
     event.notification.close();
   }
 
   const rawUrl = event.notification?.data?.url;
-  const origin = (sw.location && sw.location.origin) || 'https://cadeapp.ar';
+  const origin = sw.location?.origin || 'https://cadeapp.ar';
   let targetUrl = rawUrl || `${origin}/`;
 
   if (targetUrl.startsWith('/')) {
@@ -160,7 +167,7 @@ export function handleNotificationClickEvent(event: any, sw: any): void {
 
   const clickPromise = sw.clients
     .matchAll({ type: 'window', includeUncontrolled: true })
-    .then((clientList: any[]) => {
+    .then((clientList: readonly ServiceWorkerClientLike[]) => {
       // Si ya hay una ventana abierta en el mismo destino u origen, hacer focus
       for (const client of clientList) {
         if (client.url === targetUrl && 'focus' in client) {
@@ -168,7 +175,7 @@ export function handleNotificationClickEvent(event: any, sw: any): void {
         }
       }
       for (const client of clientList) {
-        if ('focus' in client && 'navigate' in client) {
+        if ('focus' in client && client.navigate) {
           return client.navigate(targetUrl).then(() => client.focus());
         }
       }
@@ -184,7 +191,7 @@ export function handleNotificationClickEvent(event: any, sw: any): void {
   }
 }
 
-export function registerPushHandlers(sw: any): void {
+export function registerPushHandlers(sw: ServiceWorkerGlobalScopeLike): void {
   if (!sw || typeof sw.addEventListener !== 'function') {
     return;
   }
@@ -195,11 +202,11 @@ export function registerPushHandlers(sw: any): void {
   }
   sw.__cadeapp_push_registered = true;
 
-  sw.addEventListener('push', (event: any) => {
-    handlePushEvent(event, sw);
+  sw.addEventListener('push', (event: unknown) => {
+    handlePushEvent(event as PushEventLike, sw);
   });
 
-  sw.addEventListener('notificationclick', (event: any) => {
-    handleNotificationClickEvent(event, sw);
+  sw.addEventListener('notificationclick', (event: unknown) => {
+    handleNotificationClickEvent(event as NotificationEventLike, sw);
   });
 }

@@ -11,8 +11,16 @@ import {
   getNotificationDataForEvent,
 } from './push';
 
+vi.mock('@/lib/env.public', () => ({
+  publicEnv: {
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY:
+      'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE',
+  },
+}));
+
 describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.clearAllMocks();
@@ -25,7 +33,10 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
     const mockNotification = {
       permission: 'default',
-      requestPermission: vi.fn().mockResolvedValue('granted'),
+      requestPermission: vi.fn().mockImplementation(async () => {
+        mockNotification.permission = 'granted';
+        return 'granted';
+      }),
     };
 
     Object.defineProperty(window, 'Notification', {
@@ -170,7 +181,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('DoD: alta de suscripción es idempotente si ya existe suscripción activa', async () => {
+    it('DoD: alta de suscripción es idempotente si ya existe suscripción activa y RECONCILIA con el backend', async () => {
       const existingSubscription = {
         endpoint: 'https://push.example.com/sub/existing',
         toJSON: () => ({
@@ -190,6 +201,10 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
       const mockGetSubscription = vi.fn().mockResolvedValue(existingSubscription);
       const mockSubscribe = vi.fn();
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), { status: 200 })
+      );
+      vi.stubGlobal('fetch', mockFetch);
 
       Object.defineProperty(globalThis.navigator, 'serviceWorker', {
         value: {
@@ -209,6 +224,144 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       expect(result.ok).toBe(true);
       // No debe llamar a subscribe nuevamente si ya existe
       expect(mockSubscribe).not.toHaveBeenCalled();
+      // PR120-H03: DEBE reconciliar con backend para garantizar que la sesión posee la suscripción
+      expect(mockFetch, 'Debe reconciliar la suscripción existente con POST /api/push/subscriptions').toHaveBeenCalledWith(
+        '/api/push/subscriptions',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('PR120-H03: subscribeToPush falla si el backend responde 401', async () => {
+      const mockSub = {
+        endpoint: 'https://push.example.com/sub/new-1',
+        toJSON: () => ({
+          endpoint: 'https://push.example.com/sub/new-1',
+          keys: { p256dh: 'p256', auth: 'auth' },
+        }),
+      };
+
+      Object.defineProperty(window, 'Notification', {
+        value: { permission: 'granted', requestPermission: vi.fn().mockResolvedValue('granted') },
+        writable: true,
+        configurable: true,
+      });
+
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(null),
+              subscribe: vi.fn().mockResolvedValue(mockSub),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+      ));
+
+      const result = await subscribeToPush('test-vapid-key');
+      expect(result.ok, '401 en backend debe provocar ok: false').toBe(false);
+      expect(localStorage.getItem('cadeapp_push_enabled')).not.toBe('true');
+    });
+
+    it('PR120-H03: subscribeToPush falla si las claves p256dh o auth están ausentes', async () => {
+      const mockSubWithoutKeys = {
+        endpoint: 'https://push.example.com/sub/no-keys',
+        toJSON: () => ({
+          endpoint: 'https://push.example.com/sub/no-keys',
+          keys: {},
+        }),
+      };
+
+      Object.defineProperty(window, 'Notification', {
+        value: { permission: 'granted', requestPermission: vi.fn().mockResolvedValue('granted') },
+        writable: true,
+        configurable: true,
+      });
+
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(null),
+              subscribe: vi.fn().mockResolvedValue(mockSubWithoutKeys),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      const mockFetch = vi.fn();
+      vi.stubGlobal('fetch', mockFetch);
+
+      const result = await subscribeToPush('test-vapid-key');
+      expect(result.ok, 'Suscripción sin claves debe fallar').toBe(false);
+      expect(result.error).toMatch(/missing_keys|invalid/i);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('PR120-H05: unsubscribeFromPush retiene endpoint pendiente si DELETE falla con 500 y reconcilia en segunda llamada', async () => {
+      const targetEndpoint = 'https://push.example.com/sub/orphan-check';
+      const mockUnsubscribe = vi.fn().mockResolvedValue(true);
+      const mockSub = {
+        endpoint: targetEndpoint,
+        unsubscribe: mockUnsubscribe,
+      };
+
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(mockSub),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      // Primer intento: backend falla con 500
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'DB error' }), { status: 500 })
+      ));
+
+      const firstResult = await unsubscribeFromPush();
+      expect(firstResult.ok, 'Fallo 500 de DELETE debe provocar ok: false').toBe(false);
+      expect(localStorage.getItem('cadeapp_pending_unsub_endpoint')).toBe(targetEndpoint);
+
+      // Segundo intento: navegador ya no tiene suscripción nativa, pero reconcilia con endpoint retenido
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(null),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      const mockFetchRetry = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), { status: 200 })
+      );
+      vi.stubGlobal('fetch', mockFetchRetry);
+
+      const secondResult = await unsubscribeFromPush();
+      expect(secondResult.ok).toBe(true);
+      expect(mockFetchRetry).toHaveBeenCalledWith(
+        '/api/push/subscriptions',
+        expect.objectContaining({
+          method: 'DELETE',
+          body: JSON.stringify({ endpoint: targetEndpoint }),
+        })
+      );
+      expect(localStorage.getItem('cadeapp_pending_unsub_endpoint')).toBeNull();
     });
   });
 
@@ -264,19 +417,103 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       expect(unknown.data.url).toBe('https://cadeapp.ar/');
       expect(unknown.title).toBe('cadeApp');
     });
+
+    it('PR120-H11: inyección deliberada de PII en payload es rechazada/descartada sin llegar a título, cuerpo ni datos', () => {
+      const origin = 'https://cadeapp.ar';
+      const poisonedPayload = {
+        event: 'request_published',
+        requestId: '11111111-1111-4111-8111-111111111111',
+        recipient_name: 'Santiago Benítez',
+        phone: '+54 9 3865 123456',
+        street_address: 'Av. San Martín 450, Piso 3',
+        dni: '38999888',
+        delivery_notes: 'Dejar en la reja negra',
+      };
+
+      const result = getNotificationDataForEvent(poisonedPayload, origin);
+      const serialized = JSON.stringify(result);
+
+      expect(serialized).not.toMatch(/santiago|ben[ií]tez|3865|123456|mart[ií]n|450|38999888|reja/i);
+      expect(result.title).toBe('Nueva solicitud disponible');
+      expect(result.data.url).toBe('https://cadeapp.ar/courier/feed');
+      // Aseguramos que data solo contiene las propiedades autorizadas
+      expect(Object.keys(result.data).sort()).toEqual(['event', 'requestId', 'url'].sort());
+    });
+
+    it('PR120-H06: payload con UUID inválido es rechazado por schema y degrada al fallback seguro', () => {
+      const origin = 'https://cadeapp.ar';
+      const invalidPayload = {
+        event: 'request_published',
+        requestId: 'not-a-valid-uuid',
+      };
+
+      const result = getNotificationDataForEvent(invalidPayload, origin);
+      expect(result.title).toBe('cadeApp');
+      expect(result.data.url).toBe('https://cadeapp.ar/');
+    });
   });
 
   describe('5. Verificación visual responsive (390px / 360px) y accesibilidad WCAG AA', () => {
-    it('DoD: T02 en 390px cumple TopBar #12182C, targets táctiles >= 48px y texto >= 14px', () => {
+    it('PR120-H04: si subscribeToPush() falla tras conceder permiso, NO muestra éxito ni llama onSuccess', async () => {
+      const mockSuccess = vi.fn();
+
+      Object.defineProperty(window, 'Notification', {
+        value: {
+          permission: 'default',
+          requestPermission: vi.fn().mockResolvedValue('granted'),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      // Simular que el backend de push responde 500
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'Server error' }), { status: 500 })
+      ));
+
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(null),
+              subscribe: vi.fn().mockResolvedValue({
+                endpoint: 'https://push.example.com/sub/err',
+                toJSON: () => ({ endpoint: 'https://push.example.com/sub/err', keys: { p256dh: 'p', auth: 'a' } }),
+              }),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(React.createElement(PushPermissionPrompt, { onSuccess: mockSuccess }));
+
+      const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
+      fireEvent.click(activateBtn);
+
+      // Esperar a que termine la acción
+      await waitFor(() => {
+        // NO debe mostrar éxito
+        expect(screen.queryByText(/¡Avisos activados con éxito!/i)).toBeNull();
+        expect(screen.getByText(/No se pudo confirmar la suscripción con el servidor/i)).toBeTruthy();
+      });
+
+      // NO debe haber llamado onSuccess
+      expect(mockSuccess).not.toHaveBeenCalled();
+    });
+
+    it('DoD: T02 en 390px cumple TopBar institucional semántico, targets táctiles >= 48px y texto >= 14px', () => {
       window.innerWidth = 390;
       window.innerHeight = 844;
 
       const { container } = render(React.createElement(PushPermissionPrompt));
 
-      // TopBar #12182C
+      // TopBar semántica (bg-foreground text-background según Stitch D16)
       const header = container.querySelector('header');
       expect(header).toBeTruthy();
-      expect(header?.className).toContain('bg-[#12182C]');
+      expect(header?.className).toContain('bg-foreground');
+      expect(header?.className).toContain('text-background');
 
       // Botón volver con target >= 48px
       const backBtn = screen.getByRole('button', { name: /Volver/i });
@@ -299,7 +536,7 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       expect(heading.textContent).toMatch(/¿Te avisamos al instante\?/i);
     });
 
-    it('DoD: T02 en 360px mantiene legibilidad, estructura y targets táctiles', () => {
+    it('DoD: T02 en 360px mantiene legibilidad, estructura y targets táctiles con escala semántica max-w-md', () => {
       window.innerWidth = 360;
       window.innerHeight = 640;
 
@@ -307,14 +544,35 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
 
       const main = container.querySelector('main');
       expect(main).toBeTruthy();
-      expect(main?.className).toContain('max-w-[390px]');
+      expect(main?.className).toContain('max-w-md');
 
       const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
       expect(activateBtn.className).toMatch(/(min-h-12|h-12)/);
     });
 
-    it('DoD: interacción de usuario en T02 ejecuta solicitud y activa estado concedido', async () => {
+    it('DoD: interacción de usuario en T02 ejecuta solicitud y activa estado concedido tras confirmación backend', async () => {
       const mockSuccess = vi.fn();
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), { status: 200 })
+      ));
+
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: {
+          ready: Promise.resolve({
+            pushManager: {
+              getSubscription: vi.fn().mockResolvedValue(null),
+              subscribe: vi.fn().mockResolvedValue({
+                endpoint: 'https://push.example.com/sub/ok',
+                toJSON: () => ({ endpoint: 'https://push.example.com/sub/ok', keys: { p256dh: 'p', auth: 'a' } }),
+              }),
+            },
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
       render(React.createElement(PushPermissionPrompt, { onSuccess: mockSuccess }));
 
       const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
@@ -340,6 +598,15 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       expect(screen.getByText(/Avisos bloqueados en el navegador/i)).toBeTruthy();
       // El botón 'Ahora no' sigue disponible para cerrar
       expect(screen.getByRole('button', { name: /Ahora no/i })).toBeTruthy();
+    });
+
+    it('PR120-H02: T02 es exportado desde @/features/notifications y accesible para flujos productivos', async () => {
+      const notificationsModule = await import('@/features/notifications');
+      expect(notificationsModule.PushPermissionPrompt).toBeDefined();
+      expect(notificationsModule.loadPushPermissionPrompt).toBeDefined();
+
+      const loaded = await notificationsModule.loadPushPermissionPrompt();
+      expect(loaded.default).toBe(notificationsModule.PushPermissionPrompt);
     });
   });
 });

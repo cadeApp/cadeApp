@@ -5,6 +5,7 @@ import { ArrowLeft, Bell, CheckCircle2, Info, ShieldCheck, Zap } from 'lucide-re
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
 import { cn } from '@/ui/cn';
+import { PUSH_COPY } from '../copy';
 import {
   getNotificationPermission,
   requestNotificationPermission,
@@ -22,7 +23,9 @@ export function PushPermissionPrompt({
   onDismiss,
   className,
 }: PushPermissionPromptProps) {
-  const [status, setStatus] = React.useState<'idle' | 'requesting' | 'granted' | 'denied'>('idle');
+  const [status, setStatus] = React.useState<
+    'idle' | 'requesting' | 'subscribing' | 'granted' | 'denied'
+  >('idle');
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -56,21 +59,25 @@ export function PushPermissionPrompt({
         setStatus('idle');
         setErrorMessage(
           permissionResult.error === 'unsupported'
-            ? 'Las notificaciones no están soportadas en este navegador.'
-            : 'No se pudo activar el permiso de avisos.'
+            ? PUSH_COPY.prompt.statusUnsupported
+            : PUSH_COPY.prompt.statusGenericError
         );
       }
       return;
     }
 
-    setStatus('granted');
+    // PR120-H04: Permiso concedido en navegador -> proceder a alta confirmada en backend
+    setStatus('subscribing');
 
-    // Suscripción idempotente en background
-    try {
-      await subscribeToPush();
-    } catch {
-      // Best-effort
+    const subResult = await subscribeToPush();
+    if (!subResult.ok) {
+      setStatus('idle');
+      setErrorMessage(PUSH_COPY.prompt.statusSubscriptionError);
+      return;
     }
+
+    // Alta confirmada en backend y browser: marcar éxito y disparar onSuccess
+    setStatus('granted');
 
     if (onSuccess) {
       setTimeout(() => {
@@ -79,20 +86,22 @@ export function PushPermissionPrompt({
     }
   };
 
+  const isPending = status === 'requesting' || status === 'subscribing';
+
   return (
     <main
       className={cn(
-        'relative mx-auto flex min-h-screen w-full max-w-[390px] flex-col justify-between bg-background shadow-xs',
+        'relative mx-auto flex min-h-screen w-full max-w-md flex-col justify-between bg-background shadow-xs',
         className
       )}
     >
-      {/* TopBar Institucional Marino #12182C */}
-      <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between border-b border-border/20 bg-[#12182C] px-4 text-white">
+      {/* TopBar Institucional Marino (bg-foreground text-background según Stitch D16) */}
+      <header className="sticky top-0 z-20 flex h-14 w-full items-center justify-between border-b border-border/20 bg-foreground px-4 text-background">
         <button
           type="button"
-          aria-label="Volver"
+          aria-label={PUSH_COPY.prompt.backAriaLabel}
           onClick={handleDismiss}
-          className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg text-white transition-colors hover:bg-white/10 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg text-background transition-colors hover:bg-background/10 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <ArrowLeft className="h-6 w-6" aria-hidden="true" />
         </button>
@@ -106,9 +115,8 @@ export function PushPermissionPrompt({
 
       {/* Contenido Central */}
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-8">
-        {/* Campana con indicador de pulso */}
+        {/* Campana con indicador visual accesible sin animate-pulse arbitrario */}
         <div className="relative mb-6 flex items-center justify-center">
-          <div className="pointer-events-none absolute h-28 w-28 animate-pulse rounded-full bg-primary/20" />
           <div className="relative z-10 flex h-24 w-24 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary">
             {status === 'granted' ? (
               <CheckCircle2 className="h-11 w-11 text-success" aria-hidden="true" />
@@ -121,10 +129,10 @@ export function PushPermissionPrompt({
         {/* Título y Copy Stitch T02 */}
         <div className="mx-auto max-w-[320px] text-center">
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            ¿Te avisamos al instante?
+            {PUSH_COPY.prompt.title}
           </h1>
           <p className="mt-3 text-base text-muted-foreground">
-            Te avisamos cuando aparezca una solicitud nueva o cuando te elijan.
+            {PUSH_COPY.prompt.subtitle}
           </p>
         </div>
 
@@ -135,9 +143,11 @@ export function PushPermissionPrompt({
               <Zap className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="text-left">
-              <p className="text-sm font-semibold text-foreground">Cero demoras</p>
+              <p className="text-sm font-semibold text-foreground">
+                {PUSH_COPY.prompt.benefitSpeedTitle}
+              </p>
               <p className="text-sm text-muted-foreground">
-                Enterate al segundo y agarrá viajes antes que nadie.
+                {PUSH_COPY.prompt.benefitSpeedDesc}
               </p>
             </div>
           </div>
@@ -147,9 +157,11 @@ export function PushPermissionPrompt({
               <ShieldCheck className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="text-left">
-              <p className="text-sm font-semibold text-foreground">Sin spam molesto</p>
+              <p className="text-sm font-semibold text-foreground">
+                {PUSH_COPY.prompt.benefitNoSpamTitle}
+              </p>
               <p className="text-sm text-muted-foreground">
-                Solo alertas directas sobre tus pedidos activos.
+                {PUSH_COPY.prompt.benefitNoSpamDesc}
               </p>
             </div>
           </div>
@@ -159,7 +171,7 @@ export function PushPermissionPrompt({
         <div className="mt-6 flex w-full max-w-[340px] items-center justify-center gap-2 rounded-xl border border-border/30 bg-muted/40 px-3.5 py-3 text-center">
           <Info className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <p className="text-sm text-muted-foreground">
-            Si no llegan, igual lo vas a ver en la app al abrirla.
+            {PUSH_COPY.prompt.fallbackNote}
           </p>
         </div>
 
@@ -167,16 +179,13 @@ export function PushPermissionPrompt({
         {status === 'granted' && (
           <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-success">
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            <span>¡Avisos activados con éxito!</span>
+            <span>{PUSH_COPY.prompt.statusSuccess}</span>
           </div>
         )}
 
         {status === 'denied' && (
           <div className="mt-4 text-center text-sm text-muted-foreground">
-            <span>
-              Avisos bloqueados en el navegador. Podés activarlos en cualquier momento desde los
-              ajustes del sitio.
-            </span>
+            <span>{PUSH_COPY.prompt.statusDenied}</span>
           </div>
         )}
 
@@ -192,14 +201,18 @@ export function PushPermissionPrompt({
         <Button
           type="button"
           size="default"
-          isPending={status === 'requesting'}
-          pendingText="Solicitando..."
+          isPending={isPending}
+          pendingText={PUSH_COPY.prompt.btnActivating}
           disabled={status === 'granted'}
           onClick={handleActivate}
           className="w-full gap-2 font-display text-base font-bold"
         >
           <Bell className="h-5 w-5" aria-hidden="true" />
-          <span>{status === 'granted' ? '¡Avisos activados!' : 'Activar avisos'}</span>
+          <span>
+            {status === 'granted'
+              ? PUSH_COPY.prompt.btnActivated
+              : PUSH_COPY.prompt.btnActivate}
+          </span>
         </Button>
 
         <Button
@@ -209,7 +222,7 @@ export function PushPermissionPrompt({
           onClick={handleDismiss}
           className="w-full text-sm font-medium text-muted-foreground hover:text-foreground"
         >
-          Ahora no
+          {PUSH_COPY.prompt.btnDismiss}
         </Button>
       </footer>
     </main>

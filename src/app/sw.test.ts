@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { registerPushHandlers } from './sw';
 
 interface FetchEventLike {
   request: Request;
@@ -94,7 +93,6 @@ function createSWInstance(customCode?: string): SWContext {
 
   const context = vm.createContext(sandbox);
   vm.runInContext(code, context);
-  registerPushHandlers(sandbox);
 
   const dispatchFetch = async (request: Request): Promise<Response | null> => {
     let respondedWithPromise: Promise<Response> | null = null;
