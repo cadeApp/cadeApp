@@ -1,32 +1,35 @@
 # Lecciones de la PR #117 para `AGENTS.md` y las reglas
 
-**Fuente:** 5 hallazgos abiertos + 1 desvío aceptado. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente tras R2:** A01 + H01–H09. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
 
-Vuelve a aparecer **P08-control-no-cubre-lo-que-dice**: el test crea un sustituto barato del invariante y queda verde sin atravesar el runtime que el usuario va a ejecutar.
+**P08-control-no-cubre-lo-que-dice** sigue dominando y ahora aparece en cuatro formas de la misma raíz:
 
-En esta PR ocurre dos veces con impacto distinto:
+1. un botón artificial en R1 en lugar del componente real;
+2. Retry clickable sin afirmar la postcondición entre múltiples consumidores;
+3. submit offline probado mediante click sobre un botón disabled, sin atravesar `handleSubmit`;
+4. iconos “maskable” validados solo por nombre/peso, sin demostrar dimensiones ni variante segura.
 
-- T03: el fixture inventa su propio botón `disabled={isOffline}`, mientras el botón real de ofertar no conoce el estado offline.
-- Service Worker: el test importa `src/app/sw.ts`, mientras el navegador registra `public/sw.js`.
-
-También la “verificación visual” usa jsdom como proxy de navegador real.
+El patrón común no es “faltan más tests”, sino **el control termina antes del invariante real**.
 
 ## Lecciones propuestas
 
-No se agrega un número AG nuevo en R1. El protocolo de revisión ya marca P08 como patrón reincidente y las reglas existentes de pruebas/visual ya exigen ejercer el runtime real y mostrar evidencia roja.
+No se agrega un AG nuevo: P08 ya está en el catálogo y el protocolo ya exige mutación adversaria. R2 aporta ejemplos nuevos para endurecer cómo se aplica:
 
-La acción útil acá es **aplicar esas reglas**, no duplicarlas con otra frase.
+> Para una acción con defensa visual + guarda lógica, la mutación debe atacar ambas capas por separado. Un botón disabled no demuestra la guarda del handler.
+
+> Para archivos binarios con semántica declarativa (maskable, tamaño de icono), validar metadatos/estructura del archivo y una propiedad que distinga la variante, no solo existencia y peso.
 
 ## Qué cambiar, en orden de impacto
 
-1. En los prompts de corrección, nombrar siempre el componente/script productivo que el test debe atravesar.
-2. Prohibir explícitamente fixtures que implementen dentro del test la propiedad que se pretende validar.
-3. Para assets ejecutados fuera del bundle principal (SW, workers, scripts públicos), hacer que la prueba cargue el artefacto que realmente consume el navegador.
-4. Separar “test DOM” de “evidencia visual”: el primero evita regresiones; la segunda requiere navegador/captura.
+1. Hacer que los tests de Retry observen **otro consumidor** del estado, no solo el componente clickeado.
+2. Probar handlers defensivos enviando el form directamente, aunque el botón esté disabled.
+3. Validar PNGs leyendo IHDR y diferenciando hashes de variantes.
+4. Mantener la separación entre test DOM y evidencia visual real.
+5. En harnesses de `node:vm`, tipar el borde con tipos mínimos locales: no usar `any` para “salir del paso”.
 
 ## Advertencias
 
-- T-201 es especialmente propensa a falsos positivos porque mezcla App Router, un script estático de Service Worker y estados de navegador que jsdom no reproduce por completo.
-- H05 es documental/operativo y no justifica por sí solo una regla nueva.
+- H04 no es solucionable con más unit tests: necesita URL/dispositivo/navegador real y capturas persistentes.
+- La inspección de R2 no sustituye ejecución: H01–H03 quedan `arreglado-sin-verificar` hasta una ronda sin bloqueantes.

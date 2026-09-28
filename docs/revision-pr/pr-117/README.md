@@ -7,50 +7,50 @@
 | **Autor** | @KiraK72 |
 | **Rama** | `feat/T-201-pwa-manifest-sw` → `develop` |
 | **Base original del PR** | `15d21e8105ab08e7c05105105a3c0e325e87fd04` |
-| **develop al revisar** | `57badabc28fd3bd8e913674bd80b30feb8828414` |
-| **SHA revisado** | `f661f372e0cc708759caf91816b3483d31883f69` |
-| **Tamaño** | 25 archivos, +1141 / -9 |
-| **Estado** | bloqueada · R1 |
+| **develop al revisar R2** | `57badabc28fd3bd8e913674bd80b30feb8828414` |
+| **SHA R2** | `a1c93ae2cd482e497254cc836a21f12cddbbb160` |
+| **Tamaño R2** | 33 archivos, +1947 / -16 |
+| **Estado** | bloqueada · R2 |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
-|---|---|---:|---|
-| 1 | `f661f372e0cc708759caf91816b3483d31883f69` | 5 abiertos + 1 alcance aceptado | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| Ronda | SHA revisado | Resultado | Informe |
+|---|---|---|---|
+| 1 | `f661f372e0cc708759caf91816b3483d31883f69` | 4 bloqueantes + 1 mejora + A01 aceptado | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `a1c93ae2cd482e497254cc836a21f12cddbbb160` | 5 bloqueantes: H04 + H06–H09 | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
-## Decisiones humanas resueltas antes del cierre
+## Decisiones humanas vigentes
 
-Lautaro073 resolvió en esta ronda:
+- **D01 / 1-A:** aceptado `src/features/notifications/index.ts`.
+- **D02 / 2-A:** autorizados exactamente los cuatro archivos de `offers` ya incorporados a la ficha.
+- **D03 / 3-A:** Cache Storage solo persiste shell/assets públicos same-origin explícitamente permitidos.
 
-- **D01 = 1-A:** se acepta `src/features/notifications/index.ts` como excepción exacta de alcance por ser el entry point exigido por la arquitectura.
-- **D02 = 2-A:** T-201 queda autorizada a tocar, solo para completar T03 real:
-  - `src/features/offers/components/courier-feed.tsx`
-  - `src/features/offers/components/request-card.tsx`
-  - `src/features/offers/components/offer-sheet.tsx`
-  - `src/features/offers/courier-panel.test.tsx`
-- **D03 = 3-A:** Cache Storage solo puede persistir shell y assets públicos explícitamente permitidos, same-origin. No se persisten `/api/**`, HTML/RSC autenticado ni lecturas de usuario.
+R2 no encontró ninguna decisión humana nueva.
 
 ## Estado por hallazgo
 
-| ID | Título | Sev. | Estado |
+| ID | Título | Sev. | Estado R2 |
 |---|---|---|---|
 | PR117-A01 | Entry point de notifications fuera de la ficha original | decisión | aceptado |
-| PR117-H01 | T03 se prueba con un botón ficticio y no protege el feed real | alto | abierto |
-| PR117-H02 | El SW real persiste GETs arbitrarios y sus tests ejercen otro archivo | alto | abierto |
-| PR117-H03 | T01/T03/T04 incumplen piso 14 px y Retry de T03 mide 36 px | alto | abierto |
-| PR117-H04 | La “verificación visual” es jsdom y no hay capturas reales enlazadas | medio | abierto |
-| PR117-H05 | El rollback del cuerpo de la PR afirma una desregistración automática inexistente | bajo | abierto |
+| PR117-H01 | T03 no protegía el feed/ofertas reales | alto | arreglado sin verificación de ejecución |
+| PR117-H02 | SW real persistía GETs arbitrarios y se probaba otro archivo | alto | arreglado sin verificación de ejecución |
+| PR117-H03 | Piso 14 px / Retry 48 px | alto | arreglado sin verificación de ejecución |
+| PR117-H04 | Falta navegador real/capturas 390/360 | medio | abierto |
+| PR117-H05 | Rollback falso sobre unregister | bajo | arreglado verificado por inspección |
+| PR117-H06 | Reintentar solo actualiza una instancia de `useOfflineStatus` | alto | abierto |
+| PR117-H07 | El test del guard de submit offline no puede detectar que se borre el guard | medio | abierto |
+| PR117-H08 | El harness del SW introduce 8 `any` explícitos | medio | abierto |
+| PR117-H09 | Maskable = copia del icono normal; falta set PWA/Safari exigido por S00 | alto | abierto |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. Pullear este commit de revisión y mergear `origin/develop` sin rebase.
-2. Aplicar H01–H04 y H05 siguiendo el prompt de la R1.
-3. Reflejar D02 en la ficha **solo con los cuatro paths aprobados**; no ampliar ningún otro archivo.
-4. Dejar evidencia RED/GREEN real. No crear tests ficticios ni adulterar expectativas para obtener verde.
-5. Volver a pedir revisión sobre el nuevo SHA.
+1. Corregir H06–H09 con el prompt de R2.
+2. Mantener H04 abierto y desmarcar en la ficha la verificación visual hasta tener evidencia real; no fabricar capturas.
+3. Dejar RED/GREEN reproducible de H06–H09.
+4. Volver a pedir R3. Recién cuando no queden bloqueantes se inspeccionará CI del SHA candidato.
 
 ## Para el análisis posterior
 
-La recurrencia dominante es **P08-control-no-cubre-lo-que-dice**: la suite verde demuestra proxies creados por el propio test, mientras el runtime relevante queda fuera. No se propone una lección AG nueva en esta ronda: el patrón ya está catalogado y fue marcado como reincidente en el protocolo de revisión.
+R2 refuerza **P08-control-no-cubre-lo-que-dice** en tres lugares nuevos: Retry sin postcondición compartida, submit offline cuyo test solo hace click en un botón disabled, y validación de iconos que comprueba existencia/tamaño de archivo pero no dimensiones ni que el maskable sea realmente distinto/seguro.
