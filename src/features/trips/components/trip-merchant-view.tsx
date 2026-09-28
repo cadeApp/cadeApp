@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { TripDetails } from '../types';
+import { TripRouteMap } from './trip-route-map';
 import { Button } from '@/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/card';
 import { Badge } from '@/ui/badge';
@@ -171,6 +172,20 @@ export function TripMerchantView({
           </div>
         </CardContent>
       </Card>
+
+      <TripRouteMap
+        pickupAddress={trip.pickupAddress}
+        pickupZoneName={trip.pickupZoneName}
+        pickupLat={trip.pickupLat}
+        pickupLng={trip.pickupLng}
+        dropoffAddress={trip.dropoffAddress}
+        dropoffZoneName={trip.dropoffZoneName}
+        dropoffLat={trip.dropoffLat}
+        dropoffLng={trip.dropoffLng}
+        routeDistanceM={trip.routeDistanceM}
+        showExternalNavigation={false}
+        title="Mapa del viaje"
+      />
 
       <Card className="border-primary/20 bg-primary/5 shadow-card">
         <CardContent className="space-y-3 p-4">

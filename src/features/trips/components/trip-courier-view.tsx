@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { TripDetails } from '../types';
+import { TripRouteMap } from './trip-route-map';
 import { Button } from '@/ui/button';
 import { Card, CardContent } from '@/ui/card';
 import { Badge } from '@/ui/badge';
@@ -124,6 +125,20 @@ export function TripCourierView({
           </p>
         </CardContent>
       </Card>
+
+      <TripRouteMap
+        pickupAddress={trip.pickupAddress}
+        pickupZoneName={trip.pickupZoneName}
+        pickupLat={trip.pickupLat}
+        pickupLng={trip.pickupLng}
+        dropoffAddress={trip.dropoffAddress}
+        dropoffZoneName={trip.dropoffZoneName}
+        dropoffLat={trip.dropoffLat}
+        dropoffLng={trip.dropoffLng}
+        routeDistanceM={trip.routeDistanceM}
+        showExternalNavigation={true}
+        title="Recorrido en mapa"
+      />
 
       <Card className="border-border bg-card shadow-card">
         <CardContent className="space-y-4 p-4">
