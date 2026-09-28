@@ -16,8 +16,7 @@ import { RequestCard } from './request-card';
 import type { OfferSheetProps } from './offer-sheet';
 import { FeedSkeleton } from './feed-skeleton';
 import { useAvailableRequests } from '../hooks/use-available-requests';
-// eslint-disable-next-line boundaries/entry-point -- Autorizado por decisión humana Opción A: desacople de useOfflineStatus para bundle budget [T-201]
-import { useOfflineStatus } from '@/features/notifications/offline/use-offline-status';
+import { useOfflineStatus } from '@/features/notifications';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
 
