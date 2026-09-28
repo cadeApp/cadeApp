@@ -9,6 +9,8 @@ export type MerchantSubscriptionStatus =
 export interface ZoneOption {
   readonly id: string;
   readonly name: string;
+  readonly centroidLat: number | null;
+  readonly centroidLng: number | null;
 }
 
 export interface MerchantAccountProfile {
@@ -21,11 +23,18 @@ export interface MerchantAccountProfile {
   readonly paidUntil: string | null;
 }
 
+interface ZoneRow {
+  readonly id: string;
+  readonly name: string;
+  readonly centroid_lat: number | null;
+  readonly centroid_lng: number | null;
+}
+
 export async function getActiveZones(): Promise<ZoneOption[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('zones')
-    .select('id, name')
+    .select<string, ZoneRow>('id, name, centroid_lat, centroid_lng')
     .eq('active', true)
     .order('name', { ascending: true });
 
@@ -33,7 +42,14 @@ export async function getActiveZones(): Promise<ZoneOption[]> {
     throw new Error(`Error al consultar zonas: ${error.message}`);
   }
 
-  return data ?? [];
+  return (
+    data?.map((row) => ({
+      id: row.id,
+      name: row.name,
+      centroidLat: row.centroid_lat,
+      centroidLng: row.centroid_lng,
+    })) ?? []
+  );
 }
 
 export async function getMerchantAccountProfile(): Promise<MerchantAccountProfile | null> {

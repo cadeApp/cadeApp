@@ -1,0 +1,62 @@
+{
+  "c01_map_available_390x844": {
+    "title": "Alta de Comercio (C01) - Estado: map-available (390x844)",
+    "url": "http://localhost:4567/?page=c01&state=map-available",
+    "timestamp": "2026-09-27T09:09:27.080Z",
+    "violationsCount": 0,
+    "passesCount": 26,
+    "incompleteCount": 1,
+    "inapplicableCount": 36,
+    "violations": []
+  },
+  "c01_map_available_360x800": {
+    "title": "Alta de Comercio (C01) - Estado: map-available (360x800)",
+    "url": "http://localhost:4567/?page=c01&state=map-available",
+    "timestamp": "2026-09-27T09:09:28.688Z",
+    "violationsCount": 0,
+    "passesCount": 26,
+    "incompleteCount": 1,
+    "inapplicableCount": 36,
+    "violations": []
+  },
+  "c01_google_failed_390x844": {
+    "title": "Alta de Comercio (C01) - Estado: google-failed (390x844)",
+    "url": "http://localhost:4567/?page=c01&state=google-failed",
+    "timestamp": "2026-09-27T09:09:30.263Z",
+    "violationsCount": 0,
+    "passesCount": 24,
+    "incompleteCount": 0,
+    "inapplicableCount": 38,
+    "violations": []
+  },
+  "c01_google_failed_360x800": {
+    "title": "Alta de Comercio (C01) - Estado: google-failed (360x800)",
+    "url": "http://localhost:4567/?page=c01&state=google-failed",
+    "timestamp": "2026-09-27T09:09:31.841Z",
+    "violationsCount": 0,
+    "passesCount": 24,
+    "incompleteCount": 0,
+    "inapplicableCount": 38,
+    "violations": []
+  },
+  "c01_offline_390x844": {
+    "title": "Alta de Comercio (C01) - Estado: offline (390x844)",
+    "url": "http://localhost:4567/?page=c01&state=offline",
+    "timestamp": "2026-09-27T09:09:33.437Z",
+    "violationsCount": 0,
+    "passesCount": 26,
+    "incompleteCount": 1,
+    "inapplicableCount": 36,
+    "violations": []
+  },
+  "c01_offline_360x800": {
+    "title": "Alta de Comercio (C01) - Estado: offline (360x800)",
+    "url": "http://localhost:4567/?page=c01&state=offline",
+    "timestamp": "2026-09-27T09:09:35.053Z",
+    "violationsCount": 0,
+    "passesCount": 26,
+    "incompleteCount": 1,
+    "inapplicableCount": 36,
+    "violations": []
+  }
+}
