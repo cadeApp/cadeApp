@@ -1,0 +1,62 @@
+{
+  "c03_map_available_390x844": {
+    "title": "Nueva Solicitud (C03) - Estado: map-available (390x844)",
+    "url": "http://localhost:4567/?page=c03&state=map-available",
+    "timestamp": "2026-09-27T09:09:36.688Z",
+    "violationsCount": 0,
+    "passesCount": 25,
+    "incompleteCount": 1,
+    "inapplicableCount": 37,
+    "violations": []
+  },
+  "c03_map_available_360x800": {
+    "title": "Nueva Solicitud (C03) - Estado: map-available (360x800)",
+    "url": "http://localhost:4567/?page=c03&state=map-available",
+    "timestamp": "2026-09-27T09:09:38.308Z",
+    "violationsCount": 0,
+    "passesCount": 25,
+    "incompleteCount": 1,
+    "inapplicableCount": 37,
+    "violations": []
+  },
+  "c03_google_failed_390x844": {
+    "title": "Nueva Solicitud (C03) - Estado: google-failed (390x844)",
+    "url": "http://localhost:4567/?page=c03&state=google-failed",
+    "timestamp": "2026-09-27T09:09:39.916Z",
+    "violationsCount": 0,
+    "passesCount": 24,
+    "incompleteCount": 0,
+    "inapplicableCount": 38,
+    "violations": []
+  },
+  "c03_google_failed_360x800": {
+    "title": "Nueva Solicitud (C03) - Estado: google-failed (360x800)",
+    "url": "http://localhost:4567/?page=c03&state=google-failed",
+    "timestamp": "2026-09-27T09:09:41.528Z",
+    "violationsCount": 0,
+    "passesCount": 24,
+    "incompleteCount": 1,
+    "inapplicableCount": 38,
+    "violations": []
+  },
+  "c03_offline_390x844": {
+    "title": "Nueva Solicitud (C03) - Estado: offline (390x844)",
+    "url": "http://localhost:4567/?page=c03&state=offline",
+    "timestamp": "2026-09-27T09:09:43.148Z",
+    "violationsCount": 0,
+    "passesCount": 25,
+    "incompleteCount": 1,
+    "inapplicableCount": 37,
+    "violations": []
+  },
+  "c03_offline_360x800": {
+    "title": "Nueva Solicitud (C03) - Estado: offline (360x800)",
+    "url": "http://localhost:4567/?page=c03&state=offline",
+    "timestamp": "2026-09-27T09:09:44.764Z",
+    "violationsCount": 0,
+    "passesCount": 25,
+    "incompleteCount": 1,
+    "inapplicableCount": 37,
+    "violations": []
+  }
+}

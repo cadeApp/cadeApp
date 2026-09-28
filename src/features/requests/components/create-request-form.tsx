@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -25,6 +26,7 @@ import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { cn } from '@/ui/cn';
 import { Input } from '@/ui/input';
+import { MapSkeleton } from '@/ui/map-skeleton';
 import { notify } from '@/ui/notify';
 import { Textarea } from '@/ui/textarea';
 import { createDeliveryRequestAction } from '../actions';
@@ -35,6 +37,14 @@ import {
   type CreateDeliveryRequestInput,
   type CreateDeliveryRequestOutput,
 } from '../schemas';
+
+const MapPicker = dynamic(
+  () => import('@/ui/map').then((mod) => mod.MapPicker),
+  {
+    ssr: false,
+    loading: () => <MapSkeleton className="h-64 w-full" />,
+  }
+);
 
 export interface CreateRequestFormProps {
   readonly zones: ZoneOption[];
@@ -51,6 +61,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
 
   const [dropoffLocating, setDropoffLocating] = React.useState(false);
   const [dropoffCoordsError, setDropoffCoordsError] = React.useState<string | null>(null);
+  const [showDropoffMap, setShowDropoffMap] = React.useState(false);
 
   const [customChangeInput, setCustomChangeInput] = React.useState('');
   const [serverError, setServerError] = React.useState<string | null>(null);
@@ -88,6 +99,12 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
   const pickupLng = watch('pickupLng');
   const dropoffLat = watch('dropoffLat');
   const dropoffLng = watch('dropoffLng');
+  const dropoffZoneId = watch('dropoffZoneId');
+  const dropoffZone = zones.find((z) => z.id === dropoffZoneId);
+  const dropoffZoneCenter =
+    dropoffZone?.centroidLat != null && dropoffZone?.centroidLng != null
+      ? { lat: dropoffZone.centroidLat, lng: dropoffZone.centroidLng }
+      : null;
   const packageType = watch('packageType');
   const paymentMethod = watch('recipientPaymentMethod');
   const needsChange = watch('needsChange');
@@ -215,7 +232,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             <h2 className="font-display text-base font-bold text-foreground">{copy.stepPickup}</h2>
           </div>
           {defaultPickup && (
-            <Badge variant="outline" className="border-primary/30 text-sm font-medium text-primary">
+            <Badge variant="outline" className="border-primary/30 text-sm font-medium text-primary-dark">
               Precargado editable
             </Badge>
           )}
@@ -276,12 +293,12 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               className="min-h-[44px] gap-2 text-sm"
             >
               <Navigation
-                className={cn('h-4 w-4 text-primary', pickupLocating && 'animate-spin')}
+                className={cn('h-4 w-4 text-primary-dark', pickupLocating && 'animate-spin')}
               />
               {pickupLocating ? 'Obteniendo GPS...' : copy.useMyLocation}
             </Button>
             {pickupLat != null && pickupLng != null && !pickupCoordsError && (
-              <span className="ml-3 inline-flex items-center gap-1 text-sm font-medium text-primary">
+              <span className="ml-3 inline-flex items-center gap-1 text-sm font-medium text-primary-dark">
                 <CheckCircle2 className="h-4 w-4" /> Pin de retiro fijado
               </span>
             )}
@@ -350,24 +367,55 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
           </div>
 
           <div className="pt-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleUseMyLocationDropoff}
-              disabled={dropoffLocating}
-              className="min-h-[44px] gap-2 text-sm"
-            >
-              <Navigation
-                className={cn('h-4 w-4 text-primary', dropoffLocating && 'animate-spin')}
-              />
-              {dropoffLocating ? 'Obteniendo GPS...' : 'Fijar ubicación opcional en Aguilares'}
-            </Button>
-            {dropoffLat != null && dropoffLng != null && !dropoffCoordsError && (
-              <span className="ml-3 inline-flex items-center gap-1 text-sm font-medium text-primary">
-                <CheckCircle2 className="h-4 w-4" /> Pin de entrega fijado
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDropoffMap((prev) => !prev)}
+                className="min-h-12 gap-2 text-sm"
+              >
+                <MapPin className="h-4 w-4 text-primary-dark" />
+                {showDropoffMap ? 'Ocultar mapa' : 'Fijar en mapa interactivo'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleUseMyLocationDropoff}
+                disabled={dropoffLocating}
+                className="min-h-12 gap-2 text-sm"
+              >
+                <Navigation
+                  className={cn('h-4 w-4 text-primary-dark', dropoffLocating && 'animate-spin')}
+                />
+                {dropoffLocating ? 'Obteniendo GPS...' : 'Usar mi ubicación'}
+              </Button>
+              {dropoffLat != null && dropoffLng != null && !dropoffCoordsError && (
+                <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-dark">
+                  <CheckCircle2 className="h-4 w-4" /> Pin fijado
+                </span>
+              )}
+            </div>
+
+            {showDropoffMap && (
+              <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
+                <MapPicker
+                  value={
+                    dropoffLat != null && dropoffLng != null
+                      ? { lat: dropoffLat, lng: dropoffLng }
+                      : null
+                  }
+                  onChange={(coords) => {
+                    setValue('dropoffLat', coords.lat, { shouldValidate: true });
+                    setValue('dropoffLng', coords.lng, { shouldValidate: true });
+                    setDropoffCoordsError(null);
+                  }}
+                  defaultZoneCenter={dropoffZoneCenter}
+                />
+              </div>
             )}
+
             {dropoffCoordsError && (
               <p className="mt-2 text-sm text-destructive">{dropoffCoordsError}</p>
             )}
@@ -483,12 +531,19 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                   className={cn(
                     'flex min-h-[58px] flex-col items-start justify-center rounded-lg border p-3 text-left transition-colors',
                     isSelected
-                      ? 'border-primary bg-primary/10 font-semibold text-primary'
+                      ? 'border-primary bg-primary/10 font-semibold text-primary-dark'
                       : 'border-border bg-background text-foreground hover:bg-muted/50'
                   )}
                 >
                   <span className="text-sm font-bold capitalize">{opt.label}</span>
-                  <span className="line-clamp-2 text-sm opacity-80">{opt.description}</span>
+                  <span
+                    className={cn(
+                      'line-clamp-2 text-sm font-normal',
+                      isSelected ? 'text-primary-dark' : 'text-muted-foreground'
+                    )}
+                  >
+                    {opt.description}
+                  </span>
                 </button>
               );
             })}
@@ -505,7 +560,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
 
         <div className="space-y-3">
           <div className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary-dark" />
             <p>{copy.paymentMethodHint}</p>
           </div>
 
@@ -531,7 +586,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                     className={cn(
                       'flex min-h-[48px] items-center justify-center gap-2 rounded-lg border p-3 text-sm font-semibold transition-colors',
                       isSelected
-                        ? 'border-primary bg-primary/10 text-primary'
+                        ? 'border-primary bg-primary/10 text-primary-dark'
                         : 'border-border bg-background text-foreground hover:bg-muted/50'
                     )}
                   >

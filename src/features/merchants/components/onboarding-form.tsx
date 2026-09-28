@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Store, Phone, MapPin, Crosshair, Info, AlertTriangle, AlertCircle } from 'lucide-react';
+import { Store, Phone, MapPin, AlertTriangle, AlertCircle, Info, Crosshair } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { Input } from '@/ui/input';
+import { MapSkeleton } from '@/ui/map-skeleton';
 import { Textarea } from '@/ui/textarea';
 import { merchantOnboardingAction } from '../actions';
 import { merchantCopy } from '../copy';
@@ -16,6 +18,14 @@ import { useForm, zodResolver } from './form-hooks';
 import type { ZoneOption } from '../queries';
 import Link from 'next/link';
 import { getLegalDocument } from '@/features/legal';
+
+const MapPicker = dynamic(
+  () => import('@/ui/map').then((mod) => mod.MapPicker),
+  {
+    ssr: false,
+    loading: () => <MapSkeleton className="h-64 w-full" />,
+  }
+);
 
 interface MerchantOnboardingFormProps {
   readonly zones: ZoneOption[];
@@ -51,6 +61,13 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
 
   const defaultPickupLat = watch('defaultPickupLat');
   const defaultPickupLng = watch('defaultPickupLng');
+  const selectedZoneId = watch('defaultPickupZoneId');
+
+  const selectedZone = zones.find((z) => z.id === selectedZoneId);
+  const selectedZoneCenter =
+    selectedZone?.centroidLat != null && selectedZone?.centroidLng != null
+      ? { lat: selectedZone.centroidLat, lng: selectedZone.centroidLng }
+      : null;
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
@@ -82,10 +99,13 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
   };
 
   const onSubmit = async (data: MerchantOnboardingInput) => {
+    const finalLat = data.defaultPickupLat ?? selectedZoneCenter?.lat ?? null;
+    const finalLng = data.defaultPickupLng ?? selectedZoneCenter?.lng ?? null;
+
     if (
-      data.defaultPickupLat != null &&
-      data.defaultPickupLng != null &&
-      !isWithinAguilaresBounds(data.defaultPickupLat, data.defaultPickupLng)
+      finalLat != null &&
+      finalLng != null &&
+      !isWithinAguilaresBounds(finalLat, finalLng)
     ) {
       setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);
       return;
@@ -96,6 +116,8 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
     try {
       const result = await merchantOnboardingAction({
         ...data,
+        defaultPickupLat: finalLat,
+        defaultPickupLng: finalLng,
         defaultPickupZoneId: data.defaultPickupZoneId || undefined,
         notes: data.notes || undefined,
       });
@@ -231,7 +253,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           )}
         </div>
 
-        {/* Ubicación del local en el mapa / Fallback graceful */}
+        {/* Ubicación del local en el mapa / Selector interactivo T-116 */}
         <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
           <div className="flex items-start gap-2">
             <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary-dark" />
@@ -243,12 +265,6 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
                 {merchantCopy.onboarding.mapCardHelper}
               </p>
             </div>
-          </div>
-
-          {/* Degradación elegante: aviso informativo si no carga el mapa dinámico */}
-          <div className="flex items-center gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
-            <Info className="h-5 w-5 shrink-0 text-primary-dark" />
-            <span>{merchantCopy.onboarding.mapFallbackNotice}</span>
           </div>
 
           <Button
@@ -272,6 +288,20 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             </div>
           )}
 
+          <MapPicker
+            value={
+              defaultPickupLat != null && defaultPickupLng != null
+                ? { lat: defaultPickupLat, lng: defaultPickupLng }
+                : null
+            }
+            onChange={(coords) => {
+              setValue('defaultPickupLat', coords.lat, { shouldValidate: true });
+              setValue('defaultPickupLng', coords.lng, { shouldValidate: true });
+              setCoordsError(null);
+            }}
+            defaultZoneCenter={selectedZoneCenter}
+          />
+
           {coordsError && (
             <div
               role="alert"
@@ -281,6 +311,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
               <span>{coordsError}</span>
             </div>
           )}
+
           {errors.defaultPickupLat && (
             <div
               role="alert"
