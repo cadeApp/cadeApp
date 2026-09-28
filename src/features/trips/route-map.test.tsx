@@ -447,6 +447,36 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       // Verificación de target táctil de al menos 48 px de alto para uso con guantes en moto
       expect(mapsLink.className).toMatch(/h-12|min-h-\[48px\]|min-h-12/);
     });
+
+    it('PR119-H05: TripCourierView con coordenadas null pasa direcciones completas tal cual sin anexar sufijos duplicados', () => {
+      const tripWithoutCoords: TripDetails = {
+        ...baseTrip,
+        pickupAddress: 'San Martín 450, Aguilares, Tucumán',
+        dropoffAddress: 'Belgrano 1220, Concepción, Tucumán',
+        pickupLat: null,
+        pickupLng: null,
+        dropoffLat: null,
+        dropoffLng: null,
+      };
+
+      render(<TripCourierView trip={tripWithoutCoords} />);
+
+      const mapsLink = screen.getByRole('link', { name: /abrir en google maps/i });
+      expect(mapsLink).toBeDefined();
+
+      const href = mapsLink.getAttribute('href');
+      expect(href).toBeDefined();
+
+      const expectedOrigin = encodeURIComponent('San Martín 450, Aguilares, Tucumán');
+      const expectedDest = encodeURIComponent('Belgrano 1220, Concepción, Tucumán');
+      expect(href).toBe(
+        `https://www.google.com/maps/dir/?api=1&origin=${expectedOrigin}&destination=${expectedDest}`
+      );
+
+      // No debe contener sufijo duplicado como "Aguilares, Tucumán, Aguilares"
+      expect(href).not.toContain(encodeURIComponent('Aguilares, Tucumán, Aguilares'));
+      expect(href).not.toContain(encodeURIComponent('Concepción, Tucumán, Aguilares'));
+    });
   });
 
   describe('4. H04 — Fallback graceful y resiliencia ante fallo real de APIProvider.onError, status FAILED, offline y sin key', () => {

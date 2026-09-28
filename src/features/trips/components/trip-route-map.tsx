@@ -119,8 +119,8 @@ export function TripRouteMap({
       });
     }
     return buildGoogleMapsDirectionsUrl({
-      origin: `${pickupAddress}, Aguilares, Tucumán`,
-      destination: `${dropoffAddress}, Aguilares, Tucumán`,
+      origin: pickupAddress,
+      destination: dropoffAddress,
     });
   }, [hasCoords, pickupLat, pickupLng, dropoffLat, dropoffLng, pickupAddress, dropoffAddress]);
 
@@ -267,7 +267,7 @@ export function TripRouteMap({
       {/* Pie informativo para C06 (cuando no hay botón externo) */}
       {!showExternalNavigation && (
         <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2 text-xs text-muted-foreground">
-          <span>Aguilares, Tucumán</span>
+          <span>{pickupZoneName} → {dropoffZoneName}</span>
           <span className="font-medium text-primary">Ruta directa sin desvíos</span>
         </div>
       )}
