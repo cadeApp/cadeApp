@@ -15,45 +15,49 @@ describe('T-201: Verificación visual responsive (390px / 360px), emulación iOS
   describe('T01 — Guía de instalación en iOS Safari', () => {
     it('emulación de iOS Safari (standalone: false) vs iOS Chrome vs PWA instalada', () => {
       const origNav = window.navigator;
+      const setNavigator = (userAgent: string, standalone: boolean) => {
+        Object.defineProperty(window, 'navigator', {
+          value: { userAgent, standalone },
+          writable: true,
+          configurable: true,
+        });
+      };
 
-      // 1. iOS Safari en navegador -> debe ser true
-      Object.defineProperty(window, 'navigator', {
-        value: {
-          userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
-          standalone: false,
-        },
-        writable: true,
-        configurable: true,
-      });
-      expect(isIosSafariNonStandalone()).toBe(true);
+      try {
+        // 1. iOS Safari en navegador -> debe ser true
+        setNavigator(
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+          false
+        );
+        expect(isIosSafariNonStandalone()).toBe(true);
 
-      // 2. iOS ya instalado como PWA (standalone: true) -> debe ser false
-      Object.defineProperty(window, 'navigator', {
-        value: {
-          userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-          standalone: true,
-        },
-        writable: true,
-        configurable: true,
-      });
-      expect(isIosSafariNonStandalone()).toBe(false);
+        // 2. iOS Chrome (CriOS) en navegador -> debe ser false
+        setNavigator(
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/123.0.6312.69 Mobile/15E148 Safari/604.1',
+          false
+        );
+        expect(isIosSafariNonStandalone()).toBe(false);
 
-      // 3. Android Chrome -> debe ser false
-      Object.defineProperty(window, 'navigator', {
-        value: {
-          userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
-          standalone: false,
-        },
-        writable: true,
-        configurable: true,
-      });
-      expect(isIosSafariNonStandalone()).toBe(false);
+        // 3. iOS ya instalado como PWA (standalone: true) -> debe ser false
+        setNavigator(
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+          true
+        );
+        expect(isIosSafariNonStandalone()).toBe(false);
 
-      Object.defineProperty(window, 'navigator', {
-        value: origNav,
-        writable: true,
-        configurable: true,
-      });
+        // 4. Android Chrome -> debe ser false
+        setNavigator(
+          'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36',
+          false
+        );
+        expect(isIosSafariNonStandalone()).toBe(false);
+      } finally {
+        Object.defineProperty(window, 'navigator', {
+          value: origNav,
+          writable: true,
+          configurable: true,
+        });
+      }
     });
 
     it('renderizado responsive a 360px y 390px conserva targets táctiles de 48px y safe-areas', () => {

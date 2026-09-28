@@ -9,39 +9,61 @@ describe('T-201: iOS PWA Installation Guide (T01)', () => {
     vi.restoreAllMocks();
   });
 
-  it('DoD: isIosSafariNonStandalone detecta correctamente iOS Safari en modo navegador', () => {
+  it('DoD: isIosSafariNonStandalone detecta correctamente iOS Safari en modo navegador y descarta otros navegadores iOS', () => {
     const originalNavigator = window.navigator;
+    const setNavigator = (userAgent: string, standalone: boolean) => {
+      Object.defineProperty(window, 'navigator', {
+        value: {
+          userAgent,
+          standalone,
+        },
+        writable: true,
+        configurable: true,
+      });
+    };
 
-    // Simular iOS Safari no standalone
-    Object.defineProperty(window, 'navigator', {
-      value: {
-        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-        standalone: false,
-      },
-      writable: true,
-      configurable: true,
-    });
+    try {
+      // Caso A — Safari iPhone, navegador
+      setNavigator(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        false
+      );
+      expect(isIosSafariNonStandalone()).toBe(true);
 
-    expect(isIosSafariNonStandalone()).toBe(true);
+      // Caso B — Chrome iPhone
+      setNavigator(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/123.0.6312.69 Mobile/15E148 Safari/604.1',
+        false
+      );
+      expect(isIosSafariNonStandalone()).toBe(false);
 
-    // Simular Android Chrome
-    Object.defineProperty(window, 'navigator', {
-      value: {
-        userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-        standalone: false,
-      },
-      writable: true,
-      configurable: true,
-    });
+      // Caso C — Firefox iPhone
+      setNavigator(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/124.0 Mobile/15E148 Safari/605.1.15',
+        false
+      );
+      expect(isIosSafariNonStandalone()).toBe(false);
 
-    expect(isIosSafariNonStandalone()).toBe(false);
+      // Caso D — Safari ya instalado
+      setNavigator(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+        true
+      );
+      expect(isIosSafariNonStandalone()).toBe(false);
 
-    // Restaurar
-    Object.defineProperty(window, 'navigator', {
-      value: originalNavigator,
-      writable: true,
-      configurable: true,
-    });
+      // Caso E — Android Chrome
+      setNavigator(
+        'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        false
+      );
+      expect(isIosSafariNonStandalone()).toBe(false);
+    } finally {
+      Object.defineProperty(window, 'navigator', {
+        value: originalNavigator,
+        writable: true,
+        configurable: true,
+      });
+    }
   });
 
   it('DoD: IosInstallGuideSheet se monta en un Sheet con los 3 pasos, la advertencia y acción de cerrar', () => {
