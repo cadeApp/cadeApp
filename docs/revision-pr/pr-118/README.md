@@ -2,31 +2,40 @@
 
 - **PR:** #118 · `feat/T-206-cableado-push` → `develop`
 - **Tarea:** T-206 · Issue #92
-- **Ronda actual:** 1
-- **SHA de producto revisado:** `f1d2d096cdcddc68633270c5b8b5805b4daff035`
+- **Ronda actual:** 2
+- **SHA de producto revisado:** `aba405dd4544af13d85cdd0b3e26a1f8bca8e07d`
 - **develop comparado:** `57badabc28fd3bd8e913674bd80b30feb8828414`
 - **Estado:** **CON BLOQUEANTES**
-- **Decisión humana:** D01 = **1-A**. Cancelación/expiración notifican solo a actores afectados por esa transición; no a couriers históricos.
+- **Decisión humana:** D01 = **1-A**, sin cambios.
 - **Aprobación/merge:** no realizados.
 
-## Hallazgos abiertos
+## Estado de Ronda 1
 
-- **PR118-H01 · alto · correctness:** `accept_offer` reenvía push en replay `idempotent:true`.
-- **PR118-H02 · alto · correctness:** `cancel_request` incluye merchant y todos los couriers históricos.
-- **PR118-H03 · alto · correctness:** `request_expired` vuelve a consultar todas las ofertas en vez de usar las filas realmente expiradas.
-- **PR118-H04 · alto · test-coverage:** los tests de destinatarios no protegen predicados exactos ni destinatarios extra.
-- **PR118-H05 · medio · test-coverage:** falta evidencia de mutaciones RED semánticas sobre el GREEN, incluida la mutación de orden exigida por la ficha.
-- **PR118-M01 · medio · conventions:** bitácora/PR dicen `test:db n.a.` aunque la PR toca `src/server/**`; CI db-tests sí pasó.
+- **H01:** implementación corregida por inspección; el test directo corre verde en CI. Pendiente mutación independiente/reproducible.
+- **H02:** implementación corregida por inspección y matriz exacta de destinatarios agregada. El control de `audit_log` quedó incompleto dentro de H04.
+- **H03:** reconsulta amplia eliminada y agrupación por filas actualizadas implementada. El arreglo introdujo PR118-R01: fallback condicional de `.select()`.
+- **H04:** **parcial**. Publish/submit/accept y conjuntos exactos mejoraron, pero los predicados de `audit_log` siguen sin estar protegidos semánticamente.
+- **H05:** **abierto**. La bitácora enumera mutaciones pero no registra las líneas reales RED/GREEN requeridas; la mutación de `decided_at` tampoco es reproducible semánticamente con el mock actual.
+- **M01:** corregido; CI del nuevo SHA vuelve a confirmar db-tests PASS.
 
-## Lo que quedó bien por inspección
+## Nuevos bloqueantes
 
-- Los eventos se construyen con IDs y los contratos de T-203; no se agregan teléfono, dirección, DNI, selfie ni otros datos personales.
-- Los call sites principales ejecutan el side effect después de una respuesta de negocio exitosa.
-- Las purgas de logout/suspensión/rechazo/suspensión preventiva están ubicadas después del éxito de negocio y son best-effort.
-- El sweep conserva la guarda de expiración sobre las filas de solicitudes realmente actualizadas.
+- **PR118-H06 · alto · correctness:** un rechazo de `auth.getUser()` ocurre fuera del best-effort y evita `signOut()`.
+- **PR118-H07 · alto · correctness:** `accept_offer` y `cancel_request` ignoran errores in-band de los lookups y pueden enviar a un conjunto parcial/incorrecto.
+- **PR118-R01 · medio · test-coverage:** el arreglo de H03 agregó un fallback productivo que permite seguir sin `.select('request_id, courier_id')`.
 
-## Evidencia de infraestructura
+## Mejora
 
-Por política de revisión no se levantó Supabase/Docker local. Se inspeccionó el job `db-tests` de CI asociado al head/merge ref: **Files=12, Tests=1601, Result: PASS**.
+- **PR118-M02:** el cuerpo de la PR quedó desfasado respecto de CI: dice 1254 tests y verify-workflows 21, pero el run del SHA revisado reporta 1255 y 22.
 
-La siguiente ronda debe revalidar los arreglos sobre el nuevo SHA y agregar mutaciones independientes nuevas.
+## CI del SHA revisado
+
+Workflow `36380194256`: todos los jobs verdes.
+
+- Unit: 92/92 files, 1255/1255 tests.
+- verify-workflows: 22.
+- verify-adr: 6.
+- db-tests: Files=12, Tests=1601, Result: PASS.
+- typecheck/lint/build/audit/bundle-budget: success.
+
+CI verde no cierra los bloqueantes semánticos de esta ronda.
