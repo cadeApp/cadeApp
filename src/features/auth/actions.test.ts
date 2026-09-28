@@ -591,5 +591,73 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(mockSignOut).toHaveBeenCalledTimes(1);
       expect(result.ok).toBe(true);
     });
+
+    it('T-206: logoutAction purga las suscripciones del usuario en push_subscriptions al cerrar sesión', async () => {
+      const mockSignOut = vi.fn().mockResolvedValue({ error: null });
+      const mockGetUser = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-push-logout-1' } },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: mockGetUser,
+          signOut: mockSignOut,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const mockDeleteEq = vi.fn().mockResolvedValue({ error: null });
+      const mockDelete = vi.fn().mockReturnValue({ eq: mockDeleteEq });
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let deletedBeforeSignOut = false;
+      mockDeleteEq.mockImplementation(async () => {
+        expect(mockSignOut).not.toHaveBeenCalled();
+        deletedBeforeSignOut = true;
+        return { error: null };
+      });
+
+      const result = await logoutAction();
+
+      expect(result.ok).toBe(true);
+      expect(mockAdminFrom).toHaveBeenCalledWith('push_subscriptions');
+      expect(mockDelete).toHaveBeenCalled();
+      expect(mockDeleteEq).toHaveBeenCalledWith('user_id', 'usr-push-logout-1');
+      expect(deletedBeforeSignOut).toBe(true);
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
+
+    it('T-206: logoutAction no falla ni purga suscripciones si no hay usuario autenticado', async () => {
+      const mockSignOut = vi.fn().mockResolvedValue({ error: null });
+      const mockGetUser = vi.fn().mockResolvedValue({
+        data: { user: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: mockGetUser,
+          signOut: mockSignOut,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const mockDelete = vi.fn();
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const result = await logoutAction();
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).not.toHaveBeenCalled();
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
   });
 });
+

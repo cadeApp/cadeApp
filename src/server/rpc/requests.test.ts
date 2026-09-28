@@ -315,4 +315,222 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       setDiscordTimeoutForTesting(null);
     }
   }, 1000);
+
+  describe('T-206: Cableado de push en transiciones de negocio (requests)', () => {
+    it('publish_request despacha push a repartidores habilitados y disponibles después del éxito', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 2,
+        sentCount: 2,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'couriers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: [
+                    { profile_id: '00000000-0000-4000-8000-0000000000c1' },
+                    { profile_id: '00000000-0000-4000-8000-0000000000c2' },
+                  ],
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let rpcExecuted = false;
+      let orderIsPostCommit = false;
+      const rpc = vi.fn().mockImplementation(async () => {
+        rpcExecuted = true;
+        return {
+          data: {
+            requestId,
+            status: 'published',
+            publishedAt: time,
+            expiresAt: time,
+            routeDistanceM: 1500,
+          },
+          error: null,
+        };
+      });
+
+      safeNotifySpy.mockImplementationOnce(async () => {
+        orderIsPostCommit = rpcExecuted;
+        return {
+          totalSubscriptions: 2,
+          sentCount: 2,
+          failedCount: 0,
+          deletedSubscriptions: [],
+          attempts: [],
+          errors: [],
+        };
+      });
+
+      const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(orderIsPostCommit).toBe(true);
+      expect(safeNotifySpy).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          '00000000-0000-4000-8000-0000000000c1',
+          '00000000-0000-4000-8000-0000000000c2',
+        ]),
+        {
+          event: 'request_published',
+          requestId,
+        }
+      );
+      safeNotifySpy.mockRestore();
+    });
+
+    it('publish_request NO despacha push si la RPC falla', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'INVALID_STATE_TRANSITION' },
+      });
+
+      const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+
+      expect(result.ok).toBe(false);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('publish_request conserva resultado exitoso si el emisor push falla (best-effort)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockRejectedValue(
+        new Error('Push network timeout')
+      );
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'published',
+          publishedAt: time,
+          expiresAt: time,
+          routeDistanceM: 1500,
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request despacha push request_cancelled tras éxito de cancelación', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 1,
+        sentCount: 1,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({
+                data: [{ courier_id: '00000000-0000-4000-8000-0000000000c1' }],
+                error: null,
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: '00000000-0000-4000-8000-0000000000b1' },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let rpcExecuted = false;
+      let orderIsPostCommit = false;
+      const rpc = vi.fn().mockImplementation(async () => {
+        rpcExecuted = true;
+        return {
+          data: {
+            requestId,
+            status: 'cancelled',
+            cancelledAt: time,
+          },
+          error: null,
+        };
+      });
+
+      safeNotifySpy.mockImplementationOnce(async () => {
+        orderIsPostCommit = rpcExecuted;
+        return {
+          totalSubscriptions: 1,
+          sentCount: 1,
+          failedCount: 0,
+          deletedSubscriptions: [],
+          attempts: [],
+          errors: [],
+        };
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(orderIsPostCommit).toBe(true);
+      expect(safeNotifySpy).toHaveBeenCalledWith(
+        expect.arrayContaining(['00000000-0000-4000-8000-0000000000c1']),
+        {
+          event: 'request_cancelled',
+          requestId,
+        }
+      );
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request NO despacha push si la RPC falla', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'REQUEST_EXPIRED' },
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(false);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+  });
 });
+
