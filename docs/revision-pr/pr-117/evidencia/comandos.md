@@ -1,50 +1,63 @@
-# Comandos reproducibles — PR #117 / R5
+# Comandos reproducibles — PR #117 / R6
 
-## CI del SHA `aea137697424c0da86d256c0675b0ca6a7267eda`
+## SHA revisado
 
-Workflow: CI #538.
+`5e48b7809c0ceb62743f23162b5061dfabdfad4e`
 
-Suites relevantes observadas en logs:
+## H11 verificado en CI #548
 
 ```text
-courier-panel.test.tsx       16 tests PASS
-offline-state.test.tsx        5 tests PASS
-visual-verification.test.tsx  7 tests PASS
-ios-install-guide.test.tsx    2 tests PASS
-sw.test.ts                    9 tests PASS
-manifest.test.ts              4 tests PASS
-Total                         98 files / 1260 tests PASS
-DB                            12 files / 1601 tests PASS
+/courier/feed   177 kB  OK
+/courier/offers 177 kB  OK
+99 test files / 1271 tests PASS
 ```
 
-## Comparación de bundle
-
-develop `57badabc...`:
+develop actual `c91ec4e...`:
 
 ```text
 /courier/feed   176 kB  OK
 /courier/offers 176 kB  OK
 ```
 
-PR `aea137697424c0da86d256c0675b0ca6a7267eda`:
+## H12
 
-```text
-/courier/feed   244 kB  Supera el límite
-/courier/offers 244 kB  Supera el límite
+Debe desaparecer:
+
+```ts
+// eslint-disable-next-line boundaries/entry-point
+import { useOfflineStatus } from '@/features/notifications/offline/use-offline-status';
 ```
 
-## Después del arreglo H11
+Y quedar:
+
+```ts
+import { useOfflineStatus } from '@/features/notifications';
+```
+
+Comprobación:
 
 ```bash
-pnpm build 2>&1 | tee build-output.txt
-node .github/workflows/check-bundle-budget.mjs build-output.txt
+git grep -n "boundaries/entry-point" -- src/features/offers/components/courier-feed.tsx
+```
+
+Debe devolver 0 líneas.
+
+## Sincronización y batería final
+
+```bash
+git fetch origin
+git merge origin/develop
+
 pnpm typecheck
 pnpm lint
 pnpm test
+pnpm build 2>&1 | tee build-output.txt
+node .github/workflows/check-bundle-budget.mjs build-output.txt
+
+git status --short
 ```
 
 Criterio:
-- `/courier/feed <= 180 kB`
-- `/courier/offers <= 180 kB`
-
-No usar el conclusion=success del job advisory como sustituto del número real.
+- courier feed/offers <=180 kB;
+- no reintroducir import profundo si el tamaño sube;
+- pedir revisión del SHA remoto después del push.

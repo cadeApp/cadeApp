@@ -3,12 +3,11 @@
 | | |
 |---|---|
 | **PR** | https://github.com/cadeApp/cadeApp/pull/117 |
-| **Tarea** | T-201 (Fase 2 · PWA, notificaciones y accesibilidad) |
-| **Autor** | @KiraK72 |
+| **Tarea** | T-201 |
 | **Rama** | `feat/T-201-pwa-manifest-sw` → `develop` |
-| **develop al revisar R5** | `57badabc28fd3bd8e913674bd80b30feb8828414` |
-| **SHA R5** | `aea137697424c0da86d256c0675b0ca6a7267eda` |
-| **Estado** | bloqueada · R5 · H11 |
+| **SHA R6** | `5e48b7809c0ceb62743f23162b5061dfabdfad4e` |
+| **develop actual** | `c91ec4e304de0d983cd31be3c77acecf374304bf` |
+| **Estado** | bloqueada · R6 · H12 + sincronización develop |
 
 ## Rondas
 
@@ -18,22 +17,38 @@
 | 2 | `a1c93ae...` | H04 + H06–H09 |
 | 3 | `3795238...` | H04 + H10 |
 | 4 | `d47c7c1...` | H04 |
-| 5 | `aea137697424c0da86d256c0675b0ca6a7267eda` | H04 aceptado por waiver; H11 bundle regression abierto |
+| 5 | `aea13769...` | H04 waiver; H11 abierto |
+| 6 | `5e48b7809c0ceb62743f23162b5061dfabdfad4e` | H11 cerrado; A02 aceptado; H12 abierto; branch behind develop 1 |
 
-## Decisiones humanas
+## Decisiones humanas vigentes
 
-- **D01 / 1-A:** aceptar `src/features/notifications/index.ts`.
-- **D02 / 2-A:** autorizar los cuatro archivos de offers.
-- **D03 / 3-A:** Cache Storage solo shell/assets públicos same-origin.
-- **D04 / waiver R5:** Lautaro073 acepta continuar sin Safari ni capturas reales. H04 queda **aceptado con riesgo**, no “verificado”.
+- **D01:** aceptar entry point `notifications/index.ts`.
+- **D02:** autorizar los cuatro archivos de offers para T03.
+- **D03:** Cache Storage solo shell/assets públicos same-origin.
+- **D04:** waiver visual H04; aceptado con riesgo, no verificado.
+- **D05 / R6:** aceptar exactamente los cambios de imports UI hoja en:
+  - `install/ios-install-guide-sheet.tsx`
+  - `offline/offline-banner.tsx`
+  - `offline/error-view.tsx`
+  - `offline/not-found-view.tsx`
+- **D06 / R6:** NO autorizar import profundo entre features ni `eslint-disable boundaries/entry-point`; `CourierFeed` debe volver a `@/features/notifications`.
 
 ## Estado
 
-- A01: aceptado.
-- H01–H03 y H05–H10: cerrados/verificados.
-- H04: aceptado por waiver humano.
-- **H11: abierto — /courier/feed y /courier/offers suben de 176 kB a 244 kB.**
+- A01, A02: aceptados.
+- H01–H03, H05–H11: cerrados/verificados.
+- H04: aceptado por waiver.
+- **H12: abierto.**
+- La rama está **behind 1** respecto de `develop`; debe mergear `origin/develop` sin rebase y revalidar.
 
-## Próximo paso
+## Evidencia H11
 
-Corregir H11 con el menor cambio posible en la API pública de `notifications`, medir el build real y volver a pedir revisión. No hay que volver a trabajar H04.
+CI R6:
+- `/courier/feed = 177 kB` ✅
+- `/courier/offers = 177 kB` ✅
+
+develop actual:
+- `/courier/feed = 176 kB`
+- `/courier/offers = 176 kB`
+
+La regresión original de 244 kB queda resuelta. El cierre final depende de mantener ≤180 después de H12 + merge de develop.
