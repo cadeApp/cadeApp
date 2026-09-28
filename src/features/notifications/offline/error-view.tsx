@@ -3,7 +3,8 @@
 import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { AlertCircle, RefreshCw } from 'lucide-react';
-import { Button, buttonVariants, cn } from '@/ui';
+import { Button, buttonVariants } from '@/ui/button';
+import { cn } from '@/ui/cn';
 
 export interface ErrorViewProps {
   error: Error & { digest?: string };

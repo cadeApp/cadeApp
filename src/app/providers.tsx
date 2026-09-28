@@ -1,14 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MotionProvider, Toaster } from '@/ui';
 import {
-  IosInstallGuideSheet,
   isIosSafariNonStandalone,
   OfflineBanner,
   OfflineFloatingCard,
 } from '@/features/notifications';
+
+const LazyIosInstallGuideSheet = dynamic(
+  () =>
+    import('@/features/notifications').then((m) => ({
+      default: m.IosInstallGuideSheet,
+    })),
+  { ssr: false },
+);
 
 const IOS_DISMISS_KEY = 'cadeapp_ios_install_guide_dismissed';
 
@@ -64,7 +72,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <OfflineBanner />
         {children}
         <OfflineFloatingCard />
-        <IosInstallGuideSheet open={showIosGuide} onOpenChange={handleCloseIosGuide} />
+        {showIosGuide && (
+          <LazyIosInstallGuideSheet open={showIosGuide} onOpenChange={handleCloseIosGuide} />
+        )}
         <Toaster />
       </MotionProvider>
     </QueryClientProvider>

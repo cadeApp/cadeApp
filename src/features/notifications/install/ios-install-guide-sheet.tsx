@@ -2,15 +2,15 @@
 
 import React from 'react';
 import { AlertTriangle, PlusSquare, Share, Smartphone } from 'lucide-react';
+import { Button } from '@/ui/button';
 import {
-  Button,
   Sheet,
   SheetContent,
   SheetDescription,
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from '@/ui';
+} from '@/ui/sheet';
 
 export interface IosInstallGuideSheetProps {
   open: boolean;

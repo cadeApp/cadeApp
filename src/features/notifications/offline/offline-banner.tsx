@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { RefreshCw, WifiOff } from 'lucide-react';
-import { Button } from '@/ui';
+import { Button } from '@/ui/button';
 import { useOfflineStatus } from './use-offline-status';
 
 export interface OfflineBannerProps {

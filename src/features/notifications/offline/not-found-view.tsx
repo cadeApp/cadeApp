@@ -1,7 +1,8 @@
 import React from 'react';
 import Link from 'next/link';
 import { Compass, Home } from 'lucide-react';
-import { buttonVariants, cn } from '@/ui';
+import { buttonVariants } from '@/ui/button';
+import { cn } from '@/ui/cn';
 
 export function NotFoundView() {
   return (
