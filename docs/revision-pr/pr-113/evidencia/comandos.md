@@ -2,14 +2,29 @@
 
 ## Ronda 1 — SHA `3ef389de515f01b03a7aff88982b0b32b5f91c4d`
 
+La R1 encontró H01–H08 y detuvo GREEN hasta CC-012 + corrección del RED.
+
+## Ronda 2 — SHA `32d56c44a67b83de782086e0f9e176490c088d88`
+
 ### Preflight
 
-- base: `develop@47d65c41dc22e1f6b5bebbfb5473c3e89b2d820a`
-- rama: 0 commits detrás de develop al iniciar la revisión;
-- PR mergeable, Draft;
-- no existía `docs/revision-pr/pr-113/**` escrito por el autor.
+```text
+base: develop@aae504a218b8b76e2d6cd0f56d8b5189e5b8b4fd
+branch: feat/T-124-incidentes
+ahead: 12
+behind: 0
+mergeable: true
+Draft: true
+```
 
-### CI run 36306937968
+Desde el commit de desbloqueo `2c2eb03` hasta el SHA funcional R2:
+- 6 commits;
+- 34 archivos funcionales/documentales de T-124;
+- ningún cambio del autor en `docs/revision-pr/pr-113/**`.
+
+### Fase RED corregida — commit `86f53b5`
+
+CI run `36353380524`:
 
 ```text
 typecheck       PASS
@@ -17,75 +32,113 @@ lint            PASS
 build           PASS
 audit           PASS
 db-tests        PASS
-bundle-budget   PASS
-unit            FAIL esperado — fase RED
+bundle-budget   PASS (warning de rutas fuera de presupuesto)
+unit            FAIL esperado
 
-Test Files      7 failed | 73 passed (80)
-Tests           94 failed | 897 passed (991)
+Test Files      8 failed | 84 passed
+Tests           120 failed | 1102 passed
+```
 
-db-tests:
-Files=12, Tests=1529
+La inspección del log muestra fallos en los ocho archivos/rutas de T-124: stubs `T-124: sin implementar`, rutas admin ausentes, componentes no renderizados y wiring del viaje todavía sin props finales. No se detecta una suite ajena roja.
+
+### GREEN final — CI `36355934244`
+
+```text
+build           PASS
+lint            PASS
+db-tests        PASS
+audit           PASS
+typecheck       PASS
+unit            PASS
+bundle-budget   PASS con warning
+```
+
+Unit:
+
+```text
+src/app/(admin)/admin/incidents/_tests/trip-report-wiring.test.tsx  9 tests PASS
+src/app/(admin)/admin/incidents/_tests/incidents-routes.test.tsx     10 tests PASS
+Test Files 92 passed
+Tests      1225 passed
+```
+
+DB:
+
+```text
+Files=12, Tests=1601
 Result: PASS
+pnpm db:types --local
+git diff --exit-code -- src/types/database.types.ts
+→ sin drift
 ```
 
-Los fallos unitarios inspeccionados son de T-124: stubs `T-124: sin implementar`, componentes `null`, rutas ausentes y controles D03. No se observó regresión de suites ajenas.
+### H03–H08
 
-### Contrato report_incident
+Inspección del SHA:
+- `resolveIncidentAction` solo acepta/manda `incidentId, decision, reason`;
+- schemas de feature reutilizan Zod canónico de CC-012;
+- el test de wiring renderiza `trips/[id]/page.tsx` real y observa props reales;
+- la bandeja consume `admin_list_incidents` y no reimplementa SQL/keyset;
+- tests recorren empates de `createdAt` con cursor `createdAt+id`;
+- happy paths de las tres decisiones exigen una llamada exacta a `adminResolveIncidentRpc`;
+- Dialogs reales prueban Escape/Cancelar y foco;
+- loading/error prueban Skeleton, copy seguro y `reset()`.
 
-Inspección de develop:
+Las mutaciones M-T124-01..07 están documentadas con fallos de aserción objetivo en la bitácora. No se consideran válidas las variantes que el propio autor marcó como no-RED (por ejemplo blur simple en M-T124-06a).
+
+### Route guard admin
+
+`src/features/auth/server.ts` aplica `evaluateRouteGuard` desde middleware a las rutas. Los tests de T-122 demuestran que `/admin/*`:
+- redirige merchant/courier;
+- exige admin;
+- exige AAL2.
+
+Por eso la lectura RLS de `getIncidentDetail` no abre una ruta admin a actores no autorizados.
+
+### PR113-H09 — evidencia visual no persistida
+
+La directiva vinculante dice:
 
 ```text
-supabase/migrations/20260924010124_rpc_requests_v1.sql
-- request_cycle no restringe report_incident a merchant/courier en el chequeo inicial.
-- rpc_requests.sql considera válidos:
-  merchant actor 1 en published/matched/in_transit/delivered
-  admin actor 5 en published/matched/in_transit/delivered
-  courier actor 3 en matched/in_transit/delivered
+docs/design/visual-task-directive.md §8:
+"Antes de pedir revisión ... dejá enlaces a capturas, comandos y resultado en el PR y en la bitácora."
 ```
 
-D05-A cambia la matriz a:
-- merchant dueño: matched / in_transit / delivered <= 24 h;
-- courier asignado: matched / in_transit;
-- admin: nunca.
+Estado R2:
+- PR describe navegador 360/390/1280;
+- bitácora describe estados y mediciones;
+- ambos dicen que el harness temporal fue borrado;
+- no hay enlaces a PNG/JPG en PR/bitácora;
+- no existe `feat/T-124-visual-assets` ni variante equivalente.
 
-### Bypass RLS
+Precedente existente: T-118 publicó PNG reales en una rama `feat/T-118-visual-assets` y enlazó/incrustó esas imágenes en el PR sin contaminar la rama funcional.
+
+### PR113-H10 — bundle
+
+Salida CI RED `36353380524`:
 
 ```text
-supabase/migrations/20260922051650_rls_v1.sql
-- policy incidents insert para participantes
-- policy incidents_write_admin FOR ALL para admin
-
-supabase/tests/rls_matrix.sql
-- “assigned courier can create incident on its matched request”
-- “merchant can report an open incident”
+## First Load JS por ruta (límite 180 kB)
+/trips/[id] | 187 kB | Supera el límite
 ```
 
-Esto contradice la regla del master plan “operaciones críticas: solo por RPC”. D07-A lo corrige vía contract-change.
+Salida CI final `36355934244`:
 
-### Paginación
+```text
+/admin/incidents      | 174 kB | OK
+/admin/incidents/[id] | 174 kB | OK
+/trips/[id]           | 194 kB | Supera el límite
+warning: Alguna ruta supera el presupuesto de First Load JS
+```
 
-La fase RED exige actualmente:
-- `order(created_at desc)`;
-- `lt(created_at, cursor)`;
-- `nextCursor = createdAt`.
+La Regla 25 fija ≤180 kB para rutas de comercio/repartidor. El workflow actual solo avisa, por eso no vuelve rojo el job.
 
-No existe desempate por `id`. D07-A exige:
-- orden `created_at DESC, id DESC`;
-- cursor compuesto `{createdAt,id}`;
-- índice `incidents(status, created_at DESC, id DESC)`;
-- caso de prueba con dos incidentes empatados en `created_at`.
+Criterio de R2 para no ampliar scope:
+- ideal: ≤180 kB;
+- mínimo para cerrar H10 dentro de T-124: eliminar el delta propio y volver `/trips/[id]` a **≤187 kB**, dejando documentados los 7 kB preexistentes para la pasada de rendimiento posterior.
 
-### Mutaciones que quedan obligatorias antes de GREEN
+### Resultado
 
-No se declaran ejecutadas por esta revisión; son requisitos de la corrección:
+H01–H08: cerrados/verificados.
 
-1. permitir admin en `report_incident` → pgTAP debe quedar rojo;
-2. reintroducir INSERT directo a `incidents` para merchant/courier → RLS pgTAP rojo;
-3. hacer que preventive_suspension use un `courierId` recibido del cliente → test contractual rojo;
-4. reemplazar un schema Zod por aceptación manual/cast → test de frontera rojo;
-5. hardcodear `tripStatus` o quitar `actorRole` en el wiring → test de consumidor rojo;
-6. volver a cursor timestamp-only con dos filas empatadas → test de paginación rojo;
-7. quitar `adminResolveIncidentRpc` del happy path → action test rojo;
-8. hacer blur del trigger antes de abrir el Dialog → test de retorno de foco rojo.
-
-Prohibido contar como mutación válida una caída por TypeError de mock o por romper compilación antes de la aserción objetivo.
+H09–H10: abiertos/bloqueantes.
