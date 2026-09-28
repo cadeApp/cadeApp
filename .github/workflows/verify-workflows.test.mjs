@@ -370,4 +370,57 @@ test('board-sync ignores docs/* PR branches and normalizes Unicode hyphens in is
   assert.equal(t201?.targetColumn, 'Bloqueada');
 });
 
+test('board-sync automatically reassigns Lautaro073 tasks and unassigned tasks to KiraK72', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const issues = [
+    {
+      number: 1,
+      title: '[T-301] Arnés E2E',
+      body: '- **Depende de:** Fase 1',
+      state: 'OPEN',
+      labels: [],
+      assignees: ['Lautaro073'],
+    },
+    {
+      number: 2,
+      title: '[T-312] Checklist',
+      body: '- **Depende de:** Fase 1',
+      state: 'OPEN',
+      labels: [],
+      assignees: ['Lautaro073', 'asako669'],
+    },
+    {
+      number: 3,
+      title: '[T-302] Nueva tarea sin asignar',
+      body: '- **Depende de:** Fase 1',
+      state: 'OPEN',
+      labels: [],
+      assignees: [],
+    },
+    {
+      number: 4,
+      title: '[T-303] Tarea de Asako',
+      body: '- **Depende de:** Fase 1',
+      state: 'OPEN',
+      labels: [],
+      assignees: ['asako669'],
+    },
+  ];
+  const transitions = computeBoardTransitions({
+    issues,
+    pullRequests: [],
+  });
+
+  const t301 = transitions.find((t) => t.taskId === 'T-301');
+  const t312 = transitions.find((t) => t.taskId === 'T-312');
+  const t302 = transitions.find((t) => t.taskId === 'T-302');
+  const t303 = transitions.find((t) => t.taskId === 'T-303');
+
+  assert.deepEqual(t301?.targetAssignees, ['KiraK72']);
+  assert.deepEqual(t312?.targetAssignees, ['asako669', 'KiraK72']);
+  assert.deepEqual(t302?.targetAssignees, ['KiraK72']);
+  assert.equal(t303?.targetAssignees, undefined);
+});
+
+
 
