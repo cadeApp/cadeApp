@@ -1,7 +1,9 @@
+import * as React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetails } from '@/features/trips/server';
 import { TripMerchantContainer, TripCourierContainer } from '@/features/trips';
+import { ReportIncidentButton } from '@/features/incidents';
 
 interface TripDetailPageProps {
   params: Promise<{ id: string }>;
@@ -31,6 +33,9 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
   }
 
   const trip = await getTripDetails(id);
+
+  // Instante con el que el botón de reporte evalúa la ventana de 24 h (D05-A).
+  const renderedAt = Date.now();
   if (!trip) {
     notFound();
   }
@@ -40,8 +45,15 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
       notFound();
     }
     return (
-      <div className="mx-auto w-full max-w-lg px-4 py-4">
+      <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
         <TripMerchantContainer trip={trip} />
+        <ReportIncidentButton
+          requestId={trip.id}
+          actorRole={profile.role}
+          tripStatus={trip.status}
+          deliveredAt={trip.deliveredAt}
+          now={renderedAt}
+        />
       </div>
     );
   }
@@ -51,8 +63,15 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
       notFound();
     }
     return (
-      <div className="mx-auto w-full max-w-lg px-4 py-4">
+      <div className="mx-auto w-full max-w-lg space-y-4 px-4 py-4">
         <TripCourierContainer trip={trip} />
+        <ReportIncidentButton
+          requestId={trip.id}
+          actorRole={profile.role}
+          tripStatus={trip.status}
+          deliveredAt={trip.deliveredAt}
+          now={renderedAt}
+        />
       </div>
     );
   }
