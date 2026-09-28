@@ -1,9 +1,13 @@
 # Lecciones de la PR #117
 
-## R6
+## R7
 
-H11 refuerza que un bundle budget advisory debe leerse por número real, no por color del job.
+Corregir una frontera arquitectónica puede reabrir un problema de rendimiento si el entry point público mezcla API liviana y componentes visuales pesados.
 
-H12 agrega otra aplicación de una regla ya existente: **no resolver performance saltándose la frontera arquitectónica que el linter protege**. Un `eslint-disable boundaries/entry-point` no convierte un import profundo en API válida.
+La regla no debe resolverse eligiendo entre arquitectura **o** performance:
+- `CourierFeed` debe consumir otra feature por `index.ts`;
+- las rutas courier deben quedar ≤180 kB.
 
-También aplica la regla de decisiones humanas: no escribir “autorizado por Lautaro” si la decisión no existe. Si el agente necesita ampliar scope o exceptuar arquitectura, debe detenerse y pedir la decisión antes del commit.
+La API pública puede mantener ambos invariantes exponiendo primitivas livianas directamente y componentes pesados mediante loaders dinámicos públicos.
+
+También se repite el patrón del bundle-budget advisory: un workflow `success` no implica que el presupuesto se cumpla. Hay que leer las líneas por ruta.

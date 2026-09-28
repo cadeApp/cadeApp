@@ -1,63 +1,90 @@
-# Comandos reproducibles — PR #117 / R6
+# Comandos y evidencia — PR #117 / R7
 
 ## SHA revisado
 
-`5e48b7809c0ceb62743f23162b5061dfabdfad4e`
+`52b47f80f501a070fc20b8847bd3acc12d12d158`
 
-## H11 verificado en CI #548
-
-```text
-/courier/feed   177 kB  OK
-/courier/offers 177 kB  OK
-99 test files / 1271 tests PASS
-```
-
-develop actual `c91ec4e...`:
+## Sincronización
 
 ```text
-/courier/feed   176 kB  OK
-/courier/offers 176 kB  OK
+develop: c5d2612d211469468ec1ee465939c4b46fa9a6ba
+PR:      52b47f80f501a070fc20b8847bd3acc12d12d158
+ahead:   18
+behind:  0
+mergeable: true
 ```
 
 ## H12
 
-Debe desaparecer:
-
-```ts
-// eslint-disable-next-line boundaries/entry-point
-import { useOfflineStatus } from '@/features/notifications/offline/use-offline-status';
-```
-
-Y quedar:
+Código actual:
 
 ```ts
 import { useOfflineStatus } from '@/features/notifications';
 ```
 
-Comprobación:
+CI #556:
 
-```bash
-git grep -n "boundaries/entry-point" -- src/features/offers/components/courier-feed.tsx
+```text
+pnpm lint
+✔ No ESLint warnings or errors
 ```
 
-Debe devolver 0 líneas.
+La bitácora documenta RED del autor al mantener el import profundo sin el disable:
+```text
+boundaries/entry-point
+No rule allows the entry point 'offline/use-offline-status.ts'
+```
 
-## Sincronización y batería final
+Intento de mutación independiente local:
+
+```text
+git clone https://github.com/cadeApp/cadeApp.git
+fatal: Could not resolve host: github.com
+```
+
+No se declara una mutación independiente que no pudo ejecutarse.
+
+## R01 · bundle
+
+develop CI #553:
+
+```text
+/courier/feed    176 kB  OK
+/courier/offers  176 kB  OK
+```
+
+PR CI #556:
+
+```text
+/courier/feed    198 kB  Supera el límite
+/courier/offers  198 kB  Supera el límite
+```
+
+## CI #556 completo
+
+```text
+typecheck ✅
+lint ✅
+build ✅
+unit ✅  99 files / 1312 tests
+db-tests ✅ 12 files / 1601 tests
+audit ✅ advisory (2 vulnerabilities)
+bundle-budget ✅ advisory, PERO courier 198 kB
+```
+
+## Comandos exigidos después del fix R01
 
 ```bash
-git fetch origin
-git merge origin/develop
-
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build 2>&1 | tee build-output.txt
 node .github/workflows/check-bundle-budget.mjs build-output.txt
-
 git status --short
 ```
 
 Criterio:
-- courier feed/offers <=180 kB;
-- no reintroducir import profundo si el tamaño sube;
-- pedir revisión del SHA remoto después del push.
+- `/courier/feed <= 180 kB`
+- `/courier/offers <= 180 kB`
+- `CourierFeed` sigue importando desde `@/features/notifications`
+- 0 `eslint-disable boundaries/entry-point`
