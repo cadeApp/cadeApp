@@ -49,7 +49,8 @@ describe('runSweep logic', () => {
     const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
     const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
 
-    const mockOffersUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
     const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
     const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
@@ -193,6 +194,7 @@ describe('runSweep logic', () => {
     expect(mockReqUpdateEq).toHaveBeenCalledWith('status', 'published');
     expect(mockReqUpdateLte).toHaveBeenCalledWith('expires_at', expect.any(String));
     expect(mockOffersUpdateEq).toHaveBeenCalledWith('status', 'pending');
+    expect(mockOffersUpdateSelect).toHaveBeenCalledWith('request_id, courier_id');
     expect(mockDocUpdateIs).toHaveBeenCalledWith('purged_at', null);
     expect(mockMerchantUpdateEq).toHaveBeenCalledWith('subscription_status', 'active');
     expect(mockMerchantUpdateOr).toHaveBeenCalledWith(expect.stringContaining('paid_until.lte.'));
@@ -482,7 +484,8 @@ describe('runSweep logic', () => {
     const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
     const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
 
-    const mockOffersUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
     const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
     const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
@@ -946,7 +949,10 @@ describe('runSweep logic', () => {
       });
 
       const mockReqUpdateSelect = vi.fn().mockResolvedValue({
-        data: [{ id: 'req-expired-10', merchant_id: 'merchant-expired-10' }],
+        data: [
+          { id: 'req-expired-10', merchant_id: 'merchant-expired-10' },
+          { id: 'req-expired-20', merchant_id: 'merchant-expired-20' },
+        ],
         error: null,
       });
       const mockReqUpdateLte = vi.fn().mockReturnValue({ select: mockReqUpdateSelect });
@@ -954,18 +960,23 @@ describe('runSweep logic', () => {
       const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
       const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
 
-      const mockOffersUpdateEq = vi.fn().mockResolvedValue({ error: null });
+      let offersUpdated = false;
+      let orderIsPostCommit = false;
+      const mockOffersUpdateSelect = vi.fn().mockImplementation(async () => {
+        offersUpdated = true;
+        return {
+          data: [
+            { request_id: 'req-expired-10', courier_id: 'courier-with-offer-1' },
+            { request_id: 'req-expired-20', courier_id: 'courier-with-offer-2' },
+          ],
+          error: null,
+        };
+      });
+      const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
       const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
       const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
-      let offersUpdated = false;
-      let orderIsPostCommit = false;
-      mockOffersUpdateEq.mockImplementation(async () => {
-        offersUpdated = true;
-        return { error: null };
-      });
-
-      safeNotifySpy.mockImplementationOnce(async () => {
+      safeNotifySpy.mockImplementation(async () => {
         orderIsPostCommit = offersUpdated;
         return {
           totalSubscriptions: 2,
@@ -983,7 +994,10 @@ describe('runSweep logic', () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 lte: vi.fn().mockResolvedValue({
-                  data: [{ id: 'req-expired-10', merchant_id: 'merchant-expired-10' }],
+                  data: [
+                    { id: 'req-expired-10', merchant_id: 'merchant-expired-10' },
+                    { id: 'req-expired-20', merchant_id: 'merchant-expired-20' },
+                  ],
                   error: null,
                 }),
               }),
@@ -993,12 +1007,6 @@ describe('runSweep logic', () => {
         }
         if (table === 'offers') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({
-                data: [{ courier_id: 'courier-with-offer-1' }],
-                error: null,
-              }),
-            }),
             update: mockOffersUpdate,
           };
         }
@@ -1044,15 +1052,32 @@ describe('runSweep logic', () => {
 
       const result = await runSweep();
 
-      expect(result.expiredRequestsCount).toBe(1);
+      expect(result.expiredRequestsCount).toBe(2);
       expect(orderIsPostCommit).toBe(true);
-      expect(safeNotifySpy).toHaveBeenCalledWith(
-        expect.arrayContaining(['merchant-expired-10', 'courier-with-offer-1']),
-        {
-          event: 'request_expired',
-          requestId: 'req-expired-10',
-        }
+      expect(mockOffersUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'expired', decided_at: expect.any(String) })
       );
+      expect(mockOffersIn).toHaveBeenCalledWith('request_id', ['req-expired-10', 'req-expired-20']);
+      expect(mockOffersUpdateEq).toHaveBeenCalledWith('status', 'pending');
+      expect(mockOffersUpdateSelect).toHaveBeenCalledWith('request_id, courier_id');
+
+      expect(safeNotifySpy).toHaveBeenCalledTimes(2);
+
+      const [call1Recipients, call1Payload] = safeNotifySpy.mock.calls[0]!;
+      expect(call1Recipients).toHaveLength(2);
+      expect(new Set(call1Recipients)).toEqual(new Set(['merchant-expired-10', 'courier-with-offer-1']));
+      expect(call1Payload).toEqual({
+        event: 'request_expired',
+        requestId: 'req-expired-10',
+      });
+
+      const [call2Recipients, call2Payload] = safeNotifySpy.mock.calls[1]!;
+      expect(call2Recipients).toHaveLength(2);
+      expect(new Set(call2Recipients)).toEqual(new Set(['merchant-expired-20', 'courier-with-offer-2']));
+      expect(call2Payload).toEqual({
+        event: 'request_expired',
+        requestId: 'req-expired-20',
+      });
       safeNotifySpy.mockRestore();
     });
 
@@ -1071,7 +1096,8 @@ describe('runSweep logic', () => {
       const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
       const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
 
-      const mockOffersUpdateEq = vi.fn().mockResolvedValue({ error: null });
+      const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+      const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
       const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
       const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
@@ -1091,9 +1117,6 @@ describe('runSweep logic', () => {
         }
         if (table === 'offers') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
-            }),
             update: mockOffersUpdate,
           };
         }

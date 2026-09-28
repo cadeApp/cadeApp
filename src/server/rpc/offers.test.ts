@@ -1126,17 +1126,26 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
         errors: [],
       });
 
+      const drEqSpy = vi.fn().mockImplementation((col: string, val: string) => {
+        if (col === 'id' && val === REQ_1_ID) {
+          return {
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { merchant_id: MERCHANT_ID },
+              error: null,
+            }),
+          };
+        }
+        return {
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      });
+
       const adminSupabase = await import('@/server/supabase/admin');
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') {
           return {
             select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: { merchant_id: MERCHANT_ID },
-                  error: null,
-                }),
-              }),
+              eq: drEqSpy,
             }),
           };
         }
@@ -1184,6 +1193,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
 
       expect(result.ok).toBe(true);
       expect(orderIsPostCommit).toBe(true);
+      expect(drEqSpy).toHaveBeenCalledWith('id', REQ_1_ID);
       expect(safeNotifySpy).toHaveBeenCalledWith(
         [MERCHANT_ID],
         {
@@ -1257,29 +1267,47 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
         errors: [],
       });
 
+      const drEqSpy = vi.fn().mockImplementation((col: string, val: string) => {
+        if (col === 'id' && val === REQ_1_ID) {
+          return {
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { merchant_id: MERCHANT_ID },
+              error: null,
+            }),
+          };
+        }
+        return {
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      });
+
+      const offersEqSpy = vi.fn().mockImplementation((col: string, val: string) => {
+        if (col === 'id' && val === OFFER_1_ID) {
+          return {
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { courier_id: COURIER_1_ID },
+              error: null,
+            }),
+          };
+        }
+        return {
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      });
+
       const adminSupabase = await import('@/server/supabase/admin');
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') {
           return {
             select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: { merchant_id: MERCHANT_ID },
-                  error: null,
-                }),
-              }),
+              eq: drEqSpy,
             }),
           };
         }
         if (table === 'offers') {
           return {
             select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: { courier_id: COURIER_1_ID },
-                  error: null,
-                }),
-              }),
+              eq: offersEqSpy,
             }),
           };
         }
@@ -1325,15 +1353,52 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
 
       expect(result.ok).toBe(true);
       expect(orderIsPostCommit).toBe(true);
-      expect(safeNotifySpy).toHaveBeenCalledWith(
-        expect.arrayContaining([MERCHANT_ID, COURIER_1_ID]),
-        {
-          event: 'offer_accepted',
-          requestId: REQ_1_ID,
-          offerId: OFFER_1_ID,
-        }
-      );
+      expect(drEqSpy).toHaveBeenCalledWith('id', REQ_1_ID);
+      expect(offersEqSpy).toHaveBeenCalledWith('id', OFFER_1_ID);
+      expect(safeNotifySpy).toHaveBeenCalledTimes(1);
+      const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
+      expect(recipients).toHaveLength(2);
+      expect(new Set(recipients)).toEqual(new Set([MERCHANT_ID, COURIER_1_ID]));
+      expect(payload).toEqual({
+        event: 'offer_accepted',
+        requestId: REQ_1_ID,
+        offerId: OFFER_1_ID,
+      });
       safeNotifySpy.mockRestore();
+    });
+
+    it('accept_offer con idempotent: true NO genera push ni consulta destinatarios (PR118-H01)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+      const adminSupabase = await import('@/server/supabase/admin');
+      const createAdminSpy = vi.spyOn(adminSupabase, 'createAdminClient');
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            requestId: REQ_1_ID,
+            acceptedOfferId: OFFER_1_ID,
+            status: 'matched',
+            matchedAt: FIXED_NOW_ISO,
+            idempotent: true,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await acceptOfferRpc(client, {
+        offerId: OFFER_1_ID,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.idempotent).toBe(true);
+      }
+      expect(createAdminSpy).not.toHaveBeenCalled();
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+
+      safeNotifySpy.mockRestore();
+      createAdminSpy.mockRestore();
     });
 
     it('accept_offer NO despacha push si la RPC falla', async () => {

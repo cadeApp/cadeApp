@@ -269,6 +269,11 @@ export async function acceptOfferRpc(
       return err('INTERNAL_ERROR');
     }
 
+    // PR118-H01: accept_offer idempotente (idempotent: true) no genera otro push ni resuelve destinatarios
+    if (parsedOutput.data.idempotent === true) {
+      return ok(parsedOutput.data);
+    }
+
     // T-206: Disparo post-commit best-effort a ambas partes (merchant y courier)
     try {
       const admin = createAdminClient();

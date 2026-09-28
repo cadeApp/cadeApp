@@ -110,27 +110,55 @@ export async function callRequestRpc<K extends RequestRpcName>(
     } else if (rpcName === 'cancel_request') {
       try {
         const admin = createAdminClient();
-        const reqId = (output.data as { requestId: string }).requestId;
+        const cancelOutput = output.data as { requestId: string; cancelledAt: string };
+        const reqId = cancelOutput.requestId;
+        const cancelledAt = cancelOutput.cancelledAt;
 
-        const [offersRes, reqRes] = await Promise.all([
-          admin.from('offers').select('courier_id').eq('request_id', reqId),
-          admin.from('delivery_requests').select('merchant_id').eq('id', reqId).maybeSingle(),
+        const [offersRes, reqRes, auditRes] = await Promise.all([
+          admin
+            .from('offers')
+            .select('courier_id')
+            .eq('request_id', reqId)
+            .eq('decided_at', cancelledAt)
+            .in('status', ['expired', 'cancelled']),
+          admin
+            .from('delivery_requests')
+            .select('merchant_id')
+            .eq('id', reqId)
+            .maybeSingle(),
+          admin
+            .from('audit_log')
+            .select('actor_id')
+            .eq('target_type', 'delivery_request')
+            .eq('target_id', reqId)
+            .eq('action', 'cancel_request')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
         ]);
 
         const recipients = new Set<string>();
-        if (reqRes.data?.merchant_id) {
-          recipients.add(reqRes.data.merchant_id);
+        const merchantId = reqRes.data?.merchant_id;
+        const actorId = auditRes.data?.actor_id;
+
+        // D01/1-A: Solo actores afectados. Si el actor fue el comercio, no se le notifica a él mismo.
+        // Si el actor fue otro (e.g. admin cancela in_transit), se notifica al comercio.
+        if (merchantId && actorId !== merchantId) {
+          recipients.add(merchantId);
         }
+
         if (offersRes.data) {
           for (const o of offersRes.data) {
             recipients.add(o.courier_id);
           }
         }
 
-        await safeNotifyPostTransition(Array.from(recipients), {
-          event: 'request_cancelled',
-          requestId: reqId,
-        });
+        if (recipients.size > 0) {
+          await safeNotifyPostTransition(Array.from(recipients), {
+            event: 'request_cancelled',
+            requestId: reqId,
+          });
+        }
       } catch {
         // Best effort: falla de push nunca altera la transición exitosa
       }

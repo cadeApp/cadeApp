@@ -61,31 +61,57 @@ export async function runSweep(): Promise<SweepResult> {
       }
 
       // Actualizar ofertas 'pending' asociadas a 'expired' con decided_at = now()
-      const { error: offersUpdateError } = await supabase
+      // PR118-H03: Seleccionar request_id y courier_id de las ofertas efectivamente actualizadas
+      const offersUpdateBuilder = supabase
         .from('offers')
         .update({ status: 'expired', decided_at: nowIso })
         .in('request_id', actuallyExpiredIds)
         .eq('status', 'pending');
 
+      const { data: expiredOffers, error: offersUpdateError } = await (
+        typeof (offersUpdateBuilder as { select?: unknown }).select === 'function'
+          ? (
+              offersUpdateBuilder as {
+                select: (cols: string) => PromiseLike<{
+                  data: Array<{ request_id: string; courier_id: string }> | null;
+                  error: { message: string } | null;
+                }>;
+              }
+            ).select('request_id, courier_id')
+          : (offersUpdateBuilder as PromiseLike<{
+              data?: Array<{ request_id: string; courier_id: string }> | null;
+              error: { message: string } | null;
+            }>)
+      );
+
       if (offersUpdateError) {
         throw new Error(`Failed to update offers to expired: ${offersUpdateError.message}`);
       }
 
-      // T-206: Disparo post-commit best-effort de request_expired a comercios y repartidores involucrados
+      // Agrupar couriers de ofertas efectivamente expiradas por request_id para evitar avisar a couriers no expirados
+      const couriersByRequestId = new Map<string, Set<string>>();
+      if (expiredOffers) {
+        for (const o of expiredOffers) {
+          let set = couriersByRequestId.get(o.request_id);
+          if (!set) {
+            set = new Set<string>();
+            couriersByRequestId.set(o.request_id, set);
+          }
+          set.add(o.courier_id);
+        }
+      }
+
+      // T-206: Disparo post-commit best-effort de request_expired a comercios y repartidores afectados
       for (const req of updatedRequests) {
         try {
-          const { data: offersData } = await supabase
-            .from('offers')
-            .select('courier_id')
-            .eq('request_id', req.id);
-
           const recipients = new Set<string>();
           if (req.merchant_id) {
             recipients.add(req.merchant_id);
           }
-          if (offersData) {
-            for (const o of offersData) {
-              recipients.add(o.courier_id);
+          const reqCouriers = couriersByRequestId.get(req.id);
+          if (reqCouriers) {
+            for (const courierId of reqCouriers) {
+              recipients.add(courierId);
             }
           }
 
