@@ -132,3 +132,63 @@ Varios reportes tienen incompleteCount=1, pero los summary afirman “cumple al 
 
 ## Barrido
 0 only/skip/sleeps/any/ts-ignore/hex/direct-env/inline-style/direct-sonner/static-MapPicker.
+---
+
+# Evidencia — PR #109 / T-116 / Ronda 3
+
+head: 57f96df55745995aafe1053171c65a9f54f6e6c5
+develop: aae504a218b8b76e2d6cd0f56d8b5189e5b8b4fd
+merge sintético CI: b80f7797477682a849fecec55a36bae605df7054
+
+## H05
+
+Inspección del wiring:
+- C01 `onChange` hace `setValue(defaultPickupLat/defaultPickupLng)`.
+- Test H05 dispara el callback capturado y exige marcador de UI + payload exacto -27.4365/-65.6165.
+- C03 `onChange` hace `setValue(dropoffLat/dropoffLng)`.
+- Test H05 dispara el pin y exige `Pin fijado` + payload exacto -27.4385/-65.6185.
+
+Bitácora del autor:
+- C01 mutado a no-op: 1 failed / 7 skipped; restaurado: 1 passed / 7 skipped.
+- C03 mutado a no-op: 1 failed / 7 skipped; restaurado: 1 passed / 7 skipped.
+
+Limitación: el contenedor de revisión no pudo clonar GitHub (DNS/egress no disponible), por lo que la mutación roja no se reejecutó localmente. Se deja explícito.
+
+## H07
+
+Decisión de Lautaro073: evidencia visual/runtime final diferida a T-300 / staging.
+
+Residual hallado:
+- docs/tasks/T-116.md aún marca [x] el requisito que contiene “axe AA sin violaciones”.
+- body #109 hace lo mismo.
+- merchants/evidence/T-116/axe-summary.md: “cumple al 100%”, con incomplete > 0.
+- requests/evidence/T-116/axe-summary.md: “cumple al 100%”, con incomplete > 0.
+
+## CI #518
+
+Checkout real:
+```text
+HEAD = b80f7797477682a849fecec55a36bae605df7054
+Merge 57f96df... into aae504a...
+```
+
+Unit:
+```text
+Test Files 84 passed (84)
+Tests 1044 passed (1044)
+```
+
+DB:
+```text
+Files=12, Tests=1601
+Result: PASS
+```
+
+Bundle:
+```text
+/merchant/onboarding   147 kB
+/merchant/requests/new 164 kB
+/courier/feed          176 kB
+```
+
+approval-policy: failure esperada por falta de aprobación vigente de Lautaro073.
