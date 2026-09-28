@@ -1,6 +1,7 @@
 import 'server-only';
 import { createAdminClient } from '@/server/supabase/admin';
 import { canMerchantPublishRequest } from '@/domain/states';
+import { safeNotifyPostTransition } from '@/server/push';
 
 export interface SweepResult {
   expiredRequestsCount: number;
@@ -60,14 +61,54 @@ export async function runSweep(): Promise<SweepResult> {
       }
 
       // Actualizar ofertas 'pending' asociadas a 'expired' con decided_at = now()
-      const { error: offersUpdateError } = await supabase
+      // PR118-H03 / PR118-R01: Seleccionar request_id y courier_id de las ofertas efectivamente actualizadas
+      const { data: expiredOffers, error: offersUpdateError } = await supabase
         .from('offers')
         .update({ status: 'expired', decided_at: nowIso })
         .in('request_id', actuallyExpiredIds)
-        .eq('status', 'pending');
+        .eq('status', 'pending')
+        .select('request_id, courier_id');
 
       if (offersUpdateError) {
         throw new Error(`Failed to update offers to expired: ${offersUpdateError.message}`);
+      }
+
+      // Agrupar couriers de ofertas efectivamente expiradas por request_id para evitar avisar a couriers no expirados
+      const couriersByRequestId = new Map<string, Set<string>>();
+      if (expiredOffers) {
+        for (const o of expiredOffers) {
+          let set = couriersByRequestId.get(o.request_id);
+          if (!set) {
+            set = new Set<string>();
+            couriersByRequestId.set(o.request_id, set);
+          }
+          set.add(o.courier_id);
+        }
+      }
+
+      // T-206: Disparo post-commit best-effort de request_expired a comercios y repartidores afectados
+      for (const req of updatedRequests) {
+        try {
+          const recipients = new Set<string>();
+          if (req.merchant_id) {
+            recipients.add(req.merchant_id);
+          }
+          const reqCouriers = couriersByRequestId.get(req.id);
+          if (reqCouriers) {
+            for (const courierId of reqCouriers) {
+              recipients.add(courierId);
+            }
+          }
+
+          if (recipients.size > 0) {
+            await safeNotifyPostTransition(Array.from(recipients), {
+              event: 'request_expired',
+              requestId: req.id,
+            });
+          }
+        } catch {
+          // Best effort: fallo de push nunca altera la expiración ni la ejecución del cron
+        }
       }
 
       expiredRequestsCount = updatedRequests.length;
