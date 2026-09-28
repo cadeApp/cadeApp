@@ -93,17 +93,19 @@ export async function callRequestRpc<K extends RequestRpcName>(
     if (rpcName === 'publish_request') {
       try {
         const admin = createAdminClient();
-        const { data: couriers } = await admin
+        const { data: couriers, error: couriersError } = await admin
           .from('couriers')
           .select('profile_id')
           .eq('status', 'approved')
           .eq('available', true);
 
-        const courierIds = couriers?.map((c) => c.profile_id) ?? [];
-        await safeNotifyPostTransition(courierIds, {
-          event: 'request_published',
-          requestId: (output.data as { requestId: string }).requestId,
-        });
+        if (!couriersError && couriers && couriers.length > 0) {
+          const courierIds = couriers.map((c) => c.profile_id);
+          await safeNotifyPostTransition(courierIds, {
+            event: 'request_published',
+            requestId: (output.data as { requestId: string }).requestId,
+          });
+        }
       } catch {
         // Best effort: falla de push nunca altera la transición exitosa
       }
@@ -136,6 +138,11 @@ export async function callRequestRpc<K extends RequestRpcName>(
             .limit(1)
             .maybeSingle(),
         ]);
+
+        // PR118-H07: Resolución de destinatarios falla cerrada ante { error }
+        if (offersRes.error || reqRes.error || auditRes.error) {
+          return ok(output.data as RpcOutput<K>);
+        }
 
         const recipients = new Set<string>();
         const merchantId = reqRes.data?.merchant_id;

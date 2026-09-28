@@ -61,28 +61,13 @@ export async function runSweep(): Promise<SweepResult> {
       }
 
       // Actualizar ofertas 'pending' asociadas a 'expired' con decided_at = now()
-      // PR118-H03: Seleccionar request_id y courier_id de las ofertas efectivamente actualizadas
-      const offersUpdateBuilder = supabase
+      // PR118-H03 / PR118-R01: Seleccionar request_id y courier_id de las ofertas efectivamente actualizadas
+      const { data: expiredOffers, error: offersUpdateError } = await supabase
         .from('offers')
         .update({ status: 'expired', decided_at: nowIso })
         .in('request_id', actuallyExpiredIds)
-        .eq('status', 'pending');
-
-      const { data: expiredOffers, error: offersUpdateError } = await (
-        typeof (offersUpdateBuilder as { select?: unknown }).select === 'function'
-          ? (
-              offersUpdateBuilder as {
-                select: (cols: string) => PromiseLike<{
-                  data: Array<{ request_id: string; courier_id: string }> | null;
-                  error: { message: string } | null;
-                }>;
-              }
-            ).select('request_id, courier_id')
-          : (offersUpdateBuilder as PromiseLike<{
-              data?: Array<{ request_id: string; courier_id: string }> | null;
-              error: { message: string } | null;
-            }>)
-      );
+        .eq('status', 'pending')
+        .select('request_id, courier_id');
 
       if (offersUpdateError) {
         throw new Error(`Failed to update offers to expired: ${offersUpdateError.message}`);

@@ -658,6 +658,58 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(mockDelete).not.toHaveBeenCalled();
       expect(mockSignOut).toHaveBeenCalledTimes(1);
     });
+
+    it('T-206 (PR118-H06): logoutAction ejecuta signOut y retorna ok si getUser rechaza', async () => {
+      const mockSignOut = vi.fn().mockResolvedValue({ error: null });
+      const mockGetUser = vi.fn().mockRejectedValue(new Error('Network error on getUser'));
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: mockGetUser,
+          signOut: mockSignOut,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const mockDelete = vi.fn();
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const result = await logoutAction();
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).not.toHaveBeenCalled();
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
+
+    it('T-206 (PR118-H06): logoutAction ejecuta signOut y retorna ok si delete de push_subscriptions rechaza', async () => {
+      const mockSignOut = vi.fn().mockResolvedValue({ error: null });
+      const mockGetUser = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-push-logout-error' } },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: mockGetUser,
+          signOut: mockSignOut,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const mockDeleteEq = vi.fn().mockRejectedValue(new Error('DB failure deleting subscriptions'));
+      const mockDelete = vi.fn().mockReturnValue({ eq: mockDeleteEq });
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const result = await logoutAction();
+
+      expect(result.ok).toBe(true);
+      expect(mockDeleteEq).toHaveBeenCalledWith('user_id', 'usr-push-logout-error');
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

@@ -454,6 +454,114 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       safeNotifySpy.mockRestore();
     });
 
+    it('publish_request NO despacha push si la consulta de couriers retorna error (PR118-H07)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'couriers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'couriers error' },
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'published',
+          publishedAt: time,
+          expiresAt: time,
+          routeDistanceM: 1500,
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'publish_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    type MockOfferRow = {
+      courier_id: string;
+      request_id: string;
+      status: string;
+      decided_at: string;
+    };
+
+    type MockAuditRow = {
+      actor_id: string;
+      target_type: string;
+      target_id: string;
+      action: string;
+      created_at: string;
+    };
+
+    function createOffersQueryBuilder(allRows: MockOfferRow[]) {
+      let filtered = [...allRows];
+      const builder: any = {
+        eq: vi.fn((col: string, val: unknown) => {
+          filtered = filtered.filter((r) => (r as any)[col] === val);
+          return builder;
+        }),
+        in: vi.fn((col: string, vals: unknown[]) => {
+          filtered = filtered.filter((r) => vals.includes((r as any)[col]));
+          return Promise.resolve({
+            data: filtered.map((r) => ({ courier_id: r.courier_id })),
+            error: null,
+          });
+        }),
+      };
+      return builder;
+    }
+
+    function createAuditLogQueryBuilder(allRows: MockAuditRow[]) {
+      let filtered = [...allRows];
+      const builder: any = {
+        eq: vi.fn((col: string, val: unknown) => {
+          filtered = filtered.filter((r) => (r as any)[col] === val);
+          return builder;
+        }),
+        order: vi.fn((col: string, options?: { ascending?: boolean }) => {
+          const asc = options?.ascending ?? true;
+          filtered.sort((a, b) => {
+            const valA = (a as any)[col];
+            const valB = (b as any)[col];
+            if (valA < valB) return asc ? -1 : 1;
+            if (valA > valB) return asc ? 1 : -1;
+            return 0;
+          });
+          return builder;
+        }),
+        limit: vi.fn((n: number) => {
+          filtered = filtered.slice(0, n);
+          return builder;
+        }),
+        maybeSingle: vi.fn(async () => {
+          const match = filtered[0] ?? null;
+          return {
+            data: match ? { actor_id: match.actor_id } : null,
+            error: null,
+          };
+        }),
+      };
+      return builder;
+    }
+
     it('cancel_request: merchant cancela published -> push solo a couriers con pending expiradas; no merchant ni históricos (PR118-H02, D01/1-A)', async () => {
       const push = await import('@/server/push');
       const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
@@ -468,51 +576,35 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       const merchantId = '00000000-0000-4000-8000-0000000000b1';
       const courierPending1 = '00000000-0000-4000-8000-0000000000c1';
       const courierPending2 = '00000000-0000-4000-8000-0000000000c2';
+      const courierHistoricExpired = '00000000-0000-4000-8000-0000000000c7';
       const courierHistoricRejected = '00000000-0000-4000-8000-0000000000c8';
       const courierHistoricWithdrawn = '00000000-0000-4000-8000-0000000000c9';
       const cancelledAt = '2026-09-28T01:00:00.000Z';
       const olderDecidedAt = '2026-09-27T12:00:00.000Z';
 
-      // Simulación de ofertas en base de datos: solo las que tienen decided_at == cancelledAt
-      // y status in ('expired','cancelled') deben ser devueltas por la consulta con filtros.
-      const allOffers = [
-        { courier_id: courierPending1, status: 'expired', decided_at: cancelledAt },
-        { courier_id: courierPending2, status: 'expired', decided_at: cancelledAt },
-        { courier_id: courierHistoricRejected, status: 'rejected', decided_at: olderDecidedAt },
-        { courier_id: courierHistoricWithdrawn, status: 'withdrawn', decided_at: olderDecidedAt },
+      const allOffers: MockOfferRow[] = [
+        { courier_id: courierPending1, request_id: requestId, status: 'expired', decided_at: cancelledAt },
+        { courier_id: courierPending2, request_id: requestId, status: 'expired', decided_at: cancelledAt },
+        // Oferta histórica con status expired pero decided_at previo: si se omite el filtro decided_at, entra y falla
+        { courier_id: courierHistoricExpired, request_id: requestId, status: 'expired', decided_at: olderDecidedAt },
+        { courier_id: courierHistoricRejected, request_id: requestId, status: 'rejected', decided_at: olderDecidedAt },
+        { courier_id: courierHistoricWithdrawn, request_id: requestId, status: 'withdrawn', decided_at: olderDecidedAt },
       ];
+      const offersBuilder = createOffersQueryBuilder(allOffers);
 
-      const offersInSpy = vi.fn().mockImplementation((col: string, values: string[]) => {
-        if (col === 'status') {
-          const matched = allOffers.filter(
-            (o) => o.decided_at === cancelledAt && values.includes(o.status)
-          );
-          return Promise.resolve({ data: matched, error: null });
-        }
-        return Promise.resolve({ data: [], error: null });
-      });
-
-      const offersEqDecidedAtSpy = vi.fn().mockImplementation((col: string, val: string) => {
-        if (col === 'decided_at' && val === cancelledAt) {
-          return { in: offersInSpy };
-        }
-        return { in: vi.fn().mockResolvedValue({ data: [], error: null }) };
-      });
-
-      const offersEqReqIdSpy = vi.fn().mockImplementation((col: string, val: string) => {
-        if (col === 'request_id' && val === requestId) {
-          return { eq: offersEqDecidedAtSpy };
-        }
-        return { eq: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
-      });
+      const auditRows: MockAuditRow[] = [
+        { actor_id: merchantId, target_type: 'delivery_request', target_id: requestId, action: 'cancel_request', created_at: cancelledAt },
+        { actor_id: 'other-actor', target_type: 'delivery_request', target_id: requestId, action: 'publish_request', created_at: '2026-09-28T00:50:00.000Z' },
+        { actor_id: 'other-req-actor', target_type: 'delivery_request', target_id: '00000000-0000-4000-8000-999999999999', action: 'cancel_request', created_at: cancelledAt },
+        { actor_id: 'other-type-actor', target_type: 'offer', target_id: requestId, action: 'cancel_request', created_at: cancelledAt },
+      ];
+      const auditBuilder = createAuditLogQueryBuilder(auditRows);
 
       const adminSupabase = await import('@/server/supabase/admin');
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'offers') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: offersEqReqIdSpy,
-            }),
+            select: vi.fn().mockReturnValue(offersBuilder),
           };
         }
         if (table === 'delivery_requests') {
@@ -534,22 +626,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
         }
         if (table === 'audit_log') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  eq: vi.fn().mockReturnValue({
-                    order: vi.fn().mockReturnValue({
-                      limit: vi.fn().mockReturnValue({
-                        maybeSingle: vi.fn().mockResolvedValue({
-                          data: { actor_id: merchantId },
-                          error: null,
-                        }),
-                      }),
-                    }),
-                  }),
-                }),
-              }),
-            }),
+            select: vi.fn().mockReturnValue(auditBuilder),
           };
         }
         return {};
@@ -588,9 +665,16 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
 
       expect(result.ok).toBe(true);
       expect(orderIsPostCommit).toBe(true);
-      expect(offersEqReqIdSpy).toHaveBeenCalledWith('request_id', requestId);
-      expect(offersEqDecidedAtSpy).toHaveBeenCalledWith('decided_at', cancelledAt);
-      expect(offersInSpy).toHaveBeenCalledWith('status', ['expired', 'cancelled']);
+      expect(offersBuilder.eq).toHaveBeenCalledWith('request_id', requestId);
+      expect(offersBuilder.eq).toHaveBeenCalledWith('decided_at', cancelledAt);
+      expect(offersBuilder.in).toHaveBeenCalledWith('status', ['expired', 'cancelled']);
+
+      expect(auditBuilder.eq).toHaveBeenCalledWith('target_type', 'delivery_request');
+      expect(auditBuilder.eq).toHaveBeenCalledWith('target_id', requestId);
+      expect(auditBuilder.eq).toHaveBeenCalledWith('action', 'cancel_request');
+      expect(auditBuilder.order).toHaveBeenCalledWith('created_at', { ascending: false });
+      expect(auditBuilder.limit).toHaveBeenCalledWith(1);
+
       expect(safeNotifySpy).toHaveBeenCalledTimes(1);
 
       const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
@@ -607,8 +691,8 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     it('cancel_request: merchant cancela matched -> push solo a courier aceptado cancelado; no merchant ni históricos (PR118-H02, D01/1-A)', async () => {
       const push = await import('@/server/push');
       const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
-        totalSubscriptions: 1,
-        sentCount: 1,
+        totalSubscriptions: 2,
+        sentCount: 2,
         failedCount: 0,
         deletedSubscriptions: [],
         attempts: [],
@@ -616,42 +700,32 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       });
 
       const merchantId = '00000000-0000-4000-8000-0000000000b1';
-      const courierAccepted = '00000000-0000-4000-8000-0000000000c3';
+      const courierAccepted = '00000000-0000-4000-8000-0000000000c2';
+      const courierHistoricCancelled = '00000000-0000-4000-8000-0000000000c7';
       const courierHistoric = '00000000-0000-4000-8000-0000000000c8';
       const cancelledAt = '2026-09-28T01:05:00.000Z';
       const olderDecidedAt = '2026-09-27T12:00:00.000Z';
 
-      const allOffers = [
-        { courier_id: courierAccepted, status: 'cancelled', decided_at: cancelledAt },
-        { courier_id: courierHistoric, status: 'rejected', decided_at: olderDecidedAt },
+      const allOffers: MockOfferRow[] = [
+        { courier_id: courierAccepted, request_id: requestId, status: 'cancelled', decided_at: cancelledAt },
+        // Oferta histórica con status cancelled pero decided_at previo:
+        { courier_id: courierHistoricCancelled, request_id: requestId, status: 'cancelled', decided_at: olderDecidedAt },
+        { courier_id: courierHistoric, request_id: requestId, status: 'rejected', decided_at: olderDecidedAt },
       ];
+      const offersBuilder = createOffersQueryBuilder(allOffers);
+
+      const auditRows: MockAuditRow[] = [
+        { actor_id: merchantId, target_type: 'delivery_request', target_id: requestId, action: 'cancel_request', created_at: cancelledAt },
+        { actor_id: 'other-actor', target_type: 'delivery_request', target_id: requestId, action: 'publish_request', created_at: '2026-09-28T00:50:00.000Z' },
+        { actor_id: 'other-req-actor', target_type: 'delivery_request', target_id: '00000000-0000-4000-8000-999999999999', action: 'cancel_request', created_at: cancelledAt },
+      ];
+      const auditBuilder = createAuditLogQueryBuilder(auditRows);
 
       const adminSupabase = await import('@/server/supabase/admin');
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'offers') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockImplementation((col: string, val: string) => {
-                if (col === 'request_id' && val === requestId) {
-                  return {
-                    eq: vi.fn().mockImplementation((col2: string, val2: string) => {
-                      if (col2 === 'decided_at' && val2 === cancelledAt) {
-                        return {
-                          in: vi.fn().mockImplementation((col3: string, values: string[]) => {
-                            const matched = allOffers.filter(
-                              (o) => o.decided_at === cancelledAt && values.includes(o.status)
-                            );
-                            return Promise.resolve({ data: matched, error: null });
-                          }),
-                        };
-                      }
-                      return { in: vi.fn().mockResolvedValue({ data: [], error: null }) };
-                    }),
-                  };
-                }
-                return { eq: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
-              }),
-            }),
+            select: vi.fn().mockReturnValue(offersBuilder),
           };
         }
         if (table === 'delivery_requests') {
@@ -668,22 +742,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
         }
         if (table === 'audit_log') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  eq: vi.fn().mockReturnValue({
-                    order: vi.fn().mockReturnValue({
-                      limit: vi.fn().mockReturnValue({
-                        maybeSingle: vi.fn().mockResolvedValue({
-                          data: { actor_id: merchantId },
-                          error: null,
-                        }),
-                      }),
-                    }),
-                  }),
-                }),
-              }),
-            }),
+            select: vi.fn().mockReturnValue(auditBuilder),
           };
         }
         return {};
@@ -704,6 +763,16 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
 
       expect(result.ok).toBe(true);
+      expect(offersBuilder.eq).toHaveBeenCalledWith('request_id', requestId);
+      expect(offersBuilder.eq).toHaveBeenCalledWith('decided_at', cancelledAt);
+      expect(offersBuilder.in).toHaveBeenCalledWith('status', ['expired', 'cancelled']);
+
+      expect(auditBuilder.eq).toHaveBeenCalledWith('target_type', 'delivery_request');
+      expect(auditBuilder.eq).toHaveBeenCalledWith('target_id', requestId);
+      expect(auditBuilder.eq).toHaveBeenCalledWith('action', 'cancel_request');
+      expect(auditBuilder.order).toHaveBeenCalledWith('created_at', { ascending: false });
+      expect(auditBuilder.limit).toHaveBeenCalledWith(1);
+
       expect(safeNotifySpy).toHaveBeenCalledTimes(1);
       const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
       expect(recipients).toHaveLength(1);
@@ -734,37 +803,24 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       const cancelledAt = '2026-09-28T01:10:00.000Z';
       const olderDecidedAt = '2026-09-27T12:00:00.000Z';
 
-      const allOffers = [
-        { courier_id: courierAssigned, status: 'cancelled', decided_at: cancelledAt },
-        { courier_id: courierHistoric, status: 'rejected', decided_at: olderDecidedAt },
+      const allOffers: MockOfferRow[] = [
+        { courier_id: courierAssigned, request_id: requestId, status: 'cancelled', decided_at: cancelledAt },
+        { courier_id: courierHistoric, request_id: requestId, status: 'rejected', decided_at: olderDecidedAt },
       ];
+      const offersBuilder = createOffersQueryBuilder(allOffers);
+
+      const auditRows: MockAuditRow[] = [
+        { actor_id: adminId, target_type: 'delivery_request', target_id: requestId, action: 'cancel_request', created_at: cancelledAt },
+        { actor_id: 'other-actor', target_type: 'delivery_request', target_id: requestId, action: 'publish_request', created_at: '2026-09-28T00:50:00.000Z' },
+        { actor_id: 'other-req-actor', target_type: 'delivery_request', target_id: '00000000-0000-4000-8000-999999999999', action: 'cancel_request', created_at: cancelledAt },
+      ];
+      const auditBuilder = createAuditLogQueryBuilder(auditRows);
 
       const adminSupabase = await import('@/server/supabase/admin');
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'offers') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockImplementation((col: string, val: string) => {
-                if (col === 'request_id' && val === requestId) {
-                  return {
-                    eq: vi.fn().mockImplementation((col2: string, val2: string) => {
-                      if (col2 === 'decided_at' && val2 === cancelledAt) {
-                        return {
-                          in: vi.fn().mockImplementation((col3: string, values: string[]) => {
-                            const matched = allOffers.filter(
-                              (o) => o.decided_at === cancelledAt && values.includes(o.status)
-                            );
-                            return Promise.resolve({ data: matched, error: null });
-                          }),
-                        };
-                      }
-                      return { in: vi.fn().mockResolvedValue({ data: [], error: null }) };
-                    }),
-                  };
-                }
-                return { eq: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
-              }),
-            }),
+            select: vi.fn().mockReturnValue(offersBuilder),
           };
         }
         if (table === 'delivery_requests') {
@@ -781,22 +837,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
         }
         if (table === 'audit_log') {
           return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                eq: vi.fn().mockReturnValue({
-                  eq: vi.fn().mockReturnValue({
-                    order: vi.fn().mockReturnValue({
-                      limit: vi.fn().mockReturnValue({
-                        maybeSingle: vi.fn().mockResolvedValue({
-                          data: { actor_id: adminId },
-                          error: null,
-                        }),
-                      }),
-                    }),
-                  }),
-                }),
-              }),
-            }),
+            select: vi.fn().mockReturnValue(auditBuilder),
           };
         }
         return {};
@@ -817,6 +858,16 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
 
       expect(result.ok).toBe(true);
+      expect(offersBuilder.eq).toHaveBeenCalledWith('request_id', requestId);
+      expect(offersBuilder.eq).toHaveBeenCalledWith('decided_at', cancelledAt);
+      expect(offersBuilder.in).toHaveBeenCalledWith('status', ['expired', 'cancelled']);
+
+      expect(auditBuilder.eq).toHaveBeenCalledWith('target_type', 'delivery_request');
+      expect(auditBuilder.eq).toHaveBeenCalledWith('target_id', requestId);
+      expect(auditBuilder.eq).toHaveBeenCalledWith('action', 'cancel_request');
+      expect(auditBuilder.order).toHaveBeenCalledWith('created_at', { ascending: false });
+      expect(auditBuilder.limit).toHaveBeenCalledWith(1);
+
       expect(safeNotifySpy).toHaveBeenCalledTimes(1);
       const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
       expect(recipients).toHaveLength(2);
@@ -991,6 +1042,228 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
 
       expect(result.ok).toBe(true);
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request NO despacha push si la consulta de offers retorna error (PR118-H07)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: { message: 'offers error' },
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: '00000000-0000-4000-8000-0000000000b1' },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: { actor_id: '00000000-0000-4000-8000-0000000000a0' },
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-28T01:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request NO despacha push si la consulta de delivery_requests retorna error (PR118-H07)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: [{ courier_id: '00000000-0000-4000-8000-0000000000c1' }],
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'requests error' },
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: { actor_id: '00000000-0000-4000-8000-0000000000b1' },
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-28T01:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request NO despacha push si la consulta de audit_log retorna error (PR118-H07)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: [{ courier_id: '00000000-0000-4000-8000-0000000000c1' }],
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: '00000000-0000-4000-8000-0000000000b1' },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: null,
+                          error: { message: 'audit error' },
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-28T01:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
       safeNotifySpy.mockRestore();
     });
   });

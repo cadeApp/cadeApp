@@ -152,13 +152,13 @@ export async function submitOfferRpc(
     // T-206: Disparo post-commit best-effort a la persona que solicitó el envío (merchant)
     try {
       const admin = createAdminClient();
-      const { data: req } = await admin
+      const { data: req, error: reqError } = await admin
         .from('delivery_requests')
         .select('merchant_id')
         .eq('id', parsedOutput.data.requestId)
         .maybeSingle();
 
-      if (req?.merchant_id) {
+      if (!reqError && req?.merchant_id) {
         await safeNotifyPostTransition([req.merchant_id], {
           event: 'offer_submitted',
           requestId: parsedOutput.data.requestId,
@@ -290,11 +290,14 @@ export async function acceptOfferRpc(
           .maybeSingle(),
       ]);
 
-      const parties = [reqRes.data?.merchant_id, offerRes.data?.courier_id].filter(
-        Boolean
-      ) as string[];
-
-      if (parties.length > 0) {
+      // PR118-H07: Resolución de destinatarios falla cerrada ante { error } o ausencia de alguna parte
+      if (
+        !reqRes.error &&
+        !offerRes.error &&
+        reqRes.data?.merchant_id &&
+        offerRes.data?.courier_id
+      ) {
+        const parties = [reqRes.data.merchant_id, offerRes.data.courier_id];
         await safeNotifyPostTransition(parties, {
           event: 'offer_accepted',
           requestId: parsedOutput.data.requestId,
