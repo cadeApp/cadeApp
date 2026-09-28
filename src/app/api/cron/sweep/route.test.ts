@@ -121,7 +121,9 @@ describe('GET & POST /api/cron/sweep', () => {
         return {
           update: vi.fn().mockReturnValue({
             in: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ error: null }),
+              eq: vi.fn().mockReturnValue({
+                select: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
             }),
           }),
         };

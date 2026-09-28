@@ -10,6 +10,8 @@ import {
   type RpcOutput,
 } from '@/domain';
 import { sendCriticalAlert } from '@/server/observability';
+import { createAdminClient } from '@/server/supabase/admin';
+import { safeNotifyPostTransition } from '@/server/push';
 
 export interface SupabaseRpcErrorLike {
   readonly code?: string;
@@ -147,6 +149,26 @@ export async function submitOfferRpc(
       return err('INTERNAL_ERROR');
     }
 
+    // T-206: Disparo post-commit best-effort a la persona que solicitó el envío (merchant)
+    try {
+      const admin = createAdminClient();
+      const { data: req, error: reqError } = await admin
+        .from('delivery_requests')
+        .select('merchant_id')
+        .eq('id', parsedOutput.data.requestId)
+        .maybeSingle();
+
+      if (!reqError && req?.merchant_id) {
+        await safeNotifyPostTransition([req.merchant_id], {
+          event: 'offer_submitted',
+          requestId: parsedOutput.data.requestId,
+          offerId: parsedOutput.data.offerId,
+        });
+      }
+    } catch {
+      // Best effort: fallo de push nunca altera la transición exitosa
+    }
+
     return ok(parsedOutput.data);
   } catch (ex) {
     try {
@@ -245,6 +267,45 @@ export async function acceptOfferRpc(
         // Fallo de observabilidad no debe interrumpir el retorno al caller
       }
       return err('INTERNAL_ERROR');
+    }
+
+    // PR118-H01: accept_offer idempotente (idempotent: true) no genera otro push ni resuelve destinatarios
+    if (parsedOutput.data.idempotent === true) {
+      return ok(parsedOutput.data);
+    }
+
+    // T-206: Disparo post-commit best-effort a ambas partes (merchant y courier)
+    try {
+      const admin = createAdminClient();
+      const [reqRes, offerRes] = await Promise.all([
+        admin
+          .from('delivery_requests')
+          .select('merchant_id')
+          .eq('id', parsedOutput.data.requestId)
+          .maybeSingle(),
+        admin
+          .from('offers')
+          .select('courier_id')
+          .eq('id', parsedOutput.data.acceptedOfferId)
+          .maybeSingle(),
+      ]);
+
+      // PR118-H07: Resolución de destinatarios falla cerrada ante { error } o ausencia de alguna parte
+      if (
+        !reqRes.error &&
+        !offerRes.error &&
+        reqRes.data?.merchant_id &&
+        offerRes.data?.courier_id
+      ) {
+        const parties = [reqRes.data.merchant_id, offerRes.data.courier_id];
+        await safeNotifyPostTransition(parties, {
+          event: 'offer_accepted',
+          requestId: parsedOutput.data.requestId,
+          offerId: parsedOutput.data.acceptedOfferId,
+        });
+      }
+    } catch {
+      // Best effort: fallo de push nunca altera la transición exitosa
     }
 
     return ok(parsedOutput.data);

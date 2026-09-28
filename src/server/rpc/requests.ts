@@ -10,6 +10,8 @@ import {
   type RpcOutput,
 } from '@/domain';
 import { sendCriticalAlert } from '@/server/observability';
+import { createAdminClient } from '@/server/supabase/admin';
+import { safeNotifyPostTransition } from '@/server/push';
 import type { SupabaseRpcCaller } from './offers';
 
 type RequestRpcName =
@@ -47,7 +49,6 @@ export async function callRequestRpc<K extends RequestRpcName>(
     args.p_kind = input.kind;
     args.p_description = input.description;
   }
-
   try {
     const { data, error } = await client.rpc(rpcName, args);
     if (error) {
@@ -86,6 +87,94 @@ export async function callRequestRpc<K extends RequestRpcName>(
       }
       return err('INTERNAL_ERROR');
     }
+
+    // T-206: Disparo post-commit best-effort
+    if (rpcName === 'publish_request') {
+      try {
+        const admin = createAdminClient();
+        const { data: couriers, error: couriersError } = await admin
+          .from('couriers')
+          .select('profile_id')
+          .eq('status', 'approved')
+          .eq('available', true);
+
+        if (!couriersError && couriers && couriers.length > 0) {
+          const courierIds = couriers.map((c) => c.profile_id);
+          await safeNotifyPostTransition(courierIds, {
+            event: 'request_published',
+            requestId: (output.data as { requestId: string }).requestId,
+          });
+        }
+      } catch {
+        // Best effort: falla de push nunca altera la transición exitosa
+      }
+    } else if (rpcName === 'cancel_request') {
+      try {
+        const admin = createAdminClient();
+        const cancelOutput = output.data as { requestId: string; cancelledAt: string };
+        const reqId = cancelOutput.requestId;
+        const cancelledAt = cancelOutput.cancelledAt;
+
+        const [offersRes, reqRes, auditRes] = await Promise.all([
+          admin
+            .from('offers')
+            .select('courier_id')
+            .eq('request_id', reqId)
+            .eq('decided_at', cancelledAt)
+            .in('status', ['expired', 'cancelled']),
+          admin
+            .from('delivery_requests')
+            .select('merchant_id')
+            .eq('id', reqId)
+            .maybeSingle(),
+          admin
+            .from('audit_log')
+            .select('actor_id')
+            .eq('target_type', 'delivery_request')
+            .eq('target_id', reqId)
+            .eq('action', 'cancel_request')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        // PR118-H07: Resolución de destinatarios falla cerrada ante { error } o datos críticos ausentes
+        if (
+          offersRes.error ||
+          reqRes.error ||
+          auditRes.error ||
+          offersRes.data == null ||
+          !reqRes.data?.merchant_id ||
+          !auditRes.data?.actor_id
+        ) {
+          return ok(output.data as RpcOutput<K>);
+        }
+
+        const recipients = new Set<string>();
+        const merchantId = reqRes.data?.merchant_id;
+        const actorId = auditRes.data?.actor_id;
+
+        // D01/1-A: Solo actores afectados. Si el actor fue el comercio, no se le notifica a él mismo.
+        // Si el actor fue otro (e.g. admin cancela in_transit), se notifica al comercio.
+        if (merchantId && actorId !== merchantId) {
+          recipients.add(merchantId);
+        }
+
+        for (const o of offersRes.data) {
+          recipients.add(o.courier_id);
+        }
+
+        if (recipients.size > 0) {
+          await safeNotifyPostTransition(Array.from(recipients), {
+            event: 'request_cancelled',
+            requestId: reqId,
+          });
+        }
+      } catch {
+        // Best effort: falla de push nunca altera la transición exitosa
+      }
+    }
+
     // The same RPC key selects both Zod schemas and the corresponding result type.
     return ok(output.data as RpcOutput<K>);
   } catch (ex) {

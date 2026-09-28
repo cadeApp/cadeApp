@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RPC_CONTRACTS } from '@/domain/rpc-contracts';
 import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
 import {
@@ -602,4 +602,244 @@ describe('T-105 · Wrappers Server RPC y Pruebas de Contrato para Admin', () => 
       );
     });
   });
+
+  describe('T-206: Purga de push_subscriptions en suspensión y deshabilitación administrativa', () => {
+    it('adminSuspendCourierRpc purga las suscripciones del repartidor suspendido tras el éxito de la RPC', async () => {
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockDeleteEq = vi.fn().mockResolvedValue({ error: null });
+      const mockDelete = vi.fn().mockReturnValue({ eq: mockDeleteEq });
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let rpcExecuted = false;
+      let purgedPostCommit = false;
+      const caller: SupabaseRpcCaller = {
+        async rpc(fn, args) {
+          if (fn === 'admin_suspend_courier') {
+            rpcExecuted = true;
+            return {
+              data: {
+                courierId: args?.p_courier_id as string,
+                status: 'suspended',
+                withdrawnOffersCount: 2,
+                deactivatedAt: '2026-09-28T03:00:00.000Z',
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: { message: 'UNEXPECTED' } };
+        },
+      };
+
+      mockDeleteEq.mockImplementationOnce(async () => {
+        purgedPostCommit = rpcExecuted;
+        return { error: null };
+      });
+
+      const result = await adminSuspendCourierRpc(caller, {
+        courierId: COURIER_1_ID,
+        reason: 'Incumplimiento de términos',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(purgedPostCommit).toBe(true);
+      expect(mockAdminFrom).toHaveBeenCalledWith('push_subscriptions');
+      expect(mockDelete).toHaveBeenCalled();
+      expect(mockDeleteEq).toHaveBeenCalledWith('user_id', COURIER_1_ID);
+    });
+
+    it('adminSuspendCourierRpc NO purga suscripciones si la RPC falla', async () => {
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockDelete = vi.fn();
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const caller: SupabaseRpcCaller = {
+        async rpc() {
+          return { data: null, error: { message: 'AAL2_REQUIRED' } };
+        },
+      };
+
+      const result = await adminSuspendCourierRpc(caller, {
+        courierId: COURIER_1_ID,
+        reason: 'Incumplimiento',
+      });
+
+      expect(result.ok).toBe(false);
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+
+    it('adminResolveIncidentRpc purga suscripciones si la decisión es preventive_suspension con repartidor', async () => {
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockDeleteEq = vi.fn().mockResolvedValue({ error: null });
+      const mockDelete = vi.fn().mockReturnValue({ eq: mockDeleteEq });
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let rpcExecuted = false;
+      let purgedPostCommit = false;
+      const caller: SupabaseRpcCaller = {
+        async rpc(fn) {
+          if (fn === 'admin_resolve_incident') {
+            rpcExecuted = true;
+            return {
+              data: {
+                incidentId: '00000000-0000-4000-8000-0000000000e1',
+                status: 'resolved',
+                decision: 'preventive_suspension',
+                courierId: COURIER_1_ID,
+                withdrawnOffersCount: 1,
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: { message: 'UNEXPECTED' } };
+        },
+      };
+
+      mockDeleteEq.mockImplementationOnce(async () => {
+        purgedPostCommit = rpcExecuted;
+        return { error: null };
+      });
+
+      const result = await adminResolveIncidentRpc(caller, {
+        incidentId: '00000000-0000-4000-8000-0000000000e1',
+        decision: 'preventive_suspension',
+        reason: 'Agresión física reportada',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(purgedPostCommit).toBe(true);
+      expect(mockAdminFrom).toHaveBeenCalledWith('push_subscriptions');
+      expect(mockDelete).toHaveBeenCalled();
+      expect(mockDeleteEq).toHaveBeenCalledWith('user_id', COURIER_1_ID);
+    });
+
+    it('adminResolveIncidentRpc NO purga suscripciones si la decisión es no_action o warning', async () => {
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockDelete = vi.fn();
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const caller: SupabaseRpcCaller = {
+        async rpc(fn) {
+          if (fn === 'admin_resolve_incident') {
+            return {
+              data: {
+                incidentId: '00000000-0000-4000-8000-0000000000e1',
+                status: 'resolved',
+                decision: 'warning',
+                courierId: COURIER_1_ID,
+                withdrawnOffersCount: 0,
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: { message: 'UNEXPECTED' } };
+        },
+      };
+
+      const result = await adminResolveIncidentRpc(caller, {
+        incidentId: '00000000-0000-4000-8000-0000000000e1',
+        decision: 'warning',
+        reason: 'Llegada tarde sin aviso',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+
+    it('adminDecideCourierRpc purga suscripciones si la decisión es rejected', async () => {
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockDeleteEq = vi.fn().mockResolvedValue({ error: null });
+      const mockDelete = vi.fn().mockReturnValue({ eq: mockDeleteEq });
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let rpcExecuted = false;
+      let purgedPostCommit = false;
+      const caller: SupabaseRpcCaller = {
+        async rpc(fn, args) {
+          if (fn === 'admin_decide_courier') {
+            rpcExecuted = true;
+            return {
+              data: {
+                courierId: args?.p_courier_id as string,
+                status: 'rejected',
+                decidedAt: '2026-09-28T03:00:00.000Z',
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: { message: 'UNEXPECTED' } };
+        },
+      };
+
+      mockDeleteEq.mockImplementationOnce(async () => {
+        purgedPostCommit = rpcExecuted;
+        return { error: null };
+      });
+
+      const result = await adminDecideCourierRpc(caller, {
+        courierId: COURIER_1_ID,
+        decision: 'rejected',
+        reason: 'Documentación apócrifa',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(purgedPostCommit).toBe(true);
+      expect(mockAdminFrom).toHaveBeenCalledWith('push_subscriptions');
+      expect(mockDeleteEq).toHaveBeenCalledWith('user_id', COURIER_1_ID);
+    });
+
+    it('adminDecideCourierRpc NO purga suscripciones si la decisión es approved', async () => {
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockDelete = vi.fn();
+      const mockAdminFrom = vi.fn().mockReturnValue({ delete: mockDelete });
+
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockAdminFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const caller: SupabaseRpcCaller = {
+        async rpc(fn, args) {
+          if (fn === 'admin_decide_courier') {
+            return {
+              data: {
+                courierId: args?.p_courier_id as string,
+                status: 'approved',
+                decidedAt: '2026-09-28T03:00:00.000Z',
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: { message: 'UNEXPECTED' } };
+        },
+      };
+
+      const result = await adminDecideCourierRpc(caller, {
+        courierId: COURIER_1_ID,
+        decision: 'approved',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+  });
 });
+

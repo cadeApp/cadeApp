@@ -168,6 +168,20 @@ export async function requestPasswordResetAction(
 
 export async function logoutAction(): Promise<ActionResult<null, DomainErrorCode>> {
   const supabase = await createClient();
+  try {
+    const user =
+      typeof supabase.auth.getUser === 'function'
+        ? (await supabase.auth.getUser()).data?.user
+        : null;
+
+    if (user?.id) {
+      const adminClient = createAdminClient();
+      await adminClient.from('push_subscriptions').delete().eq('user_id', user.id);
+    }
+  } catch {
+    // Best-effort: fallo en la resolución de usuario o purga no impide el logout del usuario
+  }
+
   await supabase.auth.signOut();
   return ok(null);
 }
