@@ -7,9 +7,9 @@
 | **Autor** | @KiraK72 |
 | **Rama** | `feat/T-201-pwa-manifest-sw` → `develop` |
 | **Base original del PR** | `15d21e8105ab08e7c05105105a3c0e325e87fd04` |
-| **develop al revisar R3** | `57badabc28fd3bd8e913674bd80b30feb8828414` |
-| **SHA R3** | `37952386084ea8388b624c71c33ff3378f03414a` |
-| **Estado** | bloqueada · R3 |
+| **develop al revisar R4** | `57badabc28fd3bd8e913674bd80b30feb8828414` |
+| **SHA R4** | `d47c7c1b62b8288a2b273843c1e0118133fc927b` |
+| **Estado** | bloqueada · R4 · solo H04 |
 
 ## Rondas
 
@@ -18,6 +18,7 @@
 | 1 | `f661f372e0cc708759caf91816b3483d31883f69` | 4 bloqueantes + 1 mejora + A01 aceptado | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `a1c93ae2cd482e497254cc836a21f12cddbbb160` | 5 bloqueantes: H04 + H06–H09 | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `37952386084ea8388b624c71c33ff3378f03414a` | 2 bloqueantes: H04 + H10 | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `d47c7c1b62b8288a2b273843c1e0118133fc927b` | 1 bloqueante: H04 | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 
 ## Decisiones humanas vigentes
 
@@ -25,29 +26,31 @@
 - **D02 / 2-A:** autorizados exactamente los cuatro archivos de `offers`.
 - **D03 / 3-A:** Cache Storage solo persiste shell/assets públicos same-origin explícitamente permitidos.
 
-R3 no requiere decisiones nuevas.
+R4 no requiere decisiones nuevas.
 
 ## Estado por hallazgo
 
-| ID | Estado R3 |
+| ID | Estado R4 |
 |---|---|
 | A01 | aceptado |
-| H01–H03 | arreglado-sin-verificar ejecución |
-| H04 | **abierto — evidencia visual real pendiente** |
+| H01–H03 | arreglado-sin-verificar ejecución independiente |
+| H04 | **ABIERTO — único bloqueante** |
 | H05 | arreglado-verificado |
-| H06–H07 | arreglado-sin-verificar ejecución |
-| H08 | arreglado-verificado |
-| H09 | arreglado-verificado por inspección binaria/visual |
-| H10 | **abierto — detector Safari acepta cualquier navegador iOS** |
+| H06–H07 | arreglado-sin-verificar ejecución independiente |
+| H08–H10 | arreglado-verificado |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. Corregir H10 con el prompt acotado de R3.
-2. Mantener H04 abierto hasta navegador real + capturas persistentes 390/360; no fabricar evidencia.
-3. Volver a pedir R4. Solo con H04/H10 cerrados se revisará CI del SHA candidato.
+No hay más correcciones de código pedidas a agy.
 
-## Nota de la revisión
+Para cerrar H04 hace falta evidencia de navegador real:
+- 390×844 y 360×800;
+- T01 Sheet en Safari iOS;
+- T03 CourierFeed offline;
+- T04 error y 404;
+- foco visible, safe-area y reduced-motion;
+- capturas persistentes enlazadas en PR + bitácora.
 
-H10 ya existía desde la implementación inicial y debió haberse detectado en R1. R3 lo registra explícitamente: el binding T00 dice Safari-only y el predicado actual solo detecta plataforma iOS + no-standalone.
+Con H04 cerrado, la siguiente ronda pasa a CI/logs del SHA exacto y cierre final.

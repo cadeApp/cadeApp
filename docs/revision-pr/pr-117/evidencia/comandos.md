@@ -1,46 +1,21 @@
 # Comandos reproducibles — PR #117
 
-## R3 · SHA inspeccionado
+## R4 · SHA inspeccionado
 
-`37952386084ea8388b624c71c33ff3378f03414a`
+`d47c7c1b62b8288a2b273843c1e0118133fc927b`
 
-### Evidencia independiente H09
+### H10 — reproducción independiente
 
-La revisión leyó IHDR directamente de los blobs remotos y obtuvo:
+La revisión ejecutó la misma clasificación del detector sobre cuatro clases:
 
 ```text
-icon-192.png              192x192
-icon-512.png              512x512
-icon-maskable-512.png     512x512
-icons/apple-touch-icon    180x180
-/apple-touch-icon         180x180
+Safari iOS no standalone -> true
+CriOS iPhone             -> false
+FxiOS iPhone             -> false
+Safari standalone        -> false
 ```
 
-Blobs Git:
-- normal 512: `a11153d79235770cef1a5434f99838f2a6e86008`
-- maskable 512: `1122383d7151aa5d28ba8c4810e05db09d057d37`
-
-### Evidencia independiente H10
-
-Reproducción mínima de la lógica actual:
-
-```bash
-node - <<'NODE'
-function current(ua, standalone = false) {
-  const isIos = /iPhone|iPad|iPod/i.test(ua);
-  return isIos && !standalone;
-}
-const crios =
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) ' +
-  'AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/123.0.6312.69 ' +
-  'Mobile/15E148 Safari/604.1';
-console.log(current(crios)); // true <- incorrecto para trigger Safari-only
-NODE
-```
-
-### Corrección H10
-
-Tests dirigidos:
+Tests del autor relevantes:
 
 ```bash
 pnpm vitest run \
@@ -48,35 +23,39 @@ pnpm vitest run \
   src/features/notifications/offline/visual-verification.test.tsx
 ```
 
-Casos:
-- Safari iOS navegador → true
-- CriOS → false
-- FxiOS → false
-- Safari standalone → false
-- Android Chrome → false
+H10 queda cerrado por inspección + reproducción independiente de la lógica.
 
-Mutación RED: reemplazar temporalmente `return isIos && isSafari && !isStandalone` por `return isIos && !isStandalone`. Deben fallar al menos CriOS y FxiOS.
+## H04 — checklist manual obligatorio
 
-### H04
-
-No hay comando unitario que cierre H04. Requiere navegador real:
-- 390×844 y 360×800;
-- T01, T03, T04;
-- foco, safe area, reduced motion;
-- capturas persistentes enlazadas en PR + bitácora.
-
-Mientras falten, mantener checkbox `[ ]`.
-
-### Batería del autor tras H10
+Levantar el SHA exacto `d47c7c1b62b8288a2b273843c1e0118133fc927b` en un entorno real:
 
 ```bash
-pnpm vitest run src/features/notifications/install/ios-install-guide.test.tsx
-pnpm vitest run src/features/notifications/offline/visual-verification.test.tsx
-pnpm typecheck
-pnpm lint
-pnpm test
+pnpm install --frozen-lockfile
 pnpm build
-git status --short
+pnpm start
 ```
 
-No crear tests falsos, no debilitar expectativas y no tocar `docs/revision-pr/**`.
+Capturar al menos:
+
+```text
+390x844 — T01 Safari iOS
+360x800 — T01 Safari iOS
+390x844 — T03 CourierFeed offline
+360x800 — T03 CourierFeed offline
+390x844 — T04 error
+360x800 — T04 404
+```
+
+Comprobar además:
+- safe-area bottom del Sheet;
+- foco visible;
+- Retry/acciones ≥48 px;
+- reduced motion;
+- sin clipping horizontal;
+- icono/PWA en navegador real.
+
+Los archivos/capturas deben quedar en almacenamiento persistente y sus enlaces pegarse en PR + bitácora.
+
+## Después de cerrar H04
+
+Pedir nueva revisión. En esa ronda se inspeccionará CI del SHA exacto, incluidos logs, y no solo el color del check.
