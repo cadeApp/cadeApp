@@ -11,6 +11,20 @@ import { TripEmptyState } from './components/trip-empty-state';
 import { formatVehicleType, formatRecipientPaymentMethod } from './format';
 import type { TripDetails } from './types';
 
+vi.mock('@vis.gl/react-google-maps', () => ({
+  APILoadingStatus: {
+    NOT_LOADED: 'NOT_LOADED',
+    LOADING: 'LOADING',
+    LOADED: 'LOADED',
+    FAILED: 'FAILED',
+  },
+  useApiLoadingStatus: () => 'LOADED',
+  APIProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Map: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  AdvancedMarker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  Polyline: () => null,
+}));
+
 describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   const baseTrip: TripDetails = {
     id: 'req-uuid-1',
@@ -178,11 +192,11 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(screen.getByText(/Frente a la plaza/i)).toBeDefined();
     });
 
-    it('no incluye botón "Abrir en Google Maps" ni coordenadas en T-115 (H15)', () => {
+    it('incluye botón "Abrir en Google Maps" en T-117 (D7/D15)', () => {
       render(<TripCourierView trip={baseTrip} />);
 
-      const mapsLink = screen.queryByRole('link', { name: /Abrir en Google Maps/i });
-      expect(mapsLink).toBeNull();
+      const mapsLink = screen.getByRole('link', { name: /Abrir en Google Maps/i });
+      expect(mapsLink).toBeDefined();
     });
 
     it('tiene botón sticky gigante de 56px de avance de viaje: "Marcar como retirado" en matched', () => {

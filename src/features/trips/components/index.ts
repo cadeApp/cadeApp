@@ -6,4 +6,5 @@ export * from './trip-cancel-dialog';
 export * from './trip-skeleton';
 export * from './trip-error-state';
 export * from './trip-empty-state';
+export * from './trip-route-map';
 

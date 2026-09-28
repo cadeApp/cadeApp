@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as tripsRpc from '@/server/rpc/trips';
+import * as serverSupabase from '@/server/supabase/server';
 import { getTripDetails } from './queries';
 
 vi.mock('@/server/rpc/trips', () => ({
   getTripDetailsServer: vi.fn(),
 }));
 
-describe('T-115 — query adapter sobre CC-008', () => {
+vi.mock('@/server/supabase/server', () => ({
+  createClient: vi.fn(),
+}));
+
+describe('T-115 / T-117 — query adapter sobre CC-008 y proyección de coordenadas post-matched', () => {
   const requestId = '1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d';
 
   const rpcTrip = {
@@ -39,11 +44,33 @@ describe('T-115 — query adapter sobre CC-008', () => {
     deliveredAt: null,
   };
 
+  const mockDbContacts = {
+    pickup_lat: -27.4333,
+    pickup_lng: -65.6167,
+    dropoff_lat: -27.4250,
+    dropoff_lng: -65.6100,
+  };
+
+  const mockDbRequest = {
+    route_distance_m: 2500,
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      from: vi.fn().mockImplementation((table: string) => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: table === 'delivery_request_contacts' ? mockDbContacts : mockDbRequest,
+          error: null,
+        }),
+      })),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
   });
 
-  it('delegates exactamente a getTripDetailsServer y mapea la proyección post-matched', async () => {
+  it('delegates exactamente a getTripDetailsServer y mapea la proyección post-matched con coordenadas', async () => {
     vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue({
       ok: true,
       data: rpcTrip,
@@ -65,8 +92,13 @@ describe('T-115 — query adapter sobre CC-008', () => {
       amountArs: 1800,
       pickupAddress: 'San Martín 450, Aguilares',
       pickupZoneName: 'Centro',
+      pickupLat: -27.4333,
+      pickupLng: -65.6167,
       dropoffAddress: 'Belgrano 1220',
       dropoffZoneName: 'Barrio Sur',
+      dropoffLat: -27.4250,
+      dropoffLng: -65.6100,
+      routeDistanceM: 2500,
       deliveryNotes: 'Frente a la plaza',
       recipientName: 'Laura Gómez',
       recipientPhone: '3865123456',
@@ -104,5 +136,31 @@ describe('T-115 — query adapter sobre CC-008', () => {
     expect(trip?.merchantPhone).toBe('3865222222');
     expect(trip?.recipientPhone).toBe('3865123456');
     expect(trip?.avatarUrl).toBe('https://signed.test/avatar.webp');
+  });
+
+  it('soporta de forma resiliente la ausencia de coordenadas retornando null en esos campos', async () => {
+    vi.mocked(tripsRpc.getTripDetailsServer).mockResolvedValue({
+      ok: true,
+      data: rpcTrip,
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      from: vi.fn().mockImplementation(() => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: null,
+          error: null,
+        }),
+      })),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const trip = await getTripDetails(requestId);
+    expect(trip).not.toBeNull();
+    expect(trip?.pickupLat).toBeNull();
+    expect(trip?.pickupLng).toBeNull();
+    expect(trip?.dropoffLat).toBeNull();
+    expect(trip?.dropoffLng).toBeNull();
+    expect(trip?.routeDistanceM).toBeNull();
   });
 });

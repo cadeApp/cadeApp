@@ -8,8 +8,7 @@ import type { TripDetails } from './types';
 import { TripCourierView } from './components/trip-courier-view';
 import { TripMerchantView } from './components/trip-merchant-view';
 import { buildGoogleMapsDirectionsUrl } from './maps';
-import { CourierFeed } from '@/features/offers/components/courier-feed';
-import type { AvailableRequestItem } from '@/features/offers/schemas';
+import { CourierFeed, type AvailableRequestItem } from '@/features/offers';
 
 // Mocks para CourierFeed
 const pushMock = vi.fn();
@@ -161,15 +160,7 @@ function getProductionFilesRecursively(dir: string): string[] {
 }
 
 describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista de viaje', () => {
-  type ExtendedTripDetails = TripDetails & {
-    pickupLat?: number | null;
-    pickupLng?: number | null;
-    dropoffLat?: number | null;
-    dropoffLng?: number | null;
-    routeDistanceM?: number | null;
-  };
-
-  const baseTrip: ExtendedTripDetails = {
+  const baseTrip: TripDetails = {
     id: '11111111-2222-3333-4444-555555555555',
     code: 'REQ-ABCD1234',
     status: 'matched',
@@ -204,7 +195,7 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
     deliveredAt: null,
   };
 
-  const inTransitTrip: ExtendedTripDetails = {
+  const inTransitTrip: TripDetails = {
     ...baseTrip,
     status: 'in_transit',
     pickedUpAt: '2026-09-28T10:15:00.000Z',
