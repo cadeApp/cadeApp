@@ -1,41 +1,36 @@
 # PR #113 — T-124 · Incidentes
 
-> 🔴 **Ronda 2 — CON BLOQUEANTES (2)**
+> 🟢 **Ronda 3 — SIN BLOQUEANTES**
 
 | | |
 |---|---|
 | PR | #113 |
 | Rama | `feat/T-124-incidentes` → `develop` |
-| SHA funcional revisado | `32d56c44a67b83de782086e0f9e176490c088d88` |
+| SHA funcional revisado | `db6b4f9d38afc73222939bdcea4367d29f92b878` |
 | Base | `develop@aae504a218b8b76e2d6cd0f56d8b5189e5b8b4fd` |
-| Estado | Draft · GREEN implementado |
-| CI | typecheck ✅ · lint ✅ · unit ✅ · build ✅ · audit ✅ · db-tests ✅ · bundle-budget ✅ con warning |
-| Unit | 92 archivos · 1225 tests PASS |
+| Estado | Draft · implementación completa |
+| CI | typecheck ✅ · lint ✅ · unit ✅ · build ✅ · audit ✅ · db-tests ✅ · bundle-budget ✅ con deuda preexistente |
+| Unit | 92 archivos · 1228 tests PASS |
 | DB | 12 archivos · 1601 tests PASS · db:types sin drift |
-| Resultado | H01–H08 cerrados; H09–H10 bloquean el cierre |
+| Resultado | H01–H10 cerrados/verificados · 0 bloqueantes |
 
-## Decisiones ya resueltas
+## Rondas
 
-- **D05-A:** merchant dueño reporta en `matched`/`in_transit` y hasta 24 h post-`delivered`; courier asignado solo en `matched`/`in_transit`; admin no reporta.
-- **D06-A:** `preventive_suspension` vive en `admin_resolve_incident`; la UI nunca envía `courierId`.
-- **D07-A:** CC-012 mergeado en `aae504a` aporta resolución, seguridad RLS/RPC e índice/keyset estable.
-- **D08:** el cruce de `src/app/trips/[id]/page.tsx` no requiere aprobación P2/P3 para Lautaro073.
+- **R1:** 8 bloqueantes H01–H08.
+- **CC-012 / PR #115:** resolvió contrato DB/RLS/RPC.
+- **R2:** H01–H08 cerrados; nuevos H09 (capturas persistentes) y H10 (delta bundle).
+- **R3:** H09 y H10 cerrados.
 
-## Ronda 2
+## Evidencia clave R3
 
-Los ocho hallazgos de R1 quedaron corregidos y verificados:
-- H01/H02 + DB de H06: resueltos por CC-012.
-- H03: no existe camino separado de suspensión ni `courierId` de cliente.
-- H04: Zod es fuente de verdad.
-- H05: wiring real actor/estado/fecha.
-- H06: cursor compuesto consumiendo `admin_list_incidents`.
-- H07: happy path exacto de `adminResolveIncidentRpc`.
-- H08: Dialog Escape/Cancelar+foco y loading/error funcionales.
+- H09: `feat/T-124-visual-assets@61fa15a67ece1b3032f229f7fefaca01b4ac4bdb` es un commit huérfano con **21 PNG y ningún archivo de código**. PR + bitácora enlazan los assets por SHA.
+- H10: CI `36370845157` deja `/trips/[id]` en **187 kB**, igual al baseline RED de T-124 y 7 kB menos que R2 (194 kB). T-124 eliminó su delta.
+- Refactor H10 no regresa contratos: focales de incidentes, wiring, foco, keyset y actions continúan verdes.
+- El autor no modificó `docs/revision-pr/pr-113/**` durante las correcciones R3.
 
-Quedan dos bloqueantes nuevos:
-- **H09:** el DoD visual está marcado como verificado pero PR/bitácora no contienen enlaces persistentes a las capturas, en contra de `docs/design/visual-task-directive.md §8`.
-- **H10:** `/trips/[id]` subió de 187 kB en la fase RED previa al wiring GREEN a 194 kB final. Es una ruta comercio/repartidor y la Regla 25 fija 180 kB. R2 exige, como mínimo, eliminar el delta de T-124 y volver a ≤187 kB sin ampliar scope; idealmente ≤180 kB.
+## Residuales no bloqueantes
 
-No aprobar ni mergear todavía.
+- `/trips/[id]` sigue en 187 kB frente al objetivo absoluto de 180 kB, pero esa deuda ya existía antes del GREEN de T-124. T-124 no la empeora. La pasada de rendimiento T-205 contempla first-load JS.
+- La corrida visual registró un error de hidratación de `BrandLogo` dentro de `AdminNav`, fuera del código de T-124. No afecta el cierre de esta PR y debe tratarse en su scope correspondiente si persiste.
 
-Detalle: [revisiones/ronda-2.md](revisiones/ronda-2.md)
+Detalle: [revisiones/ronda-3.md](revisiones/ronda-3.md)
