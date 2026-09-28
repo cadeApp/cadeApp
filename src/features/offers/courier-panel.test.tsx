@@ -498,11 +498,13 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
 
       expect((submitBtn as HTMLButtonElement).disabled).toBe(true);
 
-      // Intentar submit offline: onSubmitOffer queda en 0 llamadas
-      await act(async () => {
-        fireEvent.click(submitBtn);
+      // Intentar submit offline: enviar el formulario directamente para probar la guarda interna de handleSubmit
+      const form = submitBtn.closest('form');
+      expect(form).not.toBeNull();
+      fireEvent.submit(form as HTMLFormElement);
+      await waitFor(() => {
+        expect(mockOnSubmit).toHaveBeenCalledTimes(0);
       });
-      expect(mockOnSubmit).toHaveBeenCalledTimes(0);
 
       // Online rehabilita
       rerender(

@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+const announceOnline = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('online'));
+  }
+};
+
 export function useOfflineStatus() {
   const [isOffline, setIsOffline] = useState(() => {
     if (typeof navigator !== 'undefined') {
@@ -20,12 +26,16 @@ export function useOfflineStatus() {
 
   const retryConnection = useCallback(() => {
     if (typeof navigator !== 'undefined' && navigator.onLine) {
-      setIsOffline(false);
+      announceOnline();
     } else {
       // Intentar una verificación de red si el navegador aún reporta offline
       fetch('/api/health', { method: 'HEAD', cache: 'no-store' })
-        .then(() => setIsOffline(false))
-        .catch(() => setIsOffline(true));
+        .then(() => {
+          announceOnline();
+        })
+        .catch(() => {
+          setIsOffline(true);
+        });
     }
   }, []);
 

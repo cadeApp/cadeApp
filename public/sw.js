@@ -5,10 +5,11 @@ const STATIC_ASSETS = [
   '/manifest.webmanifest',
   '/brand/logo.svg',
   '/brand/logo.webp',
-  '/icon-192x192.png',
-  '/icon-512x512.png',
-  '/icon-maskable-192x192.png',
-  '/icon-maskable-512x512.png',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-maskable-512.png',
+  '/icons/apple-touch-icon.png',
+  '/apple-touch-icon.png',
 ];
 
 // Identifica si un recurso es un asset estático público persistible (shell o chunks de Next.js)

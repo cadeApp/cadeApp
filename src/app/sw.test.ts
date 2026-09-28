@@ -3,8 +3,20 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+interface FetchEventLike {
+  request: Request;
+  respondWith: (promise: Promise<Response>) => void;
+  waitUntil: (promise: Promise<unknown>) => void;
+}
+
+interface ExtendableEventLike {
+  waitUntil: (promise: Promise<unknown>) => void;
+}
+
+type TestListener = (event: unknown) => void;
+
 interface SWContext {
-  listeners: Record<string, ((event: any) => void)[]>;
+  listeners: Record<string, TestListener[]>;
   mockCache: {
     match: ReturnType<typeof vi.fn>;
     put: ReturnType<typeof vi.fn>;
@@ -27,7 +39,7 @@ function createSWInstance(customCode?: string): SWContext {
     customCode ??
     fs.readFileSync(path.resolve(process.cwd(), 'public/sw.js'), 'utf-8');
 
-  const listeners: Record<string, ((event: any) => void)[]> = {};
+  const listeners: Record<string, TestListener[]> = {};
 
   const mockCache = {
     match: vi.fn(),
@@ -44,9 +56,9 @@ function createSWInstance(customCode?: string): SWContext {
 
   const mockFetch = vi.fn();
 
-  const sandbox: any = {
+  const sandbox: Record<string, unknown> = {
     location: { origin: 'https://cadeapp.ar' },
-    addEventListener: (type: string, fn: (event: any) => void) => {
+    addEventListener: (type: string, fn: TestListener) => {
       listeners[type] = listeners[type] || [];
       listeners[type].push(fn);
     },
@@ -70,7 +82,7 @@ function createSWInstance(customCode?: string): SWContext {
 
   const dispatchFetch = async (request: Request): Promise<Response | null> => {
     let respondedWithPromise: Promise<Response> | null = null;
-    const event = {
+    const event: FetchEventLike = {
       request,
       respondWith: (promise: Promise<Response>) => {
         respondedWithPromise = promise;
@@ -90,9 +102,9 @@ function createSWInstance(customCode?: string): SWContext {
   };
 
   const dispatchInstall = async () => {
-    let waitUntilPromise: Promise<any> | null = null;
-    const event = {
-      waitUntil: (promise: Promise<any>) => {
+    let waitUntilPromise: Promise<unknown> | null = null;
+    const event: ExtendableEventLike = {
+      waitUntil: (promise: Promise<unknown>) => {
         waitUntilPromise = promise;
       },
     };
@@ -105,9 +117,9 @@ function createSWInstance(customCode?: string): SWContext {
   };
 
   const dispatchActivate = async () => {
-    let waitUntilPromise: Promise<any> | null = null;
-    const event = {
-      waitUntil: (promise: Promise<any>) => {
+    let waitUntilPromise: Promise<unknown> | null = null;
+    const event: ExtendableEventLike = {
+      waitUntil: (promise: Promise<unknown>) => {
         waitUntilPromise = promise;
       },
     };

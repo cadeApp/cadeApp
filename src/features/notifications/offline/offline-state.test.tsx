@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OfflineBanner, OfflineFloatingCard } from './offline-banner';
@@ -47,12 +47,38 @@ describe('T-201: Offline State & Degradation (T03)', () => {
     expect(screen.queryByText(/Cuando vuelva la conexión, actualizamos solo/i)).toBeNull();
   });
 
-  it('DoD: botón Reintentar permite disparar revalidación manual', () => {
-    render(<TestConsumer />);
-    fireEvent(window, new Event('offline'));
+  it('DoD / PR117-H06: botón Reintentar sincroniza todas las instancias si hay conectividad (probe HEAD exitoso)', async () => {
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 404 }));
 
-    const retryBtn = screen.getByRole('button', { name: /Reintentar/i });
-    expect(retryBtn).toBeTruthy();
-    fireEvent.click(retryBtn);
+    render(<TestConsumer />);
+    expect(screen.getByText(/Sin conexión/i)).toBeTruthy();
+    expect(screen.getByText(/Cuando vuelva la conexión/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Reintentar/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(/Sin conexión/i)).toBeNull();
+      expect(screen.queryByText(/Cuando vuelva la conexión/i)).toBeNull();
+    });
+
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+  });
+
+  it('DoD / PR117-H06: si probe fetch falla al reintentar, mantiene estado offline en todas las instancias', async () => {
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network offline'));
+
+    render(<TestConsumer />);
+    expect(screen.getByText(/Sin conexión/i)).toBeTruthy();
+    expect(screen.getByText(/Cuando vuelva la conexión/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Reintentar/i }));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText(/Sin conexión/i)).toBeTruthy();
+    expect(screen.getByText(/Cuando vuelva la conexión/i)).toBeTruthy();
+
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
   });
 });
