@@ -22,3 +22,7 @@
 ## Ronda 5
 - Sin lección AG nueva. Se reutilizan `pr-63/AG-68` y `pr-63/AG-70`: cuando dos defensas redundantes conservan la misma conducta pública, una mutación de una sola defensa puede quedar verde legítimamente; la batería debe romper la propiedad observable sin adulterar el test.
 - Una autorrevisión no sustituye el estado de la revisión independiente: mientras haya hallazgos abiertos, el body no debe autofirmar `SIN BLOQUEANTES`.
+
+## Ronda 6
+- Cierre sin lección AG nueva: la mutación compuesta confirmó la regla existente de probar la propiedad observable cuando existen defensas redundantes.
+- La evidencia CI final debe nombrar el SHA y run exactos del commit que se revisa; los conteos solos no sustituyen esa trazabilidad.
