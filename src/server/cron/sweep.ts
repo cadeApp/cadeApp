@@ -1,6 +1,7 @@
 import 'server-only';
 import { createAdminClient } from '@/server/supabase/admin';
 import { canMerchantPublishRequest } from '@/domain/states';
+import { safeNotifyPostTransition } from '@/server/push';
 
 export interface SweepResult {
   expiredRequestsCount: number;
@@ -68,6 +69,35 @@ export async function runSweep(): Promise<SweepResult> {
 
       if (offersUpdateError) {
         throw new Error(`Failed to update offers to expired: ${offersUpdateError.message}`);
+      }
+
+      // T-206: Disparo post-commit best-effort de request_expired a comercios y repartidores involucrados
+      for (const req of updatedRequests) {
+        try {
+          const { data: offersData } = await supabase
+            .from('offers')
+            .select('courier_id')
+            .eq('request_id', req.id);
+
+          const recipients = new Set<string>();
+          if (req.merchant_id) {
+            recipients.add(req.merchant_id);
+          }
+          if (offersData) {
+            for (const o of offersData) {
+              recipients.add(o.courier_id);
+            }
+          }
+
+          if (recipients.size > 0) {
+            await safeNotifyPostTransition(Array.from(recipients), {
+              event: 'request_expired',
+              requestId: req.id,
+            });
+          }
+        } catch {
+          // Best effort: fallo de push nunca altera la expiración ni la ejecución del cron
+        }
       }
 
       expiredRequestsCount = updatedRequests.length;

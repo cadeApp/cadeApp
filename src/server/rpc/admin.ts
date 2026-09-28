@@ -9,6 +9,7 @@ import {
   type RpcErrorCode,
   type RpcOutput,
 } from '@/domain';
+import { createAdminClient } from '@/server/supabase/admin';
 
 export interface SupabaseRpcErrorLike {
   readonly code?: string;
@@ -111,6 +112,19 @@ export async function adminDecideCourierRpc(
     return err('INTERNAL_ERROR');
   }
 
+  // T-206: Si el repartidor fue rechazado/deshabilitado, purgar sus suscripciones
+  if (parsedOutput.data.status === 'rejected') {
+    try {
+      const admin = createAdminClient();
+      await admin
+        .from('push_subscriptions')
+        .delete()
+        .eq('user_id', parsedOutput.data.courierId);
+    } catch {
+      // Best effort: fallo en la purga no altera la decisión administrativa
+    }
+  }
+
   return ok(parsedOutput.data);
 }
 
@@ -146,6 +160,17 @@ export async function adminSuspendCourierRpc(
     RPC_CONTRACTS.admin_suspend_courier.outputSchema.safeParse(data);
   if (!parsedOutput.success) {
     return err('INTERNAL_ERROR');
+  }
+
+  // T-206: Purgar suscripciones del repartidor suspendido tras el éxito de la RPC
+  try {
+    const admin = createAdminClient();
+    await admin
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', parsedOutput.data.courierId);
+  } catch {
+    // Best effort: fallo en la purga no altera la suspensión administrativa
   }
 
   return ok(parsedOutput.data);
@@ -317,6 +342,22 @@ export async function adminResolveIncidentRpc(
     RPC_CONTRACTS.admin_resolve_incident.outputSchema.safeParse(data);
   if (!parsedOutput.success) {
     return err('INTERNAL_ERROR');
+  }
+
+  // T-206: Si la resolución implica suspensión preventiva del repartidor, purgar sus suscripciones
+  if (
+    parsedOutput.data.decision === 'preventive_suspension' &&
+    parsedOutput.data.courierId
+  ) {
+    try {
+      const admin = createAdminClient();
+      await admin
+        .from('push_subscriptions')
+        .delete()
+        .eq('user_id', parsedOutput.data.courierId);
+    } catch {
+      // Best effort: fallo en la purga no altera la resolución del incidente
+    }
   }
 
   return ok(parsedOutput.data);

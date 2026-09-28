@@ -10,6 +10,8 @@ import {
   type RpcOutput,
 } from '@/domain';
 import { sendCriticalAlert } from '@/server/observability';
+import { createAdminClient } from '@/server/supabase/admin';
+import { safeNotifyPostTransition } from '@/server/push';
 import type { SupabaseRpcCaller } from './offers';
 
 type RequestRpcName =
@@ -86,6 +88,54 @@ export async function callRequestRpc<K extends RequestRpcName>(
       }
       return err('INTERNAL_ERROR');
     }
+
+    // T-206: Disparo post-commit best-effort
+    if (rpcName === 'publish_request') {
+      try {
+        const admin = createAdminClient();
+        const { data: couriers } = await admin
+          .from('couriers')
+          .select('profile_id')
+          .eq('status', 'approved')
+          .eq('available', true);
+
+        const courierIds = couriers?.map((c) => c.profile_id) ?? [];
+        await safeNotifyPostTransition(courierIds, {
+          event: 'request_published',
+          requestId: (output.data as { requestId: string }).requestId,
+        });
+      } catch {
+        // Best effort: falla de push nunca altera la transición exitosa
+      }
+    } else if (rpcName === 'cancel_request') {
+      try {
+        const admin = createAdminClient();
+        const reqId = (output.data as { requestId: string }).requestId;
+
+        const [offersRes, reqRes] = await Promise.all([
+          admin.from('offers').select('courier_id').eq('request_id', reqId),
+          admin.from('delivery_requests').select('merchant_id').eq('id', reqId).maybeSingle(),
+        ]);
+
+        const recipients = new Set<string>();
+        if (reqRes.data?.merchant_id) {
+          recipients.add(reqRes.data.merchant_id);
+        }
+        if (offersRes.data) {
+          for (const o of offersRes.data) {
+            recipients.add(o.courier_id);
+          }
+        }
+
+        await safeNotifyPostTransition(Array.from(recipients), {
+          event: 'request_cancelled',
+          requestId: reqId,
+        });
+      } catch {
+        // Best effort: falla de push nunca altera la transición exitosa
+      }
+    }
+
     // The same RPC key selects both Zod schemas and the corresponding result type.
     return ok(output.data as RpcOutput<K>);
   } catch (ex) {
