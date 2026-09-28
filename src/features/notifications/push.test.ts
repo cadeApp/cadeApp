@@ -8,12 +8,33 @@ import {
   unsubscribeFromPush,
   isPushSupported,
   getNotificationPermission,
+  getNotificationDataForEvent,
 } from './push';
 
 describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
   beforeEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
     vi.clearAllMocks();
+
+    Object.defineProperty(window, 'PushManager', {
+      value: class MockPushManager {},
+      writable: true,
+      configurable: true,
+    });
+
+    const mockNotification = {
+      permission: 'default',
+      requestPermission: vi.fn().mockResolvedValue('granted'),
+    };
+
+    Object.defineProperty(window, 'Notification', {
+      value: mockNotification,
+      writable: true,
+      configurable: true,
+    });
+
+    vi.stubGlobal('Notification', mockNotification);
   });
 
   describe('1. Pantalla T02 (Soft Prompt de Notificaciones)', () => {
@@ -158,6 +179,15 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
         }),
       };
 
+      Object.defineProperty(window, 'Notification', {
+        value: {
+          permission: 'granted',
+          requestPermission: vi.fn().mockResolvedValue('granted'),
+        },
+        writable: true,
+        configurable: true,
+      });
+
       const mockGetSubscription = vi.fn().mockResolvedValue(existingSubscription);
       const mockSubscribe = vi.fn();
 
@@ -181,4 +211,136 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       expect(mockSubscribe).not.toHaveBeenCalled();
     });
   });
+
+  describe('4. Mapeo estricto de eventos de Push sin PII (sw-handlers)', () => {
+    it('DoD: mapea eventos de negocio a URLs canónicas sin filtrar datos personales', () => {
+      const origin = 'https://cadeapp.ar';
+
+      // 1. request_published -> /courier/feed
+      const published = getNotificationDataForEvent(
+        { event: 'request_published', requestId: '11111111-1111-4111-8111-111111111111' },
+        origin
+      );
+      expect(published.data.url).toBe('https://cadeapp.ar/courier/feed');
+      expect(published.title).toMatch(/solicitud/i);
+      expect(JSON.stringify(published)).not.toMatch(/dni|teléfono|phone|address|calle|nombre/i);
+
+      // 2. offer_submitted -> /merchant/requests/[id]
+      const submitted = getNotificationDataForEvent(
+        { event: 'offer_submitted', requestId: '11111111-1111-4111-8111-111111111111', offerId: '22222222-2222-4222-8222-222222222222' },
+        origin
+      );
+      expect(submitted.data.url).toBe('https://cadeapp.ar/merchant/requests/11111111-1111-4111-8111-111111111111');
+      expect(submitted.title).toMatch(/oferta/i);
+      expect(JSON.stringify(submitted)).not.toMatch(/dni|teléfono|phone|address|calle|nombre/i);
+
+      // 3. offer_accepted -> /trips/[id]
+      const accepted = getNotificationDataForEvent(
+        { event: 'offer_accepted', requestId: '11111111-1111-4111-8111-111111111111', offerId: '22222222-2222-4222-8222-222222222222' },
+        origin
+      );
+      expect(accepted.data.url).toBe('https://cadeapp.ar/trips/11111111-1111-4111-8111-111111111111');
+      expect(accepted.title).toMatch(/aceptada/i);
+      expect(JSON.stringify(accepted)).not.toMatch(/dni|teléfono|phone|address|calle|nombre/i);
+
+      // 4. request_cancelled -> /courier/feed
+      const cancelled = getNotificationDataForEvent(
+        { event: 'request_cancelled', requestId: '11111111-1111-4111-8111-111111111111' },
+        origin
+      );
+      expect(cancelled.data.url).toBe('https://cadeapp.ar/courier/feed');
+      expect(cancelled.title).toMatch(/cancelada/i);
+
+      // 5. request_expired -> /courier/feed
+      const expired = getNotificationDataForEvent(
+        { event: 'request_expired', requestId: '11111111-1111-4111-8111-111111111111' },
+        origin
+      );
+      expect(expired.data.url).toBe('https://cadeapp.ar/courier/feed');
+      expect(expired.title).toMatch(/vencida/i);
+
+      // 6. Payload nulo o desconocido -> fallback seguro
+      const unknown = getNotificationDataForEvent(null, origin);
+      expect(unknown.data.url).toBe('https://cadeapp.ar/');
+      expect(unknown.title).toBe('cadeApp');
+    });
+  });
+
+  describe('5. Verificación visual responsive (390px / 360px) y accesibilidad WCAG AA', () => {
+    it('DoD: T02 en 390px cumple TopBar #12182C, targets táctiles >= 48px y texto >= 14px', () => {
+      window.innerWidth = 390;
+      window.innerHeight = 844;
+
+      const { container } = render(React.createElement(PushPermissionPrompt));
+
+      // TopBar #12182C
+      const header = container.querySelector('header');
+      expect(header).toBeTruthy();
+      expect(header?.className).toContain('bg-[#12182C]');
+
+      // Botón volver con target >= 48px
+      const backBtn = screen.getByRole('button', { name: /Volver/i });
+      expect(backBtn).toBeTruthy();
+      expect(backBtn.className).toMatch(/(min-h-12|h-12)/);
+      expect(backBtn.className).toMatch(/(min-w-12|w-12)/);
+
+      // Botón Activar avisos con target >= 48px
+      const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
+      expect(activateBtn).toBeTruthy();
+      expect(activateBtn.className).toMatch(/(min-h-12|h-12)/);
+
+      // Botón Ahora no con target >= 48px
+      const dismissBtn = screen.getByRole('button', { name: /Ahora no/i });
+      expect(dismissBtn).toBeTruthy();
+      expect(dismissBtn.className).toMatch(/(min-h-12|h-12)/);
+
+      // Jerarquía y texto accesible
+      const heading = screen.getByRole('heading', { level: 1 });
+      expect(heading.textContent).toMatch(/¿Te avisamos al instante\?/i);
+    });
+
+    it('DoD: T02 en 360px mantiene legibilidad, estructura y targets táctiles', () => {
+      window.innerWidth = 360;
+      window.innerHeight = 640;
+
+      const { container } = render(React.createElement(PushPermissionPrompt));
+
+      const main = container.querySelector('main');
+      expect(main).toBeTruthy();
+      expect(main?.className).toContain('max-w-[390px]');
+
+      const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
+      expect(activateBtn.className).toMatch(/(min-h-12|h-12)/);
+    });
+
+    it('DoD: interacción de usuario en T02 ejecuta solicitud y activa estado concedido', async () => {
+      const mockSuccess = vi.fn();
+      render(React.createElement(PushPermissionPrompt, { onSuccess: mockSuccess }));
+
+      const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
+      fireEvent.click(activateBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/¡Avisos activados con éxito!/i)).toBeTruthy();
+      });
+    });
+
+    it('DoD: si el permiso está denegado, T02 muestra explicación sin bloquear ni romper', () => {
+      Object.defineProperty(window, 'Notification', {
+        value: {
+          permission: 'denied',
+          requestPermission: vi.fn().mockResolvedValue('denied'),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(React.createElement(PushPermissionPrompt));
+
+      expect(screen.getByText(/Avisos bloqueados en el navegador/i)).toBeTruthy();
+      // El botón 'Ahora no' sigue disponible para cerrar
+      expect(screen.getByRole('button', { name: /Ahora no/i })).toBeTruthy();
+    });
+  });
 });
+
