@@ -15,16 +15,17 @@ describe('T-201: Web App Manifest & Maskable Icons', () => {
     expect(data.background_color).toBe('#12182C');
     expect(data.orientation).toBe('portrait');
 
+    const icons = data.icons ?? [];
     expect(Array.isArray(data.icons)).toBe(true);
-    expect(data.icons.length).toBeGreaterThanOrEqual(2);
+    expect(icons.length).toBeGreaterThanOrEqual(2);
 
-    const has192 = data.icons.some(
+    const has192 = icons.some(
       (icon) => icon.sizes === '192x192' && icon.type === 'image/png'
     );
-    const has512 = data.icons.some(
+    const has512 = icons.some(
       (icon) => icon.sizes === '512x512' && icon.type === 'image/png'
     );
-    const hasMaskable = data.icons.some(
+    const hasMaskable = icons.some(
       (icon) => icon.purpose?.includes('maskable')
     );
 
@@ -36,8 +37,9 @@ describe('T-201: Web App Manifest & Maskable Icons', () => {
   it('DoD: los archivos de íconos declarados deben existir físicamente en public/', () => {
     const data = manifest();
     const publicDir = path.resolve(process.cwd(), 'public');
+    const icons = data.icons ?? [];
 
-    for (const icon of data.icons) {
+    for (const icon of icons) {
       const iconPath = path.resolve(publicDir, icon.src.replace(/^\//, ''));
       expect(
         fs.existsSync(iconPath),

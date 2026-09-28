@@ -32,7 +32,7 @@ describe('T-201: Offline State & Degradation (T03)', () => {
     render(<TestConsumer />);
     expect(screen.queryByText(/Sin conexión. Mostramos lo último que cargó/i)).toBeNull();
     expect(screen.queryByText(/Cuando vuelva la conexión, actualizamos solo/i)).toBeNull();
-    expect(screen.getByTestId('unsafe-action-btn')).toBeEnabled();
+    expect((screen.getByTestId('unsafe-action-btn') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('DoD: al disparar evento offline, muestra banner T03, card flotante y deshabilita acciones no seguras', () => {
@@ -42,24 +42,24 @@ describe('T-201: Offline State & Degradation (T03)', () => {
     // Simular evento offline
     fireEvent(window, new Event('offline'));
 
-    expect(screen.getByText(/Sin conexión. Mostramos lo último que cargó/i)).toBeInTheDocument();
-    expect(screen.getByText(/Cuando vuelva la conexión, actualizamos solo/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Reintentar/i })).toBeInTheDocument();
+    expect(screen.getByText(/Sin conexión. Mostramos lo último que cargó/i)).toBeTruthy();
+    expect(screen.getByText(/Cuando vuelva la conexión, actualizamos solo/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Reintentar/i })).toBeTruthy();
 
-    const unsafeBtn = screen.getByTestId('unsafe-action-btn');
-    expect(unsafeBtn).toBeDisabled();
+    const unsafeBtn = screen.getByTestId('unsafe-action-btn') as HTMLButtonElement;
+    expect(unsafeBtn.disabled).toBe(true);
   });
 
   it('DoD: al disparar evento online, restaura estado y oculta banners', () => {
     render(<TestConsumer />);
 
     fireEvent(window, new Event('offline'));
-    expect(screen.getByText(/Sin conexión. Mostramos lo último que cargó/i)).toBeInTheDocument();
+    expect(screen.getByText(/Sin conexión. Mostramos lo último que cargó/i)).toBeTruthy();
 
     fireEvent(window, new Event('online'));
     expect(screen.queryByText(/Sin conexión. Mostramos lo último que cargó/i)).toBeNull();
     expect(screen.queryByText(/Cuando vuelva la conexión, actualizamos solo/i)).toBeNull();
-    expect(screen.getByTestId('unsafe-action-btn')).toBeEnabled();
+    expect((screen.getByTestId('unsafe-action-btn') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('DoD: botón Reintentar permite disparar revalidación manual', () => {
@@ -67,7 +67,7 @@ describe('T-201: Offline State & Degradation (T03)', () => {
     fireEvent(window, new Event('offline'));
 
     const retryBtn = screen.getByRole('button', { name: /Reintentar/i });
-    expect(retryBtn).toBeInTheDocument();
+    expect(retryBtn).toBeTruthy();
     fireEvent.click(retryBtn);
   });
 });

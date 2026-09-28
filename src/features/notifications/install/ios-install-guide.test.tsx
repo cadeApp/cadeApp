@@ -49,18 +49,18 @@ describe('T-201: iOS PWA Installation Guide (T01)', () => {
     render(<IosInstallGuideSheet open={true} onOpenChange={handleClose} />);
 
     // Verificar pasos mandatorios según Stitch T01
-    expect(screen.getByText(/Tocá el botón Compartir/i)).toBeInTheDocument();
-    expect(screen.getByText(/Elegí «Agregar a inicio»/i)).toBeInTheDocument();
-    expect(screen.getByText(/Abrí cadeApp desde el ícono de tu pantalla/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tocá el botón Compartir/i)).toBeTruthy();
+    expect(screen.getByText(/Elegí «Agregar a inicio»/i)).toBeTruthy();
+    expect(screen.getByText(/Abrí cadeApp desde el ícono de tu pantalla/i)).toBeTruthy();
 
     // Advertencia de Chrome en iPhone
     expect(
       screen.getByText(/Si usás Chrome en iPhone, primero abrí este link en Safari/i)
-    ).toBeInTheDocument();
+    ).toBeTruthy();
 
     // Botón o acción de cerrar
     const closeBtn = screen.getByRole('button', { name: /Entendido|Cerrar/i });
-    expect(closeBtn).toBeInTheDocument();
+    expect(closeBtn).toBeTruthy();
     fireEvent.click(closeBtn);
     expect(handleClose).toHaveBeenCalled();
   });

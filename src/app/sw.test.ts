@@ -38,6 +38,7 @@ describe('T-201: Service Worker & Offline Shell Cache', () => {
     };
     const mockCaches = {
       open: vi.fn().mockResolvedValue(mockCache),
+      match: vi.fn().mockResolvedValue(new Response('<html>Offline Shell</html>', { status: 200 })),
     };
     (globalThis as unknown as { caches: typeof mockCaches }).caches = mockCaches;
 
