@@ -49,7 +49,8 @@ describe('runSweep logic', () => {
     const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
     const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
 
-    const mockOffersUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
     const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
     const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
@@ -193,6 +194,7 @@ describe('runSweep logic', () => {
     expect(mockReqUpdateEq).toHaveBeenCalledWith('status', 'published');
     expect(mockReqUpdateLte).toHaveBeenCalledWith('expires_at', expect.any(String));
     expect(mockOffersUpdateEq).toHaveBeenCalledWith('status', 'pending');
+    expect(mockOffersUpdateSelect).toHaveBeenCalledWith('request_id, courier_id');
     expect(mockDocUpdateIs).toHaveBeenCalledWith('purged_at', null);
     expect(mockMerchantUpdateEq).toHaveBeenCalledWith('subscription_status', 'active');
     expect(mockMerchantUpdateOr).toHaveBeenCalledWith(expect.stringContaining('paid_until.lte.'));
@@ -482,7 +484,8 @@ describe('runSweep logic', () => {
     const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
     const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
 
-    const mockOffersUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
     const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
     const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
@@ -932,4 +935,292 @@ describe('runSweep logic', () => {
       expect.stringContaining('paid_until.lte.2026-09-21')
     );
   });
+
+  describe('T-206: Cableado de push en transiciones de negocio (sweep / request_expired)', () => {
+    it('despacha request_expired a comercio y repartidores con ofertas cuando expira una solicitud', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 2,
+        sentCount: 2,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const mockReqUpdateSelect = vi.fn().mockResolvedValue({
+        data: [
+          { id: 'req-expired-10', merchant_id: 'merchant-expired-10' },
+          { id: 'req-expired-20', merchant_id: 'merchant-expired-20' },
+        ],
+        error: null,
+      });
+      const mockReqUpdateLte = vi.fn().mockReturnValue({ select: mockReqUpdateSelect });
+      const mockReqUpdateEq = vi.fn().mockReturnValue({ lte: mockReqUpdateLte });
+      const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
+      const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
+
+      let offersUpdated = false;
+      let orderIsPostCommit = false;
+      const mockOffersUpdateSelect = vi.fn().mockImplementation(async () => {
+        offersUpdated = true;
+        return {
+          data: [
+            { request_id: 'req-expired-10', courier_id: 'courier-with-offer-1' },
+            { request_id: 'req-expired-20', courier_id: 'courier-with-offer-2' },
+          ],
+          error: null,
+        };
+      });
+      const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
+      const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
+      const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
+
+      safeNotifySpy.mockImplementation(async () => {
+        orderIsPostCommit = offersUpdated;
+        return {
+          totalSubscriptions: 2,
+          sentCount: 2,
+          failedCount: 0,
+          deletedSubscriptions: [],
+          attempts: [],
+          errors: [],
+        };
+      });
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                lte: vi.fn().mockResolvedValue({
+                  data: [
+                    { id: 'req-expired-10', merchant_id: 'merchant-expired-10' },
+                    { id: 'req-expired-20', merchant_id: 'merchant-expired-20' },
+                  ],
+                  error: null,
+                }),
+              }),
+            }),
+            update: mockReqUpdate,
+          };
+        }
+        if (table === 'offers') {
+          return {
+            update: mockOffersUpdate,
+          };
+        }
+        if (table === 'courier_documents') {
+          return {
+            select: vi.fn().mockReturnValue({
+              lte: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'platform_settings') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: { value: '0' }, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'merchants') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
+        }
+        return {};
+      });
+
+      setAdminClientMock({
+        from: mockFrom,
+        storage: {
+          from: vi.fn().mockReturnValue({
+            remove: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        },
+      });
+
+      const result = await runSweep();
+
+      expect(result.expiredRequestsCount).toBe(2);
+      expect(orderIsPostCommit).toBe(true);
+      expect(mockOffersUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'expired', decided_at: expect.any(String) })
+      );
+      expect(mockOffersIn).toHaveBeenCalledWith('request_id', ['req-expired-10', 'req-expired-20']);
+      expect(mockOffersUpdateEq).toHaveBeenCalledWith('status', 'pending');
+      expect(mockOffersUpdateSelect).toHaveBeenCalledWith('request_id, courier_id');
+
+      expect(safeNotifySpy).toHaveBeenCalledTimes(2);
+
+      const [call1Recipients, call1Payload] = safeNotifySpy.mock.calls[0]!;
+      expect(call1Recipients).toHaveLength(2);
+      expect(new Set(call1Recipients)).toEqual(new Set(['merchant-expired-10', 'courier-with-offer-1']));
+      expect(call1Payload).toEqual({
+        event: 'request_expired',
+        requestId: 'req-expired-10',
+      });
+
+      const [call2Recipients, call2Payload] = safeNotifySpy.mock.calls[1]!;
+      expect(call2Recipients).toHaveLength(2);
+      expect(new Set(call2Recipients)).toEqual(new Set(['merchant-expired-20', 'courier-with-offer-2']));
+      expect(call2Payload).toEqual({
+        event: 'request_expired',
+        requestId: 'req-expired-20',
+      });
+      safeNotifySpy.mockRestore();
+    });
+
+    it('runSweep conserva resultado exitoso si push falla (best-effort)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockRejectedValue(
+        new Error('Push notification transport error')
+      );
+
+      const mockReqUpdateSelect = vi.fn().mockResolvedValue({
+        data: [{ id: 'req-expired-20', merchant_id: 'merchant-expired-20' }],
+        error: null,
+      });
+      const mockReqUpdateLte = vi.fn().mockReturnValue({ select: mockReqUpdateSelect });
+      const mockReqUpdateEq = vi.fn().mockReturnValue({ lte: mockReqUpdateLte });
+      const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
+      const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
+
+      const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+      const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
+      const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
+      const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                lte: vi.fn().mockResolvedValue({
+                  data: [{ id: 'req-expired-20', merchant_id: 'merchant-expired-20' }],
+                  error: null,
+                }),
+              }),
+            }),
+            update: mockReqUpdate,
+          };
+        }
+        if (table === 'offers') {
+          return {
+            update: mockOffersUpdate,
+          };
+        }
+        if (table === 'courier_documents') {
+          return {
+            select: vi.fn().mockReturnValue({
+              lte: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'platform_settings') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: { value: '0' }, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'merchants') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
+        }
+        return {};
+      });
+
+      setAdminClientMock({
+        from: mockFrom,
+        storage: {
+          from: vi.fn().mockReturnValue({
+            remove: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        },
+      });
+
+      const result = await runSweep();
+      expect(result.expiredRequestsCount).toBe(1);
+      safeNotifySpy.mockRestore();
+    });
+
+    it('runSweep NO llama a push si ninguna solicitud expira', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                lte: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'courier_documents') {
+          return {
+            select: vi.fn().mockReturnValue({
+              lte: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'platform_settings') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: { value: '0' }, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'merchants') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          };
+        }
+        return {};
+      });
+
+      setAdminClientMock({
+        from: mockFrom,
+        storage: {
+          from: vi.fn().mockReturnValue({
+            remove: vi.fn().mockResolvedValue({ data: [], error: null }),
+          }),
+        },
+      });
+
+      const result = await runSweep();
+      expect(result.expiredRequestsCount).toBe(0);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+  });
 });
+

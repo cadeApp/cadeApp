@@ -1113,4 +1113,504 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
     );
     alertSpy.mockRestore();
   });
+
+  describe('T-206: Cableado de push en transiciones de negocio (offers)', () => {
+    it('submit_offer despacha push al comercio solicitante después del éxito de la RPC', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 1,
+        sentCount: 1,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const drEqSpy = vi.fn().mockImplementation((col: string, val: string) => {
+        if (col === 'id' && val === REQ_1_ID) {
+          return {
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { merchant_id: MERCHANT_ID },
+              error: null,
+            }),
+          };
+        }
+        return {
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      });
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: drEqSpy,
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let rpcExecuted = false;
+      let orderIsPostCommit = false;
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockImplementation(async () => {
+          rpcExecuted = true;
+          return {
+            data: {
+              offerId: OFFER_1_ID,
+              requestId: REQ_1_ID,
+              status: 'pending',
+              amountArs: 1500,
+              createdAt: FIXED_NOW_ISO,
+            },
+            error: null,
+          };
+        }),
+      };
+
+      safeNotifySpy.mockImplementationOnce(async () => {
+        orderIsPostCommit = rpcExecuted;
+        return {
+          totalSubscriptions: 1,
+          sentCount: 1,
+          failedCount: 0,
+          deletedSubscriptions: [],
+          attempts: [],
+          errors: [],
+        };
+      });
+
+      const result = await submitOfferRpc(client, {
+        requestId: REQ_1_ID,
+        amountArs: 1500,
+        etaMinutes: 20,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(orderIsPostCommit).toBe(true);
+      expect(drEqSpy).toHaveBeenCalledWith('id', REQ_1_ID);
+      expect(safeNotifySpy).toHaveBeenCalledWith(
+        [MERCHANT_ID],
+        {
+          event: 'offer_submitted',
+          requestId: REQ_1_ID,
+          offerId: OFFER_1_ID,
+        }
+      );
+      safeNotifySpy.mockRestore();
+    });
+
+    it('submit_offer NO despacha push si la RPC falla', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: null,
+          error: { code: 'P0001', message: 'OFFER_BELOW_MINIMUM' },
+        }),
+      };
+
+      const result = await submitOfferRpc(client, {
+        requestId: REQ_1_ID,
+        amountArs: 500,
+        etaMinutes: 20,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('submit_offer conserva resultado exitoso si push falla (best-effort)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockRejectedValue(
+        new Error('Push network error')
+      );
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            offerId: OFFER_1_ID,
+            requestId: REQ_1_ID,
+            status: 'pending',
+            amountArs: 1500,
+            createdAt: FIXED_NOW_ISO,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await submitOfferRpc(client, {
+        requestId: REQ_1_ID,
+        amountArs: 1500,
+        etaMinutes: 20,
+      });
+
+      expect(result.ok).toBe(true);
+      safeNotifySpy.mockRestore();
+    });
+
+    it('submit_offer NO despacha push si la consulta de delivery_requests retorna error (PR118-H07)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'request lookup error' },
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            offerId: OFFER_1_ID,
+            requestId: REQ_1_ID,
+            status: 'pending',
+            amountArs: 1500,
+            createdAt: FIXED_NOW_ISO,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await submitOfferRpc(client, {
+        requestId: REQ_1_ID,
+        amountArs: 1500,
+        etaMinutes: 20,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('accept_offer despacha push a ambas partes (comercio y repartidor) tras éxito de la RPC', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 2,
+        sentCount: 2,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const drEqSpy = vi.fn().mockImplementation((col: string, val: string) => {
+        if (col === 'id' && val === REQ_1_ID) {
+          return {
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { merchant_id: MERCHANT_ID },
+              error: null,
+            }),
+          };
+        }
+        return {
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      });
+
+      const offersEqSpy = vi.fn().mockImplementation((col: string, val: string) => {
+        if (col === 'id' && val === OFFER_1_ID) {
+          return {
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { courier_id: COURIER_1_ID },
+              error: null,
+            }),
+          };
+        }
+        return {
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      });
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: drEqSpy,
+            }),
+          };
+        }
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: offersEqSpy,
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      let rpcExecuted = false;
+      let orderIsPostCommit = false;
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockImplementation(async () => {
+          rpcExecuted = true;
+          return {
+            data: {
+              requestId: REQ_1_ID,
+              acceptedOfferId: OFFER_1_ID,
+              status: 'matched',
+              matchedAt: FIXED_NOW_ISO,
+              idempotent: false,
+            },
+            error: null,
+          };
+        }),
+      };
+
+      safeNotifySpy.mockImplementationOnce(async () => {
+        orderIsPostCommit = rpcExecuted;
+        return {
+          totalSubscriptions: 2,
+          sentCount: 2,
+          failedCount: 0,
+          deletedSubscriptions: [],
+          attempts: [],
+          errors: [],
+        };
+      });
+
+      const result = await acceptOfferRpc(client, {
+        offerId: OFFER_1_ID,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(orderIsPostCommit).toBe(true);
+      expect(drEqSpy).toHaveBeenCalledWith('id', REQ_1_ID);
+      expect(offersEqSpy).toHaveBeenCalledWith('id', OFFER_1_ID);
+      expect(safeNotifySpy).toHaveBeenCalledTimes(1);
+      const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
+      expect(recipients).toHaveLength(2);
+      expect(new Set(recipients)).toEqual(new Set([MERCHANT_ID, COURIER_1_ID]));
+      expect(payload).toEqual({
+        event: 'offer_accepted',
+        requestId: REQ_1_ID,
+        offerId: OFFER_1_ID,
+      });
+      safeNotifySpy.mockRestore();
+    });
+
+    it('accept_offer con idempotent: true NO genera push ni consulta destinatarios (PR118-H01)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+      const adminSupabase = await import('@/server/supabase/admin');
+      const createAdminSpy = vi.spyOn(adminSupabase, 'createAdminClient');
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            requestId: REQ_1_ID,
+            acceptedOfferId: OFFER_1_ID,
+            status: 'matched',
+            matchedAt: FIXED_NOW_ISO,
+            idempotent: true,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await acceptOfferRpc(client, {
+        offerId: OFFER_1_ID,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.idempotent).toBe(true);
+      }
+      expect(createAdminSpy).not.toHaveBeenCalled();
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+
+      safeNotifySpy.mockRestore();
+      createAdminSpy.mockRestore();
+    });
+
+    it('accept_offer NO despacha push si la RPC falla', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: null,
+          error: { code: 'P0001', message: 'ALREADY_MATCHED' },
+        }),
+      };
+
+      const result = await acceptOfferRpc(client, {
+        offerId: OFFER_1_ID,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('accept_offer conserva resultado exitoso si push falla (best-effort)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockRejectedValue(
+        new Error('Push network error')
+      );
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            requestId: REQ_1_ID,
+            acceptedOfferId: OFFER_1_ID,
+            status: 'matched',
+            matchedAt: FIXED_NOW_ISO,
+            idempotent: false,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await acceptOfferRpc(client, {
+        offerId: OFFER_1_ID,
+      });
+
+      expect(result.ok).toBe(true);
+      safeNotifySpy.mockRestore();
+    });
+
+    it('accept_offer NO despacha push si la consulta de delivery_requests retorna error (PR118-H07)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'requests lookup error' },
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { courier_id: COURIER_1_ID },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            requestId: REQ_1_ID,
+            acceptedOfferId: OFFER_1_ID,
+            status: 'matched',
+            matchedAt: FIXED_NOW_ISO,
+            idempotent: false,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await acceptOfferRpc(client, {
+        offerId: OFFER_1_ID,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('accept_offer NO despacha push si la consulta de offers retorna error (PR118-H07)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: MERCHANT_ID },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'offers lookup error' },
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            requestId: REQ_1_ID,
+            acceptedOfferId: OFFER_1_ID,
+            status: 'matched',
+            matchedAt: FIXED_NOW_ISO,
+            idempotent: false,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await acceptOfferRpc(client, {
+        offerId: OFFER_1_ID,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+  });
 });
+
