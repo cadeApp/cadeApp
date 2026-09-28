@@ -37,6 +37,7 @@ const PHASE_0_TASKS = [
  *   body: string,
  *   state: string,
  *   labels: string[],
+ *   assignees?: string[],
  * }} IssueSnapshot
  */
 
@@ -59,6 +60,7 @@ const PHASE_0_TASKS = [
  *   optionId: string,
  *   shouldCloseIssue: boolean,
  *   shouldReopenIssue?: boolean,
+ *   targetAssignees?: string[],
  *   addLabels: string[],
  *   removeLabels: string[],
  * }} BoardTransition
@@ -217,6 +219,17 @@ export function computeBoardTransitions({
       targetState = unblocked ? 'lista' : 'bloqueada';
     }
 
+    const currentAssignees = issue.assignees ?? [];
+    const hasLautaro = currentAssignees.includes('Lautaro073');
+    const isUnassigned = currentAssignees.length === 0;
+    /** @type {string[] | undefined} */
+    let targetAssignees;
+    if (hasLautaro || isUnassigned) {
+      targetAssignees = [
+        ...new Set(currentAssignees.filter((login) => login !== 'Lautaro073').concat('KiraK72')),
+      ];
+    }
+
     const currentLabels = new Set(issue.labels);
     const addLabels = currentLabels.has(targetState) ? [] : [targetState];
     const removeLabels = STATE_LABELS.filter(
@@ -233,6 +246,7 @@ export function computeBoardTransitions({
       optionId: meta.optionId,
       shouldCloseIssue: isCompleted && !isClosed,
       shouldReopenIssue: Boolean(openPr && isClosed),
+      targetAssignees,
       addLabels,
       removeLabels,
     });
@@ -409,6 +423,9 @@ async function main() {
         labels: Array.isArray(raw.labels)
           ? raw.labels.map((/** @type {{ name?: string }} */ l) => l.name ?? '').filter(Boolean)
           : [],
+        assignees: Array.isArray(raw.assignees)
+          ? raw.assignees.map((/** @type {{ login?: string }} */ a) => a.login ?? '').filter(Boolean)
+          : [],
       });
     }
     if (batch.length < 100) break;
@@ -456,6 +473,16 @@ async function main() {
   });
 
   for (const transition of transitions) {
+    if (transition.targetAssignees) {
+      await githubApi(repository, token, `/issues/${transition.number}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignees: transition.targetAssignees }),
+      });
+      console.log(
+        `Issue #${transition.number} [${transition.taskId}]: asignada a ${transition.targetAssignees.join(', ')}`
+      );
+    }
     if (transition.shouldReopenIssue) {
       await githubApi(repository, token, `/issues/${transition.number}`, {
         method: 'PATCH',
