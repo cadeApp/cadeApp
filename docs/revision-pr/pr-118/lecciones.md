@@ -1,22 +1,16 @@
 # Lecciones — PR #118 (T-206)
 
 ## Ronda 1
-
-No se agrega una regla AG nueva en esta ronda.
-
-Los hallazgos reutilizan reglas ya existentes:
-
-- **PR118-H01:** enumeración completa de casos semánticos e idempotencia; la salida exitosa no implica una transición nueva.
-- **PR118-H02:** pr-56/AG-37 — enumerar toda la clase de destinatarios; no usar una muestra como proxy.
-- **PR118-H03:** pr-68/AG-74 — los efectos colaterales salen de las filas realmente actualizadas, no de una reconsulta más amplia.
-- **PR118-H04:** P08 + pr-56/AG-37 — el test debe proteger los predicados que seleccionan al destinatario y prohibir extras.
-- **PR118-H05 / M01:** pr-63/AG-68 y pr-68/AG-75 — la evidencia debe ser reproducible y la batería de mutaciones no puede reducirse a lo que el autor esperaba ver.
+- H01/H02/H03/H04: enumerar la clase completa de transiciones, filtros y destinatarios; no usar fixtures mínimas como proxy.
+- H05/M01: la evidencia debe ser reproducible y corresponder al check realmente requerido.
 
 ## Ronda 2
+- H04/H05: un rojo por TypeError/forma del mock no demuestra la propiedad semántica.
+- H06/H07: best-effort debe cubrir throws y errores in-band.
+- R01: no introducir un escape productivo para tolerar un mock incompleto.
 
-No se agrega una regla AG nueva; los problemas encajan en lecciones ya existentes.
-
-- **H04/H05:** pr-63/AG-70 — un rojo causado por la forma incompleta del mock/TypeError no demuestra la propiedad semántica. La mutación sin `decided_at` debe incluir un histórico y fallar por destinatario extra.
-- **H06/H07:** pr-56/AG-37 — al integrar side effects best-effort hay que enumerar fallos por throw y fallos in-band `{ error }`; ninguno puede alterar el flujo principal ni producir destinatarios distintos.
-- **R01:** P08 — no introducir una rama productiva que omita el mismo control que el test dice exigir.
-- **M02:** pr-63/AG-68 — cifras de evidencia pertenecen al SHA/run concreto y no deben mezclarse entre local y CI.
+## Ronda 3
+- **H05:** registrar “un test falló” no sustituye ejecutar toda la batería mínima acordada. Para una mutación semántica, ordenar/separar controles de modo que falle la consecuencia de negocio (destinatario extra), no antes una aserción de implementación.
+- **H07:** fail-closed incluye errores explícitos y también ausencia imposible/incompleta de datos críticos con `error:null`.
+- **A01:** un cambio fuera de ficha puede aceptarse por decisión humana, pero debe registrarse como `aceptado`, no reescribirse como si nunca hubiese existido el desvío.
+- **Sincronización:** antes del cierre final, la rama debe contener el develop actual aunque el merge-ref de GitHub CI ya pruebe integración automática.

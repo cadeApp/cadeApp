@@ -1,78 +1,72 @@
 # Evidencia y comandos — PR #118
 
-## Ronda 1
+## Rondas 1–2
+Ver `revisiones/ronda-1.md` y `revisiones/ronda-2.md`.
 
-Ver `revisiones/ronda-1.md`.
+## Ronda 3 — SHA `6980fb095b3605663ad658e8c885ed2b7906df3b`
 
-## Ronda 2 — SHA `aba405dd4544af13d85cdd0b3e26a1f8bca8e07d`
+### Delta desde Ronda 2
+- base: `96a1af1e7d5cc14d0f9ff3aa3fd7615ea2080503`
+- 1 commit de producto.
+- 9 archivos tocados.
+- `docs/revision-pr/**`: sin cambios del autor.
+- desvío: `src/app/api/cron/sweep/route.test.ts` — aceptado por D02=2-A.
 
-### Sincronización
-
-- parent del arreglo: `8cfd6402f2525a1815c09d886bf505541a478cdf`
-- head: `aba405dd4544af13d85cdd0b3e26a1f8bca8e07d`
-- develop: `57badabc28fd3bd8e913674bd80b30feb8828414`
-- compare head vs develop: 6 ahead / 0 behind
-- compare R1-review vs head: 1 commit, 7 archivos; ninguno bajo `docs/revision-pr/**`
-
-### CI inspeccionado
-
-Workflow run: `36380194256`.
-
-Unit:
+### Sincronización con develop
+Compare al revisar:
 ```text
-Test Files  92 passed (92)
-Tests       1255 passed (1255)
+develop c91ec4e... vs head 6980fb...
+8 ahead / 1 behind
 ```
+Requisito próxima ronda:
+`git merge origin/develop` y `git rev-list --left-right --count origin/develop...HEAD` con cero a la izquierda.
 
-Node:
+### CI
+Run `36461968118` — success.
+
 ```text
+Test Files 93 passed (93)
+Tests      1275 passed (1275)
 verify-workflows: # tests 22
 verify-adr:       # tests 6
-```
-
-DB job `108794184718`:
-```text
+DB:
 All tests successful.
 Files=12, Tests=1601
 Result: PASS
 ```
 
-Jobs build, typecheck, lint, unit, db-tests, audit y bundle-budget: success.
+Build, typecheck, lint, audit y bundle-budget: success.
 
-### Inspección SQL de cancel_request
+### Inspección H06
+`logoutAction`:
+- getUser + purge dentro de try/catch;
+- signOut fuera;
+- tests de getUser reject y delete reject presentes.
 
-En `supabase/migrations/20260924010124_rpc_requests_v1.sql`:
-- accepted offer se actualiza a `cancelled, decided_at=v_now`;
-- pending offers se actualizan a `expired, decided_at=v_now`;
-- request recibe `cancelled_at=v_now`;
-- retorno incluye `cancelledAt=v_now`;
-- audit_log inserta `actor_id=v_uid`, `action=p_action`, `target_type='delivery_request'`, `target_id=p_request_id`.
+### Inspección H07 residual
+Código actual:
+```ts
+if (offersRes.error || reqRes.error || auditRes.error) {
+  return ok(output.data as RpcOutput<K>);
+}
+const merchantId = reqRes.data?.merchant_id;
+const actorId = auditRes.data?.actor_id;
+if (merchantId && actorId !== merchantId) recipients.add(merchantId);
+```
+Con `auditRes={data:null,error:null}`, actorId es undefined y merchantId puede ser agregado. No existe test para este caso.
 
-Esto valida que filtrar por `decided_at = cancelledAt` puede seleccionar las filas de esa transición.
+### Inspección H05
+Bitácora 14:55 registra siete mutaciones con comando/salida. Comparación con batería mínima R2:
 
-### Mutaciones pendientes para Ronda 3
+- accept idempotencia: ✅
+- publish available true→false: ❌
+- publish pre-commit: ❌
+- cancel action incorrecta: ✅
+- cancel sin decided_at: ⚠️ registrada, pero el mensaje mostrado es la aserción estructural del spy, no histórico extra
+- sweep couriers cruzados: ❌
+- sweep sin `.select(...)`: ❌ (se cambió a `.select('courier_id')`, no se quitó)
+- error offers/cancel: ✅
+- error request/accept: ✅
 
-No se declaran como ejecutadas por el revisor; no hubo checkout local ejecutable.
-
-1. Audit action:
-   - mutar `.eq('action','cancel_request')` a otra acción.
-   - esperado: RED por actor/destinatario, no por TypeError.
-
-2. Cancel sin timestamp:
-   - quitar `.eq('decided_at', cancelledAt)`.
-   - el mock debe seguir siendo una cadena válida y devolver una offer histórica adicional.
-   - esperado: RED por tamaño/conjunto de destinatarios.
-
-3. Logout:
-   - mover `getUser()` fuera del try best-effort.
-   - esperado: test con `getUser.mockRejectedValue` falla porque signOut no se ejecuta.
-
-4. Resolver errors:
-   - quitar guard de `reqRes.error` en accept o `auditRes.error` en cancel.
-   - esperado: aparece llamada parcial/incorrecta a safeNotify.
-
-5. Sweep:
-   - quitar `.select('request_id, courier_id')`.
-   - esperado: test T-206 RED por pérdida de filas afectadas/select esperado, no por mock artificial.
-
-La evidencia del autor en `docs/tasks/log/T-206.md` debe incluir comandos y líneas reales `Test Files`/`Tests` por mutación.
+### D02
+Lautaro073 eligió `2-A`: conservar el cambio test-only de `src/app/api/cron/sweep/route.test.ts`. Se registra como A01 `aceptado`.

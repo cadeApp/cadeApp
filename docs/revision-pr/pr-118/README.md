@@ -1,41 +1,36 @@
 # Revisión independiente — PR #118 · T-206
 
 - **PR:** #118 · `feat/T-206-cableado-push` → `develop`
-- **Tarea:** T-206 · Issue #92
-- **Ronda actual:** 2
-- **SHA de producto revisado:** `aba405dd4544af13d85cdd0b3e26a1f8bca8e07d`
-- **develop comparado:** `57badabc28fd3bd8e913674bd80b30feb8828414`
+- **Ronda actual:** 3
+- **SHA de producto revisado:** `6980fb095b3605663ad658e8c885ed2b7906df3b`
+- **develop actual:** `c91ec4e304de0d983cd31be3c77acecf374304bf`
 - **Estado:** **CON BLOQUEANTES**
-- **Decisión humana:** D01 = **1-A**, sin cambios.
+- **Decisiones:** D01 = 1-A · D02 = 2-A.
 - **Aprobación/merge:** no realizados.
 
-## Estado de Ronda 1
+## Cerrados por inspección + CI
 
-- **H01:** implementación corregida por inspección; el test directo corre verde en CI. Pendiente mutación independiente/reproducible.
-- **H02:** implementación corregida por inspección y matriz exacta de destinatarios agregada. El control de `audit_log` quedó incompleto dentro de H04.
-- **H03:** reconsulta amplia eliminada y agrupación por filas actualizadas implementada. El arreglo introdujo PR118-R01: fallback condicional de `.select()`.
-- **H04:** **parcial**. Publish/submit/accept y conjuntos exactos mejoraron, pero los predicados de `audit_log` siguen sin estar protegidos semánticamente.
-- **H05:** **abierto**. La bitácora enumera mutaciones pero no registra las líneas reales RED/GREEN requeridas; la mutación de `decided_at` tampoco es reproducible semánticamente con el mock actual.
-- **M01:** corregido; CI del nuevo SHA vuelve a confirmar db-tests PASS.
+- H04: builders de query semánticos + predicados exactos implementados.
+- H06: `getUser()` y purga están dentro del best-effort; `signOut()` queda afuera.
+- R01: `.select('request_id, courier_id')` es directo e incondicional.
+- M01: db-tests correctamente distinguidos de ejecución local.
 
-## Nuevos bloqueantes
+## Abiertos
 
-- **PR118-H06 · alto · correctness:** un rechazo de `auth.getUser()` ocurre fuera del best-effort y evita `signOut()`.
-- **PR118-H07 · alto · correctness:** `accept_offer` y `cancel_request` ignoran errores in-band de los lookups y pueden enviar a un conjunto parcial/incorrecto.
-- **PR118-R01 · medio · test-coverage:** el arreglo de H03 agregó un fallback productivo que permite seguir sin `.select('request_id, courier_id')`.
+- **H05:** batería RED incompleta; faltan mutaciones mínimas pedidas y el RED “sin decided_at” registrado cae primero por aserción estructural, no por histórico extra.
+- **H07 (parcial):** errores `{ error }` están cubiertos, pero `cancel_request` no falla cerrado si un lookup crítico devuelve `data:null,error:null`.
+- **M02:** body de PR desfasado; CI del SHA revisado dio 93/93 files y 1275/1275 tests.
+- **Sincronización:** rama 1 commit detrás de develop; debe mergear `origin/develop` antes de la siguiente ronda.
 
-## Mejora
+## Alcance aceptado
 
-- **PR118-M02:** el cuerpo de la PR quedó desfasado respecto de CI: dice 1254 tests y verify-workflows 21, pero el run del SHA revisado reporta 1255 y 22.
+**PR118-A01 — aceptado.** `src/app/api/cron/sweep/route.test.ts` estaba fuera de la ficha/lista cerrada. Lautaro073 decidió D02=2-A: conservar el cambio test-only que adapta el mock al select obligatorio. No habilita otros desvíos.
 
-## CI del SHA revisado
+## CI
 
-Workflow `36380194256`: todos los jobs verdes.
-
-- Unit: 92/92 files, 1255/1255 tests.
-- verify-workflows: 22.
-- verify-adr: 6.
-- db-tests: Files=12, Tests=1601, Result: PASS.
-- typecheck/lint/build/audit/bundle-budget: success.
-
-CI verde no cierra los bloqueantes semánticos de esta ronda.
+Run `36461968118`: success.
+- unit: 93/93 files · 1275/1275 tests
+- verify-workflows: 22
+- verify-adr: 6
+- db-tests: 12 files · 1601 tests · PASS
+- typecheck/lint/build/audit/bundle-budget: success
