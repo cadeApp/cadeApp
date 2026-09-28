@@ -28,6 +28,7 @@ export interface OfferSheetProps {
   onSubmitOffer?: (
     input: SubmitOfferFormInput
   ) => Promise<{ ok: boolean; code?: string; message?: string }>;
+  isOffline?: boolean;
 }
 
 export function OfferSheet({
@@ -36,6 +37,7 @@ export function OfferSheet({
   request,
   minOfferArs,
   onSubmitOffer,
+  isOffline = false,
 }: OfferSheetProps) {
   const [amountStr, setAmountStr] = useState<string>('1500');
   const [etaMinutes, setEtaMinutes] = useState<number>(15);
@@ -67,6 +69,9 @@ export function OfferSheet({
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) {
       e.preventDefault();
+    }
+    if (isOffline) {
+      return;
     }
     setServerError(null);
     setIsSubmitting(true);
@@ -260,7 +265,7 @@ export function OfferSheet({
           <SheetFooter className="mt-4 pt-2">
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isOffline}
               className="min-h-12 w-full text-sm font-bold"
             >
               {isSubmitting ? OFFERS_COPY.submittingOffer : OFFERS_COPY.submitOfferButton}
