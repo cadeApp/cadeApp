@@ -16,6 +16,7 @@ import { RequestCard } from './request-card';
 import type { OfferSheetProps } from './offer-sheet';
 import { FeedSkeleton } from './feed-skeleton';
 import { useAvailableRequests } from '../hooks/use-available-requests';
+import { useOfflineStatus } from '@/features/notifications';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
 
@@ -44,6 +45,7 @@ export function CourierFeed({
   const [available, setAvailable] = useState<boolean>(initialAvailable);
   const [selectedRequest, setSelectedRequest] = useState<AvailableRequestItem | null>(null);
   const [isOfferSheetOpen, setIsOfferSheetOpen] = useState<boolean>(false);
+  const { isOffline } = useOfflineStatus();
 
   const {
     requests: liveRequests,
@@ -102,6 +104,9 @@ export function CourierFeed({
   }
 
   const handleOpenOfferSheet = (request: AvailableRequestItem) => {
+    if (isOffline) {
+      return;
+    }
     setSelectedRequest(request);
     setIsOfferSheetOpen(true);
   };
@@ -180,9 +185,14 @@ export function CourierFeed({
               </div>
 
               {requests.length > 0 && (
-                <div className="space-y-3">
+                <div className={`space-y-3 ${isOffline ? 'grayscale-[20%] opacity-80' : ''}`}>
                   {requests.map((req) => (
-                    <RequestCard key={req.id} request={req} onOfferClick={handleOpenOfferSheet} />
+                    <RequestCard
+                      key={req.id}
+                      request={req}
+                      onOfferClick={handleOpenOfferSheet}
+                      isOffline={isOffline}
+                    />
                   ))}
                 </div>
               )}
@@ -194,9 +204,14 @@ export function CourierFeed({
               description={OFFERS_COPY.emptyFeedDescription}
             />
           ) : (
-            <div className="space-y-3">
+            <div className={`space-y-3 ${isOffline ? 'grayscale-[20%] opacity-80' : ''}`}>
               {requests.map((req) => (
-                <RequestCard key={req.id} request={req} onOfferClick={handleOpenOfferSheet} />
+                <RequestCard
+                  key={req.id}
+                  request={req}
+                  onOfferClick={handleOpenOfferSheet}
+                  isOffline={isOffline}
+                />
               ))}
               {hasNextPage && !isError && (
                 <div className="flex justify-center pt-2">
@@ -204,7 +219,7 @@ export function CourierFeed({
                     type="button"
                     variant="outline"
                     onClick={() => void fetchNextPage()}
-                    disabled={isFetchingNextPage}
+                    disabled={isFetchingNextPage || isOffline}
                   >
                     {isFetchingNextPage ? OFFERS_COPY.loadingMore : OFFERS_COPY.loadMore}
                   </Button>
@@ -225,6 +240,7 @@ export function CourierFeed({
           }}
           request={selectedRequest}
           minOfferArs={minOfferArs}
+          isOffline={isOffline}
         />
       )}
     </div>

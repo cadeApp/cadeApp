@@ -54,7 +54,7 @@ export function ErrorView({ error, reset }: ErrorViewProps) {
         </p>
 
         <div className="mt-4">
-          <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 font-mono text-xs text-muted-foreground">
+          <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 font-mono text-sm text-muted-foreground">
             Código: {supportCode}
           </span>
         </div>

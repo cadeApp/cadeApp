@@ -35,7 +35,7 @@ export function IosInstallGuideSheet({ open, onOpenChange }: IosInstallGuideShee
 
         <div className="my-5 flex flex-col gap-4">
           <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
               1
             </span>
             <div className="flex-1 text-sm">
@@ -49,7 +49,7 @@ export function IosInstallGuideSheet({ open, onOpenChange }: IosInstallGuideShee
           </div>
 
           <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
               2
             </span>
             <div className="flex-1 text-sm">
@@ -63,7 +63,7 @@ export function IosInstallGuideSheet({ open, onOpenChange }: IosInstallGuideShee
           </div>
 
           <div className="flex items-start gap-3 rounded-lg border border-border bg-card p-3">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
               3
             </span>
             <div className="flex-1 text-sm">
@@ -76,7 +76,7 @@ export function IosInstallGuideSheet({ open, onOpenChange }: IosInstallGuideShee
             </div>
           </div>
 
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" aria-hidden="true" />
             <p>
               <strong>Atención:</strong> Si usás Chrome en iPhone, primero abrí este link en Safari para poder agregarlo a tu inicio.

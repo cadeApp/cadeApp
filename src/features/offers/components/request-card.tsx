@@ -10,6 +10,7 @@ import type { AvailableRequestItem } from '../schemas';
 export interface RequestCardProps {
   request: AvailableRequestItem;
   onOfferClick: (request: AvailableRequestItem) => void;
+  isOffline?: boolean;
 }
 
 function calculateRelativeMinutes(dateIso: string | null): number | null {
@@ -18,7 +19,7 @@ function calculateRelativeMinutes(dateIso: string | null): number | null {
   return Math.round(diffMs / 60000);
 }
 
-export function RequestCard({ request, onOfferClick }: RequestCardProps) {
+export function RequestCard({ request, onOfferClick, isOffline = false }: RequestCardProps) {
   const packageLabel =
     request.packageType === 'small'
       ? OFFERS_COPY.packageSmall
@@ -106,6 +107,7 @@ export function RequestCard({ request, onOfferClick }: RequestCardProps) {
               type="button"
               variant="secondary"
               onClick={() => onOfferClick(request)}
+              disabled={isOffline}
               className="w-full min-h-12 text-sm font-bold"
             >
               {OFFERS_COPY.offerButton}

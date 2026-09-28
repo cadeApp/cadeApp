@@ -442,5 +442,110 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     expect(sourceCode).not.toContain('FeedSkeleton');
     expect(sourceCode).not.toContain('OFFERS_COPY');
   });
+
+  describe('T-201 / T03: Comportamiento real ante degradación offline en feed y ofertas', () => {
+    it('offline inicial: botón real Ofertar disabled y el wrapper real de las requests contiene grayscale-[20%] y opacity-80', () => {
+      Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+
+      const { container } = render(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[sampleRequest]}
+          minOfferArs={1000}
+        />
+      );
+
+      const offerButton = screen.getByRole('button', { name: OFFERS_COPY.offerButton });
+      expect((offerButton as HTMLButtonElement).disabled).toBe(true);
+
+      const requestsWrapper = container.querySelector('.grayscale-\\[20\\%\\]');
+      expect(requestsWrapper).not.toBeNull();
+      expect(requestsWrapper?.className).toContain('opacity-80');
+
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    });
+
+    it('transición offline/online: al estar offline en Sheet deshabilita Enviar oferta, submit no llama a onSubmitOffer, y online rehabilita', async () => {
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+      const mockOnSubmit = vi.fn().mockResolvedValue({ ok: true });
+
+      const { rerender } = render(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={sampleRequest}
+          minOfferArs={1000}
+          onSubmitOffer={mockOnSubmit}
+          isOffline={false}
+        />
+      );
+
+      const submitBtn = screen.getByRole('button', { name: OFFERS_COPY.submitOfferButton });
+      expect((submitBtn as HTMLButtonElement).disabled).toBe(false);
+
+      // Simular offline
+      rerender(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={sampleRequest}
+          minOfferArs={1000}
+          onSubmitOffer={mockOnSubmit}
+          isOffline={true}
+        />
+      );
+
+      expect((submitBtn as HTMLButtonElement).disabled).toBe(true);
+
+      // Intentar submit offline: onSubmitOffer queda en 0 llamadas
+      await act(async () => {
+        fireEvent.click(submitBtn);
+      });
+      expect(mockOnSubmit).toHaveBeenCalledTimes(0);
+
+      // Online rehabilita
+      rerender(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={sampleRequest}
+          minOfferArs={1000}
+          onSubmitOffer={mockOnSubmit}
+          isOffline={false}
+        />
+      );
+      expect((submitBtn as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it('en CourierFeed real, evento offline deshabilita botón y evento online lo rehabilita', async () => {
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+
+      render(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[sampleRequest]}
+          minOfferArs={1000}
+        />
+      );
+
+      const offerButton = screen.getByRole('button', { name: OFFERS_COPY.offerButton });
+      expect((offerButton as HTMLButtonElement).disabled).toBe(false);
+
+      // Disparar evento offline
+      act(() => {
+        window.dispatchEvent(new Event('offline'));
+      });
+
+      expect((offerButton as HTMLButtonElement).disabled).toBe(true);
+
+      // Disparar evento online
+      act(() => {
+        window.dispatchEvent(new Event('online'));
+      });
+      expect((offerButton as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
 });
 

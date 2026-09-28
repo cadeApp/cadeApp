@@ -92,6 +92,9 @@ describe('T-201: Verificación visual responsive (390px / 360px), emulación iOS
 
       const retryBtn = screen.getByRole('button', { name: /Reintentar/i });
       expect(retryBtn).toBeTruthy();
+      expect(retryBtn.className).toMatch(/(min-h-12|h-12)/);
+      expect(retryBtn.className).toContain('text-sm');
+      expect(container.innerHTML).not.toContain('text-xs');
 
       Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
     });
@@ -117,6 +120,9 @@ describe('T-201: Verificación visual responsive (390px / 360px), emulación iOS
 
       // No filtrar mensaje interno
       expect(screen.queryByText(/Sensitive SQL query/i)).toBeNull();
+
+      // Anti-12px
+      expect(container.innerHTML).not.toContain('text-xs');
     });
 
     it('NotFoundView a 390px presenta motivo gráfico, copy rioplatense y botón de inicio accesible', () => {
@@ -130,6 +136,41 @@ describe('T-201: Verificación visual responsive (390px / 360px), emulación iOS
       expect(homeLink.className).toContain('h-12');
       expect(screen.getByText(/Página no encontrada/i)).toBeTruthy();
       expect(screen.getByText(/No encontramos lo que buscabas/i)).toBeTruthy();
+      expect(container.innerHTML).not.toContain('text-xs');
+    });
+  });
+
+  describe('PR117-H03 — Invariante Anti-12px (D16) y Target Táctil de 48px', () => {
+    it('T01, T03 y T04 no contienen text-xs en ningún nodo renderizado', () => {
+      const { container: t01Container } = render(
+        <IosInstallGuideSheet open={true} onOpenChange={() => {}} />
+      );
+      expect(t01Container.innerHTML).not.toContain('text-xs');
+      expect(document.body.innerHTML).not.toContain('text-xs');
+
+      const { container: t03Container } = render(
+        <div>
+          <OfflineBanner />
+          <OfflineFloatingCard />
+        </div>
+      );
+      expect(t03Container.innerHTML).not.toContain('text-xs');
+
+      const { container: t04Container } = render(
+        <ErrorView error={new Error('test')} reset={() => {}} />
+      );
+      expect(t04Container.innerHTML).not.toContain('text-xs');
+    });
+
+    it('T03 botón Reintentar cumple altura mínima de 48px (min-h-12 o h-12) y text-sm', () => {
+      Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+      render(<OfflineFloatingCard />);
+      const retryBtn = screen.getByRole('button', { name: /Reintentar/i });
+      expect(retryBtn.className).toMatch(/(min-h-12|h-12)/);
+      expect(retryBtn.className).toContain('text-sm');
+      expect(retryBtn.className).not.toContain('text-xs');
+      expect(retryBtn.className).not.toContain('h-9');
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
     });
   });
 });
