@@ -14,3 +14,7 @@
 - **H07:** fail-closed incluye errores explícitos y también ausencia imposible/incompleta de datos críticos con `error:null`.
 - **A01:** un cambio fuera de ficha puede aceptarse por decisión humana, pero debe registrarse como `aceptado`, no reescribirse como si nunca hubiese existido el desvío.
 - **Sincronización:** antes del cierre final, la rama debe contener el develop actual aunque el merge-ref de GitHub CI ya pruebe integración automática.
+
+## Ronda 4
+- Una guarda compuesta con varios términos no queda completamente probada por mutar solo uno: si se agregan tests nuevos para términos independientes, cada propiedad nueva debe demostrar su RED correspondiente.
+- No actualizar evidencia CI con cifras de un SHA anterior después de agregar tests; esperar el run del HEAD y distinguir explícitamente jobs todavía pendientes.

@@ -1,72 +1,30 @@
 # Evidencia y comandos — PR #118
 
-## Rondas 1–2
-Ver `revisiones/ronda-1.md` y `revisiones/ronda-2.md`.
+## Ronda 4 — SHA `71cce94818fa5fb4cace69921cf0181a8e3871d9`
 
-## Ronda 3 — SHA `6980fb095b3605663ad658e8c885ed2b7906df3b`
+### Sync
+`origin/develop...HEAD`: 0 behind / 11 ahead.
 
-### Delta desde Ronda 2
-- base: `96a1af1e7d5cc14d0f9ff3aa3fd7615ea2080503`
-- 1 commit de producto.
-- 9 archivos tocados.
-- `docs/revision-pr/**`: sin cambios del autor.
-- desvío: `src/app/api/cron/sweep/route.test.ts` — aceptado por D02=2-A.
-
-### Sincronización con develop
-Compare al revisar:
-```text
-develop c91ec4e... vs head 6980fb...
-8 ahead / 1 behind
-```
-Requisito próxima ronda:
-`git merge origin/develop` y `git rev-list --left-right --count origin/develop...HEAD` con cero a la izquierda.
+### Delta
+Desde commit de revisión R3: merge de develop + corrección T-206. El merge incorporó T-116; los cambios propios T-206 se concentran en requests.ts, requests.test.ts y log. No se detectaron cambios del autor en `docs/revision-pr/**`.
 
 ### CI
-Run `36461968118` — success.
+Run `36465381165`.
 
+Completados al inspeccionar:
 ```text
 Test Files 93 passed (93)
-Tests      1275 passed (1275)
-verify-workflows: # tests 22
-verify-adr:       # tests 6
-DB:
-All tests successful.
-Files=12, Tests=1601
-Result: PASS
+Tests      1280 passed (1280)
+verify-workflows # tests 22
+verify-adr       # tests 6
+typecheck/lint/build/audit/bundle-budget: success
 ```
 
-Build, typecheck, lint, audit y bundle-budget: success.
+db-tests: en ejecución al cerrar la ronda.
 
-### Inspección H06
-`logoutAction`:
-- getUser + purge dentro de try/catch;
-- signOut fuera;
-- tests de getUser reject y delete reject presentes.
+### Evidencia RED faltante
+La bitácora demuestra las cinco mutaciones H05 pedidas en R3 y actor_id ausente. No contiene mutación independiente para:
+- `!reqRes.data?.merchant_id`
+- `offersRes.data == null`
 
-### Inspección H07 residual
-Código actual:
-```ts
-if (offersRes.error || reqRes.error || auditRes.error) {
-  return ok(output.data as RpcOutput<K>);
-}
-const merchantId = reqRes.data?.merchant_id;
-const actorId = auditRes.data?.actor_id;
-if (merchantId && actorId !== merchantId) recipients.add(merchantId);
-```
-Con `auditRes={data:null,error:null}`, actorId es undefined y merchantId puede ser agregado. No existe test para este caso.
-
-### Inspección H05
-Bitácora 14:55 registra siete mutaciones con comando/salida. Comparación con batería mínima R2:
-
-- accept idempotencia: ✅
-- publish available true→false: ❌
-- publish pre-commit: ❌
-- cancel action incorrecta: ✅
-- cancel sin decided_at: ⚠️ registrada, pero el mensaje mostrado es la aserción estructural del spy, no histórico extra
-- sweep couriers cruzados: ❌
-- sweep sin `.select(...)`: ❌ (se cambió a `.select('courier_id')`, no se quitó)
-- error offers/cancel: ✅
-- error request/accept: ✅
-
-### D02
-Lautaro073 eligió `2-A`: conservar el cambio test-only de `src/app/api/cron/sweep/route.test.ts`. Se registra como A01 `aceptado`.
+Por regla 40, las pruebas nuevas correspondientes no pueden darse por demostradas solo porque están GREEN.
