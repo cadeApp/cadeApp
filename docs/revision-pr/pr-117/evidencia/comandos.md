@@ -1,61 +1,50 @@
-# Comandos reproducibles — PR #117
+# Comandos reproducibles — PR #117 / R5
 
-## R4 · SHA inspeccionado
+## CI del SHA `aea137697424c0da86d256c0675b0ca6a7267eda`
 
-`d47c7c1b62b8288a2b273843c1e0118133fc927b`
+Workflow: CI #538.
 
-### H10 — reproducción independiente
-
-La revisión ejecutó la misma clasificación del detector sobre cuatro clases:
+Suites relevantes observadas en logs:
 
 ```text
-Safari iOS no standalone -> true
-CriOS iPhone             -> false
-FxiOS iPhone             -> false
-Safari standalone        -> false
+courier-panel.test.tsx       16 tests PASS
+offline-state.test.tsx        5 tests PASS
+visual-verification.test.tsx  7 tests PASS
+ios-install-guide.test.tsx    2 tests PASS
+sw.test.ts                    9 tests PASS
+manifest.test.ts              4 tests PASS
+Total                         98 files / 1260 tests PASS
+DB                            12 files / 1601 tests PASS
 ```
 
-Tests del autor relevantes:
+## Comparación de bundle
 
-```bash
-pnpm vitest run \
-  src/features/notifications/install/ios-install-guide.test.tsx \
-  src/features/notifications/offline/visual-verification.test.tsx
-```
-
-H10 queda cerrado por inspección + reproducción independiente de la lógica.
-
-## H04 — checklist manual obligatorio
-
-Levantar el SHA exacto `d47c7c1b62b8288a2b273843c1e0118133fc927b` en un entorno real:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm build
-pnpm start
-```
-
-Capturar al menos:
+develop `57badabc...`:
 
 ```text
-390x844 — T01 Safari iOS
-360x800 — T01 Safari iOS
-390x844 — T03 CourierFeed offline
-360x800 — T03 CourierFeed offline
-390x844 — T04 error
-360x800 — T04 404
+/courier/feed   176 kB  OK
+/courier/offers 176 kB  OK
 ```
 
-Comprobar además:
-- safe-area bottom del Sheet;
-- foco visible;
-- Retry/acciones ≥48 px;
-- reduced motion;
-- sin clipping horizontal;
-- icono/PWA en navegador real.
+PR `aea137697424c0da86d256c0675b0ca6a7267eda`:
 
-Los archivos/capturas deben quedar en almacenamiento persistente y sus enlaces pegarse en PR + bitácora.
+```text
+/courier/feed   244 kB  Supera el límite
+/courier/offers 244 kB  Supera el límite
+```
 
-## Después de cerrar H04
+## Después del arreglo H11
 
-Pedir nueva revisión. En esa ronda se inspeccionará CI del SHA exacto, incluidos logs, y no solo el color del check.
+```bash
+pnpm build 2>&1 | tee build-output.txt
+node .github/workflows/check-bundle-budget.mjs build-output.txt
+pnpm typecheck
+pnpm lint
+pnpm test
+```
+
+Criterio:
+- `/courier/feed <= 180 kB`
+- `/courier/offers <= 180 kB`
+
+No usar el conclusion=success del job advisory como sustituto del número real.
