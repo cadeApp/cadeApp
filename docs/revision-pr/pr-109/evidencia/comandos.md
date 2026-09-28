@@ -192,3 +192,57 @@ Bundle:
 ```
 
 approval-policy: failure esperada por falta de aprobación vigente de Lautaro073.
+
+---
+
+# Evidencia — PR #109 / T-116 / Ronda 4
+
+head: c23bf0d77bf2dd03fd123bbfcbd5bc09eb54e614
+develop actual: 57badabc28fd3bd8e913674bd80b30feb8828414
+merge sintético CI: 91ae078ad0c9188e30e3ad1f034ab6fd509588ad
+
+## Diff final
+
+57f96df...c23bf0d: exactamente 4 archivos:
+- docs/tasks/T-116.md
+- docs/tasks/log/T-116.md
+- src/features/merchants/evidence/T-116/axe-summary.md
+- src/features/requests/evidence/T-116/axe-summary.md
+
+Sin código/tests/JSON/PNG modificados.
+
+## H07
+
+- ficha: axe/runtime pendiente a T-300;
+- body: mismo estado;
+- ambos axe-summary: advertencia “EVIDENCIA PRELIMINAR — NO VÁLIDA PARA CERRAR H07”;
+- “cumple al 100%” eliminado;
+- incomplete/conteos preservados.
+
+## CI #540
+
+Checkout:
+```text
+HEAD is now at 91ae078 Merge c23bf0d... into 57badabc...
+```
+
+Unit:
+```text
+Test Files 93 passed (93)
+Tests 1239 passed (1239)
+```
+
+DB:
+```text
+Files=12, Tests=1601
+Result: PASS
+```
+
+Bundle:
+```text
+/merchant/onboarding   147 kB
+/merchant/requests/new 164 kB
+/courier/feed          176 kB
+```
+
+approval-policy: success.

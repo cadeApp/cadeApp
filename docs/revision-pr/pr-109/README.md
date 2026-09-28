@@ -1,16 +1,17 @@
 # PR #109 — T-116 · Componente de mapa
 
-> ❌ Ronda 3 independiente: CON 1 BLOQUEANTE · 0 decisiones pendientes
+> ✅ Ronda 4 independiente: SIN BLOQUEANTES · 0 decisiones pendientes
 
 | Campo | Valor |
 |---|---|
 | PR | #109 |
 | Tarea | T-116 |
 | Autor | @asako669 · P2 |
-| SHA revisado | 57f96df55745995aafe1053171c65a9f54f6e6c5 |
-| develop actual | aae504a218b8b76e2d6cd0f56d8b5189e5b8b4fd |
-| CI | #518 · verde sobre merge sintético b80f779... con develop actual |
-| approval-policy | rojo esperado: falta aprobación vigente de Lautaro073 |
+| SHA revisado | c23bf0d77bf2dd03fd123bbfcbd5bc09eb54e614 |
+| develop actual | 57badabc28fd3bd8e913674bd80b30feb8828414 |
+| merge sintético CI | 91ae078ad0c9188e30e3ad1f034ab6fd509588ad |
+| CI | #540 · verde |
+| approval-policy | #674/#675 · verde |
 | Decisiones | ninguna pendiente |
 
 ## Rondas
@@ -19,20 +20,26 @@
 |---|---|---|
 | 1 | 9acf2ac6 | 9 bloqueantes |
 | 2 | df73adac | 2 bloqueantes |
-| 3 | 57f96df5 | **1 bloqueante residual de H07** |
+| 3 | 57f96df5 | 1 bloqueante residual documental |
+| 4 | c23bf0d7 | **SIN BLOQUEANTES** |
 
-## Estado
+## Cierre
 
-Cerrados/verificados: H01, H02, H03, H04, H05, H06, H08 y H09.
+H01, H02, H03, H04, H05, H06, H08 y H09 quedan cerrados.
 
-H07 fue **diferido por decisión de Lautaro073 a T-300 / staging** para la evidencia visual/runtime real. Ese diferimiento es válido y no exige más código de mapa ahora.
+H07 queda **aceptado/diferido**, no “verificado”: por decisión explícita de Lautaro073, la evidencia visual/runtime final se ejecutará en T-300 cuando staging esté alineado con develop. El HEAD ya refleja correctamente esa decisión:
+- el DoD de axe/runtime queda pendiente;
+- el body no afirma H07 verificado ni 100% WCAG AA;
+- ambos `axe-summary.md` están rotulados como evidencia preliminar/no válida para cerrar H07;
+- no se alteraron JSON, conteos ni PNG para hacerlos parecer verdes.
 
-Queda un único residual documental antes de cerrar la PR:
-- `docs/tasks/T-116.md` y el body todavía marcan como cumplido “axe AA sin violaciones”;
-- `src/features/merchants/evidence/T-116/axe-summary.md` y `src/features/requests/evidence/T-116/axe-summary.md` todavía dicen “cumple al 100%”, aunque los reportes tienen `incompleteCount > 0` y la evidencia `:4567` fue declarada no válida para cierre.
+El commit final de asako tocó solo los cuatro archivos autorizados para la corrección documental.
 
-Corregir esas afirmaciones para dejar axe/evidencia final explícitamente pendientes a T-300. No tocar producto ni tests.
+CI #540 verificó el merge exacto con el develop actual:
+```text
+91ae078 = c23bf0d + develop@57badabc
+```
 
-El branch está behind 3, pero CI #518 verificó el merge sintético exacto del HEAD con `develop@aae504a...`; no se abre hallazgo de sincronización.
+No quedan bloqueantes técnicos ni documentales para T-116. El seguimiento H07 permanece obligatorio en T-300.
 
-Ver `revisiones/ronda-3.md`.
+Ver `revisiones/ronda-4.md`.
