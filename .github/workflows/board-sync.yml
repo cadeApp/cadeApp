@@ -4,7 +4,7 @@ on:
   push:
     branches: [develop]
   issues:
-    types: [closed, reopened]
+    types: [opened, closed, reopened]
   pull_request_target:
     branches: [develop]
     types: [opened, reopened, closed, ready_for_review, converted_to_draft]
