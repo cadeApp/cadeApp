@@ -1,35 +1,22 @@
 # Lecciones de la PR #117 para `AGENTS.md` y las reglas
 
-**Fuente tras R2:** A01 + H01–H09. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente tras R3:** A01 + H01–H10.
 
 ## Patrón dominante
 
-**P08-control-no-cubre-lo-que-dice** sigue dominando y ahora aparece en cuatro formas de la misma raíz:
+Sigue dominando **P08-control-no-cubre-lo-que-dice**. R3 suma una variante especialmente clara: un test puede llamarse “Safari” y pasar aunque el predicado productivo no distinga Safari de otros navegadores iOS.
 
-1. un botón artificial en R1 en lugar del componente real;
-2. Retry clickable sin afirmar la postcondición entre múltiples consumidores;
-3. submit offline probado mediante click sobre un botón disabled, sin atravesar `handleSubmit`;
-4. iconos “maskable” validados solo por nombre/peso, sin demostrar dimensiones ni variante segura.
+El control útil no es el nombre del test ni un caso cercano: tiene que incluir el **contracaso que separa las dos clases**.
 
-El patrón común no es “faltan más tests”, sino **el control termina antes del invariante real**.
+## Lecciones
 
-## Lecciones propuestas
+No se agrega un AG nuevo; P08 ya cubre la raíz. Aplicación concreta:
 
-No se agrega un AG nuevo: P08 ya está en el catálogo y el protocolo ya exige mutación adversaria. R2 aporta ejemplos nuevos para endurecer cómo se aplica:
+> Cuando un predicado clasifica A vs B, la prueba mínima incluye un positivo de A y un negativo de B que comparte el resto de atributos. Para `isIosSafariNonStandalone`: iOS Safari=true e iOS Chrome=false; Android Chrome no sirve como contracaso porque cambia plataforma y navegador a la vez.
 
-> Para una acción con defensa visual + guarda lógica, la mutación debe atacar ambas capas por separado. Un botón disabled no demuestra la guarda del handler.
+## Estado de las lecciones previas
 
-> Para archivos binarios con semántica declarativa (maskable, tamaño de icono), validar metadatos/estructura del archivo y una propiedad que distinga la variante, no solo existencia y peso.
-
-## Qué cambiar, en orden de impacto
-
-1. Hacer que los tests de Retry observen **otro consumidor** del estado, no solo el componente clickeado.
-2. Probar handlers defensivos enviando el form directamente, aunque el botón esté disabled.
-3. Validar PNGs leyendo IHDR y diferenciando hashes de variantes.
-4. Mantener la separación entre test DOM y evidencia visual real.
-5. En harnesses de `node:vm`, tipar el borde con tipos mínimos locales: no usar `any` para “salir del paso”.
-
-## Advertencias
-
-- H04 no es solucionable con más unit tests: necesita URL/dispositivo/navegador real y capturas persistentes.
-- La inspección de R2 no sustituye ejecución: H01–H03 quedan `arreglado-sin-verificar` hasta una ronda sin bloqueantes.
+- Retry multi-instancia: corregido por inspección.
+- Guarda de submit: corregida por inspección con submit directo.
+- Binarios maskable: verificados mediante IHDR + distinción de blob + inspección visual.
+- Evidencia visual real: sigue siendo una clase aparte; jsdom no la sustituye.

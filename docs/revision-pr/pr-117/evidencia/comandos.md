@@ -1,114 +1,77 @@
 # Comandos reproducibles — PR #117
 
-## R1
+## R3 · SHA inspeccionado
 
-La batería original de R1 queda preservada en el historial de git del commit `41f31178778d214f3930a783ac10d061813cba58`.
+`37952386084ea8388b624c71c33ff3378f03414a`
 
-## R2 · SHA inspeccionado
+### Evidencia independiente H09
 
-`a1c93ae2cd482e497254cc836a21f12cddbbb160`
-
-R2 fue estática porque siguen existiendo bloqueantes. Se intentó clonar el SHA en un scratch limpio para ejecutar mutaciones, pero el entorno de shell devolvió `Could not resolve host: github.com`. No se sustituyó esa ejecución por afirmaciones de “verde”.
-
-### H06 · Retry compartido entre instancias
-
-Test dirigido:
-
-```bash
-pnpm vitest run src/features/notifications/offline/offline-state.test.tsx
-```
-
-Caso obligatorio:
-1. `navigator.onLine=false`.
-2. Renderizar `OfflineBanner`, `OfflineFloatingCard` y un segundo consumer de `useOfflineStatus`.
-3. `global.fetch = vi.fn().mockResolvedValue(new Response(null, {status: 404}))` — una respuesta HTTP demuestra conectividad aunque el probe sea 404.
-4. Click Retry.
-5. `waitFor`: banner y card desaparecen y el segundo consumer muestra online.
-
-Caso de fallo: `fetch` rechaza → los tres permanecen offline.
-
-Mutación RED: reemplazar temporalmente la señal global por el viejo `setIsOffline(false)` local. El primer caso debe fallar.
-
-### H07 · guarda de OfferSheet
-
-```bash
-pnpm vitest run src/features/offers/courier-panel.test.tsx
-```
-
-Con `isOffline=true`:
-
-```ts
-const submitBtn = screen.getByRole('button', { name: OFFERS_COPY.submitOfferButton });
-expect(submitBtn).toBeDisabled();
-const form = submitBtn.closest('form');
-expect(form).not.toBeNull();
-fireEvent.submit(form!);
-expect(mockOnSubmit).toHaveBeenCalledTimes(0);
-```
-
-Mutación RED: borrar temporalmente `if (isOffline) return;` de `OfferSheet.handleSubmit`. Debe fallar por 1 llamada al spy.
-
-### H08 · sin `any`
-
-```bash
-grep -nE '\bany\b|@ts-ignore|@ts-expect-error' src/app/sw.test.ts
-pnpm vitest run src/app/sw.test.ts
-pnpm typecheck
-```
-
-El grep debe salir vacío.
-
-### H09 · assets PWA
-
-Paths obligatorios:
+La revisión leyó IHDR directamente de los blobs remotos y obtuvo:
 
 ```text
-public/icons/icon-192.png              192x192
-public/icons/icon-512.png              512x512
-public/icons/icon-maskable-512.png     512x512, variante distinta con zona segura
-public/icons/apple-touch-icon.png      180x180
-public/apple-touch-icon.png            180x180, para descubrimiento Safari convencional
+icon-192.png              192x192
+icon-512.png              512x512
+icon-maskable-512.png     512x512
+icons/apple-touch-icon    180x180
+/apple-touch-icon         180x180
 ```
 
-`manifest.test.ts` debe leer el header PNG (IHDR, bytes 16–23) con `Buffer.readUInt32BE` y afirmar dimensiones. También usar `crypto.createHash('sha256')` para demostrar que `icon-maskable-512.png` no es byte-a-byte el icono normal.
+Blobs Git:
+- normal 512: `a11153d79235770cef1a5434f99838f2a6e86008`
+- maskable 512: `1122383d7151aa5d28ba8c4810e05db09d057d37`
+
+### Evidencia independiente H10
+
+Reproducción mínima de la lógica actual:
 
 ```bash
-pnpm vitest run src/app/manifest.test.ts src/app/sw.test.ts
+node - <<'NODE'
+function current(ua, standalone = false) {
+  const isIos = /iPhone|iPad|iPod/i.test(ua);
+  return isIos && !standalone;
+}
+const crios =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) ' +
+  'AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/123.0.6312.69 ' +
+  'Mobile/15E148 Safari/604.1';
+console.log(current(crios)); // true <- incorrecto para trigger Safari-only
+NODE
 ```
 
-Mutaciones RED:
-- copiar `icon-512.png` encima de `icon-maskable-512.png` → falla hash;
-- sustituir temporalmente apple-touch por un PNG 192×192 → falla dimensión;
-- borrar una ruta canónica del manifest → falla path requerido.
+### Corrección H10
 
-No agregar dependencias de imagen al proyecto. Los scripts raster auxiliares, si hacen falta, van a `/tmp`.
+Tests dirigidos:
 
-### H04 · evidencia visual
-
-Mientras no existan capturas:
-
-```text
-docs/tasks/T-201.md -> checkbox “Verificación en navegador...” = [ ]
-PR body             -> [ ]
-bitácora             -> pendiente
+```bash
+pnpm vitest run \
+  src/features/notifications/install/ios-install-guide.test.tsx \
+  src/features/notifications/offline/visual-verification.test.tsx
 ```
 
-Cuando exista entorno de navegador:
+Casos:
+- Safari iOS navegador → true
+- CriOS → false
+- FxiOS → false
+- Safari standalone → false
+- Android Chrome → false
+
+Mutación RED: reemplazar temporalmente `return isIos && isSafari && !isStandalone` por `return isIos && !isStandalone`. Deben fallar al menos CriOS y FxiOS.
+
+### H04
+
+No hay comando unitario que cierre H04. Requiere navegador real:
 - 390×844 y 360×800;
-- T01 Sheet;
-- T03 CourierFeed offline;
-- T04 error y 404;
-- PWA/installability e icono maskable;
-- foco, safe-area, reduced motion.
+- T01, T03, T04;
+- foco, safe area, reduced motion;
+- capturas persistentes enlazadas en PR + bitácora.
 
-Guardar enlaces persistentes en PR + bitácora.
+Mientras falten, mantener checkbox `[ ]`.
 
-## Batería final para el autor
+### Batería del autor tras H10
 
 ```bash
-pnpm vitest run src/features/notifications/offline/offline-state.test.tsx
-pnpm vitest run src/features/offers/courier-panel.test.tsx
-pnpm vitest run src/app/sw.test.ts src/app/manifest.test.ts
+pnpm vitest run src/features/notifications/install/ios-install-guide.test.tsx
+pnpm vitest run src/features/notifications/offline/visual-verification.test.tsx
 pnpm typecheck
 pnpm lint
 pnpm test
@@ -116,4 +79,4 @@ pnpm build
 git status --short
 ```
 
-No adulterar tests, no crear fixtures que implementen el invariante por sí mismos y no escribir “verificado” sobre arreglos propios.
+No crear tests falsos, no debilitar expectativas y no tocar `docs/revision-pr/**`.
