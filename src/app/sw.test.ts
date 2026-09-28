@@ -29,9 +29,14 @@ interface SWContext {
     delete: ReturnType<typeof vi.fn>;
   };
   mockFetch: ReturnType<typeof vi.fn>;
+  mockShowNotification: ReturnType<typeof vi.fn>;
+  mockOpenWindow: ReturnType<typeof vi.fn>;
+  mockMatchAll: ReturnType<typeof vi.fn>;
   dispatchFetch: (request: Request) => Promise<Response | null>;
   dispatchInstall: () => Promise<void>;
   dispatchActivate: () => Promise<void>;
+  dispatchPush: (payload: unknown) => Promise<void>;
+  dispatchNotificationClick: (notificationData: unknown, action?: string) => Promise<{ closed: boolean }>;
 }
 
 function createSWInstance(customCode?: string): SWContext {
@@ -56,6 +61,10 @@ function createSWInstance(customCode?: string): SWContext {
 
   const mockFetch = vi.fn();
 
+  const mockShowNotification = vi.fn().mockResolvedValue(undefined);
+  const mockOpenWindow = vi.fn().mockImplementation(async (url: string) => ({ url, focus: vi.fn() }));
+  const mockMatchAll = vi.fn().mockResolvedValue([]);
+
   const sandbox: Record<string, unknown> = {
     location: { origin: 'https://cadeapp.ar' },
     addEventListener: (type: string, fn: TestListener) => {
@@ -63,8 +72,13 @@ function createSWInstance(customCode?: string): SWContext {
       listeners[type].push(fn);
     },
     skipWaiting: vi.fn().mockResolvedValue(undefined),
+    registration: {
+      showNotification: mockShowNotification,
+    },
     clients: {
       claim: vi.fn().mockResolvedValue(undefined),
+      openWindow: mockOpenWindow,
+      matchAll: mockMatchAll,
     },
     caches: mockCaches,
     fetch: mockFetch,
@@ -131,14 +145,62 @@ function createSWInstance(customCode?: string): SWContext {
     }
   };
 
+  const dispatchPush = async (payload: unknown) => {
+    let waitUntilPromise: Promise<unknown> | null = null;
+    const event = {
+      data: {
+        json: () => payload,
+        text: () => (typeof payload === 'string' ? payload : JSON.stringify(payload)),
+      },
+      waitUntil: (p: Promise<unknown>) => {
+        waitUntilPromise = p;
+      },
+    };
+    for (const listener of listeners['push'] || []) {
+      listener(event);
+    }
+    if (waitUntilPromise) {
+      await waitUntilPromise;
+    }
+  };
+
+  const dispatchNotificationClick = async (notificationData: unknown, action?: string) => {
+    let closed = false;
+    let waitUntilPromise: Promise<unknown> | null = null;
+    const event = {
+      notification: {
+        data: notificationData,
+        close: () => {
+          closed = true;
+        },
+      },
+      action,
+      waitUntil: (p: Promise<unknown>) => {
+        waitUntilPromise = p;
+      },
+    };
+    for (const listener of listeners['notificationclick'] || []) {
+      listener(event);
+    }
+    if (waitUntilPromise) {
+      await waitUntilPromise;
+    }
+    return { closed };
+  };
+
   return {
     listeners,
     mockCache,
     mockCaches,
     mockFetch,
+    mockShowNotification,
+    mockOpenWindow,
+    mockMatchAll,
     dispatchFetch,
     dispatchInstall,
     dispatchActivate,
+    dispatchPush,
+    dispatchNotificationClick,
   };
 }
 
@@ -314,3 +376,57 @@ describe('PR117-H02 / D03: Service Worker Runtime Execution (public/sw.js via no
     expect(sw.mockCache.put).not.toHaveBeenCalled();
   });
 });
+
+describe('T-202: Service Worker Push & NotificationClick Handlers (DoD Fase RED)', () => {
+  let sw: SWContext;
+
+  beforeEach(() => {
+    sw = createSWInstance();
+  });
+
+  it('DoD: notificationclick abre un destino incorrecto (debe fallar si no abre la URL esperada del payload o abre destino incorrecto)', async () => {
+    // Al recibir un click sobre una notificación de viaje, debe abrir /trips/[id]
+    const targetUrl = 'https://cadeapp.ar/trips/10000000-0000-4000-8000-000000000001';
+    const clickResult = await sw.dispatchNotificationClick({
+      url: targetUrl,
+      event: 'offer_accepted',
+    });
+
+    // Debe cerrar la notificación
+    expect(clickResult.closed, 'notificationclick debe cerrar la notificación').toBe(true);
+
+    // Debe abrir la ventana con el destino exacto (o hacer focus en cliente existente)
+    expect(sw.mockOpenWindow, 'Debe invocar openWindow con el destino exacto').toHaveBeenCalledWith(targetUrl);
+  });
+
+  it('DoD: push procesa eventos sin leer datos personales y muestra notificación', async () => {
+    // Payload estricto sin PII
+    const pushPayload = {
+      event: 'request_published',
+      requestId: '10000000-0000-4000-8000-000000000001',
+    };
+
+    await sw.dispatchPush(pushPayload);
+
+    // Debe invocar showNotification sin PII en title ni body
+    expect(sw.mockShowNotification, 'El service worker debe escuchar el evento push y mostrar notificación').toHaveBeenCalledWith(
+      expect.stringMatching(/solicitud|envío/i),
+      expect.objectContaining({
+        icon: expect.stringContaining('icon'),
+        data: expect.objectContaining({
+          url: expect.stringContaining('/courier/feed'),
+        }),
+      })
+    );
+  });
+
+  it('DoD: los handlers se registran desde el service worker de T-201 sin duplicarse', () => {
+    // Verificar que existen los listeners de push y notificationclick en el SW
+    const pushListeners = sw.listeners['push'] || [];
+    const clickListeners = sw.listeners['notificationclick'] || [];
+
+    expect(pushListeners.length, 'Debe registrar exactamente 1 listener para push').toBe(1);
+    expect(clickListeners.length, 'Debe registrar exactamente 1 listener para notificationclick').toBe(1);
+  });
+});
+
