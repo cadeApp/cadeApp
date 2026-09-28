@@ -1266,6 +1266,381 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       expect(safeNotifySpy).not.toHaveBeenCalled();
       safeNotifySpy.mockRestore();
     });
+
+    it('cancel_request: merchant cancela matched -> filtra semánticamente solo couriers de esta cancelación y excluye históricos (PR118-H05 semantic)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 1,
+        sentCount: 1,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const merchantId = '00000000-0000-4000-8000-0000000000b1';
+      const courierAccepted = '00000000-0000-4000-8000-0000000000c2';
+      const courierHistoricCancelled = '00000000-0000-4000-8000-0000000000c7';
+      const cancelledAt = '2026-09-28T01:05:00.000Z';
+      const olderDecidedAt = '2026-09-27T12:00:00.000Z';
+
+      const allOffers: MockOfferRow[] = [
+        { courier_id: courierAccepted, request_id: requestId, status: 'cancelled', decided_at: cancelledAt },
+        { courier_id: courierHistoricCancelled, request_id: requestId, status: 'cancelled', decided_at: olderDecidedAt },
+      ];
+      const offersBuilder = createOffersQueryBuilder(allOffers);
+
+      const auditRows: MockAuditRow[] = [
+        { actor_id: merchantId, target_type: 'delivery_request', target_id: requestId, action: 'cancel_request', created_at: cancelledAt },
+      ];
+      const auditBuilder = createAuditLogQueryBuilder(auditRows);
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return { select: vi.fn().mockReturnValue(offersBuilder) };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: merchantId },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return { select: vi.fn().mockReturnValue(auditBuilder) };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt,
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).toHaveBeenCalledTimes(1);
+      const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
+      expect(recipients).toHaveLength(1);
+      expect(new Set(recipients)).toEqual(new Set([courierAccepted]));
+      expect(payload).toEqual({
+        event: 'request_cancelled',
+        requestId,
+      });
+
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request NO despacha push si audit_log devuelve data: null sin error (PR118-H07 residual)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: [{ courier_id: '00000000-0000-4000-8000-0000000000c1' }],
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: '00000000-0000-4000-8000-0000000000b1' },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: null,
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-28T01:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request NO despacha push si delivery_requests devuelve data: null sin error (PR118-H07 residual)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: [{ courier_id: '00000000-0000-4000-8000-0000000000c1' }],
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: { actor_id: '00000000-0000-4000-8000-0000000000b1' },
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-28T01:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('cancel_request NO despacha push si offers devuelve data: null sin error (PR118-H07 residual)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: '00000000-0000-4000-8000-0000000000b1' },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: { actor_id: '00000000-0000-4000-8000-0000000000a0' },
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-28T01:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('control: cancel_request NO despacha push si offers es array vacío y actor es el comercio (PR118-H07 residual)', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const merchantId = '00000000-0000-4000-8000-0000000000b1';
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: [],
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: merchantId },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'audit_log') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    order: vi.fn().mockReturnValue({
+                      limit: vi.fn().mockReturnValue({
+                        maybeSingle: vi.fn().mockResolvedValue({
+                          data: { actor_id: merchantId },
+                          error: null,
+                        }),
+                      }),
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'cancelled',
+          cancelledAt: '2026-09-28T01:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await callRequestRpc({ rpc }, 'cancel_request', { requestId });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
   });
 });
 

@@ -49,7 +49,6 @@ export async function callRequestRpc<K extends RequestRpcName>(
     args.p_kind = input.kind;
     args.p_description = input.description;
   }
-
   try {
     const { data, error } = await client.rpc(rpcName, args);
     if (error) {
@@ -139,8 +138,15 @@ export async function callRequestRpc<K extends RequestRpcName>(
             .maybeSingle(),
         ]);
 
-        // PR118-H07: Resolución de destinatarios falla cerrada ante { error }
-        if (offersRes.error || reqRes.error || auditRes.error) {
+        // PR118-H07: Resolución de destinatarios falla cerrada ante { error } o datos críticos ausentes
+        if (
+          offersRes.error ||
+          reqRes.error ||
+          auditRes.error ||
+          offersRes.data == null ||
+          !reqRes.data?.merchant_id ||
+          !auditRes.data?.actor_id
+        ) {
           return ok(output.data as RpcOutput<K>);
         }
 
@@ -154,10 +160,8 @@ export async function callRequestRpc<K extends RequestRpcName>(
           recipients.add(merchantId);
         }
 
-        if (offersRes.data) {
-          for (const o of offersRes.data) {
-            recipients.add(o.courier_id);
-          }
+        for (const o of offersRes.data) {
+          recipients.add(o.courier_id);
         }
 
         if (recipients.size > 0) {
