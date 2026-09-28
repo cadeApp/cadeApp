@@ -34,8 +34,7 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
 
   const trip = await getTripDetails(id);
 
-  // Mismo instante para el render del servidor y la hidratación del botón de reporte (ventana de 24 h).
-
+  // Instante con el que el botón de reporte evalúa la ventana de 24 h (D05-A).
   const renderedAt = Date.now();
   if (!trip) {
     notFound();

@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { notFound } from 'next/navigation';
-import { getIncidentDetail } from '@/features/incidents/server';
-import { IncidentDetailPanel } from '@/features/incidents';
+import { getIncidentDetail, IncidentDetailPanel } from '@/features/incidents/server';
 
 export const metadata = {
   title: 'Detalle del incidente | cadeApp Admin',

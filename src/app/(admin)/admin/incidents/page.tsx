@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { getIncidentsQueue, parseIncidentsSearchParams } from '@/features/incidents/server';
-import { IncidentsInbox } from '@/features/incidents';
+import { getIncidentsQueue, IncidentsInbox, parseIncidentsSearchParams } from '@/features/incidents/server';
 
 export const metadata = {
   title: 'Incidentes | cadeApp Admin',

@@ -15,9 +15,10 @@ vi.mock('../actions', () => ({
   reportIncidentAction: vi.fn(),
 }));
 
-// El formulario es un chunk diferido: se transforma una vez antes de las pruebas para que abrir el Dialog no dependa
-// del tiempo de compilación en frío de Vitest.
+// El Dialog y el formulario son chunks diferidos: se transforman una vez antes de las pruebas para que abrir el Dialog
+// no dependa del tiempo de compilación en frío de Vitest.
 beforeAll(async () => {
+  await import('./report-incident-dialog');
   await import('./report-incident-form');
 });
 
@@ -296,6 +297,21 @@ describe('T-124: formulario de ReportIncidentButton (C06/R07)', () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog');
     fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it('Cancelar cierra el Dialog y devuelve el foco al botón que lo abrió', async () => {
+    renderButton();
+    const trigger = reportTrigger();
+    if (!trigger) throw new Error('sin botón');
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(await within(dialog).findByRole('button', { name: /cancelar/i }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(trigger));

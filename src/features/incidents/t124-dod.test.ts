@@ -65,6 +65,28 @@ describe('T-124 DoD: el botón de reporte vive en el viaje (D02)', () => {
   });
 });
 
+describe('PR113-H10: /trips/[id] solo suma la isla del botón a su First Load JS', () => {
+  // bundle-budget de CI solo avisa; esto evita que vuelvan a entrar al bundle inicial del viaje los módulos que ya se
+  // midieron como responsables del delta (Dialogs admin por el barrel, auth/server por las actions, Dialog y textos).
+  const read = (file: string) => fs.readFileSync(path.join(featureDir, file), 'utf-8');
+
+  it('el barrel cliente no reexporta actions, bandeja ni detalle admin', () => {
+    const barrel = read('index.ts');
+    expect(barrel).not.toMatch(/from '\.\/actions'/);
+    expect(barrel).not.toMatch(/incidents-inbox|incident-detail-panel|incident-resolution/);
+    expect(read('server.ts')).toMatch(/export \* from '\.\/actions'/);
+  });
+
+  it('ReportIncidentButton se resuelve en el servidor y solo la isla es componente cliente', () => {
+    expect(read('components/report-incident-button.tsx')).not.toMatch(/['"]use client['"]/);
+    const trigger = read('components/report-incident-trigger.tsx');
+    expect(trigger).toMatch(/^'use client';/);
+    const staticImports = [...trigger.matchAll(/^import[^;]*from\s*'([^']+)'/gm)].map((match) => match[1]);
+    expect(staticImports).toEqual(['react']);
+    expect(trigger).toMatch(/import\('\.\/report-incident-dialog'\)/);
+  });
+});
+
 describe('T-124 DoD: mutaciones solo por RPC auditadas (D03, D06-A)', () => {
   const sources = () => readAll([...collectSourceFiles(featureDir), ...collectSourceFiles(inboxDir)]);
 

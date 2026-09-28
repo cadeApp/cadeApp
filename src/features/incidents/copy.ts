@@ -1,5 +1,6 @@
 import type { IncidentDecision, IncidentKind, IncidentStatus, ProfileRole } from '@/domain';
 import type { IncidentInboxTab } from './schemas';
+import { REPORT_TRIGGER_COPY } from './report-trigger-copy';
 
 /** Textos es-AR de incidentes: botón y formulario del viaje (C06/R07) y bandeja/detalle admin (A05). */
 export const INCIDENTS_COPY = {
@@ -22,7 +23,7 @@ export const INCIDENTS_COPY = {
     admin: 'Administración',
   } satisfies Record<ProfileRole, string>,
   report: {
-    trigger: 'Reportar un problema',
+    trigger: REPORT_TRIGGER_COPY.label,
     title: 'Reportar un problema',
     description:
       'Contanos qué pasó en este envío. El envío sigue su curso; la administración de cadeApp lo revisa y te contacta si hace falta.',
@@ -34,7 +35,7 @@ export const INCIDENTS_COPY = {
     cancel: 'Cancelar',
     submit: 'Enviar reporte',
     submitting: 'Enviando reporte...',
-    loading: 'Cargando el formulario',
+    loading: REPORT_TRIGGER_COPY.loading,
     success: 'Recibimos tu reporte. La administración lo va a revisar.',
     errors: {
       kind: 'Elegí qué tipo de problema fue.',
