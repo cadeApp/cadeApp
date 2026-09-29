@@ -242,25 +242,63 @@ test('deploy targets the right environment and pins the Vercel CLI', () => {
   }
 });
 
+/** @param {string} jobBody @param {string} name */
+function step(jobBody, name) {
+  const normalized = jobBody.replace(/\r\n/g, '\n');
+  const start = normalized.indexOf(`\n      - name: ${name}\n`);
+  assert.notEqual(start, -1, `Missing step ${name}`);
+  const next = normalized.slice(start + 1).search(/\n {6}- /);
+  return next === -1 ? normalized.slice(start) : normalized.slice(start, start + next + 1);
+}
+
+test('each deploy job pulls, builds, deploys and checks health in that order', () => {
+  // PR128-H02: la secuencia se valida dentro de cada job, no con tokens sueltos del archivo.
+  const deploy = workflow('deploy.yml');
+  const sequence = [
+    'vercel@61.0.0 pull --yes --environment=production',
+    'vercel@61.0.0 build --prod',
+    'vercel@61.0.0 deploy --prebuilt --prod',
+    '"$APP_URL/api/health"',
+  ];
+  for (const name of ['staging', 'production']) {
+    const body = job(deploy, name);
+    let previous = -1;
+    for (const command of sequence) {
+      const index = body.indexOf(command, previous + 1);
+      assert.notEqual(index, -1, `${name}: falta «${command}» después del paso anterior`);
+      previous = index;
+    }
+  }
+});
+
 test('production deploy fails visibly for an unauthorized actor', () => {
+  // PR128-H01: se autoriza a quien hizo el push que disparó migrate (workflow_run.actor), no a quien
+  // relanzó el run (triggering_actor): un re-run de otra persona no puede publicar producción.
   const production = job(workflow('deploy.yml'), 'production');
   assert.doesNotMatch(production, /if:.*github\.actor/);
-  assert.match(
-    production,
-    /TRIGGERING_ACTOR: \$\{\{ github\.event\.workflow_run\.triggering_actor\.login \}\}/
-  );
-  assert.match(production, /"\$TRIGGERING_ACTOR" != 'Lautaro073'/);
+  const guard = step(production, 'Require authorized release actor');
+  assert.match(guard, /RUN_ACTOR: \$\{\{ github\.event\.workflow_run\.actor\.login \}\}/);
+  assert.doesNotMatch(production, /workflow_run\.triggering_actor\.login/);
+  const branch = guard.match(/if \[ "\$RUN_ACTOR" != 'Lautaro073' \]; then\n([\s\S]*?)\n\s+fi\n/);
+  assert.ok(branch, 'la guarda compara "$RUN_ACTOR" contra Lautaro073');
+  const [, unauthorized = ''] = branch;
+  assert.match(unauthorized, /^\s+exit 1$/m, 'el actor no autorizado corta con exit 1');
+  assert.doesNotMatch(unauthorized, /exit 0/, 'el actor no autorizado no puede salir con exit 0');
 });
 
 test('each deploy fails the job unless /api/health answers 200', () => {
   const deploy = workflow('deploy.yml');
   for (const name of ['staging', 'production']) {
     const body = job(deploy, name);
-    const deployIndex = body.indexOf('deploy --prebuilt --prod');
-    const healthIndex = body.indexOf('"$APP_URL/api/health"');
-    assert.notEqual(healthIndex, -1, `${name}: falta el health check`);
-    assert.ok(deployIndex < healthIndex, `${name}: el health check va después del deploy`);
-    assert.match(body, /curl --fail/);
+    assert.doesNotMatch(body, /continue-on-error/, `${name}: el job no puede ignorar fallos`);
+    const health = step(body, 'Health check');
+    assert.match(health, /curl --fail /, `${name}: curl tiene que fallar con HTTP >= 400`);
+    assert.match(health, /"\$APP_URL\/api\/health"\n/, `${name}: el health es el último comando`);
+    assert.doesNotMatch(
+      health,
+      /\|\||set \+e|; *true\b/,
+      `${name}: el error de curl no se neutraliza`
+    );
   }
 });
 

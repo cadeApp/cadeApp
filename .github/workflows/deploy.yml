@@ -68,9 +68,10 @@ jobs:
     steps:
       - name: Require authorized release actor
         env:
-          TRIGGERING_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+          # Quien hizo el push que disparó migrate, no quien relanzó el run.
+          RUN_ACTOR: ${{ github.event.workflow_run.actor.login }}
         run: |
-          if [ "$TRIGGERING_ACTOR" != 'Lautaro073' ]; then
+          if [ "$RUN_ACTOR" != 'Lautaro073' ]; then
             echo '::error::El deploy de production requiere un release iniciado por Lautaro073.'
             exit 1
           fi
