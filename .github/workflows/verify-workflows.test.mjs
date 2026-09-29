@@ -201,6 +201,147 @@ test('production migration fails visibly for an unauthorized actor and uses a di
   assert.match(production, /"\$SUPABASE_PROJECT_REF" = "\$SUPABASE_STAGING_PROJECT_REF"/);
 });
 
+test('deploy runs only after a successful migrate push, never before the database', () => {
+  // T-315: primero la base, después la app. Si la migración falla, la app nueva no se publica contra un
+  // esquema viejo.
+  const deploy = workflow('deploy.yml');
+  assert.match(deploy, /workflow_run:\r?\n\s+workflows: \[migrate\]\r?\n\s+types: \[completed\]/);
+  assert.match(deploy, /branches: \[staging, main\]/);
+  for (const name of ['staging', 'production']) {
+    const body = job(deploy, name);
+    assert.match(
+      body,
+      /github\.event\.workflow_run\.conclusion == 'success'/,
+      `${name}: exige migrate verde`
+    );
+    assert.match(body, /github\.event\.workflow_run\.event == 'push'/, `${name}: solo pushes`);
+    assert.match(
+      body,
+      /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/,
+      `${name}: commit exacto`
+    );
+  }
+  assert.match(deploy, /concurrency:/);
+  assert.match(deploy, /cancel-in-progress:\s*false/);
+});
+
+test('deploy targets the right environment and pins the Vercel CLI', () => {
+  const deploy = workflow('deploy.yml');
+  const staging = job(deploy, 'staging');
+  const production = job(deploy, 'production');
+  assert.match(staging, /head_branch == 'staging'/);
+  assert.match(staging, /^\s+environment: staging$/m);
+  assert.match(production, /head_branch == 'main'/);
+  assert.match(production, /^\s+environment: production$/m);
+  for (const match of deploy.matchAll(/pnpm dlx (vercel\S*)/g)) {
+    assert.equal(match[1], 'vercel@61.0.0', 'la versión del CLI de Vercel va fijada');
+  }
+  for (const body of [staging, production]) {
+    assert.match(body, /vercel@61\.0\.0 build --prod/);
+    assert.match(body, /vercel@61\.0\.0 deploy --prebuilt --prod/);
+  }
+});
+
+/** @param {string} jobBody @param {string} name */
+function step(jobBody, name) {
+  const normalized = jobBody.replace(/\r\n/g, '\n');
+  const start = normalized.indexOf(`\n      - name: ${name}\n`);
+  assert.notEqual(start, -1, `Missing step ${name}`);
+  const next = normalized.slice(start + 1).search(/\n {6}- /);
+  return next === -1 ? normalized.slice(start) : normalized.slice(start, start + next + 1);
+}
+
+/**
+ * Comandos shell activos del bloque `run: |` de un step: sin líneas vacías ni comentarios, y con las
+ * continuaciones `\` unidas en un solo comando lógico. PR128-H02: las propiedades se afirman sobre lo que
+ * se ejecuta, no sobre texto que puede estar comentado o dentro de un `echo`.
+ * @param {string} stepBody
+ */
+function shellCommands(stepBody) {
+  const lines = stepBody.replace(/\r\n/g, '\n').split('\n');
+  const runIndex = lines.findIndex((line) => /^\s*run: \|\s*$/.test(line));
+  assert.notEqual(runIndex, -1, 'el step no tiene un bloque run: |');
+  const runIndent = (lines[runIndex] ?? '').search(/\S/);
+  /** @type {string[]} */
+  const commands = [];
+  let pending = '';
+  for (const raw of lines.slice(runIndex + 1)) {
+    if (raw.trim() !== '' && raw.search(/\S/) <= runIndent) break;
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    if (line.endsWith('\\')) {
+      pending += `${line.slice(0, -1).trimEnd()} `;
+      continue;
+    }
+    commands.push(pending + line);
+    pending = '';
+  }
+  if (pending) commands.push(pending.trimEnd());
+  return commands;
+}
+
+test('each deploy job pulls, builds and deploys in that order, then checks health', () => {
+  // PR128-H02: la secuencia se valida sobre los comandos activos del step de Vercel de cada job.
+  const deploy = workflow('deploy.yml');
+  for (const name of ['staging', 'production']) {
+    const body = job(deploy, name);
+    const commands = shellCommands(step(body, `Build and deploy to Vercel (${name})`));
+    const pull = commands.findIndex((command) =>
+      command.startsWith('pnpm dlx vercel@61.0.0 pull --yes --environment=production')
+    );
+    const build = commands.findIndex((command) =>
+      command.startsWith('pnpm dlx vercel@61.0.0 build --prod')
+    );
+    const deployCommand = commands.findIndex((command) =>
+      /^url="\$\(pnpm dlx vercel@61\.0\.0 deploy --prebuilt --prod .*\)"$/.test(command)
+    );
+    assert.notEqual(pull, -1, `${name}: falta el vercel pull activo`);
+    assert.notEqual(build, -1, `${name}: falta el vercel build activo`);
+    assert.notEqual(deployCommand, -1, `${name}: falta el vercel deploy activo`);
+    assert.ok(pull < build && build < deployCommand, `${name}: el orden es pull → build → deploy`);
+    const normalized = body.replace(/\r\n/g, '\n');
+    assert.ok(
+      normalized.indexOf(`- name: Build and deploy to Vercel (${name})`) <
+        normalized.indexOf('- name: Health check'),
+      `${name}: el health check va después del deploy`
+    );
+  }
+});
+
+test('production deploy fails visibly for an unauthorized actor', () => {
+  // PR128-H01: se autoriza a quien hizo el push que disparó migrate (workflow_run.actor), no a quien
+  // relanzó el run (triggering_actor): un re-run de otra persona no puede publicar producción.
+  const production = job(workflow('deploy.yml'), 'production');
+  assert.doesNotMatch(production, /if:.*github\.actor/);
+  const guard = step(production, 'Require authorized release actor');
+  assert.match(guard, /RUN_ACTOR: \$\{\{ github\.event\.workflow_run\.actor\.login \}\}/);
+  assert.doesNotMatch(production, /workflow_run\.triggering_actor\.login/);
+  const branch = guard.match(/if \[ "\$RUN_ACTOR" != 'Lautaro073' \]; then\n([\s\S]*?)\n\s+fi\n/);
+  assert.ok(branch, 'la guarda compara "$RUN_ACTOR" contra Lautaro073');
+  const [, unauthorized = ''] = branch;
+  assert.match(unauthorized, /^\s+exit 1$/m, 'el actor no autorizado corta con exit 1');
+  assert.doesNotMatch(unauthorized, /exit 0/, 'el actor no autorizado no puede salir con exit 0');
+});
+
+test('each deploy fails the job unless /api/health answers 200', () => {
+  const deploy = workflow('deploy.yml');
+  for (const name of ['staging', 'production']) {
+    const body = job(deploy, name);
+    assert.doesNotMatch(body, /continue-on-error/, `${name}: el job no puede ignorar fallos`);
+    const commands = shellCommands(step(body, 'Health check'));
+    assert.equal(commands.length, 1, `${name}: el health check es un único comando`);
+    const [health = ''] = commands;
+    assert.ok(health.startsWith('curl --fail '), `${name}: el comando empieza con curl --fail`);
+    for (const flag of ['--retry 6', '--retry-delay 10', '--retry-all-errors']) {
+      assert.ok(health.includes(` ${flag} `), `${name}: conserva ${flag}`);
+    }
+    assert.ok(
+      health.endsWith(' "$APP_URL/api/health"'),
+      `${name}: el comando termina en "$APP_URL/api/health"`
+    );
+  }
+});
+
 test('every third-party action is pinned to a full commit SHA', () => {
   const names = readdirSync(new URL('.', import.meta.url)).filter((name) => name.endsWith('.yml'));
   assert.ok(names.length >= 3, 'CI, migration and approval workflows must exist');
