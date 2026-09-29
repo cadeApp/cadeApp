@@ -21,8 +21,13 @@ export interface TripDetails {
   amountArs: number;
   pickupAddress: string;
   pickupZoneName: string;
+  pickupLat?: number | null;
+  pickupLng?: number | null;
   dropoffAddress: string;
   dropoffZoneName: string;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
+  routeDistanceM?: number | null;
   deliveryNotes: string | null;
   recipientName: string;
   recipientPhone: string;
