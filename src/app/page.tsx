@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
@@ -7,6 +8,10 @@ import { Store, Wallet, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 // El año del footer se actualiza solo: la página se regenera una vez por día.
 export const revalidate = 86400;
+
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+};
 
 export default function HomePage() {
   return (
