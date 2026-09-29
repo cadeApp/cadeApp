@@ -21,7 +21,3 @@ export const VehicleForm = dynamic<VehicleFormProps>(
   () => import('./components/vehicle-form').then((mod) => mod.VehicleForm)
 );
 export type { VehicleFormProps };
-
-export { IdentityForm as CanonicalIdentityForm } from './components/identity-form';
-export { VehicleForm as CanonicalVehicleForm } from './components/vehicle-form';
-
