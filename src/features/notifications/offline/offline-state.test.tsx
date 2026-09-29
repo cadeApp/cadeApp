@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
+import { renderToString } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OfflineBanner, OfflineFloatingCard } from './offline-banner';
 import { useOfflineStatus } from './use-offline-status';
@@ -80,5 +81,18 @@ describe('T-201: Offline State & Degradation (T03)', () => {
     expect(screen.getByText(/Cuando vuelva la conexión/i)).toBeTruthy();
 
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+  });
+
+  it('SSR: con un navigator sin onLine (Node 22) el HTML del servidor no muestra sin conexión', () => {
+    // Node 22 expone `navigator` global, pero sin `onLine`: `!navigator.onLine` daba `true` y staging servía
+    // la página con el banner y la card aunque hubiera red.
+    Object.defineProperty(navigator, 'onLine', { value: undefined, configurable: true });
+    try {
+      const html = renderToString(<TestConsumer />);
+      expect(html).not.toContain('Sin conexión');
+      expect(html).not.toContain('Cuando vuelva la conexión');
+    } finally {
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    }
   });
 });
