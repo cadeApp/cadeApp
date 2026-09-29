@@ -201,6 +201,69 @@ test('production migration fails visibly for an unauthorized actor and uses a di
   assert.match(production, /"\$SUPABASE_PROJECT_REF" = "\$SUPABASE_STAGING_PROJECT_REF"/);
 });
 
+test('deploy runs only after a successful migrate push, never before the database', () => {
+  // T-315: primero la base, después la app. Si la migración falla, la app nueva no se publica contra un
+  // esquema viejo.
+  const deploy = workflow('deploy.yml');
+  assert.match(deploy, /workflow_run:\r?\n\s+workflows: \[migrate\]\r?\n\s+types: \[completed\]/);
+  assert.match(deploy, /branches: \[staging, main\]/);
+  for (const name of ['staging', 'production']) {
+    const body = job(deploy, name);
+    assert.match(
+      body,
+      /github\.event\.workflow_run\.conclusion == 'success'/,
+      `${name}: exige migrate verde`
+    );
+    assert.match(body, /github\.event\.workflow_run\.event == 'push'/, `${name}: solo pushes`);
+    assert.match(
+      body,
+      /ref: \$\{\{ github\.event\.workflow_run\.head_sha \}\}/,
+      `${name}: commit exacto`
+    );
+  }
+  assert.match(deploy, /concurrency:/);
+  assert.match(deploy, /cancel-in-progress:\s*false/);
+});
+
+test('deploy targets the right environment and pins the Vercel CLI', () => {
+  const deploy = workflow('deploy.yml');
+  const staging = job(deploy, 'staging');
+  const production = job(deploy, 'production');
+  assert.match(staging, /head_branch == 'staging'/);
+  assert.match(staging, /^\s+environment: staging$/m);
+  assert.match(production, /head_branch == 'main'/);
+  assert.match(production, /^\s+environment: production$/m);
+  for (const match of deploy.matchAll(/pnpm dlx (vercel\S*)/g)) {
+    assert.equal(match[1], 'vercel@61.0.0', 'la versión del CLI de Vercel va fijada');
+  }
+  for (const body of [staging, production]) {
+    assert.match(body, /vercel@61\.0\.0 build --prod/);
+    assert.match(body, /vercel@61\.0\.0 deploy --prebuilt --prod/);
+  }
+});
+
+test('production deploy fails visibly for an unauthorized actor', () => {
+  const production = job(workflow('deploy.yml'), 'production');
+  assert.doesNotMatch(production, /if:.*github\.actor/);
+  assert.match(
+    production,
+    /TRIGGERING_ACTOR: \$\{\{ github\.event\.workflow_run\.triggering_actor\.login \}\}/
+  );
+  assert.match(production, /"\$TRIGGERING_ACTOR" != 'Lautaro073'/);
+});
+
+test('each deploy fails the job unless /api/health answers 200', () => {
+  const deploy = workflow('deploy.yml');
+  for (const name of ['staging', 'production']) {
+    const body = job(deploy, name);
+    const deployIndex = body.indexOf('deploy --prebuilt --prod');
+    const healthIndex = body.indexOf('"$APP_URL/api/health"');
+    assert.notEqual(healthIndex, -1, `${name}: falta el health check`);
+    assert.ok(deployIndex < healthIndex, `${name}: el health check va después del deploy`);
+    assert.match(body, /curl --fail/);
+  }
+});
+
 test('every third-party action is pinned to a full commit SHA', () => {
   const names = readdirSync(new URL('.', import.meta.url)).filter((name) => name.endsWith('.yml'));
   assert.ok(names.length >= 3, 'CI, migration and approval workflows must exist');
