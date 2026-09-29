@@ -293,7 +293,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               className="min-h-12 gap-2 text-sm"
             >
               <Navigation
-                className={cn('h-4 w-4 text-primary-dark', pickupLocating && 'animate-spin')}
+                className="h-4 w-4 text-primary-dark"
               />
               {pickupLocating ? 'Obteniendo GPS...' : copy.useMyLocation}
             </Button>
@@ -387,7 +387,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                 className="min-h-12 gap-2 text-sm"
               >
                 <Navigation
-                  className={cn('h-4 w-4 text-primary-dark', dropoffLocating && 'animate-spin')}
+                  className="h-4 w-4 text-primary-dark"
                 />
                 {dropoffLocating ? 'Obteniendo GPS...' : 'Usar mi ubicación'}
               </Button>

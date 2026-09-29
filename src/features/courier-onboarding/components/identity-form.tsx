@@ -275,7 +275,7 @@ export function IdentityForm({
                       </span>
                     ) : status === 'uploading' || isCompress ? (
                       <RotateCw
-                        className="h-5 w-5 animate-spin text-primary"
+                        className="h-5 w-5 text-primary"
                         aria-label="Cargando"
                       />
                     ) : status === 'error' ? (

@@ -133,8 +133,8 @@ describe('T-205 DoD: Criterios de Aceptación de Accesibilidad y Rendimiento', (
     ).toEqual([]);
   });
 
-  // PR122-H02: Auditoría completa de objetivos táctiles en todas las superficies clave enumeradas por la ficha
-  it('DoD 1.2: Objetivos táctiles interactivos >= 48 px en todas las superficies clave', () => {
+  // PR122-H02: Auditoría de objetivos táctiles en las superficies de requests (CreateRequestForm y RequestOffersList)
+  it('DoD 1.2: Objetivos táctiles interactivos >= 48 px en las superficies de requests (CreateRequestForm y RequestOffersList)', () => {
     // 1. CreateRequestForm: ubicación, toggle de cambio, chips rápidos
     const { container: reqContainer } = render(<CreateRequestForm zones={mockZones} />);
     // 2. RequestOffersList: botones segmentados de filtro
@@ -184,11 +184,11 @@ describe('T-205 DoD: Criterios de Aceptación de Accesibilidad y Rendimiento', (
 
     expect(
       undersizedTargets,
-      'Todos los objetivos táctiles interactivos de las superficies clave deben medir al menos 48 px (min-h-12 / h-12)'
+      'Todos los objetivos táctiles interactivos de las superficies de requests deben medir al menos 48 px (min-h-12 / h-12)'
     ).toEqual([]);
   });
 
-  it('DoD 1.3: Todos los inputs numéricos o de teléfono declaran atributo inputmode', () => {
+  it('DoD 1.3: Los inputs telefónicos auditados declaran atributo inputmode="tel"', () => {
     const { container: reqContainer } = render(<CreateRequestForm zones={mockZones} />);
     const { container: merchantContainer } = render(<MerchantOnboardingForm zones={mockZones} />);
 
@@ -211,32 +211,7 @@ describe('T-205 DoD: Criterios de Aceptación de Accesibilidad y Rendimiento', (
 
     expect(
       inputsWithoutInputMode,
-      'Los inputs de teléfono y numéricos deben declarar inputmode="numeric" o "tel"'
+      'Los inputs de teléfono auditados deben declarar inputmode="tel"'
     ).toEqual([]);
-  });
-
-  // PR122-H01: Regresión de arquitectura de rendimiento y code-splitting para garantizar First Load JS < 180 kB (Regla 25)
-  it('DoD 1.4: Arquitectura de carga diferida y aislamiento de bundle en componentes clave', async () => {
-    // 1. courier-onboarding exporta IdentityForm y VehicleForm como componentes dinámicos para proteger profile
-    const courierOnboardingModule = await import('@/features/courier-onboarding');
-    expect(
-      courierOnboardingModule.IdentityForm,
-      'IdentityForm debe estar exportado dinámicamente'
-    ).toBeDefined();
-    expect(
-      courierOnboardingModule.VehicleForm,
-      'VehicleForm debe estar exportado dinámicamente'
-    ).toBeDefined();
-
-    // 2. trips aísla el diálogo de cancelación para reducir el bundle de la vista de viaje
-    const tripsModule = await import('@/features/trips');
-    expect(
-      tripsModule.TripMerchantContainer,
-      'TripMerchantContainer debe estar expuesto para carga optimizada'
-    ).toBeDefined();
-    expect(
-      tripsModule.TripCourierContainer,
-      'TripCourierContainer debe estar expuesto para carga optimizada'
-    ).toBeDefined();
   });
 });

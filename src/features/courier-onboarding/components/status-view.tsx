@@ -39,7 +39,7 @@ export function StatusView({ onGoToFeed }: StatusViewProps) {
           variant="outline"
           className="mb-6 inline-flex items-center gap-1.5 rounded-full border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-600"
         >
-          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-600" />
+          <span className="h-2 w-2 rounded-full bg-amber-600" />
           <span>{COURIER_ONBOARDING_COPY.underReviewBadge}</span>
         </Badge>
 

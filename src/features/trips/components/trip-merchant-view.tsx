@@ -89,7 +89,7 @@ export function TripMerchantView({
           {isDelivered ? (
             <CheckCircle2 className="h-4 w-4 text-primary" />
           ) : (
-            <Clock className="h-4 w-4 animate-pulse text-primary" />
+            <Clock className="h-4 w-4 text-primary" />
           )}
           <span>Retirado</span>
         </div>

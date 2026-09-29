@@ -9,7 +9,7 @@ const PushPermissionPrompt = dynamic<PushPermissionPromptProps>(
     ssr: false,
     loading: () => (
       <div className="mx-auto max-w-md p-6">
-        <div className="h-64 w-full animate-pulse rounded-2xl bg-muted" />
+        <div className="h-64 w-full rounded-2xl bg-muted" />
       </div>
     ),
   }

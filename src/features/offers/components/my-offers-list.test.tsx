@@ -55,4 +55,16 @@ describe('MyOffersList - Navegación SPA a detalle de viaje', () => {
     expect(pushMock).toHaveBeenCalledTimes(1);
     expect(pushMock).toHaveBeenCalledWith(`/trips/${sampleAcceptedOffer.requestId}`);
   });
+
+  it('los tres tabs de estado deben tener un touch target mínimo de 48px (min-h-12)', () => {
+    render(<MyOffersList initialOffers={[]} />);
+
+    const pendingTab = screen.getByRole('button', { name: /pendientes/i });
+    const acceptedTab = screen.getByRole('button', { name: /aceptadas/i });
+    const otherTab = screen.getByRole('button', { name: /otras/i });
+
+    expect(pendingTab.className).toContain('min-h-12');
+    expect(acceptedTab.className).toContain('min-h-12');
+    expect(otherTab.className).toContain('min-h-12');
+  });
 });

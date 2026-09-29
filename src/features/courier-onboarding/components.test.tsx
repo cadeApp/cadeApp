@@ -61,6 +61,12 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect((continueBtn as HTMLButtonElement).disabled).toBe(true);
     });
 
+    it('el input de DNI declara inputmode="numeric" para teclado numérico móvil', () => {
+      render(<IdentityForm courierId="test-courier" />);
+      const dniInput = screen.getByLabelText(/Número de DNI/i);
+      expect(dniInput.getAttribute('inputmode')).toBe('numeric');
+    });
+
     it('muestra error de validación cuando el DNI no tiene 7 u 8 dígitos', async () => {
       render(<IdentityForm courierId="test-courier" />);
       const dniInput = screen.getByLabelText(/Número de DNI/i);

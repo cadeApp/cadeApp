@@ -133,7 +133,6 @@ export function CourierFeed({
           {available && (
             <Badge variant="published" className="flex items-center gap-1 text-sm">
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-dark" />
               </span>
               {OFFERS_COPY.liveBadge}
@@ -151,9 +150,9 @@ export function CourierFeed({
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <Radio className="h-6 w-6" aria-hidden="true" />
           </div>
-          <h3 className="mb-1 font-display text-base font-bold text-foreground">
+          <h2 className="mb-1 font-display text-base font-bold text-foreground">
             {OFFERS_COPY.unavailableAlertTitle}
-          </h3>
+          </h2>
           <p className="text-sm text-muted-foreground">{OFFERS_COPY.unavailableAlertDescription}</p>
         </Card>
       )}

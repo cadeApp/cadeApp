@@ -548,6 +548,40 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       });
       expect((offerButton as HTMLButtonElement).disabled).toBe(false);
     });
+
+    it('en estado no disponible, la jerarquía de headings es continua (h1 -> h2 sin salto a h3)', () => {
+      render(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+        />
+      );
+
+      const headings = screen.getAllByRole('heading');
+      const levels = headings.map((h) => Number(h.tagName.replace(/^H/, '')));
+      for (let i = 1; i < levels.length; i++) {
+        expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
+      }
+      const unavailableHeading = screen.getByRole('heading', { name: OFFERS_COPY.unavailableAlertTitle });
+      expect(unavailableHeading.tagName).toBe('H2');
+    });
+
+    it('el input de monto de oferta en OfferSheet declara inputmode="numeric"', () => {
+      render(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={sampleRequest}
+          minOfferArs={1000}
+          onSubmitOffer={vi.fn()}
+        />
+      );
+
+      const amountInput = screen.getByRole('textbox', { name: OFFERS_COPY.amountLabel });
+      expect(amountInput.getAttribute('inputmode')).toBe('numeric');
+    });
   });
 });
 
