@@ -1,56 +1,84 @@
-#!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const TARGET_FILE = process.env.DB_TYPES_TARGET_FILE
-  ? path.resolve(process.env.DB_TYPES_TARGET_FILE)
-  : path.resolve('src/types/database.types.ts');
+/**
+ * CC-013: `db-tests` genera con `--local` y `migrate-staging` con `--project-id`. La salida remota usa la
+ * plantilla del servidor de Supabase: agrega el bloque `__InternalSupabase` y envuelve entre paréntesis el
+ * condicional de los helpers. Se normaliza a la plantilla local para que los dos checks comparen esquema, no
+ * versión del generador. No toca tablas, columnas, funciones ni enums.
+ * @param {string} source
+ */
+export function normalizeGeneratedTypes(source) {
+  return source
+    .replace(/\r\n/g, '\n')
+    .replace(
+      /^ {2}\/\/ Allows to automatically instantiate createClient with right options\n {2}\/\/ instead of createClient<Database, \{ PostgrestVersion: 'XX' \}>\(URL, KEY\)\n {2}__InternalSupabase: \{\n {4}PostgrestVersion: "[^"\n]*"\n {2}\}\n/m,
+      ''
+    )
+    .replace(/^( {2}\w+ extends )\((\w+ extends \{)$/gm, '$1$2')
+    .replace(/^( {4}: never)\) = never,$/gm, '$1 = never,');
+}
 
-const args = process.argv.slice(2);
-const cliArgs = ['supabase', 'gen', 'types', 'typescript', '--schema', 'public'];
+function main() {
+  const TARGET_FILE = process.env.DB_TYPES_TARGET_FILE
+    ? path.resolve(process.env.DB_TYPES_TARGET_FILE)
+    : path.resolve('src/types/database.types.ts');
 
-if (args.length > 0) {
-  cliArgs.push(...args);
-} else {
-  const projectRef =
-    process.env.SUPABASE_PROJECT_REF ||
-    process.env.SUPABASE_PROJECT_ID ||
-    (() => {
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const match = url?.match(/^https:\/\/([a-z0-9]+)\.supabase\.co/);
-      return match ? match[1] : null;
-    })();
+  const args = process.argv.slice(2);
+  const cliArgs = ['supabase', 'gen', 'types', 'typescript', '--schema', 'public'];
 
-  if (projectRef) {
-    cliArgs.push('--project-id', projectRef);
+  if (args.length > 0) {
+    cliArgs.push(...args);
   } else {
-    cliArgs.push('--linked');
+    const projectRef =
+      process.env.SUPABASE_PROJECT_REF ||
+      process.env.SUPABASE_PROJECT_ID ||
+      (() => {
+        const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const match = url?.match(/^https:\/\/([a-z0-9]+)\.supabase\.co/);
+        return match ? match[1] : null;
+      })();
+
+    if (projectRef) {
+      cliArgs.push('--project-id', projectRef);
+    } else {
+      cliArgs.push('--linked');
+    }
   }
+
+  console.log(`[db:types] Ejecutando: pnpm ${cliArgs.join(' ')}`);
+
+  const isWindows = process.platform === 'win32';
+  const result = spawnSync('pnpm', cliArgs, {
+    encoding: 'utf-8',
+    shell: isWindows,
+  });
+
+  if (result.status !== 0) {
+    console.error('[db:types] Error al generar tipos con Supabase CLI:');
+    if (result.stdout) console.error(result.stdout.trim());
+    if (result.stderr) console.error(result.stderr.trim());
+    console.error(
+      '[db:types] src/types/database.types.ts NO fue modificado para proteger los tipos commiteados.'
+    );
+    process.exit(1);
+  }
+
+  const output = normalizeGeneratedTypes((result.stdout || '').trim());
+
+  if (!output || !output.includes('export type') || output.length < 50) {
+    console.error(
+      '[db:types] La salida generada no es válida o está vacía. No se sobreescribirá el archivo.'
+    );
+    process.exit(1);
+  }
+
+  writeFileSync(TARGET_FILE, output + '\n', 'utf-8');
+  console.log(`[db:types] Tipos generados exitosamente en ${TARGET_FILE}`);
 }
 
-console.log(`[db:types] Ejecutando: pnpm ${cliArgs.join(' ')}`);
-
-const isWindows = process.platform === 'win32';
-const result = spawnSync('pnpm', cliArgs, {
-  encoding: 'utf-8',
-  shell: isWindows,
-});
-
-if (result.status !== 0) {
-  console.error('[db:types] Error al generar tipos con Supabase CLI:');
-  if (result.stdout) console.error(result.stdout.trim());
-  if (result.stderr) console.error(result.stderr.trim());
-  console.error('[db:types] src/types/database.types.ts NO fue modificado para proteger los tipos commiteados.');
-  process.exit(1);
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main();
 }
-
-const output = (result.stdout || '').trim();
-
-if (!output || !output.includes('export type') || output.length < 50) {
-  console.error('[db:types] La salida generada no es válida o está vacía. No se sobreescribirá el archivo.');
-  process.exit(1);
-}
-
-writeFileSync(TARGET_FILE, output + '\n', 'utf-8');
-console.log(`[db:types] Tipos generados exitosamente en ${TARGET_FILE}`);
