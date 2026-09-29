@@ -5,6 +5,9 @@ import { Card } from '@/ui/card';
 import { TopBar } from '@/ui/top-bar';
 import { Store, Wallet, ArrowRight, CheckCircle2 } from 'lucide-react';
 
+// El año del footer se actualiza solo: la página se regenera una vez por día.
+export const revalidate = 86400;
+
 export default function HomePage() {
   return (
     <div className="flex min-h-screen w-full flex-col justify-between bg-background text-foreground">
@@ -193,13 +196,37 @@ export default function HomePage() {
       {/* Footer responsive */}
       <footer className="w-full border-t border-border bg-card/40 py-8 text-center text-sm text-muted-foreground">
         <div className="mx-auto max-w-5xl space-y-2 px-4 sm:px-6">
-          <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 font-medium">
-            <span className="text-muted-foreground">
-              Términos y Privacidad del Piloto (documentos legales en publicación · T-311)
-            </span>
-          </div>
-          <p className="text-sm text-muted-foreground/80">
-            Hecho en Aguilares, Tucumán · cadeApp 2026
+          <nav
+            aria-label="Documentos legales"
+            className="flex flex-wrap justify-center gap-x-2 gap-y-1 font-medium"
+          >
+            <Link
+              href="/legal/terms"
+              className="inline-flex min-h-12 items-center rounded-sm px-2 py-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Términos
+            </Link>
+            <Link
+              href="/legal/privacy"
+              className="inline-flex min-h-12 items-center rounded-sm px-2 py-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Privacidad
+            </Link>
+            <Link
+              href="/legal/courier"
+              className="inline-flex min-h-12 items-center rounded-sm px-2 py-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Repartidores
+            </Link>
+            <Link
+              href="/legal/pilot"
+              className="inline-flex min-h-12 items-center rounded-sm px-2 py-1 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Piloto
+            </Link>
+          </nav>
+          <p className="text-sm text-muted-foreground">
+            Hecho en Aguilares, Tucumán · cadeApp {new Date().getFullYear()}
           </p>
         </div>
       </footer>
