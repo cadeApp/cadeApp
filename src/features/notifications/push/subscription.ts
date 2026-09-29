@@ -1,4 +1,5 @@
 import { publicEnv } from '@/lib/env.public';
+import { PendingUnsubEndpointSchema } from './schemas';
 import type {
   PushOperationResult,
   PushPermissionStatus,
@@ -183,10 +184,20 @@ export async function subscribeToPush(
 }
 
 export async function unsubscribeFromPush(): Promise<{ ok: boolean; error?: string }> {
-  const pendingEndpoint =
+  const rawPendingEndpoint =
     typeof window !== 'undefined'
       ? localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)
       : null;
+
+  let pendingEndpoint: string | null = null;
+  if (rawPendingEndpoint !== null) {
+    const parsed = PendingUnsubEndpointSchema.safeParse(rawPendingEndpoint);
+    if (!parsed.success) {
+      localStorage.removeItem(PENDING_UNSUB_STORAGE_KEY);
+      return { ok: false, error: 'invalid_pending_endpoint' };
+    }
+    pendingEndpoint = parsed.data;
+  }
 
   if (!isPushSupported()) {
     if (typeof window !== 'undefined') {

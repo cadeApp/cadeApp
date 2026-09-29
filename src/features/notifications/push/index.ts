@@ -14,21 +14,12 @@ export {
   getPushSubscription,
   urlBase64ToUint8Array,
   PUSH_STORAGE_KEY,
+  PENDING_UNSUB_STORAGE_KEY,
 } from './subscription';
-
-export {
-  registerPushHandlers,
-  handlePushEvent,
-  handleNotificationClickEvent,
-  getNotificationDataForEvent,
-  type PushEventNotificationConfig,
-} from './sw-handlers';
 
 export type {
   PushOperationResult,
   PushPermissionStatus,
   RequestPermissionOptions,
   PushSubscriptionRecord,
-  PushNotificationPayload,
-  NotificationActionData,
 } from './types';

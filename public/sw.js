@@ -120,28 +120,62 @@ self.addEventListener('fetch', (event) => {
 
 // --- Push Notifications & Notification Click Handlers (T-202) ---
 
-function getNotificationDataForEvent(payload, baseOrigin) {
+// Excepción acotada a Regla 25 (D03 = 3-A): el SW no puede importar Zod, así que replica a mano
+// y de forma estricta `pushPayloadSchema` de src/server/push/sender.ts. Si ese schema cambia,
+// este objeto y sus pruebas en src/app/sw.test.ts cambian en el mismo PR.
+const PUSH_PAYLOAD_KEYS = {
+  request_published: ['event', 'requestId'],
+  offer_submitted: ['event', 'requestId', 'offerId'],
+  offer_accepted: ['event', 'requestId', 'offerId'],
+  request_cancelled: ['event', 'requestId'],
+  request_expired: ['event', 'requestId'],
+};
+
+// Mismo patrón que z.string().uuid() (Zod 3).
+const UUID_REGEX =
+  /^[0-9a-fA-F]{8}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{4}\b-[0-9a-fA-F]{12}$/i;
+
+function isUuid(value) {
+  return typeof value === 'string' && UUID_REGEX.test(value);
+}
+
+// Devuelve el payload validado o null. Cualquier clave extra, evento desconocido o UUID inválido
+// invalida el payload completo.
+function parsePushPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+  const event = payload.event;
+  if (typeof event !== 'string' || !Object.prototype.hasOwnProperty.call(PUSH_PAYLOAD_KEYS, event)) {
+    return null;
+  }
+  const expectedKeys = PUSH_PAYLOAD_KEYS[event];
+  const actualKeys = Object.keys(payload);
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    !expectedKeys.every((key) => actualKeys.includes(key))
+  ) {
+    return null;
+  }
+  if (!isUuid(payload.requestId)) {
+    return null;
+  }
+  if (expectedKeys.includes('offerId')) {
+    if (!isUuid(payload.offerId)) {
+      return null;
+    }
+    return { event: event, requestId: payload.requestId, offerId: payload.offerId };
+  }
+  return { event: event, requestId: payload.requestId };
+}
+
+function getNotificationDataForEvent(rawPayload, baseOrigin) {
   const origin = baseOrigin || (self.location && self.location.origin) || 'https://cadeapp.ar';
   const icon = '/icons/icon-192.png';
   const badge = '/icons/icon-192.png';
+  const payload = parsePushPayload(rawPayload);
 
-  if (!payload || typeof payload !== 'object') {
-    return {
-      title: 'cadeApp',
-      body: 'Tenés una nueva notificación en cadeApp.',
-      icon: icon,
-      badge: badge,
-      data: { url: origin + '/', event: 'unknown' },
-    };
-  }
-
-  const event = typeof payload.event === 'string' ? payload.event : '';
-  const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
-  const offerId = typeof payload.offerId === 'string' ? payload.offerId : undefined;
-
-  // Validación básica UUID v4 RFC 4122
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(requestId)) {
+  if (!payload) {
     return {
       title: 'cadeApp',
       body: 'Tenés una actualización en la aplicación.',
@@ -151,6 +185,9 @@ function getNotificationDataForEvent(payload, baseOrigin) {
     };
   }
 
+  const event = payload.event;
+  const requestId = payload.requestId;
+
   switch (event) {
     case 'request_published':
       return {
@@ -158,11 +195,7 @@ function getNotificationDataForEvent(payload, baseOrigin) {
         body: 'Hay un nuevo envío disponible en Aguilares.',
         icon: icon,
         badge: badge,
-        data: {
-          url: origin + '/courier/feed',
-          event: event,
-          requestId: requestId,
-        },
+        data: { url: origin + '/courier/feed', event: event, requestId: requestId },
       };
 
     case 'offer_submitted':
@@ -175,7 +208,7 @@ function getNotificationDataForEvent(payload, baseOrigin) {
           url: origin + '/merchant/requests/' + requestId,
           event: event,
           requestId: requestId,
-          offerId: offerId,
+          offerId: payload.offerId,
         },
       };
 
@@ -189,7 +222,7 @@ function getNotificationDataForEvent(payload, baseOrigin) {
           url: origin + '/trips/' + requestId,
           event: event,
           requestId: requestId,
-          offerId: offerId,
+          offerId: payload.offerId,
         },
       };
 
@@ -199,33 +232,17 @@ function getNotificationDataForEvent(payload, baseOrigin) {
         body: 'La solicitud de envío fue cancelada.',
         icon: icon,
         badge: badge,
-        data: {
-          url: origin + '/courier/feed',
-          event: event,
-          requestId: requestId,
-        },
+        data: { url: origin + '/courier/feed', event: event, requestId: requestId },
       };
 
     case 'request_expired':
+    default:
       return {
         title: 'Solicitud vencida',
         body: 'La solicitud de envío expiró sin confirmación.',
         icon: icon,
         badge: badge,
-        data: {
-          url: origin + '/courier/feed',
-          event: event,
-          requestId: requestId,
-        },
-      };
-
-    default:
-      return {
-        title: 'cadeApp',
-        body: 'Tenés una actualización en la aplicación.',
-        icon: icon,
-        badge: badge,
-        data: { url: origin + '/', event: 'unknown' },
+        data: { url: origin + '/courier/feed', event: event, requestId: requestId },
       };
   }
 }

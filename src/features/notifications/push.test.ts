@@ -8,7 +8,7 @@ import {
   unsubscribeFromPush,
   isPushSupported,
   getNotificationPermission,
-  getNotificationDataForEvent,
+  PENDING_UNSUB_STORAGE_KEY,
 } from './push';
 
 vi.mock('@/lib/env.public', () => ({
@@ -365,91 +365,148 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
     });
   });
 
-  describe('4. Mapeo estricto de eventos de Push sin PII (sw-handlers)', () => {
-    it('DoD: mapea eventos de negocio a URLs canónicas sin filtrar datos personales', () => {
-      const origin = 'https://cadeapp.ar';
+  describe('4. PR120 Ronda 2: permiso, matriz de alta/baja, storage y layout', () => {
+    const SUB_ENDPOINT = 'https://push.example.com/sub/round-2';
 
-      // 1. request_published -> /courier/feed
-      const published = getNotificationDataForEvent(
-        { event: 'request_published', requestId: '11111111-1111-4111-8111-111111111111' },
-        origin
+    function mockServiceWorker(pushManager: Record<string, unknown>) {
+      Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+        value: { ready: Promise.resolve({ pushManager }) },
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    function mockGrantedPermission() {
+      const requestPermission = vi.fn().mockResolvedValue('granted');
+      vi.stubGlobal('Notification', { permission: 'granted', requestPermission });
+      return requestPermission;
+    }
+
+    function newSubscription() {
+      return {
+        endpoint: SUB_ENDPOINT,
+        toJSON: () => ({ endpoint: SUB_ENDPOINT, keys: { p256dh: 'p', auth: 'a' } }),
+      };
+    }
+
+    it('PR120-H04: permiso ya concedido al montar NO muestra éxito hasta confirmar el alta en backend', async () => {
+      const requestPermission = mockGrantedPermission();
+      const mockFetch = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+      vi.stubGlobal('fetch', mockFetch);
+      mockServiceWorker({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockResolvedValue(newSubscription()),
+      });
+
+      render(React.createElement(PushPermissionPrompt, { onDismiss: vi.fn() }));
+
+      expect(screen.queryByText(/Avisos activados/i)).toBeNull();
+      const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
+      expect((activateBtn as HTMLButtonElement).disabled).toBe(false);
+
+      fireEvent.click(activateBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/¡Avisos activados con éxito!/i)).toBeTruthy();
+      });
+      expect(requestPermission).not.toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/push/subscriptions',
+        expect.objectContaining({ method: 'POST' })
       );
-      expect(published.data.url).toBe('https://cadeapp.ar/courier/feed');
-      expect(published.title).toMatch(/solicitud/i);
-      expect(JSON.stringify(published)).not.toMatch(/dni|teléfono|phone|address|calle|nombre/i);
-
-      // 2. offer_submitted -> /merchant/requests/[id]
-      const submitted = getNotificationDataForEvent(
-        { event: 'offer_submitted', requestId: '11111111-1111-4111-8111-111111111111', offerId: '22222222-2222-4222-8222-222222222222' },
-        origin
-      );
-      expect(submitted.data.url).toBe('https://cadeapp.ar/merchant/requests/11111111-1111-4111-8111-111111111111');
-      expect(submitted.title).toMatch(/oferta/i);
-      expect(JSON.stringify(submitted)).not.toMatch(/dni|teléfono|phone|address|calle|nombre/i);
-
-      // 3. offer_accepted -> /trips/[id]
-      const accepted = getNotificationDataForEvent(
-        { event: 'offer_accepted', requestId: '11111111-1111-4111-8111-111111111111', offerId: '22222222-2222-4222-8222-222222222222' },
-        origin
-      );
-      expect(accepted.data.url).toBe('https://cadeapp.ar/trips/11111111-1111-4111-8111-111111111111');
-      expect(accepted.title).toMatch(/aceptada/i);
-      expect(JSON.stringify(accepted)).not.toMatch(/dni|teléfono|phone|address|calle|nombre/i);
-
-      // 4. request_cancelled -> /courier/feed
-      const cancelled = getNotificationDataForEvent(
-        { event: 'request_cancelled', requestId: '11111111-1111-4111-8111-111111111111' },
-        origin
-      );
-      expect(cancelled.data.url).toBe('https://cadeapp.ar/courier/feed');
-      expect(cancelled.title).toMatch(/cancelada/i);
-
-      // 5. request_expired -> /courier/feed
-      const expired = getNotificationDataForEvent(
-        { event: 'request_expired', requestId: '11111111-1111-4111-8111-111111111111' },
-        origin
-      );
-      expect(expired.data.url).toBe('https://cadeapp.ar/courier/feed');
-      expect(expired.title).toMatch(/vencida/i);
-
-      // 6. Payload nulo o desconocido -> fallback seguro
-      const unknown = getNotificationDataForEvent(null, origin);
-      expect(unknown.data.url).toBe('https://cadeapp.ar/');
-      expect(unknown.title).toBe('cadeApp');
     });
 
-    it('PR120-H11: inyección deliberada de PII en payload es rechazada/descartada sin llegar a título, cuerpo ni datos', () => {
-      const origin = 'https://cadeapp.ar';
-      const poisonedPayload = {
-        event: 'request_published',
-        requestId: '11111111-1111-4111-8111-111111111111',
-        recipient_name: 'Santiago Benítez',
-        phone: '+54 9 3865 123456',
-        street_address: 'Av. San Martín 450, Piso 3',
-        dni: '38999888',
-        delivery_notes: 'Dejar en la reja negra',
-      };
+    it('PR120-H03: subscribeToPush con POST 500 devuelve ok=false, error estable y no habilita storage', async () => {
+      mockGrantedPermission();
+      mockServiceWorker({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockResolvedValue(newSubscription()),
+      });
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 500 })));
 
-      const result = getNotificationDataForEvent(poisonedPayload, origin);
-      const serialized = JSON.stringify(result);
+      const result = await subscribeToPush('test-vapid-key');
 
-      expect(serialized).not.toMatch(/santiago|ben[ií]tez|3865|123456|mart[ií]n|450|38999888|reja/i);
-      expect(result.title).toBe('Nueva solicitud disponible');
-      expect(result.data.url).toBe('https://cadeapp.ar/courier/feed');
-      // Aseguramos que data solo contiene las propiedades autorizadas
-      expect(Object.keys(result.data).sort()).toEqual(['event', 'requestId', 'url'].sort());
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('backend_error');
+      expect(localStorage.getItem('cadeapp_push_enabled')).not.toBe('true');
     });
 
-    it('PR120-H06: payload con UUID inválido es rechazado por schema y degrada al fallback seguro', () => {
-      const origin = 'https://cadeapp.ar';
-      const invalidPayload = {
-        event: 'request_published',
-        requestId: 'not-a-valid-uuid',
-      };
+    it('PR120-H03: subscribeToPush con rechazo de red devuelve network_error y no habilita storage', async () => {
+      mockGrantedPermission();
+      mockServiceWorker({
+        getSubscription: vi.fn().mockResolvedValue(null),
+        subscribe: vi.fn().mockResolvedValue(newSubscription()),
+      });
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')));
 
-      const result = getNotificationDataForEvent(invalidPayload, origin);
-      expect(result.title).toBe('cadeApp');
-      expect(result.data.url).toBe('https://cadeapp.ar/');
+      const result = await subscribeToPush('test-vapid-key');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('network_error');
+      expect(localStorage.getItem('cadeapp_push_enabled')).not.toBe('true');
+    });
+
+    it('PR120-H05: DELETE rechazado por red guarda el endpoint pendiente y la segunda llamada reconcilia', async () => {
+      mockServiceWorker({
+        getSubscription: vi.fn().mockResolvedValue({
+          endpoint: SUB_ENDPOINT,
+          unsubscribe: vi.fn().mockResolvedValue(true),
+        }),
+      });
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network down')));
+
+      const firstResult = await unsubscribeFromPush();
+      expect(firstResult.ok).toBe(false);
+      expect(firstResult.error).toBe('network_error');
+      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBe(SUB_ENDPOINT);
+
+      mockServiceWorker({ getSubscription: vi.fn().mockResolvedValue(null) });
+      const mockFetchRetry = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
+      vi.stubGlobal('fetch', mockFetchRetry);
+
+      const secondResult = await unsubscribeFromPush();
+      expect(secondResult.ok).toBe(true);
+      expect(mockFetchRetry).toHaveBeenCalledWith(
+        '/api/push/subscriptions',
+        expect.objectContaining({
+          method: 'DELETE',
+          body: JSON.stringify({ endpoint: SUB_ENDPOINT }),
+        })
+      );
+      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBeNull();
+    });
+
+    it('PR120-H16: endpoint pendiente corrupto en localStorage no llega a fetch, se limpia y devuelve error', async () => {
+      localStorage.setItem(PENDING_UNSUB_STORAGE_KEY, 'javascript:alert(1)');
+      mockServiceWorker({ getSubscription: vi.fn().mockResolvedValue(null) });
+      const mockFetch = vi.fn();
+      vi.stubGlobal('fetch', mockFetch);
+
+      const result = await unsubscribeFromPush();
+
+      expect(result).toEqual({ ok: false, error: 'invalid_pending_endpoint' });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(localStorage.getItem(PENDING_UNSUB_STORAGE_KEY)).toBeNull();
+    });
+
+    it('PR120-H08: el DOM renderizado de T02 no contiene clases max-w-[...] arbitrarias', () => {
+      const { container } = render(React.createElement(PushPermissionPrompt));
+      const arbitrary = Array.from(container.querySelectorAll('[class]')).filter((el) =>
+        /max-w-\[/.test(el.getAttribute('class') ?? '')
+      );
+      expect(arbitrary.map((el) => el.getAttribute('class'))).toEqual([]);
+    });
+
+    it('PR120-H15: standalone renderiza su header; embedded no lo duplica y usa min-h-full', () => {
+      const standalone = render(React.createElement(PushPermissionPrompt));
+      expect(standalone.container.querySelectorAll('header')).toHaveLength(1);
+      standalone.unmount();
+
+      const embedded = render(React.createElement(PushPermissionPrompt, { embedded: true }));
+      expect(embedded.container.querySelectorAll('header')).toHaveLength(0);
+      const root = embedded.container.firstElementChild;
+      expect(root?.className).toContain('min-h-full');
+      expect(root?.className).not.toContain('min-h-screen');
     });
   });
 

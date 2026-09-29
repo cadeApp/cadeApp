@@ -430,3 +430,80 @@ describe('T-202: Service Worker Push & NotificationClick Handlers (DoD Fase RED)
   });
 });
 
+
+describe('PR120-H06 / H11: public/sw.js valida el contrato T-203 (pushPayloadSchema)', () => {
+  const REQUEST_ID = '10000000-0000-4000-8000-000000000001';
+  const OFFER_ID = '20000000-0000-4000-8000-000000000002';
+  const FALLBACK_URL = 'https://cadeapp.ar/';
+  let sw: SWContext;
+
+  beforeEach(() => {
+    sw = createSWInstance();
+  });
+
+  async function pushAndGetUrl(payload: unknown): Promise<unknown> {
+    await sw.dispatchPush(payload);
+    expect(sw.mockShowNotification).toHaveBeenCalledTimes(1);
+    const options = sw.mockShowNotification.mock.calls[0]?.[1] as { data?: { url?: unknown } };
+    return options.data?.url;
+  }
+
+  it.each([
+    [{ event: 'request_published', requestId: REQUEST_ID }, 'https://cadeapp.ar/courier/feed'],
+    [
+      { event: 'offer_submitted', requestId: REQUEST_ID, offerId: OFFER_ID },
+      `https://cadeapp.ar/merchant/requests/${REQUEST_ID}`,
+    ],
+    [
+      { event: 'offer_accepted', requestId: REQUEST_ID, offerId: OFFER_ID },
+      `https://cadeapp.ar/trips/${REQUEST_ID}`,
+    ],
+    [{ event: 'request_cancelled', requestId: REQUEST_ID }, 'https://cadeapp.ar/courier/feed'],
+    [{ event: 'request_expired', requestId: REQUEST_ID }, 'https://cadeapp.ar/courier/feed'],
+  ])('evento válido %o → URL exacta %s', async (payload, expectedUrl) => {
+    expect(await pushAndGetUrl(payload)).toBe(expectedUrl);
+  });
+
+  it('offer_submitted sin offerId → fallback', async () => {
+    expect(await pushAndGetUrl({ event: 'offer_submitted', requestId: REQUEST_ID })).toBe(FALLBACK_URL);
+  });
+
+  it('offer_accepted sin offerId → fallback', async () => {
+    expect(await pushAndGetUrl({ event: 'offer_accepted', requestId: REQUEST_ID })).toBe(FALLBACK_URL);
+  });
+
+  it('offerId inválido → fallback', async () => {
+    expect(
+      await pushAndGetUrl({ event: 'offer_accepted', requestId: REQUEST_ID, offerId: 'not-a-uuid' })
+    ).toBe(FALLBACK_URL);
+  });
+
+  it.each(['recipient_name', 'phone', 'street_address', 'dni'])(
+    'payload con clave extra de PII %s → fallback',
+    async (piiKey) => {
+      const url = await pushAndGetUrl({
+        event: 'request_published',
+        requestId: REQUEST_ID,
+        [piiKey]: 'dato sensible',
+      });
+      expect(url).toBe(FALLBACK_URL);
+      const [title, options] = sw.mockShowNotification.mock.calls[0] as [string, unknown];
+      expect(JSON.stringify({ title, options })).not.toContain('dato sensible');
+    }
+  );
+
+  it('evento desconocido → fallback', async () => {
+    expect(await pushAndGetUrl({ event: 'trip_hacked', requestId: REQUEST_ID })).toBe(FALLBACK_URL);
+  });
+
+  it('array → fallback', async () => {
+    expect(await pushAndGetUrl([{ event: 'request_published', requestId: REQUEST_ID }])).toBe(
+      FALLBACK_URL
+    );
+  });
+
+  it('sigue habiendo exactamente 1 listener push y 1 notificationclick', () => {
+    expect(sw.listeners['push']?.length).toBe(1);
+    expect(sw.listeners['notificationclick']?.length).toBe(1);
+  });
+});

@@ -23,19 +23,9 @@ export const PUSH_COPY = {
     btnActivated: '¡Avisos activados!',
     btnDismiss: 'Ahora no',
   },
-  notifications: {
-    fallbackTitle: 'cadeApp',
-    fallbackBody: 'Tenés una nueva notificación en cadeApp.',
-    fallbackUpdateBody: 'Tenés una actualización en la aplicación.',
-    requestPublishedTitle: 'Nueva solicitud disponible',
-    requestPublishedBody: 'Hay un nuevo envío disponible en Aguilares.',
-    offerSubmittedTitle: 'Nueva oferta recibida',
-    offerSubmittedBody: 'Un repartidor envió una oferta para tu pedido.',
-    offerAcceptedTitle: '¡Oferta aceptada!',
-    offerAcceptedBody: 'Se confirmó la oferta para el envío.',
-    requestCancelledTitle: 'Solicitud cancelada',
-    requestCancelledBody: 'La solicitud de envío fue cancelada.',
-    requestExpiredTitle: 'Solicitud vencida',
-    requestExpiredBody: 'La solicitud de envío expiró sin confirmación.',
+  profileLink: {
+    title: 'Notificaciones y avisos',
+    description: 'Configurá las alertas instantáneas de pedidos',
+    action: 'Configurar →',
   },
 } as const;
