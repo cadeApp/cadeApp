@@ -29,9 +29,14 @@ interface SWContext {
     delete: ReturnType<typeof vi.fn>;
   };
   mockFetch: ReturnType<typeof vi.fn>;
+  mockShowNotification: ReturnType<typeof vi.fn>;
+  mockOpenWindow: ReturnType<typeof vi.fn>;
+  mockMatchAll: ReturnType<typeof vi.fn>;
   dispatchFetch: (request: Request) => Promise<Response | null>;
   dispatchInstall: () => Promise<void>;
   dispatchActivate: () => Promise<void>;
+  dispatchPush: (payload: unknown) => Promise<void>;
+  dispatchNotificationClick: (notificationData: unknown, action?: string) => Promise<{ closed: boolean }>;
 }
 
 function createSWInstance(customCode?: string): SWContext {
@@ -56,6 +61,10 @@ function createSWInstance(customCode?: string): SWContext {
 
   const mockFetch = vi.fn();
 
+  const mockShowNotification = vi.fn().mockResolvedValue(undefined);
+  const mockOpenWindow = vi.fn().mockImplementation(async (url: string) => ({ url, focus: vi.fn() }));
+  const mockMatchAll = vi.fn().mockResolvedValue([]);
+
   const sandbox: Record<string, unknown> = {
     location: { origin: 'https://cadeapp.ar' },
     addEventListener: (type: string, fn: TestListener) => {
@@ -63,8 +72,13 @@ function createSWInstance(customCode?: string): SWContext {
       listeners[type].push(fn);
     },
     skipWaiting: vi.fn().mockResolvedValue(undefined),
+    registration: {
+      showNotification: mockShowNotification,
+    },
     clients: {
       claim: vi.fn().mockResolvedValue(undefined),
+      openWindow: mockOpenWindow,
+      matchAll: mockMatchAll,
     },
     caches: mockCaches,
     fetch: mockFetch,
@@ -131,14 +145,62 @@ function createSWInstance(customCode?: string): SWContext {
     }
   };
 
+  const dispatchPush = async (payload: unknown) => {
+    let waitUntilPromise: Promise<unknown> | null = null;
+    const event = {
+      data: {
+        json: () => payload,
+        text: () => (typeof payload === 'string' ? payload : JSON.stringify(payload)),
+      },
+      waitUntil: (p: Promise<unknown>) => {
+        waitUntilPromise = p;
+      },
+    };
+    for (const listener of listeners['push'] || []) {
+      listener(event);
+    }
+    if (waitUntilPromise) {
+      await waitUntilPromise;
+    }
+  };
+
+  const dispatchNotificationClick = async (notificationData: unknown, action?: string) => {
+    let closed = false;
+    let waitUntilPromise: Promise<unknown> | null = null;
+    const event = {
+      notification: {
+        data: notificationData,
+        close: () => {
+          closed = true;
+        },
+      },
+      action,
+      waitUntil: (p: Promise<unknown>) => {
+        waitUntilPromise = p;
+      },
+    };
+    for (const listener of listeners['notificationclick'] || []) {
+      listener(event);
+    }
+    if (waitUntilPromise) {
+      await waitUntilPromise;
+    }
+    return { closed };
+  };
+
   return {
     listeners,
     mockCache,
     mockCaches,
     mockFetch,
+    mockShowNotification,
+    mockOpenWindow,
+    mockMatchAll,
     dispatchFetch,
     dispatchInstall,
     dispatchActivate,
+    dispatchPush,
+    dispatchNotificationClick,
   };
 }
 
@@ -312,5 +374,136 @@ describe('PR117-H02 / D03: Service Worker Runtime Execution (public/sw.js via no
     const safeRes = await sw.dispatchFetch(healthRequest);
     expect(safeRes).toBeNull();
     expect(sw.mockCache.put).not.toHaveBeenCalled();
+  });
+});
+
+describe('T-202: Service Worker Push & NotificationClick Handlers (DoD Fase RED)', () => {
+  let sw: SWContext;
+
+  beforeEach(() => {
+    sw = createSWInstance();
+  });
+
+  it('DoD: notificationclick abre un destino incorrecto (debe fallar si no abre la URL esperada del payload o abre destino incorrecto)', async () => {
+    // Al recibir un click sobre una notificación de viaje, debe abrir /trips/[id]
+    const targetUrl = 'https://cadeapp.ar/trips/10000000-0000-4000-8000-000000000001';
+    const clickResult = await sw.dispatchNotificationClick({
+      url: targetUrl,
+      event: 'offer_accepted',
+    });
+
+    // Debe cerrar la notificación
+    expect(clickResult.closed, 'notificationclick debe cerrar la notificación').toBe(true);
+
+    // Debe abrir la ventana con el destino exacto (o hacer focus en cliente existente)
+    expect(sw.mockOpenWindow, 'Debe invocar openWindow con el destino exacto').toHaveBeenCalledWith(targetUrl);
+  });
+
+  it('DoD: push procesa eventos sin leer datos personales y muestra notificación', async () => {
+    // Payload estricto sin PII
+    const pushPayload = {
+      event: 'request_published',
+      requestId: '10000000-0000-4000-8000-000000000001',
+    };
+
+    await sw.dispatchPush(pushPayload);
+
+    // Debe invocar showNotification sin PII en title ni body
+    expect(sw.mockShowNotification, 'El service worker debe escuchar el evento push y mostrar notificación').toHaveBeenCalledWith(
+      expect.stringMatching(/solicitud|envío/i),
+      expect.objectContaining({
+        icon: expect.stringContaining('icon'),
+        data: expect.objectContaining({
+          url: expect.stringContaining('/courier/feed'),
+        }),
+      })
+    );
+  });
+
+  it('DoD: los handlers se registran desde el service worker de T-201 sin duplicarse', () => {
+    // Verificar que existen los listeners de push y notificationclick en el SW
+    const pushListeners = sw.listeners['push'] || [];
+    const clickListeners = sw.listeners['notificationclick'] || [];
+
+    expect(pushListeners.length, 'Debe registrar exactamente 1 listener para push').toBe(1);
+    expect(clickListeners.length, 'Debe registrar exactamente 1 listener para notificationclick').toBe(1);
+  });
+});
+
+
+describe('PR120-H06 / H11: public/sw.js valida el contrato T-203 (pushPayloadSchema)', () => {
+  const REQUEST_ID = '10000000-0000-4000-8000-000000000001';
+  const OFFER_ID = '20000000-0000-4000-8000-000000000002';
+  const FALLBACK_URL = 'https://cadeapp.ar/';
+  let sw: SWContext;
+
+  beforeEach(() => {
+    sw = createSWInstance();
+  });
+
+  async function pushAndGetUrl(payload: unknown): Promise<unknown> {
+    await sw.dispatchPush(payload);
+    expect(sw.mockShowNotification).toHaveBeenCalledTimes(1);
+    const options = sw.mockShowNotification.mock.calls[0]?.[1] as { data?: { url?: unknown } };
+    return options.data?.url;
+  }
+
+  it.each([
+    [{ event: 'request_published', requestId: REQUEST_ID }, 'https://cadeapp.ar/courier/feed'],
+    [
+      { event: 'offer_submitted', requestId: REQUEST_ID, offerId: OFFER_ID },
+      `https://cadeapp.ar/merchant/requests/${REQUEST_ID}`,
+    ],
+    [
+      { event: 'offer_accepted', requestId: REQUEST_ID, offerId: OFFER_ID },
+      `https://cadeapp.ar/trips/${REQUEST_ID}`,
+    ],
+    [{ event: 'request_cancelled', requestId: REQUEST_ID }, 'https://cadeapp.ar/courier/feed'],
+    [{ event: 'request_expired', requestId: REQUEST_ID }, 'https://cadeapp.ar/courier/feed'],
+  ])('evento válido %o → URL exacta %s', async (payload, expectedUrl) => {
+    expect(await pushAndGetUrl(payload)).toBe(expectedUrl);
+  });
+
+  it('offer_submitted sin offerId → fallback', async () => {
+    expect(await pushAndGetUrl({ event: 'offer_submitted', requestId: REQUEST_ID })).toBe(FALLBACK_URL);
+  });
+
+  it('offer_accepted sin offerId → fallback', async () => {
+    expect(await pushAndGetUrl({ event: 'offer_accepted', requestId: REQUEST_ID })).toBe(FALLBACK_URL);
+  });
+
+  it('offerId inválido → fallback', async () => {
+    expect(
+      await pushAndGetUrl({ event: 'offer_accepted', requestId: REQUEST_ID, offerId: 'not-a-uuid' })
+    ).toBe(FALLBACK_URL);
+  });
+
+  it.each(['recipient_name', 'phone', 'street_address', 'dni'])(
+    'payload con clave extra de PII %s → fallback',
+    async (piiKey) => {
+      const url = await pushAndGetUrl({
+        event: 'request_published',
+        requestId: REQUEST_ID,
+        [piiKey]: 'dato sensible',
+      });
+      expect(url).toBe(FALLBACK_URL);
+      const [title, options] = sw.mockShowNotification.mock.calls[0] as [string, unknown];
+      expect(JSON.stringify({ title, options })).not.toContain('dato sensible');
+    }
+  );
+
+  it('evento desconocido → fallback', async () => {
+    expect(await pushAndGetUrl({ event: 'trip_hacked', requestId: REQUEST_ID })).toBe(FALLBACK_URL);
+  });
+
+  it('array → fallback', async () => {
+    expect(await pushAndGetUrl([{ event: 'request_published', requestId: REQUEST_ID }])).toBe(
+      FALLBACK_URL
+    );
+  });
+
+  it('sigue habiendo exactamente 1 listener push y 1 notificationclick', () => {
+    expect(sw.listeners['push']?.length).toBe(1);
+    expect(sw.listeners['notificationclick']?.length).toBe(1);
   });
 });

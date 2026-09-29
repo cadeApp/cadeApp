@@ -1,5 +1,8 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Bell } from 'lucide-react';
 import { createClient } from '@/server/supabase/server';
+import { PUSH_COPY } from '@/features/notifications';
 import {
   CourierProfileView,
   combineDniDocumentStatus,
@@ -79,5 +82,26 @@ export default async function CourierProfilePage() {
     courierStatus: courier.status,
   };
 
-  return <CourierProfileView profile={profileData} />;
+  return (
+    <div className="relative mx-auto flex w-full max-w-md flex-col pb-8">
+      <CourierProfileView profile={profileData} />
+      <div className="px-4 mt-2">
+        <Link
+          href="/courier/profile/notifications"
+          className="flex w-full items-center justify-between rounded-xl border border-border/40 bg-card p-4 text-foreground shadow-xs transition-colors hover:bg-muted/40"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Bell className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold">{PUSH_COPY.profileLink.title}</p>
+              <p className="text-sm text-muted-foreground">{PUSH_COPY.profileLink.description}</p>
+            </div>
+          </div>
+          <span className="text-sm font-medium text-primary">{PUSH_COPY.profileLink.action}</span>
+        </Link>
+      </div>
+    </div>
+  );
 }

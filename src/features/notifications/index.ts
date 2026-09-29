@@ -25,3 +25,25 @@ export const loadNotFoundView = () =>
   import('./offline/not-found-view').then((module) => ({
     default: module.NotFoundView,
   }));
+
+// D02: Exportación autorizada para T02 (Push Notifications)
+export {
+  PushPermissionPrompt,
+  type PushPermissionPromptProps,
+} from './push/components/push-permission-prompt';
+
+export { PUSH_COPY } from './push/copy';
+
+export const loadPushPermissionPrompt = () =>
+  import('./push/components/push-permission-prompt').then((module) => ({
+    default: module.PushPermissionPrompt,
+  }));
+
+export {
+  requestNotificationPermission,
+  subscribeToPush,
+  unsubscribeFromPush,
+  isPushSupported,
+  getNotificationPermission,
+  getPushSubscription,
+} from './push/subscription';
