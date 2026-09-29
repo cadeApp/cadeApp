@@ -220,7 +220,7 @@ export function RequestOffersList({
             type="button"
             aria-pressed={sortOrder === 'doc_level'}
             onClick={() => setSortOrder('doc_level')}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`min-h-12 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               sortOrder === 'doc_level'
                 ? 'bg-card text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
@@ -232,7 +232,7 @@ export function RequestOffersList({
             type="button"
             aria-pressed={sortOrder === 'price'}
             onClick={() => setSortOrder('price')}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`min-h-12 inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               sortOrder === 'price'
                 ? 'bg-card text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'

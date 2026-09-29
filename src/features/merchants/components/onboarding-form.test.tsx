@@ -259,4 +259,10 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
     const gpsButtons = screen.getAllByRole('button', { name: /usar mi ubicación actual/i });
     expect(gpsButtons).toHaveLength(1);
   });
+
+  it('el input de teléfono de contacto declara inputmode="tel"', () => {
+    render(<MerchantOnboardingForm zones={mockZones} />);
+    const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
+    expect(phoneInput.getAttribute('inputmode')).toBe('tel');
+  });
 });

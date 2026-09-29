@@ -330,10 +330,10 @@ export function VehicleForm({
                 </div>
                 <label
                   htmlFor="upload-license"
-                  className="flex h-10 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-muted"
+                  className="flex h-12 min-h-12 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-muted"
                 >
                   {uploadingOptional.license ? (
-                    <RotateCw className="h-4 w-4 animate-spin text-primary" />
+                    <RotateCw className="h-4 w-4 text-primary" />
                   ) : optionalDocs.license ? (
                     <span className="text-success">{COURIER_ONBOARDING_COPY.btnUploaded}</span>
                   ) : (
@@ -368,10 +368,10 @@ export function VehicleForm({
                 </div>
                 <label
                   htmlFor="upload-insurance"
-                  className="flex h-10 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-muted"
+                  className="flex h-12 min-h-12 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-muted"
                 >
                   {uploadingOptional.insurance ? (
-                    <RotateCw className="h-4 w-4 animate-spin text-primary" />
+                    <RotateCw className="h-4 w-4 text-primary" />
                   ) : optionalDocs.insurance ? (
                     <span className="text-success">{COURIER_ONBOARDING_COPY.btnUploaded}</span>
                   ) : (
@@ -469,7 +469,7 @@ export function VehicleForm({
           >
             {isSubmitting ? (
               <>
-                <RotateCw className="h-4 w-4 animate-spin" />
+                <RotateCw className="h-4 w-4" />
                 <span>{COURIER_ONBOARDING_COPY.btnSubmitting}</span>
               </>
             ) : (

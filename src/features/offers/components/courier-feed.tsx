@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
-import { EmptyState } from '@/ui/empty-state';
 import { AvailabilitySwitch } from '@/features/availability';
 import { Radio, AlertCircle } from 'lucide-react';
 import { OFFERS_COPY } from '../copy';
@@ -14,11 +13,17 @@ import dynamic from 'next/dynamic';
 import { UnderReview } from './under-review';
 import { RequestCard } from './request-card';
 import type { OfferSheetProps } from './offer-sheet';
+import type { EmptyStateProps } from '@/ui/empty-state';
 import { FeedSkeleton } from './feed-skeleton';
 import { useAvailableRequests } from '../hooks/use-available-requests';
 import { useOfflineStatus } from '@/features/notifications';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
+
+const EmptyState = dynamic<EmptyStateProps>(
+  () => import('@/ui/empty-state').then((mod) => mod.EmptyState),
+  { ssr: false }
+);
 
 const OfferSheet = dynamic<OfferSheetProps>(
   () => import('./offer-sheet').then((mod) => mod.OfferSheet),
@@ -128,7 +133,6 @@ export function CourierFeed({
           {available && (
             <Badge variant="published" className="flex items-center gap-1 text-sm">
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary-dark" />
               </span>
               {OFFERS_COPY.liveBadge}
@@ -146,9 +150,9 @@ export function CourierFeed({
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <Radio className="h-6 w-6" aria-hidden="true" />
           </div>
-          <h3 className="mb-1 font-display text-base font-bold text-foreground">
+          <h2 className="mb-1 font-display text-base font-bold text-foreground">
             {OFFERS_COPY.unavailableAlertTitle}
-          </h3>
+          </h2>
           <p className="text-sm text-muted-foreground">{OFFERS_COPY.unavailableAlertDescription}</p>
         </Card>
       )}

@@ -4,7 +4,7 @@ import React from 'react';
 import type { TripDetails } from '../types';
 import { TripRouteMap } from './trip-route-map';
 import { Button } from '@/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/card';
+import { Card, CardContent, CardHeader } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import {
   buildNotifyCustomerWhatsAppMessage,
@@ -89,7 +89,7 @@ export function TripMerchantView({
           {isDelivered ? (
             <CheckCircle2 className="h-4 w-4 text-primary" />
           ) : (
-            <Clock className="h-4 w-4 animate-pulse text-primary" />
+            <Clock className="h-4 w-4 text-primary" />
           )}
           <span>Retirado</span>
         </div>
@@ -102,10 +102,10 @@ export function TripMerchantView({
 
       <Card className="border-border bg-card shadow-card">
         <CardHeader className="p-4 pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-bold text-foreground">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-foreground">
             <User className="h-4 w-4 text-primary" />
             Repartidor asignado
-          </CardTitle>
+          </h2>
         </CardHeader>
         <CardContent className="space-y-3 p-4 pt-0">
           <div className="flex items-center justify-between gap-3">
@@ -190,7 +190,7 @@ export function TripMerchantView({
       <Card className="border-primary/20 bg-primary/5 shadow-card">
         <CardContent className="space-y-3 p-4">
           <div>
-            <h4 className="text-sm font-bold text-foreground">Avisale a tu cliente</h4>
+            <h2 className="text-sm font-bold text-foreground">Avisale a tu cliente</h2>
             <p className="text-sm text-muted-foreground">
               Destinatario: <strong className="text-foreground">{trip.recipientName}</strong>
             </p>

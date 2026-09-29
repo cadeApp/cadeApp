@@ -192,6 +192,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             <Input
               id="phone"
               type="tel"
+              inputMode="tel"
               {...register('phone')}
               placeholder={merchantCopy.onboarding.phonePlaceholder}
               aria-invalid={Boolean(errors.phone)}

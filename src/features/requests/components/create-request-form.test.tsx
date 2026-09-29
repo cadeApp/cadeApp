@@ -256,4 +256,19 @@ describe('T-112: CreateRequestForm', () => {
     );
     expect(dropoffAddressInputMatch).toHaveLength(1);
   });
+
+  it('los inputs de teléfono y cambio numérico declaran inputmode adecuado ("tel" y "numeric")', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    // 1. Teléfono del destinatario: inputmode="tel"
+    const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
+    expect(phoneInput.getAttribute('inputmode')).toBe('tel');
+
+    // 2. Activar cambio en efectivo para desplegar input libre de cambio
+    const yesChangeBtn = screen.getByRole('button', { name: /^sí$/i });
+    fireEvent.click(yesChangeBtn);
+
+    const customChangeInput = screen.getByPlaceholderText('Otro monto en efectivo');
+    expect(customChangeInput.getAttribute('inputmode')).toBe('numeric');
+  });
 });

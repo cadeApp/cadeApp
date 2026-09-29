@@ -7,8 +7,13 @@ import dynamic from 'next/dynamic';
 import { Card, CardContent } from '@/ui/card';
 import { Button } from '@/ui/button';
 import { Badge } from '@/ui/badge';
-import { EmptyState } from '@/ui/empty-state';
+import type { EmptyStateProps } from '@/ui/empty-state';
 import type { ConfirmDialogProps } from '@/ui/dialog';
+
+const EmptyState = dynamic<EmptyStateProps>(
+  () => import('@/ui/empty-state').then((mod) => mod.EmptyState),
+  { ssr: false }
+);
 
 const ConfirmDialog = dynamic<ConfirmDialogProps>(
   () => import('@/ui/dialog').then((mod) => mod.ConfirmDialog),
@@ -75,7 +80,7 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
         <button
           type="button"
           onClick={() => setActiveTab('pending')}
-          className={`min-h-10 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-12 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'pending'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -86,7 +91,7 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
         <button
           type="button"
           onClick={() => setActiveTab('accepted')}
-          className={`min-h-10 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-12 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'accepted'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
@@ -97,7 +102,7 @@ export function MyOffersList({ initialOffers }: MyOffersListProps) {
         <button
           type="button"
           onClick={() => setActiveTab('other')}
-          className={`min-h-10 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`min-h-12 rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
             activeTab === 'other'
               ? 'bg-card text-foreground shadow-sm'
               : 'text-muted-foreground hover:text-foreground'
