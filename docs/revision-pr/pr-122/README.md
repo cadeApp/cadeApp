@@ -1,39 +1,45 @@
 # Revisión PR #122 — T-205
 
-> La revisión descartada original sigue fuera de vigencia. **Ronda 7** registra la decisión explícita de P1 sobre H03 y revisa CI final del HEAD actual.
+> La revisión descartada original sigue fuera de vigencia. **Ronda 8** verifica la corrección de R08 y cierra la revisión sin bloqueantes.
 
 - **PR:** #122 — `[T-205] Pasada de accesibilidad y rendimiento en las pantallas de comercio y repartidor`
 - **Rama:** `feat/T-205-accesibilidad-rendimiento`
 - **Base:** `develop@ae514947a467de4bd2f4e8deb96aff542a3e79c3`
-- **HEAD revisado:** `014f82f2c0fbf5c418964f07ef8189b4a0d77d14`
-- **Ronda vigente:** 7
-- **Resultado:** **CON BLOQUEANTE (1)**
-- **CI:** revisado porque H03 dejó de bloquear por decisión explícita de P1.
-
-## Decisión P1 — H03
-
-Lautaro073 eligió la opción B: la verificación que requiere entorno real se completa **post-merge en staging**.
-
-La decisión está respaldada por el plan actual:
-
-- **T-300 / #96:** checkpoint obligatorio `develop → staging`, migraciones, deployment y `/api/health`.
-- **T-301:** arnés E2E en staging, bloqueado por T-300.
-- **T-309 / #41:** E2E de accesibilidad en staging; su DoD incluye **axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding**.
-
-Lighthouse no está asignado expresamente en T-309, así que queda como residual explícito de H03 para ejecutarse en staging antes del release; no se afirma como verificado.
-
-Estado de H03: **aceptado por decisión P1**, no `arreglado-verificado`.
+- **HEAD funcional revisado:** `01227903ec78a48df748491ef93725ae0648e2d9`
+- **Ronda vigente:** 8
+- **Resultado:** **SIN BLOQUEANTES**
+- **PR:** abierta, mergeable, 0 behind.
+- **CI #588:** verde en el SHA revisado.
 
 ## Estado vigente
 
 - H01 — arreglado-sin-verificar.
 - H02 — arreglado-sin-verificar.
-- H03 — **aceptado**: runtime diferido a staging por decisión P1.
+- H03 — **aceptado por decisión P1**: runtime diferido a staging; axe alineado con T-309 y Lighthouse residual previo al release.
 - H04 — arreglado-sin-verificar.
 - R01 — arreglado-sin-verificar.
 - R02 — arreglado-sin-verificar.
 - R03 — arreglado-sin-verificar.
 - R04–R07 anteriores — retirados por corrección del reviewer.
-- **R08 — abierto y bloqueante:** CI unit falla por el harness versionado que entró a la rama debido a una instrucción incorrecta del reviewer.
+- R08 — **arreglado-verificado** en `01227903...`: harness auxiliar eliminado, exports auxiliares retirados y CI completo verde.
 
-Detalle: `revisiones/ronda-7.md`.
+## CI final del SHA revisado
+
+- typecheck ✅
+- lint ✅
+- unit ✅ — 102 archivos / 1377 tests
+- db-tests ✅ — Files=12, Tests=1601, Result: PASS
+- audit ✅
+- build ✅
+- bundle-budget ✅
+
+En el alcance T-205 todas las rutas auditadas quedan bajo 180 kB:
+- courier: 157–173 kB
+- merchant: 147–164 kB
+- trip: 162 kB
+
+Los warnings de bundle restantes son rutas fuera del alcance de T-205.
+
+**Conclusión:** no quedan bloqueantes de revisión. No se aprueba ni mergea desde esta revisión; queda a decisión explícita de Lautaro073.
+
+Detalle: `revisiones/ronda-8.md`.

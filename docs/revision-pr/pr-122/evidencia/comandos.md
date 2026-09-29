@@ -128,3 +128,55 @@ pnpm lint
 Luego push normal y esperar CI completo.
 
 No crear un test nuevo, no editar `route-integrity.test.ts`, no bajar controles y no excluir `browser-audit` de la auditoría: el archivo auxiliar debe salir de la rama.
+
+## Ronda 8 — GREEN final
+
+SHA corregido: `01227903ec78a48df748491ef93725ae0648e2d9`.
+
+CI #588:
+
+```text
+typecheck       success
+lint            success
+unit            success
+db-tests        success
+audit           success
+build           success
+bundle-budget   success
+```
+
+Unit:
+
+```text
+src/app/route-integrity.test.ts  51 passed
+Test Files  102 passed (102)
+Tests       1377 passed (1377)
+```
+
+DB:
+
+```text
+Files=12, Tests=1601
+Result: PASS
+```
+
+Rutas T-205 dentro de presupuesto:
+
+```text
+/courier/feed                    157 kB
+/courier/offers                  157 kB
+/courier/onboarding/identity     173 kB
+/courier/onboarding/status       173 kB
+/courier/onboarding/vehicle      173 kB
+/courier/profile                 173 kB
+/courier/profile/notifications   105 kB
+/merchant/dashboard              164 kB
+/merchant/history                164 kB
+/merchant/onboarding             147 kB
+/merchant/plan                   156 kB
+/merchant/requests/[id]          164 kB
+/merchant/requests/new           164 kB
+/trips/[id]                      162 kB
+```
+
+Todos los valores del alcance T-205 son <= 180 kB.

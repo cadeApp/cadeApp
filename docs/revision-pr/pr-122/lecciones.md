@@ -14,3 +14,9 @@ Regla reforzada:
 2. staging residual se enlaza a tareas existentes;
 3. scripts auxiliares del reviewer nunca se versionan en producto;
 4. CI final se inspecciona job por job antes de declarar una PR lista.
+
+## Ronda 8
+
+- R08 queda **arreglado-verificado** en `01227903...`: el mismo control que estaba rojo pasó verde sin modificar el test.
+- La evidencia más fuerte para cerrar un hallazgo de CI es el mismo job canónico sobre el SHA corregido: `route-integrity` 51/51 y suite completa 1377/1377.
+- Para presupuestos por ruta, distinguir advertencias globales de las rutas realmente incluidas en la tarea; T-205 quedó por debajo de 180 kB en todo su alcance.
