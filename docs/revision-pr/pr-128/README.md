@@ -2,32 +2,38 @@
 
 - PR: #128 `[T-315] Deploy a Vercel desde GitHub Actions`
 - Rama: `feat/T-315-deploy-vercel`
-- SHA revisado: `f5a11f0f8f4e85e83f675c56afbef47b529a81d1`
-- Base: `develop@b659027f49a96762d020e23f159f898b2895d938`
-- Ronda actual: 1
-- Estado: **CON BLOQUEANTES (2)**
-- Decisiones de Lautaro073: D01 = 1-A; D02 = 2-A.
+- SHA revisado: `c2df5e6aafe12fdd0de6057455b0707a83645c4a`
+- Base observada al iniciar R2: `develop@ffded647be7445b33092ccc76d26e78430ec87dd`
+- Ronda actual: 2
+- Estado: **CON BLOQUEANTES (1)**
+- Decisiones: D01 = 1-A; D02 = 2-A.
 
 ## Resumen
 
-La implementación conserva el orden `migrate -> deploy`, fija Actions y Vercel CLI, usa el `head_sha` del run de migración, separa environments y ejecuta health después del deploy.
+- **PR128-H01 cerrado/verificado:** producción usa `workflow_run.actor.login`; volver a `triggering_actor` deja el control en RED.
+- **PR128-H02 parcial:** la batería del autor detecta las cuatro mutaciones pedidas en R1, pero la batería independiente de R2 encontró dos variantes todavía verdes:
+  1. comentar la línea activa de `vercel pull` conserva el texto buscado y el test pasa;
+  2. anteponer `!` a `curl --fail` invierte el exit del health y el test pasa.
 
-Quedan dos bloqueantes:
+La implementación productiva del SHA mantiene los comandos activos y el health sin negación. El bloqueante es el control de regresión exigido por el DoD.
 
-1. `deploy-production` usa `workflow_run.triggering_actor.login`, mientras T-315 exige el mismo criterio que `migrate-production`: el actor original que inició el run. Lautaro073 decidió 2-A: usar `workflow_run.actor.login`.
-2. Los tests nuevos no cubren propiedades que sus nombres/DoD dicen proteger. El harness independiente deja verdes las aserciones actuales al quitar `vercel pull`, al convertir el health en `... || true` y al hacer que el actor no autorizado termine con `exit 0`.
+PR128-A01 sigue aceptado.
 
-La ausencia previa de `docs/tasks/T-315.md` en develop se registró como desvío de proceso aceptado por decisión 1-A; no bloquea esta ronda.
+## Sincronización
+
+GitHub reportó `ahead 3 / behind 1`: `develop` avanzó a `ffded647` por CC-013 mientras se arreglaba R1. Ese commit no toca los archivos funcionales de T-315 y la PR figura mergeable, pero antes de R3 la rama debe incorporar `origin/develop` mediante merge, nunca rebase.
 
 ## Checks
 
-- Rama: HEAD coincide con el PR al iniciar y antes de cerrar la ronda.
-- Comparación con develop: ahead 1 / behind 0.
-- Comentarios/reviews previos: ninguno.
-- CI general: **no inspeccionado todavía**, porque hay bloqueantes y el procedimiento indica mirarlo recién cuando la ronda esté para aprobar.
-- Checkout local completo: no disponible en este entorno por resolución de red a github.com; no se presenta evidencia ajena como propia.
-- Mutaciones H02: reproducidas con harness independiente sobre el contenido exacto de `deploy.yml` y las aserciones nuevas del SHA revisado; ver `evidencia/comandos.md`.
+- El commit de arreglo toca solo `deploy.yml`, `verify-workflows.test.mjs` y `docs/tasks/log/T-315.md`; el autor no tocó `docs/revision-pr/**`.
+- La bitácora trae los cuatro RED pedidos y GREEN de la suite específica.
+- El autor declara typecheck/lint verdes y `pnpm test` local rojo por dos fallos fuera de T-315; no se promueve esa evidencia a verificación independiente.
+- CI general todavía no se inspecciona porque H02 sigue bloqueante.
+- El checkout completo volvió a fallar por DNS; la batería independiente se ejecutó en un harness aislado con las aserciones relevantes del SHA.
 
 ## Siguiente ronda
 
-Corregir H01 y H02 sin tocar la ficha ni `docs/revision-pr/**`; después revalidar las tres mutaciones en RED, los tests en GREEN y recién entonces inspeccionar CI del SHA corregido.
+1. Merge de `origin/develop`.
+2. Endurecer H02 validando líneas/comandos ejecutables, no presencia textual ni listas crecientes de sintaxis prohibida.
+3. RED con comentario de `vercel pull`, RED con `! curl --fail` y una tercera mutación distinta elegida por el autor.
+4. Con H02 cerrado, revalidar checks y recién entonces inspeccionar CI del SHA final.

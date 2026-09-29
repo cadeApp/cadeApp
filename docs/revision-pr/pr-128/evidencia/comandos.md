@@ -1,133 +1,106 @@
-# Evidencia reproducible — PR #128 / Ronda 1
+# Evidencia reproducible — PR #128
+
+## Ronda 1
 
 SHA revisado: `f5a11f0f8f4e85e83f675c56afbef47b529a81d1`.
 
-## Sincronización
+GitHub reportó `ahead 1 / behind 0`. La ficha T-315 no existía en develop y quedó aceptada por decisión 1-A.
 
-GitHub reportó:
+El checkout completo falló por DNS:
 
 ```
-base: develop@b659027f49a96762d020e23f159f898b2895d938
-head: f5a11f0f8f4e85e83f675c56afbef47b529a81d1
-ahead_by: 1
-behind_by: 0
+Could not resolve host: github.com
 ```
 
-La ficha `docs/tasks/T-315.md` consultada en `develop` devolvió 404; en la rama existe y fue agregada por este PR.
+Harness R1:
 
-## Limitación del entorno
-
-Se intentó un checkout independiente:
-
-```bash
-git clone https://github.com/cadeApp/cadeApp.git /tmp/cadeapp-pr128
+```
+baseline: GREEN
+remove vercel pull: GREEN
+health con || true: GREEN
+actor no autorizado con exit 0: GREEN
 ```
 
-Resultado:
+Eso originó H02.
+
+---
+
+## Ronda 2
+
+SHA revisado: `c2df5e6aafe12fdd0de6057455b0707a83645c4a`.
+
+### Sincronización
+
+```
+develop: ffded647be7445b33092ccc76d26e78430ec87dd
+merge-base: b659027f49a96762d020e23f159f898b2895d938
+head: c2df5e6aafe12fdd0de6057455b0707a83645c4a
+ahead_by: 3
+behind_by: 1
+mergeable: true
+```
+
+El nuevo commit de develop corresponde a CC-013 y no toca los archivos funcionales de T-315.
+
+### Limitación del entorno
+
+Se volvió a intentar un clone limpio y falló con:
 
 ```
 fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/':
 Could not resolve host: github.com
 ```
 
-Por eso no se atribuyen como propios `pnpm typecheck/lint/test` ni los checks declarados por el autor. El CI general tampoco se inspecciona en esta ronda porque hay bloqueantes.
+Por eso no se atribuyen como propios los checks generales declarados por el autor.
 
-## Harness independiente para PR128-H02
+### Batería independiente R2
 
-El harness reproduce exactamente las aserciones nuevas relevantes de `verify-workflows.test.mjs` contra el contenido de `deploy.yml` del SHA revisado y luego aplica tres mutaciones.
+La revisión reprodujo las aserciones relevantes de `job()`, `step()`, secuencia, actor y health sobre el workflow del SHA y aplicó mutaciones distintas de las usadas por el autor.
 
-```python
-import re
-
-def job(yaml, name):
-    normalized = yaml.replace("\r\n", "\n")
-    start = normalized.index(f"\n  {name}:\n")
-    tail = normalized[start + 1:]
-    header_len = len(f"  {name}:\n")
-    match = re.search(r"\n {2}[\w-]+:\n", tail[header_len:])
-    return normalized[start:] if not match else normalized[start:start + 1 + header_len + match.start()]
-
-def current_new_tests(yaml):
-    assert re.search(r"workflow_run:\n\s+workflows: \[migrate\]\n\s+types: \[completed\]", yaml)
-    assert re.search(r"branches: \[staging, main\]", yaml)
-
-    for name in ("staging", "production"):
-        body = job(yaml, name)
-        assert "github.event.workflow_run.conclusion == 'success'" in body
-        assert "github.event.workflow_run.event == 'push'" in body
-        assert "ref: ${{ github.event.workflow_run.head_sha }}" in body
-
-    assert "concurrency:" in yaml
-    assert re.search(r"cancel-in-progress:\s*false", yaml)
-
-    staging = job(yaml, "staging")
-    production = job(yaml, "production")
-    assert "head_branch == 'staging'" in staging
-    assert re.search(r"^\s+environment: staging$", staging, re.M)
-    assert "head_branch == 'main'" in production
-    assert re.search(r"^\s+environment: production$", production, re.M)
-
-    for match in re.finditer(r"pnpm dlx (vercel\S*)", yaml):
-        assert match.group(1) == "vercel@61.0.0"
-
-    for body in (staging, production):
-        assert re.search(r"vercel@61\.0\.0 build --prod", body)
-        assert re.search(r"vercel@61\.0\.0 deploy --prebuilt --prod", body)
-
-    assert not re.search(r"if:.*github\.actor", production)
-    assert re.search(
-        r"TRIGGERING_ACTOR: \$\{\{ github\.event\.workflow_run\.triggering_actor\.login \}\}",
-        production,
-    )
-    assert "\"$TRIGGERING_ACTOR\" != 'Lautaro073'" in production
-
-    for name in ("staging", "production"):
-        body = job(yaml, name)
-        deploy_index = body.index("deploy --prebuilt --prod")
-        health_index = body.index('"$APP_URL/api/health"')
-        assert deploy_index < health_index
-        assert re.search(r"curl --fail", body)
-
-# DEPLOY contiene el texto exacto de .github/workflows/deploy.yml del SHA revisado.
-current_new_tests(DEPLOY)
-
-m1 = DEPLOY.replace(
-    '          pnpm dlx vercel@61.0.0 pull --yes --environment=production --token="$VERCEL_TOKEN"\n',
-    '',
-)
-current_new_tests(m1)
-
-m2 = DEPLOY.replace(
-    '--max-time 15 "$APP_URL/api/health"',
-    '--max-time 15 "$APP_URL/api/health" || true',
-)
-current_new_tests(m2)
-
-m3 = DEPLOY.replace(
-    "            echo '::error::El deploy de production requiere un release iniciado por Lautaro073.'\n            exit 1",
-    "            echo '::error::El deploy de production requiere un release iniciado por Lautaro073.'\n            exit 0",
-)
-current_new_tests(m3)
-```
-
-Salida observada:
+Salida:
 
 ```
 baseline: GREEN
-M1 remove vercel pull: GREEN
-M2 health ignores failure: GREEN
-M3 unauthorized actor exits 0: GREEN
+M1 comment out staging pull: GREEN
+M2 invert staging health with !: GREEN
+M3 actor back to triggering_actor: RED
 ```
 
-Esto demuestra el hueco del instrumento: las tres implementaciones rotas siguen satisfaciendo las aserciones actuales.
+M1:
 
-## RED que debe producir el arreglo
+```
+pnpm dlx vercel@61.0.0 pull ...
+->
+# pnpm dlx vercel@61.0.0 pull ...
+```
 
-Después de endurecer `verify-workflows.test.mjs`, ejecutar por separado:
+El control sigue GREEN porque `indexOf` encuentra el texto dentro del comentario.
 
-1. borrar solo la línea `vercel@61.0.0 pull --yes --environment=production ...` de ambos jobs → el test de secuencia debe fallar;
-2. agregar `|| true` al comando de health → el test de health debe fallar;
-3. cambiar a `exit 0` la rama de actor no autorizado → el test de compuerta debe fallar;
-4. cambiar `workflow_run.actor.login` de vuelta a `workflow_run.triggering_actor.login` → el test de identidad debe fallar.
+M2:
 
-Restaurar cada mutación antes de aplicar la siguiente. No se aceptan tests creados/adulterados para hacer verde la implementación.
+```
+curl --fail ... "$APP_URL/api/health"
+->
+! curl --fail ... "$APP_URL/api/health"
+```
+
+El control sigue GREEN aunque la negación invierte el estado de salida y rompe la propiedad de “fallar el job”.
+
+M3:
+
+```
+workflow_run.actor.login
+->
+workflow_run.triggering_actor.login
+```
+
+El control queda RED; esto verifica H01.
+
+### RED exigido para la próxima ronda
+
+1. comentar una sola línea activa de `vercel pull` debe poner RED el test de secuencia;
+2. anteponer `!` a un solo `curl --fail` debe poner RED el test de health;
+3. el autor debe agregar una mutación propia distinta que vuelva no ejecutable `pull/build/deploy` o absorba/invierta el fallo del health;
+4. baseline restaurado debe quedar GREEN.
+
+El arreglo no debe limitarse a sumar más strings prohibidos: tiene que comprobar positivamente que los comandos son líneas ejecutables y que el health propaga su exit.
