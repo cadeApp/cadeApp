@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Bell } from 'lucide-react';
 import { createClient } from '@/server/supabase/server';
-import { PUSH_COPY } from '@/features/notifications';
 import {
   CourierProfileView,
   combineDniDocumentStatus,
@@ -10,6 +9,7 @@ import {
   type DocumentReviewStatus,
   type CourierReviewStatus,
 } from '@/features/courier-onboarding';
+
 
 export default async function CourierProfilePage() {
   const supabase = await createClient();
@@ -95,11 +95,11 @@ export default async function CourierProfilePage() {
               <Bell className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="text-left">
-              <p className="text-sm font-semibold">{PUSH_COPY.profileLink.title}</p>
-              <p className="text-sm text-muted-foreground">{PUSH_COPY.profileLink.description}</p>
+              <p className="text-sm font-semibold">Notificaciones y avisos</p>
+              <p className="text-sm text-muted-foreground">Configurá las alertas instantáneas de pedidos</p>
             </div>
           </div>
-          <span className="text-sm font-medium text-primary">{PUSH_COPY.profileLink.action}</span>
+          <span className="text-sm font-medium text-primary">Configurar →</span>
         </Link>
       </div>
     </div>

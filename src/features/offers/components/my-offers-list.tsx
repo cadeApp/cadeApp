@@ -7,8 +7,13 @@ import dynamic from 'next/dynamic';
 import { Card, CardContent } from '@/ui/card';
 import { Button } from '@/ui/button';
 import { Badge } from '@/ui/badge';
-import { EmptyState } from '@/ui/empty-state';
+import type { EmptyStateProps } from '@/ui/empty-state';
 import type { ConfirmDialogProps } from '@/ui/dialog';
+
+const EmptyState = dynamic<EmptyStateProps>(
+  () => import('@/ui/empty-state').then((mod) => mod.EmptyState),
+  { ssr: false }
+);
 
 const ConfirmDialog = dynamic<ConfirmDialogProps>(
   () => import('@/ui/dialog').then((mod) => mod.ConfirmDialog),

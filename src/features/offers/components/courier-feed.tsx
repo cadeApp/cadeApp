@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { Badge } from '@/ui/badge';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
-import { EmptyState } from '@/ui/empty-state';
 import { AvailabilitySwitch } from '@/features/availability';
 import { Radio, AlertCircle } from 'lucide-react';
 import { OFFERS_COPY } from '../copy';
@@ -14,11 +13,17 @@ import dynamic from 'next/dynamic';
 import { UnderReview } from './under-review';
 import { RequestCard } from './request-card';
 import type { OfferSheetProps } from './offer-sheet';
+import type { EmptyStateProps } from '@/ui/empty-state';
 import { FeedSkeleton } from './feed-skeleton';
 import { useAvailableRequests } from '../hooks/use-available-requests';
 import { useOfflineStatus } from '@/features/notifications';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
+
+const EmptyState = dynamic<EmptyStateProps>(
+  () => import('@/ui/empty-state').then((mod) => mod.EmptyState),
+  { ssr: false }
+);
 
 const OfferSheet = dynamic<OfferSheetProps>(
   () => import('./offer-sheet').then((mod) => mod.OfferSheet),

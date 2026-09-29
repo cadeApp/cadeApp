@@ -18,14 +18,20 @@ import {
 import { Card } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { Button, buttonVariants } from '@/ui/button';
-import { EmptyState } from '@/ui/empty-state';
 import { BrandLogo } from '@/ui/brand-logo';
 import { cn } from '@/ui/cn';
-import { logoutCourierAction } from '../actions';
-import type { Database } from '@/types/database.types';
+import { logoutAction } from '@/features/auth';
+import {
+  type DocumentReviewStatus,
+  type CourierReviewStatus,
+  combineDniDocumentStatus,
+} from '../schemas';
 
-export type DocumentReviewStatus = Database['public']['Enums']['document_review_status'];
-export type CourierReviewStatus = Database['public']['Enums']['courier_status'];
+export {
+  type DocumentReviewStatus,
+  type CourierReviewStatus,
+  combineDniDocumentStatus,
+};
 
 export interface CourierProfileData {
   readonly displayName: string;
@@ -37,22 +43,6 @@ export interface CourierProfileData {
   readonly licenseStatus: DocumentReviewStatus;
   readonly insuranceStatus: DocumentReviewStatus;
   readonly courierStatus: CourierReviewStatus;
-}
-
-export function combineDniDocumentStatus(
-  dniFront: DocumentReviewStatus,
-  dniBack: DocumentReviewStatus
-): DocumentReviewStatus {
-  if (dniFront === 'rejected' || dniBack === 'rejected') {
-    return 'rejected';
-  }
-  if (dniFront === 'verified' && dniBack === 'verified') {
-    return 'verified';
-  }
-  if (dniFront === 'submitted' || dniBack === 'submitted') {
-    return 'submitted';
-  }
-  return 'none';
 }
 
 export function getDocumentStatusPresentation(status: DocumentReviewStatus) {
@@ -146,7 +136,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await logoutCourierAction();
+      await logoutAction();
       router.push('/login');
     } catch {
       setIsLoggingOut(false);
@@ -165,11 +155,24 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           </p>
         </div>
 
-        <EmptyState
-          icon={<User className="h-6 w-6 text-muted-foreground" aria-hidden="true" />}
-          title="Todavía no completaste tu legajo de repartidor"
-          description="Subí tu documento, selfie y tipo de movilidad para iniciar la revisión."
-        />
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-6 text-center shadow-card"
+        >
+          <div
+            className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-primary-dark"
+            aria-hidden="true"
+          >
+            <User className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+          </div>
+          <h2 className="font-display text-base font-bold text-foreground">
+            Todavía no completaste tu legajo de repartidor
+          </h2>
+          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+            Subí tu documento, selfie y tipo de movilidad para iniciar la revisión.
+          </p>
+        </div>
         <div className="flex justify-center">
           <Link
             href="/courier/onboarding/identity"

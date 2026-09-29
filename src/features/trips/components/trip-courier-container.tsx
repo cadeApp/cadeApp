@@ -1,10 +1,16 @@
 'use client';
 
 import React, { useState, useTransition } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import type { TripDetails } from '../types';
 import { TripCourierView } from './trip-courier-view';
-import { TripCancelDialog } from './trip-cancel-dialog';
+import type { TripCancelDialogProps } from './trip-cancel-dialog';
+
+const TripCancelDialog = dynamic<TripCancelDialogProps>(
+  () => import('./trip-cancel-dialog').then((mod) => mod.TripCancelDialog),
+  { ssr: false }
+);
 import {
   markTripPickedUpAction,
   markTripDeliveredAction,

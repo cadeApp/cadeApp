@@ -290,7 +290,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               size="sm"
               onClick={handleUseMyLocationPickup}
               disabled={pickupLocating}
-              className="min-h-[44px] gap-2 text-sm"
+              className="min-h-12 gap-2 text-sm"
             >
               <Navigation
                 className={cn('h-4 w-4 text-primary-dark', pickupLocating && 'animate-spin')}
@@ -467,6 +467,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                   <Input
                     id="recipient-phone"
                     type="tel"
+                    inputMode="tel"
                     {...register('recipientPhone')}
                     placeholder={copy.recipientPhonePlaceholder}
                     maxLength={30}
@@ -616,7 +617,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                         setValue('cashChangeAmount', 2000, { shouldValidate: true });
                       }
                     }}
-                    className="min-h-[44px] min-w-[60px] text-sm"
+                    className="min-h-12 min-w-[60px] text-sm"
                   >
                     Sí
                   </Button>
@@ -629,7 +630,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                       setValue('cashChangeAmount', null, { shouldValidate: true });
                       setCustomChangeInput('');
                     }}
-                    className="min-h-[44px] min-w-[60px] text-sm"
+                    className="min-h-12 min-w-[60px] text-sm"
                   >
                     No
                   </Button>
@@ -651,7 +652,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
                           type="button"
                           onClick={() => handlePresetChangeAmount(preset)}
                           className={cn(
-                            'min-h-[44px] rounded-full border px-4 py-2 text-sm font-semibold transition-colors',
+                            'min-h-12 rounded-full border px-4 py-2 text-sm font-semibold transition-colors',
                             isSelected
                               ? 'border-primary bg-primary text-primary-foreground shadow-sm'
                               : 'border-border bg-card text-foreground hover:bg-muted'

@@ -71,3 +71,24 @@ export const courierOnboardingSchema = z
   });
 
 export type CourierOnboardingInput = z.infer<typeof courierOnboardingSchema>;
+
+import type { Database } from '@/types/database.types';
+
+export type DocumentReviewStatus = Database['public']['Enums']['document_review_status'];
+export type CourierReviewStatus = Database['public']['Enums']['courier_status'];
+
+export function combineDniDocumentStatus(
+  dniFront: DocumentReviewStatus,
+  dniBack: DocumentReviewStatus
+): DocumentReviewStatus {
+  if (dniFront === 'rejected' || dniBack === 'rejected') {
+    return 'rejected';
+  }
+  if (dniFront === 'verified' && dniBack === 'verified') {
+    return 'verified';
+  }
+  if (dniFront === 'submitted' || dniBack === 'submitted') {
+    return 'submitted';
+  }
+  return 'none';
+}

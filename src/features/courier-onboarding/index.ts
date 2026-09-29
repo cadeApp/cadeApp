@@ -1,23 +1,24 @@
-'use client';
-
 import dynamic from 'next/dynamic';
 import type { IdentityFormProps } from './components/identity-form';
 import type { VehicleFormProps } from './components/vehicle-form';
 
-export type * from './schemas';
+export * from './schemas';
 export * from './copy';
-export * from './upload-manager';
-export type { IdentityFormProps, VehicleFormProps };
-export * from './components/step-indicator';
-export * from './components/status-view';
-export * from './components/courier-profile-view';
+export { StepIndicator, type StepIndicatorProps } from './components/step-indicator';
+export { StatusView, type StatusViewProps } from './components/status-view';
+export {
+  CourierProfileView,
+  getDocumentStatusPresentation,
+  type CourierProfileData,
+} from './components/courier-profile-view';
 
 export const IdentityForm = dynamic<IdentityFormProps>(
-  () => import('./components/identity-form').then((mod) => mod.IdentityForm),
-  { ssr: false }
+  () => import('./components/identity-form').then((mod) => mod.IdentityForm)
 );
+export type { IdentityFormProps };
 
 export const VehicleForm = dynamic<VehicleFormProps>(
-  () => import('./components/vehicle-form').then((mod) => mod.VehicleForm),
-  { ssr: false }
+  () => import('./components/vehicle-form').then((mod) => mod.VehicleForm)
 );
+export type { VehicleFormProps };
+

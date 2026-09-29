@@ -208,7 +208,7 @@ export function OfferSheet({
                   key={chipAmount}
                   type="button"
                   onClick={() => handleChipClick(chipAmount)}
-                  className="inline-flex min-h-10 items-center justify-center rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex min-h-12 items-center justify-center rounded-lg border border-border bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {formatArs(chipAmount)}
                 </button>
