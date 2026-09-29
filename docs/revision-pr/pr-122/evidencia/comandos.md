@@ -1,121 +1,189 @@
-# Evidencia y reproducciones — PR #122 — Ronda 1 vigente
+# Evidencia y reproducciones — PR #122
 
-**SHA funcional inspeccionado:** `5ff06783a0b70558c03d05d91c9b55dd7d1c2b3a`.
+## Ronda 1 — SHA `5ff06783a0b70558c03d05d91c9b55dd7d1c2b3a`
 
-> Esta revisión se hizo contra el contenido exacto del SHA mediante el conector GitHub. El entorno actual no tiene checkout ejecutable del repo, por lo que los comandos de shell de esta sección son la batería que debe reproducirse en el worktree; no se registran falsamente como ejecutados por el revisor.
+La Ronda 1 vigente detectó:
 
-## Estado comprobado
+- targets de 40 px en `MyOffersList`;
+- salto `h1 -> h3` en `CourierFeed`;
+- animaciones directas sin control de reduced motion;
+- tests de DoD con cobertura sobredeclarada / proxy falso de bundle;
+- criterios de aceptación marcados completos sin evidencia de Lighthouse/axe/browser/capturas;
+- SHA inexistente en bitácora.
 
-- PR abierta, no Draft, mergeable.
-- Rama 3 commits ahead / 0 behind respecto de `develop`.
-- Ficha autoritativa leída desde `develop`.
-- `docs/tasks/T-205.md` en la rama marca todos los DoD como `[x]`.
-- CI de cierre no se consultó porque hay bloqueantes.
-- El comentario de la revisión anterior se considera obsoleto por decisión de Lautaro073.
+Los comandos y mutaciones solicitados quedaron documentados en el comentario de revisión de esa ronda.
 
-## H01 — accesibilidad incompleta
+---
 
-### Targets de `/courier/offers`
+## Ronda 2 — SHA `2e3d6edad1fd127294e360288cd8857263c90948`
 
-`src/features/offers/components/my-offers-list.tsx`:
+### Estado del arreglo
 
-- línea 83: `min-h-10`
-- línea 94: `min-h-10`
-- línea 105: `min-h-10`
-
-La ruta `src/app/(courier)/courier/offers/page.tsx` renderiza directamente `MyOffersList`.
-
-Reproducción/mutación después del arreglo:
-
-```bash
-pnpm vitest run src/features/offers/components/my-offers-list.test.tsx
-```
-
-Agregar una regresión que obtenga los tres tabs por role/name y exija `min-h-12`. Luego volver temporalmente uno a `min-h-10`: el test debe mostrar **1 failed**. Restaurar y confirmar verde.
-
-### Heading order de CourierFeed
-
-En el estado aprobado/no-disponible:
-
-- `courier-feed.tsx:130` → `h1`
-- `courier-feed.tsx:154` → `h3`
-
-Mutación:
-
-```bash
-pnpm vitest run src/features/offers/courier-panel.test.tsx
-```
-
-Agregar una regresión del estado `courierStatus="approved"`, `isAvailable={false}` que enumere headings y exija secuencia continua. Con el `h3` actual debe fallar; cambiarlo a `h2`, repetir y exigir verde.
-
-### Reduced motion
-
-No hay regla global de `prefers-reduced-motion` en `src/app/globals.css`. El mecanismo compartido está en `src/ui/motion/index.tsx`.
-
-Clases directas observadas en superficies de T-205:
+Comparación exacta:
 
 ```text
-src/app/(courier)/courier/profile/notifications/page.tsx:12  animate-pulse
-src/features/offers/components/courier-feed.tsx:136             animate-ping
-src/features/requests/components/create-request-form.tsx:296    animate-spin
-src/features/requests/components/create-request-form.tsx:390    animate-spin
-src/features/courier-onboarding/components/identity-form.tsx:278 animate-spin
-src/features/courier-onboarding/components/vehicle-form.tsx:336  animate-spin
-src/features/courier-onboarding/components/vehicle-form.tsx:374  animate-spin
-src/features/courier-onboarding/components/vehicle-form.tsx:472  animate-spin
-src/features/courier-onboarding/components/status-view.tsx:42    animate-pulse
-src/features/trips/components/trip-merchant-view.tsx:92          animate-pulse
+base reviewer: 9ddfaf3d3791bb25bdfb07b4ea9b0ede99ca68ef
+head autor:    2e3d6edad1fd127294e360288cd8857263c90948
+commits:       1
 ```
 
-Batería final: abrir las cinco pantallas con emulación `prefers-reduced-motion: reduce`; ninguna animación continua/decorativa debe seguir ejecutándose. Si se conservan loaders esenciales, deben implementarse con el mecanismo permitido y respetar la preferencia.
+La rama está 0 behind / 5 ahead de `develop`.
 
-## H02 — controles que pueden quedar falsamente verdes
+### H01 — inspección del arreglo
 
-### Targets
+Confirmado por lectura del SHA:
 
-En `dod-t205.test.tsx`, `interactiveContainers` solo contiene `CreateRequestForm` y `RequestOffersList`. La mutación `MyOffersList min-h-12 -> min-h-10` no modifica el resultado de ese test.
+- `my-offers-list.tsx`: tabs Pendientes/Aceptadas/Otras usan `min-h-12`.
+- `my-offers-list.test.tsx`: regresión específica exige `min-h-12` en los tres.
+- `courier-feed.tsx`: estado no disponible usa `h2` después del `h1`.
+- `courier-panel.test.tsx`: regresión enumera headings.
+- Se removieron las `animate-ping/spin/pulse` enumeradas en Ronda 1.
 
-### Inputmode
+El autor registró mutaciones RED/VERDE en la bitácora. Esta revisión no tiene checkout ejecutable y no las reprodujo; por eso H01 queda `arreglado-sin-verificar`.
 
-El test central solo consulta teléfonos:
+### H02 — inspección del arreglo
+
+Confirmado:
+
+- `dod-t205.test.tsx` acota el nombre de targets a requests.
+- El caso proxy de bundle basado en `.toBeDefined()` fue eliminado.
+- Se agregaron regresiones específicas:
+  - CreateRequestForm: `tel` + `numeric`.
+  - OfferSheet: `numeric`.
+  - IdentityForm: `numeric`.
+  - MerchantOnboardingForm: `tel`.
+
+Las mutaciones declaradas por el autor no se ejecutaron independientemente en esta revisión. Estado: `arreglado-sin-verificar`.
+
+### H03 — evidencia todavía insuficiente
+
+Ficha autoritativa en `develop`:
 
 ```text
-input[type="tel"], input#recipient-phone
-input[type="tel"], input#phone
+axe AA sin violaciones; objetivos de 48 px; inputmode numérico;
+Lighthouse móvil >= 80 rendimiento y >= 95 accesibilidad
+en crear solicitud, detalle con ofertas, lista del repartidor, onboarding y viaje;
+first-load JS dentro del presupuesto.
 ```
 
-Campos numéricos actualmente correctos pero fuera del control:
+Y además:
 
-- CreateRequestForm: cambio libre → `inputMode="numeric"`
-- OfferSheet: monto → `inputMode="numeric"`
-- IdentityForm: DNI → `inputMode="numeric"`
+```text
+navegador 390/360, prefers-reduced-motion, teclado, contraste,
+sin scroll horizontal y capturas comparativas Stitch/implementación.
+```
 
-Mutación exigida: quitar temporalmente `inputMode` de cada uno y demostrar que su **suite específica** falla.
+En el SHA de Ronda 2:
 
-### Bundle/code splitting
+- no hay tabla Lighthouse por las cinco superficies;
+- no hay salida axe AA;
+- la bitácora solo dice genéricamente que browser 390/360 fue verificado;
+- no hay tabla por ruta con teclado/foco/overflow/targets/reduced-motion;
+- no hay rutas de capturas T-205 actuales;
+- el body referencia carpetas `evidence/T-116`, que son de una tarea anterior;
+- la auditoría de `src/ui/**` está marcada `[x]` pero PR/bitácora no enumera primitivas ni resultado.
 
-El caso DoD 1.4 actual solo hace `.toBeDefined()` sobre:
+Consulta de Vercel conectada durante Ronda 2:
 
-- `IdentityForm`
-- `VehicleForm`
-- `TripMerchantContainer`
-- `TripCourierContainer`
+```text
+project cadeapp-staging -> 0 deployments
+project cadeapp         -> 0 deployments
+```
 
-Una importación estática conserva todos esos exports; por lo tanto el test seguiría verde.
+Por lo tanto el revisor tampoco pudo reproducir browser/Lighthouse desde un preview.
 
-No crear otro proxy. Medición canónica:
+### H04 — trazabilidad
+
+La bitácora ya usa:
+
+```text
+Último commit: 5ff0678
+```
+
+y la entrada activa usa `por commitear`.
+
+Estado por inspección: `arreglado-sin-verificar`.
+
+---
+
+## PR122-R01 — criterio de axe reescrito
+
+Comparación:
+
+`develop`:
+
+```md
+- [ ] axe AA sin violaciones; objetivos de 48 px; `inputmode` numérico; Lighthouse móvil ...
+```
+
+rama:
+
+```md
+- [ ] axe AA pendiente (sin dependencias nuevas en T-205 según decisión de Lautaro073); objetivos de 48 px; ...
+```
+
+La decisión 1-A mantiene “dependencias nuevas permitidas: ninguna”; no cambia el DoD.
+
+Reproducción:
 
 ```bash
-rm -rf .next
-pnpm build 2>&1 | tee /tmp/t205-build.txt
-node .github/workflows/check-bundle-budget.mjs /tmp/t205-build.txt
+git show develop:docs/tasks/T-205.md
+git show HEAD:docs/tasks/T-205.md
 ```
 
-Registrar la tabla exacta. El control de regresión del bundle es el valor de First Load JS, no la existencia del export.
+Arreglo: restaurar literalmente el texto de `develop`; conservar `[ ]` hasta demostrar el criterio.
 
-## H03 — evidencia de aceptación faltante
+---
 
-Antes de volver a marcar los ítems como `[x]`, registrar por cada una de estas cinco superficies:
+## PR122-R02 — non-null assertions nuevas
+
+Código actual:
+
+```ts
+for (let i = 1; i < levels.length; i++) {
+  expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
+}
+```
+
+`AGENTS.md`:
+
+```text
+Prohibido: any, @ts-ignore, ! non-null, .only, .skip sin issue...
+```
+
+La entrada de bitácora de Ronda 2 afirma “Cero `!`”.
+
+Arreglo sin debilitar el test:
+
+```ts
+for (let i = 1; i < levels.length; i++) {
+  const current = levels[i];
+  const previous = levels[i - 1];
+
+  expect(current).toBeDefined();
+  expect(previous).toBeDefined();
+
+  if (current === undefined || previous === undefined) {
+    continue;
+  }
+
+  expect(current - previous).toBeLessThanOrEqual(1);
+}
+```
+
+Mutación del heading `h2 -> h3` debe seguir dejando el test rojo.
+
+---
+
+## Evidencia requerida para H03
+
+Antes de volver a marcar criterios visuales como `[x]`, registrar para cada superficie:
+
+```text
+superficie | ruta | viewport | target min | teclado/foco | overflow-x | reduced-motion | captura
+```
+
+Superficies:
 
 1. crear solicitud;
 2. detalle con ofertas;
@@ -123,31 +191,41 @@ Antes de volver a marcar los ítems como `[x]`, registrar por cada una de estas 
 4. onboarding;
 5. viaje.
 
-### Lighthouse móvil
-
-Registrar por superficie:
+Lighthouse:
 
 ```text
-ruta | performance | accessibility | fecha | navegador/build SHA
+ruta | performance | accessibility
 ```
 
-Umbrales: performance >= 80 y accessibility >= 95.
+Umbrales:
 
-### Axe
+- performance >= 80
+- accessibility >= 95
 
-Registrar salida de auditoría axe AA real de navegador. Si no se puede ejecutar sin agregar dependencias al repo, dejar el criterio pendiente y decirlo; no sustituirlo por el test de headings.
+Axe:
 
-### Browser
+- auditoría real WCAG 2.1 A/AA en navegador autenticado;
+- 0 violations para poder cerrar el criterio;
+- no agregar dependencia al proyecto;
+- si el tooling actual no permite ejecutarla, dejar el criterio `[ ]` y documentar el bloqueo.
 
-En 390 px y 360 px:
+Capturas actuales pueden guardarse, dentro de las zonas permitidas, en carpetas T-205, por ejemplo:
 
-- teclado y orden de tabulación;
-- foco visible;
-- contraste;
-- targets renderizados;
-- ausencia de scroll horizontal;
-- `prefers-reduced-motion: reduce`;
-- capturas Stitch/implementación con ruta o enlace verificable.
+```text
+src/features/requests/evidence/T-205/
+src/features/offers/evidence/T-205/
+src/features/courier-onboarding/evidence/T-205/
+src/features/trips/evidence/T-205/
+```
+
+No reutilizar T-116 como prueba del estado posterior a T-205.
+
+Auditoría `src/ui/**`:
+
+- solo lectura;
+- enumerar primitivas realmente usadas (Button, Input, BottomNav, Dialog/Sheet, etc.);
+- registrar si cumplen targets, foco, semántica y reduced motion;
+- no editar `src/ui/**` dentro de T-205.
 
 ## Checks finales del autor
 
@@ -164,16 +242,15 @@ git rev-parse HEAD
 git ls-remote origin feat/T-205-accesibilidad-rendimiento
 ```
 
-## H04 — trazabilidad
+## Checks del revisor
 
-La bitácora afirma `f7fe5dd`; una consulta directa de GitHub devolvió **No commit found for SHA**. No volver a escribir un SHA futuro/autorreferencial. Si la bitácora se escribe antes del commit, usar `por commitear`; la siguiente sesión puede registrar el hash real.
+No ejecutados localmente por falta de checkout ejecutable.  
+CI final se difiere mientras existan H03/R01/R02.
 
-## Validación de los artefactos de revisión
-
-El comando normativo es:
+El comando normativo de artefactos sigue siendo:
 
 ```bash
 node docs/revision-pr/analizar.mjs verificacion
 ```
 
-No pudo ejecutarse en este entorno por ausencia de checkout del repo. No se declara como corrido; debe ejecutarse desde el worktree antes de considerar esta ronda lista para archivo definitivo.
+y debe correrse desde un worktree antes del cierre definitivo.

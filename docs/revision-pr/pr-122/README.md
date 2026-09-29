@@ -1,26 +1,28 @@
 # Revisión PR #122 — T-205
 
-> La revisión anterior de esta PR fue descartada por indicación de Lautaro073. Este documento la reemplaza por completo y vuelve a numerar la revisión vigente como **Ronda 1**.
+> La revisión anterior descartada sigue fuera de vigencia. La revisión válida comenzó en `5ff06783...`; esta es su **Ronda 2** sobre el arreglo `2e3d6eda...`.
 
 - **PR:** #122 — `[T-205] Pasada de accesibilidad y rendimiento en las pantallas de comercio y repartidor`
 - **Rama:** `feat/T-205-accesibilidad-rendimiento`
 - **Base:** `develop@ae514947a467de4bd2f4e8deb96aff542a3e79c3`
-- **SHA funcional revisado:** `5ff06783a0b70558c03d05d91c9b55dd7d1c2b3a`
-- **Ronda vigente:** 1
-- **Resultado:** **CON BLOQUEANTES (3)**
-- **Mejoras no bloqueantes:** 1
-- **Estado observado:** PR abierta, no Draft, 0 commits behind / 3 ahead.
-- **CI:** no se usa todavía como criterio de cierre porque esta ronda tiene bloqueantes.
-- **Ejecución local independiente:** no disponible en este entorno; no se atribuyen tests/build/browser no ejecutados por el revisor.
+- **SHA funcional revisado:** `2e3d6edad1fd127294e360288cd8857263c90948`
+- **Ronda vigente:** 2
+- **Resultado:** **CON BLOQUEANTES**
+- **Estado:** PR abierta, no Draft, 0 behind / 5 ahead.
+- **CI:** no se usa todavía como criterio de cierre porque permanecen bloqueantes.
+- **Ejecución local independiente:** no disponible; no se atribuyen tests, mutaciones, Lighthouse, axe o navegador no ejecutados por el revisor.
+- **Preview Vercel:** los proyectos conectados `cadeapp-staging` y `cadeapp` no exponen deployments, por lo que no hubo preview reproducible para browser review.
 
-## Bloqueantes
+## Estado de hallazgos previos
 
-- `PR122-H01` — la pasada de accesibilidad está incompleta: quedan targets de 40 px, un salto real `h1 -> h3` y animaciones que no respetan el mecanismo de reduced motion del proyecto.
-- `PR122-H02` — `dod-t205.test.tsx` declara cobertura amplia pero contiene controles que pueden quedar verdes aunque se rompa la regla que dicen probar.
-- `PR122-H03` — la ficha marca como completadas axe/Lighthouse/navegador/capturas sin evidencia reproducible en PR o bitácora; además H01 demuestra que al menos parte de ese cierre es materialmente falso.
+- `PR122-H01` — **arreglado sin verificar runtime**. El diff corrige tabs 48 px, heading de CourierFeed y elimina las animaciones directas enumeradas.
+- `PR122-H02` — **arreglado sin verificar runtime**. El proxy de bundle fue eliminado y las regresiones específicas de inputmode/targets fueron agregadas.
+- `PR122-H03` — **parcial / sigue bloqueante**. Axe queda pendiente y todavía faltan evidencia reproducible de Lighthouse, browser/capturas y auditoría de primitivas para justificar los `[x]`.
+- `PR122-H04` — **arreglado sin verificar runtime**. La bitácora ya referencia `5ff0678` y la sesión activa usa `por commitear`.
 
-## Mejora
+## Regresiones de Ronda 2
 
-- `PR122-H04` — la bitácora referencia como último commit `f7fe5dd`, SHA que GitHub no resuelve; el HEAD funcional real revisado es `5ff06783...`.
+- `PR122-R01` — la rama modificó el texto autoritativo del DoD: reemplaza “axe AA sin violaciones” por “axe AA pendiente...”. La decisión 1-A impide agregar dependencias al proyecto, pero no elimina el requisito.
+- `PR122-R02` — el test nuevo de headings usa non-null assertions `levels[i]!` / `levels[i - 1]!`, expresamente prohibidas por `AGENTS.md`, mientras la bitácora afirma “Cero `!`”.
 
-Detalle: `revisiones/ronda-1.md`. Evidencia y reproducciones: `evidencia/comandos.md`.
+Detalle: `revisiones/ronda-2.md`. Evidencia: `evidencia/comandos.md`.
