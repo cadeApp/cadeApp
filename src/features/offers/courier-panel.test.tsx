@@ -562,7 +562,14 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       const headings = screen.getAllByRole('heading');
       const levels = headings.map((h) => Number(h.tagName.replace(/^H/, '')));
       for (let i = 1; i < levels.length; i++) {
-        expect(levels[i]! - levels[i - 1]!).toBeLessThanOrEqual(1);
+        const current = levels[i];
+        const previous = levels[i - 1];
+        expect(current).toBeDefined();
+        expect(previous).toBeDefined();
+        if (current === undefined || previous === undefined) {
+          continue;
+        }
+        expect(current - previous).toBeLessThanOrEqual(1);
       }
       const unavailableHeading = screen.getByRole('heading', { name: OFFERS_COPY.unavailableAlertTitle });
       expect(unavailableHeading.tagName).toBe('H2');
