@@ -2,33 +2,67 @@
 
 - PR: #132 `[T-316] Chequeo de uptime cada 10 minutos desde GitHub Actions`
 - Rama: `feat/T-316-health-cron-actions`
-- SHA revisado: `5daa66074efb5c8e197ecdb24370c37a9badaeb1`
+- SHA revisado: `0f12b80b22c89a33d61f25f2a7111c1e668f7600`
 - Base: `develop@f620a3982c51b5ea837271a776a7d28a99c2ceb1`
-- Ronda actual: 1
-- Estado: **CON BLOQUEANTES (1)**
+- Ronda actual: 2
+- Estado: **SIN BLOQUEANTES**
 - Decisiones Lautaro073: D01 = 1-A; D02 = 2-A.
 
 ## Resumen
 
-La solución funcional va en la dirección correcta: el fallo real de Vercel fue confirmado en el run `36543241685` por el límite de Hobby a crons diarios, `vercel.json` deja solo el sweep diario y el chequeo de uptime pasa a GitHub Actions cada 10 minutos.
+T-316 queda técnicamente apta en el SHA revisado.
 
-Queda un bloqueante:
+- **PR132-H01 cerrado/verificado:** el control ahora valida concurrency exacto, rangos reales del cron diario y el mismo contrato de secret/guard/curl para staging y production.
+- **PR132-A01** sigue aceptado por decisión 1-A: excepción de ficha previa solo para T-316.
+- **D02 / 2-A** quedó aplicada en documentación: `PRODUCTION_APP_URL` es repository variable y `CRON_SECRET` secret del environment `production`.
+- `health-cron.yml` y `vercel.json` no cambiaron durante el arreglo de la ronda.
 
-- **PR132-H01 — P08 test-coverage:** los tests nuevos validan parte del contrato pero dejan verdes mutaciones que rompen el DoD: permiten `cancel-in-progress: true`, un grupo de concurrency distinto por run, ausencia del guard de `CRON_SECRET`, pérdida de auth o `--fail` solo en production y un cron diario inválido como `99 99 * * *`.
+## Evidencia independiente
 
-Decisiones:
-- **PR132-A01:** la ficha T-316 no existía en develop antes de implementar. Lautaro073 eligió 1-A: excepción aceptada solo para esta tarea.
-- **D02 / 2-A:** `PRODUCTION_APP_URL` se define como **repository variable**, no como environment variable. `CRON_SECRET` sigue siendo secret del environment `production`. El workflow actual ya usa `vars.PRODUCTION_APP_URL`; hay que corregir ficha/bitácora y configurar esa variable fuera del código.
+Se reprodujeron en RED las siete mutaciones declaradas por el autor:
 
-## Checks
+1. `cancel-in-progress: false -> true`;
+2. group fijo -> group por `github.run_id`;
+3. quitar guard de `CRON_SECRET` en staging;
+4. quitar Authorization en production;
+5. quitar `--fail` en production;
+6. `0 6 * * * -> 99 99 * * *`;
+7. `exit 1 -> exit 0` en production.
 
-- Rama: `ahead 1 / behind 0`, merge-base exacto con develop.
-- Archivos cambiados: solo los 5 declarados por la PR.
-- Comentarios/reviews previos: ninguno.
-- Fallo original de deploy reproducido desde logs: `Hobby accounts are limited to daily cron jobs`.
-- CI general de la PR: **no inspeccionado todavía** porque H01 bloquea la ronda.
-- Mutaciones independientes del instrumento: ver `evidencia/comandos.md`.
+Batería propia adicional:
 
-## Siguiente ronda
+- `APP_URL` de production reemplazada por literal -> RED;
+- quitar env `CRON_SECRET` de production -> RED;
+- invertir la guarda a `-n` -> RED;
+- mover curl antes de la guarda -> RED;
+- minuto 60 -> RED;
+- hora 24 -> RED;
+- borde válido `59 23 * * *` -> GREEN.
 
-Endurecer únicamente el control en `verify-workflows.test.mjs`, corregir documentación de D02 y demostrar RED para toda la clase enumerada antes de volver a revisar.
+## CI exacto del SHA revisado
+
+Run CI **#614** sobre `0f12b80b22c89a33d61f25f2a7111c1e668f7600`:
+
+- `typecheck`: success
+- `lint`: success
+- `unit`: success
+  - Vitest: **103 archivos / 1381 tests passed**
+  - `verify-workflows.test.mjs`: **29 pass / 0 fail**
+  - ADR tests: **6 pass / 0 fail**
+- `build`: success
+- `audit`: success
+- `db-tests`: success
+  - pgTAP: **Files=12, Tests=1601, Result: PASS**
+  - `db:types` generado con `--local` y sin drift
+- `bundle-budget`: success advisory; rutas preexistentes sobre 180 kB permanecen fuera de T-316.
+
+## No revisado / operativo posterior
+
+- La existencia y valor efectivo de la repository variable `PRODUCTION_APP_URL` no se verifican desde la revisión.
+- Los secrets de environments no se leen.
+- El primer schedule real se ejercita después del merge a la rama por defecto.
+- Después del merge debe promoverse nuevamente a staging para comprobar que Vercel ya acepta el deploy sin el cron de 10 minutos.
+
+## Veredicto
+
+**SIN BLOQUEANTES.** H01 cerrado, A01 aceptado y sin decisiones pendientes.
