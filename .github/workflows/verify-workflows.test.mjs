@@ -349,10 +349,18 @@ test('vercel.json only schedules daily crons and no longer runs the uptime check
   /** @type {{ path: string, schedule: string }[]} */
   const crons = vercel.crons ?? [];
   for (const cron of crons) {
-    assert.match(
-      cron.schedule,
-      /^\d{1,2} \d{1,2} \* \* \*$/,
-      `${cron.path}: corre una vez por día`
+    // PR132-H01: minuto 0–59 y hora 0–23 como enteros; el resto exactamente `*`. `99 99 * * *` no pasa.
+    const fields = cron.schedule.split(' ');
+    assert.equal(fields.length, 5, `${cron.path}: el cron tiene 5 campos`);
+    const [minute = '', hour = '', dayOfMonth, month, dayOfWeek] = fields;
+    assert.match(minute, /^\d+$/, `${cron.path}: minuto fijo`);
+    assert.match(hour, /^\d+$/, `${cron.path}: hora fija`);
+    assert.ok(Number(minute) >= 0 && Number(minute) <= 59, `${cron.path}: minuto entre 0 y 59`);
+    assert.ok(Number(hour) >= 0 && Number(hour) <= 23, `${cron.path}: hora entre 0 y 23`);
+    assert.deepEqual(
+      [dayOfMonth, month, dayOfWeek],
+      ['*', '*', '*'],
+      `${cron.path}: corre todos los días`
     );
   }
   assert.ok(
@@ -365,26 +373,63 @@ test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () 
   const healthCron = workflow('health-cron.yml');
   assert.match(healthCron, /schedule:\r?\n\s+- cron: '\*\/10 \* \* \* \*'/);
   assert.match(healthCron, /workflow_dispatch:/);
-  assert.match(healthCron, /concurrency:/);
-  const staging = job(healthCron, 'staging');
-  assert.match(staging, /^\s+environment: staging$/m);
-  const call = step(staging, 'Call /api/cron/health');
-  assert.match(call, /CRON_SECRET: \$\{\{ secrets\.CRON_SECRET \}\}/);
-  const curls = shellCommands(call).filter((command) => /\bcurl\b/.test(command));
-  assert.equal(curls.length, 1, 'un solo llamado a curl');
-  const [curl = ''] = curls;
-  assert.ok(curl.startsWith('curl --fail '), 'el llamado empieza con curl --fail');
-  assert.ok(
-    curl.includes(' -H "Authorization: Bearer $CRON_SECRET" '),
-    'el llamado manda el Bearer con CRON_SECRET'
+  // PR132-H01: un grupo fijo y sin cancelar, así dos chequeos no se pisan ni se cortan.
+  assert.match(
+    healthCron,
+    /^concurrency:\r?\n {2}group: health-cron\r?\n {2}cancel-in-progress: false\r?$/m
   );
-  assert.ok(
-    curl.endsWith(' "$APP_URL/api/cron/health"'),
-    'el llamado termina en "$APP_URL/api/cron/health"'
-  );
-  const production = job(healthCron, 'production');
-  assert.match(production, /if: vars\.PRODUCTION_APP_URL != ''/);
-  assert.match(production, /^\s+environment: production$/m);
+
+  const jobs = [
+    {
+      name: 'staging',
+      environment: 'staging',
+      appUrl: 'https://cadeapp-staging.vercel.app',
+      condition: null,
+    },
+    {
+      name: 'production',
+      environment: 'production',
+      appUrl: '${{ vars.PRODUCTION_APP_URL }}',
+      condition: "vars.PRODUCTION_APP_URL != ''",
+    },
+  ];
+  for (const { name, environment, appUrl, condition } of jobs) {
+    const body = job(healthCron, name).replace(/\r\n/g, '\n');
+    assert.ok(
+      body.includes(`\n    environment: ${environment}\n`),
+      `${name}: environment ${environment}`
+    );
+    assert.ok(body.includes(`\n      APP_URL: ${appUrl}\n`), `${name}: APP_URL ${appUrl}`);
+    if (condition) assert.ok(body.includes(`\n    if: ${condition}\n`), `${name}: if ${condition}`);
+
+    const call = step(body, 'Call /api/cron/health');
+    assert.ok(
+      call.includes('\n          CRON_SECRET: ${{ secrets.CRON_SECRET }}\n'),
+      `${name}: CRON_SECRET sale de secrets`
+    );
+    const commands = shellCommands(call);
+    const guardStart = commands.indexOf('if [ -z "$CRON_SECRET" ]; then');
+    assert.notEqual(guardStart, -1, `${name}: falta la guarda de CRON_SECRET`);
+    const guardEnd = commands.indexOf('fi', guardStart);
+    assert.notEqual(guardEnd, -1, `${name}: la guarda de CRON_SECRET cierra con fi`);
+    const missingSecret = commands.slice(guardStart + 1, guardEnd);
+    assert.ok(missingSecret.includes('exit 1'), `${name}: sin CRON_SECRET corta con exit 1`);
+    assert.ok(!missingSecret.includes('exit 0'), `${name}: sin CRON_SECRET no sale con exit 0`);
+
+    const curls = commands.filter((command) => /\bcurl\b/.test(command));
+    assert.equal(curls.length, 1, `${name}: un solo llamado a curl`);
+    const [curl = ''] = curls;
+    assert.ok(commands.indexOf(curl) > guardEnd, `${name}: el curl va después de la guarda`);
+    assert.ok(curl.startsWith('curl --fail '), `${name}: el llamado empieza con curl --fail`);
+    assert.ok(
+      curl.includes(' -H "Authorization: Bearer $CRON_SECRET" '),
+      `${name}: el llamado manda el Bearer con CRON_SECRET`
+    );
+    assert.ok(
+      curl.endsWith(' "$APP_URL/api/cron/health"'),
+      `${name}: el llamado termina en "$APP_URL/api/cron/health"`
+    );
+  }
 });
 
 test('every third-party action is pinned to a full commit SHA', () => {
