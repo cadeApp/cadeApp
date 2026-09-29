@@ -124,3 +124,51 @@ No hay PNG de T-202 entre los archivos cambiados y los comentarios de PR no cont
 
 ## CI
 No inspeccionado en Ronda 2: quedan bloqueantes, por lo que corresponde revisión estática + controles propios antes de mirar CI.
+
+
+---
+
+# Evidencia — Ronda 3 PR #120
+
+## HEAD
+`1884b43b72e5978f96c9d2ae4d7ff895cd9c1fde`
+
+## CI remoto final
+Workflow `36507514360`: **success**.
+
+```text
+unit          success
+typecheck     success
+lint          success
+build         success
+db-tests      success
+audit         success
+bundle-budget success
+```
+
+## Harness independiente — public/sw.js
+
+Resultado sobre el contenido del SHA revisado:
+
+```text
+push listeners = 1
+notificationclick listeners = 1
+
+valid offer_accepted + offerId:
+  /trips/10000000-0000-4000-8000-000000000001
+
+offer_accepted sin offerId:
+  fallback /
+
+request_published con PII extra:
+  fallback /
+
+request_published con UUID inválido:
+  fallback /
+
+request_published válido:
+  /courier/feed
+```
+
+## D04
+Lautaro073 eligió **4-C**: H10 se difiere hasta T-300/staging y no se declara verificado.

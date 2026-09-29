@@ -26,3 +26,8 @@ La carpeta `docs/revision-pr/**` no es un canal de evidencia del autor. Si la fi
 ### Extensión de P08: probar el artefacto servido, no su gemelo tipado
 **PR120-H06/H11.**  
 Cuando el runtime es un archivo estático (`public/sw.js`), un schema/helper TypeScript paralelo no valida producción. La batería debe disparar eventos sobre el SW servido y mutar el contrato allí.
+
+
+## Ronda 3
+
+No se agrega una lección global nueva. La diferencia entre `aceptado` y `arreglado-verificado` ya está cubierta por el esquema de `hallazgos.jsonl`: una dependencia de entorno futura puede justificar un diferimiento explícito sin falsear evidencia.
