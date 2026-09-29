@@ -2,38 +2,60 @@
 
 - PR: #128 `[T-315] Deploy a Vercel desde GitHub Actions`
 - Rama: `feat/T-315-deploy-vercel`
-- SHA revisado: `c2df5e6aafe12fdd0de6057455b0707a83645c4a`
-- Base observada al iniciar R2: `develop@ffded647be7445b33092ccc76d26e78430ec87dd`
-- Ronda actual: 2
-- Estado: **CON BLOQUEANTES (1)**
-- Decisiones: D01 = 1-A; D02 = 2-A.
+- SHA revisado: `f0c613a8f47dd28d930e08dbc5b3bc328dfb2a86`
+- Base: `develop@ffded647be7445b33092ccc76d26e78430ec87dd`
+- Ronda actual: 3
+- Estado: **SIN BLOQUEANTES**
+- Decisiones cerradas: D01 = 1-A; D02 = 2-A.
 
 ## Resumen
 
-- **PR128-H01 cerrado/verificado:** producción usa `workflow_run.actor.login`; volver a `triggering_actor` deja el control en RED.
-- **PR128-H02 parcial:** la batería del autor detecta las cuatro mutaciones pedidas en R1, pero la batería independiente de R2 encontró dos variantes todavía verdes:
-  1. comentar la línea activa de `vercel pull` conserva el texto buscado y el test pasa;
-  2. anteponer `!` a `curl --fail` invierte el exit del health y el test pasa.
+T-315 queda técnicamente apta en el SHA revisado.
 
-La implementación productiva del SHA mantiene los comandos activos y el health sin negación. El bloqueante es el control de regresión exigido por el DoD.
+- **PR128-H01 cerrado/verificado:** producción usa `workflow_run.actor.login`, conserva `exit 1` para actor no autorizado y el control detecta volver a `triggering_actor`.
+- **PR128-H02 cerrado/verificado:** `shellCommands()` valida comandos activos del bloque `run: |`; comentario de `pull`, negación del health y `echo` del build quedan RED. La batería independiente además pone RED al invertir `pull/build`, eliminar el deploy y volver a neutralizar health con `|| true`.
+- **PR128-A01** sigue aceptado por decisión 1-A; no crea precedente general.
+- La rama incorporó `develop@ffded647` por merge normal y quedó `ahead 6 / behind 0`.
 
-PR128-A01 sigue aceptado.
+## CI exacto del SHA revisado
 
-## Sincronización
+Run CI **#606** sobre `f0c613a8f47dd28d930e08dbc5b3bc328dfb2a86`:
 
-GitHub reportó `ahead 3 / behind 1`: `develop` avanzó a `ffded647` por CC-013 mientras se arreglaba R1. Ese commit no toca los archivos funcionales de T-315 y la PR figura mergeable, pero antes de R3 la rama debe incorporar `origin/develop` mediante merge, nunca rebase.
+- `typecheck`: success
+- `lint`: success
+- `unit`: success
+  - Vitest: **103 archivos / 1381 tests passed**
+  - `verify-workflows.test.mjs`: **27 pass / 0 fail**
+  - ADR tests: **6 pass / 0 fail**
+- `build`: success
+- `audit`: success
+- `db-tests`: success
+  - pgTAP: **Files=12, Tests=1601, Result: PASS**
+  - `db:types` generó tipos con `--local` y el mismo step ejecutó `git diff --exit-code -- src/types/database.types.ts`.
+- `bundle-budget`: success advisory. El log sigue mostrando rutas preexistentes sobre 180 kB (por ejemplo varias rutas admin a 236 kB y `/design-system` a 185 kB). T-315 no modifica código de producto ni bundle, por lo que no se abre hallazgo en esta PR.
 
-## Checks
+## Evidencia independiente
 
-- El commit de arreglo toca solo `deploy.yml`, `verify-workflows.test.mjs` y `docs/tasks/log/T-315.md`; el autor no tocó `docs/revision-pr/**`.
-- La bitácora trae los cuatro RED pedidos y GREEN de la suite específica.
-- El autor declara typecheck/lint verdes y `pnpm test` local rojo por dos fallos fuera de T-315; no se promueve esa evidencia a verificación independiente.
-- CI general todavía no se inspecciona porque H02 sigue bloqueante.
-- El checkout completo volvió a fallar por DNS; la batería independiente se ejecutó en un harness aislado con las aserciones relevantes del SHA.
+Se reprodujeron las tres mutaciones declaradas por el autor:
 
-## Siguiente ronda
+- comentar `vercel pull` de staging → RED;
+- `! curl --fail` → RED;
+- reemplazar build por `echo "...build..."` → RED.
 
-1. Merge de `origin/develop`.
-2. Endurecer H02 validando líneas/comandos ejecutables, no presencia textual ni listas crecientes de sintaxis prohibida.
-3. RED con comentario de `vercel pull`, RED con `! curl --fail` y una tercera mutación distinta elegida por el autor.
-4. Con H02 cerrado, revalidar checks y recién entonces inspeccionar CI del SHA final.
+Batería propia, distinta:
+
+- invertir `pull` y `build` → RED;
+- eliminar el comando de deploy → RED;
+- health con `|| true` → RED.
+
+También se probaron `pull/build ... || true`; quedan GREEN porque agregan un invariante distinto —propagación explícita del fallo de esos dos comandos— que no forma parte del DoD de H02. No se usa esa ampliación para prolongar artificialmente el hallazgo.
+
+## No revisado / operativo posterior
+
+- El deploy real a Vercel solo puede ejercitarse después de mergear el workflow a la rama por defecto y promover a `staging`.
+- La bitácora declara que producción todavía necesita la variable `PRODUCTION_APP_URL`; la revisión no lee ni modifica configuración/secrets externos. El workflow falla visible si falta.
+- Esta revisión no aprueba ni mergea la PR.
+
+## Veredicto
+
+**SIN BLOQUEANTES.** H01 y H02 cerrados, A01 aceptado y sin decisiones pendientes.
