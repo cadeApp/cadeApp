@@ -1,142 +1,183 @@
 # Evidencia y reproducciones — PR #122
 
-## Ronda 4 — HEAD `732a9bdc16ef495920c0a6c55920aa3ae427aca4`
+## Ronda 5 — HEAD `bae8c771e2a42c20a45764cc984fefb5265de160`
 
-### Commits desde Ronda 3
-
-```text
-5915ad4e66457fd83103518bcf5ef41de4da5273
-fix(T-205): resolver clipping horizontal y regenerar capturas con harness cdp [T-205]
-
-732a9bdc16ef495920c0a6c55920aa3ae427aca4
-docs(tasks): registrar commit de ronda 3 en bitacora [T-205]
-```
-
-### PNG nuevas
-
-Se inspeccionaron las 14 PNG T-205 a 390 y 360 px.
-
-Resultado visual:
-
-- ya no hay clipping evidente como en Ronda 3;
-- los tres tabs de MyOffersList son visibles;
-- botones y badges de TripMerchantView caben;
-- formularios de onboarding caben;
-- CreateRequest y RequestOffers no muestran recortes horizontales visibles.
-
-### Harness declarado
-
-La bitácora declara:
-
-`src/features/requests/evidence/browser-audit.test.tsx`
-
-Consulta GitHub en el HEAD:
+### Archivos nuevos relevantes
 
 ```text
-404 Not Found
+src/features/requests/evidence/T-205/browser-audit.tsx
+src/features/requests/evidence/T-205/vitest.config.ts
 ```
 
-También se comprobó:
+El harness existe y se puede invocar explícitamente con Vitest.
 
-`src/features/requests/evidence/T-205/browser-audit.test.tsx`
+### R05 — CSS compilado no reproducible
 
-Resultado:
+Código actual:
 
-```text
-404 Not Found
+```ts
+const cssPath = path.resolve('.next/static/css/b30c4bb5cec07bc0.css');
+const cssContent = fs.existsSync(cssPath) ? fs.readFileSync(cssPath, 'utf8') : '';
 ```
 
-El compare entre `e52b99b2...` y `732a9bdc...` contiene únicamente:
+Problema reproducible:
 
-- `docs/tasks/log/T-205.md`;
-- las 14 PNG T-205.
+- `.next` no está versionado;
+- el nombre de CSS contiene hash de build;
+- un build nuevo puede generar otro nombre;
+- si el archivo no existe, el harness sigue con CSS vacío;
+- el test solo exige `offendersCount === 0`.
 
-No hay script/test/harness agregado.
+Corrección mínima:
 
-### Diferencia entre capturas y árbol canónico de onboarding
+```ts
+const cssDir = path.resolve('.next/static/css');
 
-Ruta real identity:
+if (!fs.existsSync(cssDir)) {
+  throw new Error('Falta .next/static/css. Ejecutá pnpm build antes del browser audit.');
+}
 
-`src/app/(courier)/courier/onboarding/identity/page.tsx`
+const cssFiles = fs.readdirSync(cssDir).filter((name) => name.endsWith('.css'));
 
-```tsx
-<div className="flex flex-col items-center justify-start px-4 py-6">
-  <IdentityForm courierId={user?.id || 'temp-courier'} />
-</div>
+if (cssFiles.length === 0) {
+  throw new Error('No se encontraron CSS compilados de Next.js.');
+}
+
+const cssContent = cssFiles
+  .map((name) => fs.readFileSync(path.join(cssDir, name), 'utf8'))
+  .join('\n');
 ```
 
-Ruta real vehicle:
+Comando reproducible esperado:
 
-`src/app/(courier)/courier/onboarding/vehicle/page.tsx`
-
-```tsx
-<div className="flex flex-col items-center justify-start px-4 py-6">
-  <VehicleForm courierId={user?.id || 'temp-courier'} />
-</div>
+```bash
+rm -rf .next
+pnpm build
+pnpm exec vitest run -c src/features/requests/evidence/T-205/vitest.config.ts
 ```
 
-No existe:
+Mutación RED: cambiar temporalmente `cssDir` a una ruta inexistente; el audit debe fallar antes de iniciar Edge.
 
-`src/app/(courier)/courier/onboarding/layout.tsx`
+### R06 — diferencias entre harness y rutas reales
 
-El layout de grupo real:
+#### Merchant
+
+Real:
+
+`src/app/(merchant)/layout.tsx`
+
+incluye `<MerchantNav />`.
+
+Harness:
+
+`wrapMerchant`
+
+no lo incluye.
+
+#### Courier
+
+Real:
 
 `src/app/(courier)/layout.tsx`
 
-solo agrega:
+incluye `<CourierNav />`.
 
-- TopBar;
-- main;
-- CourierNav.
+Harness:
 
-No agrega StepIndicator.
+- recrea `BottomNav` y sus items manualmente;
+- aplica su propia lógica `showNav`.
 
-Los componentes:
+#### Trip
 
-- `IdentityForm`;
-- `VehicleForm`;
+Real:
 
-ya contienen internamente su propio:
+`src/app/trips/[id]/page.tsx`
 
-`<StepIndicator ... />`
+para merchant:
 
-Sin embargo las cuatro PNG de onboarding de Ronda 4 muestran **dos barras completas de pasos**: una exterior y otra dentro del Card.
+```tsx
+<TripMerchantContainer trip={trip} />
+<ReportIncidentButton ... />
+```
 
-Conclusión: el montaje capturado no coincide exactamente con el árbol canónico de las rutas reales.
+Harness:
 
-### Corrección esperada
+```tsx
+wrapTrip(<TripMerchantView trip={mockTrip} />)
+```
 
-Versionar el harness real dentro de un path permitido, por ejemplo:
+Además `wrapTrip` agrega un TopBar “Viaje” que no proviene de la page real.
 
-`src/features/requests/evidence/T-205/browser-audit.test.tsx`
+#### Runtime
 
-o un archivo equivalente claramente documentado.
+El harness genera HTML con `renderToString`. No hidrata client components.
 
-Debe:
+Consecuencia: sirve para layout SSR/fixture y screenshots, pero no demuestra:
 
-1. reutilizar los layouts/pages/componentes reales;
-2. no inventar un segundo StepIndicator;
-3. registrar el comando exacto;
-4. usar CDP / viewport móvil como se describe;
-5. producir salida textual de offenders;
-6. regenerar las 14 PNG desde ese mismo mecanismo.
+- orden de tabulación real;
+- focus management;
+- interacción del cliente;
+- comportamiento hidratado;
+- la ruta completa de Next.js.
 
-Después, un tercero debe poder ejecutar el comando desde el repo y obtener los mismos resultados.
+La ficha browser debe permanecer `[ ]` hasta una verificación real.
+
+### R07 — API pública y bundle
+
+Regla 20:
+
+`src/features/<x>/index.ts` = API pública apta para cliente.
+
+Cambios nuevos:
+
+```ts
+export { IdentityForm as CanonicalIdentityForm } from './components/identity-form';
+export { VehicleForm as CanonicalVehicleForm } from './components/vehicle-form';
+```
+
+Los exports dinámicos ya existentes siguen siendo:
+
+```ts
+export const IdentityForm = dynamic(...)
+export const VehicleForm = dynamic(...)
+```
+
+El cambio nuevo agrega caminos estáticos por el mismo barrel.
+
+La ronda actual documenta:
+
+- typecheck;
+- lint;
+- tests;
+- browser harness.
+
+No documenta un `pnpm build` + `check-bundle-budget.mjs` posterior a estos nuevos exports.
+
+Revalidación necesaria:
+
+```bash
+rm -rf .next
+pnpm build 2>&1 | tee /tmp/t205-build-r5.txt
+node .github/workflows/check-bundle-budget.mjs /tmp/t205-build-r5.txt
+```
+
+No reutilizar la tabla de tamaños de una ronda anterior.
 
 ### H03
 
-Todavía pendientes según la propia bitácora:
+En el HEAD actual permanecen `[ ]`:
 
-- Lighthouse móvil;
-- axe AA.
+- axe AA / Lighthouse / first-load combinado;
+- browser 390/360 + reduced-motion + teclado + contraste + overflow;
+- auditoría integrada src/ui.
 
-Los checkboxes de DoD permanecen correctamente en `[ ]`.
+La propia bitácora declara axe y Lighthouse pendientes.
 
-### CI
+### CI final
 
-No se revisa como criterio final mientras H03/R04 sigan bloqueando.
+No se usa como criterio de cierre mientras existan H03/R05/R06/R07.
 
-Cuando no queden bloqueantes:
+Cuando ya no haya bloqueantes:
 
 ```bash
 pnpm typecheck
