@@ -1,0 +1,16 @@
+--- D04: doc verificado / rechazado / purgado
+dddddddd-0000-4000-8000-000000000003|ERR P0001 INVALID_STATE_TRANSITION
+dddddddd-0000-4000-8000-000000000004|ERR P0001 INVALID_STATE_TRANSITION
+dddddddd-0000-4000-8000-000000000005|ERR P0001 INVALID_STATE_TRANSITION
+--- H10: contenido de audit_log tras decide(rejected, motivo) y verify(rejected, motivo)
+OK {"status": "rejected", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "decidedAt": "2026-09-24T02:44:59.957Z"}
+OK {"kind": "license", "status": "rejected", "docLevel": 0, "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "documentId": "dddddddd-0000-4000-8000-000000000001"}
+admin_decide_courier|courier|aaaaaaaa-0000-4000-8000-000000000001|{"status": "pending"}|{"reason": "documento ilegible", "status": "rejected"}
+admin_verify_document|courier_document|aaaaaaaa-0000-4000-8000-000000000001|{"kind": "license", "status": "submitted", "courier_id": "aaaaaaaa-0000-4000-8000-000000000003"}|{"reason": "foto borrosa", "status": "rejected", "docLevel": 0}
+--- H02/H05: suspender con 1 pending + 1 accepted en otra solicitud
+OK {"status": "suspended", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "deactivatedAt": "2026-09-24T02:44:59.957Z", "withdrawnOffersCount": 1}
+ffffffff-0000-4000-8000-000000000001|withdrawn
+ffffffff-0000-4000-8000-000000000002|accepted
+--- H10: audit de update_setting
+OK {"key": "min_offer_ars", "value": 1500}
+admin_update_setting|min_offer_ars|{"value": 1000}|{"value": 1500}

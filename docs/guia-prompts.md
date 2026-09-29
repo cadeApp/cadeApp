@@ -16,6 +16,14 @@
 
 ## 1. Tabla de Prompts Universales (Copiar y Pegar)
 
+### Prompt obligatorio para tareas visuales
+
+Para T-115, T-116, T-117, T-118, T-122, T-123, T-124, T-201, T-202, T-204, T-205 y T-311, usá además la directiva global [`docs/design/visual-task-directive.md`](design/visual-task-directive.md):
+
+```text
+Tomá T-xxx de cadeApp con la skill tomar-tarea. Cumplí AGENTS.md, .agents/rules y docs/design/visual-task-directive.md. Leé docs/implementation-plan.md §12 y los README/PNG de Stitch correspondientes. Si falta una referencia, usá el MCP de Stitch para descargarla en tu worktree. Aplicá implementar-diseno, consultá a los agentes de Frontend, Diseño y Persona de El Consejo, y verificá el resultado en el navegador a 390 px y 360 px. Si falta una primitiva shadcn/ui o un token, usá contract-change antes de tocar src/ui/**. Tocá solo los archivos permitidos de la ficha. Escribí primero las pruebas del DoD, mostrá que fallan y commiteá esa fase sola.
+```
+
 Guardate estos 6 comandos. Son los únicos que vas a necesitar escribirle a agy:
 
 | Situación | Qué prompt escribirle a agy | Qué hace agy automáticamente |

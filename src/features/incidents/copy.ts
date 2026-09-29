@@ -1,0 +1,157 @@
+import type { IncidentDecision, IncidentKind, IncidentStatus, ProfileRole } from '@/domain';
+import type { IncidentInboxTab } from './schemas';
+import { REPORT_TRIGGER_COPY } from './report-trigger-copy';
+
+/** Textos es-AR de incidentes: botón y formulario del viaje (C06/R07) y bandeja/detalle admin (A05). */
+export const INCIDENTS_COPY = {
+  kinds: {
+    no_show: 'No se presentó',
+    payment_issue: 'Problema con el cobro',
+    damaged_goods: 'Mercadería dañada',
+    safety: 'Problema de seguridad',
+    other: 'Otro',
+  } satisfies Record<IncidentKind, string>,
+  statuses: {
+    open: 'Abierto',
+    reviewing: 'En revisión',
+    resolved: 'Resuelto',
+    dismissed: 'Cerrado sin sanción',
+  } satisfies Record<IncidentStatus, string>,
+  roles: {
+    merchant: 'Comercio',
+    courier: 'Repartidor',
+    admin: 'Administración',
+  } satisfies Record<ProfileRole, string>,
+  report: {
+    trigger: REPORT_TRIGGER_COPY.label,
+    title: 'Reportar un problema',
+    description:
+      'Contanos qué pasó en este envío. El envío sigue su curso; la administración de cadeApp lo revisa y te contacta si hace falta.',
+    kindLabel: '¿Qué tipo de problema fue?',
+    safetyNotice:
+      'Si estás en peligro ahora, llamá al 911. Este reporte lo revisa la administración y no es atención inmediata.',
+    descriptionLabel: '¿Qué pasó?',
+    descriptionHelp: 'No incluyas teléfonos, correos ni datos de contacto. Podés mencionar montos.',
+    cancel: 'Cancelar',
+    submit: 'Enviar reporte',
+    submitting: 'Enviando reporte...',
+    loading: REPORT_TRIGGER_COPY.loading,
+    success: 'Recibimos tu reporte. La administración lo va a revisar.',
+    errors: {
+      kind: 'Elegí qué tipo de problema fue.',
+      descriptionShort: 'Contanos qué pasó con al menos 5 caracteres.',
+      descriptionLong: 'El relato puede tener hasta 1000 caracteres.',
+      descriptionContact: 'Sacá los teléfonos o correos del relato: no se pueden compartir datos de contacto.',
+      generic: 'Revisá los datos del reporte.',
+      connection: 'No pudimos enviar el reporte. Revisá tu conexión e intentá de nuevo.',
+    },
+  },
+  inbox: {
+    title: 'Incidentes',
+    description: 'Reclamos de comercios y repartidores para mediar y resolver.',
+    tabsLabel: 'Estado de los incidentes',
+    tabs: {
+      open: 'Abiertos',
+      closed: 'Cerrados',
+    } satisfies Record<IncidentInboxTab, string>,
+    listLabel: 'Incidentes reportados',
+    reportedBy: (role: string, name: string) => `${role} · ${name}`,
+    viewDetail: 'Ver detalle',
+    viewDetailFor: (kind: string, name: string) => `del reclamo «${kind}» de ${name}`,
+    emptyTitle: {
+      open: 'No hay incidentes abiertos',
+      closed: 'No hay incidentes cerrados',
+    } satisfies Record<IncidentInboxTab, string>,
+    emptyDescription: 'Cuando un comercio o un repartidor reporte un problema en un viaje, va a aparecer acá.',
+    paginationLabel: 'Paginación de incidentes',
+    next: 'Siguiente',
+    firstPage: 'Volver al inicio',
+    loading: 'Cargando incidentes',
+  },
+  detail: {
+    back: '← Volver a incidentes',
+    title: (kind: string) => `Incidente: ${kind}`,
+    storyTitle: 'Relato del reclamo',
+    reportedBy: (role: string, name: string) => `Reportado por ${role.toLowerCase()} ${name}`,
+    timelineTitle: 'Cronología del envío',
+    timeline: {
+      publishedAt: 'Publicada',
+      matchedAt: 'Repartidor asignado',
+      pickedUpAt: 'Pedido retirado',
+      deliveredAt: 'Entregada',
+      cancelledAt: 'Cancelada',
+    },
+    partiesTitle: 'Partes involucradas',
+    merchantLabel: 'Comercio',
+    courierLabel: 'Repartidor asignado',
+    noCourier: 'El viaje no tiene repartidor asignado.',
+    noPhone: 'Sin teléfono cargado',
+    call: (name: string) => `Llamar a ${name}`,
+    courierSuspended: 'Repartidor suspendido',
+    resolutionTitle: 'Resolución de mediación',
+    resolutionHelp: 'Elegí cómo cerrar el incidente. Toda decisión exige un motivo y queda en la auditoría.',
+    closedTitle: 'Incidente cerrado',
+    decisionLabels: {
+      no_action: 'Decisión: sin sanción',
+      warning: 'Decisión: advertencia',
+      preventive_suspension: 'Decisión: suspensión preventiva',
+    } satisfies Record<IncidentDecision, string>,
+    noResolution: 'Sin resolución registrada.',
+    loading: 'Cargando incidente',
+  },
+  resolve: {
+    actions: {
+      no_action: 'Resolver sin sanción',
+      warning: 'Advertencia',
+      preventive_suspension: 'Suspensión preventiva',
+    } satisfies Record<IncidentDecision, string>,
+    titles: {
+      no_action: 'Resolver sin sanción',
+      warning: 'Registrar una advertencia',
+      preventive_suspension: 'Suspender preventivamente al repartidor',
+    } satisfies Record<IncidentDecision, string>,
+    descriptions: {
+      no_action: 'El incidente se cierra sin sanción para nadie.',
+      warning: 'El incidente se resuelve con una advertencia registrada para las partes.',
+      preventive_suspension:
+        'Suspende al instante al repartidor asignado a este viaje: deja de estar disponible y se retiran sus ofertas pendientes. El incidente queda resuelto.',
+    } satisfies Record<IncidentDecision, string>,
+    confirm: {
+      no_action: 'Confirmar resolución',
+      warning: 'Confirmar advertencia',
+      preventive_suspension: 'Confirmar suspensión',
+    } satisfies Record<IncidentDecision, string>,
+    reasonLabel: 'Motivo',
+    reasonHelp: 'Queda registrado en el incidente y en la auditoría.',
+    reasonPlaceholder: 'Ej: Hablé con ambas partes y el comercio confirmó el faltante.',
+    reasonRequired: 'Ingresá el motivo de la decisión.',
+    reasonTooLong: 'El motivo puede tener hasta 500 caracteres.',
+    cancel: 'Cancelar',
+    processing: 'Procesando...',
+    loading: 'Cargando el formulario',
+    success: {
+      no_action: 'Incidente cerrado sin sanción.',
+      warning: 'Advertencia registrada.',
+      preventive_suspension: 'Repartidor suspendido y ofertas retiradas.',
+    } satisfies Record<IncidentDecision, string>,
+    connection: 'Error de conexión al resolver el incidente.',
+  },
+  errors: {
+    inbox: {
+      title: 'No pudimos cargar los incidentes',
+      description: 'Ocurrió un inconveniente al consultar la bandeja. Probá de nuevo en unos segundos.',
+      retry: 'Reintentar',
+    },
+    notFound: {
+      title: 'No encontramos el incidente',
+      description: 'Puede que el enlace esté mal o que el incidente no exista.',
+      back: 'Volver a incidentes',
+    },
+    detail: {
+      title: 'No pudimos cargar el incidente',
+      description: 'Ocurrió un inconveniente al consultar el detalle. Probá de nuevo en unos segundos.',
+      retry: 'Reintentar',
+      back: 'Volver a incidentes',
+    },
+  },
+} as const;

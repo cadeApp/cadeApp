@@ -1,0 +1,210 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, staging, main]
+  push:
+    branches: [develop, staging, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      # PR57-H20: prettier estaba instalado con su .prettierrc y no lo corria nadie,
+      # mientras la bitacora de T-003 anotaba «Prettier ✅». Todavia no bloquea:
+      # hay 25 archivos de src/** sin formatear y formatearlos excede T-007.
+      - name: Check formatting (advisory)
+        run: |
+          FMT_FAILED=
+          pnpm format:check > format-output.txt 2>&1 || FMT_FAILED=1
+          cat format-output.txt
+          if [ -n "$FMT_FAILED" ]; then
+            # Sin comas en el title: GitHub las usa para separar propiedades y trunca.
+            # Y sin ANSI en el message, que prettier colorea aunque no haya tty.
+            SUMMARY=$(grep -m1 'Code style issues' format-output.txt | sed 's/\x1b\[[0-9;]*m//g' || echo 'ver el log del job')
+            echo "::warning title=Formato pendiente (prettier no bloquea todavia)::${SUMMARY}"
+          fi
+
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:coverage
+      - run: node --test .github/workflows/verify-workflows.test.mjs
+      # PR57-H06: la suite que verifica el DoD de T-007 vivia solo en el script
+      # `test`, que este job no corre — corre `test:coverage`. Sin este paso,
+      # borrar los dos ADR dejaba los 8 jobs en verde.
+      - run: node --test docs/adr/verify-adr.test.mjs
+
+  db-tests:
+    name: db-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      # Sin caché de ~/.cache/supabase: el CLI nunca escribe ahí, así que el paso
+      # terminaba en «Path Validation Error: Path(s) specified in the action for
+      # caching do(es) not exist, hence no cache is being saved» en cada corrida.
+      # Lo que tarda es bajar las imágenes de Docker, que no viven en esa ruta y
+      # que además se traen sin autenticar contra Docker Hub, con su límite. Eso
+      # sigue abierto: es PR54-H02, y necesita una decisión (credenciales, espejo
+      # o aceptar la intermitencia), no otro paso de caché.
+      - run: pnpm install --frozen-lockfile
+      - name: Run local RPC/RLS tests and compare local types when schema exists
+        run: |
+          if [ -d supabase/migrations ] && [ -n "$(find supabase/migrations -name '*.sql' -print -quit)" ]; then
+            pnpm supabase start
+            pnpm supabase test db
+            pnpm db:types --local
+            git diff --exit-code -- src/types/database.types.ts
+          else
+            echo 'No hay migraciones todavía; las pruebas de base empiezan en T-004.'
+          fi
+
+  # Acá vivía el job db-types, que comparaba los tipos commiteados contra el
+  # esquema remoto de staging. Comparar contra staging en un PR a develop es
+  # comparar contra el pasado: develop va adelante de staging por diseño —
+  # migrate.yml solo corre al pushear a staging o main— así que el job falla
+  # siempre que haya una migración mergeada y todavía no promovida. Pasó en
+  # T-003 («drift real de 12 a 650 líneas») y volvería a pasar en el primer PR
+  # a develop que no toque supabase/migrations.
+  #
+  # Lo que el PR necesita —que los tipos commiteados coincidan con las
+  # migraciones del repo— ya lo verifica db-tests contra la base local, en todo
+  # PR y en todo push, sin depender de staging.
+  # Lo que falta —que staging no se haya movido por fuera del repo— se verifica
+  # ahora en migrate.yml, justo después del db push, que es el único momento en
+  # que staging es la verdad.
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build and capture route sizes
+        run: pnpm build 2>&1 | tee build-output.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: next-build-output
+          path: build-output.txt
+          retention-days: 1
+
+  bundle-budget:
+    name: bundle-budget
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: next-build-output
+      - name: Report First Load JS by route (180 kB budget)
+        run: node .github/workflows/check-bundle-budget.mjs build-output.txt
+
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # PR57-H19: la rama advisory terminaba en `|| echo`, asi que el job quedaba
+      # en `pass` mudo al lado de los que si verifican algo, escondiendo 23
+      # vulnerabilidades high/critical. Sigue sin bloquear —es la decision
+      # "advisory hasta contracts-v1"— pero ahora se ve en el resumen del run.
+      - name: Audit dependencies (advisory until contracts-v1)
+        run: |
+          if [ -f src/domain/rpc-contracts.ts ] && [ -d supabase/migrations ]; then
+            pnpm audit --audit-level=high
+          else
+            AUDIT_FAILED=
+            pnpm audit --audit-level=high > audit-output.txt 2>&1 || AUDIT_FAILED=1
+            cat audit-output.txt
+            if [ -n "$AUDIT_FAILED" ]; then
+              SUMMARY=$(grep -m1 'Severity:' audit-output.txt | sed 's/\x1b\[[0-9;]*m//g' || echo 'ver el log del job')
+              echo "::warning title=Auditoria de dependencias (no bloquea hasta contracts-v1)::${SUMMARY}"
+            fi
+          fi

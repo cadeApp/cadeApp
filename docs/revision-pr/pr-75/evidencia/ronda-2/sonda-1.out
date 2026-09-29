@@ -1,0 +1,19 @@
+--- decide approve (admin aal2)
+OK {"status": "approved", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "decidedAt": "2026-09-24T02:44:39.422Z"}
+--- verify_document license (admin aal2)
+OK {"kind": "license", "status": "verified", "docLevel": 1, "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "documentId": "dddddddd-0000-4000-8000-000000000001"}
+--- verify_document selfie (admin aal2)
+OK {"kind": "selfie", "status": "verified", "docLevel": 1, "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "documentId": "dddddddd-0000-4000-8000-000000000002"}
+--- suspend (admin aal2)
+OK {"status": "suspended", "courierId": "aaaaaaaa-0000-4000-8000-000000000003", "deactivatedAt": "2026-09-24T02:44:39.422Z", "withdrawnOffersCount": 0}
+--- set_subscription each domain value
+pilot|OK {"paidUntil": null, "merchantId": "aaaaaaaa-0000-4000-8000-000000000002", "subscriptionStatus": "pilot"}
+active|OK {"paidUntil": null, "merchantId": "aaaaaaaa-0000-4000-8000-000000000002", "subscriptionStatus": "active"}
+expired|OK {"paidUntil": null, "merchantId": "aaaaaaaa-0000-4000-8000-000000000002", "subscriptionStatus": "expired"}
+cancelled|OK {"paidUntil": null, "merchantId": "aaaaaaaa-0000-4000-8000-000000000002", "subscriptionStatus": "cancelled"}
+past_due|ERR P0001 VALIDATION_ERROR
+canceled|ERR P0001 VALIDATION_ERROR
+--- update_setting min_offer_ars 1500
+OK {"key": "min_offer_ars", "value": 1500}
+--- update_setting as wrapper sends it: JSON.stringify(1500) => text "1500" -> jsonb
+OK {"key": "pilot_terms_version", "value": "\"v2\""}

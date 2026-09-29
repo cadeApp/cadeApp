@@ -1,0 +1,451 @@
+# Evidencia — PR #91 / T-203 — Ronda 1
+
+- **SHA producto revisado:** `038faab20a32fe5d468eede1310d45eb8a570c61`
+- **develop al revisar:** `b6bdac6cfe4c5ac9227e87692b8572e1f6bc2121`
+- **Fecha:** 2026-09-24
+- **Entorno:** sesión cloud; acceso al árbol remoto por GitHub, sin checkout ejecutable.
+
+## 1. Estado remoto
+
+PR #91: abierta, no Draft, no mergeada, `mergeable=true`, rama `feat/T-203-emisor-push`, head `038faab`; comparación contra `develop`: ahead 4, behind 0.
+
+Archivos cambiados antes de la revisión:
+
+```text
+docs/tasks/T-203.md
+docs/tasks/log/T-203.md
+package.json
+pnpm-lock.yaml
+src/app/api/push/send/route.test.ts
+src/app/api/push/send/route.ts
+src/app/api/push/subscriptions/route.test.ts
+src/app/api/push/subscriptions/route.ts
+src/server/push/database-client.test.ts
+src/server/push/index.ts
+src/server/push/push.test.ts
+src/server/push/sender.ts
+```
+
+`docs/revision-pr/pr-91/` no existía en el SHA revisado.
+
+## 2. Diff de ficha oficial vs rama
+
+`develop:docs/tasks/T-203.md`:
+
+```text
+Archivos permitidos:
+- src/server/push/**
+- src/app/api/push/**
+- supabase/migrations/**
+- docs/tasks/T-203.md
+- docs/tasks/log/T-203.md
+- docs/revision-pr/**
+
+Dependencias nuevas permitidas:
+- ninguna
+```
+
+`038faab:docs/tasks/T-203.md` agrega:
+
+```text
+- package.json
+- pnpm-lock.yaml
+...
+Dependencias nuevas permitidas:
+- web-push (autorizado por Lautaro073 según regla 25 y ADR-0001/0002)
+```
+
+La regla 25 sí contiene `web-push (T-203)`, lo que confirma que hay una inconsistencia de la ficha original; no cambia cuál es la fuente de alcance durante esta revisión.
+
+## 3. Historial de fase roja
+
+Commits de la PR:
+
+```text
+aa89372 chore(T-203): start task [T-203]
+c3e7ba4 feat(push): implement push sender and subscription routes [T-203]
+3179538 fix(push): remove 'as any' in test mocks [T-203]
+038faab docs(T-203): session log
+```
+
+`aa89372` contiene solo `docs/tasks/log/T-203.md` y `src/server/push/push.test.ts`; `src/server/push/sender.ts` no existe en ese SHA. Por tanto el archivo de tests falla antes de ejecutar sus aserciones al resolver `./sender`.
+
+La bitácora de ese SHA deja `test n.a.`. La entrada final solo registra el verde, sin salida roja por mutación semántica.
+
+## 4. Barrido del fallo del Juez
+
+Fuente: `.el-consejo/revision-1/adjudication/push-notification-implementation-scope.json` en `develop`.
+
+Obligaciones backend relevantes y estado observado:
+
+```text
+1. push_subscriptions por usuario/dispositivo + alta/baja dueño-solo -> parcial: route existe; platform no se escribe
+2. emisor Node + Web Push/VAPID                                  -> sí
+3. disparo desde transición real después de commit               -> no hay call site de producción
+4. lifecycle: upsert/apertura, inválida, logout, disable courier  -> parcial: upsert + 404/410; faltan logout/disable
+5. payload mínimo tipo+id sin PII                                 -> código actual sí; tests 2/5 variantes
+   registrar resultado + código de respuesta                      -> conteos sí; status HTTP por intento no
+```
+
+El árbol existente `src/server/rpc/requests.ts`, `src/server/rpc/offers.ts` y `src/server/cron/sweep.ts` no contiene referencias a push/notify. Como `safeNotifyPostTransition` nace en esta PR y el diff no toca esos archivos, no existe cableado de producción.
+
+## 5. Intento de checkout local
+
+```bash
+git clone --filter=blob:none --no-checkout https://github.com/cadeApp/cadeApp.git /tmp/cadeapp-pr91
+```
+
+Salida:
+
+```text
+Cloning into '/tmp/cadeapp-pr91'...
+fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/': Could not resolve host: github.com
+```
+
+Consecuencia: no se atribuye ejecución independiente de `pnpm typecheck`, `pnpm lint`, `pnpm test` ni del arnés de Vitest. CI tampoco se inspeccionó por existir bloqueantes. No se levantó Supabase/Docker local.
+
+## 6. Batería de mutaciones del revisor
+
+Arnés preparado para ejecutar desde la raíz de un checkout limpio del SHA revisado. Muta una sola coincidencia, corre solo la suite push y restaura bytes desde memoria en `finally`.
+
+```js
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+
+const S = 'src/server/push/sender.ts';
+const T = 'src/server/push/push.test.ts';
+
+const M = {
+  X00_control: [],
+
+  // H02: el test post-commit debe detectar que el helper deja de intentar el envío.
+  X01_safe_notify_noop: [[
+    S,
+    '    await sendPushNotification(userIds, event, options);',
+    '    return;',
+  ]],
+
+  // H03: un 410 real de web-push llega por rejection/statusCode.
+  X02_webpush_rethrows_status: [[
+    S,
+    '        return { status: err.statusCode };',
+    '        throw err;',
+  ]],
+
+  // H04: romper solo una variante de la unión; las otras no deben servir de proxy.
+  X03_offer_submitted_passthrough: [[
+    S,
+    `  z\n    .object({\n      event: z.literal('offer_submitted'),\n      requestId: z.string().uuid(),\n      offerId: z.string().uuid(),\n    })\n    .strict(),`,
+    `  z\n    .object({\n      event: z.literal('offer_submitted'),\n      requestId: z.string().uuid(),\n      offerId: z.string().uuid(),\n    })\n    .passthrough(),`,
+  ]],
+
+  // H05: 429 no significa suscripción inválida/expirada.
+  X04_delete_429: [[
+    S,
+    '      } else if (status === 410 || status === 404) {',
+    '      } else if (status === 410 || status === 404 || status === 429) {',
+  ]],
+
+  // H05: la clase de éxito no es solo 201.
+  X05_only_201_is_success: [[
+    S,
+    '      if (status >= 200 && status < 300) {',
+    '      if (status === 201) {',
+  ]],
+};
+
+const name = process.argv[2];
+if (!name || !(name in M)) {
+  console.error(`uso: node /tmp/mut-pr91.mjs ${Object.keys(M).join('|')}`);
+  process.exit(2);
+}
+
+const originals = new Map([[S, readFileSync(S)]]);
+try {
+  for (const [file, from, to] of M[name]) {
+    const text = readFileSync(file, 'utf8');
+    const count = text.split(from).length - 1;
+    if (count !== 1) {
+      console.error(`${name}: SIN OBJETIVO (${count}) en ${file}`);
+      process.exitCode = 2;
+      break;
+    }
+    writeFileSync(file, text.replace(from, to));
+  }
+
+  if (process.exitCode !== 2) {
+    let out = '';
+    try {
+      out = execSync(
+        'pnpm exec vitest run src/server/push src/app/api/push --testTimeout 15000 2>&1',
+        { encoding: 'utf8' }
+      );
+    } catch (error) {
+      out = error.stdout ?? String(error);
+    }
+    const summary = out.split('\n').find((line) => /^\s+Tests\s/.test(line)) ?? '(sin línea Tests)';
+    console.log(`${name}: ${summary.trim()}`);
+  }
+} finally {
+  for (const [file, bytes] of originals) writeFileSync(file, bytes);
+}
+```
+
+Expectativa que debe verificarse en el arreglo:
+
+```text
+X00_control                    -> verde
+X01_safe_notify_noop           -> rojo
+X02_webpush_rethrows_status    -> rojo
+X03_offer_submitted_passthrough-> rojo
+X04_delete_429                 -> rojo
+X05_only_201_is_success        -> rojo
+```
+
+En `038faab`, por inspección de dependencias de las aserciones, X01–X05 no tienen una aserción que observe directamente la propiedad mutada. Esta sesión **no inventa** una línea `Tests ...` como si se hubiera ejecutado: deberá reproducirse en el checkout de quien arregle.
+
+## 7. Validación del artefacto de revisión
+
+Se validó `hallazgos.jsonl` parseando las 8 líneas como JSON. El comando canónico del repo `node docs/revision-pr/analizar.mjs verificacion` debe correrse en un checkout tras traer este commit; no pudo ejecutarse en esta sesión por no disponer del árbol local completo.
+
+
+---
+
+# Ronda 2 sobre `6f867f1`
+
+## Delta desde la ronda 1
+
+Comparación `18f4749...6f867f1`:
+
+```text
+status: ahead
+ahead_by: 1
+behind_by: 0
+total_commits: 1
+
+docs/tasks/log/T-203.md  +9 / -0
+```
+
+Commit nuevo:
+
+```text
+6f867f115699d9c8df373aa3126b8f6e0910677c
+docs(T-203): session log - bloqueada por ficha [T-203]
+```
+
+No hay cambios en `src/**`, `package.json`, `pnpm-lock.yaml`, tests ni `docs/tasks/T-203.md`.
+
+## Ficha oficial releída
+
+`develop:docs/tasks/T-203.md` continúa con:
+
+```text
+Archivos permitidos:
+- src/server/push/**
+- src/app/api/push/**
+- supabase/migrations/**
+- docs/tasks/T-203.md
+- docs/tasks/log/T-203.md
+- docs/revision-pr/**
+
+Dependencias nuevas permitidas:
+- ninguna
+```
+
+La rama todavía contiene la versión autoampliada de la ficha, pero el nuevo commit no volvió a modificarla.
+
+## Revalidación de los 8 hallazgos
+
+No existe cambio de producto que pueda cerrar A01/H01-H07. Todos permanecen abiertos por la misma evidencia de ronda 1. La nueva bitácora confirma explícitamente que el agente se detuvo por A01/H01 y que H02-H07 siguen pendientes.
+
+No se ejecutan nuevas mutaciones ni checks sobre producto en ronda 2 porque el SHA de producto no cambió; la ronda no presenta resultados de ejecución inventados. CI final tampoco se inspecciona mientras siguen abiertos los bloqueantes.
+
+
+---
+
+# Ronda 3 — SHA `926ca2e`
+
+## Delta desde la ronda 2
+
+La rama incorporó `develop` con PR #93 y luego el commit de producto `0cae1ef`. Los cambios de producto de la ronda afectan:
+
+```text
+src/server/push/sender.ts
+src/server/push/push.test.ts
+src/server/push/database-client.test.ts
+src/app/api/push/subscriptions/route.ts
+src/app/api/push/subscriptions/route.test.ts
+src/app/api/push/send/route.test.ts
+docs/tasks/log/T-203.md
+```
+
+La ficha oficial en `develop` ya autoriza `package.json`, `pnpm-lock.yaml` y `web-push@3.6.7`, y delega el cableado end-to-end a T-206.
+
+## CI independiente observado
+
+Workflow CI del head `926ca2e`: success.
+
+```text
+unit          success
+typecheck     success
+audit         success
+lint          success
+db-tests      success
+build         success
+bundle-budget success
+```
+
+Unit:
+
+```text
+Test Files 46 passed (46)
+Tests      422 passed (422)
+workflows  20 tests
+ADR        6 tests
+```
+
+DB:
+
+```text
+All tests successful.
+Files=8, Tests=1444
+Result: PASS
+```
+
+## Verificación de hallazgos anteriores
+
+- H02: el test actual contiene `expect(failingTransport.send).toHaveBeenCalledTimes(1)`.
+- H03: hay casos de rejection con `statusCode:410`, `404`, error sin status y éxito 201, más integración 410→delete.
+- H04: `it.each` recorre las 5 variantes con `SENTINEL_PII`.
+- H05: `it.each` recorre 200/201, 404/410 y 429/500/503.
+- H06: `db-tests` ejecutó Supabase/pgTAP realmente en CI.
+- H07: la entrada 20:50 de la bitácora contiene los resúmenes rojo/verde de las cinco mutaciones.
+
+## PR91-H08
+
+Código relevante:
+
+```text
+sender.ts:157 private configureVapid(): void
+sender.ts:163 if (publicKey && privateKey) {
+sender.ts:164   this.client.setVapidDetails(...)
+sender.ts:170 this.configureVapid();
+sender.ts:172 ...sendNotification(...)
+```
+
+`serverEnv.VAPID_PRIVATE_KEY` y `publicEnv.NEXT_PUBLIC_VAPID_PUBLIC_KEY` permiten valor vacío. Si falta una key, no se configura VAPID pero el envío continúa.
+
+La suite actual no afirma `setVapidDetails`; todos sus mocks de entorno contienen keys. Por dependencia directa de assertions, una mutación que convierta `configureVapid` en no-op no es detectada por los casos actuales de status.
+
+## PR91-H09
+
+Diff actual de `package.json`:
+
+```text
+- "test": "vitest run ..."
++ "test": "vitest run --testTimeout 15000 ..."
+
+- "test:coverage": "vitest run --coverage"
++ "test:coverage": "vitest run --coverage --testTimeout 15000"
+```
+
+El job `unit` de CI ejecuta `pnpm test:coverage`, por lo tanto el timeout relajado afecta también el control de CI. La bitácora dice que el motivo fue tolerar latencia/concurrencia en Windows.
+
+
+---
+
+# Ronda 4 — SHA `54a996c`
+
+## Delta desde `a7c2460`
+
+```text
+275c4bc fix(push): enforce VAPID credentials and revert test timeouts [T-203]
+54a996c docs(T-203): record commit 275c4bc in session log [T-203]
+```
+
+Archivos:
+
+```text
+docs/tasks/log/T-203.md
+package.json
+src/server/push/push.test.ts
+src/server/push/sender.ts
+```
+
+## H08
+
+Inspección de `sender.ts`:
+
+```text
+configureVapid:
+- trim public/private
+- si falta una: throw "VAPID credentials missing..."
+- setVapidDetails(subject, public, private)
+- vapidConfigured = true
+
+send:
+- configureVapid antes de sendNotification
+- cualquier error de configuración se convierte en status 500
+```
+
+Inspección de `push.test.ts`:
+
+```text
+setVapidDetails -> llamado una vez con subject/public/private
+public key faltante -> status 500 + sendNotification no llamado
+private key faltante -> status 500 + sendNotification no llamado
+ambas faltantes -> status 500 + sendNotification no llamado
+```
+
+Bitácora del autor:
+
+```text
+mutación configureVapid -> no-op:
+Tests 4 failed | 33 passed (37)
+verde restaurado:
+Tests 37 passed (37)
+```
+
+## H09
+
+`package.json` actual:
+
+```text
+"test": "vitest run && ..."
+"test:coverage": "vitest run --coverage"
+```
+
+No existe `--testTimeout 15000` en esos scripts.
+
+## CI observado
+
+Workflow `36076862734` sobre `54a996c`:
+
+```text
+lint          success
+audit         success
+typecheck     success
+build         success
+unit          success
+db-tests      success
+bundle-budget success
+```
+
+Unit:
+
+```text
+Test Files 46 passed (46)
+Tests      426 passed (426)
+workflow tests 20
+ADR tests 6
+```
+
+DB:
+
+```text
+All tests successful.
+Files=8, Tests=1444
+Result: PASS
+```
+
+No se ejecutó checkout local en el entorno del revisor; la ejecución independiente disponible es CI.

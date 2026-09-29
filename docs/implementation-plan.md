@@ -1,7 +1,7 @@
-# cadeApp — Plan de implementación para agentes (agy) · v2.5
+# cadeApp — Plan de implementación para agentes (agy) · v2.7
 
 > Revisado por El Consejo en `revision-3` (2026-09-18). **Estado: APROBADO CON RESOLUCIÓN D16.** El registro está en `.el-consejo/revision-3/`.
-> Qué construir: [master-plan.md](master-plan.md). Reglas listas para copiar: [`docs/agy-kit/`](agy-kit/README.md). Diseños y especificaciones vinculantes: [`docs/design/stitch/exports/`](design/stitch/exports/registro.md).
+> Qué construir: [master-plan.md](master-plan.md). Reglas y skills de agy: [`.agents/`](../.agents/). Diseños y especificaciones vinculantes: [`docs/design/stitch/exports/`](design/stitch/exports/registro.md).
 > Somos 3 personas con agy, trabajando **en simultáneo** y **en horarios distintos**. **Lautaro073** es el **único programador y líder técnico**:
 > programa la zona más crítica (datos y servidor) y el arranque, y revisa todo. Las otras dos personas **no saben programar**:
 > operan agy como herramienta de codificación asistida mediante fichas, skills y prompts predefinidos. **agy es quien codifica**,
@@ -15,8 +15,8 @@
 | Si sos… | Leé primero | Tu primera tarea |
 |---|---|---|
 | Persona 1 · Lautaro073 (líder técnico y programador: datos, servidor y arranque) | §3.7 Día 0, §2, §7.1 | Día 0 (humano) → T-000 |
-| Persona 2 · App de comercio y repartidor (operador de agy) | §3.8, §7.2, `agy-kit/.agents/rules/20-arquitectura.md` | T-006 y T-008 (cuando T-000 esté mergeada) |
-| Persona 3 · Admin, PWA y calidad (operador de agy) | §3.8, §7.3, `agy-kit/.agents/rules/40-testing.md` | T-201 (cuando T-000 esté mergeada) |
+| Persona 2 · App de comercio y repartidor (operador de agy) | §3.8, §7.2, `.agents/rules/20-arquitectura.md` | T-006 y T-008 (cuando T-000 esté mergeada) |
+| Persona 3 · Admin, PWA y calidad (operador de agy) | §3.8, §7.3, `.agents/rules/40-testing.md` | T-201 (cuando T-000 esté mergeada) |
 
 Todos: [`docs/guia-prompts.md`](guia-prompts.md) (**manual de prompts para copiar y pegar según tu rol**), `docs/onboarding.md` (en el kit), §3 (coordinación) y la skill `tomar-tarea`.
 
@@ -38,8 +38,8 @@ Completar al crear el repo:
 | Persona | Usuario de GitHub | Rol |
 |---|---|---|
 | Persona 1 | `@Lautaro073` | Líder técnico y desarrollador. Programa datos, servidor y arranque (T-000, T-001, T-003). Revisa y aprueba los PR de las otras dos personas. Único administrador de producción. |
-| Persona 2 | `@________` | Operador de agy (no programador) en la zona App de comercio y repartidor. agy codifica y ejecuta las skills bajo su cuenta. |
-| Persona 3 | `@________` | Operador de agy (no programador) en la zona Admin, PWA y calidad. agy codifica y ejecuta las skills bajo su cuenta. |
+| Persona 2 | `@KiraK72` | Operador de agy (no programador) en la zona App de comercio y repartidor. agy codifica y ejecuta las skills bajo su cuenta. |
+| Persona 3 | `Pendiente` | Operador de agy (no programador) en la zona Admin, PWA y calidad. agy codifica y ejecuta las skills bajo su cuenta (Lautaro073 cubre provisoriamente). |
 
 | Zona | Rutas | Dueña |
 |---|---|---|
@@ -51,13 +51,13 @@ La zona sirve para repartir tareas y coordinar, no para aprobar.
 
 **Quién aprueba cada PR** (checkpoint revision-2, ajustado al equipo real):
 - **PR de Persona 2 o Persona 3:** lo aprueba **Lautaro073**, siempre. Antes de pedir revisión, quien lo abre adjunta el informe de revisión de agy (skill `revisar-pr`) con lo bloqueante corregido.
-- **PR de Lautaro073:** lo aprueba Persona 2 o Persona 3. No revisan el código línea por línea. Verifican:
+- **PR de Lautaro073:** los aprueba y mergea **él mismo**. P2 y P3 no programan, así que no pueden revisar código; pedirles una aprobación sería un requisito que nadie puede cumplir, y GitHub además no permite aprobar el propio PR. Lo que reemplaza a la aprobación de un par es la **revisión independiente**, que corre sobre el PR ronda por ronda hasta que no queda ningún hallazgo abierto y deja el informe de `revisar-pr` en el cuerpo. Antes de mergear, Lautaro073 verifica:
   1. que CI esté verde, incluidas las pruebas de base y `rls_enabled.sql`;
-  2. que haya un informe de `revisar-pr` generado por ellos, sin hallazgos bloqueantes;
+  2. que el cuerpo traiga el informe de `revisar-pr` sin hallazgos bloqueantes;
   3. que el checklist de seguridad esté marcado.
 
-  Si el informe marca algo bloqueante, no aprueban: lo comentan.
-- **Check de CI `approval-policy`** (T-003): falla si un PR de P2 o P3 no tiene la aprobación de Lautaro073, o si un PR de Lautaro073 no tiene la sección de informe de agy completa.
+  Si el informe marca algo bloqueante, no se mergea: se corrige y se vuelve a revisar.
+- **Check de CI `approval-policy`** (T-003): falla si un PR de P2 o P3 no tiene la aprobación de Lautaro073, o si un PR de Lautaro073 no tiene la sección de informe de agy completa. **En los PR de Lautaro073 no exige aprobación de un par, a propósito:** no hay quién la dé.
 - **Tocar la zona de otra persona:** la ficha nombra la subruta y la dueña de esa zona deja un comentario de visto bueno para coordinar. El visto bueno no reemplaza la aprobación.
 - **Producción:** solo Lautaro073 ve y rota los secretos de producción, aprueba el environment `production` y el PR `staging → main`. Lo hace desde las consolas web con 2FA. **Su máquina de desarrollo, donde corre agy, tampoco guarda credenciales de staging ni de producción.**
 - **Sin respaldo experto en la base:** si Lautaro073 no está, no se mergean migraciones ni cambios de RLS o RPC. P2 y P3 siguen contra el fake de RPC (§3.4). No hay procedimiento de emergencia (break-glass). Nunca se aplican migraciones a mano: solo `migrate.yml`.
@@ -122,11 +122,11 @@ Labels: `P1`, `P2`, `P3`, `fase-0` a `fase-3`, `bloqueada`, `contract-change`, `
 ### 3.7 Día 0 (Lautaro073, sin agentes)
 1. Crear el repo privado `cadeapp` en GitHub, invitar a las 3 personas y exigir 2FA.
 2. Crear `develop` y `staging` desde `main` y crear el Project "cadeApp" con las columnas y labels de §3.1.
-3. Crear la organización de Supabase y los **2 proyectos remotos del Free Tier**: `cadeapp-prod` (producción) y `cadeapp-staging` (staging, en T-002). No se crea proyecto remoto para `develop`: el desarrollo y CI corren 100% sobre Docker local y runners de GitHub (costo $0, sin límites excedidos).
+3. Crear la organización de Supabase y los **2 proyectos remotos del Free Tier**: `cadeapp-prod` (producción) y `cadeapp-staging` (staging y develop compartido, en T-002). Se utiliza `cadeapp-staging` tanto para develop como para staging, descartando Docker local para agilizar el onboarding de los operadores de agy y mantener costo $0 sin límites excedidos.
 4. Hosting: proyecto con ambientes de preview y producción. Producción la administra solo Lautaro073.
 5. Crear los GitHub Environments `staging` y `production` (este último con Lautaro073 como required reviewer). Los secretos se cargan a medida que las tareas los piden.
-6. Subir a `main` los documentos `docs/master-plan.md`, `docs/implementation-plan.md` y `docs/agy-kit/`, y completar la tabla de §2.
-7. Pedirles a P2 y P3 que sigan `docs/agy-kit/docs/onboarding.md` y lean §3.8 mientras Lautaro073 hace T-000.
+6. Subir a `main` los documentos `docs/master-plan.md` y `docs/implementation-plan.md`, y completar la tabla de §2.
+7. Pedirles a P2 y P3 que sigan `docs/onboarding.md` y lean §3.8 mientras Lautaro073 hace T-000.
 
 ### 3.8 Guía para quienes operan agy sin saber programar (P2 y P3)
 Como operador de agy no necesitás saber programar: **agy es quien escribe el código, corre las pruebas y genera los commits**. Tu rol es dirigirlo con las skills y vigilar que no se desvíe. **Toda la secuencia de prompts listos para copiar y pegar está en [`docs/guia-prompts.md`](guia-prompts.md)**:
@@ -154,8 +154,8 @@ cadeapp/
 │  ├─ app/{layout.tsx,providers.tsx,(public),(merchant),(courier),(admin),api/{cron,push,health}}
 │  ├─ domain/{AGENTS.md,states/,errors.ts,rpc-contracts.ts,schemas/,testing/rpc-fake.ts}
 │  ├─ features/_template/ y features/<modulo>/{components/,hooks/,actions.ts,queries.ts,query-keys.ts,schemas.ts,copy.ts,index.ts,server.ts}
-│  ├─ server/{supabase/{server,browser,admin}.ts,rpc/{offers,requests,admin}.ts,push/,observability/,env.ts}
-│  ├─ lib/{format/,hooks/,error-messages.ts,env.public.ts}
+│  ├─ server/{supabase/{server,admin}.ts,rpc/{offers,requests,admin}.ts,push/,observability/,env.ts}
+│  ├─ lib/{supabase/browser.ts,format/,hooks/,error-messages.ts,env.public.ts}
 │  ├─ ui/{shadcn/ui,tokens.css,cn.ts}
 │  ├─ types/database.types.ts (generado)
 ├─ components.json                                             # shadcn/ui → src/ui
@@ -165,7 +165,7 @@ cadeapp/
 
 Módulos: `auth`, `merchants`, `requests`, `offers`, `trips`, `availability`, `courier-onboarding`, `admin`, `incidents`, `notifications`, `legal`.
 
-Fronteras (ESLint + `server-only`; detalle en `agy-kit/.agents/rules/20-arquitectura.md`):
+Fronteras (ESLint + `server-only`; detalle en `.agents/rules/20-arquitectura.md`):
 - `domain` es puro.
 - `server` lleva `import 'server-only'` en todos sus archivos.
 - Una feature expone `index.ts` (apto para cliente) y `server.ts` (solo servidor).
@@ -174,7 +174,7 @@ Fronteras (ESLint + `server-only`; detalle en `agy-kit/.agents/rules/20-arquitec
 
 ## 5. Reglas y skills de agy (kit)
 
-Todo está en `docs/agy-kit/` y se instala en T-001:
+Instalado en la raíz en T-001:
 
 | Archivo | Para qué |
 |---|---|
@@ -194,10 +194,11 @@ El hook ya se probó contra 35 casos: bloquea lo peligroso y deja pasar lo norma
 
 - **Ramas:** `main` (producción), `staging`, `develop`, `feat/T-xxx-*`, `cc/CC-nnn-*`, y `fix/T-xxx-*` para hotfix.
 - **Protección** (en `develop`, `staging` y `main`):
-  - PR obligatorio, con una aprobación de otra persona, checks verdes (incluido `approval-policy`) y rama al día;
+  - PR obligatorio, checks verdes (incluido `approval-policy`) y rama al día;
   - sin push directo ni force push, tampoco para administradores;
-  - en `main` se suma el check `e2e-staging`.
-- **Hasta que T-003 esté mergeada,** cada PR lleva la salida local de los checks pegada y se aprueba según §2. Los PR de Lautaro073 de T-000 y T-001 los aprueba P2 o P3 con informe de agy.
+  - en `main` se suma el check `e2e-staging`;
+  - **sin «require approvals»:** GitHub no distingue por autor, así que exigir una review aprobatoria bloquearía para siempre los PR de Lautaro073, que nadie más puede aprobar (§2). La aprobación de los PR de P2 y P3 la exige el check `approval-policy`, que sí distingue el autor.
+- **Hasta que T-003 esté mergeada,** cada PR lleva la salida local de los checks pegada y se aprueba según §2. Los PR de Lautaro073 los mergea él con el informe de la revisión independiente en el cuerpo.
 - **`ci.yml`:** corre en paralelo `typecheck`, `lint`, `unit` + cobertura (umbral en `src/domain`), `db-tests` (Supabase local, `rls_enabled.sql`, `db:types` sin diff) y `build`.
   - Usa caché de pnpm y de las imágenes de Supabase. Objetivo: menos de 10 minutos.
   - `pnpm audit --audit-level=high` solo avisa hasta `contracts-v1`; después bloquea.
@@ -217,7 +218,7 @@ El hook ya se probó contra 35 casos: bloquea lo peligroso y deja pasar lo norma
 
 Cada tablero está en orden. `∥` = se puede hacer en paralelo con la anterior.
 
-### 7.1 Persona 1 · Lautaro073 · Datos, servidor y arranque (15 tareas + revisión)
+### 7.1 Persona 1 · Lautaro073 · Datos, servidor y arranque (16 tareas + revisión)
 1. T-000 Scaffold mínimo (máximo 1 día; destraba a todos)
 2. T-001 Kit de agy, CODEOWNERS, Project e issues (con P2 y P3 en el simulacro de traspaso) · ∥ T-002 Supabase local, clientes y proyectos staging/prod (Free Tier)
 3. T-003 CI/CD, protecciones y `approval-policy`
@@ -226,10 +227,11 @@ Cada tablero está en orden. `∥` = se puede hacer en paralelo con la anterior.
 6. T-101 RPC de ofertas → T-103 RPC de solicitudes (no dependen entre sí: hacé primero la que destrabe a quien esté esperando)
 7. T-102 `accept_offer`
 8. T-106 Migración, RLS de coordenadas y RPC `calculate_route_distance` (Haversine × 1.30, bounding box Aguilares, fallback a `zones`)
-9. T-105 RPC de admin (destraba T-122 y T-123 de P3)
+9. T-105 RPC de admin (destraba T-122 y T-123, hoy asignadas a P1)
 10. T-104 Cron y health
-11. T-203 Emisor de push (destraba T-202 de P3)
-12. T-310 Operación, backups y simulacro de restauración
+11. T-118 Integración visual Stitch, shells y navegación canónica (corrección transversal; sin viajes, mapas ni contratos de UI)
+12. T-122 Shell admin, MFA y postulantes · T-123 Admin de comercios, settings y auditoría · T-124 Incidentes (asignadas a P1; después de T-115/T-121 y del contract-change de primitivas)
+13. T-201 PWA, estados transversales y error/404 (asignada a P1) · T-203 Emisor de push · T-310 Operación, backups y simulacro de restauración
 
 Siempre: revisar y aprobar los PR de P2 y P3 (§2), y atender las preguntas de §3.8 en los issues. Conviene reservar un bloque diario para revisiones, así nadie queda trabado.
 
@@ -238,27 +240,27 @@ Siempre: revisar y aprobar los PR de P2 y P3 (§2), y atender las preguntas de �
 2. T-009 Auth base (después de T-004 y T-005)
 3. T-111 Alta de comercio (con pin en mapa de Aguilares y fallback a texto)
 4. T-112 Crear solicitud (con pin de entrega opcional en mapa de Aguilares, retiro precargado y selector de cambio en efectivo)
-5. T-116 Componente de mapa `src/ui/map.tsx` (import dinámico) y selector interactivo de pin para comercio
+5. T-116 Componente de mapa `src/ui/map.tsx` (import dinámico) y selector interactivo de pin para comercio, después de su contract-change
 6. T-114 Panel del repartidor (con el fake hasta T-101; solo barrio y distancia aproximada, sin mapa, sin precio sugerido y sin ciudades ajenas)
 7. T-113 Mis solicitudes, ofertas y aceptar (real después de T-102; sin estrellas ni calificaciones según S4)
 8. T-115 Vista de viaje y WhatsApp
 9. T-117 Mapa de recorrido y botón "Abrir en Google Maps" en viaje activo (C06, R07; post-aceptación)
 10. T-204 Respaldo de tiempo real
-11. T-205 Pasada de accesibilidad
+11. T-205 Pasada final de accesibilidad (asignada a P2), después de T-115–T-118, T-201/T-202 y T-204
 12. T-313 E2E de registro de comercio · ∥ T-303 E2E del flujo principal · ∥ T-304 E2E de estados · ∥ T-307 E2E de notificaciones
 
 Mientras esperás T-000: onboarding (`docs/onboarding.md`) y lectura del master plan. Después: tests de dominio, estados vacíos y de error, y visto bueno cuando otra zona toca `src/ui` o las rutas de comercio y repartidor.
 
-### 7.3 Persona 3 · Admin, PWA y calidad (14 tareas)
-1. T-201 PWA (depende solo de T-000)
-2. T-121 Onboarding del repartidor (después de T-009 y T-008)
-3. T-123 Admin de comercios y plataforma (después de T-105; sin CUIT y sin solapa de liquidaciones en TopNav)
-4. T-122 Admin de repartidores
-5. T-124 Incidentes
-6. T-202 Cliente de push (después de T-203)
-7. T-301 Arnés E2E
-8. T-302 E2E de onboarding · ∥ T-305 E2E de autorización · ∥ T-306 E2E de piloto y suscripción · ∥ T-308 E2E de incidentes · ∥ T-309 E2E de cargas y accesibilidad · ∥ T-314 E2E de mapas, privacidad y degradación
-9. T-311 Páginas legales (bloqueante externo: abogado)
+### 7.3 Persona 3 · Admin, PWA y calidad (tablero histórico; las fichas corregidas reflejan la asignación vigente en Project)
+1. T-121 Onboarding del repartidor (después de T-009 y T-008)
+2. T-201 PWA, estados transversales y error/404 (vigente: P1; después de T-118)
+3. T-202 Cliente de push (vigente: P2; después de T-201 y T-203)
+4. T-122 Shell admin, MFA y postulantes (vigente: P1; después de T-121)
+5. T-123 Admin de comercios, plataforma y auditoría (vigente: P1; después de T-122)
+6. T-124 Incidentes (vigente: P1; después de T-115 y T-122)
+7. T-300 Promoción inicial `develop → staging` · 8. T-301 Arnés E2E
+9. T-302 E2E de onboarding · ∥ T-305 E2E de autorización · ∥ T-306 E2E de piloto y suscripción · ∥ T-308 E2E de incidentes · ∥ T-309 E2E de cargas y accesibilidad · ∥ T-314 E2E de mapas, privacidad y degradación
+10. T-311 Páginas legales (vigente: P1; después de T-118; textos contrastados con normativa argentina vigente y fuentes oficiales)
 
 Mientras esperás T-000: onboarding y lectura del master plan. Después: preparar fixtures y page objects para T-301, y visto bueno cuando otra zona toca `(public)`, `(admin)` o `e2e/`.
 
@@ -272,65 +274,67 @@ Mientras esperás T-000: onboarding y lectura del master plan. Después: prepara
 
 | ID | Quién | Tarea | Depende de | Archivos permitidos | DoD específico |
 |---|---|---|---|---|---|
-| T-000 | P1 | Scaffold mínimo: Next.js App Router, pnpm con `packageManager`, `.nvmrc` y `engines.node`, TS strict, ESLint con fronteras (`eslint-plugin-boundaries`) y regla cliente→servidor, `server-only`, Prettier con plugin de Tailwind, Tailwind, `components.json` de shadcn/ui apuntando a `src/ui`, Vitest con cobertura, raíz de `src/` según la regla 20, `src/features/_template/`, `layout.tsx`, `providers.tsx` con el `QueryClientProvider`, `middleware.ts` vacío, `src/server/env.ts` y `src/lib/env.public.ts` validados con Zod, `.env.example` | — | raíz y configs, esqueleto de `src/**`, `middleware.ts`, `components.json`, `tools/lint-fixtures/**` | typecheck, lint, test y build verdes. Lint falla con (a) un import profundo entre features, (b) un `"use client"` que importa `src/server/**` y (c) un paquete fuera de la lista aprobada, con fixtures commiteados. Importar un archivo `server-only` desde cliente rompe el build; arrancar sin una variable obligatoria falla con un mensaje claro |
-| T-001 | P1 | Instalar `docs/agy-kit/` en la raíz, CODEOWNERS con usuarios reales, Project y labels, un issue por tarea, fichas de Fase 0 y 1 | T-000 | `AGENTS.md`, `.agents/**`, `.github/CODEOWNERS`, `.github/pull_request_template.md`, `docs/**`, `supabase/AGENTS.md`, `src/domain/AGENTS.md`, `e2e/AGENTS.md` | GitHub no marca errores en CODEOWNERS; con agy en las máquinas de las 3 personas, leer `.env.local`, `pnpm supabase db push` y `git push origin develop` quedan bloqueados y `pnpm test` pide permiso normal; **simulacro de traspaso:** P2 empieza una ficha de prueba y P3 la retoma con `retomar-tarea` (acta en la bitácora); P2 y P3 generan un informe de `revisar-pr` sobre el PR de T-001 |
-| T-002 | P1 | CLI de Supabase en devDependencies con versión exacta, `config.toml`, proyectos staging y producción (Free Tier), clientes `src/server/supabase/{server,browser,admin}.ts`, scripts `db:*`, sección de base en `docs/onboarding.md` | T-000 | `supabase/config.toml`, `src/server/supabase/**`, `package.json` (scripts y devDep), `.env.example`, `docs/onboarding.md` | P2 o P3 levantan la base en su máquina siguiendo solo el onboarding (vía Docker local); no hay claves en el repo; el cliente admin tiene `server-only` |
-| T-003 | P1 | `ci.yml`, `migrate.yml`, `approval-policy.yml`, protecciones y environments según §6 | T-000, T-002 | `.github/workflows/**` | Un PR con error de tipos queda bloqueado; CI con caché en menos de 10 minutos; una migración vacía de prueba se aplica en staging; dos merges seguidos no migran en paralelo; Actions fijadas por SHA; `approval-policy` bloquea un PR de prueba de P2 sin aprobación de Lautaro073 y uno de Lautaro073 sin informe de agy; job `bundle-budget` informa el first-load JS por ruta y avisa si supera el presupuesto de la regla 25 |
+| T-001 | P1 | Instalar kit de agy en la raíz, CODEOWNERS con usuarios reales, Project y labels, un issue por tarea, fichas de Fase 0 y 1 | T-000 | `AGENTS.md`, `.agents/**`, `.github/CODEOWNERS`, `.github/pull_request_template.md`, `docs/**`, `supabase/AGENTS.md`, `src/domain/AGENTS.md`, `e2e/AGENTS.md`, `tools/**` | GitHub no marca errores en CODEOWNERS; con agy en las máquinas de las 3 personas, leer `.env.local`, `pnpm supabase db push` y `git push origin develop` quedan bloqueados y `pnpm test` pide permiso normal; **simulacro de traspaso:** P2 empieza una ficha de prueba y P3 la retoma con `retomar-tarea` (acta en la bitácora); P2 y P3 generan un informe de `revisar-pr` sobre el PR de T-001 |
+| T-002 | P1 | Clientes @supabase/ssr (`src/lib/supabase/browser.ts` y `src/server/supabase/{server,admin}.ts`), configuración remota para `cadeapp-staging` vía variables de entorno, script `pnpm db:types` remoto, sección de base en `docs/onboarding.md` (sin Docker local) | T-000 | `supabase/config.toml`, `src/server/supabase/**`, `src/lib/supabase/**`, `tools/**`, `.eslintrc.json`, `package.json`, `pnpm-lock.yaml`, `.env.example`, `docs/onboarding.md`, `docs/tasks/**`, `docs/implementation-plan.md` | Variables de entorno validadas con `cadeapp-staging`; no hay claves en el repo; clientes de servidor tienen `server-only` y browser en `src/lib`; script `db:types` seguro en `tools/db-types.mjs` (verificación de drift asignada al CI en T-003) |
+| T-003 | P1 | `ci.yml`, `migrate.yml`, `approval-policy.yml`, protecciones y environments según §6 | T-000, T-002 | `.github/workflows/**` | Un PR con error de tipos queda bloqueado; `ci.yml` falla si `db:types` deja drift de `database.types.ts` usando `SUPABASE_PROJECT_REF` (demostrado plantando un diff); CI con caché en menos de 10 minutos; una migración vacía de prueba se aplica en staging; dos merges seguidos no migran en paralelo; Actions fijadas por SHA; `approval-policy` bloquea un PR de prueba de P2 sin aprobación de Lautaro073 y uno de Lautaro073 sin informe de agy; job `bundle-budget` informa el first-load JS por ruta y avisa si supera el presupuesto de la regla 25 |
 | T-004 | P1 | Esquema v1 (§7 del master plan), trigger de alta (rol desde metadatos, solo `merchant` o `courier`), seed de zonas y settings, tipos generados | T-002 | `supabase/migrations/**`, `supabase/seed.sql`, `supabase/tests/structure.sql`, `src/types/database.types.ts` | pgTAP de estructura (tablas, índices únicos parciales, checks); registrarse con rol `admin` no crea un admin; tipos sin diff |
 | T-005 | P1 | RLS v1, storage `courier-docs`, matriz RLS, `rls_enabled.sql` | T-004 | `supabase/migrations/**`, `supabase/tests/rls_*.sql` | Matriz por rol (merchant, courier approved/pending/suspended, admin, anon); un repartidor no aceptado no lee contactos; el bucket no se puede leer; `rls_enabled.sql` falla con una tabla sin RLS (demostrado) |
 | T-006 | P2 | Estados, `DomainErrorCode`, `ActionResult`, `rpc-contracts.ts` (todas las RPC, incluidas las `admin_*`), schemas Zod, orden por `doc_level`, `testing/rpc-fake.ts` | T-000 | `src/domain/**` | Transiciones válidas e inválidas por actor; orden de ofertas; el fake devuelve cada código de error; umbral de cobertura de ramas ≥ 90 % configurado |
 | T-007 | P1 | ADR-0001 Supabase (relacional, RLS, push manual, backups/PITR, costo por ambiente en USD) y ADR-0002 hosting y cron | T-002 | `docs/adr/**` | Revisados por las 3 personas; cada costo marcado como dato o supuesto |
-| T-008 | P2 | Base de UI y tokens de Stitch (D16): tokens canónicos en `src/ui/tokens.css` mapeados a variables CSS de shadcn/ui (`--primary: #09BABD`, `--primary-foreground: #12182C` WCAG AAA 6.93:1, `--background: #FDFCFB`, `--card: #FFFFFF`, `--border: #E4E7EC`, radio 10px), componente `<BrandLogo />` (`src/ui/brand-logo.tsx`) con SVGs optimizados (< 5 KB) y WebP en `public/brand/` (sin importar los archivos fuente de `assets/` directo al bundle; PNGs rasterizados obligatorios en `public/` para PWA manifest), cláusula Anti-12px (piso tipográfico `text-sm` 14px Inter 500/600), `BottomNav` móvil (48px targets, safe-area inset), `TopBar` marino 56px (`#12182C`), componentes shadcn/ui en `src/ui` (Button con estado pendiente, Input, Select, Textarea, Form con react-hook-form, Dialog de confirmación, Sheet, Badge, Card, **Skeleton**, EmptyState), **Sonner** (`Toaster` de shadcn/ui + helper `src/ui/notify.ts`), **Motion** (presets en `src/ui/motion/` y `MotionProvider` con `LazyMotion` y `MotionConfig reducedMotion="user"`), montaje de `Toaster` y `MotionProvider` en `providers.tsx`, y formateadores `src/lib/format/` (`formatArs`, `formatDate`, `formatPhone`) | T-000 | `src/ui/**`, `src/lib/format/**`, `src/app/providers.tsx` (visto bueno P1) | Tests del Dialog (foco atrapado, Esc), de `notify` (usa los mensajes y no duplica toasts por id) y de los formateadores (ARS sin decimales, fecha en zona Argentina); verificación de contraste WCAG AA/AAA (AAA en botones primarios); piso tipográfico 14px sin excepciones móviles; bundle size de `<BrandLogo />` < 5 KB; con `prefers-reduced-motion` los presets no desplazan; axe sin violaciones en la página de muestra; ningún valor de estilo arbitrario |
+| T-008 | P2 | Base de UI y tokens de Stitch (D16): tokens canónicos en `src/ui/tokens.css` mapeados a variables CSS de shadcn/ui (`--primary: #09BABD`, `--primary-foreground: #12182C` WCAG AAA 7.35:1, `--background: #FDFCFB`, `--card: #FFFFFF`, `--border: #E4E7EC`, radio 10px), componente `<BrandLogo />` (`src/ui/brand-logo.tsx`) con SVGs optimizados (< 5 KB) y WebP en `public/brand/` (sin importar los archivos fuente de `assets/` directo al bundle; PNGs rasterizados obligatorios en `public/` para PWA manifest), ruta de muestra S00 en `src/app/design-system/page.tsx`, cláusula Anti-12px (piso tipográfico `text-sm` 14px Inter 500/600), `BottomNav` móvil (48px targets, safe-area inset), `TopBar` marino 56px (`#12182C`), componentes shadcn/ui en `src/ui` sobre primitivas reales Radix y `react-hook-form` (Button con estado pendiente, Input, Select, Textarea, Form con react-hook-form, Dialog de confirmación, Sheet, Badge, Card, **Skeleton**, EmptyState), **Sonner** (`Toaster` de shadcn/ui + helper `src/ui/notify.ts`), **Motion** (presets en `src/ui/motion/` y `MotionProvider` con `LazyMotion` y `MotionConfig reducedMotion="user"` de `motion/react`), montaje de `Toaster` y `MotionProvider` en `providers.tsx`, y formateadores `src/lib/format/` (`formatArs`, `formatDate`, `formatPhone`) | T-000 | `src/ui/**`, `src/lib/format/**`, `src/lib/error-messages.ts`, `src/app/providers.tsx` (visto bueno P1), `src/app/design-system/**`, `public/**`, `package.json`, `pnpm-lock.yaml`, `vitest.config.ts` | Tests del Dialog (foco automático al abrir, retorno al disparador al cerrar, foco atrapado, Esc), de `notify` (usa los mensajes y reemplaza toasts por id en Sonner) y de los formateadores (ARS sin decimales, fecha en zona Argentina); verificación de contraste WCAG AA/AAA (AAA 7.35:1 en botones primarios y cobertura de todos los pares semánticos); piso tipográfico 14px sin excepciones móviles verificado contra `tailwind.config.ts`; bundle size de `<BrandLogo />` < 5 KB y assets reales en `public/`; con `prefers-reduced-motion` los presets no desplazan y `.animate-pulse`/`.animate-spin` se desactivan; auditoría estructural DOM sin violaciones en la página de muestra S00 (`@axe-core/playwright` pasa a E2E según `D03`); ningún valor de estilo arbitrario; umbral de cobertura ≥ 80 % de ramas en `src/ui/**` (`D04`) |
 | T-009 | P2 | Auth base: login, registro con rol, logout, sesión/rol/aal, guardas por rol, función de sesión para `middleware.ts` | T-004, T-005, T-006 | `src/features/auth/**`, `src/app/(public)/login/**` y `src/app/(public)/register/**` (visto bueno P3), `middleware.ts` | merchant y courier se registran con su rol; rol admin rechazado; courier no entra a `(merchant)` ni merchant a `(courier)`; tests unitarios de guardas |
 
 ### Fase 1 — Núcleo transaccional y flujos
 
 | ID | Quién | Tarea | Depende de | Archivos permitidos | DoD específico |
 |---|---|---|---|---|---|
-| T-101 | P1 | `submit_offer`, `withdraw_offer`, `set_availability`, `rate_limits` atómico | contracts-v1 | `supabase/migrations/**`, `supabase/tests/rpc_offers.sql`, `src/server/rpc/offers.ts` | 999, 1000 y 1001 con el piso cambiado a 1500; pending, rejected y suspended rechazados; oferta activa duplicada; rate limit con llamadas concurrentes; test de contrato contra `rpc-contracts.ts` y el fake |
-| T-102 | P1 | `accept_offer` atómica e idempotente | T-101 | idem + `supabase/tests/rpc_accept.sql` | 10 llamadas concurrentes → una sola ganadora; idempotencia; `ALREADY_MATCHED`; repartidor suspendido entre la oferta y la aceptación |
+| T-101 | P1 | `submit_offer`, `withdraw_offer`, `set_availability`, `rate_limits` atómico | contracts-v1 | `supabase/migrations/**`, `supabase/seed.sql`, `supabase/tests/rpc_offers.sql`, `src/server/rpc/offers.ts`, `src/server/rpc/offers.test.ts`, `src/domain/rpc-contracts.ts`, `src/domain/testing/rpc-fake.ts`, `src/domain/domain.test.ts`, `docs/contracts/**`, `src/types/database.types.ts` | 999, 1000 y 1001 con el piso cambiado a 1500; pending, rejected y suspended rechazados; oferta activa duplicada; limita ofertas exitosas por ventana (tope de ventana verificado y upsert atómico sobre la PK); test de contrato contra `rpc-contracts.ts` y el fake |
+| T-102 | P1 | `accept_offer` atómica e idempotente | T-101 | idem + `supabase/tests/rpc_accept.sql` | Competencia de 10 ofertas → una sola ganadora y 9 ALREADY_MATCHED (serialización por locks FOR UPDATE en delivery_requests → offers y FOR SHARE en couriers verificada en la migración); idempotencia preservando matchedAt; repartidor suspendido entre la oferta y la aceptación |
 | T-103 | P1 | Ciclo de solicitud (publish, cancel, picked_up, delivered, no_show, courier_cancel, republish, report_incident), expiración perezosa, distancia por zonas | contracts-v1 | `supabase/migrations/**`, `supabase/tests/rpc_requests.sql`, `src/server/rpc/requests.ts` | Cada transición de §5.1 del master plan, válida e inválida por actor; una solicitud vencida rechaza ofertas; suscripción vencida bloquea publicar; test de contrato |
 | T-104 | P1 | `/api/cron/sweep` (expiraciones, purga de documentos, suscripciones vencidas) y `/api/health` | T-103 | `src/app/api/cron/**`, `src/app/api/health/**`, `src/server/**` | Documento vencido purgado y auditado; sin `CRON_SECRET` responde 401 |
 | T-105 | P1 | `admin_decide_courier`, `admin_suspend_courier`, `admin_verify_document`, `admin_set_subscription`, `admin_update_setting` | contracts-v1 | `supabase/migrations/**`, `supabase/tests/rpc_admin.sql`, `src/server/rpc/admin.ts` | Caso feliz, sin aal2, rol incorrecto, estado incorrecto; suspender retira las ofertas pending; test de contrato |
-| T-106 | P1 | Migración, RLS de coordenadas (`merchants.default_pickup_lat/lng`, `delivery_request_contacts.pickup/dropoff_lat/lng`, `delivery_requests.route_distance_m`), RPC `calculate_route_distance(lat1, lng1, lat2, lng2)` con Haversine × 1.30 y redondeo a 0,5 km, validación de bounding box de Aguilares (-27.4550 a -27.4100 lat, -65.6400 a -65.5950 lng) y fallback a centroides de `zones` | contracts-v1 | `supabase/migrations/**`, `supabase/tests/rpc_distance.sql`, `supabase/tests/rls_coordinates.sql`, `src/server/rpc/distance.ts`, `src/types/database.types.ts` | pgTAP de RLS (repartidor no aceptado recibe NULL al leer coordenadas); cálculo exacto con factor 1.30 y redondeo a múltiplos de 500 m; coordenadas fuera de Aguilares rechazadas con error P0001; fallback a centroides probado sin lat/lng; tipos regenerados sin diff |
+| T-106 | P1 | Migración, RLS de coordenadas (`merchants.default_pickup_lat/lng`, `delivery_request_contacts.pickup/dropoff_lat/lng`, `delivery_requests.route_distance_m`), RPC `calculate_route_distance(lat1, lng1, lat2, lng2)` con Haversine × 1.30 y redondeo a 0,5 km, validación de bounding box de Aguilares (-27.4550 a -27.4100 lat, -65.6400 a -65.5950 lng) y fallback a centroides de `zones` | contracts-v1 | `supabase/migrations/**`, `supabase/tests/rpc_distance.sql`, `supabase/tests/rls_coordinates.sql`, `src/server/rpc/distance.ts`, `src/types/database.types.ts` | pgTAP de RLS (repartidor no aceptado recibe NULL al leer coordenadas); un repartidor aprobado no lee `notes`, `paid_until` ni `subscription_status` de `merchants` (PR56-H13); cálculo exacto con factor 1.30 y redondeo a múltiplos de 500 m; coordenadas fuera de Aguilares rechazadas con error P0001; fallback a centroides probado sin lat/lng; tipos regenerados sin diff |
 | T-111 | P2 | Alta de comercio (negocio, retiro habitual, pin opcional en mapa de Aguilares con fallback a texto, consentimientos versionados) | T-009 | `src/features/merchants/**`, `src/app/(merchant)/onboarding/**` | Test de la action (mapeo de errores); el comercio queda en `pilot`; versión de consentimiento guardada; coordenadas validadas en Zod dentro de Aguilares |
 | T-112 | P2 | Crear solicitud (barrios, direcciones, pin de entrega opcional en mapa de Aguilares con fallback a centroide de `zones`, retiro precargado del comercio editable, selector de cambio en efectivo con chips rápidos "Paga con: $ 2.000 / $ 5.000 / $ 10.000", destinatario con declaración, paquete tipificado en enum `['sobre', 'chico', 'mediano', 'grande']`, indicaciones, medio de pago del destinatario) | T-009 (T-103 o fake) | `src/features/requests/**`, `src/app/(merchant)/requests/new/**` | Tests del schema y de la action; contactos y coordenadas opcionales en `delivery_request_contacts`; cálculo de distancia en servidor invocado (con coordenadas o centroide de zona); chips de cambio guardan `cash_change_amount`; bloqueo sin piloto ni suscripción |
 | T-113 | P2 | Mis solicitudes, ofertas en tiempo real (orden por `doc_level` o por precio, insignias de documentación verificada; sin estrellas ni calificaciones de Stitch según S4), aceptar con modal de confirmación y desglose de tarifa y medio de pago | T-112, T-102 | `src/features/requests/**`, `src/features/offers/**`, `src/app/(merchant)/requests/**` | Test de la action de aceptar, incluido `ALREADY_MATCHED`; la oferta nueva aparece sin recargar; verificación de ausencia total de estrellas/reviews ("4.9 ★ 182 viajes") |
 | T-114 | P2 | Panel del repartidor: disponibilidad, lista única sin contactos ni mapa (solo barrio de retiro, barrio de entrega y distancia aproximada redondeada; D3/D15; restringido a Aguilares, sin ciudades de prueba de Stitch), tarjetas con piso 14px e indicador visual de necesidad de cambio, ofertar con piso visible (ofertas libres >= $1.000, sin "precio sugerido" de Stitch), retirar, mis ofertas, pantalla "en revisión" | T-009, T-101 (o fake) | `src/features/availability/**`, `src/features/offers/**`, `src/app/(courier)/**` salvo `onboarding/` | Tests de las actions; un pending ve "en revisión"; una oferta bajo el piso muestra el error del servidor; se valida que no viajen coordenadas ni mapa en el DOM ni en la red; sin textos de precio sugerido |
-| T-115 | P2 | Vista de viaje: contactos tras aceptar, foto/nombre/vehículo, WhatsApp comercio↔repartidor y "Avisar a mi cliente", retirado/entregado, cancelar, no llegó, republicar | T-103, T-113 | `src/features/trips/**`, `src/app/(merchant)/trips/**`, `src/app/(courier)/trips/**`, `src/lib/whatsapp.ts` | Unit de los mensajes (monto aceptado, sin datos de más); tests de actions por transición |
-| T-116 | P2 | Componente de mapa `src/ui/map.tsx` (Google Maps Platform con `@vis.gl/react-google-maps` en import dinámico con `Skeleton`), selector interactivo de pin (crosshair central fijo desplazable, botón "Usar mi ubicación", botones de ajuste fino) para alta de comercio (T-111) y creación de solicitud (T-112), validación Zod de bounding box de Aguilares, y fallback graceful a formulario de texto si la API no carga o está offline | T-008, T-111, T-112, T-106 | `src/ui/map.tsx`, `src/features/merchants/**`, `src/features/requests/**`, `src/app/(merchant)/**` | Tests unitarios de `src/ui/map.tsx` (renderiza fallback si google falla o no hay API key); selección de pin actualiza coordenadas y dirección; Zod rechaza coordenadas fuera de Aguilares; axe AA sin violaciones; first-load bundle JS < 180 KB respetado mediante import dinámico |
-| T-117 | P2 | Mapa de recorrido y botón "Abrir en Google Maps" en vista de viaje (T-115, C06, R07): renderizado interactivo de ruta orientativa entre retiro y entrega revelados ÚNICAMENTE tras la aceptación de la oferta, botón de navegación externa (`https://www.google.com/maps/dir/`), y verificación de que el feed de repartidor (T-114, R04, R05) no contenga mapas ni coordenadas (D3/D15) | T-115, T-106, T-116 | `src/features/trips/**`, `src/features/offers/**`, `src/app/(courier)/**`, `src/app/(merchant)/trips/**` | Test de integración: el feed del repartidor no monta mapa ni filtra coordenadas; la vista de viaje renderiza los dos pines tras matched; el botón "Abrir en Google Maps" genera la URL canónica con `encodeURIComponent`; con mapa caído, el botón externo y las direcciones en texto siguen 100% operativos |
+| T-115 | P2 | Vista de viaje C06/R07 y diálogo transversal T05: contactos tras aceptar, foto/nombre/vehículo, WhatsApp comercio↔repartidor y "Avisar a mi cliente", retirado/entregado, cancelación segura, no llegó y republicar | T-103, T-113 | `src/features/trips/**`, `src/app/(merchant)/trips/**`, `src/app/(courier)/trips/**`, `src/lib/whatsapp.ts` | Pruebas en rojo antes de implementar y commit separado: cubren mensajes sin datos de más, transitions válidas/ inválidas, `report_no_show`, republicación y cancelación con motivo obligatorio; se demuestra que fallan antes del arreglo. |
+| T-116 | P2 | Componente de mapa `src/ui/map.tsx` para C01/C03 y T03-mapa-sin-conexión, con `@vis.gl/react-google-maps` en import dinámico, selector de pin, bounding box de Aguilares y fallback de texto | T-008, T-111, T-112, T-106 y contract-change aprobado | `src/ui/map.tsx`, `src/ui/map.test.tsx`, `src/features/merchants/**`, `src/features/requests/**`, `src/app/(merchant)/**`, `package.json`, `pnpm-lock.yaml` | Pruebas en rojo antes de implementar y commit separado: fallback sin API key o con Google caído, selección de pin, botón de ubicación, ajuste fino y límites de Aguilares. |
+| T-117 | P2 | Mapa de recorrido y botón "Abrir en Google Maps" en C06/R07, únicamente después de aceptar la oferta, sin live tracking y sin mapas/coordenadas en el feed R04/R05 | T-115, T-106, T-116 | `src/features/trips/**`, `src/features/offers/**`, `src/app/(courier)/**`, `src/app/(merchant)/trips/**` | Pruebas en rojo antes de implementar y commit separado: feed sin mapa/coordenadas, mapa visible solamente después de `matched`, URL externa canónica y fallback con mapa caído. |
+| T-118 | P1 | Integración visual Stitch y navegación canónica: P01–P03, shells público/comercio/repartidor, rutas por rol, C01–C05/C07/C08 y R01–R06/R08; corrige placeholder, redirects y destinos inexistentes sin modificar viajes, mapas ni contratos de UI | T-008, T-009, T-111, T-112, T-113, T-114, T-121 | `src/app/page.tsx`, subrutas públicas y canónicas de comercio/repartidor detalladas en `docs/tasks/T-118.md`, componentes/copy/queries de auth, merchants, requests, offers, courier-onboarding y availability, `middleware.ts` | **Pruebas en rojo antes de implementar y commit separado:** demuestran que P01 sigue siendo el placeholder, que `/merchant/dashboard`, C07, C08 y R08 no existen, que los redirects/enlaces de comercio no resuelven y que el onboarding no está aislado por rol. |
 | T-121 | P3 | Onboarding del repartidor: DNI, selfie, avatar, vehículo, licencia y seguro opcionales, consentimientos, compresión, progreso y reintento, `dni_hmac` | T-009, T-008 | `src/features/courier-onboarding/**`, `src/app/(courier)/onboarding/**` (visto bueno P2), `src/lib/image-compression.ts` (visto bueno P2) | Unit de compresión; la subida resiste un corte de red; DNI de un rechazado bloqueado |
-| T-122 | P3 | Admin de repartidores: MFA obligatorio, cola, visor de documentos auditado, aprobar/rechazar/suspender, verificar licencia y seguro | T-121, T-105, T-008 | `src/features/admin/**`, `src/app/(admin)/couriers/**` | Sin aal2 no se entra; cada vista de documento crea una fila en `audit_log`; tests de actions |
-| T-123 | P3 | Admin de comercios y plataforma: tabla de comercios sin CUIT (dato fantasma de Stitch extirpado), TopNav institucional blanco con `<BrandLogo variant="horizontal-color" />` y sin solapa "Liquidaciones" (D14), piloto, pago manual y `paid_until`, settings (piso, TTL, gracia, versión de términos) | T-105, T-008 | `src/features/admin/**`, `src/app/(admin)/merchants/**`, `src/app/(admin)/settings/**` | Cambios auditados; tests de actions; sin campo CUIT en vistas ni en types del admin; sin ruta ni vista de liquidaciones en el bundle |
-| T-124 | P3 | Incidentes: botón en el viaje, bandeja admin, resolución y suspensión cautelar | T-103, T-105, T-115, T-008 | `src/features/incidents/**`, `src/app/(admin)/incidents/**`, botón en `src/app/(merchant)/trips/**` y `src/app/(courier)/trips/**` (visto bueno P2) | El reporte llega al admin; la suspensión cautelar es inmediata |
+| T-122 | P1 | Shell admin, MFA A00 y gestión de repartidores A01/A02: cola, visor de documentos auditado, aprobar/rechazar/suspender, verificar licencia y seguro | T-121, T-105, T-008, T-009 | `src/features/admin/**`, `src/app/(admin)/layout.tsx`, `src/app/(admin)/admin-nav.tsx`, `src/app/(admin)/login/mfa/**`, `src/app/(admin)/applicants/**`, `src/app/(admin)/couriers/**` | Pruebas en rojo antes de implementar y commit separado: sin `aal2` no se entra, un merchant/courier no atraviesa el shell admin, la cola y el detalle no existen y la vista documental no registra auditoría. |
+| T-123 | P1 | Admin de comercios/plataforma A03/A04 y auditoría A06 sobre el shell de T-122: tabla sin CUIT, piloto, pago manual, settings y auditoría paginada | T-105, T-008, T-122 | `src/features/admin/**`, `src/app/(admin)/merchants/**`, `src/app/(admin)/settings/**`, `src/app/(admin)/audit/**` | Pruebas en rojo antes de implementar y commit separado: A03/A04/A06 no existen, las mutaciones no auditan, aparece CUIT o Liquidaciones y la lectura de auditoría no pagina server-side. |
+| T-124 | P1 | Incidentes A05: botón en C06/R07, bandeja admin, resolución y suspensión cautelar | T-103, T-105, T-115, T-008, T-122 | `src/features/incidents/**`, `src/app/(admin)/incidents/**`, `src/app/(merchant)/trips/**`, `src/app/(courier)/trips/**` | Pruebas en rojo antes de implementar y commit separado: el reporte no llega a la bandeja, una persona sin permisos puede resolver y la suspensión cautelar no retira inmediatamente la capacidad de ofertar. |
 
 ### Fase 2 — PWA, notificaciones y accesibilidad
 
 | ID | Quién | Tarea | Depende de | Archivos permitidos | DoD específico |
 |---|---|---|---|---|---|
-| T-201 | P3 | Manifest, íconos maskable, service worker (shell offline, caché de lectura), onboarding de instalación en iOS | T-000 | `public/**`, `src/app/manifest.ts`, `src/app/sw.ts` (o equivalente), `src/features/notifications/install/**` | Instalable en Chrome Android; offline muestra el shell y un aviso |
-| T-202 | P3 | Cliente de push: permiso desde un gesto, alta y baja de la suscripción, handlers `push` y `notificationclick` | T-201, T-203 | `src/features/notifications/**` | Con el permiso denegado el flujo no se rompe; el click abre la pantalla correcta |
-| T-203 | P1 | Emisor de push (fallo del Juez de revision-1) | T-103 | `src/server/push/**`, `src/app/api/push/**`, `supabase/migrations/**` | El payload no lleva datos personales; una falla del emisor no revierte la transición; un 410 borra la suscripción |
+| T-201 | P1 | PWA, T01/T03/T04: manifest, íconos maskable, service worker, shell offline, error/404 y onboarding de instalación en iOS | T-000, T-008, T-118 | `public/**`, `src/app/manifest.ts`, `src/app/sw.ts`, `src/app/sw.test.ts`, `src/app/error.tsx`, `src/app/not-found.tsx`, `src/app/providers.tsx`, `src/features/notifications/install/**`, `src/features/notifications/offline/**` | Pruebas en rojo antes de implementar y commit separado: manifest incompleto, íconos ausentes, offline sin aviso, error/404 sin diseño y guía iOS inexistente. |
+| T-202 | P2 | Cliente de push y T02: soft prompt, alta/baja, handlers `push`/`notificationclick` y destino correcto | T-201, T-203, T-118 | `src/features/notifications/push/**`, `src/app/sw.ts`, `src/app/sw.test.ts`, `src/app/(courier)/courier/profile/**` | Pruebas en rojo antes de implementar y commit separado: T02 no existe, el permiso se solicita fuera de un gesto, una suscripción no se elimina y `notificationclick` abre un destino incorrecto. |
+| T-203 | P1 | Servicio base de push: suscripciones, emisor Web Push/VAPID, payload y limpieza de endpoints inválidos; **sin cableado en transiciones de negocio** | T-103 | `src/server/push/**`, `src/app/api/push/**`, `supabase/migrations/**`, `package.json`, `pnpm-lock.yaml` | Payload mínimo sin PII; adaptador real probado; 404/410 eliminan y 429/5xx conservan; falla contenida; resultado/status auditable. El cableado end-to-end queda en T-206 |
 | T-204 | P2 | Datos en vivo con TanStack Query (`query-keys.ts` por feature, datos iniciales del servidor, `refetchOnWindowFocus` y `refetchOnReconnect`), invalidación por Supabase Realtime (un canal por pantalla, con debounce), polling de 30 s solo en pantallas activas, badges | T-113, T-114 | `src/features/{requests,offers,trips}/hooks/**`, `src/features/{requests,offers,trips}/query-keys.ts`, `src/lib/hooks/use-realtime-invalidation.ts` | Con el push apagado, la oferta nueva aparece al volver a la app; al desmontar la pantalla se cierra el canal; Realtime no escribe la caché a mano |
-| T-205 | P2 | Pasada de accesibilidad y rendimiento en las pantallas de comercio y repartidor | T-115, T-204 | features de P2, `src/ui/**` | axe AA sin violaciones; objetivos de 48 px; `inputmode` numérico; Lighthouse móvil ≥ 80 en rendimiento y ≥ 95 en accesibilidad en crear solicitud, detalle con ofertas, lista del repartidor y viaje; first-load JS dentro del presupuesto de la regla 25 |
+| T-205 | P2 | Pasada final de accesibilidad y rendimiento en comercio, repartidor, onboarding y estados transversales, después de cerrar las tareas visuales | T-115, T-116, T-117, T-118, T-201, T-202, T-204 | `src/features/{auth,merchants,requests,offers,trips,availability}/**`, `src/features/courier-onboarding/**`, `src/features/notifications/**`, `src/app/(merchant)/**`, `src/app/(courier)/**` | Pruebas y auditoría en rojo antes de corregir, con commit separado: al menos una violación axe, un target menor de 48 px, un input sin `inputmode` y una ruta que supera el presupuesto. |
+| T-206 | P1 | Cableado de push post-commit en transiciones de negocio y lifecycle (publish/offer/accept/cancel/expire/logout/suspensión) | T-203, T-124 | `src/server/rpc/{requests,offers,admin}.ts`, tests contiguos, `src/server/cron/sweep.ts`, `src/server/cron/sweep.test.ts`, `src/features/auth/actions.ts`, `src/features/auth/actions.test.ts` | Los destinatarios y el orden post-commit se prueban en call sites reales; fallar push no altera la transición; logout/suspensión purgan suscripciones; sin PII |
 
 ### Fase 3 — Calidad, operación y salida
 
 | ID | Quién | Tarea | Depende de | Archivos permitidos | DoD específico |
 |---|---|---|---|---|---|
-| T-301 | P3 | Arnés E2E: Playwright (con `reducedMotion: 'reduce'`), fixtures por rol, seed y limpieza en staging, page objects, proyecto `global-settings`, `e2e-staging.yml` | T-003 y Fase 1 | `e2e/**`, `playwright.config.ts`, `.github/workflows/e2e-staging.yml` | Un spec de humo corre en CI; dos corridas no se superponen; un helper espera a que desaparezcan los skeletons en lugar de usar tiempos fijos |
+| T-300 | P1 | Checkpoint operativo: promoción inicial `develop → staging`, ejecución verde de `migrate-staging`, verificación de drift de tipos, deployment de staging y `/api/health` 200 | T-003 y Fase 1 | `docs/tasks/T-300.md`, `docs/tasks/log/T-300.md` | `develop` está verde y se promueve mediante PR `develop → staging`; el PR de promoción no incorpora cambios de feature ni resuelve conflictos agregando código. |
+| T-301 | P3 | Arnés E2E: Playwright (con `reducedMotion: 'reduce'`), fixtures por rol, seed y limpieza en staging, page objects, proyecto `global-settings`, `e2e-staging.yml` | T-300, T-003 y Fase 1 | `e2e/**`, `playwright.config.ts`, `.github/workflows/e2e-staging.yml` | Un spec de humo corre en CI; dos corridas no se superponen; un helper espera a que desaparezcan los skeletons en lugar de usar tiempos fijos |
 | T-302 | P3 | E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado | T-301, T-122 | `e2e/specs/courier-onboarding.spec.ts` | Falla si se quita el chequeo de MFA o la deduplicación |
 | T-303 | P2 | E2E del flujo principal: publicar, ofertar (piso), retirar, aceptar en dos pestañas, revelación progresiva, orden por documentación, medio de pago y "Avisar a mi cliente" | T-301, T-115 | `e2e/specs/main-flow.spec.ts` | Falla si el repartidor no aceptado ve el teléfono o si se aceptan dos ofertas |
 | T-304 | P2 | E2E de estados: cancelaciones por actor y estado, no llegó y republicar, expiración, entregado | T-301, T-115 | `e2e/specs/request-states.spec.ts` | Cubre cada fila de §5.1; falla si se permite cancelar después de entregado |
 | T-305 | P3 | E2E de autorización | T-301, T-122 | `e2e/specs/authorization.spec.ts` | Un pending recibe el error del servidor aunque fuerce la llamada; un suspendido pierde sus ofertas pending al instante; merchant en `(courier)` y courier en `(admin)` son redirigidos; falla al desactivar el chequeo de `submit_offer` o la guarda |
 | T-306 | P3 | E2E de piloto y suscripción (proyecto `global-settings`) | T-301, T-123 | `e2e/specs/subscription.spec.ts` | Con el piloto apagado y `paid_until` vencido no se publica; con el piloto encendido o `paid_until` futuro sí; los settings se restauran; falla al quitar el chequeo de `publish_request` |
-| T-307 | P2 | E2E de notificaciones y resiliencia | T-301, T-204, T-202 | `e2e/specs/notifications.spec.ts` | Con el permiso denegado la oferta aparece por tiempo real; offline muestra un aviso y al reconectar refresca sin perder el formulario; falla si se quita el refetch |
+| T-307 | P2 | E2E de notificaciones y resiliencia | T-301, T-204, T-202, T-206 | `e2e/specs/notifications.spec.ts` | Con el permiso denegado la oferta aparece por tiempo real; offline muestra un aviso y al reconectar refresca sin perder el formulario; falla si se quita el refetch |
 | T-308 | P3 | E2E de incidentes y suspensión cautelar | T-301, T-124 | `e2e/specs/incidents.spec.ts` | El reporte llega a la bandeja; el suspendido no oferta ni puede ser aceptado; falla si `accept_offer` no revalida |
 | T-309 | P3 | E2E de carga de documentos con red lenta y accesibilidad | T-301, T-121 | `e2e/specs/uploads-a11y.spec.ts` | Con red 3G simulada y un corte, la carga se completa al reintentar; el servidor rechaza un archivo inválido; axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding |
 | T-310 | P1 | Backups y PITR, bucket de documentos fuera del backup, simulacro de restauración en staging, Sentry sin datos personales, uptime y alertas | T-104, T-007 | `docs/adr/**`, `docs/runbooks/**`, `src/server/observability/**` | Acta del simulacro; alerta de prueba recibida |
-| T-311 | P3 | Páginas legales y consentimientos versionados | T-111, T-121 | `src/features/legal/**`, `src/app/(public)/legal/**` | Textos revisados por un abogado (bloqueante externo); versión aceptada registrada |
-| T-312 | Todos | Checklist de release `staging → main` | T-302…T-311, T-313, T-314 | `docs/runbooks/release.md` | E2E completo verde; migraciones aplicadas; variables de producción; nota de rollback; abogado OK; simulacro OK; **revisión de seguridad independiente** de `supabase/migrations` y `src/server` (rol security de El Consejo sobre el diff acumulado, porque no hay un segundo experto); **aprobación de Lautaro073** |
+| T-311 | P1 | Páginas legales P04 y consentimientos versionados | T-111, T-118, T-121 | `src/features/legal/**`, `src/app/(public)/legal/**` | Pruebas en rojo antes de implementar y commit separado: rutas legales inexistentes, versión no registrada y consentimiento aceptado con una versión que no coincide. |
+| T-312 | Todos | Checklist de release `staging → main` | T-302…T-311, T-313, T-314 | `docs/runbooks/release.md` | E2E completo verde; migraciones aplicadas; variables de producción; nota de rollback; textos legales T-311 publicados contra normativa vigente; simulacro OK; **revisión de seguridad independiente** de `supabase/migrations` y `src/server` (rol security de El Consejo sobre el diff acumulado, porque no hay un segundo experto); **aprobación de Lautaro073** |
 | T-313 | P2 | E2E de registro de comercio y consentimientos | T-301, T-111 | `e2e/specs/merchant-registration.spec.ts` (visto bueno P3) | Alta completa y panel visible; versión de consentimiento registrada; un courier no entra a `(merchant)`; falla si no se guarda el consentimiento |
 | T-314 | P3 | E2E de mapas, geolocalización, privacidad (D3/D15) y degradación graceful (mock Google Maps) | T-301, T-106, T-116, T-117 | `e2e/specs/map-privacy.spec.ts` | Playwright mockea Maps API (0 llamadas a Google); valida que el feed abierto no tenga tags con coordenadas; valida selección de pin en alta y solicitud; valida error inline con pin fuera de Aguilares; valida que tras matched aparezca el mapa y botón Google Maps; valida degradación cuando Maps falla |
 
@@ -361,7 +365,7 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
 | Buen código y modularización | Reglas 10 y 20, ESLint de fronteras, `server-only` | Fixtures de lint que fallan (T-000); build roto al importar `server-only` desde cliente |
 | Seguridad con agentes | Regla 00, hook `agent-guard`, sin credenciales remotas en laptops, Code Owners, Actions por SHA, `pnpm audit`, `rls_enabled.sql` | 35 casos del guard (hechos) + prueba en agy (T-001); `rls_enabled.sql` demostrado fallando (T-005) |
 | Selección de pin en mapa de Aguilares, distancia calculada en servidor y recorrido post-aceptación (D15) | T-106, T-116, T-117, T-314 | pgTAP de RLS de coordenadas (repartidor no aceptado recibe NULL); unitarias de bounding box y Haversine × 1.30; E2E T-314 con mock de Google Maps validando que en el feed no viajan coordenadas, revelación tras matched y degradación graceful a texto |
-| Sistema de diseño, tokens shadcn/ui y estrategia de logos (D16) | T-008, T-111 a T-115, T-121 a T-124 | Verificación de tokens HSL, contraste >= 4.5:1 (AAA 6.93:1 en botones primarios), piso tipográfico 14px (Anti-12px), logos optimizados en `public/brand/` (< 5 KB), manifest PWA con PNGs y ausencia de datos fantasma de Stitch en tests unitarios y de integración |
+| Sistema de diseño, tokens shadcn/ui, navegación canónica y estrategia de logos (D16) | T-008, T-111 a T-118, T-121 a T-124 | Verificación de tokens HSL, contraste >= 4.5:1 (AAA 6.93:1 en botones primarios), piso tipográfico 14px (Anti-12px), rutas por rol sin destinos inexistentes, capturas comparativas Stitch 390/360 px, logos optimizados en `public/brand/` (< 5 KB), manifest PWA con PNGs y ausencia de datos fantasma en tests unitarios y de integración |
 | Pruebas que prueban | Regla 40, DoD específico por tarea, umbral de cobertura en `domain` | Cada ficha registra en la bitácora la prueba demostrada fallando; CI con umbral de cobertura |
 | E2E de todos los flujos (D10) | T-301 a T-309, T-313 y T-314 | `e2e-staging` verde como check obligatorio de `main` |
 | Producción controlada | Solo Lautaro073 en `production` y en `staging → main` | Environment `production` con required reviewer (T-003) |
@@ -431,6 +435,17 @@ Sin cuota:    (a mano) git add -A && git commit -m "wip(T-xxx): corte por cuota"
     - Extirpación de 7 datos fantasma generados por Stitch: eliminación de estrellas y contadores de viajes (S4), precios sugeridos en ofertas, CUIT en comercios, pestaña "Liquidaciones" en Admin (D14), facturación AFIP/ARBA (D6), localidades foráneas ajenas a Aguilares (D13) y bultos no tipificados.
     - Refinamientos operativos: pin de entrega en C03 opcional (con centroide como fallback en hora pico) y selector rápido de cambio en efectivo ("Paga con: $ 2.000 / $ 5.000 / $ 10.000") visible en R07.
     - Tareas actualizadas con estos requerimientos: T-008, T-112, T-113, T-114, T-123.
+16. **Integración visual y navegación canónica (v2.6, T-118, 2026-09-24):**
+    - La verificación visual en `develop` confirmó que `/` seguía siendo el placeholder de T-000, P02/P03 carecían del shell público vinculante y el redirect de comercio apuntaba a `/merchant/dashboard` sin una ruta real.
+    - Se incorpora T-118 para implementar P01–P03, shells público/comercio/repartidor, rutas canónicas por rol y las vistas omitidas C07, C08 y R08, preservando la lógica entregada en T-009/T-111–T-114/T-121.
+    - Se fijan aliases de servidor para las rutas heredadas, pruebas de integridad contra 404 y loops, y evidencia comparativa a 390 px y 360 px con los PNG/README de Stitch.
+    - T-118 no absorbe viajes, mapas, admin, legal, PWA ni Realtime: esos alcances permanecen en T-115–T-117, T-122–T-124, T-311, T-201/T-202 y T-204.
+17. **Endurecimiento de las fichas visuales pendientes (v2.7, T-001, 2026-09-24):**
+    - T-115–T-117, T-122–T-124, T-201/T-202, T-205 y T-311 ahora referencian explícitamente sus README de Stitch, `implementar-diseno`, pruebas rojas separadas, navegador, capturas a 390/360 px y estados de carga/vacío/error cuando corresponde.
+    - Se asignan A00/A01/A02 a T-122, A03/A04/A06 a T-123, A05 a T-124 y T01/T03/T04 a T-201; T02 queda en T-202. Se elimina el hueco de Auditoría y error/404 del plan.
+    - T-122 crea el shell admin compartido; T-123 y T-124 dependen de él. T-205 se mueve al final de las tareas móviles para evitar una segunda pasada de accesibilidad.
+    - T-116 exige un `contract-change` previo para `src/ui/map.tsx` y `@vis.gl/react-google-maps`; las primitivas admin faltantes siguen el mismo procedimiento. T-311 se redacta contra normativa argentina vigente y fuentes oficiales sin bloqueo de abogado.
+    - Se sincronizan en el plan los dueños vigentes del Project para T-122, T-123, T-124, T-201, T-202 y T-311.
 
 ### 11.4 Disensos preservados
 - **Un solo experto.** Backend, DevOps y PM pedían que la revisión no dependiera de una persona. Con el equipo real, Lautaro073 programa la zona más crítica, aprueba todos los PR de P2 y P3 y administra producción.
@@ -537,10 +552,13 @@ Las 36 vistas generadas en Stitch están archivadas en `docs/design/stitch/expor
 
 ### 12.8 Protocolo de implementación para agy y operadores
 
-Al tomar cualquier tarea de UI (T-008, T-111 a T-117, T-121 a T-124):
+La directiva operativa completa para las tareas visuales está en [`docs/design/visual-task-directive.md`](design/visual-task-directive.md). La ficha y esa directiva deben leerse antes de tomar T-008, T-111 a T-118, T-121 a T-124, T-201, T-202, T-204, T-205 o T-311.
+
+Al tomar cualquier tarea de UI (T-008, T-111 a T-118, T-121 a T-124):
 1. **Lectura previa obligatoria:** El agente debe consultar el `README.md` de la carpeta correspondiente en `docs/design/stitch/exports/` antes de escribir código.
 2. **Utilizar componentes de `src/ui/`:** No crear elementos HTML crudos con estilos en línea. Usar las primitivas shadcn/ui (`Button`, `Card`, `Input`, `Dialog`, `Skeleton`, etc.).
 3. **Respetar tokens semánticos:** Usar clases semánticas de Tailwind (`bg-primary`, `text-primary-foreground`, `border-border`, etc.) mapeadas a `src/ui/tokens.css`.
 4. **Respetar el piso de 14px:** Clampear todo texto secundario a `text-sm font-medium`.
 5. **No inventar datos fantasma:** Seguir estrictamente la lista de datos extirpados de §12.5.
+6. **Validar con evidencia:** Aplicar `implementar-diseno`, consultar los agentes de Frontend, Diseño y Persona de El Consejo, verificar en navegador a 390 px y 360 px y adjuntar capturas y diferencias deliberadas al PR. Si falta una referencia, descargarla con el MCP de Stitch en el worktree sin copiar HTML/CSS exportado al producto.
 

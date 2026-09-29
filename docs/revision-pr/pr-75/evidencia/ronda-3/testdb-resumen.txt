@@ -1,0 +1,4 @@
+9:psql:/home/user/cadeApp/supabase/tests/rpc_admin.sql:3: NOTICE:  extension "pgtap" already exists, skipping
+10:/home/user/cadeApp/supabase/tests/rpc_admin.sql .............. ok
+16:Files=7, Tests=234,  1 wallclock secs ( 0.06 usr  0.03 sys +  0.11 cusr  0.04 csys =  0.24 CPU)
+17:Result: PASS
