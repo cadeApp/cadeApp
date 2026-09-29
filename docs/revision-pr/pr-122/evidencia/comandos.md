@@ -1,191 +1,81 @@
 # Evidencia y reproducciones — PR #122
 
-## Ronda 5 — HEAD `bae8c771e2a42c20a45764cc984fefb5265de160`
+## Ronda 6 — corrección del reviewer
 
-### Archivos nuevos relevantes
+Esta ronda no agrega evidencia de producto nueva. Corrige el criterio de revisión aplicado en Rondas 4–5.
+
+### Regla del protocolo que se había incumplido
+
+El prompt obligatorio para arreglos indica:
 
 ```text
-src/features/requests/evidence/T-205/browser-audit.tsx
-src/features/requests/evidence/T-205/vitest.config.ts
+Prohibido: docs/revision-pr/** (es de la revisión), marcar hallazgos como verificados,
+crear archivos nuevos (los scripts auxiliares van en /tmp), dependencias nuevas,
+editar la ficha, <lo que aplique>.
 ```
 
-El harness existe y se puede invocar explícitamente con Vitest.
+En Ronda 4 el reviewer pidió versionar un browser harness dentro de la rama. Esa instrucción fue incorrecta.
 
-### R05 — CSS compilado no reproducible
+### Consecuencia
 
-Código actual:
+Se retiran del estado vigente:
 
-```ts
-const cssPath = path.resolve('.next/static/css/b30c4bb5cec07bc0.css');
-const cssContent = fs.existsSync(cssPath) ? fs.readFileSync(cssPath, 'utf8') : '';
+```text
+PR122-R04
+PR122-R05
+PR122-R06
+PR122-R07
 ```
 
-Problema reproducible:
+No se pide al autor corregirlos.
 
-- `.next` no está versionado;
-- el nombre de CSS contiene hash de build;
-- un build nuevo puede generar otro nombre;
-- si el archivo no existe, el harness sigue con CSS vacío;
-- el test solo exige `offendersCount === 0`.
+Las Rondas 4 y 5 permanecen en el historial para transparencia, pero **Ronda 6 supersede su veredicto**.
 
-Corrección mínima:
+### Estado técnico que sí permanece
 
-```ts
-const cssDir = path.resolve('.next/static/css');
+La ficha autoritativa en `develop` exige:
 
-if (!fs.existsSync(cssDir)) {
-  throw new Error('Falta .next/static/css. Ejecutá pnpm build antes del browser audit.');
-}
-
-const cssFiles = fs.readdirSync(cssDir).filter((name) => name.endsWith('.css'));
-
-if (cssFiles.length === 0) {
-  throw new Error('No se encontraron CSS compilados de Next.js.');
-}
-
-const cssContent = cssFiles
-  .map((name) => fs.readFileSync(path.join(cssDir, name), 'utf8'))
-  .join('\n');
+```md
+- [ ] axe AA sin violaciones; objetivos de 48 px; `inputmode` numérico; Lighthouse móvil ≥ 80 en rendimiento y ≥ 95 en accesibilidad en crear solicitud, detalle con ofertas, lista del repartidor, onboarding y viaje; first-load JS dentro del presupuesto de la regla 25.
+- [ ] Verificación con navegador a 390 px y 360 px, `prefers-reduced-motion`, teclado, contraste, sin scroll horizontal y capturas comparativas Stitch/implementación.
+- [ ] Las primitivas de `src/ui/**` se auditan; cualquier cambio de contrato se deriva a `contract-change` separado y no se edita directamente en T-205.
 ```
 
-Comando reproducible esperado:
+En el SHA funcional de autor vigente esas casillas siguen en `[ ]`.
 
-```bash
-rm -rf .next
-pnpm build
-pnpm exec vitest run -c src/features/requests/evidence/T-205/vitest.config.ts
+La bitácora declara expresamente:
+
+```text
+Lighthouse móvil: pendiente
+axe AA: pendiente
 ```
 
-Mutación RED: cambiar temporalmente `cssDir` a una ruta inexistente; el audit debe fallar antes de iniciar Edge.
+Por eso `PR122-H03` permanece parcial y bloqueante.
 
-### R06 — diferencias entre harness y rutas reales
+### R03
 
-#### Merchant
+Las PNG actuales fueron inspeccionadas por el reviewer y ya no muestran el clipping horizontal evidente que originó R03.
 
-Real:
+No se ejecutó una reproducción browser independiente; por eso el estado correcto es:
 
-`src/app/(merchant)/layout.tsx`
-
-incluye `<MerchantNav />`.
-
-Harness:
-
-`wrapMerchant`
-
-no lo incluye.
-
-#### Courier
-
-Real:
-
-`src/app/(courier)/layout.tsx`
-
-incluye `<CourierNav />`.
-
-Harness:
-
-- recrea `BottomNav` y sus items manualmente;
-- aplica su propia lógica `showNav`.
-
-#### Trip
-
-Real:
-
-`src/app/trips/[id]/page.tsx`
-
-para merchant:
-
-```tsx
-<TripMerchantContainer trip={trip} />
-<ReportIncidentButton ... />
+```text
+arreglado-sin-verificar
 ```
 
-Harness:
+y no `arreglado-verificado`.
 
-```tsx
-wrapTrip(<TripMerchantView trip={mockTrip} />)
-```
+### CI
 
-Además `wrapTrip` agrega un TopBar “Viaje” que no proviene de la page real.
+No se consulta CI final mientras H03 siga abierto. El protocolo indica revisar CI recién cuando la ronda esté para aprobar.
 
-#### Runtime
+### Próximo paso real
 
-El harness genera HTML con `renderToString`. No hidrata client components.
+No hay corrección de código pedida por esta ronda.
 
-Consecuencia: sirve para layout SSR/fixture y screenshots, pero no demuestra:
+Cuando exista un entorno adecuado para cerrar H03, la verificación deberá producir evidencia real de:
 
-- orden de tabulación real;
-- focus management;
-- interacción del cliente;
-- comportamiento hidratado;
-- la ruta completa de Next.js.
+1. axe AA;
+2. Lighthouse móvil en las cinco superficies;
+3. browser 390/360 con reduced-motion, teclado/foco, contraste y overflow.
 
-La ficha browser debe permanecer `[ ]` hasta una verificación real.
-
-### R07 — API pública y bundle
-
-Regla 20:
-
-`src/features/<x>/index.ts` = API pública apta para cliente.
-
-Cambios nuevos:
-
-```ts
-export { IdentityForm as CanonicalIdentityForm } from './components/identity-form';
-export { VehicleForm as CanonicalVehicleForm } from './components/vehicle-form';
-```
-
-Los exports dinámicos ya existentes siguen siendo:
-
-```ts
-export const IdentityForm = dynamic(...)
-export const VehicleForm = dynamic(...)
-```
-
-El cambio nuevo agrega caminos estáticos por el mismo barrel.
-
-La ronda actual documenta:
-
-- typecheck;
-- lint;
-- tests;
-- browser harness.
-
-No documenta un `pnpm build` + `check-bundle-budget.mjs` posterior a estos nuevos exports.
-
-Revalidación necesaria:
-
-```bash
-rm -rf .next
-pnpm build 2>&1 | tee /tmp/t205-build-r5.txt
-node .github/workflows/check-bundle-budget.mjs /tmp/t205-build-r5.txt
-```
-
-No reutilizar la tabla de tamaños de una ronda anterior.
-
-### H03
-
-En el HEAD actual permanecen `[ ]`:
-
-- axe AA / Lighthouse / first-load combinado;
-- browser 390/360 + reduced-motion + teclado + contraste + overflow;
-- auditoría integrada src/ui.
-
-La propia bitácora declara axe y Lighthouse pendientes.
-
-### CI final
-
-No se usa como criterio de cierre mientras existan H03/R05/R06/R07.
-
-Cuando ya no haya bloqueantes:
-
-```bash
-pnpm typecheck
-pnpm lint
-pnpm test
-rm -rf .next
-pnpm build 2>&1 | tee /tmp/t205-build-final.txt
-node .github/workflows/check-bundle-budget.mjs /tmp/t205-build-final.txt
-git diff --check
-node docs/revision-pr/analizar.mjs verificacion
-```
+Los scripts auxiliares del reviewer, si hacen falta, se ejecutan desde `/tmp`; no se agregan a la rama del autor.

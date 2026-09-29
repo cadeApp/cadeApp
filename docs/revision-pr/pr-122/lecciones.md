@@ -1,25 +1,31 @@
 # Lecciones — PR #122 (T-205)
 
-La revisión descartada original sigue fuera de vigencia. Este archivo resume la revisión válida hasta Ronda 5 (`bae8c771...`).
+La revisión descartada original sigue fuera de vigencia. Esta actualización corresponde a la **Ronda 6, corrección del reviewer**.
+
+## Lecciones válidas
 
 - **H01 / P06:** una pasada visual exige enumerar la clase completa.
 - **H02 / P08:** un control debe observar la propiedad real, no un proxy.
 - **H03 / P03:** no cerrar criterios runtime sin evidencia reproducible.
 - **R01 / P10:** no reescribir el DoD para acomodar una limitación operativa.
 - **R02 / P03:** las reglas de AGENTS también cuentan aunque ESLint no las imponga.
-- **R03 / P08:** `scrollWidth` no demuestra ausencia de clipping.
-- **R04 / P15:** un harness debe existir en el repo y poder ejecutarse.
-- **R05 / P08:** nunca usar artefactos de build con hash hardcodeado y fallback silencioso. Si el CSS real no está, el audit debe fallar.
-- **R06 / P15:** “visualmente equivalente” no es “ruta canónica”. Si se recrea manualmente un layout, la evidencia debe etiquetarse como harness SSR/fixture, no como navegador real de la app.
-- **R07 / P10:** no ampliar una API pública de producción solo para facilitar evidencia. Si un test necesita internals, resolverlo en el espacio de evidencia sin alterar el contrato o revalidar explícitamente el impacto de producción.
+- **R03 / P08:** `scrollWidth` no demuestra por sí solo ausencia de clipping.
 
-Regla práctica final para este tipo de auditoría:
+## Corrección de proceso del reviewer
 
-1. build limpio;
-2. CSS descubierto dinámicamente y fail-fast;
-3. harness versionado;
-4. no inventar layouts/rutas;
-5. screenshots + detector de offenders;
-6. browser real autenticado para teclado/foco/reduced-motion;
-7. axe/Lighthouse separados;
-8. bundle re-medido después de cualquier cambio al grafo de imports.
+El reviewer incumplió una regla expresa del prompt obligatorio al pedir en Ronda 4 que se versionara un harness de browser dentro de la rama.
+
+La regla correcta era:
+
+- **no crear archivos nuevos** en el prompt de arreglo;
+- **scripts auxiliares en `/tmp`**.
+
+Por eso las exigencias posteriores sobre ese harness (`R04–R07`) no deben considerarse hallazgos vigentes ni generar otra ronda de trabajo para el autor.
+
+Regla reforzada para futuras revisiones:
+
+1. cualquier harness de mutación/reproducción pertenece al reviewer;
+2. se guarda completo en `docs/revision-pr/.../evidencia/comandos.md`;
+3. cuando haya que ejecutarlo, se copia a `/tmp`;
+4. no se modifica la API de producción ni se agregan scripts al PR solo para facilitar la revisión;
+5. si el reviewer da una instrucción incompatible con el protocolo, debe corregirla explícitamente y retirar los hallazgos derivados.
