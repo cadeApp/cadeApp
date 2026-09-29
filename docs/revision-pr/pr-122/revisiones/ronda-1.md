@@ -1,97 +1,119 @@
-# PR #122 — T-205 — Ronda 1
+# PR #122 — T-205 — Ronda 1 vigente
 
-**Fecha:** 2026-09-28  
-**SHA revisado:** `79d3aeaa4949bd85820467592dafb62fdc2232d4`  
-**Resultado:** **CON BLOQUEANTES (3)**
+**Fecha:** 2026-09-29  
+**SHA revisado:** `5ff06783a0b70558c03d05d91c9b55dd7d1c2b3a`  
+**Resultado:** **CON BLOQUEANTES (3)** · **1 mejora**
 
-## Alcance y sincronización
+> Por decisión de Lautaro073, la revisión que antes ocupaba “Ronda 1” queda descartada. Esta revisión parte de cero sobre el HEAD actual y reemplaza esos artefactos; no arrastra hallazgos anteriores por defecto.
 
-- La rama está 0 commits behind y 1 ahead respecto del `develop` de apertura en el SHA revisado.
-- Diff funcional: `docs/tasks/log/T-205.md` y `src/features/requests/dod-t205.test.tsx`.
-- La ficha se leyó desde `develop`.
-- T-115, T-116, T-117, T-118, T-201, T-202 y T-204 están mergeadas.
-- Ambos archivos están permitidos por la ficha.
-- La PR sigue en fase RED inicial; no se evalúa como implementación terminada.
-- CI final no se usa para cierre mientras haya bloqueantes.
+## Alcance y estado
 
-## Decisión resuelta
-
-### D01 — tooling de axe
-
-Lautaro073 eligió **1-A**:
-
-- no agregar dependencias nuevas a T-205;
-- no modificar `package.json` ni lockfile para axe/Playwright;
-- eliminar el acceso a internals de pnpm;
-- conservar en tests de repo regresiones semánticas concretas;
-- obtener la evidencia integral de accesibilidad desde la verificación real de navegador/Lighthouse exigida por la ficha;
-- si no puede producirse una corrida axe real sin agregar dependencias, declararla pendiente en vez de inventarla.
+- `develop` y la rama comparten merge-base `ae514947...`; la rama está 3 commits ahead y 0 behind.
+- La PR ya no es Draft.
+- Se leyó la ficha autoritativa desde `develop`. En el HEAD de la PR, `docs/tasks/T-205.md` cambia todos los ítems del DoD de `[ ]` a `[x]`.
+- Los archivos funcionales cambiados están dentro de la lista permitida de T-205.
+- No se consultó CI para aprobar: existen bloqueantes y el procedimiento reserva CI final para una ronda aprobable.
+- El entorno del revisor no permite checkout/ejecución local; los hallazgos se sostienen con inspección reproducible del SHA exacto y no se inventa evidencia runtime.
 
 ## BLOQUEANTES
 
-### PR122-H01 — El RED de bundle depende de un build previo y no mide el First Load JS canónico
+### PR122-H01 — La pasada de accesibilidad no está terminada
 
-**Archivo:** `src/features/requests/dod-t205.test.tsx:171-213`  
-**Severidad:** alto · efficiency / test-coverage  
-**Patrón:** `P08-control-no-cubre-lo-que-dice`
+**Severidad:** alta · accesibilidad / correctness  
+**Archivos principales:**  
+- `src/features/offers/components/my-offers-list.tsx:80-107`
+- `src/features/offers/components/courier-feed.tsx:130-156`
+- superficies con `animate-*` enumeradas en evidencia.
 
-El test busca `.next/app-build-manifest.json`, falla si el artefacto no existe y luego vuelve a gzippear manualmente los archivos listados. Eso no es el contrato que usa cadeApp: el control canónico genera `pnpm build`, captura la tabla de Next y `.github/workflows/check-bundle-budget.mjs` evalúa el **First Load JS por ruta**.
+La ficha oficial exige objetivos de 48 px, axe AA sin violaciones y verificación de `prefers-reduced-motion` en las pantallas clave. El HEAD marca esos ítems como completados, pero todavía contiene incumplimientos concretos:
 
-En un checkout limpio, el job de tests no genera primero `.next`; por lo tanto la prueba puede quedar roja en `fs.existsSync(manifestPath)` sin demostrar una ruta > 180 kB. Si existe un `.next` previo, puede medir otro build.
+1. **Targets < 48 px en una pantalla de repartidor real.**  
+   `/courier/offers` renderiza `MyOffersList`. Sus tres tabs de estado siguen con `min-h-10` en líneas 83, 94 y 105, es decir, 40 px de altura mínima. La pasada no los incluyó.
 
-**Qué corregir:** sacar la medición de bundle de Vitest. La fase RED debe usar un build limpio del SHA y registrar los valores reales por ruta con el checker existente. Si el build exacto no contiene ninguna ruta > 180 kB, no fabricar una: registrarlo y frenar ese punto del DoD. Para GREEN, repetir la misma medición y exigir todas las rutas auditadas <= 180 kB.
+2. **Jerarquía de headings aún inválida en la lista del repartidor.**  
+   `CourierFeed` presenta un `h1` en línea 130 y, cuando el repartidor no está disponible, el siguiente heading del estado es un `h3` en línea 154. Sigue existiendo un salto `h1 -> h3` en una de las cinco superficies que el DoD obliga a auditar.
 
-**Evidencia:** `ci.yml` separa `unit` de `build`; `bundle-budget` consume la salida textual del build mediante `check-bundle-budget.mjs`.
+3. **Reduced motion no está resuelto de forma general.**  
+   La Regla 60 indica que las animaciones deben pasar por `src/ui/motion` y respetar la preferencia del usuario. `globals.css` no contiene una regla global que desactive Tailwind animations bajo `prefers-reduced-motion`. Sin embargo, las superficies auditadas mantienen clases directas como:
+   - `courier-feed.tsx:136` — `animate-ping`
+   - `create-request-form.tsx:296,390` — `animate-spin`
+   - `identity-form.tsx:278` — `animate-spin`
+   - `vehicle-form.tsx:336,374,472` — `animate-spin`
+   - `status-view.tsx:42` — `animate-pulse`
+   - `trip-merchant-view.tsx:92` — `animate-pulse`
+   - `courier/profile/notifications/page.tsx:12` — `animate-pulse`
 
----
+**Por qué los checks actuales no lo detectan:** el test central de targets solo renderiza `CreateRequestForm` y `RequestOffersList`; el test de headings solo renderiza `TripMerchantView`; no existe un control real de reduced-motion en esa suite.
 
-### PR122-H02 — El control de 48 px cubre una pantalla y reconoce strings, no targets
-
-**Archivo:** `src/features/requests/dod-t205.test.tsx:116-138`  
-**Severidad:** alto · accesibilidad / test-coverage  
-**Patrón:** `P08-control-no-cubre-lo-que-dice`
-
-La prueba renderiza solo `CreateRequestForm` y considera “sub-48” tres substrings: `min-h-[44px]`, `min-h-10` y `py-1.5`. Es un proxy de clases, no una medición del target renderizado, y no cubre las otras superficies del DoD.
-
-El barrido de la clase completa en las superficies clave ya muestra:
-
-- `CreateRequestForm`: usar ubicación, Sí/No y presets con 44 px.
-- `RequestOffersList`: Documentación/Precio con `py-1.5` sin altura mínima.
-- `OfferSheet`: chips rápidos con `min-h-10` (40 px).
-- `VehicleForm`: uploads Licencia/Seguro con `h-10` (40 px); el test ni busca `h-10`.
-
-El test podría ponerse verde corrigiendo solo `CreateRequestForm` y dejar incumplimientos reales.
-
-**Qué corregir:** llevar los targets conocidos a 48 px y auditar en navegador las cinco superficies clave. La prueba persistente puede proteger controles concretos, pero no debe presentarse como auditoría exhaustiva. La evidencia final debe medir el tamaño renderizado a 390 y 360 px, con teclado y sin overflow.
+**Corrección esperada:** ampliar la pasada a las superficies omitidas, llevar los tabs de `MyOffersList` a 48 px, corregir `CourierFeed` a una jerarquía continua y eliminar/reemplazar las animaciones crudas por comportamiento compatible con reduced motion sin editar `src/ui/**`.
 
 ---
 
-### PR122-H03 — axe se importa desde internals de pnpm sin dependencia declarada
+### PR122-H02 — La suite DoD contiene controles de falso verde
 
-**Archivo:** `src/features/requests/dod-t205.test.tsx:7-10`  
-**Severidad:** alto · conventions / test-coverage  
-**Patrón:** `P15-entregable-declarado-pero-no-ejecutable`
+**Severidad:** alta · testing / test-coverage  
+**Archivo:** `src/features/requests/dod-t205.test.tsx`  
+**Patrón:** `P08-control-no-cubre-lo-que-dice`
 
-La suite requiere:
+La Regla 40 exige que toda prueba nueva pueda fallar al romper deliberadamente la regla que protege. La suite actual no cumple ese requisito en varios puntos:
 
-`../../../node_modules/.pnpm/axe-core@4.13.0/node_modules/axe-core`
+- **Targets:** el test se llama “Objetivos táctiles ... en todas las superficies clave”, pero `interactiveContainers` solo contiene `CreateRequestForm` y `RequestOffersList`. Si se deja `MyOffersList` en 40 px, la prueba sigue verde; de hecho eso ocurre en el HEAD revisado.
+- **Inputmode:** el test se llama “Todos los inputs numéricos o de teléfono”, pero los selectores de líneas 196-197 solo inspeccionan teléfonos en dos formularios. Quitar `inputMode="numeric"` del monto de `OfferSheet` o del DNI de `IdentityForm` no afectaría ese test.
+- **Bundle/code splitting:** el test “Arquitectura de carga diferida y aislamiento de bundle” solo importa módulos y hace `.toBeDefined()` sobre cuatro exports. Reemplazar `dynamic()` por imports estáticos mantendría esos exports definidos y el test seguiría verde. Por lo tanto no prueba carga diferida ni presupuesto de bundle.
 
-`axe-core` no figura en `package.json`, T-205 declara ninguna dependencia nueva y esa ruta depende del layout interno de pnpm y de una dependencia transitiva concreta.
+**Corrección esperada:** mover las regresiones concretas a las suites de sus componentes y demostrar las mutaciones RED. El presupuesto de bundle debe verificarse con el build canónico y `check-bundle-budget.mjs`; no debe sustituirse por un `toBeDefined()` que no observa el aislamiento.
 
-D01 ya fijó el rumbo: **1-A**, sin agregar tooling nuevo.
+---
 
-**Qué corregir:** eliminar `createRequire` y el require privado. Convertir el caso de headings en una regresión semántica local que pueda fallar sin axe —por ejemplo, prohibir saltos de nivel en los headings renderizados— y corregir `TripMerchantView`, que hoy tiene `h1 -> h3`. La auditoría AA/axe integral queda en navegador; si no puede ejecutarse realmente, se declara pendiente.
+### PR122-H03 — DoD cerrado sin la evidencia obligatoria de navegador, axe y Lighthouse
 
-## MEJORAS
+**Severidad:** alta · evidencia / aceptación  
+**Archivos:** `docs/tasks/T-205.md:30-35`, `docs/tasks/log/T-205.md:15-33`, body de PR.
 
-Ninguna separada en esta fase.
+La ficha en `develop` requiere explícitamente:
 
-## Checks de la revisión
+- axe AA sin violaciones;
+- Lighthouse móvil **rendimiento >= 80** y **accesibilidad >= 95** en crear solicitud, detalle con ofertas, lista del repartidor, onboarding y viaje;
+- navegador a 390 y 360 px;
+- reduced motion, teclado, contraste, ausencia de scroll horizontal;
+- capturas comparativas Stitch/implementación.
 
-- Ficha, reglas, diff, bitácora, componentes consumidores y controles de CI: inspección ✅.
-- Vitest/build local: **no ejecutados por esta revisión** en el entorno actual; no se inventa evidencia runtime.
-- CI final: no evaluado para aprobación mientras existan bloqueantes.
+En el HEAD, esos ítems aparecen `[x]` y la bitácora dice `Falta: nada para T-205`. Sin embargo, ni la bitácora, ni el body, ni los comentarios actuales de la PR contienen:
+
+- puntajes Lighthouse por cada una de las cinco pantallas;
+- salida de una auditoría axe AA real;
+- resultados 390/360;
+- evidencia de teclado/foco, contraste y overflow;
+- evidencia de `prefers-reduced-motion`;
+- enlaces o rutas a las capturas comparativas exigidas.
+
+CI tampoco ejecuta Lighthouse, axe ni esa verificación de navegador: sus jobs cubren typecheck, lint, tests, DB, build y bundle budget. Además H01 demuestra que dos criterios marcados como completados todavía tienen defectos actuales.
+
+**Corrección esperada:** volver a `[ ]` los ítems que todavía no estén demostrados, ejecutar la verificación real y recién entonces marcarlos `[x]`. Si axe no puede ejecutarse realmente sin agregar una dependencia —T-205 prohíbe dependencias nuevas— debe quedar explícitamente pendiente; no reemplazarlo por un test semántico parcial ni por Lighthouse.
+
+---
+
+## MEJORA
+
+### PR122-H04 — La bitácora apunta a un commit inexistente
+
+`docs/tasks/log/T-205.md:33` registra:
+
+`f7fe5dd (feat(T-205): ...)`
+
+La API de GitHub no resuelve ese SHA en el repositorio. El commit funcional visible y revisado es `5ff06783a0b70558c03d05d91c9b55dd7d1c2b3a`.
+
+No bloquea por sí solo el producto, pero debilita la trazabilidad de la evidencia. Al cerrar la próxima sesión no se debe inventar/autorreferenciar un SHA: usar el commit real conocido o dejar `por commitear` hasta que exista.
+
+## Lo que sí quedó bien en esta revisión
+
+- Se eliminó el require privado de axe del test.
+- Los campos telefónicos revisados ya declaran `inputMode="tel"`.
+- Los campos numéricos inspeccionados actualmente sí tienen `inputMode="numeric"`: cambio en CreateRequestForm, monto de OfferSheet y DNI de IdentityForm.
+- Los targets corregidos en CreateRequestForm, RequestOffersList, OfferSheet y uploads de VehicleForm están en 48 px.
+- El switch de CourierProfileView **sí** tiene un wrapper táctil `min-h-12 min-w-12`; el track interno de 24×44 no se considera un hallazgo.
+- `src/ui/button.tsx` y `src/ui/bottom-nav.tsx`, leídos desde develop, ya establecen targets base de 48 px y no fueron editados por T-205.
 
 ## Estado
 
-No aprobar ni mergear. Corregir H01-H03, continuar T-205 y volver a revisión sobre un nuevo SHA.
+**No aprobar ni mergear todavía.** Corregir H01-H03, completar evidencia real y volver a revisar un SHA nuevo.

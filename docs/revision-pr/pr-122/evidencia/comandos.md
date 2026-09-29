@@ -1,90 +1,179 @@
-# Evidencia y comandos — PR #122 — Ronda 1
+# Evidencia y reproducciones — PR #122 — Ronda 1 vigente
 
-SHA funcional revisado: `79d3aeaa4949bd85820467592dafb62fdc2232d4`.
+**SHA funcional inspeccionado:** `5ff06783a0b70558c03d05d91c9b55dd7d1c2b3a`.
 
-## Inspección realizada
+> Esta revisión se hizo contra el contenido exacto del SHA mediante el conector GitHub. El entorno actual no tiene checkout ejecutable del repo, por lo que los comandos de shell de esta sección son la batería que debe reproducirse en el worktree; no se registran falsamente como ejecutados por el revisor.
 
-- `docs/tasks/T-205.md` desde `develop`.
-- `AGENTS.md`, reglas 25/40/60 y skill `revisar-pr`.
-- Diff completo y bitácora.
-- `src/features/requests/dod-t205.test.tsx`.
-- Superficies clave para enumerar targets.
-- `.github/workflows/ci.yml` y `.github/workflows/check-bundle-budget.mjs`.
+## Estado comprobado
 
-Esta revisión no tuvo checkout ejecutable. Los comandos siguientes son reproducibles para un worktree limpio; **no se registran como ejecutados por la revisión**.
+- PR abierta, no Draft, mergeable.
+- Rama 3 commits ahead / 0 behind respecto de `develop`.
+- Ficha autoritativa leída desde `develop`.
+- `docs/tasks/T-205.md` en la rama marca todos los DoD como `[x]`.
+- CI de cierre no se consultó porque hay bloqueantes.
+- El comentario de la revisión anterior se considera obsoleto por decisión de Lautaro073.
 
-## H01 — First Load JS
+## H01 — accesibilidad incompleta
 
-Control real del repo:
+### Targets de `/courier/offers`
+
+`src/features/offers/components/my-offers-list.tsx`:
+
+- línea 83: `min-h-10`
+- línea 94: `min-h-10`
+- línea 105: `min-h-10`
+
+La ruta `src/app/(courier)/courier/offers/page.tsx` renderiza directamente `MyOffersList`.
+
+Reproducción/mutación después del arreglo:
 
 ```bash
-git worktree add /tmp/wt-pr122 <SHA-A-VALIDAR>
-cd /tmp/wt-pr122
-pnpm install --frozen-lockfile
+pnpm vitest run src/features/offers/components/my-offers-list.test.tsx
+```
+
+Agregar una regresión que obtenga los tres tabs por role/name y exija `min-h-12`. Luego volver temporalmente uno a `min-h-10`: el test debe mostrar **1 failed**. Restaurar y confirmar verde.
+
+### Heading order de CourierFeed
+
+En el estado aprobado/no-disponible:
+
+- `courier-feed.tsx:130` → `h1`
+- `courier-feed.tsx:154` → `h3`
+
+Mutación:
+
+```bash
+pnpm vitest run src/features/offers/courier-panel.test.tsx
+```
+
+Agregar una regresión del estado `courierStatus="approved"`, `isAvailable={false}` que enumere headings y exija secuencia continua. Con el `h3` actual debe fallar; cambiarlo a `h2`, repetir y exigir verde.
+
+### Reduced motion
+
+No hay regla global de `prefers-reduced-motion` en `src/app/globals.css`. El mecanismo compartido está en `src/ui/motion/index.tsx`.
+
+Clases directas observadas en superficies de T-205:
+
+```text
+src/app/(courier)/courier/profile/notifications/page.tsx:12  animate-pulse
+src/features/offers/components/courier-feed.tsx:136             animate-ping
+src/features/requests/components/create-request-form.tsx:296    animate-spin
+src/features/requests/components/create-request-form.tsx:390    animate-spin
+src/features/courier-onboarding/components/identity-form.tsx:278 animate-spin
+src/features/courier-onboarding/components/vehicle-form.tsx:336  animate-spin
+src/features/courier-onboarding/components/vehicle-form.tsx:374  animate-spin
+src/features/courier-onboarding/components/vehicle-form.tsx:472  animate-spin
+src/features/courier-onboarding/components/status-view.tsx:42    animate-pulse
+src/features/trips/components/trip-merchant-view.tsx:92          animate-pulse
+```
+
+Batería final: abrir las cinco pantallas con emulación `prefers-reduced-motion: reduce`; ninguna animación continua/decorativa debe seguir ejecutándose. Si se conservan loaders esenciales, deben implementarse con el mecanismo permitido y respetar la preferencia.
+
+## H02 — controles que pueden quedar falsamente verdes
+
+### Targets
+
+En `dod-t205.test.tsx`, `interactiveContainers` solo contiene `CreateRequestForm` y `RequestOffersList`. La mutación `MyOffersList min-h-12 -> min-h-10` no modifica el resultado de ese test.
+
+### Inputmode
+
+El test central solo consulta teléfonos:
+
+```text
+input[type="tel"], input#recipient-phone
+input[type="tel"], input#phone
+```
+
+Campos numéricos actualmente correctos pero fuera del control:
+
+- CreateRequestForm: cambio libre → `inputMode="numeric"`
+- OfferSheet: monto → `inputMode="numeric"`
+- IdentityForm: DNI → `inputMode="numeric"`
+
+Mutación exigida: quitar temporalmente `inputMode` de cada uno y demostrar que su **suite específica** falla.
+
+### Bundle/code splitting
+
+El caso DoD 1.4 actual solo hace `.toBeDefined()` sobre:
+
+- `IdentityForm`
+- `VehicleForm`
+- `TripMerchantContainer`
+- `TripCourierContainer`
+
+Una importación estática conserva todos esos exports; por lo tanto el test seguiría verde.
+
+No crear otro proxy. Medición canónica:
+
+```bash
+rm -rf .next
 pnpm build 2>&1 | tee /tmp/t205-build.txt
 node .github/workflows/check-bundle-budget.mjs /tmp/t205-build.txt
 ```
 
-La evidencia válida de RED es la tabla real del build con al menos una ruta de comercio/repartidor > 180 kB. El checker es advisory ante una ruta excedida, así que hay que leer el valor: exit 0 no convierte “Supera el límite” en verde.
+Registrar la tabla exacta. El control de regresión del bundle es el valor de First Load JS, no la existencia del export.
 
-Si el build exacto no muestra ninguna ruta > 180 kB, **no fabricar el rojo**: registrarlo y pedir decisión.
+## H03 — evidencia de aceptación faltante
 
-Para GREEN, repetir exactamente la misma medición después de corregir y comprobar todas las rutas auditadas <= 180 kB.
+Antes de volver a marcar los ítems como `[x]`, registrar por cada una de estas cinco superficies:
 
-## H02 — targets 48 px
+1. crear solicitud;
+2. detalle con ofertas;
+3. lista del repartidor;
+4. onboarding;
+5. viaje.
 
-Barrido estático mínimo:
+### Lighthouse móvil
 
-```bash
-git grep -nE 'min-h-\[44px\]|min-h-10|h-10|py-1\.5' -- \
-  'src/features/requests/**/*.tsx' \
-  'src/features/offers/**/*.tsx' \
-  'src/features/courier-onboarding/**/*.tsx' \
-  'src/features/merchants/**/*.tsx' \
-  'src/features/trips/**/*.tsx'
+Registrar por superficie:
+
+```text
+ruta | performance | accessibility | fecha | navegador/build SHA
 ```
 
-Casos ya observados:
+Umbrales: performance >= 80 y accessibility >= 95.
 
-- `create-request-form.tsx`: usar ubicación, Sí/No y presets con 44 px.
-- `request-offers-list.tsx`: Documentación/Precio sin min-height.
-- `offer-sheet.tsx`: chips rápidos `min-h-10`.
-- `vehicle-form.tsx`: uploads Licencia/Seguro `h-10`.
+### Axe
 
-La validación final no puede ser solo grep. En navegador a 390 y 360 px, en cada superficie del DoD, enumerar elementos interactivos visibles y registrar etiqueta + `getBoundingClientRect().width/height`. Los targets aplicables deben medir al menos 48x48.
+Registrar salida de auditoría axe AA real de navegador. Si no se puede ejecutar sin agregar dependencias al repo, dejar el criterio pendiente y decirlo; no sustituirlo por el test de headings.
 
-Mutación RED por cada control corregido: quitar temporalmente su `min-h-12` o volverlo a 40/44 px; el control de regresión específico debe fallar. Restaurar antes de continuar.
+### Browser
 
-## H03 — dependencia privada de axe
+En 390 px y 360 px:
 
-```bash
-node -e "const p=require('./package.json'); console.log(Boolean((p.dependencies||{})['axe-core'] || (p.devDependencies||{})['axe-core']))"
-git grep -n "node_modules/.pnpm/axe-core" -- src
-```
+- teclado y orden de tabulación;
+- foco visible;
+- contraste;
+- targets renderizados;
+- ausencia de scroll horizontal;
+- `prefers-reduced-motion: reduce`;
+- capturas Stitch/implementación con ruta o enlace verificable.
 
-En el SHA revisado se espera `false` y una coincidencia en `dod-t205.test.tsx`.
-
-Arreglo con D01=1-A:
-
-- eliminar `createRequire` y el require privado;
-- no tocar `package.json` ni lockfile;
-- dejar para `TripMerchantView` una regresión semántica que enumere headings y falle ante un salto de nivel;
-- corregir la jerarquía real `h1 -> h3`;
-- documentar la auditoría integral desde navegador; si axe real no puede ejecutarse, declararlo pendiente y no falsificarlo.
-
-Mutación RED: volver temporalmente el heading corregido a `h3`; el test semántico debe fallar. Restaurar y confirmar verde.
-
-## Comandos finales
+## Checks finales del autor
 
 ```bash
 pnpm typecheck
 pnpm lint
 pnpm test
+rm -rf .next
 pnpm build 2>&1 | tee /tmp/t205-build-final.txt
 node .github/workflows/check-bundle-budget.mjs /tmp/t205-build-final.txt
 git diff --check
 git status --short
+git rev-parse HEAD
 git ls-remote origin feat/T-205-accesibilidad-rendimiento
 ```
 
-No editar `docs/revision-pr/**` desde la sesión de arreglo. No bajar umbrales, borrar casos, introducir `.skip`/`.only`, cambiar expectativas para que coincidan con una implementación incorrecta ni crear tests tautológicos.
+## H04 — trazabilidad
+
+La bitácora afirma `f7fe5dd`; una consulta directa de GitHub devolvió **No commit found for SHA**. No volver a escribir un SHA futuro/autorreferencial. Si la bitácora se escribe antes del commit, usar `por commitear`; la siguiente sesión puede registrar el hash real.
+
+## Validación de los artefactos de revisión
+
+El comando normativo es:
+
+```bash
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+No pudo ejecutarse en este entorno por ausencia de checkout del repo. No se declara como corrido; debe ejecutarse desde el worktree antes de considerar esta ronda lista para archivo definitivo.
