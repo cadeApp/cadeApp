@@ -342,6 +342,51 @@ test('each deploy fails the job unless /api/health answers 200', () => {
   }
 });
 
+test('vercel.json only schedules daily crons and no longer runs the uptime check', () => {
+  // T-316: el plan Hobby de Vercel rechaza el deploy si un cron corre más de una vez por día
+  // (run deploy 36543241685). El chequeo de uptime pasó a GitHub Actions.
+  const vercel = JSON.parse(readFileSync(new URL('../../vercel.json', import.meta.url), 'utf8'));
+  /** @type {{ path: string, schedule: string }[]} */
+  const crons = vercel.crons ?? [];
+  for (const cron of crons) {
+    assert.match(
+      cron.schedule,
+      /^\d{1,2} \d{1,2} \* \* \*$/,
+      `${cron.path}: corre una vez por día`
+    );
+  }
+  assert.ok(
+    crons.every((cron) => cron.path !== '/api/cron/health'),
+    '/api/cron/health ya no se programa en Vercel'
+  );
+});
+
+test('the uptime check runs every 10 minutes from Actions with CRON_SECRET', () => {
+  const healthCron = workflow('health-cron.yml');
+  assert.match(healthCron, /schedule:\r?\n\s+- cron: '\*\/10 \* \* \* \*'/);
+  assert.match(healthCron, /workflow_dispatch:/);
+  assert.match(healthCron, /concurrency:/);
+  const staging = job(healthCron, 'staging');
+  assert.match(staging, /^\s+environment: staging$/m);
+  const call = step(staging, 'Call /api/cron/health');
+  assert.match(call, /CRON_SECRET: \$\{\{ secrets\.CRON_SECRET \}\}/);
+  const curls = shellCommands(call).filter((command) => /\bcurl\b/.test(command));
+  assert.equal(curls.length, 1, 'un solo llamado a curl');
+  const [curl = ''] = curls;
+  assert.ok(curl.startsWith('curl --fail '), 'el llamado empieza con curl --fail');
+  assert.ok(
+    curl.includes(' -H "Authorization: Bearer $CRON_SECRET" '),
+    'el llamado manda el Bearer con CRON_SECRET'
+  );
+  assert.ok(
+    curl.endsWith(' "$APP_URL/api/cron/health"'),
+    'el llamado termina en "$APP_URL/api/cron/health"'
+  );
+  const production = job(healthCron, 'production');
+  assert.match(production, /if: vars\.PRODUCTION_APP_URL != ''/);
+  assert.match(production, /^\s+environment: production$/m);
+});
+
 test('every third-party action is pinned to a full commit SHA', () => {
   const names = readdirSync(new URL('.', import.meta.url)).filter((name) => name.endsWith('.yml'));
   assert.ok(names.length >= 3, 'CI, migration and approval workflows must exist');
