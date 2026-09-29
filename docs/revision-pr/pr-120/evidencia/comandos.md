@@ -53,3 +53,74 @@ try {
 
 ## Limitación de esta ronda
 El entorno de revisión no pudo clonar GitHub por resolución de red. No se inventó ejecución local: donde la evidencia proviene de lectura de código se registra como inspección; la ejecución disponible es el CI remoto del SHA exacto.
+
+
+---
+
+# Evidencia — Ronda 2 PR #120
+
+## HEAD exacto revisado
+`0638d2a7bf4074a719052332b4b95d50ba86f813`
+
+## Sincronización
+- develop actual: `a758790f9c73ac5794e5c89ce8e7103149a13a88`
+- estado: diverged; PR ahead 5 / behind 1.
+- el commit nuevo de develop toca T-117/pr-119 y no comparte archivos de producto con T-202.
+
+## Harness independiente del Service Worker real
+
+Se obtuvo el contenido exacto de `public/sw.js` del SHA revisado mediante GitHub y se ejecutó en memoria con un sandbox que implementa `self.addEventListener`, `registration.showNotification` y `clients`. No se invocó `src/features/notifications/push/sw-handlers.ts`.
+
+Casos ejecutados:
+
+1. Registro del runtime:
+```text
+push listeners = 1
+notificationclick listeners = 1
+```
+Esto verifica H01.
+
+2. Evento canónico incompleto:
+```json
+{
+  "event": "offer_accepted",
+  "requestId": "11111111-1111-4111-8111-111111111111"
+}
+```
+Resultado real:
+```text
+title = "¡Oferta aceptada!"
+url = /trips/11111111-1111-4111-8111-111111111111
+offerId = ausente
+```
+T-203 exige `offerId: UUID`; el SW debería degradar a fallback. H06 sigue rojo.
+
+3. Payload con campos extra/PII:
+```json
+{
+  "event": "request_published",
+  "requestId": "11111111-1111-4111-8111-111111111111",
+  "recipient_name": "Santiago",
+  "phone": "+54 9 3865 123456"
+}
+```
+Resultado real: el SW lo acepta como `request_published` normal. El servidor usa objetos `.strict()`; bajo D03 la frontera manual debe rechazar extras. H11/H06 siguen rojos.
+
+## Escaneo del SHA revisado
+
+```text
+initialGrantedSetsSuccess = true
+arbitraryWidths = ["max-w-[320px]","max-w-[340px]"]
+outerTopBar = 1
+innerHeader = 1
+notificationPageUsesPrompt = true
+rawPendingEndpointRead = true
+pendingEndpointZod = false
+visualTestsStillJSDOM = ["window.innerWidth = 390","window.innerWidth = 360"]
+```
+
+## Evidencia visual
+No hay PNG de T-202 entre los archivos cambiados y los comentarios de PR no contienen capturas. Por protocolo, la declaración de la bitácora no sustituye la evidencia del navegador.
+
+## CI
+No inspeccionado en Ronda 2: quedan bloqueantes, por lo que corresponde revisión estática + controles propios antes de mirar CI.
