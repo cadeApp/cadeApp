@@ -1,4 +1,13 @@
 declare module '@playwright/test' {
+  export interface ProjectConfig {
+    name: string;
+    use?: Record<string, unknown>;
+    testMatch?: string | RegExp | Array<string | RegExp>;
+    testIgnore?: string | RegExp | Array<string | RegExp>;
+    dependencies?: string[];
+    fullyParallel?: boolean;
+  }
+
   export interface PlaywrightTestConfig {
     testDir?: string;
     timeout?: number;
@@ -17,13 +26,7 @@ declare module '@playwright/test' {
       actionTimeout?: number;
       navigationTimeout?: number;
     };
-    projects?: Array<{
-      name: string;
-      use?: Record<string, unknown>;
-      testMatch?: string | RegExp | Array<string | RegExp>;
-      dependencies?: string[];
-      fullyParallel?: boolean;
-    }>;
+    projects?: ProjectConfig[];
     webServer?: {
       command: string;
       url: string;
@@ -53,6 +56,7 @@ declare module '@playwright/test' {
     getByLabel(label: string | RegExp): Locator;
     getByPlaceholder(placeholder: string | RegExp): Locator;
     getByTestId(testId: string): Locator;
+    url(): string;
   }
 
   export interface DescribeMethod {
