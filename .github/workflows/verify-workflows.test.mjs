@@ -251,23 +251,60 @@ function step(jobBody, name) {
   return next === -1 ? normalized.slice(start) : normalized.slice(start, start + next + 1);
 }
 
-test('each deploy job pulls, builds, deploys and checks health in that order', () => {
-  // PR128-H02: la secuencia se valida dentro de cada job, no con tokens sueltos del archivo.
+/**
+ * Comandos shell activos del bloque `run: |` de un step: sin líneas vacías ni comentarios, y con las
+ * continuaciones `\` unidas en un solo comando lógico. PR128-H02: las propiedades se afirman sobre lo que
+ * se ejecuta, no sobre texto que puede estar comentado o dentro de un `echo`.
+ * @param {string} stepBody
+ */
+function shellCommands(stepBody) {
+  const lines = stepBody.replace(/\r\n/g, '\n').split('\n');
+  const runIndex = lines.findIndex((line) => /^\s*run: \|\s*$/.test(line));
+  assert.notEqual(runIndex, -1, 'el step no tiene un bloque run: |');
+  const runIndent = (lines[runIndex] ?? '').search(/\S/);
+  /** @type {string[]} */
+  const commands = [];
+  let pending = '';
+  for (const raw of lines.slice(runIndex + 1)) {
+    if (raw.trim() !== '' && raw.search(/\S/) <= runIndent) break;
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    if (line.endsWith('\\')) {
+      pending += `${line.slice(0, -1).trimEnd()} `;
+      continue;
+    }
+    commands.push(pending + line);
+    pending = '';
+  }
+  if (pending) commands.push(pending.trimEnd());
+  return commands;
+}
+
+test('each deploy job pulls, builds and deploys in that order, then checks health', () => {
+  // PR128-H02: la secuencia se valida sobre los comandos activos del step de Vercel de cada job.
   const deploy = workflow('deploy.yml');
-  const sequence = [
-    'vercel@61.0.0 pull --yes --environment=production',
-    'vercel@61.0.0 build --prod',
-    'vercel@61.0.0 deploy --prebuilt --prod',
-    '"$APP_URL/api/health"',
-  ];
   for (const name of ['staging', 'production']) {
     const body = job(deploy, name);
-    let previous = -1;
-    for (const command of sequence) {
-      const index = body.indexOf(command, previous + 1);
-      assert.notEqual(index, -1, `${name}: falta «${command}» después del paso anterior`);
-      previous = index;
-    }
+    const commands = shellCommands(step(body, `Build and deploy to Vercel (${name})`));
+    const pull = commands.findIndex((command) =>
+      command.startsWith('pnpm dlx vercel@61.0.0 pull --yes --environment=production')
+    );
+    const build = commands.findIndex((command) =>
+      command.startsWith('pnpm dlx vercel@61.0.0 build --prod')
+    );
+    const deployCommand = commands.findIndex((command) =>
+      /^url="\$\(pnpm dlx vercel@61\.0\.0 deploy --prebuilt --prod .*\)"$/.test(command)
+    );
+    assert.notEqual(pull, -1, `${name}: falta el vercel pull activo`);
+    assert.notEqual(build, -1, `${name}: falta el vercel build activo`);
+    assert.notEqual(deployCommand, -1, `${name}: falta el vercel deploy activo`);
+    assert.ok(pull < build && build < deployCommand, `${name}: el orden es pull → build → deploy`);
+    const normalized = body.replace(/\r\n/g, '\n');
+    assert.ok(
+      normalized.indexOf(`- name: Build and deploy to Vercel (${name})`) <
+        normalized.indexOf('- name: Health check'),
+      `${name}: el health check va después del deploy`
+    );
   }
 });
 
@@ -291,13 +328,16 @@ test('each deploy fails the job unless /api/health answers 200', () => {
   for (const name of ['staging', 'production']) {
     const body = job(deploy, name);
     assert.doesNotMatch(body, /continue-on-error/, `${name}: el job no puede ignorar fallos`);
-    const health = step(body, 'Health check');
-    assert.match(health, /curl --fail /, `${name}: curl tiene que fallar con HTTP >= 400`);
-    assert.match(health, /"\$APP_URL\/api\/health"\n/, `${name}: el health es el último comando`);
-    assert.doesNotMatch(
-      health,
-      /\|\||set \+e|; *true\b/,
-      `${name}: el error de curl no se neutraliza`
+    const commands = shellCommands(step(body, 'Health check'));
+    assert.equal(commands.length, 1, `${name}: el health check es un único comando`);
+    const [health = ''] = commands;
+    assert.ok(health.startsWith('curl --fail '), `${name}: el comando empieza con curl --fail`);
+    for (const flag of ['--retry 6', '--retry-delay 10', '--retry-all-errors']) {
+      assert.ok(health.includes(` ${flag} `), `${name}: conserva ${flag}`);
+    }
+    assert.ok(
+      health.endsWith(' "$APP_URL/api/health"'),
+      `${name}: el comando termina en "$APP_URL/api/health"`
     );
   }
 });
