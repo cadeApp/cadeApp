@@ -1,22 +1,21 @@
 # Lecciones — PR #122 (T-205)
 
-La revisión descartada original sigue fuera de vigencia. Este archivo resume la revisión válida iniciada sobre `5ff06783...` hasta Ronda 3 (`fc010850...`).
+La revisión descartada original sigue fuera de vigencia. Este archivo resume la revisión válida hasta Ronda 4 (`732a9bdc...`).
 
-No se agrega número AG nuevo.
+- **H01 / P06:** una pasada visual exige enumerar la clase completa.
+- **H02 / P08:** un control debe observar la propiedad real, no un proxy.
+- **H03 / P03:** no cerrar criterios runtime sin evidencia reproducible.
+- **R01 / P10:** no reescribir el DoD para acomodar una limitación operativa.
+- **R02 / P03:** reglas de AGENTS también deben auditarse aunque ESLint no las imponga.
+- **R03 / P08:** `scrollWidth` no demuestra ausencia de clipping.
+- **R04 / P15:** documentar un harness no equivale a entregarlo. Si la evidencia depende de una herramienta, script o test, ese mecanismo debe existir y poder ejecutarse por un tercero. Una captura “correcta” que proviene de un árbol manual distinto a la ruta real no prueba la ruta canónica.
 
-- **H01 → AG-37 / P06:** enumerar la clase completa antes de cerrar una pasada visual.
-- **H02 → AG-75 / P08:** un control debe fallar al romper la propiedad real; no usar proxies tautológicos.
-- **H03 → P03:** no cerrar aceptación runtime sin evidencia reproducible.
-- **R01 → P10:** no reescribir un criterio de aceptación para reflejar una limitación operativa.
-- **R02 → P03:** la bitácora no puede afirmar “Cero !” si el código nuevo contiene non-null assertions.
-- **R03 → P08:** “no hay scroll horizontal” no equivale a “no hay contenido fuera del viewport”. Con `overflow-x:hidden`, una UI puede quedar visualmente recortada y un check de `scrollWidth` dar verde.
+Regla práctica para evidencia browser:
 
-Regla práctica reforzada para browser review:
-
-1. medir scroll;
-2. enumerar `getBoundingClientRect()` de elementos visibles;
-3. inspeccionar capturas reales;
-4. exigir 0 elementos fuera del viewport;
-5. conservar el harness/URL/comando usado para poder reproducirlo.
-
-La captura no es decoración: si contradice la tabla, prevalece el defecto visible hasta que se explique/reproduzca correctamente.
+1. versionar el harness;
+2. reutilizar pages/layouts/componentes reales;
+3. registrar comando reproducible;
+4. medir offenders;
+5. inspeccionar capturas;
+6. no duplicar manualmente UI que ya vive dentro de los componentes;
+7. si el harness no puede reproducirse desde el repo, el resultado queda como evidencia auxiliar, no como verificación.
