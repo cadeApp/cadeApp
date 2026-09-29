@@ -1,134 +1,86 @@
 # Evidencia y reproducciones — PR #126
 
-## Ronda 1 — HEAD `acccd45b4b6d3ec5d3c84e2c6d6165ddd5e52186`
+## Ronda 1
 
-### Run que origina CC-013
+Ver `revisiones/ronda-1.md` para blobs reales, run de staging 36535421202 y false-green original.
 
-`migrate` run `36535421202`, staging SHA `08b4b4d1550501289a817c3c00e1e570411abd5a`.
+## Ronda 2 — HEAD funcional `80155e4fea27e6a906fcbd59da73b266683ff832`
 
-```text
-Apply migrations to staging                  success
-Detect committed types drift against staging failure
-```
+### H01
 
-El log muestra:
+Fixture corregido contiene:
 
 ```text
-pnpm db:types
-supabase gen types typescript --schema public --project-id <staging-ref>
+Tables
+TablesInsert
+TablesUpdate
+Enums
+CompositeTypes
 ```
 
-y luego un diff únicamente de:
-
-- `__InternalSupabase / PostgrestVersion`;
-- `Tables`;
-- `TablesInsert`;
-- `TablesUpdate`;
-- `Enums`;
-- `CompositeTypes`.
-
-### Blobs reales
+Mutación independiente: regex inicial limitado a `EnumName`.
 
 ```text
-base/develop:
-51a224df8ffe7ad8a42336aaf4e390cf0e2d36a0
-size 31822
-
-salida remota preservada en d52c4e7:
-caa03af8699d85eb9660aa8e178b94e72c98afa5
-size 32039
-
-HEAD actual database.types.ts:
-51a224df8ffe7ad8a42336aaf4e390cf0e2d36a0
-size 31822
+correctPasses: true
+mutationWouldFailFirstTest: true
+remainingCount: 4
+remainingBrokenHelpers:
+- TableName / Tables
+- TableName / TablesInsert
+- TableName / TablesUpdate
+- CompositeTypeName / CompositeTypes
 ```
 
-### Reproducción de normalizeGeneratedTypes sobre blobs reales
+H01 queda arreglado-verificado.
 
-Resultado independiente:
+### CI técnico #601
 
 ```text
-baseLength: 31822
-remoteLength: 32039
-normalizedLength: 31822
-exactEquality: true
-firstMismatch: -1
-internalSupabaseBlocks: 1
-helperStartsMatched: 5
-helperEndsMatched: 5
+build          success
+unit           success
+db-tests       success
+lint           success
+audit           success
+typecheck      success
+bundle-budget  success
 ```
 
-Helpers encontrados:
+### approval-policy
+
+Runs sobre el mismo SHA:
 
 ```text
-TableName / Tables
-TableName / TablesInsert
-TableName / TablesUpdate
-EnumName / Enums
-CompositeTypeName / CompositeTypes
+#752 failure
+#753 failure
 ```
 
-Mutación de esquema:
+Log:
 
 ```text
-+ reviewer_probe: boolean
+Falta el informe completo de revisar-pr sin bloqueantes.
 ```
 
-Resultado:
-
-```text
-mutationPreserved: true
-mutationStillDiffersFromBase: true
-```
-
-### PR126-H01 — false green demostrado
-
-Mutación independiente de la implementación:
-
-- conservar el bloque `__InternalSupabase`;
-- conservar el regex final;
-- hacer que el regex inicial normalice únicamente `EnumName`.
-
-Resultados de los cuatro tests actuales:
-
-```text
-remote -> local                 true
-idempotencia local              true
-columna nueva visible           true
-committed fixed point           true
-```
-
-```text
-allFourWouldPass: true
-```
-
-Pero contra el remoto real:
-
-```text
-brokenMutationFailsRealRemoteEquality: true
-remainingParenStarts:
-- Tables
-- TablesInsert
-- TablesUpdate
-- CompositeTypes
-```
-
-Conclusión: la suite actual no protege cuatro de los cinco helpers.
-
-### Board T-300
-
-Issue #96 está en `en-review` porque PR #123 está abierta.
-
-`board-sync.mjs` aplica:
+Causa en `.github/workflows/approval-policy.mjs`:
 
 ```js
-if (openPr) {
-  targetState = openPr.isDraft ? 'en-curso' : 'en-review';
-}
+/Informe revisar-pr\s*—\s*T-\d{3}/
 ```
 
-Por eso no se pide un cambio manual a `bloqueada`.
+El control no acepta `CC-013`.
 
-### CI
+Decisión P1:
 
-No consultado como criterio final de aprobación porque PR126-H01 sigue abierto.
+```text
+B — aceptar approval-policy rojo para esta PR y seguir igual.
+```
+
+No se altera el workflow ni se usa un ID falso.
+
+### Estado GitHub
+
+```text
+mergeable: true
+mergeable_state: unstable
+```
+
+No se pudo consultar branch protection (403 de la integración).

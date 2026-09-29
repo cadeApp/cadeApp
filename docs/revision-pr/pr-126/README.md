@@ -3,40 +3,51 @@
 - **PR:** #126 — `[CC-013] db:types independiente de la plantilla del generador`
 - **Rama:** `cc/CC-013-db-types-remote`
 - **Base:** `develop@b659027f49a96762d020e23f159f898b2895d938`
-- **HEAD revisado:** `acccd45b4b6d3ec5d3c84e2c6d6165ddd5e52186`
-- **Ronda vigente:** 1
-- **Resultado:** **CON BLOQUEANTES (1)**
-- **PR:** abierta, mergeable, 0 behind.
-- **CI final:** no se usa como criterio de cierre mientras H01 siga abierto.
+- **HEAD funcional revisado:** `80155e4fea27e6a906fcbd59da73b266683ff832`
+- **Ronda vigente:** 2
+- **Resultado:** **SIN BLOQUEANTES DE CÓDIGO · EXCEPCIÓN DE GATE ACEPTADA POR P1**
+- **PR:** abierta, no Draft, 0 behind, mergeable=true, mergeable_state=unstable.
+- **CI técnico #601:** verde.
+- **approval-policy #752/#753:** rojo por no aceptar identificadores `CC-xxx`; Lautaro073 eligió explícitamente **B: aceptar ese rojo para esta PR y seguir igual**.
 
-## Decisión P1
+## Estado
 
-Lautaro073 aprobó **CC-013 como P1**, condicionado a corregir los bloqueantes de revisión.
+- `PR126-H01` — **arreglado-verificado** en `80155e4...`.
+- `PR126-D01` — **aceptado**: P1 aprobó CC-013 y la casilla quedó marcada.
+- `PR126-D02` — **aceptado**: excepción explícita al gate `approval-policy` para esta PR; no se falsea el informe usando `T-013`.
 
-Debe reflejarse en `docs/contracts/CC-013.md` marcando:
+## Verificación H01
 
-`- [x] P1 (dueño de esquema/RPC)`
+El fixture ahora contiene los cinco helpers:
 
-No implica que la PR esté aprobada para merge.
+- `Tables`
+- `TablesInsert`
+- `TablesUpdate`
+- `Enums`
+- `CompositeTypes`
 
-## Validación independiente del contrato
+La mutación independiente que normaliza solo `EnumName` deja cuatro helpers rotos y ahora hace fallar la primera prueba, por lo que el falso verde de Ronda 1 quedó cerrado.
 
-Se verificó con los blobs reales preservados en la historia de esta misma rama:
+## CI técnico
 
-- local/base: `51a224df8ffe7ad8a42336aaf4e390cf0e2d36a0` — 31.822 bytes;
-- remoto/staging reconstruido: `caa03af8699d85eb9660aa8e178b94e72c98afa5` — 32.039 bytes.
+CI #601 sobre `80155e4...`:
 
-Aplicando la función actual `normalizeGeneratedTypes` al blob remoto:
+- build ✅
+- unit ✅
+- db-tests ✅
+- lint ✅
+- audit ✅
+- typecheck ✅
+- bundle-budget ✅
 
-- elimina exactamente 1 bloque `__InternalSupabase`;
-- normaliza exactamente 5 helpers;
-- resultado final: **igualdad byte a byte** con el blob local;
-- una columna de esquema mutada sigue visible y mantiene el diff.
+## Gate residual
 
-El run real `migrate` 36535421202 confirma que el fallo de staging era exactamente ese bloque más los cinco helpers.
+`.github/workflows/approval-policy.mjs` exige literalmente:
 
-## Hallazgo vigente
+`Informe revisar-pr — T-\d{3}`
 
-- **PR126-H01 — BLOQUEANTE:** `tools/db-types.test.ts` solo ejercita `Enums`; se puede romper la normalización de `Tables`, `TablesInsert`, `TablesUpdate` y `CompositeTypes` manteniendo los cuatro tests nuevos en verde.
+Por eso un informe honesto `CC-013` nunca satisface el gate actual. P1 decidió no corregir ese workflow en esta PR y aceptar el rojo como excepción conocida.
 
-Detalle: `revisiones/ronda-1.md`. Evidencia: `evidencia/comandos.md`.
+No se falsifica el identificador del informe para engañar el check.
+
+Detalle: `revisiones/ronda-2.md`.
