@@ -1,21 +1,22 @@
 # Lecciones — PR #122 (T-205)
 
-La revisión anterior descartada sigue fuera de vigencia. Este archivo resume únicamente la revisión válida iniciada sobre `5ff06783...` y su Ronda 2 sobre `2e3d6eda...`.
+La revisión descartada original sigue fuera de vigencia. Este archivo resume la revisión válida iniciada sobre `5ff06783...` hasta Ronda 3 (`fc010850...`).
 
-No se agrega número AG nuevo; los defectos siguen cubiertos por patrones/lecciones existentes:
+No se agrega número AG nuevo.
 
-- **PR122-H01 → AG-37 / P06:** cuando una tarea dice “todas las superficies”, hay que enumerar la clase completa antes de cerrar.
-- **PR122-H02 → AG-75 / P08:** una regresión debe fallar al romper la propiedad real; `toBeDefined()` no prueba code-splitting.
-- **PR122-H02 → AG-92:** un presupuesto cuantitativo se demuestra con el valor canónico del build.
-- **PR122-H03 → P03:** no marcar `[x]` ni escribir “Falta: nada” sin la evidencia que la ficha exige.
-- **PR122-H04 → P03:** un SHA en bitácora debe existir realmente.
-- **PR122-R01 → P10:** una decisión operativa (“no agregar dependencias”) no autoriza a reescribir el criterio de aceptación. El estado pendiente se documenta fuera del texto autoritativo.
-- **PR122-R02 → P03:** si la documentación afirma “Cero `!`”, la revisión debe buscar la sintaxis prohibida en el código nuevo; una regla escrita en AGENTS puede no estar cubierta por ESLint.
+- **H01 → AG-37 / P06:** enumerar la clase completa antes de cerrar una pasada visual.
+- **H02 → AG-75 / P08:** un control debe fallar al romper la propiedad real; no usar proxies tautológicos.
+- **H03 → P03:** no cerrar aceptación runtime sin evidencia reproducible.
+- **R01 → P10:** no reescribir un criterio de aceptación para reflejar una limitación operativa.
+- **R02 → P03:** la bitácora no puede afirmar “Cero !” si el código nuevo contiene non-null assertions.
+- **R03 → P08:** “no hay scroll horizontal” no equivale a “no hay contenido fuera del viewport”. Con `overflow-x:hidden`, una UI puede quedar visualmente recortada y un check de `scrollWidth` dar verde.
 
-Regla práctica reforzada: en tareas visuales separar tres capas y no sustituirlas entre sí:
+Regla práctica reforzada para browser review:
 
-1. **regresiones unitarias concretas**;
-2. **métricas de build/Lighthouse**;
-3. **auditoría browser/axe + capturas reproducibles**.
+1. medir scroll;
+2. enumerar `getBoundingClientRect()` de elementos visibles;
+3. inspeccionar capturas reales;
+4. exigir 0 elementos fuera del viewport;
+5. conservar el harness/URL/comando usado para poder reproducirlo.
 
-Que una capa esté verde no convierte automáticamente las otras en cumplidas.
+La captura no es decoración: si contradice la tabla, prevalece el defecto visible hasta que se explique/reproduzca correctamente.
