@@ -1,81 +1,130 @@
 # Evidencia y reproducciones — PR #122
 
-## Ronda 6 — corrección del reviewer
+## Ronda 7 — decisión P1 + CI final
 
-Esta ronda no agrega evidencia de producto nueva. Corrige el criterio de revisión aplicado en Rondas 4–5.
+### Decisión P1
 
-### Regla del protocolo que se había incumplido
-
-El prompt obligatorio para arreglos indica:
+Lautaro073 eligió opción B:
 
 ```text
-Prohibido: docs/revision-pr/** (es de la revisión), marcar hallazgos como verificados,
-crear archivos nuevos (los scripts auxiliares van en /tmp), dependencias nuevas,
-editar la ficha, <lo que aplique>.
+Completar post-merge en staging las verificaciones de H03 que requieren entorno real.
 ```
 
-En Ronda 4 el reviewer pidió versionar un browser harness dentro de la rama. Esa instrucción fue incorrecta.
+Esto se registra como decisión de alcance, no como verificación técnica.
 
-### Consecuencia
+### Tareas de staging existentes
 
-Se retiran del estado vigente:
+`docs/tasks/T-300.md`
+
+- promoción `develop → staging`;
+- migrate-staging;
+- deployment staging;
+- health 200.
+
+Issue #96: abierto, label `lista`.
+
+`docs/tasks/T-301.md`
+
+- Playwright;
+- `reducedMotion: 'reduce'`;
+- fixtures/seed en staging;
+- E2E staging;
+- bloqueado por T-300.
+
+`docs/tasks/T-309.md`
+
+DoD:
 
 ```text
-PR122-R04
-PR122-R05
-PR122-R06
-PR122-R07
+axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding
 ```
 
-No se pide al autor corregirlos.
+Issue #41: abierto/bloqueado.
 
-Las Rondas 4 y 5 permanecen en el historial para transparencia, pero **Ronda 6 supersede su veredicto**.
+No se encontró una ficha de Fase 3 que nombre Lighthouse móvil explícitamente. Se conserva como residual H03 previo al release/T-312.
 
-### Estado técnico que sí permanece
+## CI #586 — SHA `014f82f2c0fbf5c418964f07ef8189b4a0d77d14`
 
-La ficha autoritativa en `develop` exige:
-
-```md
-- [ ] axe AA sin violaciones; objetivos de 48 px; `inputmode` numérico; Lighthouse móvil ≥ 80 en rendimiento y ≥ 95 en accesibilidad en crear solicitud, detalle con ofertas, lista del repartidor, onboarding y viaje; first-load JS dentro del presupuesto de la regla 25.
-- [ ] Verificación con navegador a 390 px y 360 px, `prefers-reduced-motion`, teclado, contraste, sin scroll horizontal y capturas comparativas Stitch/implementación.
-- [ ] Las primitivas de `src/ui/**` se auditan; cualquier cambio de contrato se deriva a `contract-change` separado y no se edita directamente en T-205.
-```
-
-En el SHA funcional de autor vigente esas casillas siguen en `[ ]`.
-
-La bitácora declara expresamente:
+### Jobs
 
 ```text
-Lighthouse móvil: pendiente
-axe AA: pendiente
+typecheck       success
+lint            success
+db-tests        success
+audit           success
+build           success
+bundle-budget   success
+unit            failure
 ```
 
-Por eso `PR122-H03` permanece parcial y bloqueante.
+### Unit
 
-### R03
+Job `109286277017`.
 
-Las PNG actuales fueron inspeccionadas por el reviewer y ya no muestran el clipping horizontal evidente que originó R03.
-
-No se ejecutó una reproducción browser independiente; por eso el estado correcto es:
+Resumen Vitest:
 
 ```text
-arreglado-sin-verificar
+Test Files  1 failed | 101 passed (102)
+Tests       1 failed | 1376 passed (1377)
 ```
 
-y no `arreglado-verificado`.
+Fallo:
 
-### CI
+```text
+FAIL src/app/route-integrity.test.ts
+T-118: Integridad de Rutas, Shells y Navegación Canónica
+DoD 4 ...
 
-No se consulta CI final mientras H03 siga abierto. El protocolo indica revisar CI recién cuando la ronda esté para aprobar.
+AssertionError: expected [Function] to not throw an error but
+Error: src/features/requests/evidence/T-205/browser-audit.tsx
+referencia una ruta interna inexistente en el filesystem: /style.css
+```
 
-### Próximo paso real
+### Causa
 
-No hay corrección de código pedida por esta ronda.
+El archivo:
 
-Cuando exista un entorno adecuado para cerrar H03, la verificación deberá producir evidencia real de:
+`src/features/requests/evidence/T-205/browser-audit.tsx`
 
-1. axe AA;
-2. Lighthouse móvil en las cinco superficies;
-3. browser 390/360 con reduced-motion, teclado/foco, contraste y overflow.
+fue agregado por una instrucción incorrecta del reviewer en una ronda previa.
 
-Los scripts auxiliares del reviewer, si hacen falta, se ejecutan desde `/tmp`; no se agregan a la rama del autor.
+El protocolo correcto exigía mantener scripts auxiliares en `/tmp`.
+
+### Corrección mínima esperada
+
+Eliminar:
+
+```text
+src/features/requests/evidence/T-205/browser-audit.tsx
+src/features/requests/evidence/T-205/vitest.config.ts
+```
+
+y quitar de:
+
+`src/features/courier-onboarding/index.ts`
+
+solo:
+
+```ts
+export { IdentityForm as CanonicalIdentityForm } from './components/identity-form';
+export { VehicleForm as CanonicalVehicleForm } from './components/vehicle-form';
+```
+
+No tocar PNG, tests existentes ni ficha T-205.
+
+### RED / GREEN
+
+RED ya existe en CI #586.
+
+GREEN mínimo:
+
+```bash
+pnpm exec vitest run src/app/route-integrity.test.ts
+pnpm test:coverage
+pnpm typecheck
+pnpm lint
+```
+
+Luego push normal y esperar CI completo.
+
+No crear un test nuevo, no editar `route-integrity.test.ts`, no bajar controles y no excluir `browser-audit` de la auditoría: el archivo auxiliar debe salir de la rama.

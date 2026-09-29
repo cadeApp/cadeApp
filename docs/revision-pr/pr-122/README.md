@@ -1,55 +1,39 @@
 # Revisión PR #122 — T-205
 
-> La revisión descartada original sigue fuera de vigencia. **Ronda 6 es una corrección del reviewer, sin cambios funcionales nuevos del autor.** Corrige un error de proceso introducido en las Rondas 4–5.
+> La revisión descartada original sigue fuera de vigencia. **Ronda 7** registra la decisión explícita de P1 sobre H03 y revisa CI final del HEAD actual.
 
 - **PR:** #122 — `[T-205] Pasada de accesibilidad y rendimiento en las pantallas de comercio y repartidor`
 - **Rama:** `feat/T-205-accesibilidad-rendimiento`
-- **SHA funcional de autor vigente:** `bae8c771e2a42c20a45764cc984fefb5265de160`
-- **HEAD antes de esta corrección:** `2276749641b5bd242707386ac08416381736096c` (solo docs del reviewer)
-- **Ronda vigente:** 6 — corrección del reviewer
+- **Base:** `develop@ae514947a467de4bd2f4e8deb96aff542a3e79c3`
+- **HEAD revisado:** `014f82f2c0fbf5c418964f07ef8189b4a0d77d14`
+- **Ronda vigente:** 7
 - **Resultado:** **CON BLOQUEANTE (1)**
-- **CI final:** no se consulta todavía porque el DoD runtime de H03 sigue abierto.
-- **Ejecución local independiente:** no disponible; no se atribuyen axe/Lighthouse/browser que el reviewer no ejecutó.
+- **CI:** revisado porque H03 dejó de bloquear por decisión explícita de P1.
 
-## Corrección del reviewer
+## Decisión P1 — H03
 
-El protocolo obligatorio para prompts de arreglo dice explícitamente:
+Lautaro073 eligió la opción B: la verificación que requiere entorno real se completa **post-merge en staging**.
 
-- **prohibido crear archivos nuevos**;
-- **los scripts auxiliares van en `/tmp`**.
+La decisión está respaldada por el plan actual:
 
-En Ronda 4 el reviewer pidió versionar un harness browser dentro de la rama. Esa instrucción fue incorrecta. Por arrastre, R04–R07 evaluaron y endurecieron un entregable que **no debía haberse exigido dentro del PR**.
+- **T-300 / #96:** checkpoint obligatorio `develop → staging`, migraciones, deployment y `/api/health`.
+- **T-301:** arnés E2E en staging, bloqueado por T-300.
+- **T-309 / #41:** E2E de accesibilidad en staging; su DoD incluye **axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding**.
 
-Por eso:
+Lighthouse no está asignado expresamente en T-309, así que queda como residual explícito de H03 para ejecutarse en staging antes del release; no se afirma como verificado.
 
-- `PR122-R04` — retirado del estado vigente;
-- `PR122-R05` — retirado;
-- `PR122-R06` — retirado;
-- `PR122-R07` — retirado.
+Estado de H03: **aceptado por decisión P1**, no `arreglado-verificado`.
 
-No se pide al autor otra ronda para “arreglar” esos puntos.
+## Estado vigente
 
-## Estado válido
+- H01 — arreglado-sin-verificar.
+- H02 — arreglado-sin-verificar.
+- H03 — **aceptado**: runtime diferido a staging por decisión P1.
+- H04 — arreglado-sin-verificar.
+- R01 — arreglado-sin-verificar.
+- R02 — arreglado-sin-verificar.
+- R03 — arreglado-sin-verificar.
+- R04–R07 anteriores — retirados por corrección del reviewer.
+- **R08 — abierto y bloqueante:** CI unit falla por el harness versionado que entró a la rama debido a una instrucción incorrecta del reviewer.
 
-- `PR122-H01` — arreglado-sin-verificar.
-- `PR122-H02` — arreglado-sin-verificar.
-- `PR122-H03` — **parcial y único bloqueante vigente**.
-- `PR122-H04` — arreglado-sin-verificar.
-- `PR122-R01` — arreglado-sin-verificar.
-- `PR122-R02` — arreglado-sin-verificar.
-- `PR122-R03` — arreglado-sin-verificar: las PNG actuales ya no muestran el clipping visual original.
-
-## Bloqueo actual
-
-La ficha autoritativa leída desde `develop` exige todavía:
-
-- axe AA sin violaciones;
-- Lighthouse móvil ≥ 80 rendimiento y ≥ 95 accesibilidad en las cinco superficies;
-- verificación browser 390/360, reduced-motion, teclado, contraste y ausencia de overflow;
-- auditoría de primitivas `src/ui/**`.
-
-En la rama estos criterios siguen correctamente en `[ ]`, y la propia bitácora declara Lighthouse y axe pendientes.
-
-Por lo tanto **T-205 todavía no cumple su DoD completo**, pero no hay otro bloqueante de código atribuible a esta corrección.
-
-Detalle: `revisiones/ronda-6.md`.
+Detalle: `revisiones/ronda-7.md`.

@@ -1,31 +1,16 @@
 # Lecciones — PR #122 (T-205)
 
-La revisión descartada original sigue fuera de vigencia. Esta actualización corresponde a la **Ronda 6, corrección del reviewer**.
+Ronda 7 incorpora dos correcciones de proceso importantes.
 
-## Lecciones válidas
+- **Decisiones de alcance:** cuando P1 acepta explícitamente diferir una verificación, el estado correcto es `aceptado`, no `arreglado-verificado`. La decisión no sustituye evidencia técnica.
+- **Staging ya tiene su propio gate:** T-300 prepara el entorno; T-301 monta el arnés E2E; T-309 ya cubre axe AA en las superficies de accesibilidad. No duplicar esa validación dentro de T-205 si P1 decidió moverla post-merge.
+- **Residual no cubierto por otra ficha:** Lighthouse móvil no aparece asignado explícitamente en Fase 3, por lo que debe quedar nombrado como residual antes del release para no perder trazabilidad.
+- **Error del reviewer:** pedir versionar un harness auxiliar dentro de `src/**` violó el protocolo y además rompió una auditoría canónica ajena (T-118 route-integrity). Los scripts de reproducción del reviewer van en `/tmp`, no en la rama del autor.
+- **CI se revisa solo cuando corresponde:** una vez que H03 dejó de bloquear por decisión P1, se revisó CI y apareció R08. No basta con “build verde”; hay que entrar al job fallido y leer el error real.
 
-- **H01 / P06:** una pasada visual exige enumerar la clase completa.
-- **H02 / P08:** un control debe observar la propiedad real, no un proxy.
-- **H03 / P03:** no cerrar criterios runtime sin evidencia reproducible.
-- **R01 / P10:** no reescribir el DoD para acomodar una limitación operativa.
-- **R02 / P03:** las reglas de AGENTS también cuentan aunque ESLint no las imponga.
-- **R03 / P08:** `scrollWidth` no demuestra por sí solo ausencia de clipping.
+Regla reforzada:
 
-## Corrección de proceso del reviewer
-
-El reviewer incumplió una regla expresa del prompt obligatorio al pedir en Ronda 4 que se versionara un harness de browser dentro de la rama.
-
-La regla correcta era:
-
-- **no crear archivos nuevos** en el prompt de arreglo;
-- **scripts auxiliares en `/tmp`**.
-
-Por eso las exigencias posteriores sobre ese harness (`R04–R07`) no deben considerarse hallazgos vigentes ni generar otra ronda de trabajo para el autor.
-
-Regla reforzada para futuras revisiones:
-
-1. cualquier harness de mutación/reproducción pertenece al reviewer;
-2. se guarda completo en `docs/revision-pr/.../evidencia/comandos.md`;
-3. cuando haya que ejecutarlo, se copia a `/tmp`;
-4. no se modifica la API de producción ni se agregan scripts al PR solo para facilitar la revisión;
-5. si el reviewer da una instrucción incompatible con el protocolo, debe corregirla explícitamente y retirar los hallazgos derivados.
+1. decisiones P1 quedan separadas de verificaciones;
+2. staging residual se enlaza a tareas existentes;
+3. scripts auxiliares del reviewer nunca se versionan en producto;
+4. CI final se inspecciona job por job antes de declarar una PR lista.
