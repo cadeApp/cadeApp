@@ -35,4 +35,9 @@ pnpm dev                          # http://localhost:3000
 - Nueva tarea: "Tomá T-xxx con la skill tomar-tarea". Tarea empezada: "Retomá T-xxx con la skill retomar-tarea".
 
 ## Qué NO hay en tu máquina
-- Credenciales de staging o producción, service role remota, tokens de Supabase o Vercel. Los tiene CI.
+- Credenciales privilegiadas de staging o producción: service-role/secret key, contraseña o URL de la base, tokens
+  de infraestructura (Supabase, Vercel, GitHub). Los tiene CI.
+- `NEXT_PUBLIC_SUPABASE_URL` y la anon/publishable key sí están: son configuración pública del proyecto de
+  desarrollo (`cadeapp-staging`).
+- Una ficha aprobada puede pedir credenciales de usuario final de staging (por ejemplo, un admin de prueba),
+  ingresadas de forma interactiva; nunca se guardan.

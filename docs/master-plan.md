@@ -273,12 +273,12 @@ Legal (sin acceso a fuentes durante la revisión) dejó estos puntos. **Antes de
 
 | Ambiente | Rama | Base | Deploy | Uso |
 |---|---|---|---|---|
-| local | `feat/*` | Supabase CLI (Docker) con `seed.sql` | `next dev` | Desarrollo con agy. |
-| develop | `develop` | Supabase CLI (Docker) local / CI runner | Preview/dev en el hosting | Integración diaria y pruebas de PR. |
+| local | `feat/*` | Proyecto Supabase remoto `cadeapp-staging` (compartido); Supabase CLI (Docker) opcional | `next dev` | Desarrollo con agy. |
+| develop | `develop` | Proyecto Supabase remoto `cadeapp-staging` (compartido); Supabase local en CI (`db-tests`) | Preview/dev en el hosting | Integración diaria y pruebas de PR. |
 | staging | `staging` | Proyecto Supabase `cadeapp-staging` (Free Tier) | Ambiente staging | Suite E2E completa y prueba de restauración. |
 | producción | `main` | Proyecto Supabase `cadeapp-prod` (Free Tier) | Producción | Usuarios reales en Aguilares. |
 
-> **Nota de infraestructura:** Supabase limita a 2 proyectos activos gratuitos por cuenta (S3 confirmado). Se aprovechan para `staging` y `producción`. `develop` opera 100% sobre Supabase local (Docker) en desarrollo y en runners de GitHub Actions para CI, garantizando costo $0 y evitando colisiones de datos.
+> **Nota de infraestructura:** Supabase limita a 2 proyectos activos gratuitos por cuenta (S3 confirmado). Se aprovechan para `staging` y `producción`. El desarrollo (`feat/*` y `develop`) consume el proyecto remoto `cadeapp-staging`, compartido con `staging` (D01 / 1-B, 2026-09-30), como documentan `docs/onboarding.md` y T-002; los datos de prueba conviven, así que se identifican como tales. CI sigue usando Supabase local en los runners para `db-tests`. En laptops y agentes solo se usan la URL pública y la anon key; los secretos privilegiados quedan en GitHub Secrets / Vercel.
 
 - **Flujo:** `feat/T-xxx-*` → PR a `develop` → PR de release `develop → staging` → PR `staging → main`, solo con la suite E2E verde en staging.
 - **Protección de ramas** en `develop`, `staging` y `main`:
@@ -392,7 +392,7 @@ Las tareas están en [`implementation-plan.md`](implementation-plan.md).
 |---|---|
 | S1 | El hosting es Vercel, como recomendó DevOps ("Vercel u otro equivalente"). El plan Hobby no admite uso comercial, así que hay que verificar costo y plan. |
 | S2 | La frecuencia del cron depende del plan de hosting. La expiración perezosa garantiza la corrección aunque el cron corra poco. |
-| S3 | **Confirmado (Lautaro, 2026-09-17):** Supabase limita a 2 proyectos activos gratuitos por cuenta. Se usan para staging (`cadeapp-staging`) y producción (`cadeapp-prod`). `develop` utiliza Supabase CLI local (Docker) para desarrollo y Docker en el runner de GitHub Actions para CI, manteniendo el costo en $0 sin requerir cuentas secundarias ni degradar aislamiento. |
+| S3 | **Confirmado (Lautaro, 2026-09-17):** Supabase limita a 2 proyectos activos gratuitos por cuenta. Se usan para staging (`cadeapp-staging`) y producción (`cadeapp-prod`). El desarrollo (`feat/*` y `develop`) consume `cadeapp-staging`, compartido con staging (actualizado por D01 / 1-B, 2026-09-30), y CI usa Docker en el runner de GitHub Actions para `db-tests`, manteniendo el costo en $0 sin requerir cuentas secundarias. |
 | S4 | Las calificaciones quedan fuera del MVP porque ningún rol las exigió. Se reevalúan después del piloto. |
 | S5 | El link público de seguimiento para el destinatario (propuesto por Persona) queda fuera del MVP: suma superficie de datos personales. |
 | S6 | Gracia de suscripción de 0 días, parametrizable. |
