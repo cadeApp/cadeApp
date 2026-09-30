@@ -307,3 +307,120 @@ test('DoD, H04 (M3) & H05: spec de humo implementado con ejecución Playwright y
     'smoke.spec.ts debe incluir assertions significativas sobre el estado de la aplicación.'
   );
 });
+
+// --------------------------------------------------------------------------
+// 6. Verificación de Mitigación de Mutaciones de Ronda 2 (M5, M6, M7, M8)
+// --------------------------------------------------------------------------
+test('DoD, H09 & M5: Fixture conecta efectivamente seed y cleanup al ciclo de Playwright y smoke los consume', () => {
+  const rolesCode = readFile('e2e/fixtures/roles.ts');
+  const strippedRoles = stripComments(rolesCode);
+
+  // M5: roles.ts debe invocar seedStagingData antes de use(context)
+  assert.match(
+    strippedRoles,
+    /await\s+seedStagingData\s*\(\s*context/,
+    'roles.ts debe invocar funcionalmente seedStagingData(context) antes del test (rechaza mutación M5).'
+  );
+
+  // M5: Teardown debe ejecutar cleanupStagingData en un bloque finally
+  assert.match(
+    strippedRoles,
+    /try\s*\{\s*await\s+use\s*\(\s*context\s*\);\s*\}\s*finally\s*\{\s*await\s+cleanupStagingData\s*\(\s*context\s*\);\s*\}/,
+    'roles.ts debe asegurar la limpieza mediante try { await use(context) } finally { await cleanupStagingData(context) }.'
+  );
+
+  // M5: smoke.spec.ts debe solicitar stagingContext y verificar las entidades sembradas
+  const smokeCode = readFile('e2e/specs/smoke.spec.ts');
+  const strippedSmoke = stripComments(smokeCode);
+
+  assert.match(
+    strippedSmoke,
+    /stagingContext/,
+    'smoke.spec.ts debe solicitar el fixture stagingContext para activar el ciclo de seed/teardown (rechaza mutación M5).'
+  );
+  assert.match(
+    strippedSmoke,
+    /stagingContext\.createdRequestIds/,
+    'smoke.spec.ts debe verificar la presencia de entidades creadas en staging.'
+  );
+});
+
+test('DoD, H08 & M6: El seed no usa identificadores falsos y exige UUIDs válidos para id, merchant_id y zonas', () => {
+  const serverSeedCode = readFile('src/server/e2e/staging-seed.ts');
+  const strippedSeed = stripComments(serverSeedCode);
+
+  // M6: No debe contener generadores de ID inválidos ni zonas de texto arbitrario en campos UUID
+  assert.doesNotMatch(
+    strippedSeed,
+    /\$\{context\.testRunId\}req/,
+    'El seed no debe construir IDs con strings no-UUID (rechaza mutación M6).'
+  );
+  assert.doesNotMatch(
+    strippedSeed,
+    /merchant_id:\s*`\${context\.testRunId}_merchant/,
+    'El seed no debe usar strings no-UUID para merchant_id (rechaza mutación M6).'
+  );
+  assert.doesNotMatch(
+    strippedSeed,
+    /pickup_zone_id:\s*['"]caba_norte['"]/,
+    'pickup_zone_id debe ser un UUID resuelto y no el literal "caba_norte" (rechaza mutación M6).'
+  );
+
+  // Debe usar crypto.randomUUID() y assertValidUuid
+  assert.match(
+    strippedSeed,
+    /crypto\.randomUUID\(\)/,
+    'El seed debe generar identificadores UUID v4 reales con crypto.randomUUID().'
+  );
+  assert.match(
+    strippedSeed,
+    /assertValidUuid\s*\(/,
+    'El seed debe validar estrictamente que todos los identificadores sean UUIDs válidos.'
+  );
+});
+
+test('DoD, H08 & M7: El seed falla si Supabase devuelve error y no registra IDs no confirmados', () => {
+  const serverSeedCode = readFile('src/server/e2e/staging-seed.ts');
+  const strippedSeed = stripComments(serverSeedCode);
+
+  // M7: Si Supabase devuelve error, debe lanzar excepción inmediatamente
+  assert.match(
+    strippedSeed,
+    /if\s*\(\s*error\s*\|\|\s*!data\?\.id\s*\)\s*\{\s*throw\s+new\s+Error/,
+    'El seed debe fallar explícitamente si Supabase devuelve error al insertar (rechaza mutación M7).'
+  );
+
+  // M7: Solo debe rastrear para cleanup DESPUÉS de comprobar éxito
+  const insertIndex = strippedSeed.search(/\.from\(['"]delivery_requests['"]\)\s*\.insert/);
+  const trackIndex = strippedSeed.indexOf("trackEntityForCleanup(context, 'request'");
+  assert.ok(insertIndex >= 0, 'Debe insertar en delivery_requests.');
+  assert.ok(trackIndex > insertIndex, 'trackEntityForCleanup debe ocurrir estrictamente después de confirmar la inserción exitosa.');
+});
+
+test('DoD, H10 & M8: Protección Fail-Closed rechaza producción y proyectos desconocidos incluso con flags de test', () => {
+  const serverSeedCode = readFile('src/server/e2e/staging-seed.ts');
+  const strippedSeed = stripComments(serverSeedCode);
+
+  // M8: isAllowedE2EEnvironment debe comprobar afirmativamente contra staging conocido
+  assert.match(
+    strippedSeed,
+    /KNOWN_STAGING_PROJECT_REFS/,
+    'La guarda debe validar contra la lista de proyectos staging autorizados afirmativamente (H10 / M8).'
+  );
+  assert.match(
+    strippedSeed,
+    /axwvmyqwhwfghyjdufny/,
+    'El proyecto de Supabase staging conocido (axwvmyqwhwfghyjdufny) debe estar registrado.'
+  );
+  assert.match(
+    strippedSeed,
+    /SUPABASE_PRODUCTION_PROJECT_REF/,
+    'La guarda debe identificar y bloquear afirmativamente el ref de producción.'
+  );
+  assert.match(
+    strippedSeed,
+    /cadeapp\.com/,
+    'La guarda debe bloquear dominios de producción.'
+  );
+});
+

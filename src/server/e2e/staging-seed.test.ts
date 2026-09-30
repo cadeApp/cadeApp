@@ -1,21 +1,28 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   isAllowedE2EEnvironment,
   assertAllowedE2EEnvironment,
+  isValidUuid,
+  assertValidUuid,
+  parseSupabaseProjectRef,
+  isLocalSupabaseUrl,
   createStagingSeedContext,
   trackEntityForCleanup,
   seedStagingData,
   cleanupStagingData,
+  KNOWN_STAGING_PROJECT_REFS,
   type StagingSeedContext,
 } from './staging-seed';
 
-describe('H02: Seed y Cleanup REAL en Staging con protección Fail-Closed', () => {
+describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-Closed', () => {
   describe('Protección fail-closed de entorno (assertAllowedE2EEnvironment)', () => {
     it('debe bloquear terminantemente cuando VERCEL_ENV es production', () => {
       expect(() => {
         assertAllowedE2EEnvironment({
           VERCEL_ENV: 'production',
           APP_ENV: 'staging',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+          E2E_TEST: 'true',
         });
       }).toThrow(/VERCEL_ENV es production/i);
     });
@@ -24,7 +31,8 @@ describe('H02: Seed y Cleanup REAL en Staging con protección Fail-Closed', () =
       expect(() => {
         assertAllowedE2EEnvironment({
           APP_ENV: 'production',
-          NODE_ENV: 'test',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+          E2E_TEST: 'true',
         });
       }).toThrow(/APP_ENV es production/i);
     });
@@ -32,51 +40,91 @@ describe('H02: Seed y Cleanup REAL en Staging con protección Fail-Closed', () =
     it('debe bloquear terminantemente cuando NEXT_PUBLIC_APP_URL apunta a dominio de producción', () => {
       expect(() => {
         assertAllowedE2EEnvironment({
-          APP_ENV: 'staging',
           NEXT_PUBLIC_APP_URL: 'https://cadeapp.com',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+          E2E_TEST: 'true',
         });
       }).toThrow(/dominio de producción/i);
     });
 
-    it('debe bloquear terminantemente cuando NEXT_PUBLIC_SUPABASE_URL apunta a proyecto prod', () => {
+    it('debe bloquear cuando NEXT_PUBLIC_SUPABASE_URL coincide con SUPABASE_PRODUCTION_PROJECT_REF', () => {
       expect(() => {
         assertAllowedE2EEnvironment({
-          APP_ENV: 'staging',
-          NEXT_PUBLIC_SUPABASE_URL: 'https://cadeapp-prod.supabase.co',
+          SUPABASE_PRODUCTION_PROJECT_REF: 'prodproject12345678',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://prodproject12345678.supabase.co',
+          E2E_TEST: 'true',
         });
-      }).toThrow(/proyecto de producción/i);
+      }).toThrow(/SUPABASE_PRODUCTION_PROJECT_REF/i);
     });
 
-    it('debe aplicar fail-closed cuando el entorno es ambiguo o no tiene indicadores afirmativos', () => {
+    // M8: NODE_ENV=test o flags apuntando a un Supabase que no es staging
+    it('M8: debe bloquear cuando NODE_ENV=test pero la URL de Supabase es de producción o proyecto desconocido', () => {
+      expect(() => {
+        assertAllowedE2EEnvironment({
+          NODE_ENV: 'test',
+          E2E_TEST: 'true',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://desconocido-o-prod-ref.supabase.co',
+        });
+      }).toThrow(/no está positivamente identificado como staging/i);
+    });
+
+    it('M8: ALLOW_E2E_STAGING=true por sí sola NO debe autorizar un proyecto desconocido', () => {
+      expect(() => {
+        assertAllowedE2EEnvironment({
+          ALLOW_E2E_STAGING: 'true',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://desconocido-o-prod-ref.supabase.co',
+        });
+      }).toThrow(/no está positivamente identificado como staging/i);
+    });
+
+    it('debe aplicar fail-closed cuando el entorno está completamente vacío', () => {
       expect(() => {
         assertAllowedE2EEnvironment({});
       }).toThrow(/fail-closed/i);
     });
 
-    it('debe permitir ejecución cuando APP_ENV es staging', () => {
+    it('debe permitir cuando NEXT_PUBLIC_SUPABASE_URL es el proyecto staging conocido y E2E está habilitado', () => {
       expect(() => {
         assertAllowedE2EEnvironment({
-          APP_ENV: 'staging',
-          NEXT_PUBLIC_APP_URL: 'https://cadeapp-staging.vercel.app',
+          NEXT_PUBLIC_SUPABASE_URL: `https://${KNOWN_STAGING_PROJECT_REFS[0]}.supabase.co`,
+          E2E_TEST: 'true',
         });
       }).not.toThrow();
     });
 
-    it('debe permitir ejecución cuando VERCEL_ENV es preview', () => {
+    it('debe permitir cuando coincide con SUPABASE_PROJECT_REF configurado en el ambiente staging', () => {
       expect(() => {
         assertAllowedE2EEnvironment({
-          VERCEL_ENV: 'preview',
-          NEXT_PUBLIC_APP_URL: 'https://cadeapp-git-feat-staging.vercel.app',
+          SUPABASE_PROJECT_REF: 'custom-staging-ref',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://custom-staging-ref.supabase.co',
+          E2E_TEST: 'true',
         });
       }).not.toThrow();
     });
 
-    it('debe permitir ejecución cuando NODE_ENV es test', () => {
+    it('debe permitir ejecución contra Supabase local en test/desarrollo', () => {
       expect(() => {
         assertAllowedE2EEnvironment({
           NODE_ENV: 'test',
+          NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
         });
       }).not.toThrow();
+    });
+  });
+
+  describe('Validación de esquema UUID (assertValidUuid)', () => {
+    it('acepta UUIDs v4 válidos', () => {
+      const validUuid = '123e4567-e89b-12d3-a456-426614174000';
+      expect(isValidUuid(validUuid)).toBe(true);
+      expect(() => assertValidUuid(validUuid, 'testField')).not.toThrow();
+    });
+
+    // M6: usar IDs no UUID
+    it('M6: rechaza terminantemente strings que no son UUID (e.g. e2e_*_req_1 o caba_norte)', () => {
+      expect(isValidUuid('e2e_123_req_1')).toBe(false);
+      expect(() => assertValidUuid('e2e_123_req_1', 'id')).toThrow(/debe ser un UUID válido/i);
+      expect(() => assertValidUuid('caba_norte', 'pickup_zone_id')).toThrow(/debe ser un UUID válido/i);
+      expect(() => assertValidUuid('invalid-short', 'merchant_id')).toThrow(/debe ser un UUID válido/i);
     });
   });
 
@@ -90,67 +138,198 @@ describe('H02: Seed y Cleanup REAL en Staging con protección Fail-Closed', () =
       expect(ctx1.testRunId).not.toBe(ctx2.testRunId);
     });
 
-    it('rastrea entidades creadas sin duplicar IDs', () => {
+    it('rastrea entidades creadas exigiendo UUID válido sin duplicados', () => {
       const ctx = createStagingSeedContext();
-      trackEntityForCleanup(ctx, 'request', 'req_1');
-      trackEntityForCleanup(ctx, 'request', 'req_1');
-      trackEntityForCleanup(ctx, 'offer', 'off_1');
-      trackEntityForCleanup(ctx, 'user', 'usr_1');
+      const reqId = '123e4567-e89b-12d3-a456-426614174001';
+      const offId = '123e4567-e89b-12d3-a456-426614174002';
+      const usrId = '123e4567-e89b-12d3-a456-426614174003';
+      const zoneId = '123e4567-e89b-12d3-a456-426614174004';
 
-      expect(ctx.createdRequestIds).toEqual(['req_1']);
-      expect(ctx.createdOfferIds).toEqual(['off_1']);
-      expect(ctx.createdUserIds).toEqual(['usr_1']);
+      trackEntityForCleanup(ctx, 'request', reqId);
+      trackEntityForCleanup(ctx, 'request', reqId);
+      trackEntityForCleanup(ctx, 'offer', offId);
+      trackEntityForCleanup(ctx, 'user', usrId);
+      trackEntityForCleanup(ctx, 'zone', zoneId);
+
+      expect(ctx.createdRequestIds).toEqual([reqId]);
+      expect(ctx.createdOfferIds).toEqual([offId]);
+      expect(ctx.createdUserIds).toEqual([usrId]);
+      expect(ctx.createdZoneIds).toEqual([zoneId]);
     });
   });
 
-  describe('Operación real de seed contra cliente Supabase', () => {
-    it('inserta requests en delivery_requests vinculados a la corrida', async () => {
+  const setupStagingTestEnv = () => {
+    beforeEach(() => {
+      vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://axwvmyqwhwfghyjdufny.supabase.co');
+      vi.stubEnv('E2E_TEST', 'true');
+    });
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+  };
+
+  describe('Operación real de seed contra cliente Supabase (H08)', () => {
+    setupStagingTestEnv();
+
+    it('construye únicamente UUIDs válidos para id, merchant_id y zonas', async () => {
       const ctx = createStagingSeedContext();
-      const mockInsert = vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          single: vi.fn().mockResolvedValue({
-            data: { id: `${ctx.testRunId}_req_1` },
-            error: null,
-          }),
-        }),
-      });
+      const capturedInserts: { delivery_requests: any[]; zones: any[] } = {
+        delivery_requests: [],
+        zones: [],
+      };
+
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614174010';
+      const mockZoneId = '123e4567-e89b-12d3-a456-426614174020';
 
       const mockClient = {
         from: vi.fn((table: string) => {
-          if (table === 'delivery_requests') {
-            return { insert: mockInsert };
+          if (table === 'zones') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue({
+                    data: [{ id: mockZoneId }],
+                    error: null,
+                  }),
+                }),
+              }),
+            };
           }
-          throw new Error(`Unexpected table ${table}`);
+          if (table === 'delivery_requests') {
+            return {
+              insert: vi.fn((payload: any) => {
+                capturedInserts.delivery_requests.push(payload);
+                return {
+                  select: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { id: payload.id },
+                      error: null,
+                    }),
+                  }),
+                };
+              }),
+            };
+          }
+          if (table === 'profiles' || table === 'merchants') {
+            return {
+              upsert: vi.fn().mockResolvedValue({ error: null }),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
         }),
+        auth: {
+          admin: {
+            createUser: vi.fn().mockResolvedValue({
+              data: { user: { id: mockMerchantId } },
+              error: null,
+            }),
+          },
+        },
       } as any;
 
       await seedStagingData(ctx, { requestsCount: 1 }, mockClient);
 
-      expect(mockClient.from).toHaveBeenCalledWith('delivery_requests');
-      expect(mockInsert).toHaveBeenCalledTimes(1);
-      expect(ctx.createdRequestIds).toContain(`${ctx.testRunId}_req_1`);
+      expect(capturedInserts.delivery_requests).toHaveLength(1);
+      const row = capturedInserts.delivery_requests[0]!;
+
+      // Verificación estricta de que todos los IDs son UUIDs v4
+      expect(isValidUuid(row.id)).toBe(true);
+      expect(isValidUuid(row.merchant_id)).toBe(true);
+      expect(isValidUuid(row.pickup_zone_id)).toBe(true);
+      expect(isValidUuid(row.dropoff_zone_id)).toBe(true);
+
+      // No strings falsos
+      expect(row.id).not.toContain('e2e_');
+      expect(row.merchant_id).not.toContain('e2e_');
+      expect(row.pickup_zone_id).not.toBe('caba_norte');
+
+      expect(ctx.createdRequestIds).toContain(row.id);
+    });
+
+    // M7: Supabase responde error al insert -> seed debe rechazar/fallar y no marcar la entidad como creada
+    it('M7: si Supabase responde error en la inserción, el seed debe fallar y no registrar el ID en el contexto', async () => {
+      const ctx = createStagingSeedContext();
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614174011';
+      const mockZoneId = '123e4567-e89b-12d3-a456-426614174021';
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue({
+                    data: [{ id: mockZoneId }],
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'delivery_requests') {
+            return {
+              insert: vi.fn().mockReturnValue({
+                select: vi.fn().mockReturnValue({
+                  single: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: { message: 'violates foreign key constraint' },
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'profiles' || table === 'merchants') {
+            return {
+              upsert: vi.fn().mockResolvedValue({ error: null }),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn().mockResolvedValue({
+              data: { user: { id: mockMerchantId } },
+              error: null,
+            }),
+          },
+        },
+      } as any;
+
+      await expect(seedStagingData(ctx, { requestsCount: 1 }, mockClient)).rejects.toThrow(
+        /violates foreign key constraint/i
+      );
+
+      // Garantía: el ID fallido jamás se marca como creado
+      expect(ctx.createdRequestIds).toHaveLength(0);
     });
   });
 
   describe('Limpieza acotada de staging (cleanupStagingData)', () => {
-    it('ejecuta delete() en orden inverso (offers -> requests -> users) y vacía los registros', async () => {
+    setupStagingTestEnv();
+
+    it('ejecuta delete() en orden inverso y vacía los registros', async () => {
       const ctx: StagingSeedContext = {
         testRunId: 'e2e_run_123',
-        createdOfferIds: ['off_1'],
-        createdRequestIds: ['req_1'],
-        createdUserIds: ['usr_1'],
+        createdOfferIds: ['123e4567-e89b-12d3-a456-426614174031'],
+        createdRequestIds: ['123e4567-e89b-12d3-a456-426614174032'],
+        createdUserIds: ['123e4567-e89b-12d3-a456-426614174033'],
+        createdZoneIds: ['123e4567-e89b-12d3-a456-426614174034'],
       };
 
       const offersInMock = vi.fn().mockResolvedValue({ error: null });
       const requestsInMock = vi.fn().mockResolvedValue({ error: null });
-      const mockOffersDelete = vi.fn().mockReturnValue({ in: offersInMock });
-      const mockRequestsDelete = vi.fn().mockReturnValue({ in: requestsInMock });
+      const merchantsInMock = vi.fn().mockResolvedValue({ error: null });
+      const profilesInMock = vi.fn().mockResolvedValue({ error: null });
+      const zonesInMock = vi.fn().mockResolvedValue({ error: null });
       const mockDeleteUser = vi.fn().mockResolvedValue({ error: null });
 
       const mockClient = {
         from: vi.fn((table: string) => {
-          if (table === 'offers') return { delete: mockOffersDelete };
-          if (table === 'delivery_requests') return { delete: mockRequestsDelete };
+          if (table === 'offers') return { delete: vi.fn().mockReturnValue({ in: offersInMock }) };
+          if (table === 'delivery_requests') return { delete: vi.fn().mockReturnValue({ in: requestsInMock }) };
+          if (table === 'merchants') return { delete: vi.fn().mockReturnValue({ in: merchantsInMock }) };
+          if (table === 'profiles') return { delete: vi.fn().mockReturnValue({ in: profilesInMock }) };
+          if (table === 'zones') return { delete: vi.fn().mockReturnValue({ in: zonesInMock }) };
           throw new Error(`Unexpected table ${table}`);
         }),
         auth: {
@@ -163,24 +342,32 @@ describe('H02: Seed y Cleanup REAL en Staging con protección Fail-Closed', () =
       await cleanupStagingData(ctx, mockClient);
 
       expect(mockClient.from).toHaveBeenCalledWith('offers');
-      expect(offersInMock).toHaveBeenCalledWith('id', ['off_1']);
+      expect(offersInMock).toHaveBeenCalledWith('id', ['123e4567-e89b-12d3-a456-426614174031']);
 
       expect(mockClient.from).toHaveBeenCalledWith('delivery_requests');
-      expect(requestsInMock).toHaveBeenCalledWith('id', ['req_1']);
+      expect(requestsInMock).toHaveBeenCalledWith('id', ['123e4567-e89b-12d3-a456-426614174032']);
 
-      expect(mockDeleteUser).toHaveBeenCalledWith('usr_1');
+      expect(mockClient.from).toHaveBeenCalledWith('merchants');
+      expect(merchantsInMock).toHaveBeenCalledWith('profile_id', ['123e4567-e89b-12d3-a456-426614174033']);
+
+      expect(mockClient.from).toHaveBeenCalledWith('zones');
+      expect(zonesInMock).toHaveBeenCalledWith('id', ['123e4567-e89b-12d3-a456-426614174034']);
+
+      expect(mockDeleteUser).toHaveBeenCalledWith('123e4567-e89b-12d3-a456-426614174033');
 
       expect(ctx.createdOfferIds).toHaveLength(0);
       expect(ctx.createdRequestIds).toHaveLength(0);
       expect(ctx.createdUserIds).toHaveLength(0);
+      expect(ctx.createdZoneIds).toHaveLength(0);
     });
 
     it('tolera fallos parciales sin abortar el cleanup de los demás registros', async () => {
       const ctx: StagingSeedContext = {
         testRunId: 'e2e_run_123',
-        createdOfferIds: ['off_1'],
-        createdRequestIds: ['req_1'],
-        createdUserIds: ['usr_1'],
+        createdOfferIds: ['123e4567-e89b-12d3-a456-426614174041'],
+        createdRequestIds: ['123e4567-e89b-12d3-a456-426614174042'],
+        createdUserIds: ['123e4567-e89b-12d3-a456-426614174043'],
+        createdZoneIds: [],
       };
 
       const mockClient = {
@@ -199,7 +386,11 @@ describe('H02: Seed y Cleanup REAL en Staging con protección Fail-Closed', () =
               }),
             };
           }
-          return {};
+          return {
+            delete: () => ({
+              in: vi.fn().mockResolvedValue({ error: null }),
+            }),
+          };
         }),
         auth: {
           admin: {
@@ -212,6 +403,95 @@ describe('H02: Seed y Cleanup REAL en Staging con protección Fail-Closed', () =
       expect(ctx.createdOfferIds).toHaveLength(0);
       expect(ctx.createdRequestIds).toHaveLength(0);
       expect(ctx.createdUserIds).toHaveLength(0);
+    });
+  });
+
+  describe('Ciclo de vida E2E Playwright (seed -> test -> cleanup)', () => {
+    setupStagingTestEnv();
+
+    it('demuestra que cleanup se ejecuta en finally incluso si la prueba falla', async () => {
+      const ctx = createStagingSeedContext();
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614174051';
+      const mockZoneId = '123e4567-e89b-12d3-a456-426614174052';
+      const mockReqId = '123e4567-e89b-12d3-a456-426614174053';
+
+      const deleteReqMock = vi.fn().mockResolvedValue({ error: null });
+      const deleteUserMock = vi.fn().mockResolvedValue({ error: null });
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue({
+                    data: [{ id: mockZoneId }],
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'delivery_requests') {
+            return {
+              insert: vi.fn().mockReturnValue({
+                select: vi.fn().mockReturnValue({
+                  single: vi.fn().mockResolvedValue({
+                    data: { id: mockReqId },
+                    error: null,
+                  }),
+                }),
+              }),
+              delete: vi.fn().mockReturnValue({ in: deleteReqMock }),
+            };
+          }
+          if (table === 'profiles' || table === 'merchants') {
+            return {
+              upsert: vi.fn().mockResolvedValue({ error: null }),
+              delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+            };
+          }
+          return {
+            delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+          };
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn().mockResolvedValue({
+              data: { user: { id: mockMerchantId } },
+              error: null,
+            }),
+            deleteUser: deleteUserMock,
+          },
+        },
+      } as any;
+
+      // Ejecución del patrón de fixture de Playwright (seed -> test body -> finally cleanup)
+      let testBodyExecuted = false;
+      let errorThrownByTest = false;
+
+      try {
+        await seedStagingData(ctx, { requestsCount: 1 }, mockClient);
+        expect(ctx.createdRequestIds).toContain(mockReqId);
+
+        testBodyExecuted = true;
+        // Simular que el test falla en alguna assertion
+        throw new Error('Test assertion failed');
+      } catch (err: any) {
+        if (err.message === 'Test assertion failed') {
+          errorThrownByTest = true;
+        }
+      } finally {
+        await cleanupStagingData(ctx, mockClient);
+      }
+
+      expect(testBodyExecuted).toBe(true);
+      expect(errorThrownByTest).toBe(true);
+
+      // Verificación de que el cleanup se ejecutó a pesar del fallo
+      expect(deleteReqMock).toHaveBeenCalledWith('id', [mockReqId]);
+      expect(deleteUserMock).toHaveBeenCalledWith(mockMerchantId);
+      expect(ctx.createdRequestIds).toHaveLength(0);
     });
   });
 });

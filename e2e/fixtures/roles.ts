@@ -2,6 +2,7 @@ import { test as baseTest, expect } from '@playwright/test';
 import { MerchantPage, CourierPage, AdminPage, LoginPage } from '../pages';
 import {
   createStagingSeedContext,
+  seedStagingData,
   cleanupStagingData,
   type StagingSeedContext,
 } from './staging-seed';
@@ -16,13 +17,18 @@ export interface RoleFixtures {
 
 /**
  * Fixture de Playwright extendida con los Page Objects de cada rol y contexto de datos de staging.
- * Garantiza que cada prueba cuente con páginas tipadas y ejecute limpieza automática en el teardown.
+ * Garantiza que cada prueba cuente con páginas tipadas, ejecute seed real de staging y
+ * garantice la limpieza automática en el teardown vía bloque finally.
  */
 export const test = baseTest.extend<RoleFixtures>({
   stagingContext: async ({}, use) => {
     const context = createStagingSeedContext();
-    await use(context);
-    await cleanupStagingData(context);
+    await seedStagingData(context, { requestsCount: 1 });
+    try {
+      await use(context);
+    } finally {
+      await cleanupStagingData(context);
+    }
   },
 
   loginPage: async ({ page }, use) => {
