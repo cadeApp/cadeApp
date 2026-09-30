@@ -1,84 +1,51 @@
-# Evidencia — PR #142 / T-318 — Ronda 2
+# Evidencia — PR #142 / T-318
+
+## Ronda 2
 
 SHA: `9d34f42841ec9ed9875324e8d81f36dd7234315a`.
 
-## Historia desde la revisión R1
+Se detectaron PR142-H01, H02 y A01. El detalle histórico queda en `revisiones/ronda-2.md`.
 
-`compare 29b6437...9d34f42841ec9ed9875324e8d81f36dd7234315a`: 2 commits, 8 archivos propios:
-- docs/implementation-plan.md
-- docs/tasks/T-318.md
-- docs/tasks/log/T-318.md
-- src/features/auth/actions.ts + test
-- src/features/auth/components/register-form.tsx + test
-- src/features/auth/copy.ts
+## Ronda 3
 
-El autor no modificó `docs/revision-pr/pr-140/**` después del commit de revisión.
+SHA funcional revisado: `6947d68ffca5c5510aa0e943355fa1ff33e8bc23`.  
+Base: `develop` @ `158f83b2b1bf6211a2bf8e53ae7cd90130edc445`.
 
-## H03 heredado — mapper
+### H02 / A01
 
-Harness independiente sobre la función exacta:
+- PR #143: merged=true.
+- `compare develop...feat/T-318-register-errors`: behind=0 / ahead=8.
+- `docs/tasks/T-318.md` y `docs/implementation-plan.md` no están en el diff de implementación.
 
-~~~text
-weak_password                -> VALIDATION_ERROR
-email_address_invalid        -> VALIDATION_ERROR
-validation_failed            -> VALIDATION_ERROR
-over_email_send_rate_limit   -> RATE_LIMITED
-over_request_rate_limit      -> RATE_LIMITED
-user_already_exists          -> VALIDATION_ERROR
-email_exists                 -> VALIDATION_ERROR
-unexpected_failure           -> INTERNAL_ERROR
-email_provider_disabled      -> INTERNAL_ERROR
-email_address_not_authorized -> INTERNAL_ERROR
-captcha_failed               -> INTERNAL_ERROR
-hook_timeout                 -> INTERNAL_ERROR
-hook_timeout_after_retry     -> INTERNAL_ERROR
-unknown_code                 -> INTERNAL_ERROR
-undefined                    -> INTERNAL_ERROR
-~~~
+### H01 — sesión como canal de enumeración
 
-## H04 heredado — catch
+Implementación actual:
+- alta nueva, sanitizado y códigos explícitos devuelven el mismo `ActionResult`;
+- `RegisterForm` hace el mismo `router.push`;
+- el test UI compara `push`, `refresh`, alerta y texto.
 
-`register-form.test.tsx`:
-- usa `registerAction.mockRejectedValueOnce(new Error('sentinel'))`;
-- exige `errorUnexpected`;
-- exige que `sentinel` no aparezca.
+Hueco:
+- `NEW_USER` en `actions.test.ts` y `register-enumeration.test.tsx` usa `session: null`;
+- no existe llamada a `supabase.auth.signOut` en `registerAction`;
+- `src/server/supabase/server.ts` usa `createServerClient` con almacenamiento en cookies;
+- `middleware.ts` + `src/features/auth/server.ts` reconstruyen la sesión desde esas cookies y las guardas cambian el destino efectivo.
 
-CI ejecutó el archivo con 33 tests verdes.
+Contrato actual de Supabase:
+- con Confirm Email habilitado: alta nueva devuelve usuario y `session=null`;
+- con Confirm Email deshabilitado: alta nueva devuelve usuario + sesión y queda autenticada;
+- una cuenta existente puede devolver `User already registered` en lugar de una sesión.
 
-## PR142-H01 — anti-enumeración residual
+La propia bitácora reconoce que con Confirm Email OFF la pantalla destino puede diferir. Eso no es un residual externo: la ficha exige misma navegación/resultados observables para esos cuatro caminos.
 
-Código exacto:
-- `identities: []` -> `err('VALIDATION_ERROR')`;
-- alta normal -> `ok({userId, role, redirectTo})`.
+### CI exact-head
 
-La documentación actual de Supabase `auth.signUp` advierte que una cuenta existente puede recibir una respuesta diseñada para ocultar esa información.
+Workflow CI #680 sobre `6947d68ffca5c5510aa0e943355fa1ff33e8bc23`: **7/7 jobs verdes**:
+- typecheck
+- lint
+- unit
+- db-tests
+- build
+- bundle-budget
+- audit
 
-Fuente oficial `supabase/auth/internal/api/signup.go`:
-`sanitizeUser` declara que debe usarse para evitar que se filtre si un usuario está registrado y establece `Identities=[]`.
-
-Por tanto el booleano `ok` vuelve a introducir la distinción que la respuesta sanitizada intentaba eliminar.
-
-## PR142-H02 / A01 — constitución y alcance
-
-- `docs/tasks/T-318.md@develop`: 404.
-- Issue #141: “Ficha ... en la rama feat/T-318-register-errors”.
-- AGENTS §1.1: la ficha debe existir en develop antes de escribir código.
-- T-318 permite solo src/features/auth/**, su ficha, su bitácora y docs/revision-pr/**.
-- `docs/implementation-plan.md` no está permitido pero aparece en el diff.
-- `tools/verify-fichas.test.ts` explica que una contradicción entre DoD/archivos obliga al agente a desviarse o frenar.
-- Precedente PR #138/T-317: la Ronda 2 dejó que la implementación #139 debía esperar a mergear la PR de ficha #138.
-
-## CI exact-head
-
-- unit ✅: 104 archivos / 1433 tests
-- actions.test.ts: 38 tests
-- register-form.test.tsx: 33 tests
-- verify-fichas: 7 tests
-- typecheck ✅
-- lint ✅
-- db-tests ✅
-- build ✅
-- bundle-budget ✅
-- audit ✅
-- board-sync ✅
-- approval-policy ❌: falta informe independiente SIN BLOQUEANTES.
+El CI verde no cubre H01 porque los mocks del alta nueva fijan `session:null`.
