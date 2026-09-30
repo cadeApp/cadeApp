@@ -93,8 +93,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.data.role).toBe('merchant');
-        expect(result.data.userId).toBe('usr-merchant-1');
+        // T-318: el resultado público no incluye el id del usuario (anti-enumeración).
+        expect(result.data).toStrictEqual({ role: 'merchant', redirectTo: '/merchant/onboarding' });
       }
       expect(mockSignUp).toHaveBeenCalledWith({
         email: 'comercio@test.com',
@@ -130,8 +130,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.data.role).toBe('courier');
-        expect(result.data.userId).toBe('usr-courier-1');
+        // T-318: el resultado público no incluye el id del usuario (anti-enumeración).
+        expect(result.data).toStrictEqual({
+          role: 'courier',
+          redirectTo: '/courier/onboarding/identity',
+        });
       }
       expect(mockSignUp).toHaveBeenCalledWith({
         email: 'courier@test.com',
@@ -451,27 +454,63 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: expected });
     });
 
-    it.each(['user_already_exists', 'email_exists'])(
-      'error %s → mismo código que un dato inválido (no confirma que el email exista)',
-      async (code) => {
-        mockSignUpResult({
-          data: { user: null, session: null },
-          error: { code, message: 'User already registered' },
-        });
-        expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-      }
-    );
-
-    it('respuesta sanitizada (identities vacío) → mismo código que un dato inválido y sin activar consentimientos', async () => {
-      mockSignUpResult({
-        data: { user: { id: 'sanitized-id', identities: [] }, session: null },
+    describe('anti-enumeración: toda señal de cuenta existente responde igual que un alta nueva', () => {
+      const NEW_USER = {
+        data: { user: { id: 'usr-new-real', identities: [{ id: 'identity-1' }] }, session: null },
         error: null,
+      };
+      const EXISTING_ACCOUNT_SIGNALS = [
+        [
+          'respuesta sanitizada identities: []',
+          { data: { user: { id: 'sanitized-id', identities: [] }, session: null }, error: null },
+        ],
+        [
+          'user_already_exists',
+          {
+            data: { user: null, session: null },
+            error: { code: 'user_already_exists', message: 'User already registered' },
+          },
+        ],
+        [
+          'email_exists',
+          {
+            data: { user: null, session: null },
+            error: { code: 'email_exists', message: 'Email address already exists' },
+          },
+        ],
+      ] as const;
+      const ENUMERATING_TEXT = /ya existe|email registrado|cuenta existente|already/i;
+
+      async function publicResult(signUpResult: { data: unknown; error: unknown }) {
+        mockSignUpResult(signUpResult);
+        const rpc = vi.mocked(adminSupabase.createAdminClient)().rpc;
+        vi.mocked(rpc).mockClear();
+        const result = await registerAction(VALID_INPUT);
+        return { result, activations: vi.mocked(rpc).mock.calls.length };
+      }
+
+      it('el alta nueva devuelve éxito sin exponer el id del usuario', async () => {
+        const fresh = await publicResult(NEW_USER);
+        expect(fresh.result).toStrictEqual({
+          ok: true,
+          data: { role: 'merchant', redirectTo: '/merchant/onboarding' },
+        });
+        expect(JSON.stringify(fresh.result)).not.toContain('usr-new-real');
+        expect(fresh.activations).toBe(1);
       });
-      const rpc = vi.mocked(adminSupabase.createAdminClient)().rpc;
-      const result = await registerAction(VALID_INPUT);
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-      expect(JSON.stringify(result)).not.toContain('sanitized-id');
-      expect(rpc).not.toHaveBeenCalled();
+
+      it.each(EXISTING_ACCOUNT_SIGNALS)(
+        '%s → mismo resultado público que un alta nueva y sin activar consentimientos',
+        async (_signal, signUpResult) => {
+          const fresh = await publicResult(NEW_USER);
+          const existing = await publicResult(signUpResult);
+
+          expect(existing.result).toStrictEqual(fresh.result);
+          expect(JSON.stringify(existing.result)).not.toMatch(/sanitized-id|usr-new-real/);
+          expect(JSON.stringify(existing.result)).not.toMatch(ENUMERATING_TEXT);
+          expect(existing.activations).toBe(0);
+        }
+      );
     });
 
     it('el rechazo del trigger por rol inválido sigue devolviendo INVALID_SIGNUP_ROLE', async () => {
