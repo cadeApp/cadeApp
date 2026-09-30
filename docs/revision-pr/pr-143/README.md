@@ -7,29 +7,32 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `docs/T-318-ficha` → `develop` |
 | **Head R1** | `d843026b9d0e951278c954fdde7494dddbd88f56` |
-| **Head R2 revisado** | `bb6e18be470af93f5a26306970240ae0e1e35e07` |
-| **develop actual al cerrar R2** | `a16acd4831e2e538d4313e6821d3ebc4e7f758ac` |
-| **Estado** | bloqueada — Ronda 2 · 1 bloqueante |
+| **Head R2** | `bb6e18be470af93f5a26306970240ae0e1e35e07` |
+| **Head R3 revisado** | `fb308412d868b210c6c3152ebc2ed1414596120f` |
+| **develop al revisar R3** | `10c229f628e89527e20d222ca536af46eda015f1` |
+| **Estado** | Ronda 3 · SIN BLOQUEANTES |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `d843026b9d0e951278c954fdde7494dddbd88f56` | 2 bloqueantes | `revisiones/ronda-1.md` |
-| 2 | `bb6e18be470af93f5a26306970240ae0e1e35e07` | H02 cerrado; H01 reaparece por nuevo avance de develop | `revisiones/ronda-2.md` |
+| 2 | `bb6e18be470af93f5a26306970240ae0e1e35e07` | H02 cerrado; H01 reaparece por avance de develop | `revisiones/ronda-2.md` |
+| 3 | `fb308412d868b210c6c3152ebc2ed1414596120f` | SIN BLOQUEANTES | `revisiones/ronda-3.md` |
 
 ## Estado por hallazgo
 
-- **PR143-H01** · alto · abierto · la rama fue sincronizada hasta `ec3c671`, pero `develop` avanzó después a `a16acd4`; ahora vuelve a estar 14 commits detrás, incluyendo cambios en `.github/workflows/ci.yml`.
+- **PR143-H01** · alto · aceptado/cerrado en R3 · la rama incorporó el `develop` que incluía los cambios de CI vigentes en R2; después `develop` avanzó 7 commits exclusivamente de T-301/E2E, sin tocar T-318, `docs/implementation-plan.md` ni workflows. La PR sigue `mergeable=true` y el CI exact-head está 7/7 verde.
 - **PR143-H02** · alto · arreglado-verificado · toda señal de cuenta existente quedó cubierta por la misma política anti-enumeración y la fila del plan coincide exactamente con el primer DoD.
 
-## Verificado en R2
+## Verificado en R3
 
-- La carpeta `docs/revision-pr/pr-143/**` no fue tocada por el autor.
-- Primer DoD y fila T-318 del plan: coincidencia exacta.
-- `user_already_exists` / `email_exists` ya no se clasifican como `VALIDATION_ERROR`; siguen el mismo camino no enumerable definido para `identities: []`.
-- CI exact-head de `bb6e18be470af93f5a26306970240ae0e1e35e07`: 104 archivos / 1407 tests, typecheck/lint/db/build/bundle/audit verdes.
+- Ficha T-318 y fila del plan mantienen la semántica validada en R2.
+- El código actual permite implementar la ficha dentro de `src/features/auth/**`: `registerAction` puede devolver un resultado público neutral sin cambiar `src/domain/errors.ts`, y `RegisterForm` solo usa `redirectTo`.
+- El camino de cuenta existente puede cortar antes de `activate_account_consents`, evitando usar un id sanitizado.
+- `develop` avanzó de `a16acd4` a `10c229f` solo en T-301/E2E: `docs/tasks/T-301.md`, su bitácora, `e2e/pages/login.page.ts` y `playwright.config.test.ts`.
+- CI exact-head de `fb308412...`: typecheck, lint, unit, db-tests, build, bundle-budget y audit verdes.
 
 ## Próximo paso
 
-Mergear nuevamente el `origin/develop` actual en la rama documental, sin cambios semánticos adicionales salvo resolver conflictos si aparecieran. Después revalidar `behind=0` y CI exact-head con los workflows vigentes.
+Actualizar únicamente el body de la PR con el informe de Ronda 3. No hace falta otro merge de `develop` por los 7 commits ajenos a T-318 detectados al cerrar esta ronda. No aprobar ni mergear desde el agente.
