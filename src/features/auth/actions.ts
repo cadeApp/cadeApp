@@ -69,18 +69,25 @@ export async function loginAction(
   });
 }
 
-/** Traduce el `code` de Supabase Auth a un código de dominio que la pantalla puede explicar. */
+/**
+ * Traduce el `code` de Supabase Auth a un código de dominio que la pantalla puede explicar.
+ * Solo los códigos listados se atribuyen a los datos ingresados; cualquier otro (configuración,
+ * hooks, captcha, desconocido o ausente) es una falla del servicio.
+ */
 function signUpErrorCode(code: string | undefined): DomainErrorCode {
   switch (code) {
+    case 'weak_password':
+    case 'email_address_invalid':
+    case 'validation_failed':
+    // Email ya registrado: mismo código que un dato no aceptado, para no confirmar que la cuenta existe.
     case 'user_already_exists':
     case 'email_exists':
-      return 'CONFLICT';
+      return 'VALIDATION_ERROR';
     case 'over_email_send_rate_limit':
     case 'over_request_rate_limit':
       return 'RATE_LIMITED';
     default:
-      // weak_password, email_address_invalid y cualquier otro rechazo de los datos ingresados.
-      return 'VALIDATION_ERROR';
+      return 'INTERNAL_ERROR';
   }
 }
 
@@ -138,10 +145,11 @@ export async function registerAction(
     return err('INTERNAL_ERROR');
   }
 
-  // Con confirmación de email activa, Supabase no devuelve error para un email ya registrado: devuelve un
-  // usuario sin identidades. No se activan consentimientos sobre ese id.
+  // Con confirmación de email activa, Supabase responde a un email ya registrado con un usuario sanitizado
+  // sin identidades, para no revelar que la cuenta existe. No se activan consentimientos sobre ese id y se
+  // responde igual que ante un dato no aceptado.
   if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-    return err('CONFLICT');
+    return err('VALIDATION_ERROR');
   }
 
   const adminClient = createAdminClient();

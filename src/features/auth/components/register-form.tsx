@@ -18,8 +18,6 @@ function registerErrorMessage(code: DomainErrorCode): string {
   switch (code) {
     case 'INVALID_SIGNUP_ROLE':
       return authCopy.register.errorAdminRejected;
-    case 'CONFLICT':
-      return authCopy.register.errorEmailTaken;
     case 'RATE_LIMITED':
       return authCopy.register.errorRateLimited;
     case 'VALIDATION_ERROR':
