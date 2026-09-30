@@ -189,3 +189,57 @@ Log de `approval-policy`:
 `Falta el informe completo de revisar-pr sin bloqueantes.`
 
 El workflow `.github/workflows/approval-policy.mjs` exige que la sección `### Informe de revisión de agy` del **cuerpo del PR** contenga el informe completo. Un comentario no satisface esa regla.
+
+# Ronda 4 — SHA `d6fac40e01202c99f6db800e4057017ffee3c80c`
+
+## Inmutabilidad funcional respecto de R3
+
+Blobs comparados entre `6cfa41e` y `d6fac40e01202c99f6db800e4057017ffee3c80c`:
+
+- `tools/admin-mfa-enroll.mjs`: `8d6456a10fae24735cfd65dc07412d167b67515a` en ambos.
+- `tools/admin-mfa-enroll.test.ts`: `5c814898bea98bf4752cc9ff7399c2aa72314934` en ambos.
+- `docs/runbooks/admin-bootstrap.md`: `c8d6ae667bc1ca92ebf206455cecab9eda734938` en ambos.
+- `package.json` cambió por merges ajenos, pero `scripts["admin:mfa-enroll"]` sigue exactamente en `node tools/admin-mfa-enroll.mjs`.
+
+Ficha T-317:
+- head blob: `2e1f5d68d2d6b33eb474d84bcfede5cd2cec1951`
+- develop blob: `2e1f5d68d2d6b33eb474d84bcfede5cd2cec1951`
+
+## Divergencia actual
+
+`compare develop...d6fac40e01202c99f6db800e4057017ffee3c80c`:
+- behind_by=12
+- ahead_by=10
+
+Los 12 commits faltantes en la rama tocan solo T-318/PR143:
+- docs/implementation-plan.md
+- docs/tasks/T-318.md
+- docs/revision-pr/pr-143/**
+
+No modifican T-317 ni workflows.
+
+## CI exact-head
+
+Log de unit:
+- `tools/admin-mfa-enroll.test.ts (30 tests)` ✅
+- `Test Files 105 passed (105)`
+- `Tests 1437 passed (1437)`
+- verify-workflows: 31
+- verify-adr: 6
+
+Checks:
+- bundle-budget success
+- db-tests success
+- build success
+- audit success
+- unit success
+- typecheck success
+- lint success
+- approval-policy failure
+
+Log de approval-policy:
+`Falta el informe completo de revisar-pr sin bloqueantes.`
+
+## Evidencia manual
+
+La evidencia real de `cadeapp-staging` sigue pendiente. Un intento que no alcanza enrolamiento TOTP + login MFA + `/admin/applicants` con AAL2 no satisface el ítem del DoD.

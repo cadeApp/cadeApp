@@ -33,3 +33,10 @@ H03–H07 nacen en parte de una evolución de la ficha posterior al fork de la r
 - La regla de `verificado_en_sha` fue relevante: aunque H01–H09 ya estaban cerrados, el archivo volvió a cambiar y hubo que revalidarlos sobre el nuevo SHA antes de afirmar cierre total.
 - `approval-policy` distingue correctamente revisión técnica de la evidencia operativa: el único rojo restante exige el informe en el cuerpo de la PR; la prueba real de staging sigue siendo una obligación manual separada.
 - No se agrega numeración AG nueva.
+
+## Ronda 4
+
+- Un merge de `develop` no obliga por sí solo a reabrir hallazgos funcionales: primero hay que comprobar si cambió alguno de los blobs que sostenían la verificación. En R4 los tres artefactos funcionales quedaron byte-identical a R3.
+- La divergencia con `develop` debe evaluarse por contenido: los 12 commits faltantes son exclusivamente documentación de T-318/PR143 y no cambian T-317 ni CI.
+- Un intento manual fallido antes de completar el flujo no sustituye la evidencia operativa del DoD. La PR puede estar técnicamente limpia y seguir sin estar lista para merge.
+- No se agrega numeración AG nueva.
