@@ -675,3 +675,17 @@ test('deploy-staging calls reusable E2E with the exact migrated SHA after deploy
   );
   assert.match(e2eJob, /head_branch == 'staging'/, 'E2E call is staging-only');
 });
+
+
+test('CI build supplies required public env and propagates next build failures through tee', () => {
+  const ci = workflow('ci.yml');
+  const build = job(ci, 'build');
+
+  assert.match(build, /NEXT_PUBLIC_APP_URL:\s*http:\/\/localhost:3000/);
+  assert.match(build, /NEXT_PUBLIC_SUPABASE_URL:\s*http:\/\/127\.0\.0\.1:54321/);
+  assert.match(build, /NEXT_PUBLIC_SUPABASE_ANON_KEY:\s*ci-public-anon-placeholder/);
+
+  const buildStep = step(build, 'Build and capture route sizes');
+  assert.match(buildStep, /set -o pipefail/);
+  assert.match(buildStep, /pnpm build 2>&1 \| tee build-output\.txt/);
+});
