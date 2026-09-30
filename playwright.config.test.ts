@@ -200,6 +200,12 @@ test('H19: LoginPage refleja el contrato real email + contraseña y no reintrodu
   assert.match(stripped, /get\s+emailInput\(\):\s*Locator/);
   assert.match(stripped, /getByLabel\(\/\^email\$\/i\)/);
   assert.doesNotMatch(stripped, /phoneInput|teléfono|celular|número de teléfono/i);
+test('H20: passwordInput usa el label exacto y no colisiona con Ver contraseña', () => {
+  const code = stripComments(readFile('e2e/pages/login.page.ts'));
+  assert.match(code, /getByLabel\(\/\^contraseña\$\/i\)/);
+  assert.doesNotMatch(code, /getByLabel\(\/código\|clave\|contraseña\/i\)/);
+});
+
 
   const smoke = stripComments(readFile('e2e/specs/smoke.spec.ts'));
   assert.match(smoke, /loginPage\.emailInput/);
