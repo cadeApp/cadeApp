@@ -15,7 +15,7 @@ export class LoginPage extends BasePage {
   }
 
   get passwordInput(): Locator {
-    return this.page.getByLabel(/código|clave|contraseña/i);
+    return this.page.getByLabel(/^contraseña$/i);
   }
 
   get submitButton(): Locator {
@@ -30,9 +30,9 @@ export class LoginPage extends BasePage {
     await this.goto('/login');
   }
 
-  async login(email: string, passwordOrCode: string): Promise<void> {
+  async login(email: string, password: string): Promise<void> {
     await this.emailInput.fill(email);
-    await this.passwordInput.fill(passwordOrCode);
+    await this.passwordInput.fill(password);
     await this.submitButton.click();
     await this.waitForNoSkeletons();
   }
