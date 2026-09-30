@@ -4,42 +4,60 @@
 
 SHA: `9d34f42841ec9ed9875324e8d81f36dd7234315a`.
 
-Se detectaron PR142-H01, H02 y A01. El detalle histórico queda en `revisiones/ronda-2.md`.
+Se detectaron PR142-H01, H02 y A01. Detalle en `revisiones/ronda-2.md`.
 
 ## Ronda 3
 
-SHA funcional revisado: `6947d68ffca5c5510aa0e943355fa1ff33e8bc23`.  
+SHA funcional: `6947d68ffca5c5510aa0e943355fa1ff33e8bc23`.
+
+H02/A01 quedaron cerrados; H01 siguió abierto por el efecto de sesión cuando Confirm Email estaba desactivado.
+
+## Ronda 4
+
+SHA funcional revisado: `d9d7b063e346443155b3208d271ddf3f9d225aef`.  
 Base: `develop` @ `158f83b2b1bf6211a2bf8e53ae7cd90130edc445`.
 
-### H02 / A01
+### Diff desde R3
 
-- PR #143: merged=true.
-- `compare develop...feat/T-318-register-errors`: behind=0 / ahead=8.
-- `docs/tasks/T-318.md` y `docs/implementation-plan.md` no están en el diff de implementación.
+Solo:
+- `src/features/auth/actions.ts`
+- `src/features/auth/actions.test.ts`
+- `src/features/auth/components/register-enumeration.test.tsx`
+- `docs/tasks/log/T-318.md`
 
-### H01 — sesión como canal de enumeración
+### H01
 
-Implementación actual:
-- alta nueva, sanitizado y códigos explícitos devuelven el mismo `ActionResult`;
-- `RegisterForm` hace el mismo `router.push`;
-- el test UI compara `push`, `refresh`, alerta y texto.
+Código verificado:
+- si `data.session` existe → `supabase.auth.signOut({ scope: 'local' })`;
+- si signOut devuelve error → `INTERNAL_ERROR`;
+- ese bloque corre antes de `identities: []`, `createAdminClient` y `activate_account_consents`;
+- sin sesión → no signOut.
 
-Hueco:
-- `NEW_USER` en `actions.test.ts` y `register-enumeration.test.tsx` usa `session: null`;
-- no existe llamada a `supabase.auth.signOut` en `registerAction`;
-- `src/server/supabase/server.ts` usa `createServerClient` con almacenamiento en cookies;
-- `middleware.ts` + `src/features/auth/server.ts` reconstruyen la sesión desde esas cookies y las guardas cambian el destino efectivo.
+Tests verificados:
+- alta nueva con sesión no nula → signOut local 1 vez + 1 activación;
+- alta nueva sin sesión → 0 signOut + 1 activación;
+- `identities: []`, `user_already_exists`, `email_exists` → mismo resultado público, 0 activaciones, 0 signOut;
+- fallo de signOut → INTERNAL_ERROR, 0 activaciones, sin filtrar detalle.
 
-Contrato actual de Supabase:
-- con Confirm Email habilitado: alta nueva devuelve usuario y `session=null`;
-- con Confirm Email deshabilitado: alta nueva devuelve usuario + sesión y queda autenticada;
-- una cuenta existente puede devolver `User already registered` en lugar de una sesión.
+RED natural:
+- 2 archivos fallidos; 3 tests fallidos antes del bloque de signOut.
 
-La propia bitácora reconoce que con Confirm Email OFF la pantalla destino puede diferir. Eso no es un residual externo: la ficha exige misma navegación/resultados observables para esos cuatro caminos.
+GREEN focal:
+- 2 archivos passed; 45 tests passed.
+
+Mutaciones:
+- S1 quitar bloque signOut → 3 failed;
+- S2 signOut sin scope → 2 failed;
+- S2b scope global → 2 failed;
+- S3 ignorar signOutError → 1 failed.
+
+### Sincronización
+
+`compare develop...feat/T-318-register-errors`: behind=0.
 
 ### CI exact-head
 
-Workflow CI #680 sobre `6947d68ffca5c5510aa0e943355fa1ff33e8bc23`: **7/7 jobs verdes**:
+Workflow CI #683 sobre `d9d7b063e346443155b3208d271ddf3f9d225aef`: **7/7 jobs verdes**:
 - typecheck
 - lint
 - unit
@@ -48,4 +66,4 @@ Workflow CI #680 sobre `6947d68ffca5c5510aa0e943355fa1ff33e8bc23`: **7/7 jobs ve
 - bundle-budget
 - audit
 
-El CI verde no cubre H01 porque los mocks del alta nueva fijan `session:null`.
+La corrida local global documentó dos fallos preexistentes/interferencias; los aislados pasaron y el runner limpio quedó completamente verde.
