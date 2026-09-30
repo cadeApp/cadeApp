@@ -81,3 +81,58 @@ git status --short
 ~~~
 
 No crear tests falsos, no bajar aserciones, no modificar tests ajenos para conseguir verde y no tocar docs/revision-pr/** desde la sesión de arreglo.
+
+# Ronda 2 — SHA `4fb89bc79817650f747c2b12669687585ee526ec`
+
+## Revalidación H01–H09
+
+- compare `develop...head`: behind_by=0; ficha T-317 mismo blob SHA en ambos refs.
+- Harness independiente: secreto TOTP ausente; writer recibe `<svg`; raw/base64 rechazados; cliente con 3 flags; signOut local; errores de list/unenroll fail-closed; throw post-QR borra QR y cierra sesión.
+
+## H10 — cleanup no aislado
+
+```js
+const t = setup({ removeThrows: true });
+await assert.rejects(() => enrollAdminMfa(t.deps));
+assert.deepEqual(t.signOutArgs, [[{ scope: 'local' }]]);
+```
+Resultado actual: `signOutArgs=[]`. El rechazo de `removeFile` corta el segundo cleanup.
+
+Mutación/control para el arreglo: volver temporalmente de `try { remove } finally { signOut }` a dos `await` secuenciales; el test debe quedar RED.
+
+## H11 — error/end de TTY
+
+```js
+const pending = readSecret({ input: fakeTty, output, question: 'Contraseña: ' });
+fakeTty.emit('error', new Error('stdin-failure'));
+await assert.rejects(() => pending);
+assert.equal(fakeTty.isRaw, false);
+assert.equal(fakeTty.listenerCount('data'), 0);
+assert.equal(fakeTty.listenerCount('error'), 0);
+assert.equal(fakeTty.listenerCount('end'), 0);
+```
+Resultado actual: `error` deja raw=true y lanza fuera de la Promise; `end` deja raw=true con la Promise pendiente.
+
+Mutación/control: quitar solo los handlers `error/end` del arreglo; ambos tests deben quedar RED.
+
+## H12 — cuerpo no SVG
+
+```js
+assert.throws(() => qrSvgFromDataUri('data:image/svg+xml;utf-8,not-svg'));
+```
+Resultado actual: devuelve `not-svg`.
+
+Mutación/control: quitar solo la guarda `svgXml.startsWith('<svg')`; el test debe quedar RED.
+
+## Batería de Ronda 3
+
+```bash
+pnpm exec vitest run tools/admin-mfa-enroll.test.ts
+pnpm exec eslint tools/admin-mfa-enroll.mjs --max-warnings 0
+pnpm typecheck
+pnpm lint
+pnpm test
+git diff origin/develop -- docs/tasks/T-317.md
+git diff --name-only origin/develop...HEAD
+git status --short
+```

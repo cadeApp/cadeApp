@@ -19,3 +19,10 @@
 ## Advertencias
 
 H03–H07 nacen en parte de una evolución de la ficha posterior al fork de la rama; no implica que el agente ignorara requisitos que ya tuviera delante al implementar. H08 sí es independiente de ese cambio.
+
+## Ronda 2
+
+- **H10:** un `finally` con dos obligaciones de cleanup también necesita enumeración completa: un fallo del primer cleanup no puede impedir el segundo.
+- **H11:** refuerza `P08`: probar Enter/Ctrl+C no equivale a probar “restaura siempre”; un stream también termina por `error`/`end`.
+- **H12:** refuerza `P08`: validar el envelope (`data:image/svg+xml`) no verifica el contenido que el control promete (`<svg…>`).
+- No se agrega numeración AG nueva; los tres casos caben en patrones existentes.
