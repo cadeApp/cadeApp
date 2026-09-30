@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  OperatorError,
   createEnrollClient,
   enrollAdminMfa,
   qrSvgFromDataUri,
@@ -233,6 +234,22 @@ describe('T-317: enrolamiento del primer factor TOTP del admin', () => {
     expect(t.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
   });
 
+  it('si falla el borrado del QR, igual intenta cerrar la sesión local y después rechaza', async () => {
+    const t = setup();
+    t.deps.removeFile.mockRejectedValueOnce(new Error('remove failed'));
+    await expect(enrollAdminMfa(t.deps)).rejects.toThrow('remove failed');
+    expect(t.deps.removeFile).toHaveBeenCalledWith(QR_PATH);
+    expect(t.auth.signOut).toHaveBeenCalledTimes(1);
+    expect(t.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
+  it('QR data URL utf-8 que no es SVG → falla cerrado sin escribir archivo ni verificar', async () => {
+    const t = setup({ qrCode: 'data:image/svg+xml;utf-8,not-svg' });
+    expect(await enrollAdminMfa(t.deps)).toEqual({ ok: false, reason: 'QR_FORMAT' });
+    expect(t.deps.writeQr).not.toHaveBeenCalled();
+    expect(t.auth.mfa.challengeAndVerify).not.toHaveBeenCalled();
+  });
+
   it('la salida nunca contiene contraseña, código, tokens, secreto TOTP ni otpauth://', async () => {
     const logs: string[] = [];
     const capture = (...args: unknown[]) => {
@@ -278,6 +295,10 @@ describe('T-317: formato del QR', () => {
     expect(() =>
       qrSvgFromDataUri(`data:image/svg+xml;base64,${Buffer.from(SVG).toString('base64')}`)
     ).toThrow();
+  });
+
+  it('data URL utf-8 cuyo cuerpo no es SVG → error', () => {
+    expect(() => qrSvgFromDataUri('data:image/svg+xml;utf-8,not-svg')).toThrow('QR_FORMAT');
   });
 });
 
@@ -368,6 +389,43 @@ describe('T-317: entrada oculta de la contraseña', () => {
     expect(written.join('')).not.toContain('parcial');
     expect(input.isRaw).toBe(false);
     expect(input.listenerCount('data')).toBe(0);
+  });
+
+  function expectRestored(input: FakeTty) {
+    expect(input.isRaw).toBe(false);
+    expect(input.listenerCount('data')).toBe(0);
+    expect(input.listenerCount('error')).toBe(0);
+    expect(input.listenerCount('end')).toBe(0);
+  }
+
+  it('error de la entrada → rechaza con un mensaje propio y restaura raw mode y listeners', async () => {
+    const input = new FakeTty({ isRaw: false });
+    const { written, output } = fakeOutput();
+    const pending = readSecret({ input, output, question: 'Contraseña: ' });
+    input.emit('data', Buffer.from('parcial'));
+    input.emit('error', new Error('REMOTE-STDIN-DETAIL'));
+    const rejection = await pending.then(
+      () => null,
+      (error: unknown) => error
+    );
+    expect(rejection).toBeInstanceOf(OperatorError);
+    expect(String((rejection as Error).message)).not.toContain('REMOTE-STDIN-DETAIL');
+    expect(written.join('')).not.toContain('parcial');
+    expectRestored(input);
+  });
+
+  it('fin de la entrada antes de Enter → rechaza con un mensaje propio y restaura raw mode y listeners', async () => {
+    const input = new FakeTty({ isRaw: false });
+    const { output } = fakeOutput();
+    const pending = readSecret({ input, output, question: 'Contraseña: ' });
+    input.emit('data', Buffer.from('parcial'));
+    input.emit('end');
+    const rejection = await pending.then(
+      () => null,
+      (error: unknown) => error
+    );
+    expect(rejection).toBeInstanceOf(OperatorError);
+    expectRestored(input);
   });
 
   it('respeta un raw mode que ya estaba activo', async () => {

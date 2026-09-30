@@ -27,7 +27,11 @@ export function qrSvgFromDataUri(qrCode) {
   if (typeof qrCode !== 'string' || !qrCode.startsWith(QR_DATA_URL_PREFIX)) {
     throw new Error('QR_FORMAT');
   }
-  return decodeURIComponent(qrCode.slice(QR_DATA_URL_PREFIX.length));
+  const svgXml = decodeURIComponent(qrCode.slice(QR_DATA_URL_PREFIX.length));
+  if (!svgXml.startsWith('<svg')) {
+    throw new Error('QR_FORMAT');
+  }
+  return svgXml;
 }
 
 /**
@@ -47,7 +51,17 @@ export function createEnrollClient(url, anonKey, create) {
 /**
  * Lee un secreto de una TTY sin eco. Sin TTY interactiva falla cerrado, antes de consumir entrada.
  * @param {{
- *   input: { isTTY?: boolean, isRaw?: boolean, setRawMode?: (mode: boolean) => unknown, on(event: 'data', listener: (chunk: Buffer | string) => void): unknown, removeListener(event: 'data', listener: (chunk: Buffer | string) => void): unknown, resume?: () => unknown, pause?: () => unknown },
+ *   input: {
+ *     isTTY?: boolean,
+ *     isRaw?: boolean,
+ *     setRawMode?: (mode: boolean) => unknown,
+ *     on(event: 'data', listener: (chunk: Buffer | string) => void): unknown,
+ *     on(event: 'error' | 'end', listener: () => void): unknown,
+ *     removeListener(event: 'data', listener: (chunk: Buffer | string) => void): unknown,
+ *     removeListener(event: 'error' | 'end', listener: () => void): unknown,
+ *     resume?: () => unknown,
+ *     pause?: () => unknown,
+ *   },
  *   output: { write(text: string): unknown },
  *   question: string,
  * }} io
@@ -61,12 +75,20 @@ export async function readSecret({ input, output, question }) {
   const wasRaw = input.isRaw === true;
   /** @type {((chunk: Buffer | string) => void) | null} */
   let onData = null;
+  /** @type {(() => void) | null} */
+  let onError = null;
+  /** @type {(() => void) | null} */
+  let onEnd = null;
   output.write(question);
   try {
     setRawMode.call(input, true);
     input.resume?.();
     return await new Promise((resolve, reject) => {
       let value = '';
+      // El detalle del error de la entrada no se propaga: el mensaje es siempre propio.
+      onError = () => reject(new OperatorError('No se pudo leer la entrada de la terminal.'));
+      onEnd = () =>
+        reject(new OperatorError('La entrada terminó antes de completar la contraseña.'));
       onData = (chunk) => {
         for (const char of String(chunk)) {
           if (char === '\r' || char === '\n') {
@@ -85,9 +107,13 @@ export async function readSecret({ input, output, question }) {
         }
       };
       input.on('data', onData);
+      input.on('error', onError);
+      input.on('end', onEnd);
     });
   } finally {
     if (onData) input.removeListener('data', onData);
+    if (onError) input.removeListener('error', onError);
+    if (onEnd) input.removeListener('end', onEnd);
     setRawMode.call(input, wasRaw);
     input.pause?.();
     output.write('\n');
@@ -216,8 +242,13 @@ export async function enrollAdminMfa({ client, prompt, promptSecret, print, writ
     print('Listo: MFA activo. Entrá por /login y después /login/mfa con el código de la app.');
     return { ok: true };
   } finally {
-    if (qrFile) await removeFile(qrFile);
-    await client.auth.signOut({ scope: 'local' });
+    // El cierre de sesión no depende del borrado: si borrar falla, igual se intenta cerrar la sesión y después
+    // se propaga el error del borrado.
+    try {
+      if (qrFile) await removeFile(qrFile);
+    } finally {
+      await client.auth.signOut({ scope: 'local' });
+    }
   }
 }
 
