@@ -6,27 +6,43 @@
 grep -n "Supabase remoto\|credenciales" AGENTS.md docs/onboarding.md .agents/rules/00-confianza-y-seguridad.md
 ```
 
-En `f280bc9`, AGENTS prohíbe Supabase remoto de forma general y onboarding conserva “Credenciales de staging o producción”.
+- En `f280bc9`: AGENTS prohibía Supabase remoto de forma general y onboarding conservaba “Credenciales de staging o producción”.
+- En `7f698de`: AGENTS distingue operaciones privilegiadas de llamadas de aplicación autorizadas; onboarding distingue credenciales privilegiadas de credenciales de usuario final interactivas.
 
 ## H02 · Ficha sin fila del plan
 
 ```bash
-grep -n "^| T-317 |" docs/implementation-plan.md
-grep -n "if (!esperado) continue" tools/verify-fichas.test.ts
 pnpm exec vitest run tools/verify-fichas.test.ts
+grep -n "^| T-31[567] |" docs/implementation-plan.md
 ```
 
-En `f280bc9`, el primer grep no devuelve fila T-317 y el test igualmente pasa, demostrando el hueco P08.
+RED reportado antes de agregar filas:
+```
+Estas fichas no tienen fila en docs/implementation-plan.md §8: T-315, T-316, T-317
+Tests 1 failed | 6 passed
+```
 
-### RED/GREEN esperado para el arreglo
+GREEN reportado después:
+```
+Test Files 1 passed (1)
+Tests 7 passed (7)
+```
 
-1. Agregar el test “toda ficha no exceptuada tiene fila” sin tocar el plan → RED por T-317.
-2. Agregar la fila T-317 → GREEN.
+Las filas T-315/T-316/T-317 se contrastaron contra sus fichas y coinciden en dependencias, archivos permitidos y primer DoD.
 
 ## H03 · Referencia muerta
 
-Comprobar en Issue #137 que `verifyMfaAction` se reemplazó por `verifyAdminMfaAction`.
+Issue #137 verificado en Ronda 3: usa `verifyAdminMfaAction`.
 
 ## CI observado
 
-Workflow `CI` run #629 sobre `f280bc918d3203cc29a2381c68da82611154112f`: `success`.
+Workflow `CI` run #634 sobre `7f698dedb08480d5b39914389bfcba463b196fb8`:
+- typecheck: success
+- lint: success
+- unit: success
+- build: success
+- audit: success
+- db-tests: success
+- bundle-budget: success
+
+Resultado: **7/7 jobs verdes**.
