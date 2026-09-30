@@ -1,0 +1,62 @@
+name: e2e-staging
+
+on:
+  workflow_call:
+    inputs:
+      target_sha:
+        description: SHA exacto desplegado en staging
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: SHA exacto ya desplegado en staging
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-staging
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: e2e-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_TEST_BASE_URL: https://cadeapp-staging.vercel.app
+      NEXT_PUBLIC_APP_URL: https://cadeapp-staging.vercel.app
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      NEXT_PUBLIC_SUPABASE_URL: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      DNI_HMAC_SECRET: ${{ secrets.DNI_HMAC_SECRET }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      E2E_TEST: 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.target_sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run E2E smoke spec against staging
+        run: pnpm exec playwright test e2e/specs/smoke.spec.ts --project=chromium
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
