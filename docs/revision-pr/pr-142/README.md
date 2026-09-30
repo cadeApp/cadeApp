@@ -3,12 +3,13 @@
 | | |
 |---|---|
 | **PR** | https://github.com/cadeApp/cadeApp/pull/142 |
-| **Tarea declarada** | T-318 · Issue #141 |
+| **Tarea** | T-318 · Issue #141 |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-318-register-errors` → `develop` |
-| **Base de revisión** | `75950cdf2a8a47d5f0642c3caa479c6f364e13bc` |
-| **Head de implementación revisado** | `9d34f42841ec9ed9875324e8d81f36dd7234315a` |
-| **Estado** | bloqueada — 3 bloqueantes en Ronda 2 de la cadena #140 → #142 |
+| **Head R2** | `9d34f42841ec9ed9875324e8d81f36dd7234315a` |
+| **Head R3 revisado** | `6947d68ffca5c5510aa0e943355fa1ff33e8bc23` |
+| **Base R3** | `develop` @ `158f83b2b1bf6211a2bf8e53ae7cd90130edc445` |
+| **Estado** | bloqueada — Ronda 3 · 1 bloqueante |
 
 ## Contexto
 
@@ -16,27 +17,25 @@
 - 1-A: separar el bug de T-009 y crear T-318.
 - 2-A: preservar la protección anti-enumeración de Supabase.
 
-H03, H04 y H05 de #140 quedaron corregidos y verificados sobre este head. H01/H02 de #140 quedan parciales porque la nueva tarea todavía tiene dos problemas de constitución y la anti-enumeración sigue siendo observable.
+La ficha oficial ya fue mergeada por PR #143 y la implementación está sincronizada con ese `develop`.
 
 ## Hallazgos propios de #142
 
-- **PR142-H01** · alto · anti-enumeración todavía observable por `ok:true` vs `ok:false`.
-- **PR142-H02** · alto · la ficha T-318 no existe en `develop`; se implementó antes de que la tarea fuera oficial.
-- **PR142-A01** · alto · `docs/implementation-plan.md` está fuera de los «Archivos permitidos» de la ficha T-318.
+- **PR142-H01** · alto · abierto · el `ActionResult` ya es indistinguible, pero con Confirm Email desactivado el alta nueva conserva una sesión de Supabase y la cuenta existente no; la navegación efectiva puede divergir.
+- **PR142-H02** · alto · arreglado-verificado · la ficha T-318 ya está en `develop`.
+- **PR142-A01** · alto · arreglado-verificado · ficha y plan salieron del diff de implementación tras mergear #143.
 
 ## CI exact-head
 
-Sobre `9d34f42841ec9ed9875324e8d81f36dd7234315a`:
-- unit ✅ — 104 archivos / 1433 tests
+Sobre `6947d68ffca5c5510aa0e943355fa1ff33e8bc23`:
 - typecheck ✅
 - lint ✅
+- unit ✅
 - db-tests ✅
 - build ✅
 - bundle-budget ✅
 - audit ✅
-- board-sync ✅
-- approval-policy ❌: falta informe independiente `SIN BLOQUEANTES` (esperado mientras esta ronda esté bloqueada)
 
 ## Próximo paso
 
-Primero separar y mergear una PR documental de ficha T-318 desde `develop`, igual que se hizo con T-317 / PR #138. Después sincronizar #142 con el nuevo `develop` y recién entonces corregir PR142-H01.
+Neutralizar cualquier sesión creada por `signUp` cuando Confirm Email esté desactivado y demostrarlo con RED→GREEN real. No cambiar configuración de Supabase ni contratos de dominio.
