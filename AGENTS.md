@@ -59,7 +59,13 @@ Prohibido: `any`, `@ts-ignore`, `!` non-null, `.only`, `.skip` sin issue, desact
 
 ## 6. Seguridad operativa
 - No leas, imprimas ni copies `.env*` (salvo `.env.example`), claves ni tokens.
-- No corras comandos contra Supabase remoto, Vercel ni GitHub secrets: eso lo hace CI.
+- Prohibido: comandos administrativos o de infraestructura contra Supabase remoto (`supabase link`, `db push`,
+  `secrets`, `--linked`, `--db-url`), Vercel o GitHub secrets; usar la service-role/secret key, la contraseña o URL
+  de la base, o tokens de Supabase, Vercel o GitHub. Eso lo hace CI.
+- Permitido solo si la ficha lo autoriza explícitamente: llamadas de aplicación a `cadeapp-staging` (el proyecto
+  que comparten `feat/*`, `develop` y `staging`) con la URL pública y la anon/publishable key, y credenciales de
+  usuario final ingresadas de forma interactiva. Esas credenciales nunca se copian a archivos, logs, PRs, issues
+  ni bitácoras. Producción queda fuera. Detalle: `.agents/rules/00-confianza-y-seguridad.md`.
 - No hagas push a develop/staging/main, ni `--force`, ni reescribas historia compartida.
 - No agregues dependencias que la ficha no liste. No modifiques `AGENTS.md`, `.agents/**`, `.github/**` ni
   migraciones ya mergeadas salvo que la ficha lo diga.

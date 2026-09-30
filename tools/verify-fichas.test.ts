@@ -134,6 +134,18 @@ describe('Fichas de tarea: sincronía con el plan', () => {
     if (dod && id) dodDelPlan.set(id, dod);
   }
 
+  it('toda ficha no exceptuada tiene una fila en docs/implementation-plan.md', () => {
+    const sinFila = fichas
+      .filter((f) => !EXCEPCIONES.has(f.id))
+      .filter((f) => !dodDelPlan.has(f.id))
+      .map((f) => f.id);
+
+    expect(
+      sinFila,
+      `Estas fichas no tienen fila en docs/implementation-plan.md §8: ${sinFila.join(', ')}`
+    ).toEqual([]);
+  });
+
   it('el primer ítem del DoD de cada ficha coincide con su fila del plan', () => {
     const desincronizadas: string[] = [];
 
