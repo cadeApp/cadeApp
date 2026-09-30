@@ -194,6 +194,18 @@ test('DoD: un helper espera a que desaparezcan los skeletons sin tiempos fijos',
 // --------------------------------------------------------------------------
 // 4. Page Objects y Fixtures por rol con selectores accesibles
 // --------------------------------------------------------------------------
+test('H19: LoginPage refleja el contrato real email + contraseña y no reintroduce phoneInput', () => {
+  const code = readFile('e2e/pages/login.page.ts');
+  const stripped = stripComments(code);
+  assert.match(stripped, /get\s+emailInput\(\):\s*Locator/);
+  assert.match(stripped, /getByLabel\(\/\^email\$\/i\)/);
+  assert.doesNotMatch(stripped, /phoneInput|teléfono|celular|número de teléfono/i);
+
+  const smoke = stripComments(readFile('e2e/specs/smoke.spec.ts'));
+  assert.match(smoke, /loginPage\.emailInput/);
+  assert.doesNotMatch(smoke, /loginPage\.phoneInput/);
+});
+
 test('DoD & H06: Page objects implementados con selectores accesibles por rol (e2e/pages)', () => {
   const pageFiles = [
     'e2e/pages/login.page.ts',

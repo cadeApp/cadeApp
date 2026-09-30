@@ -28,7 +28,7 @@ test.describe('Spec de humo de staging (T-301)', () => {
     await waitForNoSkeletons(page);
 
     // 5. Validar controles esenciales por rol accesible
-    await expect(loginPage.phoneInput).toBeVisible();
+    await expect(loginPage.emailInput).toBeVisible();
     await expect(loginPage.passwordInput).toBeVisible();
     await expect(loginPage.submitButton).toBeVisible();
   });
