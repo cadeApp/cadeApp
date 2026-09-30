@@ -309,9 +309,9 @@ test('DoD, H04 (M3) & H05: spec de humo implementado con ejecución Playwright y
 });
 
 // --------------------------------------------------------------------------
-// 6. Verificación de Mitigación de Mutaciones de Ronda 2 (M5, M6, M7, M8)
+// 6. Verificación de Mitigación de Mutaciones (M5 a M12) y Robustez de Lifecycle (H12-H14)
 // --------------------------------------------------------------------------
-test('DoD, H09 & M5: Fixture conecta efectivamente seed y cleanup al ciclo de Playwright y smoke los consume', () => {
+test('DoD, H09, H12 & M5/M9: Fixture conecta efectivamente seed y cleanup abarcando todo el lifecycle con try/finally', () => {
   const rolesCode = readFile('e2e/fixtures/roles.ts');
   const strippedRoles = stripComments(rolesCode);
 
@@ -322,11 +322,11 @@ test('DoD, H09 & M5: Fixture conecta efectivamente seed y cleanup al ciclo de Pl
     'roles.ts debe invocar funcionalmente seedStagingData(context) antes del test (rechaza mutación M5).'
   );
 
-  // M5: Teardown debe ejecutar cleanupStagingData en un bloque finally
+  // H12 & M9: El bloque try/finally debe abarcar tanto seedStagingData como use(context) para garantizar cleanup ante fallos del seed
   assert.match(
     strippedRoles,
-    /try\s*\{\s*await\s+use\s*\(\s*context\s*\);\s*\}\s*finally\s*\{\s*await\s+cleanupStagingData\s*\(\s*context\s*\);\s*\}/,
-    'roles.ts debe asegurar la limpieza mediante try { await use(context) } finally { await cleanupStagingData(context) }.'
+    /try\s*\{[\s\S]*await\s+seedStagingData\s*\(\s*context[\s\S]*await\s+use\s*\(\s*context\s*\);[\s\S]*\}\s*catch\s*\([\s\S]*\}\s*finally\s*\{[\s\S]*await\s+cleanupStagingData\s*\(\s*context\s*\);/,
+    'roles.ts debe asegurar la limpieza envolviendo tanto seedStagingData como use(context) en try/finally con preservación de errores (H12 / M9).'
   );
 
   // M5: smoke.spec.ts debe solicitar stagingContext y verificar las entidades sembradas
@@ -423,4 +423,52 @@ test('DoD, H10 & M8: Protección Fail-Closed rechaza producción y proyectos des
     'La guarda debe bloquear dominios de producción.'
   );
 });
+
+test('DoD, H12 & M12: seedStagingData valida y falla ante error en profiles o merchants upsert', () => {
+  const serverSeedCode = readFile('src/server/e2e/staging-seed.ts');
+  const strippedSeed = stripComments(serverSeedCode);
+
+  assert.match(
+    strippedSeed,
+    /if\s*\(\s*profileErr\s*\)\s*\{\s*throw\s+new\s+Error/,
+    'seedStagingData debe validar explícitamente el resultado del upsert en profiles (H12).'
+  );
+  assert.match(
+    strippedSeed,
+    /if\s*\(\s*merchantErr\s*\)\s*\{\s*throw\s+new\s+Error/,
+    'seedStagingData debe validar explícitamente el resultado del upsert en merchants (H12 / M12).'
+  );
+});
+
+test('DoD, H13 & M10: e2e-staging.yml declara todas las variables de entorno necesarias para serverEnv', () => {
+  const yaml = readFile('.github/workflows/e2e-staging.yml');
+
+  assert.match(
+    yaml,
+    /DNI_HMAC_SECRET:\s*\${{\s*secrets\.DNI_HMAC_SECRET\s*}}/,
+    'e2e-staging.yml debe inyectar DNI_HMAC_SECRET desde secrets para satisfacer serverEnv (H13).'
+  );
+  assert.match(
+    yaml,
+    /CRON_SECRET:\s*\${{\s*secrets\.CRON_SECRET\s*}}/,
+    'e2e-staging.yml debe inyectar CRON_SECRET desde secrets para satisfacer serverEnv (H13).'
+  );
+});
+
+test('DoD, H14 & M11: cleanupStagingData inspecciona errores de Supabase, conserva IDs fallidos y lanza error agregado', () => {
+  const serverSeedCode = readFile('src/server/e2e/staging-seed.ts');
+  const strippedSeed = stripComments(serverSeedCode);
+
+  assert.match(
+    strippedSeed,
+    /cleanupErrors\.push/,
+    'cleanupStagingData debe registrar los fallos individuales sin abortar de inmediato (H14).'
+  );
+  assert.match(
+    strippedSeed,
+    /if\s*\(\s*cleanupErrors\.length\s*>\s*0\s*\)\s*\{[\s\S]*throw\s+new\s+Error/,
+    'cleanupStagingData debe lanzar un error agregado si hubo fallos en la limpieza (H14 / M11).'
+  );
+});
+
 

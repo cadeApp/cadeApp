@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { createServerEnv } from '../env';
 import {
   isAllowedE2EEnvironment,
   assertAllowedE2EEnvironment,
@@ -361,7 +364,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(ctx.createdZoneIds).toHaveLength(0);
     });
 
-    it('tolera fallos parciales sin abortar el cleanup de los demás registros', async () => {
+    it('continúa el cleanup ante fallos parciales, conserva los IDs fallidos y reporta error agregado (H14)', async () => {
       const ctx: StagingSeedContext = {
         testRunId: 'e2e_run_123',
         createdOfferIds: ['123e4567-e89b-12d3-a456-426614174041'],
@@ -399,9 +402,60 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         },
       } as any;
 
-      await expect(cleanupStagingData(ctx, mockClient)).resolves.not.toThrow();
-      expect(ctx.createdOfferIds).toHaveLength(0);
+      await expect(cleanupStagingData(ctx, mockClient)).rejects.toThrow(
+        /\[E2E Cleanup Error\] Falló la limpieza de staging: offers/i
+      );
+      // El ID fallido se conserva para trazabilidad y reintento
+      expect(ctx.createdOfferIds).toEqual(['123e4567-e89b-12d3-a456-426614174041']);
+      // Los exitosos fueron eliminados del tracking
       expect(ctx.createdRequestIds).toHaveLength(0);
+      expect(ctx.createdUserIds).toHaveLength(0);
+    });
+
+    it('M11: si delete().in(...) devuelve { error } sin rechazar, cleanup no borra el tracking, intenta las demás y reporta fallo agregado', async () => {
+      const ctx: StagingSeedContext = {
+        testRunId: 'e2e_run_m11',
+        createdOfferIds: [],
+        createdRequestIds: ['123e4567-e89b-12d3-a456-426614174071'],
+        createdUserIds: ['123e4567-e89b-12d3-a456-426614174072'],
+        createdZoneIds: [],
+      };
+
+      const deleteUserMock = vi.fn().mockResolvedValue({ error: null });
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              delete: () => ({
+                // Devuelve error de Supabase sin rechazar la promise
+                in: vi.fn().mockResolvedValue({ error: { message: 'FK violation on delivery_requests' } }),
+              }),
+            };
+          }
+          return {
+            delete: () => ({
+              in: vi.fn().mockResolvedValue({ error: null }),
+            }),
+          };
+        }),
+        auth: {
+          admin: {
+            deleteUser: deleteUserMock,
+          },
+        },
+      } as any;
+
+      // Debe lanzar error agregado que informe el fallo
+      await expect(cleanupStagingData(ctx, mockClient)).rejects.toThrow(
+        /\[E2E Cleanup Error\] Falló la limpieza de staging: delivery_requests/i
+      );
+
+      // El ID de delivery_requests QUE FALLÓ debe conservarse en el tracking
+      expect(ctx.createdRequestIds).toContain('123e4567-e89b-12d3-a456-426614174071');
+
+      // Las demás entidades debieron ser intentadas y eliminadas exitosamente
+      expect(deleteUserMock).toHaveBeenCalledWith('123e4567-e89b-12d3-a456-426614174072');
       expect(ctx.createdUserIds).toHaveLength(0);
     });
   });
@@ -492,6 +546,134 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(deleteReqMock).toHaveBeenCalledWith('id', [mockReqId]);
       expect(deleteUserMock).toHaveBeenCalledWith(mockMerchantId);
       expect(ctx.createdRequestIds).toHaveLength(0);
+    });
+
+    it('M9: si el seed crea recursos (e.g. usuario) y luego falla, el ciclo try/finally invoca cleanupStagingData', async () => {
+      const ctx = createStagingSeedContext();
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614174061';
+      const mockZoneId = '123e4567-e89b-12d3-a456-426614174062';
+
+      const deleteUserMock = vi.fn().mockResolvedValue({ error: null });
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: () => ({ eq: () => ({ limit: vi.fn().mockResolvedValue({ data: [{ id: mockZoneId }], error: null }) }) }),
+            };
+          }
+          if (table === 'profiles') {
+            // Falla en profiles tras haber creado el usuario auth
+            return {
+              upsert: vi.fn().mockResolvedValue({ error: { message: 'Profiles DB error' } }),
+              delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+            };
+          }
+          return {
+            delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+          };
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn().mockResolvedValue({
+              data: { user: { id: mockMerchantId } },
+              error: null,
+            }),
+            deleteUser: deleteUserMock,
+          },
+        },
+      } as any;
+
+      let seedErrorCaught: any = null;
+      let cleanupRan = false;
+
+      try {
+        await seedStagingData(ctx, { requestsCount: 1 }, mockClient);
+      } catch (err: any) {
+        seedErrorCaught = err;
+      } finally {
+        await cleanupStagingData(ctx, mockClient);
+        cleanupRan = true;
+      }
+
+      // Debe haber fallado el seed
+      expect(seedErrorCaught).not.toBeNull();
+      expect(seedErrorCaught.message).toMatch(/Falló el upsert en profiles/i);
+
+      // Cleanup DEBE haberse ejecutado y haber limpiado el usuario que el seed creó antes de fallar
+      expect(cleanupRan).toBe(true);
+      expect(deleteUserMock).toHaveBeenCalledWith(mockMerchantId);
+      expect(ctx.createdUserIds).toHaveLength(0);
+    });
+
+    it('M12: si el upsert de merchants o profiles devuelve { error }, seedStagingData falla inmediatamente y no ignora el error', async () => {
+      const ctx = createStagingSeedContext();
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614174081';
+      const mockZoneId = '123e4567-e89b-12d3-a456-426614174082';
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: () => ({ eq: () => ({ limit: vi.fn().mockResolvedValue({ data: [{ id: mockZoneId }], error: null }) }) }),
+            };
+          }
+          if (table === 'profiles') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          if (table === 'merchants') {
+            return { upsert: vi.fn().mockResolvedValue({ error: { message: 'Merchants table constraint error' } }) };
+          }
+          return {};
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn().mockResolvedValue({
+              data: { user: { id: mockMerchantId } },
+              error: null,
+            }),
+          },
+        },
+      } as any;
+
+      await expect(seedStagingData(ctx, { requestsCount: 1 }, mockClient)).rejects.toThrow(
+        /\[E2E Seed Error\] Falló el upsert en merchants: Merchants table constraint error/i
+      );
+
+      // No debe haber intentado insertar delivery_requests
+      expect(ctx.createdRequestIds).toHaveLength(0);
+    });
+
+    it('M10: las variables del workflow e2e-staging.yml satisfacen serverEnvSchema; sin DNI_HMAC_SECRET o CRON_SECRET falla la carga del servidor', () => {
+      const workflowPath = path.resolve(process.cwd(), '.github/workflows/e2e-staging.yml');
+      const yamlContent = fs.readFileSync(workflowPath, 'utf8');
+
+      // Verificar que el workflow incluye explícitamente DNI_HMAC_SECRET y CRON_SECRET
+      expect(yamlContent).toMatch(/DNI_HMAC_SECRET:\s*\${{\s*secrets\.DNI_HMAC_SECRET\s*}}/);
+      expect(yamlContent).toMatch(/CRON_SECRET:\s*\${{\s*secrets\.CRON_SECRET\s*}}/);
+
+      // Simular el entorno cargado con los secrets del workflow (valores válidos para CI)
+      const simulatedWorkflowEnv: Record<string, string> = {
+        NODE_ENV: 'test',
+        SUPABASE_SERVICE_ROLE_KEY: 'mock_service_role_key_for_test',
+        DNI_HMAC_SECRET: 'min_16_characters_secret_key_123',
+        CRON_SECRET: 'mock_cron_secret',
+        NEXT_PUBLIC_APP_URL: 'https://cadeapp-staging.vercel.app',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: 'mock_anon_key',
+        E2E_TEST: 'true',
+      };
+
+      // Debe validar sin arrojar error usando la carga real de createServerEnv
+      expect(() => createServerEnv(simulatedWorkflowEnv)).not.toThrow();
+
+      // M10: Si falta DNI_HMAC_SECRET (estado anterior de e2e-staging.yml), falla
+      const missingDni = { ...simulatedWorkflowEnv, DNI_HMAC_SECRET: undefined };
+      expect(() => createServerEnv(missingDni)).toThrow(/DNI_HMAC_SECRET es obligatoria/i);
+
+      // M10: Si falta CRON_SECRET (estado anterior de e2e-staging.yml), falla
+      const missingCron = { ...simulatedWorkflowEnv, CRON_SECRET: undefined };
+      expect(() => createServerEnv(missingCron)).toThrow(/CRON_SECRET es obligatoria/i);
     });
   });
 });

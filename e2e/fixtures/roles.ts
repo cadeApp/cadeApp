@@ -23,11 +23,29 @@ export interface RoleFixtures {
 export const test = baseTest.extend<RoleFixtures>({
   stagingContext: async ({}, use) => {
     const context = createStagingSeedContext();
-    await seedStagingData(context, { requestsCount: 1 });
+    let seedOrTestError: unknown = null;
     try {
+      await seedStagingData(context, { requestsCount: 1 });
       await use(context);
+    } catch (err) {
+      seedOrTestError = err;
+      throw err;
     } finally {
-      await cleanupStagingData(context);
+      try {
+        await cleanupStagingData(context);
+      } catch (cleanupErr) {
+        if (seedOrTestError) {
+          const combined = new Error(
+            `[E2E Lifecycle Error] Falló la ejecución principal y el cleanup posterior.\n` +
+            `Error principal: ${seedOrTestError instanceof Error ? seedOrTestError.message : String(seedOrTestError)}\n` +
+            `Error de cleanup: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`
+          );
+          (combined as any).cause = seedOrTestError;
+          throw combined;
+        } else {
+          throw cleanupErr;
+        }
+      }
     }
   },
 

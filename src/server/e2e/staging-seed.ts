@@ -310,17 +310,23 @@ export async function seedStagingData(
     trackEntityForCleanup(context, 'user', createdUserId);
 
     // Asegurar filas en profiles y merchants (resiliente ante entornos sin trigger de auth)
-    await admin.from('profiles').upsert({
+    const { error: profileErr } = await admin.from('profiles').upsert({
       id: createdUserId,
       role: 'merchant',
       display_name: `E2E Merchant ${context.testRunId}`,
       phone: '+5491112345678',
     });
+    if (profileErr) {
+      throw new Error(`[E2E Seed Error] Falló el upsert en profiles: ${profileErr.message}`);
+    }
 
-    await admin.from('merchants').upsert({
+    const { error: merchantErr } = await admin.from('merchants').upsert({
       profile_id: createdUserId,
       business_name: `E2E Comercio ${context.testRunId}`,
     });
+    if (merchantErr) {
+      throw new Error(`[E2E Seed Error] Falló el upsert en merchants: ${merchantErr.message}`);
+    }
 
     merchantId = createdUserId;
   }
@@ -386,70 +392,109 @@ export async function cleanupStagingData(
     }
     const admin = client ?? createAdminClient();
     try {
-      await admin.from('delivery_requests').delete().in('id', context);
-    } catch {
-      // Tolerar fallo parcial
+      const { error } = await admin.from('delivery_requests').delete().in('id', context);
+      if (error) {
+        throw new Error(`Error en delete delivery_requests: ${error.message}`);
+      }
+    } catch (err: any) {
+      throw new Error(`[E2E Cleanup Error] Falló la limpieza directa: ${err?.message || String(err)}`);
     }
     return;
   }
 
   const admin = client ?? createAdminClient();
+  const cleanupErrors: Array<{ entity: string; ids: string[]; error: string }> = [];
 
   // 1. Limpieza de ofertas
   if (context.createdOfferIds.length > 0) {
+    const toDelete = [...context.createdOfferIds];
     try {
-      await admin.from('offers').delete().in('id', [...context.createdOfferIds]);
-    } catch {
-      // Tolerar fallo parcial
+      const { error } = await admin.from('offers').delete().in('id', toDelete);
+      if (error) {
+        cleanupErrors.push({ entity: 'offers', ids: toDelete, error: error.message });
+      } else {
+        context.createdOfferIds = context.createdOfferIds.filter((id) => !toDelete.includes(id));
+      }
+    } catch (err: any) {
+      cleanupErrors.push({ entity: 'offers', ids: toDelete, error: err?.message || String(err) });
     }
   }
 
   // 2. Limpieza de delivery_requests
   if (context.createdRequestIds.length > 0) {
+    const toDelete = [...context.createdRequestIds];
     try {
-      await admin.from('delivery_requests').delete().in('id', [...context.createdRequestIds]);
-    } catch {
-      // Tolerar fallo parcial
+      const { error } = await admin.from('delivery_requests').delete().in('id', toDelete);
+      if (error) {
+        cleanupErrors.push({ entity: 'delivery_requests', ids: toDelete, error: error.message });
+      } else {
+        context.createdRequestIds = context.createdRequestIds.filter((id) => !toDelete.includes(id));
+      }
+    } catch (err: any) {
+      cleanupErrors.push({ entity: 'delivery_requests', ids: toDelete, error: err?.message || String(err) });
     }
   }
 
   // 3. Limpieza de merchants y profiles
   if (context.createdUserIds.length > 0) {
+    const toDeleteUsers = [...context.createdUserIds];
     try {
-      await admin.from('merchants').delete().in('profile_id', [...context.createdUserIds]);
-    } catch {
-      // Tolerar fallo parcial
+      const { error: merchErr } = await admin.from('merchants').delete().in('profile_id', toDeleteUsers);
+      if (merchErr) {
+        cleanupErrors.push({ entity: 'merchants', ids: toDeleteUsers, error: merchErr.message });
+      }
+    } catch (err: any) {
+      cleanupErrors.push({ entity: 'merchants', ids: toDeleteUsers, error: err?.message || String(err) });
     }
+
     try {
-      await admin.from('profiles').delete().in('id', [...context.createdUserIds]);
-    } catch {
-      // Tolerar fallo parcial
+      const { error: profErr } = await admin.from('profiles').delete().in('id', toDeleteUsers);
+      if (profErr) {
+        cleanupErrors.push({ entity: 'profiles', ids: toDeleteUsers, error: profErr.message });
+      }
+    } catch (err: any) {
+      cleanupErrors.push({ entity: 'profiles', ids: toDeleteUsers, error: err?.message || String(err) });
     }
   }
 
   // 4. Limpieza de zonas transitorias creadas por la prueba
   if (context.createdZoneIds.length > 0) {
+    const toDeleteZones = [...context.createdZoneIds];
     try {
-      await admin.from('zones').delete().in('id', [...context.createdZoneIds]);
-    } catch {
-      // Tolerar fallo parcial
+      const { error: zoneErr } = await admin.from('zones').delete().in('id', toDeleteZones);
+      if (zoneErr) {
+        cleanupErrors.push({ entity: 'zones', ids: toDeleteZones, error: zoneErr.message });
+      } else {
+        context.createdZoneIds = context.createdZoneIds.filter((id) => !toDeleteZones.includes(id));
+      }
+    } catch (err: any) {
+      cleanupErrors.push({ entity: 'zones', ids: toDeleteZones, error: err?.message || String(err) });
     }
   }
 
   // 5. Limpieza de usuarios auth
   if (context.createdUserIds.length > 0) {
+    const remainingUsers: string[] = [];
     for (const userId of context.createdUserIds) {
       try {
-        await admin.auth.admin.deleteUser(userId);
-      } catch {
-        // Tolerar fallo individual
+        const { error: authErr } = await admin.auth.admin.deleteUser(userId);
+        if (authErr) {
+          cleanupErrors.push({ entity: 'auth.users', ids: [userId], error: authErr.message });
+          remainingUsers.push(userId);
+        }
+      } catch (err: any) {
+        cleanupErrors.push({ entity: 'auth.users', ids: [userId], error: err?.message || String(err) });
+        remainingUsers.push(userId);
       }
     }
+    context.createdUserIds = remainingUsers;
   }
 
-  // Vaciar listas tras limpieza
-  context.createdOfferIds.length = 0;
-  context.createdRequestIds.length = 0;
-  context.createdUserIds.length = 0;
-  context.createdZoneIds.length = 0;
+  // 6. Si hubo fallos, reportar error agregado sin perder los IDs que fallaron
+  if (cleanupErrors.length > 0) {
+    const summary = cleanupErrors
+      .map((e) => `${e.entity} [${e.ids.join(', ')}]: ${e.error}`)
+      .join('; ');
+    throw new Error(`[E2E Cleanup Error] Falló la limpieza de staging: ${summary}`);
+  }
 }

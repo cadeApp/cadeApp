@@ -27,6 +27,8 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: https://${{ vars.SUPABASE_PROJECT_REF }}.supabase.co
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      DNI_HMAC_SECRET: ${{ secrets.DNI_HMAC_SECRET }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
       E2E_TEST: 'true'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
