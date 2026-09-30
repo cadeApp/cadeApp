@@ -57,6 +57,16 @@ jobs:
           curl --fail --silent --show-error --retry 6 --retry-delay 10 --retry-all-errors \
             --max-time 15 "$APP_URL/api/health"
 
+
+  e2e-staging:
+    name: e2e-staging
+    needs: staging
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'staging'
+    uses: ./.github/workflows/e2e-staging.yml
+    with:
+      target_sha: ${{ github.event.workflow_run.head_sha }}
+    secrets: inherit
+
   production:
     name: deploy-production
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
