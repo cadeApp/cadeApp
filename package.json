@@ -18,7 +18,7 @@
     "format": "prettier --write \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
     "format:check": "prettier --check \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
     "db:types": "node tools/db-types.mjs",
-    "admin:mfa-enroll": "node --env-file-if-exists=.env.local tools/admin-mfa-enroll.mjs",
+    "admin:mfa-enroll": "node tools/admin-mfa-enroll.mjs",
     "test:db": "supabase test db"
   },
   "dependencies": {

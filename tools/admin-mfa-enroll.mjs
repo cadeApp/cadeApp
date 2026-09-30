@@ -7,38 +7,106 @@ import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 
 /**
- * T-317: enrola el primer factor TOTP de una cuenta admin. Lo corre el operador en su terminal, una sola vez
- * por cuenta (runbook `docs/runbooks/admin-bootstrap.md`). No usa la service role: entra como el propio admin
- * con la anon key. Nunca imprime ni guarda la contraseña ni el código.
+ * T-317: enrola el primer factor TOTP de una cuenta admin de `cadeapp-staging`. Lo corre el operador en su
+ * terminal, una sola vez por cuenta (runbook `docs/runbooks/admin-bootstrap.md`). No usa la service role: entra
+ * como el propio admin con la URL pública y la anon key. Nunca imprime ni guarda la contraseña, el código, los
+ * tokens de sesión ni el secreto TOTP; solo muestra la ruta de un QR temporal.
  */
 
+/** Error con un mensaje propio de la herramienta, seguro de mostrar al operador. */
+export class OperatorError extends Error {}
+
+export const QR_DATA_URL_PREFIX = 'data:image/svg+xml;utf-8,';
+
 /**
- * `mfa.enroll()` devuelve el QR como data URI de SVG (utf-8 o base64); también se acepta el SVG crudo.
+ * `mfa.enroll()` devuelve el QR como data URL utf-8 de un SVG. Cualquier otro formato falla cerrado.
  * @param {string} qrCode
+ * @returns {string} el XML del SVG
  */
 export function qrSvgFromDataUri(qrCode) {
-  if (!qrCode.startsWith('data:')) return qrCode;
-  const comma = qrCode.indexOf(',');
-  const header = qrCode.slice(0, comma);
-  const body = qrCode.slice(comma + 1);
-  return header.endsWith(';base64')
-    ? Buffer.from(body, 'base64').toString('utf8')
-    : decodeURIComponent(body);
+  if (typeof qrCode !== 'string' || !qrCode.startsWith(QR_DATA_URL_PREFIX)) {
+    throw new Error('QR_FORMAT');
+  }
+  return decodeURIComponent(qrCode.slice(QR_DATA_URL_PREFIX.length));
 }
 
 /**
- * @typedef {'SIGN_IN_FAILED' | 'NOT_ADMIN' | 'ALREADY_ENROLLED' | 'ENROLL_FAILED' | 'INVALID_CODE' | 'NOT_AAL2'} EnrollFailure
+ * Cliente sin sesión persistente ni refresco: la sesión vive solo en memoria mientras corre la herramienta.
+ * @template T
+ * @param {string} url
+ * @param {string} anonKey
+ * @param {(url: string, key: string, options: { auth: { persistSession: boolean, autoRefreshToken: boolean, detectSessionInUrl: boolean } }) => T} create
+ * @returns {T}
+ */
+export function createEnrollClient(url, anonKey, create) {
+  return create(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+}
+
+/**
+ * Lee un secreto de una TTY sin eco. Sin TTY interactiva falla cerrado, antes de consumir entrada.
+ * @param {{
+ *   input: { isTTY?: boolean, isRaw?: boolean, setRawMode?: (mode: boolean) => unknown, on(event: 'data', listener: (chunk: Buffer | string) => void): unknown, removeListener(event: 'data', listener: (chunk: Buffer | string) => void): unknown, resume?: () => unknown, pause?: () => unknown },
+ *   output: { write(text: string): unknown },
+ *   question: string,
+ * }} io
+ * @returns {Promise<string>}
+ */
+export async function readSecret({ input, output, question }) {
+  const setRawMode = input.setRawMode;
+  if (input.isTTY !== true || typeof setRawMode !== 'function') {
+    throw new OperatorError('Se necesita una terminal interactiva para pedir la contraseña.');
+  }
+  const wasRaw = input.isRaw === true;
+  /** @type {((chunk: Buffer | string) => void) | null} */
+  let onData = null;
+  output.write(question);
+  try {
+    setRawMode.call(input, true);
+    input.resume?.();
+    return await new Promise((resolve, reject) => {
+      let value = '';
+      onData = (chunk) => {
+        for (const char of String(chunk)) {
+          if (char === '\r' || char === '\n') {
+            resolve(value);
+            return;
+          }
+          if (char === '\u0003') {
+            reject(new OperatorError('Cancelado.'));
+            return;
+          }
+          if (char === '\u007f' || char === '\b') {
+            value = value.slice(0, -1);
+            continue;
+          }
+          value += char;
+        }
+      };
+      input.on('data', onData);
+    });
+  } finally {
+    if (onData) input.removeListener('data', onData);
+    setRawMode.call(input, wasRaw);
+    input.pause?.();
+    output.write('\n');
+  }
+}
+
+/**
+ * @typedef {'SIGN_IN_FAILED' | 'NOT_ADMIN' | 'FACTORS_UNAVAILABLE' | 'ALREADY_ENROLLED' | 'CLEANUP_FAILED' | 'ENROLL_FAILED' | 'QR_FORMAT' | 'INVALID_CODE' | 'NOT_AAL2'} EnrollFailure
  * @typedef {{ ok: true } | { ok: false, reason: EnrollFailure }} EnrollResult
  * @typedef {{ message: string } | null} ApiError
  * @typedef {{ id: string, factor_type: string, status: string }} Factor
  * @typedef {{
  *   auth: {
  *     signInWithPassword(credentials: { email: string, password: string }): Promise<{ data: { user: { id: string } | null } | null, error: ApiError }>,
- *     signOut(): Promise<unknown>,
+ *     signOut(options: { scope: 'local' }): Promise<unknown>,
  *     mfa: {
- *       listFactors(): Promise<{ data: { all: Factor[], totp: Factor[] } | null }>,
- *       unenroll(params: { factorId: string }): Promise<unknown>,
- *       enroll(params: { factorType: 'totp', friendlyName: string }): Promise<{ data: { id: string, totp: { qr_code: string, secret: string } } | null, error: ApiError }>,
+ *       listFactors(): Promise<{ data: { all: Factor[], totp: Factor[] } | null, error: ApiError }>,
+ *       unenroll(params: { factorId: string }): Promise<{ error: ApiError }>,
+ *       enroll(params: { factorType: 'totp' }): Promise<{ data: { id: string, totp: { qr_code: string } } | null, error: ApiError }>,
  *       challengeAndVerify(params: { factorId: string, code: string }): Promise<{ error: ApiError }>,
  *       getAuthenticatorAssuranceLevel(): Promise<{ data: { currentLevel: string | null } | null }>,
  *     },
@@ -53,7 +121,7 @@ export function qrSvgFromDataUri(qrCode) {
  *   prompt: (question: string) => Promise<string>,
  *   promptSecret: (question: string) => Promise<string>,
  *   print: (line: string) => void,
- *   writeQr: (qrCode: string) => Promise<string>,
+ *   writeQr: (svgXml: string) => Promise<string>,
  *   removeFile: (file: string) => Promise<void>,
  * }} deps
  * @returns {Promise<EnrollResult>}
@@ -84,31 +152,46 @@ export async function enrollAdminMfa({ client, prompt, promptSecret, print, writ
       return { ok: false, reason: 'NOT_ADMIN' };
     }
 
-    const { data: factors } = await client.auth.mfa.listFactors();
-    if ((factors?.totp ?? []).length > 0) {
+    const { data: factors, error: factorsError } = await client.auth.mfa.listFactors();
+    if (factorsError || !Array.isArray(factors?.all) || !Array.isArray(factors?.totp)) {
+      print('No se pudieron leer los factores MFA de la cuenta. No se enroló nada.');
+      return { ok: false, reason: 'FACTORS_UNAVAILABLE' };
+    }
+    if (factors.totp.length > 0) {
       print('La cuenta ya tiene un factor TOTP verificado. No se enrola otro.');
       return { ok: false, reason: 'ALREADY_ENROLLED' };
     }
-    const pending = (factors?.all ?? []).filter(
-      (/** @type {{ factor_type: string, status: string }} */ factor) =>
-        factor.factor_type === 'totp' && factor.status === 'unverified'
+    const pending = factors.all.filter(
+      (factor) => factor.factor_type === 'totp' && factor.status === 'unverified'
     );
     for (const factor of pending) {
-      await client.auth.mfa.unenroll({ factorId: factor.id });
+      const { error: unenrollError } = await client.auth.mfa.unenroll({ factorId: factor.id });
+      if (unenrollError) {
+        print(
+          'No se pudo borrar un factor TOTP sin verificar de un intento anterior. No se enroló nada.'
+        );
+        return { ok: false, reason: 'CLEANUP_FAILED' };
+      }
     }
 
     const { data: enrolled, error: enrollError } = await client.auth.mfa.enroll({
       factorType: 'totp',
-      friendlyName: 'cadeApp admin',
     });
     if (enrollError || !enrolled?.totp) {
       print('Supabase no pudo crear el factor TOTP.');
       return { ok: false, reason: 'ENROLL_FAILED' };
     }
 
-    qrFile = await writeQr(enrolled.totp.qr_code);
+    /** @type {string} */
+    let svgXml;
+    try {
+      svgXml = qrSvgFromDataUri(enrolled.totp.qr_code);
+    } catch {
+      print('Supabase devolvió el QR en un formato inesperado. No se escribió ningún archivo.');
+      return { ok: false, reason: 'QR_FORMAT' };
+    }
+    qrFile = await writeQr(svgXml);
     print(`Abrí este archivo y escanealo con tu app de autenticación: ${qrFile}`);
-    print(`O cargá la clave a mano: ${enrolled.totp.secret}`);
 
     const code = (await prompt('Código de 6 dígitos de la app: ')).trim();
     if (!/^\d{6}$/.test(code)) {
@@ -134,7 +217,7 @@ export async function enrollAdminMfa({ client, prompt, promptSecret, print, writ
     return { ok: true };
   } finally {
     if (qrFile) await removeFile(qrFile);
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: 'local' });
   }
 }
 
@@ -154,59 +237,50 @@ function prompt(question) {
   });
 }
 
-/** @param {string} question */
-function promptSecret(question) {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: true,
-  });
-  process.stdout.write(question);
-  // Silencia el eco de lo que se tipea; readline no expone una opción pública para esto.
-  Object.assign(rl, { _writeToOutput: () => {} });
-  return new Promise((resolve) => {
-    rl.question('', (answer) => {
-      rl.close();
-      process.stdout.write('\n');
-      resolve(answer);
-    });
-  });
-}
-
 async function main() {
   const env = envSchema.safeParse(process.env);
   if (!env.success) {
-    console.error('Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY.');
+    console.error('Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en el entorno.');
     process.exitCode = 1;
     return;
   }
   console.log(`Proyecto: ${new URL(env.data.NEXT_PUBLIC_SUPABASE_URL).host}`);
-  const client = createClient(
+  const client = createEnrollClient(
     env.data.NEXT_PUBLIC_SUPABASE_URL,
     env.data.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    createClient
   );
   const dir = await mkdtemp(path.join(tmpdir(), 'cadeapp-mfa-'));
-  const result = await enrollAdminMfa({
-    client,
-    prompt,
-    promptSecret,
-    print: (line) => console.log(line),
-    writeQr: async (qrCode) => {
-      const file = path.join(dir, 'qr.svg');
-      await writeFile(file, qrSvgFromDataUri(qrCode), { mode: 0o600 });
-      return file;
-    },
-    removeFile: async () => {
-      await rm(dir, { recursive: true, force: true });
-    },
-  });
-  if (!result.ok) process.exitCode = 1;
+  try {
+    const result = await enrollAdminMfa({
+      client,
+      prompt,
+      promptSecret: (question) =>
+        readSecret({ input: process.stdin, output: process.stdout, question }),
+      print: (line) => console.log(line),
+      writeQr: async (svgXml) => {
+        const file = path.join(dir, 'qr.svg');
+        await writeFile(file, svgXml, { mode: 0o600 });
+        return file;
+      },
+      removeFile: async (file) => {
+        await rm(file, { force: true });
+      },
+    });
+    if (!result.ok) process.exitCode = 1;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   main().catch((error) => {
-    console.error(error instanceof Error ? error.message : 'Error inesperado.');
+    // Los errores de Supabase o de la red no se imprimen: pueden traer datos del servidor.
+    console.error(
+      error instanceof OperatorError
+        ? error.message
+        : 'Error inesperado. No se completó el enrolamiento.'
+    );
     process.exitCode = 1;
   });
 }
