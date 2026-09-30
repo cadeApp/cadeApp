@@ -26,3 +26,10 @@ H03–H07 nacen en parte de una evolución de la ficha posterior al fork de la r
 - **H11:** refuerza `P08`: probar Enter/Ctrl+C no equivale a probar “restaura siempre”; un stream también termina por `error`/`end`.
 - **H12:** refuerza `P08`: validar el envelope (`data:image/svg+xml`) no verifica el contenido que el control promete (`<svg…>`).
 - No se agrega numeración AG nueva; los tres casos caben en patrones existentes.
+
+## Ronda 3
+
+- H10–H12 quedaron cerrados con reproducción independiente y mutación inversa de cada propiedad.
+- La regla de `verificado_en_sha` fue relevante: aunque H01–H09 ya estaban cerrados, el archivo volvió a cambiar y hubo que revalidarlos sobre el nuevo SHA antes de afirmar cierre total.
+- `approval-policy` distingue correctamente revisión técnica de la evidencia operativa: el único rojo restante exige el informe en el cuerpo de la PR; la prueba real de staging sigue siendo una obligación manual separada.
+- No se agrega numeración AG nueva.
