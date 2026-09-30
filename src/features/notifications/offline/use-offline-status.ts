@@ -9,12 +9,9 @@ const announceOnline = () => {
 };
 
 export function useOfflineStatus() {
-  const [isOffline, setIsOffline] = useState(() => {
-    if (typeof navigator !== 'undefined') {
-      return !navigator.onLine;
-    }
-    return false;
-  });
+  // Arranca online en servidor y cliente: Node 22 expone `navigator` sin `onLine`, y leerlo en el render
+  // hacía que el HTML del servidor saliera con «Sin conexión». El valor real se lee al montar.
+  const [isOffline, setIsOffline] = useState(false);
 
   const handleOnline = useCallback(() => {
     setIsOffline(false);
@@ -41,6 +38,8 @@ export function useOfflineStatus() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    setIsOffline(navigator.onLine === false);
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
