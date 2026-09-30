@@ -9,16 +9,21 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, refresh }),
 }));
 // El componente no importa código de servidor: se mockean los clientes que usa el `registerAction` real.
-const { createClient, createAdminClient, rpc } = vi.hoisted(() => ({
+const { createClient, createAdminClient, rpc, signOut } = vi.hoisted(() => ({
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
   rpc: vi.fn(),
+  signOut: vi.fn(),
 }));
 vi.mock('@/server/supabase/server', () => ({ createClient }));
 vi.mock('@/server/supabase/admin', () => ({ createAdminClient }));
 
+// Con Confirm Email OFF, Supabase autentica el alta nueva: la acción tiene que terminar sin sesión.
 const NEW_USER = {
-  data: { user: { id: 'usr-new-real', identities: [{ id: 'identity-1' }] }, session: null },
+  data: {
+    user: { id: 'usr-new-real', identities: [{ id: 'identity-1' }] },
+    session: { access_token: 'fresh-access', refresh_token: 'fresh-refresh' },
+  },
   error: null,
 };
 const EXISTING_ACCOUNT_SIGNALS = [
@@ -48,8 +53,9 @@ async function observeSubmit(signUpResult: { data: unknown; error: unknown }) {
   push.mockClear();
   refresh.mockClear();
   rpc.mockClear();
+  signOut.mockClear();
   createClient.mockResolvedValue({
-    auth: { signUp: vi.fn().mockResolvedValue(signUpResult) },
+    auth: { signUp: vi.fn().mockResolvedValue(signUpResult), signOut },
   });
 
   const { container, unmount } = render(<RegisterForm />);
@@ -72,29 +78,32 @@ async function observeSubmit(signUpResult: { data: unknown; error: unknown }) {
     text: container.textContent,
   };
   const activations = rpc.mock.calls.length;
+  const signOutCalls = signOut.mock.calls;
   unmount();
-  return { observed, activations };
+  return { observed, activations, signOutCalls };
 }
 
 describe('T-318: el formulario no permite distinguir un email ya registrado', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     rpc.mockResolvedValue({ data: { success: true }, error: null });
+    signOut.mockResolvedValue({ error: null });
     createAdminClient.mockReturnValue({
       rpc,
       auth: { admin: { deleteUser: vi.fn().mockResolvedValue({ error: null }) } },
     });
   });
 
-  it('el alta nueva navega al onboarding sin mostrar error', async () => {
+  it('el alta nueva navega al onboarding sin mostrar error y cierra la sesión local', async () => {
     const fresh = await observeSubmit(NEW_USER);
     expect(fresh.observed.navigation).toStrictEqual([['/merchant/onboarding']]);
     expect(fresh.observed.alert).toBeNull();
     expect(fresh.activations).toBe(1);
+    expect(fresh.signOutCalls).toStrictEqual([[{ scope: 'local' }]]);
   });
 
   it.each(EXISTING_ACCOUNT_SIGNALS)(
-    '%s → misma navegación, mismo texto y sin activar consentimientos',
+    '%s → misma navegación, mismo texto, sin activar consentimientos ni signOut',
     async (_signal, signUpResult) => {
       const fresh = await observeSubmit(NEW_USER);
       const existing = await observeSubmit(signUpResult);
@@ -103,6 +112,7 @@ describe('T-318: el formulario no permite distinguir un email ya registrado', ()
       expect(existing.observed.text).not.toMatch(ENUMERATING_TEXT);
       expect(existing.observed.text).not.toMatch(/sanitized-id|usr-new-real/);
       expect(existing.activations).toBe(0);
+      expect(existing.signOutCalls).toStrictEqual([]);
     }
   );
 });

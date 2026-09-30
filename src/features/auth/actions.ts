@@ -164,6 +164,16 @@ export async function registerAction(
     return err('INTERNAL_ERROR');
   }
 
+  // Con Confirm Email OFF, Supabase autentica el alta nueva. La acción termina sin sesión para que el
+  // resultado no dependa de si el email era nuevo o ya existía. `local` solo cierra esta sesión, no las del
+  // usuario en otros dispositivos.
+  if (data.session) {
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+    if (signOutError) {
+      return err('INTERNAL_ERROR');
+    }
+  }
+
   // Con confirmación de email activa, Supabase responde a un email ya registrado con un usuario sanitizado
   // sin identidades, para no revelar que la cuenta existe. No se activan consentimientos sobre ese id y se
   // responde igual que ante un alta nueva.
