@@ -8,10 +8,9 @@ test.describe('Spec de humo de staging (T-301)', () => {
   }) => {
     // 1. Verificar endpoint de salud de la plataforma
     const healthResponse = await page.goto('/api/health');
-    if (healthResponse && typeof (healthResponse as { status?: () => number }).status === 'function') {
-      const status = (healthResponse as { status(): number }).status();
-      expect(status).toBe(200);
-    }
+    expect(healthResponse).not.toBeNull();
+    expect(healthResponse?.ok()).toBe(true);
+    expect(healthResponse?.status()).toBe(200);
 
     // 2. Navegar a la pantalla de acceso
     await loginPage.navigate();
@@ -20,7 +19,8 @@ test.describe('Spec de humo de staging (T-301)', () => {
     await waitForNoSkeletons(page);
 
     // 4. Validar controles esenciales por rol accesible
-    await expect(loginPage.submitButton).toBeVisible();
     await expect(loginPage.phoneInput).toBeVisible();
+    await expect(loginPage.passwordInput).toBeVisible();
+    await expect(loginPage.submitButton).toBeVisible();
   });
 });

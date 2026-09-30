@@ -1,7 +1,16 @@
-import type { PlaywrightTestConfig } from '@playwright/test';
+import { defineConfig } from '@playwright/test';
 
-function defineConfig(config: PlaywrightTestConfig): PlaywrightTestConfig {
-  return config;
+// En el runner de Playwright (Node.js fuera de Next.js), interceptar server-only
+try {
+  const resolved = require.resolve('server-only');
+  require.cache[resolved] = {
+    id: resolved,
+    filename: resolved,
+    loaded: true,
+    exports: {},
+  } as any;
+} catch {
+  // No-op si no se resuelve vía require
 }
 
 export default defineConfig({
@@ -20,7 +29,9 @@ export default defineConfig({
   ],
   use: {
     baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'https://cadeapp-staging.vercel.app',
-    reducedMotion: 'reduce',
+    contextOptions: {
+      reducedMotion: 'reduce',
+    },
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',

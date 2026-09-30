@@ -1,4 +1,4 @@
-import { test as baseTest, expect, type Page } from '@playwright/test';
+import { test as baseTest, expect } from '@playwright/test';
 import { MerchantPage, CourierPage, AdminPage, LoginPage } from '../pages';
 import {
   createStagingSeedContext,
@@ -19,28 +19,28 @@ export interface RoleFixtures {
  * Garantiza que cada prueba cuente con páginas tipadas y ejecute limpieza automática en el teardown.
  */
 export const test = baseTest.extend<RoleFixtures>({
-  stagingContext: async ({}: Record<string, unknown>, use: (ctx: StagingSeedContext) => Promise<void>) => {
+  stagingContext: async ({}, use) => {
     const context = createStagingSeedContext();
     await use(context);
     await cleanupStagingData(context);
   },
 
-  loginPage: async ({ page }: { page: Page }, use: (p: LoginPage) => Promise<void>) => {
+  loginPage: async ({ page }, use) => {
     const loginPage = new LoginPage(page);
     await use(loginPage);
   },
 
-  merchantPage: async ({ page }: { page: Page }, use: (p: MerchantPage) => Promise<void>) => {
+  merchantPage: async ({ page }, use) => {
     const merchantPage = new MerchantPage(page);
     await use(merchantPage);
   },
 
-  courierPage: async ({ page }: { page: Page }, use: (p: CourierPage) => Promise<void>) => {
+  courierPage: async ({ page }, use) => {
     const courierPage = new CourierPage(page);
     await use(courierPage);
   },
 
-  adminPage: async ({ page }: { page: Page }, use: (p: AdminPage) => Promise<void>) => {
+  adminPage: async ({ page }, use) => {
     const adminPage = new AdminPage(page);
     await use(adminPage);
   },

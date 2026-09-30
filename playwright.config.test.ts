@@ -11,6 +11,13 @@ function readFile(relativePath: string): string {
   return fs.readFileSync(fullPath, 'utf8');
 }
 
+// Helper para eliminar comentarios de código JS/TS
+function stripComments(code: string): string {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+}
+
 // --------------------------------------------------------------------------
 // 1. Configuración de Playwright (playwright.config.ts)
 // --------------------------------------------------------------------------
@@ -20,8 +27,10 @@ test('DoD: playwright.config.ts define reducedMotion: "reduce"', async () => {
   const configModule = await import(pathToFileURL(configPath).href);
   const config = configModule.default;
   assert.ok(config, 'playwright.config.ts debe exportar una configuración por defecto.');
+  const reducedMotionSetting =
+    config.use?.contextOptions?.reducedMotion ?? config.use?.reducedMotion;
   assert.equal(
-    config.use?.reducedMotion,
+    reducedMotionSetting,
     'reduce',
     'La configuración debe fijar reducedMotion: "reduce" según el objetivo de T-301.'
   );
@@ -81,7 +90,7 @@ test('DoD: .github/workflows/e2e-staging.yml existe y previene superposición de
   );
 });
 
-test('DoD: e2e-staging.yml se ejecuta tras deploy en staging y corre el spec de humo', () => {
+test('DoD: e2e-staging.yml corre tras deploy exitoso en staging, prueba el SHA exacto y ejecuta Playwright real', () => {
   const yaml = readFile('.github/workflows/e2e-staging.yml');
   assert.match(
     yaml,
@@ -89,13 +98,55 @@ test('DoD: e2e-staging.yml se ejecuta tras deploy en staging y corre el spec de 
     'El workflow debe dispararse tras workflow_run (deploy a staging).'
   );
   assert.match(yaml, /workflows:\s*\[deploy\]/, 'Debe observar la finalización de deploy.');
+
+  // H03: checkout explícito de head_sha y persist-credentials: false
   assert.match(
     yaml,
-    /smoke\.spec\.ts|playwright test/,
-    'El workflow debe ejecutar el spec de humo en staging.'
+    /ref:\s*\${{\s*github\.event\.workflow_run\.head_sha\s*}}/,
+    'El checkout debe fijar explícitamente ref: ${{ github.event.workflow_run.head_sha }} (H03).'
   );
+  assert.match(
+    yaml,
+    /persist-credentials:\s*false/,
+    'El checkout debe mantener persist-credentials: false.'
+  );
+
+  // H03: condición estricta de deploy exitoso en staging
+  assert.match(
+    yaml,
+    /github\.event\.workflow_run\.conclusion\s*==\s*['"]success['"]/,
+    'E2E debe continuar únicamente cuando el deployment previo haya finalizado con éxito.'
+  );
+  assert.match(
+    yaml,
+    /github\.event\.workflow_run\.head_branch\s*==\s*['"]staging['"]/,
+    'E2E debe ejecutarse exclusivamente para el branch staging.'
+  );
+
+  // H01: instalación y ejecución mediante pnpm exec playwright (no dlx, no ambient)
+  assert.match(
+    yaml,
+    /pnpm\s+exec\s+playwright\s+install\s+--with-deps\s+chromium/,
+    'Debe instalar el navegador chromium con pnpm exec playwright install.'
+  );
+
+  // H04 (M1): Verificación estricta de ejecución de Playwright que rechaza falsos positivos de echo
+  const lines = yaml.split('\n');
+  const runLines = lines
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('run:'));
+
+  const playwrightExecutionStep = runLines.find(
+    (l) => /pnpm\s+exec\s+playwright\s+test/.test(l) && !/^\s*run:\s*echo\b/.test(l)
+  );
+
+  assert.ok(
+    playwrightExecutionStep,
+    'El workflow debe ejecutar realmente pnpm exec playwright test (rechaza mutación M1 con sólo echo).'
+  );
+
   // Regla 00: Actions fijadas por SHA completo de 40 caracteres
-  const actionLines = yaml.split('\n').filter((l) => l.trim().startsWith('uses:'));
+  const actionLines = lines.filter((l) => l.trim().startsWith('uses:'));
   for (const line of actionLines) {
     if (!line.includes('./')) {
       assert.match(
@@ -130,9 +181,40 @@ test('DoD: un helper espera a que desaparezcan los skeletons sin tiempos fijos',
 });
 
 // --------------------------------------------------------------------------
-// 4. Page Objects y Fixtures por rol
+// 4. Page Objects y Fixtures por rol con selectores accesibles
 // --------------------------------------------------------------------------
-test('DoD: Page objects implementados con selectores accesibles por rol (e2e/pages)', () => {
+test('DoD & H06: Page objects implementados con selectores accesibles por rol (e2e/pages)', () => {
+  const pageFiles = [
+    'e2e/pages/login.page.ts',
+    'e2e/pages/merchant.page.ts',
+    'e2e/pages/courier.page.ts',
+    'e2e/pages/admin.page.ts',
+  ];
+
+  for (const file of pageFiles) {
+    const code = readFile(file);
+    const codeNoComments = stripComments(code);
+
+    // Debe contener selectores accesibles
+    assert.match(
+      codeNoComments,
+      /getByRole|getByLabel|getByPlaceholder|getByText|getByTestId/,
+      `${file} debe usar selectores accesibles (getByRole, getByLabel, etc.).`
+    );
+
+    // H04 (M4) & H06: Rechazar selectores CSS frágiles o XPath en Page Objects
+    assert.doesNotMatch(
+      codeNoComments,
+      /this\.page\.locator\(\s*['"](\.[a-zA-Z0-9_-]+|#[a-zA-Z0-9_-]+|\/\/)/,
+      `${file} no debe usar selectores CSS frágiles ni XPath (rechaza mutación M4).`
+    );
+    assert.doesNotMatch(
+      codeNoComments,
+      /:nth-child|div\s*>\s*div|span\s*>\s*span/,
+      `${file} no debe encadenar selectores estructurales frágiles.`
+    );
+  }
+
   const basePageCode = readFile('e2e/pages/base.page.ts');
   assert.match(basePageCode, /class BasePage/, 'Debe exportar BasePage.');
   assert.match(
@@ -140,26 +222,9 @@ test('DoD: Page objects implementados con selectores accesibles por rol (e2e/pag
     /waitForNoSkeletons/,
     'BasePage debe integrar el helper de espera de skeletons.'
   );
-
-  const loginPageCode = readFile('e2e/pages/login.page.ts');
-  assert.match(loginPageCode, /class LoginPage/, 'Debe exportar LoginPage.');
-  assert.match(
-    loginPageCode,
-    /getByRole|getByLabel|getByText/,
-    'LoginPage debe utilizar selectores accesibles por rol, label o texto.'
-  );
-
-  const merchantPageCode = readFile('e2e/pages/merchant.page.ts');
-  assert.match(merchantPageCode, /class MerchantPage/, 'Debe exportar MerchantPage.');
-
-  const courierPageCode = readFile('e2e/pages/courier.page.ts');
-  assert.match(courierPageCode, /class CourierPage/, 'Debe exportar CourierPage.');
-
-  const adminPageCode = readFile('e2e/pages/admin.page.ts');
-  assert.match(adminPageCode, /class AdminPage/, 'Debe exportar AdminPage.');
 });
 
-test('DoD: Fixtures tipadas por rol y utilidades de seed/limpieza en staging (e2e/fixtures)', () => {
+test('DoD & H02: Fixtures tipadas por rol y utilidades de seed/limpieza real en staging', () => {
   const rolesCode = readFile('e2e/fixtures/roles.ts');
   assert.match(
     rolesCode,
@@ -167,23 +232,78 @@ test('DoD: Fixtures tipadas por rol y utilidades de seed/limpieza en staging (e2
     'Debe exportar fixtures tipadas para merchant, courier y admin.'
   );
 
-  const seedCode = readFile('e2e/fixtures/staging-seed.ts');
+  const stagingSeedFixtures = readFile('e2e/fixtures/staging-seed.ts');
   assert.match(
-    seedCode,
-    /seedStagingData|cleanupStagingData/,
-    'Debe proveer utilidades para seed y limpieza de datos en staging.'
+    stagingSeedFixtures,
+    /@\/server\/e2e\/staging-seed/,
+    'e2e/fixtures/staging-seed.ts debe delegar a la capa server-side src/server/e2e/staging-seed.ts.'
+  );
+
+  const serverSeedCode = readFile('src/server/e2e/staging-seed.ts');
+  const strippedServerCode = stripComments(serverSeedCode);
+
+  // H02: import 'server-only' y createAdminClient
+  assert.match(
+    serverSeedCode,
+    /import\s+['"]server-only['"]/,
+    'src/server/e2e/staging-seed.ts debe comenzar con import "server-only".'
+  );
+  assert.match(
+    serverSeedCode,
+    /createAdminClient/,
+    'src/server/e2e/staging-seed.ts debe reutilizar createAdminClient().'
+  );
+
+  // H02 & H04 (M2): seed y cleanup reales, no stubs vacíos
+  assert.match(
+    strippedServerCode,
+    /\.from\(['"]delivery_requests['"]\)/,
+    'seedStagingData debe interactuar realmente con la tabla delivery_requests (rechaza mutación M2).'
+  );
+  assert.match(
+    strippedServerCode,
+    /\.delete\(\)/,
+    'cleanupStagingData debe ejecutar delete() real para la limpieza (rechaza mutación M2).'
+  );
+
+  // H02: Protección Fail-Closed
+  assert.match(
+    strippedServerCode,
+    /assertAllowedE2EEnvironment/,
+    'src/server/e2e/staging-seed.ts debe validar assertAllowedE2EEnvironment() antes de operar.'
   );
 });
 
 // --------------------------------------------------------------------------
 // 5. Spec de humo para CI (e2e/specs/smoke.spec.ts)
 // --------------------------------------------------------------------------
-test('DoD: spec de humo implementado para verificar carga y salud sin skeletons', () => {
+test('DoD, H04 (M3) & H05: spec de humo implementado con ejecución Playwright y assertions reales', () => {
   const smokeCode = readFile('e2e/specs/smoke.spec.ts');
-  assert.match(smokeCode, /test\(/, 'smoke.spec.ts debe contener tests de Playwright.');
+  const codeWithoutComments = stripComments(smokeCode);
+
   assert.match(
     smokeCode,
-    /waitForNoSkeletons/,
-    'El spec de humo debe utilizar el helper de skeletons en lugar de sleeps fijos.'
+    /test\.describe|test\(/,
+    'smoke.spec.ts debe contener tests de Playwright.'
+  );
+
+  // H04 (M3) & H05: waitForNoSkeletons debe ser una llamada real, no estar sólo en comentarios
+  assert.match(
+    codeWithoutComments,
+    /waitForNoSkeletons\s*\(/,
+    'smoke.spec.ts debe invocar funcionalmente waitForNoSkeletons() (rechaza mutación M3 con comentario muerto).'
+  );
+
+  // H05: Navegación real y assertions significativas
+  assert.match(
+    codeWithoutComments,
+    /page\.goto\s*\(|loginPage\.navigate\s*\(/,
+    'smoke.spec.ts debe realizar navegación real en Playwright.'
+  );
+
+  assert.match(
+    codeWithoutComments,
+    /expect\s*\([^)]+\)\.(toBeVisible|toBe|toEqual|toBeOK)\s*\(/,
+    'smoke.spec.ts debe incluir assertions significativas sobre el estado de la aplicación.'
   );
 });
