@@ -90,20 +90,30 @@ test('DoD: .github/workflows/e2e-staging.yml existe y previene superposición de
   );
 });
 
-test('DoD: e2e-staging.yml corre tras deploy exitoso en staging, prueba el SHA exacto y ejecuta Playwright real', () => {
+test('DoD: deploy-staging invoca e2e-staging reutilizable con el SHA exacto desplegado', () => {
   const yaml = readFile('.github/workflows/e2e-staging.yml');
+  const deployYaml = readFile('.github/workflows/deploy.yml');
+
   assert.match(
+    yaml,
+    /workflow_call:/,
+    'e2e-staging debe ser un workflow reutilizable llamado por deploy.'
+  );
+  assert.match(
+    yaml,
+    /target_sha:[\s\S]*required:\s*true[\s\S]*type:\s*string/,
+    'El workflow reutilizable debe exigir target_sha como input.'
+  );
+  assert.doesNotMatch(
     yaml,
     /workflow_run:/,
-    'El workflow debe dispararse tras workflow_run (deploy a staging).'
+    'e2e-staging no debe encadenar un segundo workflow_run: ese run usa la rama por defecto y pierde el branch/SHA original.'
   );
-  assert.match(yaml, /workflows:\s*\[deploy\]/, 'Debe observar la finalización de deploy.');
 
-  // H03: checkout explícito de head_sha y persist-credentials: false
   assert.match(
     yaml,
-    /ref:\s*\${{\s*github\.event\.workflow_run\.head_sha\s*}}/,
-    'El checkout debe fijar explícitamente ref: ${{ github.event.workflow_run.head_sha }} (H03).'
+    /ref:\s*\$\{\{\s*inputs\.target_sha\s*\}\}/,
+    'El checkout debe fijar explícitamente el SHA recibido desde deploy.'
   );
   assert.match(
     yaml,
@@ -111,41 +121,42 @@ test('DoD: e2e-staging.yml corre tras deploy exitoso en staging, prueba el SHA e
     'El checkout debe mantener persist-credentials: false.'
   );
 
-  // H03: condición estricta de deploy exitoso en staging
+  const deployE2E = deployYaml.slice(deployYaml.indexOf('\n  e2e-staging:\n'));
+  assert.match(deployE2E, /needs:\s*staging/, 'E2E debe esperar a deploy-staging.');
   assert.match(
-    yaml,
-    /github\.event\.workflow_run\.conclusion\s*==\s*['"]success['"]/,
-    'E2E debe continuar únicamente cuando el deployment previo haya finalizado con éxito.'
+    deployE2E,
+    /uses:\s*\.\/\.github\/workflows\/e2e-staging\.yml/,
+    'deploy debe invocar el workflow reutilizable e2e-staging.yml.'
   );
   assert.match(
-    yaml,
+    deployE2E,
+    /target_sha:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha\s*\}\}/,
+    'deploy debe propagar al E2E el SHA original que recibió de migrate.'
+  );
+  assert.match(
+    deployE2E,
     /github\.event\.workflow_run\.head_branch\s*==\s*['"]staging['"]/,
-    'E2E debe ejecutarse exclusivamente para el branch staging.'
+    'La llamada E2E debe limitarse al flujo de staging.'
   );
 
-  // H01: instalación y ejecución mediante pnpm exec playwright (no dlx, no ambient)
   assert.match(
     yaml,
     /pnpm\s+exec\s+playwright\s+install\s+--with-deps\s+chromium/,
-    'Debe instalar el navegador chromium con pnpm exec playwright install.'
+    'Debe instalar Chromium mediante el Playwright instalado en el repo.'
   );
 
-  // H04 (M1): Verificación estricta de ejecución de Playwright que rechaza falsos positivos de echo
   const lines = yaml.split('\n');
   const runLines = lines
     .map((l) => l.trim())
     .filter((l) => l.startsWith('run:'));
-
   const playwrightExecutionStep = runLines.find(
     (l) => /pnpm\s+exec\s+playwright\s+test/.test(l) && !/^\s*run:\s*echo\b/.test(l)
   );
-
   assert.ok(
     playwrightExecutionStep,
-    'El workflow debe ejecutar realmente pnpm exec playwright test (rechaza mutación M1 con sólo echo).'
+    'El workflow debe ejecutar realmente pnpm exec playwright test.'
   );
 
-  // Regla 00: Actions fijadas por SHA completo de 40 caracteres
   const actionLines = lines.filter((l) => l.trim().startsWith('uses:'));
   for (const line of actionLines) {
     if (!line.includes('./')) {
@@ -183,6 +194,18 @@ test('DoD: un helper espera a que desaparezcan los skeletons sin tiempos fijos',
 // --------------------------------------------------------------------------
 // 4. Page Objects y Fixtures por rol con selectores accesibles
 // --------------------------------------------------------------------------
+test('H19: LoginPage refleja el contrato real email + contraseña y no reintroduce phoneInput', () => {
+  const code = readFile('e2e/pages/login.page.ts');
+  const stripped = stripComments(code);
+  assert.match(stripped, /get\s+emailInput\(\):\s*Locator/);
+  assert.match(stripped, /getByLabel\(\/\^email\$\/i\)/);
+  assert.doesNotMatch(stripped, /phoneInput|teléfono|celular|número de teléfono/i);
+
+  const smoke = stripComments(readFile('e2e/specs/smoke.spec.ts'));
+  assert.match(smoke, /loginPage\.emailInput/);
+  assert.doesNotMatch(smoke, /loginPage\.phoneInput/);
+});
+
 test('DoD & H06: Page objects implementados con selectores accesibles por rol (e2e/pages)', () => {
   const pageFiles = [
     'e2e/pages/login.page.ts',
