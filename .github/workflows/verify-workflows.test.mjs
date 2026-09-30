@@ -655,3 +655,23 @@ test('board-sync automatically reassigns Lautaro073 tasks and unassigned tasks t
 
 
 
+
+
+test('deploy-staging calls reusable E2E with the exact migrated SHA after deploy succeeds', () => {
+  const deploy = workflow('deploy.yml');
+  const e2e = workflow('e2e-staging.yml');
+  const e2eJob = job(deploy, 'e2e-staging');
+
+  assert.match(e2e, /workflow_call:/, 'e2e-staging must be reusable instead of chaining workflow_run');
+  assert.doesNotMatch(e2e, /workflow_run:/, 'a second workflow_run loses the original staging branch/SHA');
+  assert.match(e2e, /ref:\s*\$\{\{\s*inputs\.target_sha\s*\}\}/, 'E2E checks out the propagated staging SHA');
+
+  assert.match(e2eJob, /needs:\s*staging/, 'E2E must wait for deploy-staging');
+  assert.match(e2eJob, /uses:\s*\.\/\.github\/workflows\/e2e-staging\.yml/, 'deploy calls reusable E2E');
+  assert.match(
+    e2eJob,
+    /target_sha:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha\s*\}\}/,
+    'deploy propagates the exact SHA that migrate ran on'
+  );
+  assert.match(e2eJob, /head_branch == 'staging'/, 'E2E call is staging-only');
+});
