@@ -136,3 +136,56 @@ git diff origin/develop -- docs/tasks/T-317.md
 git diff --name-only origin/develop...HEAD
 git status --short
 ```
+
+# Ronda 3 — SHA `6cfa41e949b3ac81c17f4a3f6b545de8b27a10f1`
+
+## Target y alcance
+
+- `compare develop...head`: `behind_by=0`.
+- `docs/tasks/T-317.md`: mismo blob SHA `2e1f5d68d2d6b33eb474d84bcfede5cd2cec1951` en develop y head.
+- Desde `f6de2d5` solo cambiaron `tools/admin-mfa-enroll.mjs`, `tools/admin-mfa-enroll.test.ts` y `docs/tasks/log/T-317.md`.
+
+## Revalidación H01–H12
+
+Harness independiente sobre las funciones exactas del SHA:
+
+- launcher exacto: `node tools/admin-mfa-enroll.mjs`;
+- flujo feliz: `ok:true`;
+- salida sin sentinelas de password/code/access/refresh/TOTP/otpauth;
+- writer: `<svg></svg>`;
+- raw SVG/base64: rechazados;
+- no-TTY: `OperatorError`;
+- Ctrl+C: `raw=false`, listeners data/error/end = 0;
+- client auth flags: `false/false/false`;
+- listFactors error: `FACTORS_UNAVAILABLE`, sin enroll;
+- unenroll error: `CLEANUP_FAILED`, sin enroll;
+- throw post-QR: QR eliminado + signOut local;
+- removeFile throw: signOut local igualmente llamado;
+- stdin error/end: `OperatorError`, raw restaurado, listeners 0;
+- body `not-svg`: `QR_FORMAT`, sin writer.
+
+## Mutaciones propias
+
+Control: H10=true, H11=true, H12=true.
+
+- H10 — reemplazar `try { remove } finally { signOut }` por dos awaits secuenciales: H10=false.
+- H11 — quitar handlers/listener cleanup de `error/end`: H11=false.
+- H12 — quitar `svgXml.startsWith('<svg')`: H12=false.
+
+Las otras propiedades permanecieron true en cada mutación.
+
+## CI exact-head
+
+`bundle-budget=success, db-tests=success, audit=success, typecheck=success, lint=success, build=success, unit=success, approval-policy=failure, Supabase Preview=skipped`
+
+Log de `unit`:
+- `tools/admin-mfa-enroll.test.ts (30 tests)` ✅
+- `Test Files 104 passed (104)`
+- `Tests 1412 passed (1412)`
+- `verify-workflows`: 29 tests
+- `verify-adr`: 6 tests
+
+Log de `approval-policy`:
+`Falta el informe completo de revisar-pr sin bloqueantes.`
+
+El workflow `.github/workflows/approval-policy.mjs` exige que la sección `### Informe de revisión de agy` del **cuerpo del PR** contenga el informe completo. Un comentario no satisface esa regla.
