@@ -7,3 +7,8 @@
 - **La PR documental separada fue la decisión correcta.** El alcance propio quedó en dos archivos y #142 puede esperar a que la tarea sea oficial en develop.
 
 No se propone todavía una nueva regla AG: la anti-enumeración ya es una decisión explícita y el problema está en completar correctamente su DoD.
+
+## Ronda 2
+
+- H02 confirma que la protección anti-enumeración debe especificarse por propiedad observable completa, no por códigos de error aislados.
+- H01 muestra un riesgo operativo de ramas documentales cortas en un develop muy activo: la sincronización puede quedar obsoleta entre corrección y revisión. No cambia la regla; el cierre debe comprobar siempre el develop vigente, no el SHA que estaba vigente cuando el autor terminó.

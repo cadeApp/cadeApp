@@ -61,3 +61,38 @@ Por tanto ambos caminos representan variantes de la misma información sensible 
 - bundle-budget ✅
 - audit ✅
 - approval-policy ❌: falta informe independiente SIN BLOQUEANTES.
+
+# Ronda 2
+
+SHA revisado: `bb6e18be470af93f5a26306970240ae0e1e35e07`.
+
+## H02
+
+Primer DoD de T-318 y celda DoD del plan: `exact=true`.
+
+Contenido verificado:
+- cubre `identities: []`, `user_already_exists`, `email_exists`;
+- mismo `ok`, shape/campos, navegación;
+- sin ids distinguibles;
+- sin copy que confirme existencia;
+- sin `activate_account_consents`;
+- mapper genuino separado.
+
+Hashes de `docs/revision-pr/pr-143/**` en R1 vs head: idénticos en los cinco archivos, por lo que el autor no tocó la carpeta.
+
+## H01
+
+Al terminar la corrección el body declaró `0 4` contra `ec3c671`.
+
+Al revisar:
+- develop = `a16acd4831e2e538d4313e6821d3ebc4e7f758ac`;
+- compare develop...head = behind 14 / ahead 4;
+- los 14 commits posteriores a `ec3c671` modifican workflows CI/deploy/E2E y archivos T-301/E2E, no T-318 ni implementation-plan.
+
+## CI exact-head
+
+- verify-fichas: 7/7
+- Test Files: 104 passed
+- Tests: 1407 passed
+- typecheck/lint/db-tests/build/bundle-budget/audit: success
+- approval-policy: failure esperado por falta de informe SIN BLOQUEANTES.
