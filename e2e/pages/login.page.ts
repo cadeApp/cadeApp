@@ -10,8 +10,8 @@ export class LoginPage extends BasePage {
     super(page);
   }
 
-  get phoneInput(): Locator {
-    return this.page.getByLabel(/teléfono|celular|número de teléfono/i);
+  get emailInput(): Locator {
+    return this.page.getByLabel(/^email$/i);
   }
 
   get passwordInput(): Locator {
@@ -30,8 +30,8 @@ export class LoginPage extends BasePage {
     await this.goto('/login');
   }
 
-  async login(phone: string, passwordOrCode: string): Promise<void> {
-    await this.phoneInput.fill(phone);
+  async login(email: string, passwordOrCode: string): Promise<void> {
+    await this.emailInput.fill(email);
     await this.passwordInput.fill(passwordOrCode);
     await this.submitButton.click();
     await this.waitForNoSkeletons();
