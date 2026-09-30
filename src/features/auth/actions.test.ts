@@ -411,6 +411,59 @@ describe('T-009: Auth actions y esquemas de registro', () => {
     });
   });
 
+  describe('Registro: motivo del rechazo de Supabase Auth', () => {
+    const VALID_INPUT = {
+      email: 'comercio@test.com',
+      password: 'password123',
+      role: 'merchant',
+      acceptTerms: true,
+      acceptedTermsVersion: '1.0',
+      acceptedPrivacyVersion: '1.0',
+    } as const;
+
+    function mockSignUpResult(result: { data: unknown; error: unknown }) {
+      const signUp = vi.fn().mockResolvedValue(result);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: { signUp },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+      return signUp;
+    }
+
+    it.each(['user_already_exists', 'email_exists'])(
+      'error %s → CONFLICT (email ya registrado)',
+      async (code) => {
+        mockSignUpResult({ data: { user: null, session: null }, error: { code, message: 'x' } });
+        expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: 'CONFLICT' });
+      }
+    );
+
+    it('usuario ya registrado con confirmación de email (identities vacío) → CONFLICT sin activar consentimientos', async () => {
+      mockSignUpResult({
+        data: { user: { id: 'usr-fake', identities: [] }, session: null },
+        error: null,
+      });
+      const rpc = vi.mocked(adminSupabase.createAdminClient)().rpc;
+      expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: 'CONFLICT' });
+      expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it.each(['over_email_send_rate_limit', 'over_request_rate_limit'])(
+      'error %s → RATE_LIMITED',
+      async (code) => {
+        mockSignUpResult({ data: { user: null, session: null }, error: { code, message: 'x' } });
+        expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: 'RATE_LIMITED' });
+      }
+    );
+
+    it.each(['weak_password', 'email_address_invalid', undefined])(
+      'error %s → VALIDATION_ERROR',
+      async (code) => {
+        mockSignUpResult({ data: { user: null, session: null }, error: { code, message: 'x' } });
+        expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      }
+    );
+  });
+
   describe('Consumo asíncrono obligatorio de await createClient() en login y logout (H16)', () => {
     it('loginAction consume asíncronamente createClient() y autentica con signInWithPassword', async () => {
       const mockSignIn = vi.fn().mockResolvedValue({
