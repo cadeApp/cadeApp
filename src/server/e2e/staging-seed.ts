@@ -436,23 +436,28 @@ export async function cleanupStagingData(
   }
 
   // 3. Limpieza de merchants y profiles
+  const failedUserIds = new Set<string>();
   if (context.createdUserIds.length > 0) {
     const toDeleteUsers = [...context.createdUserIds];
     try {
       const { error: merchErr } = await admin.from('merchants').delete().in('profile_id', toDeleteUsers);
       if (merchErr) {
+        for (const uid of toDeleteUsers) failedUserIds.add(uid);
         cleanupErrors.push({ entity: 'merchants', ids: toDeleteUsers, error: merchErr.message });
       }
     } catch (err: any) {
+      for (const uid of toDeleteUsers) failedUserIds.add(uid);
       cleanupErrors.push({ entity: 'merchants', ids: toDeleteUsers, error: err?.message || String(err) });
     }
 
     try {
       const { error: profErr } = await admin.from('profiles').delete().in('id', toDeleteUsers);
       if (profErr) {
+        for (const uid of toDeleteUsers) failedUserIds.add(uid);
         cleanupErrors.push({ entity: 'profiles', ids: toDeleteUsers, error: profErr.message });
       }
     } catch (err: any) {
+      for (const uid of toDeleteUsers) failedUserIds.add(uid);
       cleanupErrors.push({ entity: 'profiles', ids: toDeleteUsers, error: err?.message || String(err) });
     }
   }
@@ -474,20 +479,20 @@ export async function cleanupStagingData(
 
   // 5. Limpieza de usuarios auth
   if (context.createdUserIds.length > 0) {
-    const remainingUsers: string[] = [];
     for (const userId of context.createdUserIds) {
       try {
         const { error: authErr } = await admin.auth.admin.deleteUser(userId);
         if (authErr) {
+          failedUserIds.add(userId);
           cleanupErrors.push({ entity: 'auth.users', ids: [userId], error: authErr.message });
-          remainingUsers.push(userId);
         }
       } catch (err: any) {
+        failedUserIds.add(userId);
         cleanupErrors.push({ entity: 'auth.users', ids: [userId], error: err?.message || String(err) });
-        remainingUsers.push(userId);
       }
     }
-    context.createdUserIds = remainingUsers;
+    // Conservar en el tracking todo usuario que haya fallado en cualquier etapa (merchants, profiles o auth.users)
+    context.createdUserIds = context.createdUserIds.filter((id) => failedUserIds.has(id));
   }
 
   // 6. Si hubo fallos, reportar error agregado sin perder los IDs que fallaron

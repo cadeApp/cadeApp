@@ -471,4 +471,21 @@ test('DoD, H14 & M11: cleanupStagingData inspecciona errores de Supabase, conser
   );
 });
 
+test('DoD, H15 & M13: cleanupStagingData conserva createdUserIds si fallan merchants o profiles (agregado coherente)', () => {
+  const serverSeedCode = readFile('src/server/e2e/staging-seed.ts');
+  const strippedSeed = stripComments(serverSeedCode);
+
+  assert.match(
+    strippedSeed,
+    /failedUserIds\.add/,
+    'cleanupStagingData debe registrar IDs fallidos durante merchants y profiles (H15).'
+  );
+  assert.match(
+    strippedSeed,
+    /context\.createdUserIds\s*=\s*context\.createdUserIds\.filter\(\s*\([^)]+\)\s*=>\s*failedUserIds\.has\(/,
+    'cleanupStagingData debe conservar en createdUserIds cualquier usuario con fallos en merchants, profiles o auth (H15 / M13).'
+  );
+});
+
+
 

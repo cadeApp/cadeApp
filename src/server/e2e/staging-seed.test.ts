@@ -458,6 +458,86 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(deleteUserMock).toHaveBeenCalledWith('123e4567-e89b-12d3-a456-426614174072');
       expect(ctx.createdUserIds).toHaveLength(0);
     });
+
+    it('M13: si merchants.delete() devuelve error, profiles.delete() y auth.deleteUser() devuelven éxito, cleanup intenta las 3, falla con [E2E Cleanup Error], conserva el userId y libera IDs confirmados', async () => {
+      const failedUserId = '123e4567-e89b-12d3-a456-426614174081';
+      const cleanRequestId = '123e4567-e89b-12d3-a456-426614174082';
+      const cleanZoneId = '123e4567-e89b-12d3-a456-426614174083';
+
+      const ctx: StagingSeedContext = {
+        testRunId: 'e2e_run_m13',
+        createdOfferIds: [],
+        createdRequestIds: [cleanRequestId],
+        createdUserIds: [failedUserId],
+        createdZoneIds: [cleanZoneId],
+      };
+
+      const merchantsInMock = vi.fn().mockResolvedValue({ error: { message: 'Merchants foreign key lock error' } });
+      const profilesInMock = vi.fn().mockResolvedValue({ error: null });
+      const requestsInMock = vi.fn().mockResolvedValue({ error: null });
+      const zonesInMock = vi.fn().mockResolvedValue({ error: null });
+      const deleteUserMock = vi.fn().mockResolvedValue({ error: null });
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'merchants') {
+            return {
+              delete: () => ({
+                in: merchantsInMock,
+              }),
+            };
+          }
+          if (table === 'profiles') {
+            return {
+              delete: () => ({
+                in: profilesInMock,
+              }),
+            };
+          }
+          if (table === 'delivery_requests') {
+            return {
+              delete: () => ({
+                in: requestsInMock,
+              }),
+            };
+          }
+          if (table === 'zones') {
+            return {
+              delete: () => ({
+                in: zonesInMock,
+              }),
+            };
+          }
+          return {
+            delete: () => ({
+              in: vi.fn().mockResolvedValue({ error: null }),
+            }),
+          };
+        }),
+        auth: {
+          admin: {
+            deleteUser: deleteUserMock,
+          },
+        },
+      } as any;
+
+      // 1. Cleanup debe terminar con [E2E Cleanup Error]
+      await expect(cleanupStagingData(ctx, mockClient)).rejects.toThrow(
+        /\[E2E Cleanup Error\] Falló la limpieza de staging: merchants/i
+      );
+
+      // 2. Cleanup intenta las tres operaciones del agregado de usuario
+      expect(merchantsInMock).toHaveBeenCalledWith('profile_id', [failedUserId]);
+      expect(profilesInMock).toHaveBeenCalledWith('id', [failedUserId]);
+      expect(deleteUserMock).toHaveBeenCalledWith(failedUserId);
+
+      // 3. El user ID permanece en context.createdUserIds porque falló la etapa de merchants (H15 / M13)
+      expect(ctx.createdUserIds).toEqual([failedUserId]);
+
+      // 4. Otros IDs confirmadamente limpiados sí salieron del tracking
+      expect(ctx.createdRequestIds).toHaveLength(0);
+      expect(ctx.createdZoneIds).toHaveLength(0);
+    });
   });
 
   describe('Ciclo de vida E2E Playwright (seed -> test -> cleanup)', () => {
