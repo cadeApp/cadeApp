@@ -104,3 +104,12 @@ Log unit:
 `Falta el informe completo de revisar-pr sin bloqueantes.`
 
 Ese rojo es esperado mientras existan hallazgos abiertos.
+
+# Continuación Ronda 2 — PR #142 / T-318
+
+SHA revisado: `9d34f42841ec9ed9875324e8d81f36dd7234315a`.
+
+- H03: harness exacto del mapper confirmó allowlist correcta.
+- H04: test rejected Server Action presente y ejecutado en CI (`register-form.test.tsx` 33 tests).
+- H05: bitácora T-318 presente; CI exact-head 104 archivos / 1433 tests en verde.
+- H01/H02 quedan parciales y se trasladan a los hallazgos propios de PR #142.

@@ -20,3 +20,9 @@ La implementación llega con CI técnico verde (1396 tests, typecheck, lint, db-
 ## Regla nueva
 
 No se agrega numeración AG en esta ronda. H01 requiere primero una decisión de proceso de Lautaro073 y H02 una decisión de seguridad/producto.
+
+## Continuación en PR #142 / T-318
+
+- H03–H05 quedaron cerrados sobre `9d34f42841ec9ed9875324e8d81f36dd7234315a`.
+- H01 demostró que “crear una tarea nueva” no alcanza si su ficha nace en la misma rama de implementación: AGENTS exige que la ficha ya exista en `develop` antes de escribir código.
+- H02 mostró una segunda capa de anti-enumeración: quitar el texto explícito no basta si el resultado observable cambia de `ok:true` a `ok:false`.
