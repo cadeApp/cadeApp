@@ -1,82 +1,110 @@
-# Evidencia y comandos — PR #160 — Ronda 1
+# Evidencia y comandos — PR #160
+
+## Ronda 1
 
 **SHA revisado:** `803632187079aab355b3cadb8d20477a50ef274d`
 
-## Sincronización reproducible
+La evidencia completa de Ronda 1 se conserva en el historial de este archivo y en `revisiones/ronda-1.md`.
+
+## Ronda 2
+
+**SHA revisado:** `e268f5c2f4e72fdcb2592996b50b027062e2464a`  
+**develop:** `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
+
+### Sincronización
 
 ```bash
 git fetch origin
 git rev-parse origin/feat/T-303-main-flow
 git rev-parse origin/develop
 git merge-base origin/develop origin/feat/T-303-main-flow
-git diff --stat origin/develop...origin/feat/T-303-main-flow
-git diff origin/develop -- docs/tasks/T-303.md
+git rev-list --left-right --count origin/develop...origin/feat/T-303-main-flow
 ```
 
-Valores observados al iniciar la ronda:
-- head PR: `803632187079aab355b3cadb8d20477a50ef274d`
-- base/merge-base: `9e232d0e4ef003ca0535b11e5a962b4cf603189a`
-- ahead: 2
-- behind: 0
-- archivos: `docs/tasks/T-303.md`, `docs/tasks/log/T-303.md`, `e2e/specs/main-flow.spec.ts`
+Observado:
+- head: `e268f5c2f4e72fdcb2592996b50b027062e2464a`
+- develop: `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
+- merge-base: `9e232d0e4ef003ca0535b11e5a962b4cf603189a`
+- detrás de develop: **25**
+- por delante: 7
 
-## Enumeración de mocks que sustituyen la aplicación
+### H01 — desaparición de mocks integrales
 
 ```bash
-git grep -n "route.fulfill" 803632187079aab355b3cadb8d20477a50ef274d -- e2e/specs/main-flow.spec.ts
-git grep -n "page.route\|context.route" 803632187079aab355b3cadb8d20477a50ef274d -- e2e/specs/main-flow.spec.ts
-git grep -n "stagingContext" 803632187079aab355b3cadb8d20477a50ef274d -- e2e/specs/main-flow.spec.ts
+git grep -n "route.fulfill\|page.route\|context.route" e268f5c2f4e72fdcb2592996b50b027062e2464a -- e2e/specs/main-flow.spec.ts
 ```
 
-Resultado por inspección:
-- hay `route.fulfill` para las pantallas principales;
-- existe un mock para `**/api/offers/accept`;
-- el spec no consume `stagingContext`.
+Por inspección del archivo actual: no quedan mocks de página/RPC en `main-flow.spec.ts`. H01 pasa a `arreglado-sin-verificar`, no a verificado.
 
-## Enumeración de la falsa concurrencia
+### H02 — oráculo incompleto de concurrencia
 
 ```bash
-git show 803632187079aab355b3cadb8d20477a50ef274d:e2e/specs/main-flow.spec.ts | sed -n '69,129p'
+git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/specs/main-flow.spec.ts | sed -n '58,116p'
 ```
 
-Propiedad observada:
-1. `acceptedCount` decide el 200/409;
-2. `res1` se espera con `await`;
-3. recién después se inicia `res2`.
+Se observa:
+- clicks dentro de `Promise.all`;
+- `alreadyMatchedAlert` es cualquier `role=alert`;
+- única afirmación: `hasAlert1 || hasAlert2`;
+- después de `tab1.reload()` no hay aserción de cantidad/estado final.
 
-Por lo tanto el test no produce dos operaciones simultáneas contra el backend.
-
-## Enumeración completa de los flujos nominales
+### R01 — escenario del piso incompatible con fixture
 
 ```bash
-git show 803632187079aab355b3cadb8d20477a50ef274d:e2e/specs/main-flow.spec.ts | sed -n '133,357p'
+git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/fixtures/roles.ts
+git show e268f5c2f4e72fdcb2592996b50b027062e2464a:src/server/e2e/staging-seed.ts
+git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/specs/main-flow.spec.ts | sed -n '205,244p'
 ```
 
-Casos que deben revalidarse en la próxima ronda:
-- publicación: fill + submit + efecto;
-- oferta: valor menor al piso real + rechazo, valor válido + creación;
-- retiro: click + confirmación + desaparición/estado;
-- orden: default por documentación + cambio a precio + orden;
-- pago: efectivo/cambio y transferencia;
-- WhatsApp: href generado por la aplicación;
-- viaje: retirar + confirmar entrega + estado final.
+Cadena estática:
+1. `createOffersForFirstRequest: true`.
+2. seed crea offer pending de Courier 0 para la primera request.
+3. floor test hace `loginAsCourier(0)`.
+4. `getAvailableRequests` calcula `hasMyOffer=true`.
+5. `RequestCard` no renderiza “Ofertar” cuando `hasMyOffer`.
 
-## Estado de ejecución de esta revisión
+Si `offerButton.first()` existe, proviene de otra request de staging y el caso deja de estar aislado.
 
-No se ejecutó `pnpm typecheck/lint/test` ni Playwright en esta ronda porque este entorno no dispone de un clon ejecutable del repositorio. No se inventa una salida GREEN ni una mutación runtime.
+### R02 — cleanup no cubre writes de UI
 
-Los hallazgos H01-H05 quedan con `deteccion: analisis`. La próxima ronda debe reproducir las pruebas RED/GREEN del autor y sumar mutaciones independientes del revisor antes de marcar cualquier hallazgo como `arreglado-verificado`.
+```bash
+git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/specs/main-flow.spec.ts | sed -n '119,203p'
+git show e268f5c2f4e72fdcb2592996b50b027062e2464a:src/server/e2e/staging-seed.ts | sed -n '618,744p'
+git show origin/develop:supabase/migrations/20260922031435_schema_v1.sql | sed -n '83,150p'
+```
 
-## Mutaciones obligatorias para la revalidación independiente
+Prueba estructural:
+- submit de publicación crea una request real nueva;
+- el spec no agrega su ID a `createdRequestIds`;
+- cleanup borra solo IDs trackeados;
+- `delivery_requests.merchant_id` y `offers.request_id` no tienen `ON DELETE CASCADE`.
 
-Estas son propiedades a probar; el harness concreto de la revisión siguiente debe guardarse completo aquí cuando pueda ejecutarse:
+Consecuencia: puede quedar una request/offer E2E viva y fallar el borrado del merchant/request en teardown.
 
-1. **Revelación:** mutar la app real para exponer el teléfono a un courier no aceptado. El E2E debe fallar.
-2. **Concurrencia:** mutar la guarda real para permitir dos aceptaciones. El E2E concurrente debe fallar.
-3. **Publicar:** impedir el submit/persistencia real. El flujo debe fallar.
-4. **Piso:** permitir una oferta menor que `platform_settings.min_offer_ars`. El flujo debe fallar.
-5. **Retirar:** convertir la acción de retiro en no-op. El flujo debe fallar.
-6. **Ordenar:** invertir/ignorar uno de los criterios. El flujo debe fallar.
-7. **Viaje:** convertir la transición de estado en no-op. El flujo debe fallar.
+### H04/H05 — evidencia contradictoria
 
-No se aceptan mutaciones sobre el HTML de prueba ni mocks que fabriquen el resultado esperado.
+La bitácora de 02:45 atribuye RED/GREEN al SHA `464084a`, pero los commits que implementan el arreglo son posteriores:
+- `a102cc4` — extensión seed;
+- `c5c211c` — spec/Page Objects;
+- `e268f5c` — docs de cierre.
+
+La misma entrada dice que Playwright fue bloqueado por fail-closed y que falta la ejecución staging. El body, aun así, marca el DoD como `[x]`.
+
+También faltan en el body salidas de:
+```bash
+pnpm test
+pnpm test:db
+```
+
+### H07 — constructs prohibidos añadidos
+
+Extraídos del diff `464084a...e268f5c`:
+- `createdRequestIds[0]!`
+- `couriers[0]!.id`
+- `couriers[1]!.id`
+- `builder as any`
+- nuevos `as any` y `[0]!/[1]!` en `staging-seed.test.ts`.
+
+### Ejecución de esta revisión
+
+No se ejecutaron checks locales ni CI. Esta ronda se cierra por inspección estática porque ya hay bloqueantes previos a la etapa de aprobación. No se inventa GREEN ni se reusa la evidencia del autor como verificación independiente.

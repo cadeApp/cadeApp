@@ -4,31 +4,41 @@
 - **Tarea:** T-303
 - **Rama:** `feat/T-303-main-flow`
 - **Base:** `develop`
-- **Ronda actual:** 1
-- **SHA revisado:** `803632187079aab355b3cadb8d20477a50ef274d`
-- **Resultado:** CON BLOQUEANTES (5)
+- **Ronda actual:** 2
+- **SHA revisado:** `e268f5c2f4e72fdcb2592996b50b027062e2464a`
+- **develop al revisar:** `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
+- **Resultado:** CON BLOQUEANTES (8)
 - **Fecha:** 2026-10-01
 - **Revisor:** revisión independiente solicitada por Lautaro073
 
-## Resumen
+## Resumen Ronda 2
 
-El spec agregado no prueba el flujo real de cadeApp: intercepta las navegaciones con `page.route(...).fulfill()` y construye el HTML que luego afirma. La aceptación concurrente también simula el endpoint y decide dentro del propio test que la primera llamada sea exitosa y la segunda devuelva `ALREADY_MATCHED`. Además, los flujos de publicar, ofertar, retirar, ordenar y avanzar viaje no ejecutan las acciones que sus nombres declaran.
+La reescritura elimina los mocks HTML/RPC de la Ronda 1 y ahora usa UI/backend reales, pero todavía no es cerrable:
 
-## Decisión P1
+- la rama quedó 25 commits detrás de `develop`;
+- la concurrencia no afirma el estado final exacto y acepta cualquier `role=alert` como si fuera `ALREADY_MATCHED`;
+- el test del piso inicia con una oferta pending ya seeded para el mismo courier, por lo que su request propio no muestra “Ofertar”;
+- las solicitudes creadas por UI no se incorporan al tracking de cleanup y bloquean el teardown por FK;
+- la bitácora declara RED/GREEN imposibles de reconciliar con el mismo registro que dice que Playwright fue bloqueado por fail-closed;
+- el body marca DoD/checks completos sin salida de `pnpm test`, `pnpm test:db` ni corrida real de T-303 en staging;
+- se introdujeron `any` y non-null assertions nuevos en archivos tocados.
+
+## Decisión P1 vigente
 
 Lautaro073 eligió **1-A** en Ronda 1: T-303 puede ampliar mínimamente el arnés E2E para crear/autenticar/limpiar usuarios de rol reales y ejercitar el flujo en staging.
 
-Archivos adicionales autorizados para el arreglo:
+Archivos adicionales autorizados:
 - `e2e/fixtures/**`
 - Page Objects estrictamente necesarios dentro de `e2e/pages/**`
 - `src/server/e2e/staging-seed.ts`
 - `src/server/e2e/staging-seed.test.ts`
 
-La decisión debe quedar documentada en `docs/tasks/T-303.md`. No habilita cambios funcionales de producto ni contratos.
+No se reabre ninguna decisión de producto en Ronda 2.
 
 ## Archivos de esta revisión
 
 - `revisiones/ronda-1.md`
+- `revisiones/ronda-2.md`
 - `hallazgos.jsonl`
 - `evidencia/comandos.md`
 - `lecciones.md`

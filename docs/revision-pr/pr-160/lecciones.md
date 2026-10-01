@@ -10,9 +10,21 @@ No se agrega un número AG nuevo en esta ronda. Los problemas encontrados ya est
 - **P03-comentario-contradice-codigo:** la bitácora no puede llamar “seed real” a un contexto que el spec nunca consume.
 - **P19-cuerpo-de-pr-fuera-de-template:** el body debe aportar la evidencia verificable que exige el proceso.
 
-### Refuerzo para la siguiente ronda
+## Ronda 2
 
-La revisión debe aplicar mutaciones propias sobre la implementación real, no reutilizar las mutaciones del autor. En particular:
-- romper la revelación progresiva en código real y verificar que el E2E falle;
-- romper la exclusión mutua real y verificar que el E2E de dos aceptaciones falle;
-- romper al menos una acción de cada flujo (publicar, ofertar, retirar, ordenar, avanzar) y comprobar que el spec correspondiente se pone rojo.
+Tampoco se abre un AG nuevo; la segunda ronda refuerza patrones ya catalogados:
+
+- **P08:** un fixture “real” también puede invalidar el test si prepara un estado incompatible con el escenario o si el oráculo observa un síntoma genérico en vez del estado final.
+- **P16:** cleanup E2E no puede limitarse a lo que creó el seed cuando el propio navegador crea filas adicionales. Toda escritura real del flujo tiene que entrar en tracking/descubrimiento.
+- **P03/P19:** una línea de bitácora o checkbox no es evidencia si el SHA indicado no contiene el código probado o la propia sesión reconoce que la corrida no ocurrió.
+- **P10:** una ronda de corrección sobre una rama muy atrasada obliga a repetir validaciones; arreglar contra una base vieja no cierra el hallazgo.
+
+### Control a exigir en Ronda 3
+
+Antes de mirar CI:
+1. branch sincronizada con develop;
+2. ninguna entidad creada por UI queda fuera del cleanup;
+3. cada escenario usa datos propios y compatibles;
+4. concurrencia afirma estado final exacto;
+5. bitácora y body solo citan comandos realmente ejecutados sobre el SHA correspondiente;
+6. cero `any`/non-null nuevos.
