@@ -125,24 +125,64 @@ jobs:
             [/'min_offer_ars'\s*,\s*'1000'::jsonb/i, 'min_offer_ars=1000'],
             [/'request_ttl_minutes'\s*,\s*'30'::jsonb/i, 'request_ttl_minutes=30'],
             [/'pilot_active'\s*,\s*'true'::jsonb/i, 'pilot_active=true'],
-            [/'pilot_terms_version'\s*,\s*'\"v1\"'::jsonb/i, 'pilot_terms_version=v1'],
+            [/'pilot_terms_version'\s*,\s*'"v1"'::jsonb/i, 'pilot_terms_version=v1'],
             [/'subscription_grace_days'\s*,\s*'0'::jsonb/i, 'subscription_grace_days=0'],
           ];
 
+          function stripSqlComments(text) {
+            return text
+              .replace(/\/\*[\s\S]*?\*\//g, '')
+              .replace(/--[^\n\r]*/g, '');
+          }
+
           function violations(text) {
             const errors = [];
-            for (const [pattern, label] of expected) {
-              if (!pattern.test(text)) errors.push('missing:' + label);
+            const code = stripSqlComments(text);
+            const inserts = [
+              ...code.matchAll(
+                /insert\s+into\s+public\.platform_settings\s*\(\s*key\s*,\s*value\s*\)\s*values[\s\S]*?;/gi
+              ),
+            ].map((match) => match[0]);
+
+            if (inserts.length !== 1) {
+              errors.push('platform_settings_insert_count:' + inserts.length);
+              return errors;
             }
-            if (!/on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i.test(text)) {
-              errors.push('missing:ON_CONFLICT_DO_NOTHING');
+
+            const statement = inserts[0];
+            for (const [pattern, label] of expected) {
+              if (!pattern.test(statement)) {
+                errors.push('missing:' + label);
+              }
+            }
+            if (
+              !/on\s+conflict\s*\(\s*key\s*\)\s*do\s+nothing\s*;\s*$/i.test(
+                statement
+              )
+            ) {
+              errors.push('missing:TARGET_ON_CONFLICT_DO_NOTHING');
+            }
+            if (/\bdo\s+update\b/i.test(statement)) {
+              errors.push('forbidden:DO_UPDATE');
             }
             return errors;
           }
 
+          function requireMutationRed(name, mutant, expectedFragment) {
+            const errors = violations(mutant);
+            if (!errors.some((error) => error.includes(expectedFragment))) {
+              throw new Error(
+                name + ' was not detected. Errors: ' + errors.join(', ')
+              );
+            }
+            console.log(name + ' RED_OK: ' + errors.join(', '));
+          }
+
           const baseline = violations(sql);
           if (baseline.length) {
-            throw new Error('T-321 migration contract broken: ' + baseline.join(', '));
+            throw new Error(
+              'T-321 migration contract broken: ' + baseline.join(', ')
+            );
           }
           console.log('T321_MIGRATION_BASELINE GREEN');
 
@@ -150,21 +190,49 @@ jobs:
             /insert into public\.platform_settings[\s\S]*?on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i,
             ''
           );
-          const m01Errors = violations(m01);
-          if (m01Errors.length === 0) {
-            throw new Error('M01 was not detected');
-          }
-          console.log('T321_M01 RED_OK: ' + m01Errors.join(', '));
+          requireMutationRed(
+            'T321_M01',
+            m01,
+            'platform_settings_insert_count:0'
+          );
 
           const m02 = sql.replace(
             /on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i,
             'on conflict (key) do update set value = excluded.value;'
           );
-          const m02Errors = violations(m02);
-          if (!m02Errors.includes('missing:ON_CONFLICT_DO_NOTHING')) {
-            throw new Error('M02 was not detected');
-          }
-          console.log('T321_M02 RED_OK: ' + m02Errors.join(', '));
+          requireMutationRed(
+            'T321_M02',
+            m02,
+            'forbidden:DO_UPDATE'
+          );
+
+          const m03 = sql.replace(
+            /on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i,
+            [
+              'on conflict (key) do update set value = excluded.value;',
+              '-- on conflict (key) do nothing;',
+            ].join('\n')
+          );
+          requireMutationRed(
+            'T321_M03',
+            m03,
+            'forbidden:DO_UPDATE'
+          );
+
+          const m04 = sql.replace(
+            /on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i,
+            [
+              'on conflict (key) do update set value = excluded.value;',
+              "insert into public.platform_settings (key, value)",
+              "values ('__t321_probe__', '0'::jsonb)",
+              'on conflict (key) do nothing;',
+            ].join('\n')
+          );
+          requireMutationRed(
+            'T321_M04',
+            m04,
+            'platform_settings_insert_count:2'
+          );
           NODE
             pnpm supabase db reset
             pnpm supabase test db
