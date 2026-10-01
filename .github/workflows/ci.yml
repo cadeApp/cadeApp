@@ -114,6 +114,59 @@ jobs:
         run: |
           if [ -d supabase/migrations ] && [ -n "$(find supabase/migrations -name '*.sql' -print -quit)" ]; then
             pnpm supabase start
+            pnpm supabase db reset --no-seed
+            pnpm supabase test db supabase/tests/t321_admin_staging_bootstrap.sql
+            node <<'NODE'
+          const fs = require('node:fs');
+          const migrationPath = 'supabase/migrations/20260930224700_t321_admin_staging_bootstrap.sql';
+          const sql = fs.readFileSync(migrationPath, 'utf8');
+
+          const expected = [
+            [/'min_offer_ars'\s*,\s*'1000'::jsonb/i, 'min_offer_ars=1000'],
+            [/'request_ttl_minutes'\s*,\s*'30'::jsonb/i, 'request_ttl_minutes=30'],
+            [/'pilot_active'\s*,\s*'true'::jsonb/i, 'pilot_active=true'],
+            [/'pilot_terms_version'\s*,\s*'\"v1\"'::jsonb/i, 'pilot_terms_version=v1'],
+            [/'subscription_grace_days'\s*,\s*'0'::jsonb/i, 'subscription_grace_days=0'],
+          ];
+
+          function violations(text) {
+            const errors = [];
+            for (const [pattern, label] of expected) {
+              if (!pattern.test(text)) errors.push('missing:' + label);
+            }
+            if (!/on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i.test(text)) {
+              errors.push('missing:ON_CONFLICT_DO_NOTHING');
+            }
+            return errors;
+          }
+
+          const baseline = violations(sql);
+          if (baseline.length) {
+            throw new Error('T-321 migration contract broken: ' + baseline.join(', '));
+          }
+          console.log('T321_MIGRATION_BASELINE GREEN');
+
+          const m01 = sql.replace(
+            /insert into public\.platform_settings[\s\S]*?on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i,
+            ''
+          );
+          const m01Errors = violations(m01);
+          if (m01Errors.length === 0) {
+            throw new Error('M01 was not detected');
+          }
+          console.log('T321_M01 RED_OK: ' + m01Errors.join(', '));
+
+          const m02 = sql.replace(
+            /on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i,
+            'on conflict (key) do update set value = excluded.value;'
+          );
+          const m02Errors = violations(m02);
+          if (!m02Errors.includes('missing:ON_CONFLICT_DO_NOTHING')) {
+            throw new Error('M02 was not detected');
+          }
+          console.log('T321_M02 RED_OK: ' + m02Errors.join(', '));
+          NODE
+            pnpm supabase db reset
             pnpm supabase test db
             pnpm db:types --local
             git diff --exit-code -- src/types/database.types.ts

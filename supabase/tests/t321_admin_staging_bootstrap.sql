@@ -2,7 +2,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(11);
+select plan(10);
 
 -- 1-2: min_offer_ars
 select is(
@@ -62,19 +62,6 @@ select is(
   (select jsonb_typeof(value) from public.platform_settings where key = 'subscription_grace_days'),
   'number',
   'T-321: subscription_grace_days type is number'
-);
-
--- 11: Idempotencia - ON CONFLICT (key) DO NOTHING preserva valores configurados
-update public.platform_settings set value = '1500'::jsonb where key = 'min_offer_ars';
-
-insert into public.platform_settings (key, value)
-values ('min_offer_ars', '1000'::jsonb)
-on conflict (key) do nothing;
-
-select is(
-  (select value from public.platform_settings where key = 'min_offer_ars'),
-  '1500'::jsonb,
-  'T-321: on conflict do nothing preserva el valor configurado previamente'
 );
 
 select * from finish();
