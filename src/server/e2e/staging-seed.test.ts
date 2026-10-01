@@ -756,4 +756,459 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(() => createServerEnv(missingCron)).toThrow(/CRON_SECRET es obligatoria/i);
     });
   });
+
+  describe('T-303: Ampliación de arnés E2E para usuarios reales, contactos, ofertas y cleanup relacional', () => {
+    setupStagingTestEnv();
+
+    it('creación de merchant + 2 couriers y retorno de credenciales solo en memoria', async () => {
+      const ctx = createStagingSeedContext();
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614175001';
+      const mockCourier0Id = '123e4567-e89b-12d3-a456-426614175002';
+      const mockCourier1Id = '123e4567-e89b-12d3-a456-426614175003';
+      const mockZoneId = '123e4567-e89b-12d3-a456-426614175004';
+
+      const createdAuthUsers: Array<{ email: string; password: string; user_metadata: any }> = [];
+      const profileUpserts: any[] = [];
+      const courierUpserts: any[] = [];
+      const merchantUpserts: any[] = [];
+
+      let userCounter = 0;
+      const userIds = [mockMerchantId, mockCourier0Id, mockCourier1Id];
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  limit: vi.fn().mockResolvedValue({ data: [{ id: mockZoneId }], error: null }),
+                }),
+              }),
+            };
+          }
+          if (table === 'profiles') {
+            return {
+              upsert: vi.fn(async (payload: any) => {
+                profileUpserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'merchants') {
+            return {
+              upsert: vi.fn(async (payload: any) => {
+                merchantUpserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'couriers') {
+            return {
+              upsert: vi.fn(async (payload: any) => {
+                courierUpserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn(async (payload: any) => {
+              createdAuthUsers.push(payload);
+              const uid = userIds[userCounter++] ?? crypto.randomUUID();
+              return { data: { user: { id: uid } }, error: null };
+            }),
+          },
+        },
+      } as any;
+
+      await seedStagingData(ctx, { withMerchant: true, couriersCount: 2 }, mockClient);
+
+      // Verificación de credenciales en memoria para merchant
+      expect(ctx.merchantUser).toBeDefined();
+      expect(ctx.merchantUser?.id).toBe(mockMerchantId);
+      expect(ctx.merchantUser?.email).toContain('merchant');
+      expect(ctx.merchantUser?.password).toMatch(/^P@ssword_/);
+      expect(ctx.merchantUser?.role).toBe('merchant');
+
+      // Verificación de credenciales en memoria para 2 couriers
+      expect(ctx.courierUsers).toBeDefined();
+      expect(ctx.courierUsers).toHaveLength(2);
+      const couriers = ctx.courierUsers!;
+      expect(couriers[0]!.id).toBe(mockCourier0Id);
+      expect(couriers[0]!.password).toMatch(/^P@ssword_/);
+      expect(couriers[0]!.role).toBe('courier');
+
+      expect(couriers[1]!.id).toBe(mockCourier1Id);
+      expect(couriers[1]!.password).toMatch(/^P@ssword_/);
+      expect(couriers[1]!.role).toBe('courier');
+
+      // Perfiles creados con consent_status = 'active'
+      expect(profileUpserts).toHaveLength(3);
+      for (const p of profileUpserts) {
+        expect(p.consent_status).toBe('active');
+      }
+
+      // Couriers creados con aptitud de oferta: ambos approved y available
+      expect(courierUpserts).toHaveLength(2);
+      // Courier 0: doc_level 2 (license_status y insurance_status verified)
+      expect(courierUpserts[0]!.profile_id).toBe(mockCourier0Id);
+      expect(courierUpserts[0]!.status).toBe('approved');
+      expect(courierUpserts[0]!.available).toBe(true);
+      expect(courierUpserts[0]!.license_status).toBe('verified');
+      expect(courierUpserts[0]!.insurance_status).toBe('verified');
+
+      // Courier 1: doc_level 0 (license_status y insurance_status none)
+      expect(courierUpserts[1]!.profile_id).toBe(mockCourier1Id);
+      expect(courierUpserts[1]!.status).toBe('approved');
+      expect(courierUpserts[1]!.available).toBe(true);
+      expect(courierUpserts[1]!.license_status).toBe('none');
+      expect(courierUpserts[1]!.insurance_status).toBe('none');
+
+      // Tracking de los 3 usuarios para cleanup
+      expect(ctx.createdUserIds).toEqual([mockMerchantId, mockCourier0Id, mockCourier1Id]);
+    });
+
+    it('creación/tracking de request/contact/offers', async () => {
+      const ctx = createStagingSeedContext();
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614175011';
+      const mockCourier0Id = '123e4567-e89b-12d3-a456-426614175012';
+      const mockCourier1Id = '123e4567-e89b-12d3-a456-426614175013';
+      const mockZoneId = '123e4567-e89b-12d3-a456-426614175014';
+      const mockReqId = '123e4567-e89b-12d3-a456-426614175015';
+
+      const contactInserts: any[] = [];
+      const offerInserts: any[] = [];
+
+      let userCounter = 0;
+      const userIds = [mockMerchantId, mockCourier0Id, mockCourier1Id];
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  limit: vi.fn().mockResolvedValue({ data: [{ id: mockZoneId }], error: null }),
+                }),
+              }),
+            };
+          }
+          if (table === 'profiles' || table === 'merchants' || table === 'couriers') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          if (table === 'delivery_requests') {
+            return {
+              insert: vi.fn(() => ({
+                select: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({ data: { id: mockReqId }, error: null }),
+                })),
+              })),
+            };
+          }
+          if (table === 'delivery_request_contacts') {
+            return {
+              insert: vi.fn(async (payload: any) => {
+                contactInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              insert: vi.fn(async (payload: any) => {
+                offerInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            createUser: vi.fn(async () => {
+              const uid = userIds[userCounter++] ?? crypto.randomUUID();
+              return { data: { user: { id: uid } }, error: null };
+            }),
+          },
+        },
+      } as any;
+
+      await seedStagingData(
+        ctx,
+        {
+          requestsCount: 1,
+          couriersCount: 2,
+          withContacts: true,
+          recipientPhone: '+5493865123456',
+          recipientName: 'Juan Pérez Test',
+          createOffersForFirstRequest: true,
+        },
+        mockClient
+      );
+
+      // Verificación de tracking de request
+      expect(ctx.createdRequestIds).toContain(mockReqId);
+
+      // Verificación de inserción y tracking de contacto
+      expect(contactInserts).toHaveLength(1);
+      expect(contactInserts[0]!.request_id).toBe(mockReqId);
+      expect(contactInserts[0]!.recipient_phone).toBe('+5493865123456');
+      expect(contactInserts[0]!.recipient_name).toBe('Juan Pérez Test');
+      expect(contactInserts[0]!.recipient_consent_declared).toBe(true);
+      expect(ctx.createdContactRequestIds).toContain(mockReqId);
+
+      // Verificación de inserción y tracking de 2 ofertas reales
+      expect(offerInserts).toHaveLength(2);
+      expect(offerInserts[0]!.request_id).toBe(mockReqId);
+      expect(offerInserts[0]!.courier_id).toBe(mockCourier0Id);
+      expect(offerInserts[0]!.amount_ars).toBe(2000);
+
+      expect(offerInserts[1]!.request_id).toBe(mockReqId);
+      expect(offerInserts[1]!.courier_id).toBe(mockCourier1Id);
+      expect(offerInserts[1]!.amount_ars).toBe(1500);
+
+      expect(ctx.createdOfferIds).toHaveLength(2);
+      expect(isValidUuid(ctx.createdOfferIds[0])).toBe(true);
+      expect(isValidUuid(ctx.createdOfferIds[1])).toBe(true);
+    });
+
+    it('cleanup de todos esos tipos en orden relacional inverso', async () => {
+      const orderOfOperations: string[] = [];
+
+      const ctx: StagingSeedContext = {
+        testRunId: 'e2e_run_order_test',
+        createdOfferIds: ['123e4567-e89b-12d3-a456-426614175021'],
+        createdContactRequestIds: ['123e4567-e89b-12d3-a456-426614175022'],
+        createdRequestIds: ['123e4567-e89b-12d3-a456-426614175022'],
+        createdUserIds: ['123e4567-e89b-12d3-a456-426614175023', '123e4567-e89b-12d3-a456-426614175024'],
+        createdZoneIds: ['123e4567-e89b-12d3-a456-426614175025'],
+        courierUsers: [],
+      };
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              update: vi.fn(() => {
+                orderOfOperations.push('delivery_requests.update_accepted_offer');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+              delete: vi.fn(() => {
+                orderOfOperations.push('delivery_requests.delete');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              delete: vi.fn(() => {
+                orderOfOperations.push('offers.delete');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'delivery_request_contacts') {
+            return {
+              delete: vi.fn(() => {
+                orderOfOperations.push('delivery_request_contacts.delete');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'couriers') {
+            return {
+              delete: vi.fn(() => {
+                orderOfOperations.push('couriers.delete');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'merchants') {
+            return {
+              delete: vi.fn(() => {
+                orderOfOperations.push('merchants.delete');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'profiles') {
+            return {
+              delete: vi.fn(() => {
+                orderOfOperations.push('profiles.delete');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'zones') {
+            return {
+              delete: vi.fn(() => {
+                orderOfOperations.push('zones.delete');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            deleteUser: vi.fn(async () => {
+              orderOfOperations.push('auth.users.deleteUser');
+              return { error: null };
+            }),
+          },
+        },
+      } as any;
+
+      await cleanupStagingData(ctx, mockClient);
+
+      // Verificación estricta del orden relacional inverso:
+      // 0. desvincular accepted_offer_id en delivery_requests
+      // 1. offers
+      // 2. delivery_request_contacts
+      // 3. delivery_requests
+      // 4. couriers -> merchants -> profiles
+      // 5. zones
+      // 6. auth users
+      expect(orderOfOperations).toEqual([
+        'delivery_requests.update_accepted_offer',
+        'offers.delete',
+        'delivery_request_contacts.delete',
+        'delivery_requests.delete',
+        'couriers.delete',
+        'merchants.delete',
+        'profiles.delete',
+        'zones.delete',
+        'auth.users.deleteUser',
+        'auth.users.deleteUser',
+      ]);
+
+      // Todo el tracking quedó vaciado
+      expect(ctx.createdOfferIds).toHaveLength(0);
+      expect(ctx.createdContactRequestIds).toHaveLength(0);
+      expect(ctx.createdRequestIds).toHaveLength(0);
+      expect(ctx.createdUserIds).toHaveLength(0);
+      expect(ctx.createdZoneIds).toHaveLength(0);
+    });
+
+    it('error de una etapa conserva el ID fallido y no impide intentar el resto', async () => {
+      const failedOfferId = '123e4567-e89b-12d3-a456-426614175031';
+      const cleanContactReqId = '123e4567-e89b-12d3-a456-426614175032';
+      const cleanRequestId = '123e4567-e89b-12d3-a456-426614175032';
+      const cleanUserId = '123e4567-e89b-12d3-a456-426614175033';
+
+      const ctx: StagingSeedContext = {
+        testRunId: 'e2e_run_partial_failure',
+        createdOfferIds: [failedOfferId],
+        createdContactRequestIds: [cleanContactReqId],
+        createdRequestIds: [cleanRequestId],
+        createdUserIds: [cleanUserId],
+        createdZoneIds: [],
+        courierUsers: [],
+      };
+
+      const attemptedStages: string[] = [];
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'offers') {
+            return {
+              delete: vi.fn(() => {
+                attemptedStages.push('offers');
+                // Falla con error
+                return { in: vi.fn().mockResolvedValue({ error: { message: 'Offers delete timeout' } }) };
+              }),
+            };
+          }
+          if (table === 'delivery_request_contacts') {
+            return {
+              delete: vi.fn(() => {
+                attemptedStages.push('delivery_request_contacts');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'delivery_requests') {
+            return {
+              update: vi.fn(() => ({ in: vi.fn().mockResolvedValue({ error: null }) })),
+              delete: vi.fn(() => {
+                attemptedStages.push('delivery_requests');
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          if (table === 'couriers' || table === 'merchants' || table === 'profiles') {
+            return {
+              delete: vi.fn(() => {
+                attemptedStages.push(table);
+                return { in: vi.fn().mockResolvedValue({ error: null }) };
+              }),
+            };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            deleteUser: vi.fn(async () => {
+              attemptedStages.push('auth.users');
+              return { error: null };
+            }),
+          },
+        },
+      } as any;
+
+      // Debe lanzar [E2E Cleanup Error] agregado
+      await expect(cleanupStagingData(ctx, mockClient)).rejects.toThrow(
+        /\[E2E Cleanup Error\] Falló la limpieza de staging: offers/i
+      );
+
+      // El fallo en offers no impidió intentar las etapas posteriores
+      expect(attemptedStages).toContain('offers');
+      expect(attemptedStages).toContain('delivery_request_contacts');
+      expect(attemptedStages).toContain('delivery_requests');
+      expect(attemptedStages).toContain('auth.users');
+
+      // El ID fallido de offers se conserva en el tracking para reintento
+      expect(ctx.createdOfferIds).toEqual([failedOfferId]);
+
+      // Los exitosos fueron eliminados del tracking
+      expect(ctx.createdContactRequestIds).toHaveLength(0);
+      expect(ctx.createdRequestIds).toHaveLength(0);
+      expect(ctx.createdUserIds).toHaveLength(0);
+    });
+
+    it('guard fail-closed sigue bloqueando prod/proyecto desconocido', () => {
+      // Bloqueo incondicional de producción conocida
+      expect(() => {
+        assertAllowedE2EEnvironment({
+          VERCEL_ENV: 'production',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+        });
+      }).toThrow(/VERCEL_ENV es production/i);
+
+      expect(() => {
+        assertAllowedE2EEnvironment({
+          APP_ENV: 'production',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+        });
+      }).toThrow(/APP_ENV es production/i);
+
+      expect(() => {
+        assertAllowedE2EEnvironment({
+          NEXT_PUBLIC_APP_URL: 'https://cadeapp.com',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+        });
+      }).toThrow(/dominio de producción/i);
+
+      // Bloqueo de proyecto no verificado / desconocido
+      expect(() => {
+        assertAllowedE2EEnvironment({
+          NODE_ENV: 'test',
+          E2E_TEST: 'true',
+          NEXT_PUBLIC_SUPABASE_URL: 'https://proyecto-desconocido-123.supabase.co',
+        });
+      }).toThrow(/no está positivamente identificado como staging/i);
+    });
+  });
 });
