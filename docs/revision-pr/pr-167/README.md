@@ -2,28 +2,29 @@
 
 - **PR:** #167
 - **Rama:** `feat/T-322-registration-email-confirmation`
-- **SHA funcional R1:** `6c7ace01cbb0ee7151271cceab10f51fbbdff78d`
+- **SHA funcional R2:** `3c94d0eb8116987cc605ce5b433ad05e89b1b470`
 - **develop:** `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
-- **Ronda:** 1
-- **Resultado:** **CON BLOQUEANTES (4)**
+- **Ronda:** 2
+- **Resultado:** **CON BLOQUEANTE (1)**
 
-## Hallazgos
+## Estado de hallazgos
 
 | ID | Severidad | Estado |
 |---|---|---|
-| PR167-H01 | alto | abierto |
-| PR167-H02 | alto | abierto |
-| PR167-H03 | medio | abierto |
-| PR167-H04 | medio | abierto |
+| PR167-H01 | alto | arreglado-verificado |
+| PR167-H02 | alto | arreglado-verificado |
+| PR167-H03 | medio | arreglado-verificado |
+| PR167-H04 | medio | arreglado-verificado |
+| PR167-R01 | alto | abierto |
 
-CI exact-head `36829069927`: typecheck, lint, unit, build, bundle-budget, audit y db-tests verdes; **1565/1565** unitarios y **1614/1614** DB.
+CI exact-head `36914443982`: typecheck, lint, build, audit, bundle-budget y db-tests verdes; **unit rojo por 1 test legal**: 1580 passed / 1 failed.
 
-La rama está 3 commits adelante y 0 detrás de `develop`.
+La decisión P1 para PR167-R01 es **opción A**. Se abrió la PR documental **#168** para ampliar oficialmente T-322 a `src/features/legal/documents.ts` y `src/features/legal/legal-red.test.ts`, exigir Privacy **v1.1** y conservar consentimientos históricos.
 
 ## Residual manual
 
-La evidencia real de staging sigue pendiente por ficha, pero no debe ejecutarse hasta corregir H01–H04.
+La evidencia real de staging sigue pendiente hasta que #168 se mergee, agy ajuste la política/test legal y CI vuelva a verde.
 
 ## Follow-up fuera de T-322
 
-El problema del onboarding de comercio con barrios de Aguilares no se mezcla en esta PR: requiere tarea separada porque toca zonas/modelo/onboarding merchant. Decisión ya fijada: usar el `Select` del sistema, barrios por nombre y **sin inventar centroides**.
+Onboarding merchant: barrios de Aguilares con `src/ui/select.tsx`, por nombre y sin inventar centroides. Sigue separado de este hotfix.

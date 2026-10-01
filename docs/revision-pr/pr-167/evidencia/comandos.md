@@ -104,3 +104,44 @@ Mutación independiente por inspección: volver a introducir `courierId = 'temp-
 ### Follow-up merchant
 
 Fuera de alcance de T-322: el onboarding de comercio necesita tarea separada para lista de barrios + `src/ui/select.tsx`, sin centroides inventados.
+
+## Ronda 2
+
+SHA funcional: `3c94d0eb8116987cc605ce5b433ad05e89b1b470`.
+
+### CI exact-head 36914443982
+
+```text
+typecheck       success
+lint            success
+build           success
+bundle-budget   success
+audit           success
+db-tests        success — 1614/1614
+unit            failure — 1580 passed / 1 failed
+```
+
+Test fallido:
+
+```text
+src/features/legal/legal-red.test.ts:57
+registerSchema: displayName y phone son facultativos...
+expected true, received false
+```
+
+### Verificación H01–H04
+
+- `actions.test.ts`: 55 tests verdes.
+- `auth/confirm/route.test.ts`: 27 tests verdes.
+- `register-enumeration.test.tsx`: 4 tests verdes.
+- `courier-onboarding/components.test.tsx`: 23 tests verdes.
+- `route-integrity.test.ts`: 53 tests verdes.
+
+### R01
+
+`src/features/legal/documents.ts` v1.0 todavía declara nombre visible y teléfono facultativos. La corrección funcional los vuelve obligatorios. CI detecta correctamente la contradicción.
+
+P1 eligió opción A. PR documental #168 formaliza:
+- archivos legales permitidos;
+- Privacy v1.1;
+- conservación de consentimientos históricos.
