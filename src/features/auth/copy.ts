@@ -48,4 +48,22 @@ export const authCopy = {
     successMessage:
       'Si el email coincide con una cuenta registrada, te enviamos las instrucciones para restablecer tu contraseña. Revisá tu casilla de correo.',
   },
+  resetPassword: {
+    title: 'Creá tu contraseña nueva',
+    subtitle: 'Elegí una contraseña segura para tu cuenta.',
+    passwordLabel: 'Contraseña nueva',
+    passwordConfirmLabel: 'Confirmar contraseña nueva',
+    passwordHelper: 'Mínimo 8 caracteres',
+    submitButton: 'Guardar contraseña',
+    loadingButton: 'Guardando...',
+    invalidLinkTitle: 'Enlace no válido o expirado',
+    invalidLinkSubtitle: 'El enlace de recuperación ya fue utilizado o venció.',
+    requestNewLink: 'Solicitar un enlace nuevo',
+    errorMismatch: 'Las contraseñas no coinciden.',
+    errorLength: 'La contraseña debe tener al menos 8 caracteres.',
+    errorWeak: 'La contraseña elegida es muy débil. Elegí una más segura.',
+    errorSame: 'La contraseña nueva no puede ser igual a la anterior.',
+    errorRateLimited: 'Hiciste muchos intentos seguidos. Esperá unos minutos y volvé a probar.',
+    errorGeneric: 'Ocurrió un error al actualizar la contraseña. Probá de nuevo.',
+  },
 } as const;

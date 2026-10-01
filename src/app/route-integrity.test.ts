@@ -19,6 +19,13 @@ vi.mock('@/server/supabase/server', () => ({
 vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
 }));
+vi.mock('@/lib/env.public', () => ({
+  publicEnv: {
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key-test',
+  },
+}));
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 
@@ -227,6 +234,7 @@ function assertNoInvalidInternalLinks(sourceCode: string, fileLabel: string): vo
       } else if (indirectExpr.includes('.redirectTo')) {
         const actionProducerMap: ReadonlyArray<readonly [string, string]> = [
           ['registerAction', 'features/auth/actions.ts'],
+          ['updatePasswordAction', 'features/auth/actions.ts'],
           ['merchantOnboardingAction', 'features/merchants/actions.ts'],
           ['createDeliveryRequestAction', 'features/requests/actions.ts'],
           ['courierOnboardingAction', 'features/courier-onboarding/actions.ts'],

@@ -10,9 +10,16 @@ import {
   type ConsentStatus,
   type ProfileRole,
 } from '@/domain/schemas';
-import { loginSchema, registerSchema, forgotPasswordSchema, type SignupRole } from './schemas';
+import {
+  loginSchema,
+  registerSchema,
+  forgotPasswordSchema,
+  updatePasswordSchema,
+  type SignupRole,
+} from './schemas';
 import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
 import { areCurrentLegalVersions } from '@/features/legal';
+import { publicEnv } from '@/lib/env.public';
 
 export async function loginAction(
   input: unknown
@@ -141,6 +148,7 @@ export async function registerAction(
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
+      emailRedirectTo: `${publicEnv.NEXT_PUBLIC_APP_URL}/auth/confirm`,
       data: {
         role: parsed.data.role,
         ...(parsed.data.displayName ? { display_name: parsed.data.displayName } : {}),
@@ -212,10 +220,80 @@ export async function requestPasswordResetAction(
   }
 
   const supabase = await createClient();
-  await supabase.auth.resetPasswordForEmail(parsed.data.email);
+  await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+    redirectTo: `${publicEnv.NEXT_PUBLIC_APP_URL}/auth/confirm?next=/reset-password`,
+  });
 
   return ok({ sent: true });
 }
+
+function updatePasswordErrorCode(code: string | undefined): DomainErrorCode {
+  switch (code) {
+    case 'weak_password':
+    case 'same_password':
+      return 'VALIDATION_ERROR';
+    case 'over_request_rate_limit':
+    case 'over_email_send_rate_limit':
+      return 'RATE_LIMITED';
+    case 'session_missing':
+      return 'UNAUTHENTICATED';
+    default:
+      return 'INTERNAL_ERROR';
+  }
+}
+
+export async function updatePasswordAction(
+  input: unknown
+): Promise<ActionResult<{ redirectTo: string }, DomainErrorCode>> {
+  const parsed = updatePasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.updateUser({
+    password: parsed.data.password,
+  });
+
+  if (error) {
+    if (error.code === 'session_missing' || error.name === 'AuthSessionMissingError') {
+      return err('UNAUTHENTICATED');
+    }
+    return err(updatePasswordErrorCode(error.code));
+  }
+
+  if (!data.user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  try {
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
+    if (signOutError) {
+      return err('INTERNAL_ERROR');
+    }
+  } catch {
+    return err('INTERNAL_ERROR');
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, consent_status')
+    .eq('id', data.user.id)
+    .maybeSingle<{ role: unknown; consent_status: unknown }>();
+
+  let redirectTo = '/';
+  const roleParsed = profileRoleSchema.safeParse(profile?.role);
+  const consentParsed = consentStatusSchema.safeParse(profile?.consent_status);
+
+  if (roleParsed.success && consentParsed.success) {
+    redirectTo = resolvePostLoginRedirect(null, roleParsed.data, consentParsed.data);
+  } else if (roleParsed.success) {
+    redirectTo = getRoleDefaultPath(roleParsed.data);
+  }
+
+  return ok({ redirectTo });
+}
+
 
 export async function logoutAction(): Promise<ActionResult<null, DomainErrorCode>> {
   const supabase = await createClient();
