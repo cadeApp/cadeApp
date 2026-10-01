@@ -815,3 +815,68 @@ describe('T-123: getAuditActors (A06, filtro por operador)', () => {
     expect(typeof limit === 'number' && limit <= 50).toBe(true);
   });
 });
+
+describe('T-321: Desambiguación de embeds PostgREST con foreign keys canónicas (DoD T-321)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('getApplicantsQueue usa profiles!couriers_profile_id_fkey y no profiles:profile_id', async () => {
+    const { calls } = mockClient({ couriers: { data: [], error: null } });
+    await getApplicantsQueue('pending');
+
+    const [select] = callsOf(calls, 'couriers', 'select');
+    expect(select).toBeDefined();
+    const selectStr = String(select?.args[0]);
+    expect(selectStr).toMatch(/profiles!couriers_profile_id_fkey\s*\(/);
+    expect(selectStr).not.toMatch(/profiles:profile_id/);
+  });
+
+  it('getApplicantDetail usa profiles!couriers_profile_id_fkey y no profiles:profile_id', async () => {
+    const { calls } = mockClient({
+      couriers: { data: null, error: null },
+      courier_documents: { data: [], error: null },
+    });
+    await getApplicantDetail('c-1');
+
+    const [select] = callsOf(calls, 'couriers', 'select');
+    expect(select).toBeDefined();
+    const selectStr = String(select?.args[0]);
+    expect(selectStr).toMatch(/profiles!couriers_profile_id_fkey\s*\(/);
+    expect(selectStr).not.toMatch(/profiles:profile_id/);
+  });
+
+  it('getAdminMerchants usa profiles!merchants_profile_id_fkey y no profiles:profile_id', async () => {
+    const { calls } = mockClient({ merchants: { data: [], error: null } });
+    await getAdminMerchants();
+
+    const [select] = callsOf(calls, 'merchants', 'select');
+    expect(select).toBeDefined();
+    const selectStr = String(select?.args[0]);
+    expect(selectStr).toMatch(/profiles!merchants_profile_id_fkey\s*\(/);
+    expect(selectStr).not.toMatch(/profiles:profile_id/);
+  });
+
+  it('getAuditLog usa profiles!audit_log_actor_id_fkey y no profiles:actor_id', async () => {
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getAuditLog();
+
+    const [select] = callsOf(calls, 'audit_log', 'select');
+    expect(select).toBeDefined();
+    const selectStr = String(select?.args[0]);
+    expect(selectStr).toMatch(/profiles!audit_log_actor_id_fkey\s*\(/);
+    expect(selectStr).not.toMatch(/profiles:actor_id/);
+  });
+
+  it('getRecentSettingChanges usa profiles!audit_log_actor_id_fkey y no profiles:actor_id', async () => {
+    const { calls } = mockClient({ audit_log: { data: [], error: null } });
+    await getRecentSettingChanges();
+
+    const [select] = callsOf(calls, 'audit_log', 'select');
+    expect(select).toBeDefined();
+    const selectStr = String(select?.args[0]);
+    expect(selectStr).toMatch(/profiles!audit_log_actor_id_fkey\s*\(/);
+    expect(selectStr).not.toMatch(/profiles:actor_id/);
+  });
+});
+
