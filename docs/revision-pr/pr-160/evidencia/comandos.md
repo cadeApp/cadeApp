@@ -1,110 +1,86 @@
 # Evidencia y comandos — PR #160
 
-## Ronda 1
+## Ronda 3
 
-**SHA revisado:** `803632187079aab355b3cadb8d20477a50ef274d`
-
-La evidencia completa de Ronda 1 se conserva en el historial de este archivo y en `revisiones/ronda-1.md`.
-
-## Ronda 2
-
-**SHA revisado:** `e268f5c2f4e72fdcb2592996b50b027062e2464a`  
-**develop:** `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
+**SHA revisado:** `01476eb56b7ec962d488cd087b6d7abc5f31ca53`
 
 ### Sincronización
 
-```bash
-git fetch origin
-git rev-parse origin/feat/T-303-main-flow
-git rev-parse origin/develop
-git merge-base origin/develop origin/feat/T-303-main-flow
-git rev-list --left-right --count origin/develop...origin/feat/T-303-main-flow
-```
-
-Observado:
-- head: `e268f5c2f4e72fdcb2592996b50b027062e2464a`
+Comparación remota:
 - develop: `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
-- merge-base: `9e232d0e4ef003ca0535b11e5a962b4cf603189a`
-- detrás de develop: **25**
-- por delante: 7
+- head revisado: `01476eb56b7ec962d488cd087b6d7abc5f31ca53`
+- ahead: 11
+- behind: **0**
+- merge-base: develop actual
 
-### H01 — desaparición de mocks integrales
+### Concurrencia
 
-```bash
-git grep -n "route.fulfill\|page.route\|context.route" e268f5c2f4e72fdcb2592996b50b027062e2464a -- e2e/specs/main-flow.spec.ts
+Inspección de `main-flow.spec.ts`:
+- dos confirmaciones dentro de `Promise.all`;
+- alerta filtrada por mensaje de `ALREADY_MATCHED`;
+- `expect.poll` sobre estado server-side;
+- expected: request matched, acceptedCount=1, nonAcceptedCount=1 y accepted_offer_id igual a la ganadora.
+
+Corrección estructural confirmada; falta runtime independiente.
+
+### Publicación cash
+
+El producto renderiza el preset con:
+
+```tsx
+Paga con: {formatArs(preset)}
 ```
 
-Por inspección del archivo actual: no quedan mocks de página/RPC en `main-flow.spec.ts`. H01 pasa a `arreglado-sin-verificar`, no a verificado.
+y `formatArs(5000)` devuelve `$ 5.000`.
 
-### H02 — oráculo incompleto de concurrencia
+El Page Object construye `/paga con.*5000/i`; no coincide con el texto real.
 
-```bash
-git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/specs/main-flow.spec.ts | sed -n '58,116p'
+Después del submit el caso busca “Paquete chico” y “Efectivo” en toda la página. La fixture base ya creó una request `chico/cash`, por lo que esas aserciones no identifican la request recién publicada.
+
+### Ordenamiento
+
+Oráculo actual:
+
+```ts
+expect(orderDoc[0]).not.toBe(orderPrice[0]);
 ```
 
-Se observa:
-- clicks dentro de `Promise.all`;
-- `alreadyMatchedAlert` es cualquier `role=alert`;
-- única afirmación: `hasAlert1 || hasAlert2`;
-- después de `tab1.reload()` no hay aserción de cantidad/estado final.
+No prueba que Doc2 sea primero por documentación ni que $1500 sea primero por precio.
 
-### R01 — escenario del piso incompatible con fixture
+### Cambio de rol en Flow 5
 
-```bash
-git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/fixtures/roles.ts
-git show e268f5c2f4e72fdcb2592996b50b027062e2464a:src/server/e2e/staging-seed.ts
-git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/specs/main-flow.spec.ts | sed -n '205,244p'
-```
+Cadena observada:
+1. `loginAsMerchant(page)`;
+2. la misma page/context conserva cookies merchant;
+3. `loginAsCourier(0, page)` navega a `/login`;
+4. `evaluateRouteGuard('/login', merchantSession)` redirige a `/merchant/dashboard`;
+5. el formulario de login courier no queda disponible.
 
-Cadena estática:
-1. `createOffersForFirstRequest: true`.
-2. seed crea offer pending de Courier 0 para la primera request.
-3. floor test hace `loginAsCourier(0)`.
-4. `getAvailableRequests` calcula `hasMyOffer=true`.
-5. `RequestCard` no renderiza “Ofertar” cuando `hasMyOffer`.
+### Cleanup auxiliar
 
-Si `offerButton.first()` existe, proviene de otra request de staging y el caso deja de estar aislado.
+Migraciones actuales:
+- `publish_request` genera `rate_limits` y `audit_log`;
+- `submit_offer` y `withdraw_offer` generan `rate_limits`;
+- `mark_picked_up` y `mark_delivered` generan `audit_log`.
 
-### R02 — cleanup no cubre writes de UI
+Esquema:
+- `audit_log.actor_id` → profiles con `ON DELETE SET NULL`;
+- `rate_limits.subject` es texto, sin FK.
 
-```bash
-git show e268f5c2f4e72fdcb2592996b50b027062e2464a:e2e/specs/main-flow.spec.ts | sed -n '119,203p'
-git show e268f5c2f4e72fdcb2592996b50b027062e2464a:src/server/e2e/staging-seed.ts | sed -n '618,744p'
-git show origin/develop:supabase/migrations/20260922031435_schema_v1.sql | sed -n '83,150p'
-```
+`cleanupStagingData` no elimina esas tablas, así que las filas sobreviven al teardown.
 
-Prueba estructural:
-- submit de publicación crea una request real nueva;
-- el spec no agrega su ID a `createdRequestIds`;
-- cleanup borra solo IDs trackeados;
-- `delivery_requests.merchant_id` y `offers.request_id` no tienen `ON DELETE CASCADE`.
+### Evidencia declarada por el autor
 
-Consecuencia: puede quedar una request/offer E2E viva y fallar el borrado del merchant/request en teardown.
+- typecheck: verde declarado;
+- lint: verde declarado;
+- staging-seed: 36/36 verde declarado;
+- verify-fichas: un fallo en T-322, ajeno a T-303;
+- test:db: rojo local por ausencia de Supabase local;
+- Playwright: solo `--list`, sin ejecución staging;
+- `pnpm test`: sin salida pegada en body.
 
-### H04/H05 — evidencia contradictoria
+La demostración RED de concurrencia usa un estado simulado con dos accepted; no se toma como mutación de la implementación real.
 
-La bitácora de 02:45 atribuye RED/GREEN al SHA `464084a`, pero los commits que implementan el arreglo son posteriores:
-- `a102cc4` — extensión seed;
-- `c5c211c` — spec/Page Objects;
-- `e268f5c` — docs de cierre.
+### Checks de esta revisión
 
-La misma entrada dice que Playwright fue bloqueado por fail-closed y que falta la ejecución staging. El body, aun así, marca el DoD como `[x]`.
-
-También faltan en el body salidas de:
-```bash
-pnpm test
-pnpm test:db
-```
-
-### H07 — constructs prohibidos añadidos
-
-Extraídos del diff `464084a...e268f5c`:
-- `createdRequestIds[0]!`
-- `couriers[0]!.id`
-- `couriers[1]!.id`
-- `builder as any`
-- nuevos `as any` y `[0]!/[1]!` en `staging-seed.test.ts`.
-
-### Ejecución de esta revisión
-
-No se ejecutaron checks locales ni CI. Esta ronda se cierra por inspección estática porque ya hay bloqueantes previos a la etapa de aprobación. No se inventa GREEN ni se reusa la evidencia del autor como verificación independiente.
+No se ejecutaron checks/CI en Ronda 3 porque existen bloqueantes estáticos anteriores a aprobación.
