@@ -276,3 +276,55 @@ Código:
 - `verifyError` → VALIDATION_ERROR.
 
 Los tests de `verifyAdminMfaAction` cubren payload inválido y éxito, no los estados anteriores.
+
+# Ronda 8 — H14/H15
+
+## Alcance desde R7
+
+`compare ddec5a3...d9232e7431610f4f5dd5ab1b665b0c0f8c581757`:
+- 3 commits del autor;
+- cambios solo en ficha/log y archivos auth/admin autorizados;
+- reviewer docs sin cambios.
+
+## H14
+
+Código verificado:
+- `ADMIN_HOME = '/admin/applicants'`;
+- `defaultPostLoginPath('admin', ...)` evalúa `evaluateRouteGuard(ADMIN_HOME, admin aal1)`;
+- retorna `/login/mfa?redirectTo=%2Fadmin%2Fapplicants`;
+- `resolvePostLoginRedirect` usa ese helper en sus fallbacks;
+- `LoginForm` navega usando el mismo resolver canónico.
+
+## H15
+
+Código verificado:
+- `factorsError || !factors` → INTERNAL_ERROR;
+- `!factors.totp?.[0]` → AAL2_REQUIRED;
+- challenge error/ausente → INTERNAL_ERROR;
+- verify error → VALIDATION_ERROR;
+- ningún detalle remoto entra al ActionResult;
+- MfaForm tiene rama específica para AAL2_REQUIRED.
+
+## CI
+
+GitHub Actions hizo checkout de:
+`24e32c8a9070fb7604cd8734504a04335ad16d8a` = head `d9232e7431610f4f5dd5ab1b665b0c0f8c581757` + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6`.
+
+Unit:
+- Test Files: 108 passed
+- Tests: 1520 passed
+- admin-mfa-enroll: 34
+- login-form: 4
+- mfa-form: 7
+- verify-workflows: 31
+- verify-adr: 6
+
+Checks:
+- typecheck success
+- lint success
+- unit success
+- db-tests success
+- build success
+- bundle-budget success
+- audit success
+- approval-policy failure esperada por body incompleto.

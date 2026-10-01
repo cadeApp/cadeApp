@@ -53,3 +53,10 @@ H03–H07 nacen en parte de una evolución de la ficha posterior al fork de la r
 - Un guard puede estar correcto y aun así el flujo real estar roto si el login nunca navega hacia la ruta protegida que activa ese guard.
 - Un `INTERNAL_ERROR` que agrupa estados operativos distintos impide diagnosticar staging y puede convertir un estado recuperable (“sin factor verificado”) en un supuesto fallo de infraestructura.
 - La evidencia end-to-end sigue encontrando huecos que las pruebas unitarias por componente no conectaban.
+
+## Ronda 8
+
+- H14 se cerró sin romper un contrato anterior: cuando una función de “default por rol” tiene consumidores históricos, el flujo nuevo puede derivarse del guard canónico en vez de alterar globalmente ese default.
+- H15 refuerza P06: dos fallos que terminan en el mismo DomainError pueden ser semánticamente distintos; enumerar cada salida remota permite conservar un estado recuperable sin disfrazarlo de infraestructura.
+- Los tests del formulario son importantes porque verifican la conexión entre Server Action/resolver y navegación real, no solo helpers aislados.
+- El merge sintético de GitHub permite validar compatibilidad con un develop adelantado sin fingir que la rama está sincronizada en historia.

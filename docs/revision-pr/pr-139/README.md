@@ -6,9 +6,9 @@
 | **Tarea** | T-317 (Fase 3) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-317-admin-mfa-enroll` → `develop` |
-| **Head R6 revisado** | `b9115b7e388a490e51461f5085fc5918a4bd6740` |
-| **Merge sintético CI** | `d85ee4ac17921e46ca4d228fdfe8ef26b070116d` = head + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6` |
-| **Estado** | bloqueada — Ronda 7: staging descubre H14 y H15 en login/MFA web |
+| **Head R8 revisado** | `d9232e7431610f4f5dd5ab1b665b0c0f8c581757` |
+| **Merge sintético CI** | `24e32c8a9070fb7604cd8734504a04335ad16d8a` = head + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6` |
+| **Estado** | sin bloqueantes de código — pendiente evidencia manual final en `cadeapp-staging` |
 
 ## Rondas
 
@@ -19,23 +19,29 @@
 | 3 | `6cfa41e` | H01–H12 cerrados |
 | 4 | `d6fac40` | revalidación, 0 nuevos |
 | 5 | `8b347e4` | staging descubre H13 |
-| 6 | `b9115b7e388a490e51461f5085fc5918a4bd6740` | H13 cerrado; 0 bloqueantes de código |
-| 7 | `061121ad055232e9a618313cbeece26db4a4a601` | H14–H15 abiertos por evidencia real de staging |
+| 6 | `b9115b7` | H13 cerrado |
+| 7 | `061121a` | staging descubre H14–H15 |
+| 8 | `d9232e7431610f4f5dd5ab1b665b0c0f8c581757` | H14–H15 cerrados; 0 bloqueantes de código |
 
 ## Estado
 
-H01–H13 están `arreglado-verificado`. H14 y H15 están abiertos por la evidencia real de staging.
+H01–H15 están `arreglado-verificado`.
 
-## R6
+## R8
 
-- Parser acepta el formato real de Supabase: prefijo exacto + SVG crudo con declaración XML/comentarios opcionales antes de la raíz.
-- No usa `decodeURIComponent`.
-- Raw SVG, base64, prefijo incorrecto y cuerpos sin raíz SVG siguen fail-closed.
-- La ficha T-317 corrige únicamente el caso de prueba del QR para describir el contrato real.
-- El autor no tocó `docs/revision-pr/pr-139/**`.
-- GitHub ejecutó CI sobre el merge sintético con el develop vigente: 107 archivos / 1498 tests; enrolador 34/34; typecheck/lint/db/build/audit/bundle verdes.
-- `approval-policy` sigue rojo intencionalmente mientras falte la evidencia manual final y el body no tenga el informe final.
+- H14: el login del admin sin destino ya entra al circuito MFA hacia `/admin/applicants`, sin cambiar el contrato histórico `getRoleDefaultPath('admin') === '/'`.
+- El destino se deriva del guard existente con una sesión admin AAL1; no se duplica la política MFA ni se confía en un redirect externo.
+- H15: `verifyAdminMfaAction` distingue error de listado, ausencia de factor verificado, error de challenge y código incorrecto.
+- La UI muestra un mensaje específico ante `AAL2_REQUIRED` y mantiene mensajes separados para error interno/código inválido.
+- La ampliación de alcance quedó registrada explícitamente en la ficha T-317 y los cambios de R7 se limitaron a los archivos autorizados.
+- El autor no modificó `docs/revision-pr/pr-139/**`.
+- GitHub probó el merge sintético con el develop vigente: **108 archivos / 1520 tests**, enrolador 34/34, login-form 4/4, mfa-form 7/7, typecheck/lint/db/build/audit/bundle verdes.
+- `approval-policy` sigue rojo intencionalmente: falta la evidencia manual final y todavía no corresponde completar el informe SIN BLOQUEANTES en el body.
 
 ## Qué queda
 
-Repetir `pnpm admin:mfa-enroll` en `cadeapp-staging`, escanear el QR, verificar TOTP, y comprobar `/login → /login/mfa → /admin/applicants` con AAL2. Registrar solo fecha, éxito, AAL2 y ruta final.
+1. Ejecutar `pnpm admin:mfa-enroll` hasta que la herramienta confirme MFA activo.
+2. En una sesión web nueva: `/login` → redirección automática a `/login/mfa?redirectTo=%2Fadmin%2Fapplicants`.
+3. Ingresar un TOTP válido y comprobar llegada a `/admin/applicants`.
+4. Confirmar que la sesión está en AAL2.
+5. Registrar únicamente fecha, éxito, AAL2 y ruta final; nunca contraseña, QR, secreto, URI, código ni token.
