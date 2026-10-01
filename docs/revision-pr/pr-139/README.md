@@ -6,9 +6,9 @@
 | **Tarea** | T-317 (Fase 3) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-317-admin-mfa-enroll` → `develop` |
-| **Head R8 revisado** | `d9232e7431610f4f5dd5ab1b665b0c0f8c581757` |
-| **Merge sintético CI** | `24e32c8a9070fb7604cd8734504a04335ad16d8a` = head + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6` |
-| **Estado** | sin bloqueantes de código — pendiente evidencia manual final en `cadeapp-staging` |
+| **Head funcional final verificado** | `d9232e7431610f4f5dd5ab1b665b0c0f8c581757` |
+| **Merge sintético CI** | `24e32c8a9070fb7604cd8734504a04335ad16d8a` = head funcional + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6` |
+| **Estado** | **SIN BLOQUEANTES — evidencia manual final completada** |
 
 ## Rondas
 
@@ -21,27 +21,48 @@
 | 5 | `8b347e4` | staging descubre H13 |
 | 6 | `b9115b7` | H13 cerrado |
 | 7 | `061121a` | staging descubre H14–H15 |
-| 8 | `d9232e7431610f4f5dd5ab1b665b0c0f8c581757` | H14–H15 cerrados; 0 bloqueantes de código |
+| 8 | `d9232e7` | H14–H15 cerrados |
+| 9 | evidencia manual | recorrido real completo; cierre final |
 
 ## Estado
 
 H01–H15 están `arreglado-verificado`.
 
-## R8
+## Evidencia manual final
 
-- H14: el login del admin sin destino ya entra al circuito MFA hacia `/admin/applicants`, sin cambiar el contrato histórico `getRoleDefaultPath('admin') === '/'`.
-- El destino se deriva del guard existente con una sesión admin AAL1; no se duplica la política MFA ni se confía en un redirect externo.
-- H15: `verifyAdminMfaAction` distingue error de listado, ausencia de factor verificado, error de challenge y código incorrecto.
-- La UI muestra un mensaje específico ante `AAL2_REQUIRED` y mantiene mensajes separados para error interno/código inválido.
-- La ampliación de alcance quedó registrada explícitamente en la ficha T-317 y los cambios de R7 se limitaron a los archivos autorizados.
-- El autor no modificó `docs/revision-pr/pr-139/**`.
-- GitHub probó el merge sintético con el develop vigente: **108 archivos / 1520 tests**, enrolador 34/34, login-form 4/4, mfa-form 7/7, typecheck/lint/db/build/audit/bundle verdes.
-- `approval-policy` sigue rojo intencionalmente: falta la evidencia manual final y todavía no corresponde completar el informe SIN BLOQUEANTES en el body.
+Lautaro073 confirmó en `cadeapp-staging`:
+- herramienta de enrolamiento completada;
+- MFA TOTP activo;
+- login de admin;
+- redirección automática a `/login/mfa?redirectTo=%2Fadmin%2Fapplicants`;
+- verificación correcta del TOTP;
+- sesión `aal2`;
+- llegada a `/admin/applicants`.
 
-## Qué queda
+No se guardó ningún secreto.
 
-1. Ejecutar `pnpm admin:mfa-enroll` hasta que la herramienta confirme MFA activo.
-2. En una sesión web nueva: `/login` → redirección automática a `/login/mfa?redirectTo=%2Fadmin%2Fapplicants`.
-3. Ingresar un TOTP válido y comprobar llegada a `/admin/applicants`.
-4. Confirmar que la sesión está en AAL2.
-5. Registrar únicamente fecha, éxito, AAL2 y ruta final; nunca contraseña, QR, secreto, URI, código ni token.
+## Follow-up fuera de T-317
+
+Después de superar el guard y ejecutar la página admin, staging expuso defectos preexistentes del panel:
+
+1. `getApplicantsQueue`: embed PostgREST ambiguo sobre `couriers/profile_id`.
+2. `getAdminMerchants`: embed PostgREST ambiguo sobre `merchants/profile_id`.
+3. `getPlatformSettings`: falta `min_offer_ars` en el remoto; el valor existe en `supabase/seed.sql`, no como garantía de migración remota.
+
+Estos fallos ocurren después del MFA/AAL2 y pertenecen a T-122/T-123/bootstrap de staging. No reabren T-317.
+
+## CI previo al cierre
+
+GitHub probó el merge sintético `24e32c8a9070fb7604cd8734504a04335ad16d8a`:
+- unit ✅ 108 archivos / 1520 tests
+- enrolador ✅ 34/34
+- login-form ✅ 4/4
+- mfa-form ✅ 7/7
+- typecheck ✅
+- lint ✅
+- db-tests ✅
+- build ✅
+- bundle-budget ✅
+- audit ✅
+
+El commit de R9 solo agrega evidencia/documentación; revalidar CI/approval-policy sobre el head final antes del merge.

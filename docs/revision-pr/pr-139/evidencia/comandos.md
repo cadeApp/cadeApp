@@ -328,3 +328,28 @@ Checks:
 - bundle-budget success
 - audit success
 - approval-policy failure esperada por body incompleto.
+
+# Ronda 9 — evidencia manual final
+
+Reportado por Lautaro073 en `cadeapp-staging`, 2026-09-30:
+- enrolamiento TOTP: éxito;
+- login admin: éxito;
+- MFA web: éxito;
+- AAL2: confirmado;
+- ruta final alcanzada: `/admin/applicants`.
+
+No se registró ningún valor sensible.
+
+## Observaciones post-AAL2 fuera de alcance
+
+El panel ejecutó sus Server Components y expuso:
+- `getApplicantsQueue` → relación PostgREST ambigua;
+- `getAdminMerchants` → relación PostgREST ambigua;
+- `getPlatformSettings` → `min_offer_ars` ausente/inválido.
+
+El hecho de que `ApplicantsPage` haya llegado a ejecutar `getApplicantsQueue` después del submit MFA confirma que el guard permitió la sesión AAL2. Los fallos posteriores son de lectura/configuración del panel y no del flujo T-317.
+
+Repo:
+- `src/features/admin/queries.ts` usa `profiles:profile_id` en applicants y merchants.
+- `supabase/seed.sql` contiene `min_offer_ars = 1000`.
+- las migraciones garantizan otros settings puntuales, pero no insertan `min_offer_ars` como parte del esquema base.

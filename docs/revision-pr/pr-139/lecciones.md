@@ -60,3 +60,9 @@ H03–H07 nacen en parte de una evolución de la ficha posterior al fork de la r
 - H15 refuerza P06: dos fallos que terminan en el mismo DomainError pueden ser semánticamente distintos; enumerar cada salida remota permite conservar un estado recuperable sin disfrazarlo de infraestructura.
 - Los tests del formulario son importantes porque verifican la conexión entre Server Action/resolver y navegación real, no solo helpers aislados.
 - El merge sintético de GitHub permite validar compatibilidad con un develop adelantado sin fingir que la rama está sincronizada en historia.
+
+## Ronda 9
+
+- La evidencia E2E debe distinguir “el control de acceso dejó pasar” de “la página renderizó todos sus datos”: un error de query posterior puede confirmar el primero y revelar un defecto independiente.
+- No conviene absorber indefinidamente fallos encontrados en staging dentro de la PR que habilitó el entorno. Cuando el fallo pertenece a código previo (T-122/T-123), se registra como follow-up separado.
+- Los tests mockeados de queries Supabase no sustituyen una ejecución real de PostgREST para validar joins/embeds y datos seed de un remoto.
