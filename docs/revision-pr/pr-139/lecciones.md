@@ -40,3 +40,10 @@ H03–H07 nacen en parte de una evolución de la ficha posterior al fork de la r
 - La divergencia con `develop` debe evaluarse por contenido: los 12 commits faltantes son exclusivamente documentación de T-318/PR143 y no cambian T-317 ni CI.
 - Un intento manual fallido antes de completar el flujo no sustituye la evidencia operativa del DoD. La PR puede estar técnicamente limpia y seguir sin estar lista para merge.
 - No se agrega numeración AG nueva.
+
+## Rondas 5–6
+
+- H13 es un caso directo de P01: el mock representaba una forma plausible del proveedor, no la forma real de la versión instalada.
+- Para fronteras de serialización externas, un fixture realista del proveedor evita que una suite completamente verde valide un contrato inventado.
+- La prueba manual de staging encontró un defecto que 30 tests unitarios no podían ver; después del arreglo, el caso real quedó incorporado como fixture y la suite subió a 34 tests.
+- No se agrega una regla nueva: P01 ya cubre el patrón.

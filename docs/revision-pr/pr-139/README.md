@@ -6,44 +6,35 @@
 | **Tarea** | T-317 (Fase 3) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-317-admin-mfa-enroll` → `develop` |
-| **Head funcional validado** | `6cfa41e949b3ac81c17f4a3f6b545de8b27a10f1` |
-| **Head actual revalidado** | `d6fac40e01202c99f6db800e4057017ffee3c80c` |
-| **develop al revisar R4** | `158f83b2b1bf6211a2bf8e53ae7cd90130edc445` |
-| **Estado** | sin bloqueantes de código — pendiente evidencia manual obligatoria en `cadeapp-staging` |
+| **Head R6 revisado** | `b9115b7e388a490e51461f5085fc5918a4bd6740` |
+| **Merge sintético CI** | `d85ee4ac17921e46ca4d228fdfe8ef26b070116d` = head + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6` |
+| **Estado** | sin bloqueantes de código — pendiente repetir evidencia manual obligatoria en `cadeapp-staging` |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
-|---|---|---|---|
-| 1 | `7645c4e3f55cc349a72443b2b0ea0e7fa5cdc463` | 9 bloqueantes | `revisiones/ronda-1.md` |
-| 2 | `4fb89bc79817650f747c2b12669687585ee526ec` | 9 cerrados + 3 nuevos | `revisiones/ronda-2.md` |
-| 3 | `6cfa41e949b3ac81c17f4a3f6b545de8b27a10f1` | 12 cerrados · 0 nuevos | `revisiones/ronda-3.md` |
-| 4 | `d6fac40e01202c99f6db800e4057017ffee3c80c` | 0 nuevos · implementación revalidada | `revisiones/ronda-4.md` |
+| Ronda | SHA revisado | Resultado |
+|---|---|---|
+| 1 | `7645c4e` | 9 bloqueantes |
+| 2 | `4fb89bc` | 9 cerrados + H10–H12 |
+| 3 | `6cfa41e` | H01–H12 cerrados |
+| 4 | `d6fac40` | revalidación, 0 nuevos |
+| 5 | `8b347e4` | staging descubre H13 |
+| 6 | `b9115b7e388a490e51461f5085fc5918a4bd6740` | H13 cerrado; 0 bloqueantes de código |
 
-## Estado por hallazgo
+## Estado
 
-- **PR139-H01** · alto · arreglado-verificado en `6cfa41e`
-- **PR139-H02** · alto · arreglado-verificado en `6cfa41e`
-- **PR139-H03** · critico · arreglado-verificado en `6cfa41e`
-- **PR139-H04** · alto · arreglado-verificado en `6cfa41e`
-- **PR139-H05** · alto · arreglado-verificado en `6cfa41e`
-- **PR139-H06** · medio · arreglado-verificado en `6cfa41e`
-- **PR139-H07** · medio · arreglado-verificado en `6cfa41e`
-- **PR139-H08** · alto · arreglado-verificado en `6cfa41e`
-- **PR139-H09** · medio · arreglado-verificado en `6cfa41e`
-- **PR139-H10** · medio · arreglado-verificado en `6cfa41e`
-- **PR139-H11** · alto · arreglado-verificado en `6cfa41e`
-- **PR139-H12** · medio · arreglado-verificado en `6cfa41e`
+H01–H13 están `arreglado-verificado`. H04 y H12 se revalidaron porque H13 modifica el mismo parser QR.
 
-Los datos estructurados permanecen en `hallazgos.jsonl`; R4 no agrega hallazgos nuevos.
+## R6
 
-## Qué queda por hacer
+- Parser acepta el formato real de Supabase: prefijo exacto + SVG crudo con declaración XML/comentarios opcionales antes de la raíz.
+- No usa `decodeURIComponent`.
+- Raw SVG, base64, prefijo incorrecto y cuerpos sin raíz SVG siguen fail-closed.
+- La ficha T-317 corrige únicamente el caso de prueba del QR para describir el contrato real.
+- El autor no tocó `docs/revision-pr/pr-139/**`.
+- GitHub ejecutó CI sobre el merge sintético con el develop vigente: 107 archivos / 1498 tests; enrolador 34/34; typecheck/lint/db/build/audit/bundle verdes.
+- `approval-policy` sigue rojo intencionalmente mientras falte la evidencia manual final y el body no tenga el informe final.
 
-1. Completar la evidencia real obligatoria en `cadeapp-staging`: cuenta admin confirmada, `pnpm admin:mfa-enroll`, luego `/login` → `/login/mfa` → `/admin/applicants` con `aal2`.
-2. Registrar en la bitácora solo fecha, resultado, AAL2 y ruta final; nunca contraseña, código, QR, token ni secreto TOTP.
-3. Recién después, actualizar el cuerpo de la PR con el informe completo `Resultado: SIN BLOQUEANTES` para que `approval-policy` quede verde.
-4. Revalidar el head final si aparece cualquier commit nuevo antes del merge.
+## Qué queda
 
-## Nota sobre divergencia actual
-
-La rama está 12 commits detrás del `develop` actual, pero esos commits son exclusivamente documentación/revisión de T-318/PR #143 y no cambian T-317, workflows ni código ejecutable. No se considera bloqueante para esta ronda; sí se volverá a comprobar antes del merge final.
+Repetir `pnpm admin:mfa-enroll` en `cadeapp-staging`, escanear el QR, verificar TOTP, y comprobar `/login → /login/mfa → /admin/applicants` con AAL2. Registrar solo fecha, éxito, AAL2 y ruta final.

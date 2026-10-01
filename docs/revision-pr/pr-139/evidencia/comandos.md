@@ -243,3 +243,12 @@ Log de approval-policy:
 ## Evidencia manual
 
 La evidencia real de `cadeapp-staging` sigue pendiente. Un intento que no alcanza enrolamiento TOTP + login MFA + `/admin/applicants` con AAL2 no satisface el ítem del DoD.
+
+# Rondas 5–6 — PR139-H13
+
+- Staging: `mfa.enroll()` respondió, pero el parser devolvió `QR_FORMAT`.
+- Fuente oficial revisada: Supabase JS 2.116 concatena `data:image/svg+xml;utf-8,` + SVG crudo; Supabase Auth usa SVGo.
+- Reproducción independiente R6: real=true; raw/base64/wrong-prefix/not-svg/xml-without-svg=false.
+- Mutación conceptual antigua `startsWith('<svg')`: false para el fixture real.
+- CI checkout: `refs/pull/139/merge`, commit `d85ee4ac17921e46ca4d228fdfe8ef26b070116d` = `b9115b7e388a490e51461f5085fc5918a4bd6740` + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6`.
+- Unit: 107 files / 1498 tests; enrolador 34/34.
