@@ -93,8 +93,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.data.role).toBe('merchant');
-        expect(result.data.userId).toBe('usr-merchant-1');
+        // T-318: el resultado público no incluye el id del usuario (anti-enumeración).
+        expect(result.data).toStrictEqual({ role: 'merchant', redirectTo: '/merchant/onboarding' });
       }
       expect(mockSignUp).toHaveBeenCalledWith({
         email: 'comercio@test.com',
@@ -130,8 +130,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.data.role).toBe('courier');
-        expect(result.data.userId).toBe('usr-courier-1');
+        // T-318: el resultado público no incluye el id del usuario (anti-enumeración).
+        expect(result.data).toStrictEqual({
+          role: 'courier',
+          redirectTo: '/courier/onboarding/identity',
+        });
       }
       expect(mockSignUp).toHaveBeenCalledWith({
         email: 'courier@test.com',
@@ -408,6 +411,150 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         p_privacy_version: '1.0',
       });
       expect(deleteUserSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('T-318: motivo del rechazo de Supabase Auth en el registro', () => {
+    const VALID_INPUT = {
+      email: 'comercio@test.com',
+      password: 'password123',
+      role: 'merchant',
+      acceptTerms: true,
+      acceptedTermsVersion: '1.0',
+      acceptedPrivacyVersion: '1.0',
+    } as const;
+
+    function mockSignUpResult(result: { data: unknown; error: unknown }) {
+      const signUp = vi.fn().mockResolvedValue(result);
+      const signOut = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: { signUp, signOut },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+      return { signUp, signOut };
+    }
+
+    it.each([
+      ['weak_password', 'VALIDATION_ERROR'],
+      ['email_address_invalid', 'VALIDATION_ERROR'],
+      ['validation_failed', 'VALIDATION_ERROR'],
+      ['over_email_send_rate_limit', 'RATE_LIMITED'],
+      ['over_request_rate_limit', 'RATE_LIMITED'],
+      ['unexpected_failure', 'INTERNAL_ERROR'],
+      ['email_provider_disabled', 'INTERNAL_ERROR'],
+      ['email_address_not_authorized', 'INTERNAL_ERROR'],
+      ['captcha_failed', 'INTERNAL_ERROR'],
+      ['hook_timeout', 'INTERNAL_ERROR'],
+      ['hook_timeout_after_retry', 'INTERNAL_ERROR'],
+      ['unknown_code', 'INTERNAL_ERROR'],
+      [undefined, 'INTERNAL_ERROR'],
+    ])('error %s → %s', async (code, expected) => {
+      mockSignUpResult({
+        data: { user: null, session: null },
+        error: { code, message: 'detalle interno de Supabase' },
+      });
+      expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: expected });
+    });
+
+    describe('anti-enumeración: toda señal de cuenta existente responde igual que un alta nueva', () => {
+      // Con Confirm Email OFF, Supabase autentica el alta nueva: la acción tiene que terminar sin sesión.
+      const NEW_USER_WITH_SESSION = {
+        data: {
+          user: { id: 'usr-new-real', identities: [{ id: 'identity-1' }] },
+          session: { access_token: 'fresh-access', refresh_token: 'fresh-refresh' },
+        },
+        error: null,
+      };
+      // Con Confirm Email ON, el alta nueva llega sin sesión.
+      const NEW_USER_WITHOUT_SESSION = {
+        data: { user: { id: 'usr-new-real', identities: [{ id: 'identity-1' }] }, session: null },
+        error: null,
+      };
+      const EXISTING_ACCOUNT_SIGNALS = [
+        [
+          'respuesta sanitizada identities: []',
+          { data: { user: { id: 'sanitized-id', identities: [] }, session: null }, error: null },
+        ],
+        [
+          'user_already_exists',
+          {
+            data: { user: null, session: null },
+            error: { code: 'user_already_exists', message: 'User already registered' },
+          },
+        ],
+        [
+          'email_exists',
+          {
+            data: { user: null, session: null },
+            error: { code: 'email_exists', message: 'Email address already exists' },
+          },
+        ],
+      ] as const;
+      const ENUMERATING_TEXT = /ya existe|email registrado|cuenta existente|already/i;
+
+      async function publicResult(
+        signUpResult: { data: unknown; error: unknown },
+        signOutResult: { error: unknown } = { error: null }
+      ) {
+        const { signOut } = mockSignUpResult(signUpResult);
+        signOut.mockResolvedValue(signOutResult);
+        const rpc = vi.mocked(adminSupabase.createAdminClient)().rpc;
+        vi.mocked(rpc).mockClear();
+        const result = await registerAction(VALID_INPUT);
+        return { result, activations: vi.mocked(rpc).mock.calls.length, signOut };
+      }
+
+      it('el alta nueva con sesión devuelve éxito sin id, activa una vez y cierra la sesión local', async () => {
+        const fresh = await publicResult(NEW_USER_WITH_SESSION);
+        expect(fresh.result).toStrictEqual({
+          ok: true,
+          data: { role: 'merchant', redirectTo: '/merchant/onboarding' },
+        });
+        expect(JSON.stringify(fresh.result)).not.toMatch(/usr-new-real|fresh-access|fresh-refresh/);
+        expect(fresh.activations).toBe(1);
+        expect(fresh.signOut).toHaveBeenCalledTimes(1);
+        expect(fresh.signOut).toHaveBeenCalledWith({ scope: 'local' });
+      });
+
+      it('el alta nueva sin sesión devuelve éxito, activa una vez y no llama signOut', async () => {
+        const fresh = await publicResult(NEW_USER_WITHOUT_SESSION);
+        expect(fresh.result).toStrictEqual({
+          ok: true,
+          data: { role: 'merchant', redirectTo: '/merchant/onboarding' },
+        });
+        expect(fresh.activations).toBe(1);
+        expect(fresh.signOut).not.toHaveBeenCalled();
+      });
+
+      it.each(EXISTING_ACCOUNT_SIGNALS)(
+        '%s → mismo resultado público que un alta nueva, sin activar consentimientos ni signOut',
+        async (_signal, signUpResult) => {
+          const fresh = await publicResult(NEW_USER_WITH_SESSION);
+          const existing = await publicResult(signUpResult);
+
+          expect(existing.result).toStrictEqual(fresh.result);
+          expect(JSON.stringify(existing.result)).not.toMatch(/sanitized-id|usr-new-real/);
+          expect(JSON.stringify(existing.result)).not.toMatch(ENUMERATING_TEXT);
+          expect(existing.activations).toBe(0);
+          expect(existing.signOut).not.toHaveBeenCalled();
+        }
+      );
+
+      it('si no se puede cerrar la sesión del alta nueva, falla cerrado sin activar consentimientos', async () => {
+        const failed = await publicResult(NEW_USER_WITH_SESSION, {
+          error: new Error('signout failed'),
+        });
+        expect(failed.result).toStrictEqual({ ok: false, code: 'INTERNAL_ERROR' });
+        expect(JSON.stringify(failed.result)).not.toContain('signout failed');
+        expect(failed.activations).toBe(0);
+      });
+    });
+
+    it('el rechazo del trigger por rol inválido sigue devolviendo INVALID_SIGNUP_ROLE', async () => {
+      mockSignUpResult({
+        data: { user: null, session: null },
+        error: { code: 'unexpected_failure', message: 'Database error: INVALID_SIGNUP_ROLE' },
+      });
+      expect(await registerAction(VALID_INPUT)).toEqual({ ok: false, code: 'INVALID_SIGNUP_ROLE' });
     });
   });
 

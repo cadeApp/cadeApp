@@ -30,7 +30,10 @@ export const authCopy = {
     loadingButton: 'Creando cuenta...',
     hasAccount: '¿Ya tenés cuenta?',
     loginLink: 'Ingresá',
-    errorGeneric: 'No pudimos crear tu cuenta. Revisá los datos ingresados.',
+    errorGeneric:
+      'No pudimos completar el registro con esos datos. Revisá que el email esté bien escrito, elegí una contraseña más segura y evitá las demasiado comunes. Si ya tenés una cuenta, probá ingresar o recuperar tu contraseña.',
+    errorRateLimited: 'Hiciste muchos intentos seguidos. Esperá unos minutos y volvé a probar.',
+    errorUnexpected: 'Tuvimos un problema al crear tu cuenta. Probá de nuevo en unos minutos.',
     errorAdminRejected: 'El rol solicitado no es válido para el registro público.',
     errorTermsRequired: 'Tenés que aceptar los Términos y la Política de privacidad.',
   },
