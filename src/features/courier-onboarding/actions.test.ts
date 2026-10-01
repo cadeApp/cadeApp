@@ -43,7 +43,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         privacy: true,
         courierContract: true,
         tosVersion: '1.0',
-        privacyVersion: '1.0',
+        privacyVersion: '1.1',
         courierContractVersion: '1.0',
       },
     });
@@ -86,7 +86,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         privacy: true,
         courierContract: true,
         tosVersion: '1.0',
-        privacyVersion: '1.0',
+        privacyVersion: '1.1',
         courierContractVersion: '1.0',
       },
     });
@@ -153,7 +153,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         privacy: true,
         courierContract: true,
         tosVersion: '1.0',
-        privacyVersion: '1.0',
+        privacyVersion: '1.1',
         courierContractVersion: '1.0',
       },
     });
@@ -224,7 +224,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         privacy: true,
         courierContract: true,
         tosVersion: '1.0',
-        privacyVersion: '1.0',
+        privacyVersion: '1.1',
         courierContractVersion: '1.0',
       },
     });
@@ -315,7 +315,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         privacy: true,
         courierContract: true,
         tosVersion: '1.0',
-        privacyVersion: '1.0',
+        privacyVersion: '1.1',
         courierContractVersion: '1.0',
       },
     });
@@ -341,7 +341,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
     expect(mockUpsertConsents).toHaveBeenCalledWith(
       [
         { profile_id: currentUserId, document: 'tos', version: '1.0' },
-        { profile_id: currentUserId, document: 'privacy', version: '1.0' },
+        { profile_id: currentUserId, document: 'privacy', version: '1.1' },
         { profile_id: currentUserId, document: 'courier_contract', version: '1.0' },
       ],
       {
@@ -380,9 +380,9 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
   });
 
   it.each([
-    ['tosVersion desactualizada', { tosVersion: '0.9', privacyVersion: '1.0', courierContractVersion: '1.0' }],
-    ['privacyVersion desactualizada', { tosVersion: '1.0', privacyVersion: '0.9', courierContractVersion: '1.0' }],
-    ['courierContractVersion desactualizada', { tosVersion: '1.0', privacyVersion: '1.0', courierContractVersion: '0.9' }],
+    ['tosVersion desactualizada', { tosVersion: '0.9', privacyVersion: '1.1', courierContractVersion: '1.0' }],
+    ['privacyVersion desactualizada', { tosVersion: '1.0', privacyVersion: '1.0', courierContractVersion: '1.0' }],
+    ['courierContractVersion desactualizada', { tosVersion: '1.0', privacyVersion: '1.1', courierContractVersion: '0.9' }],
   ])(
     'rechaza con VALIDATION_ERROR si %s sin modificar courier ni insertar consents ni documents (H05)',
     async (_label, consentVersions) => {
@@ -529,7 +529,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
     const privacyAcceptedAt = '2026-09-01T10:05:00.000Z';
     const fakeConsents = createConsentsStatefulFake([
       { profile_id: currentUserId, document: 'tos', version: '1.0', accepted_at: tosAcceptedAt },
-      { profile_id: currentUserId, document: 'privacy', version: '1.0', accepted_at: privacyAcceptedAt },
+      { profile_id: currentUserId, document: 'privacy', version: '1.1', accepted_at: privacyAcceptedAt },
     ]);
 
     vi.mocked(serverAuth.createClient).mockResolvedValue({
@@ -595,7 +595,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         privacy: true,
         courierContract: true,
         tosVersion: '1.0',
-        privacyVersion: '1.0',
+        privacyVersion: '1.1',
         courierContractVersion: '1.0',
       },
     });
@@ -606,7 +606,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
     }
     // Preserva los timestamps históricos de TOS y Privacy sin sobrescribir
     expect(fakeConsents.store.get(`${currentUserId}:tos:1.0`)?.accepted_at).toBe(tosAcceptedAt);
-    expect(fakeConsents.store.get(`${currentUserId}:privacy:1.0`)?.accepted_at).toBe(privacyAcceptedAt);
+    expect(fakeConsents.store.get(`${currentUserId}:privacy:1.1`)?.accepted_at).toBe(privacyAcceptedAt);
     // Inserta courier_contract nuevo
     expect(fakeConsents.store.has(`${currentUserId}:courier_contract:1.0`)).toBe(true);
   });
@@ -615,7 +615,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
     const initialTimestamp = '2026-09-01T10:00:00.000Z';
     const fakeConsents = createConsentsStatefulFake([
       { profile_id: currentUserId, document: 'tos', version: '1.0', accepted_at: initialTimestamp },
-      { profile_id: currentUserId, document: 'privacy', version: '1.0', accepted_at: initialTimestamp },
+      { profile_id: currentUserId, document: 'privacy', version: '1.1', accepted_at: initialTimestamp },
       { profile_id: currentUserId, document: 'courier_contract', version: '1.0', accepted_at: initialTimestamp },
     ]);
 
@@ -682,14 +682,14 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         privacy: true,
         courierContract: true,
         tosVersion: '1.0',
-        privacyVersion: '1.0',
+        privacyVersion: '1.1',
         courierContractVersion: '1.0',
       },
     });
 
     expect(result.ok).toBe(true);
     expect(fakeConsents.store.get(`${currentUserId}:tos:1.0`)?.accepted_at).toBe(initialTimestamp);
-    expect(fakeConsents.store.get(`${currentUserId}:privacy:1.0`)?.accepted_at).toBe(initialTimestamp);
+    expect(fakeConsents.store.get(`${currentUserId}:privacy:1.1`)?.accepted_at).toBe(initialTimestamp);
     expect(fakeConsents.store.get(`${currentUserId}:courier_contract:1.0`)?.accepted_at).toBe(initialTimestamp);
   });
 });

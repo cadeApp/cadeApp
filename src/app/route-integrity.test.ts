@@ -542,7 +542,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(merchantRes.ok).toBe(true);
@@ -558,7 +558,7 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(courierRes.ok).toBe(true);

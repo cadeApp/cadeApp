@@ -123,9 +123,9 @@ const LEGAL_DOCUMENTS: Readonly<Record<LegalDocumentName, LegalDocumentDescripto
     href: '/legal/privacy',
     title: 'Política de Privacidad',
     shortTitle: 'Política de Privacidad',
-    version: '1.0',
-    effectiveDate: '2026-09-25',
-    updatedLabel: UPDATED_LABEL,
+    version: '1.1',
+    effectiveDate: '2026-10-01',
+    updatedLabel: '1 de octubre de 2026',
     intro:
       'Esta Política explica qué datos trata cadeApp, para qué los utiliza, el carácter obligatorio o facultativo de su provisión, con quién puede compartirlos y cómo ejercer los derechos previstos por la Ley 25.326 y su reglamentación.',
     sections: [
@@ -154,7 +154,7 @@ const LEGAL_DOCUMENTS: Readonly<Record<LegalDocumentName, LegalDocumentDescripto
         title: '3. Carácter obligatorio o facultativo y consecuencias de la negativa o inexactitud',
         paragraphs: [
           'Conforme al artículo 6 de la Ley 25.326, se informa con precisión el carácter obligatorio o facultativo de los datos requeridos por la plataforma según sus esquemas operativos:',
-          'Registro de cuenta: son obligatorios el correo electrónico, la contraseña (gestionada por el proveedor de autenticación), la selección de rol (comercio o repartidor) y la aceptación expresa con versión de los Términos y la Política de Privacidad. El nombre visible (displayName) y el teléfono de contacto son facultativos en esta etapa.',
+          'Registro de cuenta: son obligatorios el nombre visible y apellido (displayName), el teléfono de contacto (phone), el correo electrónico, la contraseña (gestionada por el proveedor de autenticación), la selección de rol (comercio o repartidor) y la aceptación expresa con versión de los Términos y la Política de Privacidad. La omisión o negativa a suministrar el nombre visible o el teléfono impide crear o registrar la cuenta en la plataforma.',
           'Alta y perfil de comercio: son obligatorios el nombre del negocio (businessName), el teléfono de contacto comercial (phone), la dirección de retiro habitual (defaultPickupAddress) y la aceptación de los Términos del piloto con su versión. La selección del barrio de retiro habitual (defaultPickupZoneId), las coordenadas en mapa (latitud/longitud) y las referencias adicionales (notes) son facultativas.',
           'Onboarding de repartidor: son obligatorios el número de DNI, las fotografías del frente y dorso del DNI, la fotografía selfie, la imagen de perfil o avatar, la selección del tipo de vehículo (vehicleType: bici, moto o auto) y las aceptaciones de Términos, Privacidad y Condiciones de repartidores con sus versiones. La patente del vehículo es obligatoria únicamente cuando se declara moto o auto (condicional) y no se exige para bicicleta. La carga de licencia de conducir y póliza de seguro es facultativa dentro del perfil en la plataforma (sin perjuicio de las exigencias normativas vigentes para circular en la vía pública).',
           'Solicitudes de entrega: son obligatorios el barrio y la dirección de retiro (pickupZoneId, pickupAddress), el barrio y la dirección de entrega (dropoffZoneId, dropoffAddress), el nombre del destinatario (recipientName), el teléfono del destinatario (recipientPhone), la declaración de autorización del destinatario (recipientConsentDeclared), el tipo de paquete (packageType), el medio de pago (recipientPaymentMethod) y la indicación de si precisa cambio (needsChange). Las coordenadas geográficas exactas de retiro y entrega (latitud/longitud), las notas o indicaciones accesorias (notes) y el monto específico para cambio en efectivo (cashChangeAmount) son facultativos o condicionales a la necesidad de cambio declarada.',

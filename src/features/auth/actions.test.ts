@@ -51,7 +51,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
       const courierInput = {
         email: 'repartidor@test.com',
@@ -61,7 +61,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
 
       expect(registerSchema.safeParse(merchantInput).success).toBe(true);
@@ -77,7 +77,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
       const invalidRoleInput = {
         email: 'otro@test.com',
@@ -87,7 +87,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
 
       const adminParsed = registerSchema.safeParse(adminInput);
@@ -117,7 +117,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(true);
@@ -159,7 +159,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(true);
@@ -202,7 +202,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '  3815559876  ',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(true);
@@ -262,7 +262,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
           role: 'merchant',
           acceptTerms: true,
           acceptedTermsVersion: '1.0',
-          acceptedPrivacyVersion: '1.0',
+          acceptedPrivacyVersion: '1.1',
           ...invalidFields,
         });
 
@@ -288,7 +288,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         role: 'merchant',
         acceptTerms: false,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -312,7 +312,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         role: 'merchant',
         acceptTerms: true,
         acceptedTermsVersion: '0.9',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -323,7 +323,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('registerAction rechaza versión no vigente (0.9) de Privacidad con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
+    it('registerAction rechaza versión no vigente (1.0 o 0.9) de Privacidad con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
       const mockSignUp = vi.fn();
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {
@@ -335,9 +335,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'repartidor@test.com',
         password: 'password123',
         role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '0.9',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(result.ok).toBe(false);
@@ -380,7 +382,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -391,7 +393,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
         p_user_id: 'usr-fail-consent-1',
         p_tos_version: '1.0',
-        p_privacy_version: '1.0',
+        p_privacy_version: '1.1',
       });
       expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-1');
     });
@@ -431,7 +433,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -473,7 +475,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -515,14 +517,14 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(true);
       expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
         p_user_id: 'usr-success-1',
         p_tos_version: '1.0',
-        p_privacy_version: '1.0',
+        p_privacy_version: '1.1',
       });
       expect(deleteUserSpy).not.toHaveBeenCalled();
     });
@@ -537,7 +539,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       phone: '3815551234',
       acceptTerms: true,
       acceptedTermsVersion: '1.0',
-      acceptedPrivacyVersion: '1.0',
+      acceptedPrivacyVersion: '1.1',
     } as const;
 
     function mockSignUpResult(result: { data: unknown; error: unknown }) {
@@ -999,7 +1001,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         phone: '3815550000',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
 
       const result = await registerAction(input);
