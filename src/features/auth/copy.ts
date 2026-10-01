@@ -36,7 +36,7 @@ export const authCopy = {
     loginLink: 'Ingresá',
     checkEmailTitle: 'Revisá tu email',
     checkEmailSubtitle:
-      'Te enviamos un enlace de confirmación. Abrilo en tu dispositivo para verificar tu identidad y empezar a operar en cadeApp.',
+      'Si pudimos procesar el registro, vas a recibir un email con los próximos pasos para verificar tu identidad y empezar a operar en cadeApp.',
     checkEmailNotice:
       'Si no lo encontrás en tu bandeja de entrada, revisá la carpeta de correo no deseado o spam.',
     backToLogin: 'Ir al ingreso',

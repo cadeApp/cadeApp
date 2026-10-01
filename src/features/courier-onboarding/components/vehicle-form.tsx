@@ -34,10 +34,12 @@ export interface VehicleFormProps {
   onSuccess?: () => void;
 }
 
+const EMPTY_INITIAL_DOCS: Record<string, string> = {};
+
 export function VehicleForm({
   courierId,
   initialDni = '',
-  initialDocs = {},
+  initialDocs = EMPTY_INITIAL_DOCS,
   onSuccess,
 }: VehicleFormProps) {
   const router = useRouter();

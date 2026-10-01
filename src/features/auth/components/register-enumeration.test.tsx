@@ -53,7 +53,8 @@ const EXISTING_ACCOUNT_SIGNALS = [
     },
   ],
 ] as const;
-const ENUMERATING_TEXT = /ya existe|email registrado|cuenta existente|already/i;
+const DEFINITIVE_SENDING_OR_EXISTENCE_TEXT =
+  /te enviamos|enviamos un enlace|cuenta creada|ya existe|email registrado|cuenta existente|already/i;
 
 /** Envía el formulario con el `registerAction` real y devuelve todo lo que el usuario puede observar. */
 async function observeSubmit(signUpResult: { data: unknown; error: unknown }) {
@@ -66,6 +67,12 @@ async function observeSubmit(signUpResult: { data: unknown; error: unknown }) {
   });
 
   const { container, unmount } = render(<RegisterForm />);
+  fireEvent.change(screen.getByLabelText(/nombre y apellido/i), {
+    target: { value: 'Comercio Test' },
+  });
+  fireEvent.change(screen.getByLabelText(/teléfono/i), {
+    target: { value: '3815551234' },
+  });
   fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'comercio@test.com' } });
   fireEvent.change(screen.getByLabelText(/^contraseña$/i), {
     target: { value: 'una-clave-segura' },
@@ -105,17 +112,19 @@ describe('T-318 / T-322: el formulario no permite distinguir un email ya registr
     });
   });
 
-  it('el alta nueva no navega al onboarding, muestra estado neutral "Revisá tu email" y cierra la sesión local', async () => {
+  it('el alta nueva no navega al onboarding, muestra estado neutral condicional "Revisá tu email" y cierra la sesión local', async () => {
     const fresh = await observeSubmit(NEW_USER);
     expect(fresh.observed.navigation).toStrictEqual([]);
     expect(fresh.observed.text).toMatch(/revisá tu email/i);
+    expect(fresh.observed.text).toContain('Si pudimos procesar el registro, vas a recibir un email');
+    expect(fresh.observed.text).not.toMatch(DEFINITIVE_SENDING_OR_EXISTENCE_TEXT);
     expect(fresh.observed.alert).toBeNull();
     expect(fresh.activations).toBe(1);
     expect(fresh.signOutCalls).toStrictEqual([[{ scope: 'local' }]]);
   });
 
   it.each(EXISTING_ACCOUNT_SIGNALS)(
-    '%s → misma navegación neutral, mismo texto, sin activar consentimientos ni signOut',
+    '%s → misma navegación neutral, texto condicional sin afirmar envío ni existencia, sin activar consentimientos ni signOut',
     async (_signal, signUpResult) => {
       const fresh = await observeSubmit(NEW_USER);
       const existing = await observeSubmit(signUpResult);
@@ -123,7 +132,8 @@ describe('T-318 / T-322: el formulario no permite distinguir un email ya registr
       expect(existing.observed).toStrictEqual(fresh.observed);
       expect(existing.observed.navigation).toStrictEqual([]);
       expect(existing.observed.text).toMatch(/revisá tu email/i);
-      expect(existing.observed.text).not.toMatch(ENUMERATING_TEXT);
+      expect(existing.observed.text).toContain('Si pudimos procesar el registro, vas a recibir un email');
+      expect(existing.observed.text).not.toMatch(DEFINITIVE_SENDING_OR_EXISTENCE_TEXT);
       expect(existing.observed.text).not.toMatch(/sanitized-id|usr-new-real/);
       expect(existing.activations).toBe(0);
       expect(existing.signOutCalls).toStrictEqual([]);

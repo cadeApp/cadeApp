@@ -14,8 +14,8 @@ export const registerSchema = z.object({
   email: z.string().trim().email('Ingresá un email válido'),
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
   role: signupRoleSchema,
-  displayName: z.string().trim().max(100).optional(),
-  phone: z.string().trim().max(30).optional(),
+  displayName: z.string().trim().min(1, 'Ingresá tu nombre y apellido').max(100),
+  phone: z.string().trim().min(1, 'Ingresá tu teléfono').max(30),
   acceptTerms: z.literal(true, {
     errorMap: () => ({ message: authCopy.register.errorTermsRequired }),
   }),

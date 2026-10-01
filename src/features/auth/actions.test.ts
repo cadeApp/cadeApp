@@ -47,6 +47,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -55,6 +57,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'repartidor@test.com',
         password: 'password123',
         role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -69,11 +73,21 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'admin@test.com',
         password: 'password123',
         role: 'admin',
+        displayName: 'Admin User',
+        phone: '3815551234',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       };
       const invalidRoleInput = {
         email: 'otro@test.com',
         password: 'password123',
         role: 'superadmin',
+        displayName: 'Super Admin',
+        phone: '3815551234',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
       };
 
       const adminParsed = registerSchema.safeParse(adminInput);
@@ -99,6 +113,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -116,6 +132,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
           emailRedirectTo: 'http://localhost:3000/auth/confirm',
           data: expect.objectContaining({
             role: 'merchant',
+            display_name: 'Comercio Test',
+            phone: '3815551234',
           }),
         },
       });
@@ -137,6 +155,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'courier@test.com',
         password: 'password123',
         role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -220,6 +240,39 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       }
       expect(mockSignUp).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['displayName omitido', { phone: '3815551234' }],
+      ['displayName vacío', { displayName: '', phone: '3815551234' }],
+      ['displayName solo espacios', { displayName: '   ', phone: '3815551234' }],
+      ['phone omitido', { displayName: 'Comercio Test' }],
+      ['phone vacío', { displayName: 'Comercio Test', phone: '' }],
+      ['phone solo espacios', { displayName: 'Comercio Test', phone: '   ' }],
+    ])(
+      'registerAction rechaza %s con VALIDATION_ERROR y no invoca signUp (PR167-H01)',
+      async (_desc, invalidFields) => {
+        const mockSignUp = vi.fn();
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: { signUp: mockSignUp },
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        const result = await registerAction({
+          email: 'comercio@test.com',
+          password: 'password123',
+          role: 'merchant',
+          acceptTerms: true,
+          acceptedTermsVersion: '1.0',
+          acceptedPrivacyVersion: '1.0',
+          ...invalidFields,
+        });
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('VALIDATION_ERROR');
+        }
+        expect(mockSignUp).not.toHaveBeenCalled();
+      }
+    );
 
     it('registerAction rechaza acceptTerms: false con VALIDATION_ERROR (PR60-H06)', async () => {
       const mockSignUp = vi.fn();
@@ -323,6 +376,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -372,6 +427,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant2@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -412,6 +469,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant3@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -452,6 +511,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
@@ -472,6 +533,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       email: 'comercio@test.com',
       password: 'password123',
       role: 'merchant',
+      displayName: 'Comercio Test',
+      phone: '3815551234',
       acceptTerms: true,
       acceptedTermsVersion: '1.0',
       acceptedPrivacyVersion: '1.0',
@@ -932,6 +995,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'nuevo@comercio.com',
         password: 'passwordSegura123',
         role: 'merchant',
+        displayName: 'Nuevo Comercio',
+        phone: '3815550000',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
         acceptedPrivacyVersion: '1.0',
