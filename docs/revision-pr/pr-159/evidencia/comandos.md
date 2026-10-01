@@ -91,3 +91,81 @@ git diff --exit-code -- src/types/database.types.ts
 ```
 
 Este enfoque cubre por comportamiento M01-M06 sin depender de parsear SQL.
+
+
+---
+
+## Ronda 4
+
+**SHA revisado:** `66a83c1e39273d4c2e9448de60ef894432e50f9d`  
+**CI run:** `36816282209` — `success`.
+
+### Sincronización
+
+```text
+base: develop@9e232d0e4ef003ca0535b11e5a962b4cf603189a
+head: 66a83c1e39273d4c2e9448de60ef894432e50f9d
+ahead_by: 11
+behind_by: 0
+mergeable: true
+```
+
+### Secuencia runtime observada
+
+```text
+Applying migration 20260927120000_cc012_incidents_contract.sql...
+Finished supabase db reset on branch feat/T-321-admin-staging-bootstrap.
+
+INSERT 0 5
+Connecting to local database...
+Applying migration 20260930224700_t321_admin_staging_bootstrap.sql...
+Local database is up to date.
+
+DO
+T321_PRESERVE_EXISTING GREEN
+```
+
+No se aplicó T-321 en el reset previo; `migration up` fue quien la aplicó después de cargar los cinco valores personalizados.
+
+### Base fresca sin seed
+
+```text
+supabase/tests/t321_admin_staging_bootstrap.sql .. ok
+All tests successful.
+Files=1, Tests=10
+Result: PASS
+```
+
+### Suite DB completa
+
+```text
+All tests successful.
+Files=13, Tests=1611
+Result: PASS
+```
+
+El job continuó con `pnpm db:types --local` y `git diff --exit-code -- src/types/database.types.ts` sin fallar.
+
+### Mutaciones independientes — inspección + CI verde
+
+Por la regla del proyecto para SQL/RLS no se levantó Supabase/Docker local solo para mutar la migración.
+
+**M05 — UPDATE posterior:** la fixture runtime parte de `min_offer_ars=1500`. Un UPDATE destructivo a 1000 dejaría rojo el bloque PL/pgSQL, que compara explícitamente contra 1500 y levanta `T-321 overwrote min_offer_ars`.
+
+**M06 — CTE destructivo:** si un CTE altera cualquiera de los cinco valores, produce el mismo estado final incorrecto y cae en la comprobación correspondiente. El control es independiente de la sintaxis de la escritura.
+
+### CI completo
+
+```text
+typecheck       success
+lint            success
+unit            success
+build           success
+bundle-budget   success
+audit           success
+db-tests        success
+```
+
+### Cuerpo de PR
+
+La revisión actualizó directamente la frase obsoleta “control ... con mutaciones en memoria” por la descripción del control runtime actual. No hubo cambio de código asociado.
