@@ -1,6 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { registerSchema } from './schemas';
-import { registerAction, loginAction, logoutAction } from './actions';
+import {
+  registerAction,
+  loginAction,
+  logoutAction,
+  requestPasswordResetAction,
+  updatePasswordAction,
+} from './actions';
 import { getRoleDefaultPath } from './guards';
 import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
@@ -856,6 +862,193 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(result.ok).toBe(true);
       expect(mockDeleteEq).toHaveBeenCalledWith('user_id', 'usr-push-logout-error');
       expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('T-320: URLs de confirmación, recuperación y cambio de contraseña', () => {
+    it('registerAction pasa emailRedirectTo configurado con NEXT_PUBLIC_APP_URL a /auth/confirm', async () => {
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: {
+          user: { id: 'usr-new-reg', identities: [{ id: 'ident-1' }] },
+          session: null,
+        },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const input = {
+        email: 'nuevo@comercio.com',
+        password: 'passwordSegura123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      };
+
+      const result = await registerAction(input);
+
+      expect(result.ok).toBe(true);
+      expect(mockSignUp).toHaveBeenCalledWith({
+        email: 'nuevo@comercio.com',
+        password: 'passwordSegura123',
+        options: expect.objectContaining({
+          emailRedirectTo: 'http://localhost:3000/auth/confirm',
+        }),
+      });
+    });
+
+    it('requestPasswordResetAction pasa redirectTo configurado con NEXT_PUBLIC_APP_URL a /auth/confirm?next=/reset-password', async () => {
+      const mockResetPassword = vi.fn().mockResolvedValue({
+        data: {},
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          resetPasswordForEmail: mockResetPassword,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await requestPasswordResetAction({ email: 'usuario@test.com' });
+
+      expect(result.ok).toBe(true);
+      expect(result).toEqual({ ok: true, data: { sent: true } });
+      expect(mockResetPassword).toHaveBeenCalledWith('usuario@test.com', {
+        redirectTo: 'http://localhost:3000/auth/confirm?next=/reset-password',
+      });
+    });
+
+    describe('updatePasswordAction', () => {
+      it('falla con VALIDATION_ERROR si la contraseña tiene menos de 8 caracteres o no coinciden', async () => {
+        const shortRes = await updatePasswordAction({
+          password: 'short',
+          confirmPassword: 'short',
+        });
+        expect(shortRes).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+
+        const mismatchRes = await updatePasswordAction({
+          password: 'password123',
+          confirmPassword: 'password456',
+        });
+        expect(mismatchRes).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      });
+
+      it('mapea errores de Supabase Auth adecuadamente', async () => {
+        const mockUpdateUser = vi.fn();
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            updateUser: mockUpdateUser,
+            getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } }, error: null }),
+          },
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        // weak_password
+        mockUpdateUser.mockResolvedValueOnce({
+          data: { user: null },
+          error: { code: 'weak_password', message: 'Password is too weak' },
+        });
+        const weakRes = await updatePasswordAction({
+          password: 'password123',
+          confirmPassword: 'password123',
+        });
+        expect(weakRes).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+
+        // same_password
+        mockUpdateUser.mockResolvedValueOnce({
+          data: { user: null },
+          error: { code: 'same_password', message: 'New password should be different from the old password' },
+        });
+        const sameRes = await updatePasswordAction({
+          password: 'password123',
+          confirmPassword: 'password123',
+        });
+        expect(sameRes).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+
+        // over_request_rate_limit
+        mockUpdateUser.mockResolvedValueOnce({
+          data: { user: null },
+          error: { code: 'over_request_rate_limit', message: 'Rate limit exceeded' },
+        });
+        const rateRes = await updatePasswordAction({
+          password: 'password123',
+          confirmPassword: 'password123',
+        });
+        expect(rateRes).toEqual({ ok: false, code: 'RATE_LIMITED' });
+
+        // sin sesión
+        mockUpdateUser.mockResolvedValueOnce({
+          data: { user: null },
+          error: { code: 'session_missing', message: 'Auth session missing' },
+        });
+        const noSessionRes = await updatePasswordAction({
+          password: 'password123',
+          confirmPassword: 'password123',
+        });
+        expect(noSessionRes).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
+
+        // error desconocido -> INTERNAL_ERROR
+        mockUpdateUser.mockResolvedValueOnce({
+          data: { user: null },
+          error: { code: 'unknown_failure', message: 'Server exploded' },
+        });
+        const internalRes = await updatePasswordAction({
+          password: 'password123',
+          confirmPassword: 'password123',
+        });
+        expect(internalRes).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      });
+
+      it('en éxito actualiza la contraseña, cierra las demás sesiones con scope others y redirige según rol', async () => {
+        const mockUpdateUser = vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-reset-success' } },
+          error: null,
+        });
+        const mockSignOut = vi.fn().mockResolvedValue({ error: null });
+        const mockGetUser = vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-reset-success' } },
+          error: null,
+        });
+        const mockFrom = vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { role: 'merchant', consent_status: 'active' },
+                error: null,
+              }),
+            }),
+          }),
+        });
+
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            updateUser: mockUpdateUser,
+            signOut: mockSignOut,
+            getUser: mockGetUser,
+          },
+          from: mockFrom,
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        const result = await updatePasswordAction({
+          password: 'nuevaPasswordSegura123',
+          confirmPassword: 'nuevaPasswordSegura123',
+        });
+
+        expect(mockUpdateUser).toHaveBeenCalledWith({
+          password: 'nuevaPasswordSegura123',
+        });
+        expect(mockSignOut).toHaveBeenCalledWith({ scope: 'others' });
+        expect(result).toEqual({
+          ok: true,
+          data: {
+            redirectTo: '/merchant/dashboard',
+          },
+        });
+      });
     });
   });
 });

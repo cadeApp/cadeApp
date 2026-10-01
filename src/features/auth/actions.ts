@@ -217,6 +217,13 @@ export async function requestPasswordResetAction(
   return ok({ sent: true });
 }
 
+export async function updatePasswordAction(
+  _input: unknown
+): Promise<ActionResult<{ redirectTo: string }, DomainErrorCode>> {
+  return err('INTERNAL_ERROR');
+}
+
+
 export async function logoutAction(): Promise<ActionResult<null, DomainErrorCode>> {
   const supabase = await createClient();
   try {
