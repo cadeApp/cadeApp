@@ -19,16 +19,24 @@ export class OperatorError extends Error {}
 export const QR_DATA_URL_PREFIX = 'data:image/svg+xml;utf-8,';
 
 /**
- * `mfa.enroll()` devuelve el QR como data URL utf-8 de un SVG. Cualquier otro formato falla cerrado.
+ * Documento SVG: espacios, declaración XML y comentarios opcionales antes de la raíz `<svg …>`, y el
+ * documento termina en `</svg>`. Es la forma que genera Supabase Auth (SVGo).
+ */
+const SVG_DOCUMENT =
+  /^\s*(?:<\?xml\b[^>]*\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>][\s\S]*<\/svg>\s*$/;
+
+/**
+ * `mfa.enroll()` devuelve el QR como data URL utf-8 de un SVG: supabase-js concatena el SVG crudo al
+ * prefijo, sin codificarlo. Cualquier otro formato falla cerrado.
  * @param {string} qrCode
- * @returns {string} el XML del SVG
+ * @returns {string} el XML del SVG tal como vino después del prefijo
  */
 export function qrSvgFromDataUri(qrCode) {
   if (typeof qrCode !== 'string' || !qrCode.startsWith(QR_DATA_URL_PREFIX)) {
     throw new Error('QR_FORMAT');
   }
-  const svgXml = decodeURIComponent(qrCode.slice(QR_DATA_URL_PREFIX.length));
-  if (!svgXml.startsWith('<svg')) {
+  const svgXml = qrCode.slice(QR_DATA_URL_PREFIX.length);
+  if (!SVG_DOCUMENT.test(svgXml)) {
     throw new Error('QR_FORMAT');
   }
   return svgXml;
