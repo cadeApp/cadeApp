@@ -252,3 +252,27 @@ La evidencia real de `cadeapp-staging` sigue pendiente. Un intento que no alcanz
 - Mutación conceptual antigua `startsWith('<svg')`: false para el fixture real.
 - CI checkout: `refs/pull/139/merge`, commit `d85ee4ac17921e46ca4d228fdfe8ef26b070116d` = `b9115b7e388a490e51461f5085fc5918a4bd6740` + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6`.
 - Unit: 107 files / 1498 tests; enrolador 34/34.
+
+# Ronda 7 — staging web
+
+## H14
+
+Lectura exacta del head:
+- `loginAction` → `resolvePostLoginRedirect`;
+- `resolvePostLoginRedirect` usa `getRoleDefaultPath(role)` como fallback;
+- `getRoleDefaultPath('admin') === '/'`;
+- `evaluateRouteGuard('/admin/applicants', admin aal1)` sí produce `/login/mfa?redirectTo=%2Fadmin%2Fapplicants`.
+
+Conclusión: la protección de rutas existe, pero el login directo de admin no entra en ese circuito.
+
+## H15
+
+Respuesta observada por DevTools en staging:
+`{ok:false,code:'INTERNAL_ERROR'}`.
+
+Código:
+- `factorsError || !factors?.totp?.length` → INTERNAL_ERROR;
+- `challengeError || !challenge` → INTERNAL_ERROR;
+- `verifyError` → VALIDATION_ERROR.
+
+Los tests de `verifyAdminMfaAction` cubren payload inválido y éxito, no los estados anteriores.

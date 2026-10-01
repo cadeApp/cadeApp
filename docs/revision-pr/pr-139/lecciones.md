@@ -47,3 +47,9 @@ H03–H07 nacen en parte de una evolución de la ficha posterior al fork de la r
 - Para fronteras de serialización externas, un fixture realista del proveedor evita que una suite completamente verde valide un contrato inventado.
 - La prueba manual de staging encontró un defecto que 30 tests unitarios no podían ver; después del arreglo, el caso real quedó incorporado como fixture y la suite subió a 34 tests.
 - No se agrega una regla nueva: P01 ya cubre el patrón.
+
+## Ronda 7
+
+- Un guard puede estar correcto y aun así el flujo real estar roto si el login nunca navega hacia la ruta protegida que activa ese guard.
+- Un `INTERNAL_ERROR` que agrupa estados operativos distintos impide diagnosticar staging y puede convertir un estado recuperable (“sin factor verificado”) en un supuesto fallo de infraestructura.
+- La evidencia end-to-end sigue encontrando huecos que las pruebas unitarias por componente no conectaban.

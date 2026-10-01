@@ -8,7 +8,7 @@
 | **Rama** | `feat/T-317-admin-mfa-enroll` → `develop` |
 | **Head R6 revisado** | `b9115b7e388a490e51461f5085fc5918a4bd6740` |
 | **Merge sintético CI** | `d85ee4ac17921e46ca4d228fdfe8ef26b070116d` = head + develop `4de495e7ab2b63ce3d9907a66400ce7e5cef9cd6` |
-| **Estado** | sin bloqueantes de código — pendiente repetir evidencia manual obligatoria en `cadeapp-staging` |
+| **Estado** | bloqueada — Ronda 7: staging descubre H14 y H15 en login/MFA web |
 
 ## Rondas
 
@@ -20,10 +20,11 @@
 | 4 | `d6fac40` | revalidación, 0 nuevos |
 | 5 | `8b347e4` | staging descubre H13 |
 | 6 | `b9115b7e388a490e51461f5085fc5918a4bd6740` | H13 cerrado; 0 bloqueantes de código |
+| 7 | `061121ad055232e9a618313cbeece26db4a4a601` | H14–H15 abiertos por evidencia real de staging |
 
 ## Estado
 
-H01–H13 están `arreglado-verificado`. H04 y H12 se revalidaron porque H13 modifica el mismo parser QR.
+H01–H13 están `arreglado-verificado`. H14 y H15 están abiertos por la evidencia real de staging.
 
 ## R6
 
