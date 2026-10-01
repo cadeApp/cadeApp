@@ -18,15 +18,87 @@ export class MerchantPage extends BasePage {
     return this.page.getByRole('region', { name: /solicitudes|mis envíos/i });
   }
 
-  get destinationInput(): Locator {
+  async navigate(): Promise<void> {
+    await this.goto('/merchant/dashboard');
+  }
+
+  async gotoNewRequest(): Promise<void> {
+    await this.goto('/merchant/requests/new');
+  }
+
+  async gotoRequestDetail(requestId: string): Promise<void> {
+    await this.goto(`/merchant/requests/${requestId}`);
+  }
+
+  get pickupAddressInput(): Locator {
+    return this.page.getByLabel(/dirección del comercio|dirección de retiro/i);
+  }
+
+  get dropoffAddressInput(): Locator {
     return this.page.getByLabel(/dirección de entrega|destino/i);
   }
 
-  get recipientPhoneInput(): Locator {
-    return this.page.getByLabel(/teléfono del destinatario|contacto/i);
+  get recipientNameInput(): Locator {
+    return this.page.getByLabel(/nombre de quien recibe|nombre del destinatario/i);
   }
 
-  async navigate(): Promise<void> {
-    await this.goto('/merchant/dashboard');
+  get recipientPhoneInput(): Locator {
+    return this.page.getByLabel(/teléfono de contacto|teléfono del destinatario/i);
+  }
+
+  get consentCheckbox(): Locator {
+    return this.page.getByLabel(/declaro que cuento con la autorización|declaro consentimiento/i);
+  }
+
+  get packageChicoButton(): Locator {
+    return this.page.getByRole('button', { name: /^chico/i });
+  }
+
+  get paymentCashButton(): Locator {
+    return this.page.getByRole('button', { name: /^efectivo$/i });
+  }
+
+  get paymentTransferButton(): Locator {
+    return this.page.getByRole('button', { name: /^transferencia$/i });
+  }
+
+  get needsChangeYesButton(): Locator {
+    return this.page.getByRole('button', { name: /^sí$/i });
+  }
+
+  get customChangeInput(): Locator {
+    return this.page.getByPlaceholder(/otro monto en efectivo/i);
+  }
+
+  changePresetButton(amount: number): Locator {
+    return this.page.getByRole('button', { name: new RegExp(`paga con.*${amount}`, 'i') });
+  }
+
+  get submitRequestButton(): Locator {
+    return this.page.getByRole('button', { name: /publicar solicitud/i });
+  }
+
+  get docSortButton(): Locator {
+    return this.page.getByRole('button', { name: /documentación/i });
+  }
+
+  get priceSortButton(): Locator {
+    return this.page.getByRole('button', { name: /precio/i });
+  }
+
+  get acceptOfferButton(): Locator {
+    return this.page.getByRole('button', { name: /^aceptar$/i });
+  }
+
+  get confirmAcceptButton(): Locator {
+    return this.page.getByRole('button', { name: /sí, aceptar/i });
+  }
+
+  get alreadyMatchedAlert(): Locator {
+    return this.page.getByRole('alert');
+  }
+
+  get offerCourierHeadings(): Locator {
+    return this.page.getByRole('heading', { level: 4 });
   }
 }

@@ -18,4 +18,5 @@ export {
   type StagingSeedContext,
   type SeedStagingOptions,
   type EnvironmentCheckResult,
+  type UserCredentials,
 } from '@/server/e2e/staging-seed';

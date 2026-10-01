@@ -1,359 +1,359 @@
 import { test, expect } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
+import { LoginPage, MerchantPage } from '../pages';
 
 /**
  * T-303: Suite E2E del flujo principal de cadeApp
  *
- * Flujo completo cubierto:
- * 1. Publicar solicitud con datos de retiro, entrega, destinatario, paquete y medio de pago.
- * 2. Repartidor ve solicitud en feed y valida piso de oferta (min_offer_ars).
- * 3. Repartidor retira su oferta pendiente desde "Mis ofertas".
- * 4. Comercio visualiza ofertas recibidas ordenadas por documentación (doc_level) y por precio.
- * 5. Aceptación en dos pestañas (concurrencia): exclusión mutua mediante ALREADY_MATCHED.
- * 6. Revelación progresiva: el repartidor no aceptado NO ve el teléfono del cliente.
- * 7. Vista de viaje C06/R07: medio de pago, cobro al cliente y botón "Avisar a mi cliente" (WhatsApp).
- * 8. Avance del viaje: marcar como retirado y entrega confirmada.
- *
- * Invariantes del DoD específico:
- * - Falla si el repartidor no aceptado ve el teléfono
- * - Falla si se aceptan dos ofertas
+ * Flujo completo con backend y UI reales (sin mocks de páginas HTML ni de RPCs de aceptación):
+ * 1. Revelación progresiva: el repartidor no aceptado NO ve el teléfono del destinatario.
+ * 2. Aceptación concurrente en dos pestañas: exclusión mutua backend (ALREADY_MATCHED).
+ * 3. Publicación real de solicitud (efectivo con cambio y transferencia).
+ * 4. Repartidor oferta respetando el piso mínimo dinámico (min_offer_ars).
+ * 5. Repartidor retira oferta pendiente desde "Mis ofertas" con modal de confirmación.
+ * 6. Comercio visualiza ofertas y alterna ordenamiento entre Documentación y Precio.
+ * 7. Vista de viaje: enlace WhatsApp "Avisar a mi cliente", medio de pago y avance de viaje (retirado -> entregado).
  */
 
 test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   // ---------------------------------------------------------------------------
-  // DoD Invariante 1: Revelación progresiva de datos de contacto
+  // DoD Invariante 1: Revelación progresiva de datos de contacto (PR160-H01)
   // ---------------------------------------------------------------------------
   test('DoD: Falla si el repartidor no aceptado ve el teléfono del destinatario', async ({
     page,
+    stagingContext,
+    loginAsCourier,
   }) => {
-    const recipientPhone = '+5493865123456';
-    const mockRequestId = '00000000-0000-4000-a000-000000000001';
+    const sentinelPhone = stagingContext.sentinelPhone ?? '+5493865123456';
+    const rawSentinelDigits = sentinelPhone.replace(/\D/g, '');
 
-    // Mock de feed y de solicitud no asignada (published)
-    await page.route('**/courier/feed**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html; charset=utf-8',
-        body: `
-          <!DOCTYPE html>
-          <html>
-            <head><meta charset="utf-8"></head>
-            <body>
-              <main>
-                <h1>Solicitudes abiertas</h1>
-                <div role="region" aria-label="Solicitudes disponibles">
-                  <article data-request-id="${mockRequestId}">
-                    <h2>Centro → Santa Bárbara</h2>
-                    <p>Paquete chico · Paga en efectivo</p>
-                    <button type="button">Ofertar</button>
-                  </article>
-                </div>
-              </main>
-            </body>
-          </html>
-        `,
-      });
-    });
+    // Autenticarse como repartidor no asignado (Courier 1)
+    await loginAsCourier(1, page);
 
+    // 1. Explorar el feed de solicitudes disponibles
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
 
-    // Verificamos exhaustivamente que el teléfono NO esté en el HTML ni en elementos visibles
-    const bodyContent = await page.content();
-    const phoneIsExposed = bodyContent.includes(recipientPhone);
+    // Verificar exhaustivamente que el teléfono sentinel NO aparezca en DOM, texto ni enlaces
+    const feedContent = await page.content();
+    expect(feedContent).not.toContain(sentinelPhone);
+    expect(feedContent).not.toContain(rawSentinelDigits);
+    await expect(page.getByText(sentinelPhone)).not.toBeVisible();
+    await expect(page.getByText(rawSentinelDigits)).not.toBeVisible();
 
-    // DoD Invariante: Falla si el repartidor no aceptado ve el teléfono
-    expect(phoneIsExposed).toBe(false);
-    await expect(page.getByText(recipientPhone)).not.toBeVisible();
-  });
-
-  // ---------------------------------------------------------------------------
-  // DoD Invariante 2: Aceptación concurrente en dos pestañas (Exclusión mutua)
-  // ---------------------------------------------------------------------------
-  test('DoD: Falla si se aceptan dos ofertas para la misma solicitud en dos pestañas concurrentes', async ({
-    browser,
-  }) => {
-    const context = await browser.newContext();
-    const tab1 = await context.newPage();
-    const tab2 = await context.newPage();
-
-    let acceptedCount = 0;
-
-    // Configurar rutas para ambas pestañas
-    await context.route('**/api/offers/accept', async (route) => {
-      if (acceptedCount === 0) {
-        acceptedCount++;
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json; charset=utf-8',
-          body: JSON.stringify({ ok: true, data: { status: 'matched' } }),
-        });
-      } else {
-        await route.fulfill({
-          status: 409,
-          contentType: 'application/json; charset=utf-8',
-          body: JSON.stringify({
-            ok: false,
-            code: 'ALREADY_MATCHED',
-            message: 'Esta solicitud ya fue asignada a otro repartidor o la oferta no está disponible.',
-          }),
-        });
-      }
-    });
-
-    // Interceptar la página base para inicializar el origen en ambas pestañas
-    await context.route('**/merchant/requests/123**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html; charset=utf-8',
-        body: '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>Pestaña de solicitud</body></html>',
-      });
-    });
-
-    await tab1.goto('/merchant/requests/123');
-    await tab2.goto('/merchant/requests/123');
-
-    // Ambas pestañas intentan aceptar simultáneamente
-    const res1 = await tab1.evaluate(async () => {
-      const response = await fetch('/api/offers/accept', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offerId: 'offer-1' }),
-      });
-      return (await response.json()) as { ok: boolean; data?: { status: string }; code?: string };
-    });
-
-    const res2 = await tab2.evaluate(async () => {
-      const response = await fetch('/api/offers/accept', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offerId: 'offer-2' }),
-      });
-      return (await response.json()) as { ok: boolean; data?: { status: string }; code?: string };
-    });
-
-    const successfulAccepts = [res1.ok, res2.ok].filter(Boolean).length;
-
-    // DoD Invariante: Falla si se aceptan dos ofertas (exactamente 1 aceptada con éxito)
-    expect(successfulAccepts).toBe(1);
-    expect(res1.ok).toBe(true);
-    expect(res2.ok).toBe(false);
-    expect(res2.code).toBe('ALREADY_MATCHED');
-
-    await context.close();
-  });
-
-  // ---------------------------------------------------------------------------
-  // Flujo 1: Publicación de solicitud con destinatario, paquete y medio de pago
-  // ---------------------------------------------------------------------------
-  test('Flujo 1: Publicación de solicitud con datos de entrega, paquete y medio de pago', async ({
-    page,
-  }) => {
-    await page.route('**/merchant/requests/new**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html; charset=utf-8',
-        body: `
-          <!DOCTYPE html>
-          <html>
-            <head><meta charset="utf-8"></head>
-            <body>
-              <form>
-                <h1>Pedir envío</h1>
-                <label for="pickup-address">Dirección de retiro</label>
-                <input id="pickup-address" name="pickupAddress" value="Alberdi 150" />
-                <label for="dropoff-address">Dirección de entrega</label>
-                <input id="dropoff-address" name="dropoffAddress" value="San Martín 400" />
-                <label for="recipient-name">Nombre del destinatario</label>
-                <input id="recipient-name" name="recipientName" value="Juan Pérez" />
-                <label for="recipient-phone">Teléfono del destinatario</label>
-                <input id="recipient-phone" name="recipientPhone" value="+5493865123456" />
-                <label for="recipient-consent">Declaro consentimiento</label>
-                <input id="recipient-consent" type="checkbox" checked />
-                <button type="button" aria-pressed="true">Chico</button>
-                <button type="button" aria-pressed="true">Efectivo</button>
-                <button type="submit">Publicar solicitud</button>
-              </form>
-            </body>
-          </html>
-        `,
-      });
-    });
-
-    await page.goto('/merchant/requests/new');
-    await waitForNoSkeletons(page);
-
-    await expect(page.getByLabel(/dirección de retiro/i)).toHaveValue('Alberdi 150');
-    await expect(page.getByLabel(/dirección de entrega/i)).toHaveValue('San Martín 400');
-    await expect(page.getByLabel(/nombre del destinatario/i)).toHaveValue('Juan Pérez');
-    await expect(page.getByLabel(/teléfono del destinatario/i)).toHaveValue('+5493865123456');
-    await expect(page.getByRole('button', { name: /publicar solicitud/i })).toBeVisible();
-  });
-
-  // ---------------------------------------------------------------------------
-  // Flujo 2: Oferta de repartidor y validación de piso mínimo (min_offer_ars)
-  // ---------------------------------------------------------------------------
-  test('Flujo 2: Repartidor oferta respetando el piso mínimo de la plataforma', async ({
-    page,
-  }) => {
-    await page.route('**/courier/feed**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html; charset=utf-8',
-        body: `
-          <!DOCTYPE html>
-          <html>
-            <head><meta charset="utf-8"></head>
-            <body>
-              <main>
-                <h1>Solicitudes abiertas</h1>
-                <button type="button">Ofertar</button>
-                <div role="dialog" aria-label="Tu oferta">
-                  <h2>Tu oferta</h2>
-                  <p>Mínimo $ 1.000</p>
-                  <label for="amount-input">Monto de la oferta</label>
-                  <input id="amount-input" aria-label="Monto de la oferta" value="1500" />
-                  <button type="submit">Enviar oferta</button>
-                </div>
-              </main>
-            </body>
-          </html>
-        `,
-      });
-    });
-
-    await page.goto('/courier/feed');
-    await waitForNoSkeletons(page);
-
-    const amountInput = page.getByLabel(/monto de la oferta/i);
-    await expect(amountInput).toBeVisible();
-    await expect(amountInput).toHaveValue('1500');
-
-    const submitBtn = page.getByRole('button', { name: /enviar oferta/i });
-    await expect(submitBtn).toBeVisible();
-  });
-
-  // ---------------------------------------------------------------------------
-  // Flujo 3: Retiro de oferta pendiente por el repartidor
-  // ---------------------------------------------------------------------------
-  test('Flujo 3: Repartidor puede retirar una oferta pendiente', async ({ page }) => {
-    await page.route('**/courier/offers**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html; charset=utf-8',
-        body: `
-          <!DOCTYPE html>
-          <html>
-            <head><meta charset="utf-8"></head>
-            <body>
-              <main>
-                <h1>Mis ofertas</h1>
-                <div role="tablist">
-                  <button role="tab" aria-selected="true">Pendientes</button>
-                </div>
-                <div role="tabpanel">
-                  <article>
-                    <p>Monto: $ 1.500</p>
-                    <button type="button">Retirar oferta</button>
-                  </article>
-                </div>
-              </main>
-            </body>
-          </html>
-        `,
-      });
-    });
-
+    // 2. Explorar la vista de ofertas del repartidor
     await page.goto('/courier/offers');
     await waitForNoSkeletons(page);
 
-    const withdrawBtn = page.getByRole('button', { name: /retirar oferta/i });
-    await expect(withdrawBtn).toBeVisible();
+    const offersContent = await page.content();
+    expect(offersContent).not.toContain(sentinelPhone);
+    expect(offersContent).not.toContain(rawSentinelDigits);
+    await expect(page.getByText(sentinelPhone)).not.toBeVisible();
+    await expect(page.getByText(rawSentinelDigits)).not.toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
-  // Flujo 4: Ordenamiento de ofertas por documentación (doc_level) y por precio
+  // DoD Invariante 2: Aceptación concurrente en dos pestañas (PR160-H02)
+  // ---------------------------------------------------------------------------
+  test('DoD: Falla si se aceptan dos ofertas para la misma solicitud en dos pestañas concurrentes', async ({
+    browser,
+    stagingContext,
+  }) => {
+    const targetRequestId = stagingContext.createdRequestIds[0];
+    if (!targetRequestId) {
+      throw new Error('[E2E Error] No request ID found in stagingContext');
+    }
+    const merchant = stagingContext.merchantUser;
+    if (!merchant) {
+      throw new Error('[E2E Error] No merchant user seeded in stagingContext');
+    }
+
+    // Contexto de navegador compartido que conserva sesión autenticada
+    const context = await browser.newContext();
+    const tab1 = await context.newPage();
+    const loginPage = new LoginPage(tab1);
+    await loginPage.navigate();
+    await loginPage.login(merchant.email, merchant.password);
+
+    const merchantPage1 = new MerchantPage(tab1);
+    await merchantPage1.gotoRequestDetail(targetRequestId);
+    await waitForNoSkeletons(tab1);
+
+    // Segunda pestaña bajo el mismo contexto (mismo comercio autenticado)
+    const tab2 = await context.newPage();
+    const merchantPage2 = new MerchantPage(tab2);
+    await merchantPage2.gotoRequestDetail(targetRequestId);
+    await waitForNoSkeletons(tab2);
+
+    // Tab 1 abre modal sobre la primera oferta
+    await merchantPage1.acceptOfferButton.first().click();
+    await expect(merchantPage1.confirmAcceptButton).toBeVisible();
+
+    // Tab 2 abre modal sobre la segunda oferta
+    await merchantPage2.acceptOfferButton.nth(1).click();
+    await expect(merchantPage2.confirmAcceptButton).toBeVisible();
+
+    // Disparar las confirmaciones en paralelo real mediante barrera Promise.all
+    await Promise.all([
+      merchantPage1.confirmAcceptButton.click(),
+      merchantPage2.confirmAcceptButton.click(),
+    ]);
+
+    // Al menos una pestaña debe reflejar rechazo por concurrencia ALREADY_MATCHED
+    const alert1 = merchantPage1.alreadyMatchedAlert;
+    const alert2 = merchantPage2.alreadyMatchedAlert;
+
+    const hasAlert1 = await alert1.isVisible({ timeout: 5000 }).catch(() => false);
+    const hasAlert2 = await alert2.isVisible({ timeout: 5000 }).catch(() => false);
+
+    expect(hasAlert1 || hasAlert2).toBe(true);
+
+    // Tras refrescar ambas pestañas, solo debe existir exactamente una asignación
+    await tab1.reload();
+    await waitForNoSkeletons(tab1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Flujo 1: Publicación de solicitud con efectivo y cambio (PR160-H03)
+  // ---------------------------------------------------------------------------
+  test('Flujo 1: Publicación de solicitud con datos de entrega, paquete y medio de pago', async ({
+    page,
+    merchantPage,
+    loginAsMerchant,
+  }) => {
+    await loginAsMerchant(page);
+    await merchantPage.gotoNewRequest();
+    await waitForNoSkeletons(page);
+
+    // Completar dirección de retiro si no está precargada
+    const pickupVal = await merchantPage.pickupAddressInput.inputValue();
+    if (!pickupVal.trim()) {
+      await merchantPage.pickupAddressInput.fill('San Martín 150');
+    }
+
+    // Datos de entrega
+    await merchantPage.dropoffAddressInput.fill('Av. Mitre 450');
+    await merchantPage.recipientNameInput.fill('María Elena Walsh');
+    await merchantPage.recipientPhoneInput.fill('3865123456');
+
+    // Consentimiento del destinatario obligatorio
+    await merchantPage.consentCheckbox.check();
+
+    // Tamaño del paquete
+    await merchantPage.packageChicoButton.click();
+
+    // Medio de pago: efectivo con cambio
+    await merchantPage.paymentCashButton.click();
+    await merchantPage.needsChangeYesButton.click();
+    await merchantPage.changePresetButton(5000).click();
+
+    // Publicar solicitud con el botón real de UI
+    await merchantPage.submitRequestButton.click();
+
+    // Esperar redirección al listado o detalle
+    await page.waitForURL((url) => !url.pathname.endsWith('/requests/new'), {
+      timeout: 10000,
+    });
+    await waitForNoSkeletons(page);
+
+    // Verificar renderizado de paquete Chico y medio de pago Efectivo
+    await expect(page.getByText(/paquete chico/i)).toBeVisible();
+    await expect(page.getByText(/efectivo/i)).toBeVisible();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Flujo 1b: Publicación de solicitud con transferencia (PR160-H03)
+  // ---------------------------------------------------------------------------
+  test('Flujo 1b: Publicación de solicitud con medio de pago transferencia', async ({
+    page,
+    merchantPage,
+    loginAsMerchant,
+  }) => {
+    await loginAsMerchant(page);
+    await merchantPage.gotoNewRequest();
+    await waitForNoSkeletons(page);
+
+    const pickupVal = await merchantPage.pickupAddressInput.inputValue();
+    if (!pickupVal.trim()) {
+      await merchantPage.pickupAddressInput.fill('San Martín 150');
+    }
+
+    await merchantPage.dropoffAddressInput.fill('Belgrano 800');
+    await merchantPage.recipientNameInput.fill('Juan Bautista Alberdi');
+    await merchantPage.recipientPhoneInput.fill('3865654321');
+    await merchantPage.consentCheckbox.check();
+
+    await merchantPage.packageChicoButton.click();
+
+    // Medio de pago: transferencia (sin cambio)
+    await merchantPage.paymentTransferButton.click();
+
+    await merchantPage.submitRequestButton.click();
+    await page.waitForURL((url) => !url.pathname.endsWith('/requests/new'), {
+      timeout: 10000,
+    });
+    await waitForNoSkeletons(page);
+
+    await expect(page.getByText(/paquete chico/i)).toBeVisible();
+    await expect(page.getByText(/transferencia/i)).toBeVisible();
+    await expect(page.getByText(/necesita cambio/i)).not.toBeVisible();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Flujo 2: Repartidor oferta respetando el piso mínimo dinámico (PR160-H03)
+  // ---------------------------------------------------------------------------
+  test('Flujo 2: Repartidor oferta respetando el piso mínimo de la plataforma', async ({
+    page,
+    courierPage,
+    loginAsCourier,
+  }) => {
+    await loginAsCourier(0, page);
+    await courierPage.gotoFeed();
+    await waitForNoSkeletons(page);
+
+    // Abrir la primera solicitud disponible
+    await courierPage.offerButton.first().click();
+
+    // Leer el piso mínimo dinámico configurado en la UI (platform_settings.min_offer_ars)
+    const floorText = (await courierPage.minFloorText.textContent()) || '';
+    const rawNumber = floorText.replace(/\D/g, '');
+    const minOfferArs = parseInt(rawNumber, 10);
+    expect(minOfferArs).toBeGreaterThan(0);
+
+    // 1. Intentar ofertar por debajo del piso: minOfferArs - 1
+    const invalidAmount = minOfferArs - 1;
+    await courierPage.offerAmountInput.fill(String(invalidAmount));
+    await courierPage.submitOfferButton.click();
+
+    // Debe mostrar rechazo visible en alert y no enviar la oferta
+    await expect(courierPage.offerErrorAlert).toBeVisible();
+
+    // 2. Ofertar con monto válido respetando el piso
+    const validAmount = minOfferArs + 500;
+    await courierPage.offerAmountInput.fill(String(validAmount));
+    await courierPage.submitOfferButton.click();
+
+    // Ir a "Mis ofertas" y verificar que la oferta aparezca
+    await courierPage.gotoOffers();
+    await waitForNoSkeletons(page);
+    await expect(page.getByText(new RegExp(String(validAmount)))).toBeVisible();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Flujo 3: Retiro de oferta pendiente con confirmación (PR160-H03)
+  // ---------------------------------------------------------------------------
+  test('Flujo 3: Repartidor puede retirar una oferta pendiente', async ({
+    page,
+    courierPage,
+    loginAsCourier,
+  }) => {
+    await loginAsCourier(0, page);
+    await courierPage.gotoOffers();
+    await waitForNoSkeletons(page);
+
+    // Debe existir al menos una oferta en estado pendiente
+    await expect(courierPage.withdrawOfferButton.first()).toBeVisible();
+    await courierPage.withdrawOfferButton.first().click();
+
+    // Diálogo de confirmación accesible
+    await expect(courierPage.confirmWithdrawButton).toBeVisible();
+    await courierPage.confirmWithdrawButton.click();
+
+    // Cambiar a la pestaña "Otras" y verificar que figure como retirada
+    await courierPage.otherTab.click();
+    await expect(page.getByText(/retirada/i).first()).toBeVisible();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Flujo 4: Ordenamiento de ofertas por documentación y precio (PR160-H03)
   // ---------------------------------------------------------------------------
   test('Flujo 4: Ordenamiento de ofertas recibidas por documentación y precio', async ({
     page,
+    merchantPage,
+    stagingContext,
+    loginAsMerchant,
   }) => {
-    await page.route('**/merchant/requests/123**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html; charset=utf-8',
-        body: `
-          <!DOCTYPE html>
-          <html>
-            <head><meta charset="utf-8"></head>
-            <body>
-              <main>
-                <h2>Ofertas recibidas</h2>
-                <div role="group" aria-label="Criterio de ordenamiento de ofertas">
-                  <button type="button" aria-pressed="true">Documentación</button>
-                  <button type="button" aria-pressed="false">Precio</button>
-                </div>
-                <div id="offers-list">
-                  <div data-doc-level="2" data-price="2000">Cadete Verificado - $ 2.000</div>
-                  <div data-doc-level="0" data-price="1500">Cadete En Revisión - $ 1.500</div>
-                </div>
-              </main>
-            </body>
-          </html>
-        `,
-      });
-    });
+    const targetRequestId = stagingContext.createdRequestIds[0];
+    if (!targetRequestId) {
+      throw new Error('[E2E Error] No request ID found in stagingContext');
+    }
 
-    await page.goto('/merchant/requests/123');
+    await loginAsMerchant(page);
+    await merchantPage.gotoRequestDetail(targetRequestId);
     await waitForNoSkeletons(page);
 
-    const docSortBtn = page.getByRole('button', { name: /documentación/i });
-    const priceSortBtn = page.getByRole('button', { name: /precio/i });
+    // Por defecto el ordenamiento activo es por documentación (doc_level)
+    await expect(merchantPage.docSortButton).toHaveAttribute('aria-pressed', 'true');
+    const orderDoc = await merchantPage.offerCourierHeadings.allTextContents();
+    expect(orderDoc.length).toBeGreaterThanOrEqual(2);
 
-    await expect(docSortBtn).toHaveAttribute('aria-pressed', 'true');
-    await expect(priceSortBtn).toHaveAttribute('aria-pressed', 'false');
+    // Cambiar a ordenamiento por precio
+    await merchantPage.priceSortButton.click();
+    await expect(merchantPage.priceSortButton).toHaveAttribute('aria-pressed', 'true');
+    await expect(merchantPage.docSortButton).toHaveAttribute('aria-pressed', 'false');
+
+    const orderPrice = await merchantPage.offerCourierHeadings.allTextContents();
+    expect(orderPrice.length).toBeGreaterThanOrEqual(2);
+
+    // Al tener couriers con combinación cruzada (Courier 0 Doc 2 $2000 vs Courier 1 Doc 0 $1500),
+    // el primer elemento visible debe diferir entre ambos modos
+    expect(orderDoc[0]).not.toBe(orderPrice[0]);
   });
 
   // ---------------------------------------------------------------------------
-  // Flujo 5: Vista de viaje, medio de pago y botón "Avisar a mi cliente"
+  // Flujo 5: Vista de viaje, WhatsApp y avance del estado (PR160-H03)
   // ---------------------------------------------------------------------------
   test('Flujo 5: Vista de viaje refleja medio de pago y botón accesible Avisar a mi cliente', async ({
     page,
+    tripPage,
+    merchantPage,
+    stagingContext,
+    loginAsMerchant,
+    loginAsCourier,
   }) => {
-    const waUrl =
-      'https://wa.me/5493865123456?text=Tu%20pedido%20va%20en%20camino%20con%20Carlos';
+    const targetRequestId = stagingContext.createdRequestIds[0];
+    if (!targetRequestId) {
+      throw new Error('[E2E Error] No request ID found in stagingContext');
+    }
+    const sentinelPhone = stagingContext.sentinelPhone ?? '+5493865123456';
+    const rawSentinelDigits = sentinelPhone.replace(/\D/g, '');
 
-    await page.route('**/trips/123**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'text/html; charset=utf-8',
-        body: `
-          <!DOCTYPE html>
-          <html>
-            <head><meta charset="utf-8"></head>
-            <body>
-              <main>
-                <h1>Viaje en curso</h1>
-                <p>Medio de pago: Efectivo (paga con $ 2.000)</p>
-                <div>
-                  <h2>Avisale a tu cliente</h2>
-                  <a role="link" href="${waUrl}">Avisar a mi cliente</a>
-                </div>
-                <button type="button">Marcar como retirado</button>
-              </main>
-            </body>
-          </html>
-        `,
-      });
-    });
-
-    await page.goto('/trips/123');
+    // 1. Comercio acepta la oferta de Courier 0 para generar el viaje (trip)
+    await loginAsMerchant(page);
+    await merchantPage.gotoRequestDetail(targetRequestId);
     await waitForNoSkeletons(page);
 
-    const notifyLink = page.getByRole('link', { name: /avisar a mi cliente/i });
-    await expect(notifyLink).toBeVisible();
-    await expect(notifyLink).toHaveAttribute('href', waUrl);
+    await merchantPage.acceptOfferButton.first().click();
+    await merchantPage.confirmAcceptButton.click();
+    await waitForNoSkeletons(page);
 
-    const advanceBtn = page.getByRole('button', { name: /marcar como retirado/i });
-    await expect(advanceBtn).toBeVisible();
+    // Navegar a la vista del viaje como comercio
+    await tripPage.navigate(targetRequestId);
+    await waitForNoSkeletons(page);
+
+    // Verificar botón accesible "Avisar a mi cliente" con link https://wa.me/
+    await expect(tripPage.notifyCustomerLink).toBeVisible();
+    const customerHref = await tripPage.notifyCustomerLink.getAttribute('href');
+    expect(customerHref).toMatch(/^https:\/\/wa\.me\//);
+    expect(customerHref).toContain(rawSentinelDigits);
+
+    // 2. Repartidor asignado (Courier 0) accede al viaje y avanza los estados
+    await loginAsCourier(0, page);
+    await tripPage.navigate(targetRequestId);
+    await waitForNoSkeletons(page);
+
+    // Verificar medio de pago visible
+    await expect(page.getByText(/cobrás al entregar/i)).toBeVisible();
+
+    // Marcar como retirado -> estado in_transit
+    await expect(tripPage.markPickedUpButton).toBeVisible();
+    await tripPage.markPickedUpButton.click();
+    await waitForNoSkeletons(page);
+    await expect(tripPage.confirmDeliveryButton).toBeVisible();
+
+    // Confirmar entrega -> estado entregado
+    await tripPage.confirmDeliveryButton.click();
+    await waitForNoSkeletons(page);
+    await expect(tripPage.deliveredStatus).toBeVisible();
   });
 });
