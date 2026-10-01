@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MfaForm } from './mfa-form';
 import { verifyAdminMfaAction } from '../actions';
+import { ADMIN_COPY } from '../copy';
+import { getDomainErrorMessage } from '@/lib/error-messages';
 
 const push = vi.fn();
 const refresh = vi.fn();
@@ -93,5 +95,40 @@ describe('MfaForm (PR106-H03, PR106-H13, PR106-H15)', () => {
         expect(verifyAdminMfaAction).not.toHaveBeenCalled();
       });
     });
+  });
+});
+
+describe('T-317 / PR139-H15: mensajes de la pantalla MFA', () => {
+  const REMOTE = 'REMOTE-SUPABASE-DETAIL';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function submitCode() {
+    render(<MfaForm />);
+    const input =
+      document.getElementById('totp-code') ?? screen.getByLabelText(/código de seguridad/i);
+    fireEvent.change(input, { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /verificar código/i }));
+    const alert = await screen.findByRole('alert');
+    return alert.textContent ?? '';
+  }
+
+  it.each([
+    ['AAL2_REQUIRED', ADMIN_COPY.mfa.noActiveFactor],
+    ['INTERNAL_ERROR', getDomainErrorMessage('INTERNAL_ERROR')],
+    ['VALIDATION_ERROR', ADMIN_COPY.mfa.invalidCode],
+  ] as const)('%s muestra su mensaje sin detalles remotos', async (code, expected) => {
+    vi.mocked(verifyAdminMfaAction).mockResolvedValue({ ok: false, code });
+    const text = await submitCode();
+    expect(text).toContain(expected);
+    expect(text).not.toContain(REMOTE);
+  });
+
+  it('el mensaje de factor no activo es distinto del genérico y del de código inválido', () => {
+    expect(ADMIN_COPY.mfa.noActiveFactor).not.toBe(getDomainErrorMessage('AAL2_REQUIRED'));
+    expect(ADMIN_COPY.mfa.noActiveFactor).not.toBe(getDomainErrorMessage('INTERNAL_ERROR'));
+    expect(ADMIN_COPY.mfa.noActiveFactor).not.toBe(ADMIN_COPY.mfa.invalidCode);
   });
 });

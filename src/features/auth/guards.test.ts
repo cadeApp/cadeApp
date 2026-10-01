@@ -378,3 +378,51 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     });
   });
 });
+
+describe('T-317 / PR139-H14: el login de admin entra al circuito MFA', () => {
+  const MFA_TO_APPLICANTS = '/login/mfa?redirectTo=%2Fadmin%2Fapplicants';
+  const adminAal1: AuthSession = {
+    userId: 'adm-1',
+    email: 'admin@test.com',
+    role: 'admin',
+    aal: 'aal1',
+    consentStatus: 'active',
+  };
+  const adminAal2: AuthSession = { ...adminAal1, aal: 'aal2' };
+
+  it('sin redirectTo, el destino post-login del admin es el MFA hacia /admin/applicants y no /', () => {
+    const target = resolvePostLoginRedirect(undefined, 'admin', 'active');
+    expect(target).toBe(MFA_TO_APPLICANTS);
+    expect(target).not.toBe('/');
+  });
+
+  it('recorrido completo: /login → /login/mfa?redirectTo=%2Fadmin%2Fapplicants → /admin/applicants', () => {
+    const afterLogin = resolvePostLoginRedirect(undefined, 'admin', 'active');
+    const [mfaPath, mfaQuery] = afterLogin.split('?');
+    expect(mfaPath).toBe('/login/mfa');
+    expect(evaluateRouteGuard('/login/mfa', adminAal1)).toEqual({ action: 'allow' });
+
+    const afterMfa = new URLSearchParams(mfaQuery).get('redirectTo');
+    expect(afterMfa).toBe('/admin/applicants');
+    expect(evaluateRouteGuard('/admin/applicants', adminAal2)).toEqual({ action: 'allow' });
+  });
+
+  it('admin AAL1 en /admin/applicants → /login/mfa?redirectTo=%2Fadmin%2Fapplicants', () => {
+    expect(evaluateRouteGuard('/admin/applicants', adminAal1)).toEqual({
+      action: 'redirect',
+      redirectTo: MFA_TO_APPLICANTS,
+    });
+  });
+
+  it('merchant y courier conservan sus destinos post-login', () => {
+    expect(resolvePostLoginRedirect(undefined, 'merchant', 'active')).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect(undefined, 'courier', 'active')).toBe('/courier/feed');
+  });
+
+  it.each(['https://evil.com', '//evil.com', '/\evil.com', 'javascript:alert(1)', '/login'])(
+    'redirectTo hostil o de autenticación (%s) para admin → MFA hacia /admin/applicants',
+    (raw) => {
+      expect(resolvePostLoginRedirect(raw, 'admin', 'active')).toBe(MFA_TO_APPLICANTS);
+    }
+  );
+});

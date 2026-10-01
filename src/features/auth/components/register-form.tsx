@@ -12,6 +12,20 @@ import { registerAction } from '../actions';
 import { authCopy } from '../copy';
 import type { SignupRole } from '../schemas';
 import { getLegalDocument } from '@/features/legal';
+import type { DomainErrorCode } from '@/domain/errors';
+
+function registerErrorMessage(code: DomainErrorCode): string {
+  switch (code) {
+    case 'INVALID_SIGNUP_ROLE':
+      return authCopy.register.errorAdminRejected;
+    case 'RATE_LIMITED':
+      return authCopy.register.errorRateLimited;
+    case 'VALIDATION_ERROR':
+      return authCopy.register.errorGeneric;
+    default:
+      return authCopy.register.errorUnexpected;
+  }
+}
 
 export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
   const router = useRouter();
@@ -43,11 +57,7 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
       });
 
       if (!result.ok) {
-        if (result.code === 'INVALID_SIGNUP_ROLE') {
-          setErrorMessage(authCopy.register.errorAdminRejected);
-        } else {
-          setErrorMessage(authCopy.register.errorGeneric);
-        }
+        setErrorMessage(registerErrorMessage(result.code));
         setIsPending(false);
         return;
       }
@@ -55,7 +65,7 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
       router.push(result.data.redirectTo);
       router.refresh();
     } catch {
-      setErrorMessage(authCopy.register.errorGeneric);
+      setErrorMessage(authCopy.register.errorUnexpected);
       setIsPending(false);
     }
   };

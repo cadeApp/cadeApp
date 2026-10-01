@@ -127,6 +127,27 @@ export function isKnownExistingRouteForRole(pathname: string, role: ProfileRole)
   return false;
 }
 
+/** Pantalla de inicio del admin. El guard la protege con MFA (AAL2). */
+const ADMIN_HOME = '/admin/applicants';
+
+/**
+ * Destino por defecto después del login. Para el admin no es `getRoleDefaultPath` (`/`): un login con
+ * contraseña deja la sesión en AAL1, así que el guard decide el paso por el MFA antes de `/admin/applicants`.
+ */
+function defaultPostLoginPath(role: ProfileRole, consentStatus: ConsentStatus): string {
+  if (role !== 'admin') {
+    return getRoleDefaultPath(role);
+  }
+  const guardResult = evaluateRouteGuard(ADMIN_HOME, {
+    userId: 'check',
+    email: '',
+    role,
+    aal: 'aal1',
+    consentStatus,
+  });
+  return guardResult.action === 'redirect' ? guardResult.redirectTo : ADMIN_HOME;
+}
+
 export function resolvePostLoginRedirect(
   rawRedirectTo: unknown,
   role: ProfileRole,
@@ -144,12 +165,12 @@ export function resolvePostLoginRedirect(
     rawRedirectTo.includes('\\') ||
     /[\r\n]/.test(rawRedirectTo)
   ) {
-    return getRoleDefaultPath(role);
+    return defaultPostLoginPath(role, consentStatus);
   }
 
   const [pathname, query] = rawRedirectTo.split('?');
   if (!pathname || isAuthRoute(pathname) || pathname === '/forgot-password') {
-    return getRoleDefaultPath(role);
+    return defaultPostLoginPath(role, consentStatus);
   }
 
   const mockSession: AuthSession = {
@@ -172,7 +193,7 @@ export function resolvePostLoginRedirect(
     }
   }
 
-  return getRoleDefaultPath(role);
+  return defaultPostLoginPath(role, consentStatus);
 }
 
 export function evaluateRouteGuard(

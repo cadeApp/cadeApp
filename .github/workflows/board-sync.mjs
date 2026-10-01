@@ -220,14 +220,11 @@ export function computeBoardTransitions({
     }
 
     const currentAssignees = issue.assignees ?? [];
-    const hasLautaro = currentAssignees.includes('Lautaro073');
     const isUnassigned = currentAssignees.length === 0;
     /** @type {string[] | undefined} */
     let targetAssignees;
-    if (hasLautaro || isUnassigned) {
-      targetAssignees = [
-        ...new Set(currentAssignees.filter((login) => login !== 'Lautaro073').concat('KiraK72')),
-      ];
+    if (isUnassigned) {
+      targetAssignees = ['KiraK72'];
     }
 
     const currentLabels = new Set(issue.labels);
@@ -406,11 +403,7 @@ async function main() {
   /** @type {IssueSnapshot[]} */
   const issues = [];
   for (let page = 1; ; page += 1) {
-    const batch = await githubApi(
-      repository,
-      token,
-      `/issues?state=all&per_page=100&page=${page}`
-    );
+    const batch = await githubApi(repository, token, `/issues?state=all&per_page=100&page=${page}`);
     if (!Array.isArray(batch) || batch.length === 0) break;
     for (const raw of batch) {
       if (raw.pull_request) continue;
@@ -424,7 +417,9 @@ async function main() {
           ? raw.labels.map((/** @type {{ name?: string }} */ l) => l.name ?? '').filter(Boolean)
           : [],
         assignees: Array.isArray(raw.assignees)
-          ? raw.assignees.map((/** @type {{ login?: string }} */ a) => a.login ?? '').filter(Boolean)
+          ? raw.assignees
+              .map((/** @type {{ login?: string }} */ a) => a.login ?? '')
+              .filter(Boolean)
           : [],
       });
     }

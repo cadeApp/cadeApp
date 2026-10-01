@@ -515,6 +515,83 @@ describe('Admin Actions (T-122 DoD & PR106-H13)', () => {
     });
   });
 
+  describe('T-317 / PR139-H15: estado del factor MFA en verifyAdminMfaAction', () => {
+    const REMOTE = 'REMOTE-SUPABASE-DETAIL';
+
+    function mockMfa({
+      factors = { data: { totp: [{ id: 'factor-1' }] }, error: null } as {
+        data: unknown;
+        error: unknown;
+      },
+      challenge = { data: { id: 'challenge-1' }, error: null } as { data: unknown; error: unknown },
+      verify = { data: {}, error: null } as { data: unknown; error: unknown },
+    } = {}) {
+      const mfa = {
+        listFactors: vi.fn().mockResolvedValue(factors),
+        challenge: vi.fn().mockResolvedValue(challenge),
+        verify: vi.fn().mockResolvedValue(verify),
+      };
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: validAdminUser }, error: null }),
+          mfa,
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'admin' }, error: null }),
+            }),
+          }),
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+      return mfa;
+    }
+
+    it('listFactors con error → INTERNAL_ERROR, sin challenge', async () => {
+      const mfa = mockMfa({ factors: { data: null, error: { message: REMOTE } } });
+      const result = await verifyAdminMfaAction({ code: '123456' });
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(JSON.stringify(result)).not.toContain(REMOTE);
+      expect(mfa.challenge).not.toHaveBeenCalled();
+    });
+
+    it('lista válida sin TOTP verificado → AAL2_REQUIRED, sin challenge', async () => {
+      const mfa = mockMfa({ factors: { data: { totp: [], all: [] }, error: null } });
+      const result = await verifyAdminMfaAction({ code: '123456' });
+      expect(result).toEqual({ ok: false, code: 'AAL2_REQUIRED' });
+      expect(mfa.challenge).not.toHaveBeenCalled();
+    });
+
+    it('TOTP verificado pero challenge con error → INTERNAL_ERROR, sin verify', async () => {
+      const mfa = mockMfa({ challenge: { data: null, error: { message: REMOTE } } });
+      const result = await verifyAdminMfaAction({ code: '123456' });
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(JSON.stringify(result)).not.toContain(REMOTE);
+      expect(mfa.verify).not.toHaveBeenCalled();
+    });
+
+    it('challenge válido pero código incorrecto → VALIDATION_ERROR', async () => {
+      mockMfa({ verify: { data: null, error: { message: REMOTE } } });
+      const result = await verifyAdminMfaAction({ code: '123456' });
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(JSON.stringify(result)).not.toContain(REMOTE);
+    });
+
+    it('verificación correcta → éxito con redirect admin saneado', async () => {
+      const mfa = mockMfa();
+      const result = await verifyAdminMfaAction({ code: '123456', redirectTo: '//evil.com' });
+      expect(result).toEqual({
+        ok: true,
+        data: { success: true, redirectTo: '/admin/applicants' },
+      });
+      expect(mfa.verify).toHaveBeenCalledWith({
+        factorId: 'factor-1',
+        challengeId: 'challenge-1',
+        code: '123456',
+      });
+    });
+  });
+
   describe('4. Sanitización de redirectTo (PR106-H03)', () => {
     it('permite rutas relativas de administración seguras', () => {
       expect(sanitizeAdminRedirect('/admin/applicants')).toBe('/admin/applicants');

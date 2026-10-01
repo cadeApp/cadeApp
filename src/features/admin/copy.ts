@@ -166,6 +166,8 @@ export const ADMIN_COPY = {
     countdown: (seconds: number) =>
       `Expira en 00:${String(seconds).padStart(2, '0')}`,
     invalidCode: 'Código incorrecto o expirado. Verificá tu app e intentá de nuevo.',
+    noActiveFactor:
+      'No hay un factor de verificación activo para esta cuenta. Completá nuevamente el enrolamiento MFA y volvé a iniciar sesión.',
     connectionError: 'Error de conexión al verificar el segundo factor.',
     success: 'Identidad verificada con éxito.',
     validationFallback: 'Ingresá los 6 dígitos numéricos.',
