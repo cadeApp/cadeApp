@@ -1,48 +1,79 @@
-# Evidencia reproducible — PR #162 / T-320
+# Evidencia — PR #162 / T-320
 
-## Fuente y alcance
+## Ronda 1
 
-```text
-base: develop@905b51ffb2c79d963d6716db05fa6d7034ead2d0
-head: 49bc8c92ddd225e65cc930a71f2104957eb1ef7e
-ahead_by: 3
-behind_by: 0
-changed_files: 15
-archivos fuera de ficha: 0
-autor tocó docs/revision-pr/**: no
-```
+- RED original: CI `36818656439` sobre `0de9f858`.
+- Resultado: **25 failed / 1527 passed**.
+- HEAD R1: `49bc8c92ddd225e65cc930a71f2104957eb1ef7e`.
+- CI R1: `36820292693` verde, **1552/1552** unitarios y **1611/1611** DB.
 
-Lecturas obligatorias realizadas desde `develop`:
-- `docs/revision-pr/COMO-ENTREGAR.md`
-- `docs/revision-pr/README.md`
-- `.agents/skills/revisar-pr/SKILL.md`
-- `docs/tasks/T-320.md`
+## Ronda 2
 
-También se leyó `docs/tasks/log/T-320.md` desde el HEAD y las lecciones de PR #139 y #142.
+SHA funcional: `b892e2a0d7e7b32f39b34350c188765edc6a8cd0`.
 
-## RED original
-
-Commit: `0de9f8589ff5dd44228dfd85702e35ee9a409238`  
-CI run: `36818656439`  
-unit job: `110229214497`
+Desde el commit de revisión `4636dcc9bb5130b5bb307564c587e0975c804c34` hubo un solo commit de autor y seis archivos, todos autorizados:
 
 ```text
-Failed Tests 25
-
-Test Files  4 failed | 106 passed (110)
-Tests       25 failed | 1527 passed (1552)
+docs/tasks/log/T-320.md
+src/app/auth/confirm/route.test.ts
+src/features/auth/actions.test.ts
+src/features/auth/actions.ts
+src/features/auth/components/reset-password-form.test.tsx
+src/features/auth/components/reset-password-form.tsx
 ```
 
-Ejemplos observados:
-- `registerAction`: faltaba `emailRedirectTo`.
-- `requestPasswordResetAction`: faltaba `redirectTo`.
-- `updatePasswordAction`: acciones/errores aún no cumplían T-320.
-- `isPublicRoute('/auth/confirm')`: false.
-- confirm route y reset form todavía no cumplían las nuevas pruebas.
+### H01
 
-## HEAD verde
+- producción inspecciona `signOutError`;
+- `{ error }` -> `INTERNAL_ERROR`;
+- rechazo -> `INTERNAL_ERROR`;
+- `{ error:null }` -> camino verde.
 
-CI run: `36820292693`
+Mutaciones independientes por inspección:
+- quitar el check de `signOutError` rompe el test M01;
+- volver el `catch` best-effort rompe M02.
+
+### H02
+
+Se eliminó matching sobre `error.message`.
+
+Caso adversarial:
+
+```text
+code=unknown_failure
+name=AuthApiError
+message=Session backend unavailable
+esperado=INTERNAL_ERROR
+```
+
+Reintroducir `.includes('session')` vuelve el caso rojo.
+
+### H03
+
+Casos del handler:
+
+```text
+%2F%2Fevil.com
+https%3A%2F%2Fevil.com
+%2F%5Cevil.com
+%252F%252Fevil.com
+```
+
+Todos exigen 303 y `Location=http://localhost:3000/merchant/dashboard`.
+
+### H04
+
+Control:
+- link `/forgot-password` sin `button` descendiente;
+- dos toggles;
+- `min-h-12`;
+- `min-w-12`;
+- `focus-visible:ring-2`;
+- sin `focus:outline-none`.
+
+### CI R2
+
+Run `36822459862`:
 
 ```text
 typecheck       success
@@ -53,86 +84,29 @@ bundle-budget   success
 audit           success
 db-tests        success
 
-Test Files  110 passed (110)
-Tests       1552 passed (1552)
-
+Test Files 110 passed (110)
+Tests      1559 passed (1559)
 Files=13, Tests=1611
 Result: PASS
+[db:types] Tipos generados exitosamente
 ```
 
-## Supabase Auth — contrato actual consultado
+## develop actual
 
-Documentación oficial consultada mediante el conector Supabase:
+`develop = 7c2f9e6d924dc034e23ae3f093f16f95e0906bf5`.
+
+La rama está detrás solo por:
 
 ```text
-signOut({ scope: 'others' })
--> const { error } = await supabase.auth.signOut({ scope: 'others' })
+f56b65fb docs(T-319): add hosted auth email task [T-319]
+d6b05ef3 docs(T-319): register task in implementation plan [T-319]
+7c2f9e6d Merge PR #163 — ficha T-319
 ```
 
-El scope `others` termina las demás sesiones preservando la actual. El punto relevante para H01 es que el fallo puede llegar como `{ error }`, por lo que envolver solo el `await` en `try/catch` no observa esa clase.
-
-También se verificó que `resetPasswordForEmail` soporta PKCE y `redirectTo`, y que `exchangeCodeForSession` es el intercambio previsto en callback SSR.
-
-## Mutaciones/adversariales independientes
-
-### M01 — signOut resuelve error
-
-Fixture semántica:
-
-```ts
-signOut.mockResolvedValue({ error: { code: 'request_failed' } })
-```
-
-Con el código actual, la acción ignora el resultado y continúa a `ok({redirectTo})`.
-
-### M02 — signOut rechaza
-
-```ts
-signOut.mockRejectedValue(new Error('network failure'))
-```
-
-El `catch` actual lo absorbe y la acción vuelve a continuar a éxito.
-
-### M03 — mensaje contiene “session” pero no es session_missing
-
-```text
-code: unknown_failure
-name: AuthApiError
-message: Session backend unavailable
-
-esperado por ficha: INTERNAL_ERROR
-actual: UNAUTHENTICATED
-```
-
-### M04 — clase de next codificado
-
-La suite actual no contiene requests con:
-
-```text
-next=%2F%2Fevil.com
-next=https%3A%2F%2Fevil.com
-next=%2F%5Cevil.com
-```
-
-La frontera está implementada, pero no queda fijada por prueba pese a figurar expresamente en el DoD.
-
-## Accesibilidad
-
-`reset-password-form.tsx` introduce:
-- `Link > Button` en el CTA del enlace inválido;
-- dos toggles con `focus:outline-none` sin ring de reemplazo;
-- ambos toggles sin el target 48×48 que sí usa `login-form.tsx`.
-
-El patrón canónico existente es:
-
-```text
-h-12 min-h-12 w-12 min-w-12
-focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
-```
+Archivos afectados: `docs/tasks/T-319.md` y `docs/implementation-plan.md`. Sin impacto funcional sobre T-320.
 
 ## Residual manual
 
-No se ejecutó ni se marca como hecho:
-- configuración de Redirect URLs en Supabase;
-- registro/confirmación real en staging;
-- recuperación/cambio de contraseña real en staging.
+Sigue pendiente:
+- Redirect URLs en Supabase Dashboard;
+- evidencia E2E real en staging.

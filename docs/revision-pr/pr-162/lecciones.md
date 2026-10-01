@@ -4,18 +4,16 @@
 
 No se agrega numeración AG nueva.
 
-### H01 — una llamada no demuestra una postcondición
+- **H01 / P08:** una llamada no demuestra una postcondición; en Auth hay que observar tanto `{ error }` como rechazo de Promise.
+- **H02 / P07:** no clasificar semántica por texto libre del proveedor cuando existe una señal estructurada.
+- **H03 / P06 + AG-37:** si la ficha enumera percent-encoding, esa representación debe aparecer en la batería.
+- **H04 / P13:** una pantalla nueva debe reutilizar el patrón accesible existente para foco, target táctil y semántica.
 
-Refuerza **P08** y la lección de PR #142: en Auth hay que observar efectos laterales, no solo que un método haya sido invocado. Para `signOut({ scope: 'others' })`, la clase incluye tanto `{ error }` resuelto como una Promise rechazada.
+## Ronda 2
 
-### H02 — no clasificar semántica por copy del proveedor
-
-Refuerza **P07**. Un texto remoto que contiene “session” no equivale a “no hay sesión”. La clasificación debe apoyarse en señales estructuradas.
-
-### H03 — enumerar literalmente los ataques que nombra la ficha
-
-Refuerza **pr-56/AG-37** y **P06**. Una batería de open redirect no queda completa solo porque cubra variantes parecidas; si la ficha llama a out percent-encoding, esa representación debe aparecer en el test.
-
-### H04 — reutilizar el patrón accesible existente
-
-Refuerza **P13**. Login/register ya resuelven toggle de contraseña con target 48×48 y foco visible; una pantalla nueva no debe reimplementar una versión más débil. Tampoco debe componerse `Link > Button` cuando ambos renderizan elementos interactivos.
+- H01 confirma que `toHaveBeenCalledWith` no alcanza si la API devuelve un resultado con error.
+- H02 queda protegido por un contraejemplo cuyo mensaje contiene “session” pero cuyo código no representa falta de sesión.
+- H03 fija la propiedad en la frontera HTTP real mediante `NextRequest`.
+- H04 observa solo el contrato mínimo accesible y evita snapshots frágiles.
+- La divergencia histórica con `develop` no invalida por sí sola una verificación: los 3 commits nuevos solo modifican documentación de T-319.
+- No se agrega numeración AG nueva.
