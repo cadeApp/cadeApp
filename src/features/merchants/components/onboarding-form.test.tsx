@@ -265,4 +265,109 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
     const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
     expect(phoneInput.getAttribute('inputmode')).toBe('tel');
   });
+
+  describe('T-323 DoD: Degradación graceful de mapa y geolocalización', () => {
+    it('si la geolocalización falla, muestra aviso de fallback pero NO deshabilita el botón Empezar y permite submit con dirección escrita', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((_success, error) => {
+            error({ code: 1, message: 'User denied geolocation' });
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      // Usuario intenta usar GPS
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación actual/i });
+      fireEvent.click(gpsBtn);
+
+      // Muestra el aviso que dice que puede continuar con la dirección escrita
+      expect(
+        await screen.findByText(/no pudimos obtener tu ubicación actual\. podés continuar con la dirección escrita\./i)
+      ).toBeDefined();
+
+      // El botón de submit NO debe estar deshabilitado
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
+      expect(submitBtn).not.toHaveProperty('disabled', true);
+
+      // El usuario hace submit con la dirección escrita
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+
+      const firstCall = vi.mocked(merchantOnboardingAction).mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const callArgs = firstCall[0] as Record<string, unknown>;
+      expect(callArgs['defaultPickupAddress']).toBe('Av. Sarmiento 123');
+      expect(callArgs['defaultPickupLat']).toBeNull();
+      expect(callArgs['defaultPickupLng']).toBeNull();
+    });
+
+    it('una falla de mapa o geolocalización no muestra falsamente el errorGeneric de guardar datos', async () => {
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((_success, error) => {
+            error({ code: 2, message: 'Position unavailable' });
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación actual/i });
+      fireEvent.click(gpsBtn);
+
+      await screen.findByText(/no pudimos obtener tu ubicación actual/i);
+
+      // NO debe mostrarse el mensaje de error al crear/guardar comercio
+      expect(screen.queryByText(/ocurrió un error al guardar los datos/i)).toBeNull();
+    });
+
+    it('solo bloquea el submit por coordenadas si estas están explícitamente fuera de Aguilares', async () => {
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((success) => {
+            success({
+              coords: { latitude: -26.83, longitude: -65.20 }, // Fuera de Aguilares
+            });
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación actual/i });
+      fireEvent.click(gpsBtn);
+
+      expect(
+        await screen.findByText(/ubicación fuera de aguilares/i)
+      ).toBeDefined();
+
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
+      // Debe estar deshabilitado o bloquear el submit porque las coordenadas son explícitamente inválidas
+      expect(submitBtn).toHaveProperty('disabled', true);
+    });
+  });
 });

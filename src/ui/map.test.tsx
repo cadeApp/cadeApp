@@ -82,6 +82,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     mockPublicMapId = 'test-map-id';
     capturedMapProps = null;
     mockOnError = null;
+    delete (window as unknown as { gm_authFailure?: () => void }).gm_authFailure;
   });
 
   beforeEach(() => {
@@ -224,6 +225,53 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
 
       fireEvent(window, new Event('online'));
       expect(screen.queryByTestId('map-offline-banner')).toBeNull();
+    });
+
+    it('muestra fallback cuando Google Maps dispara window.gm_authFailure (billing, key inválida o referrer no autorizado)', async () => {
+      render(<MapPicker value={AGUILARES_CENTER} />);
+
+      expect(screen.getByTestId('mock-google-map')).toBeDefined();
+      expect(typeof (window as unknown as { gm_authFailure?: () => void }).gm_authFailure).toBe('function');
+
+      act(() => {
+        (window as unknown as { gm_authFailure: () => void }).gm_authFailure();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('map-load-error-banner')).toBeDefined();
+      });
+
+      expect(screen.getByText(/no pudimos conectar con google maps/i)).toBeDefined();
+      expect(screen.getByTestId('map-fallback')).toBeDefined();
+      expect(screen.queryByTestId('mock-google-map')).toBeNull();
+    });
+
+    it('el fallback y banner no exponen la API key ni URLs técnicas de Google', async () => {
+      render(<MapPicker value={AGUILARES_CENTER} />);
+
+      act(() => {
+        (window as unknown as { gm_authFailure?: () => void }).gm_authFailure?.();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('map-load-error-banner')).toBeDefined();
+      });
+
+      const pickerHtml = screen.getByTestId('map-picker').innerHTML;
+      expect(pickerHtml).not.toContain(mockPublicApiKey);
+      expect(pickerHtml).not.toContain('maps.googleapis.com');
+      expect(pickerHtml).not.toContain('BillingNotEnabledMapError');
+      expect(pickerHtml).not.toContain('RefererNotAllowedMapError');
+    });
+
+    it('limpia o preserva handler previo de window.gm_authFailure al desmontar', () => {
+      const priorHandler = vi.fn();
+      (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = priorHandler;
+
+      const { unmount } = render(<MapPicker value={AGUILARES_CENTER} />);
+      unmount();
+
+      expect((window as unknown as { gm_authFailure?: () => void }).gm_authFailure).toBe(priorHandler);
     });
   });
 

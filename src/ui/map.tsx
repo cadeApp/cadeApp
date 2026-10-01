@@ -130,6 +130,29 @@ export function MapPicker({
     };
   }, []);
 
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const previousAuthFailure = (window as unknown as { gm_authFailure?: () => void }).gm_authFailure;
+
+    (window as unknown as { gm_authFailure: () => void }).gm_authFailure = () => {
+      setApiLoadFailed(true);
+      if (typeof previousAuthFailure === 'function') {
+        try {
+          previousAuthFailure();
+        } catch {
+          // ignore error in previous handler
+        }
+      }
+    };
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = previousAuthFailure;
+      }
+    };
+  }, []);
+
   const fallbackCenter = React.useMemo<MapCoordinates>(() => {
     if (value != null) return value;
     if (defaultZoneCenter != null) return defaultZoneCenter;
