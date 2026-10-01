@@ -75,7 +75,11 @@ async function observeSubmit(signUpResult: { data: unknown; error: unknown }) {
     screen.getByRole('button', { name: /crear cuenta/i }).closest('form') as HTMLFormElement
   );
   await waitFor(() => {
-    expect(push.mock.calls.length > 0 || screen.queryByRole('alert') !== null).toBe(true);
+    expect(
+      push.mock.calls.length > 0 ||
+        screen.queryByRole('alert') !== null ||
+        container.textContent?.includes('Revisá tu email')
+    ).toBe(true);
   });
 
   const observed = {
@@ -90,7 +94,7 @@ async function observeSubmit(signUpResult: { data: unknown; error: unknown }) {
   return { observed, activations, signOutCalls };
 }
 
-describe('T-318: el formulario no permite distinguir un email ya registrado', () => {
+describe('T-318 / T-322: el formulario no permite distinguir un email ya registrado y no navega antes de confirmar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     rpc.mockResolvedValue({ data: { success: true }, error: null });
@@ -101,21 +105,24 @@ describe('T-318: el formulario no permite distinguir un email ya registrado', ()
     });
   });
 
-  it('el alta nueva navega al onboarding sin mostrar error y cierra la sesión local', async () => {
+  it('el alta nueva no navega al onboarding, muestra estado neutral "Revisá tu email" y cierra la sesión local', async () => {
     const fresh = await observeSubmit(NEW_USER);
-    expect(fresh.observed.navigation).toStrictEqual([['/merchant/onboarding']]);
+    expect(fresh.observed.navigation).toStrictEqual([]);
+    expect(fresh.observed.text).toMatch(/revisá tu email/i);
     expect(fresh.observed.alert).toBeNull();
     expect(fresh.activations).toBe(1);
     expect(fresh.signOutCalls).toStrictEqual([[{ scope: 'local' }]]);
   });
 
   it.each(EXISTING_ACCOUNT_SIGNALS)(
-    '%s → misma navegación, mismo texto, sin activar consentimientos ni signOut',
+    '%s → misma navegación neutral, mismo texto, sin activar consentimientos ni signOut',
     async (_signal, signUpResult) => {
       const fresh = await observeSubmit(NEW_USER);
       const existing = await observeSubmit(signUpResult);
 
       expect(existing.observed).toStrictEqual(fresh.observed);
+      expect(existing.observed.navigation).toStrictEqual([]);
+      expect(existing.observed.text).toMatch(/revisá tu email/i);
       expect(existing.observed.text).not.toMatch(ENUMERATING_TEXT);
       expect(existing.observed.text).not.toMatch(/sanitized-id|usr-new-real/);
       expect(existing.activations).toBe(0);

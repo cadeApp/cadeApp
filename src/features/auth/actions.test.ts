@@ -162,6 +162,44 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       });
     });
 
+    it('registerAction pasa displayName y phone validados a data.display_name y data.phone de signUp', async () => {
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-courier-1', email: 'courier@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'courier@test.com',
+        password: 'password123',
+        role: 'courier',
+        displayName: '  Juan Repartidor  ',
+        phone: '  3815559876  ',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.0',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockSignUp).toHaveBeenCalledWith({
+        email: 'courier@test.com',
+        password: 'password123',
+        options: {
+          emailRedirectTo: 'http://localhost:3000/auth/confirm',
+          data: expect.objectContaining({
+            role: 'courier',
+            display_name: 'Juan Repartidor',
+            phone: '3815559876',
+          }),
+        },
+      });
+    });
+
     it('registerAction rechaza rol admin con INVALID_SIGNUP_ROLE sin invocar signUp', async () => {
       const mockSignUp = vi.fn();
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
