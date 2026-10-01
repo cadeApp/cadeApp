@@ -2,12 +2,12 @@
 
 - **PR:** #167
 - **Rama:** `feat/T-322-registration-email-confirmation`
-- **SHA funcional R3:** `490979e74286aad3a287a958902a21abfd03bf08`
-- **develop:** `76d71d67f5e2b7c026f2abe20f9d05a337d1bb51`
-- **Ronda:** 3
-- **Resultado:** **CON BLOQUEANTE (1 · decisión P1)**
+- **SHA funcional R4:** `bff48abd64dbf596add21df8ec4f68d1ed299b11`
+- **develop:** `0b6b540096de15a84d7693b2e0d23b3ad9357fb0`
+- **Ronda:** 4
+- **Resultado:** **SIN BLOQUEANTES**
 
-## Estado de hallazgos
+## Estado final de hallazgos
 
 | ID | Severidad | Estado |
 |---|---|---|
@@ -16,22 +16,32 @@
 | PR167-H03 | medio | arreglado-verificado |
 | PR167-H04 | medio | arreglado-verificado |
 | PR167-R01 | alto | arreglado-verificado |
-| PR167-A01 | decisión | decision-pendiente |
+| PR167-A01 | decisión | aceptado |
 
-CI exact-head `36923370905` completamente verde: typecheck, lint, unit, build, bundle-budget, audit y db-tests; **1581/1581 unitarios** y **1614/1614 DB**.
+PR167-A01 quedó formalmente resuelto por PR #169, mergeada en `develop` con `0b6b540096de15a84d7693b2e0d23b3ad9357fb0`.
 
-PR167-R01 quedó resuelto correctamente: Privacy v1.1, texto de obligatoriedad alineado y tests actualizados.
+## CI exact-head
 
-El único bloqueo no es funcional: la rama añadió `src/features/courier-onboarding/actions.test.ts` a su propia ficha y afirmó una autorización P1 que no está formalizada en la ficha vigente de `develop`. Según el protocolo, la ficha de `develop` es la autoridad de alcance.
+Run `36927363187` sobre `bff48abd64dbf596add21df8ec4f68d1ed299b11`:
 
-## Mejora no bloqueante
+```text
+typecheck       success
+lint            success
+unit            success — 110 files / 1581 tests
+build           success
+bundle-budget   success
+audit           success
+db-tests        success — 13 files / 1614 tests
+```
 
-El cuerpo del PR #167 quedó desactualizado: todavía copia el DoD previo a Privacy v1.1 y muestra cifras antiguas de tests. Actualizarlo después de resolver PR167-A01, antes del merge.
+## Alcance
 
-## Residual manual
+`develop...HEAD` no contiene archivos fuera de la ficha T-322 vigente. No hubo cambios funcionales posteriores a la Ronda 3: la última sincronización incorporó únicamente la formalización documental de PR #169 y la bitácora.
 
-Sigue pendiente la evidencia E2E real en staging exigida por T-322 después de merge/promoción.
+## Resultado
 
-## Follow-up fuera de T-322
+La PR queda técnicamente lista para merge. La evidencia manual de staging exigida por la ficha es posterior al merge/promoción y permanece como residual operativo.
 
-Onboarding merchant: barrios de Aguilares con `src/ui/select.tsx`, por nombre y sin inventar centroides.
+## Follow-up separado
+
+Onboarding merchant: lista de barrios de Aguilares con `src/ui/select.tsx`, por nombre y sin inventar centroides.

@@ -20,3 +20,9 @@
 - PR167-R01 quedó cerrado: versionar el documento legal y actualizar los controles dependientes evita reescribir silenciosamente el contrato previo.
 - **PR167-A01 / P10:** una necesidad técnica legítima no autoriza a la rama a editar su propia ficha para ampliar alcance. La decisión debe existir primero en `develop`; recién después el trabajo queda dentro de alcance.
 - `verify-fichas.test.ts` no detecta autoampliaciones de la lista “Archivos permitidos”; este caso queda como evidencia para evaluar un control futuro si P10 vuelve a aparecer.
+
+## Ronda 4
+
+- PR167-A01 quedó formalizado correctamente mediante una PR documental previa en `develop`; el mismo cambio que antes era fuera de alcance ahora queda trazable y autorizado.
+- El merge de `develop` posterior a la decisión no modificó código funcional, lo que permitió revalidar los hallazgos anteriores contra el exact-head sin abrir una nueva clase de defecto.
+- La evidencia manual de Auth/Storage se mantiene como paso de staging posterior al merge, no como sustituto de los controles automatizados.

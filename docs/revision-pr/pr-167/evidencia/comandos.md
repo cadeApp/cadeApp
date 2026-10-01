@@ -196,3 +196,51 @@ src/features/courier-onboarding/actions.test.ts
 La ficha vigente en `develop` no incluye ese archivo. La rama añadió dos líneas a su copia de `docs/tasks/T-322.md`: una afirmación de autorización P1 y el propio path en “Archivos permitidos”.
 
 Según `.agents/skills/revisar-pr/SKILL.md`, el alcance se evalúa contra la ficha de `develop`; por eso permanece **decision-pendiente** aunque CI esté verde.
+
+## Ronda 4
+
+SHA funcional: `bff48abd64dbf596add21df8ec4f68d1ed299b11`.  
+develop: `0b6b540096de15a84d7693b2e0d23b3ad9357fb0`.
+
+### Cambios desde R3
+
+Comparación `843e112...bff48abd64dbf596add21df8ec4f68d1ed299b11`:
+- merge de PR #169 / documentación de alcance;
+- `docs/tasks/log/T-322.md`;
+- sin cambios funcionales nuevos de Auth, legal, courier onboarding ni RLS.
+
+### Alcance formal
+
+La ficha en `develop` incluye:
+```text
+src/features/courier-onboarding/actions.test.ts
+```
+con la restricción expresa de usarlo solo para fixtures Privacy 1.1.
+
+### CI exact-head 36927363187
+
+```text
+typecheck       success
+lint            success
+audit           success
+build           success
+bundle-budget   success
+unit            success — 110 / 110 files; 1581 / 1581 tests
+db-tests        success — 13 files; 1614 / 1614 tests
+```
+
+Evidencia de suites:
+```text
+courier-onboarding/actions.test.ts      10/10
+courier-onboarding/components.test.tsx  23/23
+legal/legal-red.test.ts                 11/11
+register-enumeration.test.tsx            4/4
+auth/confirm/route.test.ts              27/27
+verify-fichas.test.ts                    7/7
+```
+
+### PR167-A01
+
+Estado final: `aceptado`.
+
+Decisión P1 registrada en `develop@0b6b540096de15a84d7693b2e0d23b3ad9357fb0` mediante PR #169. El diff actual ya no presenta un desvío de alcance.
