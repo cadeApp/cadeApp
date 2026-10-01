@@ -95,7 +95,9 @@ export class MerchantPage extends BasePage {
   }
 
   get alreadyMatchedAlert(): Locator {
-    return this.page.getByRole('alert');
+    return this.page.getByRole('alert').filter({
+      hasText: /ya fue asignada a otro repartidor|ALREADY_MATCHED/i,
+    });
   }
 
   get offerCourierHeadings(): Locator {

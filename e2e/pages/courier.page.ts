@@ -69,4 +69,8 @@ export class CourierPage extends BasePage {
   get minFloorText(): Locator {
     return this.page.getByText(/mínimo/i);
   }
+
+  requestCardByNotes(testRunId: string): Locator {
+    return this.page.getByTestId('request-card').filter({ hasText: testRunId });
+  }
 }

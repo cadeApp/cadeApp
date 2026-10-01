@@ -147,8 +147,8 @@ export function isAllowedE2EEnvironment(
   const isPositivelyIdentifiedStaging =
     Boolean(targetProjectRef) &&
     ((Boolean(configuredStagingRef) && targetProjectRef === configuredStagingRef) ||
-      KNOWN_STAGING_PROJECT_REFS.includes(targetProjectRef!) ||
-      (PLACEHOLDER_TEST_PROJECT_REFS.includes(targetProjectRef!) && env.NODE_ENV === 'test'));
+      (targetProjectRef !== null && KNOWN_STAGING_PROJECT_REFS.includes(targetProjectRef)) ||
+      (targetProjectRef !== null && PLACEHOLDER_TEST_PROJECT_REFS.includes(targetProjectRef) && env.NODE_ENV === 'test'));
 
   if (!isLocal && !isPositivelyIdentifiedStaging) {
     return {
@@ -227,7 +227,7 @@ export function trackEntityForCleanup(
   }
 }
 
-type AdminClientType = ReturnType<typeof createAdminClient>;
+export type AdminClientType = ReturnType<typeof createAdminClient>;
 
 /**
  * Crea datos transitorios mínimos reales en Supabase staging vinculados al testRunId.
@@ -518,50 +518,147 @@ export async function seedStagingData(
       }
     }
 
-    // 5. Crear ofertas reales de prueba para sorting / concurrencia si se solicitó
-    const couriers = context.courierUsers ?? [];
-    if (
-      options?.createOffersForFirstRequest &&
-      context.createdRequestIds.length > 0 &&
-      couriers.length >= 2
-    ) {
-      const targetReqId = context.createdRequestIds[0]!;
-
-      // Oferta 1: Courier 0 (Doc 2, monto $2000)
-      const offer0Id = crypto.randomUUID();
-      const { error: off0Err } = await admin.from('offers').insert({
-        id: offer0Id,
-        request_id: targetReqId,
-        courier_id: couriers[0]!.id,
-        amount_ars: 2000,
-        eta_minutes: 15,
-        message: 'Voy en moto',
-        status: 'pending',
-      });
-      if (off0Err) {
-        throw new Error(`[E2E Seed Error] Falló la creación de oferta 0: ${off0Err.message}`);
-      }
-      trackEntityForCleanup(context, 'offer', offer0Id);
-
-      // Oferta 2: Courier 1 (Doc 0, monto $1500)
-      const offer1Id = crypto.randomUUID();
-      const { error: off1Err } = await admin.from('offers').insert({
-        id: offer1Id,
-        request_id: targetReqId,
-        courier_id: couriers[1]!.id,
-        amount_ars: 1500,
-        eta_minutes: 10,
-        message: 'Estoy a 5 cuadras',
-        status: 'pending',
-      });
-      if (off1Err) {
-        throw new Error(`[E2E Seed Error] Falló la creación de oferta 1: ${off1Err.message}`);
-      }
-      trackEntityForCleanup(context, 'offer', offer1Id);
+    // 5. Crear ofertas reales de prueba para sorting / concurrencia si se solicitó explícitamente
+    if (options?.createOffersForFirstRequest) {
+      await seedOffersForFirstRequest(context, admin, env);
     }
   }
 
   return context;
+}
+
+/**
+ * Crea dos ofertas reales de prueba para sorting / concurrencia sobre la primera solicitud creada.
+ * Courier 0: Doc 2, monto $2000, eta 15 min, mensaje 'Voy en moto', status 'pending'.
+ * Courier 1: Doc 0, monto $1500, eta 10 min, mensaje 'Estoy a 5 cuadras', status 'pending'.
+ * Ambas ofertas quedan registradas en context.createdOfferIds para su cleanup.
+ */
+export async function seedOffersForFirstRequest(
+  context: StagingSeedContext,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<StagingSeedContext> {
+  assertAllowedE2EEnvironment(env);
+
+  const targetReqId = context.createdRequestIds[0];
+  if (!targetReqId) {
+    throw new Error('[E2E Seed Error] No hay solicitudes creadas en el contexto para ofertar');
+  }
+
+  const couriers = context.courierUsers ?? [];
+  const firstCourier = couriers[0];
+  const secondCourier = couriers[1];
+  if (!firstCourier || !secondCourier) {
+    throw new Error('[E2E Seed Error] Se requieren al menos 2 repartidores en el contexto para precrear ofertas');
+  }
+
+  const admin = client ?? createAdminClient();
+
+  // Oferta 1: Courier 0 (Doc 2, monto $2000)
+  const offer0Id = crypto.randomUUID();
+  assertValidUuid(offer0Id, 'offer0Id');
+  const { error: off0Err } = await admin.from('offers').insert({
+    id: offer0Id,
+    request_id: targetReqId,
+    courier_id: firstCourier.id,
+    amount_ars: 2000,
+    eta_minutes: 15,
+    message: 'Voy en moto',
+    status: 'pending',
+  });
+  if (off0Err) {
+    throw new Error(`[E2E Seed Error] Falló la creación de oferta 0: ${off0Err.message}`);
+  }
+  trackEntityForCleanup(context, 'offer', offer0Id);
+
+  // Oferta 2: Courier 1 (Doc 0, monto $1500)
+  const offer1Id = crypto.randomUUID();
+  assertValidUuid(offer1Id, 'offer1Id');
+  const { error: off1Err } = await admin.from('offers').insert({
+    id: offer1Id,
+    request_id: targetReqId,
+    courier_id: secondCourier.id,
+    amount_ars: 1500,
+    eta_minutes: 10,
+    message: 'Estoy a 5 cuadras',
+    status: 'pending',
+  });
+  if (off1Err) {
+    throw new Error(`[E2E Seed Error] Falló la creación de oferta 1: ${off1Err.message}`);
+  }
+  trackEntityForCleanup(context, 'offer', offer1Id);
+
+  return context;
+}
+
+export interface RequestFinalInspectionData {
+  requestId: string;
+  requestStatus: string;
+  acceptedOfferId: string | null;
+  offers: Array<{
+    id: string;
+    status: string;
+    courierId: string;
+    amountArs: number;
+  }>;
+}
+
+/**
+ * Consulta server-side el estado final de una solicitud y sus ofertas asociadas.
+ * Acotado estrictamente a los IDs rastreados por la corrida E2E en context.
+ * La service-role se utiliza exclusivamente en el entorno de ejecución Node/Server.
+ */
+export async function getRequestInspectionData(
+  context: StagingSeedContext,
+  requestId: string,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<RequestFinalInspectionData> {
+  assertAllowedE2EEnvironment(env);
+  assertValidUuid(requestId, 'requestId');
+
+  if (!context.createdRequestIds.includes(requestId)) {
+    throw new Error(
+      `[E2E Inspection Error] La solicitud '${requestId}' no pertenece a la corrida '${context.testRunId}'`
+    );
+  }
+
+  const admin = client ?? createAdminClient();
+
+  const { data: requestData, error: reqErr } = await admin
+    .from('delivery_requests')
+    .select('id, status, accepted_offer_id')
+    .eq('id', requestId)
+    .single();
+
+  if (reqErr || !requestData) {
+    throw new Error(
+      `[E2E Inspection Error] Error al consultar delivery_requests: ${reqErr?.message ?? 'Sin datos'}`
+    );
+  }
+
+  const { data: offersData, error: offErr } = await admin
+    .from('offers')
+    .select('id, status, courier_id, amount_ars')
+    .eq('request_id', requestId);
+
+  if (offErr) {
+    throw new Error(`[E2E Inspection Error] Error al consultar offers: ${offErr.message}`);
+  }
+
+  const offers = (offersData ?? []).map((row) => ({
+    id: row.id,
+    status: row.status,
+    courierId: row.courier_id,
+    amountArs: row.amount_ars,
+  }));
+
+  return {
+    requestId: requestData.id,
+    requestStatus: requestData.status,
+    acceptedOfferId: requestData.accepted_offer_id,
+    offers,
+  };
 }
 
 /**
@@ -594,8 +691,9 @@ export async function cleanupStagingData(
       if (error) {
         throw new Error(`Error en delete delivery_requests: ${error.message}`);
       }
-    } catch (err: any) {
-      throw new Error(`[E2E Cleanup Error] Falló la limpieza directa: ${err?.message || String(err)}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`[E2E Cleanup Error] Falló la limpieza directa: ${msg}`);
     }
     return;
   }
@@ -603,15 +701,136 @@ export async function cleanupStagingData(
   const admin = client ?? createAdminClient();
   const cleanupErrors: Array<{ entity: string; ids: string[]; error: string }> = [];
 
+  // Discovery dinámico: entidades creadas por UI u operaciones posteriores al seed
+  // 1. Descubrir todas las delivery_requests del merchant de la corrida
+  if (context.merchantUser?.id) {
+    try {
+      const reqBuilder = admin.from('delivery_requests');
+      if (typeof (reqBuilder as { select?: unknown }).select === 'function') {
+        const { data: merchantReqs, error: merchReqsErr } = await reqBuilder
+          .select('id')
+          .eq('merchant_id', context.merchantUser.id);
+
+        if (merchReqsErr) {
+          cleanupErrors.push({
+            entity: 'discovery.delivery_requests',
+            ids: [context.merchantUser.id],
+            error: merchReqsErr.message,
+          });
+        } else if (merchantReqs) {
+          for (const row of merchantReqs) {
+            if (row.id && !context.createdRequestIds.includes(row.id)) {
+              context.createdRequestIds.push(row.id);
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Unexpected table delivery_requests')) {
+        cleanupErrors.push({
+          entity: 'discovery.delivery_requests',
+          ids: [context.merchantUser.id],
+          error: msg,
+        });
+      }
+    }
+  }
+
+  // 2. Descubrir ofertas asociadas a todos los request IDs de la corrida
+  if (context.createdRequestIds.length > 0) {
+    try {
+      const offersBuilder = admin.from('offers');
+      if (typeof (offersBuilder as { select?: unknown }).select === 'function') {
+        const { data: foundOffers, error: offersErr } = await offersBuilder
+          .select('id')
+          .in('request_id', context.createdRequestIds);
+
+        if (offersErr) {
+          cleanupErrors.push({
+            entity: 'discovery.offers',
+            ids: context.createdRequestIds,
+            error: offersErr.message,
+          });
+        } else if (foundOffers) {
+          for (const row of foundOffers) {
+            if (row.id && !context.createdOfferIds.includes(row.id)) {
+              context.createdOfferIds.push(row.id);
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Unexpected table offers')) {
+        cleanupErrors.push({
+          entity: 'discovery.offers',
+          ids: context.createdRequestIds,
+          error: msg,
+        });
+      }
+    }
+
+    // 3. Descubrir contactos correspondientes
+    try {
+      const contactsBuilder = admin.from('delivery_request_contacts');
+      if (typeof (contactsBuilder as { select?: unknown }).select === 'function') {
+        const { data: foundContacts, error: contactsErr } = await contactsBuilder
+          .select('request_id')
+          .in('request_id', context.createdRequestIds);
+
+        if (contactsErr) {
+          cleanupErrors.push({
+            entity: 'discovery.delivery_request_contacts',
+            ids: context.createdRequestIds,
+            error: contactsErr.message,
+          });
+        } else if (foundContacts) {
+          if (!context.createdContactRequestIds) {
+            context.createdContactRequestIds = [];
+          }
+          for (const row of foundContacts) {
+            if (row.request_id && !context.createdContactRequestIds.includes(row.request_id)) {
+              context.createdContactRequestIds.push(row.request_id);
+            }
+          }
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Unexpected table delivery_request_contacts')) {
+        cleanupErrors.push({
+          entity: 'discovery.delivery_request_contacts',
+          ids: context.createdRequestIds,
+          error: msg,
+        });
+      }
+    }
+  }
+
   // 0. Desvincular accepted_offer_id si hubiera quedado fijado
   if (context.createdRequestIds.length > 0) {
     try {
-      const builder = admin.from('delivery_requests');
-      if (typeof (builder as any).update === 'function') {
-        await (builder as any).update({ accepted_offer_id: null }).in('id', context.createdRequestIds);
+      const reqBuilder = admin.from('delivery_requests');
+      if (typeof (reqBuilder as { update?: unknown }).update === 'function') {
+        const { error: unlinkErr } = await reqBuilder
+          .update({ accepted_offer_id: null })
+          .in('id', context.createdRequestIds);
+
+        if (unlinkErr) {
+          cleanupErrors.push({
+            entity: 'delivery_requests.unlink_accepted_offer',
+            ids: context.createdRequestIds,
+            error: unlinkErr.message,
+          });
+        }
       }
-    } catch {
-      // Ignorar para proceder con la eliminación relacional
+    } catch (err: unknown) {
+      cleanupErrors.push({
+        entity: 'delivery_requests.unlink_accepted_offer',
+        ids: context.createdRequestIds,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -625,8 +844,12 @@ export async function cleanupStagingData(
       } else {
         context.createdOfferIds = context.createdOfferIds.filter((id) => !toDelete.includes(id));
       }
-    } catch (err: any) {
-      cleanupErrors.push({ entity: 'offers', ids: toDelete, error: err?.message || String(err) });
+    } catch (err: unknown) {
+      cleanupErrors.push({
+        entity: 'offers',
+        ids: toDelete,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -642,11 +865,11 @@ export async function cleanupStagingData(
           (id) => !toDelete.includes(id)
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       cleanupErrors.push({
         entity: 'delivery_request_contacts',
         ids: toDelete,
-        error: err?.message || String(err),
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
@@ -661,11 +884,11 @@ export async function cleanupStagingData(
       } else {
         context.createdRequestIds = context.createdRequestIds.filter((id) => !toDelete.includes(id));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       cleanupErrors.push({
         entity: 'delivery_requests',
         ids: toDelete,
-        error: err?.message || String(err),
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
@@ -681,10 +904,11 @@ export async function cleanupStagingData(
         for (const uid of toDeleteUsers) failedUserIds.add(uid);
         cleanupErrors.push({ entity: 'couriers', ids: toDeleteUsers, error: courierErr.message });
       }
-    } catch (err: any) {
-      if (!err?.message?.includes('Unexpected table couriers')) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Unexpected table couriers')) {
         for (const uid of toDeleteUsers) failedUserIds.add(uid);
-        cleanupErrors.push({ entity: 'couriers', ids: toDeleteUsers, error: err?.message || String(err) });
+        cleanupErrors.push({ entity: 'couriers', ids: toDeleteUsers, error: msg });
       }
     }
 
@@ -694,9 +918,13 @@ export async function cleanupStagingData(
         for (const uid of toDeleteUsers) failedUserIds.add(uid);
         cleanupErrors.push({ entity: 'merchants', ids: toDeleteUsers, error: merchErr.message });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       for (const uid of toDeleteUsers) failedUserIds.add(uid);
-      cleanupErrors.push({ entity: 'merchants', ids: toDeleteUsers, error: err?.message || String(err) });
+      cleanupErrors.push({
+        entity: 'merchants',
+        ids: toDeleteUsers,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     try {
@@ -705,9 +933,13 @@ export async function cleanupStagingData(
         for (const uid of toDeleteUsers) failedUserIds.add(uid);
         cleanupErrors.push({ entity: 'profiles', ids: toDeleteUsers, error: profErr.message });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       for (const uid of toDeleteUsers) failedUserIds.add(uid);
-      cleanupErrors.push({ entity: 'profiles', ids: toDeleteUsers, error: err?.message || String(err) });
+      cleanupErrors.push({
+        entity: 'profiles',
+        ids: toDeleteUsers,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -721,8 +953,12 @@ export async function cleanupStagingData(
       } else {
         context.createdZoneIds = context.createdZoneIds.filter((id) => !toDeleteZones.includes(id));
       }
-    } catch (err: any) {
-      cleanupErrors.push({ entity: 'zones', ids: toDeleteZones, error: err?.message || String(err) });
+    } catch (err: unknown) {
+      cleanupErrors.push({
+        entity: 'zones',
+        ids: toDeleteZones,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -735,9 +971,13 @@ export async function cleanupStagingData(
           failedUserIds.add(userId);
           cleanupErrors.push({ entity: 'auth.users', ids: [userId], error: authErr.message });
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         failedUserIds.add(userId);
-        cleanupErrors.push({ entity: 'auth.users', ids: [userId], error: err?.message || String(err) });
+        cleanupErrors.push({
+          entity: 'auth.users',
+          ids: [userId],
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
     // Conservar en el tracking todo usuario que haya fallado en cualquier etapa (couriers, merchants, profiles o auth.users)

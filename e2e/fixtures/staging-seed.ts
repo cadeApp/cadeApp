@@ -12,6 +12,8 @@ export {
   createStagingSeedContext,
   trackEntityForCleanup,
   seedStagingData,
+  seedOffersForFirstRequest,
+  getRequestInspectionData,
   cleanupStagingData,
   assertAllowedE2EEnvironment,
   isAllowedE2EEnvironment,
@@ -19,4 +21,5 @@ export {
   type SeedStagingOptions,
   type EnvironmentCheckResult,
   type UserCredentials,
+  type RequestFinalInspectionData,
 } from '@/server/e2e/staging-seed';

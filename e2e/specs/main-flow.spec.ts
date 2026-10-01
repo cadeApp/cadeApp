@@ -1,4 +1,10 @@
-import { test, expect } from '../fixtures';
+import {
+  test,
+  expect,
+  seedOffersForFirstRequest,
+  getRequestInspectionData,
+} from '../fixtures';
+import { formatArs } from '@/lib/format';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { LoginPage, MerchantPage } from '../pages';
 
@@ -7,7 +13,7 @@ import { LoginPage, MerchantPage } from '../pages';
  *
  * Flujo completo con backend y UI reales (sin mocks de páginas HTML ni de RPCs de aceptación):
  * 1. Revelación progresiva: el repartidor no aceptado NO ve el teléfono del destinatario.
- * 2. Aceptación concurrente en dos pestañas: exclusión mutua backend (ALREADY_MATCHED).
+ * 2. Aceptación concurrente en dos pestañas: exclusión mutua backend (ALREADY_MATCHED) con oráculo de estado final.
  * 3. Publicación real de solicitud (efectivo con cambio y transferencia).
  * 4. Repartidor oferta respetando el piso mínimo dinámico (min_offer_ars).
  * 5. Repartidor retira oferta pendiente desde "Mis ofertas" con modal de confirmación.
@@ -24,6 +30,10 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     stagingContext,
     loginAsCourier,
   }) => {
+    // Precrear ofertas para que Courier 1 posea una oferta activa y se verifique
+    // la exclusión de teléfono tanto en el feed general como en "Mis ofertas"
+    await seedOffersForFirstRequest(stagingContext);
+
     const sentinelPhone = stagingContext.sentinelPhone ?? '+5493865123456';
     const rawSentinelDigits = sentinelPhone.replace(/\D/g, '');
 
@@ -59,6 +69,9 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     browser,
     stagingContext,
   }) => {
+    // Precrear explícitamente las dos ofertas que competirán en concurrencia
+    await seedOffersForFirstRequest(stagingContext);
+
     const targetRequestId = stagingContext.createdRequestIds[0];
     if (!targetRequestId) {
       throw new Error('[E2E Error] No request ID found in stagingContext');
@@ -99,16 +112,42 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       merchantPage2.confirmAcceptButton.click(),
     ]);
 
-    // Al menos una pestaña debe reflejar rechazo por concurrencia ALREADY_MATCHED
+    // Al menos una pestaña debe reflejar rechazo específico por concurrencia ALREADY_MATCHED
     const alert1 = merchantPage1.alreadyMatchedAlert;
     const alert2 = merchantPage2.alreadyMatchedAlert;
+    await expect(alert1.or(alert2)).toBeVisible({ timeout: 10000 });
 
-    const hasAlert1 = await alert1.isVisible({ timeout: 5000 }).catch(() => false);
-    const hasAlert2 = await alert2.isVisible({ timeout: 5000 }).catch(() => false);
+    // Oráculo de estado final: convergencia observada server-side con expect.poll
+    await expect
+      .poll(
+        async () => {
+          const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
+          const acceptedOffers = inspection.offers.filter((o) => o.status === 'accepted');
+          const nonAcceptedOffers = inspection.offers.filter((o) => o.status !== 'accepted');
+          return {
+            requestStatus: inspection.requestStatus,
+            acceptedOfferId: inspection.acceptedOfferId,
+            acceptedCount: acceptedOffers.length,
+            nonAcceptedCount: nonAcceptedOffers.length,
+            matchedWinner: acceptedOffers[0]?.id === inspection.acceptedOfferId,
+          };
+        },
+        {
+          message:
+            'Debe haber exactamente 1 oferta accepted, la otra no accepted, request en matched y accepted_offer_id coincidente',
+          timeout: 10000,
+          intervals: [250, 500, 1000],
+        }
+      )
+      .toEqual({
+        requestStatus: 'matched',
+        acceptedOfferId: expect.any(String),
+        acceptedCount: 1,
+        nonAcceptedCount: 1,
+        matchedWinner: true,
+      });
 
-    expect(hasAlert1 || hasAlert2).toBe(true);
-
-    // Tras refrescar ambas pestañas, solo debe existir exactamente una asignación
+    // Tras refrescar la pestaña ganadora, renderiza la vista de viaje o asignación sin duplicados
     await tab1.reload();
     await waitForNoSkeletons(tab1);
   });
@@ -205,14 +244,19 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   test('Flujo 2: Repartidor oferta respetando el piso mínimo de la plataforma', async ({
     page,
     courierPage,
+    stagingContext,
     loginAsCourier,
   }) => {
     await loginAsCourier(0, page);
     await courierPage.gotoFeed();
     await waitForNoSkeletons(page);
 
-    // Abrir la primera solicitud disponible
-    await courierPage.offerButton.first().click();
+    // Identificar de forma inequívoca la solicitud correspondiente a la corrida actual
+    const targetCard = courierPage.requestCardByNotes(stagingContext.testRunId);
+    await expect(targetCard).toBeVisible();
+
+    // Abrir la solicitud
+    await targetCard.getByRole('button', { name: /^ofertar$/i }).click();
 
     // Leer el piso mínimo dinámico configurado en la UI (platform_settings.min_offer_ars)
     const floorText = (await courierPage.minFloorText.textContent()) || '';
@@ -233,10 +277,10 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     await courierPage.offerAmountInput.fill(String(validAmount));
     await courierPage.submitOfferButton.click();
 
-    // Ir a "Mis ofertas" y verificar que la oferta aparezca
+    // Ir a "Mis ofertas" y verificar que la oferta aparezca con formato ARS real
     await courierPage.gotoOffers();
     await waitForNoSkeletons(page);
-    await expect(page.getByText(new RegExp(String(validAmount)))).toBeVisible();
+    await expect(page.getByText(formatArs(validAmount))).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
@@ -245,8 +289,12 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   test('Flujo 3: Repartidor puede retirar una oferta pendiente', async ({
     page,
     courierPage,
+    stagingContext,
     loginAsCourier,
   }) => {
+    // Precrear las ofertas para que Courier 0 posea una oferta activa para retirar
+    await seedOffersForFirstRequest(stagingContext);
+
     await loginAsCourier(0, page);
     await courierPage.gotoOffers();
     await waitForNoSkeletons(page);
@@ -273,6 +321,9 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     stagingContext,
     loginAsMerchant,
   }) => {
+    // Precrear las ofertas con niveles de doc y montos cruzados para probar ordenamiento
+    await seedOffersForFirstRequest(stagingContext);
+
     const targetRequestId = stagingContext.createdRequestIds[0];
     if (!targetRequestId) {
       throw new Error('[E2E Error] No request ID found in stagingContext');
@@ -311,6 +362,8 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     loginAsMerchant,
     loginAsCourier,
   }) => {
+    // Precrear las ofertas para que el comercio pueda aceptar la de Courier 0
+    await seedOffersForFirstRequest(stagingContext);
     const targetRequestId = stagingContext.createdRequestIds[0];
     if (!targetRequestId) {
       throw new Error('[E2E Error] No request ID found in stagingContext');

@@ -35,7 +35,6 @@ export const test = baseTest.extend<RoleFixtures>({
         couriersCount: 2,
         withContacts: true,
         recipientPhone: '+5493865123456',
-        createOffersForFirstRequest: true,
       });
       await use(context);
     } catch (err) {
@@ -49,9 +48,9 @@ export const test = baseTest.extend<RoleFixtures>({
           const combined = new Error(
             `[E2E Lifecycle Error] Falló la ejecución principal y el cleanup posterior.\n` +
             `Error principal: ${seedOrTestError instanceof Error ? seedOrTestError.message : String(seedOrTestError)}\n` +
-            `Error de cleanup: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`
+            `Error de cleanup: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            { cause: seedOrTestError }
           );
-          (combined as any).cause = seedOrTestError;
           throw combined;
         } else {
           throw cleanupErr;
