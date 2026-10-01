@@ -114,6 +114,72 @@ jobs:
         run: |
           if [ -d supabase/migrations ] && [ -n "$(find supabase/migrations -name '*.sql' -print -quit)" ]; then
             pnpm supabase start
+
+            # A. Probar que T-321 NO pisa valores preexistentes.
+            pnpm supabase db reset --version 20260927120000 --no-seed
+
+            DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n 1)"
+            if [ -z "$DB_CONTAINER" ]; then
+              echo "No se encontró el contenedor local de Postgres de Supabase"
+              exit 1
+            fi
+
+            docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+            insert into public.platform_settings (key, value)
+            values
+              ('min_offer_ars', '1500'::jsonb),
+              ('request_ttl_minutes', '45'::jsonb),
+              ('pilot_active', 'false'::jsonb),
+              ('pilot_terms_version', '"custom-v1"'::jsonb),
+              ('subscription_grace_days', '9'::jsonb)
+            on conflict (key) do update set value = excluded.value;
+          SQL
+
+            pnpm supabase migration up
+
+            docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 <<'SQL'
+            do $$
+            begin
+              if (
+                select value from public.platform_settings where key = 'min_offer_ars'
+              ) is distinct from '1500'::jsonb then
+                raise exception 'T-321 overwrote min_offer_ars';
+              end if;
+
+              if (
+                select value from public.platform_settings where key = 'request_ttl_minutes'
+              ) is distinct from '45'::jsonb then
+                raise exception 'T-321 overwrote request_ttl_minutes';
+              end if;
+
+              if (
+                select value from public.platform_settings where key = 'pilot_active'
+              ) is distinct from 'false'::jsonb then
+                raise exception 'T-321 overwrote pilot_active';
+              end if;
+
+              if (
+                select value from public.platform_settings where key = 'pilot_terms_version'
+              ) is distinct from '"custom-v1"'::jsonb then
+                raise exception 'T-321 overwrote pilot_terms_version';
+              end if;
+
+              if (
+                select value from public.platform_settings where key = 'subscription_grace_days'
+              ) is distinct from '9'::jsonb then
+                raise exception 'T-321 overwrote subscription_grace_days';
+              end if;
+            end $$;
+          SQL
+
+            echo "T321_PRESERVE_EXISTING GREEN"
+
+            # B. Probar defaults en una base fresca, sin seed.
+            pnpm supabase db reset --no-seed
+            pnpm supabase test db supabase/tests/t321_admin_staging_bootstrap.sql
+
+            # C. Restaurar el flujo normal y correr toda la suite.
+            pnpm supabase db reset
             pnpm supabase test db
             pnpm db:types --local
             git diff --exit-code -- src/types/database.types.ts

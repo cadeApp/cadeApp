@@ -102,7 +102,7 @@ export async function getApplicantsQueue(
       doc_level,
       license_status,
       insurance_status,
-      profiles:profile_id (
+      profiles!couriers_profile_id_fkey (
         display_name,
         phone,
         created_at
@@ -201,7 +201,7 @@ export async function getApplicantDetail(
         decided_at,
         decided_by,
         deactivated_at,
-        profiles:profile_id (
+        profiles!couriers_profile_id_fkey (
           display_name,
           phone,
           created_at
@@ -309,7 +309,7 @@ export async function getAdminMerchants(
       business_name,
       subscription_status,
       paid_until,
-      profiles:profile_id ( display_name, phone ),
+      profiles!merchants_profile_id_fkey ( display_name, phone ),
       zones:default_pickup_zone_id ( name ),
       delivery_requests ( count )
     `
@@ -417,7 +417,7 @@ const AUDIT_SELECT = `
   target_id,
   before,
   after,
-  profiles:actor_id ( display_name )
+  profiles!audit_log_actor_id_fkey ( display_name )
 `;
 
 /**
