@@ -145,3 +145,54 @@ P1 eligió opción A. PR documental #168 formaliza:
 - archivos legales permitidos;
 - Privacy v1.1;
 - conservación de consentimientos históricos.
+
+## Ronda 3
+
+SHA funcional: `490979e74286aad3a287a958902a21abfd03bf08`.  
+develop: `76d71d67f5e2b7c026f2abe20f9d05a337d1bb51`.
+
+### CI exact-head 36923370905
+
+```text
+typecheck       success
+lint            success
+unit            success — 110 files / 1581 tests
+build           success
+bundle-budget   success
+audit           success
+db-tests        success — 13 files / 1614 tests
+```
+
+Suites relevantes:
+
+```text
+src/features/auth/actions.test.ts                    55/55
+src/app/route-integrity.test.ts                      53/53
+src/features/courier-onboarding/actions.test.ts      10/10
+src/features/courier-onboarding/components.test.tsx  23/23
+src/features/legal/legal-red.test.ts                 11/11
+src/features/auth/components/register-enumeration...  4/4
+src/app/auth/confirm/route.test.ts                   27/27
+```
+
+### PR167-R01
+
+Inspección:
+- Privacy actual = 1.1;
+- Privacy 1.0 deja de ser vigente en `isCurrentLegalVersion`;
+- texto legal cambia solo metadata de Privacy y el párrafo de obligatoriedad relevante;
+- no se agregó migración ni escritura sobre consentimientos históricos.
+
+Resultado: **arreglado-verificado**.
+
+### PR167-A01
+
+Comparación `develop...HEAD` contiene:
+
+```text
+src/features/courier-onboarding/actions.test.ts
+```
+
+La ficha vigente en `develop` no incluye ese archivo. La rama añadió dos líneas a su copia de `docs/tasks/T-322.md`: una afirmación de autorización P1 y el propio path en “Archivos permitidos”.
+
+Según `.agents/skills/revisar-pr/SKILL.md`, el alcance se evalúa contra la ficha de `develop`; por eso permanece **decision-pendiente** aunque CI esté verde.

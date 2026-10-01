@@ -14,3 +14,9 @@
 - **R01 / P05:** cuando un schema cambia la obligatoriedad de un dato, los textos legales que describen ese schema forman parte del contrato funcional y deben versionarse en la misma decisión de producto.
 - El freno de alcance funcionó: el agente no editó `src/features/legal/**` sin autorización y CI hizo visible la contradicción.
 - Decisión P1: opción A; ampliación mínima formalizada en PR #168.
+
+## Ronda 3
+
+- PR167-R01 quedó cerrado: versionar el documento legal y actualizar los controles dependientes evita reescribir silenciosamente el contrato previo.
+- **PR167-A01 / P10:** una necesidad técnica legítima no autoriza a la rama a editar su propia ficha para ampliar alcance. La decisión debe existir primero en `develop`; recién después el trabajo queda dentro de alcance.
+- `verify-fichas.test.ts` no detecta autoampliaciones de la lista “Archivos permitidos”; este caso queda como evidencia para evaluar un control futuro si P10 vuelve a aparecer.

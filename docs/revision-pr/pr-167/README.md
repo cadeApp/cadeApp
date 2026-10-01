@@ -2,10 +2,10 @@
 
 - **PR:** #167
 - **Rama:** `feat/T-322-registration-email-confirmation`
-- **SHA funcional R2:** `3c94d0eb8116987cc605ce5b433ad05e89b1b470`
-- **develop:** `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
-- **Ronda:** 2
-- **Resultado:** **CON BLOQUEANTE (1)**
+- **SHA funcional R3:** `490979e74286aad3a287a958902a21abfd03bf08`
+- **develop:** `76d71d67f5e2b7c026f2abe20f9d05a337d1bb51`
+- **Ronda:** 3
+- **Resultado:** **CON BLOQUEANTE (1 · decisión P1)**
 
 ## Estado de hallazgos
 
@@ -15,16 +15,23 @@
 | PR167-H02 | alto | arreglado-verificado |
 | PR167-H03 | medio | arreglado-verificado |
 | PR167-H04 | medio | arreglado-verificado |
-| PR167-R01 | alto | abierto |
+| PR167-R01 | alto | arreglado-verificado |
+| PR167-A01 | decisión | decision-pendiente |
 
-CI exact-head `36914443982`: typecheck, lint, build, audit, bundle-budget y db-tests verdes; **unit rojo por 1 test legal**: 1580 passed / 1 failed.
+CI exact-head `36923370905` completamente verde: typecheck, lint, unit, build, bundle-budget, audit y db-tests; **1581/1581 unitarios** y **1614/1614 DB**.
 
-La decisión P1 para PR167-R01 es **opción A**. Se abrió la PR documental **#168** para ampliar oficialmente T-322 a `src/features/legal/documents.ts` y `src/features/legal/legal-red.test.ts`, exigir Privacy **v1.1** y conservar consentimientos históricos.
+PR167-R01 quedó resuelto correctamente: Privacy v1.1, texto de obligatoriedad alineado y tests actualizados.
+
+El único bloqueo no es funcional: la rama añadió `src/features/courier-onboarding/actions.test.ts` a su propia ficha y afirmó una autorización P1 que no está formalizada en la ficha vigente de `develop`. Según el protocolo, la ficha de `develop` es la autoridad de alcance.
+
+## Mejora no bloqueante
+
+El cuerpo del PR #167 quedó desactualizado: todavía copia el DoD previo a Privacy v1.1 y muestra cifras antiguas de tests. Actualizarlo después de resolver PR167-A01, antes del merge.
 
 ## Residual manual
 
-La evidencia real de staging sigue pendiente hasta que #168 se mergee, agy ajuste la política/test legal y CI vuelva a verde.
+Sigue pendiente la evidencia E2E real en staging exigida por T-322 después de merge/promoción.
 
 ## Follow-up fuera de T-322
 
-Onboarding merchant: barrios de Aguilares con `src/ui/select.tsx`, por nombre y sin inventar centroides. Sigue separado de este hotfix.
+Onboarding merchant: barrios de Aguilares con `src/ui/select.tsx`, por nombre y sin inventar centroides.
