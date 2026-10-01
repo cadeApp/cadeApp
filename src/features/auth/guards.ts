@@ -86,11 +86,11 @@ export function isPublicRoute(pathname: string): boolean {
   if (pathname === '/' || isAuthRoute(pathname)) {
     return true;
   }
-  const publicPrefixes = ['/forgot-password', '/design-system'];
+  const publicPrefixes = ['/forgot-password', '/design-system', '/auth/confirm', '/reset-password'];
   return publicPrefixes.some((prefix) => matchesSegment(pathname, prefix));
 }
 
-const EXISTING_SHARED_ROUTES = new Set<string>(['/', '/design-system']);
+const EXISTING_SHARED_ROUTES = new Set<string>(['/', '/design-system', '/reset-password']);
 
 const EXISTING_MERCHANT_EXACT_ROUTES = new Set<string>([
   '/merchant/dashboard',
@@ -169,7 +169,13 @@ export function resolvePostLoginRedirect(
   }
 
   const [pathname, query] = rawRedirectTo.split('?');
-  if (!pathname || isAuthRoute(pathname) || pathname === '/forgot-password') {
+  if (
+    !pathname ||
+    isAuthRoute(pathname) ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
+    pathname === '/auth/confirm'
+  ) {
     return defaultPostLoginPath(role, consentStatus);
   }
 

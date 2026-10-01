@@ -426,3 +426,40 @@ describe('T-317 / PR139-H14: el login de admin entra al circuito MFA', () => {
     }
   );
 });
+
+describe('T-320: Guardas para /auth/confirm y /reset-password', () => {
+  it('reconoce /auth/confirm y /reset-password como rutas públicas accesibles sin sesión', () => {
+    expect(isPublicRoute('/auth/confirm')).toBe(true);
+    expect(isPublicRoute('/reset-password')).toBe(true);
+    expect(evaluateRouteGuard('/auth/confirm', null)).toEqual({ action: 'allow' });
+    expect(evaluateRouteGuard('/reset-password', null)).toEqual({ action: 'allow' });
+  });
+
+  it('no expulsa de /reset-password a un usuario con sesión y consent_status pendiente o reconsent_required', () => {
+    const sessionPending: AuthSession = {
+      userId: 'usr-pending',
+      email: 'user@test.com',
+      role: 'courier',
+      aal: 'aal1',
+      consentStatus: 'pending',
+    };
+    const sessionReconsent: AuthSession = {
+      ...sessionPending,
+      consentStatus: 'reconsent_required',
+    };
+
+    expect(evaluateRouteGuard('/reset-password', sessionPending)).toEqual({ action: 'allow' });
+    expect(evaluateRouteGuard('/reset-password', sessionReconsent)).toEqual({ action: 'allow' });
+  });
+
+  it('permite a un usuario autenticado con consent_status activo acceder a /reset-password', () => {
+    const sessionActive: AuthSession = {
+      userId: 'usr-active',
+      email: 'user@test.com',
+      role: 'merchant',
+      aal: 'aal1',
+      consentStatus: 'active',
+    };
+    expect(evaluateRouteGuard('/reset-password', sessionActive)).toEqual({ action: 'allow' });
+  });
+});
