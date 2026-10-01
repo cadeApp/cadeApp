@@ -21,6 +21,10 @@ export const authCopy = {
     merchantRoleDesc: 'Publicá entregas y elegí al repartidor.',
     courierRoleTitle: 'Quiero repartir',
     courierRoleDesc: 'Ofertá en las entregas de tu ciudad.',
+    displayNameLabel: 'Nombre y apellido',
+    displayNamePlaceholder: 'Ej: Juan Pérez',
+    phoneLabel: 'Teléfono',
+    phonePlaceholder: 'Ej: 381 555-1234',
     emailLabel: 'Email',
     emailPlaceholder: 'tu@email.com',
     passwordLabel: 'Contraseña',
@@ -30,6 +34,12 @@ export const authCopy = {
     loadingButton: 'Creando cuenta...',
     hasAccount: '¿Ya tenés cuenta?',
     loginLink: 'Ingresá',
+    checkEmailTitle: 'Revisá tu email',
+    checkEmailSubtitle:
+      'Si pudimos procesar el registro, vas a recibir un email con los próximos pasos para verificar tu identidad y empezar a operar en cadeApp.',
+    checkEmailNotice:
+      'Si no lo encontrás en tu bandeja de entrada, revisá la carpeta de correo no deseado o spam.',
+    backToLogin: 'Ir al ingreso',
     errorGeneric:
       'No pudimos completar el registro con esos datos. Revisá que el email esté bien escrito, elegí una contraseña más segura y evitá las demasiado comunes. Si ya tenés una cuenta, probá ingresar o recuperar tu contraseña.',
     errorRateLimited: 'Hiciste muchos intentos seguidos. Esperá unos minutos y volvé a probar.',

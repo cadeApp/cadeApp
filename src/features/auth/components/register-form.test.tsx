@@ -89,4 +89,46 @@ describe('T-318: mensajes de error del registro', () => {
     expect(text).toContain(authCopy.register.errorUnexpected);
     expect(text).not.toContain('sentinel');
   });
+
+  describe('T-322: campos de perfil y estado neutral post-registro', () => {
+    it('renderiza inputs obligatorios para Nombre y apellido y Teléfono', () => {
+      render(<RegisterForm />);
+      expect(screen.getByLabelText(/nombre y apellido/i)).toBeDefined();
+      expect(screen.getByLabelText(/teléfono/i)).toBeDefined();
+    });
+
+    it('al completar el registro exitoso NO navega y muestra la pantalla neutral "Revisá tu email"', async () => {
+      registerAction.mockResolvedValue({
+        ok: true,
+        data: { role: 'merchant', redirectTo: '/merchant/onboarding' },
+      });
+      render(<RegisterForm />);
+
+      fireEvent.change(screen.getByLabelText(/nombre y apellido/i), {
+        target: { value: 'Comercio Aguilares' },
+      });
+      fireEvent.change(screen.getByLabelText(/teléfono/i), { target: { value: '3815551234' } });
+      fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'comercio@test.com' } });
+      fireEvent.change(screen.getByLabelText(/^contraseña$/i), {
+        target: { value: 'una-clave-segura' },
+      });
+      fireEvent.click(screen.getByRole('checkbox'));
+      fireEvent.submit(
+        screen.getByRole('button', { name: /crear cuenta/i }).closest('form') as HTMLFormElement
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/revisá tu email/i)).toBeDefined();
+      });
+
+      expect(push).not.toHaveBeenCalled();
+      expect(registerAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          displayName: 'Comercio Aguilares',
+          phone: '3815551234',
+          email: 'comercio@test.com',
+        })
+      );
+    });
+  });
 });

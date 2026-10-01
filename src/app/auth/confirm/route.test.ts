@@ -40,16 +40,21 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
       error: null,
     });
 
-    mockFrom = vi.fn().mockReturnValue({
+    mockFrom = vi.fn((table?: string) => ({
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
           maybeSingle: vi.fn().mockResolvedValue({
-            data: { role: 'merchant', consent_status: 'active' },
+            data:
+              table === 'merchants'
+                ? { default_pickup_address: 'Av. San Martín 123' }
+                : table === 'couriers'
+                  ? { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' }
+                  : { role: 'merchant', consent_status: 'active' },
             error: null,
           }),
         }),
       }),
-    });
+    }));
 
     vi.mocked(createClient).mockResolvedValue({
       auth: {
@@ -72,17 +77,20 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
       expect(location).toBe('http://localhost:3000/merchant/dashboard');
     });
 
-    it('code válido de registro courier redirige a /courier/feed', async () => {
-      mockFrom.mockReturnValue({
+    it('code válido de registro courier con onboarding completo redirige a /courier/feed', async () => {
+      mockFrom.mockImplementation((table?: string) => ({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({
             maybeSingle: vi.fn().mockResolvedValue({
-              data: { role: 'courier', consent_status: 'active' },
+              data:
+                table === 'couriers'
+                  ? { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' }
+                  : { role: 'courier', consent_status: 'active' },
               error: null,
             }),
           }),
         }),
-      });
+      }));
 
       const request = new NextRequest('http://localhost:3000/auth/confirm?code=pkce-courier-code');
       const response = await GET(request);
@@ -102,6 +110,172 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
       expect(response.status).toBe(303);
       expect(response.headers.get('location')).toBe('http://localhost:3000/reset-password');
     });
+  });
+
+  describe('PR167-H02: confirmación de signup redirige a onboarding si la cuenta es nueva, preservando destinos para cuentas completas', () => {
+    it.each([
+      [
+        'merchant con code',
+        'http://localhost:3000/auth/confirm?code=pkce-merchant-code',
+        'merchant',
+        '/merchant/onboarding',
+      ],
+      [
+        'merchant con token_hash type=signup',
+        'http://localhost:3000/auth/confirm?token_hash=th_m_123&type=signup',
+        'merchant',
+        '/merchant/onboarding',
+      ],
+      [
+        'courier con code',
+        'http://localhost:3000/auth/confirm?code=pkce-courier-code',
+        'courier',
+        '/courier/onboarding/identity',
+      ],
+      [
+        'courier con token_hash type=signup',
+        'http://localhost:3000/auth/confirm?token_hash=th_c_123&type=signup',
+        'courier',
+        '/courier/onboarding/identity',
+      ],
+    ])(
+      'cuenta nueva sin onboarding: %s redirige a %s',
+      async (_name, url, role, expectedDestination) => {
+        mockFrom.mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { role, consent_status: 'active' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { default_pickup_address: null },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { dni_hmac: null, vehicle_type: null },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              }),
+            }),
+          };
+        });
+
+        const request = new NextRequest(url);
+        const response = await GET(request);
+
+        expect(response.status).toBe(303);
+        expect(response.headers.get('location')).toBe(`http://localhost:3000${expectedDestination}`);
+      }
+    );
+
+    it.each([
+      [
+        'merchant con onboarding completo y code',
+        'http://localhost:3000/auth/confirm?code=pkce-merchant-done',
+        'merchant',
+        '/merchant/dashboard',
+      ],
+      [
+        'courier con onboarding completo y code',
+        'http://localhost:3000/auth/confirm?code=pkce-courier-done',
+        'courier',
+        '/courier/feed',
+      ],
+      [
+        'merchant con onboarding completo y token_hash type=signup',
+        'http://localhost:3000/auth/confirm?token_hash=th_m_done&type=signup',
+        'merchant',
+        '/merchant/dashboard',
+      ],
+      [
+        'courier con onboarding completo y token_hash type=signup',
+        'http://localhost:3000/auth/confirm?token_hash=th_c_done&type=signup',
+        'courier',
+        '/courier/feed',
+      ],
+    ])(
+      'cuenta existente con onboarding completo: %s redirige a %s',
+      async (_name, url, role, expectedDestination) => {
+        mockFrom.mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { role, consent_status: 'active' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { default_pickup_address: 'Av. San Martín 123' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue({
+                    data: { dni_hmac: 'a'.repeat(64), vehicle_type: 'moto' },
+                    error: null,
+                  }),
+                }),
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              }),
+            }),
+          };
+        });
+
+        const request = new NextRequest(url);
+        const response = await GET(request);
+
+        expect(response.status).toBe(303);
+        expect(response.headers.get('location')).toBe(`http://localhost:3000${expectedDestination}`);
+      }
+    );
   });
 
   describe('Verificación con token_hash y type', () => {

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(61);
+select plan(64);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -243,6 +243,30 @@ select throws_ok(
   '42501'::char(5),
   null::text,
   'merchant cannot insert into courier-docs bucket'
+);
+
+-- 16b. T-322: Storage courier-docs: insert permitido a courier en su propia carpeta
+select pg_temp.act_as('authenticated', pg_temp.courier_approved_1_id());
+select lives_ok(
+  'insert into storage.objects (id, bucket_id, name) values (gen_random_uuid(), ''courier-docs'', ''courier/'' || pg_temp.courier_approved_1_id() || ''/dni_front.png'')',
+  'courier can insert into own folder in courier-docs bucket'
+);
+
+-- 16c. T-322: Storage courier-docs: insert denegado a courier en carpeta de otro courier
+select throws_ok(
+  'insert into storage.objects (id, bucket_id, name) values (gen_random_uuid(), ''courier-docs'', ''courier/'' || pg_temp.courier_approved_2_id() || ''/dni_front.png'')',
+  '42501'::char(5),
+  null::text,
+  'courier cannot insert into another courier folder in courier-docs'
+);
+
+-- 16d. T-322: Storage courier-docs: insert denegado a anon
+select pg_temp.act_as('anon');
+select throws_ok(
+  'insert into storage.objects (id, bucket_id, name) values (gen_random_uuid(), ''courier-docs'', ''courier/'' || pg_temp.courier_approved_1_id() || ''/dni_front.png'')',
+  '42501'::char(5),
+  null::text,
+  'anon cannot insert into courier-docs bucket'
 );
 
 -- 17. admin ve todas las solicitudes y contactos

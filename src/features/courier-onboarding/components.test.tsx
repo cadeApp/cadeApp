@@ -14,6 +14,23 @@ import {
 } from './components/courier-profile-view';
 import * as actionsModule from './actions';
 import { vehiclePlateSchema } from './schemas';
+import * as uploadManager from './upload-manager';
+
+const { mockUploadCourierDocument } = vi.hoisted(() => ({
+  mockUploadCourierDocument: vi.fn(),
+}));
+
+vi.mock('@/lib/image-compression', () => ({
+  compressImage: vi.fn((file: File) => Promise.resolve(file)),
+}));
+
+vi.mock('./upload-manager', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    uploadCourierDocument: mockUploadCourierDocument,
+  };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -27,6 +44,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
   afterEach(cleanup);
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
   describe('StepIndicator', () => {
@@ -279,6 +297,89 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
 
       render(<CourierProfileView profile={null} />);
       expect(screen.getByText(/Todavía no completaste tu legajo de repartidor/i)).toBeDefined();
+    });
+  });
+
+  describe('T-322 / PR167-H04: eliminación de fallbacks temp-courier en componentes', () => {
+    it('IdentityForm no utiliza valor por defecto temp-courier ni temp-courier-id al subir documentos', async () => {
+      mockUploadCourierDocument.mockReset();
+      mockUploadCourierDocument.mockResolvedValue({ storagePath: 'courier/mock/path.jpg' });
+
+      // Render sin prop courierId (ejerciendo la ausencia de prop)
+      const { container, unmount } = render(
+        <IdentityForm {...({} as unknown as { courierId: string })} />
+      );
+      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(fileInput).not.toBeNull();
+
+      const fakeFile = new File(['fake-content'], 'dni_front.jpg', { type: 'image/jpeg' });
+      Object.defineProperty(fileInput, 'files', {
+        value: [fakeFile],
+        configurable: true,
+      });
+      fireEvent.change(fileInput);
+
+      await waitFor(() => {
+        expect(mockUploadCourierDocument).toHaveBeenCalled();
+      });
+
+      const call = mockUploadCourierDocument.mock.calls[0]?.[0];
+      // Si se reintroduce courierId = 'temp-courier-id' o 'temp-courier', este test falla inmediatamente.
+      expect(call?.courierId).toBeUndefined();
+      expect(call?.courierId).not.toBe('temp-courier-id');
+      expect(call?.courierId).not.toBe('temp-courier');
+      unmount();
+    });
+
+    it('VehicleForm no utiliza valor por defecto temp-courier ni temp-courier-id al subir opcionales', async () => {
+      mockUploadCourierDocument.mockReset();
+      mockUploadCourierDocument.mockResolvedValue({ storagePath: 'courier/mock/path.jpg' });
+
+      // Render sin prop courierId (ejerciendo la ausencia de prop)
+      const { container, unmount } = render(
+        <VehicleForm {...({} as unknown as { courierId: string })} initialDni="12345678" />
+      );
+      const optionalFileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(optionalFileInput).not.toBeNull();
+
+      const fakeFile = new File(['fake-lic'], 'lic.jpg', { type: 'image/jpeg' });
+      Object.defineProperty(optionalFileInput, 'files', {
+        value: [fakeFile],
+        configurable: true,
+      });
+      fireEvent.change(optionalFileInput);
+
+      await waitFor(() => {
+        expect(mockUploadCourierDocument).toHaveBeenCalled();
+      });
+
+      const call = mockUploadCourierDocument.mock.calls[0]?.[0];
+      // Si se reintroduce courierId = 'temp-courier-id' o 'temp-courier', este test falla inmediatamente.
+      expect(call?.courierId).toBeUndefined();
+      expect(call?.courierId).not.toBe('temp-courier-id');
+      expect(call?.courierId).not.toBe('temp-courier');
+      unmount();
+    });
+
+    it('IdentityForm y VehicleForm usan el courierId real provisto sin alteraciones', async () => {
+      mockUploadCourierDocument.mockReset();
+      mockUploadCourierDocument.mockResolvedValue({ storagePath: 'courier/mock/path.jpg' });
+
+      const { container, unmount } = render(<IdentityForm courierId="usr-real-123" />);
+      const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+      const fakeFile = new File(['fake'], 'dni_front.jpg', { type: 'image/jpeg' });
+      Object.defineProperty(fileInput, 'files', {
+        value: [fakeFile],
+        configurable: true,
+      });
+      fireEvent.change(fileInput);
+
+      await waitFor(() => {
+        expect(mockUploadCourierDocument).toHaveBeenCalled();
+      });
+
+      expect(mockUploadCourierDocument.mock.calls[0]?.[0]?.courierId).toBe('usr-real-123');
+      unmount();
     });
   });
 });
