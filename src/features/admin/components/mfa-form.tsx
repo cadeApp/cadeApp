@@ -63,11 +63,13 @@ export function MfaForm({ redirectTo = '/admin/applicants' }: MfaFormProps = {})
       const res = await verifyAdminMfaAction({ code: data.code, redirectTo });
 
       if (!res.ok) {
-        setErrorMsg(
-          res.code === 'VALIDATION_ERROR'
-            ? ADMIN_COPY.mfa.invalidCode
-            : getDomainErrorMessage(res.code)
-        );
+        if (res.code === 'VALIDATION_ERROR') {
+          setErrorMsg(ADMIN_COPY.mfa.invalidCode);
+        } else if (res.code === 'AAL2_REQUIRED') {
+          setErrorMsg(ADMIN_COPY.mfa.noActiveFactor);
+        } else {
+          setErrorMsg(getDomainErrorMessage(res.code));
+        }
         return;
       }
 

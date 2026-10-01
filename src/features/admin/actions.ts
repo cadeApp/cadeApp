@@ -111,11 +111,16 @@ export async function verifyAdminMfaAction(
   }
 
   const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
-  if (factorsError || !factors?.totp?.length) {
+  if (factorsError || !factors) {
     return err('INTERNAL_ERROR');
   }
-  const factor = factors?.totp?.[0];
-  if (!factor?.id) {
+  // `totp` solo trae factores verificados: un `mfa.enroll()` sin verificar no cuenta. Sin factor activo no
+  // hay segundo paso posible, y la pantalla lo explica en vez de mostrar una falla genérica.
+  const factor = factors.totp?.[0];
+  if (!factor) {
+    return err('AAL2_REQUIRED');
+  }
+  if (!factor.id) {
     return err('INTERNAL_ERROR');
   }
 
