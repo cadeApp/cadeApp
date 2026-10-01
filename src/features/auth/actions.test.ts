@@ -1010,6 +1010,97 @@ describe('T-009: Auth actions y esquemas de registro', () => {
           confirmPassword: 'password123',
         });
         expect(internalRes).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+
+        // PR162-H02 adversarial: error con substring "session" en message que no es session_missing
+        mockUpdateUser.mockResolvedValueOnce({
+          data: { user: null },
+          error: {
+            code: 'unknown_failure',
+            name: 'AuthApiError',
+            message: 'Session backend unavailable',
+          },
+        });
+        const sessionMsgRes = await updatePasswordAction({
+          password: 'password123',
+          confirmPassword: 'password123',
+        });
+        expect(sessionMsgRes).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      });
+
+      it('PR162-H01: falla con INTERNAL_ERROR si la revocación de otras sesiones (signOut scope others) resuelve con error', async () => {
+        const mockUpdateUser = vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-reset-fail-signout' } },
+          error: null,
+        });
+        const mockSignOut = vi.fn().mockResolvedValue({
+          error: { code: 'request_failed', message: 'Auth service down' },
+        });
+        const mockFrom = vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { role: 'merchant', consent_status: 'active' },
+                error: null,
+              }),
+            }),
+          }),
+        });
+
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            updateUser: mockUpdateUser,
+            signOut: mockSignOut,
+          },
+          from: mockFrom,
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        const result = await updatePasswordAction({
+          password: 'nuevaPasswordSegura123',
+          confirmPassword: 'nuevaPasswordSegura123',
+        });
+
+        expect(mockUpdateUser).toHaveBeenCalledWith({
+          password: 'nuevaPasswordSegura123',
+        });
+        expect(mockSignOut).toHaveBeenCalledWith({ scope: 'others' });
+        expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      });
+
+      it('PR162-H01: falla con INTERNAL_ERROR si la revocación de otras sesiones (signOut scope others) rechaza con excepción', async () => {
+        const mockUpdateUser = vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-reset-fail-signout-reject' } },
+          error: null,
+        });
+        const mockSignOut = vi.fn().mockRejectedValue(new Error('Network transport error'));
+        const mockFrom = vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { role: 'merchant', consent_status: 'active' },
+                error: null,
+              }),
+            }),
+          }),
+        });
+
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            updateUser: mockUpdateUser,
+            signOut: mockSignOut,
+          },
+          from: mockFrom,
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        const result = await updatePasswordAction({
+          password: 'nuevaPasswordSegura123',
+          confirmPassword: 'nuevaPasswordSegura123',
+        });
+
+        expect(mockUpdateUser).toHaveBeenCalledWith({
+          password: 'nuevaPasswordSegura123',
+        });
+        expect(mockSignOut).toHaveBeenCalledWith({ scope: 'others' });
+        expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
       });
 
       it('en éxito actualiza la contraseña, cierra las demás sesiones con scope others y redirige según rol', async () => {

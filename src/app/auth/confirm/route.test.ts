@@ -253,6 +253,27 @@ describe('T-320: GET /auth/confirm — Enlaces de confirmación de Auth y recupe
 
       expect(response.headers.get('location')).toBe('http://localhost:3000/merchant/dashboard');
     });
+
+    it.each([
+      ['next=%2F%2Fevil.com', '%2F%2Fevil.com'],
+      ['next=https%3A%2F%2Fevil.com', 'https%3A%2F%2Fevil.com'],
+      ['next=%2F%5Cevil.com', '%2F%5Cevil.com'],
+      ['next=%252F%252Fevil.com', '%252F%252Fevil.com'],
+    ])(
+      'PR162-H03: ignora next percent-encoded (%s) y redirige al destino interno seguro sin host atacante',
+      async (_label, encodedNext) => {
+        const request = new NextRequest(
+          `http://localhost:3000/auth/confirm?code=valid-code&next=${encodedNext}`
+        );
+        const response = await GET(request);
+
+        expect(response.status).toBe(303);
+        const location = response.headers.get('location') ?? '';
+        expect(location).toBe('http://localhost:3000/merchant/dashboard');
+        expect(location).not.toContain('evil.com');
+        expect(location.startsWith('http://localhost:3000/')).toBe(true);
+      }
+    );
   });
 
   describe('Protección de datos sensibles', () => {

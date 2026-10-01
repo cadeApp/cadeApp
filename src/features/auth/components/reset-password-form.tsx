@@ -8,9 +8,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { updatePasswordSchema, type UpdatePasswordInput } from '../schemas';
 import { updatePasswordAction } from '../actions';
 import { authCopy } from '../copy';
-import { Button } from '@/ui/button';
+import { Button, buttonVariants } from '@/ui/button';
 import { Input } from '@/ui/input';
 import { Card } from '@/ui/card';
+import { cn } from '@/ui/cn';
 import { Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 export interface ResetPasswordFormProps {
@@ -47,10 +48,11 @@ export function ResetPasswordForm({ hasSession }: ResetPasswordFormProps) {
           </p>
         </div>
         <div className="pt-2">
-          <Link href="/forgot-password" className="block w-full">
-            <Button variant="default" className="w-full">
-              {authCopy.resetPassword.requestNewLink}
-            </Button>
+          <Link
+            href="/forgot-password"
+            className={cn(buttonVariants({ variant: 'default' }), 'w-full')}
+          >
+            {authCopy.resetPassword.requestNewLink}
           </Link>
         </div>
       </Card>
@@ -100,7 +102,7 @@ export function ResetPasswordForm({ hasSession }: ResetPasswordFormProps) {
             id="reset-password"
             type={showPassword ? 'text' : 'password'}
             autoComplete="new-password"
-            className="h-12 pl-10 pr-10"
+            className="h-12 pl-10 pr-12"
             aria-invalid={!!errors.password}
             aria-describedby={errors.password ? 'reset-password-error' : 'reset-password-helper'}
             {...register('password')}
@@ -112,7 +114,7 @@ export function ResetPasswordForm({ hasSession }: ResetPasswordFormProps) {
           <button
             type="button"
             onClick={() => setShowPassword((prev) => !prev)}
-            className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground focus:outline-none"
+            className="absolute right-0 top-0 flex h-12 min-h-12 w-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={showPassword ? authCopy.login.hidePassword : authCopy.login.showPassword}
           >
             {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
@@ -138,7 +140,7 @@ export function ResetPasswordForm({ hasSession }: ResetPasswordFormProps) {
             id="reset-confirm-password"
             type={showConfirmPassword ? 'text' : 'password'}
             autoComplete="new-password"
-            className="h-12 pl-10 pr-10"
+            className="h-12 pl-10 pr-12"
             aria-invalid={!!errors.confirmPassword}
             aria-describedby={errors.confirmPassword ? 'reset-confirm-password-error' : undefined}
             {...register('confirmPassword')}
@@ -150,7 +152,7 @@ export function ResetPasswordForm({ hasSession }: ResetPasswordFormProps) {
           <button
             type="button"
             onClick={() => setShowConfirmPassword((prev) => !prev)}
-            className="absolute right-3 top-3.5 text-muted-foreground hover:text-foreground focus:outline-none"
+            className="absolute right-0 top-0 flex h-12 min-h-12 w-12 min-w-12 items-center justify-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={showConfirmPassword ? authCopy.login.hidePassword : authCopy.login.showPassword}
           >
             {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}

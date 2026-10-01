@@ -256,11 +256,7 @@ export async function updatePasswordAction(
   });
 
   if (error) {
-    if (
-      error.code === 'session_missing' ||
-      error.name === 'AuthSessionMissingError' ||
-      error.message?.toLowerCase().includes('session')
-    ) {
+    if (error.code === 'session_missing' || error.name === 'AuthSessionMissingError') {
       return err('UNAUTHENTICATED');
     }
     return err(updatePasswordErrorCode(error.code));
@@ -271,9 +267,12 @@ export async function updatePasswordAction(
   }
 
   try {
-    await supabase.auth.signOut({ scope: 'others' });
+    const { error: signOutError } = await supabase.auth.signOut({ scope: 'others' });
+    if (signOutError) {
+      return err('INTERNAL_ERROR');
+    }
   } catch {
-    // Best-effort: fallo al revocar otras sesiones no anula el cambio de contraseña
+    return err('INTERNAL_ERROR');
   }
 
   const { data: profile } = await supabase

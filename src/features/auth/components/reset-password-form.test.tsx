@@ -23,7 +23,7 @@ describe('T-320: ResetPasswordForm — Formulario de cambio de contraseña', () 
   });
 
   describe('Estado sin sesión (enlace no válido o expirado)', () => {
-    it('sin sesión no muestra campos de contraseña y muestra mensaje con enlace a /forgot-password', () => {
+    it('sin sesión no muestra campos de contraseña y muestra mensaje con enlace a /forgot-password sin anidar button', () => {
       render(<ResetPasswordForm hasSession={false} />);
 
       expect(screen.queryByLabelText(/contraseña/i)).toBeNull();
@@ -33,6 +33,7 @@ describe('T-320: ResetPasswordForm — Formulario de cambio de contraseña', () 
       const link = screen.getByRole('link', { name: authCopy.resetPassword.requestNewLink });
       expect(link).not.toBeNull();
       expect(link.getAttribute('href')).toBe('/forgot-password');
+      expect(link.querySelector('button')).toBeNull();
     });
   });
 
@@ -49,6 +50,22 @@ describe('T-320: ResetPasswordForm — Formulario de cambio de contraseña', () 
       expect(
         screen.getByRole('button', { name: authCopy.resetPassword.submitButton })
       ).not.toBeNull();
+    });
+
+    it('los botones de visibilidad de contraseña cumplen target táctil mínimo y foco visible', () => {
+      render(<ResetPasswordForm hasSession={true} />);
+
+      const toggleButtons = screen.getAllByRole('button', {
+        name: new RegExp(authCopy.login.showPassword, 'i'),
+      });
+      expect(toggleButtons).toHaveLength(2);
+
+      for (const btn of toggleButtons) {
+        expect(btn.className).toMatch(/\bmin-h-12\b/);
+        expect(btn.className).toMatch(/\bmin-w-12\b/);
+        expect(btn.className).toMatch(/\bfocus-visible:ring-2\b/);
+        expect(btn.className).not.toMatch(/\bfocus:outline-none\b/);
+      }
     });
 
     it('valida que la contraseña tenga al menos 8 caracteres y que coincidan', async () => {
