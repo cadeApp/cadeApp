@@ -560,8 +560,14 @@ test('board-sync automatically unblocks dependent issues and marks merged PR tas
 
 test('board-sync ignores docs/* PR branches and normalizes Unicode hyphens in issue titles', async () => {
   const { computeBoardTransitions, extractPrTaskId } = await import('./board-sync.mjs');
-  assert.equal(extractPrTaskId('docs/T-118-integracion-visual-navegacion', 'Crear ficha T-118'), '');
-  assert.equal(extractPrTaskId('feat/T-118-integracion-visual-stitch', '[T-118] Integración'), 'T-118');
+  assert.equal(
+    extractPrTaskId('docs/T-118-integracion-visual-navegacion', 'Crear ficha T-118'),
+    ''
+  );
+  assert.equal(
+    extractPrTaskId('feat/T-118-integracion-visual-stitch', '[T-118] Integración'),
+    'T-118'
+  );
 
   const issues = [
     {
@@ -601,7 +607,7 @@ test('board-sync ignores docs/* PR branches and normalizes Unicode hyphens in is
   assert.equal(t201?.targetColumn, 'Bloqueada');
 });
 
-test('board-sync automatically reassigns Lautaro073 tasks and unassigned tasks to KiraK72', async () => {
+test('board-sync preserves Lautaro073 task assignments and assigns unassigned tasks to KiraK72', async () => {
   const { computeBoardTransitions } = await import('./board-sync.mjs');
   const issues = [
     {
@@ -647,27 +653,39 @@ test('board-sync automatically reassigns Lautaro073 tasks and unassigned tasks t
   const t302 = transitions.find((t) => t.taskId === 'T-302');
   const t303 = transitions.find((t) => t.taskId === 'T-303');
 
-  assert.deepEqual(t301?.targetAssignees, ['KiraK72']);
-  assert.deepEqual(t312?.targetAssignees, ['asako669', 'KiraK72']);
+  assert.equal(t301?.targetAssignees, undefined);
+  assert.equal(t312?.targetAssignees, undefined);
   assert.deepEqual(t302?.targetAssignees, ['KiraK72']);
   assert.equal(t303?.targetAssignees, undefined);
 });
-
-
-
-
 
 test('deploy-staging calls reusable E2E with the exact migrated SHA after deploy succeeds', () => {
   const deploy = workflow('deploy.yml');
   const e2e = workflow('e2e-staging.yml');
   const e2eJob = job(deploy, 'e2e-staging');
 
-  assert.match(e2e, /workflow_call:/, 'e2e-staging must be reusable instead of chaining workflow_run');
-  assert.doesNotMatch(e2e, /workflow_run:/, 'a second workflow_run loses the original staging branch/SHA');
-  assert.match(e2e, /ref:\s*\$\{\{\s*inputs\.target_sha\s*\}\}/, 'E2E checks out the propagated staging SHA');
+  assert.match(
+    e2e,
+    /workflow_call:/,
+    'e2e-staging must be reusable instead of chaining workflow_run'
+  );
+  assert.doesNotMatch(
+    e2e,
+    /workflow_run:/,
+    'a second workflow_run loses the original staging branch/SHA'
+  );
+  assert.match(
+    e2e,
+    /ref:\s*\$\{\{\s*inputs\.target_sha\s*\}\}/,
+    'E2E checks out the propagated staging SHA'
+  );
 
   assert.match(e2eJob, /needs:\s*staging/, 'E2E must wait for deploy-staging');
-  assert.match(e2eJob, /uses:\s*\.\/\.github\/workflows\/e2e-staging\.yml/, 'deploy calls reusable E2E');
+  assert.match(
+    e2eJob,
+    /uses:\s*\.\/\.github\/workflows\/e2e-staging\.yml/,
+    'deploy calls reusable E2E'
+  );
   assert.match(
     e2eJob,
     /target_sha:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha\s*\}\}/,
@@ -675,7 +693,6 @@ test('deploy-staging calls reusable E2E with the exact migrated SHA after deploy
   );
   assert.match(e2eJob, /head_branch == 'staging'/, 'E2E call is staging-only');
 });
-
 
 test('CI build supplies required public env and propagates next build failures through tee', () => {
   const ci = workflow('ci.yml');
