@@ -141,3 +141,83 @@ bundle-budget success
 ```
 
 Nota: el job bundle-budget sigue mostrando warnings preexistentes en rutas admin y `/design-system`; no pertenecen al diff de T-323.
+
+## Ronda 2
+
+SHA funcional revisado: `04133f01d6a1b42142336ce3bd97db20a2bbd98e`  
+develop vigente tras decisión P1: `1457072a7cac1ae9e2a8a92abe9253d45b745082`.
+
+### Cambios desde Ronda 1
+
+```text
+ce4b014 fix(merchants): derive map blocking from effective coords and use shared auth bridge [T-323]
+04133f0 docs(T-323): session log
+```
+
+El autor no tocó `docs/revision-pr/pr-175/**`.
+
+### Harness independiente H01/H02
+
+Ejecutado:
+
+```bash
+node /tmp/pr175_r2_harness.mjs
+```
+
+Salida:
+
+```text
+H01_PASS current=false, mutation_caught=true
+H02_PASS non_lifo=[B,external], external_restored=true
+H02_MUTATION_CAUGHT=true
+```
+
+El harness:
+- verifica que coords descartadas no bloqueen el fallback;
+- verifica que reintroducir el string stale sí sea detectado;
+- verifica dos listeners con unmount no-LIFO y restauración del externo;
+- verifica que el patrón antiguo de stack por instancia sea detectado.
+
+### H03
+
+Inspección del body actual y bitácora: la evidencia quedó separada en cobertura heredada GREEN vs RED nuevos T-323.
+
+### CI exact-head 36942523962
+
+```text
+typecheck success
+lint success
+build success
+audit success
+bundle-budget success
+Test Files 110 passed (110)
+Tests 1593 passed (1593)
+db-tests Files=13, Tests=1614, Result: PASS
+/merchant/onboarding 147 kB OK
+/merchant/requests/new 163 kB OK
+```
+
+### H04 — comprobación contra ficha vigente
+
+PR #176 fue mergeada a develop como `1457072a7cac1ae9e2a8a92abe9253d45b745082`.
+
+La inspección del HEAD funcional aún encuentra:
+
+```text
+onCameraChanged={handleCameraChange}
+onChangeRef.current?.(rounded) dentro de handleCameraChange
+center={activeCoords}
+data-testid="map-crosshair"
+data-testid="map-fine-adjustment"
+data-testid="map-coords-badge"
+```
+
+La ficha vigente exige que esos tres primeros dejen de formar un loop de persistencia y que los tres controles visuales sean reemplazados por pin draggable/click con UI no intrusiva.
+
+Estado de rama tras #176:
+
+```text
+ahead_by=6
+behind_by=3
+status=diverged
+```
