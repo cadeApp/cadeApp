@@ -86,7 +86,37 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   let destination = '/';
-  if (consentParsed.success) {
+  if (roleParsed.data === 'merchant') {
+    const { data: merchant } = await supabase
+      .from('merchants')
+      .select('default_pickup_address')
+      .eq('profile_id', userData.user.id)
+      .maybeSingle<{ default_pickup_address: string | null }>();
+
+    const isOnboardingComplete = Boolean(merchant?.default_pickup_address);
+    if (!isOnboardingComplete) {
+      destination = '/merchant/onboarding';
+    } else if (consentParsed.success) {
+      destination = resolvePostLoginRedirect(null, roleParsed.data, consentParsed.data);
+    } else {
+      destination = getRoleDefaultPath(roleParsed.data);
+    }
+  } else if (roleParsed.data === 'courier') {
+    const { data: courier } = await supabase
+      .from('couriers')
+      .select('dni_hmac, vehicle_type')
+      .eq('profile_id', userData.user.id)
+      .maybeSingle<{ dni_hmac: string | null; vehicle_type: string | null }>();
+
+    const isOnboardingComplete = Boolean(courier?.dni_hmac && courier?.vehicle_type);
+    if (!isOnboardingComplete) {
+      destination = '/courier/onboarding/identity';
+    } else if (consentParsed.success) {
+      destination = resolvePostLoginRedirect(null, roleParsed.data, consentParsed.data);
+    } else {
+      destination = getRoleDefaultPath(roleParsed.data);
+    }
+  } else if (consentParsed.success) {
     destination = resolvePostLoginRedirect(null, roleParsed.data, consentParsed.data);
   } else {
     destination = getRoleDefaultPath(roleParsed.data);

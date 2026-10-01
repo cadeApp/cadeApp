@@ -12,6 +12,8 @@ import {
 } from '@/features/auth';
 import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
+import CanonicalCourierOnboardingIdentityPage from '@/app/(courier)/courier/onboarding/identity/page';
+import CanonicalCourierOnboardingVehiclePage from '@/app/(courier)/courier/onboarding/vehicle/page';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -536,9 +538,11 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(merchantRes.ok).toBe(true);
@@ -550,9 +554,11 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         email: 'courier@test.com',
         password: 'password123',
         role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(courierRes.ok).toBe(true);
@@ -694,6 +700,44 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       for (const route of canonicalAdminRoutes) {
         const resolved = resolveRouteToFilesystemPage(route);
         expect(resolved, `La ruta canónica ${route} debe resolver a un archivo de página en el filesystem`).not.toBeNull();
+      }
+    });
+  });
+
+  describe('T-322: Redirección obligatoria a login en onboarding courier sin sesión activa', () => {
+    it('CanonicalCourierOnboardingIdentityPage redirige a /login?redirectTo=/courier/onboarding/identity si user es null', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      try {
+        await CanonicalCourierOnboardingIdentityPage();
+        expect.unreachable('Debe lanzar redirect');
+      } catch (err: unknown) {
+        expect((err as Error).message).toBe('NEXT_REDIRECT');
+        expect((err as { digest?: string }).digest).toContain(
+          '/login?redirectTo=/courier/onboarding/identity'
+        );
+      }
+    });
+
+    it('CanonicalCourierOnboardingVehiclePage redirige a /login?redirectTo=/courier/onboarding/vehicle si user es null', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      try {
+        await CanonicalCourierOnboardingVehiclePage();
+        expect.unreachable('Debe lanzar redirect');
+      } catch (err: unknown) {
+        expect((err as Error).message).toBe('NEXT_REDIRECT');
+        expect((err as { digest?: string }).digest).toContain(
+          '/login?redirectTo=/courier/onboarding/vehicle'
+        );
       }
     });
   });

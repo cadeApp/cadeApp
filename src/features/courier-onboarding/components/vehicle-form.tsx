@@ -28,16 +28,18 @@ import Link from 'next/link';
 import { getLegalDocument } from '@/features/legal';
 
 export interface VehicleFormProps {
-  courierId?: string;
+  courierId: string;
   initialDni?: string;
   initialDocs?: Record<string, string>;
   onSuccess?: () => void;
 }
 
+const EMPTY_INITIAL_DOCS: Record<string, string> = {};
+
 export function VehicleForm({
-  courierId = 'temp-courier-id',
+  courierId,
   initialDni = '',
-  initialDocs = {},
+  initialDocs = EMPTY_INITIAL_DOCS,
   onSuccess,
 }: VehicleFormProps) {
   const router = useRouter();
