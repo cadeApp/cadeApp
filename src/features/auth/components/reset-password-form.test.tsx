@@ -41,10 +41,10 @@ describe('T-320: ResetPasswordForm — Formulario de cambio de contraseña', () 
       render(<ResetPasswordForm hasSession={true} />);
 
       expect(
-        screen.getByLabelText(authCopy.resetPassword.passwordLabel, { exact: false })
+        screen.getByLabelText(authCopy.resetPassword.passwordLabel)
       ).not.toBeNull();
       expect(
-        screen.getByLabelText(authCopy.resetPassword.passwordConfirmLabel, { exact: false })
+        screen.getByLabelText(authCopy.resetPassword.passwordConfirmLabel)
       ).not.toBeNull();
       expect(
         screen.getByRole('button', { name: authCopy.resetPassword.submitButton })
@@ -54,10 +54,8 @@ describe('T-320: ResetPasswordForm — Formulario de cambio de contraseña', () 
     it('valida que la contraseña tenga al menos 8 caracteres y que coincidan', async () => {
       render(<ResetPasswordForm hasSession={true} />);
 
-      const pwdInput = screen.getByLabelText(authCopy.resetPassword.passwordLabel, { exact: false });
-      const confirmInput = screen.getByLabelText(authCopy.resetPassword.passwordConfirmLabel, {
-        exact: false,
-      });
+      const pwdInput = screen.getByLabelText(authCopy.resetPassword.passwordLabel);
+      const confirmInput = screen.getByLabelText(authCopy.resetPassword.passwordConfirmLabel);
       const submitBtn = screen.getByRole('button', { name: authCopy.resetPassword.submitButton });
 
       // Demasiado corta
@@ -89,10 +87,8 @@ describe('T-320: ResetPasswordForm — Formulario de cambio de contraseña', () 
 
       render(<ResetPasswordForm hasSession={true} />);
 
-      const pwdInput = screen.getByLabelText(authCopy.resetPassword.passwordLabel, { exact: false });
-      const confirmInput = screen.getByLabelText(authCopy.resetPassword.passwordConfirmLabel, {
-        exact: false,
-      });
+      const pwdInput = screen.getByLabelText(authCopy.resetPassword.passwordLabel);
+      const confirmInput = screen.getByLabelText(authCopy.resetPassword.passwordConfirmLabel);
       const submitBtn = screen.getByRole('button', { name: authCopy.resetPassword.submitButton });
 
       fireEvent.change(pwdInput, { target: { value: 'nuevaPassword123' } });

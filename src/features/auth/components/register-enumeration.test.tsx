@@ -17,6 +17,13 @@ const { createClient, createAdminClient, rpc, signOut } = vi.hoisted(() => ({
 }));
 vi.mock('@/server/supabase/server', () => ({ createClient }));
 vi.mock('@/server/supabase/admin', () => ({ createAdminClient }));
+vi.mock('@/lib/env.public', () => ({
+  publicEnv: {
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key-test',
+  },
+}));
 
 // Con Confirm Email OFF, Supabase autentica el alta nueva: la acción tiene que terminar sin sesión.
 const NEW_USER = {

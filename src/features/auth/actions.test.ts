@@ -17,6 +17,13 @@ vi.mock('@/server/supabase/server', () => ({
 vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
 }));
+vi.mock('@/lib/env.public', () => ({
+  publicEnv: {
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key-test',
+  },
+}));
 
 describe('T-009: Auth actions y esquemas de registro', () => {
   beforeEach(() => {
@@ -106,6 +113,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         options: {
+          emailRedirectTo: 'http://localhost:3000/auth/confirm',
           data: expect.objectContaining({
             role: 'merchant',
           }),
@@ -146,6 +154,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'courier@test.com',
         password: 'password123',
         options: {
+          emailRedirectTo: 'http://localhost:3000/auth/confirm',
           data: expect.objectContaining({
             role: 'courier',
           }),
