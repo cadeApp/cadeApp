@@ -28,14 +28,14 @@ import Link from 'next/link';
 import { getLegalDocument } from '@/features/legal';
 
 export interface VehicleFormProps {
-  courierId?: string;
+  courierId: string;
   initialDni?: string;
   initialDocs?: Record<string, string>;
   onSuccess?: () => void;
 }
 
 export function VehicleForm({
-  courierId = 'temp-courier-id',
+  courierId,
   initialDni = '',
   initialDocs = {},
   onSuccess,

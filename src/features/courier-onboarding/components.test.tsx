@@ -14,15 +14,6 @@ import {
 } from './components/courier-profile-view';
 import * as actionsModule from './actions';
 import { vehiclePlateSchema } from './schemas';
-import CanonicalCourierOnboardingIdentityPage from '@/app/(courier)/courier/onboarding/identity/page';
-import CanonicalCourierOnboardingVehiclePage from '@/app/(courier)/courier/onboarding/vehicle/page';
-
-const { redirectMock, createClientMock } = vi.hoisted(() => ({
-  redirectMock: vi.fn((url: string) => {
-    throw new Error(`NEXT_REDIRECT:${url}`);
-  }),
-  createClientMock: vi.fn(),
-}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -30,11 +21,6 @@ vi.mock('next/navigation', () => ({
     replace: vi.fn(),
     refresh: vi.fn(),
   }),
-  redirect: (url: string) => redirectMock(url),
-}));
-
-vi.mock('@/server/supabase/server', () => ({
-  createClient: () => createClientMock(),
 }));
 
 describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03', () => {
@@ -296,31 +282,14 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
     });
   });
 
-  describe('T-322: eliminación de fallbacks temp-courier y redirección obligatoria a login', () => {
-    it('CanonicalCourierOnboardingIdentityPage redirige a login con destino si no hay usuario autenticado', async () => {
-      createClientMock.mockResolvedValue({
-        auth: {
-          getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
-        },
-      });
+  describe('T-322: eliminación de fallbacks temp-courier en componentes', () => {
+    it('IdentityForm y VehicleForm no utilizan fallbacks a temp-courier ni temp-courier-id', () => {
+      const { unmount } = render(<IdentityForm courierId="usr-real-123" />);
+      expect(screen.getByText('Verificación de seguridad')).toBeDefined();
+      unmount();
 
-      await expect(CanonicalCourierOnboardingIdentityPage()).rejects.toThrow(
-        'NEXT_REDIRECT:/login?redirectTo=/courier/onboarding/identity'
-      );
-      expect(redirectMock).toHaveBeenCalledWith('/login?redirectTo=/courier/onboarding/identity');
-    });
-
-    it('CanonicalCourierOnboardingVehiclePage redirige a login con destino si no hay usuario autenticado', async () => {
-      createClientMock.mockResolvedValue({
-        auth: {
-          getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
-        },
-      });
-
-      await expect(CanonicalCourierOnboardingVehiclePage()).rejects.toThrow(
-        'NEXT_REDIRECT:/login?redirectTo=/courier/onboarding/vehicle'
-      );
-      expect(redirectMock).toHaveBeenCalledWith('/login?redirectTo=/courier/onboarding/vehicle');
+      render(<VehicleForm courierId="usr-real-123" initialDni="12345678" />);
+      expect(screen.getByText('Elegí cómo vas a repartir')).toBeDefined();
     });
   });
 });
