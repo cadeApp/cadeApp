@@ -69,11 +69,12 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
       ? { lat: selectedZone.centroidLat, lng: selectedZone.centroidLng }
       : null;
 
-  const isOutOfAguilares =
-    coordsError === merchantCopy.onboarding.mapOutOfAguilares ||
-    (defaultPickupLat != null &&
-      defaultPickupLng != null &&
-      !isWithinAguilaresBounds(defaultPickupLat, defaultPickupLng));
+  const effectiveLat = defaultPickupLat ?? selectedZoneCenter?.lat ?? null;
+  const effectiveLng = defaultPickupLng ?? selectedZoneCenter?.lng ?? null;
+  const hasInvalidEffectiveCoords =
+    effectiveLat != null &&
+    effectiveLng != null &&
+    !isWithinAguilaresBounds(effectiveLat, effectiveLng);
 
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
@@ -402,7 +403,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         <Button
           type="submit"
           size="lg"
-          disabled={isSubmitting || isOutOfAguilares}
+          disabled={isSubmitting || hasInvalidEffectiveCoords}
           className="w-full font-semibold"
         >
           {isSubmitting

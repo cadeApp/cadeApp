@@ -340,7 +340,12 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       expect(screen.queryByText(/ocurrió un error al guardar los datos/i)).toBeNull();
     });
 
-    it('solo bloquea el submit por coordenadas si estas están explícitamente fuera de Aguilares', async () => {
+    it('Caso A: GPS fuera -> handler descarta lat/lng -> completar dirección manual -> botón habilitado -> submit llama merchantOnboardingAction con lat/lng nulas', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
       Object.defineProperty(navigator, 'geolocation', {
         value: {
           getCurrentPosition: vi.fn((success) => {
@@ -366,8 +371,92 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       ).toBeDefined();
 
       const submitBtn = screen.getByRole('button', { name: /empezar/i });
-      // Debe estar deshabilitado o bloquear el submit porque las coordenadas son explícitamente inválidas
+      // El botón debe estar HABILITADO porque lat/lng fueron descartadas a null
+      expect(submitBtn).not.toHaveProperty('disabled', true);
+
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+
+      const firstCall = vi.mocked(merchantOnboardingAction).mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const callArgs = firstCall[0] as Record<string, unknown>;
+      expect(callArgs['defaultPickupAddress']).toBe('Av. Sarmiento 123');
+      expect(callArgs['defaultPickupLat']).toBeNull();
+      expect(callArgs['defaultPickupLng']).toBeNull();
+    });
+
+    it('Caso B: pin o centroide realmente fuera y todavía presente -> submit bloqueado', async () => {
+      const zoneOutOfBounds = {
+        id: '44444444-4444-4444-8444-444444444444',
+        name: 'Zona Fuera',
+        centroidLat: -26.83,
+        centroidLng: -65.20,
+      };
+
+      render(<MerchantOnboardingForm zones={[...mockZones, zoneOutOfBounds]} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      // B1. Con pin fuera de Aguilares
+      expect(mockOnChange).toBeDefined();
+      await act(async () => {
+        mockOnChange?.({ lat: -26.83, lng: -65.20 });
+      });
+
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
       expect(submitBtn).toHaveProperty('disabled', true);
+
+      // B2. Con zona cuyo centroide está fuera de Aguilares
+      const zoneSelect = screen.getByLabelText(/barrio de retiro/i);
+      fireEvent.change(zoneSelect, { target: { value: zoneOutOfBounds.id } });
+      expect(submitBtn).toHaveProperty('disabled', true);
+    });
+
+    it('Caso C: tras un error fuera de rango, corregir a coordenadas o centroide válido -> se puede enviar', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      // Inicialmente fija un pin inválido fuera de Aguilares
+      expect(mockOnChange).toBeDefined();
+      await act(async () => {
+        mockOnChange?.({ lat: -26.83, lng: -65.20 });
+      });
+
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
+      expect(submitBtn).toHaveProperty('disabled', true);
+
+      // Corrige a coordenadas válidas dentro de Aguilares
+      await act(async () => {
+        mockOnChange?.({ lat: -27.435, lng: -65.615 });
+      });
+
+      // Ahora el botón debe estar habilitado
+      expect(submitBtn).not.toHaveProperty('disabled', true);
+
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+
+      const firstCall = vi.mocked(merchantOnboardingAction).mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const callArgs = firstCall[0] as Record<string, unknown>;
+      expect(callArgs['defaultPickupLat']).toBe(-27.435);
+      expect(callArgs['defaultPickupLng']).toBe(-65.615);
     });
   });
 });

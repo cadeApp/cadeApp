@@ -10,6 +10,7 @@ import {
   AGUILARES_BOUNDS,
   isWithinAguilaresBounds,
   aguilaresCoordinatesSchema,
+  resetAuthFailureBridgeForTesting,
   type MapCoordinates,
 } from './map';
 import { MapSkeleton } from './map-skeleton';
@@ -82,6 +83,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     mockPublicMapId = 'test-map-id';
     capturedMapProps = null;
     mockOnError = null;
+    resetAuthFailureBridgeForTesting();
     delete (window as unknown as { gm_authFailure?: () => void }).gm_authFailure;
   });
 
@@ -91,6 +93,8 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     mockPublicMapId = 'test-map-id';
     capturedMapProps = null;
     mockOnError = null;
+    resetAuthFailureBridgeForTesting();
+    delete (window as unknown as { gm_authFailure?: () => void }).gm_authFailure;
 
     Object.defineProperty(navigator, 'onLine', {
       value: true,
@@ -264,7 +268,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       expect(pickerHtml).not.toContain('RefererNotAllowedMapError');
     });
 
-    it('limpia o preserva handler previo de window.gm_authFailure al desmontar', () => {
+    it('handler previo + una instancia -> se preserva al desmontar', () => {
       const priorHandler = vi.fn();
       (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = priorHandler;
 
@@ -272,6 +276,100 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       unmount();
 
       expect((window as unknown as { gm_authFailure?: () => void }).gm_authFailure).toBe(priorHandler);
+    });
+
+    it('dos MapPicker montados -> auth failure degrada ambos', async () => {
+      render(
+        <div>
+          <MapPicker value={AGUILARES_CENTER} />
+          <MapPicker value={{ lat: -27.44, lng: -65.62 }} />
+        </div>
+      );
+
+      expect(screen.getAllByTestId('mock-google-map')).toHaveLength(2);
+
+      act(() => {
+        (window as unknown as { gm_authFailure: () => void }).gm_authFailure();
+      });
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('map-load-error-banner')).toHaveLength(2);
+      });
+
+      expect(screen.getAllByTestId('map-fallback')).toHaveLength(2);
+      expect(screen.queryByTestId('mock-google-map')).toBeNull();
+    });
+
+    it('desmontar primero la instancia A dejando B montada -> gm_authFailure sigue degradando B', async () => {
+      function TwoPickers({ showA }: { showA: boolean }) {
+        return (
+          <div>
+            {showA && (
+              <div data-testid="container-a">
+                <MapPicker value={AGUILARES_CENTER} />
+              </div>
+            )}
+            <div data-testid="container-b">
+              <MapPicker value={{ lat: -27.44, lng: -65.62 }} />
+            </div>
+          </div>
+        );
+      }
+
+      const { rerender } = render(<TwoPickers showA={true} />);
+      expect(screen.getAllByTestId('mock-google-map')).toHaveLength(2);
+
+      // Desmontar A dejando B montada (no-LIFO)
+      rerender(<TwoPickers showA={false} />);
+      expect(screen.queryByTestId('container-a')).toBeNull();
+      expect(screen.getByTestId('container-b')).toBeDefined();
+
+      // Disparar gm_authFailure
+      act(() => {
+        (window as unknown as { gm_authFailure: () => void }).gm_authFailure();
+      });
+
+      // B debe degradar
+      await waitFor(() => {
+        expect(screen.getByTestId('map-load-error-banner')).toBeDefined();
+      });
+      expect(screen.getByTestId('map-fallback')).toBeDefined();
+    });
+
+    it('desmontar B después -> restaura el handler externo previo', () => {
+      const priorHandler = vi.fn();
+      (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = priorHandler;
+
+      function TwoPickers({ showA, showB }: { showA: boolean; showB: boolean }) {
+        return (
+          <div>
+            {showA && <MapPicker value={AGUILARES_CENTER} />}
+            {showB && <MapPicker value={{ lat: -27.44, lng: -65.62 }} />}
+          </div>
+        );
+      }
+
+      const { rerender } = render(<TwoPickers showA={true} showB={true} />);
+      // Desmontar A
+      rerender(<TwoPickers showA={false} showB={true} />);
+      // Desmontar B
+      rerender(<TwoPickers showA={false} showB={false} />);
+
+      expect((window as unknown as { gm_authFailure?: () => void }).gm_authFailure).toBe(priorHandler);
+    });
+
+    it('si otro código reemplaza el global después del bridge, el cleanup no debe pisar ese handler nuevo', () => {
+      const priorHandler = vi.fn();
+      (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = priorHandler;
+
+      const { unmount } = render(<MapPicker value={AGUILARES_CENTER} />);
+
+      const thirdPartyHandler = vi.fn();
+      (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = thirdPartyHandler;
+
+      unmount();
+
+      expect((window as unknown as { gm_authFailure?: () => void }).gm_authFailure).toBe(thirdPartyHandler);
     });
   });
 

@@ -88,6 +88,68 @@ function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
   return null;
 }
 
+type AuthFailureListener = () => void;
+
+const authFailureListeners = new Set<AuthFailureListener>();
+let previousGlobalAuthFailure: (() => void) | undefined = undefined;
+let installedBridgeHandler: (() => void) | null = null;
+
+function globalAuthFailureBridge() {
+  for (const listener of Array.from(authFailureListeners)) {
+    try {
+      listener();
+    } catch {
+      // Ignorar errores individuales para no bloquear otros listeners
+    }
+  }
+
+  if (typeof previousGlobalAuthFailure === 'function') {
+    try {
+      previousGlobalAuthFailure();
+    } catch {
+      // Ignorar fallos de handlers externos
+    }
+  }
+}
+
+function registerAuthFailureListener(listener: AuthFailureListener): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  authFailureListeners.add(listener);
+
+  if (authFailureListeners.size === 1) {
+    const win = window as unknown as { gm_authFailure?: () => void };
+    previousGlobalAuthFailure = win.gm_authFailure;
+    installedBridgeHandler = globalAuthFailureBridge;
+    win.gm_authFailure = globalAuthFailureBridge;
+  }
+
+  return () => {
+    authFailureListeners.delete(listener);
+
+    if (authFailureListeners.size === 0) {
+      const win = window as unknown as { gm_authFailure?: () => void };
+      if (win.gm_authFailure === installedBridgeHandler) {
+        if (previousGlobalAuthFailure !== undefined) {
+          win.gm_authFailure = previousGlobalAuthFailure;
+        } else {
+          delete win.gm_authFailure;
+        }
+      }
+      previousGlobalAuthFailure = undefined;
+      installedBridgeHandler = null;
+    }
+  };
+}
+
+export function resetAuthFailureBridgeForTesting(): void {
+  authFailureListeners.clear();
+  previousGlobalAuthFailure = undefined;
+  installedBridgeHandler = null;
+}
+
 export function MapPicker({
   value,
   onChange,
@@ -131,26 +193,9 @@ export function MapPicker({
   }, []);
 
   React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const previousAuthFailure = (window as unknown as { gm_authFailure?: () => void }).gm_authFailure;
-
-    (window as unknown as { gm_authFailure: () => void }).gm_authFailure = () => {
+    return registerAuthFailureListener(() => {
       setApiLoadFailed(true);
-      if (typeof previousAuthFailure === 'function') {
-        try {
-          previousAuthFailure();
-        } catch {
-          // ignore error in previous handler
-        }
-      }
-    };
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = previousAuthFailure;
-      }
-    };
+    });
   }, []);
 
   const fallbackCenter = React.useMemo<MapCoordinates>(() => {
