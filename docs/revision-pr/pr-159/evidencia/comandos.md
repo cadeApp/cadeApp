@@ -1,164 +1,93 @@
 # Evidencia reproducible — PR #159
 
-## Ronda 1
+## Ronda 3
 
-**SHA revisado:** `680511dc625ce3fec4a65e0b7268a3a7a955512e`
+**SHA revisado:** `8aad4db969c148499374ebc24acedfd2c070d44a`
 
-### Sincronización y alcance
+### CI
 
-```text
-base: develop
-head: feat/T-321-admin-staging-bootstrap
-status: ahead
-ahead_by: 3
-behind_by: 0
-merge_base: 9e232d0e4ef003ca0535b11e5a962b4cf603189a
-PR mergeable: true
-```
-
-### RED real previo de los embeds
-
-Commit `118042c3eaceb0a18ac9380168e389a2e584c024`:
-
-```text
-Test Files  1 failed | 107 passed (108)
-Tests       5 failed | 1520 passed (1525)
-```
-
-### CI de ronda 1
-
-Run `36803697869`, db-tests:
-
-```text
-Applying migration 20260930224700_t321_admin_staging_bootstrap.sql...
-Seeding data from supabase/seed.sql...
-supabase/tests/t321_admin_staging_bootstrap.sql .. ok
-Files=13, Tests=1612
-Result: PASS
-```
-
-La ronda 1 demostró que seed.sql enmascaraba los defaults y que la aserción 11 probaba un DO NOTHING copiado dentro del test.
-
----
-
-## Ronda 2
-
-**SHA revisado:** `ce5e3a19f3dfba71da4ccd47610b06beee3a2de2`
-
-### Cambios desde el último commit de revisión
-
-```text
-ahead_by: 2
-behind_by: 0
-
-.github/workflows/ci.yml
-docs/tasks/T-321.md
-docs/tasks/log/T-321.md
-supabase/tests/t321_admin_staging_bootstrap.sql
-```
-
-No hubo cambios del autor en `docs/revision-pr/pr-159/**`.
-
-### Reproducción de la evidencia del autor
-
-CI run `36813709928`, job `db-tests`:
+Run `36815136630` — conclusión `success`.
 
 ```text
 supabase/tests/t321_admin_staging_bootstrap.sql .. ok
-All tests successful.
 Files=1, Tests=10
 Result: PASS
 
 T321_MIGRATION_BASELINE GREEN
-T321_M01 RED_OK: missing:min_offer_ars=1000, missing:request_ttl_minutes=30, missing:pilot_active=true, missing:pilot_terms_version=v1, missing:subscription_grace_days=0, missing:ON_CONFLICT_DO_NOTHING
-T321_M02 RED_OK: missing:ON_CONFLICT_DO_NOTHING
+T321_M01 RED_OK: platform_settings_insert_count:0
+T321_M02 RED_OK: missing:TARGET_ON_CONFLICT_DO_NOTHING, forbidden:DO_UPDATE
+T321_M03 RED_OK: missing:TARGET_ON_CONFLICT_DO_NOTHING, forbidden:DO_UPDATE
+T321_M04 RED_OK: platform_settings_insert_count:2
 
-...
-All tests successful.
 Files=13, Tests=1611
 Result: PASS
 ```
 
-Esto verifica el cierre técnico de PR159-H01.
+### H03/H04
 
-### Batería independiente nueva — M03
+- H03: cerrado por CI + inspección del checker.
+- H04: cuerpo de PR contiene `10 aserciones`; no contiene `11 aserciones` ni `1612`.
 
-Objetivo: atacar el checker agregado por el arreglo, no reutilizar M01/M02.
+### Mutación independiente M05/M06
 
-Copiar como `/tmp/pr159-round2.sh` y ejecutar:
+Se ejecutó el mismo `violations()` del workflow contra la migración exacta del SHA revisado.
 
-```bash
-bash /tmp/pr159-round2.sh .
+Mutación M05 agregada después del INSERT válido:
+
+```sql
+update public.platform_settings
+set value = '1000'::jsonb
+where key = 'min_offer_ars'
+  and value <> '1000'::jsonb;
 ```
 
-Harness completo:
+M06 usa un CTE con el mismo UPDATE.
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT=${1:?repo root required}
-CI="$ROOT/.github/workflows/ci.yml"
-SRC="$ROOT/supabase/migrations/20260930224700_t321_admin_staging_bootstrap.sql"
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-
-mkdir -p "$TMP/supabase/migrations"
-
-# Extrae y ejecuta el checker real que vive dentro del heredoc del workflow.
-awk '
-  /node <<'\''NODE'\''/ { in_node=1; next }
-  in_node && /^[[:space:]]*NODE[[:space:]]*$/ { exit }
-  in_node { sub(/^          /, ""); print }
-' "$CI" > "$TMP/checker.cjs"
-
-DST="$TMP/supabase/migrations/20260930224700_t321_admin_staging_bootstrap.sql"
-cp "$SRC" "$DST"
-
-(cd "$TMP" && node checker.cjs) > "$TMP/baseline.out"
-grep -F 'T321_MIGRATION_BASELINE GREEN' "$TMP/baseline.out" >/dev/null
-
-# M03: semántica destructiva real + comentario que conserva la cadena esperada.
-node - "$SRC" "$DST" <<'NODE'
-const fs = require('node:fs');
-const [src, dst] = process.argv.slice(2);
-const sql = fs.readFileSync(src, 'utf8');
-const mutant = sql.replace(
-  /on\s+conflict\s*\(key\)\s*do\s+nothing\s*;/i,
-  'on conflict (key) do update set value = excluded.value;\n-- on conflict (key) do nothing;'
-);
-fs.writeFileSync(dst, mutant);
-NODE
-
-set +e
-(cd "$TMP" && node checker.cjs) > "$TMP/m03.out" 2>&1
-M03_RC=$?
-set -e
-
-if [ "$M03_RC" -eq 0 ]; then
-  echo 'M03 CONTROL_CIEGO: DO UPDATE + comentario señuelo mantiene el checker GREEN.'
-  grep -F 'T321_MIGRATION_BASELINE GREEN' "$TMP/m03.out"
-else
-  echo 'M03 DETECTADO'
-fi
-```
-
-Salida reproducida por la revisión con los contenidos exactos del SHA revisado:
+Salida:
 
 ```text
-M03 CONTROL_CIEGO: DO UPDATE + comentario señuelo mantiene el checker GREEN.
-T321_MIGRATION_BASELINE GREEN
+baseline []
+m05 []
+m06 []
 ```
 
-### Por qué el pgTAP sin seed no salva M03
+Interpretación: el control estático sigue verde aunque una base con `min_offer_ars=1500` sería sobrescrita.
 
-El reset sin seed aplica T-321 sobre una base fresca. La fila todavía no existe, así que tanto `DO NOTHING` como `DO UPDATE` insertan el mismo default; la rama de conflicto no se ejecuta. El pgTAP puede devolver 10/10 aunque la política de no sobrescritura esté rota.
+### Control runtime esperado para la siguiente ronda
 
-### Mutaciones que debe matar el próximo arreglo
+La migración anterior a T-321 es:
 
-- **M01:** quitar el insert objetivo completo → rojo.
-- **M02:** cambiar el `DO NOTHING` real por `DO UPDATE` → rojo.
-- **M03:** cambiar a `DO UPDATE` y dejar `-- on conflict (key) do nothing;` como comentario señuelo → rojo.
-- **M04:** cambiar el insert objetivo a `DO UPDATE` y agregar un segundo insert irrelevante con `DO NOTHING` → rojo.
+```text
+20260927120000_cc012_incidents_contract.sql
+```
 
-La solución esperada es limpiar comentarios SQL y validar las cinco parejas + la cláusula sobre **el único INSERT objetivo**, no sobre el archivo completo.
+Supabase documenta `db reset --version <timestamp>` para reconstruir la base hasta una migración concreta y `supabase migration up` para aplicar migraciones pendientes a la base local.
+
+Flujo objetivo:
+
+```bash
+pnpm supabase start
+pnpm supabase db reset --version 20260927120000 --no-seed
+
+DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n1)"
+test -n "$DB_CONTAINER"
+
+# insertar cinco valores personalizados
+# aplicar T-321 pendiente
+pnpm supabase migration up
+
+# comprobar que los cinco personalizados siguen intactos
+echo 'T321_PRESERVE_EXISTING GREEN'
+
+# luego probar defaults en base fresca
+pnpm supabase db reset --no-seed
+pnpm supabase test db supabase/tests/t321_admin_staging_bootstrap.sql
+
+# y restaurar suite normal
+pnpm supabase db reset
+pnpm supabase test db
+pnpm db:types --local
+git diff --exit-code -- src/types/database.types.ts
+```
+
+Este enfoque cubre por comportamiento M01-M06 sin depender de parsear SQL.
