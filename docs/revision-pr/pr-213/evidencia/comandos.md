@@ -98,3 +98,55 @@ Método requerido sin Docker local:
 - HEAD final GREEN.
 
 La base usada por `db-tests` es efímera; estas mutaciones no migran Supabase Develop.
+
+## Ronda 2 — verificación final
+
+### H01
+- `docs/contracts/CC-015.md` actual comparado byte a byte con merge de PR #181: **igual**.
+- `docs/contracts/CC-017.md` existe y apunta a #189.
+- T-326 referencia CC-017 / PR #213 y mantiene el bloqueo hasta merge.
+
+### H02
+```text
+throws_ok(..., '23514', null::text, ...)
+```
+en los cinco casos de pair/bounds.
+
+### M1
+```text
+SHA: c5f4f8cfa6fd67da652ada967d5b96efe0dfcab8
+CI: 37052789350 (#928)
+db-tests: FAILURE
+Failed tests: 1, 6-7, 10, 15
+```
+
+Fallos directos:
+- `zones_active_centroid no longer exists`;
+- `active zone with both centroid coordinates null is accepted`.
+
+### M2
+```text
+SHA: 32b746f5a859bcbb359724385db2e5aabd013c04
+CI: 37069932109 (#931)
+db-tests: FAILURE
+Failed tests: 2, 8-10
+```
+
+Fallos:
+- `zones_centroid_pair is preserved`;
+- lat sin lng;
+- lng sin lat;
+- update a una sola coordenada.
+
+### HEAD restaurado
+```text
+SHA: 2fac315e6d86ffa43863d3fc574bd48a72b89a67
+CI: 37070408547 (#932)
+unit: 113 files / 1682 tests PASS
+db-tests: 15 files / 1660 tests PASS
+cc017_zones_without_centroid.sql .. ok
+typecheck/lint/audit/build/bundle-budget: success
+```
+
+### Develop
+La rama está 4 commits detrás, con 0 archivos solapados. Requiere sincronización mecánica antes del merge.

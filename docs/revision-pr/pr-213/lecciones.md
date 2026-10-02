@@ -20,3 +20,9 @@ H02 usa P21 ya catalogado: verificar códigos/constraints, no wording incidental
 ## Evidencia RED en cambios de esquema
 
 H03 muestra que “no tengo Docker local” no debe cancelar una mutación requerida cuando CI ya provee una base efímera. Si este patrón reaparece en otra PR, conviene documentar en la regla de DB que las mutaciones de pgTAP pueden demostrarse mediante commits temporales y runs de CI.
+
+## Ronda 2
+
+H03 quedó demostrado sin Docker local usando la base efímera de CI. Esto confirma que una restricción de permisos del agente no debe convertirse en una excepción al principio RED/GREEN cuando la revisión puede ejecutar la mutación de forma segura en la rama y restaurarla.
+
+La colisión CC-015/CC-017 fue corregida. Si una segunda PR repite reutilización de número de contract-change, conviene automatizar unicidad/trazabilidad de CC-NNN.
