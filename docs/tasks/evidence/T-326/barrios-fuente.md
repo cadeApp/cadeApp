@@ -144,3 +144,16 @@ centroid_lng = NULL
 ```
 
 No copiar `AGUILARES_CENTER`, no usar el centroide general de la ciudad y no geocodificar automáticamente el nombre para fabricar un centroide.
+
+
+## PDF completo aportado
+
+Archivo aportado por Lautaro073 el 2026-10-02:
+
+`1009795293-Plano-Aguilares-Con-Barrios-260211-114103.pdf`
+
+- páginas: 1
+- SHA-256: `7dc1206e60a3ffe629fecec389f28e817944ce2b6d1d4c97d1f5044c658dfd93`
+- el PDF conserva texto posicionado y trazos vectoriales del plano, lo que permite una georreferenciación/digitalización más precisa que trabajar sobre una fotografía rasterizada.
+
+La georreferenciación no convierte el centroide resultante en un dato oficial: debe documentarse como **derivado del plano municipal 2015**.
