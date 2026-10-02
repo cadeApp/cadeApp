@@ -16,5 +16,13 @@ No se agrega número AG nuevo.
 - **H05 / P08:** esperar que “todavía no se vea” un dato no prueba que la carga inicial haya terminado. Cuando la propiedad a demostrar es una actualización posterior, el E2E debe esperar explícitamente el response inicial, fijar un baseline y exigir una segunda observación después del estímulo.
 - Un timeout menor al polling evita un falso positivo por polling, pero no evita un falso positivo por una request inicial todavía en vuelo.
 - **Preview READY no equivale a E2E ejecutado.** La evidencia válida debe demostrar que el spec concreto de la tarea corrió contra el SHA concreto.
-- Un gate trusted que corre desde la rama por defecto no puede ser “ampliado por la misma PR bajo prueba” y usado como evidencia de sí mismo; cualquier ampliación del gate debe aterrizar primero en la fuente trusted.
-- Con Supabase Develop + Vercel Preview ya disponible, “no tengo staging local” deja de ser una justificación suficiente para omitir las mutaciones RED de E2E.
+- Un gate trusted que corre desde la rama por defecto no puede ser ampliado por la misma PR bajo prueba y usado como evidencia de sí mismo.
+
+## Ronda 3
+
+No se agrega número AG nuevo.
+
+- **H06:** `page.addInitScript` prepara futuros documentos/navegaciones; una expectativa que depende de ese override debe ejecutarse después de una navegación donde el script haya corrido.
+- Un status `e2e-preview` rojo puede ser ajeno a la PR bajo revisión: hay que abrir el job y clasificar el fallo por spec/flujo, no inferirlo desde el status agregado.
+- Un gate que no enumera el spec de la tarea no certifica esa tarea, aunque el Preview, Supabase Develop y health check estén funcionando.
+- Declarar una mutación RED en bitácora no reemplaza la salida reproducible del test; mientras no exista evidencia ejecutable se mantiene `arreglado-sin-verificar`.

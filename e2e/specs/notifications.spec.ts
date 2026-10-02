@@ -21,11 +21,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
       });
     });
 
-    // 2. Verificar que el permiso a nivel de navegador esté denegado
-    const initialPermission = await page.evaluate(() => Notification.permission);
-    expect(initialPermission).toBe('denied');
-
-    // 3. Obtener solicitud y repartidor real creados por la fixture
+    // 2. Obtener solicitud y repartidor real creados por la fixture
     const requestId = stagingContext.createdRequestIds[0];
     if (!requestId) {
       throw new Error('[E2E Error] No se encontró requestId en stagingContext');
@@ -37,7 +33,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     }
     const courierName = courier.displayName ?? 'E2E Courier Doc2';
 
-    // 4. Instalar control exacto de peticiones y respuesta inicial antes de navegar al detalle
+    // 3. Instalar control exacto de peticiones y respuesta inicial antes de navegar al detalle
     const expectedPath = `/api/live/requests/${requestId}/offers`;
     let offersRequestCount = 0;
     page.on('request', (request) => {
@@ -64,8 +60,12 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
       }
     });
 
-    // 5. Iniciar sesión como comercio por UI
+    // 4. Iniciar sesión como comercio por UI. Esta navegación aplica el addInitScript.
     await loginAsMerchant(page);
+
+    // 5. Verificar el permiso en un documento donde el init script ya fue ejecutado.
+    const initialPermission = await page.evaluate(() => Notification.permission);
+    expect(initialPermission).toBe('denied');
 
     // 6. Navegar al detalle de la solicitud y esperar respuesta inicial completa
     await page.goto(`/merchant/requests/${requestId}`);
