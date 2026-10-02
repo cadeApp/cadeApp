@@ -69,6 +69,13 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
       ? { lat: selectedZone.centroidLat, lng: selectedZone.centroidLng }
       : null;
 
+  const effectiveLat = defaultPickupLat ?? selectedZoneCenter?.lat ?? null;
+  const effectiveLng = defaultPickupLng ?? selectedZoneCenter?.lng ?? null;
+  const hasInvalidEffectiveCoords =
+    effectiveLat != null &&
+    effectiveLng != null &&
+    !isWithinAguilaresBounds(effectiveLat, effectiveLng);
+
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) {
       setCoordsError(merchantCopy.onboarding.geoNotSupported);
@@ -282,13 +289,6 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             </span>
           </Button>
 
-          {defaultPickupLat != null && defaultPickupLng != null && !coordsError && (
-            <div className="rounded-lg bg-primary/10 p-2.5 text-sm text-primary-dark">
-              {merchantCopy.onboarding.locationMarked} ({defaultPickupLat.toFixed(4)},{' '}
-              {defaultPickupLng.toFixed(4)})
-            </div>
-          )}
-
           <MapPicker
             value={
               defaultPickupLat != null && defaultPickupLng != null
@@ -396,7 +396,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         <Button
           type="submit"
           size="lg"
-          disabled={isSubmitting || Boolean(coordsError)}
+          disabled={isSubmitting || hasInvalidEffectiveCoords}
           className="w-full font-semibold"
         >
           {isSubmitting

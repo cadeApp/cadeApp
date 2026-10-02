@@ -1,47 +1,13 @@
--- T-103: ciclo atómico. Solo las ocho entradas públicas son invocables por clientes.
-create table public.request_cancellation_reasons (
-  id uuid primary key default gen_random_uuid(),
-  request_id uuid not null references public.delivery_requests (id) on delete cascade,
-  offer_id uuid references public.offers (id) on delete set null,
-  actor_id uuid references public.profiles (id) on delete set null,
-  action text not null,
-  reason text not null,
-  created_at timestamptz not null default now()
-);
-
-alter table public.request_cancellation_reasons enable row level security;
-
-create policy request_cancellation_reasons_admin on public.request_cancellation_reasons
-  for select to authenticated
-  using (app_private.is_admin());
-
-revoke all on table public.request_cancellation_reasons from public, anon, authenticated;
-grant select on table public.request_cancellation_reasons to authenticated;
-
-create function app_private.request_setting_int(p_key text) returns integer
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_value jsonb;
-begin
-  select value into v_value from public.platform_settings where key = p_key;
-  if v_value is null or jsonb_typeof(v_value) <> 'number'
-    or v_value::text !~ '^[0-9]{1,9}$' then
-    raise exception 'INTERNAL_ERROR' using errcode = 'P0001';
-  end if;
-  if v_value::text::integer = 0 and p_key <> 'subscription_grace_days' then
-    raise exception 'INTERNAL_ERROR' using errcode = 'P0001';
-  end if;
-  return v_value::text::integer;
-end;
-$$;
-revoke all on function app_private.request_setting_int(text) from public, anon, authenticated;
-
-create function app_private.request_cycle(
+-- CC-015 — admin cancel_request sobre in_transit exige incidente registrado.
+-- Append-only: no modificar migraciones históricas ya aplicadas en staging.
+create or replace function app_private.request_cycle(
   p_action text, p_request_id uuid, p_reason text default null,
   p_republish boolean default true, p_kind text default null, p_description text default null
 ) returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_uid uuid := auth.uid();
   v_role public.profile_role;
+  v_consent_status public.consent_status;
   v_request public.delivery_requests%rowtype;
   v_offer public.offers%rowtype;
   v_courier public.couriers%rowtype;
@@ -67,8 +33,9 @@ declare
   v_result jsonb;
 begin
   if v_uid is null then raise exception 'UNAUTHENTICATED' using errcode = 'P0001'; end if;
-  select role into v_role from public.profiles where id = v_uid;
+  select role, consent_status into v_role, v_consent_status from public.profiles where id = v_uid;
   if v_role is null
+    or (v_role <> 'admin' and v_consent_status <> 'active')
     or (p_action in ('publish_request','republish_request','report_no_show') and v_role <> 'merchant')
     or (p_action in ('mark_picked_up','mark_delivered','courier_cancel_match') and v_role <> 'courier')
     or (p_action = 'cancel_request' and v_role not in ('merchant','admin')) then
@@ -126,6 +93,12 @@ begin
     or (p_action = 'republish_request' and v_eff_status = 'matched')
     or p_action = 'courier_cancel_match') and coalesce(btrim(p_reason), '') = '' then
     raise exception 'REASON_REQUIRED' using errcode = 'P0001';
+  end if;
+  if p_action = 'cancel_request' and v_role = 'admin' and v_eff_status = 'in_transit'
+    and not exists (
+      select 1 from public.incidents i where i.request_id = p_request_id
+    ) then
+    raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
   end if;
   if p_action = 'report_no_show' and (v_offer.id is null or v_offer.status <> 'accepted') then
     raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
@@ -244,45 +217,6 @@ begin
   return v_result || jsonb_build_object('publishedAt', v_now, 'expiresAt', v_expires);
 end;
 $$;
-revoke all on function app_private.request_cycle(text,uuid,text,boolean,text,text) from public, anon, authenticated;
 
-create function public.publish_request(p_request_id uuid) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('publish_request', p_request_id);
-$$;
-create function public.cancel_request(p_request_id uuid, p_reason text default null) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('cancel_request', p_request_id, p_reason);
-$$;
-create function public.mark_picked_up(p_request_id uuid) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('mark_picked_up', p_request_id);
-$$;
-create function public.mark_delivered(p_request_id uuid) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('mark_delivered', p_request_id);
-$$;
-create function public.report_no_show(p_request_id uuid, p_republish boolean default true) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('report_no_show', p_request_id, p_republish => p_republish);
-$$;
-create function public.courier_cancel_match(p_request_id uuid, p_reason text) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('courier_cancel_match', p_request_id, p_reason);
-$$;
-create function public.republish_request(p_request_id uuid, p_reason text default null) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('republish_request', p_request_id, p_reason);
-$$;
-create function public.report_incident(p_request_id uuid, p_kind text, p_description text) returns jsonb
-language sql security definer set search_path = public, pg_temp as $$
-  select app_private.request_cycle('report_incident', p_request_id, p_kind => p_kind, p_description => p_description);
-$$;
-revoke all on function public.publish_request(uuid), public.cancel_request(uuid,text),
-  public.mark_picked_up(uuid), public.mark_delivered(uuid), public.report_no_show(uuid,boolean),
-  public.courier_cancel_match(uuid,text), public.republish_request(uuid,text), public.report_incident(uuid,text,text)
+revoke all on function app_private.request_cycle(text,uuid,text,boolean,text,text)
   from public, anon, authenticated;
-grant execute on function public.publish_request(uuid), public.cancel_request(uuid,text),
-  public.mark_picked_up(uuid), public.mark_delivered(uuid), public.report_no_show(uuid,boolean),
-  public.courier_cancel_match(uuid,text), public.republish_request(uuid,text), public.report_incident(uuid,text,text)
-  to authenticated;
