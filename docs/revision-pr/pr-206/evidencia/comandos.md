@@ -137,3 +137,42 @@ GET <preview>/api/health
 - Alcance de `SUPABASE_ACCESS_TOKEN`.
 
 Se conserva H04/H05 abiertos hasta confirmación P1.
+
+
+## Ronda 3
+
+**SHA funcional revisado:** `9c2e379abdec83180c770ae5307f02e0d471cec4`
+
+### Último cambio
+Desde la revisión R2 solo cambian:
+- docs/runbooks/e2e-preview.md
+- docs/tasks/T-327.md
+- docs/tasks/log/T-327.md
+
+### CI exact-head
+Run: `36979219018` / CI #870 — success.
+
+```
+Vitest:
+Test Files 110 passed (110)
+Tests      1627 passed (1627)
+
+Workflow tests:
+47 passed / 0 failed
+
+ADR:
+6 passed / 0 failed
+
+DB:
+Files=13, Tests=1621
+Result: PASS
+```
+
+### Evidencia P1
+- GitHub Environment `develop`: Selected branches and tags, única regla `develop`.
+- `SUPABASE_DEVELOP_PROJECT_REF`: visible como Environment variable de `develop`.
+- Secrets de Supabase del Environment `develop`: P1 confirmó que corresponden al proyecto Develop.
+- `SUPABASE_ACCESS_TOKEN`: no inspeccionado. Se reutiliza el token existente y su acceso se valida fail-closed en `migrate-develop`.
+
+### Residual
+No existe evidencia pre-merge del permiso efectivo del access token. Por decisión P1, esa comprobación pertenece al primer `migrate-develop` post-merge y no cierra #205 por sí sola.

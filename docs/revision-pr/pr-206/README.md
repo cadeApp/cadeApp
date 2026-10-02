@@ -4,21 +4,21 @@
 - **Tarea:** T-327 / issue #205
 - **Rama:** `ci/e2e-vercel-preview`
 - **Base:** `develop`
-- **Ronda actual:** 2
-- **SHA funcional revisado:** `4b47a618d837ccccb35bf13f8df3185b85ec55c1`
-- **Resultado:** **CON BLOQUEANTES (2)**
+- **Ronda actual:** 3
+- **SHA funcional revisado:** `9c2e379abdec83180c770ae5307f02e0d471cec4`
+- **Resultado:** **SIN BLOQUEANTES PRE-MERGE**
 - **Fecha:** 2026-10-02
 - **Revisor:** revisión independiente solicitada por Lautaro073
 
 ## Estado
 
-La rama sigue sincronizada con `develop`:
-- ahead: 3
+La rama está sincronizada con `develop`:
+- ahead: 5
 - behind: 0
 - merge-base: `163d4ade24c192e79e713b46ca9de4ec0aa02b7d`
 
 CI exacto del SHA funcional:
-- run **36977355820 / CI #868** — GREEN
+- run **36979219018 / CI #870** — GREEN
 - typecheck ✅
 - lint ✅
 - build ✅
@@ -29,19 +29,17 @@ CI exacto del SHA funcional:
 - ADR tests **6/6** ✅
 - db-tests **13 archivos / 1621 tests / PASS** ✅
 
-Ronda 1:
-- H01 ✅ arreglado-verificado
-- H02 ✅ arreglado-verificado
-- H03 ✅ arreglado-verificado
-- H04 ❌ sigue abierto — configuración manual P1
-- H05 ❌ sigue abierto — configuración manual P1
-- H06 ✅ arreglado-verificado
+Ronda 3:
+- H04 ✅ cerrado con evidencia P1 del Environment `develop` restringido a la rama `develop`.
+- H05 ✅ sin bloqueo pre-merge por decisión P1: `SUPABASE_DEVELOP_PROJECT_REF` existe; el acceso efectivo de `SUPABASE_ACCESS_TOKEN` se valida fail-closed en el primer `migrate-develop` post-merge.
+- M01 ✅ corregida/verificada.
 
-Además, Vercel Authentication ya no bloquea el Preview: el deployment del SHA exacto está READY y `/api/health` responde **200 OK**.
-
-El check `approval-policy` está rojo de forma coherente con el estado actual: exige un informe de revisión sin bloqueantes y todavía quedan H04/H05.
+**Importante:** esto deja la PR apta para merge a `develop`, pero **NO termina T-327 / #205**. Después del merge deben observarse:
+1. `migrate-develop` GREEN;
+2. una corrida real `e2e-preview` GREEN sobre una PR posterior, según decisión 3-A.
 
 ## Revisiones
 
 - `revisiones/ronda-1.md`
 - `revisiones/ronda-2.md`
+- `revisiones/ronda-3.md`
