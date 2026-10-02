@@ -762,7 +762,7 @@ function previewPull({
   };
 }
 
-/** @param {{ payload?: unknown, expectedProjectId?: string, pulls?: ReturnType<typeof previewPull>[] }} [overrides] */
+/** @param {{ payload?: unknown, expectedProjectId?: string, pulls?: import('./e2e-preview-target.mjs').ApiPull[] }} [overrides] */
 async function matchPreviewWith({
   payload = previewPayload(),
   expectedProjectId = PREVIEW_PROJECT,
@@ -1117,4 +1117,74 @@ test('develop is not deployed from Actions and staging keeps its own gate', () =
   assert.match(staging, /PLAYWRIGHT_TEST_BASE_URL: https:\/\/cadeapp-staging\.vercel\.app/);
   assert.match(stagingE2e, /^ {2}group: e2e-staging$/m);
   assert.doesNotMatch(stagingE2e, /cadeapp-develop-e2e|SUPABASE_DEVELOP_PROJECT_REF/);
+});
+
+test('preview gate stays fail-closed for payloads and API items of the wrong shape', async () => {
+  const { parsePull } = await import('./e2e-preview-target.mjs');
+
+  // Payloads que no son un objeto, o cuyos campos anidados no lo son: nunca coinciden ni lanzan.
+  for (const payload of [null, 'dpl_example123', 42, [previewPayload()]]) {
+    const result = await matchPreviewWith({ payload });
+    assert.equal(result.outcome, 'skip', `payload ${JSON.stringify(payload)}`);
+  }
+  for (const overrides of [
+    { project: PREVIEW_PROJECT },
+    { project: [{ id: PREVIEW_PROJECT }] },
+    { project: { id: { toString: () => PREVIEW_PROJECT } } },
+  ]) {
+    const result = await matchPreviewWith({ payload: previewPayload(overrides) });
+    assert.equal(result.outcome, 'skip', JSON.stringify(overrides));
+  }
+  for (const overrides of [
+    { git: PREVIEW_SHA },
+    { git: [PREVIEW_SHA] },
+    { git: { sha: 123 } },
+    { url: { href: PREVIEW_TARGET.url } },
+    { url: [PREVIEW_TARGET.url] },
+    { id: 7 },
+    { id: null },
+  ]) {
+    const result = await matchPreviewWith({ payload: previewPayload(overrides) });
+    assert.equal(result.outcome, 'reject', JSON.stringify(overrides));
+  }
+
+  // Lo que devuelve la API de GitHub también es dato: se normaliza campo por campo.
+  assert.deepEqual(parsePull(previewPull()), previewPull());
+  assert.deepEqual(parsePull(previewPull({ headRepo: null })).head.repo, null);
+  for (const item of [
+    null,
+    'pull',
+    7,
+    [],
+    {},
+    { number: 321 },
+    { base: 'develop', head: PREVIEW_SHA },
+  ]) {
+    const result = await matchPreviewWith({ pulls: [parsePull(item)] });
+    assert.equal(result.outcome, 'skip', `item ${JSON.stringify(item)}`);
+  }
+  // Una PR que coincide en todo pero sin número utilizable no puede terminar en un target.
+  for (const number of ['321', 3.5, null, -1]) {
+    const result = await matchPreviewWith({
+      pulls: [parsePull({ ...previewPull(), number })],
+    });
+    assert.equal(result.outcome, 'reject', `number ${JSON.stringify(number)}`);
+  }
+  // Un repo de head con forma inesperada no se confunde con el repo propio.
+  const oddRepo = parsePull({
+    ...previewPull(),
+    head: { sha: PREVIEW_SHA, repo: { full_name: [PREVIEW_REPOSITORY] } },
+  });
+  assert.equal((await matchPreviewWith({ pulls: [oddRepo] })).outcome, 'skip');
+});
+
+test('preview target helper declares no any in its types', () => {
+  const script = workflow('e2e-preview-target.mjs');
+  const typed = script.match(/\/\*\*[\s\S]*?\*\//g) ?? [];
+  assert.ok(typed.length > 5, 'el helper conserva sus anotaciones JSDoc');
+  for (const comment of typed) {
+    assert.doesNotMatch(comment, /@(type|typedef|param|returns)\b[^\n]*\bany\b/, comment);
+    assert.doesNotMatch(comment, /[<,[(|]\s*any\s*[>,\])|]|\bany\[\]/, comment);
+  }
+  assert.doesNotMatch(script, /@ts-(ignore|expect-error|nocheck)|eslint-disable/);
 });

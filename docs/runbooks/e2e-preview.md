@@ -58,8 +58,23 @@ probando no puede modificar el gate que decide si recibe secretos.
   runner (seed/cleanup); nunca es `NEXT_PUBLIC_*`.
 - **Base correcta:** antes de sembrar se exige `NEXT_PUBLIC_SUPABASE_URL == https://<SUPABASE_DEVELOP_PROJECT_REF>.supabase.co`
   y que ese ref sea distinto al de staging (`SUPABASE_PROJECT_REF`).
-- **Cola:** `concurrency: cadeapp-develop-e2e` sin cancelar, igual para todas las PR.
+- **Serialización:** un grupo de `concurrency` fijo, `cadeapp-develop-e2e`, igual para todas las PR, con
+  `cancel-in-progress: false`. Ver «Concurrency» más abajo: no es una cola FIFO.
 - **Seed/cleanup:** los de T-303 (`e2e/fixtures`, `src/server/e2e/staging-seed.ts`), sin cambios.
+
+## Concurrency (decisión P1 5-A)
+
+GitHub Actions admite, por grupo, **una corrida en ejecución y una pendiente**. `cancel-in-progress: false`
+garantiza que la corrida en ejecución nunca se corta. No garantiza nada sobre la pendiente: si llega una tercera
+corrida mientras hay una esperando, GitHub cancela la que esperaba y deja la nueva en su lugar.
+
+No se implementa una cola FIFO propia. Lo que sí se garantiza:
+
+- Dos E2E nunca corren a la vez contra Supabase Develop.
+- Una corrida reemplazada, cancelada o que no llegó a ejecutarse deja el status `e2e-preview` en `error`
+  («E2E no corrió»), nunca en verde.
+- Esa corrida se recupera con «Re-run all jobs» sobre el run en Actions: un re-run vuelve a resolver el mismo
+  deployment y no se descarta como duplicado.
 
 ## Migraciones
 
@@ -75,18 +90,35 @@ probando no puede modificar el gate que decide si recibe secretos.
 |---|---|---|
 | GitHub · Environment `develop` | `VERCEL_PROJECT_ID` | secreto (ya existe) |
 | GitHub · Environment `develop` | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_PASSWORD`, `DNI_HMAC_SECRET`, `CRON_SECRET` | secretos (ya existen) |
-| GitHub · repositorio o Environment `develop` | `SUPABASE_DEVELOP_PROJECT_REF` | variable (**falta**) |
-| GitHub · repositorio | `SUPABASE_PROJECT_REF` (staging), `SUPABASE_ACCESS_TOKEN` | ya existen; el token debe tener acceso al proyecto Supabase Develop |
-| Vercel · `cadeApp-develop` | Deployment Protection de los Preview | hoy responde 302 a `vercel.com/sso-api`: el health check falla hasta que se desactive Vercel Authentication para Preview o se agregue un bypass de automatización |
+| GitHub · repositorio | `SUPABASE_PROJECT_REF` (staging), `SUPABASE_ACCESS_TOKEN` | ya existen |
 | Vercel · `cadeApp-develop` | Eventos `repository_dispatch` hacia GitHub | deben estar habilitados (Settings → Git) |
 
-Recomendado: limitar el Environment `develop` a la rama `develop` (Deployment branches). `e2e-preview` y
-`migrate-develop` corren ambos sobre `develop`, y así ningún workflow editado en una rama puede pedir esos secretos.
+### Requisitos obligatorios antes del merge (los hace P1 a mano)
+
+Nada de esto se configura desde la rama ni por CLI. El merge a `develop` dispara `migrate-develop` en el acto,
+así que los puntos 1 a 3 tienen que existir antes de mergear.
+
+1. **Environment `develop` restringido a la rama `develop`.** GitHub → Settings → Environments → `develop` →
+   *Deployment branches and tags* → *Selected branches and tags* con una única regla: `develop`. Es un requisito
+   de seguridad, no una recomendación: el Environment guarda la service role y la contraseña de la base. Con
+   *No restriction*, cualquier workflow escrito en una rama interna puede declarar `environment: develop` y
+   recibir esos secretos; que el workflow bueno viva en `develop` no lo impide. `e2e-preview`
+   (`repository_dispatch`) y `migrate-develop` (push a `develop`) corren ambos sobre `develop`, así que la regla
+   no los afecta.
+2. **Variable `SUPABASE_DEVELOP_PROJECT_REF`** (no secreta) en el Environment `develop`, con el ref del proyecto
+   Supabase Develop (decisión 2-A). Sin ella `migrate-develop` y `e2e-preview` fallan cerrados antes de tocar
+   la base.
+3. **`SUPABASE_ACCESS_TOKEN` con acceso al proyecto Supabase Develop.** Es el token de repositorio que ya usa CI;
+   si no alcanza a Develop, `supabase link` falla en `migrate-develop`.
+4. **Vercel Authentication desactivada solo para Preview** en `cadeApp-develop` (decisión 1-A). Hoy el Preview
+   responde 302 a `vercel.com/sso-api` y el health check del gate falla. No se usa bypass secret. Esto no frena
+   el merge, pero sin eso ningún `e2e-preview` puede dar verde.
 
 ## Límites conocidos
 
-- La cola de GitHub guarda un solo run pendiente por grupo: con tres PR esperando, el del medio se cancela y
-  su status queda en `error` hasta re-ejecutarlo.
+- `concurrency` no es FIFO: ver «Concurrency». Con tres PR esperando, la del medio queda en `error` hasta
+  re-ejecutarla.
+- #205 no se cierra con el merge (decisión 3-A): hace falta una corrida real de `e2e-preview` GREEN posterior.
 - `main-flow` Flow 4 sigue bloqueado por #200 (proyección de documentación del courier): mientras no se
   resuelva, `e2e-preview` va a dar `failure` por ese flujo. No se debilita el test.
 - E2E post-merge contra el deployment de `develop` (después de `migrate-develop`): no implementado. Requiere
