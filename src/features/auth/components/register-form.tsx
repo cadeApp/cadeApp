@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Store, Check, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Store, Check, AlertCircle, Eye, EyeOff, Mail } from 'lucide-react';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
@@ -30,12 +30,15 @@ function registerErrorMessage(code: DomainErrorCode): string {
 export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
   const router = useRouter();
   const [role, setRole] = useState<SignupRole>(initialRole || 'merchant');
+  const [displayName, setDisplayName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -48,7 +51,9 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
 
     try {
       const result = await registerAction({
-        email,
+        displayName: displayName.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
         password,
         role,
         acceptTerms,
@@ -62,13 +67,45 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
         return;
       }
 
-      router.push(result.data.redirectTo);
-      router.refresh();
+      setIsSubmitted(true);
+      setIsPending(false);
     } catch {
       setErrorMessage(authCopy.register.errorUnexpected);
       setIsPending(false);
     }
   };
+
+  if (isSubmitted) {
+    return (
+      <Card className="w-full space-y-6 p-6 sm:p-8">
+        <div className="flex flex-col items-center text-center space-y-4 py-2">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary-dark">
+            <Mail className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              {authCopy.register.checkEmailTitle}
+            </h1>
+            <p className="text-sm text-muted-foreground max-w-sm">
+              {authCopy.register.checkEmailSubtitle}
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-sm">
+            {authCopy.register.checkEmailNotice}
+          </p>
+        </div>
+
+        <div className="border-t border-border/60 pt-4 text-center text-sm text-muted-foreground">
+          <Link
+            href="/login"
+            className="rounded-sm font-semibold text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {authCopy.register.backToLogin}
+          </Link>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full space-y-6 p-6 sm:p-8">
@@ -139,6 +176,39 @@ export function RegisterForm({ initialRole }: { initialRole?: SignupRole }) {
               </div>
             )}
           </button>
+        </div>
+
+        {/* Campo Nombre y apellido */}
+        <div className="space-y-2">
+          <label htmlFor="displayName" className="block text-sm font-semibold text-foreground">
+            {authCopy.register.displayNameLabel}
+          </label>
+          <Input
+            id="displayName"
+            type="text"
+            required
+            autoComplete="name"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder={authCopy.register.displayNamePlaceholder}
+          />
+        </div>
+
+        {/* Campo Teléfono */}
+        <div className="space-y-2">
+          <label htmlFor="phone" className="block text-sm font-semibold text-foreground">
+            {authCopy.register.phoneLabel}
+          </label>
+          <Input
+            id="phone"
+            type="tel"
+            inputMode="tel"
+            required
+            autoComplete="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder={authCopy.register.phonePlaceholder}
+          />
         </div>
 
         {/* Campo Email */}

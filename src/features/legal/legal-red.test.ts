@@ -41,38 +41,70 @@ describe('T-311 · DoD de rutas, versiones y consistencia con schemas reales (H1
   it('rechaza como no vigente una aceptación cuya versión no coincide con el documento publicado', () => {
     expect(isCurrentLegalVersion('tos', '0.9')).toBe(false);
     expect(isCurrentLegalVersion('tos', '1.0')).toBe(true);
+    expect(isCurrentLegalVersion('privacy', '1.0')).toBe(false);
+    expect(isCurrentLegalVersion('privacy', '1.1')).toBe(true);
   });
 
   describe('Validación de schemas reales contra la Política de Privacidad (H11 / H12)', () => {
-    it('registerSchema: displayName y phone son facultativos; email, password, role y versiones son obligatorios', () => {
-      // Válido sin displayName ni phone
-      const validWithoutOptional = registerSchema.safeParse({
+    it('registerSchema: displayName, phone, email, password, role y versiones son obligatorios', () => {
+      // Inválido sin displayName
+      const invalidWithoutDisplayName = registerSchema.safeParse({
+        phone: '3815551234',
         email: 'usuario@test.com',
         password: 'password123',
         role: 'merchant',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
-      expect(validWithoutOptional.success).toBe(true);
+      expect(invalidWithoutDisplayName.success).toBe(false);
 
-      // Inválido sin campos obligatorios
-      const invalidWithoutRequired = registerSchema.safeParse({
+      // Inválido sin phone
+      const invalidWithoutPhone = registerSchema.safeParse({
+        displayName: 'Comercio Test',
+        email: 'usuario@test.com',
+        password: 'password123',
         role: 'merchant',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
+      });
+      expect(invalidWithoutPhone.success).toBe(false);
+
+      // Válido con todos los campos obligatorios
+      const validWithRequired = registerSchema.safeParse({
+        displayName: 'Comercio Test',
+        phone: '3815551234',
+        email: 'usuario@test.com',
+        password: 'password123',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
+      });
+      expect(validWithRequired.success).toBe(true);
+
+      // Inválido sin campos obligatorios
+      const invalidWithoutRequired = registerSchema.safeParse({
+        displayName: 'Comercio Test',
+        phone: '3815551234',
+        role: 'merchant',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
       expect(invalidWithoutRequired.success).toBe(false);
 
       // Inválido con acceptTerms = false
       const invalidConsent = registerSchema.safeParse({
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         email: 'usuario@test.com',
         password: 'password123',
         role: 'merchant',
         acceptTerms: false,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
       expect(invalidConsent.success).toBe(false);
     });
@@ -193,6 +225,7 @@ describe('T-311 · DoD de rutas, versiones y consistencia con schemas reales (H1
     it('la Política de Privacidad describe textualmente la obligatoriedad y facultatividad de los esquemas sin ningún type cast "any" (H11 / H12)', () => {
       const privacy: LegalDocumentDescriptor = getLegalDocument('privacy');
       expect(privacy).toBeDefined();
+      expect(privacy.version).toBe('1.1');
 
       const section: LegalSection | undefined = privacy.sections.find(
         (s: LegalSection) => s.id === 'obligatoriedad-consecuencias'
@@ -201,8 +234,8 @@ describe('T-311 · DoD de rutas, versiones y consistencia con schemas reales (H1
       const text = section?.paragraphs?.join(' ') ?? '';
 
       // Describe registro
-      expect(text).toMatch(/displayName.*facultativo/i);
-      expect(text).toMatch(/teléfono.*facultativo/i);
+      expect(text).toMatch(/displayName.*obligatori/i);
+      expect(text).toMatch(/teléfono.*obligatori/i);
 
       // Describe comercio
       expect(text).toMatch(/businessName/);

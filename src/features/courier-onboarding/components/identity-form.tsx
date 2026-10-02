@@ -16,7 +16,7 @@ import {
 } from '../upload-manager';
 
 export interface IdentityFormProps {
-  courierId?: string;
+  courierId: string;
   initialDni?: string;
   onNext?: (data: { dni: string; documents: Record<CourierDocumentKind, string> }) => void;
 }
@@ -51,7 +51,7 @@ const REQUIRED_DOCS: DocConfig[] = [
 ];
 
 export function IdentityForm({
-  courierId = 'temp-courier-id',
+  courierId,
   initialDni = '',
   onNext,
 }: IdentityFormProps) {

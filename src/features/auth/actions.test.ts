@@ -47,17 +47,21 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
       const courierInput = {
         email: 'repartidor@test.com',
         password: 'password123',
         role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
 
       expect(registerSchema.safeParse(merchantInput).success).toBe(true);
@@ -69,11 +73,21 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'admin@test.com',
         password: 'password123',
         role: 'admin',
+        displayName: 'Admin User',
+        phone: '3815551234',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
       const invalidRoleInput = {
         email: 'otro@test.com',
         password: 'password123',
         role: 'superadmin',
+        displayName: 'Super Admin',
+        phone: '3815551234',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
 
       const adminParsed = registerSchema.safeParse(adminInput);
@@ -99,9 +113,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'comercio@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(true);
@@ -116,6 +132,8 @@ describe('T-009: Auth actions y esquemas de registro', () => {
           emailRedirectTo: 'http://localhost:3000/auth/confirm',
           data: expect.objectContaining({
             role: 'merchant',
+            display_name: 'Comercio Test',
+            phone: '3815551234',
           }),
         },
       });
@@ -137,9 +155,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'courier@test.com',
         password: 'password123',
         role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(true);
@@ -157,6 +177,44 @@ describe('T-009: Auth actions y esquemas de registro', () => {
           emailRedirectTo: 'http://localhost:3000/auth/confirm',
           data: expect.objectContaining({
             role: 'courier',
+          }),
+        },
+      });
+    });
+
+    it('registerAction pasa displayName y phone validados a data.display_name y data.phone de signUp', async () => {
+      const mockSignUp = vi.fn().mockResolvedValue({
+        data: { user: { id: 'usr-courier-1', email: 'courier@test.com' }, session: null },
+        error: null,
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          signUp: mockSignUp,
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await registerAction({
+        email: 'courier@test.com',
+        password: 'password123',
+        role: 'courier',
+        displayName: '  Juan Repartidor  ',
+        phone: '  3815559876  ',
+        acceptTerms: true,
+        acceptedTermsVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockSignUp).toHaveBeenCalledWith({
+        email: 'courier@test.com',
+        password: 'password123',
+        options: {
+          emailRedirectTo: 'http://localhost:3000/auth/confirm',
+          data: expect.objectContaining({
+            role: 'courier',
+            display_name: 'Juan Repartidor',
+            phone: '3815559876',
           }),
         },
       });
@@ -183,6 +241,39 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(mockSignUp).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['displayName omitido', { phone: '3815551234' }],
+      ['displayName vacío', { displayName: '', phone: '3815551234' }],
+      ['displayName solo espacios', { displayName: '   ', phone: '3815551234' }],
+      ['phone omitido', { displayName: 'Comercio Test' }],
+      ['phone vacío', { displayName: 'Comercio Test', phone: '' }],
+      ['phone solo espacios', { displayName: 'Comercio Test', phone: '   ' }],
+    ])(
+      'registerAction rechaza %s con VALIDATION_ERROR y no invoca signUp (PR167-H01)',
+      async (_desc, invalidFields) => {
+        const mockSignUp = vi.fn();
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: { signUp: mockSignUp },
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        const result = await registerAction({
+          email: 'comercio@test.com',
+          password: 'password123',
+          role: 'merchant',
+          acceptTerms: true,
+          acceptedTermsVersion: '1.0',
+          acceptedPrivacyVersion: '1.1',
+          ...invalidFields,
+        });
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('VALIDATION_ERROR');
+        }
+        expect(mockSignUp).not.toHaveBeenCalled();
+      }
+    );
+
     it('registerAction rechaza acceptTerms: false con VALIDATION_ERROR (PR60-H06)', async () => {
       const mockSignUp = vi.fn();
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
@@ -197,7 +288,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         role: 'merchant',
         acceptTerms: false,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -221,7 +312,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         role: 'merchant',
         acceptTerms: true,
         acceptedTermsVersion: '0.9',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -232,7 +323,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
     });
 
-    it('registerAction rechaza versión no vigente (0.9) de Privacidad con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
+    it('registerAction rechaza versión no vigente (1.0 o 0.9) de Privacidad con VALIDATION_ERROR sin invocar signUp (H05)', async () => {
       const mockSignUp = vi.fn();
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {
@@ -244,9 +335,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'repartidor@test.com',
         password: 'password123',
         role: 'courier',
+        displayName: 'Juan Repartidor',
+        phone: '3815559876',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '0.9',
+        acceptedPrivacyVersion: '1.0',
       });
 
       expect(result.ok).toBe(false);
@@ -285,9 +378,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -298,7 +393,7 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
         p_user_id: 'usr-fail-consent-1',
         p_tos_version: '1.0',
-        p_privacy_version: '1.0',
+        p_privacy_version: '1.1',
       });
       expect(deleteUserSpy).toHaveBeenCalledWith('usr-fail-consent-1');
     });
@@ -334,9 +429,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant2@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -374,9 +471,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant3@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(false);
@@ -414,16 +513,18 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'merchant@test.com',
         password: 'password123',
         role: 'merchant',
+        displayName: 'Comercio Test',
+        phone: '3815551234',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       });
 
       expect(result.ok).toBe(true);
       expect(rpcSpy).toHaveBeenCalledWith('activate_account_consents', {
         p_user_id: 'usr-success-1',
         p_tos_version: '1.0',
-        p_privacy_version: '1.0',
+        p_privacy_version: '1.1',
       });
       expect(deleteUserSpy).not.toHaveBeenCalled();
     });
@@ -434,9 +535,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
       email: 'comercio@test.com',
       password: 'password123',
       role: 'merchant',
+      displayName: 'Comercio Test',
+      phone: '3815551234',
       acceptTerms: true,
       acceptedTermsVersion: '1.0',
-      acceptedPrivacyVersion: '1.0',
+      acceptedPrivacyVersion: '1.1',
     } as const;
 
     function mockSignUpResult(result: { data: unknown; error: unknown }) {
@@ -894,9 +997,11 @@ describe('T-009: Auth actions y esquemas de registro', () => {
         email: 'nuevo@comercio.com',
         password: 'passwordSegura123',
         role: 'merchant',
+        displayName: 'Nuevo Comercio',
+        phone: '3815550000',
         acceptTerms: true,
         acceptedTermsVersion: '1.0',
-        acceptedPrivacyVersion: '1.0',
+        acceptedPrivacyVersion: '1.1',
       };
 
       const result = await registerAction(input);
