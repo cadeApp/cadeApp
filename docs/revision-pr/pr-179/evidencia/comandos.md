@@ -118,3 +118,79 @@ La ampliación puede incluir únicamente lo necesario para el arnés de T-304, p
 - `docs/tasks/log/T-304.md`
 
 Si aparece necesidad de tocar otro archivo productivo/contrato/workflow, detenerse y pedir/crear el cambio de alcance correspondiente. En particular, la corrección de `cancel_request` **no va dentro de T-304**: corresponde al contract-change separado.
+
+# Ronda 2
+
+## Preflight
+
+```text
+HEAD T-304: 08426ca79bd81e97208a209eff9e81843e7fee66
+develop:     169b60bb3771fb794184b5a2da5714107391ecd0
+merge-base:  640bc4cd6f86a85f8a7fb235f123a182ac6c2163
+ahead: 9
+behind: 26
+overlap desde merge-base:
+- src/server/e2e/staging-seed.ts
+- src/server/e2e/staging-seed.test.ts
+```
+
+## Runtime/gates observados
+
+```text
+CI exact-head: success
+Vercel exact-head: success / Preview desplegado
+commit status exact-head:
+- Vercel = success
+- e2e-preview = AUSENTE
+
+e2e-preview.yml actual:
+- smoke.spec.ts
+- main-flow.spec.ts
+- request-states.spec.ts = AUSENTE
+
+e2e-staging.yml actual:
+- smoke.spec.ts
+- main-flow.spec.ts
+- request-states.spec.ts = AUSENTE
+```
+
+Por regla E2E vigente, PR interna => Vercel Preview + Supabase Develop. El body de T-304 todavía habla de esperar staging.
+
+## Sonda H06 — FK
+
+```text
+schema_v1.sql:
+offers.request_id uuid not null references public.delivery_requests(id)
+
+staging-seed.ts:
+~1486 INSERT offers(request_id=requestId)
+~1511 INSERT delivery_requests(id=requestId)
+```
+
+Conclusión determinística: el camino post-match intenta insertar la FK antes del padre.
+
+## Sonda H08 — precedencia de cancel_request
+
+```text
+request-states.spec.ts ~247:
+expected INVALID_STATE_TRANSITION
+
+request_cycle vigente:
+if cancel_request && status=published && expires_at<=now
+  raise REQUEST_EXPIRED
+```
+
+## Evidencia RED declarada por autor
+
+```text
+Mutaciones 1-4:
+comando = pnpm vitest run src/domain/domain.test.ts
+archivos mutados = src/domain/states/index.ts / src/domain/testing/rpc-fake.ts
+Playwright request-states = no ejecutado
+```
+
+Sirven como mutation tests unitarios complementarios, pero no cierran H03.
+
+## Ronda 2 — mutation/runtime del revisor
+
+No se alteró código funcional para “probar” los hallazgos: H06 y H08 se demuestran directamente por constraints/precedencia incompatibles. No se ejecutó un E2E privilegiado manual porque el único gate confiable de Develop todavía no incluye `request-states.spec.ts`. La corrección debe producir primero un RED real del Preview y luego GREEN.

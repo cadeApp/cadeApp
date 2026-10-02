@@ -12,3 +12,16 @@ Se refuerzan patrones ya conocidos:
 - **P19:** el body libre no sustituye el template obligatorio ni el informe literal de `revisar-pr`.
 
 La discrepancia “admin — solo por incidente” muestra por qué el E2E debe atravesar la fuente de verdad: la matriz pura y los pgTAP existentes aceptaban una precondición menos estricta que la escrita en §5.1.
+
+## Ronda 2
+
+No se crea un AG nuevo.
+
+Se refuerzan:
+
+- **P08:** un mock de Supabase no valida FKs ni orden relacional. Un seed puede pasar 52 unitarios y ser imposible en PostgreSQL real.
+- **P15:** “el spec existe” no equivale a “el gate lo ejecuta”. Todo E2E nuevo debe quedar incluido explícitamente en Preview/Staging y producir status para el SHA exacto.
+- **P03:** un E2E debe derivar los códigos de error de la precedencia contractual real; no de una interpretación del estado.
+- **P06:** cubrir una fila de §5.1 incluye sus precondiciones y efectos, no solo comprobar el status final.
+
+La existencia de Supabase Develop + Vercel Preview elimina el motivo para cerrar T-304 sin una corrida real del spec.

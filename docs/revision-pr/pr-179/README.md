@@ -2,13 +2,14 @@
 
 - **PR:** #179
 - **Rama:** `feat/T-304-request-states`
-- **SHA funcional revisado:** `4718ce7fcd2714009776b3da2321e553d8ee2c86`
-- **Base develop:** `1457072a7cac1ae9e2a8a92abe9253d45b745082`
-- **Ronda:** 1
-- **Resultado:** **CON BLOQUEANTES (5)**
-- **CI:** no consultado por bloqueantes.
-- **Decisiones P1:** D01 = 1-A; D02 = 2-A.
+- **SHA funcional revisado R2:** `08426ca79bd81e97208a209eff9e81843e7fee66`
+- **develop al revisar:** `169b60bb3771fb794184b5a2da5714107391ecd0`
+- **merge-base:** `640bc4cd6f86a85f8a7fb235f123a182ac6c2163`
+- **Ronda:** 2
+- **Resultado:** **CON BLOQUEANTES (6)**
+- **CI general del SHA:** GREEN; no cuenta como E2E de T-304.
+- **Vercel Preview del SHA:** desplegado.
+- **E2E Preview de T-304:** no ejecutado.
+- **Decisiones P1 vigentes:** D01 = 1-A; D02 = 2-A.
 
-La PR declara una suite E2E de estados, pero el spec actual ejecuta funciones puras de dominio y schemas Zod dentro del runner de Playwright. No toca staging, autenticación real, RPC, persistencia ni efectos laterales.
-
-P1 autorizó ampliar de forma acotada el arnés E2E para probar el sistema real. También resolvió que `in_transit → cancelled` por admin significa literalmente **solo si existe un incidente registrado previamente**. El backend actual no aplica esa precondición; debe corregirse mediante un contract-change separado antes de cerrar T-304.
+Ronda 2 confirma una mejora importante: el spec ya usa usuarios autenticados, RPCs reales y lectura de persistencia. Sin embargo todavía no es ejecutable/validado end-to-end: el seed viola una FK, una expectativa contradice la RPC vigente, el spec no está incluido en los gates de Preview/Staging, la evidencia RED sigue viniendo de unitarios y la rama quedó 26 commits detrás de develop.
