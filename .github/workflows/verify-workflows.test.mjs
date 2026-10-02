@@ -952,7 +952,7 @@ test('preview target is resolved by trusted code with the project id from the de
   );
 });
 
-test('preview E2E runs core specs and conditionally request-states against the resolved SHA and URL', () => {
+test('preview E2E runs core specs plus optional request-states and global-settings against the resolved SHA and URL', () => {
   const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
   const e2eJob = job(preview, 'e2e');
   assert.match(e2eJob, /^ {4}needs: resolve$/m);
@@ -984,6 +984,11 @@ test('preview E2E runs core specs and conditionally request-states against the r
     'T-304 request-states must run when the exact Preview SHA contains the spec'
   );
   assert.match(run, /pnpm exec playwright test "\$\{specs\[@\]\}" --project=chromium --workers=1/);
+  assert.match(
+    run,
+    /if \[ -f e2e\/specs\/subscription\.global-settings\.spec\.ts \]; then[\s\S]*pnpm exec playwright test e2e\/specs\/subscription\.global-settings\.spec\.ts --project=global-settings --workers=1[\s\S]*fi/,
+    'T-306 global-settings must run serially when the exact Preview SHA contains the spec'
+  );
   assert.ok(
     run.includes('\n          PLAYWRIGHT_TEST_BASE_URL: ${{ needs.resolve.outputs.url }}\n'),
     'Playwright apunta al Preview resuelto'
