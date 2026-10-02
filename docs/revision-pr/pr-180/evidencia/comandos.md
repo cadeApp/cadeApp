@@ -1,10 +1,10 @@
-# Evidencia de revisión independiente — PR #180 / ronda 1
+# Evidencia de revisión independiente — PR #180
+
+## Ronda 1
 
 SHA funcional revisado: `a62abb26d5fbde522f7cf41a2363e0b2e0b30126`.
 
-## 1. Sincronización
-
-Consulta de refs vía GitHub:
+### Sincronización
 
 ```text
 develop: 01f8fb20587beb5b43b606103051deb49e1c01d1
@@ -12,88 +12,171 @@ PR head: a62abb26d5fbde522f7cf41a2363e0b2e0b30126
 compare develop...head: diverged · ahead_by=5 · behind_by=9
 ```
 
-El delta de develop posterior al merge-base no modifica `e2e/specs/notifications.spec.ts` ni la ficha T-307. GitHub reportó la PR mergeable; igual se exige merge de `origin/develop` antes de la próxima ronda.
-
-## 2. Autoría de la carpeta de revisión
-
-Historial del PR:
-
-```text
-f584d36076850f5dfef94dd8adec265d3e7a1f75
-docs(review): record PR 180 round 1 [T-307]
-author: asako669
-```
-
-La autorrevisión quedó preservada como `revisiones/autorrevision-agy-r1.md`.
-
-## 3. Auditoría focal de falsos positivos
-
-Harness completo ejecutado fuera del repo:
-
-```js
-import assert from 'node:assert/strict';
-
-// H01: reproduce el control actual sin UI ni Realtime.
-let offerDelivered = false;
-const fakeRoute = () => offerDelivered
-  ? { data: [{ courierName: 'Repartidor Ágil Aguilares', amountArs: 2500 }], nextCursor: null }
-  : { data: [], nextCursor: null };
-assert.equal(fakeRoute().data.length, 0);
-offerDelivered = true;
-const updated = fakeRoute();
-assert.equal(updated.data.length, 1);
-assert.equal(updated.data[0].courierName, 'Repartidor Ágil Aguilares');
-assert.equal(updated.data[0].amountArs, 2500);
-console.log('H01 CONTROL VERDE sin UI ni Realtime: direct fetch/mock basta');
-
-// H02: reproduce el detector actual sin refetch de una query de la app.
-let refetchOccurred = false;
-function onRequest(url) {
-  if (url.includes('/api/') || url.includes('_rsc')) refetchOccurred = true;
-}
-onRequest('https://cadeapp-staging.vercel.app/api/health');
-assert.equal(refetchOccurred, true);
-console.log('H02 CONTROL VERDE sin refetch de TanStack: /api/health autogenerado basta');
-```
-
-Comando:
-
-```text
-node /tmp/pr180-control-audit.mjs
-```
-
-Salida:
+### Auditoría focal de falsos positivos
 
 ```text
 H01 CONTROL VERDE sin UI ni Realtime: direct fetch/mock basta
 H02 CONTROL VERDE sin refetch de TanStack: /api/health autogenerado basta
 ```
 
-Interpretación: no es una reproducción del navegador completo; es una demostración aislada de que la lógica de aceptación del control actual es independiente de las propiedades que declara medir. La inspección del spec confirma que el primer caso permanece en `/login` y usa `page.evaluate(fetch)`, y que el segundo genera explícitamente `/api/health`.
+La ronda 1 dejó tres bloqueantes y preservó la autorrevisión del agy por separado.
 
-## 4. Implementación real contrastada
+---
 
-- `src/features/requests/hooks/use-request-offers.ts` configura `refetchOnReconnect: 'always'` y usa `useRealtimeInvalidation`.
-- `src/features/requests/components/request-offers-list.tsx` es la UI que debe reflejar las ofertas.
-- `src/app/providers.tsx` configura TanStack Query con refetch al reconectar.
-- `src/features/notifications/offline/use-offline-status.ts` usa `/api/health` solo como probe del botón de reintento cuando `navigator.onLine` sigue false; ese probe no es la query de ofertas.
+## Ronda 2
 
-## 5. Evidencia del DoD general
+SHA funcional revisado: `0a70b6819e67a8c83c6b8ddb8a5f160ff5096240`.
 
-El body adjunta typecheck, lint y E2E focal. La bitácora dice:
+### 1. Sincronización actual
+
+Consulta GitHub compare:
 
 ```text
-test ❌ (1579 passed, 2 preexistentes en develop ajenos a la tarea)
+develop: 6577d9e427c5efc0a79a2c374f0f74d847732f4d
+PR head: 0a70b6819e67a8c83c6b8ddb8a5f160ff5096240
+status: diverged
+ahead_by: 9
+behind_by: 30
 ```
 
-Mientras la ficha marca el comando completo `pnpm typecheck && pnpm lint && pnpm test` como `[x]`. Se exige reconciliarlo con una corrida exacta en la corrección.
+La rama debe volver a integrar `origin/develop`. El nuevo delta contiene T-327 (Preview E2E + Supabase Develop).
 
-## 6. Decisión D01
+### 2. Corrección H01/H02 inspeccionada
 
-`docs/implementation-plan.md §8` lista T-307 con dependencias `T-301, T-204, T-202, T-206`; `docs/tasks/T-307.md` omite T-206.
+Commit del agy:
 
-Lautaro073 eligió **1-A**: agregar T-206 a la ficha. T-206 / PR #118 ya está mergeada, por lo que es sincronización documental.
+```text
+062d29679b811abac246b0fd1d5a53a532c6f83b
+feat(e2e): resolve round 1 review findings for notifications and resilience [T-307]
+```
 
-## 7. Batería completa
+H01 ya usa:
+- solicitud real de `stagingContext`;
+- login real;
+- inserción real en `offers`;
+- UI real del detalle;
+- cero `page.route().fulfill()` para fabricar la oferta;
+- cero `fetch()` manual para hacer aparecer el resultado.
 
-No se levantó Docker ni Supabase local. Tampoco se usó CI completa para cerrar esta ronda porque existen bloqueantes; el protocolo reserva esa inspección para la ronda que esté en condición de aprobar. El entorno local de revisión no pudo clonar desde github.com por resolución DNS, por lo que no se atribuyen `pnpm typecheck/lint/test` como ejecutados por esta revisión.
+H02 ya usa:
+- listener exclusivo del path `/api/live/requests/<requestId>/offers`;
+- baseline;
+- `setOffline(true)` / `setOffline(false)`;
+- cero `/api/health` manual;
+- cero `_rsc`;
+- cero `navigator.onLine` como oráculo.
+
+### 3. PR180-H05 — carrera reproducible por inspección
+
+Código funcional relevante:
+
+```text
+notifications.spec.ts:122  page.goto(/merchant/requests/<id>)
+notifications.spec.ts:124  waitForNoSkeletons
+notifications.spec.ts:127  courier no visible
+notifications.spec.ts:131  INSERT offer
+notifications.spec.ts:147  espera UI
+```
+
+Producto:
+
+```text
+use-request-offers.ts:
+  initialDataUpdatedAt: 0
+  staleTime: 0
+  queryFn -> GET /api/live/requests/<requestId>/offers
+  refetchInterval: 30_000
+```
+
+El test no espera que el GET inicial termine antes del INSERT. Por lo tanto, una respuesta inicial tardía puede incluir la nueva oferta y satisfacer la UI incluso sin evento Realtime. El timeout de 15 s solo excluye el polling de 30 s.
+
+Mutación RED exigida para la próxima ronda:
+1. esperar la respuesta inicial exacta;
+2. fijar baseline;
+3. bloquear Realtime temporalmente;
+4. insertar oferta;
+5. comprobar que no hay segunda request/UI dentro de 15 s;
+6. restaurar Realtime y demostrar GREEN.
+
+### 4. CI del SHA revisado
+
+Run: `36972452441` — **SUCCESS**.
+
+Jobs:
+- typecheck ✅
+- lint ✅
+- unit / `pnpm test:coverage` ✅
+- workflow tests ✅
+- ADR tests ✅
+- db-tests ✅
+- build ✅
+- audit ✅
+- bundle-budget ✅
+
+Esto permite cerrar H03 como problema de evidencia: la ficha ya no falsifica el DoD y los componentes de tests están verdes en CI. El comando final se vuelve a ejecutar tras el próximo merge de `develop`.
+
+### 5. Vercel Preview del SHA
+
+Deployment:
+```text
+dpl_6Rk7k6S7hyuUnGEsRViuDcBGkBpj
+project: cadeapp-develop
+branch: feat/T-307-notificaciones-resiliencia
+sha: 0a70b6819e67a8c83c6b8ddb8a5f160ff5096240
+state: READY
+```
+
+Health:
+```text
+GET https://cadeapp-develop.vercel.app/api/health
+HTTP 200
+{"status":"ok"}
+```
+
+### 6. Cuarta Regla / T-327
+
+En el `develop` actual existe `.github/workflows/e2e-preview.yml` con Environment `develop`, Supabase Develop y Vercel Preview del SHA exacto.
+
+Su comando actual es:
+
+```text
+pnpm exec playwright test
+  e2e/specs/smoke.spec.ts
+  e2e/specs/main-flow.spec.ts
+  --project=chromium
+  --workers=1
+```
+
+**No incluye `e2e/specs/notifications.spec.ts`.**
+
+Consulta de runs para el SHA revisado:
+
+```text
+repository_dispatch / head_sha=0a70b681...
+total_count: 0
+```
+
+El deployment de PR #180 ocurrió antes de que la infraestructura T-327 estuviera disponible en la rama por defecto. Además, incluso un nuevo GREEN de la configuración actual solo probaría smoke + main-flow.
+
+Se dejó follow-up en **issue #205 / T-327** para habilitar una vía trusted de ejecución de `notifications.spec.ts`. No se modifica el workflow desde PR #180 porque el diseño de seguridad exige que el job que recibe secrets provenga de la rama por defecto.
+
+### 7. Evidencia del autor no aceptada como verificación
+
+La bitácora del agy registra:
+- Tests 1 y B bloqueados por fail-closed local;
+- H02 RED no ejecutado;
+- y a la vez afirma H01 RED + GREEN.
+
+No hay output reproducible ni corrida remota del SHA que sostenga H01. La revisión no lo usa como evidencia de cierre.
+
+### 8. Estado final de Ronda 2
+
+```text
+H01 original  -> arreglado-verificado
+H02           -> arreglado-sin-verificar (falta RED/GREEN real)
+H03           -> arreglado-verificado
+H04           -> arreglado-verificado
+H05           -> abierto
+D01 1-A       -> aplicado
+Infra T-327   -> follow-up abierto en #205
+```
