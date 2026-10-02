@@ -40,7 +40,7 @@ La leyenda municipal usa numeración **discontinua**. La transcripción visible 
 | 06 | El Porvenir | El Porvenir | claro |
 | 07 | 9 de Julio | 9 de Julio | claro |
 | 08 | San Martin | San Martín | claro |
-| 09 | Centro | Centro | claro |
+| 09 | Centro | Aguilares - Centro | aprobado por Lautaro073; nombre de producto/DB |
 | 10 | Alte. Brown | Almirante Brown | aprobado por Lautaro073 |
 | 11 | Los Alamos | Los Álamos | claro |
 | 12 | Fray M. Esquiu | Fray M. Esquiú | no expandir inicial sin corroboración |
@@ -126,13 +126,12 @@ El resto de la transcripción queda exactamente con la normalización candidata 
 - Las normalizaciones finales quedan aprobadas, incluidas las cinco correcciones explícitas anteriores.
 - No se inventarán centroides.
 
-### Pendiente
-- Definir si la fila general `Aguilares` sigue activa/seleccionable o queda como dato legacy.
-- CC-015 debe estar mergeado antes de crear la migration T-326.
+### Resuelto
+- La fila general `Aguilares` queda **legacy**, se conserva por compatibilidad histórica y debe quedar `active = false`.
+- El barrio municipal 09 `Centro` se carga como **`Aguilares - Centro`** y será la opción seleccionable para el centro de la ciudad.
+- CC-015 ya está mergeado.
 
-Hasta resolver esos dos puntos:
-- no crear la migration T-326;
-- no modificar `supabase/seed.sql`.
+La implementación T-326 ya puede crear la migration/seed respetando estas decisiones.
 
 ## Regla de coordenadas
 
@@ -157,3 +156,16 @@ Archivo aportado por Lautaro073 el 2026-10-02:
 - el PDF conserva texto posicionado y trazos vectoriales del plano, lo que permite una georreferenciación/digitalización más precisa que trabajar sobre una fotografía rasterizada.
 
 La georreferenciación no convierte el centroide resultante en un dato oficial: debe documentarse como **derivado del plano municipal 2015**.
+
+
+## Decisión sobre la fila legacy `Aguilares`
+
+Lautaro073 decidió el 2026-10-02:
+
+- conservar la fila genérica existente `Aguilares` como dato legacy;
+- marcarla inactiva para que `getActiveZones()` no la ofrezca en el selector nuevo;
+- conservar UUID/centroide histórico;
+- no reinterpretarla como barrio Centro;
+- crear/activar el barrio 09 con nombre normalizado `Aguilares - Centro`.
+
+Esto evita mezclar el concepto “ciudad Aguilares” con el barrio municipal “Centro”.
