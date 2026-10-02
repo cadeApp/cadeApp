@@ -7,3 +7,7 @@
 
 alter table public.zones
   drop constraint if exists zones_active_centroid;
+
+-- MUTACIÓN TEMPORAL M2 — debe romper los pgTAP de pair
+alter table public.zones
+  drop constraint if exists zones_centroid_pair;
