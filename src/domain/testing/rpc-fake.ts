@@ -724,6 +724,15 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('REASON_REQUIRED');
         }
 
+        if (actor.role === 'admin' && effectiveStatus === 'in_transit') {
+          const hasIncident = Array.from(incidents.values()).some(
+            (i) => i.requestId === req.requestId
+          );
+          if (!hasIncident) {
+            return err('INVALID_STATE_TRANSITION');
+          }
+        }
+
         if (effectiveStatus === 'published') {
           for (const offer of offers.values()) {
             if (offer.requestId === req.requestId && offer.status === 'pending') {

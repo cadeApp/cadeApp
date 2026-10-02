@@ -406,12 +406,36 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         })
       ).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
 
+      // CC-015: admin cancel sobre in_transit sin incidente devuelve INVALID_STATE_TRANSITION
       expect(
         transitionRequest({
           from: 'in_transit',
           to: 'cancelled',
           actor: 'admin',
           reason: 'Incidente operativo',
+          now,
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'cancelled',
+          actor: 'admin',
+          reason: 'Incidente operativo',
+          hasIncident: false,
+          now,
+        })
+      ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+      // CC-015: admin cancel sobre in_transit con incidente pasa a cancelled
+      expect(
+        transitionRequest({
+          from: 'in_transit',
+          to: 'cancelled',
+          actor: 'admin',
+          reason: 'Incidente operativo',
+          hasIncident: true,
           now,
         })
       ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
@@ -1702,13 +1726,39 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
             subExpired?: boolean;
             c2Status?: 'approved' | 'suspended';
             noC2?: boolean;
+            hasIncident?: boolean;
+            otherRequestIncident?: boolean;
           } = {}
         ) {
           const assigned = ['matched', 'in_transit', 'delivered'].includes(status);
+          const initialIncidents = [];
+          if (opts.hasIncident) {
+            initialIncidents.push({
+              incidentId: '00000000-0000-4000-8000-000000000099',
+              requestId: REQ_1,
+              reporterId: COURIER_1,
+              reporterRole: 'courier' as const,
+              kind: 'safety' as const,
+              description: 'Accidente en camino',
+              createdAt: now.toISOString(),
+            });
+          }
+          if (opts.otherRequestIncident) {
+            initialIncidents.push({
+              incidentId: '00000000-0000-4000-8000-000000000098',
+              requestId: '00000000-0000-4000-8000-000000000088',
+              reporterId: COURIER_1,
+              reporterRole: 'courier' as const,
+              kind: 'safety' as const,
+              description: 'Accidente en otra orden',
+              createdAt: now.toISOString(),
+            });
+          }
           return createFakeRpcClient({
             settings: { ...BASE_SETTINGS, pilotActive: !opts.subExpired },
             now: () => now,
             initialActor: actor,
+            initialIncidents,
             initialRequests: [
               {
                 requestId: REQ_1,
@@ -1772,9 +1822,11 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
         expect(code(await mk('draft', merch, { subExpired: true }).publish_request({ requestId: REQ_1 }))).toBe('SUBSCRIPTION_INACTIVE'); // C03
         expect(code(await mk('expired', merch).republish_request({ requestId: REQ_1 }))).toBe('ok'); // C04
 
-        // D03 y H14 (P4b / T02): admin en in_transit sin aal2 recibe AAL2_REQUIRED; sobre published vencida con aal1 recibe REQUEST_EXPIRED
+        // D03, H14 y CC-015: admin en in_transit sin aal2 recibe AAL2_REQUIRED; sin incidente recibe INVALID_STATE_TRANSITION; con incidente pasa a ok
         expect(code(await mk('in_transit', adminAal1).cancel_request({ requestId: REQ_1, reason: 'Sin MFA' }))).toBe('AAL2_REQUIRED');
-        expect(code(await mk('in_transit', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('ok');
+        expect(code(await mk('in_transit', adminAal2).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('INVALID_STATE_TRANSITION');
+        expect(code(await mk('in_transit', adminAal2, { otherRequestIncident: true }).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('INVALID_STATE_TRANSITION');
+        expect(code(await mk('in_transit', adminAal2, { hasIncident: true }).cancel_request({ requestId: REQ_1, reason: 'Con MFA' }))).toBe('ok');
         expect(code(await mk('published', adminAal1, { expiresAt: past }).cancel_request({ requestId: REQ_1, reason: 'Motivo' }))).toBe('REQUEST_EXPIRED'); // P4b / T02 / H14
         expect(code(await mk('published', merch, { expiresAt: past }).cancel_request({ requestId: REQ_1 }))).toBe('REQUEST_EXPIRED');
         expect(code(await mk('matched', merch).cancel_request({ requestId: REQ_1 }))).toBe('REASON_REQUIRED');
@@ -1852,6 +1904,16 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
             to: 'cancelled',
             actor: 'admin',
             reason: 'Incidente operativo',
+            now,
+          })
+        ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+        expect(
+          transitionRequest({
+            from: 'in_transit',
+            to: 'cancelled',
+            actor: 'admin',
+            reason: 'Incidente operativo',
+            hasIncident: true,
             now,
           })
         ).toEqual({ ok: true, data: { status: 'cancelled', offerSideEffect: 'cancel_accepted' } });
