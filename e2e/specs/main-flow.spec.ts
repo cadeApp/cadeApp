@@ -5,7 +5,7 @@ import {
   getRequestInspectionData,
   findRequestIdByNotesMarker,
 } from '../fixtures';
-import { formatArs } from '@/lib/format';
+import { formatArs, formatPhone } from '@/lib/format';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { LoginPage, MerchantPage, TripPage } from '../pages';
 
@@ -24,7 +24,7 @@ import { LoginPage, MerchantPage, TripPage } from '../pages';
 
 test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   // ---------------------------------------------------------------------------
-  // DoD Invariante 1: Revelación progresiva de datos de contacto (PR160-H01)
+  // DoD Invariante 1: Revelación progresiva de datos de contacto (PR160-H01 / PR160-H11)
   // ---------------------------------------------------------------------------
   test('DoD: Falla si el repartidor no aceptado ve el teléfono del destinatario', async ({
     page,
@@ -37,37 +37,56 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
 
     const sentinelPhone = stagingContext.sentinelPhone ?? '+5493865123456';
     const rawSentinelDigits = sentinelPhone.replace(/\D/g, '');
+    const formattedSentinelPhone = formatPhone(sentinelPhone);
+    const nationalDigits = formattedSentinelPhone.replace(/\D/g, '');
 
     // Autenticarse como repartidor no asignado (Courier 1)
     await loginAsCourier(1, page);
 
+    const assertNoSentinelPhoneLeak = async (targetPage: typeof page) => {
+      // Verificar exhaustivamente que el teléfono sentinel NO aparezca en DOM, texto ni enlaces
+      const pageContent = await targetPage.content();
+      expect(pageContent).not.toContain(sentinelPhone);
+      expect(pageContent).not.toContain(rawSentinelDigits);
+      expect(pageContent).not.toContain(formattedSentinelPhone);
+
+      await expect(targetPage.getByText(sentinelPhone)).not.toBeVisible();
+      await expect(targetPage.getByText(rawSentinelDigits)).not.toBeVisible();
+      await expect(
+        targetPage.getByText(formattedSentinelPhone, { exact: false })
+      ).not.toBeVisible();
+
+      // Comprobar que ninguna línea visible contenga los 10 dígitos nacionales
+      const visibleLines = (await targetPage.locator('body').innerText()).split(/\r?\n/);
+      for (const line of visibleLines) {
+        expect(line.replace(/\D/g, '')).not.toContain(nationalDigits);
+      }
+
+      // Comprobar que ningún href del DOM contenga los 10 dígitos nacionales
+      const hrefs = await targetPage.locator('a[href]').evaluateAll((links) =>
+        links.map((link) => link.getAttribute('href') ?? '')
+      );
+      for (const href of hrefs) {
+        expect(href.replace(/\D/g, '')).not.toContain(nationalDigits);
+      }
+    };
+
     // 1. Explorar el feed de solicitudes disponibles
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
-
-    // Verificar exhaustivamente que el teléfono sentinel NO aparezca en DOM, texto ni enlaces
-    const feedContent = await page.content();
-    expect(feedContent).not.toContain(sentinelPhone);
-    expect(feedContent).not.toContain(rawSentinelDigits);
-    await expect(page.getByText(sentinelPhone)).not.toBeVisible();
-    await expect(page.getByText(rawSentinelDigits)).not.toBeVisible();
+    await assertNoSentinelPhoneLeak(page);
 
     // 2. Explorar la vista de ofertas del repartidor
     await page.goto('/courier/offers');
     await waitForNoSkeletons(page);
-
-    const offersContent = await page.content();
-    expect(offersContent).not.toContain(sentinelPhone);
-    expect(offersContent).not.toContain(rawSentinelDigits);
-    await expect(page.getByText(sentinelPhone)).not.toBeVisible();
-    await expect(page.getByText(rawSentinelDigits)).not.toBeVisible();
+    await assertNoSentinelPhoneLeak(page);
   });
 
   // ---------------------------------------------------------------------------
   // DoD Invariante 2: Aceptación concurrente en dos pestañas (PR160-H02)
   // ---------------------------------------------------------------------------
   test('DoD: Falla si se aceptan dos ofertas para la misma solicitud en dos pestañas concurrentes', async ({
-    browser,
+    context,
     stagingContext,
   }) => {
     // Precrear explícitamente las dos ofertas que competirán en concurrencia
@@ -82,8 +101,7 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       throw new Error('[E2E Error] No merchant user seeded in stagingContext');
     }
 
-    // Contexto de navegador compartido que conserva sesión autenticada
-    const context = await browser.newContext();
+    // Pestañas bajo el contexto provisto por Playwright (configurado con baseURL)
     const tab1 = await context.newPage();
     const loginPage = new LoginPage(tab1);
     await loginPage.navigate();
@@ -397,15 +415,18 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   // ---------------------------------------------------------------------------
   // Flujo 5: Vista de viaje, WhatsApp y avance del estado (PR160-H03 / PR160-H10)
   // ---------------------------------------------------------------------------
-  test('Flujo 5: Vista de viaje refleja medio de pago y botón accesible Avisar a mi cliente', async ({
-    browser,
-    page,
-    tripPage,
-    merchantPage,
-    stagingContext,
-    loginAsMerchant,
-    loginAsCourier,
-  }) => {
+  test('Flujo 5: Vista de viaje refleja medio de pago y botón accesible Avisar a mi cliente', async (
+    {
+      browser,
+      page,
+      tripPage,
+      merchantPage,
+      stagingContext,
+      loginAsMerchant,
+      loginAsCourier,
+    },
+    testInfo
+  ) => {
     // Precrear las ofertas para que el comercio pueda aceptar la de Courier 0
     await seedOffersForFirstRequest(stagingContext);
     const targetRequestId = stagingContext.createdRequestIds[0];
@@ -461,7 +482,11 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     expect(decodedMessage).toMatch(/efectivo/i);
 
     // 2. Repartidor asignado (Courier 0) accede al viaje en un contexto de navegador separado
-    const courierContext = await browser.newContext();
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('[E2E Error] Falta baseURL para crear el contexto aislado del courier');
+    }
+    const courierContext = await browser.newContext({ baseURL });
     try {
       const courierBrowserPage = await courierContext.newPage();
       await loginAsCourier(0, courierBrowserPage);
