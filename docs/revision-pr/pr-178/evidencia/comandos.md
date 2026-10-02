@@ -108,3 +108,99 @@ bundle-budget success
 ```
 
 DB tuvo varios `toomanyrequests: Rate exceeded` de Docker Hub al preparar el entorno, pero los reintentos finalizaron PASS.
+
+## Ronda 2
+
+SHA funcional: `2e8739fb5c406c377c5208d6d70d95f34608148a`.
+
+### Delta desde R1
+
+```text
+ef353117..2e8739fb
+docs/contracts/CC-014.md
+src/ui/map.tsx
+src/ui/map.test.tsx
+```
+
+El autor no tocó `docs/revision-pr/pr-178/**`.
+
+### H02 — RED dirigido
+
+```text
+develop_camera_persists=true
+develop_has_crosshair=true
+develop_has_dpad=true
+develop_has_legacy_marker=false
+develop_has_drag_handler=false
+final_directed_tests_present=true
+body_no_longer_claims_43_behavioral_red=true
+```
+
+### H03 — API/lifecycle
+
+```text
+helper_export_absent=true
+test_import_absent=true
+non_lifo_test_present=true
+external_restore_test_present=true
+```
+
+### H01 — harness de round-trip controlado
+
+Código relevante:
+- `map.tsx:238` activeCoords;
+- `map.tsx:239` cameraTarget;
+- `map.tsx:244` value → setCameraTarget(value);
+- `map.tsx:271` handleMarkerDragEnd;
+- `map.tsx:286` handleMapClick;
+- `map.tsx:495` synchronizer con cameraTarget.
+
+Consumidores:
+- onboarding L292/L299-L300: value controlado + setValue en onChange;
+- create-request L403/L410-L411: value controlado + setValue en onChange.
+
+Harness:
+
+```text
+pans_immediately_after_drag_or_click=0
+pans_after_parent_value_roundtrip=1
+roundtrip_recenters=true
+onboarding_is_controlled=true
+request_dropoff_is_controlled=true
+direct_tests_assert_no_pan=true
+has_controlled_roundtrip_test=false
+```
+
+### H04 — metadata actual
+
+```text
+issue #171 labels:
+P2
+fase-3
+en-curso
+
+bloqueada: ausente
+```
+
+### CI exact-head 36952805255
+
+```text
+Test Files 110 passed (110)
+Tests 1592 passed (1592)
+workflow tests 31
+ADR tests 6
+
+db-tests:
+Files=13, Tests=1614
+Result: PASS
+
+typecheck success
+lint success
+build success
+audit success
+bundle-budget success
+
+/merchant/onboarding 147 kB OK
+/merchant/requests/new 163 kB OK
+/design-system 185 kB warning preexistente
+```
