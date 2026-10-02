@@ -30,7 +30,7 @@ let capturedMapProps: {
   children?: React.ReactNode;
 } | null = null;
 
-let capturedMarkerProps: {
+let capturedAdvancedMarkerProps: {
   position?: MapCoordinates;
   draggable?: boolean;
   onDragEnd?: (ev: {
@@ -42,6 +42,22 @@ let capturedMarkerProps: {
   title?: string;
   children?: React.ReactNode;
 } | null = null;
+
+let capturedLegacyMarkerProps: {
+  position?: MapCoordinates;
+  draggable?: boolean;
+  onDragEnd?: (ev: {
+    latLng: {
+      lat: number | (() => number);
+      lng: number | (() => number);
+    } | null;
+  }) => void;
+  title?: string;
+  children?: React.ReactNode;
+} | null = null;
+
+const getCapturedMarkerProps = () =>
+  capturedAdvancedMarkerProps ?? capturedLegacyMarkerProps;
 
 let mockPanTo = vi.fn();
 let mockMapInstance = {
@@ -97,6 +113,21 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     capturedMapProps = props;
     return <div data-testid="mock-google-map">{props.children}</div>;
   },
+  Marker: (props: {
+    position?: MapCoordinates;
+    draggable?: boolean;
+    onDragEnd?: (ev: {
+      latLng: {
+        lat: number | (() => number);
+        lng: number | (() => number);
+      } | null;
+    }) => void;
+    title?: string;
+    children?: React.ReactNode;
+  }) => {
+    capturedLegacyMarkerProps = props;
+    return <div data-testid="mock-legacy-marker">{props.children}</div>;
+  },
   AdvancedMarker: (props: {
     position?: MapCoordinates;
     draggable?: boolean;
@@ -109,7 +140,7 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     title?: string;
     children?: React.ReactNode;
   }) => {
-    capturedMarkerProps = props;
+    capturedAdvancedMarkerProps = props;
     return <div data-testid="mock-advanced-marker">{props.children}</div>;
   },
 }));
@@ -122,7 +153,8 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     mockPublicApiKey = 'test-google-maps-api-key';
     mockPublicMapId = 'test-map-id';
     capturedMapProps = null;
-    capturedMarkerProps = null;
+    capturedAdvancedMarkerProps = null;
+    capturedLegacyMarkerProps = null;
     mockPanTo.mockClear();
     mockOnError = null;
     resetAuthFailureBridgeForTesting();
@@ -134,7 +166,8 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
     mockPublicApiKey = 'test-google-maps-api-key';
     mockPublicMapId = 'test-map-id';
     capturedMapProps = null;
-    capturedMarkerProps = null;
+    capturedAdvancedMarkerProps = null;
+    capturedLegacyMarkerProps = null;
     mockPanTo.mockClear();
     mockOnError = null;
     resetAuthFailureBridgeForTesting();
@@ -156,19 +189,19 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
 
     it('A. actualiza la posición del pin y sincroniza cámara cuando defaultZoneCenter cambia', () => {
       const { rerender } = render(<MapPicker defaultZoneCenter={ZONE_A} />);
-      expect(capturedMarkerProps?.position).toEqual(ZONE_A);
+      expect(getCapturedMarkerProps()?.position).toEqual(ZONE_A);
 
       rerender(<MapPicker defaultZoneCenter={ZONE_B} />);
-      expect(capturedMarkerProps?.position).toEqual(ZONE_B);
+      expect(getCapturedMarkerProps()?.position).toEqual(ZONE_B);
       expect(mockPanTo).toHaveBeenCalledWith(ZONE_B);
     });
 
     it('B. actualiza la posición del pin y sincroniza cámara cuando value externo cambia', () => {
       const { rerender } = render(<MapPicker value={VALUE_A} />);
-      expect(capturedMarkerProps?.position).toEqual(VALUE_A);
+      expect(getCapturedMarkerProps()?.position).toEqual(VALUE_A);
 
       rerender(<MapPicker value={VALUE_B} />);
-      expect(capturedMarkerProps?.position).toEqual(VALUE_B);
+      expect(getCapturedMarkerProps()?.position).toEqual(VALUE_B);
       expect(mockPanTo).toHaveBeenCalledWith(VALUE_B);
     });
 
@@ -207,7 +240,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
         expect(onLocationFound).toHaveBeenCalledWith(GPS_COORDS);
       });
 
-      expect(capturedMarkerProps?.position).toEqual(GPS_COORDS);
+      expect(getCapturedMarkerProps()?.position).toEqual(GPS_COORDS);
       expect(mockPanTo).toHaveBeenCalledWith(GPS_COORDS);
     });
   });
@@ -568,7 +601,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       );
 
       // Pin no arrastrable
-      expect(capturedMarkerProps?.draggable).toBe(false);
+      expect(getCapturedMarkerProps()?.draggable).toBe(false);
 
       // Botón GPS deshabilitado
       const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación/i });
@@ -584,7 +617,7 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
 
       // onDragEnd ignorado cuando disabled
       act(() => {
-        capturedMarkerProps?.onDragEnd?.({
+        getCapturedMarkerProps()?.onDragEnd?.({
           latLng: { lat: -27.435, lng: -65.618 },
         });
       });
@@ -672,11 +705,11 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
 
-      expect(capturedMarkerProps).not.toBeNull();
-      expect(capturedMarkerProps?.draggable).toBe(true);
+      expect(getCapturedMarkerProps()).not.toBeNull();
+      expect(getCapturedMarkerProps()?.draggable).toBe(true);
 
       act(() => {
-        capturedMarkerProps?.onDragEnd?.({
+        getCapturedMarkerProps()?.onDragEnd?.({
           latLng: {
             lat: () => -27.4367891,
             lng: () => -65.6198765,
@@ -689,18 +722,147 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
         lat: -27.436789,
         lng: -65.619877,
       });
-      expect(capturedMarkerProps?.position).toEqual({
+      expect(getCapturedMarkerProps()?.position).toEqual({
         lat: -27.436789,
         lng: -65.619877,
       });
     });
 
-    it('hacer click/tap en el mapa (onClick) reposiciona el pin y llama a onChange una sola vez', () => {
+    it('con mapId ausente (string vacío): NO renderiza AdvancedMarker, SÍ renderiza legacy Marker draggable y su onDragEnd persiste coordenadas', () => {
+      mockPublicMapId = '';
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
 
+      // AdvancedMarker NO debe renderizarse sin mapId
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      expect(screen.queryByTestId('map-marker-pin')).toBeNull();
+
+      // Legacy Marker SÍ debe renderizarse
+      expect(screen.getByTestId('mock-legacy-marker')).toBeDefined();
+      expect(capturedLegacyMarkerProps).not.toBeNull();
+      expect(capturedLegacyMarkerProps?.draggable).toBe(true);
+      expect(capturedLegacyMarkerProps?.title).toBe('Ubicación seleccionada');
+
+      act(() => {
+        capturedLegacyMarkerProps?.onDragEnd?.({
+          latLng: {
+            lat: () => -27.4367891,
+            lng: () => -65.6198765,
+          },
+        });
+      });
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith({
+        lat: -27.436789,
+        lng: -65.619877,
+      });
+      expect(capturedLegacyMarkerProps?.position).toEqual({
+        lat: -27.436789,
+        lng: -65.619877,
+      });
+    });
+
+    it('con mapId presente: renderiza AdvancedMarker draggable y su onDragEnd persiste coordenadas', () => {
+      mockPublicMapId = 'test-map-id';
+      const onChange = vi.fn();
+
+      render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
+
+      // Legacy Marker NO debe renderizarse si mapId existe
+      expect(screen.queryByTestId('mock-legacy-marker')).toBeNull();
+
+      // AdvancedMarker SÍ debe renderizarse con su pin personalizado
+      expect(screen.getByTestId('mock-advanced-marker')).toBeDefined();
+      expect(screen.getByTestId('map-marker-pin')).toBeDefined();
+      expect(capturedAdvancedMarkerProps).not.toBeNull();
+      expect(capturedAdvancedMarkerProps?.draggable).toBe(true);
+      expect(capturedAdvancedMarkerProps?.title).toBe('Ubicación seleccionada');
+
+      act(() => {
+        capturedAdvancedMarkerProps?.onDragEnd?.({
+          latLng: {
+            lat: () => -27.4367891,
+            lng: () => -65.6198765,
+          },
+        });
+      });
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith({
+        lat: -27.436789,
+        lng: -65.619877,
+      });
+      expect(capturedAdvancedMarkerProps?.position).toEqual({
+        lat: -27.436789,
+        lng: -65.619877,
+      });
+    });
+
+    it('con disabled=true: ninguna variante (con o sin mapId) permite drag ni persistencia', () => {
+      // 1. Sin mapId (legacy Marker)
+      mockPublicMapId = '';
+      const onChangeWithoutMapId = vi.fn();
+      const { unmount } = render(
+        <MapPicker value={AGUILARES_CENTER} onChange={onChangeWithoutMapId} disabled />
+      );
+
+      expect(capturedLegacyMarkerProps?.draggable).toBe(false);
+      act(() => {
+        capturedLegacyMarkerProps?.onDragEnd?.({
+          latLng: { lat: -27.435, lng: -65.618 },
+        });
+      });
+      expect(onChangeWithoutMapId).not.toHaveBeenCalled();
+      unmount();
+
+      // 2. Con mapId (AdvancedMarker)
+      mockPublicMapId = 'test-map-id';
+      const onChangeWithMapId = vi.fn();
+      render(<MapPicker value={AGUILARES_CENTER} onChange={onChangeWithMapId} disabled />);
+
+      expect(capturedAdvancedMarkerProps?.draggable).toBe(false);
+      act(() => {
+        capturedAdvancedMarkerProps?.onDragEnd?.({
+          latLng: { lat: -27.435, lng: -65.618 },
+        });
+      });
+      expect(onChangeWithMapId).not.toHaveBeenCalled();
+    });
+
+    it('hacer click/tap en el mapa (onClick) reposiciona el pin y llama a onChange una sola vez tanto con mapId como sin mapId', () => {
+      // 1. Con mapId
+      mockPublicMapId = 'test-map-id';
+      const onChangeWithMapId = vi.fn();
+      const { unmount } = render(
+        <MapPicker value={AGUILARES_CENTER} onChange={onChangeWithMapId} />
+      );
+
       expect(capturedMapProps).not.toBeNull();
+      act(() => {
+        capturedMapProps?.onClick?.({
+          detail: {
+            latLng: { lat: -27.4381234, lng: -65.6145678 },
+          },
+        });
+      });
+
+      expect(onChangeWithMapId).toHaveBeenCalledTimes(1);
+      expect(onChangeWithMapId).toHaveBeenCalledWith({
+        lat: -27.438123,
+        lng: -65.614568,
+      });
+      expect(capturedAdvancedMarkerProps?.position).toEqual({
+        lat: -27.438123,
+        lng: -65.614568,
+      });
+      unmount();
+
+      // 2. Sin mapId
+      mockPublicMapId = '';
+      const onChangeWithoutMapId = vi.fn();
+      render(<MapPicker value={AGUILARES_CENTER} onChange={onChangeWithoutMapId} />);
 
       act(() => {
         capturedMapProps?.onClick?.({
@@ -710,12 +872,12 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
         });
       });
 
-      expect(onChange).toHaveBeenCalledTimes(1);
-      expect(onChange).toHaveBeenCalledWith({
+      expect(onChangeWithoutMapId).toHaveBeenCalledTimes(1);
+      expect(onChangeWithoutMapId).toHaveBeenCalledWith({
         lat: -27.438123,
         lng: -65.614568,
       });
-      expect(capturedMarkerProps?.position).toEqual({
+      expect(capturedLegacyMarkerProps?.position).toEqual({
         lat: -27.438123,
         lng: -65.614568,
       });
@@ -723,7 +885,8 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
   });
 
   describe('9. P1 / T-323 DoD — Eliminación de D-pad, badge y crosshair fijo, preservando teclado accesible', () => {
-    it('NO renderiza crosshair central fijo, D-pad flotante ni badge de coordenadas', () => {
+    it('NO renderiza crosshair central fijo, D-pad flotante ni badge de coordenadas (con mapId)', () => {
+      mockPublicMapId = 'test-map-id';
       render(<MapPicker value={AGUILARES_CENTER} />);
 
       expect(screen.queryByTestId('map-crosshair')).toBeNull();
@@ -734,6 +897,20 @@ describe('CC-011 · Contrato compartido de mapa src/ui/map.tsx', () => {
       expect(screen.queryByTestId('nudge-east')).toBeNull();
       expect(screen.queryByTestId('nudge-west')).toBeNull();
       expect(screen.getByTestId('mock-advanced-marker')).toBeDefined();
+    });
+
+    it('NO renderiza crosshair central fijo, D-pad flotante ni badge de coordenadas (sin mapId)', () => {
+      mockPublicMapId = '';
+      render(<MapPicker value={AGUILARES_CENTER} />);
+
+      expect(screen.queryByTestId('map-crosshair')).toBeNull();
+      expect(screen.queryByTestId('map-fine-adjustment')).toBeNull();
+      expect(screen.queryByTestId('map-coords-badge')).toBeNull();
+      expect(screen.queryByTestId('nudge-north')).toBeNull();
+      expect(screen.queryByTestId('nudge-south')).toBeNull();
+      expect(screen.queryByTestId('nudge-east')).toBeNull();
+      expect(screen.queryByTestId('nudge-west')).toBeNull();
+      expect(screen.getByTestId('mock-legacy-marker')).toBeDefined();
     });
 
     it('responde a las 4 flechas del teclado en el contenedor del mapa para ajuste accesible', () => {

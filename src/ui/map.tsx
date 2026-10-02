@@ -7,6 +7,7 @@ import {
   useApiLoadingStatus,
   APILoadingStatus,
   AdvancedMarker,
+  Marker,
   useMap,
   type MapCameraChangedEvent,
   type MapMouseEvent,
@@ -273,7 +274,7 @@ export function MapPicker({
   const handleMarkerDragEnd = React.useCallback(
     (
       ev: Parameters<
-        NonNullable<React.ComponentProps<typeof AdvancedMarker>['onDragEnd']>
+        NonNullable<React.ComponentProps<typeof Marker>['onDragEnd']>
       >[0]
     ) => {
       if (disabled) return;
@@ -493,21 +494,30 @@ export function MapPicker({
               onCameraChanged={handleCameraChange}
             >
               <MapCameraSynchronizer targetCoords={activeCoords} />
-              <AdvancedMarker
-                position={activeCoords}
-                draggable={!disabled}
-                onDragEnd={handleMarkerDragEnd}
-                title="Ubicación seleccionada"
-              >
-                <div
-                  data-testid="map-marker-pin"
-                  aria-label="Pin de ubicación seleccionada"
-                  className="relative flex items-center justify-center"
+              {mapId ? (
+                <AdvancedMarker
+                  position={activeCoords}
+                  draggable={!disabled}
+                  onDragEnd={handleMarkerDragEnd}
+                  title="Ubicación seleccionada"
                 >
-                  <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
-                  <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
-                </div>
-              </AdvancedMarker>
+                  <div
+                    data-testid="map-marker-pin"
+                    aria-label="Pin de ubicación seleccionada"
+                    className="relative flex items-center justify-center"
+                  >
+                    <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
+                    <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
+                  </div>
+                </AdvancedMarker>
+              ) : (
+                <Marker
+                  position={activeCoords}
+                  draggable={!disabled}
+                  onDragEnd={handleMarkerDragEnd}
+                  title="Ubicación seleccionada"
+                />
+              )}
             </GoogleMap>
           </APIProvider>
         ) : (
