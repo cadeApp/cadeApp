@@ -25,6 +25,7 @@ export interface TransitionRequestInput {
   readonly subscriptionStatus?: MerchantSubscriptionStatus;
   readonly graceDays?: number;
   readonly reason?: string | null;
+  readonly hasIncident?: boolean;
 }
 
 export interface TransitionRequestOutput {
@@ -194,6 +195,9 @@ export function transitionRequest(
       if (!input.reason || input.reason.trim().length === 0) {
         return err('REASON_REQUIRED');
       }
+      if (!input.hasIncident) {
+        return err('INVALID_STATE_TRANSITION');
+      }
       return ok({ status: 'cancelled', offerSideEffect: 'cancel_accepted' });
     }
 
@@ -221,6 +225,7 @@ export function canTransitionRequest(
     subscriptionStatus: 'pilot',
     pilotActive: true,
     reason: 'motivo-valido',
+    hasIncident: true,
   }).ok;
 }
 
