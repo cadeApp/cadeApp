@@ -7,7 +7,3 @@
 
 alter table public.zones
   drop constraint if exists zones_active_centroid;
-
-alter table public.zones
-  add constraint zones_active_centroid
-  check (not active or centroid_lat is not null);
