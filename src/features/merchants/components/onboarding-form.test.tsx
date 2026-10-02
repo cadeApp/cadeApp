@@ -492,8 +492,8 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       expect(trigger.tagName).toBe('BUTTON');
       expect(trigger.getAttribute('role')).toBe('combobox');
       expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+      // Radix deja un <select aria-hidden tabindex=-1> interno; lo que no puede haber es uno operable.
       expect(container.querySelector('select:not([aria-hidden="true"])')).toBeNull();
-      expect(container.querySelector('option')).toBeNull();
     });
 
     it('muestra el placeholder y, al abrir, un listbox con todos los barrios en el orden recibido', () => {

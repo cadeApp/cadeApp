@@ -1,15 +1,17 @@
--- T-004: operational defaults. The general Aguilares centroid is the verified
--- locality point (OpenStreetMap node 198437989), not an invented barrio point.
--- T-326: this general row is legacy and inactive; it is kept for historical references only.
-insert into public.zones (name, centroid_lat, centroid_lng, active)
-values ('Aguilares', -27.431480, -65.614660, false)
-on conflict (name) do update
-set centroid_lat = excluded.centroid_lat,
-    centroid_lng = excluded.centroid_lng,
-    active = excluded.active;
+-- ============================================================================
+-- T-326: barrios reales de Aguilares para el onboarding de comercio
+-- ============================================================================
+-- Fuente: plano municipal «CIUDAD DE AGUILARES Y DIVISIONES DE BARRIOS» (nov. 2015); lista de 62 entradas
+-- aprobada en docs/tasks/evidence/T-326/barrios-fuente.md. Ningún barrio se carga con centroide: no hay
+-- georreferenciación ejecutada (docs/tasks/evidence/T-326/georreferenciacion.md) y CC-017 permite zonas
+-- activas sin centroide. Idempotente: se puede aplicar sobre una base que ya tenga alguna de estas filas.
 
--- T-326: the 62 barrios approved in docs/tasks/evidence/T-326/barrios-fuente.md, same list as the
--- migration *_t326_aguilares_zones.sql. No centroid is seeded: none was georeferenced (CC-017).
+-- 1. La fila general queda legacy: se conserva (UUID y centroide histórico) y deja de ser seleccionable.
+update public.zones
+set active = false
+where name = 'Aguilares';
+
+-- 2. Barrios aprobados. Si la fila ya existe solo se activa; no se pisa un centroide existente.
 insert into public.zones (name, centroid_lat, centroid_lng, active)
 values
   ('Chacarita', null, null, true),
@@ -75,14 +77,4 @@ values
   ('FOTIA', null, null, true),
   ('Virgen de la Merced', null, null, true)
 on conflict (name) do update
-set active = excluded.active;
-
-insert into public.platform_settings (key, value)
-values
-  ('min_offer_ars', '1000'::jsonb),
-  ('max_offers_per_min', '10'::jsonb),
-  ('request_ttl_minutes', '30'::jsonb),
-  ('pilot_active', 'true'::jsonb),
-  ('pilot_terms_version', '"v1"'::jsonb),
-  ('subscription_grace_days', '0'::jsonb)
-on conflict (key) do update set value = excluded.value;
+set active = true;
