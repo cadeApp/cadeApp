@@ -2,6 +2,8 @@
 import * as React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getDomainErrorMessage } from '@/lib/error-messages';
+import { notify } from '@/ui/notify';
 import { CreateRequestForm } from './create-request-form';
 import * as actions from '../actions';
 
@@ -221,6 +223,45 @@ describe('T-112: CreateRequestForm', () => {
     const callArgs = firstCall[0] as Record<string, unknown>;
     expect(callArgs['dropoffLat']).toBe(-27.4385);
     expect(callArgs['dropoffLng']).toBe(-65.6185);
+  });
+
+  it('#209: si la publicación es rechazada muestra el error de dominio y no anuncia éxito', async () => {
+    vi.mocked(actions.createDeliveryRequestAction).mockResolvedValueOnce({
+      ok: false,
+      code: 'SUBSCRIPTION_INACTIVE',
+    });
+
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: zoneCentro.id,
+          defaultPickupLat: -27.43,
+          defaultPickupLng: -65.61,
+          notes: '',
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Sarmiento 1200' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'Lucía Gómez' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3815551234' },
+    });
+    fireEvent.click(screen.getByRole('checkbox'));
+
+    fireEvent.click(screen.getByRole('button', { name: /publicar solicitud/i }));
+
+    const expected = getDomainErrorMessage('SUBSCRIPTION_INACTIVE');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(expected);
+    expect(notify.error).toHaveBeenCalledWith(expected);
+    expect(notify.success).not.toHaveBeenCalled();
   });
 
   it('H09: con el mapa de entrega abierto, la vista presenta exactamente un input de dirección de entrega y una sola acción de GPS para entrega', async () => {

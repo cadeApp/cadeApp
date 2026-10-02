@@ -2,9 +2,9 @@
 
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { calculateHaversineRouteDistanceM, profileRoleSchema } from '@/domain/schemas';
-import { canMerchantPublishRequest } from '@/domain/states';
+import { callRequestRpc } from '@/server/rpc/requests';
 import { createClient } from '@/server/supabase/server';
-import type { Database, TablesInsert } from '@/types/database.types';
+import type { TablesInsert } from '@/types/database.types';
 import { createDeliveryRequestSchema } from './schemas';
 
 interface ZoneCentroidRow {
@@ -49,52 +49,8 @@ export async function createDeliveryRequestAction(
     return err('UNAUTHORIZED_ACTOR');
   }
 
-  // 3. Verificación de suscripción o piloto activo (canMerchantPublishRequest)
-  const { data: merchant, error: merchantError } = await supabase
-    .from('merchants')
-    .select('subscription_status, paid_until')
-    .eq('profile_id', user.id)
-    .maybeSingle<{
-      subscription_status: Database['public']['Enums']['merchant_subscription_status'];
-      paid_until: string | null;
-    }>();
-
-  if (merchantError || !merchant) {
-    return err('SUBSCRIPTION_INACTIVE');
-  }
-
-  const { data: settingsData } = await supabase
-    .from('platform_settings')
-    .select('key, value')
-    .in('key', ['pilot_active', 'subscription_grace_days']);
-
-  let pilotActive = true;
-  let subscriptionGraceDays = 0;
-
-  if (Array.isArray(settingsData)) {
-    for (const s of settingsData as Array<{ key: string; value: unknown }>) {
-      if (s.key === 'pilot_active' && typeof s.value === 'boolean') {
-        pilotActive = s.value;
-      }
-      if (s.key === 'subscription_grace_days' && typeof s.value === 'number') {
-        subscriptionGraceDays = s.value;
-      }
-    }
-  }
-
-  const eligibility = canMerchantPublishRequest({
-    subscriptionStatus: merchant.subscription_status,
-    pilotActive,
-    paidUntil: merchant.paid_until,
-    graceDays: subscriptionGraceDays,
-    now: new Date(),
-  });
-
-  if (!eligibility.ok) {
-    return err(eligibility.code);
-  }
-
-  // 4. Validación de datos de entrada con Zod
+  // 3. Validación de datos de entrada con Zod.
+  // La suscripción/piloto no se chequea acá: la decide `publish_request` (paso 7).
   const parsed = createDeliveryRequestSchema.safeParse(input);
   if (!parsed.success) {
     return err('VALIDATION_ERROR');
@@ -102,7 +58,7 @@ export async function createDeliveryRequestAction(
 
   const data = parsed.data;
 
-  // 5. Cálculo de distancia server-side (Haversine con factor 1.30 o centroides de zones)
+  // 4. Cálculo de distancia server-side (Haversine con factor 1.30 o centroides de zones)
   let routeDistanceM: number | null = null;
 
   if (
@@ -140,7 +96,7 @@ export async function createDeliveryRequestAction(
     }
   }
 
-  // 6. Inserción en delivery_requests (status 'draft')
+  // 5. Inserción en delivery_requests (status 'draft')
   const requestPayload: TablesInsert<'delivery_requests'> = {
     merchant_id: user.id,
     pickup_zone_id: data.pickupZoneId,
@@ -165,7 +121,7 @@ export async function createDeliveryRequestAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 7. Inserción en delivery_request_contacts
+  // 6. Inserción en delivery_request_contacts
   const contactsPayload: TablesInsert<'delivery_request_contacts'> = {
     request_id: createdRequest.id,
     pickup_address: data.pickupAddress,
@@ -185,6 +141,16 @@ export async function createDeliveryRequestAction(
 
   if (contactsInsertError) {
     return err('INTERNAL_ERROR');
+  }
+
+  // 7. Publicación: la transición draft -> published y su autorización (suscripción/piloto,
+  // zonas, bordes, rate limit) las valida la RPC. Si rechaza, la solicitud queda en draft.
+  const published = await callRequestRpc(supabase, 'publish_request', {
+    requestId: createdRequest.id,
+  });
+
+  if (!published.ok) {
+    return err(published.code);
   }
 
   return ok({
