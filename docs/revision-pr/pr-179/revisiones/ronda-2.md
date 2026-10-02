@@ -77,12 +77,9 @@ y `e2e-staging.yml` tampoco ejecuta `request-states.spec.ts`.
 
 En el SHA revisado Vercel está GREEN, pero no existe status `e2e-preview` para ese SHA. El body dice que espera `e2e-staging`, pero el entorno correcto para una PR interna es ahora **Preview + Supabase Develop**.
 
-**Scope R2 autorizado:** se agregan a la ficha:
-- `.github/workflows/e2e-preview.yml`
-- `.github/workflows/e2e-staging.yml`
-- `.github/workflows/verify-workflows.test.mjs`
+**Resolución de infraestructura:** el revisor abrió PR #207 (`fix/e2e-request-states-gate`) para integrar el spec en los gates confiables sin mezclar ese cambio compartido dentro de la PR funcional de asako. El SHA final de #207 (`5180fd43409b2b7c07f7a4b29eb61bbd1a3da749`) tiene CI completo GREEN. Queda pendiente únicamente el merge explícito de P1.
 
-El autor debe integrar el spec en ambos gates y probar que los workflows lo mantienen.
+**El autor de T-304 no debe tocar workflows.** H07 es una dependencia externa de R3 hasta que #207 esté mergeada.
 
 ## H08 · Fila 4 espera un error distinto al contrato vigente · BLOQUEANTE
 
@@ -128,7 +125,7 @@ Por eso no alcanza revalidar sobre el SHA viejo.
 
 ## RED/GREEN requerido para R3
 
-Primero integrar develop + el gate de `request-states.spec.ts` y hacer un **checkpoint RED real** antes de corregir H06/H08. El Preview de ese SHA debe ejecutar el spec y registrar el fallo real. Esto reemplaza la afirmación actual de que el E2E “espera staging”.
+Primero corregir H06/H08/H09 y sincronizar `origin/develop`. Cuando P1 haya mergeado #207, empujar el nuevo HEAD de T-304 para que el trusted gate de Preview ejecute automáticamente `request-states.spec.ts` contra Supabase Develop. La evidencia RED/GREEN debe provenir de ese Playwright real; los mutation tests unitarios quedan solo como complemento.
 
 Después:
 - corregir H06/H08/H09;
@@ -144,8 +141,9 @@ No tocar expectativas para fabricar el RED y no usar `.skip`/`.only`.
 - seed FK correcto;
 - Fila 4 alineada con `REQUEST_EXPIRED`;
 - huecos de H09 cubiertos o gap de backend explícitamente reportado;
-- Preview gate ejecuta `request-states.spec.ts`;
-- Staging gate queda preparado para ejecutar el mismo spec;
+- PR #207 mergeada por P1 y presente en `develop`;
+- Preview gate ejecuta `request-states.spec.ts` sobre el SHA exacto de T-304;
+- Staging gate preparado por #207 para ejecutar el mismo spec cuando exista en el SHA;
 - RED real del Playwright documentado;
 - GREEN exact-head de `e2e-preview`;
 - DoD/body/bitácora actualizados sin falsos verdes.

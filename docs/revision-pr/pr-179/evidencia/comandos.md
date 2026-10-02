@@ -194,3 +194,32 @@ Sirven como mutation tests unitarios complementarios, pero no cierran H03.
 ## Ronda 2 — mutation/runtime del revisor
 
 No se alteró código funcional para “probar” los hallazgos: H06 y H08 se demuestran directamente por constraints/precedencia incompatibles. No se ejecutó un E2E privilegiado manual porque el único gate confiable de Develop todavía no incluye `request-states.spec.ts`. La corrección debe producir primero un RED real del Preview y luego GREEN.
+
+## Infraestructura separada — PR #207
+
+```text
+PR: #207 [T-304] Integrar request-states en gates E2E
+rama: fix/e2e-request-states-gate
+SHA final: 5180fd43409b2b7c07f7a4b29eb61bbd1a3da749
+behind develop al validar: 0
+CI exact-head: SUCCESS
+approval-policy: SUCCESS
+diff: solo
+- .github/workflows/e2e-preview.yml
+- .github/workflows/e2e-staging.yml
+- .github/workflows/verify-workflows.test.mjs
+```
+
+El gate usa inclusión condicional por existencia del archivo en el SHA exacto:
+
+```bash
+specs=(e2e/specs/smoke.spec.ts e2e/specs/main-flow.spec.ts)
+if [ -f e2e/specs/request-states.spec.ts ]; then
+  specs+=(e2e/specs/request-states.spec.ts)
+fi
+pnpm exec playwright test "${specs[@]}" --project=chromium --workers=1
+```
+
+Esto permite mergear primero la infraestructura sin romper otras PR y garantiza que #179 ejecute request-states cuando su SHA lo contenga.
+
+Estado: **CI GREEN; pendiente merge explícito de P1**. El autor de T-304 no debe modificar workflows.

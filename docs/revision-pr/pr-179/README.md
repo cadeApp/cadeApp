@@ -12,4 +12,4 @@
 - **E2E Preview de T-304:** no ejecutado.
 - **Decisiones P1 vigentes:** D01 = 1-A; D02 = 2-A.
 
-Ronda 2 confirma una mejora importante: el spec ya usa usuarios autenticados, RPCs reales y lectura de persistencia. Sin embargo todavía no es ejecutable/validado end-to-end: el seed viola una FK, una expectativa contradice la RPC vigente, el spec no está incluido en los gates de Preview/Staging, la evidencia RED sigue viniendo de unitarios y la rama quedó 26 commits detrás de develop.
+Ronda 2 confirma una mejora importante: el spec ya usa usuarios autenticados, RPCs reales y lectura de persistencia. Sin embargo todavía no es ejecutable/validado end-to-end: el seed viola una FK, una expectativa contradice la RPC vigente, el seed viola una FK, una expectativa contradice la RPC vigente, la evidencia RED sigue viniendo de unitarios y la rama quedó 26 commits detrás de develop. La integración del spec en los gates confiables quedó separada en PR #207, con CI GREEN y pendiente de merge explícito de P1.
