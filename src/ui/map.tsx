@@ -181,12 +181,6 @@ function registerAuthFailureListener(listener: AuthFailureListener): () => void 
   };
 }
 
-export function resetAuthFailureBridgeForTesting(): void {
-  authFailureListeners.clear();
-  previousGlobalAuthFailure = undefined;
-  installedBridgeHandler = null;
-}
-
 export function MapPicker({
   value,
   onChange,
@@ -242,12 +236,15 @@ export function MapPicker({
   }, [value, defaultZoneCenter]);
 
   const [activeCoords, setActiveCoords] = React.useState<MapCoordinates>(fallbackCenter);
+  const [cameraTarget, setCameraTarget] = React.useState<MapCoordinates>(fallbackCenter);
 
   React.useEffect(() => {
     if (value != null) {
       setActiveCoords(value);
+      setCameraTarget(value);
     } else if (defaultZoneCenter != null) {
       setActiveCoords(defaultZoneCenter);
+      setCameraTarget(defaultZoneCenter);
     }
   }, [value, defaultZoneCenter]);
 
@@ -306,6 +303,7 @@ export function MapPicker({
         lng: Number((current.lng + dLng).toFixed(6)),
       };
       setActiveCoords(next);
+      setCameraTarget(next);
       onChangeRef.current?.(next);
     },
     [disabled, value, activeCoords]
@@ -369,6 +367,7 @@ export function MapPicker({
         }
 
         setActiveCoords(coords);
+        setCameraTarget(coords);
         onChangeRef.current?.(coords);
         onLocationFound?.(coords);
       },
@@ -493,7 +492,7 @@ export function MapPicker({
               onClick={handleMapClick}
               onCameraChanged={handleCameraChange}
             >
-              <MapCameraSynchronizer targetCoords={activeCoords} />
+              <MapCameraSynchronizer targetCoords={cameraTarget} />
               {mapId ? (
                 <AdvancedMarker
                   position={activeCoords}

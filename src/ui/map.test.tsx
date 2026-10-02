@@ -10,7 +10,6 @@ import {
   AGUILARES_BOUNDS,
   isWithinAguilaresBounds,
   aguilaresCoordinatesSchema,
-  resetAuthFailureBridgeForTesting,
   type MapCoordinates,
 } from './map';
 import { MapSkeleton } from './map-skeleton';
@@ -157,7 +156,6 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
     capturedLegacyMarkerProps = null;
     mockPanTo.mockClear();
     mockOnError = null;
-    resetAuthFailureBridgeForTesting();
     delete (window as unknown as { gm_authFailure?: () => void }).gm_authFailure;
   });
 
@@ -170,7 +168,6 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
     capturedLegacyMarkerProps = null;
     mockPanTo.mockClear();
     mockOnError = null;
-    resetAuthFailureBridgeForTesting();
     delete (window as unknown as { gm_authFailure?: () => void }).gm_authFailure;
 
     Object.defineProperty(navigator, 'onLine', {
@@ -700,10 +697,11 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
   });
 
   describe('8. P1 / T-323 DoD — Selección directa por drag del pin y click/tap en mapa', () => {
-    it('arrastrar el pin (onDragEnd) persiste coordenadas redondeadas llamando a onChange una sola vez', () => {
+    it('arrastrar el pin (onDragEnd) persiste coordenadas redondeadas llamando a onChange una sola vez y NO recentra la cámara', () => {
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
+      mockPanTo.mockClear();
 
       expect(getCapturedMarkerProps()).not.toBeNull();
       expect(getCapturedMarkerProps()?.draggable).toBe(true);
@@ -726,13 +724,15 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
         lat: -27.436789,
         lng: -65.619877,
       });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
     });
 
-    it('con mapId ausente (string vacío): NO renderiza AdvancedMarker, SÍ renderiza legacy Marker draggable y su onDragEnd persiste coordenadas', () => {
+    it('con mapId ausente (string vacío): NO renderiza AdvancedMarker, SÍ renderiza legacy Marker draggable, su onDragEnd persiste coordenadas y NO recentra', () => {
       mockPublicMapId = '';
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
+      mockPanTo.mockClear();
 
       // AdvancedMarker NO debe renderizarse sin mapId
       expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
@@ -762,13 +762,15 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
         lat: -27.436789,
         lng: -65.619877,
       });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
     });
 
-    it('con mapId presente: renderiza AdvancedMarker draggable y su onDragEnd persiste coordenadas', () => {
+    it('con mapId presente: renderiza AdvancedMarker draggable, su onDragEnd persiste coordenadas y NO recentra', () => {
       mockPublicMapId = 'test-map-id';
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
+      mockPanTo.mockClear();
 
       // Legacy Marker NO debe renderizarse si mapId existe
       expect(screen.queryByTestId('mock-legacy-marker')).toBeNull();
@@ -798,6 +800,7 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
         lat: -27.436789,
         lng: -65.619877,
       });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
     });
 
     it('con disabled=true: ninguna variante (con o sin mapId) permite drag ni persistencia', () => {
@@ -831,13 +834,14 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
       expect(onChangeWithMapId).not.toHaveBeenCalled();
     });
 
-    it('hacer click/tap en el mapa (onClick) reposiciona el pin y llama a onChange una sola vez tanto con mapId como sin mapId', () => {
+    it('hacer click/tap en el mapa (onClick) reposiciona el pin, llama a onChange una sola vez y NO recentra la cámara tanto con mapId como sin mapId', () => {
       // 1. Con mapId
       mockPublicMapId = 'test-map-id';
       const onChangeWithMapId = vi.fn();
       const { unmount } = render(
         <MapPicker value={AGUILARES_CENTER} onChange={onChangeWithMapId} />
       );
+      mockPanTo.mockClear();
 
       expect(capturedMapProps).not.toBeNull();
       act(() => {
@@ -857,12 +861,14 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
         lat: -27.438123,
         lng: -65.614568,
       });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
       unmount();
 
       // 2. Sin mapId
       mockPublicMapId = '';
       const onChangeWithoutMapId = vi.fn();
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChangeWithoutMapId} />);
+      mockPanTo.mockClear();
 
       act(() => {
         capturedMapProps?.onClick?.({
@@ -881,6 +887,7 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
         lat: -27.438123,
         lng: -65.614568,
       });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
     });
   });
 
@@ -913,33 +920,50 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
       expect(screen.getByTestId('mock-legacy-marker')).toBeDefined();
     });
 
-    it('responde a las 4 flechas del teclado en el contenedor del mapa para ajuste accesible', () => {
+    it('responde a las 4 flechas del teclado en el contenedor del mapa para ajuste accesible y sincroniza la cámara', () => {
       const onChange = vi.fn();
 
       render(<MapPicker value={AGUILARES_CENTER} onChange={onChange} />);
+      mockPanTo.mockClear();
 
       const container = screen.getByTestId('map-container');
       expect(container.getAttribute('tabIndex')).toBe('0');
 
+      const expectedNorth = {
+        lat: Number((AGUILARES_CENTER.lat + 0.0001).toFixed(6)),
+        lng: AGUILARES_CENTER.lng,
+      };
       fireEvent.keyDown(container, { key: 'ArrowUp' });
-      expect(onChange).toHaveBeenLastCalledWith(
-        expect.objectContaining({ lat: Number((AGUILARES_CENTER.lat + 0.0001).toFixed(6)) })
-      );
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining(expectedNorth));
+      expect(getCapturedMarkerProps()?.position).toEqual(expectedNorth);
+      expect(mockPanTo).toHaveBeenLastCalledWith(expectedNorth);
 
+      const expectedSouth = {
+        lat: Number((AGUILARES_CENTER.lat - 0.0001).toFixed(6)),
+        lng: AGUILARES_CENTER.lng,
+      };
       fireEvent.keyDown(container, { key: 'ArrowDown' });
-      expect(onChange).toHaveBeenLastCalledWith(
-        expect.objectContaining({ lat: Number((AGUILARES_CENTER.lat - 0.0001).toFixed(6)) })
-      );
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining(expectedSouth));
+      expect(getCapturedMarkerProps()?.position).toEqual(expectedSouth);
+      expect(mockPanTo).toHaveBeenLastCalledWith(expectedSouth);
 
+      const expectedWest = {
+        lat: AGUILARES_CENTER.lat,
+        lng: Number((AGUILARES_CENTER.lng - 0.0001).toFixed(6)),
+      };
       fireEvent.keyDown(container, { key: 'ArrowLeft' });
-      expect(onChange).toHaveBeenLastCalledWith(
-        expect.objectContaining({ lng: Number((AGUILARES_CENTER.lng - 0.0001).toFixed(6)) })
-      );
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining(expectedWest));
+      expect(getCapturedMarkerProps()?.position).toEqual(expectedWest);
+      expect(mockPanTo).toHaveBeenLastCalledWith(expectedWest);
 
+      const expectedEast = {
+        lat: AGUILARES_CENTER.lat,
+        lng: Number((AGUILARES_CENTER.lng + 0.0001).toFixed(6)),
+      };
       fireEvent.keyDown(container, { key: 'ArrowRight' });
-      expect(onChange).toHaveBeenLastCalledWith(
-        expect.objectContaining({ lng: Number((AGUILARES_CENTER.lng + 0.0001).toFixed(6)) })
-      );
+      expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining(expectedEast));
+      expect(getCapturedMarkerProps()?.position).toEqual(expectedEast);
+      expect(mockPanTo).toHaveBeenLastCalledWith(expectedEast);
 
       // Tecla no direccional
       onChange.mockClear();
