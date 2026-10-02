@@ -80,3 +80,60 @@ El diseño de resolver desde código confiable en la rama default y validar el S
 - corrida real de `e2e-preview` (workflow aún no vive en develop);
 - corrida real de `migrate-develop`;
 - mutación independiente RED del reviewer.
+
+
+## Ronda 2
+
+**SHA funcional revisado:** `4b47a618d837ccccb35bf13f8df3185b85ec55c1`
+
+### Sync
+```
+develop = 163d4ade24c192e79e713b46ca9de4ec0aa02b7d
+ahead   = 3
+behind  = 0
+```
+
+### CI exact-head
+Run: `36977355820` / CI #868 — success.
+
+Unit:
+```
+Test Files 110 passed (110)
+Tests      1627 passed (1627)
+
+workflow tests: 47 pass / 0 fail
+ADR tests:      6 pass / 0 fail
+```
+
+DB:
+```
+All tests successful.
+Files=13, Tests=1621
+Result: PASS
+```
+
+Jobs GREEN:
+- typecheck
+- lint
+- unit
+- build
+- audit
+- db-tests
+- bundle-budget
+
+### Preview exacto
+Vercel confirmó deployment READY para `4b47a618d837ccccb35bf13f8df3185b85ec55c1`.
+
+Health observado:
+```
+GET <preview>/api/health
+200 OK
+{"status":"ok"}
+```
+
+### Configuración externa no verificable desde el conector
+- Deployment branch policy del Environment `develop`.
+- Existencia/valor de `SUPABASE_DEVELOP_PROJECT_REF`.
+- Alcance de `SUPABASE_ACCESS_TOKEN`.
+
+Se conserva H04/H05 abiertos hasta confirmación P1.
