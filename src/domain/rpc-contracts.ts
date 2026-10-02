@@ -404,6 +404,7 @@ export const RPC_CONTRACTS = {
    *      - Estado efectivo inválido para la RPC y rol: `INVALID_STATE_TRANSITION` (`republish_request` admite `'matched' | 'expired' | 'cancelled'`, por lo que una `'published'` vencida es válida; `report_incident` admite, por CC-012 / D05-A, `'matched' | 'in_transit' | 'delivered'` al comercio dueño y `'matched' | 'in_transit'` al repartidor asignado)
    *      - `cancel_request` con `role = 'admin'` (ya en `in_transit`): `AAL2_REQUIRED` si `aal <> 'aal2'` (D03)
    *      - Motivo obligatorio vacío en `cancel_request` (`matched`/`in_transit`), `republish_request` (`matched`) o `courier_cancel_match`: `REASON_REQUIRED`
+   *      - `cancel_request` administrativo sobre `in_transit` sin incidente registrado (CC-015): `INVALID_STATE_TRANSITION`
    *      - `report_no_show` sin oferta `accepted` válida: `INVALID_STATE_TRANSITION`
    *      - `report_incident` en `delivered` con `delivered_at is null` o `now() > delivered_at + 24h`: `INCIDENT_WINDOW_EXPIRED`
    *   6. Suscripción y gracia del comercio en `publish_request`, `republish_request` y `report_no_show(republish=true)` (`SUBSCRIPTION_INACTIVE`)
