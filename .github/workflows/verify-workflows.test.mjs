@@ -659,13 +659,13 @@ test('board-sync preserves Lautaro073 task assignments and assigns unassigned ta
   assert.equal(t303?.targetAssignees, undefined);
 });
 
-test('staging E2E gate runs smoke and T-303 main flow without ignoring failures', () => {
+test('staging E2E gate runs smoke, main flow and request states without ignoring failures', () => {
   const e2eJob = job(workflow('e2e-staging.yml'), 'e2e');
 
   assert.match(
     e2eJob,
-    /pnpm exec playwright test[\s\S]*e2e\/specs\/smoke\.spec\.ts[\s\S]*e2e\/specs\/main-flow\.spec\.ts[\s\S]*--project=chromium/,
-    'staging must execute both the smoke and T-303 main-flow specs'
+    /pnpm exec playwright test[\s\S]*e2e\/specs\/smoke\.spec\.ts[\s\S]*e2e\/specs\/main-flow\.spec\.ts[\s\S]*e2e\/specs\/request-states\.spec\.ts[\s\S]*--project=chromium/,
+    'staging must execute smoke, T-303 main-flow and T-304 request-states specs'
   );
   assert.match(
     e2eJob,
@@ -950,7 +950,7 @@ test('preview target is resolved by trusted code with the project id from the de
   );
 });
 
-test('preview E2E runs smoke and main-flow serially against the resolved SHA and URL', () => {
+test('preview E2E runs smoke, main-flow and request-states serially against the resolved SHA and URL', () => {
   const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
   const e2eJob = job(preview, 'e2e');
   assert.match(e2eJob, /^ {4}needs: resolve$/m);
@@ -977,7 +977,7 @@ test('preview E2E runs smoke and main-flow serially against the resolved SHA and
   const run = step(e2eJob, 'Run preview E2E gate');
   assert.match(
     run,
-    /run: >-\n {10}pnpm exec playwright test\n {10}e2e\/specs\/smoke\.spec\.ts\n {10}e2e\/specs\/main-flow\.spec\.ts\n {10}--project=chromium\n {10}--workers=1$/
+    /run: >-\n {10}pnpm exec playwright test\n {10}e2e\/specs\/smoke\.spec\.ts\n {10}e2e\/specs\/main-flow\.spec\.ts\n {10}e2e\/specs\/request-states\.spec\.ts\n {10}--project=chromium\n {10}--workers=1$/
   );
   assert.ok(
     run.includes('\n          PLAYWRIGHT_TEST_BASE_URL: ${{ needs.resolve.outputs.url }}\n'),
