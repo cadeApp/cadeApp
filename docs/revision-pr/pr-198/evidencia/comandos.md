@@ -154,3 +154,77 @@ La revisión no reutilizará como prueba la función `mutatedPublishCheck` del a
 4. volver a consultar “todas las published del merchant” en vez del marcador del caso → el control debe revelar la contaminación del seed, no ocultarla.
 
 No se aceptará como mutación una función falsa, un mock que no atraviese el flujo real ni una expectativa cambiada para provocar artificialmente RED/GREEN.
+
+# Evidencia reproducible — PR #198 / ronda 2
+
+## Baseline
+
+```text
+HEAD funcional: 5ad81b8e13191c4ef9bc2d96339bf8dea30723ea
+develop: ff5c51f7edd003c152f56a2bd2edc0cf2feab698
+ahead: 12
+behind: 0
+```
+
+CI:
+
+```text
+run 37052337255: success
+```
+
+Preview confiable:
+
+```text
+run 37052602334: success
+checkout SHA: 5ad81b8
+gate core: 9 passed
+global-settings: 3 passed
+```
+
+Logs relevantes:
+
+```text
+if [ -f e2e/specs/subscription.global-settings.spec.ts ]; then
+  pnpm exec playwright test e2e/specs/subscription.global-settings.spec.ts --project=global-settings --workers=1
+fi
+
+Running 3 tests using 1 worker
+✓ DoD 1 ... SUBSCRIPTION_INACTIVE
+✓ DoD 2 ... sí se publica
+✓ DoD 3 ... paid_until futuro sí se publica
+3 passed (44.8s)
+```
+
+## Mutación real
+
+PR temporal: #216  
+Branch: `review/T-306-mutation-no-publish`  
+Commit: `2687be147930c5d9adcd71bf975ce6a4eebc579b`
+
+Mutación única:
+
+```text
+src/features/requests/actions.ts
+- se elimina callRequestRpc(..., 'publish_request', ...)
+- la action continúa al ok(...)
+```
+
+Preview mutation run:
+
+```text
+37053309856: failure
+gate core: 9 passed
+global-settings:
+DoD 1 failed + retry #1 failed + retry #2 failed
+Expected SUBSCRIPTION_INACTIVE alert visible
+Received element not found
+```
+
+Estado final de PR temporal:
+
+```text
+PR #216: closed
+merged: false
+```
+
+La rama productiva T-306 no contiene la mutación.

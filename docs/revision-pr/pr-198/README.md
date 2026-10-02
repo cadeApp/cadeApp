@@ -2,20 +2,21 @@
 
 - **PR:** #198
 - **Rama:** `feat/T-306-subscription-e2e`
-- **SHA revisado:** `97314707933b07657a9b64ed8a305643c5d4157a`
-- **develop observado:** `6577d9e427c5efc0a79a2c374f0f74d847732f4d`
-- **Ronda actual:** 1
-- **Resultado:** CON BLOQUEANTES
-- **Estado del PR al revisar:** Draft
-- **Bloqueo externo abierto por la revisión:** #209
-- **Divergencia observada:** la rama estaba 38 commits detrás de `develop`
+- **SHA funcional revisado:** `5ad81b8e13191c4ef9bc2d96339bf8dea30723ea`
+- **develop observado:** `ff5c51f7edd003c152f56a2bd2edc0cf2feab698`
+- **Ronda actual:** 2
+- **Resultado:** SIN BLOQUEANTES
+- **Estado:** lista para merge por Lautaro073
+- **Divergencia al cierre funcional:** 12 commits ahead / 0 behind
 
 ## Decisiones de Lautaro073
 
 1. Renombrar la suite a `e2e/specs/subscription.global-settings.spec.ts`.
-2. Incorporarla al gate `e2e-preview` usando el proyecto `global-settings` y `--workers=1`.
-3. No corregir el defecto productivo dentro de T-306: issue #209 separado y bloqueante.
+2. Ejecutarla en Preview con el proyecto `global-settings` y `--workers=1`.
+3. Separar T-328 del alcance de T-306.
+4. Elegir opción 1-A: T-329 agrega el gate confiable opcional antes de cerrar T-306.
 
 ## Rondas
 
-- [Ronda 1](revisiones/ronda-1.md): 7 bloqueantes. No se evaluó CI general porque la ronda quedó bloqueada en revisión estática; la evidencia del propio autor tampoco contiene una ejecución Playwright de T-306.
+- [Ronda 1](revisiones/ronda-1.md): 7 bloqueantes.
+- [Ronda 2](revisiones/ronda-2.md): H01–H07 cerrados. Baseline GREEN 3/3 y mutación real sin `publish_request` RED en PR temporal #216.

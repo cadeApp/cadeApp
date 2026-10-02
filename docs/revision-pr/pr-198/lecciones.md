@@ -16,3 +16,9 @@ Para esta PR hay que indicar archivo exacto, patrón a implementar, aserciones d
 - fabricar funciones/mocks que representen la mutación en lugar de romper la propiedad real;
 - cambiar expectativas para convertir una RED en GREEN sin corregir el comportamiento;
 - marcar como ejecutado un E2E que no produjo salida de Playwright.
+
+## Ronda 2
+
+T-329 resolvió el patrón de “suite nueva que necesita un workflow confiable de la rama por defecto”: la infraestructura se incorpora primero y luego la feature PR genera un nuevo Preview. Así la evidencia pre-merge es real sin permitir que la feature PR redefina el workflow que entrega secretos.
+
+H05 confirma además que la mutación debe atacar el código productivo real. La prueba no necesita fallar necesariamente en el caso positivo: basta con que la suite real detecte de forma causal la omisión. En esta ronda el negativo falló porque, sin `publish_request`, desapareció el rechazo `SUBSCRIPTION_INACTIVE`.
