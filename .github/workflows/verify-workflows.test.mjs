@@ -667,6 +667,11 @@ test('staging E2E gate runs smoke and T-303 main flow without ignoring failures'
     /pnpm exec playwright test[\s\S]*e2e\/specs\/smoke\.spec\.ts[\s\S]*e2e\/specs\/main-flow\.spec\.ts[\s\S]*--project=chromium/,
     'staging must execute both the smoke and T-303 main-flow specs'
   );
+  assert.match(
+    e2eJob,
+    /--workers=1/,
+    'staging E2E must run serially because specs share the remote staging database'
+  );
   assert.doesNotMatch(e2eJob, /continue-on-error/, 'E2E failures must fail the staging gate');
 });
 
@@ -716,4 +721,470 @@ test('CI build supplies required public env and propagates next build failures t
   const buildStep = step(build, 'Build and capture route sizes');
   assert.match(buildStep, /set -o pipefail/);
   assert.match(buildStep, /pnpm build 2>&1 \| tee build-output\.txt/);
+});
+
+const PREVIEW_REPOSITORY = 'cadeApp/cadeApp';
+const PREVIEW_SHA = 'a'.repeat(40);
+const PREVIEW_PROJECT = 'project-under-test';
+const PREVIEW_TARGET = {
+  sha: PREVIEW_SHA,
+  url: 'https://cadeapp-develop-abc123-team.vercel.app',
+  deploymentId: 'dpl_example123',
+  pullNumber: 321,
+};
+
+/** @param {Record<string, unknown>} [overrides] */
+function previewPayload(overrides = {}) {
+  return {
+    environment: 'preview',
+    git: { ref: 'fix/T-999-example', sha: PREVIEW_SHA, shortSha: PREVIEW_SHA.slice(0, 7) },
+    id: PREVIEW_TARGET.deploymentId,
+    project: { id: PREVIEW_PROJECT, name: 'cadeapp-develop' },
+    state: { type: 'success' },
+    url: PREVIEW_TARGET.url,
+    ...overrides,
+  };
+}
+
+/** @param {{ number?: number, state?: string, baseRef?: string, headSha?: string, headRepo?: string | null }} [overrides] */
+function previewPull({
+  number = PREVIEW_TARGET.pullNumber,
+  state = 'open',
+  baseRef = 'develop',
+  headSha = PREVIEW_SHA,
+  headRepo = PREVIEW_REPOSITORY,
+} = {}) {
+  return {
+    number,
+    state,
+    base: { ref: baseRef, repo: { full_name: PREVIEW_REPOSITORY } },
+    head: { sha: headSha, repo: headRepo === null ? null : { full_name: headRepo } },
+  };
+}
+
+/** @param {{ payload?: unknown, expectedProjectId?: string, pulls?: import('./e2e-preview-target.mjs').ApiPull[] }} [overrides] */
+async function matchPreviewWith({
+  payload = previewPayload(),
+  expectedProjectId = PREVIEW_PROJECT,
+  pulls = [previewPull()],
+} = {}) {
+  const { matchPreview } = await import('./e2e-preview-target.mjs');
+  return matchPreview({ payload, expectedProjectId, repository: PREVIEW_REPOSITORY, pulls });
+}
+
+test('preview gate matches the internal PR whose head is the exact deployed SHA', async () => {
+  const result = await matchPreviewWith();
+  assert.equal(result.outcome, 'match');
+  assert.deepEqual(result.outcome === 'match' && result.target, PREVIEW_TARGET);
+
+  // Un commit viejo de la rama, una PR cerrada o una PR contra otra base no habilitan nada.
+  for (const pull of [
+    previewPull({ headSha: 'b'.repeat(40) }),
+    previewPull({ state: 'closed' }),
+    previewPull({ baseRef: 'staging' }),
+  ]) {
+    const other = await matchPreviewWith({ pulls: [pull] });
+    assert.equal(other.outcome, 'skip', JSON.stringify(pull));
+  }
+});
+
+test('preview gate never hands develop secrets to a fork pull request', async () => {
+  for (const headRepo of ['someone/cadeApp', null]) {
+    const result = await matchPreviewWith({ pulls: [previewPull({ headRepo })] });
+    assert.equal(result.outcome, 'skip', `head repo ${headRepo}`);
+    assert.ok(!('target' in result), 'un fork no produce target');
+  }
+});
+
+test('preview gate ignores other Vercel projects and fails closed without the configured id', async () => {
+  const staging = await matchPreviewWith({
+    payload: previewPayload({ project: { id: 'another-project', name: 'cadeapp-staging' } }),
+  });
+  assert.equal(staging.outcome, 'skip');
+  const missingProject = await matchPreviewWith({
+    payload: previewPayload({ project: undefined }),
+  });
+  assert.equal(missingProject.outcome, 'skip');
+  // Sin el id configurado, un payload sin proyecto no puede "coincidir" con vacío.
+  const unconfigured = await matchPreviewWith({
+    payload: previewPayload({ project: { id: '' } }),
+    expectedProjectId: '',
+  });
+  assert.equal(unconfigured.outcome, 'reject');
+});
+
+test('preview gate rejects ambiguous pull requests and untrusted payload shapes', async () => {
+  const ambiguous = await matchPreviewWith({
+    pulls: [previewPull(), previewPull({ number: 322 })],
+  });
+  assert.equal(ambiguous.outcome, 'reject');
+
+  for (const url of [
+    'https://cadeapp-staging.vercel.app/path',
+    'http://cadeapp-develop-abc.vercel.app',
+    'https://evil.example.com',
+    'https://cadeapp-develop-abc.vercel.app.evil.example.com',
+    'https://user@cadeapp-develop-abc.vercel.app',
+    'https://cadeapp-develop-abc.vercel.app\nrun=true',
+  ]) {
+    const result = await matchPreviewWith({ payload: previewPayload({ url }) });
+    assert.equal(result.outcome, 'reject', url);
+  }
+  for (const git of [{ sha: 'abc1234' }, { sha: `${PREVIEW_SHA}\nrun=true` }, undefined]) {
+    const result = await matchPreviewWith({ payload: previewPayload({ git }) });
+    assert.equal(result.outcome, 'reject', JSON.stringify(git));
+  }
+  const badId = await matchPreviewWith({ payload: previewPayload({ id: 'dpl_1\nrun=true' }) });
+  assert.equal(badId.outcome, 'reject');
+});
+
+test('preview gate blocks pull requests with migrations instead of reporting green', async () => {
+  const { gatePreview, BLOCKED_BY_MIGRATION } = await import('./e2e-preview-target.mjs');
+  const clean = gatePreview({
+    target: PREVIEW_TARGET,
+    changedFiles: ['src/features/offers/queries.ts', 'docs/supabase/migrations/notes.md'],
+    statuses: [],
+    runAttempt: 1,
+  });
+  assert.equal(clean.outcome, 'run');
+  const withMigration = gatePreview({
+    target: PREVIEW_TARGET,
+    changedFiles: ['src/app/page.tsx', 'supabase/migrations/20261002120000_example.sql'],
+    statuses: [],
+    runAttempt: 1,
+  });
+  assert.equal(withMigration.outcome, 'blocked');
+  assert.equal(withMigration.reason, BLOCKED_BY_MIGRATION);
+  assert.equal(BLOCKED_BY_MIGRATION, 'BLOCKED / REQUIRES DEVELOP MIGRATION');
+
+  // El script publica el bloqueo como estado no verde y sin habilitar el job de E2E.
+  const script = workflow('e2e-preview-target.mjs');
+  assert.match(script, /state: blocked \? 'error' : 'pending'/);
+  assert.match(script, /`run=\$\{blocked \? 'false' : 'true'\}`/);
+  assert.doesNotMatch(script, /state: '?success/);
+});
+
+test('preview gate runs once per deployment but honours a manual re-run', async () => {
+  const { gatePreview, STATUS_CONTEXT, deploymentMarker } =
+    await import('./e2e-preview-target.mjs');
+  const handled = [
+    {
+      context: STATUS_CONTEXT,
+      description: `en cola ${deploymentMarker(PREVIEW_TARGET.deploymentId)}`,
+    },
+  ];
+  const input = { target: PREVIEW_TARGET, changedFiles: [], statuses: handled };
+  assert.equal(gatePreview({ ...input, runAttempt: 1 }).outcome, 'duplicate');
+  assert.equal(gatePreview({ ...input, runAttempt: 2 }).outcome, 'run');
+  // Un deployment nuevo del mismo SHA, o el status de otro check, no cuenta como ya corrido.
+  const others = [
+    { context: STATUS_CONTEXT, description: `en cola ${deploymentMarker('dpl_other')}` },
+    { context: 'Vercel', description: deploymentMarker(PREVIEW_TARGET.deploymentId) },
+  ];
+  assert.equal(gatePreview({ ...input, statuses: others, runAttempt: 1 }).outcome, 'run');
+});
+
+test('preview workflow only reacts to the Vercel deployment event and never deploys', () => {
+  const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
+  const trigger = preview.slice(preview.indexOf('\non:\n'), preview.indexOf('\npermissions:'));
+  assert.equal(
+    trigger.trim(),
+    [
+      'on:',
+      '  repository_dispatch:',
+      '    types:',
+      '      - vercel.deployment.success',
+      '      - vercel.deployment.ready',
+    ].join('\n'),
+    'un único disparador: el aviso de Vercel. Sin pull_request_target ni workflow_dispatch con URL libre'
+  );
+  assert.match(preview, /^permissions: \{\}$/m, 'cada job declara lo mínimo');
+  assert.doesNotMatch(preview, /continue-on-error/);
+  assert.doesNotMatch(preview, /\bsleep\b/);
+  // Vercel despliega por Git Integration: acá no hay CLI, ni token, ni build.
+  assert.doesNotMatch(
+    preview,
+    /pnpm dlx vercel|vercel@|vercel (deploy|build|pull)|--prebuilt|--prod/
+  );
+  assert.doesNotMatch(preview, /VERCEL_TOKEN|VERCEL_ORG_ID/);
+  // Una feature PR no muta Supabase Develop.
+  assert.doesNotMatch(preview, /supabase (db push|link|migration)/);
+  assert.doesNotMatch(preview, /SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD/);
+});
+
+test('preview target is resolved by trusted code with the project id from the develop environment', () => {
+  const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
+  const resolveJob = job(preview, 'resolve');
+  assert.match(resolveJob, /^ {4}environment: develop$/m);
+  const checkout = step(resolveJob, 'Checkout trusted default branch');
+  assert.doesNotMatch(checkout, /\bref:/, 'el resolvedor corre el código de la rama por defecto');
+  const target = step(resolveJob, 'Resolve trusted preview target');
+  assert.match(target, /run: node \.github\/workflows\/e2e-preview-target\.mjs\n/);
+  assert.ok(
+    target.includes('\n          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}\n'),
+    'el Project ID sale del secreto existente del Environment develop'
+  );
+  assert.equal(
+    [...resolveJob.matchAll(/\$\{\{ secrets\.(\w+) \}\}/g)].map((match) => match[1]).join(),
+    'VERCEL_PROJECT_ID',
+    'el resolvedor no recibe ningún otro secreto'
+  );
+
+  // Nada del payload se interpola en shell ni llega directo al job con secretos: solo nombra un grupo.
+  const payloadUses = preview
+    .split('\n')
+    .filter((line) => line.includes('client_payload') && !line.trimStart().startsWith('#'));
+  assert.deepEqual(payloadUses, [
+    '      group: e2e-preview-resolve-${{ github.event.client_payload.git.sha }}',
+  ]);
+
+  // Ni el id ni una URL quedan escritos en el repo.
+  for (const name of readdirSync(new URL('.', import.meta.url))) {
+    if (name === 'verify-workflows.test.mjs') continue;
+    assert.doesNotMatch(workflow(name), /prj_[A-Za-z0-9]{6,}/, `${name}: Project ID hardcodeado`);
+  }
+  assert.doesNotMatch(
+    preview,
+    /https:\/\/[\w.-]+\.vercel\.app/,
+    'sin URL fija de develop ni de staging'
+  );
+});
+
+test('preview E2E runs smoke and main-flow serially against the resolved SHA and URL', () => {
+  const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
+  const e2eJob = job(preview, 'e2e');
+  assert.match(e2eJob, /^ {4}needs: resolve$/m);
+  assert.match(
+    e2eJob,
+    /^ {4}if: needs\.resolve\.outputs\.run == 'true'$/m,
+    'sin PR interna resuelta, el job con secretos no arranca'
+  );
+  assert.match(e2eJob, /^ {4}environment: develop$/m);
+  assert.doesNotMatch(e2eJob, /environment: (staging|production)/);
+  assert.match(e2eJob, /^ {10}ref: \$\{\{ needs\.resolve\.outputs\.sha \}\}$/m);
+  assert.match(e2eJob, /^ {6}PREVIEW_URL: \$\{\{ needs\.resolve\.outputs\.url \}\}$/m);
+  assert.match(
+    e2eJob,
+    /^ {4}permissions:\n {6}contents: read\n {4}# /m,
+    'el job que ejecuta código de la PR no puede escribir statuses'
+  );
+  assert.match(
+    e2eJob,
+    /^ {4}concurrency:\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false$/m,
+    'un grupo fijo, igual para todas las PR, y en cola'
+  );
+
+  const run = step(e2eJob, 'Run preview E2E gate');
+  assert.match(
+    run,
+    /run: >-\n {10}pnpm exec playwright test\n {10}e2e\/specs\/smoke\.spec\.ts\n {10}e2e\/specs\/main-flow\.spec\.ts\n {10}--project=chromium\n {10}--workers=1$/
+  );
+  assert.ok(
+    run.includes('\n          PLAYWRIGHT_TEST_BASE_URL: ${{ needs.resolve.outputs.url }}\n'),
+    'Playwright apunta al Preview resuelto'
+  );
+  assert.match(
+    workflow('../../playwright.config.ts'),
+    /baseURL: process\.env\.PLAYWRIGHT_TEST_BASE_URL \|\|/,
+    'esa es la variable que lee playwright.config.ts'
+  );
+
+  // Los secretos privilegiados solo existen en el step de Playwright, no en install ni en el resto del job.
+  const outsideRun = e2eJob.replace(run, '');
+  assert.doesNotMatch(outsideRun, /SUPABASE_SERVICE_ROLE_KEY|DNI_HMAC_SECRET|CRON_SECRET/);
+  assert.doesNotMatch(preview, /NEXT_PUBLIC_\w*(SERVICE|SECRET)/);
+
+  // El health check exige 200: el 302 de Vercel Authentication no pasa por sano.
+  const health = shellCommands(step(e2eJob, 'Health check'));
+  assert.ok(health[0]?.includes('"$PREVIEW_URL/api/health"'));
+  assert.equal(health[1], `if [ "$code" != '200' ]; then`);
+  assert.ok(health.slice(2, health.indexOf('fi')).includes('exit 1'));
+});
+
+test('preview E2E refuses to seed unless the develop environment points to Supabase Develop', () => {
+  const e2eJob = job(workflow('e2e-preview.yml'), 'e2e').replace(/\r\n/g, '\n');
+  const verify = step(e2eJob, 'Verify Supabase Develop target');
+  assert.ok(
+    e2eJob.indexOf('- name: Verify Supabase Develop target') <
+      e2eJob.indexOf('- name: Run preview E2E gate')
+  );
+  for (const line of [
+    'NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}',
+    'SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}',
+    'SUPABASE_STAGING_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}',
+  ]) {
+    assert.ok(verify.includes(`\n          ${line}\n`), line);
+  }
+  const commands = shellCommands(verify);
+  for (const guard of [
+    'if [ -z "$SUPABASE_PROJECT_REF" ] || [ -z "$SUPABASE_STAGING_PROJECT_REF" ]; then',
+    'if [ "$SUPABASE_PROJECT_REF" = "$SUPABASE_STAGING_PROJECT_REF" ]; then',
+    'if [ "$NEXT_PUBLIC_SUPABASE_URL" != "https://$SUPABASE_PROJECT_REF.supabase.co" ]; then',
+  ]) {
+    const start = commands.indexOf(guard);
+    assert.notEqual(start, -1, guard);
+    assert.equal(commands[start + 2], 'exit 1', `${guard}: corta con exit 1`);
+  }
+  // El seed identifica el proyecto con el ref de develop, no con el de staging.
+  const run = step(e2eJob, 'Run preview E2E gate');
+  assert.ok(
+    run.includes('\n          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}\n')
+  );
+});
+
+test('preview result is published on the tested SHA and only a passing E2E is green', () => {
+  const report = job(workflow('e2e-preview.yml'), 'report').replace(/\r\n/g, '\n');
+  assert.match(report, /^ {4}needs: \[resolve, e2e\]$/m);
+  assert.match(report, /^ {4}if: always\(\) && needs\.resolve\.outputs\.run == 'true'$/m);
+  assert.doesNotMatch(report, /environment:/, 'publicar el estado no necesita secretos de develop');
+  const publish = step(report, 'Publish e2e-preview commit status');
+  assert.ok(publish.includes('\n          RESULT: ${{ needs.e2e.result }}\n'));
+  assert.ok(publish.includes('\n          TARGET_SHA: ${{ needs.resolve.outputs.sha }}\n'));
+  const commands = shellCommands(publish);
+  const greens = commands.filter((command) => command.includes('state=success'));
+  assert.equal(greens.length, 1);
+  assert.ok(greens[0]?.startsWith('success) '), 'solo un E2E que pasó publica success');
+  assert.ok(commands.some((command) => command.startsWith('failure) state=failure;')));
+  assert.ok(commands.some((command) => command.startsWith('*) state=error;')));
+  assert.ok(
+    commands.some((command) =>
+      command.includes('"repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" -f context=e2e-preview ')
+    )
+  );
+});
+
+test('develop migrations run only after a push to develop, against its own project', () => {
+  const migrate = workflow('migrate.yml').replace(/\r\n/g, '\n');
+  const trigger = migrate.slice(migrate.indexOf('\non:\n'), migrate.indexOf('\npermissions:'));
+  assert.equal(
+    trigger.trim(),
+    'on:\n  push:\n    branches: [develop, staging, main]',
+    'migrate solo corre por push a ramas protegidas: nunca por pull_request'
+  );
+  assert.match(
+    migrate,
+    /group: migrate-\$\{\{ github\.ref_name == 'main' && 'production' \|\| github\.ref_name \}\}/,
+    'develop, staging y production no comparten cola'
+  );
+
+  const develop = job(migrate, 'develop');
+  assert.match(develop, /^ {4}if: github\.ref_name == 'develop'$/m);
+  assert.match(develop, /^ {4}environment: develop$/m);
+  const apply = step(develop, 'Apply migrations to develop');
+  assert.ok(
+    apply.includes('\n          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}\n')
+  );
+  const commands = shellCommands(apply);
+  const push = commands.indexOf('pnpm supabase db push --yes');
+  assert.notEqual(push, -1);
+  for (const guard of [
+    'if [ -z "$SUPABASE_STAGING_PROJECT_REF" ] || [ "$SUPABASE_PROJECT_REF" = "$SUPABASE_STAGING_PROJECT_REF" ]; then',
+    'if [ "$NEXT_PUBLIC_SUPABASE_URL" != "https://$SUPABASE_PROJECT_REF.supabase.co" ]; then',
+  ]) {
+    const start = commands.indexOf(guard);
+    assert.notEqual(start, -1, guard);
+    assert.equal(commands[start + 2], 'exit 1');
+    assert.ok(start < push, 'la guarda va antes del db push');
+  }
+  const drift = shellCommands(step(develop, 'Detect committed types drift against develop'));
+  assert.deepEqual(drift, ['pnpm db:types', 'git diff --exit-code -- src/types/database.types.ts']);
+  assert.ok(
+    develop.indexOf('- name: Apply migrations to develop') <
+      develop.indexOf('- name: Detect committed types drift against develop')
+  );
+
+  // staging y production siguen con su ambiente y su ref.
+  const staging = job(migrate, 'staging');
+  assert.match(staging, /^ {4}if: github\.ref_name == 'staging'$/m);
+  assert.match(staging, /^ {4}environment: staging$/m);
+  assert.doesNotMatch(staging, /SUPABASE_DEVELOP_PROJECT_REF/);
+  assert.doesNotMatch(job(migrate, 'production'), /SUPABASE_DEVELOP_PROJECT_REF/);
+
+  // Ningún workflow que corre en una PR aplica esquema a una base remota.
+  for (const name of ['ci.yml', 'e2e-preview.yml', 'approval-policy.yml']) {
+    assert.doesNotMatch(workflow(name), /supabase (db push|link)/, name);
+  }
+});
+
+test('develop is not deployed from Actions and staging keeps its own gate', () => {
+  const deploy = workflow('deploy.yml').replace(/\r\n/g, '\n');
+  assert.match(deploy, /^ {4}branches: \[staging, main\]$/m, 'un migrate de develop no despliega');
+  assert.doesNotMatch(deploy, /head_branch == 'develop'|environment: develop/);
+
+  const stagingE2e = workflow('e2e-staging.yml').replace(/\r\n/g, '\n');
+  const staging = job(stagingE2e, 'e2e');
+  assert.match(staging, /^ {4}environment: staging$/m);
+  assert.match(staging, /PLAYWRIGHT_TEST_BASE_URL: https:\/\/cadeapp-staging\.vercel\.app/);
+  assert.match(stagingE2e, /^ {2}group: e2e-staging$/m);
+  assert.doesNotMatch(stagingE2e, /cadeapp-develop-e2e|SUPABASE_DEVELOP_PROJECT_REF/);
+});
+
+test('preview gate stays fail-closed for payloads and API items of the wrong shape', async () => {
+  const { parsePull } = await import('./e2e-preview-target.mjs');
+
+  // Payloads que no son un objeto, o cuyos campos anidados no lo son: nunca coinciden ni lanzan.
+  for (const payload of [null, 'dpl_example123', 42, [previewPayload()]]) {
+    const result = await matchPreviewWith({ payload });
+    assert.equal(result.outcome, 'skip', `payload ${JSON.stringify(payload)}`);
+  }
+  for (const overrides of [
+    { project: PREVIEW_PROJECT },
+    { project: [{ id: PREVIEW_PROJECT }] },
+    { project: { id: { toString: () => PREVIEW_PROJECT } } },
+  ]) {
+    const result = await matchPreviewWith({ payload: previewPayload(overrides) });
+    assert.equal(result.outcome, 'skip', JSON.stringify(overrides));
+  }
+  for (const overrides of [
+    { git: PREVIEW_SHA },
+    { git: [PREVIEW_SHA] },
+    { git: { sha: 123 } },
+    { url: { href: PREVIEW_TARGET.url } },
+    { url: [PREVIEW_TARGET.url] },
+    { id: 7 },
+    { id: null },
+  ]) {
+    const result = await matchPreviewWith({ payload: previewPayload(overrides) });
+    assert.equal(result.outcome, 'reject', JSON.stringify(overrides));
+  }
+
+  // Lo que devuelve la API de GitHub también es dato: se normaliza campo por campo.
+  assert.deepEqual(parsePull(previewPull()), previewPull());
+  assert.deepEqual(parsePull(previewPull({ headRepo: null })).head.repo, null);
+  for (const item of [
+    null,
+    'pull',
+    7,
+    [],
+    {},
+    { number: 321 },
+    { base: 'develop', head: PREVIEW_SHA },
+  ]) {
+    const result = await matchPreviewWith({ pulls: [parsePull(item)] });
+    assert.equal(result.outcome, 'skip', `item ${JSON.stringify(item)}`);
+  }
+  // Una PR que coincide en todo pero sin número utilizable no puede terminar en un target.
+  for (const number of ['321', 3.5, null, -1]) {
+    const result = await matchPreviewWith({
+      pulls: [parsePull({ ...previewPull(), number })],
+    });
+    assert.equal(result.outcome, 'reject', `number ${JSON.stringify(number)}`);
+  }
+  // Un repo de head con forma inesperada no se confunde con el repo propio.
+  const oddRepo = parsePull({
+    ...previewPull(),
+    head: { sha: PREVIEW_SHA, repo: { full_name: [PREVIEW_REPOSITORY] } },
+  });
+  assert.equal((await matchPreviewWith({ pulls: [oddRepo] })).outcome, 'skip');
+});
+
+test('preview target helper declares no any in its types', () => {
+  const script = workflow('e2e-preview-target.mjs');
+  const typed = script.match(/\/\*\*[\s\S]*?\*\//g) ?? [];
+  assert.ok(typed.length > 5, 'el helper conserva sus anotaciones JSDoc');
+  for (const comment of typed) {
+    assert.doesNotMatch(comment, /@(type|typedef|param|returns)\b[^\n]*\bany\b/, comment);
+    assert.doesNotMatch(comment, /[<,[(|]\s*any\s*[>,\])|]|\bany\[\]/, comment);
+  }
+  assert.doesNotMatch(script, /@ts-(ignore|expect-error|nocheck)|eslint-disable/);
 });

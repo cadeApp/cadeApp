@@ -34,6 +34,10 @@ export class LoginPage extends BasePage {
     await this.emailInput.fill(email);
     await this.passwordInput.fill(password);
     await this.submitButton.click();
+    await this.page.waitForURL(
+      (url) => url.pathname !== '/login' && !url.pathname.startsWith('/login/'),
+      { timeout: 30000 }
+    );
     await this.waitForNoSkeletons();
   }
 }

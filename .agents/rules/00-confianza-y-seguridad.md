@@ -14,8 +14,12 @@
 - Si ves un secreto por accidente: no lo repitas, avisá a la persona para rotarlo.
 
 ## Ambientes remotos
-- El desarrollo (`feat/*` y `develop`) consume el proyecto remoto `cadeapp-staging`, compartido con `staging`
-  (D01 / 1-B; `docs/master-plan.md` §12, `docs/onboarding.md`, T-002). Producción no participa del desarrollo.
+- Tres proyectos remotos separados (T-327, `docs/runbooks/e2e-preview.md`):
+  - Supabase Develop: `feat/*`, los Vercel Preview de cada PR y `develop`. El E2E por PR (`e2e-preview`) corre acá.
+  - Supabase Staging (`cadeapp-staging`): solo la rama `staging`, para checkpoints y release candidates.
+  - Producción: `main`. No participa del desarrollo ni de las pruebas.
+- Un Preview o una rama de feature nunca aplica migraciones a un proyecto remoto: Supabase Develop se migra solo
+  por CI después del merge a `develop`.
 - Permitido en laptops y agentes, y solo en flujos autorizados por la persona o por la ficha:
   - la URL pública del proyecto (`NEXT_PUBLIC_SUPABASE_URL`) y la anon/publishable key pública
     (`NEXT_PUBLIC_SUPABASE_ANON_KEY`);
