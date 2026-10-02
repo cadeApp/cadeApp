@@ -782,6 +782,10 @@ export type Database = {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
       }
+      get_request_offer_couriers: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
       get_trip_details: { Args: { p_request_id: string }; Returns: Json }
       mark_delivered: { Args: { p_request_id: string }; Returns: Json }
       mark_picked_up: { Args: { p_request_id: string }; Returns: Json }
