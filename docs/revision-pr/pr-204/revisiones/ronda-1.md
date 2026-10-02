@@ -14,12 +14,13 @@
 
 ## Decisiones P1
 
-Lautaro073 eligió A/A antes de cerrar esta ronda:
+Lautaro073 resolvió las tres decisiones antes de cerrar esta ronda:
 
 1. **Gate:** habilitar únicamente `.github/workflows/e2e-preview.yml` y agregar allí `e2e/specs/authorization.spec.ts`. No tocar `e2e-staging.yml`.
 2. **Mutación:** el «o» es literal. RED obligatorio mutando temporalmente `evaluateRouteGuard`; `submit_offer` solo GREEN contra Supabase Develop. No mutar la RPC compartida.
+3. **Bootstrap del gate (3-A):** la #204 puede quedar apta para merge sin una corrida remota de `authorization.spec.ts` en ese mismo PR, porque `repository_dispatch` usa la definición del workflow que vive en `develop`. El cambio de `e2e-preview.yml` recién rige después del merge. **T-305/#37 queda abierta** hasta observar en una PR posterior un `e2e-preview` GREEN que incluya `authorization.spec.ts`. Por eso #204 debe usar `Refs #37`, no `Closes #37`.
 
-Registradas en Issue #37 y en la ficha de la rama por `23cf11f8e86a6c9ff7f5387f9ab673a328397de1`.
+Registradas en Issue #37 y en la ficha de la rama por `23cf11f8e86a6c9ff7f5387f9ab673a328397de1` y `b9e2a05847cfd273076025aad45400a8398531c4`.
 
 ## BLOQUEANTES
 
@@ -53,6 +54,8 @@ El gate ejecuta solo `smoke.spec.ts` y `main-flow.spec.ts`. Por eso ningún verd
 
 **Arreglo esperado:** mergear `origin/develop`, agregar `e2e/specs/authorization.spec.ts` al comando Playwright de Preview y actualizar la descripción del status a `smoke + main-flow + authorization`. No tocar staging.
 
+**Residual aceptado por 3-A:** no se exige que #204 produzca ese GREEN antes del merge, porque el dispatcher ejecuta el workflow de `develop`. Una vez corregido el archivo y verificados los demás bloqueantes, la ausencia de esa corrida deja de ser un bloqueo **pre-merge**, pero **no cierra T-305**.
+
 ### PR204-H04 — Dos selectores incumplen la convención E2E
 
 **Severidad:** medio · **Categoría:** conventions/test-coverage  
@@ -73,7 +76,7 @@ No agregar testids ni tocar UI productiva.
 
 El body marca todos los puntos del DoD como hechos, pero la bitácora dice que falta la ejecución E2E. Además no sigue `.github/pull_request_template.md`.
 
-**Arreglo esperado:** al finalizar, reescribir el body con el template, marcar solo lo demostrado en el SHA exacto y enlazar/pegar la corrida `e2e-preview` que incluya `authorization.spec.ts`. En la bitácora usar “hecho/pruebas/falta”, no auto-marcar “verificado”.
+**Arreglo esperado:** al finalizar, reescribir el body con el template, marcar solo lo demostrado en el SHA exacto y usar `Refs #37` (no `Closes #37`). En la bitácora usar “hecho/pruebas/falta”, no auto-marcar “verificado”. La corrida `e2e-preview` con `authorization.spec.ts` queda registrada como evidencia post-merge pendiente por decisión 3-A.
 
 ## Evidencia / checks
 
@@ -85,4 +88,4 @@ El body marca todos los puntos del DoD como hechos, pero la bitácora dice que f
 
 ## Resultado
 
-**CON BLOQUEANTES (5).** Integrar `origin/develop`, corregir H01-H05, demostrar RED real sin adulterar tests y obtener una corrida E2E real antes de la siguiente revisión.
+**CON BLOQUEANTES (5).** Integrar `origin/develop`, corregir H01-H05 y demostrar RED real sin adulterar tests. Por decisión 3-A, una corrida remota de `authorization.spec.ts` no es requisito pre-merge de #204; sí es requisito posterior para cerrar T-305/#37.
