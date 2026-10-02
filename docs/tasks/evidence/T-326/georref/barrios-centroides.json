@@ -1,0 +1,549 @@
+[
+ {
+  "num": "01",
+  "name": "Chacarita",
+  "estado": "derivado",
+  "x": 332.8,
+  "y": 243.2,
+  "lat": -27.422618,
+  "lng": -65.616127
+ },
+ {
+  "num": "02",
+  "name": "San José",
+  "estado": "derivado",
+  "x": 393.9,
+  "y": 247.0,
+  "lat": -27.422884,
+  "lng": -65.611733
+ },
+ {
+  "num": "04",
+  "name": "Santo Domingo",
+  "estado": "derivado",
+  "x": 395.6,
+  "y": 304.5,
+  "lat": -27.426663,
+  "lng": -65.611599
+ },
+ {
+  "num": "05",
+  "name": "J. F. Kennedy",
+  "estado": "derivado",
+  "x": 397.4,
+  "y": 346.6,
+  "lat": -27.429432,
+  "lng": -65.61146
+ },
+ {
+  "num": "06",
+  "name": "El Porvenir",
+  "estado": "derivado",
+  "x": 399.1,
+  "y": 419.2,
+  "lat": -27.434205,
+  "lng": -65.611323
+ },
+ {
+  "num": "07",
+  "name": "9 de Julio",
+  "estado": "derivado",
+  "x": 353.5,
+  "y": 424.0,
+  "lat": -27.434511,
+  "lng": -65.614602
+ },
+ {
+  "num": "08",
+  "name": "San Martín",
+  "estado": "derivado",
+  "x": 313.2,
+  "y": 520.1,
+  "lat": -27.440821,
+  "lng": -65.61748
+ },
+ {
+  "num": "09",
+  "name": "Aguilares - Centro",
+  "estado": "derivado",
+  "x": 338.4,
+  "y": 349.7,
+  "lat": -27.429625,
+  "lng": -65.615706
+ },
+ {
+  "num": "10",
+  "name": "Almirante Brown",
+  "estado": "derivado",
+  "x": 308.5,
+  "y": 596.2,
+  "lat": -27.445822,
+  "lng": -65.6178
+ },
+ {
+  "num": "11",
+  "name": "Los Álamos",
+  "estado": "derivado",
+  "x": 326.0,
+  "y": 651.3,
+  "lat": -27.449446,
+  "lng": -65.616527
+ },
+ {
+  "num": "12",
+  "name": "Fray M. Esquiú",
+  "estado": "derivado",
+  "x": 296.1,
+  "y": 621.1,
+  "lat": -27.447452,
+  "lng": -65.618683
+ },
+ {
+  "num": "13",
+  "name": "Alpargatas",
+  "estado": "derivado",
+  "x": 324.4,
+  "y": 689.0,
+  "lat": -27.451923,
+  "lng": -65.616631
+ },
+ {
+  "num": "14",
+  "name": "Virgen del Carmen",
+  "estado": "derivado",
+  "x": 276.8,
+  "y": 674.9,
+  "lat": -27.45099,
+  "lng": -65.620061
+ },
+ {
+  "num": "15",
+  "name": "Hostería",
+  "estado": "derivado",
+  "x": 360.1,
+  "y": 600.3,
+  "lat": -27.446101,
+  "lng": -65.614088
+ },
+ {
+  "num": "16",
+  "name": "Sofía",
+  "estado": "derivado",
+  "x": 442.0,
+  "y": 663.5,
+  "lat": -27.450276,
+  "lng": -65.608179
+ },
+ {
+  "num": "17",
+  "name": "San Lorenzo",
+  "estado": "null",
+  "motivo": "dos rótulos (17A y 17) en sectores distintos; el 17 cae fuera del recuadro de Aguilares",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "18",
+  "name": "Cristo - Centro",
+  "estado": "derivado",
+  "x": 429.1,
+  "y": 720.2,
+  "lat": -27.453997,
+  "lng": -65.609098
+ },
+ {
+  "num": "19",
+  "name": "Gambarte",
+  "estado": "null",
+  "x": 504.9,
+  "y": 752.6,
+  "motivo": "punto derivado (-27.456143, -65.603636) fuera del recuadro de Aguilares del producto"
+ },
+ {
+  "num": "20",
+  "name": "Terán",
+  "estado": "null",
+  "x": 525.8,
+  "y": 755.5,
+  "motivo": "punto derivado (-27.456337, -65.602134) fuera del recuadro de Aguilares del producto"
+ },
+ {
+  "num": "23",
+  "name": "Villa Nueva",
+  "estado": "derivado",
+  "x": 386.7,
+  "y": 142.0,
+  "lat": -27.41598,
+  "lng": -65.612274
+ },
+ {
+  "num": "24",
+  "name": "El Alto",
+  "estado": "null",
+  "motivo": "rótulos 24-25-26 agrupados en el borde norte, sin área propia distinguible",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "25",
+  "name": "El Ceibal",
+  "estado": "null",
+  "motivo": "rótulos 24-25-26 agrupados en el borde norte, sin área propia distinguible",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "26",
+  "name": "Santa Emilia",
+  "estado": "null",
+  "motivo": "rótulos 24-25-26 agrupados en el borde norte, sin área propia distinguible",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "27",
+  "name": "Evita",
+  "estado": "derivado",
+  "x": 296.6,
+  "y": 239.3,
+  "lat": -27.422358,
+  "lng": -65.618734
+ },
+ {
+  "num": "28",
+  "name": "Ampliación Evita",
+  "estado": "derivado",
+  "x": 287.6,
+  "y": 212.2,
+  "lat": -27.420573,
+  "lng": -65.619387
+ },
+ {
+  "num": "29",
+  "name": "Municipal",
+  "estado": "derivado",
+  "x": 266.6,
+  "y": 234.7,
+  "lat": -27.422044,
+  "lng": -65.620893
+ },
+ {
+  "num": "30",
+  "name": "San Nicolás",
+  "estado": "derivado",
+  "x": 242.0,
+  "y": 206.2,
+  "lat": -27.420169,
+  "lng": -65.622668
+ },
+ {
+  "num": "31",
+  "name": "Obrero",
+  "estado": "derivado",
+  "x": 213.9,
+  "y": 210.5,
+  "lat": -27.420447,
+  "lng": -65.624687
+ },
+ {
+  "num": "32",
+  "name": "Independencia Norte",
+  "estado": "derivado",
+  "x": 212.2,
+  "y": 251.8,
+  "lat": -27.42316,
+  "lng": -65.624798
+ },
+ {
+  "num": "33",
+  "name": "Las Rosas",
+  "estado": "derivado",
+  "x": 190.2,
+  "y": 269.5,
+  "lat": -27.424315,
+  "lng": -65.626383
+ },
+ {
+  "num": "34",
+  "name": "Independencia",
+  "estado": "derivado",
+  "x": 283.4,
+  "y": 305.5,
+  "lat": -27.426702,
+  "lng": -65.619668
+ },
+ {
+  "num": "35",
+  "name": "Libertad",
+  "estado": "derivado",
+  "x": 225.2,
+  "y": 308.7,
+  "lat": -27.426902,
+  "lng": -65.623854
+ },
+ {
+  "num": "36",
+  "name": "Virgen de Guadalupe",
+  "estado": "derivado",
+  "x": 189.9,
+  "y": 311.6,
+  "lat": -27.427084,
+  "lng": -65.62639
+ },
+ {
+  "num": "37",
+  "name": "Newbery",
+  "estado": "derivado",
+  "x": 284.6,
+  "y": 438.5,
+  "lat": -27.435451,
+  "lng": -65.619552
+ },
+ {
+  "num": "38",
+  "name": "25 de Mayo",
+  "estado": "derivado",
+  "x": 283.0,
+  "y": 488.3,
+  "lat": -27.438724,
+  "lng": -65.619653
+ },
+ {
+  "num": "39",
+  "name": "Barrientos",
+  "estado": "derivado",
+  "x": 276.7,
+  "y": 535.4,
+  "lat": -27.441815,
+  "lng": -65.6201
+ },
+ {
+  "num": "40",
+  "name": "La Cumbre",
+  "estado": "derivado",
+  "x": 226.6,
+  "y": 367.6,
+  "lat": -27.430776,
+  "lng": -65.623737
+ },
+ {
+  "num": "41",
+  "name": "J. A. Roca",
+  "estado": "derivado",
+  "x": 236.0,
+  "y": 464.6,
+  "lat": -27.437152,
+  "lng": -65.623042
+ },
+ {
+  "num": "42",
+  "name": "San Cayetano",
+  "estado": "derivado",
+  "x": 219.0,
+  "y": 484.0,
+  "lat": -27.438427,
+  "lng": -65.624263
+ },
+ {
+  "num": "43",
+  "name": "12 de Octubre",
+  "estado": "derivado",
+  "x": 178.2,
+  "y": 363.8,
+  "lat": -27.430513,
+  "lng": -65.627225
+ },
+ {
+  "num": "44",
+  "name": "A. Illia",
+  "estado": "derivado",
+  "x": 172.2,
+  "y": 408.5,
+  "lat": -27.433454,
+  "lng": -65.627646
+ },
+ {
+  "num": "45",
+  "name": "El Parque",
+  "estado": "derivado",
+  "x": 131.6,
+  "y": 422.0,
+  "lat": -27.434329,
+  "lng": -65.63056
+ },
+ {
+  "num": "46",
+  "name": "Juan Pablo II",
+  "estado": "derivado",
+  "x": 127.3,
+  "y": 398.0,
+  "lat": -27.432751,
+  "lng": -65.630876
+ },
+ {
+  "num": "48",
+  "name": "Huasa Rincón",
+  "estado": "derivado",
+  "x": 84.2,
+  "y": 322.3,
+  "lat": -27.427764,
+  "lng": -65.633992
+ },
+ {
+  "num": "49",
+  "name": "Los Callejones",
+  "estado": "derivado",
+  "x": 85.9,
+  "y": 337.1,
+  "lat": -27.428742,
+  "lng": -65.633868
+ },
+ {
+  "num": "50",
+  "name": "Tagusa Norte",
+  "estado": "derivado",
+  "x": 439.5,
+  "y": 263.2,
+  "lat": -27.423959,
+  "lng": -65.608449
+ },
+ {
+  "num": "51",
+  "name": "Tagusa Sur",
+  "estado": "derivado",
+  "x": 462.2,
+  "y": 317.8,
+  "lat": -27.427553,
+  "lng": -65.606806
+ },
+ {
+  "num": "52",
+  "name": "Belgrano",
+  "estado": "derivado",
+  "x": 386.1,
+  "y": 494.5,
+  "lat": -27.439149,
+  "lng": -65.612238
+ },
+ {
+  "num": "53",
+  "name": "Colón",
+  "estado": "derivado",
+  "x": 428.6,
+  "y": 480.7,
+  "lat": -27.438251,
+  "lng": -65.609186
+ },
+ {
+  "num": "54",
+  "name": "11 de Marzo",
+  "estado": "derivado",
+  "x": 453.1,
+  "y": 477.4,
+  "lat": -27.438043,
+  "lng": -65.607426
+ },
+ {
+  "num": "55",
+  "name": "San Miguel",
+  "estado": "null",
+  "motivo": "sin rótulo circular en el plano (el 55 violeta es un equipamiento)",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "56",
+  "name": "San Antonio",
+  "estado": "null",
+  "motivo": "sin rótulo circular en el plano (el 56 violeta es un equipamiento)",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "57",
+  "name": "Finca Lolita",
+  "estado": "null",
+  "motivo": "sin rótulo circular en el plano (el 57 violeta es un equipamiento)",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "59",
+  "name": "Mercantil",
+  "estado": "derivado",
+  "x": 230.6,
+  "y": 515.2,
+  "lat": -27.44048,
+  "lng": -65.623419
+ },
+ {
+  "num": "60",
+  "name": "Universitario",
+  "estado": "derivado",
+  "x": 172.2,
+  "y": 425.5,
+  "lat": -27.434567,
+  "lng": -65.627642
+ },
+ {
+  "num": "61",
+  "name": "Virgen del Valle",
+  "estado": "derivado",
+  "x": 198.4,
+  "y": 194.2,
+  "lat": -27.419371,
+  "lng": -65.625804
+ },
+ {
+  "num": "62",
+  "name": "Loteo Buffo",
+  "estado": "derivado",
+  "x": 236.1,
+  "y": 572.6,
+  "lat": -27.444252,
+  "lng": -65.623009
+ },
+ {
+  "num": "63",
+  "name": "Loteo Alpargatas",
+  "estado": "derivado",
+  "x": 207.3,
+  "y": 572.0,
+  "lat": -27.444206,
+  "lng": -65.625081
+ },
+ {
+  "num": "64",
+  "name": "Loteo Lizárraga",
+  "estado": "derivado",
+  "x": 210.0,
+  "y": 514.1,
+  "lat": -27.440405,
+  "lng": -65.624904
+ },
+ {
+  "num": "65",
+  "name": "Santa Rosa",
+  "estado": "null",
+  "motivo": "sin rótulo circular en el plano (el 65 violeta es un equipamiento)",
+  "x": null,
+  "y": null
+ },
+ {
+  "num": "66",
+  "name": "FOTIA",
+  "estado": "derivado",
+  "x": 457.6,
+  "y": 670.1,
+  "lat": -27.450713,
+  "lng": -65.607055
+ },
+ {
+  "num": "67",
+  "name": "Virgen de la Merced",
+  "estado": "null",
+  "x": 525.8,
+  "y": 738.7,
+  "motivo": "punto derivado (-27.455233, -65.602138) fuera del recuadro de Aguilares del producto"
+ }
+]
