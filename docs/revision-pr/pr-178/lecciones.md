@@ -17,3 +17,11 @@ No se agrega número AG nuevo.
 - **H02 / P08:** la evidencia dirigida corrigió el problema de atribución del RED; cada diferencia de contrato ahora tiene una precondición verificable separada.
 - **H03 / P11:** el lifecycle real puede aislarse sin exportar hooks de test desde un módulo contractual.
 - **H04 / P10:** no aceptar como hecho un cambio de coordinación solo porque el body lo declara; las labels deben releerse desde GitHub.
+
+## Ronda 3
+
+No se agrega número AG nuevo.
+
+- **H01 / P05:** distinguir origen interno/externo no basta si el efecto receptor deduplica solo por valor. Una “orden nueva hacia la misma coordenada” y “ninguna orden nueva” son estados distintos; si el contrato depende de esa diferencia, hay que modelar identidad/versión del comando.
+- Un test de eco controlado debe complementarse con la secuencia inversa: después de ignorar correctamente el eco, una actualización externa posterior tiene que seguir siendo observable aunque vuelva al target previo.
+- **H04 / P10:** la metadata quedó verificada leyendo el issue, no por el body.

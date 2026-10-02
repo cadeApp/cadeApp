@@ -204,3 +204,93 @@ bundle-budget success
 /merchant/requests/new 163 kB OK
 /design-system 185 kB warning preexistente
 ```
+
+## Ronda 3
+
+SHA funcional: `ab1dc8b5a234b90ddf01f0c05c6977feab6376c3`.
+
+### Delta desde revisión R2
+
+```text
+edc3f0d..ab1dc8b
+docs/contracts/CC-014.md
+src/ui/map.tsx
+src/ui/map.test.tsx
+```
+
+### H04 — metadata verificada
+
+```text
+issue #171 labels:
+P2
+fase-3
+bloqueada
+
+en-curso: ausente
+```
+
+### H01 — eco controlado corregido
+
+Código:
+- `activeCoordsRef` mantiene selección inmediatamente;
+- `sameCoordinates` compara por lat/lng;
+- drag/click no tocan cameraTarget;
+- echo `value === activeCoordsRef` no toca cameraTarget.
+
+Tests:
+- ControlledMapPicker drag → 0 panTo;
+- ControlledMapPicker click → 0 panTo.
+
+### H01 — control adversarial adicional
+
+Modelo:
+
+```text
+A = target inicial
+B = selección directa
+
+A inicial
+drag/click B
+echo controlado B
+cambio externo value -> A
+```
+
+Resultado con la semántica actual:
+
+```text
+pan_calls_after_controlled_echo=[]
+pan_calls_after_external_change_back=[]
+external_back_pan_missing=true
+```
+
+Causa: `MapCameraSynchronizer` deduplica por igualdad numérica de `prevTargetRef` y `targetCoords`. No existe una identidad/version de orden de cámara.
+
+Cobertura actual:
+
+```text
+has_direct_controlled_echo_tests=true
+has_external_after_direct_selection_test=false
+```
+
+### CI exact-head 36954731774
+
+```text
+Test Files 110 passed (110)
+Tests 1594 passed (1594)
+workflow tests 31
+ADR tests 6
+
+db-tests:
+Files=13, Tests=1614
+Result: PASS
+
+typecheck success
+lint success
+build success
+audit success
+bundle-budget success
+
+/merchant/onboarding 147 kB OK
+/merchant/requests/new 163 kB OK
+/design-system 184 kB warning preexistente
+```
