@@ -131,3 +131,111 @@ labels: P2, fase-3, hecha
 ```
 
 Por lo tanto no se registra la reapertura como un arreglo persistente. El comentario explicativo queda en #35 y #200 continúa abierto como tracker de CC-016 / Flow 4.
+
+
+---
+
+# Evidencia — Ronda 2
+
+## Sincronización
+
+```text
+HEAD revisado: 423b56af4911ca1d1ad6ba9f297c653172167731
+develop: cb4111273da663f7591aec370a44767c4e677b82
+compare status: ahead
+ahead_by: 5
+behind_by: 0
+merge-base: cb4111273da663f7591aec370a44767c4e677b82
+```
+
+Merge commit:
+
+```text
+759bdbbf3e324b32fe6f549f51c0688a49eb2dd5
+parent 1: a3160e636177efc2a21a7195bea22f1f2478b880
+parent 2: cb4111273da663f7591aec370a44767c4e677b82
+```
+
+El commit posterior `423b56af4911ca1d1ad6ba9f297c653172167731` cambia solo `docs/tasks/log/T-303.md`.
+
+## RED/GREEN prescripto por Ronda 1
+
+Registro de bitácora inspeccionado:
+
+```text
+Mutación A:
+fake ownership guard removido temporalmente
+RED  Tests 1 failed | 4 passed (5)
+GREEN Tests 5 passed (5)
+
+Mutación B:
+.strict() removido temporalmente de requestOfferCourierSchema
+RED  Tests 6 failed | 36 passed (42)
+GREEN Tests 42 passed (42)
+
+Mutación C:
+missing courier => continue temporal
+RED  Tests 1 failed | 27 passed (28)
+GREEN Tests 28 passed (28)
+```
+
+La batería coincide con el prompt de Ronda 1. El árbol final no contiene las mutaciones; el commit `423b56af4911ca1d1ad6ba9f297c653172167731` solo registra la evidencia.
+
+Limitación del entorno de revisión:
+
+```text
+git clone https://github.com/cadeApp/cadeApp.git
+fatal: Could not resolve host: github.com
+```
+
+Por eso no se inventa una segunda ejecución local; la verificación independiente de H01 se hace mediante grafo remoto + CI exact-head.
+
+## CI exact-head
+
+Run: `37042771528` — CI #901.
+
+Unit:
+
+```text
+Test Files 113 passed (113)
+Tests      1670 passed (1670)
+verify-workflows: success
+verify-adr: success
+```
+
+DB:
+
+```text
+Applying migration 20261002083000_cc016_request_offer_couriers.sql...
+supabase/tests/cc016_request_offer_couriers.sql .. ok
+Files=14, Tests=1645
+Result: PASS
+pnpm db:types --local
+Tipos generados exitosamente en src/types/database.types.ts
+git diff --exit-code -- src/types/database.types.ts
+job: success
+```
+
+Otros jobs:
+
+```text
+typecheck success
+lint success
+build success
+audit success
+bundle-budget success
+```
+
+## E2E Preview
+
+Run: `37042913464`.
+
+Resolve job:
+
+```text
+BLOCKED / REQUIRES DEVELOP MIGRATION
+```
+
+`e2e-preview`: skipped.
+
+La migración no se aplica al Supabase Develop remoto desde la PR; el E2E real de Flow 4 queda para después del merge y de `migrate-develop`.

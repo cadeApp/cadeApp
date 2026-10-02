@@ -2,13 +2,13 @@
 
 - **PR:** #208
 - **Rama:** `cc/CC-016-merchant-courier-projection`
-- **SHA funcional revisado:** `37c5fd892e535ea4cf68b74c4f65e3f650b6c3ff`
+- **SHA funcional revisado:** `423b56af4911ca1d1ad6ba9f297c653172167731`
 - **develop actual al cierre de ronda:** `cb4111273da663f7591aec370a44767c4e677b82`
-- **merge-base:** `6577d9e427c5efc0a79a2c374f0f74d847732f4d`
-- **Ronda:** 1
-- **Resultado:** **CON BLOQUEANTES (1)**
-- **CI del SHA funcional:** GREEN, pero generado contra la base vieja `6577d9e427c5efc0a79a2c374f0f74d847732f4d`; no valida la integración con el develop actual.
+- **merge-base:** `cb4111273da663f7591aec370a44767c4e677b82`
+- **Ronda:** 2
+- **Resultado:** **SIN BLOQUEANTES**
+- **CI exact-head:** run `37042771528` / CI #901 — GREEN.
 
-La implementación de CC-016 está bien orientada por inspección: la proyección se resuelve en una RPC `SECURITY DEFINER` con autorización dentro de Postgres, salida mínima y estricta, sin ampliar RLS, y los consumidores fallan cerrado en vez de inventar `docLevel = 0`.
+Ronda 1 dejó un único bloqueante de integración: la rama estaba 16 commits detrás de `develop`. En Ronda 2 el arreglo quedó verificado: merge normal de develop, `behind=0`, sin conflictos ni cambios funcionales sobre CC-016, y CI completo GREEN sobre el nuevo HEAD.
 
-El único bloqueante de esta ronda es de integración: develop avanzó 16 commits mientras la rama quedó en su base original. Debe mergearse `origin/develop` y repetirse la evidencia sobre el nuevo HEAD antes de poder cerrar la revisión.
+La PR queda apta para merge desde la revisión. El `e2e-preview` rojo no es un fallo de producto de esta PR: el resolver devuelve deliberadamente `BLOCKED / REQUIRES DEVELOP MIGRATION` porque CC-016 agrega una migración. El Flow 4 real sigue como gate post-merge, después de aplicar la migración en Supabase Develop.
