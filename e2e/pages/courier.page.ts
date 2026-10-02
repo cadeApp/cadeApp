@@ -18,15 +18,59 @@ export class CourierPage extends BasePage {
     return this.page.getByRole('tab', { name: /mis ofertas/i });
   }
 
+  async navigate(): Promise<void> {
+    await this.goto('/courier/dashboard');
+  }
+
+  async gotoFeed(): Promise<void> {
+    await this.goto('/courier/feed');
+  }
+
+  async gotoOffers(): Promise<void> {
+    await this.goto('/courier/offers');
+  }
+
+  get offerButton(): Locator {
+    return this.page.getByRole('button', { name: /^ofertar$/i });
+  }
+
   get offerAmountInput(): Locator {
     return this.page.getByLabel(/monto de la oferta|ofertar/i);
   }
 
   get submitOfferButton(): Locator {
-    return this.page.getByRole('button', { name: /enviar oferta|ofertar/i });
+    return this.page.getByRole('button', { name: /enviar oferta/i });
   }
 
-  async navigate(): Promise<void> {
-    await this.goto('/courier/dashboard');
+  get offerErrorAlert(): Locator {
+    return this.page.getByRole('alert');
+  }
+
+  get pendingTab(): Locator {
+    return this.page.getByRole('button', { name: /pendientes/i });
+  }
+
+  get otherTab(): Locator {
+    return this.page.getByRole('button', { name: /otras/i });
+  }
+
+  get acceptedTab(): Locator {
+    return this.page.getByRole('button', { name: /aceptadas/i });
+  }
+
+  get withdrawOfferButton(): Locator {
+    return this.page.getByRole('button', { name: /retirar oferta/i });
+  }
+
+  get confirmWithdrawButton(): Locator {
+    return this.page.getByRole('button', { name: /sí, retirar oferta/i });
+  }
+
+  get minFloorText(): Locator {
+    return this.page.getByText(/mínimo/i);
+  }
+
+  requestCardByNotes(testRunId: string): Locator {
+    return this.page.getByTestId('request-card').filter({ hasText: testRunId });
   }
 }
