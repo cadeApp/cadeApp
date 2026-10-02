@@ -230,7 +230,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
 
   describe('StatusView (R03)', () => {
     it('muestra el estado en revisión, la insignia y el checklist de documentos', () => {
-      render(<StatusView />);
+      render(<StatusView documents={[]} />);
 
       expect(screen.getByText('Estamos revisando tus datos')).toBeDefined();
       expect(screen.getByText('En revisión manual')).toBeDefined();
@@ -344,6 +344,69 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       const insuranceRow = screen.getByText(/Seguro/).closest('div[class*="flex items-center justify-between"]');
       expect(insuranceRow?.textContent).toContain('No cargado (opcional)');
       expect(insuranceRow?.textContent).not.toContain('Pendiente');
+    });
+
+    it('H02: obligatorio con status rejected se muestra como "Observado" y NO contiene "Listo"', () => {
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'submitted' as const },
+        { kind: 'selfie' as const, status: 'rejected' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      const selfieRow = screen.getByText('Selfie de seguridad').closest('div[class*="flex items-center justify-between"]');
+      expect(selfieRow?.textContent).toContain('Observado');
+      expect(selfieRow?.textContent).not.toContain('Listo');
+    });
+
+    it('H02: opcional con status rejected se muestra como "Observado", NO "Listo" y NO "No cargado (opcional)"', () => {
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'submitted' as const },
+        { kind: 'selfie' as const, status: 'submitted' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+        { kind: 'insurance' as const, status: 'rejected' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      const insuranceRow = screen.getByText(/Seguro/).closest('div[class*="flex items-center justify-between"]');
+      expect(insuranceRow?.textContent).toContain('Observado');
+      expect(insuranceRow?.textContent).not.toContain('Listo');
+      expect(insuranceRow?.textContent).not.toContain('No cargado (opcional)');
+    });
+
+    it.each([
+      ['solo dni_front presente', [{ kind: 'dni_front' as const, status: 'submitted' as const }]],
+      ['solo dni_back presente', [{ kind: 'dni_back' as const, status: 'submitted' as const }]],
+    ])('H04: DNI incompleto (%s) muestra "DNI frente y dorso" como "Pendiente"', (_, docs) => {
+      const documents = [
+        ...docs,
+        { kind: 'selfie' as const, status: 'submitted' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      const dniRow = screen.getByText('DNI frente y dorso').closest('div[class*="flex items-center justify-between"]');
+      expect(dniRow?.textContent).toContain('Pendiente');
+      expect(dniRow?.textContent).not.toContain('Listo');
+    });
+
+    it('H04: avatar faltante con dni_front, dni_back y selfie presentes muestra "Foto de perfil para comercios" como "Pendiente"', () => {
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'submitted' as const },
+        { kind: 'selfie' as const, status: 'submitted' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      const avatarRow = screen.getByText('Foto de perfil para comercios').closest('div[class*="flex items-center justify-between"]');
+      expect(avatarRow?.textContent).toContain('Pendiente');
+      expect(avatarRow?.textContent).not.toContain('Listo');
     });
 
     it('DoD T-324: no lee ni escribe en sessionStorage', () => {
