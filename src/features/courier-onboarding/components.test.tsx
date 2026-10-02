@@ -409,6 +409,25 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(avatarRow?.textContent).not.toContain('Listo');
     });
 
+    it.each([
+      [
+        'frente rechazado y dorso ausente',
+        [{ kind: 'dni_front' as const, status: 'rejected' as const }],
+      ],
+      [
+        'dorso rechazado y frente ausente',
+        [{ kind: 'dni_back' as const, status: 'rejected' as const }],
+      ],
+    ])('H05: DNI con %s muestra "DNI frente y dorso" como "Observado"', (_, documents) => {
+      render(<StatusView documents={documents} />);
+      const dniRow = screen
+        .getByText('DNI frente y dorso')
+        .closest('div[class*="flex items-center justify-between"]');
+      expect(dniRow?.textContent).toContain('Observado');
+      expect(dniRow?.textContent).not.toContain('Pendiente');
+      expect(dniRow?.textContent).not.toContain('Listo');
+    });
+
     it('DoD T-324: no lee ni escribe en sessionStorage', () => {
       const getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
       const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');

@@ -58,18 +58,17 @@ export function StatusView({ documents, onGoToFeed }: StatusViewProps) {
 
   const dniFront = documents.find((d) => d.kind === 'dni_front');
   const dniBack = documents.find((d) => d.kind === 'dni_back');
-  const hasDni = Boolean(dniFront && dniBack);
 
   let dniStatus: ItemStatus = 'pending';
-  if (hasDni) {
-    if (dniFront?.status === 'rejected' || dniBack?.status === 'rejected') {
-      dniStatus = 'rejected';
-    } else if (
-      (dniFront?.status === 'submitted' || dniFront?.status === 'verified') &&
-      (dniBack?.status === 'submitted' || dniBack?.status === 'verified')
-    ) {
-      dniStatus = 'uploaded';
-    }
+  if (dniFront?.status === 'rejected' || dniBack?.status === 'rejected') {
+    dniStatus = 'rejected';
+  } else if (
+    dniFront &&
+    dniBack &&
+    (dniFront.status === 'submitted' || dniFront.status === 'verified') &&
+    (dniBack.status === 'submitted' || dniBack.status === 'verified')
+  ) {
+    dniStatus = 'uploaded';
   }
 
   const selfie = documents.find((d) => d.kind === 'selfie');
