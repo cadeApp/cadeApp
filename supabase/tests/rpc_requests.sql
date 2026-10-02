@@ -145,6 +145,10 @@ begin
     foreach s in array array['draft','published','matched','in_transit','delivered','cancelled','expired'] loop
       for a in 0..5 loop
         perform pg_temp.fixture(s);
+        if c.name = 'cancel_request' and s = 'in_transit' then
+          insert into public.incidents (id, request_id, reporter_id, kind, description)
+          values (pg_temp.actor(99), pg_temp.actor(20), pg_temp.actor(3), 'safety', 'Incidente previo');
+        end if;
         select after_status into expected from valid_transitions
         where rpc = c.name and before_status = s and actor = a;
         result := pg_temp.invoke(a, format(c.call_sql, pg_temp.actor(20)));
@@ -333,6 +337,8 @@ select is((select matched_at from public.delivery_requests where id = pg_temp.ac
   now() - interval '10 minutes', 'cancelar preserva el hito histórico de match');
 
 select pg_temp.fixture('in_transit');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(89), pg_temp.actor(20), pg_temp.actor(3), 'safety', 'Incidente en tránsito');
 update public.delivery_requests
   set matched_at = now() - interval '20 minutes',
       picked_up_at = now() - interval '10 minutes'
@@ -428,8 +434,56 @@ select is((select reason from public.request_cancellation_reasons where request_
   'Nuevo intento', 'D02b: republish_request registra motivo en request_cancellation_reasons');
 
 select pg_temp.fixture('in_transit');
+
+-- CC-015: admin AAL2 + in_transit + motivo + 0 incidentes -> INVALID_STATE_TRANSITION
+select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
+  'INVALID_STATE_TRANSITION', 'CC-015: admin cancel_request en in_transit sin incidentes es rechazado con INVALID_STATE_TRANSITION');
+
+-- CC-015: incidente de otra solicitud no habilita la cancelacion
+insert into public.delivery_requests (id, merchant_id, status, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method)
+values (pg_temp.actor(21), pg_temp.actor(1), 'in_transit', pg_temp.actor(10), pg_temp.actor(11), 'chico', 'cash');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(91), pg_temp.actor(21), pg_temp.actor(3), 'safety', 'Incidente en otra solicitud');
+
+select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
+  'INVALID_STATE_TRANSITION', 'CC-015: incidente de otra solicitud no habilita cancel_request');
+
+-- CC-015: admin AAL1 sigue devolviendo AAL2_REQUIRED antes de evaluar incidente
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object(
+  'sub', pg_temp.actor(5)::text, 'role', 'authenticated', 'aal', 'aal1',
+  'app_metadata', json_build_object('role', 'admin')
+)::text, true);
+select throws_ok(
+  format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'),
+  'P0001', 'AAL2_REQUIRED',
+  'CC-015: admin AAL1 sigue devolviendo AAL2_REQUIRED antes de evaluar incidente'
+);
+reset role;
+
+-- CC-015: motivo vacio sigue devolviendo REASON_REQUIRED antes de evaluar incidente
+select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), '   '))->>'error',
+  'REASON_REQUIRED', 'CC-015: motivo vacio sigue devolviendo REASON_REQUIRED');
+
+-- CC-015: delivered -> cancelled sigue rechazado con INVALID_STATE_TRANSITION
+select pg_temp.fixture('delivered');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(92), pg_temp.actor(20), pg_temp.actor(1), 'other', 'Incidente entregado');
+select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
+  'INVALID_STATE_TRANSITION', 'CC-015: delivered -> cancelled sigue rechazado incluso con incidente');
+
+-- CC-015: merchant y courier no ganan permiso de cancelar in_transit (sigue INVALID_STATE_TRANSITION)
+select pg_temp.fixture('in_transit');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(93), pg_temp.actor(20), pg_temp.actor(3), 'safety', 'Incidente registrado');
+select is(pg_temp.invoke(1, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
+  'INVALID_STATE_TRANSITION', 'CC-015: merchant no gana permiso de cancelar in_transit');
+select is(pg_temp.invoke(3, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
+  'UNAUTHORIZED_ACTOR', 'CC-015: courier no gana permiso de cancelar in_transit');
+
+-- CC-015: con incidente para este request_id -> admin cancel_request pasa a cancelled
 select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->'data'->>'status',
-  'cancelled', 'M07: admin cancel_request en in_transit pasa a cancelled');
+  'cancelled', 'M07 / CC-015: admin cancel_request en in_transit con incidente pasa a cancelled');
 select ok((select cancelled_at is not null from public.delivery_requests where id = pg_temp.actor(20)),
   'M07: cancel_request persiste cancelled_at');
 select is((select cancel_reason from public.delivery_requests where id = pg_temp.actor(20)),
