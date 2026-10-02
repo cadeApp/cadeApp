@@ -2,26 +2,36 @@
 
 - **PR:** #178
 - **Rama:** `cc/CC-014-map-picker-hardening`
-- **SHA funcional R3:** `ab1dc8b5a234b90ddf01f0c05c6977feab6376c3`
+- **SHA funcional final:** `3f80a276fb936de6c06ed81030fe6ccedbad4242`
 - **develop:** `1457072a7cac1ae9e2a8a92abe9253d45b745082`
-- **Ronda:** 3
-- **Resultado:** **CON BLOQUEANTE (1)**
+- **Ronda:** 4
+- **Resultado:** **APTO PARA MERGE — SIN BLOQUEANTES**
 
 ## Estado
 
 | ID | Severidad | Estado |
 |---|---|---|
-| PR178-H01 | alto | parcial |
+| PR178-H01 | alto | arreglado-verificado |
 | PR178-H02 | medio | arreglado-verificado |
 | PR178-H03 | medio | arreglado-verificado |
 | PR178-H04 | bajo | arreglado-verificado |
 
 ## Resumen
 
-La corrección de R3 resuelve el eco controlado inmediato: drag/click actualizan la selección sin tocar `cameraTarget`, y cuando el padre devuelve ese mismo `value`, `sameCoordinates` evita el recentrado. Los dos tests con `ControlledMapPicker` cubren ese round-trip y H04 quedó realmente aplicado en GitHub.
+CC-014 queda consistente con el contrato propuesto y con el flujo real de los consumidores controlados.
 
-Queda un único residual de H01: una orden externa posterior puede querer volver a una coordenada igual al último `cameraTarget`. Como `MapCameraSynchronizer` deduplica solo por lat/lng, esa orden nueva no produce `panTo()`.
+La sincronización de cámara quedó modelada como una orden explícita versionada:
+- drag/click actualizan selección sin recentrar;
+- el eco controlado no emite orden;
+- un cambio externo genuino sí emite orden incluso si vuelve al target anterior;
+- rerenders numéricamente iguales no resetean selección ni generan pans redundantes;
+- GPS y teclado siguen recentrando;
+- `mapId` opcional degrada de `AdvancedMarker` a `Marker`;
+- `gm_authFailure` conserva lifecycle seguro;
+- API pública sin helpers de testing.
 
-Secuencia adversarial reproducida: **A inicial → drag B → eco B (0 pan) → cambio externo A → 0 pan**, cuando el contrato exige que ese cambio externo legítimo sí sincronice cámara.
+Issue #171 permanece `bloqueada` y sin `en-curso` hasta que CC-014 se mergee y T-323 sea retomada por el flujo normal.
 
-CI exact-head `36954731774`: typecheck/lint/unit/build/audit/db-tests/bundle-budget verdes, **1594/1594** unitarios y **1614/1614** DB.
+CI exact-head `36956307854`: typecheck/lint/unit/build/audit/db-tests/bundle-budget verdes, **1599/1599** unitarios y **1614/1614** DB.
+
+No se realizó merge: corresponde a Lautaro073.

@@ -294,3 +294,100 @@ bundle-budget success
 /merchant/requests/new 163 kB OK
 /design-system 184 kB warning preexistente
 ```
+
+## Ronda 4
+
+SHA funcional: `3f80a276fb936de6c06ed81030fe6ccedbad4242`.
+
+### Delta desde revisión R3
+
+```text
+0c4d82d..3f80a276
+docs/contracts/CC-014.md
+src/ui/map.tsx
+src/ui/map.test.tsx
+```
+
+### H01 — control adversarial final
+
+```text
+after_controlled_echo=[]
+after_external_return_A=[A]
+after_same_A_object=[A]
+after_manual_B_then_same_incoming_A=[A]
+after_external_C=[A,C]
+
+versioned_sync=true
+input_dedupe=true
+controlled_echo_guard=true
+no_fake_tests=true
+```
+
+Cobertura observada:
+- target anterior tras drag;
+- target anterior tras click;
+- mismo value numérico;
+- mismo defaultZoneCenter tras selección manual;
+- defaultZoneCenter realmente distinto;
+- value externo;
+- GPS;
+- teclado;
+- marker mapId/no-mapId;
+- auth bridge.
+
+### Scope / coordinación
+
+```text
+develop...HEAD:
+ahead_by=7
+behind_by=0
+mergeable=true
+draft=false
+
+issue #171:
+P2
+fase-3
+bloqueada
+en-curso ausente
+
+issue #177:
+contract-change
+en-review
+```
+
+### Calidad estática
+
+```text
+any=false
+@ts-ignore/@ts-expect-error=false
+.only/.skip=false
+setTimeout=false
+test helper export=false
+process.env directo=false
+deep import=false
+```
+
+### CI exact-head 36956307854
+
+```text
+Test Files 110 passed (110)
+Tests 1599 passed (1599)
+workflow tests 31
+ADR tests 6
+
+db-tests:
+Files=13, Tests=1614
+Result: PASS
+
+typecheck success
+lint success
+build success
+audit success
+bundle-budget success
+
+/merchant/onboarding 147 kB OK
+/merchant/requests/new 163 kB OK
+/design-system 184 kB warning preexistente
+```
+
+DB tuvo rate-limit transitorio de Docker Hub durante preparación, con reintentos exitosos.

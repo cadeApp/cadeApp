@@ -25,3 +25,11 @@ No se agrega número AG nuevo.
 - **H01 / P05:** distinguir origen interno/externo no basta si el efecto receptor deduplica solo por valor. Una “orden nueva hacia la misma coordenada” y “ninguna orden nueva” son estados distintos; si el contrato depende de esa diferencia, hay que modelar identidad/versión del comando.
 - Un test de eco controlado debe complementarse con la secuencia inversa: después de ignorar correctamente el eco, una actualización externa posterior tiene que seguir siendo observable aunque vuelva al target previo.
 - **H04 / P10:** la metadata quedó verificada leyendo el issue, no por el body.
+
+## Ronda 4
+
+No se agrega número AG nuevo.
+
+- **H01 / P05:** cuando una acción debe observarse aunque repita el mismo valor, el estado necesita identidad de evento/versión; la igualdad de payload no representa necesariamente igualdad de intención.
+- Deduplicar inputs y versionar órdenes son responsabilidades diferentes: el primero evita rerenders redundantes; el segundo preserva órdenes genuinas hacia coordenadas ya vistas.
+- La cobertura de un componente controlado debe combinar selección interna, eco del padre y una actualización externa posterior; probar esas piezas por separado no alcanza.
