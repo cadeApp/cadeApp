@@ -238,6 +238,123 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByText('Selfie de seguridad')).toBeDefined();
       expect(screen.getByRole('button', { name: /Ir al panel de repartidor/i })).toBeDefined();
     });
+
+    it('DoD T-324: muestra documentos obligatorios y opcionales como "Listo" cuando licencia y seguro están presentes (submitted o verified)', () => {
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'verified' as const },
+        { kind: 'selfie' as const, status: 'submitted' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+        { kind: 'license' as const, status: 'submitted' as const },
+        { kind: 'insurance' as const, status: 'verified' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      expect(screen.getByText('DNI frente y dorso')).toBeDefined();
+      expect(screen.getByText('Selfie de seguridad')).toBeDefined();
+      expect(screen.getByText('Foto de perfil para comercios')).toBeDefined();
+      expect(screen.getByText('Vehículo y consentimientos')).toBeDefined();
+
+      // Licencia y seguro deben aparecer cargados
+      const licenseRow = screen.getByText(/Licencia/).closest('div[class*="flex items-center justify-between"]');
+      expect(licenseRow).toBeDefined();
+      expect(licenseRow?.textContent).toContain('Listo');
+      expect(licenseRow?.textContent).not.toContain('Pendiente');
+
+      const insuranceRow = screen.getByText(/Seguro/).closest('div[class*="flex items-center justify-between"]');
+      expect(insuranceRow).toBeDefined();
+      expect(insuranceRow?.textContent).toContain('Listo');
+      expect(insuranceRow?.textContent).not.toContain('Pendiente');
+    });
+
+    it('DoD T-324: si solo licencia está presente, licencia figura como "Listo" y seguro como "No cargado (opcional)", nunca "Pendiente"', () => {
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'submitted' as const },
+        { kind: 'selfie' as const, status: 'submitted' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+        { kind: 'license' as const, status: 'submitted' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      const licenseRow = screen.getByText(/Licencia/).closest('div[class*="flex items-center justify-between"]');
+      expect(licenseRow?.textContent).toContain('Listo');
+
+      const insuranceRow = screen.getByText(/Seguro/).closest('div[class*="flex items-center justify-between"]');
+      expect(insuranceRow?.textContent).toContain('No cargado (opcional)');
+      expect(insuranceRow?.textContent).not.toContain('Pendiente');
+    });
+
+    it('DoD T-324: si solo seguro está presente, seguro figura como "Listo" y licencia como "No cargado (opcional)", nunca "Pendiente"', () => {
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'submitted' as const },
+        { kind: 'selfie' as const, status: 'submitted' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+        { kind: 'insurance' as const, status: 'submitted' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      const insuranceRow = screen.getByText(/Seguro/).closest('div[class*="flex items-center justify-between"]');
+      expect(insuranceRow?.textContent).toContain('Listo');
+
+      const licenseRow = screen.getByText(/Licencia/).closest('div[class*="flex items-center justify-between"]');
+      expect(licenseRow?.textContent).toContain('No cargado (opcional)');
+      expect(licenseRow?.textContent).not.toContain('Pendiente');
+    });
+
+    it('DoD T-324: si ningún opcional fue cargado, ambos figuran como "No cargado (opcional)" y ninguno como "Pendiente"', () => {
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'submitted' as const },
+        { kind: 'selfie' as const, status: 'submitted' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      const licenseRow = screen.getByText(/Licencia/).closest('div[class*="flex items-center justify-between"]');
+      expect(licenseRow?.textContent).toContain('No cargado (opcional)');
+      expect(licenseRow?.textContent).not.toContain('Pendiente');
+
+      const insuranceRow = screen.getByText(/Seguro/).closest('div[class*="flex items-center justify-between"]');
+      expect(insuranceRow?.textContent).toContain('No cargado (opcional)');
+      expect(insuranceRow?.textContent).not.toContain('Pendiente');
+    });
+
+    it('DoD T-324: distingue visual y semánticamente opcionales ausentes de un documento obligatorio faltante', () => {
+      // Falta selfie (obligatorio) y seguro (opcional)
+      const documents = [
+        { kind: 'dni_front' as const, status: 'submitted' as const },
+        { kind: 'dni_back' as const, status: 'submitted' as const },
+        { kind: 'avatar' as const, status: 'submitted' as const },
+        { kind: 'license' as const, status: 'submitted' as const },
+      ];
+
+      render(<StatusView documents={documents} />);
+
+      // Obligatorio faltante muestra 'Pendiente'
+      const selfieRow = screen.getByText('Selfie de seguridad').closest('div[class*="flex items-center justify-between"]');
+      expect(selfieRow?.textContent).toContain('Pendiente');
+
+      // Opcional faltante muestra 'No cargado (opcional)', NUNCA 'Pendiente'
+      const insuranceRow = screen.getByText(/Seguro/).closest('div[class*="flex items-center justify-between"]');
+      expect(insuranceRow?.textContent).toContain('No cargado (opcional)');
+      expect(insuranceRow?.textContent).not.toContain('Pendiente');
+    });
+
+    it('DoD T-324: no lee ni escribe en sessionStorage', () => {
+      const getItemSpy = vi.spyOn(Storage.prototype, 'getItem');
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
+
+      render(<StatusView documents={[]} />);
+
+      expect(getItemSpy).not.toHaveBeenCalled();
+      expect(setItemSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('CourierProfileView (R08) y estados documentales reales (PR87-H03)', () => {
