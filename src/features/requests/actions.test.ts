@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
 import { createDeliveryRequestAction } from './actions';
+import { AGUILARES_CENTER } from '@/ui/map';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -578,6 +579,132 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       const result = await createDeliveryRequestAction(validFormInput);
 
       expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    });
+  });
+
+  // =========================================================================
+  // CC-015: una zona activa puede no tener centroide verificado
+  // =========================================================================
+  describe('CC-015: zonas sin centroide y sin coordenadas explícitas', () => {
+    const noCentroidRequestId = '55555555-5555-4555-8555-555555555555';
+
+    function arrange(zones: ReadonlyArray<Record<string, unknown>>) {
+      const inserted: {
+        request: Record<string, unknown> | null;
+        contacts: Record<string, unknown> | null;
+      } = { request: null, contacts: null };
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+          };
+        }
+        if (table === 'zones') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            in: vi.fn().mockResolvedValue({ data: zones, error: null }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+              inserted.request = payload;
+              return {
+                select: vi.fn().mockReturnThis(),
+                single: vi.fn().mockResolvedValue({
+                  data: { id: noCentroidRequestId },
+                  error: null,
+                }),
+              };
+            }),
+          };
+        }
+        if (table === 'delivery_request_contacts') {
+          return {
+            insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+              inserted.contacts = payload;
+              return Promise.resolve({ error: null });
+            }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+        rpc: vi.fn().mockResolvedValue(publishedRpcResponse(noCentroidRequestId)),
+      } as unknown as MockedServerClient);
+
+      return inserted;
+    }
+
+    const withoutCoords = {
+      ...validFormInput,
+      pickupLat: null,
+      pickupLng: null,
+      dropoffLat: null,
+      dropoffLng: null,
+    };
+
+    const withCentroid = (id: string) => ({ id, centroid_lat: -27.43, centroid_lng: -65.61 });
+    const withoutCentroid = (id: string) => ({ id, centroid_lat: null, centroid_lng: null });
+
+    it.each([
+      [
+        'el barrio de retiro no tiene centroide',
+        [withoutCentroid(validPickupZoneId), withCentroid(validDropoffZoneId)],
+      ],
+      [
+        'el barrio de entrega no tiene centroide',
+        [withCentroid(validPickupZoneId), withoutCentroid(validDropoffZoneId)],
+      ],
+      [
+        'ningún barrio tiene centroide',
+        [withoutCentroid(validPickupZoneId), withoutCentroid(validDropoffZoneId)],
+      ],
+    ])('crea la solicitud con distancia null cuando %s', async (_caso, zones) => {
+      const inserted = arrange(zones);
+
+      const result = await createDeliveryRequestAction(withoutCoords);
+
+      expect(result.ok).toBe(true);
+      expect(inserted.request).not.toBeNull();
+      expect(inserted.request).toMatchObject({
+        pickup_zone_id: validPickupZoneId,
+        dropoff_zone_id: validDropoffZoneId,
+        route_distance_m: null,
+        approx_distance_m: null,
+      });
+    });
+
+    it('no fabrica coordenadas: ni el centro general de Aguilares ni ninguna otra', async () => {
+      const inserted = arrange([
+        withoutCentroid(validPickupZoneId),
+        withoutCentroid(validDropoffZoneId),
+      ]);
+
+      const result = await createDeliveryRequestAction(withoutCoords);
+
+      expect(result.ok).toBe(true);
+      expect(inserted.contacts).toMatchObject({
+        pickup_lat: null,
+        pickup_lng: null,
+        dropoff_lat: null,
+        dropoff_lng: null,
+      });
+
+      const written = JSON.stringify([inserted.request, inserted.contacts]);
+      expect(written).not.toContain(String(AGUILARES_CENTER.lat));
+      expect(written).not.toContain(String(AGUILARES_CENTER.lng));
     });
   });
 });
