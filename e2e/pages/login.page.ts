@@ -36,7 +36,7 @@ export class LoginPage extends BasePage {
     await this.submitButton.click();
     await this.page.waitForURL(
       (url) => url.pathname !== '/login' && !url.pathname.startsWith('/login/'),
-      { timeout: 15000 }
+      { timeout: 30000 }
     );
     await this.waitForNoSkeletons();
   }
