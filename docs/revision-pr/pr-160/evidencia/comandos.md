@@ -1,80 +1,125 @@
 # Evidencia y comandos — PR #160
 
-## Ronda 4
+## Ronda 5
 
-**SHA revisado:** `5aa689201b360cb1c0369900bf2dae80e05463fe`
+**SHA revisado:** `d8c3ae3eb8252ca111e869c9f1dba4a5fb313e4c`
 
-### Decisión P1
+### Criterio de merge vs cierre
 
-Lautaro073 eligió **1-B**: no se exige mutación RED local de la guarda SQL porque el proyecto no usa Supabase/Docker local. El cierre exige staging/CI real con el oráculo fuerte de concurrencia.
+P1 aclaró que una tarea E2E no queda terminada al entrar a `develop`.
+
+Gate de cierre:
+`develop → staging → deploy/migraciones → E2E real → Hecha`.
+
+La corrida staging de `main-flow.spec.ts` es por lo tanto post-merge y no un bloqueante previo a `develop`.
 
 ### Sincronización
 
-Comparación remota:
-- develop: `1457072a7cac1ae9e2a8a92abe9253d45b745082`
-- head revisado: `5aa689201b360cb1c0369900bf2dae80e05463fe`
-- ahead: 17
-- behind: **24**
-- merge-base: `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
+Al comienzo del trabajo del autor la rama llegó a estar sincronizada con:
+`develop=1457072a7cac1ae9e2a8a92abe9253d45b745082`.
 
-### H08/H09/R03
+Durante Ronda 5 develop avanzó a:
+`01f8fb20587beb5b43b606103051deb49e1c01d1`.
 
-Por inspección:
-- publicación cash/transfer usa marker único y request ID exacto;
-- selector $5.000 usa `formatArs`;
-- sorting compara contra nombres esperados seeded;
-- cleanup agrega `rate_limits` y `audit_log`.
+Comparación actual:
+- ahead: 24
+- behind: **9**
+- merge-base: `1457072a7cac1ae9e2a8a92abe9253d45b745082`
 
-Quedan como `arreglado-sin-verificar` hasta ejecutar staging.
+Cambios nuevos relevantes de develop:
+- `docs/contracts/CC-014.md`
+- `src/ui/map.tsx`
+- `src/ui/map.test.tsx`
 
-### H10 — BrowserContext sin baseURL
+El mapa participa del formulario de publicación cubierto por T-303, por lo que se exige resincronización antes de aprobar.
 
-El spec crea contextos manuales:
+### Carpeta de revisión
 
-```ts
-const context = await browser.newContext();
-const courierContext = await browser.newContext();
-```
+Comparación `92f3eb2...d8c3ae3`:
+- ningún archivo bajo `docs/revision-pr/pr-160/**` fue modificado por el autor.
 
-y luego usa Page Objects que navegan rutas relativas:
+### CI exacto del SHA revisado
 
-```ts
-goto('/login')
-goto('/merchant/requests/:id')
-goto('/trips/:id')
-```
+Workflow: **CI #788**  
+Run: **36956593490**  
+SHA: `d8c3ae3eb8252ca111e869c9f1dba4a5fb313e4c`  
+Conclusión: **success**
 
-En un `browser.newContext()` manual, el `baseURL` debe pasarse como opción; no se hereda del `use.baseURL` del test runner.
+#### unit
 
-### H11 — privacidad ante teléfono formateado
-
-El test niega:
-- `+5493865123456`;
-- `5493865123456`.
-
-Pero `formatPhone('+5493865123456')` puede renderizar:
-
-`3865 12-3456`
-
-Esa cadena no contiene ninguna de las dos buscadas. El DOM debe normalizarse antes de verificar el teléfono nacional.
-
-### H05 — check compuesto rojo
-
-El propio body registra:
+Resumen de Vitest:
 
 ```text
-Test Files  6 failed | 104 passed (110)
-Tests       7 failed | 1573 passed (1580)
+Test Files  110 passed (110)
+Tests       1602 passed (1602)
 ```
 
-pero mantiene:
+Además:
+- tests de workflows: 31;
+- tests ADR: 6;
+- `src/server/supabase/clients.test.ts`: 10 tests verdes.
 
-```markdown
-- [x] pnpm typecheck && pnpm lint && pnpm test
+#### db-tests
+
+Primera verificación T-321:
+```text
+Files=1, Tests=10
+Result: PASS
 ```
 
-El check es inválido mientras cualquiera de los tres comandos falle.
+Suite completa:
+```text
+All tests successful.
+Files=13, Tests=1614
+Result: PASS
+```
 
-### CI
+El job continuó con:
+```text
+node tools/db-types.mjs --local
+git diff --exit-code -- src/types/database.types.ts
+```
 
-No se inspeccionó CI para aprobación porque persisten H05/H10/H11/H12. Ronda 5 debe consultar workflow runs si estos cuatro quedan corregidos.
+y concluyó success.
+
+#### Otros jobs
+
+- typecheck: success
+- lint: success
+- build: success
+- bundle-budget: success
+- audit: success
+
+### H10
+
+Código actual:
+- concurrencia usa `context.newPage()` sobre la fixture `context`;
+- Flow 5 toma `testInfo.project.use.baseURL`;
+- falla cerrado si no es string/no existe;
+- `browser.newContext({ baseURL })`.
+
+### H11
+
+Código actual:
+- `formatPhone(sentinelPhone)`;
+- compara sentinel literal/crudo/formateado;
+- normaliza cada línea visible;
+- normaliza cada `href` por separado.
+
+### Gate staging post-merge
+
+`.github/workflows/e2e-staging.yml` actual ejecuta solo:
+
+```bash
+pnpm exec playwright test e2e/specs/smoke.spec.ts --project=chromium
+```
+
+Ese smoke no valida T-303.
+
+Después de la promoción de T-303 a staging debe ejecutarse explícitamente:
+
+```bash
+pnpm exec playwright test e2e/specs/main-flow.spec.ts --project=chromium
+```
+
+contra el staging desplegado. Hasta entonces el primer DoD y el estado Hecha permanecen abiertos.
