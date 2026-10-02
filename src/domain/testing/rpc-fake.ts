@@ -268,6 +268,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   set_availability: ['courier'],
   calculate_route_distance: ['merchant', 'courier', 'admin'],
   get_trip_details: ['merchant', 'courier'],
+  get_request_offer_couriers: ['merchant'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_verify_document: ['admin'],
@@ -537,7 +538,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     // CC-007: RPC operativas de comercio/repartidor que exigen consentimiento activo antes de validar
     // parámetros. CC-012 conserva el gate en la función standalone `report_incident`.
     if (
-      (rpcName === 'get_trip_details' || rpcName === 'report_incident') &&
+      (rpcName === 'get_trip_details' ||
+        rpcName === 'get_request_offer_couriers' ||
+        rpcName === 'report_incident') &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
@@ -1238,6 +1241,32 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           matchedAt: req.matchedAt,
           pickedUpAt: req.pickedUpAt,
           deliveredAt: req.deliveredAt,
+        });
+      }),
+
+    get_request_offer_couriers: (rawInput) =>
+      executeRpc('get_request_offer_couriers', rawInput, false, (input) => {
+        const req = requests.get(input.requestId);
+        if (!req || req.merchantId !== actor.userId) return err('NOT_FOUND');
+        const courierIds = new Set(
+          [...offers.values()].filter((o) => o.requestId === req.requestId).map((o) => o.courierId)
+        );
+        return ok({
+          requestId: req.requestId,
+          couriers: [...courierIds].sort().flatMap((courierId) => {
+            const courier = couriers.get(courierId);
+            if (!courier) return [];
+            return [
+              {
+                courierId,
+                displayName: courier.displayName,
+                vehicleType: courier.vehicleType,
+                licenseStatus: courier.licenseStatus,
+                insuranceStatus: courier.insuranceStatus,
+                docLevel: computeDocLevel(courier.licenseStatus, courier.insuranceStatus),
+              },
+            ];
+          }),
         });
       }),
 
