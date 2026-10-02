@@ -1,22 +1,24 @@
 # Lecciones de la PR #188 para `AGENTS.md` y las reglas
 
-**Fuente:** 4 hallazgos de la Ronda 1.
+**Fuente:** 5 hallazgos acumulados.
 
 ## Patrón dominante
 
-La batería RED se escribió alrededor de la implementación imaginada, pero dejó fuera dos clases del contrato: **el punto de integración real** (P08) y **variantes válidas del dominio** (P06).
+P06 y P08 siguen explicando la PR: primero faltó el punto de integración y luego faltó enumerar el producto cartesiano de estados relevantes para un ítem UI compuesto.
 
 ## Lecciones propuestas
 
-No se propone un AG nuevo en esta ronda. P06 y P08 ya describen exactamente los dos problemas y todavía no hay evidencia de que una regla nueva mejore sobre el catálogo existente.
+No se propone una nueva regla AG. El caso H05 es una aplicación concreta de P06:
+
+> cuando una fila visual agrega varias entidades (por ejemplo, DNI frente+dorso), no basta probar presencia/ausencia y estados por separado; hay que fijar la **precedencia entre estados** en combinaciones parciales.
 
 ## Qué cambiar, en orden de impacto
 
-1. Antes de implementar T-324, agregar un test del Server Component real; no aceptar solo unit tests de query y leaf component.
-2. Enumerar el enum completo y la cardinalidad real de la tabla, no solo los ejemplos del bug report.
-3. Hacer de `documents` una prop obligatoria para que typecheck también proteja el wiring.
+1. Hacer que `rejected` tenga precedencia sobre “incompleto” en la fila agrupada de DNI.
+2. Cubrir front rejected/back missing y back rejected/front missing.
+3. Mantener H01–H04 sin regresión.
 
 ## Advertencias
 
-- Esta ronda revisa un commit RED deliberado, no una implementación terminada.
-- Dos semánticas fueron decididas por P1 durante la revisión: `rejected = Observado` y latest-by-`uploaded_at`.
+- El primer build de CI #853 falló en `next/font`, fuera del diff; el rerun exacto pasó sin cambios.
+- H05 no invalida la estrategia latest-by-uploaded_at ni la privacidad de metadata; es exclusivamente una precedencia de presentación.

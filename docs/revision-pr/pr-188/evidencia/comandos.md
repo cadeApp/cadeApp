@@ -1,106 +1,125 @@
 # Comandos reproducibles — PR #188
 
-**SHA funcional revisado:** `86328317dd3d31f17a58e1d8a528bcc04ef810ee`
+## Ronda 1
 
-## Sincronización y alcance
+Ver informe R1 para el RED original.
 
-```bash
-git fetch origin
-git rev-parse HEAD
-git rev-parse origin/develop
-git rev-list --left-right --count origin/develop...HEAD
-git diff --name-only origin/develop...HEAD
-git merge-tree --write-tree origin/develop HEAD
-```
+## Ronda 2 — SHA `c5964452bf1624669e69a56483bb5be4c8562139`
 
-Observado en revisión: rama divergida, **26 detrás / 1 delante**; GitHub reporta mergeable. Ningún cambio de develop entre la base original y el develop actual pisa los archivos funcionales de T-324.
+### Alcance del arreglo del autor
 
-## RED del autor reproducido en CI #823
-
-```bash
-pnpm vitest run src/features/courier-onboarding/components.test.tsx src/features/courier-onboarding/queries.test.ts
-pnpm typecheck
-```
-
-Resumen del job unit del SHA revisado:
+Entre el merge de develop `3e446958c3a842a67695b9d01b717f81e073ea3c` y el HEAD R2 solo cambiaron:
 
 ```text
-Test Files  2 failed | 109 passed (111)
-Tests       5 failed | 1626 passed (1631)
-queries.test.ts: Failed to resolve import "./queries"
+docs/tasks/log/T-324.md
+src/app/(courier)/courier/onboarding/status/page.tsx
+src/features/courier-onboarding/components.test.tsx
+src/features/courier-onboarding/components/status-view.tsx
+src/features/courier-onboarding/queries.test.ts
+src/features/courier-onboarding/queries.ts
+src/features/courier-onboarding/server.ts
 ```
 
-Typecheck: falla porque `StatusViewProps` aún no tiene `documents` y porque `./queries` no existe.
+No se tocaron archivos de revisión por el autor.
 
-DB job (sin Supabase local):
+### H01
+
+```bash
+grep -n "getCourierDocumentsStatus\|redirect('/login?redirectTo=/courier/onboarding/status')\|StatusView documents" \
+  'src/app/(courier)/courier/onboarding/status/page.tsx'
+```
+
+La página real está cableada y `queries.test.ts` la invoca.
+
+### H02 / H04
+
+```bash
+grep -n "H02:\|H04:" src/features/courier-onboarding/components.test.tsx
+```
+
+R2 cubre rejected para selfie/insurance, DNI parcial submitted y avatar ausente.
+
+### H03
+
+```bash
+grep -n "select('kind, status, uploaded_at')\|order('uploaded_at'\|seenKinds" \
+  src/features/courier-onboarding/queries.ts
+```
+
+Retorno público contiene solo `kind/status`.
+
+### CI #853
+
+Primer intento de build:
 
 ```text
-All tests successful.
-Files=13, Tests=1614
-Result: PASS
+src/app/layout.tsx
+An error occurred in next/font.
+TypeError: Cannot read properties of null (reading '1')
 ```
 
-## H01 · el wiring real no está bajo prueba
+Se reintentó **solo el mismo job build**, sin cambios de código. Resultado del rerun:
+
+```text
+Build and capture route sizes: success
+build: success
+bundle-budget: success
+```
+
+Resto:
+```text
+typecheck: success
+lint: success
+unit: 111 files / 1642 tests PASS
+db-tests: 13 files / 1621 tests PASS
+audit: success
+```
+
+### H05 · reproducción lógica
+
+Código actual:
+
+```ts
+const hasDni = Boolean(dniFront && dniBack);
+let dniStatus: ItemStatus = 'pending';
+if (hasDni) {
+  if (dniFront?.status === 'rejected' || dniBack?.status === 'rejected') {
+    dniStatus = 'rejected';
+  }
+}
+```
+
+Entrada:
+
+```ts
+[{ kind: 'dni_front', status: 'rejected' }]
+```
+
+Como `dniBack` no existe, `hasDni=false`; la rama rejected no se evalúa y queda `pending`.
+
+El contrato existente del perfil ya cubre:
+
+```ts
+combineDniDocumentStatus('rejected', 'none') === 'rejected'
+```
+
+### Mutación requerida para H05
+
+Después del arreglo, volver temporalmente a condicionar rejected a que ambos lados existan. Los dos tests:
+- front rejected / back ausente;
+- back rejected / front ausente;
+
+deben quedar rojos.
+
+## Checks para Ronda 3
 
 ```bash
-grep -n "StatusView" 'src/app/(courier)/courier/onboarding/status/page.tsx'
-grep -R "CanonicalCourierOnboardingStatusPage" src --include='*.test.ts' --include='*.test.tsx'
-```
-
-En el SHA revisado, la página contiene `<StatusView />`; la segunda búsqueda no tiene un test T-324 que invoque esa página.
-
-### Mutación a ejecutar tras el arreglo
-
-Cambiar temporalmente:
-
-```tsx
-<StatusView documents={documents} />
-```
-
-por:
-
-```tsx
-<StatusView documents={[]} />
-```
-
-El test de la página debe quedar rojo. Revertir en memoria/sin commit.
-
-## H02 · rejected
-
-Tras agregar los tests, mutar temporalmente el mapper de estado para que `rejected` devuelva `Listo`. Los tests de obligatorio y opcional rechazado deben fallar.
-
-## H03 · latest por uploaded_at
-
-Comprobar en esquema:
-
-```bash
-grep -n -A14 "create table public.courier_documents" supabase/migrations/20260922031435_schema_v1.sql
-```
-
-No hay unique `(courier_id, kind)`.
-
-Mutaciones después del arreglo:
-1. `.order('uploaded_at', { ascending: false })` → `ascending: true`: el test de query debe fallar.
-2. En la deduplicación, sobrescribir un kind ya visto: el resultado con histórico viejo/nuevo debe fallar.
-
-## H04 · clase de obligatorios
-
-Mutaciones después del arreglo:
-1. DNI: `hasFront && hasBack` → `hasFront || hasBack`.
-2. Avatar: devolver siempre estado loaded.
-
-Los tests DNI parcial/avatar ausente deben quedar rojos.
-
-## Checks finales para la próxima ronda
-
-```bash
-pnpm vitest run src/features/courier-onboarding/queries.test.ts src/features/courier-onboarding/components.test.tsx
+pnpm vitest run src/features/courier-onboarding/components.test.tsx
 pnpm typecheck
 pnpm lint
 pnpm test
 git diff --check
 git status --short
-git diff --name-only origin/develop...HEAD
 ```
 
 No correr Supabase/Docker local.

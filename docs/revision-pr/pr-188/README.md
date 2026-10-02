@@ -6,42 +6,54 @@
 | **Tarea** | T-324 (Fase 3) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-324-courier-documents-status` → `develop` |
-| **SHA funcional revisado** | `86328317dd3d31f17a58e1d8a528bcc04ef810ee` |
-| **Base actual de develop al revisar** | `640bc4cd6f86a85f8a7fb235f123a182ac6c2163` |
-| **Tamaño funcional** | 3 archivos, +227 / -0 |
-| **Estado** | Draft · RED inicial · CON BLOQUEANTES |
+| **SHA funcional revisado R2** | `c5964452bf1624669e69a56483bb5be4c8562139` |
+| **Base develop R2** | `db2cf1709178383ea027e984e1a6783ee74766fa` |
+| **Estado** | Draft · CON 1 BLOQUEANTE |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `86328317dd3d31f17a58e1d8a528bcc04ef810ee` | 4 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `c5964452bf1624669e69a56483bb5be4c8562139` | H01–H04 verificados; H05 nuevo | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---:|---|
-| PR188-H01 | Falta controlar el cableado página → query → StatusView y el redirect sin sesión | alto | abierto |
-| PR188-H02 | El enum `rejected` no está cubierto por los RED | medio | abierto |
-| PR188-H03 | No se define ni prueba cuál fila manda cuando un `kind` tiene historial | alto | abierto |
-| PR188-H04 | Los RED no enumeran todos los documentos obligatorios | medio | abierto |
+| PR188-H01 | Falta controlar cableado página → query → StatusView y redirect | alto | arreglado-verificado |
+| PR188-H02 | `rejected` no estaba cubierto | medio | arreglado-verificado |
+| PR188-H03 | No se resolvía historial del mismo `kind` | alto | arreglado-verificado |
+| PR188-H04 | Obligatorios incompletamente enumerados | medio | arreglado-verificado |
+| PR188-H05 | DNI parcialmente rechazado se muestra como Pendiente en vez de Observado | medio | abierto |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Evidencia: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. Pullear este commit de revisión y mergear `origin/develop` en la rama (sin rebase).
-2. Completar los RED indicados por H01–H04.
-3. Implementar query, página y StatusView contra esos controles.
-4. Demostrar mutaciones RED propias y luego correr checks completos.
-5. Pedir Ronda 2. **No mergear todavía.**
+1. Corregir únicamente PR188-H05.
+2. Agregar RED para `dni_front rejected + dni_back ausente` y la combinación inversa.
+3. Repetir targeted + typecheck/lint/test.
+4. Pedir Ronda 3.
+5. **No mergear todavía.**
 
-## Decisiones P1 incorporadas
+## Decisiones P1 vigentes
 
-- `rejected` → **Observado**, no `Listo`.
-- Para filas repetidas del mismo `kind`, manda la más reciente por `uploaded_at`.
-- `uploaded_at` puede usarse solo en servidor para resolver vigencia; al Client Component llegan únicamente `kind` y `status`.
+- Todo documento con `status = rejected` debe representarse como **Observado**; no como `Listo` ni como simple ausencia.
+- Si existen varias filas del mismo `kind`, manda la más reciente por `uploaded_at`.
+- `uploaded_at` queda server-side; al Client Component solo llegan `kind` y `status`.
+
+## CI R2
+
+CI #853:
+- typecheck ✅
+- lint ✅
+- unit ✅ **111 files / 1642 tests**
+- DB ✅ **13 files / 1621 tests**
+- audit ✅
+- build: primer intento falló en `next/font` fuera del diff; rerun del mismo job ✅
+- bundle-budget ✅
 
 ## Para el análisis posterior
 
-Ver [`lecciones.md`](lecciones.md). No se propone regla AG nueva en esta ronda: los huecos caen en patrones ya catalogados P06/P08.
+Ver [`lecciones.md`](lecciones.md). H05 refuerza P06: al agrupar dos documentos en una fila visual, hay que enumerar precedencias de estado además de presencia/ausencia.
