@@ -1,53 +1,13 @@
-import type { Page } from '@playwright/test';
-import { test, expect, trackEntityForCleanup, type StagingSeedContext } from '../fixtures';
+import { test, expect, trackEntityForCleanup } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { createAdminClient } from '@/server/supabase/admin';
 import { formatArs } from '@/lib/format';
-import type { LoginPage } from '../pages';
 import { randomUUID } from 'node:crypto';
-
-/**
- * Autentica al merchant creado por el seed asignándole una contraseña temporal
- * y realizando el flujo completo de inicio de sesión por UI.
- */
-async function authenticateMerchant(
-  page: Page,
-  admin: ReturnType<typeof createAdminClient>,
-  stagingContext: StagingSeedContext,
-  loginPage: LoginPage
-): Promise<string> {
-  const merchantUserId = stagingContext.createdUserIds[0];
-  if (!merchantUserId) {
-    throw new Error('[E2E Error] No se encontró merchantUserId en stagingContext');
-  }
-
-  const temporaryPassword = `Pass_${Date.now()}_Aa1!`;
-  const { error: updateError } = await admin.auth.admin.updateUserById(merchantUserId, {
-    password: temporaryPassword,
-  });
-  if (updateError) {
-    throw new Error(`[E2E Error] Falló updateUserById para merchant: ${updateError.message}`);
-  }
-
-  const { data: userData, error: getUserError } = await admin.auth.admin.getUserById(merchantUserId);
-  if (getUserError || !userData?.user?.email) {
-    throw new Error(`[E2E Error] Falló getUserById para merchant: ${getUserError?.message}`);
-  }
-
-  const email = userData.user.email;
-  await loginPage.navigate();
-  await waitForNoSkeletons(page);
-  await page.waitForLoadState('networkidle');
-  await loginPage.login(email, temporaryPassword);
-  await page.waitForURL((url) => !url.pathname.includes('/login'));
-
-  return email;
-}
 
 test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
   test('con el permiso de notificaciones denegado la oferta aparece por tiempo real', async ({
     page,
-    loginPage,
+    loginAsMerchant,
     stagingContext,
   }) => {
     // 1. Configurar permiso de notificaciones denegado antes de cargar la app (T-202 fallback)
@@ -65,73 +25,66 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     const initialPermission = await page.evaluate(() => Notification.permission);
     expect(initialPermission).toBe('denied');
 
-    // 3. Obtener el request real creado por la fixture
+    // 3. Obtener solicitud y repartidor real creados por la fixture
     const requestId = stagingContext.createdRequestIds[0];
     if (!requestId) {
       throw new Error('[E2E Error] No se encontró requestId en stagingContext');
     }
 
-    const admin = createAdminClient();
-
-    // 4. Autenticar al comerciante sembrado vía UI
-    await authenticateMerchant(page, admin, stagingContext, loginPage);
-
-    // 5. Crear un repartidor transitorio en auth, profiles y couriers (approved, available, verified)
-    const uniqueCourierName = `E2E Courier RT ${stagingContext.testRunId}`;
-    const courierEmail = `courier_rt_${Date.now()}@cadeapp-staging.test`;
-    const courierPassword = `Pass_${Date.now()}_Aa1!`;
-
-    const { data: courierAuthData, error: courierAuthError } = await admin.auth.admin.createUser({
-      email: courierEmail,
-      password: courierPassword,
-      email_confirm: true,
-      user_metadata: {
-        role: 'courier',
-        display_name: uniqueCourierName,
-      },
-    });
-    if (courierAuthError || !courierAuthData.user) {
-      throw new Error(`[E2E Error] Falló createUser courier: ${courierAuthError?.message}`);
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] No se encontró courier en stagingContext');
     }
+    const courierName = courier.displayName ?? 'E2E Courier Doc2';
 
-    const courierUserId = courierAuthData.user.id;
-    trackEntityForCleanup(stagingContext, 'user', courierUserId);
-
-    const { error: profileError } = await admin.from('profiles').upsert({
-      id: courierUserId,
-      role: 'courier',
-      display_name: uniqueCourierName,
-      consent_status: 'active',
+    // 4. Instalar control exacto de peticiones y respuesta inicial antes de navegar al detalle
+    const expectedPath = `/api/live/requests/${requestId}/offers`;
+    let offersRequestCount = 0;
+    page.on('request', (request) => {
+      try {
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname === expectedPath) {
+          offersRequestCount += 1;
+        }
+      } catch {
+        // Ignorar URLs no parseables
+      }
     });
-    if (profileError) {
-      throw new Error(`[E2E Error] Falló upsert profiles courier: ${profileError.message}`);
-    }
 
-    const { error: courierError } = await admin.from('couriers').upsert({
-      profile_id: courierUserId,
-      status: 'approved',
-      available: true,
-      vehicle_type: 'moto',
-      license_status: 'verified',
-      insurance_status: 'verified',
+    const initialOffersResponse = page.waitForResponse((response) => {
+      try {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname === expectedPath &&
+          response.ok()
+        );
+      } catch {
+        return false;
+      }
     });
-    if (courierError) {
-      throw new Error(`[E2E Error] Falló upsert couriers: ${courierError.message}`);
-    }
 
-    // 6. Navegar a /merchant/requests/<requestId> y esperar la pantalla real
+    // 5. Iniciar sesión como comercio por UI
+    await loginAsMerchant(page);
+
+    // 6. Navegar al detalle de la solicitud y esperar respuesta inicial completa
     await page.goto(`/merchant/requests/${requestId}`);
     await waitForNoSkeletons(page);
+    await initialOffersResponse;
 
-    // 7. Comprobar primero que el nombre único del courier no está visible
-    await expect(page.getByText(uniqueCourierName)).not.toBeVisible();
+    const baseline = offersRequestCount;
+
+    // 7. Verificar que el heading del repartidor todavía no sea visible
+    const courierHeading = page.getByRole('heading', { level: 4, name: courierName });
+    await expect(courierHeading).not.toBeVisible();
 
     // 8. Insertar una oferta real en offers
+    const admin = createAdminClient();
     const offerId = randomUUID();
     const { error: offerError } = await admin.from('offers').insert({
       id: offerId,
       request_id: requestId,
-      courier_id: courierUserId,
+      courier_id: courier.id,
       amount_ars: 2500,
       eta_minutes: 12,
       status: 'pending',
@@ -141,9 +94,8 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     }
     trackEntityForCleanup(stagingContext, 'offer', offerId);
 
-    // 9. Afirmar por UI que aparece el courier y el monto de la oferta sin reload,
-    // sin fetch manual y dentro de un timeout menor al polling de 30 s.
-    const courierHeading = page.getByRole('heading', { level: 4, name: uniqueCourierName });
+    // 9. Exigir nueva petición posterior al INSERT y renderizado en UI dentro de 15 s (< 30 s de polling)
+    await expect.poll(() => offersRequestCount, { timeout: 15_000 }).toBeGreaterThan(baseline);
     await expect(courierHeading).toBeVisible({ timeout: 15_000 });
     const formattedAmount = formatArs(2500);
     await expect(page.getByText(formattedAmount)).toBeVisible({ timeout: 15_000 });
@@ -197,7 +149,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
 
   test('reconectar a la red dispara refetch automático de la query activa de ofertas', async ({
     page,
-    loginPage,
+    loginAsMerchant,
     stagingContext,
   }) => {
     const requestId = stagingContext.createdRequestIds[0];
@@ -205,40 +157,52 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
       throw new Error('[E2E Error] No se encontró requestId en stagingContext');
     }
 
-    const admin = createAdminClient();
-    await authenticateMerchant(page, admin, stagingContext, loginPage);
+    // 1. Autenticar como comercio
+    await loginAsMerchant(page);
 
-    // Instalar un listener de requests que cuente solo peticiones al endpoint exacto de useRequestOffers
+    // 2. Instalar listener exacto del endpoint y esperar respuesta 2xx inicial antes de fijar baseline
     let count = 0;
     const expectedPath = `/api/live/requests/${requestId}/offers`;
-    page.on('request', (req) => {
+    page.on('request', (request) => {
       try {
-        const url = new URL(req.url());
-        if (url.pathname === expectedPath) {
-          count++;
+        const url = new URL(request.url());
+        if (request.method() === 'GET' && url.pathname === expectedPath) {
+          count += 1;
         }
       } catch {
         // Ignorar URLs no parseables
       }
     });
 
-    // Navegar a la pantalla de detalle de solicitud que monta useRequestOffers
+    const initialOffersResponse = page.waitForResponse((response) => {
+      try {
+        const url = new URL(response.url());
+        return (
+          response.request().method() === 'GET' &&
+          url.pathname === expectedPath &&
+          response.ok()
+        );
+      } catch {
+        return false;
+      }
+    });
+
+    // 3. Navegar a la pantalla de detalle de solicitud que monta useRequestOffers
     await page.goto(`/merchant/requests/${requestId}`);
     await waitForNoSkeletons(page);
+    await initialOffersResponse;
 
-    // Esperar la petición inicial y registrar el baseline
-    await expect.poll(() => count).toBeGreaterThan(0);
     const baseline = count;
 
-    // Simular corte de red
+    // 4. Simular corte de red
     await page.context().setOffline(true);
     const offlineNotice = page.getByRole('status');
     await expect(offlineNotice).toBeVisible();
 
-    // Reconectar a la red
+    // 5. Reconectar a la red
     await page.context().setOffline(false);
 
-    // Exigir con expect.poll que count > baseline sin click en Reintentar,
+    // 6. Exigir con expect.poll que count > baseline sin click en Reintentar,
     // sin fetch('/api/health'), sin router.refresh() y sin fallback a navigator.onLine
     await expect.poll(() => count, { timeout: 15_000 }).toBeGreaterThan(baseline);
   });
