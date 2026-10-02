@@ -92,20 +92,22 @@ function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
   return null;
 }
 
-function MapCameraSynchronizer({ targetCoords }: { targetCoords: MapCoordinates }) {
+function MapCameraSynchronizer({
+  targetCoords,
+  syncVersion,
+}: {
+  targetCoords: MapCoordinates;
+  syncVersion: number;
+}) {
   const map = useMap();
-  const prevTargetRef = React.useRef<MapCoordinates>(targetCoords);
+  const previousVersionRef = React.useRef(syncVersion);
 
   React.useEffect(() => {
     if (!map) return;
-    if (
-      prevTargetRef.current.lat !== targetCoords.lat ||
-      prevTargetRef.current.lng !== targetCoords.lng
-    ) {
-      prevTargetRef.current = targetCoords;
-      map.panTo(targetCoords);
-    }
-  }, [map, targetCoords]);
+    if (previousVersionRef.current === syncVersion) return;
+    previousVersionRef.current = syncVersion;
+    map.panTo(targetCoords);
+  }, [map, targetCoords, syncVersion]);
 
   return null;
 }
@@ -242,22 +244,44 @@ export function MapPicker({
   const [activeCoords, setActiveCoords] = React.useState<MapCoordinates>(fallbackCenter);
   const activeCoordsRef = React.useRef<MapCoordinates>(fallbackCenter);
   const [cameraTarget, setCameraTarget] = React.useState<MapCoordinates>(fallbackCenter);
+  const [cameraSyncVersion, setCameraSyncVersion] = React.useState(0);
+
+  const requestCameraSync = React.useCallback((coords: MapCoordinates) => {
+    setCameraTarget(coords);
+    setCameraSyncVersion((version) => version + 1);
+  }, []);
 
   const updateActiveCoords = React.useCallback((coords: MapCoordinates) => {
     activeCoordsRef.current = coords;
     setActiveCoords(coords);
   }, []);
 
+  const lastIncomingCoordsRef = React.useRef<MapCoordinates | null>(
+    value ?? defaultZoneCenter ?? null
+  );
+
   React.useEffect(() => {
-    const next = value ?? defaultZoneCenter;
-    if (next != null) {
-      const isEcho = sameCoordinates(next, activeCoordsRef.current);
-      updateActiveCoords(next);
-      if (!isEcho) {
-        setCameraTarget(next);
-      }
+    const next = value ?? defaultZoneCenter ?? null;
+    if (next === null) {
+      lastIncomingCoordsRef.current = null;
+      return;
     }
-  }, [value, defaultZoneCenter, updateActiveCoords]);
+
+    const hasIncomingChanged =
+      lastIncomingCoordsRef.current === null ||
+      !sameCoordinates(next, lastIncomingCoordsRef.current);
+
+    if (!hasIncomingChanged) {
+      return;
+    }
+
+    lastIncomingCoordsRef.current = next;
+    const isEcho = sameCoordinates(next, activeCoordsRef.current);
+    updateActiveCoords(next);
+    if (!isEcho) {
+      requestCameraSync(next);
+    }
+  }, [value, defaultZoneCenter, updateActiveCoords, requestCameraSync]);
 
   const onChangeRef = React.useRef(onChange);
   React.useEffect(() => {
@@ -314,10 +338,10 @@ export function MapPicker({
         lng: Number((current.lng + dLng).toFixed(6)),
       };
       updateActiveCoords(next);
-      setCameraTarget(next);
+      requestCameraSync(next);
       onChangeRef.current?.(next);
     },
-    [disabled, value, updateActiveCoords]
+    [disabled, value, updateActiveCoords, requestCameraSync]
   );
 
   const handleKeyDown = React.useCallback(
@@ -378,7 +402,7 @@ export function MapPicker({
         }
 
         updateActiveCoords(coords);
-        setCameraTarget(coords);
+        requestCameraSync(coords);
         onChangeRef.current?.(coords);
         onLocationFound?.(coords);
       },
@@ -397,7 +421,7 @@ export function MapPicker({
         maximumAge: 30000,
       }
     );
-  }, [disabled, locating, onLocationError, onLocationFound, updateActiveCoords]);
+  }, [disabled, locating, onLocationError, onLocationFound, updateActiveCoords, requestCameraSync]);
 
   const labelId = React.useId();
 
@@ -503,7 +527,10 @@ export function MapPicker({
               onClick={handleMapClick}
               onCameraChanged={handleCameraChange}
             >
-              <MapCameraSynchronizer targetCoords={cameraTarget} />
+              <MapCameraSynchronizer
+                targetCoords={cameraTarget}
+                syncVersion={cameraSyncVersion}
+              />
               {mapId ? (
                 <AdvancedMarker
                   position={activeCoords}

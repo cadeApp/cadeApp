@@ -940,6 +940,154 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
       });
       expect(mockPanTo).toHaveBeenCalledTimes(0);
     });
+
+    it('consumidor controlado real: orden externa hacia el target anterior tras drag B → externo A recentra la cámara a A', () => {
+      mockPublicMapId = 'test-map-id';
+      let setExternalValue:
+        | React.Dispatch<React.SetStateAction<MapCoordinates>>
+        | null = null;
+      function ControlledMapPicker() {
+        const [value, setValue] = React.useState<MapCoordinates>(AGUILARES_CENTER);
+        setExternalValue = setValue;
+        return <MapPicker value={value} onChange={setValue} />;
+      }
+
+      render(<ControlledMapPicker />);
+      const coordA = AGUILARES_CENTER;
+      mockPanTo.mockClear();
+
+      act(() => {
+        capturedAdvancedMarkerProps?.onDragEnd?.({
+          latLng: {
+            lat: () => -27.4367891,
+            lng: () => -65.6198765,
+          },
+        });
+      });
+
+      expect(capturedAdvancedMarkerProps?.position).toEqual({
+        lat: -27.436789,
+        lng: -65.619877,
+      });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+
+      act(() => {
+        setExternalValue?.(coordA);
+      });
+
+      expect(capturedAdvancedMarkerProps?.position).toEqual(coordA);
+      expect(mockPanTo).toHaveBeenCalledTimes(1);
+      expect(mockPanTo).toHaveBeenCalledWith(coordA);
+    });
+
+    it('consumidor controlado real: orden externa hacia el target anterior tras click B → externo A recentra la cámara a A', () => {
+      mockPublicMapId = 'test-map-id';
+      let setExternalValue:
+        | React.Dispatch<React.SetStateAction<MapCoordinates>>
+        | null = null;
+      function ControlledMapPicker() {
+        const [value, setValue] = React.useState<MapCoordinates>(AGUILARES_CENTER);
+        setExternalValue = setValue;
+        return <MapPicker value={value} onChange={setValue} />;
+      }
+
+      render(<ControlledMapPicker />);
+      const coordA = AGUILARES_CENTER;
+      mockPanTo.mockClear();
+
+      act(() => {
+        capturedMapProps?.onClick?.({
+          detail: {
+            latLng: { lat: -27.4381234, lng: -65.6145678 },
+          },
+        });
+      });
+
+      expect(capturedAdvancedMarkerProps?.position).toEqual({
+        lat: -27.438123,
+        lng: -65.614568,
+      });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+
+      act(() => {
+        setExternalValue?.(coordA);
+      });
+
+      expect(capturedAdvancedMarkerProps?.position).toEqual(coordA);
+      expect(mockPanTo).toHaveBeenCalledTimes(1);
+      expect(mockPanTo).toHaveBeenCalledWith(coordA);
+    });
+
+    it('mismo value numérico en objeto nuevo: no emite nueva orden de cámara en un rerender', () => {
+      mockPublicMapId = 'test-map-id';
+      const onChange = vi.fn();
+      const coordA = { lat: -27.4333, lng: -65.6167 };
+      const { rerender } = render(<MapPicker value={coordA} onChange={onChange} />);
+      mockPanTo.mockClear();
+
+      // Rerender con un nuevo objeto con las mismas coordenadas
+      rerender(<MapPicker value={{ ...coordA }} onChange={onChange} />);
+
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+    });
+
+    it('mismo defaultZoneCenter numérico tras selección manual no resetea la selección a A (pin sigue en B, mockPanTo=0)', () => {
+      mockPublicMapId = 'test-map-id';
+      const onChange = vi.fn();
+      const coordA = { lat: -27.4333, lng: -65.6167 };
+
+      const { rerender } = render(<MapPicker defaultZoneCenter={coordA} onChange={onChange} />);
+      mockPanTo.mockClear();
+
+      // Arrastre manual a B
+      act(() => {
+        capturedAdvancedMarkerProps?.onDragEnd?.({
+          latLng: {
+            lat: () => -27.4367891,
+            lng: () => -65.6198765,
+          },
+        });
+      });
+
+      const coordB = { lat: -27.436789, lng: -65.619877 };
+      expect(capturedAdvancedMarkerProps?.position).toEqual(coordB);
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+
+      // D: Rerender con un nuevo objeto pero mismas coordenadas para defaultZoneCenter
+      rerender(<MapPicker defaultZoneCenter={{ ...coordA }} onChange={onChange} />);
+      expect(capturedAdvancedMarkerProps?.position).toEqual(coordB);
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+    });
+
+    it('defaultZoneCenter realmente distinto tras selección manual actualiza el pin a C y recentra la cámara a C', () => {
+      mockPublicMapId = 'test-map-id';
+      const onChange = vi.fn();
+      const coordA = { lat: -27.4333, lng: -65.6167 };
+      const coordC = { lat: -27.4411, lng: -65.6222 };
+
+      const { rerender } = render(<MapPicker defaultZoneCenter={coordA} onChange={onChange} />);
+      mockPanTo.mockClear();
+
+      // Arrastre manual a B
+      act(() => {
+        capturedAdvancedMarkerProps?.onDragEnd?.({
+          latLng: {
+            lat: () => -27.4367891,
+            lng: () => -65.6198765,
+          },
+        });
+      });
+
+      const coordB = { lat: -27.436789, lng: -65.619877 };
+      expect(capturedAdvancedMarkerProps?.position).toEqual(coordB);
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+
+      // E: defaultZoneCenter cambia a coordenadas numéricamente distintas (C)
+      rerender(<MapPicker defaultZoneCenter={coordC} onChange={onChange} />);
+      expect(capturedAdvancedMarkerProps?.position).toEqual(coordC);
+      expect(mockPanTo).toHaveBeenCalledTimes(1);
+      expect(mockPanTo).toHaveBeenCalledWith(coordC);
+    });
   });
 
   describe('9. P1 / T-323 DoD — Eliminación de D-pad, badge y crosshair fijo, preservando teclado accesible', () => {
