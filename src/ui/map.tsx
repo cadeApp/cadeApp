@@ -6,14 +6,14 @@ import {
   Map as GoogleMap,
   useApiLoadingStatus,
   APILoadingStatus,
+  AdvancedMarker,
+  Marker,
+  useMap,
   type MapCameraChangedEvent,
+  type MapMouseEvent,
 } from '@vis.gl/react-google-maps';
 import {
   AlertTriangle,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
   Crosshair,
   Info,
   Loader2,
@@ -64,6 +64,10 @@ export function isWithinAguilaresBounds(lat: number, lng: number): boolean {
   );
 }
 
+function sameCoordinates(a: MapCoordinates, b: MapCoordinates): boolean {
+  return a.lat === b.lat && a.lng === b.lng;
+}
+
 export interface MapPickerProps {
   value?: MapCoordinates | null;
   onChange?: (coords: MapCoordinates) => void;
@@ -86,6 +90,101 @@ function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
     }
   }, [status, onFailed]);
   return null;
+}
+
+function MapCameraSynchronizer({
+  targetCoords,
+  syncVersion,
+}: {
+  targetCoords: MapCoordinates;
+  syncVersion: number;
+}) {
+  const map = useMap();
+  const previousVersionRef = React.useRef(syncVersion);
+
+  React.useEffect(() => {
+    if (!map) return;
+    if (previousVersionRef.current === syncVersion) return;
+    previousVersionRef.current = syncVersion;
+    map.panTo(targetCoords);
+  }, [map, targetCoords, syncVersion]);
+
+  return null;
+}
+
+function extractLatLng(
+  ev: {
+    latLng?: { lat: number | (() => number); lng: number | (() => number) } | null;
+    detail?: { latLng?: { lat: number | (() => number); lng: number | (() => number) } | null };
+  }
+): MapCoordinates | null {
+  const latLng = ev.detail?.latLng ?? ev.latLng;
+  if (!latLng) return null;
+  const lat = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat;
+  const lng = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng;
+  if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+    return null;
+  }
+  return {
+    lat: Number(lat.toFixed(6)),
+    lng: Number(lng.toFixed(6)),
+  };
+}
+
+type AuthFailureListener = () => void;
+
+const authFailureListeners = new Set<AuthFailureListener>();
+let previousGlobalAuthFailure: (() => void) | undefined = undefined;
+let installedBridgeHandler: (() => void) | null = null;
+
+function globalAuthFailureBridge() {
+  for (const listener of Array.from(authFailureListeners)) {
+    try {
+      listener();
+    } catch {
+      // Ignorar errores individuales para no bloquear otros listeners
+    }
+  }
+
+  if (typeof previousGlobalAuthFailure === 'function') {
+    try {
+      previousGlobalAuthFailure();
+    } catch {
+      // Ignorar fallos de handlers externos
+    }
+  }
+}
+
+function registerAuthFailureListener(listener: AuthFailureListener): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  authFailureListeners.add(listener);
+
+  if (authFailureListeners.size === 1) {
+    const win = window as unknown as { gm_authFailure?: () => void };
+    previousGlobalAuthFailure = win.gm_authFailure;
+    installedBridgeHandler = globalAuthFailureBridge;
+    win.gm_authFailure = globalAuthFailureBridge;
+  }
+
+  return () => {
+    authFailureListeners.delete(listener);
+
+    if (authFailureListeners.size === 0) {
+      const win = window as unknown as { gm_authFailure?: () => void };
+      if (win.gm_authFailure === installedBridgeHandler) {
+        if (previousGlobalAuthFailure !== undefined) {
+          win.gm_authFailure = previousGlobalAuthFailure;
+        } else {
+          delete win.gm_authFailure;
+        }
+      }
+      previousGlobalAuthFailure = undefined;
+      installedBridgeHandler = null;
+    }
+  };
 }
 
 export function MapPicker({
@@ -130,6 +229,12 @@ export function MapPicker({
     };
   }, []);
 
+  React.useEffect(() => {
+    return registerAuthFailureListener(() => {
+      setApiLoadFailed(true);
+    });
+  }, []);
+
   const fallbackCenter = React.useMemo<MapCoordinates>(() => {
     if (value != null) return value;
     if (defaultZoneCenter != null) return defaultZoneCenter;
@@ -137,14 +242,46 @@ export function MapPicker({
   }, [value, defaultZoneCenter]);
 
   const [activeCoords, setActiveCoords] = React.useState<MapCoordinates>(fallbackCenter);
+  const activeCoordsRef = React.useRef<MapCoordinates>(fallbackCenter);
+  const [cameraTarget, setCameraTarget] = React.useState<MapCoordinates>(fallbackCenter);
+  const [cameraSyncVersion, setCameraSyncVersion] = React.useState(0);
+
+  const requestCameraSync = React.useCallback((coords: MapCoordinates) => {
+    setCameraTarget(coords);
+    setCameraSyncVersion((version) => version + 1);
+  }, []);
+
+  const updateActiveCoords = React.useCallback((coords: MapCoordinates) => {
+    activeCoordsRef.current = coords;
+    setActiveCoords(coords);
+  }, []);
+
+  const lastIncomingCoordsRef = React.useRef<MapCoordinates | null>(
+    value ?? defaultZoneCenter ?? null
+  );
 
   React.useEffect(() => {
-    if (value != null) {
-      setActiveCoords(value);
-    } else if (defaultZoneCenter != null) {
-      setActiveCoords(defaultZoneCenter);
+    const next = value ?? defaultZoneCenter ?? null;
+    if (next === null) {
+      lastIncomingCoordsRef.current = null;
+      return;
     }
-  }, [value, defaultZoneCenter]);
+
+    const hasIncomingChanged =
+      lastIncomingCoordsRef.current === null ||
+      !sameCoordinates(next, lastIncomingCoordsRef.current);
+
+    if (!hasIncomingChanged) {
+      return;
+    }
+
+    lastIncomingCoordsRef.current = next;
+    const isEcho = sameCoordinates(next, activeCoordsRef.current);
+    updateActiveCoords(next);
+    if (!isEcho) {
+      requestCameraSync(next);
+    }
+  }, [value, defaultZoneCenter, updateActiveCoords, requestCameraSync]);
 
   const onChangeRef = React.useRef(onChange);
   React.useEffect(() => {
@@ -159,32 +296,52 @@ export function MapPicker({
       : !isWithinAguilaresBounds(activeCoords.lat, activeCoords.lng);
 
   const handleCameraChange = React.useCallback(
-    (ev: MapCameraChangedEvent) => {
-      if (disabled) return;
-      if (!ev?.detail?.center) return;
-      const { lat, lng } = ev.detail.center;
-      const rounded: MapCoordinates = {
-        lat: Number(lat.toFixed(6)),
-        lng: Number(lng.toFixed(6)),
-      };
-      setActiveCoords(rounded);
-      onChangeRef.current?.(rounded);
+    (_ev: MapCameraChangedEvent) => {
+      // Invariant P1 / T-323: onCameraChanged MUST NOT call onChangeRef.current
+      // to prevent the camera feedback loop during pan/zoom.
     },
-    [disabled]
+    []
+  );
+
+  const handleMarkerDragEnd = React.useCallback(
+    (
+      ev: Parameters<
+        NonNullable<React.ComponentProps<typeof Marker>['onDragEnd']>
+      >[0]
+    ) => {
+      if (disabled) return;
+      const coords = extractLatLng(ev);
+      if (!coords) return;
+      updateActiveCoords(coords);
+      onChangeRef.current?.(coords);
+    },
+    [disabled, updateActiveCoords]
+  );
+
+  const handleMapClick = React.useCallback(
+    (ev: MapMouseEvent) => {
+      if (disabled) return;
+      const coords = extractLatLng(ev);
+      if (!coords) return;
+      updateActiveCoords(coords);
+      onChangeRef.current?.(coords);
+    },
+    [disabled, updateActiveCoords]
   );
 
   const handleNudge = React.useCallback(
     (dLat: number, dLng: number) => {
       if (disabled) return;
-      const current = value ?? activeCoords;
+      const current = value ?? activeCoordsRef.current;
       const next: MapCoordinates = {
         lat: Number((current.lat + dLat).toFixed(6)),
         lng: Number((current.lng + dLng).toFixed(6)),
       };
-      setActiveCoords(next);
+      updateActiveCoords(next);
+      requestCameraSync(next);
       onChangeRef.current?.(next);
     },
-    [disabled, value, activeCoords]
+    [disabled, value, updateActiveCoords, requestCameraSync]
   );
 
   const handleKeyDown = React.useCallback(
@@ -244,7 +401,8 @@ export function MapPicker({
           return;
         }
 
-        setActiveCoords(coords);
+        updateActiveCoords(coords);
+        requestCameraSync(coords);
         onChangeRef.current?.(coords);
         onLocationFound?.(coords);
       },
@@ -263,7 +421,7 @@ export function MapPicker({
         maximumAge: 30000,
       }
     );
-  }, [disabled, locating, onLocationError, onLocationFound]);
+  }, [disabled, locating, onLocationError, onLocationFound, updateActiveCoords, requestCameraSync]);
 
   const labelId = React.useId();
 
@@ -361,13 +519,43 @@ export function MapPicker({
           >
             <MapStatusWatcher onFailed={() => setApiLoadFailed(true)} />
             <GoogleMap
-              center={activeCoords}
+              defaultCenter={fallbackCenter}
               defaultZoom={15}
               gestureHandling={disabled ? 'none' : 'greedy'}
               disableDefaultUI
               mapId={mapId}
+              onClick={handleMapClick}
               onCameraChanged={handleCameraChange}
-            />
+            >
+              <MapCameraSynchronizer
+                targetCoords={cameraTarget}
+                syncVersion={cameraSyncVersion}
+              />
+              {mapId ? (
+                <AdvancedMarker
+                  position={activeCoords}
+                  draggable={!disabled}
+                  onDragEnd={handleMarkerDragEnd}
+                  title="Ubicación seleccionada"
+                >
+                  <div
+                    data-testid="map-marker-pin"
+                    aria-label="Pin de ubicación seleccionada"
+                    className="relative flex items-center justify-center"
+                  >
+                    <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
+                    <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
+                  </div>
+                </AdvancedMarker>
+              ) : (
+                <Marker
+                  position={activeCoords}
+                  draggable={!disabled}
+                  onDragEnd={handleMarkerDragEnd}
+                  title="Ubicación seleccionada"
+                />
+              )}
+            </GoogleMap>
           </APIProvider>
         ) : (
           <div
@@ -387,82 +575,6 @@ export function MapPicker({
             </p>
           </div>
         )}
-
-        {/* Crosshair central fijo */}
-        {isMapAvailable && (
-          <div
-            data-testid="map-crosshair"
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex items-center justify-center"
-          >
-            <div className="relative flex items-center justify-center">
-              <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
-              <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
-            </div>
-          </div>
-        )}
-
-        {/* Controles D-pad de ajuste fino (~10m por pulsación) */}
-        {isMapAvailable && !disabled && (
-          <div
-            data-testid="map-fine-adjustment"
-            className="absolute bottom-2 right-2 flex flex-col items-center rounded-lg border border-border/80 bg-background/90 p-1 shadow-sm backdrop-blur-sm"
-          >
-            <button
-              type="button"
-              data-testid="nudge-north"
-              onClick={() => handleNudge(0.0001, 0)}
-              disabled={disabled}
-              aria-label="Ajustar al norte"
-              className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <ChevronUp className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                data-testid="nudge-west"
-                onClick={() => handleNudge(0, -0.0001)}
-                disabled={disabled}
-                aria-label="Ajustar al oeste"
-                className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <span className="text-xs leading-none font-medium text-muted-foreground select-none">
-                10m
-              </span>
-              <button
-                type="button"
-                data-testid="nudge-east"
-                onClick={() => handleNudge(0, 0.0001)}
-                disabled={disabled}
-                aria-label="Ajustar al este"
-                className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
-            </div>
-            <button
-              type="button"
-              data-testid="nudge-south"
-              onClick={() => handleNudge(-0.0001, 0)}
-              disabled={disabled}
-              aria-label="Ajustar al sur"
-              className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <ChevronDown className="h-5 w-5" />
-            </button>
-          </div>
-        )}
-
-        {/* Badge de coordenadas actuales */}
-        <div
-          data-testid="map-coords-badge"
-          className="absolute top-2 left-2 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm border border-border/80"
-        >
-          {activeCoords.lat.toFixed(4)}, {activeCoords.lng.toFixed(4)}
-        </div>
       </div>
 
       {/* Advertencia si el pin queda fuera de Aguilares */}
