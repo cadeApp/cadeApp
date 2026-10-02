@@ -8,13 +8,13 @@
 | **Rama** | `cc/CC-015-zones-without-centroid-impl` → `develop` |
 | **SHA funcional revisado** | `a6cab08fa6aa86762f03f455bc4e67a9919b988e` |
 | **Base develop** | `721f6e0b0fcbab466ce97812c2a31694a2fbff88` |
-| **Estado** | Draft · CON 1 BLOQUEANTE |
+| **Estado** | Draft · CON 2 BLOQUEANTES |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `a6cab08fa6aa86762f03f455bc4e67a9919b988e` | 1 bloqueante + 1 mejora | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 1 | `a6cab08fa6aa86762f03f455bc4e67a9919b988e` | 2 bloqueantes + 1 mejora | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 
 ## Estado por hallazgo
 
@@ -22,6 +22,7 @@
 |---|---|---:|---|
 | PR213-H01 | La implementación usa CC-015 aunque #189 fue renumerado a CC-017 | alto | abierto |
 | PR213-H02 | pgTAP compara mensajes exactos de PostgreSQL | bajo | abierto |
+| PR213-H03 | M1/M2 de DB exigidas por el contrato no se demostraron en rojo | medio | abierto |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Evidencia: [`evidencia/comandos.md`](evidencia/comandos.md)
 
@@ -35,7 +36,7 @@ La lógica de zonas está bien:
 - requests conserva creación con distancia null si falta un centroide;
 - no se modificó `actions.ts`.
 
-El bloqueo es de identidad/trazabilidad del contrato: CC-015 ya pertenece a #181.
+Los bloqueos pendientes son la identidad/trazabilidad del contrato y la evidencia RED de las mutaciones DB M1/M2.
 
 ## CI
 
@@ -52,4 +53,4 @@ Run #917:
 
 ## Próximo paso
 
-Corregir H01 y, aprovechando la misma ronda, H02. No mergear todavía.
+Corregir H01, demostrar H03 y, aprovechando la misma ronda, resolver H02. No mergear todavía.

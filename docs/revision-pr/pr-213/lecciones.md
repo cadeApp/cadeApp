@@ -15,3 +15,8 @@ Si vuelve a ocurrir en otra PR, conviene agregar un control que asegure que:
 Con un solo incidente no se propone todavía una regla nueva en AGENTS.
 
 H02 usa P21 ya catalogado: verificar códigos/constraints, no wording incidental de PostgreSQL.
+
+
+## Evidencia RED en cambios de esquema
+
+H03 muestra que “no tengo Docker local” no debe cancelar una mutación requerida cuando CI ya provee una base efímera. Si este patrón reaparece en otra PR, conviene documentar en la regla de DB que las mutaciones de pgTAP pueden demostrarse mediante commits temporales y runs de CI.

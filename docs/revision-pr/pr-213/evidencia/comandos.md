@@ -80,3 +80,21 @@ git diff --check
 ```
 
 DB por CI; no levantar Supabase/Docker local.
+
+
+## Evidencia faltante — M1/M2
+
+El body de PR #213 declara:
+
+```text
+M1 (reintroducir zones_active_centroid) y M2 (debilitar zones_centroid_pair): NO ejecutadas.
+```
+
+El GREEN de CI #917 no sustituye esa demostración.
+
+Método requerido sin Docker local:
+- commit temporal M1 → push → db-tests RED → guardar run ID/salida → revert → push;
+- commit temporal M2 → push → db-tests RED → guardar run ID/salida → revert → push;
+- HEAD final GREEN.
+
+La base usada por `db-tests` es efímera; estas mutaciones no migran Supabase Develop.

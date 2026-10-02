@@ -6,9 +6,9 @@
 
 ## Resultado
 
-**CON BLOQUEANTES (1).**
+**CON BLOQUEANTES (2).**
 
-La implementación de la semántica de zonas sin centroide es técnicamente correcta y su CI está verde. El bloqueo es que se implementó bajo un identificador de contract-change que ya estaba ocupado.
+La implementación de la semántica de zonas sin centroide es técnicamente correcta y su CI está verde. Quedan dos bloqueos: identidad de contract-change incorrecta y falta de la demostración RED de las mutaciones DB exigidas por el contrato.
 
 ## PR213-H01 — CC-015 ya existe; #189 es CC-017
 
@@ -59,6 +59,34 @@ La PR #213 solo cambia tres archivos y todos siguen usando `cc015`. Por eso, aun
 - Mantener la lógica funcional actual de la migración y de los tests de requests.
 
 La rama puede conservar su nombre viejo para no recrear el PR; lo importante es que los artefactos versionados y la trazabilidad final sean CC-017.
+
+## PR213-H03 — faltan las mutaciones RED M1/M2 de DB
+
+**Severidad:** medio  
+**Patrón:** P08-control-no-cubre-lo-que-dice  
+**Estado:** abierto
+
+El contrato CC-017 exige explícitamente mutación/restauración para demostrar que los controles fallan si:
+- M1: se reintroduce `zones_active_centroid`;
+- M2: se debilita `zones_centroid_pair`.
+
+La PR declara que **M1 y M2 no fueron ejecutadas** por no tener Docker local. Eso no satisface el criterio de aceptación ni el principio RED/GREEN.
+
+No hace falta levantar Supabase local: el job `db-tests` de GitHub Actions ya crea/aplica una base efímera. Se debe demostrar cada mutación mediante CI sobre commits temporales y luego restaurar el código:
+
+### M1
+1. En un commit temporal, hacer que la migración CC-017 vuelva a crear `zones_active_centroid check (not active or centroid_lat is not null)` después de eliminarlo.
+2. Push.
+3. Esperar `db-tests` RED. La evidencia esperada es que el pgTAP de zona activa con ambos centroides null deje de vivir/pasar.
+4. Revertir el commit de mutación y push.
+
+### M2
+1. En otro commit temporal, debilitar/eliminar `zones_centroid_pair`.
+2. Push.
+3. Esperar `db-tests` RED; debe fallar la comprobación estructural y/o los casos de coordenada suelta.
+4. Revertir el commit de mutación y push.
+
+Registrar run IDs y fallos concretos en la evidencia del PR. Los commits mutados pueden quedar en el historial; el HEAD final debe restaurar la implementación correcta.
 
 ## PR213-H02 — throws_ok acoplado al mensaje textual
 
