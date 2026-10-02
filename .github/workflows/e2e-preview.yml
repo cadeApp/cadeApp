@@ -147,8 +147,8 @@ jobs:
           DEPLOYMENT_ID: ${{ needs.resolve.outputs.deployment_id }}
         run: |
           case "$RESULT" in
-            success) state=success; description='smoke + main-flow + authorization GREEN contra el Preview' ;;
-            failure) state=failure; description='smoke + main-flow + authorization RED contra el Preview' ;;
+            success) state=success; description='trusted E2E gate GREEN contra el Preview' ;;
+            failure) state=failure; description='trusted E2E gate RED contra el Preview' ;;
             *) state=error; description="E2E no corrió ($RESULT): re-ejecutar el run" ;;
           esac
           gh api --silent --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \

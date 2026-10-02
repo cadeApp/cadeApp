@@ -306,6 +306,11 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
     expect(page.url()).toContain('/merchant/dashboard');
 
     // 2. Courier intentando acceder a rutas de (admin) es redirigido a /courier/feed
+    await page.context().clearCookies();
+    await page.evaluate(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
     await loginAsCourier(0, page);
 
     await page.goto('/admin/applicants');
