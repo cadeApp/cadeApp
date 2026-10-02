@@ -667,6 +667,11 @@ test('staging E2E gate runs smoke and T-303 main flow without ignoring failures'
     /pnpm exec playwright test[\s\S]*e2e\/specs\/smoke\.spec\.ts[\s\S]*e2e\/specs\/main-flow\.spec\.ts[\s\S]*--project=chromium/,
     'staging must execute both the smoke and T-303 main-flow specs'
   );
+  assert.match(
+    e2eJob,
+    /--workers=1/,
+    'staging E2E must run serially because specs share the remote staging database'
+  );
   assert.doesNotMatch(e2eJob, /continue-on-error/, 'E2E failures must fail the staging gate');
 });
 
