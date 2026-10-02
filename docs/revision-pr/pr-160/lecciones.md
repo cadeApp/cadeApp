@@ -1,28 +1,18 @@
 # Lecciones — PR #160
 
-## Ronda 1
+## Rondas 1-3
 
-Se mantienen los patrones ya catalogados P08, P04, P06, P03 y P19.
+Se mantienen los patrones documentados P08, P04, P06, P03, P19, P16, P10 y P01.
 
-## Ronda 2
+## Ronda 4
 
-Se reforzaron P08/P16/P03/P19/P10: un fixture real puede invalidar el escenario, el cleanup debe incluir writes hechos por UI y una corrección sobre base vieja exige revalidación.
+No se abre AG nuevo.
 
-## Ronda 3
+- **P01-contrato-de-framework-no-verificado:** crear un `BrowserContext` manual no equivale a usar la fixture `context`; opciones como `baseURL` deben propagarse explícitamente.
+- **P08-control-no-cubre-lo-que-dice:** para privacidad, comparar solo el string original no alcanza si el producto puede formatear el dato antes de mostrarlo. Conviene normalizar ambos lados a una representación canónica.
+- **P19-cuerpo-de-pr-fuera-de-template:** pegar una salida roja y mantener el checkbox compuesto en verde sigue siendo evidencia contradictoria.
+- **P10-desvio-de-ficha-sin-consultar:** incluso una rama recién sincronizada puede quedar atrás durante rondas largas; cada ronda debe volver a comprobar ahead/behind.
 
-No se abre AG nuevo. La ronda agrega evidencia a patrones existentes:
+### Decisión P1
 
-- **P08-control-no-cubre-lo-que-dice:** un E2E puede ejecutar una acción real y aun dar falso positivo si el oráculo no identifica la entidad recién creada o solo exige que dos resultados sean diferentes.
-- **P01-contrato-de-framework-no-verificado:** cambiar de identidad dentro del mismo browser context sin comprobar el guard de auth vuelve inejecutable el flujo.
-- **P06-enumeracion-incompleta:** el inventario de cleanup debe incluir efectos secundarios de RPC como `rate_limits` y `audit_log`, no solo entidades principales.
-- **P03/P19:** una simulación del estado final no equivale a demostrar que el E2E detecta una implementación realmente rota.
-
-### Para Ronda 4
-
-Exigir antes de aprobación:
-1. publicación cash acotada a su propia fila;
-2. orden exacto por ambos criterios;
-3. merchant/courier en sesiones separadas;
-4. cleanup de tablas auxiliares;
-5. evidencia RED reproducible;
-6. salida de `pnpm test`, db-tests CI y Playwright staging.
+La mutación RED local de la guarda SQL queda dispensada para T-303. La sustitución aceptada es una corrida real de staging/CI con el oráculo fuerte ya implementado.
