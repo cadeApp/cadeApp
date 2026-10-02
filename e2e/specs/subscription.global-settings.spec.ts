@@ -1,7 +1,6 @@
 import { test, expect, findRequestIdByNotesMarker } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { createAdminClient } from '@/server/supabase/admin';
-import { canMerchantPublishRequest } from '@/domain/states';
 import type { Page } from '@playwright/test';
 import type { MerchantPage } from '../pages';
 import type { Json } from '@/types/database.types';
@@ -10,25 +9,49 @@ import type { Json } from '@/types/database.types';
  * T-306: E2E de piloto y suscripción (proyecto global-settings)
  *
  * Invariantes del producto probados en este spec:
- * 1. Con el piloto apagado (pilot_active = false) y paid_until vencido, el comercio
- *    no puede publicar solicitudes (bloqueo con SUBSCRIPTION_INACTIVE en UI y server).
- * 2. Con el piloto encendido (pilot_active = true), la publicación se realiza con éxito.
- * 3. Con el piloto apagado pero paid_until futuro (suscripción al día), la publicación sí se realiza.
- * 4. Los settings de la plataforma (platform_settings) se restauran en el teardown.
- * 5. Demostración de fallo al retirar o mutar el chequeo de publish_request.
+ * 1. Con el piloto apagado (pilot_active = false) y paid_until en fecha pasada con
+ *    subscription_status = 'active', el comercio no puede publicar solicitudes (bloqueo con
+ *    SUBSCRIPTION_INACTIVE en UI y servidor).
+ * 2. Con el piloto encendido (pilot_active = true), la publicación se realiza y la solicitud
+ *    alcanza efectivamente el estado 'published'.
+ * 3. Con el piloto apagado pero paid_until futuro (suscripción al día), la publicación se
+ *    realiza y la solicitud alcanza efectivamente el estado 'published'.
+ * 4. Los settings de la plataforma (platform_settings) se leen y restauran de forma fail-closed
+ *    a su valor original exacto en el bloque finally de cada prueba.
  */
 
 // Ejecución serial estricta requerida para specs que alteran platform_settings
 test.describe.configure({ mode: 'serial' });
 
+async function getPlatformSettingPilotActive(): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'pilot_active')
+    .single();
+
+  if (error || !data || typeof data.value !== 'boolean') {
+    throw new Error(
+      `[E2E Subscription Fail-Closed] No se pudo leer el valor booleano original de platform_settings.pilot_active: ${error?.message ?? 'valor no booleano'}`
+    );
+  }
+  return data.value;
+}
+
 async function setPlatformSettingPilotActive(active: boolean): Promise<void> {
   const admin = createAdminClient();
-  const { error } = await admin
+  const { data, error } = await admin
     .from('platform_settings')
     .update({ value: active as unknown as Json })
-    .eq('key', 'pilot_active');
-  if (error) {
-    throw new Error(`[E2E Subscription] Error al actualizar pilot_active: ${error.message}`);
+    .eq('key', 'pilot_active')
+    .select('value')
+    .single();
+
+  if (error || !data || data.value !== active) {
+    throw new Error(
+      `[E2E Subscription Fail-Closed] Error al actualizar pilot_active a ${active}: ${error?.message ?? 'el valor no quedó aplicado'}`
+    );
   }
 }
 
@@ -45,8 +68,11 @@ async function setMerchantSubscription(
       paid_until: paidUntil,
     })
     .eq('profile_id', merchantId);
+
   if (error) {
-    throw new Error(`[E2E Subscription] Error al actualizar estado de suscripción: ${error.message}`);
+    throw new Error(
+      `[E2E Subscription Fail-Closed] Error al actualizar estado de suscripción de ${merchantId}: ${error.message}`
+    );
   }
 }
 
@@ -76,7 +102,7 @@ async function fillAndSubmitRequestForm(
 
 test.describe('T-306 — Suite E2E de piloto y suscripción', () => {
   // ---------------------------------------------------------------------------
-  // DoD 1: Piloto apagado + suscripción vencida -> Bloqueo de publicación
+  // DoD 1: Piloto apagado + paid_until vencido -> Bloqueo de publicación (H02 / H04)
   // ---------------------------------------------------------------------------
   test('DoD 1: Con el piloto apagado y paid_until vencido no se publica (SUBSCRIPTION_INACTIVE)', async ({
     page,
@@ -88,23 +114,12 @@ test.describe('T-306 — Suite E2E de piloto y suscripción', () => {
     if (!merchant) throw new Error('[E2E Error] No merchant user in stagingContext');
 
     const admin = createAdminClient();
-    let initialPilotActive = true;
-    try {
-      const { data: initialSetting } = await admin
-        .from('platform_settings')
-        .select('value')
-        .eq('key', 'pilot_active')
-        .single();
-      if (initialSetting && typeof initialSetting.value === 'boolean') {
-        initialPilotActive = initialSetting.value;
-      }
-    } catch {
-      // Fallback si no se lee
-    }
+    const initialPilotActive = await getPlatformSettingPilotActive();
 
     try {
+      // H02: pilot_active = false, subscription_status = 'active' y paid_until en fecha pasada
       await setPlatformSettingPilotActive(false);
-      await setMerchantSubscription(merchant.id, 'expired', '2020-01-01');
+      await setMerchantSubscription(merchant.id, 'active', '2020-01-01');
 
       await loginAsMerchant(page);
 
@@ -120,21 +135,26 @@ test.describe('T-306 — Suite E2E de piloto y suscripción', () => {
       });
       await expect(alert).toBeVisible();
 
-      // Ninguna solicitud publicada para este comercio
-      const { data: requestRows } = await admin
+      // H04: Aserción sobre el intento específico con su marcador unívoco
+      const { data: publishedRows, error: publishedError } = await admin
         .from('delivery_requests')
         .select('id, status')
         .eq('merchant_id', merchant.id)
+        .eq('notes', notesMarker)
         .eq('status', 'published');
-      expect(requestRows?.length ?? 0).toBe(0);
+      expect(publishedError).toBeNull();
+      expect(publishedRows ?? []).toHaveLength(0);
     } finally {
+      // H06: Restauración exacta a initialPilotActive y relectura
       await setPlatformSettingPilotActive(initialPilotActive);
+      const restored = await getPlatformSettingPilotActive();
+      expect(restored).toBe(initialPilotActive);
       await setMerchantSubscription(merchant.id, 'pilot', null);
     }
   });
 
   // ---------------------------------------------------------------------------
-  // DoD 2: Piloto encendido -> Publicación exitosa
+  // DoD 2: Piloto encendido -> Publicación real (H03 / H06)
   // ---------------------------------------------------------------------------
   test('DoD 2: Con el piloto encendido la solicitud sí se publica', async ({
     page,
@@ -146,19 +166,7 @@ test.describe('T-306 — Suite E2E de piloto y suscripción', () => {
     if (!merchant) throw new Error('[E2E Error] No merchant user in stagingContext');
 
     const admin = createAdminClient();
-    let initialPilotActive = true;
-    try {
-      const { data: initialSetting } = await admin
-        .from('platform_settings')
-        .select('value')
-        .eq('key', 'pilot_active')
-        .single();
-      if (initialSetting && typeof initialSetting.value === 'boolean') {
-        initialPilotActive = initialSetting.value;
-      }
-    } catch {
-      // Fallback
-    }
+    const initialPilotActive = await getPlatformSettingPilotActive();
 
     try {
       await setPlatformSettingPilotActive(true);
@@ -179,13 +187,24 @@ test.describe('T-306 — Suite E2E de piloto y suscripción', () => {
       await waitForNoSkeletons(page);
 
       await expect(page.getByText(/paquete chico/i)).toBeVisible();
+
+      // H03: Aserción sobre el estado de la fila en la base de datos (publicación real vía RPC)
+      const { data: requestRow, error: requestError } = await admin
+        .from('delivery_requests')
+        .select('id, status')
+        .eq('id', createdRequestId)
+        .single();
+      expect(requestError).toBeNull();
+      expect(requestRow?.status).toBe('published');
     } finally {
       await setPlatformSettingPilotActive(initialPilotActive);
+      const restored = await getPlatformSettingPilotActive();
+      expect(restored).toBe(initialPilotActive);
     }
   });
 
   // ---------------------------------------------------------------------------
-  // DoD 3: Piloto apagado + paid_until futuro -> Publicación exitosa
+  // DoD 3: Piloto apagado + paid_until futuro -> Publicación real (H03 / H06)
   // ---------------------------------------------------------------------------
   test('DoD 3: Con el piloto apagado pero paid_until futuro sí se publica', async ({
     page,
@@ -197,19 +216,7 @@ test.describe('T-306 — Suite E2E de piloto y suscripción', () => {
     if (!merchant) throw new Error('[E2E Error] No merchant user in stagingContext');
 
     const admin = createAdminClient();
-    let initialPilotActive = true;
-    try {
-      const { data: initialSetting } = await admin
-        .from('platform_settings')
-        .select('value')
-        .eq('key', 'pilot_active')
-        .single();
-      if (initialSetting && typeof initialSetting.value === 'boolean') {
-        initialPilotActive = initialSetting.value;
-      }
-    } catch {
-      // Fallback
-    }
+    const initialPilotActive = await getPlatformSettingPilotActive();
 
     const futureDate = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
 
@@ -232,52 +239,20 @@ test.describe('T-306 — Suite E2E de piloto y suscripción', () => {
       await waitForNoSkeletons(page);
 
       await expect(page.getByText(/paquete chico/i)).toBeVisible();
+
+      // H03: Aserción sobre el estado de la fila en la base de datos (publicación real vía RPC)
+      const { data: requestRow, error: requestError } = await admin
+        .from('delivery_requests')
+        .select('id, status')
+        .eq('id', createdRequestId)
+        .single();
+      expect(requestError).toBeNull();
+      expect(requestRow?.status).toBe('published');
     } finally {
       await setPlatformSettingPilotActive(initialPilotActive);
+      const restored = await getPlatformSettingPilotActive();
+      expect(restored).toBe(initialPilotActive);
       await setMerchantSubscription(merchant.id, 'pilot', null);
     }
   });
-
-  // ---------------------------------------------------------------------------
-  // DoD 4: Restauración de settings
-  // ---------------------------------------------------------------------------
-  test('DoD 4: Los settings se restauran tras la ejecución', async () => {
-    const admin = createAdminClient();
-    const { data: setting } = await admin
-      .from('platform_settings')
-      .select('value')
-      .eq('key', 'pilot_active')
-      .single();
-
-    expect(setting?.value).toBe(true);
-  });
-
-  // ---------------------------------------------------------------------------
-  // DoD 5: Falla al quitar el chequeo de publish_request (mutación de seguridad)
-  // ---------------------------------------------------------------------------
-  test('DoD 5: Falla al quitar el chequeo de publish_request (mutación de seguridad)', async () => {
-    const expiredMerchantInput = {
-      subscriptionStatus: 'expired' as const,
-      pilotActive: false,
-      paidUntil: '2020-01-01',
-      graceDays: 0,
-      now: new Date(),
-    };
-
-    // 1. Con el chequeo activo, la regla de dominio rechaza con SUBSCRIPTION_INACTIVE
-    const result = canMerchantPublishRequest(expiredMerchantInput);
-    expect(result).toEqual({ ok: false, code: 'SUBSCRIPTION_INACTIVE' });
-
-    // 2. Simulación de mutación: si se elimina la guarda de validación en publish_request
-    const mutatedPublishCheck = (_input: typeof expiredMerchantInput) => ({
-      ok: true as const,
-      data: true as const,
-    });
-
-    const mutatedResult = mutatedPublishCheck(expiredMerchantInput);
-    // Demostración de que la mutación rompe el invariante de seguridad:
-    expect(mutatedResult.ok).toBe(true);
-    expect(mutatedResult.ok).not.toBe(result.ok);
-  });
 });
-
