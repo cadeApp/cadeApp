@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { sortOffersForMerchant } from '@/domain/priority';
 import * as serverSupabase from '@/server/supabase/server';
 import {
   getActiveZones,
@@ -873,6 +875,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
 
   describe('getMerchantRequestWithOffers', () => {
     const validUuid = '11111111-1111-1111-1111-111111111111';
+    const courierUuid = (i: number) => `10000000-0000-0000-0000-${String(i).padStart(12, '0')}`;
     const mockRequestRow = {
       id: validUuid,
       approx_distance_m: 1500,
@@ -893,21 +896,30 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const mockOffers = [
         {
           id: '22222222-2222-2222-2222-222222222222',
-          courier_id: 'courier-1',
+          courier_id: courierUuid(1),
           amount_ars: 2000,
           eta_minutes: 15,
           message: null,
           status: 'pending',
           created_at: '2026-09-26T12:05:00.000Z',
-          courier: {
-            vehicle_type: 'motorcycle',
-            license_status: 'verified',
-            insurance_status: 'verified',
-            doc_level: 2,
-            profile: { display_name: 'Carlos' },
-          },
         },
       ];
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              courierId: courierUuid(1),
+              displayName: 'Carlos',
+              vehicleType: 'moto',
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+          ],
+        },
+        error: null,
+      });
 
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn((table: string) => {
@@ -928,31 +940,50 @@ describe('T-112 / T-118: queries de requests e historial', () => {
           }
           return {};
         }),
+        rpc: couriersRpc,
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(couriersRpc).toHaveBeenCalledExactlyOnceWith('get_request_offer_couriers', {
+        p_request_id: validUuid,
+      });
       expect(result).not.toBeNull();
       expect(result?.offers).toHaveLength(1);
+      expect(result?.offers[0]).toMatchObject({
+        courierName: 'Carlos',
+        vehicleType: 'moto',
+        licenseStatus: 'verified',
+        insuranceStatus: 'verified',
+        docLevel: 2,
+        amountArs: 2000,
+      });
       expect(result?.nextOffersCursor).toBeNull();
     });
 
     it('pagina ofertas con limit(51), retorna 50 ítems y nextOffersCursor con datos de fila 50', async () => {
       const fiftyOneOffers = Array.from({ length: 51 }, (_, i) => ({
         id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
-        courier_id: `courier-${i + 1}`,
+        courier_id: courierUuid(i + 1),
         amount_ars: 2000 + i * 10,
         eta_minutes: 15,
         message: null,
         status: 'pending',
         created_at: `2026-09-26T12:${String(59 - i).padStart(2, '0')}:00.000Z`,
-        courier: {
-          vehicle_type: 'motorcycle',
-          license_status: 'verified',
-          insurance_status: 'none',
-          doc_level: 1,
-          profile: { display_name: `Courier ${i + 1}` },
-        },
       }));
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: fiftyOneOffers.map((offer, i) => ({
+            courierId: offer.courier_id,
+            displayName: `Courier ${i + 1}`,
+            vehicleType: 'moto',
+            licenseStatus: 'verified',
+            insuranceStatus: 'none',
+            docLevel: 1,
+          })),
+        },
+        error: null,
+      });
 
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn((table: string) => {
@@ -973,6 +1004,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
           }
           return {};
         }),
+        rpc: couriersRpc,
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
@@ -982,6 +1014,123 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(result?.nextOffersCursor).toEqual(
         targetOffer ? { createdAt: targetOffer.created_at, id: targetOffer.id } : null
       );
+    });
+
+    function mockMerchantDetailClient(offers: readonly unknown[], rpc: ReturnType<typeof vi.fn>) {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: mockRequestRow, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: offers, error: null }),
+            };
+          }
+          return {};
+        }),
+        rpc,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    }
+
+    const pendingOffer = (i: number, amountArs: number) => ({
+      id: `22222222-2222-2222-2222-${String(i).padStart(12, '0')}`,
+      courier_id: courierUuid(i),
+      amount_ars: amountArs,
+      eta_minutes: 15,
+      message: null,
+      status: 'pending',
+      created_at: `2026-09-26T12:0${i}:00.000Z`,
+    });
+
+    it('CC-016: no embebe couriers/profiles en la consulta de ofertas del comercio', () => {
+      const sourceCode = readFileSync('src/features/requests/queries.ts', 'utf8');
+      const fnSource = sourceCode.slice(
+        sourceCode.indexOf('export async function getMerchantRequestWithOffers')
+      );
+      expect(fnSource).not.toMatch(/couriers!courier_id|profiles!profile_id/);
+      expect(fnSource).toContain('getRequestOfferCouriersRpc');
+    });
+
+    it('CC-016: sin ofertas no llama a la RPC', async () => {
+      const couriersRpc = vi.fn();
+      mockMerchantDetailClient([], couriersRpc);
+
+      const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(result?.offers).toEqual([]);
+      expect(couriersRpc).not.toHaveBeenCalled();
+    });
+
+    it('CC-016: si la RPC falla lanza en lugar de inventar «Repartidor» y docLevel 0', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'NOT_FOUND' },
+      });
+      mockMerchantDetailClient([pendingOffer(1, 2000)], couriersRpc);
+
+      await expect(getMerchantRequestWithOffers(validUuid, 'merchant-1')).rejects.toThrow(
+        'Error al cargar repartidores de las ofertas: NOT_FOUND'
+      );
+    });
+
+    it('CC-016: si una oferta no tiene su repartidor en la proyección lanza', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: { requestId: validUuid, couriers: [] },
+        error: null,
+      });
+      mockMerchantDetailClient([pendingOffer(1, 2000)], couriersRpc);
+
+      await expect(getMerchantRequestWithOffers(validUuid, 'merchant-1')).rejects.toThrow(
+        'Error al cargar repartidores de las ofertas: NOT_FOUND'
+      );
+    });
+
+    it('CC-016: entrega los niveles reales que la lista necesita para ordenar por documentación y por precio', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              courierId: courierUuid(1),
+              displayName: 'Courier Doc2',
+              vehicleType: 'moto',
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+            {
+              courierId: courierUuid(2),
+              displayName: 'Courier Doc0',
+              vehicleType: null,
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              docLevel: 0,
+            },
+          ],
+        },
+        error: null,
+      });
+      mockMerchantDetailClient([pendingOffer(1, 2000), pendingOffer(2, 1500)], couriersRpc);
+
+      const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      const offers = result?.offers ?? [];
+      expect(offers).toHaveLength(2);
+
+      expect(sortOffersForMerchant(offers, 'doc_level').map((o) => o.courierName)).toEqual([
+        'Courier Doc2',
+        'Courier Doc0',
+      ]);
+      expect(sortOffersForMerchant(offers, 'price').map((o) => o.courierName)).toEqual([
+        'Courier Doc0',
+        'Courier Doc2',
+      ]);
     });
   });
 });

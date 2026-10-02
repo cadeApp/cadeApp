@@ -2,6 +2,7 @@ import 'server-only';
 
 import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
+import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
 import type {
   MerchantRequestSummary,
   MerchantRequestDetail,
@@ -199,15 +200,6 @@ interface RawOfferItem {
   message: string | null;
   status: string;
   created_at: string;
-  courier?: {
-    vehicle_type: string | null;
-    license_status: string;
-    insurance_status: string;
-    doc_level: number;
-    profile?: {
-      display_name: string;
-    } | null;
-  } | null;
 }
 
 interface AcceptedOfferHydration {
@@ -720,14 +712,7 @@ export async function getMerchantRequestWithOffers(
       eta_minutes,
       message,
       status,
-      created_at,
-      courier:couriers!courier_id(
-        vehicle_type,
-        license_status,
-        insurance_status,
-        doc_level,
-        profile:profiles!profile_id(display_name)
-      )
+      created_at
     `
     )
     .eq('request_id', requestId)
@@ -743,28 +728,34 @@ export async function getMerchantRequestWithOffers(
   const hasMore = rawOffers.length > 50;
   const pageRows = rawOffers.slice(0, 50);
 
-  const offers: MerchantOfferItem[] = pageRows.map((o) => {
-    const courierObj = Array.isArray(o.courier) ? o.courier[0] : o.courier;
-    const profileObj = courierObj?.profile
-      ? Array.isArray(courierObj.profile)
-        ? courierObj.profile[0]
-        : courierObj.profile
-      : null;
+  // CC-016: el comercio no lee `couriers`/`profiles` por RLS; la identidad y la documentación de quienes
+  // ofertaron llegan por la RPC. Sin esa proyección se falla: nunca se inventa un nivel de documentación.
+  const couriersResult =
+    pageRows.length > 0 ? await getRequestOfferCouriersRpc(supabase, { requestId }) : null;
 
-    const displayName = profileObj?.display_name || 'Repartidor';
+  if (couriersResult && !couriersResult.ok) {
+    throw new Error(`Error al cargar repartidores de las ofertas: ${couriersResult.code}`);
+  }
+
+  const couriersById = couriersResult?.data ?? null;
+
+  const offers: MerchantOfferItem[] = pageRows.map((o) => {
+    const courier = couriersById?.get(o.courier_id);
+    if (!courier) {
+      throw new Error('Error al cargar repartidores de las ofertas: NOT_FOUND');
+    }
 
     return {
       id: o.id,
       courierId: o.courier_id,
-      courierName: displayName,
-      vehicleType: courierObj?.vehicle_type ?? null,
+      courierName: courier.displayName || 'Repartidor',
+      vehicleType: courier.vehicleType,
       amountArs: o.amount_ars,
       etaMinutes: o.eta_minutes,
       message: o.message,
-      licenseStatus: (courierObj?.license_status as MerchantOfferItem['licenseStatus']) ?? 'none',
-      insuranceStatus:
-        (courierObj?.insurance_status as MerchantOfferItem['insuranceStatus']) ?? 'none',
-      docLevel: ((courierObj?.doc_level as number) ?? 0) as 0 | 1 | 2,
+      licenseStatus: courier.licenseStatus,
+      insuranceStatus: courier.insuranceStatus,
+      docLevel: courier.docLevel,
       createdAt: o.created_at,
       status: o.status as MerchantOfferItem['status'],
     };
