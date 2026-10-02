@@ -583,9 +583,9 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
   });
 
   // =========================================================================
-  // CC-015: una zona activa puede no tener centroide verificado
+  // CC-017: una zona activa puede no tener centroide verificado
   // =========================================================================
-  describe('CC-015: zonas sin centroide y sin coordenadas explícitas', () => {
+  describe('CC-017: zonas sin centroide y sin coordenadas explícitas', () => {
     const noCentroidRequestId = '55555555-5555-4555-8555-555555555555';
 
     function arrange(zones: ReadonlyArray<Record<string, unknown>>) {
