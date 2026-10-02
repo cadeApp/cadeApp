@@ -21,3 +21,12 @@ No se agrega número AG nuevo.
 - **H04:** la mutación independiente confirmó el contrato de eventos discretos; no alcanza con que el código “se vea” distinto al crosshair anterior.
 - **H05 / P01:** al incorporar un componente de framework/SDK hay que verificar sus precondiciones runtime contra las configuraciones que el proyecto declara válidas. Los mocks que ignoran esa precondición pueden dar un verde falso.
 - El requisito de `AdvancedMarker` y el contrato opcional de `mapId` deben probarse juntos; ninguno por separado alcanza.
+
+## Ronda 4
+
+No se agrega número AG nuevo.
+
+- **H05 / P01:** la corrección no se da por válida solo porque compila; el control tiene que ejercer las dos configuraciones runtime válidas (`mapId` presente y ausente) y sus handlers reales.
+- **H06 / P11:** una decisión de producto mergeada en una ficha no sustituye un contract-change cuando el repositorio declara `src/ui/**` como contrato. La revisión R2/R3 falló al no cruzar T-323/PR #176 con CC-011 vigente.
+- Cuando una tarea cambia un componente compartido ya gobernado por un CC, la revisión debe comparar **ficha vigente + CC vigente + implementación**, no solo ficha + diff.
+- La evidencia manual que depende de un deploy estable debe ubicarse en el gate que realmente puede producir ese deploy; no se inventa un preview especial si el flujo de release ya define `develop → staging`.

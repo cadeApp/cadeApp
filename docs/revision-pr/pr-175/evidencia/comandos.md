@@ -282,3 +282,88 @@ bundle-budget success
 /merchant/onboarding   147 kB OK
 /merchant/requests/new 163 kB OK
 ```
+
+## Ronda 4
+
+SHA funcional revisado: `8ae06d83cf89d3b50988316af54c29fdbee27a42`  
+develop: `1457072a7cac1ae9e2a8a92abe9253d45b745082`.
+
+### H05 — fallback de Marker
+
+Comparación adversarial R3 → R4:
+
+```text
+H05_OLD_RED_PROPERTY=true
+H05_CURRENT_GREEN_PROPERTY=true
+H05_CONTROL_EXERCISES_BOTH_VARIANTS=true
+```
+
+Interpretación:
+- R3 renderizaba `AdvancedMarker` incondicionalmente y no tenía rama `Marker`.
+- R4 contiene `{mapId ? <AdvancedMarker ...> : <Marker ...>}`.
+- `map.test.tsx` captura separadamente props de ambas variantes y ejerce `onDragEnd`, `disabled` y click/tap.
+
+### H06 — drift contra CC-011
+
+Chequeo independiente limitado al cuerpo ejecutable de `handleCameraChange` para evitar el falso positivo de su comentario explicativo:
+
+```text
+EXECUTABLE_CAMERA_BLOCK:
+const handleCameraChange = React.useCallback(
+    (_ev: MapCameraChangedEvent) => {
+    },
+    []
+  );
+
+ccControlled=true
+curControlled=false
+curDefault=true
+ccCameraPersist=true
+curCameraPersist=false
+ccCrosshair=true
+curCrosshair=false
+ccDpad=true
+curDpad=false
+suiteCc=true
+suiteOpposite=true
+CC011_DRIFT_CAUGHT=true
+```
+
+Fuentes cruzadas:
+- `AGENTS.md §1.4`: `src/ui/**` requiere contract-change.
+- `CC-011 §4`: center controlado, cameraChanged→onChange, crosshair y D-pad.
+- `src/ui/map.tsx@8ae06d8`: comportamiento opuesto por decisión P1.
+- PR #176: solo documentación de tarea/plan/revisión; no crea ni reemplaza un CC.
+- No existe rama `cc/CC-014-*` al momento de R4.
+
+### CI exact-head 36947374673
+
+```text
+Test Files 110 passed (110)
+Tests      1597 passed (1597)
+
+db-tests:
+Files=13, Tests=1614
+Result: PASS
+
+typecheck success
+lint success
+build success
+audit success
+bundle-budget success
+
+/merchant/onboarding 147 kB OK
+/merchant/requests/new 163 kB OK
+/design-system 184 kB — warning preexistente
+```
+
+El job db-tests tuvo reintentos por rate-limit de Docker Hub durante el arranque, pero finalmente ejecutó la base y terminó con `Files=13, Tests=1614, Result: PASS`.
+
+### Decisiones P1 de R4
+
+```text
+1-A — mantener UX nueva y formalizar CC-014 separado antes de cerrar T-323.
+2-A — validación visual real como gate de promoción develop → staging; no bloquea #175 antes del merge.
+```
+
+`.github/workflows/deploy.yml` confirma que el deploy estable de staging se dispara únicamente tras un workflow de migración completado por `push` a la rama `staging`; las feature branches no despliegan allí.
