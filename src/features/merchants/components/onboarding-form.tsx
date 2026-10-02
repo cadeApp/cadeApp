@@ -289,13 +289,6 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
             </span>
           </Button>
 
-          {defaultPickupLat != null && defaultPickupLng != null && !coordsError && (
-            <div className="rounded-lg bg-primary/10 p-2.5 text-sm text-primary-dark">
-              {merchantCopy.onboarding.locationMarked} ({defaultPickupLat.toFixed(4)},{' '}
-              {defaultPickupLng.toFixed(4)})
-            </div>
-          )}
-
           <MapPicker
             value={
               defaultPickupLat != null && defaultPickupLng != null

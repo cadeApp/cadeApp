@@ -233,7 +233,7 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       mockOnChange?.({ lat: -27.4365, lng: -65.6165 });
     });
 
-    expect(await screen.findByText(/ubicación marcada:/i)).toBeDefined();
+    expect(screen.queryByText(/ubicación marcada:/i)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /empezar/i }));
 
