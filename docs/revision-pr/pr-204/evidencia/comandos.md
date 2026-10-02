@@ -85,3 +85,88 @@ P1 decidió:
 - usar `Refs #37` en #204, no `Closes #37`.
 
 Esto separa “PR apta para merge” de “tarea terminada” y evita declarar evidencia que técnicamente no puede existir pre-merge.
+
+## Ronda 2
+
+**SHA funcional:** `328e63ad9ba44f3fd2281fb8bc758b95533d3429`
+
+### Sync
+
+```text
+develop = 721f6e0b0fcbab466ce97812c2a31694a2fbff88
+head    = 328e63ad9ba44f3fd2281fb8bc758b95533d3429
+ahead   = 13
+behind  = 20
+merge-base = cb4111273da663f7591aec370a44767c4e677b82
+```
+
+GitHub reporta mergeable=true. Los 20 commits nuevos de develop incluyen cambios de contratos/tipos y deben integrarse antes de la siguiente validación exact-head.
+
+### CI exact-head
+
+Run **37047363108 / CI #914** — success.
+
+```text
+Vitest: 113/113 archivos, 1678/1678 tests
+verify-workflows: 47/47
+ADR: 6/6
+db-tests: Files=14, Tests=1645, PASS
+```
+
+Jobs GREEN: unit, typecheck, lint, build, audit, db-tests, bundle-budget.
+
+### e2e-preview exact-head
+
+Run **37047498248** apuntó correctamente a `328e63a`, verificó Supabase Develop y health, y falló en el gate por **T-303 Flujo 4**.
+
+Salida relevante:
+```text
+8 passed
+1 failed: T-303 Flujo 4 — Ordenamiento de ofertas recibidas por documentación y precio
+retry: Expected courier name / Received "Repartidor"
+```
+
+El comando ejecutado por el workflow confiable de develop no incluyó `authorization.spec.ts`, exactamente por el bootstrap documentado en decisión 3-A.
+
+### H01
+
+Inspección: admin transitorio + TOTP + challengeAndVerify + AAL2 + RPC con cliente de sesión. Cleanup registra el UUID como user. Sin fallback service-role.
+
+### H02
+
+Bitácora nueva:
+```text
+Expected: redirect
+Received: allow
+1 failed
+...
+1 passed
+```
+
+Eso sí corresponde a romper la implementación. El reviewer intentó clonar para repetirla, pero el entorno devolvió:
+```text
+fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/': Could not resolve host: github.com
+```
+
+Por eso queda `arreglado-sin-verificar`, no `arreglado-verificado`.
+
+### H06 — sesión compartida
+
+`authorization.spec.ts` usa el mismo `page`:
+```ts
+await loginAsMerchant(page);
+...
+await loginAsCourier(0, page);
+```
+
+`loginAsCourier` hace `LoginPage.navigate()` → `/login`, pero `evaluateRouteGuard('/login', merchantSession)` retorna redirect a `/merchant/dashboard`. Debe limpiarse/aislarse la sesión antes del segundo login.
+
+### H05 — rollback incorrecto
+
+El body propone `git revert 328e63ad...`. El diff real de ese commit es únicamente:
+```diff
+- **Último commit:** `TBD`
++ **Último commit:** `1bae33d`
+```
+
+No revierte ni el spec ni el workflow.

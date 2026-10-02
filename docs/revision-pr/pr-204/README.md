@@ -4,10 +4,11 @@
 - **Tarea:** T-305 / issue #37
 - **Rama:** `feat/T-305-authorization-e2e`
 - **Base:** `develop`
-- **Ronda actual:** 1
-- **SHA funcional revisado:** `8eeee50c4a7412734075ea0d07a4bb2d5dc5e82c`
+- **Ronda actual:** 2
+- **SHA funcional revisado (Ronda 1):** `8eeee50c4a7412734075ea0d07a4bb2d5dc5e82c`
+- **SHA funcional Ronda 2:** `328e63ad9ba44f3fd2281fb8bc758b95533d3429`
 - **SHA decisiones P1:** `23cf11f8e86a6c9ff7f5387f9ab673a328397de1` + `b9e2a05847cfd273076025aad45400a8398531c4`
-- **Resultado:** **CON BLOQUEANTES (5)**
+- **Resultado:** **CON BLOQUEANTES (2)**
 - **Fecha:** 2026-10-02
 - **Revisor:** revisión independiente solicitada por Lautaro073
 
@@ -20,14 +21,21 @@ Decisiones P1 ya registradas en Issue #37 y en `docs/tasks/T-305.md`:
 2. El «o» del DoD es literal: RED auténtico rompiendo la guarda; `submit_offer` se prueba GREEN contra Supabase Develop y no se muta la RPC compartida.
 3. Por bootstrap de `repository_dispatch`, #204 puede quedar apta para merge sin haber corrido remotamente `authorization.spec.ts` en ese mismo PR. **T-305/#37 sigue abierta** hasta observar en una PR posterior un `e2e-preview` GREEN que incluya ese spec; #204 debe usar `Refs #37`, no `Closes #37`.
 
-## Bloqueantes
+## Estado Ronda 2
 
-- PR204-H01 — `admin_suspend_courier` usa service-role en vez de sesión admin AAL2.
-- PR204-H02 — la fase RED declarada cambia el expected del test, no la guarda real.
-- PR204-H03 — `e2e-preview` no ejecuta `authorization.spec.ts`.
-- PR204-H04 — dos selectores `getByText` incumplen la regla E2E de rol/label accesible.
-- PR204-H05 — body fuera del template y evidencia marcada como hecha aunque la bitácora dice que falta.
+Corregidos por árbol/evidencia, pendientes de runtime post-merge según 3-A:
+- PR204-H01 — actor admin AAL2.
+- PR204-H02 — mutación RED real de la guarda.
+- PR204-H03 — incorporación de `authorization.spec.ts` al gate.
+- PR204-H04 — selectores accesibles.
+
+Bloqueantes actuales:
+- PR204-H05 — body todavía no cumple el template/evidencia: marca “cada prueba nueva” sin respaldo completo, pega el informe en formato incorrecto y el rollback apunta al commit docs-only `328e63a`.
+- PR204-H06 — el caso merchant→courier intenta reutilizar la misma sesión/página; `/login` redirige al merchant autenticado y el segundo login no puede abrir el formulario.
+
+Además, al iniciar Ronda 2 la rama volvió a quedar 20 commits detrás de `develop`; debe resincronizarse antes de la siguiente validación exact-head.
 
 ## Revisiones
 
 - `revisiones/ronda-1.md`
+- `revisiones/ronda-2.md`
