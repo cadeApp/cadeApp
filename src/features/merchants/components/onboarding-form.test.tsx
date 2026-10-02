@@ -265,4 +265,198 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
     const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
     expect(phoneInput.getAttribute('inputmode')).toBe('tel');
   });
+
+  describe('T-323 DoD: Degradación graceful de mapa y geolocalización', () => {
+    it('si la geolocalización falla, muestra aviso de fallback pero NO deshabilita el botón Empezar y permite submit con dirección escrita', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((_success, error) => {
+            error({ code: 1, message: 'User denied geolocation' });
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      // Usuario intenta usar GPS
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación actual/i });
+      fireEvent.click(gpsBtn);
+
+      // Muestra el aviso que dice que puede continuar con la dirección escrita
+      expect(
+        await screen.findByText(/no pudimos obtener tu ubicación actual\. podés continuar con la dirección escrita\./i)
+      ).toBeDefined();
+
+      // El botón de submit NO debe estar deshabilitado
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
+      expect(submitBtn).not.toHaveProperty('disabled', true);
+
+      // El usuario hace submit con la dirección escrita
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+
+      const firstCall = vi.mocked(merchantOnboardingAction).mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const callArgs = firstCall[0] as Record<string, unknown>;
+      expect(callArgs['defaultPickupAddress']).toBe('Av. Sarmiento 123');
+      expect(callArgs['defaultPickupLat']).toBeNull();
+      expect(callArgs['defaultPickupLng']).toBeNull();
+    });
+
+    it('una falla de mapa o geolocalización no muestra falsamente el errorGeneric de guardar datos', async () => {
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((_success, error) => {
+            error({ code: 2, message: 'Position unavailable' });
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación actual/i });
+      fireEvent.click(gpsBtn);
+
+      await screen.findByText(/no pudimos obtener tu ubicación actual/i);
+
+      // NO debe mostrarse el mensaje de error al crear/guardar comercio
+      expect(screen.queryByText(/ocurrió un error al guardar los datos/i)).toBeNull();
+    });
+
+    it('Caso A: GPS fuera -> handler descarta lat/lng -> completar dirección manual -> botón habilitado -> submit llama merchantOnboardingAction con lat/lng nulas', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((success) => {
+            success({
+              coords: { latitude: -26.83, longitude: -65.20 }, // Fuera de Aguilares
+            });
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación actual/i });
+      fireEvent.click(gpsBtn);
+
+      expect(
+        await screen.findByText(/ubicación fuera de aguilares/i)
+      ).toBeDefined();
+
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
+      // El botón debe estar HABILITADO porque lat/lng fueron descartadas a null
+      expect(submitBtn).not.toHaveProperty('disabled', true);
+
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+
+      const firstCall = vi.mocked(merchantOnboardingAction).mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const callArgs = firstCall[0] as Record<string, unknown>;
+      expect(callArgs['defaultPickupAddress']).toBe('Av. Sarmiento 123');
+      expect(callArgs['defaultPickupLat']).toBeNull();
+      expect(callArgs['defaultPickupLng']).toBeNull();
+    });
+
+    it('Caso B: pin o centroide realmente fuera y todavía presente -> submit bloqueado', async () => {
+      const zoneOutOfBounds = {
+        id: '44444444-4444-4444-8444-444444444444',
+        name: 'Zona Fuera',
+        centroidLat: -26.83,
+        centroidLng: -65.20,
+      };
+
+      render(<MerchantOnboardingForm zones={[...mockZones, zoneOutOfBounds]} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      // B1. Con pin fuera de Aguilares
+      expect(mockOnChange).toBeDefined();
+      await act(async () => {
+        mockOnChange?.({ lat: -26.83, lng: -65.20 });
+      });
+
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
+      expect(submitBtn).toHaveProperty('disabled', true);
+
+      // B2. Con zona cuyo centroide está fuera de Aguilares
+      const zoneSelect = screen.getByLabelText(/barrio de retiro/i);
+      fireEvent.change(zoneSelect, { target: { value: zoneOutOfBounds.id } });
+      expect(submitBtn).toHaveProperty('disabled', true);
+    });
+
+    it('Caso C: tras un error fuera de rango, corregir a coordenadas o centroide válido -> se puede enviar', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} />);
+      await screen.findByTestId('map-picker');
+
+      fillBaseForm();
+
+      // Inicialmente fija un pin inválido fuera de Aguilares
+      expect(mockOnChange).toBeDefined();
+      await act(async () => {
+        mockOnChange?.({ lat: -26.83, lng: -65.20 });
+      });
+
+      const submitBtn = screen.getByRole('button', { name: /empezar/i });
+      expect(submitBtn).toHaveProperty('disabled', true);
+
+      // Corrige a coordenadas válidas dentro de Aguilares
+      await act(async () => {
+        mockOnChange?.({ lat: -27.435, lng: -65.615 });
+      });
+
+      // Ahora el botón debe estar habilitado
+      expect(submitBtn).not.toHaveProperty('disabled', true);
+
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+
+      const firstCall = vi.mocked(merchantOnboardingAction).mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const callArgs = firstCall[0] as Record<string, unknown>;
+      expect(callArgs['defaultPickupLat']).toBe(-27.435);
+      expect(callArgs['defaultPickupLng']).toBe(-65.615);
+    });
+  });
 });
