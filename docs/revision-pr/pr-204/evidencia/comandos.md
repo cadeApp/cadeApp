@@ -3,7 +3,7 @@
 ## Ronda 1
 
 **SHA funcional:** `8eeee50c4a7412734075ea0d07a4bb2d5dc5e82c`  
-**Decisión P1:** `23cf11f8e86a6c9ff7f5387f9ab673a328397de1`
+**Decisiones P1:** `23cf11f8e86a6c9ff7f5387f9ab673a328397de1` + `b9e2a05847cfd273076025aad45400a8398531c4`
 
 ### Sync
 
@@ -73,3 +73,15 @@ pnpm exec playwright test e2e/specs/authorization.spec.ts \
 La mutación se restaura desde una copia en memoria/`/tmp`, nunca con `git checkout`. Si queda GREEN, H02 sigue abierto. Si queda RED por la aserción de redirect y luego GREEN restaurado, la mutación queda matada.
 
 No se ejecutó este harness desde la sesión del reviewer porque este entorno no tiene checkout/red del repo; no se registra como verificado-runtime.
+
+### Decisión 3-A — bootstrap del gate
+
+`repository_dispatch` ejecuta la definición de `e2e-preview.yml` que vive en la rama default (`develop`). Por eso, aunque #204 agregue `authorization.spec.ts` al workflow de su propia rama, ese cambio no puede gobernar el `repository_dispatch` de la misma #204 antes del merge.
+
+P1 decidió:
+- corregir el gate dentro de #204;
+- permitir que #204 llegue a estado mergeable sin un GREEN remoto de `authorization.spec.ts` en ese mismo PR;
+- mantener **T-305 / #37 abierta** hasta que una PR posterior produzca un `e2e-preview` GREEN ejecutando `authorization.spec.ts`;
+- usar `Refs #37` en #204, no `Closes #37`.
+
+Esto separa “PR apta para merge” de “tarea terminada” y evita declarar evidencia que técnicamente no puede existir pre-merge.
