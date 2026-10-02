@@ -1,0 +1,154 @@
+name: e2e-preview
+
+# Las PR internas se validan contra su propio Vercel Preview, con Supabase Develop compartido. Vercel despliega
+# solo (Git Integration); acá no se despliega nada: se espera el aviso de Vercel y se prueba esa URL.
+#
+# `repository_dispatch` y no `deployment_status`: el GitHub Deployment que crea Vercel no trae el Project ID
+# (payload `{}`), y este evento sí (`client_payload.project.id`). Además corre siempre con el workflow de la
+# rama por defecto, así que la PR bajo prueba no puede reescribir este gate.
+on:
+  repository_dispatch:
+    types:
+      - vercel.deployment.success
+      - vercel.deployment.ready
+
+permissions: {}
+
+jobs:
+  resolve:
+    name: resolve-preview
+    runs-on: ubuntu-latest
+    # Solo para leer VERCEL_PROJECT_ID. Este job no hace checkout de la PR ni ejecuta código suyo.
+    environment: develop
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: write
+    concurrency:
+      group: e2e-preview-resolve-${{ github.event.client_payload.git.sha }}
+      cancel-in-progress: false
+    outputs:
+      run: ${{ steps.target.outputs.run }}
+      sha: ${{ steps.target.outputs.sha }}
+      url: ${{ steps.target.outputs.url }}
+      deployment_id: ${{ steps.target.outputs.deployment_id }}
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Resolve trusted preview target
+        id: target
+        run: node .github/workflows/e2e-preview-target.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  e2e:
+    name: e2e-preview
+    needs: resolve
+    if: needs.resolve.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    environment: develop
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    # Un solo grupo para todas las PR: Supabase Develop es compartido y `--workers=1` solo serializa adentro
+    # de una corrida.
+    concurrency:
+      group: cadeapp-develop-e2e
+      cancel-in-progress: false
+    env:
+      PREVIEW_URL: ${{ needs.resolve.outputs.url }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.28.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.14.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Verify Supabase Develop target
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}
+          SUPABASE_STAGING_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$SUPABASE_PROJECT_REF" ] || [ -z "$SUPABASE_STAGING_PROJECT_REF" ]; then
+            echo '::error::Falta la variable SUPABASE_DEVELOP_PROJECT_REF o SUPABASE_PROJECT_REF.'
+            exit 1
+          fi
+          if [ "$SUPABASE_PROJECT_REF" = "$SUPABASE_STAGING_PROJECT_REF" ]; then
+            echo '::error::El ref de develop debe ser distinto al de staging.'
+            exit 1
+          fi
+          if [ "$NEXT_PUBLIC_SUPABASE_URL" != "https://$SUPABASE_PROJECT_REF.supabase.co" ]; then
+            echo '::error::NEXT_PUBLIC_SUPABASE_URL del Environment develop no apunta a SUPABASE_DEVELOP_PROJECT_REF.'
+            exit 1
+          fi
+      - name: Health check
+        run: |
+          code="$(curl --silent --output /dev/null --write-out '%{http_code}' --retry 6 --retry-delay 10 --retry-all-errors --max-time 15 "$PREVIEW_URL/api/health")"
+          if [ "$code" != '200' ]; then
+            echo "::error::$PREVIEW_URL/api/health respondió $code. Un 302 o 401 es Vercel Authentication protegiendo el Preview."
+            exit 1
+          fi
+      - name: Run preview E2E gate
+        env:
+          PLAYWRIGHT_TEST_BASE_URL: ${{ needs.resolve.outputs.url }}
+          NEXT_PUBLIC_APP_URL: ${{ needs.resolve.outputs.url }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          DNI_HMAC_SECRET: ${{ secrets.DNI_HMAC_SECRET }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          E2E_TEST: 'true'
+        shell: bash
+        run: |
+          specs=(e2e/specs/smoke.spec.ts e2e/specs/main-flow.spec.ts)
+          if [ -f e2e/specs/request-states.spec.ts ]; then
+            specs+=(e2e/specs/request-states.spec.ts)
+          fi
+          pnpm exec playwright test "${specs[@]}" --project=chromium --workers=1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  report:
+    name: report-preview-status
+    needs: [resolve, e2e]
+    # La corrida vive en develop, no en la PR: el resultado se publica como commit status del SHA probado.
+    if: always() && needs.resolve.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: Publish e2e-preview commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.e2e.result }}
+          TARGET_SHA: ${{ needs.resolve.outputs.sha }}
+          DEPLOYMENT_ID: ${{ needs.resolve.outputs.deployment_id }}
+        run: |
+          case "$RESULT" in
+            success) state=success; description='trusted E2E gate GREEN contra el Preview' ;;
+            failure) state=failure; description='trusted E2E gate RED contra el Preview' ;;
+            *) state=error; description="E2E no corrió ($RESULT): re-ejecutar el run" ;;
+          esac
+          gh api --silent --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f context=e2e-preview -f state="$state" \
+            -f description="$description [$DEPLOYMENT_ID]" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

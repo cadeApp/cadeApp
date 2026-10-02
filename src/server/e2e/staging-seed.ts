@@ -267,18 +267,23 @@ export async function seedStagingData(
     // Buscar zonas activas en la base
     const { data: existingZones, error: zonesQueryError } = await admin
       .from('zones')
-      .select('id')
+      .select('id, name')
       .eq('active', true)
-      .limit(2);
+      .limit(10);
 
     if (zonesQueryError) {
       throw new Error(`[E2E Seed Error] Error al consultar zonas: ${zonesQueryError.message}`);
     }
 
-    const firstZone = existingZones?.[0];
+    // Nunca reutilizar zonas transitorias creadas por otra corrida E2E paralela.
+    // Si staging no tiene zonas estables, cada contexto crea y trackea su propia zona.
+    const stableZones = (existingZones ?? []).filter(
+      (zone) => typeof zone.name !== 'string' || !zone.name.startsWith('E2E Zona ')
+    );
+    const firstZone = stableZones[0];
     if (firstZone) {
       pickupZoneId = firstZone.id;
-      dropoffZoneId = existingZones[1]?.id ?? firstZone.id;
+      dropoffZoneId = stableZones[1]?.id ?? firstZone.id;
     } else {
       // Si la base no tiene zonas activas preexistentes, crear una zona transitoria válida
       const newZoneId = crypto.randomUUID();

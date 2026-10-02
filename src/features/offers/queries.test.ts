@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
-import { getAvailableRequests, getCourierStatusAndAvailability } from './queries';
+import { getAvailableRequests, getCourierStatusAndAvailability, getMyOffers } from './queries';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -180,6 +180,44 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     expect(result.nextCursor).toEqual(
       targetRow ? { createdAt: targetRow.created_at, id: targetRow.id } : null
     );
+  });
+
+  it('getMyOffers desambigua la relación con delivery_requests usando offers_request_id_fkey', async () => {
+    let selectProjection = '';
+
+    const offersBuilder = {
+      select: vi.fn((projection: string) => {
+        selectProjection = projection;
+        return offersBuilder;
+      }),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      then: (resolve: (val: unknown) => void) =>
+        resolve({
+          data: [],
+          error: null,
+        }),
+    };
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: validCourierUser },
+          error: null,
+        }),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'offers') {
+          return offersBuilder;
+        }
+        return {};
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const result = await getMyOffers();
+
+    expect(result).toEqual([]);
+    expect(selectProjection).toContain('delivery_requests!offers_request_id_fkey');
   });
 
   it('getCourierStatusAndAvailability obtiene el estado y disponibilidad del repartidor', async () => {

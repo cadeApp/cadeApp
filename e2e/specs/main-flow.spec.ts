@@ -131,10 +131,20 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       merchantPage2.confirmAcceptButton.click(),
     ]);
 
-    // Al menos una pestaña debe reflejar rechazo específico por concurrencia ALREADY_MATCHED
+    // Al menos una pestaña debe reflejar rechazo específico por concurrencia ALREADY_MATCHED.
+    // Los locators pertenecen a páginas distintas: no usar locator.or() entre frames/pages.
     const alert1 = merchantPage1.alreadyMatchedAlert;
     const alert2 = merchantPage2.alreadyMatchedAlert;
-    await expect(alert1.or(alert2)).toBeVisible({ timeout: 10000 });
+    await expect
+      .poll(
+        async () => (await alert1.isVisible()) || (await alert2.isVisible()),
+        {
+          message: 'Una de las dos pestañas debe mostrar el rechazo ALREADY_MATCHED',
+          timeout: 10000,
+          intervals: [250, 500, 1000],
+        }
+      )
+      .toBe(true);
 
     // Oráculo de estado final: convergencia observada server-side con expect.poll
     await expect
@@ -323,6 +333,9 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     await courierPage.offerAmountInput.fill(String(validAmount));
     await courierPage.submitOfferButton.click();
 
+    // Esperar el resultado real de la Server Action antes de abandonar el sheet.
+    await expect(page.getByText(/¡Oferta enviada con éxito!/i)).toBeVisible({ timeout: 10000 });
+
     // Ir a "Mis ofertas" y verificar que la oferta aparezca con formato ARS real
     await courierPage.gotoOffers();
     await waitForNoSkeletons(page);
@@ -502,6 +515,15 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       await courierTripPage.markPickedUpButton.click();
       await waitForNoSkeletons(courierBrowserPage);
       await expect(courierTripPage.confirmDeliveryButton).toBeVisible();
+
+      // Sonner queda por encima del CTA durante unos segundos; esperar a que deje de interceptar clicks.
+      const pickedUpToast = courierBrowserPage.getByText(/Pedido marcado como retirado/i);
+      await expect(pickedUpToast).toBeVisible({ timeout: 10000 });
+
+      // Sonner pausa el auto-dismiss mientras el puntero queda sobre el toast.
+      // Moverlo a una zona neutra permite que expire sin forzar clicks ni sleeps.
+      await courierBrowserPage.mouse.move(0, 0);
+      await expect(pickedUpToast).not.toBeVisible({ timeout: 10000 });
 
       // Confirmar entrega -> estado entregado
       await courierTripPage.confirmDeliveryButton.click();
