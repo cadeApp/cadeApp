@@ -138,14 +138,55 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       message: null,
       status: 'pending',
       created_at: createdAt,
-      courier: {
-        vehicle_type: 'motorcycle',
-        license_status: 'verified',
-        insurance_status: 'none',
-        doc_level: 1,
-        profile: { display_name: `Repartidor ${i}` },
-      },
     };
+  }
+
+  // CC-016: forma exacta de la salida de `get_request_offer_couriers`.
+  function makeCourierProjection(i: number) {
+    return {
+      courierId: `10000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
+      displayName: `Repartidor ${i}`,
+      vehicleType: 'moto',
+      licenseStatus: 'verified',
+      insuranceStatus: 'none',
+      docLevel: 1,
+    };
+  }
+
+  function makeCouriersRpc(requestId: string, indexes: readonly number[]) {
+    return vi.fn().mockResolvedValue({
+      data: { requestId, couriers: indexes.map(makeCourierProjection) },
+      error: null,
+    });
+  }
+
+  function makeOwnedRequestBuilder() {
+    return {
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { id: validUuid, merchant_id: mockUser.id },
+            error: null,
+          }),
+        }),
+      }),
+    };
+  }
+
+  function mockMerchantClient(offerRows: readonly unknown[], rpc: ReturnType<typeof vi.fn>) {
+    const offersBuilder = createMockQueryBuilder(offerRows);
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return makeOwnedRequestBuilder();
+        if (table === 'offers') return offersBuilder;
+        return {};
+      }),
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    return offersBuilder;
   }
 
   describe('3.1 getAvailableRequestsLiveServer', () => {
@@ -401,6 +442,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         }),
       };
       const offersBuilder = createMockQueryBuilder([offer]);
+      const couriersRpc = makeCouriersRpc(validUuid, [1]);
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
@@ -413,14 +455,24 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
         },
         from: mockFrom,
+        rpc: couriersRpc,
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getRequestOffersLiveServer(validUuid);
+      expect(couriersRpc).toHaveBeenCalledExactlyOnceWith('get_request_offer_couriers', {
+        p_request_id: validUuid,
+      });
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.data).toHaveLength(1);
-        expect(result.data.data[0]?.courierName).toBe('Repartidor 1');
-        expect(result.data.data[0]?.amountArs).toBe(1501);
+        expect(result.data.data[0]).toMatchObject({
+          courierName: 'Repartidor 1',
+          amountArs: 1501,
+          vehicleType: 'moto',
+          licenseStatus: 'verified',
+          insuranceStatus: 'none',
+          docLevel: 1,
+        });
         expect(result.data.nextCursor).toBeNull();
       }
     });
@@ -450,6 +502,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
         },
         from: mockFrom,
+        rpc: makeCouriersRpc(
+          validUuid,
+          offers51.map((_, i) => i + 1)
+        ),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getRequestOffersLiveServer(validUuid);
@@ -510,6 +566,92 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
         ],
       ]);
+    });
+  });
+
+  describe('3.2 getRequestOffersLiveServer — proyección de repartidores (CC-016)', () => {
+    it('no embebe couriers/profiles en la consulta de ofertas del comercio', () => {
+      const sourceCode = readFileSync('src/server/live/t204.ts', 'utf8');
+      expect(sourceCode).not.toMatch(/couriers!courier_id|profiles!profile_id/);
+      expect(sourceCode).toContain('getRequestOfferCouriersRpc');
+    });
+
+    it('sin ofertas no llama a la RPC y responde lista vacía', async () => {
+      const couriersRpc = vi.fn();
+      mockMerchantClient([], couriersRpc);
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: true, data: { data: [], nextCursor: null } });
+      expect(couriersRpc).not.toHaveBeenCalled();
+    });
+
+    it('si la RPC falla responde 500 en lugar de inventar «Repartidor» y docLevel 0', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'NOT_FOUND' },
+      });
+      mockMerchantClient([makeOfferRow(1, validUuid)], couriersRpc);
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: false, error: 'DATABASE_ERROR', status: 500 });
+    });
+
+    it('si una oferta no tiene su repartidor en la proyección responde 500', async () => {
+      mockMerchantClient(
+        [makeOfferRow(1, validUuid), makeOfferRow(2, validUuid)],
+        makeCouriersRpc(validUuid, [1])
+      );
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: false, error: 'DATABASE_ERROR', status: 500 });
+    });
+
+    it('si la RPC devuelve un campo fuera del contrato (teléfono) responde 500', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [{ ...makeCourierProjection(1), phone: '3865000001' }],
+        },
+        error: null,
+      });
+      mockMerchantClient([makeOfferRow(1, validUuid)], couriersRpc);
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: false, error: 'DATABASE_ERROR', status: 500 });
+    });
+
+    it('conserva los niveles reales para ordenar: doc 2 con $2000 y doc 0 con $1500', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              ...makeCourierProjection(1),
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+            { ...makeCourierProjection(2), licenseStatus: 'none', docLevel: 0 },
+          ],
+        },
+        error: null,
+      });
+      mockMerchantClient(
+        [
+          { ...makeOfferRow(1, validUuid), amount_ars: 2000 },
+          { ...makeOfferRow(2, validUuid), amount_ars: 1500 },
+        ],
+        couriersRpc
+      );
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.data.map((o) => [o.courierName, o.docLevel, o.amountArs])).toEqual([
+          ['Repartidor 1', 2, 2000],
+          ['Repartidor 2', 0, 1500],
+        ]);
+      }
     });
   });
 
