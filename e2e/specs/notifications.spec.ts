@@ -31,7 +31,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     if (!courier) {
       throw new Error('[E2E Error] No se encontró courier en stagingContext');
     }
-    const courierName = courier.displayName ?? 'E2E Courier Doc2';
+    const offerMarker = `T307 realtime ${stagingContext.testRunId}`;
 
     // 3. Instalar control exacto de peticiones y respuesta inicial antes de navegar al detalle
     const expectedPath = `/api/live/requests/${requestId}/offers`;
@@ -74,9 +74,9 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
 
     const baseline = offersRequestCount;
 
-    // 7. Verificar que el heading del repartidor todavía no sea visible
-    const courierHeading = page.getByRole('heading', { level: 4, name: courierName });
-    await expect(courierHeading).not.toBeVisible();
+    // 7. Verificar que el marcador único de esta oferta todavía no sea visible.
+    // No usar el nombre real del courier: #200 afecta esa proyección y es ajeno a T-307.
+    await expect(page.getByText(offerMarker)).not.toBeVisible();
 
     // 8. Insertar una oferta real en offers
     const admin = createAdminClient();
@@ -87,6 +87,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
       courier_id: courier.id,
       amount_ars: 2500,
       eta_minutes: 12,
+      message: offerMarker,
       status: 'pending',
     });
     if (offerError) {
@@ -96,7 +97,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
 
     // 9. Exigir nueva petición posterior al INSERT y renderizado en UI dentro de 15 s (< 30 s de polling)
     await expect.poll(() => offersRequestCount, { timeout: 15_000 }).toBeGreaterThan(baseline);
-    await expect(courierHeading).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(offerMarker)).toBeVisible({ timeout: 15_000 });
     const formattedAmount = formatArs(2500);
     await expect(page.getByText(formattedAmount)).toBeVisible({ timeout: 15_000 });
 

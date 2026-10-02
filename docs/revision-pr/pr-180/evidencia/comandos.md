@@ -178,3 +178,65 @@ H06 -> arreglado-sin-verificar (fix mínimo del revisor)
 D01 -> aplicado
 T-327/#205 -> bloquea la verificación E2E final de T-307
 ```
+
+---
+
+## Ronda 4
+
+Base revisada: `bb2fe2a05a8fb8020b24f1eed581dc8f901e62a3`.
+
+### 1. No hubo nueva implementación del agy
+
+El HEAD al comenzar esta revisión seguía siendo el commit de Ronda 3 del revisor. No se inventa una nueva corrección del autor.
+
+### 2. Evidencia nueva del Preview de `bb2fe2a`
+
+- CI: run `37040809661` — GREEN.
+- Vercel: READY.
+- e2e-preview: run `37040956911` — RED global.
+- El job trusted ejecutó `smoke.spec.ts + main-flow.spec.ts`; la copia de `request-states.spec.ts` no existía en ese SHA y `notifications.spec.ts` no fue enumerado.
+- Resultado: 8 passed / 1 failed. El único fallo volvió a ser T-303 Flow 4 / #200.
+
+Esto confirma nuevamente que la infraestructura Preview/Develop funciona, pero T-307 todavía no fue ejecutada por el gate trusted.
+
+### 3. PR180-H07 — acoplamiento indebido con #200
+
+El test de Realtime esperaba el heading con `courier.displayName`. El bug conocido #200 hace que el merchant reciba la proyección de courier como null y la UI muestre `Repartidor`.
+
+Por lo tanto, aun con Realtime perfecto, `notifications.spec.ts` podía fallar por T-303/#200.
+
+Fix mínimo aplicado por la revisión:
+- mantener el courier sembrado solo como FK válida;
+- insertar `message: "T307 realtime <testRunId>"` como marcador único de la oferta;
+- verificar ausencia del marcador antes del INSERT;
+- después del evento, exigir segunda GET + marcador visible + monto visible;
+- dejar de depender del nombre/documentación del courier.
+
+La columna `offers.message` existe y `getRequestOffersLiveServer()` la proyecta sin depender de la relación RLS de `couriers`; `RequestOffersList` la renderiza en la tarjeta.
+
+### 4. Sincronización con develop
+
+Antes del merge:
+```text
+develop: cb4111273da663f7591aec370a44767c4e677b82
+branch: bb2fe2a05a8fb8020b24f1eed581dc8f901e62a3
+ahead: 14
+behind: 5
+```
+
+Los 5 commits pendientes cambian solo:
+- `.github/workflows/e2e-preview.yml`
+- `.github/workflows/e2e-staging.yml`
+- `.github/workflows/verify-workflows.test.mjs`
+
+La revisión integra esas versiones exactas de `develop` mediante merge commit, sin rebase.
+
+### 5. Estado de verificación
+
+```text
+H02 -> arreglado-sin-verificar
+H05 -> arreglado-sin-verificar
+H06 -> arreglado-sin-verificar
+H07 -> arreglado-sin-verificar (fix mínimo del revisor)
+T-327/#205 -> sigue bloqueando el GREEN/RED real de notifications.spec.ts
+```

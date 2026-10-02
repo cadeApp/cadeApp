@@ -26,3 +26,11 @@ No se agrega número AG nuevo.
 - Un status `e2e-preview` rojo puede ser ajeno a la PR bajo revisión: hay que abrir el job y clasificar el fallo por spec/flujo, no inferirlo desde el status agregado.
 - Un gate que no enumera el spec de la tarea no certifica esa tarea, aunque el Preview, Supabase Develop y health check estén funcionando.
 - Declarar una mutación RED en bitácora no reemplaza la salida reproducible del test; mientras no exista evidencia ejecutable se mantiene `arreglado-sin-verificar`.
+
+## Ronda 4
+
+No se agrega número AG nuevo.
+
+- Un E2E debe usar un oráculo que pertenezca al invariante de la tarea. Si la aserción depende de una proyección rota por otro issue conocido, el test queda acoplado y puede dar rojo por una causa ajena.
+- Para probar que una oferta concreta llegó por Realtime, un marcador único dentro de la propia oferta (por ejemplo `message`) es mejor oráculo que el nombre del courier cuando ese nombre depende de otra política/RLS.
+- Si `develop` avanzó solo en infraestructura trusted y no hay conflictos funcionales, el revisor puede hacer el merge mínimo sin devolver ese trabajo mecánico al agy.
