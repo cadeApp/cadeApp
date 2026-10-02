@@ -1,0 +1,126 @@
+# Evidencia — PR #208 / CC-016 / Ronda 1
+
+## Preflight
+
+Equivalente reproducible:
+
+```bash
+git fetch origin
+git rev-list --left-right --count origin/develop...origin/cc/CC-016-merchant-courier-projection
+git merge-base origin/develop origin/cc/CC-016-merchant-courier-projection
+```
+
+Estado observado por la revisión:
+
+```text
+HEAD funcional: 37c5fd892e535ea4cf68b74c4f65e3f650b6c3ff
+develop actual: cb4111273da663f7591aec370a44767c4e677b82
+merge-base: 6577d9e427c5efc0a79a2c374f0f74d847732f4d
+ahead: 1
+behind: 16
+PR: open, Draft, mergeable=true
+changed files: 14
+```
+
+Los archivos cambiados en develop desde el merge-base no se superponen con los 14 archivos funcionales de CC-016. Sí entraron cambios en los workflows E2E y su test de verificación, por lo que el CI previo no es evidencia de la integración con el tip actual.
+
+## CI reproducido desde logs del run existente
+
+Run CI: `36984430924`  
+Merge ref usado por GitHub: `3430a5f1ec9fedb60291dda95357014a4dafcccf`  
+Base de ese merge ref: `6577d9e427c5efc0a79a2c374f0f74d847732f4d`
+
+Resumen del job unit:
+
+```text
+Test Files 112 passed (112)
+Tests      1652 passed (1652)
+```
+
+Resumen del job db-tests:
+
+```text
+Applying migration 20261002083000_cc016_request_offer_couriers.sql...
+supabase/tests/cc016_request_offer_couriers.sql .. ok
+Files=14, Tests=1645
+Result: PASS
+pnpm db:types --local
+Tipos generados exitosamente en src/types/database.types.ts
+```
+
+El script del job ejecuta después:
+
+```bash
+git diff --exit-code -- src/types/database.types.ts
+```
+
+El job finalizó GREEN.
+
+## Inspección de seguridad
+
+Se revisó directamente la migración y se confirmó:
+
+```text
+SECURITY DEFINER
+SET search_path = public, pg_temp
+auth.uid() como identidad
+rol merchant + app_private.is_active_operational_actor()
+ownership: delivery_requests.id = p_request_id AND merchant_id = auth.uid()
+foreign/missing -> NOT_FOUND
+REVOKE ALL ... public, anon, authenticated
+GRANT EXECUTE ... authenticated
+sin cambios de RLS
+```
+
+La salida SQL contiene únicamente:
+
+```text
+courierId
+displayName
+vehicleType
+licenseStatus
+insuranceStatus
+docLevel
+```
+
+## Matriz de pruebas inspeccionada
+
+`supabase/tests/cc016_request_offer_couriers.sql` cubre 24 aserciones, incluyendo:
+
+- owner merchant;
+- foreign merchant y request inexistente;
+- courier no autorizado;
+- sesión sin `auth.uid()`;
+- consentimiento pendiente;
+- exactitud de claves;
+- ausencia de teléfono/patente/`dni_hmac`/status;
+- niveles documentales 2/1/0;
+- lectura directa de `couriers/profiles` sigue cerrada.
+
+Los unitarios de dominio/server/queries/live cubren parsing estricto, fail-closed y los dos órdenes usados por T-303.
+
+## Mutaciones declaradas por el autor
+
+El body declara:
+
+```text
+1. fake sin chequeo de dueño
+2. contrato sin .strict()
+3. live reader que saltea ofertas sin courier
+```
+
+La revisión comprobó estáticamente que cada mutación contradice una aserción concreta. No se registra runtime independiente porque el entorno de revisión no pudo resolver github.com para materializar un checkout; no se fabricó salida RED.
+
+En Ronda 2, después del merge de develop, el autor debe volver a demostrar RED/GREEN sin adulterar tests ni expectativas.
+
+## Estado administrativo T-303
+
+La revisión corrigió #35:
+
+```text
+state: open
+labels: P2, fase-3, bloqueada
+hecha: removida
+```
+
+Se dejó comentario con la razón: Flow 4 debe quedar GREEN después de aplicar CC-016.
