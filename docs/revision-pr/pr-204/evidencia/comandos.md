@@ -170,3 +170,44 @@ El body propone `git revert 328e63ad...`. El diff real de ese commit es únicame
 ```
 
 No revierte ni el spec ni el workflow.
+
+## Ronda 3
+
+**SHA:** `b20d7cb4f5d1199e06610d6b9ed604ab07f172d8`
+
+### H06
+
+```ts
+await page.context().clearCookies();
+await page.evaluate(() => {
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+});
+await loginAsCourier(0, page);
+```
+
+Inspección: la sesión merchant se elimina antes de volver a `/login`; no hay mock ni bypass del middleware.
+
+### CI exact-head
+
+- CI run: `37051189722` — GREEN.
+- e2e-preview status: GREEN, run `37051338095`.
+- Log e2e: `Running 9 tests using 1 worker` → `9 passed (2.8m)`.
+- El comando del workflow confiable de develop no incluyó `authorization.spec.ts`; residual 3-A sigue abierto.
+
+### Drift de base
+
+```text
+develop = ff5c51f7edd003c152f56a2bd2edc0cf2feab698
+head    = b20d7cb4f5d1199e06610d6b9ed604ab07f172d8
+ahead   = 16
+behind  = 4
+```
+
+Los cuatro commits nuevos corresponden a T-329 y agregan el gate `subscription.global-settings.spec.ts` + su control en `verify-workflows.test.mjs`.
+
+El `refs/pull/204/merge` observable contiene authorization + request-states, pero no global-settings. Por eso se exige sincronización antes de cerrar.
+
+### H05
+
+El body ya corrigió casi todo, pero el informe quedó sin saltos: `...Lautaro073Resultado: CON BLOQUEANTES...`. Debe reemplazarse por el informe literal de Ronda 3 y luego actualizar el run exact-head tras la sincronización.
