@@ -1,86 +1,80 @@
 # Evidencia y comandos — PR #160
 
-## Ronda 3
+## Ronda 4
 
-**SHA revisado:** `01476eb56b7ec962d488cd087b6d7abc5f31ca53`
+**SHA revisado:** `5aa689201b360cb1c0369900bf2dae80e05463fe`
+
+### Decisión P1
+
+Lautaro073 eligió **1-B**: no se exige mutación RED local de la guarda SQL porque el proyecto no usa Supabase/Docker local. El cierre exige staging/CI real con el oráculo fuerte de concurrencia.
 
 ### Sincronización
 
 Comparación remota:
-- develop: `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
-- head revisado: `01476eb56b7ec962d488cd087b6d7abc5f31ca53`
-- ahead: 11
-- behind: **0**
-- merge-base: develop actual
+- develop: `1457072a7cac1ae9e2a8a92abe9253d45b745082`
+- head revisado: `5aa689201b360cb1c0369900bf2dae80e05463fe`
+- ahead: 17
+- behind: **24**
+- merge-base: `f0238c3fd3c8c8dbfcb8b35e63ed45451c0e845c`
 
-### Concurrencia
+### H08/H09/R03
 
-Inspección de `main-flow.spec.ts`:
-- dos confirmaciones dentro de `Promise.all`;
-- alerta filtrada por mensaje de `ALREADY_MATCHED`;
-- `expect.poll` sobre estado server-side;
-- expected: request matched, acceptedCount=1, nonAcceptedCount=1 y accepted_offer_id igual a la ganadora.
+Por inspección:
+- publicación cash/transfer usa marker único y request ID exacto;
+- selector $5.000 usa `formatArs`;
+- sorting compara contra nombres esperados seeded;
+- cleanup agrega `rate_limits` y `audit_log`.
 
-Corrección estructural confirmada; falta runtime independiente.
+Quedan como `arreglado-sin-verificar` hasta ejecutar staging.
 
-### Publicación cash
+### H10 — BrowserContext sin baseURL
 
-El producto renderiza el preset con:
-
-```tsx
-Paga con: {formatArs(preset)}
-```
-
-y `formatArs(5000)` devuelve `$ 5.000`.
-
-El Page Object construye `/paga con.*5000/i`; no coincide con el texto real.
-
-Después del submit el caso busca “Paquete chico” y “Efectivo” en toda la página. La fixture base ya creó una request `chico/cash`, por lo que esas aserciones no identifican la request recién publicada.
-
-### Ordenamiento
-
-Oráculo actual:
+El spec crea contextos manuales:
 
 ```ts
-expect(orderDoc[0]).not.toBe(orderPrice[0]);
+const context = await browser.newContext();
+const courierContext = await browser.newContext();
 ```
 
-No prueba que Doc2 sea primero por documentación ni que $1500 sea primero por precio.
+y luego usa Page Objects que navegan rutas relativas:
 
-### Cambio de rol en Flow 5
+```ts
+goto('/login')
+goto('/merchant/requests/:id')
+goto('/trips/:id')
+```
 
-Cadena observada:
-1. `loginAsMerchant(page)`;
-2. la misma page/context conserva cookies merchant;
-3. `loginAsCourier(0, page)` navega a `/login`;
-4. `evaluateRouteGuard('/login', merchantSession)` redirige a `/merchant/dashboard`;
-5. el formulario de login courier no queda disponible.
+En un `browser.newContext()` manual, el `baseURL` debe pasarse como opción; no se hereda del `use.baseURL` del test runner.
 
-### Cleanup auxiliar
+### H11 — privacidad ante teléfono formateado
 
-Migraciones actuales:
-- `publish_request` genera `rate_limits` y `audit_log`;
-- `submit_offer` y `withdraw_offer` generan `rate_limits`;
-- `mark_picked_up` y `mark_delivered` generan `audit_log`.
+El test niega:
+- `+5493865123456`;
+- `5493865123456`.
 
-Esquema:
-- `audit_log.actor_id` → profiles con `ON DELETE SET NULL`;
-- `rate_limits.subject` es texto, sin FK.
+Pero `formatPhone('+5493865123456')` puede renderizar:
 
-`cleanupStagingData` no elimina esas tablas, así que las filas sobreviven al teardown.
+`3865 12-3456`
 
-### Evidencia declarada por el autor
+Esa cadena no contiene ninguna de las dos buscadas. El DOM debe normalizarse antes de verificar el teléfono nacional.
 
-- typecheck: verde declarado;
-- lint: verde declarado;
-- staging-seed: 36/36 verde declarado;
-- verify-fichas: un fallo en T-322, ajeno a T-303;
-- test:db: rojo local por ausencia de Supabase local;
-- Playwright: solo `--list`, sin ejecución staging;
-- `pnpm test`: sin salida pegada en body.
+### H05 — check compuesto rojo
 
-La demostración RED de concurrencia usa un estado simulado con dos accepted; no se toma como mutación de la implementación real.
+El propio body registra:
 
-### Checks de esta revisión
+```text
+Test Files  6 failed | 104 passed (110)
+Tests       7 failed | 1573 passed (1580)
+```
 
-No se ejecutaron checks/CI en Ronda 3 porque existen bloqueantes estáticos anteriores a aprobación.
+pero mantiene:
+
+```markdown
+- [x] pnpm typecheck && pnpm lint && pnpm test
+```
+
+El check es inválido mientras cualquiera de los tres comandos falle.
+
+### CI
+
+No se inspeccionó CI para aprobación porque persisten H05/H10/H11/H12. Ronda 5 debe consultar workflow runs si estos cuatro quedan corregidos.
