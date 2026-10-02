@@ -94,12 +94,6 @@ begin
     or p_action = 'courier_cancel_match') and coalesce(btrim(p_reason), '') = '' then
     raise exception 'REASON_REQUIRED' using errcode = 'P0001';
   end if;
-  if p_action = 'cancel_request' and v_role = 'admin' and v_eff_status = 'in_transit'
-    and not exists (
-      select 1 from public.incidents i where i.request_id = p_request_id
-    ) then
-    raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
-  end if;
   if p_action = 'report_no_show' and (v_offer.id is null or v_offer.status <> 'accepted') then
     raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
   end if;
