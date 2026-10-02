@@ -35,3 +35,8 @@ No se agrega número AG nuevo.
 - **H06 / P11:** una tarea que consume un contrato compartido debe volver a la implementación canónica después de que el contract-change mergea; mantener diff cero en los archivos contractuales evita una segunda fuente de verdad.
 - **H07 / P10:** permitir merge a develop antes de un gate de staging no equivale a poder cerrar la tarea. El estado de issue/tarea y el estado del PR deben modelarse por separado.
 - Los keywords `Closes/Fixes/Resolves` forman parte del comportamiento operativo: pueden violar un release gate aunque el código y CI estén perfectos.
+## Ronda 6
+
+- **H07 / P10:** un gate post-merge necesita dos estados explícitos: PR mergeada y tarea todavía abierta. El keyword de vinculación (`Refs`) debe acompañar esa separación.
+- Cuando staging es parte del DoD, la revisión puede autorizar el merge a develop sin autorizar todavía el cierre de la tarea.
+- La acción manual post-merge debe permanecer visible en PR e issue hasta que exista evidencia real del entorno.

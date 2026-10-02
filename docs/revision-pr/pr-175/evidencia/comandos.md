@@ -410,3 +410,35 @@ Riesgo: mergear #175 cierra #171 antes de promoción develop→staging y antes d
 - `/merchant/onboarding` 147 kB OK
 - `/merchant/requests/new` 163 kB OK
 - `/design-system` 184 kB warning preexistente
+## Ronda 6
+
+SHA funcional: `97cc60791ab6d8f589d2f0cb83388d5c68dc6426`.
+
+### H07
+
+- PR body: `Refs #171`.
+- PR body: acción manual post-merge visible.
+- `docs/tasks/T-323.md`: tarea abierta hasta staging GREEN.
+- bitácora: corrección append-only de 2-A.
+- issue #171: abierto, `en-curso`, gate visible.
+
+### Canonicalización
+
+- `src/ui/map.tsx`: sin diff contra develop.
+- `src/ui/map.test.tsx`: sin diff contra develop.
+
+### CI exact-head 36959413505
+
+- Test Files 110 passed (110)
+- Tests 1604 passed (1604)
+- workflow tests 31
+- ADR tests 6
+- db-tests Files=13 Tests=1614 Result=PASS
+- typecheck success
+- lint success
+- build success
+- audit success
+- bundle-budget success
+- `/merchant/onboarding` 147 kB OK
+- `/merchant/requests/new` 163 kB OK
+- `/design-system` 184 kB warning preexistente

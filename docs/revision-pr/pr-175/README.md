@@ -2,10 +2,10 @@
 
 - **PR:** #175
 - **Rama:** `feat/T-323-merchant-map-hardening`
-- **SHA funcional R5:** `a846f90b91691e7b71301aa500e62ee30e2eba07`
+- **SHA funcional final:** `97cc60791ab6d8f589d2f0cb83388d5c68dc6426`
 - **Base develop:** `01f8fb20587beb5b43b606103051deb49e1c01d1`
-- **Ronda:** 5
-- **Resultado:** **CON BLOQUEANTE (1)**
+- **Ronda:** 6
+- **Resultado:** **APTO PARA MERGE A DEVELOP — SIN BLOQUEANTES**
 
 ## Estado
 
@@ -17,10 +17,14 @@
 | PR175-H04 | alto | arreglado-verificado |
 | PR175-H05 | alto | arreglado-verificado |
 | PR175-H06 | alto | arreglado-verificado |
-| PR175-H07 | alto | abierto |
+| PR175-H07 | alto | arreglado-verificado |
 
 ## Resumen
 
-La parte técnica de T-323 quedó lista: CC-014 ya está mergeado en develop y `src/ui/map.tsx` / `src/ui/map.test.tsx` no tienen diff contra la línea canónica. Los cambios propios restantes son onboarding, tests y documentación. CI exact-head `36958099121` está verde con **1604/1604** tests unitarios y **1614/1614** pruebas DB.
+T-323 queda apta para merge de código a `develop`. CC-014 está absorbido canónicamente; no hay diff local en `src/ui/map.tsx` / `src/ui/map.test.tsx`; onboarding y cobertura de fallback permanecen correctos; el flujo de cierre quedó separado del merge.
 
-R5 detecta un único bloqueante de flujo: el body conserva `Closes #171` y tanto la PR como la ficha dicen que la falta de evidencia post-merge no debe mantener T-323 abierta. #175 puede mergearse a develop antes de la verificación manual, pero **T-323/#171 debe seguir abierta y en curso hasta promover develop→staging y verificar GREEN**.
+PR #175 usa `Refs #171`, por lo que el merge no cierra automáticamente T-323. #171 permanece abierta y `en-curso` hasta promoción `develop → staging` y validación manual GREEN.
+
+CI exact-head `36959413505`: **1604/1604** unitarios, **1614/1614** DB, typecheck/lint/build/audit/bundle verdes.
+
+**Importante:** mergeable no significa tarea terminada. Después del merge hay que promover a staging y ejecutar el gate manual antes de cerrar #171.
