@@ -1,19 +1,19 @@
 # Lecciones — PR #160
 
-## Rondas 1-4
+## Rondas 1-5
 
-Se mantienen los patrones documentados P08, P04, P06, P03, P19, P16, P10 y P01.
+Se mantienen P08, P04, P06, P03, P19, P16, P10 y P01.
 
-## Ronda 5
+## Ronda 6
 
 No se abre AG nuevo.
 
-- **Gate de merge ≠ gate de cierre para E2E:** P1 aclaró que una PR de un spec E2E puede quedar lista para `develop` con revisión estática + CI de la rama, mientras la verificación real contra staging ocurre después de la promoción. La tarea no se marca Hecha hasta esa corrida.
-- **El smoke de staging no sustituye el spec de la tarea:** `e2e-staging.yml` actual solo ejecuta T-301/smoke. Para T-303 hay que ejecutar explícitamente `main-flow.spec.ts` después de la promoción.
-- **P10 sigue siendo operativo, no necesariamente culpa del autor:** Kira sincronizó correctamente, pero `develop` avanzó durante la ronda. El control debe mirar ahead/behind inmediatamente antes de aprobar.
+- **Sincronización no debe convertirse en bucle para el operador:** cuando develop avanza durante una revisión y los diffs no se superponen, la revisión puede efectuar el merge normal y revalidar CI en vez de devolver otra ronda solo por behind.
+- **No usar `Closes` en tareas con gate post-merge:** si una tarea solo termina después de staging, el PR a develop debe usar `Refs #issue` y el issue debe permanecer abierto/en-curso hasta la verificación GREEN.
+- **La acción manual debe quedar visible:** el comando y el orden develop→staging→E2E se dejaron tanto en el PR como en el issue, no solo en documentación interna.
 
 ### Decisiones P1 vigentes
 
-- Ronda 1 — 1-A: ampliación mínima del arnés T-303.
-- Ronda 4 — 1-B: sin mutación RED local de la guarda SQL; la prueba real se sustituye por ejecución en staging.
-- Ronda 5 — criterio de proceso: T-303 se considera terminada solo después de `develop → staging` y E2E real verde.
+- Ronda 1 — 1-A: ampliación mínima del arnés.
+- Ronda 4 — 1-B: sin mutación RED local; evidencia real en staging.
+- Ronda 5/6 — merge a develop no termina T-303; cierre solo tras staging GREEN.
