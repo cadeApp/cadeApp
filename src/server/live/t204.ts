@@ -2,6 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsRpc } from '@/server/rpc/trips';
+import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
 import type {
   LiveAvailableRequestItem,
   LiveFeedResponse,
@@ -49,19 +50,6 @@ interface RawOfferRow {
   readonly message: string | null;
   readonly status: string;
   readonly created_at: string;
-  readonly courier?: {
-    readonly vehicle_type?: string | null;
-    readonly license_status?: string;
-    readonly insurance_status?: string;
-    readonly doc_level?: number;
-    readonly profile?: { readonly display_name?: string } | Array<{ readonly display_name?: string }> | null;
-  } | Array<{
-    readonly vehicle_type?: string | null;
-    readonly license_status?: string;
-    readonly insurance_status?: string;
-    readonly doc_level?: number;
-    readonly profile?: { readonly display_name?: string } | Array<{ readonly display_name?: string }> | null;
-  }> | null;
 }
 
 /**
@@ -230,14 +218,7 @@ export async function getRequestOffersLiveServer(
       eta_minutes,
       message,
       status,
-      created_at,
-      courier:couriers!courier_id(
-        vehicle_type,
-        license_status,
-        insurance_status,
-        doc_level,
-        profile:profiles!profile_id(display_name)
-      )
+      created_at
     `)
     .eq('request_id', parsedId.data)
     .order('created_at', { ascending: false })
@@ -260,30 +241,41 @@ export async function getRequestOffersLiveServer(
   const hasMore = rawOffers.length > LIVE_PAGE_SIZE;
   const pageRows = rawOffers.slice(0, LIVE_PAGE_SIZE);
 
-  const mapped: LiveMerchantOfferItem[] = pageRows.map((o) => {
-    const courierObj = Array.isArray(o.courier) ? o.courier[0] : o.courier;
-    const profileObj = courierObj?.profile
-      ? Array.isArray(courierObj.profile)
-        ? courierObj.profile[0]
-        : courierObj.profile
+  // CC-016: el comercio no lee `couriers`/`profiles` por RLS; la identidad y la documentación de quienes
+  // ofertaron llegan por la RPC. Sin esa proyección se falla: nunca se inventa un nivel de documentación.
+  const couriersResult =
+    pageRows.length > 0
+      ? await getRequestOfferCouriersRpc(supabase, { requestId: parsedId.data })
       : null;
-    const displayName = profileObj?.display_name || 'Repartidor';
 
-    return {
+  if (couriersResult && !couriersResult.ok) {
+    return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+  }
+
+  const couriersById = couriersResult?.data ?? null;
+  const mapped: LiveMerchantOfferItem[] = [];
+
+  for (const o of pageRows) {
+    const courier = couriersById?.get(o.courier_id);
+    if (!courier) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    mapped.push({
       id: o.id,
       courierId: o.courier_id,
-      courierName: displayName,
-      vehicleType: courierObj?.vehicle_type ?? null,
+      courierName: courier.displayName || 'Repartidor',
+      vehicleType: courier.vehicleType,
       amountArs: o.amount_ars,
       etaMinutes: o.eta_minutes,
       message: o.message,
-      licenseStatus: (courierObj?.license_status as LiveMerchantOfferItem['licenseStatus']) ?? 'none',
-      insuranceStatus: (courierObj?.insurance_status as LiveMerchantOfferItem['insuranceStatus']) ?? 'none',
-      docLevel: ((courierObj?.doc_level as number) ?? 0) as 0 | 1 | 2,
+      licenseStatus: courier.licenseStatus,
+      insuranceStatus: courier.insuranceStatus,
+      docLevel: courier.docLevel,
       createdAt: o.created_at,
       status: o.status as LiveMerchantOfferItem['status'],
-    };
-  });
+    });
+  }
 
   const tail = pageRows.at(-1);
   const nextCursor: LivePageCursor | null =

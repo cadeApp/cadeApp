@@ -267,6 +267,30 @@ export const getTripDetailsOutputSchema = z.object({
 });
 
 // 15. admin_decide_courier
+// get_request_offer_couriers (CC-016)
+// `.strict()`: un campo de más (teléfono, patente, dni_hmac, estado de aprobación) invalida la salida.
+export const getRequestOfferCouriersInputSchema = z.object({
+  requestId: uuidSchema,
+});
+
+export const requestOfferCourierSchema = z
+  .object({
+    courierId: uuidSchema,
+    displayName: z.string(),
+    vehicleType: vehicleTypeSchema.nullable(),
+    licenseStatus: documentReviewStatusSchema,
+    insuranceStatus: documentReviewStatusSchema,
+    docLevel: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  })
+  .strict();
+
+export const getRequestOfferCouriersOutputSchema = z
+  .object({
+    requestId: uuidSchema,
+    couriers: z.array(requestOfferCourierSchema),
+  })
+  .strict();
+
 export const adminDecideCourierInputSchema = z.object({
   courierId: uuidSchema,
   decision: z.enum(['approved', 'rejected']),
@@ -654,6 +678,21 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * CC-016: solo el comercio dueño de la solicitud. Solicitud inexistente o ajena responden igual
+   * (`NOT_FOUND`) para no confirmar que el id existe.
+   */
+  get_request_offer_couriers: {
+    inputSchema: getRequestOfferCouriersInputSchema,
+    outputSchema: getRequestOfferCouriersOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_decide_courier: {
     inputSchema: adminDecideCourierInputSchema,
     outputSchema: adminDecideCourierOutputSchema,
@@ -761,6 +800,7 @@ export const ALL_RPC_NAMES = [
   'set_availability',
   'calculate_route_distance',
   'get_trip_details',
+  'get_request_offer_couriers',
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_verify_document',
