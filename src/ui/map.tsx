@@ -6,14 +6,13 @@ import {
   Map as GoogleMap,
   useApiLoadingStatus,
   APILoadingStatus,
+  AdvancedMarker,
+  useMap,
   type MapCameraChangedEvent,
+  type MapMouseEvent,
 } from '@vis.gl/react-google-maps';
 import {
   AlertTriangle,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
   Crosshair,
   Info,
   Loader2,
@@ -86,6 +85,43 @@ function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
     }
   }, [status, onFailed]);
   return null;
+}
+
+function MapCameraSynchronizer({ targetCoords }: { targetCoords: MapCoordinates }) {
+  const map = useMap();
+  const prevTargetRef = React.useRef<MapCoordinates>(targetCoords);
+
+  React.useEffect(() => {
+    if (!map) return;
+    if (
+      prevTargetRef.current.lat !== targetCoords.lat ||
+      prevTargetRef.current.lng !== targetCoords.lng
+    ) {
+      prevTargetRef.current = targetCoords;
+      map.panTo(targetCoords);
+    }
+  }, [map, targetCoords]);
+
+  return null;
+}
+
+function extractLatLng(
+  ev: {
+    latLng?: { lat: number | (() => number); lng: number | (() => number) } | null;
+    detail?: { latLng?: { lat: number | (() => number); lng: number | (() => number) } | null };
+  }
+): MapCoordinates | null {
+  const latLng = ev.detail?.latLng ?? ev.latLng;
+  if (!latLng) return null;
+  const lat = typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat;
+  const lng = typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng;
+  if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+    return null;
+  }
+  return {
+    lat: Number(lat.toFixed(6)),
+    lng: Number(lng.toFixed(6)),
+  };
 }
 
 type AuthFailureListener = () => void;
@@ -227,16 +263,35 @@ export function MapPicker({
       : !isWithinAguilaresBounds(activeCoords.lat, activeCoords.lng);
 
   const handleCameraChange = React.useCallback(
-    (ev: MapCameraChangedEvent) => {
+    (_ev: MapCameraChangedEvent) => {
+      // Invariant P1 / T-323: onCameraChanged MUST NOT call onChangeRef.current
+      // to prevent the camera feedback loop during pan/zoom.
+    },
+    []
+  );
+
+  const handleMarkerDragEnd = React.useCallback(
+    (
+      ev: Parameters<
+        NonNullable<React.ComponentProps<typeof AdvancedMarker>['onDragEnd']>
+      >[0]
+    ) => {
       if (disabled) return;
-      if (!ev?.detail?.center) return;
-      const { lat, lng } = ev.detail.center;
-      const rounded: MapCoordinates = {
-        lat: Number(lat.toFixed(6)),
-        lng: Number(lng.toFixed(6)),
-      };
-      setActiveCoords(rounded);
-      onChangeRef.current?.(rounded);
+      const coords = extractLatLng(ev);
+      if (!coords) return;
+      setActiveCoords(coords);
+      onChangeRef.current?.(coords);
+    },
+    [disabled]
+  );
+
+  const handleMapClick = React.useCallback(
+    (ev: MapMouseEvent) => {
+      if (disabled) return;
+      const coords = extractLatLng(ev);
+      if (!coords) return;
+      setActiveCoords(coords);
+      onChangeRef.current?.(coords);
     },
     [disabled]
   );
@@ -429,13 +484,31 @@ export function MapPicker({
           >
             <MapStatusWatcher onFailed={() => setApiLoadFailed(true)} />
             <GoogleMap
-              center={activeCoords}
+              defaultCenter={fallbackCenter}
               defaultZoom={15}
               gestureHandling={disabled ? 'none' : 'greedy'}
               disableDefaultUI
               mapId={mapId}
+              onClick={handleMapClick}
               onCameraChanged={handleCameraChange}
-            />
+            >
+              <MapCameraSynchronizer targetCoords={activeCoords} />
+              <AdvancedMarker
+                position={activeCoords}
+                draggable={!disabled}
+                onDragEnd={handleMarkerDragEnd}
+                title="Ubicación seleccionada"
+              >
+                <div
+                  data-testid="map-marker-pin"
+                  aria-label="Pin de ubicación seleccionada"
+                  className="relative flex items-center justify-center"
+                >
+                  <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
+                  <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
+                </div>
+              </AdvancedMarker>
+            </GoogleMap>
           </APIProvider>
         ) : (
           <div
@@ -455,82 +528,6 @@ export function MapPicker({
             </p>
           </div>
         )}
-
-        {/* Crosshair central fijo */}
-        {isMapAvailable && (
-          <div
-            data-testid="map-crosshair"
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 flex items-center justify-center"
-          >
-            <div className="relative flex items-center justify-center">
-              <MapPin className="-translate-y-4 h-9 w-9 text-primary-dark drop-shadow-md" />
-              <div className="absolute h-2 w-2 rounded-full bg-primary-dark ring-2 ring-background" />
-            </div>
-          </div>
-        )}
-
-        {/* Controles D-pad de ajuste fino (~10m por pulsación) */}
-        {isMapAvailable && !disabled && (
-          <div
-            data-testid="map-fine-adjustment"
-            className="absolute bottom-2 right-2 flex flex-col items-center rounded-lg border border-border/80 bg-background/90 p-1 shadow-sm backdrop-blur-sm"
-          >
-            <button
-              type="button"
-              data-testid="nudge-north"
-              onClick={() => handleNudge(0.0001, 0)}
-              disabled={disabled}
-              aria-label="Ajustar al norte"
-              className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <ChevronUp className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                data-testid="nudge-west"
-                onClick={() => handleNudge(0, -0.0001)}
-                disabled={disabled}
-                aria-label="Ajustar al oeste"
-                className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <span className="text-xs leading-none font-medium text-muted-foreground select-none">
-                10m
-              </span>
-              <button
-                type="button"
-                data-testid="nudge-east"
-                onClick={() => handleNudge(0, 0.0001)}
-                disabled={disabled}
-                aria-label="Ajustar al este"
-                className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
-            </div>
-            <button
-              type="button"
-              data-testid="nudge-south"
-              onClick={() => handleNudge(-0.0001, 0)}
-              disabled={disabled}
-              aria-label="Ajustar al sur"
-              className="flex min-h-12 min-w-12 items-center justify-center rounded text-foreground transition-colors hover:bg-muted active:bg-muted/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <ChevronDown className="h-5 w-5" />
-            </button>
-          </div>
-        )}
-
-        {/* Badge de coordenadas actuales */}
-        <div
-          data-testid="map-coords-badge"
-          className="absolute top-2 left-2 rounded-md bg-background/90 px-2 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm border border-border/80"
-        >
-          {activeCoords.lat.toFixed(4)}, {activeCoords.lng.toFixed(4)}
-        </div>
       </div>
 
       {/* Advertencia si el pin queda fuera de Aguilares */}
