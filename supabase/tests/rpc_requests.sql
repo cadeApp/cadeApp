@@ -337,6 +337,8 @@ select is((select matched_at from public.delivery_requests where id = pg_temp.ac
   now() - interval '10 minutes', 'cancelar preserva el hito histórico de match');
 
 select pg_temp.fixture('in_transit');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(89), pg_temp.actor(20), pg_temp.actor(3), 'safety', 'Incidente en tránsito');
 update public.delivery_requests
   set matched_at = now() - interval '20 minutes',
       picked_up_at = now() - interval '10 minutes'
@@ -477,7 +479,7 @@ values (pg_temp.actor(93), pg_temp.actor(20), pg_temp.actor(3), 'safety', 'Incid
 select is(pg_temp.invoke(1, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
   'INVALID_STATE_TRANSITION', 'CC-015: merchant no gana permiso de cancelar in_transit');
 select is(pg_temp.invoke(3, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
-  'INVALID_STATE_TRANSITION', 'CC-015: courier no gana permiso de cancelar in_transit');
+  'UNAUTHORIZED_ACTOR', 'CC-015: courier no gana permiso de cancelar in_transit');
 
 -- CC-015: con incidente para este request_id -> admin cancel_request pasa a cancelled
 select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->'data'->>'status',
