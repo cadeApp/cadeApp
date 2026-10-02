@@ -123,3 +123,77 @@ git status --short
 ```
 
 No correr Supabase/Docker local.
+
+## Ronda 3 — SHA `a3d32c484898a83392d546ad55f95ba9ed3bba6f`
+
+### Delta desde Ronda 2
+
+```text
+docs/tasks/log/T-324.md
+src/features/courier-onboarding/components.test.tsx
+src/features/courier-onboarding/components/status-view.tsx
+```
+
+Sin otros archivos modificados por el autor.
+
+### H05
+
+Código final:
+
+```ts
+if (dniFront?.status === 'rejected' || dniBack?.status === 'rejected') {
+  dniStatus = 'rejected';
+} else if (
+  dniFront &&
+  dniBack &&
+  (dniFront.status === 'submitted' || dniFront.status === 'verified') &&
+  (dniBack.status === 'submitted' || dniBack.status === 'verified')
+) {
+  dniStatus = 'uploaded';
+}
+```
+
+Tests agregados:
+- dni_front rejected + dni_back ausente → Observado;
+- dni_back rejected + dni_front ausente → Observado.
+
+### CI #859
+
+```text
+typecheck: success
+lint: success
+unit: 111 files / 1645 tests PASS
+db-tests: 13 files / 1621 tests PASS
+audit: success
+build: success
+bundle-budget: success
+/courier/onboarding/status: 175 kB <= 180 kB
+```
+
+### Develop avanzó después de la implementación
+
+La comparación contra develop actual mostró 9 commits nuevos y **0 archivos T-324 solapados**.
+
+Archivos nuevos/modificados en esos 9 commits:
+
+```text
+.github/workflows/e2e-staging.yml
+.github/workflows/verify-workflows.test.mjs
+docs/tasks/T-303.md
+docs/tasks/log/T-303.md
+e2e/pages/login.page.ts
+e2e/specs/main-flow.spec.ts
+src/features/offers/queries.test.ts
+src/features/offers/queries.ts
+```
+
+Antes del merge final:
+
+```bash
+git pull --ff-only
+git fetch origin
+git merge origin/develop
+git diff --name-only origin/develop...HEAD
+```
+
+Esperar CI completo verde sobre el nuevo HEAD. No correr Supabase/Docker local.

@@ -22,3 +22,9 @@ No se propone una nueva regla AG. El caso H05 es una aplicación concreta de P06
 
 - El primer build de CI #853 falló en `next/font`, fuera del diff; el rerun exacto pasó sin cambios.
 - H05 no invalida la estrategia latest-by-uploaded_at ni la privacidad de metadata; es exclusivamente una precedencia de presentación.
+
+## Ronda 3
+
+H05 confirma una forma concreta de P06: cuando una fila visual agrega varias entidades, hay que probar la **precedencia de estados** en combinaciones parciales, no solo cada dimensión por separado.
+
+No se propone regla nueva en `AGENTS.md`; el patrón ya está cubierto por el catálogo.
