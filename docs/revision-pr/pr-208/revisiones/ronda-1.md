@@ -76,16 +76,11 @@ El body declara tres mutaciones. Esta revisión comprobó por inspección que la
 
 No marco esas mutaciones como runtime independiente: el entorno de revisión no pudo obtener un checkout ejecutable por resolución de red. No se fabricó una ejecución ni se tomó la declaración del autor como prueba propia.
 
-## Ajuste administrativo realizado por la revisión
+## Estado administrativo de T-303 observado durante la revisión
 
-El issue #35 / T-303 estaba cerrado con label `hecha`, contradiciendo su ficha y la propia bitácora, que exigen Flow 4 real GREEN después de aplicar CC-016. La revisión:
+El issue #35 / T-303 estaba cerrado con label `hecha`, aunque su ficha y la bitácora todavía exigen Flow 4 real GREEN después de aplicar CC-016. La revisión intentó reabrirlo y marcarlo `bloqueada`, pero `board-sync` revirtió automáticamente ese ajuste y volvió a dejar #35 cerrado/`hecha`.
 
-- reabrió #35;
-- quitó `hecha`;
-- agregó `bloqueada`;
-- dejó comentario explicando que depende de #200 / PR #208 y del gate real posterior.
-
-No cambia alcance ni producto; restaura el estado acordado.
+No se fuerza de nuevo ese estado desde esta PR. El tracker que permanece abierto para el defecto y su validación posterior es #200 / CC-016; además se dejó un comentario en #35 documentando la discrepancia.
 
 ## Decisiones
 

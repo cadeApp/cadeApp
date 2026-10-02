@@ -115,7 +115,7 @@ En Ronda 2, después del merge de develop, el autor debe volver a demostrar RED/
 
 ## Estado administrativo T-303
 
-La revisión corrigió #35:
+La revisión intentó corregir #35 y observó inicialmente:
 
 ```text
 state: open
@@ -123,4 +123,11 @@ labels: P2, fase-3, bloqueada
 hecha: removida
 ```
 
-Se dejó comentario con la razón: Flow 4 debe quedar GREEN después de aplicar CC-016.
+Después del commit de revisión, `board-sync` volvió a dejarlo:
+
+```text
+state: closed
+labels: P2, fase-3, hecha
+```
+
+Por lo tanto no se registra la reapertura como un arreglo persistente. El comentario explicativo queda en #35 y #200 continúa abierto como tracker de CC-016 / Flow 4.
