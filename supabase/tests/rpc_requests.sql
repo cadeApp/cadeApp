@@ -146,8 +146,8 @@ begin
       for a in 0..5 loop
         perform pg_temp.fixture(s);
         if c.name = 'cancel_request' and s = 'in_transit' then
-          insert into public.incidents (id, request_id, reporter_id, reporter_role, kind, description)
-          values (pg_temp.actor(99), pg_temp.actor(20), pg_temp.actor(3), 'courier', 'accident', 'Incidente previo');
+          insert into public.incidents (id, request_id, reporter_id, kind, description)
+          values (pg_temp.actor(99), pg_temp.actor(20), pg_temp.actor(3), 'safety', 'Incidente previo');
         end if;
         select after_status into expected from valid_transitions
         where rpc = c.name and before_status = s and actor = a;
@@ -440,8 +440,8 @@ select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_te
 -- CC-015: incidente de otra solicitud no habilita la cancelacion
 insert into public.delivery_requests (id, merchant_id, status, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method)
 values (pg_temp.actor(21), pg_temp.actor(1), 'in_transit', pg_temp.actor(10), pg_temp.actor(11), 'chico', 'cash');
-insert into public.incidents (id, request_id, reporter_id, reporter_role, kind, description)
-values (pg_temp.actor(91), pg_temp.actor(21), pg_temp.actor(3), 'courier', 'accident', 'Incidente en otra solicitud');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(91), pg_temp.actor(21), pg_temp.actor(3), 'safety', 'Incidente en otra solicitud');
 
 select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
   'INVALID_STATE_TRANSITION', 'CC-015: incidente de otra solicitud no habilita cancel_request');
@@ -465,15 +465,15 @@ select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_te
 
 -- CC-015: delivered -> cancelled sigue rechazado con INVALID_STATE_TRANSITION
 select pg_temp.fixture('delivered');
-insert into public.incidents (id, request_id, reporter_id, reporter_role, kind, description)
-values (pg_temp.actor(92), pg_temp.actor(20), pg_temp.actor(1), 'merchant', 'other', 'Incidente entregado');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(92), pg_temp.actor(20), pg_temp.actor(1), 'other', 'Incidente entregado');
 select is(pg_temp.invoke(5, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
   'INVALID_STATE_TRANSITION', 'CC-015: delivered -> cancelled sigue rechazado incluso con incidente');
 
 -- CC-015: merchant y courier no ganan permiso de cancelar in_transit (sigue INVALID_STATE_TRANSITION)
 select pg_temp.fixture('in_transit');
-insert into public.incidents (id, request_id, reporter_id, reporter_role, kind, description)
-values (pg_temp.actor(93), pg_temp.actor(20), pg_temp.actor(3), 'courier', 'accident', 'Incidente registrado');
+insert into public.incidents (id, request_id, reporter_id, kind, description)
+values (pg_temp.actor(93), pg_temp.actor(20), pg_temp.actor(3), 'safety', 'Incidente registrado');
 select is(pg_temp.invoke(1, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
   'INVALID_STATE_TRANSITION', 'CC-015: merchant no gana permiso de cancelar in_transit');
 select is(pg_temp.invoke(3, format('select public.cancel_request(%L, %L)', pg_temp.actor(20), 'Operativo'))->>'error',
