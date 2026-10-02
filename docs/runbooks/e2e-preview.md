@@ -110,9 +110,15 @@ así que los puntos 1 a 3 tienen que existir antes de mergear.
    la base.
 3. **`SUPABASE_ACCESS_TOKEN` con acceso al proyecto Supabase Develop.** Es el token de repositorio que ya usa CI;
    si no alcanza a Develop, `supabase link` falla en `migrate-develop`.
-4. **Vercel Authentication desactivada solo para Preview** en `cadeApp-develop` (decisión 1-A). Hoy el Preview
-   responde 302 a `vercel.com/sso-api` y el health check del gate falla. No se usa bypass secret. Esto no frena
-   el merge, pero sin eso ningún `e2e-preview` puede dar verde.
+
+Estado al 2026-10-02: P1 confirmó 1 y 2. El punto 3 reutiliza el token de repositorio existente y su acceso
+efectivo se valida, fail-closed, con el primer `migrate-develop`.
+
+### Requisito antes del primer `e2e-preview` GREEN (no antes del merge)
+
+- **Vercel Authentication desactivada solo para Preview** en `cadeApp-develop` (decisión 1-A), sin bypass secret.
+  Con la protección activa el Preview responde 302 a `vercel.com/sso-api` y el health check del gate falla.
+  Cumplido: la Ronda 2 de la PR #206 verificó `/api/health` 200 en el Preview.
 
 ## Límites conocidos
 
