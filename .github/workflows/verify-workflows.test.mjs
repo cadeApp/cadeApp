@@ -659,6 +659,17 @@ test('board-sync preserves Lautaro073 task assignments and assigns unassigned ta
   assert.equal(t303?.targetAssignees, undefined);
 });
 
+test('staging E2E gate runs smoke and T-303 main flow without ignoring failures', () => {
+  const e2eJob = job(workflow('e2e-staging.yml'), 'e2e');
+
+  assert.match(
+    e2eJob,
+    /pnpm exec playwright test[\s\S]*e2e\/specs\/smoke\.spec\.ts[\s\S]*e2e\/specs\/main-flow\.spec\.ts[\s\S]*--project=chromium/,
+    'staging must execute both the smoke and T-303 main-flow specs'
+  );
+  assert.doesNotMatch(e2eJob, /continue-on-error/, 'E2E failures must fail the staging gate');
+});
+
 test('deploy-staging calls reusable E2E with the exact migrated SHA after deploy succeeds', () => {
   const deploy = workflow('deploy.yml');
   const e2e = workflow('e2e-staging.yml');
