@@ -64,6 +64,10 @@ export function isWithinAguilaresBounds(lat: number, lng: number): boolean {
   );
 }
 
+function sameCoordinates(a: MapCoordinates, b: MapCoordinates): boolean {
+  return a.lat === b.lat && a.lng === b.lng;
+}
+
 export interface MapPickerProps {
   value?: MapCoordinates | null;
   onChange?: (coords: MapCoordinates) => void;
@@ -236,17 +240,24 @@ export function MapPicker({
   }, [value, defaultZoneCenter]);
 
   const [activeCoords, setActiveCoords] = React.useState<MapCoordinates>(fallbackCenter);
+  const activeCoordsRef = React.useRef<MapCoordinates>(fallbackCenter);
   const [cameraTarget, setCameraTarget] = React.useState<MapCoordinates>(fallbackCenter);
 
+  const updateActiveCoords = React.useCallback((coords: MapCoordinates) => {
+    activeCoordsRef.current = coords;
+    setActiveCoords(coords);
+  }, []);
+
   React.useEffect(() => {
-    if (value != null) {
-      setActiveCoords(value);
-      setCameraTarget(value);
-    } else if (defaultZoneCenter != null) {
-      setActiveCoords(defaultZoneCenter);
-      setCameraTarget(defaultZoneCenter);
+    const next = value ?? defaultZoneCenter;
+    if (next != null) {
+      const isEcho = sameCoordinates(next, activeCoordsRef.current);
+      updateActiveCoords(next);
+      if (!isEcho) {
+        setCameraTarget(next);
+      }
     }
-  }, [value, defaultZoneCenter]);
+  }, [value, defaultZoneCenter, updateActiveCoords]);
 
   const onChangeRef = React.useRef(onChange);
   React.useEffect(() => {
@@ -277,10 +288,10 @@ export function MapPicker({
       if (disabled) return;
       const coords = extractLatLng(ev);
       if (!coords) return;
-      setActiveCoords(coords);
+      updateActiveCoords(coords);
       onChangeRef.current?.(coords);
     },
-    [disabled]
+    [disabled, updateActiveCoords]
   );
 
   const handleMapClick = React.useCallback(
@@ -288,25 +299,25 @@ export function MapPicker({
       if (disabled) return;
       const coords = extractLatLng(ev);
       if (!coords) return;
-      setActiveCoords(coords);
+      updateActiveCoords(coords);
       onChangeRef.current?.(coords);
     },
-    [disabled]
+    [disabled, updateActiveCoords]
   );
 
   const handleNudge = React.useCallback(
     (dLat: number, dLng: number) => {
       if (disabled) return;
-      const current = value ?? activeCoords;
+      const current = value ?? activeCoordsRef.current;
       const next: MapCoordinates = {
         lat: Number((current.lat + dLat).toFixed(6)),
         lng: Number((current.lng + dLng).toFixed(6)),
       };
-      setActiveCoords(next);
+      updateActiveCoords(next);
       setCameraTarget(next);
       onChangeRef.current?.(next);
     },
-    [disabled, value, activeCoords]
+    [disabled, value, updateActiveCoords]
   );
 
   const handleKeyDown = React.useCallback(
@@ -366,7 +377,7 @@ export function MapPicker({
           return;
         }
 
-        setActiveCoords(coords);
+        updateActiveCoords(coords);
         setCameraTarget(coords);
         onChangeRef.current?.(coords);
         onLocationFound?.(coords);
@@ -386,7 +397,7 @@ export function MapPicker({
         maximumAge: 30000,
       }
     );
-  }, [disabled, locating, onLocationError, onLocationFound]);
+  }, [disabled, locating, onLocationError, onLocationFound, updateActiveCoords]);
 
   const labelId = React.useId();
 

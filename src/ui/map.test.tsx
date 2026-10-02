@@ -889,6 +889,57 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
       });
       expect(mockPanTo).toHaveBeenCalledTimes(0);
     });
+
+    it('consumidor controlado real: el eco de value tras drag del pin actualiza la posición del pin y NO recentra la cámara (mockPanTo = 0)', () => {
+      mockPublicMapId = 'test-map-id';
+      function ControlledMapPicker() {
+        const [value, setValue] = React.useState<MapCoordinates>(AGUILARES_CENTER);
+        return <MapPicker value={value} onChange={setValue} />;
+      }
+
+      render(<ControlledMapPicker />);
+      mockPanTo.mockClear();
+
+      act(() => {
+        capturedAdvancedMarkerProps?.onDragEnd?.({
+          latLng: {
+            lat: () => -27.4367891,
+            lng: () => -65.6198765,
+          },
+        });
+      });
+
+      expect(capturedAdvancedMarkerProps?.position).toEqual({
+        lat: -27.436789,
+        lng: -65.619877,
+      });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+    });
+
+    it('consumidor controlado real: el eco de value tras click en el mapa actualiza la posición del pin y NO recentra la cámara (mockPanTo = 0)', () => {
+      mockPublicMapId = 'test-map-id';
+      function ControlledMapPicker() {
+        const [value, setValue] = React.useState<MapCoordinates>(AGUILARES_CENTER);
+        return <MapPicker value={value} onChange={setValue} />;
+      }
+
+      render(<ControlledMapPicker />);
+      mockPanTo.mockClear();
+
+      act(() => {
+        capturedMapProps?.onClick?.({
+          detail: {
+            latLng: { lat: -27.4381234, lng: -65.6145678 },
+          },
+        });
+      });
+
+      expect(capturedAdvancedMarkerProps?.position).toEqual({
+        lat: -27.438123,
+        lng: -65.614568,
+      });
+      expect(mockPanTo).toHaveBeenCalledTimes(0);
+    });
   });
 
   describe('9. P1 / T-323 DoD — Eliminación de D-pad, badge y crosshair fijo, preservando teclado accesible', () => {
