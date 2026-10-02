@@ -15,3 +15,9 @@ No se agrega número AG nuevo.
 - **H01/H02:** las mutaciones independientes confirman que los arreglos responden a la causa raíz y no solo a las pruebas del autor.
 - **H04:** no se atribuye al agente un requisito que nació después de su último commit funcional. La decisión de staging se formalizó primero en develop mediante PR #176 y recién entonces se convirtió en DoD de revisión.
 - Para controles globales de terceros, ownership concurrente y lifecycle no-LIFO forman parte de la clase que debe enumerarse.
+
+## Ronda 3
+
+- **H04:** la mutación independiente confirmó el contrato de eventos discretos; no alcanza con que el código “se vea” distinto al crosshair anterior.
+- **H05 / P01:** al incorporar un componente de framework/SDK hay que verificar sus precondiciones runtime contra las configuraciones que el proyecto declara válidas. Los mocks que ignoran esa precondición pueden dar un verde falso.
+- El requisito de `AdvancedMarker` y el contrato opcional de `mapId` deben probarse juntos; ninguno por separado alcanza.

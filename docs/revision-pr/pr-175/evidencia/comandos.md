@@ -221,3 +221,64 @@ ahead_by=6
 behind_by=3
 status=diverged
 ```
+
+## Ronda 3
+
+SHA funcional: `8a6c8846fe59105f6eac968f3f0e8508297bdc79`.
+
+### Estado
+
+```text
+develop: 1457072a7cac1ae9e2a8a92abe9253d45b745082
+ahead_by: 10
+behind_by: 0
+mergeable: true
+```
+
+El autor no modificó la carpeta de revisión de PR #175 después de Ronda 2.
+
+### Harness independiente
+
+```bash
+node /tmp/pr175_r3_harness.mjs
+```
+
+Salida:
+
+```text
+H04_PASS camera=0 drag=1 click=1
+H04_MUT_CAMERA_CAUGHT=true
+H04_MUT_DRAG_CAUGHT=true
+H04_MUT_CLICK_CAUGHT=true
+H05_MAP_ID_CONTRACT_CAUGHT=true
+```
+
+### Contrato oficial usado para H05
+
+La documentación de `@vis.gl/react-google-maps` indica para `AdvancedMarker` que solo puede usarse en mapas que utilizan cloud-based map styling, por lo que el componente `Map` debe tener `mapId`.
+
+Contrato local:
+- `src/lib/env.public.ts`: `NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID` optional/default `''`;
+- `.env.example`: “ID de Mapa opcional”;
+- `src/ui/map.tsx`: `mapId = ... || undefined`, pero `AdvancedMarker` se renderiza sin condición;
+- `src/ui/map.test.tsx`: el mock de AdvancedMarker no modela la precondición de mapId.
+
+### CI exact-head 36945662064
+
+```text
+Test Files 110 passed (110)
+Tests      1593 passed (1593)
+
+db-tests:
+Files=13, Tests=1614
+Result: PASS
+
+typecheck success
+lint success
+build success
+audit success
+bundle-budget success
+
+/merchant/onboarding   147 kB OK
+/merchant/requests/new 163 kB OK
+```
