@@ -14,6 +14,7 @@ import {
   seedStagingData,
   seedOffersForFirstRequest,
   getRequestInspectionData,
+  findRequestIdByNotesMarker,
   cleanupStagingData,
   KNOWN_STAGING_PROJECT_REFS,
   type StagingSeedContext,
@@ -1599,6 +1600,454 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         await expect(cleanupStagingData(ctx, mockClient)).rejects.toThrow(
           /\[E2E Cleanup Error\] Falló la limpieza de staging: delivery_requests\.unlink_accepted_offer.*Unlink constraint lock/i
         );
+      });
+    });
+
+    describe('findRequestIdByNotesMarker (PR160-H08)', () => {
+      const mockMerchantId = '123e4567-e89b-12d3-a456-426614174001';
+      const mockRequestId = '123e4567-e89b-12d3-a456-426614174002';
+
+      it('falla cerrado si falta context.merchantUser', async () => {
+        const ctx = createStagingSeedContext();
+        await expect(findRequestIdByNotesMarker(ctx, 'marker-123')).rejects.toThrow(
+          /Se requiere context\.merchantUser/i
+        );
+      });
+
+      it('exactamente 1 resultado → devuelve y trackea el ID', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.merchantUser = {
+          id: mockMerchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            expect(table).toBe('delivery_requests');
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn((field1: string, val1: string) => {
+                  expect(field1).toBe('merchant_id');
+                  expect(val1).toBe(mockMerchantId);
+                  return {
+                    eq: vi.fn((field2: string, val2: string) => {
+                      expect(field2).toBe('notes');
+                      expect(val2).toBe('marker-exact-456');
+                      return Promise.resolve({
+                        data: [{ id: mockRequestId }],
+                        error: null,
+                      });
+                    }),
+                  };
+                }),
+              }),
+            };
+          }),
+        } as unknown as AdminClientType;
+
+        const foundId = await findRequestIdByNotesMarker(ctx, 'marker-exact-456', mockClient);
+        expect(foundId).toBe(mockRequestId);
+        expect(ctx.createdRequestIds).toContain(mockRequestId);
+      });
+
+      it('0 resultados → falla cerrado con error explícito', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.merchantUser = {
+          id: mockMerchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockClient = {
+          from: vi.fn(() => ({
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: [],
+                  error: null,
+                }),
+              }),
+            }),
+          })),
+        } as unknown as AdminClientType;
+
+        await expect(
+          findRequestIdByNotesMarker(ctx, 'marker-inexistente', mockClient)
+        ).rejects.toThrow(/No se encontró ninguna solicitud para el marcador de notas/i);
+      });
+
+      it('más de 1 resultado → falla cerrado', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.merchantUser = {
+          id: mockMerchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockClient = {
+          from: vi.fn(() => ({
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: [
+                    { id: '123e4567-e89b-12d3-a456-426614174002' },
+                    { id: '123e4567-e89b-12d3-a456-426614174003' },
+                  ],
+                  error: null,
+                }),
+              }),
+            }),
+          })),
+        } as unknown as AdminClientType;
+
+        await expect(
+          findRequestIdByNotesMarker(ctx, 'marker-duplicado', mockClient)
+        ).rejects.toThrow(/Se encontraron múltiples solicitudes \(2\)/i);
+      });
+
+      it('error retornado por Supabase → falla cerrado', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.merchantUser = {
+          id: mockMerchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockClient = {
+          from: vi.fn(() => ({
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'Database connection terminated' },
+                }),
+              }),
+            }),
+          })),
+        } as unknown as AdminClientType;
+
+        await expect(
+          findRequestIdByNotesMarker(ctx, 'marker-db-error', mockClient)
+        ).rejects.toThrow(/Error al consultar delivery_requests por notas: Database connection terminated/i);
+      });
+    });
+
+    describe('PR160-R03: Limpieza de rate_limits y audit_log', () => {
+      const mockUserId = '123e4567-e89b-12d3-a456-426614175001';
+      const mockRequestId = '123e4567-e89b-12d3-a456-426614175002';
+
+      it('se eliminan rate limits usando filtro subject con los user IDs de la corrida', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.createdUserIds = [mockUserId];
+        ctx.createdRequestIds = [mockRequestId];
+
+        const rateLimitDeletedSubjects: string[][] = [];
+        const auditDeletedActors: string[][] = [];
+        const auditDeletedTargets: { type?: string; ids?: string[] } = {};
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'rate_limits') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn((col: string, values: string[]) => {
+                    expect(col).toBe('subject');
+                    rateLimitDeletedSubjects.push(values);
+                    return Promise.resolve({ error: null });
+                  }),
+                }),
+              };
+            }
+            if (table === 'audit_log') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn((col: string, values: string[]) => {
+                    expect(col).toBe('actor_id');
+                    auditDeletedActors.push(values);
+                    return Promise.resolve({ error: null });
+                  }),
+                  eq: vi.fn((col: string, val: string) => {
+                    expect(col).toBe('target_type');
+                    auditDeletedTargets.type = val;
+                    return {
+                      in: vi.fn((targetCol: string, targetValues: string[]) => {
+                        expect(targetCol).toBe('target_id');
+                        auditDeletedTargets.ids = targetValues;
+                        return Promise.resolve({ error: null });
+                      }),
+                    };
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests' || table === 'offers' || table === 'delivery_request_contacts') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+                  in: vi.fn().mockResolvedValue({ data: [], error: null }),
+                }),
+                update: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                }),
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
+            if (table === 'couriers' || table === 'merchants' || table === 'profiles' || table === 'zones') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+          auth: {
+            admin: {
+              deleteUser: vi.fn().mockResolvedValue({ error: null }),
+            },
+          },
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient);
+
+        // Verifica que se llamó delete en rate_limits solo con los user IDs de la corrida
+        expect(rateLimitDeletedSubjects).toHaveLength(1);
+        expect(rateLimitDeletedSubjects[0]).toEqual([mockUserId]);
+
+        // Verifica que se llamó delete en audit_log por actor_id solo con los user IDs de la corrida
+        expect(auditDeletedActors).toHaveLength(1);
+        expect(auditDeletedActors[0]).toEqual([mockUserId]);
+
+        // Verifica que se llamó delete en audit_log por target_type 'delivery_request' y target_id de la corrida
+        expect(auditDeletedTargets.type).toBe('delivery_request');
+        expect(auditDeletedTargets.ids).toEqual([mockRequestId]);
+      });
+
+      it('los filtros usados en rate_limits y audit_log no abarcan user/request IDs ajenos', async () => {
+        const ctx = createStagingSeedContext();
+        const ownUserId = '123e4567-e89b-12d3-a456-426614175010';
+        const ownRequestId = '123e4567-e89b-12d3-a456-426614175020';
+        const alienUserId = '999e4567-e89b-12d3-a456-426614175099';
+        const alienRequestId = '888e4567-e89b-12d3-a456-426614175088';
+
+        ctx.createdUserIds = [ownUserId];
+        ctx.createdRequestIds = [ownRequestId];
+
+        let checkedRateLimitFilter = false;
+        let checkedAuditActorFilter = false;
+        let checkedAuditTargetFilter = false;
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'rate_limits') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn((_col: string, values: string[]) => {
+                    expect(values).toContain(ownUserId);
+                    expect(values).not.toContain(alienUserId);
+                    checkedRateLimitFilter = true;
+                    return Promise.resolve({ error: null });
+                  }),
+                }),
+              };
+            }
+            if (table === 'audit_log') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn((_col: string, values: string[]) => {
+                    expect(values).toContain(ownUserId);
+                    expect(values).not.toContain(alienUserId);
+                    checkedAuditActorFilter = true;
+                    return Promise.resolve({ error: null });
+                  }),
+                  eq: vi.fn((_col: string, _val: string) => ({
+                    in: vi.fn((_targetCol: string, targetValues: string[]) => {
+                      expect(targetValues).toContain(ownRequestId);
+                      expect(targetValues).not.toContain(alienRequestId);
+                      checkedAuditTargetFilter = true;
+                      return Promise.resolve({ error: null });
+                    }),
+                  })),
+                }),
+              };
+            }
+            if (table === 'delivery_requests' || table === 'offers' || table === 'delivery_request_contacts') {
+              return {
+                select: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+                update: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            if (table === 'couriers' || table === 'merchants' || table === 'profiles' || table === 'zones') {
+              return {
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+          auth: {
+            admin: {
+              deleteUser: vi.fn().mockResolvedValue({ error: null }),
+            },
+          },
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient);
+
+        expect(checkedRateLimitFilter).toBe(true);
+        expect(checkedAuditActorFilter).toBe(true);
+        expect(checkedAuditTargetFilter).toBe(true);
+      });
+
+      it('error en rate_limits queda registrado en el error agregado y el resto del cleanup continúa', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.createdUserIds = [mockUserId];
+
+        let profileDeleted = false;
+        let authUserDeleted = false;
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'rate_limits') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: { message: 'Rate limits table lock' } }),
+                }),
+              };
+            }
+            if (table === 'audit_log') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                  eq: vi.fn().mockReturnValue({
+                    in: vi.fn().mockResolvedValue({ error: null }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests' || table === 'offers' || table === 'delivery_request_contacts') {
+              return {
+                select: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+                update: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            if (table === 'couriers' || table === 'merchants') {
+              return {
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            if (table === 'profiles') {
+              return {
+                delete: vi.fn().mockImplementation(() => {
+                  profileDeleted = true;
+                  return { in: vi.fn().mockResolvedValue({ error: null }) };
+                }),
+              };
+            }
+            if (table === 'zones') {
+              return {
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+          auth: {
+            admin: {
+              deleteUser: vi.fn().mockImplementation(() => {
+                authUserDeleted = true;
+                return Promise.resolve({ error: null });
+              }),
+            },
+          },
+        } as unknown as AdminClientType;
+
+        await expect(cleanupStagingData(ctx, mockClient)).rejects.toThrow(
+          /\[E2E Cleanup Error\] Falló la limpieza de staging: rate_limits.*Rate limits table lock/i
+        );
+
+        // El resto del cleanup debe haber continuado a pesar del fallo en rate_limits
+        expect(profileDeleted).toBe(true);
+        expect(authUserDeleted).toBe(true);
+      });
+
+      it('error en audit_log queda registrado en el error agregado y el resto del cleanup continúa', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.createdUserIds = [mockUserId];
+
+        let profileDeleted = false;
+        let authUserDeleted = false;
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'rate_limits') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
+            if (table === 'audit_log') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: { message: 'Audit log read-only mode' } }),
+                  eq: vi.fn().mockReturnValue({
+                    in: vi.fn().mockResolvedValue({ error: null }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests' || table === 'offers' || table === 'delivery_request_contacts') {
+              return {
+                select: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ data: [], error: null }) }),
+                update: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            if (table === 'couriers' || table === 'merchants') {
+              return {
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            if (table === 'profiles') {
+              return {
+                delete: vi.fn().mockImplementation(() => {
+                  profileDeleted = true;
+                  return { in: vi.fn().mockResolvedValue({ error: null }) };
+                }),
+              };
+            }
+            if (table === 'zones') {
+              return {
+                delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+          auth: {
+            admin: {
+              deleteUser: vi.fn().mockImplementation(() => {
+                authUserDeleted = true;
+                return Promise.resolve({ error: null });
+              }),
+            },
+          },
+        } as unknown as AdminClientType;
+
+        await expect(cleanupStagingData(ctx, mockClient)).rejects.toThrow(
+          /\[E2E Cleanup Error\] Falló la limpieza de staging: audit_log\.actor.*Audit log read-only mode/i
+        );
+
+        // El resto del cleanup debe haber continuado a pesar del fallo en audit_log
+        expect(profileDeleted).toBe(true);
+        expect(authUserDeleted).toBe(true);
       });
     });
   });

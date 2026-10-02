@@ -3,10 +3,11 @@ import {
   expect,
   seedOffersForFirstRequest,
   getRequestInspectionData,
+  findRequestIdByNotesMarker,
 } from '../fixtures';
 import { formatArs } from '@/lib/format';
 import { waitForNoSkeletons } from '../helpers/skeletons';
-import { LoginPage, MerchantPage } from '../pages';
+import { LoginPage, MerchantPage, TripPage } from '../pages';
 
 /**
  * T-303: Suite E2E del flujo principal de cadeApp
@@ -153,11 +154,12 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Flujo 1: Publicación de solicitud con efectivo y cambio (PR160-H03)
+  // Flujo 1: Publicación de solicitud con efectivo y cambio (PR160-H03 / PR160-H08)
   // ---------------------------------------------------------------------------
   test('Flujo 1: Publicación de solicitud con datos de entrega, paquete y medio de pago', async ({
     page,
     merchantPage,
+    stagingContext,
     loginAsMerchant,
   }) => {
     await loginAsMerchant(page);
@@ -186,26 +188,40 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     await merchantPage.needsChangeYesButton.click();
     await merchantPage.changePresetButton(5000).click();
 
+    // Completar indicaciones con marcador unívoco de la corrida
+    const notesMarker = `E2E cash ${stagingContext.testRunId}`;
+    await merchantPage.notesInput.fill(notesMarker);
+
     // Publicar solicitud con el botón real de UI
     await merchantPage.submitRequestButton.click();
 
-    // Esperar redirección al listado o detalle
+    // Esperar navegación fuera del formulario de alta
     await page.waitForURL((url) => !url.pathname.endsWith('/requests/new'), {
       timeout: 10000,
     });
     await waitForNoSkeletons(page);
 
-    // Verificar renderizado de paquete Chico y medio de pago Efectivo
+    // Resolver el ID exacto de la solicitud creada mediante el helper server-side
+    const createdRequestId = await findRequestIdByNotesMarker(stagingContext, notesMarker);
+
+    // Navegar directamente a la vista de detalle de esa solicitud específica
+    await merchantPage.gotoRequestDetail(createdRequestId);
+    await waitForNoSkeletons(page);
+
+    // Verificar en el detalle específico: Paquete chico, Efectivo, cambio y monto real formatArs(5000)
     await expect(page.getByText(/paquete chico/i)).toBeVisible();
     await expect(page.getByText(/efectivo/i)).toBeVisible();
+    await expect(page.getByText(/paga con/i)).toBeVisible();
+    await expect(page.getByText(formatArs(5000))).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
-  // Flujo 1b: Publicación de solicitud con transferencia (PR160-H03)
+  // Flujo 1b: Publicación de solicitud con transferencia (PR160-H03 / PR160-H08)
   // ---------------------------------------------------------------------------
   test('Flujo 1b: Publicación de solicitud con medio de pago transferencia', async ({
     page,
     merchantPage,
+    stagingContext,
     loginAsMerchant,
   }) => {
     await loginAsMerchant(page);
@@ -227,15 +243,27 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     // Medio de pago: transferencia (sin cambio)
     await merchantPage.paymentTransferButton.click();
 
+    // Completar indicaciones con marcador unívoco de la corrida
+    const notesMarker = `E2E transfer ${stagingContext.testRunId}`;
+    await merchantPage.notesInput.fill(notesMarker);
+
     await merchantPage.submitRequestButton.click();
     await page.waitForURL((url) => !url.pathname.endsWith('/requests/new'), {
       timeout: 10000,
     });
     await waitForNoSkeletons(page);
 
+    // Resolver el ID exacto de la solicitud creada mediante el helper server-side
+    const createdRequestId = await findRequestIdByNotesMarker(stagingContext, notesMarker);
+
+    // Navegar directamente a la vista de detalle de esa solicitud específica
+    await merchantPage.gotoRequestDetail(createdRequestId);
+    await waitForNoSkeletons(page);
+
+    // Verificar en el detalle específico: Paquete chico, Transferencia y ausencia de datos de cambio
     await expect(page.getByText(/paquete chico/i)).toBeVisible();
     await expect(page.getByText(/transferencia/i)).toBeVisible();
-    await expect(page.getByText(/necesita cambio/i)).not.toBeVisible();
+    await expect(page.getByText(/paga con|cambio/i)).not.toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
@@ -313,7 +341,7 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Flujo 4: Ordenamiento de ofertas por documentación y precio (PR160-H03)
+  // Flujo 4: Ordenamiento de ofertas por documentación y precio (PR160-H03 / PR160-H09)
   // ---------------------------------------------------------------------------
   test('Flujo 4: Ordenamiento de ofertas recibidas por documentación y precio', async ({
     page,
@@ -329,32 +357,48 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       throw new Error('[E2E Error] No request ID found in stagingContext');
     }
 
+    const couriers = stagingContext.courierUsers;
+    if (!couriers || couriers.length < 2) {
+      throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext.courierUsers');
+    }
+    const courier0 = couriers[0];
+    const courier1 = couriers[1];
+    if (!courier0?.displayName || !courier1?.displayName) {
+      throw new Error('[E2E Error] Faltan los nombres displayName de los couriers seeded');
+    }
+    const courier0Name = courier0.displayName;
+    const courier1Name = courier1.displayName;
+
     await loginAsMerchant(page);
     await merchantPage.gotoRequestDetail(targetRequestId);
     await waitForNoSkeletons(page);
 
     // Por defecto el ordenamiento activo es por documentación (doc_level)
+    // Courier 0: documentación nivel 2, monto $2000 -> debe encabezar la lista
+    // Courier 1: documentación nivel 0, monto $1500 -> debe figurar en segundo lugar
     await expect(merchantPage.docSortButton).toHaveAttribute('aria-pressed', 'true');
     const orderDoc = await merchantPage.offerCourierHeadings.allTextContents();
     expect(orderDoc.length).toBeGreaterThanOrEqual(2);
+    expect(orderDoc[0]).toContain(courier0Name);
+    expect(orderDoc[1]).toContain(courier1Name);
 
     // Cambiar a ordenamiento por precio
+    // Courier 1 ($1500) debe figurar primero y Courier 0 ($2000) segundo
     await merchantPage.priceSortButton.click();
     await expect(merchantPage.priceSortButton).toHaveAttribute('aria-pressed', 'true');
     await expect(merchantPage.docSortButton).toHaveAttribute('aria-pressed', 'false');
 
     const orderPrice = await merchantPage.offerCourierHeadings.allTextContents();
     expect(orderPrice.length).toBeGreaterThanOrEqual(2);
-
-    // Al tener couriers con combinación cruzada (Courier 0 Doc 2 $2000 vs Courier 1 Doc 0 $1500),
-    // el primer elemento visible debe diferir entre ambos modos
-    expect(orderDoc[0]).not.toBe(orderPrice[0]);
+    expect(orderPrice[0]).toContain(courier1Name);
+    expect(orderPrice[1]).toContain(courier0Name);
   });
 
   // ---------------------------------------------------------------------------
-  // Flujo 5: Vista de viaje, WhatsApp y avance del estado (PR160-H03)
+  // Flujo 5: Vista de viaje, WhatsApp y avance del estado (PR160-H03 / PR160-H10)
   // ---------------------------------------------------------------------------
   test('Flujo 5: Vista de viaje refleja medio de pago y botón accesible Avisar a mi cliente', async ({
+    browser,
     page,
     tripPage,
     merchantPage,
@@ -380,6 +424,19 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     await merchantPage.confirmAcceptButton.click();
     await waitForNoSkeletons(page);
 
+    // Obtener la oferta realmente aceptada y el repartidor para verificar el mensaje de WhatsApp
+    const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
+    const acceptedOffer = inspection.offers.find((o) => o.id === inspection.acceptedOfferId);
+    if (!acceptedOffer) {
+      throw new Error('[E2E Error] No se encontró la oferta aceptada en la inspección de la solicitud');
+    }
+
+    const couriers = stagingContext.courierUsers;
+    const acceptedCourier = couriers?.find((c) => c.id === acceptedOffer.courierId);
+    if (!acceptedCourier?.displayName) {
+      throw new Error('[E2E Error] No se encontró el repartidor aceptado en courierUsers');
+    }
+
     // Navegar a la vista del viaje como comercio
     await tripPage.navigate(targetRequestId);
     await waitForNoSkeletons(page);
@@ -387,26 +444,46 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     // Verificar botón accesible "Avisar a mi cliente" con link https://wa.me/
     await expect(tripPage.notifyCustomerLink).toBeVisible();
     const customerHref = await tripPage.notifyCustomerLink.getAttribute('href');
-    expect(customerHref).toMatch(/^https:\/\/wa\.me\//);
-    expect(customerHref).toContain(rawSentinelDigits);
+    if (!customerHref) {
+      throw new Error('[E2E Error] No se encontró el atributo href en notifyCustomerLink');
+    }
 
-    // 2. Repartidor asignado (Courier 0) accede al viaje y avanza los estados
-    await loginAsCourier(0, page);
-    await tripPage.navigate(targetRequestId);
-    await waitForNoSkeletons(page);
+    const parsedUrl = new URL(customerHref);
+    expect(parsedUrl.protocol).toBe('https:');
+    expect(parsedUrl.hostname).toBe('wa.me');
+    expect(parsedUrl.pathname).toContain(rawSentinelDigits);
 
-    // Verificar medio de pago visible
-    await expect(page.getByText(/cobrás al entregar/i)).toBeVisible();
+    const messageText = parsedUrl.searchParams.get('text');
+    expect(messageText).toBeTruthy();
+    const decodedMessage = messageText ?? '';
+    expect(decodedMessage).toContain(formatArs(acceptedOffer.amountArs));
+    expect(decodedMessage).toContain(acceptedCourier.displayName);
+    expect(decodedMessage).toMatch(/efectivo/i);
 
-    // Marcar como retirado -> estado in_transit
-    await expect(tripPage.markPickedUpButton).toBeVisible();
-    await tripPage.markPickedUpButton.click();
-    await waitForNoSkeletons(page);
-    await expect(tripPage.confirmDeliveryButton).toBeVisible();
+    // 2. Repartidor asignado (Courier 0) accede al viaje en un contexto de navegador separado
+    const courierContext = await browser.newContext();
+    try {
+      const courierBrowserPage = await courierContext.newPage();
+      await loginAsCourier(0, courierBrowserPage);
+      const courierTripPage = new TripPage(courierBrowserPage);
+      await courierTripPage.navigate(targetRequestId);
+      await waitForNoSkeletons(courierBrowserPage);
 
-    // Confirmar entrega -> estado entregado
-    await tripPage.confirmDeliveryButton.click();
-    await waitForNoSkeletons(page);
-    await expect(tripPage.deliveredStatus).toBeVisible();
+      // Verificar medio de pago visible
+      await expect(courierBrowserPage.getByText(/cobrás al entregar/i)).toBeVisible();
+
+      // Marcar como retirado -> estado in_transit
+      await expect(courierTripPage.markPickedUpButton).toBeVisible();
+      await courierTripPage.markPickedUpButton.click();
+      await waitForNoSkeletons(courierBrowserPage);
+      await expect(courierTripPage.confirmDeliveryButton).toBeVisible();
+
+      // Confirmar entrega -> estado entregado
+      await courierTripPage.confirmDeliveryButton.click();
+      await waitForNoSkeletons(courierBrowserPage);
+      await expect(courierTripPage.deliveredStatus).toBeVisible();
+    } finally {
+      await courierContext.close();
+    }
   });
 });

@@ -1,4 +1,5 @@
 import type { Page, Locator } from '@playwright/test';
+import { formatArs } from '@/lib/format';
 import { BasePage } from './base.page';
 
 /**
@@ -70,8 +71,13 @@ export class MerchantPage extends BasePage {
     return this.page.getByPlaceholder(/otro monto en efectivo/i);
   }
 
+  get notesInput(): Locator {
+    return this.page.getByLabel(/indicaciones o referencias/i);
+  }
+
   changePresetButton(amount: number): Locator {
-    return this.page.getByRole('button', { name: new RegExp(`paga con.*${amount}`, 'i') });
+    const formatted = formatArs(amount).replace('$', '\\$');
+    return this.page.getByRole('button', { name: new RegExp(`paga con:?\\s*${formatted}`, 'i') });
   }
 
   get submitRequestButton(): Locator {

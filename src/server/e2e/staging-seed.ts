@@ -662,12 +662,71 @@ export async function getRequestInspectionData(
 }
 
 /**
+ * Busca de forma determinística y unívoca una solicitud creada en la corrida
+ * a partir del merchant_id y del marcador exacto en el campo notes.
+ * Falla cerrado si no se encuentra exactamente una fila o si el UUID es inválido.
+ * Incorpora el ID al tracking de la corrida si aún no estaba presente.
+ */
+export async function findRequestIdByNotesMarker(
+  context: StagingSeedContext,
+  marker: string,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<string> {
+  assertAllowedE2EEnvironment(env);
+
+  if (!context.merchantUser?.id) {
+    throw new Error(
+      '[E2E Error] Se requiere context.merchantUser para buscar solicitudes por marcador de notas'
+    );
+  }
+
+  const admin = client ?? createAdminClient();
+  const { data, error } = await admin
+    .from('delivery_requests')
+    .select('id')
+    .eq('merchant_id', context.merchantUser.id)
+    .eq('notes', marker);
+
+  if (error) {
+    throw new Error(`[E2E Error] Error al consultar delivery_requests por notas: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error(
+      `[E2E Error] No se encontró ninguna solicitud para el marcador de notas: "${marker}"`
+    );
+  }
+
+  if (data.length > 1) {
+    throw new Error(
+      `[E2E Error] Se encontraron múltiples solicitudes (${data.length}) para el marcador de notas: "${marker}"`
+    );
+  }
+
+  const foundId = data[0]?.id;
+  if (!foundId) {
+    throw new Error('[E2E Error] La fila devuelta no posee un campo id válido');
+  }
+
+  assertValidUuid(foundId, 'findRequestIdByNotesMarker');
+
+  if (!context.createdRequestIds.includes(foundId)) {
+    context.createdRequestIds.push(foundId);
+  }
+
+  return foundId;
+}
+
+/**
  * Limpia exclusivamente los registros creados por esta ejecución E2E.
  * Respeta el orden relacional inverso:
  * 0. desvincular accepted_offer_id en delivery_requests
  * 1. offers
  * 2. delivery_request_contacts
  * 3. delivery_requests
+ * 3a. rate_limits (usuarios creados por la corrida)
+ * 3b. audit_log (actor y target delivery_request antes de borrar profiles)
  * 4. couriers, merchants y profiles
  * 5. zones creadas por la corrida
  * 6. auth users
@@ -875,6 +934,7 @@ export async function cleanupStagingData(
   }
 
   // 3. Limpieza de delivery_requests
+  const runRequestIds = [...context.createdRequestIds];
   if (context.createdRequestIds.length > 0) {
     const toDelete = [...context.createdRequestIds];
     try {
@@ -890,6 +950,80 @@ export async function cleanupStagingData(
         ids: toDelete,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  // 3a. Limpieza de rate_limits atribuibles a los usuarios de la corrida
+  if (context.createdUserIds.length > 0) {
+    const toDeleteUsers = [...context.createdUserIds];
+    try {
+      const rlBuilder = admin.from('rate_limits');
+      if (typeof (rlBuilder as { delete?: unknown }).delete === 'function') {
+        const { error: rlErr } = await rlBuilder.delete().in('subject', toDeleteUsers);
+        if (rlErr) {
+          cleanupErrors.push({ entity: 'rate_limits', ids: toDeleteUsers, error: rlErr.message });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('unexpected table')) {
+        cleanupErrors.push({ entity: 'rate_limits', ids: toDeleteUsers, error: msg });
+      }
+    }
+  }
+
+  // 3b. Limpieza de audit_log atribuible a la corrida (antes de borrar profiles por ON DELETE SET NULL)
+  if (context.createdUserIds.length > 0) {
+    const toDeleteUsers = [...context.createdUserIds];
+    try {
+      const auditBuilder = admin.from('audit_log');
+      if (typeof (auditBuilder as { delete?: unknown }).delete === 'function') {
+        const { error: auditActorErr } = await auditBuilder.delete().in('actor_id', toDeleteUsers);
+        if (auditActorErr) {
+          cleanupErrors.push({ entity: 'audit_log.actor', ids: toDeleteUsers, error: auditActorErr.message });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('unexpected table')) {
+        cleanupErrors.push({ entity: 'audit_log.actor', ids: toDeleteUsers, error: msg });
+      }
+    }
+  }
+
+  if (runRequestIds.length > 0) {
+    try {
+      const auditBuilder = admin.from('audit_log');
+      const deleteResult =
+        typeof (auditBuilder as { delete?: unknown }).delete === 'function'
+          ? (auditBuilder as { delete: () => unknown }).delete()
+          : null;
+      if (deleteResult && typeof (deleteResult as { eq?: unknown }).eq === 'function') {
+        const { error: auditReqErr } = await (
+          deleteResult as {
+            eq: (
+              col: string,
+              val: string
+            ) => {
+              in: (col2: string, vals: string[]) => Promise<{ error: { message: string } | null }>;
+            };
+          }
+        )
+          .eq('target_type', 'delivery_request')
+          .in('target_id', runRequestIds);
+        if (auditReqErr) {
+          cleanupErrors.push({
+            entity: 'audit_log.delivery_request',
+            ids: runRequestIds,
+            error: auditReqErr.message,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes('unexpected table')) {
+        cleanupErrors.push({ entity: 'audit_log.delivery_request', ids: runRequestIds, error: msg });
+      }
     }
   }
 

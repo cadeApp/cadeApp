@@ -14,6 +14,7 @@ export {
   seedStagingData,
   seedOffersForFirstRequest,
   getRequestInspectionData,
+  findRequestIdByNotesMarker,
   cleanupStagingData,
   assertAllowedE2EEnvironment,
   isAllowedE2EEnvironment,
