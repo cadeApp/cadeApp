@@ -30,3 +30,8 @@ No se agrega número AG nuevo.
 - **H06 / P11:** una decisión de producto mergeada en una ficha no sustituye un contract-change cuando el repositorio declara `src/ui/**` como contrato. La revisión R2/R3 falló al no cruzar T-323/PR #176 con CC-011 vigente.
 - Cuando una tarea cambia un componente compartido ya gobernado por un CC, la revisión debe comparar **ficha vigente + CC vigente + implementación**, no solo ficha + diff.
 - La evidencia manual que depende de un deploy estable debe ubicarse en el gate que realmente puede producir ese deploy; no se inventa un preview especial si el flujo de release ya define `develop → staging`.
+## Ronda 5
+
+- **H06 / P11:** una tarea que consume un contrato compartido debe volver a la implementación canónica después de que el contract-change mergea; mantener diff cero en los archivos contractuales evita una segunda fuente de verdad.
+- **H07 / P10:** permitir merge a develop antes de un gate de staging no equivale a poder cerrar la tarea. El estado de issue/tarea y el estado del PR deben modelarse por separado.
+- Los keywords `Closes/Fixes/Resolves` forman parte del comportamiento operativo: pueden violar un release gate aunque el código y CI estén perfectos.

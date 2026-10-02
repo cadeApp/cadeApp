@@ -367,3 +367,46 @@ El job db-tests tuvo reintentos por rate-limit de Docker Hub durante el arranque
 ```
 
 `.github/workflows/deploy.yml` confirma que el deploy estable de staging se dispara únicamente tras un workflow de migración completado por `push` a la rama `staging`; las feature branches no despliegan allí.
+## Ronda 5
+
+SHA funcional: `a846f90b91691e7b71301aa500e62ee30e2eba07`.
+
+### Integración CC-014
+
+- develop...HEAD: ahead_by=16, behind_by=0
+- `src/ui/map.tsx`: sin diff contra develop
+- `src/ui/map.test.tsx`: sin diff contra develop
+
+H06 queda cerrado porque el contrato canónico CC-014 ya está en develop y T-323 no mantiene una variante local.
+
+### Código T-323 preservado
+
+- `hasInvalidEffectiveCoords`: deriva de bounds de effectiveLat/effectiveLng.
+- submit disabled: `isSubmitting || hasInvalidEffectiveCoords`.
+- GPS fuera: lat/lng pasan a null.
+- submit final vuelve a validar bounds.
+
+### H07 — gate de staging
+
+- PR body: `Closes #171`.
+- PR body: ausencia de evidencia post-merge no deja T-323 abierta.
+- `docs/tasks/T-323.md`: misma semántica.
+- issue #171: misma semántica.
+
+Riesgo: mergear #175 cierra #171 antes de promoción develop→staging y antes de validación manual GREEN.
+
+### CI exact-head 36958099121
+
+- Test Files 110 passed (110)
+- Tests 1604 passed (1604)
+- workflow tests 31
+- ADR tests 6
+- db-tests: Files=13, Tests=1614, Result PASS
+- typecheck success
+- lint success
+- build success
+- audit success
+- bundle-budget success
+- `/merchant/onboarding` 147 kB OK
+- `/merchant/requests/new` 163 kB OK
+- `/design-system` 184 kB warning preexistente
