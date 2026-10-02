@@ -2,7 +2,7 @@
 
 ## Estado
 
-**TRANSCRIPCIÓN CANDIDATA COMPLETA — PENDIENTE DE APROBACIÓN FINAL DE LAUTARO073.**
+**LISTA NORMALIZADA APROBADA POR LAUTARO073 EL 2026-10-02.**
 
 El 2026-10-02 Lautaro073 aportó fotografías legibles del plano municipal de barrios. Las fotografías coinciden en título, diseño, numeración, leyenda y créditos con la copia pública previamente localizada del plano **“CIUDAD DE AGUILARES Y DIVISIONES DE BARRIOS”**.
 
@@ -35,13 +35,13 @@ La leyenda municipal usa numeración **discontinua**. La transcripción visible 
 |---:|---|---|---|
 | 01 | Chacarita | Chacarita | claro |
 | 02 | San Jose | San José | claro |
-| 04 | Sto. Domingo | Santo Domingo | abreviatura obvia; confirmar forma oficial |
+| 04 | Sto. Domingo | Santo Domingo | aprobado por Lautaro073 |
 | 05 | J.F. Kennedy | J. F. Kennedy | claro |
 | 06 | El Porvenir | El Porvenir | claro |
 | 07 | 9 de Julio | 9 de Julio | claro |
 | 08 | San Martin | San Martín | claro |
 | 09 | Centro | Centro | claro |
-| 10 | Alte. Brown | Alte. Brown | no expandir sin fuente secundaria |
+| 10 | Alte. Brown | Almirante Brown | aprobado por Lautaro073 |
 | 11 | Los Alamos | Los Álamos | claro |
 | 12 | Fray M. Esquiu | Fray M. Esquiú | no expandir inicial sin corroboración |
 | 13 | Alpargatas | Alpargatas | claro |
@@ -52,10 +52,10 @@ La leyenda municipal usa numeración **discontinua**. La transcripción visible 
 | 18 | Cristo - Centro | Cristo - Centro | mantener literal hasta confirmar denominación |
 | 19 | Gambarte | Gambarte | claro |
 | 20 | Teran | Terán | claro |
-| 23 | Villanueva | Villanueva | posible 'Villa Nueva'; confirmar contra foto/origen antes de normalizar |
+| 23 | Villanueva | Villa Nueva | aprobado por Lautaro073 |
 | 24 | El Alto | El Alto | claro |
 | 25 | El Ceibal | El Ceibal | claro |
-| 26 | Sta. Emilia | Santa Emilia | abreviatura obvia; confirmar forma oficial |
+| 26 | Sta. Emilia | Santa Emilia | aprobado por Lautaro073 |
 | 27 | Evita | Evita | claro |
 | 28 | Ampliacion Evita | Ampliación Evita | claro |
 | 29 | Municipal | Municipal | claro |
@@ -75,7 +75,7 @@ La leyenda municipal usa numeración **discontinua**. La transcripción visible 
 | 43 | 12 de Octubre | 12 de Octubre | claro |
 | 44 | A. Illia | A. Illia | no expandir inicial sin corroboración |
 | 45 | El Parque | El Parque | claro |
-| 46 | J. Pablo II | J. Pablo II | no expandir inicial sin corroboración |
+| 46 | J. Pablo II | Juan Pablo II | aprobado por Lautaro073 |
 | 48 | Huasa Rincon | Huasa Rincón | claro |
 | 49 | Los Callejones | Los Callejones | claro |
 | 50 | Tagusa Norte | Tagusa Norte | claro |
@@ -98,18 +98,17 @@ La leyenda municipal usa numeración **discontinua**. La transcripción visible 
 
 ## Observaciones de normalización
 
-Solo se proponen:
-- tildes ortográficas evidentes;
-- espaciado/puntuación;
-- expansión de `Sto.` / `Sta.` únicamente como candidata, todavía sujeta a confirmación.
+Lautaro073 aprobó explícitamente el 2026-10-02 estas normalizaciones:
+- `Sto. Domingo` → **Santo Domingo**;
+- `Alte. Brown` → **Almirante Brown**;
+- `Villanueva` → **Villa Nueva**;
+- `Sta. Emilia` → **Santa Emilia**;
+- `J. Pablo II` → **Juan Pablo II**.
 
-No se expanden automáticamente iniciales como:
-- `Alte. Brown`;
-- `Fray M. Esquiú`;
-- `A. Illia`;
-- `J. Pablo II`.
-
-Tampoco se cambia `Villanueva` a `Villa Nueva` sin confirmar contra la fotografía/fuente.
+El resto de la transcripción queda exactamente con la normalización candidata ya documentada. En particular:
+- `Fray M. Esquiú` se conserva sin expandir la inicial;
+- `A. Illia` se conserva literal;
+- `FOTIA` se conserva con esa capitalización.
 
 ## Corroboraciones públicas ya localizadas
 
@@ -120,17 +119,20 @@ Tampoco se cambia `Villanueva` a `Villa Nueva` sin confirmar contra la fotograf�
   - https://msptucuman.gov.ar/equipos-territoriales-nuevo-amanercer/
 - Un documento académico institucional de UNSTA sobre el Servicio Local de Aguilares menciona, entre otros, **Evita, 11 de Marzo, San Martín, Obrero, Belgrano, Álamos, Alpargatas, Villa Nueva e Independencia**. Se usa solo como corroboración secundaria, no como padrón.
 
-## Decisión pendiente antes de SQL
+## Estado de decisiones antes de SQL
 
-Lautaro073 debe aprobar explícitamente:
-1. esta lista de nombres;
-2. las normalizaciones dudosas;
-3. si la fila general `Aguilares` sigue activa/seleccionable o queda como legacy.
+### Aprobado
+- La lista de **62 entradas** queda aprobada por Lautaro073.
+- Las normalizaciones finales quedan aprobadas, incluidas las cinco correcciones explícitas anteriores.
+- No se inventarán centroides.
 
-Hasta esa aprobación:
+### Pendiente
+- Definir si la fila general `Aguilares` sigue activa/seleccionable o queda como dato legacy.
+- CC-015 debe estar mergeado antes de crear la migration T-326.
+
+Hasta resolver esos dos puntos:
 - no crear la migration T-326;
-- no modificar `supabase/seed.sql`;
-- no inventar centroides.
+- no modificar `supabase/seed.sql`.
 
 ## Regla de coordenadas
 
