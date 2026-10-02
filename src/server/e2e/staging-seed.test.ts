@@ -253,6 +253,53 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(ctx.createdRequestIds).toContain(row.id);
     });
 
+    it('no reutiliza una zona transitoria creada por otra corrida E2E', async () => {
+      const ctx = createStagingSeedContext();
+      const merchantId = '123e4567-e89b-12d3-a456-426614174090';
+      const foreignTransientZoneId = '123e4567-e89b-12d3-a456-426614174091';
+      const ownZoneId = '123e4567-e89b-12d3-a456-426614174092';
+
+      const zonesInsert = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: ownZoneId }, error: null }),
+        }),
+      });
+
+      const requestInsert = vi.fn((payload: { id: string }) => ({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: payload.id }, error: null }),
+        }),
+      }));
+
+      const mockClient = {
+        from: vi.fn((table: string) => {
+          if (table === 'zones') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue({
+                    data: [{ id: foreignTransientZoneId, name: 'E2E Zona corrida-ajena' }],
+                    error: null,
+                  }),
+                }),
+              }),
+              insert: zonesInsert,
+            };
+          }
+          if (table === 'delivery_requests') {
+            return { insert: requestInsert };
+          }
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+      } as unknown as AdminClientType;
+
+      await seedStagingData(ctx, { requestsCount: 1, merchantId }, mockClient);
+
+      expect(zonesInsert).toHaveBeenCalledTimes(1);
+      expect(ctx.createdZoneIds).toEqual([ownZoneId]);
+      expect(ctx.createdRequestIds).toHaveLength(1);
+    });
+
     // M7: Supabase responde error al insert -> seed debe rechazar/fallar y no marcar la entidad como creada
     it('M7: si Supabase responde error en la inserción, el seed debe fallar y no registrar el ID en el contexto', async () => {
       const ctx = createStagingSeedContext();
