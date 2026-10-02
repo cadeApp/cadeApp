@@ -16,6 +16,11 @@ import {
   getRequestInspectionData,
   findRequestIdByNotesMarker,
   cleanupStagingData,
+  base32Decode,
+  generateTotp,
+  seedAdminUser,
+  elevateAdminToAal2,
+  seedDeliveryRequestInState,
   KNOWN_STAGING_PROJECT_REFS,
   type StagingSeedContext,
   type AdminClientType,
@@ -2048,6 +2053,285 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         // El resto del cleanup debe haber continuado a pesar del fallo en audit_log
         expect(profileDeleted).toBe(true);
         expect(authUserDeleted).toBe(true);
+      });
+    });
+  });
+
+  describe('T-304: Extensiones de seed, autenticación, MFA y estados para E2E real', () => {
+    const validEnv = {
+      NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+      E2E_TEST: 'true',
+    };
+
+    describe('base32Decode y generateTotp (RFC 6238)', () => {
+      it('decodifica correctamente base32 y maneja caracteres inválidos', () => {
+        const decoded = base32Decode('JBSWY3DPEHPK3PXP');
+        expect(decoded.toString('latin1')).toBe('Hello!\xde\xad\xbe\xef');
+
+        expect(() => base32Decode('INVALID_CHAR_89!')).toThrow(/Carácter base32 inválido/i);
+      });
+
+      it('genera código TOTP de 6 dígitos numéricos determinístico', () => {
+        const fixedTimeMs = 1700000000000;
+        const code1 = generateTotp('JBSWY3DPEHPK3PXP', fixedTimeMs);
+        const code2 = generateTotp('JBSWY3DPEHPK3PXP', fixedTimeMs);
+
+        expect(code1).toMatch(/^\d{6}$/);
+        expect(code1).toBe(code2);
+      });
+    });
+
+    describe('trackEntityForCleanup para incidentes', () => {
+      it('registra incidentes con UUIDs válidos y rechaza inválidos', () => {
+        const ctx = createStagingSeedContext();
+        const validIncidentId = '11111111-2222-3333-4444-555555555555';
+
+        trackEntityForCleanup(ctx, 'incident', validIncidentId);
+        expect(ctx.createdIncidentIds).toContain(validIncidentId);
+
+        expect(() => trackEntityForCleanup(ctx, 'incident', 'invalid-id')).toThrow(
+          /UUID válido/i
+        );
+      });
+    });
+
+    describe('seedAdminUser', () => {
+      it('crea usuario administrador en auth y profiles sin filtrar contraseñas en logs', async () => {
+        const ctx = createStagingSeedContext();
+        const mockAdminId = '99999999-8888-7777-6666-555555555555';
+
+        const mockClient = {
+          auth: {
+            admin: {
+              createUser: vi.fn().mockResolvedValue({
+                data: { user: { id: mockAdminId } },
+                error: null,
+              }),
+            },
+          },
+          from: vi.fn((table: string) => {
+            if (table === 'profiles') {
+              return {
+                upsert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const creds = await seedAdminUser(ctx, mockClient, validEnv);
+
+        expect(creds.id).toBe(mockAdminId);
+        expect(creds.role).toBe('admin');
+        expect(creds.email).toContain('admin@cadeapp-staging.test');
+        expect(ctx.createdUserIds).toContain(mockAdminId);
+        expect(ctx.adminUser).toEqual(creds);
+      });
+    });
+
+    describe('seedDeliveryRequestInState', () => {
+      it('crea solicitud en estado draft con precondiciones y tracking', async () => {
+        const ctx = createStagingSeedContext();
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        ctx.merchantUser = {
+          id: merchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'zones') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [
+                        { id: '22222222-2222-4222-8222-222222222222' },
+                        { id: '33333333-3333-4333-8333-333333333333' },
+                      ],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            if (table === 'delivery_request_contacts') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          { status: 'draft', withContacts: true },
+          mockClient,
+          validEnv
+        );
+
+        expect(result.requestId).toBeDefined();
+        expect(ctx.createdRequestIds).toContain(result.requestId);
+        expect(ctx.createdContactRequestIds).toContain(result.requestId);
+      });
+
+      it('crea solicitud en estado matched con oferta aceptada e incidentes opcionales', async () => {
+        const ctx = createStagingSeedContext();
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        const courierId = '44444444-4444-4444-8444-444444444444';
+        ctx.merchantUser = {
+          id: merchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+        ctx.courierUsers = [
+          { id: courierId, email: 'courier@test.local', password: 'pass', role: 'courier' },
+        ];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'zones') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [{ id: '22222222-2222-4222-8222-222222222222' }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            if (table === 'incidents') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          {
+            status: 'matched',
+            assignedCourierId: courierId,
+            withIncident: {
+              kind: 'other',
+              description: 'Incidente de prueba',
+              reporterId: merchantId,
+            },
+          },
+          mockClient,
+          validEnv
+        );
+
+        expect(result.requestId).toBeDefined();
+        expect(result.acceptedOfferId).toBeDefined();
+        expect(result.incidentId).toBeDefined();
+        expect(ctx.createdRequestIds).toContain(result.requestId);
+        expect(ctx.createdOfferIds).toContain(result.acceptedOfferId);
+        expect(ctx.createdIncidentIds).toContain(result.incidentId);
+      });
+    });
+
+    describe('getRequestInspectionData extendido', () => {
+      it('retorna campos extendidos de solicitud, ofertas e incidentes', async () => {
+        const ctx = createStagingSeedContext();
+        const requestId = '77777777-7777-4777-8777-777777777777';
+        ctx.createdRequestIds = [requestId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: {
+                        id: requestId,
+                        status: 'in_transit',
+                        accepted_offer_id: '88888888-8888-4888-8888-888888888888',
+                        published_at: '2026-10-01T20:00:00Z',
+                        expires_at: '2026-10-01T20:45:00Z',
+                        matched_at: '2026-10-01T20:10:00Z',
+                        picked_up_at: '2026-10-01T20:20:00Z',
+                        delivered_at: null,
+                        cancelled_at: null,
+                        cancel_reason: null,
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: '88888888-8888-4888-8888-888888888888',
+                        status: 'accepted',
+                        courier_id: 'courier-1',
+                        amount_ars: 2000,
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: 'inc-1',
+                        status: 'open',
+                        kind: 'safety',
+                        reporter_id: 'courier-1',
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const inspection = await getRequestInspectionData(ctx, requestId, mockClient, validEnv);
+
+        expect(inspection.requestId).toBe(requestId);
+        expect(inspection.requestStatus).toBe('in_transit');
+        expect(inspection.pickedUpAt).toBe('2026-10-01T20:20:00Z');
+        expect(inspection.offers).toHaveLength(1);
+        expect(inspection.offers[0]?.status).toBe('accepted');
+        expect(inspection.incidents).toHaveLength(1);
+        expect(inspection.incidents?.[0]?.kind).toBe('safety');
       });
     });
   });

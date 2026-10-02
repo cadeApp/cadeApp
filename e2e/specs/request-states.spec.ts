@@ -1,572 +1,730 @@
-import { test, expect } from '@playwright/test';
 import {
-  transitionRequest,
-  getEffectiveRequestStatus,
-  canTransitionRequest,
-  transitionOffer,
-  isRequestExpired,
-  type RequestActor,
-} from '@/domain/states';
-import {
-  cancelRequestInputSchema,
-  republishRequestInputSchema,
-  reportNoShowInputSchema,
-  courierCancelMatchInputSchema,
-  markPickedUpInputSchema,
-  markDeliveredInputSchema,
-  publishRequestInputSchema,
-  acceptOfferInputSchema,
-} from '@/domain/rpc-contracts';
+  test,
+  expect,
+  createAuthenticatedClient,
+  seedDeliveryRequestInState,
+  getRequestInspectionData,
+  elevateAdminToAal2,
+  seedAdminUser,
+} from '../fixtures';
 
 /**
  * T-304: E2E y matriz de estados (§5.1 de master-plan.md)
  *
- * Flujos y transiciones cubiertos:
- * 1. draft -> published (merchant dueño, suscripción/piloto activa, cálculo de expires_at)
- * 2. published -> matched (merchant dueño, aceptación atómica, una accepted y resto rejected)
- * 3. published -> cancelled (merchant dueño sin penalidad, ofertas pending pasan a expired)
- * 4. published -> expired (sistema, now > expires_at, expiración perezosa)
- * 5. matched -> in_transit (courier asignado marca retirado)
- * 6a. matched -> published (republicar: comercio reporta 'no llegó' con motivo no_show)
+ * Flujos y transiciones cubiertos mediante RPCs reales, autenticación por actor y oráculos en PostgreSQL:
+ * 1. draft -> published (merchant dueño, cálculo de expires_at y timestamps persistidos)
+ * 2. published -> matched (merchant dueño acepta oferta atómicamente, una accepted y resto rejected)
+ * 3. published -> cancelled (merchant dueño cancela sin penalidad, ofertas pending pasan a expired)
+ * 4. published -> expired (expiración perezosa al operar y barrido por runSweep)
+ * 5. matched -> in_transit (courier asignado marca retirado con persistencia)
+ * 6a. matched -> published (republicar: comercio reporta 'no llegó' / no_show con motivo)
  * 6b. matched -> published (republicar: courier cancela match con motivo obligatorio)
  * 7. matched -> cancelled (comercio dueño cancela con motivo obligatorio)
- * 8. in_transit -> delivered (courier asignado confirma entrega, ventana 24 h para reporte)
- * 9. in_transit -> cancelled (admin cancela por incidente con motivo)
- * 10. DoD Invariante crítica: falla si se permite cancelar después de entregado (ni merchant,
- *     ni courier, ni admin pueden cancelar cuando el pedido está delivered).
+ * 8. in_transit -> delivered (courier asignado confirma entrega y ventana de incidente de 24h)
+ * 9. in_transit -> cancelled (admin cancela por incidente con motivo obligatorio y AAL2 — CC-015 / D02 = 2-A)
+ * 10. DoD Invariante crítica: falla si se permite cancelar después de entregado (delivered jamás se cancela).
  */
 
-const SAMPLE_NOW = new Date('2026-10-01T20:00:00.000Z');
-const SAMPLE_FUTURE_EXPIRES = new Date('2026-10-01T20:45:00.000Z');
-const SAMPLE_PAST_EXPIRES = new Date('2026-10-01T19:50:00.000Z');
+async function expectRpcFailure(
+  rpcPromise: PromiseLike<{ data: unknown; error: { message: string; code?: string } | null }>,
+  expectedError: string
+): Promise<void> {
+  const { data, error } = await rpcPromise;
+  expect(
+    error,
+    `Se esperaba fallo con código '${expectedError}', pero la RPC retornó éxito con datos: ${JSON.stringify(data)}`
+  ).not.toBeNull();
+  expect(error?.message).toContain(expectedError);
+}
 
 test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
   // ---------------------------------------------------------------------------
   // Fila 1: draft -> published
   // ---------------------------------------------------------------------------
-  test('Fila 1 (§5.1): draft -> published (merchant dueño con suscripción activa/piloto)', async () => {
-    // 1. Éxito: comercio dueño en piloto activo
-    const validTransition = transitionRequest({
-      from: 'draft',
-      to: 'published',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-      subscriptionStatus: 'pilot',
-      pilotActive: true,
-    });
-    expect(validTransition.ok).toBe(true);
-    if (validTransition.ok) {
-      expect(validTransition.data.status).toBe('published');
-      expect(validTransition.data.offerSideEffect).toBe('none');
+  test('Fila 1 (§5.1): draft -> published (merchant dueño, cálculo de expires_at y timestamps persistidos)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
     }
 
-    // 2. Rechazo si el actor no es el comercio dueño
-    const unauthorizedCourier = transitionRequest({
-      from: 'draft',
-      to: 'published',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: false,
-      subscriptionStatus: 'pilot',
-      pilotActive: true,
+    // Precondición: solicitud en draft con contactos
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'draft',
+      merchantId: merchant.id,
+      withContacts: true,
     });
-    expect(unauthorizedCourier.ok).toBe(false);
-    if (!unauthorizedCourier.ok) {
-      expect(unauthorizedCourier.code).toBe('UNAUTHORIZED_ACTOR');
-    }
+    const requestId = seedResult.requestId;
 
-    // 3. Rechazo si la suscripción está vencida o cancelada
-    const inactiveSub = transitionRequest({
-      from: 'draft',
-      to: 'published',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-      subscriptionStatus: 'expired',
-      pilotActive: false,
-    });
-    expect(inactiveSub.ok).toBe(false);
-    if (!inactiveSub.ok) {
-      expect(inactiveSub.code).toBe('SUBSCRIPTION_INACTIVE');
-    }
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const courierClient = await createAuthenticatedClient(courier);
 
-    // Validación de contrato de entrada RPC
-    const validRpcInput = publishRequestInputSchema.safeParse({
-      requestId: 'a0000000-0000-4000-8000-000000000001',
+    // 1. Caso negativo: courier intenta publicar una solicitud
+    await expectRpcFailure(
+      courierClient.rpc('publish_request', { p_request_id: requestId }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 2. Caso positivo: comercio dueño publica la solicitud
+    const { data: publishData, error: publishError } = await merchantClient.rpc('publish_request', {
+      p_request_id: requestId,
     });
-    expect(validRpcInput.success).toBe(true);
+    expect(publishError).toBeNull();
+    expect(publishData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('published');
+    expect(inspection.publishedAt).not.toBeNull();
+    expect(inspection.expiresAt).not.toBeNull();
+
+    // expires_at debe ser posterior a published_at (~45 minutos por request_ttl_minutes)
+    const pubTime = new Date(inspection.publishedAt ?? '').getTime();
+    const expTime = new Date(inspection.expiresAt ?? '').getTime();
+    expect(expTime).toBeGreaterThan(pubTime);
+    const diffMinutes = Math.round((expTime - pubTime) / (60 * 1000));
+    expect(diffMinutes).toBeGreaterThanOrEqual(40);
+    expect(diffMinutes).toBeLessThanOrEqual(50);
   });
 
   // ---------------------------------------------------------------------------
   // Fila 2: published -> matched
   // ---------------------------------------------------------------------------
-  test('Fila 2 (§5.1): published -> matched (merchant dueño acepta oferta atómicamente)', async () => {
-    // 1. Éxito: comercio dueño acepta oferta mientras está publicada y no vencida
-    const validTransition = transitionRequest({
-      from: 'published',
-      to: 'matched',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      expiresAt: SAMPLE_FUTURE_EXPIRES,
-      isOwnerMerchant: true,
-    });
-    expect(validTransition.ok).toBe(true);
-    if (validTransition.ok) {
-      expect(validTransition.data.status).toBe('matched');
-      expect(validTransition.data.offerSideEffect).toBe('accept_one_reject_others');
+  test('Fila 2 (§5.1): published -> matched (merchant dueño acepta oferta atómicamente, una accepted y resto rejected)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier0 = stagingContext.courierUsers?.[0];
+    const courier1 = stagingContext.courierUsers?.[1];
+    if (!merchant || !courier0 || !courier1) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y 2 couriers en stagingContext');
     }
 
-    // Efecto colateral atómico de ofertas
-    expect(transitionOffer('pending', 'accepted', 'merchant').ok).toBe(true);
-    expect(transitionOffer('pending', 'rejected', 'system').ok).toBe(true);
-
-    // 2. Rechazo si el actor no es el dueño
-    const unauthorizedAccept = transitionRequest({
-      from: 'published',
-      to: 'matched',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      expiresAt: SAMPLE_FUTURE_EXPIRES,
-      isOwnerMerchant: false,
+    // Precondición: solicitud published con 2 ofertas pending de repartidores aprobados
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      withContacts: true,
+      withPendingOffersCount: 2,
     });
-    expect(unauthorizedAccept.ok).toBe(false);
-    if (!unauthorizedAccept.ok) {
-      expect(unauthorizedAccept.code).toBe('UNAUTHORIZED_ACTOR');
+    const requestId = seedResult.requestId;
+    const [offer0Id, offer1Id] = seedResult.pendingOfferIds;
+    if (!offer0Id || !offer1Id) {
+      throw new Error('[E2E Precondition Error] No se crearon las 2 ofertas pendientes');
     }
 
-    // Contrato RPC accept_offer
-    const validAcceptRpc = acceptOfferInputSchema.safeParse({
-      offerId: 'b0000000-0000-4000-8000-000000000001',
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const courierClient = await createAuthenticatedClient(courier0);
+
+    // 1. Caso negativo: courier no puede aceptar oferta
+    await expectRpcFailure(
+      courierClient.rpc('accept_offer', { p_offer_id: offer0Id }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 2. Caso positivo: comercio dueño acepta offer0
+    const { data: acceptData, error: acceptError } = await merchantClient.rpc('accept_offer', {
+      p_offer_id: offer0Id,
     });
-    expect(validAcceptRpc.success).toBe(true);
+    expect(acceptError).toBeNull();
+    expect(acceptData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('matched');
+    expect(inspection.acceptedOfferId).toBe(offer0Id);
+    expect(inspection.matchedAt).not.toBeNull();
+
+    // Efecto colateral atómico: oferta 0 accepted, oferta 1 rejected
+    const acceptedOffer = inspection.offers.find((o) => o.id === offer0Id);
+    const rejectedOffer = inspection.offers.find((o) => o.id === offer1Id);
+    expect(acceptedOffer?.status).toBe('accepted');
+    expect(rejectedOffer?.status).toBe('rejected');
+
+    // 4. Caso de concurrencia: intentar aceptar la oferta 1 cuando ya está matched falla
+    await expectRpcFailure(
+      merchantClient.rpc('accept_offer', { p_offer_id: offer1Id }),
+      'ALREADY_MATCHED'
+    );
   });
 
   // ---------------------------------------------------------------------------
   // Fila 3: published -> cancelled
   // ---------------------------------------------------------------------------
-  test('Fila 3 (§5.1): published -> cancelled (merchant dueño cancela sin penalidad)', async () => {
-    // 1. Éxito: comercio dueño cancela antes de aceptar oferta
-    const validTransition = transitionRequest({
-      from: 'published',
-      to: 'cancelled',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      expiresAt: SAMPLE_FUTURE_EXPIRES,
-      isOwnerMerchant: true,
-    });
-    expect(validTransition.ok).toBe(true);
-    if (validTransition.ok) {
-      expect(validTransition.data.status).toBe('cancelled');
-      // Las ofertas pendientes expiran
-      expect(validTransition.data.offerSideEffect).toBe('expire_all_pending');
+  test('Fila 3 (§5.1): published -> cancelled (merchant dueño cancela sin penalidad, ofertas pending pasan a expired)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
     }
 
-    // Oferta pending pasa a expired al cancelarse la solicitud publicada
-    expect(transitionOffer('pending', 'expired', 'merchant').ok).toBe(true);
-
-    // 2. Courier no puede cancelar una solicitud publicada
-    const courierCancel = transitionRequest({
-      from: 'published',
-      to: 'cancelled',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      expiresAt: SAMPLE_FUTURE_EXPIRES,
+    // Precondición: solicitud published con oferta pending
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      withContacts: true,
+      withPendingOffersCount: 1,
     });
-    expect(courierCancel.ok).toBe(false);
-    if (!courierCancel.ok) {
-      expect(courierCancel.code).toBe('UNAUTHORIZED_ACTOR');
-    }
+    const requestId = seedResult.requestId;
+    const pendingOfferId = seedResult.pendingOfferIds[0];
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const courierClient = await createAuthenticatedClient(courier);
+
+    // 1. Caso negativo: courier no puede cancelar solicitud
+    await expectRpcFailure(
+      courierClient.rpc('cancel_request', {
+        p_request_id: requestId,
+        p_reason: 'Intento courier',
+      }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 2. Caso positivo: comercio dueño cancela antes de aceptar oferta
+    const { data: cancelData, error: cancelError } = await merchantClient.rpc('cancel_request', {
+      p_request_id: requestId,
+      p_reason: 'El cliente retirará en el local comercial',
+    });
+    expect(cancelError).toBeNull();
+    expect(cancelData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('cancelled');
+    expect(inspection.cancelledAt).not.toBeNull();
+    expect(inspection.cancelReason).toBe('El cliente retirará en el local comercial');
+
+    // Las ofertas pending asociadas deben pasar a expired
+    const offer = inspection.offers.find((o) => o.id === pendingOfferId);
+    expect(offer?.status).toBe('expired');
   });
 
   // ---------------------------------------------------------------------------
   // Fila 4: published -> expired
   // ---------------------------------------------------------------------------
-  test('Fila 4 (§5.1): published -> expired (expiración perezosa cuando now > expires_at)', async () => {
-    // 1. Detección de expiración perezosa
-    expect(isRequestExpired('published', SAMPLE_PAST_EXPIRES, SAMPLE_NOW)).toBe(true);
-    expect(getEffectiveRequestStatus('published', SAMPLE_PAST_EXPIRES, SAMPLE_NOW)).toBe('expired');
-
-    // Solicitud aún vigente no debe ser tratada como expirada
-    expect(isRequestExpired('published', SAMPLE_FUTURE_EXPIRES, SAMPLE_NOW)).toBe(false);
-    expect(getEffectiveRequestStatus('published', SAMPLE_FUTURE_EXPIRES, SAMPLE_NOW)).toBe('published');
-
-    // 2. Transición explícita por sistema
-    const validExpire = transitionRequest({
-      from: 'published',
-      to: 'expired',
-      actor: 'system',
-      now: SAMPLE_NOW,
-      expiresAt: SAMPLE_PAST_EXPIRES,
-    });
-    expect(validExpire.ok).toBe(true);
-    if (validExpire.ok) {
-      expect(validExpire.data.status).toBe('expired');
-      expect(validExpire.data.offerSideEffect).toBe('expire_all_pending');
+  test('Fila 4 (§5.1): published -> expired (expiración perezosa al operar y barrido de expiración)', async ({
+    stagingContext,
+    request,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    if (!merchant) {
+      throw new Error('[E2E Precondition Error] Se requiere merchant en stagingContext');
     }
 
-    // 3. No expira si todavía no venció
-    const prematureExpire = transitionRequest({
-      from: 'published',
-      to: 'expired',
-      actor: 'system',
-      now: SAMPLE_NOW,
-      expiresAt: SAMPLE_FUTURE_EXPIRES,
+    // Precondición: solicitud published con expires_at en el pasado (5 minutos atrás) y oferta pendiente
+    const pastExpiresAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+      withPendingOffersCount: 1,
     });
-    expect(prematureExpire.ok).toBe(false);
-    if (!prematureExpire.ok) {
-      expect(prematureExpire.code).toBe('INVALID_STATE_TRANSITION');
+    const requestId = seedResult.requestId;
+    const pendingOfferId = seedResult.pendingOfferIds[0];
+    if (!pendingOfferId) {
+      throw new Error('[E2E Precondition Error] No se creó oferta pendiente');
     }
 
-    // 4. Intentar transicionar una solicitud expirada como si estuviera publicada debe fallar
-    const actionOnExpired = transitionRequest({
-      from: 'published',
-      to: 'matched',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      expiresAt: SAMPLE_PAST_EXPIRES,
-      isOwnerMerchant: true,
-    });
-    expect(actionOnExpired.ok).toBe(false);
-    if (!actionOnExpired.ok) {
-      expect(actionOnExpired.code).toBe('REQUEST_EXPIRED');
+    const merchantClient = await createAuthenticatedClient(merchant);
+
+    // 1. Expiración perezosa en RPC real: intentar aceptar oferta sobre solicitud vencida falla con REQUEST_EXPIRED
+    await expectRpcFailure(
+      merchantClient.rpc('accept_offer', { p_offer_id: pendingOfferId }),
+      'REQUEST_EXPIRED'
+    );
+
+    // 2. Expiración perezosa en RPC real: intentar cancelar sobre solicitud vencida falla con INVALID_STATE_TRANSITION
+    await expectRpcFailure(
+      merchantClient.rpc('cancel_request', {
+        p_request_id: requestId,
+        p_reason: 'Intento de cancelación sobre solicitud expirada',
+      }),
+      'INVALID_STATE_TRANSITION'
+    );
+
+    // 3. Ejecución del endpoint de cron /api/cron/sweep si CRON_SECRET está configurado
+    if (process.env.CRON_SECRET) {
+      const sweepResponse = await request.post('/api/cron/sweep', {
+        headers: {
+          authorization: `Bearer ${process.env.CRON_SECRET}`,
+        },
+      });
+      expect(sweepResponse.ok()).toBe(true);
+
+      // Oráculo server-side en PostgreSQL: estado físico actualizado a expired
+      const inspection = await getRequestInspectionData(stagingContext, requestId);
+      expect(inspection.requestStatus).toBe('expired');
+      const offer = inspection.offers.find((o) => o.id === pendingOfferId);
+      expect(offer?.status).toBe('expired');
     }
   });
 
   // ---------------------------------------------------------------------------
   // Fila 5: matched -> in_transit
   // ---------------------------------------------------------------------------
-  test('Fila 5 (§5.1): matched -> in_transit (courier asignado marca retirado)', async () => {
-    // 1. Éxito: repartidor asignado marca pedido retirado
-    const validTransition = transitionRequest({
-      from: 'matched',
-      to: 'in_transit',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: true,
-    });
-    expect(validTransition.ok).toBe(true);
-    if (validTransition.ok) {
-      expect(validTransition.data.status).toBe('in_transit');
-      expect(validTransition.data.offerSideEffect).toBe('none');
+  test('Fila 5 (§5.1): matched -> in_transit (courier asignado marca retirado con persistencia)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier0 = stagingContext.courierUsers?.[0];
+    const courier1 = stagingContext.courierUsers?.[1];
+    if (!merchant || !courier0 || !courier1) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y 2 couriers');
     }
 
-    // 2. Rechazo si el courier no es el asignado
-    const unassignedCourier = transitionRequest({
-      from: 'matched',
-      to: 'in_transit',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: false,
+    // Precondición: solicitud matched con courier0 asignado
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier0.id,
+      withContacts: true,
     });
-    expect(unassignedCourier.ok).toBe(false);
-    if (!unassignedCourier.ok) {
-      expect(unassignedCourier.code).toBe('UNAUTHORIZED_ACTOR');
-    }
+    const requestId = seedResult.requestId;
 
-    // 3. Comercio no puede marcar retirado
-    const merchantPickup = transitionRequest({
-      from: 'matched',
-      to: 'in_transit',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-    });
-    expect(merchantPickup.ok).toBe(false);
+    const courier0Client = await createAuthenticatedClient(courier0);
+    const courier1Client = await createAuthenticatedClient(courier1);
+    const merchantClient = await createAuthenticatedClient(merchant);
 
-    // Contrato RPC mark_picked_up
-    const validPickupRpc = markPickedUpInputSchema.safeParse({
-      requestId: 'a0000000-0000-4000-8000-000000000001',
+    // 1. Casos negativos: actor no autorizado (courier no asignado y merchant)
+    await expectRpcFailure(
+      courier1Client.rpc('mark_picked_up', { p_request_id: requestId }),
+      'UNAUTHORIZED_ACTOR'
+    );
+    await expectRpcFailure(
+      merchantClient.rpc('mark_picked_up', { p_request_id: requestId }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 2. Caso positivo: repartidor asignado marca pedido retirado
+    const { data: pickupData, error: pickupError } = await courier0Client.rpc('mark_picked_up', {
+      p_request_id: requestId,
     });
-    expect(validPickupRpc.success).toBe(true);
+    expect(pickupError).toBeNull();
+    expect(pickupData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('in_transit');
+    expect(inspection.pickedUpAt).not.toBeNull();
   });
 
   // ---------------------------------------------------------------------------
-  // Fila 6a: matched -> published (republicar por comercio: el repartidor no llegó)
+  // Fila 6a: matched -> published por no_show
   // ---------------------------------------------------------------------------
-  test('Fila 6a (§5.1): matched -> published (republicar: comercio reporta no llegó)', async () => {
-    // 1. Éxito: comercio dueño reporta no_show
-    const validNoShow = transitionRequest({
-      from: 'matched',
-      to: 'published',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-      reason: 'no_show',
-    });
-    expect(validNoShow.ok).toBe(true);
-    if (validNoShow.ok) {
-      expect(validNoShow.data.status).toBe('published');
-      // La oferta aceptada pasa a cancelled
-      expect(validNoShow.data.offerSideEffect).toBe('cancel_accepted');
+  test('Fila 6a (§5.1): matched -> published (republicar: comercio reporta no llegó con motivo)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier');
     }
 
-    // Oferta aceptada pasa a cancelled
-    expect(transitionOffer('accepted', 'cancelled', 'merchant').ok).toBe(true);
-
-    // 2. Falla si falta el motivo
-    const missingReason = transitionRequest({
-      from: 'matched',
-      to: 'published',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-      reason: '',
+    // Precondición: solicitud matched con courier asignado
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
     });
-    expect(missingReason.ok).toBe(false);
-    if (!missingReason.ok) {
-      expect(missingReason.code).toBe('REASON_REQUIRED');
+    const requestId = seedResult.requestId;
+    const acceptedOfferId = seedResult.acceptedOfferId;
+    if (!acceptedOfferId) {
+      throw new Error('[E2E Precondition Error] Se requiere acceptedOfferId');
     }
 
-    // Contrato RPC report_no_show
-    const validNoShowRpc = reportNoShowInputSchema.safeParse({
-      requestId: 'a0000000-0000-4000-8000-000000000001',
-      republish: true,
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const courierClient = await createAuthenticatedClient(courier);
+
+    // 1. Caso negativo: courier no puede reportar no_show
+    await expectRpcFailure(
+      courierClient.rpc('report_no_show', {
+        p_request_id: requestId,
+        p_republish: true,
+      }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 2. Caso positivo: comercio dueño reporta que el repartidor no llegó y republica
+    const { data: noShowData, error: noShowError } = await merchantClient.rpc('report_no_show', {
+      p_request_id: requestId,
+      p_republish: true,
     });
-    expect(validNoShowRpc.success).toBe(true);
+    expect(noShowError).toBeNull();
+    expect(noShowData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('published');
+    expect(inspection.acceptedOfferId).toBeNull();
+    expect(inspection.matchedAt).toBeNull();
+    expect(inspection.expiresAt).not.toBeNull();
+
+    // La oferta previamente aceptada debe quedar en cancelled
+    const offer = inspection.offers.find((o) => o.id === acceptedOfferId);
+    expect(offer?.status).toBe('cancelled');
   });
 
   // ---------------------------------------------------------------------------
-  // Fila 6b: matched -> published (republicar por courier: cancela match)
+  // Fila 6b: matched -> published por courier_cancel_match
   // ---------------------------------------------------------------------------
-  test('Fila 6b (§5.1): matched -> published (republicar: courier cancela match con motivo)', async () => {
-    // 1. Éxito: repartidor asignado cancela match con motivo obligatorio
-    const validCourierCancel = transitionRequest({
-      from: 'matched',
-      to: 'published',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: true,
-      reason: 'Se pinchó la rueda de la moto en camino al local',
-    });
-    expect(validCourierCancel.ok).toBe(true);
-    if (validCourierCancel.ok) {
-      expect(validCourierCancel.data.status).toBe('published');
-      expect(validCourierCancel.data.offerSideEffect).toBe('cancel_accepted');
+  test('Fila 6b (§5.1): matched -> published (republicar: courier cancela match con motivo obligatorio)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier0 = stagingContext.courierUsers?.[0];
+    const courier1 = stagingContext.courierUsers?.[1];
+    if (!merchant || !courier0 || !courier1) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y 2 couriers');
     }
 
-    // 2. Rechazo si el motivo está vacío
-    const emptyReason = transitionRequest({
-      from: 'matched',
-      to: 'published',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: true,
-      reason: '   ',
+    // Precondición: solicitud matched con courier0 asignado
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier0.id,
+      withContacts: true,
     });
-    expect(emptyReason.ok).toBe(false);
-    if (!emptyReason.ok) {
-      expect(emptyReason.code).toBe('REASON_REQUIRED');
+    const requestId = seedResult.requestId;
+    const acceptedOfferId = seedResult.acceptedOfferId;
+    if (!acceptedOfferId) {
+      throw new Error('[E2E Precondition Error] Se requiere acceptedOfferId');
     }
 
-    // 3. Rechazo si el courier no es el asignado
-    const nonAssigned = transitionRequest({
-      from: 'matched',
-      to: 'published',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: false,
-      reason: 'Motivo cualquiera',
-    });
-    expect(nonAssigned.ok).toBe(false);
-    if (!nonAssigned.ok) {
-      expect(nonAssigned.code).toBe('UNAUTHORIZED_ACTOR');
-    }
+    const courier0Client = await createAuthenticatedClient(courier0);
+    const courier1Client = await createAuthenticatedClient(courier1);
 
-    // Contrato RPC courier_cancel_match
-    const validCourierCancelRpc = courierCancelMatchInputSchema.safeParse({
-      requestId: 'a0000000-0000-4000-8000-000000000001',
-      reason: 'Demora imprevista',
-    });
-    expect(validCourierCancelRpc.success).toBe(true);
+    // 1. Casos negativos: motivo vacío y courier no asignado
+    await expectRpcFailure(
+      courier0Client.rpc('courier_cancel_match', {
+        p_request_id: requestId,
+        p_reason: '   ',
+      }),
+      'REASON_REQUIRED'
+    );
+    await expectRpcFailure(
+      courier1Client.rpc('courier_cancel_match', {
+        p_request_id: requestId,
+        p_reason: 'Desperfecto en moto',
+      }),
+      'UNAUTHORIZED_ACTOR'
+    );
 
-    const invalidEmptyCourierCancelRpc = courierCancelMatchInputSchema.safeParse({
-      requestId: 'a0000000-0000-4000-8000-000000000001',
-      reason: '  ',
-    });
-    expect(invalidEmptyCourierCancelRpc.success).toBe(false);
+    // 2. Caso positivo: repartidor asignado cancela match con motivo válido
+    const { data: cancelMatchData, error: cancelMatchError } = await courier0Client.rpc(
+      'courier_cancel_match',
+      {
+        p_request_id: requestId,
+        p_reason: 'Se pinchó la rueda delantera en camino al local',
+      }
+    );
+    expect(cancelMatchError).toBeNull();
+    expect(cancelMatchData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('published');
+    expect(inspection.acceptedOfferId).toBeNull();
+    expect(inspection.matchedAt).toBeNull();
+    expect(inspection.expiresAt).not.toBeNull();
+
+    const offer = inspection.offers.find((o) => o.id === acceptedOfferId);
+    expect(offer?.status).toBe('cancelled');
   });
 
   // ---------------------------------------------------------------------------
   // Fila 7: matched -> cancelled
   // ---------------------------------------------------------------------------
-  test('Fila 7 (§5.1): matched -> cancelled (comercio dueño cancela con motivo obligatorio)', async () => {
-    // 1. Éxito: comercio dueño cancela match informando motivo
-    const validCancel = transitionRequest({
-      from: 'matched',
-      to: 'cancelled',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-      reason: 'El cliente final canceló el pedido por demora del local',
-    });
-    expect(validCancel.ok).toBe(true);
-    if (validCancel.ok) {
-      expect(validCancel.data.status).toBe('cancelled');
-      expect(validCancel.data.offerSideEffect).toBe('cancel_accepted');
+  test('Fila 7 (§5.1): matched -> cancelled (comercio dueño cancela con motivo obligatorio)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier');
     }
 
-    // 2. Falla si falta el motivo
-    const missingReason = transitionRequest({
-      from: 'matched',
-      to: 'cancelled',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-      reason: '',
+    // Precondición: solicitud matched con courier asignado
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
     });
-    expect(missingReason.ok).toBe(false);
-    if (!missingReason.ok) {
-      expect(missingReason.code).toBe('REASON_REQUIRED');
+    const requestId = seedResult.requestId;
+    const acceptedOfferId = seedResult.acceptedOfferId;
+    if (!acceptedOfferId) {
+      throw new Error('[E2E Precondition Error] Se requiere acceptedOfferId');
     }
 
-    // Contrato RPC cancel_request
-    const validCancelRpc = cancelRequestInputSchema.safeParse({
-      requestId: 'a0000000-0000-4000-8000-000000000001',
-      reason: 'Motivo válido',
+    const merchantClient = await createAuthenticatedClient(merchant);
+
+    // 1. Caso negativo: comercio cancela sin motivo
+    await expectRpcFailure(
+      merchantClient.rpc('cancel_request', {
+        p_request_id: requestId,
+        p_reason: '   ',
+      }),
+      'REASON_REQUIRED'
+    );
+
+    // 2. Caso positivo: comercio cancela con motivo obligatorio
+    const { data: cancelData, error: cancelError } = await merchantClient.rpc('cancel_request', {
+      p_request_id: requestId,
+      p_reason: 'El cliente canceló la compra por demora de cocina',
     });
-    expect(validCancelRpc.success).toBe(true);
+    expect(cancelError).toBeNull();
+    expect(cancelData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('cancelled');
+    expect(inspection.cancelledAt).not.toBeNull();
+    expect(inspection.cancelReason).toBe('El cliente canceló la compra por demora de cocina');
+
+    const offer = inspection.offers.find((o) => o.id === acceptedOfferId);
+    expect(offer?.status).toBe('cancelled');
   });
 
   // ---------------------------------------------------------------------------
   // Fila 8: in_transit -> delivered
   // ---------------------------------------------------------------------------
-  test('Fila 8 (§5.1): in_transit -> delivered (courier asignado confirma entrega)', async () => {
-    // 1. Éxito: repartidor asignado confirma entrega
-    const validDelivery = transitionRequest({
-      from: 'in_transit',
-      to: 'delivered',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: true,
-    });
-    expect(validDelivery.ok).toBe(true);
-    if (validDelivery.ok) {
-      expect(validDelivery.data.status).toBe('delivered');
-      expect(validDelivery.data.offerSideEffect).toBe('none');
+  test('Fila 8 (§5.1): in_transit -> delivered (courier asignado confirma entrega y ventana de incidente)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier0 = stagingContext.courierUsers?.[0];
+    const courier1 = stagingContext.courierUsers?.[1];
+    if (!merchant || !courier0 || !courier1) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y 2 couriers');
     }
 
-    // 2. Rechazo si el courier no es el asignado
-    const unauthorizedCourier = transitionRequest({
-      from: 'in_transit',
-      to: 'delivered',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: false,
+    // Precondición: solicitud in_transit con courier0 asignado
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'in_transit',
+      merchantId: merchant.id,
+      assignedCourierId: courier0.id,
+      withContacts: true,
     });
-    expect(unauthorizedCourier.ok).toBe(false);
-    if (!unauthorizedCourier.ok) {
-      expect(unauthorizedCourier.code).toBe('UNAUTHORIZED_ACTOR');
-    }
+    const requestId = seedResult.requestId;
 
-    // 3. Comercio no puede marcar como entregado
-    const merchantDelivered = transitionRequest({
-      from: 'in_transit',
-      to: 'delivered',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-    });
-    expect(merchantDelivered.ok).toBe(false);
+    const courier0Client = await createAuthenticatedClient(courier0);
+    const courier1Client = await createAuthenticatedClient(courier1);
+    const merchantClient = await createAuthenticatedClient(merchant);
 
-    // Contrato RPC mark_delivered
-    const validDeliveredRpc = markDeliveredInputSchema.safeParse({
-      requestId: 'a0000000-0000-4000-8000-000000000001',
-    });
-    expect(validDeliveredRpc.success).toBe(true);
+    // 1. Casos negativos: actor no autorizado (courier no asignado y merchant)
+    await expectRpcFailure(
+      courier1Client.rpc('mark_delivered', { p_request_id: requestId }),
+      'UNAUTHORIZED_ACTOR'
+    );
+    await expectRpcFailure(
+      merchantClient.rpc('mark_delivered', { p_request_id: requestId }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 2. Caso positivo: repartidor asignado confirma entrega
+    const { data: deliveredData, error: deliveredError } = await courier0Client.rpc(
+      'mark_delivered',
+      {
+        p_request_id: requestId,
+      }
+    );
+    expect(deliveredError).toBeNull();
+    expect(deliveredData).toBeDefined();
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('delivered');
+    expect(inspection.deliveredAt).not.toBeNull();
+
+    // 4. Ventana de 24 horas para reporte de incidentes post-entrega (§5.1)
+    // El comercio involucrado reporta un incidente dentro de las 24 horas
+    const { data: incidentData, error: incidentError } = await merchantClient.rpc(
+      'report_incident',
+      {
+        p_request_id: requestId,
+        p_kind: 'damaged_goods',
+        p_description: 'El paquete llegó con el embalaje roto y producto dañado',
+      }
+    );
+    expect(incidentError).toBeNull();
+    expect(incidentData).toBeDefined();
+
+    // Verificar que el incidente quedó registrado en PostgreSQL
+    const postIncidentInspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(postIncidentInspection.incidents?.length).toBeGreaterThanOrEqual(1);
   });
 
   // ---------------------------------------------------------------------------
-  // Fila 9: in_transit -> cancelled
+  // Fila 9: in_transit -> cancelled por admin (CC-015 / Decisión 2-A)
   // ---------------------------------------------------------------------------
-  test('Fila 9 (§5.1): in_transit -> cancelled (admin cancela por incidente con motivo)', async () => {
-    // 1. Éxito: admin cancela un viaje en tránsito informando motivo de resolución
-    const validAdminCancel = transitionRequest({
-      from: 'in_transit',
-      to: 'cancelled',
-      actor: 'admin',
-      now: SAMPLE_NOW,
-      reason: 'Incidente de extravío resuelto por mediación administrativa',
-    });
-    expect(validAdminCancel.ok).toBe(true);
-    if (validAdminCancel.ok) {
-      expect(validAdminCancel.data.status).toBe('cancelled');
-      expect(validAdminCancel.data.offerSideEffect).toBe('cancel_accepted');
+  test('Fila 9 (§5.1 & CC-015): in_transit -> cancelled por admin (requiere incidente registrado y AAL2)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier');
     }
 
-    // 2. Falla si falta el motivo
-    const emptyReason = transitionRequest({
-      from: 'in_transit',
-      to: 'cancelled',
-      actor: 'admin',
-      now: SAMPLE_NOW,
-      reason: '   ',
-    });
-    expect(emptyReason.ok).toBe(false);
-    if (!emptyReason.ok) {
-      expect(emptyReason.code).toBe('REASON_REQUIRED');
-    }
+    // Crear admin real para la prueba
+    const adminUser = await seedAdminUser(stagingContext);
 
-    // 3. Ni comercio ni repartidor pueden cancelar un pedido ya retirado / en tránsito
-    const merchantInTransitCancel = transitionRequest({
-      from: 'in_transit',
-      to: 'cancelled',
-      actor: 'merchant',
-      now: SAMPLE_NOW,
-      isOwnerMerchant: true,
-      reason: 'Quiero cancelar mientras viaja',
+    // Preparar dos solicitudes en in_transit: Req A (sin incidentes) y Req B (con incidente)
+    const seedReqA = await seedDeliveryRequestInState(stagingContext, {
+      status: 'in_transit',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
     });
-    expect(merchantInTransitCancel.ok).toBe(false);
-    if (!merchantInTransitCancel.ok) {
-      expect(merchantInTransitCancel.code).toBe('UNAUTHORIZED_ACTOR');
-    }
+    const reqAId = seedReqA.requestId;
 
-    const courierInTransitCancel = transitionRequest({
-      from: 'in_transit',
-      to: 'cancelled',
-      actor: 'courier',
-      now: SAMPLE_NOW,
-      isAssignedCourier: true,
-      reason: 'Cancelo en viaje',
+    const seedReqB = await seedDeliveryRequestInState(stagingContext, {
+      status: 'in_transit',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
     });
-    expect(courierInTransitCancel.ok).toBe(false);
-    if (!courierInTransitCancel.ok) {
-      expect(courierInTransitCancel.code).toBe('UNAUTHORIZED_ACTOR');
-    }
+    const reqBId = seedReqB.requestId;
+
+    const adminClient = await createAuthenticatedClient(adminUser);
+    const merchantClient = await createAuthenticatedClient(merchant);
+
+    // 1. Caso negativo: admin con AAL1 es rechazado con AAL2_REQUIRED
+    await expectRpcFailure(
+      adminClient.rpc('cancel_request', {
+        p_request_id: reqAId,
+        p_reason: 'Intento con AAL1',
+      }),
+      'AAL2_REQUIRED'
+    );
+
+    // Elevar sesión de admin a AAL2 vía TOTP real (RFC 6238)
+    await elevateAdminToAal2(adminClient, adminUser);
+
+    // 2. Caso negativo CC-015: admin AAL2 con motivo pero 0 incidentes registrados en Req A
+    await expectRpcFailure(
+      adminClient.rpc('cancel_request', {
+        p_request_id: reqAId,
+        p_reason: 'Intento admin sin incidente',
+      }),
+      'INVALID_STATE_TRANSITION'
+    );
+
+    // Verificar en PostgreSQL que Req A sigue en in_transit
+    const inspReqAInitial = await getRequestInspectionData(stagingContext, reqAId);
+    expect(inspReqAInitial.requestStatus).toBe('in_transit');
+
+    // 3. Control cruzado: registrar incidente en Req B NO debe habilitar cancelación de Req A
+    const { error: incBErr } = await merchantClient.rpc('report_incident', {
+      p_request_id: reqBId,
+      p_kind: 'safety',
+      p_description: 'Incidente de tránsito en viaje B',
+    });
+    expect(incBErr).toBeNull();
+
+    // Req A sigue teniendo 0 incidentes -> cancelación debe seguir rechazada
+    await expectRpcFailure(
+      adminClient.rpc('cancel_request', {
+        p_request_id: reqAId,
+        p_reason: 'Intento admin en Req A habiendo incidente solo en Req B',
+      }),
+      'INVALID_STATE_TRANSITION'
+    );
+
+    // 4. Caso positivo CC-015: registrar incidente sobre Req A y cancelar exitosamente
+    const { error: incAErr } = await merchantClient.rpc('report_incident', {
+      p_request_id: reqAId,
+      p_kind: 'damaged_goods',
+      p_description: 'Paquete dañado reportado formalmente para cancelación',
+    });
+    expect(incAErr).toBeNull();
+
+    const { data: cancelData, error: cancelError } = await adminClient.rpc('cancel_request', {
+      p_request_id: reqAId,
+      p_reason: 'Incidente de extravío verificado por mediación de soporte',
+    });
+    expect(cancelError).toBeNull();
+    expect(cancelData).toBeDefined();
+
+    // 5. Oráculo server-side en PostgreSQL: Req A pasa a cancelled
+    const inspReqAFinal = await getRequestInspectionData(stagingContext, reqAId);
+    expect(inspReqAFinal.requestStatus).toBe('cancelled');
+    expect(inspReqAFinal.cancelledAt).not.toBeNull();
+    expect(inspReqAFinal.cancelReason).toBe(
+      'Incidente de extravío verificado por mediación de soporte'
+    );
   });
 
   // ---------------------------------------------------------------------------
   // Invariante crítica del DoD: Falla si se permite cancelar después de entregado
   // ---------------------------------------------------------------------------
-  test('DoD Invariante crítica: Falla si se permite cancelar después de entregado', async () => {
-    // Demostración explícita de que NINGÚN actor puede cancelar un pedido entregado
-    const actors: RequestActor[] = ['merchant', 'courier', 'admin', 'system'];
-
-    for (const actor of actors) {
-      // Intento de transición delivered -> cancelled
-      const cancelAttempt = transitionRequest({
-        from: 'delivered',
-        to: 'cancelled',
-        actor,
-        now: SAMPLE_NOW,
-        reason: 'Intento forzado de cancelación post-entrega',
-        isOwnerMerchant: true,
-        isAssignedCourier: true,
-      });
-
-      // Debe ser estrictamente rechazado con INVALID_STATE_TRANSITION
-      expect(cancelAttempt.ok).toBe(false);
-      if (!cancelAttempt.ok) {
-        expect(cancelAttempt.code).toBe('INVALID_STATE_TRANSITION');
-      }
-
-      // La consulta canTransitionRequest debe devolver false
-      expect(canTransitionRequest('delivered', 'cancelled', actor)).toBe(false);
+  test('DoD Invariante crítica: Falla si se permite cancelar después de entregado (§5.1)', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier');
     }
 
-    // Tampoco se puede pasar de delivered a ningún otro estado anterior
-    expect(canTransitionRequest('delivered', 'published', 'merchant')).toBe(false);
-    expect(canTransitionRequest('delivered', 'matched', 'merchant')).toBe(false);
-    expect(canTransitionRequest('delivered', 'in_transit', 'courier')).toBe(false);
+    // Precondición: solicitud entregada (delivered)
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'delivered',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+      withIncident: {
+        kind: 'other',
+        description: 'Incidente posterior a la entrega',
+        reporterId: merchant.id,
+      },
+    });
+    const requestId = seedResult.requestId;
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const courierClient = await createAuthenticatedClient(courier);
+
+    const adminUser = await seedAdminUser(stagingContext);
+    const adminClient = await createAuthenticatedClient(adminUser);
+    await elevateAdminToAal2(adminClient, adminUser);
+
+    // 1. Intento de cancelación por comercio sobre delivered -> rechazado
+    await expectRpcFailure(
+      merchantClient.rpc('cancel_request', {
+        p_request_id: requestId,
+        p_reason: 'Comercio intenta cancelar pedido entregado',
+      }),
+      'INVALID_STATE_TRANSITION'
+    );
+
+    // 2. Intento de cancelación por courier sobre delivered -> rechazado
+    await expectRpcFailure(
+      courierClient.rpc('cancel_request', {
+        p_request_id: requestId,
+        p_reason: 'Courier intenta cancelar pedido entregado',
+      }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 3. Intento de cancelación por admin AAL2 sobre delivered (incluso con incidente) -> rechazado
+    await expectRpcFailure(
+      adminClient.rpc('cancel_request', {
+        p_request_id: requestId,
+        p_reason: 'Admin intenta cancelar pedido entregado con incidente',
+      }),
+      'INVALID_STATE_TRANSITION'
+    );
+
+    // 4. Oráculo server-side en PostgreSQL: el estado final permanece estrictamente en 'delivered'
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('delivered');
+    expect(inspection.cancelledAt).toBeNull();
+    expect(inspection.cancelReason).toBeNull();
   });
 });
