@@ -249,7 +249,7 @@ export async function getMyOffers(): Promise<CourierOfferItem[]> {
       status,
       created_at,
       decided_at,
-      delivery_requests (
+      delivery_requests!offers_request_id_fkey (
         expires_at,
         approx_distance_m,
         pickup_zone:zones!pickup_zone_id(name),
