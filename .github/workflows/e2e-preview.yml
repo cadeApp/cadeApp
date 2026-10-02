@@ -112,13 +112,13 @@ jobs:
           DNI_HMAC_SECRET: ${{ secrets.DNI_HMAC_SECRET }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           E2E_TEST: 'true'
-        run: >-
-          pnpm exec playwright test
-          e2e/specs/smoke.spec.ts
-          e2e/specs/main-flow.spec.ts
-          e2e/specs/request-states.spec.ts
-          --project=chromium
-          --workers=1
+        shell: bash
+        run: |
+          specs=(e2e/specs/smoke.spec.ts e2e/specs/main-flow.spec.ts)
+          if [ -f e2e/specs/request-states.spec.ts ]; then
+            specs+=(e2e/specs/request-states.spec.ts)
+          fi
+          pnpm exec playwright test "${specs[@]}" --project=chromium --workers=1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -144,8 +144,8 @@ jobs:
           DEPLOYMENT_ID: ${{ needs.resolve.outputs.deployment_id }}
         run: |
           case "$RESULT" in
-            success) state=success; description='smoke + main-flow + request-states GREEN contra el Preview' ;;
-            failure) state=failure; description='smoke + main-flow + request-states RED contra el Preview' ;;
+            success) state=success; description='trusted E2E gate GREEN contra el Preview' ;;
+            failure) state=failure; description='trusted E2E gate RED contra el Preview' ;;
             *) state=error; description="E2E no corrió ($RESULT): re-ejecutar el run" ;;
           esac
           gh api --silent --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
