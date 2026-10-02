@@ -2,7 +2,6 @@
 
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { calculateHaversineRouteDistanceM, profileRoleSchema } from '@/domain/schemas';
-import { callRequestRpc } from '@/server/rpc/requests';
 import { createClient } from '@/server/supabase/server';
 import type { TablesInsert } from '@/types/database.types';
 import { createDeliveryRequestSchema } from './schemas';
@@ -143,15 +142,8 @@ export async function createDeliveryRequestAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 7. Publicación: la transición draft -> published y su autorización (suscripción/piloto,
-  // zonas, bordes, rate limit) las valida la RPC. Si rechaza, la solicitud queda en draft.
-  const published = await callRequestRpc(supabase, 'publish_request', {
-    requestId: createdRequest.id,
-  });
-
-  if (!published.ok) {
-    return err(published.code);
-  }
+  // REVIEW MUTATION T-306: se omite intencionalmente publish_request.
+  // Esta rama existe solo para demostrar que el E2E real queda RED y NUNCA debe mergearse.
 
   return ok({
     requestId: createdRequest.id,
