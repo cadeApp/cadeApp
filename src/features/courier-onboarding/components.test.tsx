@@ -783,6 +783,51 @@ describe('T-325: licencia y seguro usan el mismo sistema de carga que el paso 2'
     });
   });
 
+  it('Consejo: mientras un opcional sube no se puede enviar; al terminar, sí', async () => {
+    const mockAction = vi.spyOn(actionsModule, 'courierOnboardingAction').mockResolvedValue({
+      ok: true,
+      data: { redirectTo: '/courier/onboarding/status' },
+    });
+    const upload = deferred<{ storagePath: string }>();
+    mockUploadCourierDocument.mockImplementationOnce(() => upload.promise);
+
+    render(<VehicleForm courierId="c-1" initialDni="38123456" onSuccess={vi.fn()} />);
+    acceptConsentsWithPlate();
+    const submit = screen.getByRole('button', { name: /Enviar para revisión/i }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+
+    const { input, card } = uploadCard(/Licencia de conducir/);
+    selectFile(input, 'lic.jpg');
+    await waitFor(() => expect(card.getAttribute('aria-busy')).toBe('true'));
+    expect(submit.disabled).toBe(true);
+    fireEvent.submit(submit.closest('form') as HTMLFormElement);
+    expect(mockAction).not.toHaveBeenCalled();
+
+    upload.resolve({ storagePath: 'courier/c-1/license.jpg' });
+    await waitFor(() => expect(card.getAttribute('data-status')).toBe('success'));
+    expect(submit.disabled).toBe(false);
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(mockAction).toHaveBeenCalledTimes(1));
+    const payload = mockAction.mock.calls[0]?.[0] as
+      | { documents?: Partial<Record<string, string>> }
+      | undefined;
+    expect(payload?.documents?.license).toBe('courier/c-1/license.jpg');
+  });
+
+  it('Consejo: en error el texto accionable no se trunca (se lee completo a 360 px)', async () => {
+    mockUploadCourierDocument.mockRejectedValueOnce(new Error('network'));
+
+    render(<VehicleForm courierId="c-1" initialDni="38123456" />);
+    const { input, card } = uploadCard(/Seguro/);
+    selectFile(input, 'seg.jpg');
+    await waitFor(() => expect(card.getAttribute('data-status')).toBe('error'));
+
+    const alert = within(card).getByRole('alert');
+    expect(alert.className.split(/\s+/)).not.toContain('truncate');
+    expect(alert.className.split(/\s+/)).toContain('whitespace-normal');
+  });
+
   it('siguen siendo opcionales: con licencia en error se puede enviar y no viaja una ruta falsa', async () => {
     const mockAction = vi.spyOn(actionsModule, 'courierOnboardingAction').mockResolvedValue({
       ok: true,

@@ -91,7 +91,7 @@ export function DocumentUploadCard({
             <span
               id={statusId}
               role={status === 'error' ? 'alert' : 'status'}
-              className="truncate text-sm text-muted-foreground"
+              className={`text-sm text-muted-foreground ${status === 'error' ? 'whitespace-normal' : 'truncate'}`}
             >
               {statusText}
             </span>

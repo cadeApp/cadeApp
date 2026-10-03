@@ -118,6 +118,10 @@ export function VehicleForm({
   const areConsentsValid = tosAccepted && privacyAccepted && contractAccepted;
   const isFormValid =
     (!requiresPlate || (vehiclePlate.trim().length > 0 && isPlateValid)) && areConsentsValid;
+  // Consejo (Frontend/Persona): mientras un opcional sube no se envía, para no mandar el payload sin ese
+  // archivo y dejar la subida huérfana. No los vuelve obligatorios: sin subida en curso se envía igual.
+  const isOptionalUploading =
+    requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
 
   const handleOptionalUpload = async (kind: OptionalDocumentKind, file: File) => {
     setOptionalFileNames((prev) => ({ ...prev, [kind]: file.name }));
@@ -140,7 +144,7 @@ export function VehicleForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid || isSubmitting) return;
+    if (!isFormValid || isSubmitting || isOptionalUploading) return;
 
     setIsSubmitting(true);
     setServerError(null);
@@ -438,7 +442,7 @@ export function VehicleForm({
           <Button
             type="submit"
             size="lg"
-            disabled={!isFormValid || isSubmitting}
+            disabled={!isFormValid || isSubmitting || isOptionalUploading}
             className="w-full font-bold"
           >
             {isSubmitting ? (
