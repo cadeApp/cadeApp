@@ -1,26 +1,37 @@
 # Lecciones de la PR #236 para `AGENTS.md` y las reglas
 
-**Fuente:** 1 hallazgo en Ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 2 hallazgos, 2 rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
 
-`PR236-H01` es otra instancia de `P08-control-no-cubre-lo-que-dice`: el test corregido ya no puede pasar por el fetch inicial, pero conduce `onlineManager` directamente y por eso salta la frontera que estaba roja en el navegador real.
+`PR236-H01` sigue siendo `P08-control-no-cubre-lo-que-dice`, pero R2 afina el diagnóstico: un test puede recorrer los eventos correctos y aun así obtener su RED de una **precondición distinta**.
+
+El test de `Providers` empieza con `navigator.onLine=false`. El cambio de producción añade tanto sincronización inicial como un listener personalizado. Neutralizar ambos a la vez da RED, pero no dice cuál de los dos era necesario.
 
 ## Lecciones
 
 No se asigna AG nuevo.
 
-- Refuerza **`pr-82/AG-77`**: los tests de TanStack deben reproducir la configuración y el evento que existe en producción, no una versión más barata del contrato.
-- También aplica la distinción de **`pr-82/AG-88`**: «el mecanismo interno puede refetchear» y «la pantalla real obtiene un refetch por el evento externo» son propiedades distintas.
-- La enumeración mostró que `useAvailableRequests`, `useRequestOffers` y `useTrip` comparten la misma frontera global. Si se arregla, debe arreglarse una vez en `Providers`, no tres veces en hooks.
+- Refuerza **`pr-82/AG-77`**: un test de framework debe reproducir el estado inicial y la transición que existe en producción.
+- Refuerza el principio de mutaciones discriminantes: cuando un arreglo agrega dos comportamientos, una mutación que quita ambos solo prueba el paquete; hace falta quitar uno por vez.
+- Antes de reemplazar un listener de framework, comprobar qué hace el listener por defecto. TanStack v5 ya escucha `window.online/offline`; el cambio debe demostrar qué propiedad adicional necesita cadeApp.
 
-## Qué cambiar, en orden de impacto
+## Corrección de la revisión
 
-1. Cerrar browser offline/online → `onlineManager` en `Providers`.
-2. Añadir test de la integración global y conservar el test directo de reconnect del hook.
-3. Repetir mutaciones RED; no crear tests nuevos que solo afirmen estructura sin efecto.
-4. Tras merge, usar PR #180 como control externo real sin tocar su spec.
+R1 prescribió `onlineManager.setEventListener` antes de demostrar que el listener por defecto era insuficiente. La instrucción fue demasiado específica.
 
-## Advertencia
+La corrección de R2 es separar propiedades:
 
-El catch-up nuevo de `SUBSCRIBED` puede generar una GET adicional y contaminar el contador del E2E de reconnect. Un futuro verde del spec externo sigue siendo necesario, pero no reemplaza la prueba separada de la frontera global.
+1. sync inicial desde `navigator.onLine`;
+2. propagación `window.offline/online`;
+3. refetch posterior de una query activa.
+
+Solo después de identificar cuál falla corresponde decidir si `Providers` necesita override global.
+
+## H02
+
+El body del PR quedó atrás del código. No merece una regla nueva; ya está cubierto por `P03-comentario-contradice-codigo`.
+
+## Advertencia que se mantiene
+
+El catch-up de `SUBSCRIBED` puede sumar una GET y volver verde el contador del E2E de reconnect por una razón distinta. El control externo sigue siendo obligatorio, pero no puede ser la única evidencia causal de reconnect.
