@@ -25,6 +25,7 @@ def wgs_to_plan(lat, lng):
 
 
 cands = json.load(open(f'{BASE}/plano/cands.json'))
+# Recuadro de Aguilares: CC-019 (lat -27.4800..-27.3800, lng -65.6450..-65.5800).
 # Rótulos circulares verificados visualmente (contact sheet). Se excluyen los rótulos de calle "20 DE JUNIO"/"24 DE SETIEMBRE".
 EXCLUDE = {(20, 466), (20, 234), (24, 461), (24, 63), (24, 225)}
 labels = {}
@@ -39,7 +40,7 @@ for n, ls in sorted(labels.items()):
     for c in ls:
         lat, lng = plan_to_wgs(c['x'], c['y'])
         res.setdefault(n, []).append({'x': round(c['x'], 1), 'y': round(c['y'], 1), 'lat': round(float(lat), 6), 'lng': round(float(lng), 6),
-                                      'in_bounds': bool(-27.4550 <= lat <= -27.4100 and -65.6400 <= lng <= -65.5950)})
+                                      'in_bounds': bool(-27.4800 <= lat <= -27.3800 and -65.6450 <= lng <= -65.5800)})
 json.dump(res, open(f'{BASE}/geo/points.json', 'w', encoding='utf-8'), indent=1)
 for n, v in res.items():
     print(n, v)

@@ -156,7 +156,7 @@
    "y": 751.0,
    "lat": -27.45601,
    "lng": -65.61395,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "18": [
@@ -174,7 +174,7 @@
    "y": 752.6,
    "lat": -27.456143,
    "lng": -65.603636,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "20": [
@@ -183,7 +183,7 @@
    "y": 755.5,
    "lat": -27.456337,
    "lng": -65.602134,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "21": [
@@ -192,7 +192,7 @@
    "y": 800.8,
    "lat": -27.459265,
    "lng": -65.620248,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "22": [
@@ -201,7 +201,7 @@
    "y": 800.6,
    "lat": -27.459251,
    "lng": -65.619635,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "23": [
@@ -219,7 +219,7 @@
    "y": 29.9,
    "lat": -27.408612,
    "lng": -65.612066,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "25": [
@@ -228,7 +228,7 @@
    "y": 29.9,
    "lat": -27.408614,
    "lng": -65.611462,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "26": [
@@ -237,7 +237,7 @@
    "y": 29.9,
    "lat": -27.408616,
    "lng": -65.610858,
-   "in_bounds": false
+   "in_bounds": true
   }
  ],
  "27": [
@@ -570,7 +570,7 @@
    "y": 738.7,
    "lat": -27.455233,
    "lng": -65.602138,
-   "in_bounds": false
+   "in_bounds": true
   }
  ]
 }
