@@ -776,5 +776,80 @@ select is(pg_temp.cc012_report(1, 'other', 'Segundo reporte del minuto')->>'erro
   'RATE_LIMITED', 'CC-012: el tope por minuto sigue vigente');
 update public.platform_settings set value = '5'::jsonb where key = 'max_incidents_per_min';
 
+-- T-330 / CC-017: sin pin ni centroide no se fabrica distancia; con las 4 coordenadas se conserva el cálculo.
+insert into public.zones (id, name, centroid_lat, centroid_lng, active) values
+  (pg_temp.actor(12), 'T330 Retiro sin centroide', null, null, true),
+  (pg_temp.actor(13), 'T330 Entrega sin centroide', null, null, true);
+
+create function pg_temp.t330_publish(p_pickup uuid, p_dropoff uuid,
+  p_pickup_lat numeric default null, p_pickup_lng numeric default null,
+  p_dropoff_lat numeric default null, p_dropoff_lng numeric default null) returns jsonb language plpgsql as $$
+begin
+  perform pg_temp.fixture('draft');
+  update public.delivery_requests set pickup_zone_id = p_pickup, dropoff_zone_id = p_dropoff
+  where id = pg_temp.actor(20);
+  update public.delivery_request_contacts
+  set pickup_lat = p_pickup_lat, pickup_lng = p_pickup_lng,
+      dropoff_lat = p_dropoff_lat, dropoff_lng = p_dropoff_lng
+  where request_id = pg_temp.actor(20);
+  return pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)));
+end;
+$$;
+
+create temporary table t330_result (name text primary key, result jsonb);
+insert into t330_result values
+  ('sin_centroides', pg_temp.t330_publish(pg_temp.actor(12), pg_temp.actor(13)));
+select is(
+  (select result->'data'->>'status' from t330_result where name = 'sin_centroides'), 'published',
+  'T-330: barrios activos sin centroide y sin pin publican');
+select ok(
+  (select result->'data' ? 'routeDistanceM' and result->'data'->'routeDistanceM' = 'null'::jsonb
+   from t330_result where name = 'sin_centroides'),
+  'T-330: sin ubicación efectiva la respuesta devuelve routeDistanceM null');
+select is((select route_distance_m from public.delivery_requests where id = pg_temp.actor(20)), null::integer,
+  'T-330: sin ubicación efectiva route_distance_m queda NULL (no 500)');
+
+insert into t330_result values
+  ('un_centroide', pg_temp.t330_publish(pg_temp.actor(10), pg_temp.actor(13)));
+select is(
+  (select result->'data'->>'status' from t330_result where name = 'un_centroide'), 'published',
+  'T-330: retiro con centroide y entrega sin ubicación publica');
+select is((select route_distance_m from public.delivery_requests where id = pg_temp.actor(20)), null::integer,
+  'T-330: con una sola punta ubicada route_distance_m queda NULL');
+
+insert into t330_result values
+  ('ambos_centroides', pg_temp.t330_publish(pg_temp.actor(10), pg_temp.actor(11)));
+select is((select (result->'data'->>'routeDistanceM')::int from t330_result where name = 'ambos_centroides'), 2000,
+  'T-330: con ambos centroides se conserva el cálculo actual');
+
+insert into t330_result values
+  ('pins_sin_centroides', pg_temp.t330_publish(pg_temp.actor(12), pg_temp.actor(13),
+    -27.430000, -65.620000, -27.420000, -65.610000));
+select is((select (result->'data'->>'routeDistanceM')::int from t330_result where name = 'pins_sin_centroides'), 2000,
+  'T-330: pins explícitos completan la ubicación aunque los barrios no tengan centroide');
+select is((select route_distance_m from public.delivery_requests where id = pg_temp.actor(20)), 2000,
+  'T-330: con pins explícitos route_distance_m persiste el cálculo actual');
+
+-- Los CHECK de la tabla ya impiden estos pins; se quitan solo dentro de esta transacción (rollback final)
+-- para demostrar que el guard de bounds de la RPC sigue vigente por sí mismo.
+alter table public.delivery_request_contacts
+  drop constraint contacts_pickup_lat_bounds, drop constraint contacts_pickup_lng_bounds,
+  drop constraint contacts_dropoff_lat_bounds, drop constraint contacts_dropoff_lng_bounds;
+
+insert into t330_result values
+  ('pin_fuera_sin_centroide', pg_temp.t330_publish(pg_temp.actor(12), pg_temp.actor(13),
+    -27.500000, -65.620000, null, null));
+select is((select result->>'error' from t330_result where name = 'pin_fuera_sin_centroide'),
+  'OUT_OF_BOUNDS_AGUILARES',
+  'T-330: un pin fuera de Aguilares sigue rechazando aunque la otra punta no tenga ubicación');
+select is((select status::text from public.delivery_requests where id = pg_temp.actor(20)), 'draft',
+  'T-330: el rechazo por bounds no publica');
+
+insert into t330_result values
+  ('pins_fuera', pg_temp.t330_publish(pg_temp.actor(10), pg_temp.actor(11),
+    -27.430000, -65.620000, -27.420000, -65.700000));
+select is((select result->>'error' from t330_result where name = 'pins_fuera'),
+  'OUT_OF_BOUNDS_AGUILARES', 'T-330: coordenadas completas fuera de Aguilares siguen rechazando');
+
 select * from finish();
 rollback;
