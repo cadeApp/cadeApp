@@ -1,85 +1,141 @@
-# Evidencia reproducible — PR #240 / Ronda 1
+# Evidencia reproducible — PR #240
 
-**SHA inspeccionado:** `5c31ed86db8cacd923367deaa190c5880e0b60e5`
+## Ronda 1
 
-## H01 · Excepción demasiado amplia
+Ver historia del archivo para la evidencia del SHA `5c31ed8`.
 
-Inspección de rutas del árbol del SHA revisado:
+## Ronda 2 — SHA `94cf3db9635833b3ef1c8723717908c11fac1bff`
 
-```text
-src/app/(courier)/courier/profile/page.tsx
-src/app/(courier)/courier/profile/notifications/page.tsx
-```
-
-Código causante:
-
-```ts
-matchesSegment(pathname, '/courier/profile')
-```
-
-Sonda que debe agregarse:
-
-```ts
-expect(followGuard('/courier/profile/notifications', baseSession('courier', false)))
-  .toBe('/courier/onboarding/identity');
-```
-
-Mutación de validación: reemplazar temporalmente la igualdad exacta corregida por `matchesSegment(pathname, '/courier/profile')`; la sonda debe fallar.
-
-## H02 · Marcador antes del final
-
-Orden observado en `src/features/courier-onboarding/actions.ts`:
-
-- ~105: arma `courierUpdatePayload`;
-- ~111: update de `couriers`;
-- ~139: upsert de `consents`;
-- ~196: upsert de `courier_documents`.
-
-Casos requeridos:
+### Alcance exacto desde el commit de revisión
 
 ```text
-consents error  -> INTERNAL_ERROR + courier update 0 llamadas
-documents error -> INTERNAL_ERROR + courier update 0 llamadas
+dee1f2b..94cf3db = 1 commit
+7 archivos:
+docs/tasks/log/T-334.md
+src/features/auth/actions.test.ts
+src/features/auth/guards.test.ts
+src/features/auth/guards.ts
+src/features/auth/server.test.ts
+src/features/courier-onboarding/actions.test.ts
+src/features/courier-onboarding/actions.ts
 ```
 
-Mutación de validación: adelantar nuevamente el update de courier antes de `consents`; los casos negativos deben ponerse rojos.
+## H01
 
-## D02 · Fail-open
-
-Mutación de validación:
+Código limpio:
 
 ```ts
-// solo para demostrar RED, restaurar después
-if (onboarding?.error) onboardingComplete = false;
+matchesSegment(pathname, '/courier/onboarding') ||
+pathname === '/courier/profile'
 ```
 
-Los tests de error de lectura en `server.test.ts` y `actions.test.ts` deben fallar.
+Sonda del repo:
 
-## CI independiente del SHA revisado
+```ts
+expect(followGuard('/courier/profile', baseSession('courier', false)))
+  .toBe('/courier/profile');
 
-GitHub Actions CI run `37157587796` (run #1069): SUCCESS.
-
-Jobs observados:
-- build ✅
-- lint ✅
-- audit ✅
-- typecheck ✅
-- unit / test:coverage ✅
-- db-tests ✅
-- bundle-budget ✅
-
-Commit statuses:
-- Vercel ✅
-- e2e-preview ✅
-
-## Ronda 2 — comandos finales pedidos a agy
-
-```bash
-pnpm vitest run src/features/auth/guards.test.ts src/features/auth/server.test.ts src/features/auth/actions.test.ts src/features/courier-onboarding/actions.test.ts src/features/courier-onboarding/components.test.tsx
-pnpm typecheck
-pnpm lint
-pnpm test
-node tools/verify-fichas.test.mjs
+expect(
+  followGuard('/courier/profile/notifications', baseSession('courier', false))
+).toBe('/courier/onboarding/identity');
 ```
 
-Si el nombre/ruta real de `verify-fichas` difiere, usar el comando ya existente del repo; no crear un sustituto que siempre pase.
+Harness independiente de revisión:
+- limpio: profile permitido; notifications no exceptuada;
+- mutación a `matchesSegment('/courier/profile')`: notifications queda permitida y viola la propiedad.
+
+## H02
+
+Orden observado directamente en el source:
+
+```text
+123-131  consents upsert + error return
+180-185  courier_documents upsert + error return
+191-203  courierUpdatePayload + update de couriers
+207-209  return ok
+```
+
+Tests nuevos:
+- consents error ⇒ INTERNAL_ERROR + admin update 0;
+- documents error ⇒ INTERNAL_ERROR + admin update 0.
+
+Control histórico del happy path:
+```ts
+expect(mockAdminUpdate).toHaveBeenCalledWith({
+  dni_hmac: expectedHmac,
+  vehicle_type: 'moto',
+  vehicle_plate: 'A 123 BCD',
+});
+```
+
+RLS inspeccionada en `20260922051650_rls_v1.sql`:
+
+```sql
+create policy courier_documents_insert_self on public.courier_documents
+  for insert to authenticated
+  with check (
+    courier_id = auth.uid()
+    and status = 'submitted'
+    and purge_after is null
+    and purged_at is null
+  );
+```
+
+No exige `vehicle_type`.
+
+Harness independiente:
+- limpio: marker posterior a consents y documents;
+- mutación: marker anterior a ambos ⇒ invariante rojo.
+
+## D02
+
+Los tests de server/actions cubren merchant y courier y comprueban explícitamente que un error de lectura no manda al onboarding.
+
+La mutación registrada por agy `error => onboardingComplete=false` pone 4 casos en rojo; el código final restaura fail-open.
+
+## CI independiente
+
+GitHub Actions run `37159108997`, run #1073, SHA `94cf3db9635833b3ef1c8723717908c11fac1bff`: **SUCCESS**.
+
+```text
+build          success
+lint           success
+unit           success
+typecheck      success
+db-tests       success
+audit          success
+bundle-budget  success
+```
+
+## Vercel
+
+El deployment del SHA corregido fue rechazado por límite de cuenta:
+
+```text
+Resource is limited - try again in 24 hours
+code: api-deployments-free-per-day
+```
+
+No es un fallo de build, pero impide usar ese Preview para H03.
+
+## Infra de tests fuera de T-334
+
+`src/server/rpc/cc007.test.ts` usa:
+
+```ts
+fs.writeFileSync(filePath, mutated, 'utf8');
+spawnSync('pnpm', testArgs, ...);
+fs.writeFileSync(filePath, original, 'utf8');
+```
+
+Eso permite que workers paralelos carguen temporalmente la mutación. Seguimiento: issue #243.
+
+## Pendiente manual H03
+
+Registrar para cada rol:
+- cuenta usada (sin exponer contraseña);
+- SHA/entorno probado;
+- ruta inicial;
+- destino observado;
+- resultado de perfil courier exacto y notifications;
+- PASS/FAIL.

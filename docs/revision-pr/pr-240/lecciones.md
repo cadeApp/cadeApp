@@ -1,27 +1,28 @@
 # Lecciones — PR #240 / T-334
 
-**Fuente:** 3 hallazgos en Ronda 1. Datos estructurados en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 3 hallazgos; H01/H02 cerrados en Ronda 2, H03 manual pendiente.
 
 ## Patrón dominante
 
-La implementación cubrió bien el caso nominal “fila recién creada”, pero no enumeró dos bordes del mismo contrato: **descendientes reales de una ruta exceptuada** y **estados parciales de una action multi-paso**.
+T-334 refuerza dos controles ya conocidos: enumerar toda la clase de rutas/estados relevantes y no usar una señal de “completo” antes del último punto de fallo que la pueda invalidar.
 
-No se propone un AG nuevo en esta ronda.
+No se propone un AG nuevo.
 
-## Reutilización de lecciones existentes
+## Ronda 2
 
-- **H01** es `P07-coincidencia-demasiado-amplia`: una excepción exacta se implementó con un matcher de segmento. La defensa barata es enumerar las rutas reales del árbol cuando una regla dice “todas salvo X”.
-- **H02** refuerza la lección de enumerar la clase completa antes de cerrar: una columna usada como marcador de completitud debe analizarse contra **todos los puntos de fallo que ocurren antes y después de escribirla**, no solo contra el happy path.
-- **H03** no necesita regla nueva: la ficha ya declara el checkpoint manual y el proceso ya prohíbe afirmar evidencia no ejecutada.
+- **H01:** la igualdad exacta es la defensa correcta cuando solo una pantalla está exceptuada; usar un matcher de segmento amplía el permiso a descendientes reales.
+- **H02:** un marcador de completitud debe persistirse después de todos los pasos cuyo fallo todavía significa “onboarding no enviado”.
+- **D02:** distinguir “incompleto explícito” de “estado desconocido por error” evita mezclar UX con autorización.
 
-## Qué cambiar, en orden de impacto
+## Infra detectada fuera del alcance
 
-1. Hacer exacta la excepción de `/courier/profile` y matar la mutación de prefijo.
-2. Convertir `vehicle_type` en marcador final real, conforme D01=1-A.
-3. Fijar D02=2-A con tests de error de lectura y mutación.
-4. Recién después ejecutar el checkpoint manual de Develop.
+La suite CC-007 contiene mutaciones reales útiles, pero las ejecuta sobrescribiendo archivos fuente compartidos. Eso introduce carreras al correr Vitest en paralelo. Se abrió **issue #243** para aislarlas.
 
-## Advertencias
+Este problema no se convierte en hallazgo de T-334 porque:
+1. ya existía antes de la rama;
+2. el commit de T-334 no toca `cc007.test.ts`;
+3. CI del SHA corregido termina completamente verde.
 
-- La revisión no debe implementar H02: toca una action sensible y su persistencia multi-paso; lo implementa agy y una ronda posterior lo verifica.
-- La ampliación de ficha sí se registra desde la revisión porque fue una decisión explícita de Lautaro073.
+## Pendiente
+
+H03 sigue siendo deliberadamente humana. No debe cerrarse con mocks ni con un Preview de un SHA anterior.
