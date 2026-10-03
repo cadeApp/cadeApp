@@ -635,6 +635,14 @@ export interface RequestFinalInspectionData {
     kind: string;
     reporterId: string;
   }>;
+  cancellationReasons?: Array<{
+    id: string;
+    requestId: string;
+    offerId: string | null;
+    actorId: string;
+    action: string;
+    reason: string;
+  }>;
 }
 
 /**
@@ -709,6 +717,44 @@ export async function getRequestInspectionData(
     // Tolerante en mocks unitarios
   }
 
+  let cancellationReasons: Array<{
+    id: string;
+    requestId: string;
+    offerId: string | null;
+    actorId: string;
+    action: string;
+    reason: string;
+  }> = [];
+  try {
+    const crBuilder = admin.from('request_cancellation_reasons');
+    if (typeof (crBuilder as { select?: unknown }).select === 'function') {
+      const { data: reasonsData } = await crBuilder
+        .select('id, request_id, offer_id, actor_id, action, reason')
+        .eq('request_id', requestId);
+      if (reasonsData) {
+        cancellationReasons = (
+          reasonsData as Array<{
+            id: string;
+            request_id: string;
+            offer_id: string | null;
+            actor_id: string;
+            action: string;
+            reason: string;
+          }>
+        ).map((row) => ({
+          id: row.id,
+          requestId: row.request_id,
+          offerId: row.offer_id,
+          actorId: row.actor_id,
+          action: row.action,
+          reason: row.reason,
+        }));
+      }
+    }
+  } catch {
+    // Tolerante en mocks unitarios
+  }
+
   const rawReq = requestData as Record<string, unknown>;
 
   return {
@@ -724,6 +770,7 @@ export async function getRequestInspectionData(
     cancelReason: (rawReq.cancel_reason as string | null) ?? null,
     offers,
     incidents,
+    cancellationReasons,
   };
 }
 
@@ -1474,10 +1521,11 @@ export async function seedDeliveryRequestInState(
   assertValidUuid(requestId, 'requestId');
 
   let acceptedOfferId: string | null = null;
+  let courierId: string | null = null;
   const isPostMatched = ['matched', 'in_transit', 'delivered'].includes(options.status);
 
   if (isPostMatched) {
-    const courierId = options.assignedCourierId ?? context.courierUsers?.[0]?.id;
+    courierId = options.assignedCourierId ?? context.courierUsers?.[0]?.id ?? null;
     if (!courierId) {
       throw new Error(
         '[E2E Seed Error] Se requiere assignedCourierId para solicitudes en estado matched/in_transit/delivered'
@@ -1487,20 +1535,6 @@ export async function seedDeliveryRequestInState(
 
     acceptedOfferId = randomUUID();
     assertValidUuid(acceptedOfferId, 'acceptedOfferId');
-
-    const { error: offErr } = await admin.from('offers').insert({
-      id: acceptedOfferId,
-      request_id: requestId,
-      courier_id: courierId,
-      amount_ars: 2000,
-      eta_minutes: 15,
-      status: 'accepted',
-      message: 'Oferta aceptada en seed',
-    });
-    if (offErr) {
-      throw new Error(`[E2E Seed Error] Falló la creación de oferta aceptada: ${offErr.message}`);
-    }
-    trackEntityForCleanup(context, 'offer', acceptedOfferId);
   }
 
   const nowIso = new Date().toISOString();
@@ -1513,6 +1547,7 @@ export async function seedDeliveryRequestInState(
     options.pickedUpAt ?? (['in_transit', 'delivered'].includes(options.status) ? nowIso : null);
   const deliveredAt = options.deliveredAt ?? (options.status === 'delivered' ? nowIso : null);
 
+  // 1. Insertar delivery_request primero con accepted_offer_id = null para satisfacer FK offers.request_id -> delivery_requests.id
   const { error: reqErr } = await admin.from('delivery_requests').insert({
     id: requestId,
     merchant_id: merchantId,
@@ -1526,7 +1561,7 @@ export async function seedDeliveryRequestInState(
     matched_at: matchedAt,
     picked_up_at: pickedUpAt,
     delivered_at: deliveredAt,
-    accepted_offer_id: acceptedOfferId,
+    accepted_offer_id: null,
     notes: `E2E state seed ${context.testRunId}`,
   });
 
@@ -1534,6 +1569,32 @@ export async function seedDeliveryRequestInState(
     throw new Error(`[E2E Seed Error] Falló la inserción de delivery_request: ${reqErr.message}`);
   }
   trackEntityForCleanup(context, 'request', requestId);
+
+  // 2. Si es post-match, insertar oferta aceptada referenciando el requestId ya persistido
+  if (isPostMatched && acceptedOfferId && courierId) {
+    const { error: offErr } = await admin.from('offers').insert({
+      id: acceptedOfferId,
+      request_id: requestId,
+      courier_id: courierId,
+      amount_ars: 2000,
+      eta_minutes: 15,
+      status: 'accepted',
+      message: 'Oferta aceptada en seed',
+    });
+    if (offErr) {
+      throw new Error(`[E2E Seed Error] Falló la creación de oferta aceptada: ${offErr.message}`);
+    }
+    trackEntityForCleanup(context, 'offer', acceptedOfferId);
+
+    // 3. Vincular accepted_offer_id en delivery_requests
+    const { error: linkErr } = await admin
+      .from('delivery_requests')
+      .update({ accepted_offer_id: acceptedOfferId })
+      .eq('id', requestId);
+    if (linkErr) {
+      throw new Error(`[E2E Seed Error] Falló la vinculación de oferta aceptada: ${linkErr.message}`);
+    }
+  }
 
   if (options.withContacts) {
     const { error: contErr } = await admin.from('delivery_request_contacts').insert({
@@ -1605,3 +1666,47 @@ export async function seedDeliveryRequestInState(
     incidentId,
   };
 }
+
+/**
+ * Obtiene el valor numérico de una configuración de plataforma desde PostgreSQL.
+ */
+export async function getPlatformSettingNumber(
+  key: string,
+  defaultValue = 45,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<number> {
+  assertAllowedE2EEnvironment(env);
+  const admin = client ?? createAdminClient();
+  const { data, error } = await admin
+    .from('platform_settings')
+    .select('value')
+    .eq('key', key)
+    .single();
+  if (error || !data) return defaultValue;
+  const rawValue = (data as { value: unknown }).value;
+  const num = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+  return Number.isFinite(num) ? num : defaultValue;
+}
+
+/**
+ * Actualiza el estado de suscripción de un comercio para pruebas E2E de precondiciones.
+ */
+export async function setMerchantSubscriptionStatus(
+  merchantId: string,
+  status: 'pilot' | 'active' | 'expired' | 'cancelled',
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<void> {
+  assertAllowedE2EEnvironment(env);
+  assertValidUuid(merchantId, 'merchantId');
+  const admin = client ?? createAdminClient();
+  const { error } = await admin
+    .from('merchants')
+    .update({ subscription_status: status })
+    .eq('profile_id', merchantId);
+  if (error) {
+    throw new Error(`[E2E Seed Error] Error al actualizar suscripción de comercio: ${error.message}`);
+  }
+}
+

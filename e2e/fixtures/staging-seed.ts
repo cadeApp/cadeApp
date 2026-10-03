@@ -25,6 +25,8 @@ export {
   seedAdminUser,
   elevateAdminToAal2,
   seedDeliveryRequestInState,
+  getPlatformSettingNumber,
+  setMerchantSubscriptionStatus,
   type StagingSeedContext,
   type SeedStagingOptions,
   type EnvironmentCheckResult,

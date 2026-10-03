@@ -6,6 +6,8 @@ import {
   getRequestInspectionData,
   elevateAdminToAal2,
   seedAdminUser,
+  getPlatformSettingNumber,
+  setMerchantSubscriptionStatus,
 } from '../fixtures';
 
 /**
@@ -61,11 +63,23 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     const merchantClient = await createAuthenticatedClient(merchant);
     const courierClient = await createAuthenticatedClient(courier);
 
-    // 1. Caso negativo: courier intenta publicar una solicitud
+    // 1a. Caso negativo: courier intenta publicar una solicitud
     await expectRpcFailure(
       courierClient.rpc('publish_request', { p_request_id: requestId }),
       'UNAUTHORIZED_ACTOR'
     );
+
+    // 1b. Caso negativo (H09): comercio con suscripción inactiva ('expired') no puede publicar (§5.1)
+    await setMerchantSubscriptionStatus(merchant.id, 'expired');
+    try {
+      await expectRpcFailure(
+        merchantClient.rpc('publish_request', { p_request_id: requestId }),
+        'SUBSCRIPTION_INACTIVE'
+      );
+    } finally {
+      // Restaurar suscripción activa (pilot) para que continúe la prueba
+      await setMerchantSubscriptionStatus(merchant.id, 'pilot');
+    }
 
     // 2. Caso positivo: comercio dueño publica la solicitud
     const { data: publishData, error: publishError } = await merchantClient.rpc('publish_request', {
@@ -80,13 +94,13 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(inspection.publishedAt).not.toBeNull();
     expect(inspection.expiresAt).not.toBeNull();
 
-    // expires_at debe ser posterior a published_at (~45 minutos por request_ttl_minutes)
+    // expires_at debe ser exactamente now + request_ttl_minutes según configuración real en platform_settings (H09)
+    const ttlMinutes = await getPlatformSettingNumber('request_ttl_minutes', 45);
     const pubTime = new Date(inspection.publishedAt ?? '').getTime();
     const expTime = new Date(inspection.expiresAt ?? '').getTime();
     expect(expTime).toBeGreaterThan(pubTime);
     const diffMinutes = Math.round((expTime - pubTime) / (60 * 1000));
-    expect(diffMinutes).toBeGreaterThanOrEqual(40);
-    expect(diffMinutes).toBeLessThanOrEqual(50);
+    expect(diffMinutes).toBe(ttlMinutes);
   });
 
   // ---------------------------------------------------------------------------
@@ -238,13 +252,13 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       'REQUEST_EXPIRED'
     );
 
-    // 2. Expiración perezosa en RPC real: intentar cancelar sobre solicitud vencida falla con INVALID_STATE_TRANSITION
+    // 2. Precedencia contractual real (H08): intentar cancelar sobre solicitud vencida falla con REQUEST_EXPIRED
     await expectRpcFailure(
       merchantClient.rpc('cancel_request', {
         p_request_id: requestId,
         p_reason: 'Intento de cancelación sobre solicitud expirada',
       }),
-      'INVALID_STATE_TRANSITION'
+      'REQUEST_EXPIRED'
     );
 
     // 3. Ejecución del endpoint de cron /api/cron/sweep si CRON_SECRET está configurado
@@ -368,6 +382,15 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     // La oferta previamente aceptada debe quedar en cancelled
     const offer = inspection.offers.find((o) => o.id === acceptedOfferId);
     expect(offer?.status).toBe('cancelled');
+
+    // 4. §5.1: Se registra el motivo ('no_show') y queda disponible para conteo de métricas por admin
+    expect(inspection.cancellationReasons?.length).toBeGreaterThanOrEqual(1);
+    const noShowReason = inspection.cancellationReasons?.find(
+      (r) => r.action === 'report_no_show'
+    );
+    expect(noShowReason).toBeDefined();
+    expect(noShowReason?.reason).toBe('no_show');
+    expect(noShowReason?.actorId).toBe(merchant.id);
   });
 
   // ---------------------------------------------------------------------------
@@ -435,6 +458,15 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
 
     const offer = inspection.offers.find((o) => o.id === acceptedOfferId);
     expect(offer?.status).toBe('cancelled');
+
+    // 4. §5.1: Se registra el motivo del repartidor y queda disponible para conteo de métricas por admin
+    expect(inspection.cancellationReasons?.length).toBeGreaterThanOrEqual(1);
+    const courierReason = inspection.cancellationReasons?.find(
+      (r) => r.action === 'courier_cancel_match'
+    );
+    expect(courierReason).toBeDefined();
+    expect(courierReason?.reason).toBe('Se pinchó la rueda delantera en camino al local');
+    expect(courierReason?.actorId).toBe(courier0.id);
   });
 
   // ---------------------------------------------------------------------------
@@ -489,6 +521,20 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
 
     const offer = inspection.offers.find((o) => o.id === acceptedOfferId);
     expect(offer?.status).toBe('cancelled');
+
+    // 4. §5.1: Motivo persistido y gap contractual de notificación documentado
+    // Gap contractual (§5.1 vs backend): La matriz §5.1 define que al pasar de matched a cancelled
+    // 'Se notifica al repartidor'. La RPC cancel_request / request_cycle actualiza delivery_requests
+    // y offers a 'cancelled', registra cancel_reason y crea fila en request_cancellation_reasons,
+    // pero no emite eventos ni despacha push en la capa de datos (el push es best-effort y se maneja en Edge).
+    // Verificamos toda la persistencia real sin fingir señales inexistentes en base de datos.
+    expect(inspection.cancellationReasons?.length).toBeGreaterThanOrEqual(1);
+    const cancelReasonRow = inspection.cancellationReasons?.find(
+      (r) => r.action === 'cancel_request'
+    );
+    expect(cancelReasonRow).toBeDefined();
+    expect(cancelReasonRow?.reason).toBe('El cliente canceló la compra por demora de cocina');
+    expect(cancelReasonRow?.actorId).toBe(merchant.id);
   });
 
   // ---------------------------------------------------------------------------
@@ -558,6 +604,28 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     // Verificar que el incidente quedó registrado en PostgreSQL
     const postIncidentInspection = await getRequestInspectionData(stagingContext, requestId);
     expect(postIncidentInspection.incidents?.length).toBeGreaterThanOrEqual(1);
+
+    // 5. Expiración de ventana de incidente (> 24 h) (§5.1 & H09):
+    // Se prepara una solicitud entregada hace más de 24 horas (25 horas antes)
+    const twentyFiveHoursAgo = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    const expiredSeed = await seedDeliveryRequestInState(stagingContext, {
+      status: 'delivered',
+      merchantId: merchant.id,
+      assignedCourierId: courier0.id,
+      deliveredAt: twentyFiveHoursAgo,
+      withContacts: true,
+    });
+    const expiredRequestId = expiredSeed.requestId;
+
+    // Intentar reportar un incidente fuera de la ventana de 24h debe fallar con INCIDENT_WINDOW_EXPIRED
+    await expectRpcFailure(
+      merchantClient.rpc('report_incident', {
+        p_request_id: expiredRequestId,
+        p_kind: 'damaged_goods',
+        p_description: 'Reporte fuera de plazo de 24 horas',
+      }),
+      'INCIDENT_WINDOW_EXPIRED'
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -607,7 +675,16 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     // Elevar sesión de admin a AAL2 vía TOTP real (RFC 6238)
     await elevateAdminToAal2(adminClient, adminUser);
 
-    // 2. Caso negativo CC-015: admin AAL2 con motivo pero 0 incidentes registrados en Req A
+    // 2a. Precedencia contractual (H09): admin con AAL2 pero motivo vacío falla con REASON_REQUIRED
+    await expectRpcFailure(
+      adminClient.rpc('cancel_request', {
+        p_request_id: reqAId,
+        p_reason: '   ',
+      }),
+      'REASON_REQUIRED'
+    );
+
+    // 2b. Caso negativo CC-015: admin AAL2 con motivo pero 0 incidentes registrados en Req A
     await expectRpcFailure(
       adminClient.rpc('cancel_request', {
         p_request_id: reqAId,
@@ -659,6 +736,16 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(inspReqAFinal.cancelReason).toBe(
       'Incidente de extravío verificado por mediación de soporte'
     );
+
+    expect(inspReqAFinal.cancellationReasons?.length).toBeGreaterThanOrEqual(1);
+    const adminReason = inspReqAFinal.cancellationReasons?.find(
+      (r) => r.action === 'cancel_request'
+    );
+    expect(adminReason).toBeDefined();
+    expect(adminReason?.reason).toBe(
+      'Incidente de extravío verificado por mediación de soporte'
+    );
+    expect(adminReason?.actorId).toBe(adminUser.id);
   });
 
   // ---------------------------------------------------------------------------

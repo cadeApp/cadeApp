@@ -21,6 +21,8 @@ import {
   seedAdminUser,
   elevateAdminToAal2,
   seedDeliveryRequestInState,
+  getPlatformSettingNumber,
+  setMerchantSubscriptionStatus,
   KNOWN_STAGING_PROJECT_REFS,
   type StagingSeedContext,
   type AdminClientType,
@@ -2266,6 +2268,9 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             if (table === 'delivery_requests') {
               return {
                 insert: vi.fn().mockResolvedValue({ error: null }),
+                update: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({ error: null }),
+                }),
               };
             }
             if (table === 'incidents') {
@@ -2299,10 +2304,147 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         expect(ctx.createdOfferIds).toContain(result.acceptedOfferId);
         expect(ctx.createdIncidentIds).toContain(result.incidentId);
       });
+
+      it('cumple con el orden relacional de FK (H06): delivery_requests con accepted_offer_id null, luego offers, luego update de accepted_offer_id', async () => {
+        const ctx = createStagingSeedContext();
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        const courierId = '44444444-4444-4444-8444-444444444444';
+        ctx.merchantUser = {
+          id: merchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+        ctx.courierUsers = [
+          { id: courierId, email: 'courier@test.local', password: 'pass', role: 'courier' },
+        ];
+
+        const calls: Array<{ op: string; payload?: unknown }> = [];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'zones') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [{ id: '22222222-2222-4222-8222-222222222222' }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                insert: vi.fn((payload) => {
+                  calls.push({ op: 'delivery_requests.insert', payload });
+                  return Promise.resolve({ error: null });
+                }),
+                update: vi.fn((payload) => {
+                  calls.push({ op: 'delivery_requests.update', payload });
+                  return {
+                    eq: vi.fn().mockResolvedValue({ error: null }),
+                  };
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return {
+                insert: vi.fn((payload) => {
+                  calls.push({ op: 'offers.insert', payload });
+                  return Promise.resolve({ error: null });
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          { status: 'matched', assignedCourierId: courierId },
+          mockClient,
+          validEnv
+        );
+
+        expect(result.requestId).toBeDefined();
+        expect(result.acceptedOfferId).toBeDefined();
+
+        // Verificar el orden exacto de llamadas:
+        // 1. delivery_requests.insert (con accepted_offer_id: null para respetar FK)
+        // 2. offers.insert (con request_id: requestId)
+        // 3. delivery_requests.update (con accepted_offer_id: acceptedOfferId)
+        expect(calls.map((c) => c.op)).toEqual([
+          'delivery_requests.insert',
+          'offers.insert',
+          'delivery_requests.update',
+        ]);
+
+        const reqInsert = calls[0]?.payload as Record<string, unknown>;
+        expect(reqInsert.id).toBe(result.requestId);
+        expect(reqInsert.accepted_offer_id).toBeNull();
+
+        const offInsert = calls[1]?.payload as Record<string, unknown>;
+        expect(offInsert.id).toBe(result.acceptedOfferId);
+        expect(offInsert.request_id).toBe(result.requestId);
+        expect(offInsert.status).toBe('accepted');
+
+        const reqUpdate = calls[2]?.payload as Record<string, unknown>;
+        expect(reqUpdate.accepted_offer_id).toBe(result.acceptedOfferId);
+      });
+    });
+
+    describe('getPlatformSettingNumber y setMerchantSubscriptionStatus (H09)', () => {
+      it('obtiene valor numérico de platform_settings', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { value: 30 },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const value = await getPlatformSettingNumber('request_ttl_minutes', 45, mockClient, validEnv);
+        expect(value).toBe(30);
+      });
+
+      it('actualiza el subscription_status en merchants', async () => {
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        let updatedPayload: unknown = null;
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'merchants') {
+              return {
+                update: vi.fn((payload) => {
+                  updatedPayload = payload;
+                  return {
+                    eq: vi.fn().mockResolvedValue({ error: null }),
+                  };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await setMerchantSubscriptionStatus(merchantId, 'expired', mockClient, validEnv);
+        expect(updatedPayload).toEqual({ subscription_status: 'expired' });
+      });
     });
 
     describe('getRequestInspectionData extendido', () => {
-      it('retorna campos extendidos de solicitud, ofertas e incidentes', async () => {
+      it('retorna campos extendidos de solicitud, ofertas, incidentes y cancellationReasons', async () => {
         const ctx = createStagingSeedContext();
         const requestId = '77777777-7777-4777-8777-777777777777';
         ctx.createdRequestIds = [requestId];
@@ -2366,6 +2508,25 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                 }),
               };
             }
+            if (table === 'request_cancellation_reasons') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: 'cr-1',
+                        request_id: requestId,
+                        offer_id: '88888888-8888-4888-8888-888888888888',
+                        actor_id: 'actor-1',
+                        action: 'courier_cancel_match',
+                        reason: 'Problema mecánico con la moto',
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              };
+            }
             throw new Error(`Unexpected table: ${table}`);
           }),
         } as unknown as AdminClientType;
@@ -2379,6 +2540,9 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         expect(inspection.offers[0]?.status).toBe('accepted');
         expect(inspection.incidents).toHaveLength(1);
         expect(inspection.incidents?.[0]?.kind).toBe('safety');
+        expect(inspection.cancellationReasons).toHaveLength(1);
+        expect(inspection.cancellationReasons?.[0]?.action).toBe('courier_cancel_match');
+        expect(inspection.cancellationReasons?.[0]?.reason).toBe('Problema mecánico con la moto');
       });
     });
   });
