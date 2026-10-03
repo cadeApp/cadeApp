@@ -10,4 +10,6 @@
 - **Revisión independiente — ronda 4:** base `bb2fe2a05a8fb8020b24f1eed581dc8f901e62a3` — fix mínimo H07 + merge de `develop`; VERIFICACIÓN E2E T-307 PENDIENTE
 - **Proceso:** la autorrevisión previa del agy se preservó como `revisiones/autorrevision-agy-r1.md`; no cuenta como verificación independiente.
 - **Decisión P1 D01:** 1-A aplicada — T-206 figura como dependencia de T-307.
-- **Infra E2E:** Vercel Preview + Supabase Develop funcionan; el gate trusted actual todavía no ejecuta `notifications.spec.ts`. Follow-up activo en issue #205 / T-327.
+- **Infra E2E:** T-327/#228 quedó activa y el gate trusted ejecuta `notifications.spec.ts`; el bloqueo actual es **T-332 / #229** (Realtime + reconnect de la capa T-204).
+- **Revisión independiente — ronda 5:** SHA `d967b7820a43155b076fc0cd501d4a2953054132` — runner trusted ejecutó T-307; 1/3 GREEN y 2/3 RED por producto.
+- **Revisión independiente — ronda 6:** SHA `cfea63d76850692c3bf99c832cf4044b3859f792` — RED reproducido con autodiscovery; colisión T-331 corregida renombrando/reabriendo #229 como T-332.

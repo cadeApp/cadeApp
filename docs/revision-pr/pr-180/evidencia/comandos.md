@@ -240,3 +240,84 @@ H06 -> arreglado-sin-verificar
 H07 -> arreglado-sin-verificar (fix mínimo del revisor)
 T-327/#205 -> sigue bloqueando el GREEN/RED real de notifications.spec.ts
 ```
+
+
+## Ronda 5 — trusted runner ejecuta T-307
+
+SHA revisado: `d967b7820a43155b076fc0cd501d4a2953054132`.
+
+Run trusted: `37100304678`.
+
+Infra:
+- resolve-preview GREEN
+- Supabase Develop GREEN
+- health GREEN
+- `notifications.spec.ts` enumerado y ejecutado
+
+Resultado T-307:
+```text
+Realtime denied -> RED 3/3, no segunda GET en 15s
+Offline/form -> GREEN
+Reconnect -> RED 3/3, no segunda GET en 15s
+```
+
+La dependencia T-327 dejó de ser bloqueo. Los controles H02/H05 demostraron que no pasan cuando el producto no produce el refetch esperado.
+
+Se abrió #229 como follow-up de producto de T-204.
+
+---
+
+## Ronda 6 — repetición RED + corrección de colisión de tarea
+
+SHA revisado: `cfea63d76850692c3bf99c832cf4044b3859f792`.
+
+Cambio del autor desde R5:
+- solo `docs/tasks/T-307.md`;
+- solo `docs/tasks/log/T-307.md`;
+- no modificó `e2e/specs/notifications.spec.ts`;
+- no tocó `docs/revision-pr/**`.
+
+CI run `37138504068`:
+- typecheck GREEN
+- lint GREEN
+- db-tests GREEN
+- build GREEN
+- unit/coverage + workflow tests GREEN
+- bundle-budget GREEN
+- audit RED por advisory preexistente, sin cambio atribuible a T-307
+
+Trusted run `37138561471` usa el workflow de `develop@20db1bdbfd44f5a398dbfa984cc8ea291a56a493`, ya con autodiscovery por proyecto.
+
+Resultado:
+```text
+21 passed
+2 failed
+- notifications realtime: RED 3/3 en offersRequestCount > baseline
+- notifications reconnect: RED 3/3 en count > baseline
+offline/form: GREEN
+```
+
+No hay cambios de producto en `develop` entre el primer RED y este segundo RED: el compare `973d7fa...20db1bd` no toca:
+- `src/lib/hooks/use-realtime-invalidation.ts`
+- `src/features/requests/hooks/use-request-offers.ts`
+- `src/app/providers.tsx`
+
+### Colisión de identificador
+
+#229 había nacido como T-331 para corregir Realtime/reconnect. Después #232 / PR #233 tomó oficialmente T-331 para otra tarea: autodiscovery del pipeline, creando `docs/tasks/T-331.md` en develop.
+
+El cierre automático de #229 coincidió con el merge de #233, aunque ninguna corrección de producto fue mergeada.
+
+Corrección del revisor:
+- #229 reabierto;
+- renombrado a **T-332**;
+- labels restablecidas a P2 + fase-3;
+- body y rutas documentales actualizados a `docs/tasks/T-332.md` / `docs/tasks/log/T-332.md`.
+
+Estado real:
+```text
+T-327 runner: RESUELTO
+T-331: autodiscovery E2E, mergeado
+T-332/#229: ABIERTO, bloquea T-307
+PR #180: no mergeable por DoD funcional, aunque GitHub diga mergeable
+```

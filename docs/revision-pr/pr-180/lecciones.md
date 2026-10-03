@@ -34,3 +34,15 @@ No se agrega número AG nuevo.
 - Un E2E debe usar un oráculo que pertenezca al invariante de la tarea. Si la aserción depende de una proyección rota por otro issue conocido, el test queda acoplado y puede dar rojo por una causa ajena.
 - Para probar que una oferta concreta llegó por Realtime, un marcador único dentro de la propia oferta (por ejemplo `message`) es mejor oráculo que el nombre del courier cuando ese nombre depende de otra política/RLS.
 - Si `develop` avanzó solo en infraestructura trusted y no hay conflictos funcionales, el revisor puede hacer el merge mínimo sin devolver ese trabajo mecánico al agy.
+
+
+## Ronda 5
+
+- Cuando un E2E trusted queda RED por la propiedad exacta que debía proteger, eso es evidencia de que el control dejó de ser un falso positivo; no corresponde aflojar el test para volverlo verde.
+- Resolver el runner no resuelve el producto: separar bloqueo de infraestructura de bloqueo funcional evita cerrar una tarea por el motivo equivocado.
+
+## Ronda 6
+
+- Los IDs de tarea son claves de coordinación: reutilizar `T-331` para dos trabajos distintos puede hacer que automatizaciones cierren el issue equivocado.
+- Un issue marcado `hecha` no es evidencia de implementación. Siempre cruzar el cierre con el diff de producto y con el E2E que detectó el defecto.
+- La repetición del mismo RED bajo un runner distinto (lista explícita vs autodiscovery) aumenta la confianza en que el problema está en producto y no en la selección del spec.
