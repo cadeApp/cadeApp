@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import fs from 'node:fs';
 import path from 'node:path';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { useRequestOffers } from './use-request-offers';
 import { requestKeys } from '../query-keys';
 import * as browserClient from '@/lib/supabase/browser';
@@ -178,26 +178,47 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
       },
     ];
 
-    const fetchOffersMock = vi.fn().mockResolvedValue(updatedOffers);
+    // T-333: el fetch inicial (initialDataUpdatedAt: 0) devuelve la lista vieja; solo la reconexión trae la nueva.
+    const fetchOffersMock = vi
+      .fn()
+      .mockResolvedValueOnce(initialOffers)
+      .mockResolvedValue(updatedOffers);
 
-    const { result } = renderHook(
-      () =>
-        useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers, {
-          fetcher: fetchOffersMock,
-        }),
-      { wrapper }
-    );
+    try {
+      const { result } = renderHook(
+        () =>
+          useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers, {
+            fetcher: fetchOffersMock,
+          }),
+        { wrapper }
+      );
 
-    expect(result.current.offers).toHaveLength(1);
+      // 1. Esperar el fetch inicial y que la query quede quieta antes de fijar el baseline.
+      await waitFor(() => {
+        expect(fetchOffersMock).toHaveBeenCalledTimes(1);
+        expect(result.current.isRefetching).toBe(false);
+      });
+      const baseline = fetchOffersMock.mock.calls.length;
+      expect(result.current.offers).toHaveLength(1);
 
-    act(() => {
-      window.dispatchEvent(new Event('online'));
-    });
+      // 2. Transición real offline -> online del onlineManager de TanStack.
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      act(() => {
+        onlineManager.setOnline(true);
+      });
 
-    await waitFor(() => {
-      expect(result.current.offers).toHaveLength(2);
-    });
-    expect(fetchOffersMock).toHaveBeenCalledTimes(1);
+      // 3. Exigir una llamada posterior al baseline: el fetch inicial no alcanza.
+      await waitFor(() => {
+        expect(fetchOffersMock.mock.calls.length).toBeGreaterThan(baseline);
+      });
+      await waitFor(() => {
+        expect(result.current.offers).toHaveLength(2);
+      });
+    } finally {
+      onlineManager.setOnline(true);
+    }
   });
 
   it('DoD: al desmontar la pantalla se cierra el canal', async () => {
