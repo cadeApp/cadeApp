@@ -6,36 +6,37 @@
 | **Tarea** | T-332 (Fase 3) |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-332-audit-braces` → `develop` |
-| **Base revisada** | `20db1bdbfd44f5a398dbfa984cc8ea291a56a493` |
-| **Tamaño inicial** | 6 archivos, +221 / -0 líneas |
-| **Estado** | BLOQUEADA — 2 hallazgos |
+| **Base inicial** | `20db1bdbfd44f5a398dbfa984cc8ea291a56a493` |
+| **develop actual en R2** | `bc6329d941a510cc37d23827f5e3798e3839c065` |
+| **Estado** | BLOQUEADA — H01 parcial + conflicto con develop |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `3fd36b865f5eeb8a957d7048aff9fb4d5911e78d` | 2 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `2a3dc3a77cf453715d9806fba8bdc646aaafc40e` | H02 cerrado; H01 parcial; merge conflict | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR234-H01 | El guard del audit acepta bypasses que hacen inalcanzable el comando | alto | abierto |
-| PR234-H02 | La regla 00 contradice la excepción GHSA aprobada | alto | abierto |
+| PR234-H01 | El guard del audit acepta bypasses del entorno del step | alto | parcial |
+| PR234-H02 | La regla 00 contradice la excepción GHSA aprobada | alto | arreglado-verificado |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Decisiones de Lautaro073
 
 - **D01 — 2026-10-03: A.** Se aceptan excepciones por GHSA puntual cuando no hay versión corregida, la dependencia no llega a producción, la excepción está documentada y existe un control que impide ampliar/debilitar el gate.
-- **D02 — 2026-10-03: A.** Como T-332 todavía no existía en `develop`, el issue #227 se acepta como autorización de alcance para que la ficha nazca en esta PR. La revisión no trata la ficha de la rama como autoridad previa al SHA.
+- **D02 — 2026-10-03: A.** Como T-332 todavía no existía en `develop`, el issue #227 se acepta como autorización de alcance para que la ficha nazca en esta PR.
 
 ## Qué queda por hacer
 
-1. Corregir PR234-H01 con un control estructural del job/step de audit y demostrar las mutaciones nuevas en RED.
-2. Codificar D01 en `.agents/rules/00-confianza-y-seguridad.md`; actualizar el alcance de T-332/plan para permitir exactamente ese archivo.
-3. Revalidar la PR en una Ronda 2 y recién entonces auditar los logs de CI del SHA corregido.
+1. Cerrar el residual de H01 con allowlist estructural del job/steps, incluyendo shell/defaults/steps extra.
+2. Mergear `origin/develop` (sin rebase) y resolver `docs/implementation-plan.md` conservando **T-332 y T-333**.
+3. Revalidar mutaciones, `verify-fichas`, merge-tree/mergeability y CI del SHA final.
 
 ## Para el análisis posterior
 
-No se agrega una lección AG nueva en esta ronda. H01 repite `P08-control-no-cubre-lo-que-dice` y la disciplina de AG-75: la batería del autor no sustituye mutaciones nuevas de la revisión.
+No se agrega AG nuevo en R2. H01 vuelve a confirmar `P08-control-no-cubre-lo-que-dice` y AG-75: cada arreglo de un guard necesita mutaciones nuevas de la revisión sobre lo que ese arreglo agregó.
