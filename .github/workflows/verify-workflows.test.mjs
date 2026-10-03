@@ -62,6 +62,116 @@ test('playwright.config.ts splits e2e/specs into the chromium and serial global-
   );
 });
 
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const specsDir = join(repoRoot, 'e2e', 'specs');
+// Patrón por defecto de Playwright para archivos de test.
+const PLAYWRIGHT_DEFAULT_TEST_MATCH = '**/*.@(spec|test).?(c|m)[jt]s?(x)';
+const specFilePattern = /\.(spec|test)\.[cm]?[jt]sx?$/;
+const globalSettingsSpec = /global-settings\.spec\.ts$/;
+
+/**
+ * Tests que Playwright descubre con `--list`, contados por `proyecto|archivo`.
+ * @param {string} configPath
+ * @returns {Map<string, number>}
+ */
+function playwrightListByProjectAndFile(configPath) {
+  const cli = fileURLToPath(new URL('../../node_modules/@playwright/test/cli.js', import.meta.url));
+  const result = spawnSync(
+    process.execPath,
+    [cli, 'test', '--list', '--reporter=json', '--config', configPath],
+    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+  );
+  assert.equal(
+    result.status,
+    0,
+    `playwright test --list failed:\n${result.stderr}\n${result.stdout}`
+  );
+  /** @typedef {{ file?: string, specs?: { file: string, tests?: { projectName: string }[] }[], suites?: Suite[] }} Suite */
+  /** @type {{ suites?: Suite[] }} */
+  const report = JSON.parse(result.stdout);
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  /** @param {Suite} suite */
+  const walk = (suite) => {
+    for (const spec of suite.specs ?? []) {
+      for (const t of spec.tests ?? []) {
+        const key = `${t.projectName}|${spec.file}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    for (const child of suite.suites ?? []) walk(child);
+  };
+  for (const suite of report.suites ?? []) walk(suite);
+  return counts;
+}
+
+/** @param {string} dir @param {string} [prefix] @returns {string[]} */
+function specFilesUnder(dir, prefix = '') {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? specFilesUnder(join(dir, entry.name), `${prefix}${entry.name}/`)
+      : specFilePattern.test(entry.name)
+        ? [`${prefix}${entry.name}`]
+        : []
+  );
+}
+
+test('the chromium and global-settings projects effectively discover every spec of e2e/specs, with no narrowing', () => {
+  // PR233-H01: no alcanza con mirar testIgnore. Se compara lo que Playwright descubre de verdad con una línea base
+  // que importa la misma config y le quita todo filtro (testDir, testMatch, testIgnore, grep, grepInvert, projects).
+  // Un testMatch, grep o grepInvert extra, global o del proyecto, deja tests afuera y rompe la igualdad.
+  const directory = mkdtempSync(join(tmpdir(), 'cadeapp-pw-baseline-'));
+  try {
+    const baselineConfig = join(directory, 'baseline.config.ts');
+    writeFileSync(
+      baselineConfig,
+      [
+        `import config from ${JSON.stringify(join(repoRoot, 'playwright.config.ts'))};`,
+        'export default {',
+        '  ...config,',
+        `  testDir: ${JSON.stringify(specsDir)},`,
+        `  testMatch: ${JSON.stringify(PLAYWRIGHT_DEFAULT_TEST_MATCH)},`,
+        '  testIgnore: [],',
+        '  grep: /.*/,',
+        '  grepInvert: undefined,',
+        "  projects: [{ name: 'baseline' }],",
+        '};',
+        '',
+      ].join('\n')
+    );
+    const baseline = playwrightListByProjectAndFile(baselineConfig);
+
+    // La línea base cubre todos los archivos de spec que hay en e2e/specs, cada uno con al menos un test.
+    const files = specFilesUnder(specsDir).sort();
+    assert.ok(files.length > 0, 'e2e/specs must contain specs');
+    assert.deepEqual(
+      [...baseline.keys()].map((key) => key.replace(/^baseline\|/, '')).sort(),
+      files,
+      'every spec file under e2e/specs must have tests in the unfiltered baseline'
+    );
+
+    // chromium = todo menos *.global-settings.spec.ts; global-settings = todos y solo esos. Mismos tests por archivo.
+    /** @type {Map<string, number>} */
+    const expected = new Map();
+    for (const [key, count] of baseline) {
+      const file = key.replace(/^baseline\|/, '');
+      expected.set(
+        `${globalSettingsSpec.test(file) ? 'global-settings' : 'chromium'}|${file}`,
+        count
+      );
+    }
+    const actual = playwrightListByProjectAndFile(join(repoRoot, 'playwright.config.ts'));
+    assert.deepEqual(
+      [...actual].sort(),
+      [...expected].sort(),
+      'chromium must discover every spec except *.global-settings.spec.ts and global-settings exactly those, ' +
+        'with all their tests: no testMatch, grep or grepInvert may narrow either project'
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('CI gates pull requests with typecheck, lint, unit tests, build and cached dependencies', () => {
   const ci = workflow('ci.yml');
   for (const required of [
