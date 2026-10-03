@@ -56,7 +56,7 @@ export function DocumentUploadCard({
       data-slot="document-upload-card"
       data-status={status}
       aria-busy={busy}
-      className={`relative p-3.5 transition-colors ${
+      className={`relative p-3.5 transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
         status === 'success'
           ? 'border-border bg-card'
           : status === 'error'

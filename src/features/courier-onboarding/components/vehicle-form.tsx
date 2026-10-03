@@ -123,9 +123,8 @@ export function VehicleForm({
     setOptionalFileNames((prev) => ({ ...prev, [kind]: file.name }));
     setCompressingOptional((prev) => ({ ...prev, [kind]: true }));
     setOptionalStatuses((prev) => ({ ...prev, [kind]: 'uploading' }));
-    // Un reintento reemplaza la carga anterior: mientras sube no se envía una ruta vieja.
-    setOptionalDocs((prev) => ({ ...prev, [kind]: undefined }));
 
+    // PR237-H01: el último path exitoso se conserva hasta que el reemplazo devuelva uno nuevo.
     try {
       const compressed = await compressImage(file);
       setCompressingOptional((prev) => ({ ...prev, [kind]: false }));

@@ -730,6 +730,57 @@ describe('T-325: licencia y seguro usan el mismo sistema de carga que el paso 2'
       expect(mockUploadCourierDocument).toHaveBeenCalledTimes(2);
       expect(within(card).queryByRole('alert')).toBeNull();
     });
+
+    it('PR237-H02: el foco de teclado llega al input y la tarjeta visible lo muestra', () => {
+      render(<VehicleForm courierId="c-1" initialDni="38123456" />);
+      const { input, card } = uploadCard(label);
+
+      input.focus();
+
+      expect(document.activeElement).toBe(input);
+      const classes = card.className.split(/\s+/);
+      expect(classes).toContain('focus-within:ring-2');
+      expect(classes).toContain('focus-within:ring-ring');
+    });
+  });
+
+  // PR237-H01: un reemplazo fallido (en la compresión o en la subida) no borra el último path exitoso.
+  describe.each(
+    OPTIONAL_DOCS.flatMap((doc) =>
+      (['compresión', 'subida'] as const).map((stage) => ({ ...doc, stage }))
+    )
+  )('$kind: si el reemplazo falla en la $stage', ({ kind, label, stage }) => {
+    it('la tarjeta queda en error con "Reintentar" y el envío conserva el path anterior', async () => {
+      const mockAction = vi.spyOn(actionsModule, 'courierOnboardingAction').mockResolvedValue({
+        ok: true,
+        data: { redirectTo: '/courier/onboarding/status' },
+      });
+      const oldPath = `courier/c-1/${kind}-old.jpg`;
+      mockUploadCourierDocument.mockResolvedValueOnce({ storagePath: oldPath });
+
+      render(<VehicleForm courierId="c-1" initialDni="38123456" onSuccess={vi.fn()} />);
+      const { input, card } = uploadCard(label);
+      selectFile(input, `${kind}-old.jpg`);
+      await waitFor(() => expect(card.getAttribute('data-status')).toBe('success'));
+
+      if (stage === 'compresión') {
+        vi.mocked(compressImage).mockRejectedValueOnce(new Error('compression'));
+      } else {
+        mockUploadCourierDocument.mockRejectedValueOnce(new Error('network'));
+      }
+      selectFile(input, `${kind}-new.jpg`);
+      await waitFor(() => expect(card.getAttribute('data-status')).toBe('error'));
+      expect(card.textContent).toContain('Reintentar');
+
+      acceptConsentsWithPlate();
+      fireEvent.click(screen.getByRole('button', { name: /Enviar para revisión/i }));
+
+      await waitFor(() => expect(mockAction).toHaveBeenCalledTimes(1));
+      const payload = mockAction.mock.calls[0]?.[0] as
+        | { documents?: Partial<Record<string, string>> }
+        | undefined;
+      expect(payload?.documents?.[kind]).toBe(oldPath);
+    });
   });
 
   it('siguen siendo opcionales: con licencia en error se puede enviar y no viaja una ruta falsa', async () => {
