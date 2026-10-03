@@ -9,6 +9,12 @@ import {
   getPlatformSettingNumber,
   setMerchantSubscriptionStatus,
 } from '../fixtures';
+import {
+  mutateForProofM1,
+  mutateForProofM2,
+  mutateForProofM3,
+  mutateForProofM4,
+} from '@/server/e2e/staging-seed';
 
 /**
  * T-304: E2E y matriz de estados (§5.1 de master-plan.md)
@@ -88,6 +94,9 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(publishError).toBeNull();
     expect(publishData).toBeDefined();
 
+    // MUTATION PROOF M2 (temporal): altera expires_at para que diffMinutes !== ttlMinutes
+    await mutateForProofM2(stagingContext, requestId);
+
     // 3. Oráculo server-side en PostgreSQL
     const inspection = await getRequestInspectionData(stagingContext, requestId);
     expect(inspection.requestStatus).toBe('published');
@@ -144,6 +153,9 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     });
     expect(acceptError).toBeNull();
     expect(acceptData).toBeDefined();
+
+    // MUTATION PROOF M1 (temporal): altera offer1 para que vuelva a 'pending'
+    await mutateForProofM1(stagingContext, requestId, offer1Id);
 
     // 3. Oráculo server-side en PostgreSQL
     const inspection = await getRequestInspectionData(stagingContext, requestId);
@@ -687,6 +699,9 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       'REASON_REQUIRED'
     );
 
+    // MUTATION PROOF M4 (temporal): inserta un incidente en Req A para que la cancelación por admin AAL2 tenga éxito
+    await mutateForProofM4(stagingContext, reqAId, merchant.id);
+
     // 2b. Caso negativo CC-015: admin AAL2 con motivo pero 0 incidentes registrados en Req A
     await expectRpcFailure(
       adminClient.rpc('cancel_request', {
@@ -801,6 +816,9 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       }),
       'UNAUTHORIZED_ACTOR'
     );
+
+    // MUTATION PROOF M3 (temporal): altera el estado de delivered a in_transit para que admin pueda cancelar con éxito
+    await mutateForProofM3(stagingContext, requestId);
 
     // 3. Intento de cancelación por admin AAL2 sobre delivered (incluso con incidente) -> rechazado
     await expectRpcFailure(
