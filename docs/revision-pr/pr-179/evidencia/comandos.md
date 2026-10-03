@@ -392,3 +392,158 @@ Búsqueda comparativa HEAD vs develop:
 - sleeps: 0 nuevos.
 - `@ts-ignore/@ts-expect-error`: 0 nuevos.
 - `any` en `staging-seed.test.ts`: 15 en HEAD / 15 en develop, delta 0.
+
+# Ronda 5
+
+## Preflight
+
+```text
+HEAD funcional: 7222846be529306f45eb53997605bd43ae48075a
+develop: 125728b591950f0de2ecd520eea2617415ac9508
+ahead: 25
+behind: 0
+```
+
+No quedaron helpers `mutateForProof` en HEAD.
+
+## Batería M1-M4 definida por la revisión
+
+Commit temporal del autor que implementa exactamente la batería pedida en R4:
+`a8080a676aa2dc39919f5de527ff6bbef1cff1f8`
+
+Harness completo aplicado en ese commit:
+
+```text
+M1:
+  guard requestId in context.createdRequestIds
+  UPDATE offers SET status='pending'
+  WHERE id=offerId AND request_id=requestId
+  inyección: después de accept_offer y antes del oráculo
+
+M2:
+  guard requestId in context.createdRequestIds
+  UPDATE delivery_requests
+  SET expires_at = now + 1000 minutes
+  WHERE id=requestId
+  inyección: después de publish_request y antes del oráculo
+
+M3:
+  guard requestId in context.createdRequestIds
+  UPDATE delivery_requests SET status='in_transit'
+  WHERE id=requestId
+  inyección: sobre request delivered antes del cancel_request admin AAL2
+
+M4:
+  guard requestId in context.createdRequestIds
+  INSERT incidents(request_id=requestId, reporter_id=reporterId, ...)
+  trackEntityForCleanup(context,'incident',incidentId)
+  inyección: Req A antes del caso negativo CC-015 de 0 incidentes
+```
+
+El diff del commit confirma que no se cambió ningún `expect`.
+
+### RED remoto reproducido
+
+Run `37095557481`, job `111124661597`:
+
+```text
+HEAD is now at a8080a6
+Running 20 tests using 1 worker
+4 failed
+- Fila 1: Expected 30, Received 1000
+- Fila 2: Expected "rejected", Received "pending"
+- Fila 9: se esperaba INVALID_STATE_TRANSITION; RPC retornó success
+- delivered invariant: se esperaba INVALID_STATE_TRANSITION; RPC retornó success
+16 passed
+```
+
+### Revert y GREEN
+
+Revert:
+`07b1386c26c2218a06eb68d3614853690f77774b`
+
+Run `37096118756`, job `111126322315`:
+
+```text
+HEAD is now at 07b1386
+Running 20 tests using 1 worker
+20 passed
+Running 3 tests using 1 worker
+3 passed
+```
+
+## Exact-head final
+
+e2e-preview run `37096855417`, job `111128459694`:
+
+```text
+HEAD is now at 7222846
+Running 20 tests using 1 worker
+Fila 1  GREEN
+Fila 2  GREEN
+Fila 3  GREEN
+Fila 4  GREEN
+Fila 5  GREEN
+Fila 6a GREEN
+Fila 6b GREEN
+Fila 7  GREEN
+Fila 8  GREEN
+Fila 9  GREEN
+delivered invariant GREEN
+20 passed (4.0m)
+3 passed (42.7s)
+```
+
+## CI exact-head
+
+Run `37096772088`:
+
+```text
+lint          success
+typecheck     success
+unit          success
+build         success
+db-tests      success
+bundle-budget success
+audit         failure
+```
+
+Unit:
+```text
+Test Files 114 passed (114)
+Tests      1712 passed (1712)
+```
+
+db-tests:
+```text
+All tests successful.
+Files=15, Tests=1671
+Result: PASS
+```
+
+Audit:
+```text
+braces <=3.0.3
+3 vulnerabilities found
+Severity: 2 moderate | 1 high
+```
+
+Dependency inputs are unchanged from develop:
+```text
+package.json:
+  HEAD    3585b3a09838bccfc09e7c1fe7b7a0b851d2f4eb
+  develop 3585b3a09838bccfc09e7c1fe7b7a0b851d2f4eb
+
+pnpm-lock.yaml:
+  HEAD    01a4d0052f6ee03c084ab80b28fa80a5de51c646
+  develop 01a4d0052f6ee03c084ab80b28fa80a5de51c646
+```
+
+## Intento de batería local adicional
+
+```text
+git clone --filter=blob:none --no-checkout https://github.com/cadeApp/cadeApp.git
+fatal: Could not resolve host: github.com
+```
+
+No se declara una ejecución que no ocurrió.

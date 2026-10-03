@@ -48,3 +48,12 @@ No se agrega AG nuevo.
 - **H17** aplica **pr-82/AG-97**: un log append-only conserva el conocimiento histórico y corrige hacia adelante.
 - **H03** refuerza la regla ya explícita de mutación: cambiar el `expect` no rompe la propiedad protegida; cambia el instrumento de medida.
 - H16 es también un agujero de la propia Ronda 3: pedir `incidents.length === 0` sin revisar primero si el helper fallaba cerrado dejó una vía de falso verde. La R4 corrige esa omisión.
+
+## Ronda 5
+
+No se agrega AG nuevo.
+
+- H03 quedó cerrado aplicando la regla ya existente: la mutación cambia la propiedad/dato test-owned, nunca el `expect`.
+- H16/H18 confirman **pr-82/AG-76**: los negativos solo son útiles cuando la fuente falla cerrado y el test afirma la acción positiva que transporta el dato.
+- H17 confirma **pr-82/AG-97**: la corrección documental se hace hacia adelante, no reescribiendo el pasado.
+- El audit rojo es un buen ejemplo de por qué el color global del workflow no basta: todos los jobs de T-304 están verdes y el único fallo proviene de un lockfile idéntico a develop.
