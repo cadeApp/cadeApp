@@ -1921,3 +1921,56 @@ describe('T-006 — Contratos de dominio y rondas conductuales (H01..H13)', () =
     });
   });
 });
+
+describe('CC-019: área de servicio de Aguilares con los barrios periféricos', () => {
+  // Referencias aprobadas por Lautaro073 (docs/contracts/CC-019.md, tabla «Problema»).
+  const PERIPHERAL_POINTS = [
+    { name: '17 San Lorenzo (rótulo del plano)', lat: -27.45601, lng: -65.61395 },
+    { name: '19 Gambarte', lat: -27.456143, lng: -65.603636 },
+    { name: '20 Terán', lat: -27.456337, lng: -65.602134 },
+    { name: '67 Virgen de la Merced', lat: -27.455233, lng: -65.602138 },
+    { name: '65 Santa Rosa (OSM)', lat: -27.466365, lng: -65.619503 },
+    { name: '65 Santa Rosa, extremo sur (Motel Grey)', lat: -27.4671558, lng: -65.6196513 },
+    { name: '55 San Miguel (canchita)', lat: -27.4284408, lng: -65.5892114 },
+    { name: '56 San Antonio (capilla)', lat: -27.4272716, lng: -65.595871 },
+    { name: '25 El Ceibal', lat: -27.3964375, lng: -65.6359375 },
+    { name: '26 Santa Emilia (Monte Rico Alto)', lat: -27.4018733, lng: -65.6181326 },
+    { name: 'Monte Rico (caserío)', lat: -27.383486, lng: -65.627223 },
+  ] as const;
+
+  it('fija los cuatro límites aprobados', () => {
+    expect(AGUILARES_BOUNDS).toEqual({
+      minLat: -27.48,
+      maxLat: -27.38,
+      minLng: -65.645,
+      maxLng: -65.58,
+    });
+  });
+
+  it.each(PERIPHERAL_POINTS)('acepta $name', ({ lat, lng }) => {
+    expect(isWithinAguilaresBounds(lat, lng)).toBe(true);
+    expect(aguilaresCoordPairSchema.safeParse({ lat, lng }).success).toBe(true);
+    expect(validateRoutePointsAndCalculateDistanceM({ lat, lng }, { lat: -27.432, lng: -65.615 }).ok).toBe(
+      true
+    );
+  });
+
+  it.each([
+    { edge: 'sur', lat: -27.4801, lng: -65.615 },
+    { edge: 'norte', lat: -27.3799, lng: -65.615 },
+    { edge: 'oeste', lat: -27.432, lng: -65.6451 },
+    { edge: 'este', lat: -27.432, lng: -65.5799 },
+  ])('rechaza un punto apenas fuera del borde $edge', ({ lat, lng }) => {
+    expect(isWithinAguilaresBounds(lat, lng)).toBe(false);
+    expect(aguilaresCoordPairSchema.safeParse({ lat, lng }).success).toBe(false);
+    expect(validateRoutePointsAndCalculateDistanceM({ lat, lng }, { lat: -27.432, lng: -65.615 })).toEqual({
+      ok: false,
+      code: 'OUT_OF_BOUNDS_AGUILARES',
+    });
+  });
+
+  it('acepta las cuatro esquinas exactas, como el between de Postgres', () => {
+    expect(isWithinAguilaresBounds(-27.48, -65.645)).toBe(true);
+    expect(isWithinAguilaresBounds(-27.38, -65.58)).toBe(true);
+  });
+});
