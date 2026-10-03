@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import * as SelectPrimitive from '@radix-ui/react-select';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/ui/cn';
 
@@ -111,16 +110,9 @@ export function Select({
         listboxId,
       }}
     >
-      <SelectPrimitive.Root
-        value={currentValue}
-        onValueChange={handleSelect}
-        open={open}
-        onOpenChange={setOpen}
-      >
-        <div className="relative w-full" data-cade-select-root="true">
-          {children}
-        </div>
-      </SelectPrimitive.Root>
+      <div className="relative w-full" data-cade-select-root="true">
+        {children}
+      </div>
     </SelectInternalContext.Provider>
   );
 }
