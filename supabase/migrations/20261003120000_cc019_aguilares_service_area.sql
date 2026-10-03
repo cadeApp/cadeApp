@@ -342,7 +342,7 @@ begin
     v_lng1 := coalesce(v_contacts.pickup_lng, v_pickup.centroid_lng);
     v_lat2 := coalesce(v_contacts.dropoff_lat, v_dropoff.centroid_lat);
     v_lng2 := coalesce(v_contacts.dropoff_lng, v_dropoff.centroid_lng);
-    if v_lat1 not between -27.4550 and -27.3800 or v_lat2 not between -27.4550 and -27.3800
+    if v_lat1 not between -27.4800 and -27.3800 or v_lat2 not between -27.4800 and -27.3800
       or v_lng1 not between -65.6450 and -65.5800 or v_lng2 not between -65.6450 and -65.5800 then
       raise exception 'OUT_OF_BOUNDS_AGUILARES' using errcode = 'P0001';
     end if;
