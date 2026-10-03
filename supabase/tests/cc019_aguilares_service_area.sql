@@ -65,18 +65,21 @@ exception when others then
 end;
 $$;
 
--- Ejecuta DML como postgres y devuelve el SQLSTATE o 'ok'.
+-- Ejecuta DML como postgres y devuelve el SQLSTATE, 'ok' o 'no_row' si no tocó ninguna fila.
 create function pg_temp.try_dml(p_sql text) returns text language plpgsql as $$
+declare v_rows integer;
 begin
   execute p_sql;
-  return 'ok';
+  get diagnostics v_rows = row_count;
+  return case when v_rows > 0 then 'ok' else 'no_row' end;
 exception when others then
   return sqlstate;
 end;
 $$;
 
--- Solicitud en borrador con retiro en (lat, lng) y entrega en el centro; luego publish_request.
-create function pg_temp.publish_from(p_lat numeric, p_lng numeric) returns jsonb language plpgsql as $$
+-- Solicitud en borrador con retiro y entrega en los pines dados; luego publish_request.
+create function pg_temp.publish_between(p_pickup_lat numeric, p_pickup_lng numeric,
+  p_dropoff_lat numeric, p_dropoff_lng numeric) returns jsonb language plpgsql as $$
 begin
   delete from public.rate_limits where subject = pg_temp.actor(1)::text;
   delete from public.audit_log where target_id = pg_temp.actor(20)::text;
@@ -92,12 +95,22 @@ begin
     request_id, pickup_address, dropoff_address, recipient_name, recipient_phone,
     recipient_consent_declared, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng
   ) values (pg_temp.actor(20), 'Retiro de prueba', 'Entrega de prueba', 'Persona de prueba',
-    '+543865000000', true, p_lat, p_lng, -27.432000, -65.615000);
+    '+543865000000', true, p_pickup_lat, p_pickup_lng, p_dropoff_lat, p_dropoff_lng);
   return pg_temp.invoke(1, format('select public.publish_request(%L)', pg_temp.actor(20)));
 exception when others then
   -- Un CHECK de delivery_request_contacts rechazó el pin: se informa como error, sin abortar pgTAP.
   return jsonb_build_object('error', sqlerrm, 'sqlstate', sqlstate);
 end;
+$$;
+
+-- Retiro en el punto bajo prueba y entrega en el centro.
+create function pg_temp.publish_from(p_lat numeric, p_lng numeric) returns jsonb language sql as $$
+  select pg_temp.publish_between(p_lat, p_lng, -27.432000, -65.615000);
+$$;
+
+-- PR225-H01: retiro en el centro y entrega en el punto bajo prueba.
+create function pg_temp.publish_to(p_lat numeric, p_lng numeric) returns jsonb language sql as $$
+  select pg_temp.publish_between(-27.432000, -65.615000, p_lat, p_lng);
 $$;
 
 -- 1. Los 8 CHECK conservan su nombre.
@@ -130,9 +143,27 @@ select ok(
     -> 'data' ->> 'routeDistanceM') is not null,
   'CC-019 calculate_route_distance acepta ' || name) from cc019_inside;
 
+-- PR225-H01: el mismo punto como destino.
+select ok(
+  (pg_temp.invoke(1, format('select public.calculate_route_distance(-27.432000, -65.615000, %s, %s)', lat, lng))
+    -> 'data' ->> 'routeDistanceM') is not null,
+  'CC-019 calculate_route_distance acepta como destino ' || name) from cc019_inside;
+
 select is(
   pg_temp.publish_from(lat, lng) -> 'data' ->> 'status',
   'published', 'CC-019 delivery_request_contacts y publish_request aceptan retiro en ' || name) from cc019_inside;
+
+-- PR225-H01: el mismo punto como entrega.
+select is(
+  pg_temp.publish_to(lat, lng) -> 'data' ->> 'status',
+  'published', 'CC-019 delivery_request_contacts y publish_request aceptan entrega en ' || name) from cc019_inside;
+
+-- PR225-H01: el CHECK de dropoff acepta cada punto sobre la fila existente de la solicitud.
+select is(
+  pg_temp.try_dml(format(
+    'update public.delivery_request_contacts set dropoff_lat = %s, dropoff_lng = %s where request_id = %L',
+    lat, lng, pg_temp.actor(20))),
+  'ok', 'CC-019 contacts_dropoff_* acepta ' || name) from cc019_inside;
 
 -- La publicación va en su propia sentencia: una subconsulta en la misma sentencia vería la foto previa.
 select pg_temp.publish_from(-27.383486, -65.627223) -> 'data' ->> 'status' as cc019_last_publish;
