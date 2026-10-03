@@ -1,69 +1,61 @@
 # Comandos reproducibles — PR #234
 
-Las mutaciones de la revisión se aplican sobre copias en memoria o temporalmente y se restauran. `.github/workflows/ci.yml` no queda modificado en la rama.
+## Ronda 5 — cierre H01
 
-## Ronda 1
-
-```
-baseline                           GREEN
-exit 0 antes del audit            GREEN
-if: false en el step              GREEN
-continue-on-error en el job       GREEN
-```
-
-## Ronda 2
-
-```
-baseline                           GREEN
-exit0                              RED
-step_if_false                      RED
-job_continue                       RED
-step_shell_exit0                   GREEN
-job_defaults_shell                 GREEN
-extra_prior_step                   GREEN
-```
-
-## Ronda 3
+Sobre `05e746356da224990ef35af89c619d7a20956628`, reproduciendo la lógica exacta del guard de `tools/verify-audit-exceptions.test.ts`:
 
 ```
 baseline                          GREEN
-r2_step_shell                     RED
-r2_job_defaults                   RED
-r2_extra_step                     RED
-r1_exit0                          RED
-r1_step_if                        RED
-r1_job_continue                   RED
-workflow_defaults_shell           GREEN
+no_develop                       RED
+paths_ignore                     RED
+no_pr                            RED
+global_defaults                  RED
+step_shell                       RED
+job_defaults                     RED
+extra_step                       RED
+exit0                            RED
+step_if                          RED
+job_continue                     RED
 ```
 
-## Ronda 4
+Las diez mutaciones cubren el trigger, el contexto global, el job, sus steps y el branch bloqueante.
 
-Sobre `3b93acf2433c8ae0dd44ae854add2f395c99cf0e`:
+## CI final inspeccionado
+
+Run: `37144999309` / #1043.
+
+### audit
+
+Job `111267001324` → success.
+
+Fragmento relevante:
 
 ```
-baseline                          GREEN
-workflow_defaults_shell           RED
-r2_step_shell                     RED
-r2_job_defaults                   RED
-r2_extra_step                     RED
-r1_exit0                          RED
-r1_step_if                        RED
-r1_job_continue                   RED
-pr_develop_removed                GREEN
-pr_paths_ignore_all               GREEN
-pr_event_removed                  GREEN
+pnpm audit --audit-level=high
+3 vulnerabilities found
+Severity: 2 moderate | 1 high (1 ignored)
 ```
 
-`verify-workflows.test.mjs` solo exige que exista el texto `pull_request:`; por eso cubre `pr_event_removed`, pero no `pr_develop_removed` ni `pr_paths_ignore_all`.
+### unit
 
-### Mutaciones obligatorias para el próximo arreglo
+Job `111267001266` → failure.
 
-Una por vez:
+Resumen:
 
-1. `branches: [develop, staging, main]` → `branches: [staging, main]` bajo `pull_request`;
-2. agregar `paths-ignore: ['**']` bajo `pull_request`;
-3. quitar por completo el bloque `pull_request`.
+```
+Test Files  1 failed | 114 passed (115)
+Tests       1 failed | 1742 passed (1743)
+```
 
-Esperado: las tres RED por la igualdad del bloque `on:`.
+Único fallo:
 
-Después volver a reproducir las siete mutaciones anteriores. Restaurado: `5 passed (5)`.
+```
+FAIL tools/verify-fichas.test.ts
+Desincronizadas: T-333
+```
+
+## Causalidad del rojo externo
+
+Comparando `bc6329d941a510cc37d23827f5e3798e3839c065...05e746356da224990ef35af89c619d7a20956628`, el diff de la PR no contiene archivos de T-333. El fallo de `unit` no puede atribuirse a un cambio de T-333 realizado por esta PR.
+
+No corregir T-333 desde T-332.

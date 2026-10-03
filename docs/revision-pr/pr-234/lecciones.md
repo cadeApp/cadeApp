@@ -1,28 +1,25 @@
 # Lecciones de la PR #234 para `AGENTS.md` y las reglas
 
-**Fuente:** 2 hallazgos, 4 rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 2 hallazgos, 5 rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
 
-H01 continúa siendo `P08-control-no-cubre-lo-que-dice`. La protección fue cerrando capas: línea → job → steps → top-level. R4 muestra que una allowlist de nombres no basta si un bloque permitido (`on:`) conserva semántica mutable que puede desactivar el gate.
+H01 fue una instancia prolongada de `P08-control-no-cubre-lo-que-dice`. La revisión tuvo que ampliar el modelo de amenaza por capas hasta cubrir la cadena completa que determina si el audit realmente se ejecuta y bloquea.
 
 ## Lecciones
 
 No se asigna AG nuevo.
 
-- R1: presencia textual no prueba ejecución.
-- R2: blacklist parcial no prueba estructura.
-- R3: allowlist del job no prueba contexto heredado.
-- R4: allowlist de claves top-level no prueba el contenido de un bloque que controla si el workflow se dispara.
+- presencia textual no prueba ejecución;
+- blacklist parcial no prueba estructura;
+- allowlist del job no prueba contexto heredado;
+- allowlist top-level no prueba el contenido semántico del trigger;
+- para gates pequeños y críticos, conviene fijar por allowlist la estructura completa relevante y después probar mutaciones desde capas externas hacia internas.
 
-## Qué cambiar
+## Resultado
 
-1. Fijar el bloque `on:` por igualdad positiva.
-2. Conservar las allowlists ya ganadas de top-level/job/steps.
-3. Auditar CI solo cuando H01 cierre.
-4. Mantener el problema de T-333 fuera de esta PR.
+R5 cierra H01 con diez mutaciones independientes RED y evidencia de CI real. H02 permanece cerrado.
 
-## Advertencias
+## Bloqueo externo
 
-- No seguir agregando palabras prohibidas; el trigger debe expresarse como estructura esperada.
-- El fallo T-333 sigue heredado de develop y no corresponde corregirlo desde T-332.
+T-333 rompe `verify-fichas` en la base. No forma parte de esta PR y debe corregirse por separado antes de que el DoD de T-332 pueda marcar CI GREEN.
