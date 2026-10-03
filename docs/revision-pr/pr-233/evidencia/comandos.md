@@ -91,3 +91,98 @@ files: []
 ```
 
 La sonda no dejó cambios funcionales.
+
+---
+
+# Evidencia — PR #233 / Ronda 2
+
+## Reparación H01
+
+```text
+repair commit: aa47e0b2812e929f3900d42ed3909b6c45e0915d
+requested head: 12397b19d64f48b7e97ac44b82d92517e84a6ede
+```
+
+CI reparación `37107580778`:
+
+```text
+unit: 114 files / 1738 tests PASS
+verify-workflows: 49/49 PASS
+db-tests: 17 files / 1807 tests PASS
+typecheck/lint/build/bundle: PASS
+audit: braces advisory externo
+```
+
+## Sonda independiente exacta
+
+Mutación:
+
+```text
+commit 8ba6199e8812e3c3af32c377bf27e763e3334ec2
+playwright.config.ts:
++ testMatch: /smoke\.spec\.ts$/,
+```
+
+No se modificó `verify-workflows.test.mjs`.
+
+Run:
+
+```text
+37107968761
+```
+
+Resultado:
+
+```text
+Vitest: 114/114 files, 1738/1738 tests PASS
+
+verify-workflows:
+49 tests
+48 pass
+1 fail
+```
+
+Test fallido:
+
+```text
+the chromium and global-settings projects effectively discover every spec of e2e/specs, with no narrowing
+```
+
+Diferencia detectada:
+
+```text
+missing chromium|main-flow.spec.ts
+missing chromium|request-states.spec.ts
+present chromium|smoke.spec.ts
+present global-settings|subscription.global-settings.spec.ts
+```
+
+## Restauración y GREEN
+
+Revert normal:
+
+```text
+f09c7ad6adf8363425d5ccff84f8d9cb2aeeb5d6
+```
+
+Comparación contra el HEAD pedido:
+
+```text
+12397b19...f09c7ad
+files: []
+```
+
+CI posterior:
+
+```text
+run 37108153451
+typecheck success
+lint success
+build success
+bundle-budget success
+unit success — 1738/1738
+verify-workflows success — 49/49
+db-tests success — 1807/1807
+database.types.ts sin diff
+audit failure — braces externo
+```
