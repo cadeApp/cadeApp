@@ -333,6 +333,38 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
       expect(result.current.offers).toHaveLength(1);
     });
 
+    it('E: si tras el reconnect arranca un refetch competidor que trae datos frescos, no hay una llamada #3', async () => {
+      onlineManager.setOnline(true);
+      const { fetcher, result } = setupInFlight();
+
+      await waitFor(() => {
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(result.current.isRefetching).toBe(true);
+      });
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+      await flushMicrotasks();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      // Con la #1 todavía abierta, un invalidate explícito (cancelRefetch: true por defecto) la reemplaza por la #2.
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(requestId) });
+      });
+
+      await waitFor(() => {
+        expect(result.current.offers.map((o) => o.id)).toContain(newOffer.id);
+        expect(result.current.isRefetching).toBe(false);
+      });
+      await flushMicrotasks();
+
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
     it('D: desmontar antes del settle no deja un refetch tardío', async () => {
       onlineManager.setOnline(true);
       const { first, fetcher, result, unmount } = setupInFlight();

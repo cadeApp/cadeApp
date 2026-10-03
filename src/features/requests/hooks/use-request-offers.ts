@@ -65,10 +65,14 @@ export function useRequestOffers(
   const queryKey = requestKeys.offers(requestId);
   const enabled = Boolean(requestId) && (options?.enabled ?? true);
 
+  // T-333: generación de cada fetch, incrementada al entrar realmente al queryFn (ver latch de reconexión).
+  const fetchGenerationRef = useRef(0);
+
   const query = useInfiniteQuery(
     {
       queryKey,
       queryFn: async ({ pageParam }): Promise<LiveOffersResponse> => {
+        fetchGenerationRef.current += 1;
         if (options?.fetcher) {
           const res = await options.fetcher(pageParam);
           if ('data' in res && 'nextCursor' in res) {
@@ -153,28 +157,28 @@ export function useRequestOffers(
   }, [currentOffers, options]);
 
   // T-333: si offline → online ocurre mientras un fetch sigue en vuelo, TanStack (onOnline con
-  // cancelRefetch: false) reutiliza ese fetch y no pide datos nuevos. Se recuerda solo ese caso y, cuando esa
-  // misma operación termina, se refetchea una vez. Cada operación se identifica por dataUpdateCount +
-  // errorUpdateCount, que cambia al resolverse; así no depende del orden de los listeners de onlineManager.
+  // cancelRefetch: false) reutiliza ese fetch y no pide datos nuevos. Se recuerda la generación que estaba en
+  // vuelo y, cuando la query vuelve a idle, se refetchea una vez solo si no arrancó ninguna generación posterior
+  // (un refetch competidor, p. ej. un invalidate, ya trae datos posteriores al reconnect). No depende del orden
+  // de los listeners de onlineManager: solo compara generaciones.
   const reconnectDuringFetchRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
     const key = requestKeys.offers(requestId);
-    let fetchAtOffline: number | null = null;
+    let generationAtOffline: number | null = null;
 
     const unsubscribe = onlineManager.subscribe((online) => {
-      const state = queryClient.getQueryState(key);
-      const operation = state ? state.dataUpdateCount + state.errorUpdateCount : null;
-      const fetching = state?.fetchStatus === 'fetching';
+      const fetching = queryClient.getQueryState(key)?.fetchStatus === 'fetching';
+      const generation = fetchGenerationRef.current;
       if (!online) {
-        fetchAtOffline = fetching ? operation : null;
+        generationAtOffline = fetching ? generation : null;
         return;
       }
-      if (fetchAtOffline !== null && fetching && operation === fetchAtOffline) {
-        reconnectDuringFetchRef.current = operation;
+      if (generationAtOffline !== null && fetching && generation === generationAtOffline) {
+        reconnectDuringFetchRef.current = generation;
       }
-      fetchAtOffline = null;
+      generationAtOffline = null;
     });
 
     return () => {
@@ -188,12 +192,16 @@ export function useRequestOffers(
   useEffect(() => {
     const pending = reconnectDuringFetchRef.current;
     if (pending === null) return;
-    const state = queryClient.getQueryState(requestKeys.offers(requestId));
-    if (!state || state.dataUpdateCount + state.errorUpdateCount === pending) return;
+    // Ya arrancó una generación posterior al reconnect: esa trae los datos nuevos.
+    if (fetchGenerationRef.current > pending) {
+      reconnectDuringFetchRef.current = null;
+      return;
+    }
+    if (queryClient.getQueryState(requestKeys.offers(requestId))?.fetchStatus !== 'idle') return;
     reconnectDuringFetchRef.current = null;
-    // Si ya arrancó otro fetch después del reconnect, ese trae los datos nuevos.
-    if (state.fetchStatus !== 'idle' || !onlineManager.isOnline()) return;
-    void refetch({ cancelRefetch: false });
+    if (onlineManager.isOnline()) {
+      void refetch({ cancelRefetch: false });
+    }
   }, [fetchStatus, dataUpdatedAt, errorUpdatedAt, refetch, queryClient, requestId]);
 
   // Invalidación en tiempo real: NO muta la caché a mano; solo invalida con debounce
