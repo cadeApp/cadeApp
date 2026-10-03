@@ -90,7 +90,7 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
 
     // 3. Oráculo server-side en PostgreSQL
     const inspection = await getRequestInspectionData(stagingContext, requestId);
-    expect(inspection.requestStatus).toBe('published');
+    expect(inspection.requestStatus).toBe('draft'); // MUTACIÓN TEMPORAL H03
     expect(inspection.publishedAt).not.toBeNull();
     expect(inspection.expiresAt).not.toBeNull();
 
