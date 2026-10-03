@@ -1,74 +1,130 @@
-# Comandos reproducibles — PR #237
+# Comandos y evidencia reproducible — PR #237
 
 ## Ronda 1
 
 **SHA:** `7d65e8649302a788a8f9c2cdbf28d72295f6666d`
 
-La sesión tuvo acceso de lectura pero no checkout ejecutable. Ver `revisiones/ronda-1.md`.
+Ver `revisiones/ronda-1.md`.
 
 ## Ronda 2
 
 **SHA:** `40929053157569b68ec19d06d74e63c168248eb1`
 
-### Sincronización reproducida por GitHub
+El contenedor no resolvía GitHub y no se inventó una ejecución de mutaciones. Ver `revisiones/ronda-2.md`.
 
-- `f8707abc..40929053157569b68ec19d06d74e63c168248eb1`: 3 commits adelante, 0 atrás.
-- `develop..HEAD`: 6 commits adelante, 0 atrás.
-- `docs/revision-pr/pr-237/revisiones/ronda-1.md` conserva SHA de blob `ca9e2fac...`.
-- `hallazgos.jsonl` conservaba SHA de blob `a69cb2b5...` antes de este commit de R2.
+## Ronda 3 final
 
-### Limitación de ejecución
+**SHA funcional revisado:** `8b8142b35ddef3c87066398a4ad9a5eed125b36e`
 
-El contenedor de revisión no resuelve `github.com`, por lo que no fue posible crear un worktree ni repetir Vitest/mutaciones. No se registra un RED ficticio.
+### Sincronización
 
-Intento de conectividad:
+GitHub compare:
 
-    git ls-remote https://github.com/cadeApp/cadeApp.git refs/heads/feat/T-325-unified-document-upload
-    fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/': Could not resolve host: github.com
+    develop...feat/T-325-unified-document-upload
+    status: ahead
+    ahead_by: 8
+    behind_by: 0
+    base/merge-base: e39569b59fa8203df9893dbb824cbc4a317d4181
 
-### H01 — mutación a repetir en ronda final
+Desde la revisión R2:
 
-Baseline:
+    4c85f499ca112ab8ca343cb99f57593d2f4b2dcd...8b8142b35ddef3c87066398a4ad9a5eed125b36e
+    1 commit
+    3 archivos: bitácora + README evidencia + 360-05-cargado.jpg
 
-    pnpm vitest run src/features/courier-onboarding/components.test.tsx -t "T-325"
+### Evidencia visual abierta por el revisor
 
-Mutación independiente:
+Se leyeron los blobs en base64 desde GitHub y se renderizaron como imagen, sin usar el texto del README como sustituto:
 
-    # En handleOptionalUpload, antes del try, insertar temporalmente:
-    setOptionalDocs((prev) => ({ ...prev, [kind]: undefined }));
-
-Esperado: los cuatro casos `license|insurance × compresión|subida` deben quedar RED. Restaurado: GREEN.
-
-### H02 — mutación a repetir en ronda final
-
-Mutación independiente:
-
-    # Quitar temporalmente focus-within:ring-2 de DocumentUploadCard
-
-Esperado: los dos casos PR237-H02 deben quedar RED. Restaurado: GREEN.
-
-### H03 — cierre visual
-
-No tocar SQL/RLS. Crear una cuenta courier nueva desde `/register` en Develop, aceptar TOS/Privacy, iniciar sesión y abrir el onboarding. El registro llama `activate_account_consents`; CC-007 actualiza `consent_status='active'`.
-
-Capturar:
-
+    src/features/courier-onboarding/evidence/T-325/360-04-foco-teclado.jpg
     src/features/courier-onboarding/evidence/T-325/360-05-cargado.jpg
 
-o equivalente a 390 px, mostrando archivo + «Cargado».
+Observado en `360-05-cargado.jpg`:
 
-Actualizar el README de evidencia y la bitácora.
+    Licencia de con...   licencia.png   Cargado
+    Seguro               poliza.png     Cargado
 
-### Revalidación final
+Observado en `360-04-foco-teclado.jpg`:
 
-    pnpm vitest run src/features/courier-onboarding/components.test.tsx
-    pnpm typecheck
-    pnpm lint
-    pnpm test
-    git diff --check
-    pnpm vitest run tools/verify-fichas.test.ts
-    node .github/workflows/verify-workflows.test.mjs
-    node docs/adr/verify-adr.test.mjs
-    node docs/revision-pr/analizar.mjs verificacion
+    anillo visible alrededor de la tarjeta de licencia enfocada
 
-Cuando no queden bloqueantes, auditar también los logs de CI del SHA exacto.
+### CI exact-head
+
+Run: **37154131228 / CI #1064**
+
+Resumen del job unit:
+
+    Test Files  116 passed (116)
+    Tests       1774 passed (1774)
+    All files   83% statements | 82% branches | 77.36% funcs | 83% lines
+
+verify-workflows:
+
+    tests 49
+    pass 49
+    fail 0
+
+verify-adr:
+
+    tests 6
+    pass 6
+    fail 0
+
+DB:
+
+    All tests successful.
+    Files=1, Tests=10
+    Result: PASS
+
+    All tests successful.
+    Files=17, Tests=1807
+    Result: PASS
+
+Build:
+
+    Compiled successfully
+
+Lint:
+
+    ✔ No ESLint warnings or errors
+
+Advisories globales no bloqueantes:
+
+    Prettier: code style issues en archivos preexistentes (advisory)
+    /admin/audit: 234 kB > 180 kB (bundle advisory)
+    pnpm audit: 3 vulnerabilities (audit configurado como advisory según política vigente)
+
+### E2E Preview exact-head
+
+Workflow run: **37154218462**
+
+El job `report-preview-status` publicó:
+
+    RESULT: success
+    TARGET_SHA: 8b8142b35ddef3c87066398a4ad9a5eed125b36e
+
+Playwright:
+
+    Running 20 tests using 1 worker
+    20 passed (4.1m)
+
+Global settings:
+
+    Running 3 tests using 1 worker
+    3 passed (45.5s)
+
+Status final del commit:
+
+    Vercel      success
+    e2e-preview success
+
+### Mutaciones H01/H02
+
+La revisión no registra un RED propio inexistente. La batería declarada por el autor queda como evidencia del autor; la verificación final del revisor se apoya en:
+
+- inspección de la propiedad y del test exact-head;
+- CI unit exact-head ejecutando el test dentro de 1774/1774;
+- evidencia visual real para foco;
+- E2E exact-head.
+
+No se modificó código para fabricar una demostración.

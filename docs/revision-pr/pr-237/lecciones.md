@@ -1,22 +1,26 @@
 # Lecciones de la PR #237 para `AGENTS.md` y las reglas
 
-**Fuente:** 3 hallazgos. Ronda 2 no agrega hallazgos nuevos.
+**Fuente:** 3 hallazgos, todos cerrados en Ronda 3. No hubo hallazgos nuevos en R2/R3.
 
 ## Patrón dominante
 
-No falta una regla nueva. H01 sigue siendo una aplicación directa de pr-56/AG-37 y P06; H02 de P13 + directiva visual; H03 de un DoD visual explícito que no puede cerrarse solo con unit tests.
+No hace falta una AG nueva:
 
-## Ronda 2
+- H01 fue una aplicación directa de pr-56/AG-37 / P06: enumerar la clase completa, incluyendo estado previo exitoso.
+- H02 ya está cubierta por P13 y la directiva visual: label + target no equivalen a foco visible.
+- H03 confirma que una tarea visual no se cierra solo con tests unitarios cuando la ficha exige navegador real.
 
-- H01 quedó corregido en estructura y el test ahora enumera documento × etapa de fallo × estado previo exitoso.
-- H02 incorporó foco visible y control específico.
-- H03 pasó de «sin evidencia» a «falta un único estado real: success/Cargado».
-- El 403 observado no justifica tocar RLS: el registro normal activa el consentimiento mediante CC-007. La lección operativa es usar una cuenta creada por el flujo vigente, no una cuenta vieja que quedó `pending`.
+## Qué funcionó
 
-## Sin AG nueva
+1. La matriz documento × etapa de fallo × estado previo hizo visible la regresión de persistencia que el primer test no cubría.
+2. Separar asociación label/input, target y foco evitó tratar accesibilidad como una sola aserción barata.
+3. La evidencia real contra Develop detectó que una cuenta vieja `pending` no servía para Storage; crear un courier por el flujo normal resolvió el entorno sin tocar RLS.
+4. El E2E Preview final corrió sobre el SHA exacto y cerró la validación del ambiente compartido.
 
-Agregar una regla nueva duplicaría controles ya existentes. La mejora útil es ejecutar esas reglas al cerrar la tarea: enumerar la clase completa, probar foco real y no sustituir navegador por mocks cuando la ficha exige evidencia visual.
+## No convertir en regla nueva
 
-## Advertencias
+La ausencia del token `success` y el truncado del título largo son observaciones preexistentes del patrón compartido. No son evidencia de que T-325 haya fallado ni justifican ampliar AGENTS.md desde esta PR.
 
-La revisión R2 no tuvo un checkout ejecutable y no firma H01/H02 como `arreglado-verificado`. La verificación final debe ocurrir sobre el SHA exacto que incluya la evidencia de success.
+## Advertencia de método
+
+R2 no tuvo worktree ejecutable y por eso dejó H01/H02 como `arreglado-sin-verificar`. R3 los cierra únicamente después de inspeccionar el SHA final, abrir la evidencia real y auditar CI/E2E exact-head; no se atribuye al revisor una mutación RED que no ejecutó.
