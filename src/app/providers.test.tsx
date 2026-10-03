@@ -1,11 +1,28 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import { onlineManager } from '@tanstack/react-query';
+import { onlineManager, useQuery } from '@tanstack/react-query';
 import { Providers } from './providers';
 
-describe('T-333 / PR236-H01: frontera navegador → onlineManager en Providers', () => {
+function setNavigatorOnLine(value: boolean) {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => value });
+}
+
+function ReconnectProbe({ queryFn }: { queryFn: () => Promise<string> }) {
+  const query = useQuery({
+    queryKey: ['t333', 'reconnect-probe'],
+    queryFn,
+    initialData: 'inicial',
+    initialDataUpdatedAt: 0,
+    retry: false,
+    staleTime: 0,
+    refetchOnReconnect: 'always',
+  });
+  return <div>{query.data}</div>;
+}
+
+describe('T-333 / PR236-H01: frontera navegador → onlineManager → refetch dentro del Providers real', () => {
   const originalOnLine = Object.getOwnPropertyDescriptor(window.navigator, 'onLine');
 
   afterEach(() => {
@@ -18,31 +35,42 @@ describe('T-333 / PR236-H01: frontera navegador → onlineManager en Providers',
     onlineManager.setOnline(true);
   });
 
-  it('sincroniza el estado inicial desde navigator.onLine y sigue los eventos online/offline de window', async () => {
-    onlineManager.setOnline(true);
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, get: () => false });
+  it('secuencia real del defecto: tras el fetch inicial, offline → online de window produce una llamada nueva', async () => {
+    const queryFn = vi.fn<() => Promise<string>>().mockResolvedValue('servidor');
 
-    const { unmount } = render(
+    // A–C: navegador online, singleton online, Providers real con una query activa.
+    setNavigatorOnLine(true);
+    onlineManager.setOnline(true);
+    render(
       <Providers>
-        <div>probe</div>
+        <ReconnectProbe queryFn={queryFn} />
       </Providers>
     );
-    expect(screen.getByText('probe')).toBeDefined();
 
+    // D: fetch inicial (initialDataUpdatedAt: 0) terminado antes del baseline.
     await waitFor(() => {
-      expect(onlineManager.isOnline()).toBe(false);
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('servidor')).toBeDefined();
     });
+    const baseline = queryFn.mock.calls.length;
 
-    act(() => {
-      window.dispatchEvent(new Event('online'));
-    });
-    expect(onlineManager.isOnline()).toBe(true);
-
+    // E–F: corte de red del navegador.
+    setNavigatorOnLine(false);
     act(() => {
       window.dispatchEvent(new Event('offline'));
     });
     expect(onlineManager.isOnline()).toBe(false);
 
-    unmount();
+    // G–H: vuelve la red.
+    setNavigatorOnLine(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(onlineManager.isOnline()).toBe(true);
+
+    // I: TanStack refetchea por refetchOnReconnect: 'always', sin refetch manual.
+    await waitFor(() => {
+      expect(queryFn.mock.calls.length).toBeGreaterThan(baseline);
+    });
   });
 });
