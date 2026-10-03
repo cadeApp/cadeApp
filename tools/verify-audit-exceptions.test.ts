@@ -84,6 +84,16 @@ const AUDIT_JOB_SETUP_STEPS = [
 ];
 const AUDIT_STEP_KEYS = ['name: Audit dependencies (advisory until contracts-v1)', 'run: |'];
 
+// PR234-H01 (Ronda 3): claves de nivel superior del workflow. Un `defaults:` o `env:` global cambiaría el contexto
+// de ejecución de todos los jobs, así que cualquier clave nueva obliga a revisión explícita.
+const CI_TOP_LEVEL_KEYS = ['name: CI', 'on:', 'permissions:', 'concurrency:', 'jobs:'];
+
+function topLevelKeys(workflow: string): string[] {
+  return meaningful(workflow.replace(/\r\n/g, '\n').split('\n'))
+    .filter((line) => indentOf(line) === 0)
+    .map((line) => line.trim());
+}
+
 /** Script de `run: |` del step, sin la indentación común. */
 function runScript(step: string[]): string[] {
   const start = step.findIndex((line) => /^ {8}run: \|$/.test(line));
@@ -143,7 +153,11 @@ describe('excepciones de pnpm audit (T-332)', () => {
 
   it('CI sigue corriendo pnpm audit con umbral high, bloqueante y sin bypass', () => {
     // PR234-H01: se valida la estructura del job y del step, no solo palabras sueltas.
-    const job = extractJob(readFileSync('.github/workflows/ci.yml', 'utf8'), 'audit');
+    const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
+    expect(topLevelKeys(workflow), 'CI top-level keys must match the reviewed allowlist').toEqual(
+      CI_TOP_LEVEL_KEYS
+    );
+    const job = extractJob(workflow, 'audit');
     expect(job, 'ci.yml must keep the `audit` job').toBeDefined();
     // PR234-H01 (Ronda 2): allowlist. Las claves directas del job son exactamente las revisadas, así que
     // `if:`, `continue-on-error:`, `defaults:`, `env:`, `container:` o cualquier otra nueva lo dejan RED.
