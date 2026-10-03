@@ -1,144 +1,144 @@
 # Evidencia reproducible — PR #236 / T-333
 
-## Ronda 4 — SHA y delta
+## Ronda 5 — SHA y delta
 
 ```text
 base develop: bc6329d941a510cc37d23827f5e3798e3839c065
-commit revisión R3: 9e1d77af02fde30134aadbb872c6ca14b8059ce8
-head técnico R4: 4a339d4393f577ef46f3b817bec964c98bbb91d3
-delta:
+commit revisión R4: 894acbbb6b8e727d5d0f8b1541ff2a5b977b9032
+head técnico R5: 90ce6d1ea5d781211a95e96bd46d830ca916f0b4
+delta autor:
   docs/tasks/log/T-333.md
   src/features/requests/hooks/use-request-offers.test.tsx
   src/features/requests/hooks/use-request-offers.ts
 ```
 
-## CI exact-head
+## Control E — refetch competidor
 
-Run `37147483662`:
-
-```text
-use-request-offers.test.tsx          17 passed
-use-realtime-invalidation.test.tsx   12 passed
-providers.test.tsx                    1 passed
-Test Files                          115 passed
-Tests                             1747 passed
-typecheck                           success
-lint                                success
-build                               success
-db-tests                            success
-bundle-budget                       success
-audit                               failure por braces (externo)
-```
-
-Preview `37147561319`:
-
-```text
-checkout 4a339d4393f577ef46f3b817bec964c98bbb91d3
-20 chromium passed
-3 global-settings passed
-```
-
-## H01 verificado
-
-Control B:
-
-```text
-fetch #1 pending
-offline
-online
-calls = 1
-resolve #1
-wait calls = 2
-new data visible
-flush
-calls = 2
-```
-
-Controles adicionales:
-
-```text
-A idle reconnect: baseline + 1 exacto
-C sin reconnect: 1 llamada
-D unmount antes del settle: 1 llamada
-```
-
-Bitácora declara:
-
-```text
-M5 latch neutralizado:
-  B RED
-  idle GREEN
-  Realtime GREEN
-restaurado:
-  todos GREEN
-```
-
-## PR236-R01 — contrato que falta cubrir
-
-Documentación oficial actual de TanStack:
-
-```text
-RefetchOptions.cancelRefetch
-default: true
-
-true:
-  una request actualmente corriendo se cancela antes de realizar una nueva
-
-false:
-  no se hace un nuevo refetch si ya hay una request en curso
-```
-
-`InvalidateOptions` hereda `RefetchOptions`.
-
-Referencias:
-- https://tanstack.com/query/latest/docs/framework/react/reference/interfaces/RefetchOptions
-- https://tanstack.com/query/latest/docs/framework/react/reference/interfaces/InvalidateOptions
-- https://github.com/TanStack/query/blob/main/packages/query-core/src/query.ts
-
-## RED esperado para R01
-
-Test E:
+Propiedad commiteada:
 
 ```text
 fetch #1 deferred y activo
 offline
 online
-latch armado
 calls = 1
-
-queryClient.invalidateQueries(queryKey)
--> TanStack puede cancelar #1
--> fetch #2 empieza
--> #2 devuelve datos frescos
-
-esperar idle
-flush effects
-
-REQUERIDO:
-calls = 2
-
-HEAD actual:
-riesgo de calls = 3 porque updateCount cambió al settle de #2 y el latch no sabe que #2 ya era una generación nueva
+invalidateQueries(queryKey)
+fetch #2 empieza y reemplaza #1
+fetch #2 trae newOffer
+query idle
+flush
+calls final = 2
+nunca #3
 ```
 
-## Arreglo conceptual
-
-Rastrear generación de fetch iniciada, no solo contadores de settle.
-
-Ejemplo de propiedad:
+Implementación:
 
 ```text
-pendingGeneration = generación activa al reconnect
+fetchGenerationRef++
+al entrar realmente al queryFn
 
-si generation actual > pendingGeneration:
-  ya arrancó un fetch posterior al reconnect
+pending = generación activa al reconnect
+
+si fetchGenerationRef.current > pending:
+  ya arrancó un fetch posterior
   limpiar pending
-  NO refetch diferido
+  NO refetch
 
-si generation actual == pendingGeneration
-y esa generación termina
-y seguimos online:
+si query idle
+y no hubo generación posterior
+y sigue online:
   refetch una vez
 ```
 
-La implementación concreta puede variar; el test debe demostrar el contrato.
+## RED/GREEN declarado por bitácora
+
+```text
+pre-fix test E:
+  expected spy to be called 2 times, but got 3
+  1 failed | 17 passed
+
+post-fix:
+  18 passed
+```
+
+M6 declarada por autor:
+
+```text
+neutralizar detección generation > pending
+-> E RED
+-> resto focal GREEN
+restaurado -> GREEN
+```
+
+La mutación no fue ejecutada por la revisión; se conserva como evidencia del autor. La verificación independiente usa el test commiteado + CI exact-head.
+
+## CI exact-head
+
+Run `37148322479`:
+
+```text
+use-request-offers.test.tsx          18 passed
+use-realtime-invalidation.test.tsx   12 passed
+providers.test.tsx                    1 passed
+Test Files                          115 passed
+Tests                             1748 passed
+typecheck                           success
+lint                                success
+build                               success
+db-tests                            success
+bundle-budget                       success
+audit                               failure por braces (externo a T-333/T-332)
+```
+
+## Preview exact-head
+
+Run `37148389680`:
+
+```text
+checkout: 90ce6d1ea5d781211a95e96bd46d830ca916f0b4
+gate: success
+
+Chromium:
+  19 passed
+  1 flaky
+  flaky: T-303 / main-flow / medio de pago transferencia
+  causa observada: waitForURL login timeout
+  retry #1: passed
+
+global-settings:
+  3 passed
+```
+
+El flaky está fuera del delta/objetivo de T-333 y el workflow terminó success.
+
+## Alcance
+
+Anti-adulteración R5:
+
+```text
+.skip/.only: no
+sleeps/setTimeout nuevos: no
+force:true: no
+router.refresh: no
+/api/health manual: no
+setQueryData runtime: no
+notifications.spec.ts: sin cambios
+```
+
+## Estado final
+
+```text
+PR236-H01: arreglado-verificado
+PR236-R01: arreglado-verificado
+PR236-H02: arreglado-verificado
+bloqueantes: 0
+```
+
+Pendiente por contrato después del merge:
+
+```text
+PR #180
+sync con develop
+trusted Preview
+e2e/specs/notifications.spec.ts
+3 tests GREEN
+```

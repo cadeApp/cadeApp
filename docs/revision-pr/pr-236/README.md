@@ -7,8 +7,8 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-333-realtime-reconnect` → `develop` |
 | **Base revisada** | `bc6329d941a510cc37d23827f5e3798e3839c065` |
-| **HEAD revisado** | `4a339d4393f577ef46f3b817bec964c98bbb91d3` |
-| **Estado** | **BLOQUEADA — PR236-R01** |
+| **HEAD técnico revisado** | `90ce6d1ea5d781211a95e96bd46d830ca916f0b4` |
+| **Estado** | **SIN BLOQUEANTES** |
 
 ## Rondas
 
@@ -18,63 +18,55 @@
 | 2 | `7a0247af065864f3906887f54160542e977d04aa` | 1 bloqueante residual + 1 mejora | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `6a080cf2ccdd675e6be9ae69a517200f172af506` | 1 bloqueante | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 | 4 | `4a339d4393f577ef46f3b817bec964c98bbb91d3` | H01 cerrado + 1 regresión bloqueante | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
+| 5 | `90ce6d1ea5d781211a95e96bd46d830ca916f0b4` | **sin bloqueantes** | [`revisiones/ronda-5.md`](revisiones/ronda-5.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
 | PR236-H01 | El reconnect se pierde si vuelve online mientras el fetch inicial sigue en vuelo | alto | arreglado-verificado |
-| PR236-R01 | Un refetch competidor puede hacer que el latch dispare una tercera GET | alto | abierto |
-| PR236-H02 | El cuerpo del PR contradice el HEAD actual | bajo | abierto |
+| PR236-R01 | Un refetch competidor puede hacer que el latch dispare una tercera GET | alto | arreglado-verificado |
+| PR236-H02 | El cuerpo del PR contradice el HEAD actual | bajo | arreglado-verificado |
 
-## Ronda 4 — conclusión
+## Ronda 5 — conclusión
 
-La carrera original H01 quedó corregida:
+El arreglo final usa una **generación de fetch** incrementada al entrar realmente al `queryFn`.
 
-- el nuevo test deja la primera Promise en vuelo;
-- reconnect ocurre con esa operación activa;
-- no aparece una segunda llamada antes del settle;
-- al terminar el fetch viejo aparece exactamente una llamada adicional;
-- sin reconnect no aparece llamada extra;
-- unmount evita trabajo tardío;
-- la mutación del latch deja RED solo el caso in-flight;
-- CI exact-head ejecuta los 17 tests de ofertas y quedan verdes.
+Eso permite distinguir:
 
-Sin embargo, el mecanismo nuevo usa `dataUpdateCount + errorUpdateCount` como si identificara **qué fetch** está en curso. Esos contadores identifican settles, no inicios de fetch.
+- la operación que ya estaba en vuelo cuando ocurrió offline → online;
+- un fetch nuevo iniciado después del reconnect por otra causa;
+- el caso normal donde no arrancó una generación posterior y corresponde un único refetch diferido.
 
-Eso deja una regresión no cubierta: si después del reconnect otro mecanismo arranca un refetch —por ejemplo el catch-up de Realtime con `invalidateQueries()`— ese fetch puede traer datos frescos; al terminar cambia el contador, y el latch lo interpreta como «terminó el fetch viejo», lanzando una tercera GET innecesaria.
+El test E reproduce la interacción con `invalidateQueries()` mientras #1 sigue pendiente y exige exactamente dos llamadas; contra el estado de R4 daba 3 y con el HEAD actual queda en 2.
 
 ## Evidencia exact-head
 
-CI `37147483662`:
+CI `37148322479` sobre `90ce6d1ea5d781211a95e96bd46d830ca916f0b4`:
 
-- `use-request-offers.test.tsx`: **17/17**;
+- `use-request-offers.test.tsx`: **18/18**;
 - `use-realtime-invalidation.test.tsx`: **12/12**;
 - `providers.test.tsx`: **1/1**;
-- suite: **115/115 archivos, 1747/1747 tests**;
-- typecheck/lint/build/db-tests/bundle-budget: verdes;
+- suite: **115/115 archivos, 1748/1748 tests**;
+- typecheck: verde;
+- lint: verde;
+- build: verde;
+- db-tests: verde;
+- bundle-budget: verde;
 - audit: rojo únicamente por `braces`, externo a T-333/T-332.
 
-Preview `37147561319`:
+Preview `37148389680`:
 
-- checkout exacto `4a339d4393f577ef46f3b817bec964c98bbb91d3`;
-- chromium: **20/20**;
-- global-settings: **3/3**.
+- checkout exacto `90ce6d1ea5d781211a95e96bd46d830ca916f0b4`;
+- gate: **success**;
+- bloque Chromium: 19 passed + 1 flaky de T-303 que pasó en retry;
+- global-settings: **3/3**;
+- el flaky fue `main-flow.spec.ts` / flujo de transferencia, timeout de `waitForURL` en login, ajeno a T-333.
 
-La rama sigue 0 commits detrás de `develop` y mergeable.
+La rama está mergeable y `0` commits detrás de `develop`.
 
-## Qué falta
+## Pendiente obligatorio post-merge
 
-Agregar un RED donde:
+La ficha T-333 exige explícitamente que, **después del merge**, PR #180 se sincronice con `develop` y ejecute sus 3 tests de `e2e/specs/notifications.spec.ts` en trusted Preview.
 
-1. fetch #1 queda pendiente;
-2. offline → online arma el latch;
-3. antes de que #1 se resuelva, otro refetch explícito válido arranca fetch #2;
-4. fetch #2 termina con datos frescos;
-5. el total debe quedar exactamente en **2**, nunca 3.
-
-La forma más directa de reproducir la interacción real es `queryClient.invalidateQueries({ queryKey })`, ya que Realtime usa invalidación y TanStack tiene `cancelRefetch: true` por defecto para invalidaciones/refetch explícitos.
-
-El arreglo debe distinguir una **generación de fetch iniciada después del reconnect** del settle de la operación vieja. No alcanza contar data/error updates.
-
-Después de cerrar R01, actualizar nuevamente el body del PR: quedó viejo tras este commit técnico.
+Ese gate no puede completarse antes del merge y no deja bloqueantes técnicos abiertos en #236.
