@@ -1,8 +1,9 @@
 'use client';
 
+import * as React from 'react';
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { MotionProvider, Toaster } from '@/ui';
 import {
   isIosSafariNonStandalone,
@@ -34,6 +35,24 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   const [showIosGuide, setShowIosGuide] = useState(false);
+
+  // T-333: única fuente global navegador → onlineManager, con el estado inicial real. El refetch lo sigue
+  // decidiendo TanStack (refetchOnReconnect: 'always' en los hooks live); acá no se refetchea a mano.
+  useEffect(() => {
+    onlineManager.setEventListener((setOnline) => {
+      const handleOnline = () => setOnline(true);
+      const handleOffline = () => setOnline(false);
+
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      setOnline(navigator.onLine !== false);
+
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    });
+  }, []);
 
   useEffect(() => {
     // Registrar el Service Worker en producción o ambiente de navegador
