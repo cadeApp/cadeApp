@@ -19,3 +19,9 @@ Una aprobación de lista basada en una captura/transcripción anterior debe reab
 ## Georreferenciación
 
 La evidencia distingue correctamente “punto representativo derivado” de “centroide oficial”. Mantener esta distinción en UI/docs: error LOO de decenas de metros es compatible con recentrado aproximado, no con ubicación precisa.
+
+## Ronda 2
+
+Un advisory de dependencias que aparece sin cambio de `package.json` ni lockfile debe separarse de una regresión de la PR. En este caso el propio workflow lo declara advisory hasta contracts-v1; no corresponde modificar dependencias fuera del alcance de T-326 para conseguir un verde cosmético.
+
+La prueba de H04 es un buen patrón para migraciones idempotentes: alterar el estado previo y reejecutar la migración real registrada detecta divergencias que una base limpia no puede revelar.

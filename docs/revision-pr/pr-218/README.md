@@ -6,49 +6,43 @@
 | **Tarea** | T-326 · Issue #190 |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-326-aguilares-zones-onboarding` → `develop` |
-| **SHA funcional revisado** | `ea2b03a0d5cb5362e046bc6bdf4a0cff7e1169af` |
-| **Estado** | Draft · CON BLOQUEANTES |
+| **SHA funcional revisado** | `1d6f6b2a4042f35e18baf9fef8a014732dcd591e` |
+| **Estado** | Draft · SIN BLOQUEANTES |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `ea2b03a0d5cb5362e046bc6bdf4a0cff7e1169af` | 4 hallazgos técnicos + 1 decisión P1 | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `1d6f6b2a4042f35e18baf9fef8a014732dcd591e` | SIN BLOQUEANTES · H01–H05 verificados | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---:|---|
-| PR218-H01 | Select controlado emite valor y luego vacío | alto | abierto · CC-018 #219 |
-| PR218-H02 | publish_request fabrica 500 m sin ubicación efectiva | alto | abierto · T-330 #220 |
-| PR218-H03 | Falta demostrar RED del pgTAP T-326 | medio | abierto |
-| PR218-H04 | ON CONFLICT no sincroniza centroides documentados/null | medio | abierto |
-| PR218-H05 | El PDF completo agrega 03 — 1º de Mayo fuera de la lista aprobada | alto | decisión P1 pendiente |
+| PR218-H01 | Select controlado emite valor y luego vacío | alto | arreglado-verificado · CC-018 #219 / PR #222 |
+| PR218-H02 | publish_request fabrica distancia sin ubicación efectiva | alto | arreglado-verificado · T-330 #220 / PR #223 |
+| PR218-H03 | Falta demostrar RED del pgTAP T-326 | medio | arreglado-verificado · RED 6c8f29b → GREEN 34aa472 |
+| PR218-H04 | ON CONFLICT no sincroniza centroides documentados/null | medio | arreglado-verificado · upsert determinista + pgTAP divergente |
+| PR218-H05 | El PDF completo agrega 03 — 1º de Mayo | alto | arreglado-verificado · decisión P1 opción A |
 
-## Verificado como correcto
+## Resultado final verificado
 
-- Los 62 nombres actuales coinciden exactamente entre evidencia aprobada, migración, seed y pgTAP.
-- Georreferenciación actual: 62 barrios = 51 puntos derivados + 11 null.
-- Migración y seed coinciden exactamente con `barrios-centroides.json` en una base limpia.
-- No hay coordenadas duplicadas ni derivadas fuera de los bounds del producto.
-- El método documenta fuente, hash, 19 controles medidos / 17 usados, transformación afín y residuales.
-- LOO RMS: 32,9 m; máximo: 62,7 m.
-- La evidencia aclara correctamente que son puntos interiores representativos aproximados, no centroides oficiales ni centroides geométricos de polígonos.
-
-## Dependencias creadas durante la revisión
-
-- **CC-018 / #219:** corregir `src/ui/select.tsx`.
-- **T-330 / #220:** impedir que `publish_request` fabrique 500 m.
-- PR documental de coordinación: **#221**.
+- Rama sincronizada con `develop@125728b591950f0de2ecd520eea2617415ac9508`: 0 behind, mergeable.
+- Lista final: **63 barrios = 52 puntos derivados + 11 NULL**.
+- `03 — 1º de Mayo`: `-27.425778, -65.614882`, derivado reproducible e in-bounds.
+- Fuente, `barrios-centroides.json`, migración y seed coinciden exactamente.
+- Migración y seed usan el mismo upsert determinista de `centroid_lat`, `centroid_lng` y `active`.
+- El pgTAP prueba convergencia desde filas preexistentes divergentes reejecutando las sentencias reales registradas de la migración.
+- El selector del onboarding usa el `Select` compartido corregido por CC-018, sin workaround de `''` y sin `<select>` nativo operable.
+- Unit actual: **114 archivos / 1694 tests** GREEN; onboarding: **21/21**.
+- DB actual: **16 archivos / 1689 tests** GREEN; tipos DB sin diff.
+- typecheck, lint, build y bundle-budget GREEN; Vercel Preview READY.
+- `e2e-preview` bloqueado por `REQUIRES DEVELOP MIGRATION`: esperado para una PR con migración.
+- `audit` falla por advisory nuevo de `braces`; `package.json` y `pnpm-lock.yaml` son exactamente los mismos que `develop`, y el job está definido como advisory hasta contracts-v1. No es un hallazgo de T-326.
 
 ## Próximo paso
 
-No continuar implementación funcional de T-326 hasta:
-1. resolver/mergear #219;
-2. resolver/mergear #220;
-3. Lautaro073 decidir el tratamiento de `03 — 1º de Mayo`;
-4. corregir H04;
-5. demostrar H03;
-6. sincronizar `develop`, completar UI, mutaciones y checks finales.
+No hace falta otra ronda mientras el HEAD funcional no cambie.
 
-**No mergear PR #218 todavía.**
+Lautaro073 puede sacar la PR de Draft y mergearla cuando decida. La revisión no aprueba ni mergea por sí sola.
