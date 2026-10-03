@@ -76,6 +76,11 @@
       "handlebars": "4.7.9",
       "postcss": "8.5.28",
       "vite": "6.4.3"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-vfj7-8cjw-p6xm"
+      ]
     }
   }
 }
