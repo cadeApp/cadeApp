@@ -1,7 +1,12 @@
 'use client';
 
 import { useRef, useState, useContext, useEffect, useMemo } from 'react';
-import { QueryClient, QueryClientContext, useInfiniteQuery } from '@tanstack/react-query';
+import {
+  QueryClient,
+  QueryClientContext,
+  onlineManager,
+  useInfiniteQuery,
+} from '@tanstack/react-query';
 import { requestKeys } from '../query-keys';
 import { useRealtimeInvalidation } from '@/lib/hooks/use-realtime-invalidation';
 import type {
@@ -146,6 +151,50 @@ export function useRequestOffers(
       previousOffersRef.current = currentOffers;
     }
   }, [currentOffers, options]);
+
+  // T-333: si offline → online ocurre mientras un fetch sigue en vuelo, TanStack (onOnline con
+  // cancelRefetch: false) reutiliza ese fetch y no pide datos nuevos. Se recuerda solo ese caso y, cuando esa
+  // misma operación termina, se refetchea una vez. Cada operación se identifica por dataUpdateCount +
+  // errorUpdateCount, que cambia al resolverse; así no depende del orden de los listeners de onlineManager.
+  const reconnectDuringFetchRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    const key = requestKeys.offers(requestId);
+    let fetchAtOffline: number | null = null;
+
+    const unsubscribe = onlineManager.subscribe((online) => {
+      const state = queryClient.getQueryState(key);
+      const operation = state ? state.dataUpdateCount + state.errorUpdateCount : null;
+      const fetching = state?.fetchStatus === 'fetching';
+      if (!online) {
+        fetchAtOffline = fetching ? operation : null;
+        return;
+      }
+      if (fetchAtOffline !== null && fetching && operation === fetchAtOffline) {
+        reconnectDuringFetchRef.current = operation;
+      }
+      fetchAtOffline = null;
+    });
+
+    return () => {
+      unsubscribe();
+      reconnectDuringFetchRef.current = null;
+    };
+  }, [enabled, queryClient, requestId]);
+
+  const { fetchStatus, dataUpdatedAt, errorUpdatedAt, refetch } = query;
+
+  useEffect(() => {
+    const pending = reconnectDuringFetchRef.current;
+    if (pending === null) return;
+    const state = queryClient.getQueryState(requestKeys.offers(requestId));
+    if (!state || state.dataUpdateCount + state.errorUpdateCount === pending) return;
+    reconnectDuringFetchRef.current = null;
+    // Si ya arrancó otro fetch después del reconnect, ese trae los datos nuevos.
+    if (state.fetchStatus !== 'idle' || !onlineManager.isOnline()) return;
+    void refetch({ cancelRefetch: false });
+  }, [fetchStatus, dataUpdatedAt, errorUpdatedAt, refetch, queryClient, requestId]);
 
   // Invalidación en tiempo real: NO muta la caché a mano; solo invalida con debounce
   useRealtimeInvalidation({
