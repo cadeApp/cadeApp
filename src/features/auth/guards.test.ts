@@ -565,6 +565,14 @@ describe('T-334: onboarding incompleto redirige al onboarding sin loops', () => 
     expect(followGuard('/merchant/dashboard', session)).toBe('/courier/onboarding/identity');
   });
 
+  it('PR240-H01: la excepción del perfil es exacta; sus subrutas siguen yendo al onboarding', () => {
+    // /courier/profile exacto sigue accesible (muestra «Completá tu registro»).
+    expect(followGuard('/courier/profile', baseSession('courier', false))).toBe('/courier/profile');
+    expect(
+      followGuard('/courier/profile/notifications', baseSession('courier', false))
+    ).toBe('/courier/onboarding/identity');
+  });
+
   it('con onboarding completo no cambia nada', () => {
     for (const path of ['/merchant/dashboard', '/merchant/requests/new', '/merchant/onboarding']) {
       expect(evaluateRouteGuard(path, baseSession('merchant', true))).toEqual({ action: 'allow' });

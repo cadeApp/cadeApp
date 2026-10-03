@@ -1265,16 +1265,20 @@ describe('T-334: loginAction manda al onboarding cuando está incompleto', () =>
 
   type Row = Record<string, unknown> | null;
 
-  function mockLoginClient(rows: { profiles: Row; merchants?: Row; couriers?: Row }) {
+  function mockLoginClient(
+    rows: { profiles: Row; merchants?: Row; couriers?: Row },
+    failingTable?: 'merchants' | 'couriers'
+  ) {
     const tables: string[] = [];
     const from = vi.fn((table: string) => {
       tables.push(table);
+      const failing = table === failingTable;
       return {
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
             maybeSingle: vi.fn().mockResolvedValue({
-              data: rows[table as keyof typeof rows] ?? null,
-              error: null,
+              data: failing ? null : (rows[table as keyof typeof rows] ?? null),
+              error: failing ? { message: 'transient read error', code: '57014' } : null,
             }),
           })),
         })),
@@ -1318,6 +1322,22 @@ describe('T-334: loginAction manda al onboarding cuando está incompleto', () =>
     if (result.ok) expect(result.data.redirectTo).toBe('/courier/onboarding/identity');
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['merchant', 'merchants', '/merchant/dashboard'],
+    ['courier', 'couriers', '/courier/feed'],
+  ] as const)(
+    'D02: si la lectura del marcador de %s falla, conserva el destino normal del rol',
+    async (role, table, expected) => {
+      const { tables } = mockLoginClient({ profiles: { role, consent_status: 'active' } }, table);
+
+      const result = await loginAction({ email: 'nuevo@test.com', password: 'password123' });
+
+      expect(tables).toContain(table);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.data.redirectTo).toBe(expected);
+    }
+  );
 
   it('con onboarding completo conserva el destino por defecto', async () => {
     mockLoginClient({

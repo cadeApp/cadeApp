@@ -89,7 +89,7 @@ function isAllowedWhileOnboardingIncomplete(pathname: string, role: ProfileRole)
   if (role === 'courier') {
     return (
       matchesSegment(pathname, '/courier/onboarding') ||
-      matchesSegment(pathname, '/courier/profile')
+      pathname === '/courier/profile'
     );
   }
   return false;

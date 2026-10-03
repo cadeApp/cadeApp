@@ -222,16 +222,20 @@ describe('T-334: updateSession lee el onboarding con el cliente del usuario', ()
   type Row = Record<string, unknown> | null;
 
   /** Cliente de usuario simulado que responde según la tabla, como lo haría PostgREST con RLS. */
-  function mockUserClient(rows: { profiles: Row; merchants?: Row; couriers?: Row }) {
+  function mockUserClient(
+    rows: { profiles: Row; merchants?: Row; couriers?: Row },
+    failingTable?: 'merchants' | 'couriers'
+  ) {
     const selects: Array<{ table: string; columns: string }> = [];
     const from = vi.fn((table: string) => ({
       select: vi.fn((columns: string) => {
         selects.push({ table, columns });
+        const failing = table === failingTable;
         return {
           eq: vi.fn(() => ({
             maybeSingle: vi.fn().mockResolvedValue({
-              data: rows[table as keyof typeof rows] ?? null,
-              error: null,
+              data: failing ? null : (rows[table as keyof typeof rows] ?? null),
+              error: failing ? { message: 'transient read error', code: '57014' } : null,
             }),
           })),
         };
@@ -325,6 +329,25 @@ describe('T-334: updateSession lee el onboarding con el cliente del usuario', ()
     expect(response.headers.get('location')).toContain('/login?consentRequired=1');
     expect(selects.map((s) => s.table)).not.toContain('merchants');
   });
+
+  it.each([
+    ['merchant', 'merchants', '/merchant/dashboard'],
+    ['courier', 'couriers', '/courier/feed'],
+  ] as const)(
+    'D02: si la lectura del marcador de %s falla, no fuerza el onboarding (fail-open de navegación)',
+    async (role, table, path) => {
+      const { selects } = mockUserClient(
+        { profiles: { role, consent_status: 'active' } },
+        table
+      );
+
+      const response = await updateSession(new NextRequest(`http://localhost:3000${path}`));
+
+      expect(selects.map((s) => s.table)).toContain(table);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('location')).toBeNull();
+    }
+  );
 
   it('no usa service role: server.ts no importa el cliente admin', () => {
     const source = readFileSync(resolve(__dirname, 'server.ts'), 'utf8');
