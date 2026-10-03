@@ -252,3 +252,28 @@ behind: 27
 ```
 
 Los 27 commits nuevos son T-304/E2E y no pisan archivos de CC-019, pero requieren integración y CI exact-head nuevo.
+
+---
+
+# Evidencia reproducible — PR #225 / Ronda 3
+
+```text
+develop integrado: 55be618b26d4ab28f4030c8e8a7220d095e559b3
+merge commit: 70e35e6af3399c0c1c1be54eb458bbb2cac09c24
+behind: 0
+```
+
+CI exact-head: `37097970172`
+
+```text
+typecheck success
+lint success
+unit success — 114 files / 1731 tests
+build success
+db-tests success — 16 files / 1787 tests
+bundle-budget success
+database.types.ts sin diff
+Vercel READY
+audit failure — braces advisory externo
+e2e-preview BLOCKED / REQUIRES DEVELOP MIGRATION
+```
