@@ -25,8 +25,8 @@ alter table public.delivery_request_contacts
   drop constraint contacts_dropoff_lng_bounds,
   add constraint contacts_pickup_lat_bounds check (pickup_lat is null or pickup_lat between -27.4800 and -27.3800),
   add constraint contacts_pickup_lng_bounds check (pickup_lng is null or pickup_lng between -65.6450 and -65.5800),
-  add constraint contacts_dropoff_lat_bounds check (dropoff_lat is null or dropoff_lat between -27.4800 and -27.3800),
-  add constraint contacts_dropoff_lng_bounds check (dropoff_lng is null or dropoff_lng between -65.6450 and -65.5800);
+  add constraint contacts_dropoff_lat_bounds check (dropoff_lat is null or dropoff_lat between -27.4550 and -27.4100),
+  add constraint contacts_dropoff_lng_bounds check (dropoff_lng is null or dropoff_lng between -65.6400 and -65.5950);
 
 -- 2. calculate_route_distance
 create or replace function public.calculate_route_distance(
@@ -101,8 +101,8 @@ begin
   end if;
 
   if p_dropoff_lat is not null then
-    if p_dropoff_lat < -27.4800 or p_dropoff_lat > -27.3800 or
-       p_dropoff_lng < -65.6450 or p_dropoff_lng > -65.5800 then
+    if p_dropoff_lat < -27.4550 or p_dropoff_lat > -27.4100 or
+       p_dropoff_lng < -65.6400 or p_dropoff_lng > -65.5950 then
       raise exception using errcode = 'P0001', message = 'OUT_OF_BOUNDS_AGUILARES';
     end if;
   end if;
@@ -342,8 +342,8 @@ begin
     v_lng1 := coalesce(v_contacts.pickup_lng, v_pickup.centroid_lng);
     v_lat2 := coalesce(v_contacts.dropoff_lat, v_dropoff.centroid_lat);
     v_lng2 := coalesce(v_contacts.dropoff_lng, v_dropoff.centroid_lng);
-    if v_lat1 not between -27.4800 and -27.3800 or v_lat2 not between -27.4800 and -27.3800
-      or v_lng1 not between -65.6450 and -65.5800 or v_lng2 not between -65.6450 and -65.5800 then
+    if v_lat1 not between -27.4800 and -27.3800 or v_lat2 not between -27.4550 and -27.4100
+      or v_lng1 not between -65.6450 and -65.5800 or v_lng2 not between -65.6400 and -65.5950 then
       raise exception 'OUT_OF_BOUNDS_AGUILARES' using errcode = 'P0001';
     end if;
     -- Sin las 4 coordenadas efectivas no hay distancia: CC-017 prohíbe inventarla.
