@@ -697,63 +697,74 @@ export async function getRequestInspectionData(
     amountArs: row.amount_ars,
   }));
 
-  let incidents: Array<{ id: string; status: string; kind: string; reporterId: string }> = [];
+  let incidentsData: unknown = null;
   try {
-    const incBuilder = admin.from('incidents');
-    if (typeof (incBuilder as { select?: unknown }).select === 'function') {
-      const { data: incidentsData } = await incBuilder
-        .select('id, status, kind, reporter_id')
-        .eq('request_id', requestId);
-      if (incidentsData) {
-        incidents = (incidentsData as Array<{ id: string; status: string; kind: string; reporter_id: string }>).map((row) => ({
-          id: row.id,
-          status: row.status,
-          kind: row.kind,
-          reporterId: row.reporter_id,
-        }));
-      }
+    const { data, error: incErr } = await admin
+      .from('incidents')
+      .select('id, status, kind, reporter_id')
+      .eq('request_id', requestId);
+
+    if (incErr) {
+      throw new Error(`[E2E Inspection Error] Error al consultar incidents: ${incErr.message}`);
     }
-  } catch {
-    // Tolerante en mocks unitarios
+    incidentsData = data;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.startsWith('[E2E Inspection Error]')) {
+      throw err;
+    }
+    throw new Error(
+      `[E2E Inspection Error] Error inesperado al consultar incidents: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
-  let cancellationReasons: Array<{
-    id: string;
-    requestId: string;
-    offerId: string | null;
-    actorId: string;
-    action: string;
-    reason: string;
-  }> = [];
+  const incidents = (
+    (incidentsData as Array<{ id: string; status: string; kind: string; reporter_id: string }> | null) ?? []
+  ).map((row) => ({
+    id: row.id,
+    status: row.status,
+    kind: row.kind,
+    reporterId: row.reporter_id,
+  }));
+
+  let reasonsData: unknown = null;
   try {
-    const crBuilder = admin.from('request_cancellation_reasons');
-    if (typeof (crBuilder as { select?: unknown }).select === 'function') {
-      const { data: reasonsData } = await crBuilder
-        .select('id, request_id, offer_id, actor_id, action, reason')
-        .eq('request_id', requestId);
-      if (reasonsData) {
-        cancellationReasons = (
-          reasonsData as Array<{
-            id: string;
-            request_id: string;
-            offer_id: string | null;
-            actor_id: string;
-            action: string;
-            reason: string;
-          }>
-        ).map((row) => ({
-          id: row.id,
-          requestId: row.request_id,
-          offerId: row.offer_id,
-          actorId: row.actor_id,
-          action: row.action,
-          reason: row.reason,
-        }));
-      }
+    const { data, error: crErr } = await admin
+      .from('request_cancellation_reasons')
+      .select('id, request_id, offer_id, actor_id, action, reason')
+      .eq('request_id', requestId);
+
+    if (crErr) {
+      throw new Error(
+        `[E2E Inspection Error] Error al consultar request_cancellation_reasons: ${crErr.message}`
+      );
     }
-  } catch {
-    // Tolerante en mocks unitarios
+    reasonsData = data;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.startsWith('[E2E Inspection Error]')) {
+      throw err;
+    }
+    throw new Error(
+      `[E2E Inspection Error] Error inesperado al consultar request_cancellation_reasons: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
+
+  const cancellationReasons = (
+    (reasonsData as Array<{
+      id: string;
+      request_id: string;
+      offer_id: string | null;
+      actor_id: string;
+      action: string;
+      reason: string;
+    }> | null) ?? []
+  ).map((row) => ({
+    id: row.id,
+    requestId: row.request_id,
+    offerId: row.offer_id,
+    actorId: row.actor_id,
+    action: row.action,
+    reason: row.reason,
+  }));
 
   const rawReq = requestData as Record<string, unknown>;
 
