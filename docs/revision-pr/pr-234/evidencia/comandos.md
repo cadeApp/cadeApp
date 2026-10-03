@@ -1,34 +1,38 @@
-# Comandos reproducibles — PR #234
+# Evidencia reproducible — PR #234
 
-## Ronda 5 — cierre H01
+## Ronda 6 — integración final
 
-Sobre `05e746356da224990ef35af89c619d7a20956628`, reproduciendo la lógica exacta del guard de `tools/verify-audit-exceptions.test.ts`:
+- develop integrado: `f74c66bc1f18b1962e31c83a433ef995201765f3`
+- SHA revisado: `5e341375459b1a0ab84db57ac2bbd99ab8593fc4`
+- merge commit: `5e341375459b1a0ab84db57ac2bbd99ab8593fc4`
+- estado de la PR tras integración: mergeable, 0 behind
+- diff contra develop: solo T-332 + `docs/revision-pr/pr-234/**`
+
+## CI
+
+Run: **#1055 / 37149225848** — conclusion `success`.
 
 ```
-baseline                          GREEN
-no_develop                       RED
-paths_ignore                     RED
-no_pr                            RED
-global_defaults                  RED
-step_shell                       RED
-job_defaults                     RED
-extra_step                       RED
-exit0                            RED
-step_if                          RED
-job_continue                     RED
+typecheck       success
+lint            success
+unit            success
+db-tests        success
+build           success
+bundle-budget   success
+audit           success
 ```
 
-Las diez mutaciones cubren el trigger, el contexto global, el job, sus steps y el branch bloqueante.
+### Unit
 
-## CI final inspeccionado
+```
+verify-fichas.test.ts: 7 tests passed
+Test Files: 116 passed (116)
+Tests: 1753 passed (1753)
+verify-workflows: 49 tests
+verify-adr: 6 tests
+```
 
-Run: `37144999309` / #1043.
-
-### audit
-
-Job `111267001324` → success.
-
-Fragmento relevante:
+### Audit
 
 ```
 pnpm audit --audit-level=high
@@ -36,26 +40,6 @@ pnpm audit --audit-level=high
 Severity: 2 moderate | 1 high (1 ignored)
 ```
 
-### unit
+## Mutaciones de H01
 
-Job `111267001266` → failure.
-
-Resumen:
-
-```
-Test Files  1 failed | 114 passed (115)
-Tests       1 failed | 1742 passed (1743)
-```
-
-Único fallo:
-
-```
-FAIL tools/verify-fichas.test.ts
-Desincronizadas: T-333
-```
-
-## Causalidad del rojo externo
-
-Comparando `bc6329d941a510cc37d23827f5e3798e3839c065...05e746356da224990ef35af89c619d7a20956628`, el diff de la PR no contiene archivos de T-333. El fallo de `unit` no puede atribuirse a un cambio de T-333 realizado por esta PR.
-
-No corregir T-333 desde T-332.
+R5 dejó demostradas RED las diez mutaciones de trigger/contexto/job/step/script. La integración de R6 no modificó `tools/verify-audit-exceptions.test.ts` ni `.github/workflows/ci.yml`; no se repite una batería cuyo código no cambió. CI confirma el guard y el audit en el árbol integrado.
