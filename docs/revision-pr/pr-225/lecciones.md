@@ -1,0 +1,17 @@
+# Lecciones — PR #225
+
+## Simetría de contratos geográficos
+
+Cuando un mismo límite se replica para origen/destino o pickup/dropoff, probar solo un sentido no protege el otro. Si las ramas SQL están duplicadas, la matriz de pruebas debe ejercer ambas o una mutación puede dejar una mitad con el contrato viejo sin ponerse roja.
+
+## Reglas vivas
+
+Una regla de `.agents/rules/**` con valores numéricos de un contrato es parte del estado operativo del repositorio. Si un contract-change cambia esos valores, no alcanza con actualizar runtime y master plan: la regla debe cambiar en el mismo contrato o los agentes futuros reciben instrucciones obsoletas.
+
+## Ronda 2 — CI exact-head y base móvil
+
+Un SHA puede estar completamente verde y quedar obsoleto mientras se revisa si `develop` avanza en paralelo. Aunque los nuevos commits no toquen archivos del PR, la revisión final debe distinguir “código funcional verificado” de “árbol de integración verificado”. El segundo requiere `behind=0` y un CI posterior a la sincronización.
+
+## Ronda 3 — integración comprobada
+
+La distinción de Ronda 2 entre “código funcional verificado” y “árbol de integración verificado” evitó mergear un SHA 27 commits detrás. Tras integrar develop, el CI exact-head confirmó que el cambio seguía estable sin introducir conflictos funcionales.
