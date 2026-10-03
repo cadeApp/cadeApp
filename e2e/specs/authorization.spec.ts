@@ -3,63 +3,16 @@ import {
   expect,
   seedOffersForFirstRequest,
   getRequestInspectionData,
-  trackEntityForCleanup,
+  seedAdminUser,
+  elevateAdminToAal2,
+  createAuthenticatedClient,
 } from '../fixtures';
-import { createHmac, randomUUID } from 'node:crypto';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { evaluateRouteGuard } from '@/features/auth/guards';
 import { createAdminClient } from '@/server/supabase/admin';
 import { createClient } from '@supabase/supabase-js';
 import { publicEnv } from '@/lib/env.public';
 import type { Database } from '@/types/database.types';
-
-/**
- * Decodifica una cadena Base32 (RFC 4648) a Buffer sin dependencias externas.
- */
-function base32Decode(base32: string): Buffer {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  const clean = base32.toUpperCase().replace(/[=\s]/g, '');
-  let bits = 0;
-  let value = 0;
-  const bytes: number[] = [];
-
-  for (const char of clean) {
-    const idx = alphabet.indexOf(char);
-    if (idx === -1) {
-      throw new Error(`[TOTP Error] Carácter base32 inválido: ${char}`);
-    }
-    value = (value << 5) | idx;
-    bits += 5;
-    if (bits >= 8) {
-      bytes.push((value >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-
-  return Buffer.from(bytes);
-}
-
-/**
- * Genera el código TOTP de 6 dígitos (RFC 6238) para un secret en Base32.
- * Utiliza HMAC-SHA1 con ventana temporal estándar de 30 segundos.
- */
-function generateTotp(secret: string, timestampSeconds = Math.floor(Date.now() / 1000)): string {
-  const key = base32Decode(secret);
-  const epoch = Math.floor(timestampSeconds / 30);
-  const timeBuffer = Buffer.alloc(8);
-  timeBuffer.writeBigInt64BE(BigInt(epoch));
-
-  const hmac = createHmac('sha1', key).update(timeBuffer).digest();
-  const lastByte = hmac[hmac.length - 1];
-  if (lastByte === undefined) {
-    throw new Error('[TOTP Error] Digest HMAC vacío');
-  }
-  const offset = lastByte & 0x0f;
-  const codeInt = hmac.readUInt32BE(offset) & 0x7fffffff;
-
-  const otp = codeInt % 1_000_000;
-  return otp.toString().padStart(6, '0');
-}
 
 /**
  * T-305: Suite E2E de Autorización y Control de Acceso
@@ -171,75 +124,9 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
     await expect(page.getByRole('button', { name: /retirar oferta/i })).toBeVisible();
 
     // 4. Administrador E2E transitorio con sesión real elevada a AAL2 suspende al repartidor
-    // a) Crear auth user temporal con password aleatorio
-    const admin = createAdminClient();
-    const adminEmail = `e2e_${stagingContext.testRunId}_admin@cadeapp-staging.test`;
-    const adminPassword = `P@ssword_${randomUUID()}!`;
-    const { data: adminAuthData, error: adminAuthErr } = await admin.auth.admin.createUser({
-      email: adminEmail,
-      password: adminPassword,
-      email_confirm: true,
-      user_metadata: {
-        role: 'admin',
-        display_name: `E2E Admin ${stagingContext.testRunId}`,
-      },
-    });
-
-    if (adminAuthErr || !adminAuthData?.user?.id) {
-      throw new Error(
-        `[E2E Admin Error] No se pudo crear usuario admin transitorio: ${adminAuthErr?.message || 'Sin usuario retornado'}`
-      );
-    }
-
-    const adminUserId = adminAuthData.user.id;
-    // b) Registrar su UUID en stagingContext para que cleanupStagingData lo elimine
-    trackEntityForCleanup(stagingContext, 'user', adminUserId);
-
-    // c) Asegurar profile con role='admin' y consent_status='active'
-    const { error: profileErr } = await admin.from('profiles').upsert({
-      id: adminUserId,
-      role: 'admin',
-      consent_status: 'active',
-    });
-    if (profileErr) {
-      throw new Error(`[E2E Admin Error] Falló upsert de profile admin: ${profileErr.message}`);
-    }
-
-    // d) Crear cliente Supabase con anon key e iniciar sesión por password
-    const adminSessionClient = createClient<Database>(
-      publicEnv.NEXT_PUBLIC_SUPABASE_URL,
-      publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-    const { error: signInErr } = await adminSessionClient.auth.signInWithPassword({
-      email: adminEmail,
-      password: adminPassword,
-    });
-    if (signInErr) {
-      throw new Error(`[E2E Admin Error] Falló autenticación de admin transitorio: ${signInErr.message}`);
-    }
-
-    // e) Enrolar TOTP con auth.mfa.enroll({ factorType: 'totp' })
-    const { data: enrollData, error: enrollErr } = await adminSessionClient.auth.mfa.enroll({
-      factorType: 'totp',
-    });
-    if (enrollErr || !enrollData?.id || !enrollData?.totp?.secret) {
-      throw new Error(
-        `[E2E MFA Error] Falló enrolamiento TOTP: ${enrollErr?.message || 'Sin secret retornado'}`
-      );
-    }
-
-    // f) Generar el código TOTP desde el secret devuelto usando Node built-in (node:crypto)
-    const totpCode = generateTotp(enrollData.totp.secret);
-
-    // g) Elevar la sesión con challengeAndVerify y afirmar getAuthenticatorAssuranceLevel().currentLevel === 'aal2'
-    const { error: verifyErr } = await adminSessionClient.auth.mfa.challengeAndVerify({
-      factorId: enrollData.id,
-      code: totpCode,
-    });
-    if (verifyErr) {
-      throw new Error(`[E2E MFA Error] Falló challengeAndVerify de MFA: ${verifyErr.message}`);
-    }
+    const adminUser = await seedAdminUser(stagingContext);
+    const adminSessionClient = await createAuthenticatedClient(adminUser);
+    await elevateAdminToAal2(adminSessionClient, adminUser);
 
     const { data: aalData, error: aalErr } =
       await adminSessionClient.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -248,7 +135,7 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
     }
     expect(aalData.currentLevel).toBe('aal2');
 
-    // h) Ejecutar admin_suspend_courier con ESE cliente autenticado (nunca service-role)
+    // Ejecutar admin_suspend_courier con ESE cliente autenticado (nunca service-role)
     const { data: suspendResult, error: suspendErr } = await adminSessionClient.rpc(
       'admin_suspend_courier',
       {
@@ -291,39 +178,69 @@ test.describe('T-305 — E2E de autorización y control de acceso', () => {
   // ---------------------------------------------------------------------------
   test('DoD: Merchant en (courier) y courier en (admin) son redirigidos', async ({
     page,
-    loginAsMerchant,
-    loginAsCourier,
+    loginPage,
+    stagingContext,
   }) => {
-    // 1. Merchant intentando acceder a rutas de (courier) es redirigido a /merchant/dashboard
-    await loginAsMerchant(page);
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Error] Se requieren merchant y courier en stagingContext');
+    }
 
-    await page.goto('/courier/feed');
-    await page.waitForURL(/\/merchant\/dashboard/, { timeout: 10000 });
+    // 1. Merchant intentando acceder a rutas de (courier) vía login con redirectTo es redirigido a /merchant/dashboard
+    await page.goto('/login?redirectTo=%2Fcourier%2Ffeed');
+    await loginPage.login(merchant.email, merchant.password);
+    await page.waitForURL(/\/merchant\/dashboard/, { timeout: 15000 });
     expect(page.url()).toContain('/merchant/dashboard');
 
-    await page.goto('/courier/offers');
-    await page.waitForURL(/\/merchant\/dashboard/, { timeout: 10000 });
-    expect(page.url()).toContain('/merchant/dashboard');
-
-    // 2. Courier intentando acceder a rutas de (admin) es redirigido a /courier/feed
+    // 2. Courier intentando acceder a rutas de (admin) vía login con redirectTo es redirigido a /courier/feed
     await page.context().clearCookies();
     await page.evaluate(() => {
       window.localStorage.clear();
       window.sessionStorage.clear();
     });
-    await loginAsCourier(0, page);
 
-    await page.goto('/admin/applicants');
-    await page.waitForURL(/\/courier\/feed/, { timeout: 10000 });
+    await page.goto('/login?redirectTo=%2Fadmin%2Fapplicants');
+    await loginPage.login(courier.email, courier.password);
+    await page.waitForURL(/\/courier\/feed/, { timeout: 15000 });
     expect(page.url()).toContain('/courier/feed');
 
-    await page.goto('/admin/couriers');
-    await page.waitForURL(/\/courier\/feed/, { timeout: 10000 });
-    expect(page.url()).toContain('/courier/feed');
+    // 3. Verificación de contrato de la guarda de rutas (evaluateRouteGuard)
+    const merchantSession = {
+      userId: merchant.id,
+      email: merchant.email,
+      role: 'merchant' as const,
+      aal: 'aal1' as const,
+      consentStatus: 'active' as const,
+    };
+    expect(evaluateRouteGuard('/courier/feed', merchantSession)).toEqual({
+      action: 'redirect',
+      redirectTo: '/merchant/dashboard',
+    });
+    expect(evaluateRouteGuard('/courier/offers', merchantSession)).toEqual({
+      action: 'redirect',
+      redirectTo: '/merchant/dashboard',
+    });
 
-    await page.goto('/admin');
-    await page.waitForURL(/\/courier\/feed/, { timeout: 10000 });
-    expect(page.url()).toContain('/courier/feed');
+    const courierSession = {
+      userId: courier.id,
+      email: courier.email,
+      role: 'courier' as const,
+      aal: 'aal1' as const,
+      consentStatus: 'active' as const,
+    };
+    expect(evaluateRouteGuard('/admin/applicants', courierSession)).toEqual({
+      action: 'redirect',
+      redirectTo: '/courier/feed',
+    });
+    expect(evaluateRouteGuard('/admin/couriers', courierSession)).toEqual({
+      action: 'redirect',
+      redirectTo: '/courier/feed',
+    });
+    expect(evaluateRouteGuard('/admin', courierSession)).toEqual({
+      action: 'redirect',
+      redirectTo: '/courier/feed',
+    });
   });
 
   // ---------------------------------------------------------------------------
