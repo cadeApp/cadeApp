@@ -2,8 +2,9 @@
 
 ## Estado
 
-**EJECUTADA el 2026-10-02.** 51 de los 62 barrios aprobados tienen un centroide cartográfico **derivado**; 11 quedan
-**sin centroide** (`NULL`/`NULL`), cada uno con su motivo.
+**EJECUTADA el 2026-10-02.** 52 de los 63 barrios aprobados tienen un centroide cartográfico **derivado**; 11 quedan
+**sin centroide** (`NULL`/`NULL`), cada uno con su motivo. La lista pasó de 62 a 63 con la incorporación de
+`03 — 1º de Mayo` (decisión P1, opción A, hallazgo PR218-H05); su punto sale del mismo pipeline, sin ajuste manual.
 
 Los puntos derivados son **aproximados y no oficiales**: sirven para recentrar el mapa y como fallback aproximado.
 La ubicación precisa del comercio sigue siendo la dirección, el pin o el GPS.
@@ -23,8 +24,9 @@ La ubicación precisa del comercio sigue siendo la dirección, el pin o el GPS.
 
 - **Rótulo de barrio = número dentro de un círculo** (por ejemplo `(09)` en el Centro). Los números violetas sin círculo
   son equipamientos (escuelas, salud, iglesias), no barrios.
-- **La leyenda trae 63 entradas, no 62:** incluye `03- 1º de Mayo`, que `barrios-fuente.md` da por ausente. El plano
-  tiene además un rótulo circular `(03)` (punto derivado -27.425778, -65.614882). No se agrega a la DB sin decisión de Lautaro073.
+- **La leyenda trae 63 entradas:** incluye `03- 1º de Mayo`, que la transcripción inicial de `barrios-fuente.md` omitía.
+  El plano tiene además un rótulo circular `(03)`. **Resuelto el 2026-10-02:** Lautaro073 eligió la opción A e incorporó
+  el barrio 03 a la lista aprobada; `points.json` le da -27.425778, -65.614882 (`in_bounds = true`) y queda `derivado`.
 - En el mapa hay rótulos circulares `21`, `22`, `47` y `58` que no figuran en la leyenda: no se usan.
 
 ## Metodología
@@ -103,6 +105,7 @@ Estados:
 |---:|---|---|---|---:|---:|---|---|
 | 01 | Chacarita | (332.8, 243.2) | centro del rótulo circular | -27.422618 | -65.616127 | derivado | |
 | 02 | San José | (393.9, 247.0) | centro del rótulo circular | -27.422884 | -65.611733 | derivado | |
+| 03 | 1º de Mayo | (350.0, 291.2) | centro del rótulo circular | -27.425778 | -65.614882 | derivado | |
 | 04 | Santo Domingo | (395.6, 304.5) | centro del rótulo circular | -27.426663 | -65.611599 | derivado | |
 | 05 | J. F. Kennedy | (397.4, 346.6) | centro del rótulo circular | -27.429432 | -65.611460 | derivado | |
 | 06 | El Porvenir | (399.1, 419.2) | centro del rótulo circular | -27.434205 | -65.611323 | derivado | |
@@ -175,9 +178,13 @@ y `pdftoppm` para el render. `BASE` es una carpeta de trabajo con `plano/plano.p
 3. `python georref/controls.py BASE` → `controls.json` (puntos de control).
 4. `python georref/fit.py BASE 40` → `transform.json` y residuos (`georref/ajuste-salida.txt`).
 5. `python georref/points.py BASE` → `points.json` y la superposición con OSM.
-6. `python georref/final.py BASE <repo>` → `barrios-centroides.json` (estado por barrio).
+6. `python georref/final.py BASE <repo>` → `BASE/geo/final.json`, que se copia sin cambios como
+   `barrios-centroides.json` (estado por barrio). Exige las 63 entradas de `barrios-fuente.md`.
 7. `python docs/tasks/evidence/T-326/georref/gen_sql.py`, desde la raíz del repo, regenera la migración, el seed y el
-   pgTAP desde `barrios-fuente.md` + `barrios-centroides.json`.
+   pgTAP desde `barrios-fuente.md` + `barrios-centroides.json`. Salida actual: `ok · derivados=52 · null=11`.
+   La migración y el seed comparten el mismo upsert (`on conflict (name) do update set centroid_lat, centroid_lng,
+   active` desde `excluded`): una fila preexistente converge a la evidencia, también a `NULL`/`NULL` (PR218-H04).
+   El pgTAP precarga dos filas divergentes y re-ejecuta las sentencias registradas de la migración aplicada.
 
 ## Reglas
 
