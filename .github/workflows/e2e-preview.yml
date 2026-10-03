@@ -115,6 +115,9 @@ jobs:
         shell: bash
         run: |
           specs=(e2e/specs/smoke.spec.ts e2e/specs/main-flow.spec.ts)
+          if [ -f e2e/specs/authorization.spec.ts ]; then
+            specs+=(e2e/specs/authorization.spec.ts)
+          fi
           if [ -f e2e/specs/request-states.spec.ts ]; then
             specs+=(e2e/specs/request-states.spec.ts)
           fi
