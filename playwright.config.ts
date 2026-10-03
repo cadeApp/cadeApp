@@ -42,6 +42,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testIgnore: /global-settings\.spec\.ts$/,
+      testMatch: /smoke\.spec\.ts$/,
       use: {
         viewport: { width: 1280, height: 720 },
       },
