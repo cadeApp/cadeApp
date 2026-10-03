@@ -33,3 +33,9 @@ Una ubicación puede estar perfectamente documentada y aprobada como dato y aun 
 ## Ronda 3 — evidencia por capas
 
 La cadena `points/area17/referencias-locales → final.py → barrios-centroides → gen_sql → migration/seed/pgTAP` permite revisar por separado procedencia y materialización. En esta ronda la cadena actual quedó consistente; el problema detectado es semántico, no de generación.
+
+## Ronda 4 — un contract-change cerrado debe volver a la ficha que lo originó
+
+CC-020 resolvió correctamente H06, pero al retomar T-326 quedaron algunas frases de la ficha todavía escritas bajo la semántica anterior “derivado o NULL”. La implementación no estaba mal; el riesgo era documental: la próxima persona podía volver a interpretar como inválidos los 7 puntos ya autorizados.
+
+No hace falta una regla nueva: es la segunda mitad natural del flujo `contract-change`. Al mergear el CC, la tarea bloqueada debe alinear su ficha/DoD con el contrato antes del cierre, no solo agregar la dependencia como “cumplida”.

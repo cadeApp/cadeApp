@@ -285,3 +285,82 @@ T-326 R3:
 Los 7 `referencia_local` quedan en `zones.centroid_lat/lng`, y los consumidores actuales no distinguen su procedencia.
 
 Contract-change creado: **CC-020 / #230**.
+
+---
+
+# Evidencia reproducible — PR #218 / Ronda 4
+
+**SHA funcional/integrado:** `8f3fe8642c7104ac6f28a16d1131f2239dc503e0`
+
+## Sincronización
+
+```text
+develop: 2ba24cf3f25744eb1755c5ee448eb6516b983ed6
+head:    8f3fe8642c7104ac6f28a16d1131f2239dc503e0
+behind:  0
+```
+
+## Identidad de archivos funcionales vs Ronda 3
+
+Blob SHA idénticos entre `0039da3` y `8f3fe8642c7104ac6f28a16d1131f2239dc503e0`:
+
+```text
+barrios-centroides.json          bf8d61630898edeba1232a8e713a6bd541aedd6f
+referencias-locales.json         c7290375abff984a9c2d28ef5e75e8a530db1e17
+gen_sql.py                       8e501e831dfe85115c4d73ac3fa252adbdea6f85
+migration T-326                  b4ed92b5bd46c1c54bdbce8119181ca6d5124818
+pgTAP T-326                      e3e22321ed24e7def953a7cd31090c5cdad4fbc6
+seed.sql                         f9b3bfbcd49af061ba2a486abea4729cb8426965
+onboarding-form.tsx              331e0cdfc44d0517ccea9e531af01463f5e04108
+onboarding-form.test.tsx         f99bbc013e3208e541268830e27b254439d75c85
+points.json                      788b5b976cbc4f03dcc026a8270f1bc4e33d0c8c
+area-17.json                     1bf24f462849017e7f916e206d6e912f87fa95b9
+```
+
+## H06
+
+```text
+CC-020 / #230 / PR #231
+merge develop: 2ba24cf3f25744eb1755c5ee448eb6516b983ed6
+decision: Opción A
+authorized local references: 7
+```
+
+## CI exact-head
+
+Run `37104008549`:
+
+```text
+typecheck success
+lint success
+unit success — 114 files / 1738 tests
+build success
+db-tests success — 17 files / 1807 tests
+bundle-budget success
+database.types.ts sin diff
+audit failure — braces advisory externo
+```
+
+DB aplica, en orden:
+
+```text
+20261003120000_cc019_aguilares_service_area.sql
+20261003130000_t326_aguilares_zones.sql
+```
+
+y reporta:
+
+```text
+cc019_aguilares_service_area.sql .. ok
+t326_aguilares_zones.sql .......... ok
+Result: PASS
+```
+
+## Vercel
+
+```text
+status: failure
+reason: api-deployments-free-per-day / retry in 24 hours
+```
+
+No es error de build. El build CI del mismo HEAD pasa y el árbol funcional T-326 es idéntico al previamente verificado con Preview READY.
