@@ -240,6 +240,13 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByRole('button', { name: /Ir al panel de repartidor/i })).toBeDefined();
     });
 
+    it('PR242-H02: con showFeedButton={false} no muestra el botón al panel', () => {
+      render(<StatusView documents={[]} showFeedButton={false} />);
+
+      expect(screen.getByText('Estamos revisando tus datos')).toBeDefined();
+      expect(screen.queryByRole('button', { name: /Ir al panel de repartidor/i })).toBeNull();
+    });
+
     it('DoD T-324: muestra documentos obligatorios y opcionales como "Listo" cuando licencia y seguro están presentes (submitted o verified)', () => {
       const documents = [
         { kind: 'dni_front' as const, status: 'submitted' as const },

@@ -74,6 +74,8 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     expect(await screen.findByText(/estamos revisando tus datos/i)).toBeDefined();
     expect(screen.getByText(/te avisamos por acá y por notificación/i)).toBeDefined();
     expect(screen.queryByText(/solicitudes abiertas/i)).toBeNull();
+    // PR242-H02: dentro del feed no hay CTA hacia el propio feed.
+    expect(screen.queryByRole('button', { name: /Ir al panel de repartidor/i })).toBeNull();
   });
 
   describe('Hotfix T-325: el feed pending muestra los documentos reales, no una lista fija', () => {

@@ -1,3 +1,5 @@
+import * as React from 'react';
+import { redirect } from 'next/navigation';
 import { CourierFeed } from '@/features/offers';
 import {
   getAvailableRequests,
@@ -12,9 +14,19 @@ async function getPendingCourierDocuments() {
   const supabase = await createClient();
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
 
-  return user ? getCourierDocumentsStatus(user.id) : [];
+  // PR242-H03: un fallo de sesión no se muestra como «sin documentos».
+  if (authError) {
+    throw new Error('Error al verificar sesión del repartidor');
+  }
+
+  if (!user) {
+    redirect('/login?redirectTo=/courier/feed');
+  }
+
+  return getCourierDocumentsStatus(user.id);
 }
 
 export default async function CourierFeedPage() {
