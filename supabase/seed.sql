@@ -75,7 +75,7 @@ values
   ('Loteo Lizárraga', -27.440405, -65.624904, true),
   ('Santa Rosa', null, null, true),
   ('FOTIA', -27.450713, -65.607055, true),
-  ('Virgen de la Merced', -27.454000, -65.602000, true)
+  ('Virgen de la Merced', null, null, true)
 on conflict (name) do update
 set centroid_lat = excluded.centroid_lat,
     centroid_lng = excluded.centroid_lng,
