@@ -79,8 +79,9 @@ function getSessionHomePath(session: AuthSession): string {
 }
 
 /**
- * Rutas propias del rol que siguen abiertas con onboarding incompleto: el onboarding y, para el repartidor, el
- * perfil (muestra «Completá tu registro» y el cierre de sesión). Sin esta excepción, el redirect haría loop.
+ * Rutas propias del rol que siguen abiertas con onboarding incompleto: solo los pasos editables del onboarding y,
+ * para el repartidor, el perfil (muestra «Completá tu registro» y el cierre de sesión). La pantalla status exige que
+ * el onboarding ya haya sido enviado; dejarla abierta antes de eso mostraría falsamente «En revisión manual».
  */
 function isAllowedWhileOnboardingIncomplete(pathname: string, role: ProfileRole): boolean {
   if (role === 'merchant') {
@@ -88,7 +89,8 @@ function isAllowedWhileOnboardingIncomplete(pathname: string, role: ProfileRole)
   }
   if (role === 'courier') {
     return (
-      matchesSegment(pathname, '/courier/onboarding') ||
+      pathname === '/courier/onboarding/identity' ||
+      pathname === '/courier/onboarding/vehicle' ||
       pathname === '/courier/profile'
     );
   }

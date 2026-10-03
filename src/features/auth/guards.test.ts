@@ -542,19 +542,18 @@ describe('T-334: onboarding incompleto redirige al onboarding sin loops', () => 
     expect(followGuard('/courier/feed', session)).toBe('/merchant/onboarding');
   });
 
-  it('rutas de onboarding, perfil, públicas, de auth y alias quedan accesibles sin loops (repartidor)', () => {
+  it('solo identity/vehicle y perfil quedan accesibles con onboarding incompleto; status vuelve a identity', () => {
     const session = baseSession('courier', false);
-    for (const path of [
-      '/courier/onboarding/identity',
-      '/courier/onboarding/vehicle',
-      '/courier/onboarding/status',
-    ]) {
+    for (const path of ['/courier/onboarding/identity', '/courier/onboarding/vehicle']) {
       expect(followGuard(path, session)).toBe(path);
     }
+    expect(followGuard('/courier/onboarding/status', session)).toBe(
+      '/courier/onboarding/identity'
+    );
     expect(followGuard('/onboarding', session)).toBe('/courier/onboarding/identity');
     expect(followGuard('/onboarding/identity', session)).toBe('/courier/onboarding/identity');
     expect(followGuard('/onboarding/vehicle', session)).toBe('/courier/onboarding/vehicle');
-    expect(followGuard('/onboarding/status', session)).toBe('/courier/onboarding/status');
+    expect(followGuard('/onboarding/status', session)).toBe('/courier/onboarding/identity');
     // El perfil muestra «Completá tu registro» (y tiene el cierre de sesión): no se redirige.
     expect(followGuard('/courier/profile', session)).toBe('/courier/profile');
     expect(followGuard('/profile', session)).toBe('/courier/profile');
@@ -577,7 +576,12 @@ describe('T-334: onboarding incompleto redirige al onboarding sin loops', () => 
     for (const path of ['/merchant/dashboard', '/merchant/requests/new', '/merchant/onboarding']) {
       expect(evaluateRouteGuard(path, baseSession('merchant', true))).toEqual({ action: 'allow' });
     }
-    for (const path of ['/courier/feed', '/courier/offers', '/courier/profile']) {
+    for (const path of [
+      '/courier/feed',
+      '/courier/offers',
+      '/courier/profile',
+      '/courier/onboarding/status',
+    ]) {
       expect(evaluateRouteGuard(path, baseSession('courier', true))).toEqual({ action: 'allow' });
     }
     expect(followGuard('/login', baseSession('merchant', true))).toBe('/merchant/dashboard');
