@@ -94,6 +94,26 @@ function topLevelKeys(workflow: string): string[] {
     .map((line) => line.trim());
 }
 
+// PR234-H01 (Ronda 4): el audit solo protege si CI corre en las PRs y pushes de las ramas compartidas.
+const CI_ON_BLOCK = [
+  'on:',
+  '  pull_request:',
+  '    branches: [develop, staging, main]',
+  '  push:',
+  '    branches: [develop, staging, main]',
+];
+
+/** Bloque de una clave de nivel superior, con su indentación y sin comentarios ni líneas vacías. */
+function topLevelBlock(workflow: string, key: string): string[] | undefined {
+  const lines = workflow.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.indexOf(`${key}:`);
+  if (start === -1) return undefined;
+
+  const end = lines.findIndex((line, i) => i > start && line.trim() !== '' && indentOf(line) === 0);
+
+  return meaningful(lines.slice(start, end === -1 ? lines.length : end));
+}
+
 /** Script de `run: |` del step, sin la indentación común. */
 function runScript(step: string[]): string[] {
   const start = step.findIndex((line) => /^ {8}run: \|$/.test(line));
@@ -157,6 +177,10 @@ describe('excepciones de pnpm audit (T-332)', () => {
     expect(topLevelKeys(workflow), 'CI top-level keys must match the reviewed allowlist').toEqual(
       CI_TOP_LEVEL_KEYS
     );
+    expect(
+      topLevelBlock(workflow, 'on'),
+      'CI trigger block must match the reviewed allowlist'
+    ).toEqual(CI_ON_BLOCK);
     const job = extractJob(workflow, 'audit');
     expect(job, 'ci.yml must keep the `audit` job').toBeDefined();
     // PR234-H01 (Ronda 2): allowlist. Las claves directas del job son exactamente las revisadas, así que
