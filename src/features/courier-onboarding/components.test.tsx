@@ -485,6 +485,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
             licenseStatus: 'rejected',
             insuranceStatus: 'none',
             courierStatus: 'approved',
+            onboardingComplete: true,
           }}
         />
       );
@@ -497,6 +498,47 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
 
       render(<CourierProfileView profile={null} />);
       expect(screen.getByText(/Todavía no completaste tu legajo de repartidor/i)).toBeDefined();
+    });
+
+    describe('T-334: repartidor recién registrado sin onboarding enviado', () => {
+      const freshCourier = {
+        displayName: 'Repartidor Nuevo',
+        email: 'nuevo@test.com',
+        vehicleType: null,
+        plate: null,
+        dniStatus: 'none',
+        selfieStatus: 'none',
+        licenseStatus: 'none',
+        insuranceStatus: 'none',
+        courierStatus: 'pending',
+      } as const;
+
+      it('muestra «Completá tu registro» con enlace para continuar y nunca «En revisión administrativa»', () => {
+        render(<CourierProfileView profile={{ ...freshCourier, onboardingComplete: false }} />);
+
+        expect(screen.getAllByText('Completá tu registro').length).toBeGreaterThan(0);
+        expect(screen.queryByText('En revisión administrativa')).toBeNull();
+        const continuar = screen.getByRole('link', { name: /continuar registro/i });
+        expect(continuar.getAttribute('href')).toBe('/courier/onboarding/identity');
+      });
+
+      it('control: un repartidor que sí envió todo sigue viendo «En revisión administrativa»', () => {
+        render(
+          <CourierProfileView
+            profile={{
+              ...freshCourier,
+              vehicleType: 'moto',
+              dniStatus: 'submitted',
+              selfieStatus: 'submitted',
+              onboardingComplete: true,
+            }}
+          />
+        );
+
+        expect(screen.getByText('En revisión administrativa')).toBeDefined();
+        expect(screen.queryByText('Completá tu registro')).toBeNull();
+        expect(screen.queryByRole('link', { name: /continuar registro/i })).toBeNull();
+      });
     });
   });
 

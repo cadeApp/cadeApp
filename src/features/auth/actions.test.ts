@@ -1258,3 +1258,76 @@ describe('T-009: Auth actions y esquemas de registro', () => {
   });
 });
 
+describe('T-334: loginAction manda al onboarding cuando está incompleto', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  type Row = Record<string, unknown> | null;
+
+  function mockLoginClient(rows: { profiles: Row; merchants?: Row; couriers?: Row }) {
+    const tables: string[] = [];
+    const from = vi.fn((table: string) => {
+      tables.push(table);
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: rows[table as keyof typeof rows] ?? null,
+              error: null,
+            }),
+          })),
+        })),
+      };
+    });
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        signInWithPassword: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-nuevo', email: 'nuevo@test.com' }, session: {} },
+          error: null,
+        }),
+      },
+      from,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    return { tables };
+  }
+
+  it('comercio recién registrado (business_name vacío) → /merchant/onboarding', async () => {
+    const { tables } = mockLoginClient({
+      profiles: { role: 'merchant', consent_status: 'active' },
+      merchants: { business_name: '' },
+    });
+
+    const result = await loginAction({ email: 'nuevo@test.com', password: 'password123' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.redirectTo).toBe('/merchant/onboarding');
+    expect(tables).toContain('merchants');
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('repartidor recién registrado (vehicle_type null) → /courier/onboarding/identity', async () => {
+    mockLoginClient({
+      profiles: { role: 'courier', consent_status: 'active' },
+      couriers: { vehicle_type: null },
+    });
+
+    const result = await loginAction({ email: 'nuevo@test.com', password: 'password123' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.redirectTo).toBe('/courier/onboarding/identity');
+    expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
+  });
+
+  it('con onboarding completo conserva el destino por defecto', async () => {
+    mockLoginClient({
+      profiles: { role: 'courier', consent_status: 'active' },
+      couriers: { vehicle_type: 'bike' },
+    });
+
+    const result = await loginAction({ email: 'nuevo@test.com', password: 'password123' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.redirectTo).toBe('/courier/feed');
+  });
+});

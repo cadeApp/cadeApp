@@ -3,6 +3,8 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { updateSession } from './server';
 import * as ssr from '@supabase/ssr';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 vi.mock('@supabase/ssr', () => ({
   createServerClient: vi.fn(),
@@ -206,5 +208,126 @@ describe('T-009 / PR60-H03: server.ts updateSession y preservación de cookies r
     });
     const response = await updateSession(mockRequest);
     expect(response.status).toBe(200);
+  });
+});
+
+describe('T-334: updateSession lee el onboarding con el cliente del usuario', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'http://localhost:3000');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'http://127.0.0.1:54321');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'anon-key-test');
+  });
+
+  type Row = Record<string, unknown> | null;
+
+  /** Cliente de usuario simulado que responde según la tabla, como lo haría PostgREST con RLS. */
+  function mockUserClient(rows: { profiles: Row; merchants?: Row; couriers?: Row }) {
+    const selects: Array<{ table: string; columns: string }> = [];
+    const from = vi.fn((table: string) => ({
+      select: vi.fn((columns: string) => {
+        selects.push({ table, columns });
+        return {
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: rows[table as keyof typeof rows] ?? null,
+              error: null,
+            }),
+          })),
+        };
+      }),
+    }));
+    vi.mocked(ssr.createServerClient).mockImplementation(
+      () =>
+        ({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({
+              data: { user: { id: 'usr-nuevo', email: 'nuevo@test.com' } },
+              error: null,
+            }),
+            mfa: {
+              getAuthenticatorAssuranceLevel: vi
+                .fn()
+                .mockResolvedValue({ data: { currentLevel: 'aal1' }, error: null }),
+            },
+          },
+          from,
+        }) as unknown as ReturnType<typeof ssr.createServerClient>
+    );
+    return { from, selects };
+  }
+
+  it('comercio recién registrado (business_name vacío) en /merchant/dashboard va a /merchant/onboarding', async () => {
+    const { selects } = mockUserClient({
+      profiles: { role: 'merchant', consent_status: 'active' },
+      merchants: { business_name: '' },
+    });
+
+    const response = await updateSession(new NextRequest('http://localhost:3000/merchant/dashboard'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/merchant/onboarding');
+    expect(selects).toContainEqual({ table: 'merchants', columns: 'business_name' });
+  });
+
+  it('repartidor recién registrado (vehicle_type null) en /courier/feed va a /courier/onboarding/identity', async () => {
+    const { selects } = mockUserClient({
+      profiles: { role: 'courier', consent_status: 'active' },
+      couriers: { vehicle_type: null },
+    });
+
+    const response = await updateSession(new NextRequest('http://localhost:3000/courier/feed'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'http://localhost:3000/courier/onboarding/identity'
+    );
+    expect(selects).toContainEqual({ table: 'couriers', columns: 'vehicle_type' });
+  });
+
+  it('repartidor incompleto puede abrir su onboarding sin redirección', async () => {
+    mockUserClient({
+      profiles: { role: 'courier', consent_status: 'active' },
+      couriers: { vehicle_type: null },
+    });
+
+    const response = await updateSession(
+      new NextRequest('http://localhost:3000/courier/onboarding/identity')
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it('con onboarding completo no redirige', async () => {
+    mockUserClient({
+      profiles: { role: 'merchant', consent_status: 'active' },
+      merchants: { business_name: 'Panadería Centro' },
+    });
+    const merchant = await updateSession(new NextRequest('http://localhost:3000/merchant/dashboard'));
+    expect(merchant.status).toBe(200);
+
+    mockUserClient({
+      profiles: { role: 'courier', consent_status: 'active' },
+      couriers: { vehicle_type: 'moto' },
+    });
+    const courier = await updateSession(new NextRequest('http://localhost:3000/courier/feed'));
+    expect(courier.status).toBe(200);
+  });
+
+  it('CC-007 sigue primero: con consentimiento pendiente no se consulta el onboarding', async () => {
+    const { selects } = mockUserClient({
+      profiles: { role: 'merchant', consent_status: 'pending' },
+      merchants: { business_name: '' },
+    });
+
+    const response = await updateSession(new NextRequest('http://localhost:3000/merchant/dashboard'));
+
+    expect(response.headers.get('location')).toContain('/login?consentRequired=1');
+    expect(selects.map((s) => s.table)).not.toContain('merchants');
+  });
+
+  it('no usa service role: server.ts no importa el cliente admin', () => {
+    const source = readFileSync(resolve(__dirname, 'server.ts'), 'utf8');
+    expect(source).not.toMatch(/server\/supabase\/admin|createAdminClient|SERVICE_ROLE/);
   });
 });
