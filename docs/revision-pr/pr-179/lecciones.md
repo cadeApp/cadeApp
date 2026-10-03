@@ -25,3 +25,17 @@ Se refuerzan:
 - **P06:** cubrir una fila de §5.1 incluye sus precondiciones y efectos, no solo comprobar el status final.
 
 La existencia de Supabase Develop + Vercel Preview elimina el motivo para cerrar T-304 sin una corrida real del spec.
+
+## Ronda 3
+
+No se crea un AG nuevo.
+
+Se refuerzan patrones existentes:
+
+- **P08:** un cleanup mockeado puede parecer correcto y aun violar el orden FK real cuando aparecen entidades nuevas como `incidents`.
+- **P03:** los helpers E2E también deben respetar contratos de bootstrap; crear `role=admin` contradice directamente `handle_new_user`.
+- **P08 / oráculos:** un fallback silencioso no es evidencia de que se consultó la fuente de verdad.
+- **P03 / capas:** observar solo la RPC de DB no permite concluir que una responsabilidad de aplicación no existe. `cancel_request` sí dispara push en `callRequestRpc`.
+- **P06:** un negativo no termina en comprobar el error; cuando importa atomicidad, también debe comprobar ausencia del efecto persistido.
+
+La corrida remota fue valiosa precisamente porque encontró fallos que 1692 unitarios verdes no podían representar: constraints reales, trigger de signup y teardown sobre datos persistidos.

@@ -223,3 +223,100 @@ pnpm exec playwright test "${specs[@]}" --project=chromium --workers=1
 Esto permite mergear primero la infraestructura sin romper otras PR y garantiza que #179 ejecute request-states cuando su SHA lo contenga.
 
 Estado: **CI GREEN; pendiente merge explícito de P1**. El autor de T-304 no debe modificar workflows.
+
+# Ronda 3
+
+## Exact-head
+
+```text
+T-304 HEAD: df768471704ced79f863eb6040764fd081f3dbc7
+develop:     2e43d71eadd13acf5e92fee5a0142d678fd79059
+ahead: 13
+behind: 4
+overlap de los 4 commits faltantes con T-304/E2E: ninguno
+```
+
+## Gates
+
+```text
+CI run 37081144994: success
+approval-policy: success
+Vercel: success
+commit status e2e-preview: failure
+trusted E2E run: 37081233672
+```
+
+## Playwright remoto
+
+```text
+16 passed
+3 failed T-304
+1 flaky T-303 (finalmente pasó)
+```
+
+Filas T-304:
+- 1 GREEN
+- 2 GREEN
+- 3 GREEN
+- 4 GREEN
+- 5 GREEN
+- 6a GREEN
+- 6b GREEN
+- 7 GREEN
+- 8 RED por teardown cleanup
+- 9 RED en seedAdminUser
+- invariante delivered RED en seedAdminUser
+
+### H11
+
+```text
+[E2E Cleanup Error]
+delivery_requests ... violates FK incidents_request_id_fkey
+profiles ... violates FK incidents_reporter_id_fkey
+merchants/zones/auth.users quedan sin poder limpiarse
+```
+
+Static:
+- context tiene createdIncidentIds;
+- cleanup no ejecuta delete de incidents antes de delete delivery_requests (~L1054).
+
+### H12
+
+```text
+seedAdminUser L1358:
+user_metadata.role = admin
+
+schema_v1.sql L260-L261:
+requested_role solo merchant/courier
+otro rol => INVALID_SIGNUP_ROLE
+```
+
+Runtime:
+`Database error creating new user` en Fila 9 y delivered invariant.
+
+### H13
+
+```text
+getPlatformSettingNumber L1686:
+if (error || !data) return defaultValue
+
+request-states L98:
+getPlatformSettingNumber('request_ttl_minutes', 45)
+```
+
+### H14
+
+```text
+request-states L526: documenta "gap contractual" de push
+requests.ts L111: rama post-commit cancel_request
+requests.ts L168-L170: safeNotifyPostTransition(... request_cancelled)
+requests.test.ts L691: merchant matched -> push al courier aceptado
+```
+
+### H15
+
+Tras `INCIDENT_WINDOW_EXPIRED` para la request >24 h, el test termina sin releer `incidents`.
+
+## CI general vs E2E
+
+El CI unitario completo permanece GREEN. Esta ronda confirma que eso no sustituye el gate privilegiado: los fallos H11/H12 solo aparecen contra Supabase Develop real.
