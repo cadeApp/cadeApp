@@ -7,8 +7,8 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-333-realtime-reconnect` → `develop` |
 | **Base revisada** | `bc6329d941a510cc37d23827f5e3798e3839c065` |
-| **HEAD revisado** | `6a080cf2ccdd675e6be9ae69a517200f172af506` |
-| **Estado** | **BLOQUEADA — PR236-H01** |
+| **HEAD revisado** | `4a339d4393f577ef46f3b817bec964c98bbb91d3` |
+| **Estado** | **BLOQUEADA — PR236-R01** |
 
 ## Rondas
 
@@ -17,51 +17,64 @@
 | 1 | `371848d3ae7d25a2aaec1608f8ad16a64ef5afb7` | 1 bloqueante | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `7a0247af065864f3906887f54160542e977d04aa` | 1 bloqueante residual + 1 mejora | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 | 3 | `6a080cf2ccdd675e6be9ae69a517200f172af506` | 1 bloqueante | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `4a339d4393f577ef46f3b817bec964c98bbb91d3` | H01 cerrado + 1 regresión bloqueante | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR236-H01 | El reconnect se pierde si vuelve online mientras el fetch inicial sigue en vuelo | alto | parcial |
-| PR236-H02 | El cuerpo del PR contradice el HEAD actual | bajo | arreglado-verificado |
+| PR236-H01 | El reconnect se pierde si vuelve online mientras el fetch inicial sigue en vuelo | alto | arreglado-verificado |
+| PR236-R01 | Un refetch competidor puede hacer que el latch dispare una tercera GET | alto | abierto |
+| PR236-H02 | El cuerpo del PR contradice el HEAD actual | bajo | abierto |
 
-## Ronda 3 — conclusión
+## Ronda 4 — conclusión
 
-Agy demostró correctamente que el bridge global de R1 **no era la causa**: la secuencia online → offline → online ya quedaba GREEN antes del bridge, así que lo revirtió. El body del PR también quedó actualizado.
+La carrera original H01 quedó corregida:
 
-La causa residual del trusted E2E sí quedó identificada en esta ronda:
+- el nuevo test deja la primera Promise en vuelo;
+- reconnect ocurre con esa operación activa;
+- no aparece una segunda llamada antes del settle;
+- al terminar el fetch viejo aparece exactamente una llamada adicional;
+- sin reconnect no aparece llamada extra;
+- unmount evita trabajo tardío;
+- la mutación del latch deja RED solo el caso in-flight;
+- CI exact-head ejecuta los 17 tests de ofertas y quedan verdes.
 
-1. `useRequestOffers` arranca un refetch inmediato por `initialDataUpdatedAt: 0`.
-2. El E2E fija baseline al recibir el HTTP 200, no al terminar el `queryFn`.
-3. En el trace del run `37138561471`, `setOffline(true)` ocurre antes de que termine la GET inicial.
-4. Apenas termina esa GET, comienza el chunk dinámico requerido por `await import('@/lib/live-contracts')`.
-5. `setOffline(false)` ocurre mientras ese chunk todavía está descargándose; el `queryFn` sigue en vuelo.
-6. TanStack Query v5 ejecuta reconnect con `observer.refetch({ cancelRefetch: false })`; si ya hay fetch en curso, reutiliza su promesa y **no inicia otra GET**.
+Sin embargo, el mecanismo nuevo usa `dataUpdateCount + errorUpdateCount` como si identificara **qué fetch** está en curso. Esos contadores identifican settles, no inicios de fetch.
 
-Por eso el unit actual queda verde: deliberadamente espera `isRefetching === false` antes de offline → online y evita la carrera que sucede en navegador real.
+Eso deja una regresión no cubierta: si después del reconnect otro mecanismo arranca un refetch —por ejemplo el catch-up de Realtime con `invalidateQueries()`— ese fetch puede traer datos frescos; al terminar cambia el contador, y el latch lo interpreta como «terminó el fetch viejo», lanzando una tercera GET innecesaria.
 
 ## Evidencia exact-head
 
-CI `37146402120` sobre `6a080cf2ccdd675e6be9ae69a517200f172af506`:
+CI `37147483662`:
 
-- unit: **115/115 archivos, 1744/1744 tests**;
-- `use-request-offers.test.tsx`: 14/14;
-- `use-realtime-invalidation.test.tsx`: 12/12;
-- `providers.test.tsx`: 1/1;
-- typecheck, lint, build, db-tests y bundle-budget: verdes;
+- `use-request-offers.test.tsx`: **17/17**;
+- `use-realtime-invalidation.test.tsx`: **12/12**;
+- `providers.test.tsx`: **1/1**;
+- suite: **115/115 archivos, 1747/1747 tests**;
+- typecheck/lint/build/db-tests/bundle-budget: verdes;
 - audit: rojo únicamente por `braces`, externo a T-333/T-332.
 
-Preview trusted `37146488624`:
+Preview `37147561319`:
 
-- checkout exacto `6a080cf2ccdd675e6be9ae69a517200f172af506`;
-- chromium: 20/20;
-- global-settings: 3/3;
-- `notifications.spec.ts` sigue viviendo en PR #180, no en este SHA.
+- checkout exacto `4a339d4393f577ef46f3b817bec964c98bbb91d3`;
+- chromium: **20/20**;
+- global-settings: **3/3**.
+
+La rama sigue 0 commits detrás de `develop` y mergeable.
 
 ## Qué falta
 
-Agregar un RED específico en `use-request-offers.test.tsx` donde offline → online ocurra **mientras el fetch inicial sigue pendiente**. El control debe quedar rojo con el código actual y verde solo cuando `useRequestOffers` garantice exactamente un refetch posterior al fetch en vuelo.
+Agregar un RED donde:
 
-El camino normal, con query idle al reconectar, debe seguir delegado a `refetchOnReconnect: 'always'` sin duplicar requests.
+1. fetch #1 queda pendiente;
+2. offline → online arma el latch;
+3. antes de que #1 se resuelva, otro refetch explícito válido arranca fetch #2;
+4. fetch #2 termina con datos frescos;
+5. el total debe quedar exactamente en **2**, nunca 3.
 
-No se toca `e2e/specs/notifications.spec.ts`. Tras resolver esta carrera, PR #180 sigue siendo la validación externa post-merge exigida por la ficha.
+La forma más directa de reproducir la interacción real es `queryClient.invalidateQueries({ queryKey })`, ya que Realtime usa invalidación y TanStack tiene `cancelRefetch: true` por defecto para invalidaciones/refetch explícitos.
+
+El arreglo debe distinguir una **generación de fetch iniciada después del reconnect** del settle de la operación vieja. No alcanza contar data/error updates.
+
+Después de cerrar R01, actualizar nuevamente el body del PR: quedó viejo tras este commit técnico.
