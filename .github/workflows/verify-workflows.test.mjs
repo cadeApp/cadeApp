@@ -659,7 +659,7 @@ test('board-sync preserves Lautaro073 task assignments and assigns unassigned ta
   assert.equal(t303?.targetAssignees, undefined);
 });
 
-test('staging E2E gate runs core specs and includes request-states when the target SHA contains it', () => {
+test('staging E2E gate runs core specs and includes optional task specs when the target SHA contains them', () => {
   const e2eJob = job(workflow('e2e-staging.yml'), 'e2e');
 
   assert.match(e2eJob, /specs=\(e2e\/specs\/smoke\.spec\.ts e2e\/specs\/main-flow\.spec\.ts\)/);
@@ -667,6 +667,11 @@ test('staging E2E gate runs core specs and includes request-states when the targ
     e2eJob,
     /if \[ -f e2e\/specs\/request-states\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/request-states\.spec\.ts\)/,
     'staging must include T-304 request-states when that spec exists in the exact target SHA'
+  );
+  assert.match(
+    e2eJob,
+    /if \[ -f e2e\/specs\/notifications\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/notifications\.spec\.ts\)/,
+    'staging must include T-307 notifications when that spec exists in the exact target SHA'
   );
   assert.match(e2eJob, /pnpm exec playwright test "\$\{specs\[@\]\}" --project=chromium --workers=1/);
   assert.match(
@@ -952,7 +957,7 @@ test('preview target is resolved by trusted code with the project id from the de
   );
 });
 
-test('preview E2E runs core specs plus optional request-states and global-settings against the resolved SHA and URL', () => {
+test('preview E2E runs core specs plus optional request-states, notifications and global-settings against the resolved SHA and URL', () => {
   const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
   const e2eJob = job(preview, 'e2e');
   assert.match(e2eJob, /^ {4}needs: resolve$/m);
@@ -982,6 +987,11 @@ test('preview E2E runs core specs plus optional request-states and global-settin
     run,
     /if \[ -f e2e\/specs\/request-states\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/request-states\.spec\.ts\)/,
     'T-304 request-states must run when the exact Preview SHA contains the spec'
+  );
+  assert.match(
+    run,
+    /if \[ -f e2e\/specs\/notifications\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/notifications\.spec\.ts\)/,
+    'T-307 notifications must run when the exact Preview SHA contains the spec'
   );
   assert.match(run, /pnpm exec playwright test "\$\{specs\[@\]\}" --project=chromium --workers=1/);
   assert.match(
