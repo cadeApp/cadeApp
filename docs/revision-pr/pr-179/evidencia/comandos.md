@@ -320,3 +320,75 @@ Tras `INCIDENT_WINDOW_EXPIRED` para la request >24 h, el test termina sin releer
 ## CI general vs E2E
 
 El CI unitario completo permanece GREEN. Esta ronda confirma que eso no sustituye el gate privilegiado: los fallos H11/H12 solo aparecen contra Supabase Develop real.
+
+# Ronda 4
+
+## Preflight
+
+```text
+HEAD funcional revisado: 08d8193dd71ff5161f1cd3255ac3da9823259480
+develop...head: ahead=20, behind=0
+review files R3 vs HEAD antes de R4: mismos blob SHA
+```
+
+Archivos del diff contra develop: solo scope T-304 autorizado + `docs/revision-pr/pr-179/**`.
+
+## Intento de runtime independiente
+
+```text
+git clone https://github.com/cadeApp/cadeApp.git
+fatal: Could not resolve host: github.com
+```
+
+Por eso no se ejecutó una batería local de mutaciones R4. No se sustituye por el CI del autor mientras existan bloqueantes estáticos.
+
+## H03 — commit de mutación del autor
+
+Commit `14e72b29ec6ad34383ea59e3d566e54b81697b0b`:
+
+```diff
+- expect(inspection.requestStatus).toBe('published');
++ expect(inspection.requestStatus).toBe('draft'); // MUTACIÓN TEMPORAL H03
+```
+
+Revert `1959ef91bb3c7c59ea76fa843d29e91e8fee27ab` restaura el expect.
+
+Conclusión: RED no válido como mutation proof de propiedad.
+
+## H16
+
+`src/server/e2e/staging-seed.ts`:
+- ~700: `let incidents = []`.
+- ~704: query a incidents destructura solo `data`.
+- ~716-717: `catch { // Tolerante en mocks unitarios }`.
+- patrón análogo para `request_cancellation_reasons`.
+
+`e2e/specs/request-states.spec.ts:631`:
+`expect(expiredInspection.incidents ?? []).toHaveLength(0)`.
+
+Mutación conceptual que el control no distingue:
+- hacer que la query de incidents devuelva error/throw;
+- helper conserva `[]`;
+- H15 puede seguir verde.
+
+## H17
+
+Diff R3 `75b74466` -> HEAD en bitácora:
+- removida línea histórica que decía “se documentó explícitamente el gap contractual...”
+- agregada versión corregida dentro de la misma entrada Ronda 2.
+
+## H18
+
+`src/server/e2e/staging-seed.test.ts`:
+- test ~2148 titula “agrega los IDs descubiertos...”
+- assert final: `expect(mockClient.from).toHaveBeenCalledWith('incidents')`.
+- no afirma `delete().in('id', [incId])` para el ID descubierto.
+- no existe test con el mensaje `Falló la eliminación del subtipo merchant temporal`.
+
+## Clase de antipatrones
+
+Búsqueda comparativa HEAD vs develop:
+- `.skip/.only/.fixme`: 0 nuevos.
+- sleeps: 0 nuevos.
+- `@ts-ignore/@ts-expect-error`: 0 nuevos.
+- `any` en `staging-seed.test.ts`: 15 en HEAD / 15 en develop, delta 0.

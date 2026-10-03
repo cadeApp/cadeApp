@@ -39,3 +39,12 @@ Se refuerzan patrones existentes:
 - **P06:** un negativo no termina en comprobar el error; cuando importa atomicidad, también debe comprobar ausencia del efecto persistido.
 
 La corrida remota fue valiosa precisamente porque encontró fallos que 1692 unitarios verdes no podían representar: constraints reales, trigger de signup y teardown sobre datos persistidos.
+
+## Ronda 4
+
+No se agrega AG nuevo.
+
+- **H16/H18** repiten **pr-82/AG-76** y `P08-control-no-cubre-lo-que-dice`: consultar una tabla no demuestra que el dato llegue al control, y `[]` no distingue ausencia real de fallo de fuente.
+- **H17** aplica **pr-82/AG-97**: un log append-only conserva el conocimiento histórico y corrige hacia adelante.
+- **H03** refuerza la regla ya explícita de mutación: cambiar el `expect` no rompe la propiedad protegida; cambia el instrumento de medida.
+- H16 es también un agujero de la propia Ronda 3: pedir `incidents.length === 0` sin revisar primero si el helper fallaba cerrado dejó una vía de falso verde. La R4 corrige esa omisión.

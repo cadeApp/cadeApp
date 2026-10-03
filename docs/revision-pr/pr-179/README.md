@@ -2,14 +2,13 @@
 
 - **PR:** #179
 - **Rama:** `feat/T-304-request-states`
-- **SHA funcional revisado R3:** `df768471704ced79f863eb6040764fd081f3dbc7`
-- **develop al revisar:** `2e43d71eadd13acf5e92fee5a0142d678fd79059`
-- **Ronda:** 3
-- **Resultado:** **CON BLOQUEANTES (7)**
-- **CI general exact-head:** GREEN
-- **Vercel Preview exact-head:** GREEN
-- **e2e-preview exact-head:** **RED** — run `37081233672`
-- **Resultado Playwright:** 16 passed · 3 failed T-304 · 1 flaky T-303
-- **Decisiones P1 vigentes:** D01 = 1-A; D02 = 2-A.
+- **SHA funcional revisado R4:** `08d8193dd71ff5161f1cd3255ac3da9823259480`
+- **Base develop del PR:** `125728b591950f0de2ecd520eea2617415ac9508`
+- **Ronda:** 4
+- **Resultado:** **CON BLOQUEANTES (6)**
+- **Sincronización:** behind=0 · ahead=20
+- **Carpeta de revisión:** intacta desde R3 antes de este commit
+- **CI/E2E exact-head:** **NO inspeccionado en R4** por protocolo; hay bloqueantes estáticos. Los runs citados en el body son evidencia del autor, todavía no verificación independiente.
+- **Decisiones P1 pendientes:** ninguna.
 
-R3 verifica que la reescritura ya es un E2E real: Filas 1–7 pasaron contra Supabase Develop. El cierre queda bloqueado por dos fallos reales del arnés (cleanup de incidents y bootstrap admin), un oráculo TTL fail-open, una afirmación incorrecta sobre push, la ausencia del postcondition de no-incidente fuera de 24 h, la evidencia RED de negocio todavía pendiente y la sincronización final con develop.
+R4 confirma por inspección los arreglos H11-H14 y la sincronización H10. Sin embargo H03 sigue abierto porque el RED remoto se obtuvo cambiando el `expect`, H15 queda ciego ante fallo de lectura de incidents (H16), la bitácora dejó de ser append-only (H17) y dos controles unitarios nuevos no prueban lo que declaran (H18).
