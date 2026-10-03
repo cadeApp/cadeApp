@@ -7,3 +7,7 @@ Cuando un mismo límite se replica para origen/destino o pickup/dropoff, probar 
 ## Reglas vivas
 
 Una regla de `.agents/rules/**` con valores numéricos de un contrato es parte del estado operativo del repositorio. Si un contract-change cambia esos valores, no alcanza con actualizar runtime y master plan: la regla debe cambiar en el mismo contrato o los agentes futuros reciben instrucciones obsoletas.
+
+## Ronda 2 — CI exact-head y base móvil
+
+Un SHA puede estar completamente verde y quedar obsoleto mientras se revisa si `develop` avanza en paralelo. Aunque los nuevos commits no toquen archivos del PR, la revisión final debe distinguir “código funcional verificado” de “árbol de integración verificado”. El segundo requiere `behind=0` y un CI posterior a la sincronización.
