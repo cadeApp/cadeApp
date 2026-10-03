@@ -43,6 +43,47 @@ function extractStep(job: string[], prefix: string): string[] | undefined {
   return undefined;
 }
 
+/** Todos los steps del job, partidos en cada línea `      - `. Lo anterior al primer step no entra. */
+function extractSteps(job: string[]): string[][] {
+  const starts = job.flatMap((line, i) => (/^ {6}- /.test(line) ? [i] : []));
+  return starts.map((start, n) => job.slice(start, starts[n + 1] ?? job.length));
+}
+
+/** Líneas con contenido, sin comentarios de línea completa ni espacios finales (conserva la indentación). */
+const meaningful = (lines: string[]) =>
+  lines
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== '' && !line.trim().startsWith('#'));
+
+/** Claves directas de un step: la del `- ` y las de indentación 8. */
+const stepKeys = (step: string[]) =>
+  meaningful(step)
+    .filter((line) => /^ {6}- \S/.test(line) || /^ {8}\S/.test(line))
+    .map((line) => line.trim().replace(/^- /, ''));
+
+// Allowlist del job `audit` tal como está revisado. Cualquier clave o step nuevo tiene que pasar por revisión.
+const AUDIT_JOB_KEYS = ['name: audit', 'runs-on: ubuntu-latest', 'timeout-minutes: 10', 'steps:'];
+const AUDIT_JOB_SETUP_STEPS = [
+  [
+    '      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4',
+    '        with:',
+    '          persist-credentials: false',
+  ],
+  [
+    '      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4',
+    '        with:',
+    '          version: 10.28.0',
+  ],
+  [
+    '      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4',
+    '        with:',
+    '          node-version: 22.14.0',
+    '          cache: pnpm',
+  ],
+  ['      - run: pnpm install --frozen-lockfile'],
+];
+const AUDIT_STEP_KEYS = ['name: Audit dependencies (advisory until contracts-v1)', 'run: |'];
+
 /** Script de `run: |` del step, sin la indentación común. */
 function runScript(step: string[]): string[] {
   const start = step.findIndex((line) => /^ {8}run: \|$/.test(line));
@@ -104,15 +145,27 @@ describe('excepciones de pnpm audit (T-332)', () => {
     // PR234-H01: se valida la estructura del job y del step, no solo palabras sueltas.
     const job = extractJob(readFileSync('.github/workflows/ci.yml', 'utf8'), 'audit');
     expect(job, 'ci.yml must keep the `audit` job').toBeDefined();
-    const jobKeys = (job ?? []).filter((line) => indentOf(line) === 4).map((line) => line.trim());
-    expect(jobKeys.filter((key) => /^(if|continue-on-error):/.test(key))).toEqual([]);
+    // PR234-H01 (Ronda 2): allowlist. Las claves directas del job son exactamente las revisadas, así que
+    // `if:`, `continue-on-error:`, `defaults:`, `env:`, `container:` o cualquier otra nueva lo dejan RED.
+    const jobKeys = meaningful(job ?? [])
+      .filter((line) => indentOf(line) === 4)
+      .map((line) => line.trim());
+    expect(jobKeys, 'audit job keys must match the reviewed allowlist').toEqual(AUDIT_JOB_KEYS);
+
+    // Exactamente cinco steps, en orden: los cuatro de preparación tal cual y el audit al final.
+    const steps = extractSteps(job ?? []);
+    expect(steps, 'audit job must have exactly the reviewed steps').toHaveLength(5);
+    expect(
+      steps.slice(0, 4).map(meaningful),
+      'audit setup steps must match the reviewed allowlist'
+    ).toEqual(AUDIT_JOB_SETUP_STEPS);
 
     const step = extractStep(job ?? [], 'Audit dependencies');
     expect(step, 'the audit job must keep the `Audit dependencies` step').toBeDefined();
-    const stepKeys = (step ?? [])
-      .filter((line) => /^ {6}- \S/.test(line) || /^ {8}\S/.test(line))
-      .map((line) => line.trim().replace(/^- /, ''));
-    expect(stepKeys.filter((key) => /^(if|continue-on-error):/.test(key))).toEqual([]);
+    expect(steps[4], 'the audit step must be the fifth and last step').toEqual(step);
+    expect(stepKeys(step ?? []), 'audit step keys must match the reviewed allowlist').toEqual(
+      AUDIT_STEP_KEYS
+    );
     const stepText = (step ?? []).join('\n');
     expect(stepText).not.toMatch(
       /--prod|--audit-level=critical|--ignore|\|\|\s*true|continue-on-error/
