@@ -1,6 +1,7 @@
 -- T-330 — publish_request conserva distancia NULL sin coordenadas efectivas (CC-017).
 -- Append-only: reemplaza la definición vigente de CC-015 sin cambiar guards; solo cambia el cálculo de
--- v_distance para no fabricar 500 m cuando falta pin y centroide (greatest(500, null) = 500).
+-- v_distance para devolver NULL cuando falta pin y centroide. Sin este corte, el Haversine vigente puede
+-- convertir coordenadas incompletas en una distancia sintética enorme por la semántica NULL de least().
 create or replace function app_private.request_cycle(
   p_action text, p_request_id uuid, p_reason text default null,
   p_republish boolean default true, p_kind text default null, p_description text default null
