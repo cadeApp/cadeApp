@@ -78,7 +78,7 @@ values
   ('Loteo Buffo', -27.444252, -65.623009, true),
   ('Loteo Alpargatas', -27.444206, -65.625081, true),
   ('Loteo Lizárraga', -27.440405, -65.624904, true),
-  ('Santa Rosa', -27.462000, -65.619503, true),
+  ('Santa Rosa', -27.466365, -65.619503, true),
   ('FOTIA', -27.450713, -65.607055, true),
   ('Virgen de la Merced', -27.455233, -65.602138, true)
 on conflict (name) do update
