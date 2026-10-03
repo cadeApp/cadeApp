@@ -3,144 +3,17 @@ import {
   expect,
   getRequestInspectionData,
   trackEntityForCleanup,
-  type StagingSeedContext,
+  seedAdminUser,
+  createAuthenticatedClient,
+  elevateAdminToAal2,
+  generateTotp,
+  seedDeliveryRequestInState,
 } from '../fixtures';
-import { createHmac, randomUUID } from 'node:crypto';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { LoginPage } from '../pages';
 import { createAdminClient } from '@/server/supabase/admin';
-import { createClient } from '@supabase/supabase-js';
-import { publicEnv } from '@/lib/env.public';
-import type { Database } from '@/types/database.types';
 import { evaluateRouteGuard } from '@/features/auth/guards';
 import { canReportIncident } from '@/features/incidents/report-window';
-
-/**
- * Decodifica una cadena Base32 (RFC 4648) a Buffer sin dependencias externas.
- */
-function base32Decode(base32: string): Buffer {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  const clean = base32.toUpperCase().replace(/[=\s]/g, '');
-  let bits = 0;
-  let value = 0;
-  const bytes: number[] = [];
-
-  for (const char of clean) {
-    const idx = alphabet.indexOf(char);
-    if (idx === -1) {
-      throw new Error(`[TOTP Error] Carácter base32 inválido: ${char}`);
-    }
-    value = (value << 5) | idx;
-    bits += 5;
-    if (bits >= 8) {
-      bytes.push((value >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-
-  return Buffer.from(bytes);
-}
-
-/**
- * Genera el código TOTP de 6 dígitos (RFC 6238) para un secret en Base32.
- * Utiliza HMAC-SHA1 con ventana temporal estándar de 30 segundos.
- */
-function generateTotp(secret: string, timestampSeconds = Math.floor(Date.now() / 1000)): string {
-  const key = base32Decode(secret);
-  const epoch = Math.floor(timestampSeconds / 30);
-  const timeBuffer = Buffer.alloc(8);
-  timeBuffer.writeBigInt64BE(BigInt(epoch));
-
-  const hmac = createHmac('sha1', key).update(timeBuffer).digest();
-  const lastByte = hmac[hmac.length - 1];
-  if (lastByte === undefined) {
-    throw new Error('[TOTP Error] Digest HMAC vacío');
-  }
-  const offset = lastByte & 0x0f;
-  const codeInt = hmac.readUInt32BE(offset) & 0x7fffffff;
-
-  const otp = codeInt % 1_000_000;
-  return otp.toString().padStart(6, '0');
-}
-
-/**
- * Crea un usuario administrador transitorio con AAL2 verificado vía TOTP para la corrida.
- */
-async function createAdminWithAal2Session(stagingContext: StagingSeedContext) {
-  const admin = createAdminClient();
-  const adminEmail = `e2e_${stagingContext.testRunId}_admin@cadeapp-staging.test`;
-  const adminPassword = `P@ssword_${randomUUID()}!`;
-
-  const { data: adminAuthData, error: adminAuthErr } = await admin.auth.admin.createUser({
-    email: adminEmail,
-    password: adminPassword,
-    email_confirm: true,
-    user_metadata: {
-      role: 'admin',
-      display_name: `E2E Admin ${stagingContext.testRunId}`,
-    },
-  });
-
-  if (adminAuthErr || !adminAuthData?.user?.id) {
-    throw new Error(
-      `[E2E Admin Error] No se pudo crear usuario admin transitorio: ${adminAuthErr?.message || 'Sin usuario retornado'}`
-    );
-  }
-
-  const adminUserId = adminAuthData.user.id;
-  trackEntityForCleanup(stagingContext, 'user', adminUserId);
-
-  const { error: profileErr } = await admin.from('profiles').upsert({
-    id: adminUserId,
-    role: 'admin',
-    consent_status: 'active',
-  });
-  if (profileErr) {
-    throw new Error(`[E2E Admin Error] Falló upsert de profile admin: ${profileErr.message}`);
-  }
-
-  const adminSessionClient = createClient<Database>(
-    publicEnv.NEXT_PUBLIC_SUPABASE_URL,
-    publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-
-  const { error: signInErr } = await adminSessionClient.auth.signInWithPassword({
-    email: adminEmail,
-    password: adminPassword,
-  });
-  if (signInErr) {
-    throw new Error(`[E2E Admin Error] Falló autenticación de admin: ${signInErr.message}`);
-  }
-
-  const { data: enrollData, error: enrollErr } = await adminSessionClient.auth.mfa.enroll({
-    factorType: 'totp',
-  });
-  if (enrollErr || !enrollData?.id || !enrollData?.totp?.secret) {
-    throw new Error(
-      `[E2E MFA Error] Falló enrolamiento TOTP: ${enrollErr?.message || 'Sin secret retornado'}`
-    );
-  }
-
-  const totpCode = generateTotp(enrollData.totp.secret);
-
-  const { error: verifyErr } = await adminSessionClient.auth.mfa.challengeAndVerify({
-    factorId: enrollData.id,
-    code: totpCode,
-  });
-  if (verifyErr) {
-    throw new Error(`[E2E MFA Error] Falló challengeAndVerify de MFA: ${verifyErr.message}`);
-  }
-
-  const { data: aalData, error: aalErr } =
-    await adminSessionClient.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (aalErr) {
-    throw new Error(`[E2E MFA Error] Falló getAuthenticatorAssuranceLevel: ${aalErr.message}`);
-  }
-  expect(aalData.currentLevel).toBe('aal2');
-
-  return { adminClient: adminSessionClient, adminUserId, adminEmail, adminPassword, totpCode };
-}
 
 /**
  * T-308: Suite E2E de Incidentes y Suspensión Cautelar
@@ -166,43 +39,14 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     const courier = stagingContext.courierUsers?.[0];
     if (!courier) throw new Error('[E2E Error] No courier user in stagingContext');
 
-    const targetRequestId = stagingContext.createdRequestIds[0];
-    if (!targetRequestId) throw new Error('[E2E Error] No request ID in stagingContext');
-
-    const admin = createAdminClient();
-
-    // 1. Configurar solicitud emparejada (matched trip) con el repartidor asignado
-    const { data: offerData, error: offerErr } = await admin
-      .from('offers')
-      .insert({
-        request_id: targetRequestId,
-        courier_id: courier.id,
-        amount_ars: 1500,
-        eta_minutes: 20,
-        status: 'accepted',
-        decided_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single();
-
-    if (offerErr || !offerData) {
-      throw new Error(`[E2E Setup Error] Falló creación de oferta aceptada: ${offerErr?.message}`);
-    }
-    trackEntityForCleanup(stagingContext, 'offer', offerData.id);
-
-    const { error: requestUpdateErr } = await admin
-      .from('delivery_requests')
-      .update({
-        status: 'matched',
-        matched_at: new Date().toISOString(),
-      })
-      .eq('id', targetRequestId);
-
-    if (requestUpdateErr) {
-      throw new Error(
-        `[E2E Setup Error] Falló actualización a matched: ${requestUpdateErr.message}`
-      );
-    }
+    // 1. Configurar solicitud emparejada (matched trip) con el helper canónico (PR224-H02)
+    const matched = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const targetRequestId = matched.requestId;
 
     // 2. Comercio inicia sesión y navega a la vista del viaje
     await loginAsMerchant(page);
@@ -232,20 +76,38 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     // 5. Confirmación en pantalla
     await expect(page.getByText(/reporte enviado/i)).toBeVisible();
 
-    // 6. Administrador E2E con AAL2 verifica la llegada del reporte a la bandeja
-    const { adminEmail, adminPassword, totpCode } =
-      await createAdminWithAal2Session(stagingContext);
+    // 6. Administrador E2E con AAL2 verificado vía helper canónico (PR224-H01)
+    const adminCredentials = await seedAdminUser(stagingContext);
+    const adminClient = await createAuthenticatedClient(adminCredentials);
+    const { data: enrollData, error: enrollErr } = await adminClient.auth.mfa.enroll({
+      factorType: 'totp',
+    });
+    if (enrollErr || !enrollData?.totp?.secret) {
+      throw new Error(`[E2E MFA Error] Error al enrolar TOTP: ${enrollErr?.message}`);
+    }
+    const totpSecret = enrollData.totp.secret;
+    const verifyCode = generateTotp(totpSecret);
+    const { error: verifyErr } = await adminClient.auth.mfa.challengeAndVerify({
+      factorId: enrollData.id,
+      code: verifyCode,
+    });
+    if (verifyErr) {
+      throw new Error(`[E2E MFA Error] Error al verificar TOTP inicial: ${verifyErr.message}`);
+    }
 
+    // 7. Navegación manual en browser sin LoginPage.login (PR224-H03)
     const adminPage = await page.context().newPage();
     const loginPage = new LoginPage(adminPage);
     await loginPage.navigate();
-    await loginPage.login(adminEmail, adminPassword);
+    await loginPage.emailInput.fill(adminCredentials.email);
+    await loginPage.passwordInput.fill(adminCredentials.password);
+    await loginPage.submitButton.click();
+    await adminPage.waitForURL(/\/login\/mfa/);
 
-    // Esperar redirección al flujo MFA
-    await adminPage.waitForURL(/\/login\/mfa/, { timeout: 10000 });
-    const otpInput = adminPage.locator('#totp-code');
-    await otpInput.fill(totpCode);
+    const currentTotp = generateTotp(totpSecret);
+    await adminPage.getByLabel(/código de seguridad/i).fill(currentTotp);
     await adminPage.getByRole('button', { name: /verificar/i }).click();
+    await adminPage.waitForURL(/\/admin/);
 
     // Navegar a la bandeja de incidentes
     await adminPage.goto('/admin/incidents');
@@ -270,8 +132,10 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     const targetRequestId = stagingContext.createdRequestIds[0];
     if (!targetRequestId) throw new Error('[E2E Error] No request ID in stagingContext');
 
-    // 1. Administrador suspende cautelarmente al repartidor vía sesión AAL2
-    const { adminClient } = await createAdminWithAal2Session(stagingContext);
+    // 1. Administrador suspende cautelarmente al repartidor vía sesión AAL2 canónica (PR224-H01)
+    const adminCredentials = await seedAdminUser(stagingContext);
+    const adminClient = await createAuthenticatedClient(adminCredentials);
+    await elevateAdminToAal2(adminClient, adminCredentials);
     const { error: suspendErr } = await adminClient.rpc('admin_suspend_courier', {
       p_courier_id: courier.id,
       p_reason: `Suspensión preventiva E2E ${stagingContext.testRunId}`,
@@ -293,19 +157,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await expect(page.getByRole('button', { name: /^ofertar$/i })).not.toBeVisible();
 
     // 3. Forzar invocación directa a submit_offer con cliente autenticado
-    const courierClient = createClient<Database>(
-      publicEnv.NEXT_PUBLIC_SUPABASE_URL,
-      publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-    const { error: signInErr } = await courierClient.auth.signInWithPassword({
-      email: courier.email,
-      password: courier.password,
-    });
-    if (signInErr) {
-      throw new Error(`[E2E Auth Error] Falló login de courier: ${signInErr.message}`);
-    }
-
+    const courierClient = await createAuthenticatedClient(courier);
     const { data: offerData, error: submitErr } = await courierClient.rpc('submit_offer', {
       p_request_id: targetRequestId,
       p_amount_ars: 1500,
@@ -334,7 +186,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
 
     const admin = createAdminClient();
 
-    // 1. Crear oferta en estado pending para el repartidor
+    // 1. Crear oferta en estado pending para el repartidor mientras está approved
     const { data: offerData, error: offerErr } = await admin
       .from('offers')
       .insert({
@@ -352,8 +204,10 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     }
     trackEntityForCleanup(stagingContext, 'offer', offerData.id);
 
-    // 2. Administrador suspende al repartidor
-    const { adminClient } = await createAdminWithAal2Session(stagingContext);
+    // 2. Administrador suspende al repartidor con helpers canónicos (PR224-H01)
+    const adminCredentials = await seedAdminUser(stagingContext);
+    const adminClient = await createAuthenticatedClient(adminCredentials);
+    await elevateAdminToAal2(adminClient, adminCredentials);
     const { error: suspendErr } = await adminClient.rpc('admin_suspend_courier', {
       p_courier_id: courier.id,
       p_reason: `Suspensión para prueba de no aceptación E2E ${stagingContext.testRunId}`,
@@ -366,19 +220,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await admin.from('offers').update({ status: 'pending' }).eq('id', offerData.id);
 
     // 4. Comercio autenticado intenta aceptar la oferta
-    const merchantClient = createClient<Database>(
-      publicEnv.NEXT_PUBLIC_SUPABASE_URL,
-      publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-    const { error: merchSignInErr } = await merchantClient.auth.signInWithPassword({
-      email: merchant.email,
-      password: merchant.password,
-    });
-    if (merchSignInErr) {
-      throw new Error(`[E2E Auth Error] Falló login de comercio: ${merchSignInErr.message}`);
-    }
-
+    const merchantClient = await createAuthenticatedClient(merchant);
     const { data: acceptData, error: acceptErr } = await merchantClient.rpc('accept_offer', {
       p_offer_id: offerData.id,
     });
@@ -482,16 +324,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await admin.from('offers').update({ status: 'pending' }).eq('id', offerData.id);
 
     // Invocación a accept_offer debe fallar en el paso 8 de elegibilidad
-    const merchantClient = createClient<Database>(
-      publicEnv.NEXT_PUBLIC_SUPABASE_URL,
-      publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-    await merchantClient.auth.signInWithPassword({
-      email: merchant.email,
-      password: merchant.password,
-    });
-
+    const merchantClient = await createAuthenticatedClient(merchant);
     const { data: acceptData, error: acceptErr } = await merchantClient.rpc('accept_offer', {
       p_offer_id: offerData.id,
     });
