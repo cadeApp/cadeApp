@@ -15,7 +15,7 @@
 - RPC `admin_*` exigen `aal2` (MFA) en el JWT.
 - Storage `courier-docs`: insert solo en `courier/{auth.uid()}/**`; select denegado salvo service role.
 - Coordenadas geográficas (D15): `pickup_lat/lng` y `dropoff_lat/lng` viven únicamente en `delivery_request_contacts` (RLS idéntica a contactos: merchant dueño, courier `accepted` y admin). `delivery_requests` solo almacena `route_distance_m`. Prohibido exponer coordenadas en el feed de solicitudes abiertas.
-- Bounding box de Aguilares: CHECK constraints en Postgres que validen latitud entre -27.4550 y -27.4100 y longitud entre -65.6400 y -65.5950; puntos fuera de rango rechazan con `OUT_OF_BOUNDS_AGUILARES`.
+- Bounding box de Aguilares: CHECK constraints en Postgres que validen latitud entre -27.4800 y -27.3800 y longitud entre -65.6450 y -65.5800 (CC-019); puntos fuera de rango rechazan con `OUT_OF_BOUNDS_AGUILARES`.
 - RPC `calculate_route_distance`: fórmula Haversine × 1.30 nativa en SQL redondeada a múltiplos de 500 m; fallback automático a centroides de `zones` si las coordenadas son nulas.
 - Nunca loguear filas completas, datos del destinatario, coordenadas ni documentos.
 - Checklist de seguridad en el PR (RLS, SECURITY DEFINER, search_path, grants, RLS de coordenadas) marcado antes de pedir review.

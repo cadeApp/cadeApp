@@ -1,0 +1,60 @@
+{
+ "aprobacion": "Lautaro073, 2026-10-03: ubicación de cada barrio por conocimiento local, con capturas de Google Maps; tabla final aprobada en la sesión de T-326 (opción «Sí, cargala»; 26 con el barrio de OpenStreetMap).",
+ "nota": "No son centroides del plano ni geocodificación automática por nombre: cada punto es el lugar que Lautaro073 señaló para ese barrio, leído de Google Maps u OpenStreetMap.",
+ "barrios": [
+  {
+   "num": "24",
+   "name": "El Alto",
+   "mismo_punto_que": "23",
+   "fuente": "Decisión de Lautaro073: «va junto con la Villa Nueva». Usa exactamente el punto derivado del barrio 23 Villa Nueva."
+  },
+  {
+   "num": "25",
+   "name": "El Ceibal",
+   "lat": -27.396438,
+   "lng": -65.635938,
+   "fuente": "Google Maps, lugar «El ceival Monte rico» (-27.3964375, -65.6359375). OpenStreetMap ubica el paraje «El Ceibal» a ~60 m (-27.396851, -65.636546).",
+   "url": "https://www.google.com/maps/place/El+ceival+Monte+rico/@-27.3964375,-65.6359375,17z"
+  },
+  {
+   "num": "26",
+   "name": "Santa Emilia",
+   "lat": -27.39547,
+   "lng": -65.613699,
+   "fuente": "OpenStreetMap, nodo «Barrio Santa Emilia» (place=neighbourhood). Lautaro073 lo eligió frente a «Monte Rico Alto» (-27.4018733, -65.6181326).",
+   "url": "https://www.openstreetmap.org/#map=17/-27.39547/-65.613699"
+  },
+  {
+   "num": "55",
+   "name": "San Miguel",
+   "lat": -27.428441,
+   "lng": -65.589211,
+   "fuente": "Google Maps, lugar «Canchita de barrio San miguel» (-27.4284408, -65.5892114), en el sector pasando Tagusa sobre Av. Manuel Belgrano.",
+   "url": "https://www.google.com/maps/place/Canchita+de+barrio+San+miguel/@-27.4284408,-65.5892114,17z"
+  },
+  {
+   "num": "56",
+   "name": "San Antonio",
+   "lat": -27.427272,
+   "lng": -65.595871,
+   "fuente": "Google Maps, lugar «Capilla San Antonio de Padua» (-27.4272716, -65.595871), en el sector pasando Tagusa sobre Av. Manuel Belgrano.",
+   "url": "https://www.google.com/maps/place/Capilla+San+Antonio+de+Padua/@-27.4272716,-65.595871,17z"
+  },
+  {
+   "num": "57",
+   "name": "Finca Lolita",
+   "lat": -27.434197,
+   "lng": -65.602335,
+   "fuente": "Google Maps, lugar «Finca Lolita» (-27.4341965, -65.6023346), señalado por Lautaro073 con captura.",
+   "url": "https://www.google.com/maps/place/Finca+Lolita/@-27.4341965,-65.6023346,17z"
+  },
+  {
+   "num": "65",
+   "name": "Santa Rosa",
+   "lat": -27.466365,
+   "lng": -65.619503,
+   "fuente": "OpenStreetMap, nodo «Santa Rosa» (place=suburb), sobre la Ruta 38 entre «La casa de Tiziano» (-27.4646993, -65.6184491) y «Motel Grey» (-27.4671558, -65.6196513) de Google Maps, que enmarcan el caserío de la captura de Lautaro073.",
+   "url": "https://www.openstreetmap.org/#map=17/-27.466365/-65.619503"
+  }
+ ]
+}

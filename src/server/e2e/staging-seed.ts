@@ -1,11 +1,15 @@
 import 'server-only';
+import { createHmac, randomUUID } from 'node:crypto';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { publicEnv } from '@/lib/env.public';
 import { createAdminClient } from '@/server/supabase/admin';
+import type { Database } from '@/types/database.types';
 
 export interface UserCredentials {
   id: string;
   email: string;
   password: string;
-  role: 'merchant' | 'courier';
+  role: 'merchant' | 'courier' | 'admin';
   displayName?: string;
   phone?: string;
 }
@@ -17,8 +21,10 @@ export interface StagingSeedContext {
   createdUserIds: string[];
   createdZoneIds: string[];
   createdContactRequestIds?: string[];
+  createdIncidentIds?: string[];
   merchantUser?: UserCredentials;
   courierUsers?: UserCredentials[];
+  adminUser?: UserCredentials;
   sentinelPhone?: string;
 }
 
@@ -29,6 +35,7 @@ export interface SeedStagingOptions {
   dropoffZoneId?: string;
   withMerchant?: boolean;
   couriersCount?: number;
+  withAdmin?: boolean;
   recipientPhone?: string;
   recipientName?: string;
   pickupAddress?: string;
@@ -199,6 +206,7 @@ export function createStagingSeedContext(): StagingSeedContext {
     createdUserIds: [],
     createdZoneIds: [],
     createdContactRequestIds: [],
+    createdIncidentIds: [],
     courierUsers: [],
   };
 }
@@ -209,7 +217,7 @@ export function createStagingSeedContext(): StagingSeedContext {
  */
 export function trackEntityForCleanup(
   context: StagingSeedContext,
-  type: 'request' | 'offer' | 'user' | 'zone' | 'contact',
+  type: 'request' | 'offer' | 'user' | 'zone' | 'contact' | 'incident',
   id: string
 ): void {
   assertValidUuid(id, `trackEntityForCleanup(${type})`);
@@ -224,6 +232,9 @@ export function trackEntityForCleanup(
   } else if (type === 'contact') {
     if (!context.createdContactRequestIds) context.createdContactRequestIds = [];
     if (!context.createdContactRequestIds.includes(id)) context.createdContactRequestIds.push(id);
+  } else if (type === 'incident') {
+    if (!context.createdIncidentIds) context.createdIncidentIds = [];
+    if (!context.createdIncidentIds.includes(id)) context.createdIncidentIds.push(id);
   }
 }
 
@@ -249,8 +260,9 @@ export async function seedStagingData(
   const count = options?.requestsCount ?? 0;
   const shouldCreateMerchant = options?.withMerchant || (count > 0 && !options?.merchantId);
   const couriersCount = options?.couriersCount ?? 0;
+  const withAdmin = Boolean(options?.withAdmin);
 
-  if (count <= 0 && !shouldCreateMerchant && couriersCount <= 0) {
+  if (count <= 0 && !shouldCreateMerchant && couriersCount <= 0 && !withAdmin) {
     return context;
   }
 
@@ -529,6 +541,10 @@ export async function seedStagingData(
     }
   }
 
+  if (withAdmin) {
+    await seedAdminUser(context, admin, env);
+  }
+
   return context;
 }
 
@@ -600,11 +616,32 @@ export interface RequestFinalInspectionData {
   requestId: string;
   requestStatus: string;
   acceptedOfferId: string | null;
+  publishedAt?: string | null;
+  expiresAt?: string | null;
+  matchedAt?: string | null;
+  pickedUpAt?: string | null;
+  deliveredAt?: string | null;
+  cancelledAt?: string | null;
+  cancelReason?: string | null;
   offers: Array<{
     id: string;
     status: string;
     courierId: string;
     amountArs: number;
+  }>;
+  incidents?: Array<{
+    id: string;
+    status: string;
+    kind: string;
+    reporterId: string;
+  }>;
+  cancellationReasons?: Array<{
+    id: string;
+    requestId: string;
+    offerId: string | null;
+    actorId: string;
+    action: string;
+    reason: string;
   }>;
 }
 
@@ -632,7 +669,9 @@ export async function getRequestInspectionData(
 
   const { data: requestData, error: reqErr } = await admin
     .from('delivery_requests')
-    .select('id, status, accepted_offer_id')
+    .select(
+      'id, status, accepted_offer_id, published_at, expires_at, matched_at, picked_up_at, delivered_at, cancelled_at, cancel_reason'
+    )
     .eq('id', requestId)
     .single();
 
@@ -658,11 +697,91 @@ export async function getRequestInspectionData(
     amountArs: row.amount_ars,
   }));
 
+  let incidentsData: unknown = null;
+  try {
+    const { data, error: incErr } = await admin
+      .from('incidents')
+      .select('id, status, kind, reporter_id')
+      .eq('request_id', requestId);
+
+    if (incErr) {
+      throw new Error(`[E2E Inspection Error] Error al consultar incidents: ${incErr.message}`);
+    }
+    incidentsData = data;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.startsWith('[E2E Inspection Error]')) {
+      throw err;
+    }
+    throw new Error(
+      `[E2E Inspection Error] Error inesperado al consultar incidents: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  const incidents = (
+    (incidentsData as Array<{ id: string; status: string; kind: string; reporter_id: string }> | null) ?? []
+  ).map((row) => ({
+    id: row.id,
+    status: row.status,
+    kind: row.kind,
+    reporterId: row.reporter_id,
+  }));
+
+  let reasonsData: unknown = null;
+  try {
+    const { data, error: crErr } = await admin
+      .from('request_cancellation_reasons')
+      .select('id, request_id, offer_id, actor_id, action, reason')
+      .eq('request_id', requestId);
+
+    if (crErr) {
+      throw new Error(
+        `[E2E Inspection Error] Error al consultar request_cancellation_reasons: ${crErr.message}`
+      );
+    }
+    reasonsData = data;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.startsWith('[E2E Inspection Error]')) {
+      throw err;
+    }
+    throw new Error(
+      `[E2E Inspection Error] Error inesperado al consultar request_cancellation_reasons: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  const cancellationReasons = (
+    (reasonsData as Array<{
+      id: string;
+      request_id: string;
+      offer_id: string | null;
+      actor_id: string;
+      action: string;
+      reason: string;
+    }> | null) ?? []
+  ).map((row) => ({
+    id: row.id,
+    requestId: row.request_id,
+    offerId: row.offer_id,
+    actorId: row.actor_id,
+    action: row.action,
+    reason: row.reason,
+  }));
+
+  const rawReq = requestData as Record<string, unknown>;
+
   return {
     requestId: requestData.id,
     requestStatus: requestData.status,
     acceptedOfferId: requestData.accepted_offer_id,
+    publishedAt: (rawReq.published_at as string | null) ?? null,
+    expiresAt: (rawReq.expires_at as string | null) ?? null,
+    matchedAt: (rawReq.matched_at as string | null) ?? null,
+    pickedUpAt: (rawReq.picked_up_at as string | null) ?? null,
+    deliveredAt: (rawReq.delivered_at as string | null) ?? null,
+    cancelledAt: (rawReq.cancelled_at as string | null) ?? null,
+    cancelReason: (rawReq.cancel_reason as string | null) ?? null,
     offers,
+    incidents,
+    cancellationReasons,
   };
 }
 
@@ -791,7 +910,7 @@ export async function cleanupStagingData(
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('Unexpected table delivery_requests')) {
+      if (!msg.includes('Unexpected table delivery_requests') && !msg.includes('Unexpected table: delivery_requests')) {
         cleanupErrors.push({
           entity: 'discovery.delivery_requests',
           ids: [context.merchantUser.id],
@@ -826,7 +945,7 @@ export async function cleanupStagingData(
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('Unexpected table offers')) {
+      if (!msg.includes('Unexpected table offers') && !msg.includes('Unexpected table: offers')) {
         cleanupErrors.push({
           entity: 'discovery.offers',
           ids: context.createdRequestIds,
@@ -835,36 +954,72 @@ export async function cleanupStagingData(
       }
     }
 
-    // 3. Descubrir contactos correspondientes
+  // 3. Descubrir contactos correspondientes
+  try {
+    const contactsBuilder = admin.from('delivery_request_contacts');
+    if (typeof (contactsBuilder as { select?: unknown }).select === 'function') {
+      const { data: foundContacts, error: contactsErr } = await contactsBuilder
+        .select('request_id')
+        .in('request_id', context.createdRequestIds);
+
+      if (contactsErr) {
+        cleanupErrors.push({
+          entity: 'discovery.delivery_request_contacts',
+          ids: context.createdRequestIds,
+          error: contactsErr.message,
+        });
+      } else if (foundContacts) {
+        if (!context.createdContactRequestIds) {
+          context.createdContactRequestIds = [];
+        }
+        for (const row of foundContacts) {
+          if (row.request_id && !context.createdContactRequestIds.includes(row.request_id)) {
+            context.createdContactRequestIds.push(row.request_id);
+          }
+        }
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes('Unexpected table delivery_request_contacts') && !msg.includes('Unexpected table: delivery_request_contacts')) {
+      cleanupErrors.push({
+        entity: 'discovery.delivery_request_contacts',
+        ids: context.createdRequestIds,
+        error: msg,
+      });
+    }
+  }
+
+    // 3b. Descubrir incidentes creados para las solicitudes de la corrida (H11)
     try {
-      const contactsBuilder = admin.from('delivery_request_contacts');
-      if (typeof (contactsBuilder as { select?: unknown }).select === 'function') {
-        const { data: foundContacts, error: contactsErr } = await contactsBuilder
-          .select('request_id')
+      const incidentsBuilder = admin.from('incidents');
+      if (typeof (incidentsBuilder as { select?: unknown }).select === 'function') {
+        const { data: foundIncidents, error: incidentsErr } = await incidentsBuilder
+          .select('id')
           .in('request_id', context.createdRequestIds);
 
-        if (contactsErr) {
+        if (incidentsErr) {
           cleanupErrors.push({
-            entity: 'discovery.delivery_request_contacts',
+            entity: 'discovery.incidents',
             ids: context.createdRequestIds,
-            error: contactsErr.message,
+            error: incidentsErr.message,
           });
-        } else if (foundContacts) {
-          if (!context.createdContactRequestIds) {
-            context.createdContactRequestIds = [];
+        } else if (foundIncidents) {
+          if (!context.createdIncidentIds) {
+            context.createdIncidentIds = [];
           }
-          for (const row of foundContacts) {
-            if (row.request_id && !context.createdContactRequestIds.includes(row.request_id)) {
-              context.createdContactRequestIds.push(row.request_id);
+          for (const row of foundIncidents) {
+            if (row.id && !context.createdIncidentIds.includes(row.id)) {
+              context.createdIncidentIds.push(row.id);
             }
           }
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('Unexpected table delivery_request_contacts')) {
+      if (!msg.includes('Unexpected table incidents') && !msg.includes('Unexpected table: incidents')) {
         cleanupErrors.push({
-          entity: 'discovery.delivery_request_contacts',
+          entity: 'discovery.incidents',
           ids: context.createdRequestIds,
           error: msg,
         });
@@ -893,6 +1048,25 @@ export async function cleanupStagingData(
       cleanupErrors.push({
         entity: 'delivery_requests.unlink_accepted_offer',
         ids: context.createdRequestIds,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // 0b. Limpieza de incidents (H11: debe eliminarse antes de delivery_requests y profiles)
+  if (context.createdIncidentIds && context.createdIncidentIds.length > 0) {
+    const toDelete = [...context.createdIncidentIds];
+    try {
+      const { error } = await admin.from('incidents').delete().in('id', toDelete);
+      if (error) {
+        cleanupErrors.push({ entity: 'incidents', ids: toDelete, error: error.message });
+      } else {
+        context.createdIncidentIds = context.createdIncidentIds.filter((id) => !toDelete.includes(id));
+      }
+    } catch (err: unknown) {
+      cleanupErrors.push({
+        entity: 'incidents',
+        ids: toDelete,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -1131,3 +1305,530 @@ export async function cleanupStagingData(
     throw new Error(`[E2E Cleanup Error] Falló la limpieza de staging: ${summary}`);
   }
 }
+
+/**
+ * Decodifica una clave base32 estándar a un buffer binario.
+ */
+export function base32Decode(base32: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let value = 0;
+  let index = 0;
+  const clean = base32.toUpperCase().replace(/=+$/, '');
+  const output = new Uint8Array(Math.floor((clean.length * 5) / 8));
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    if (!char) continue;
+    const val = alphabet.indexOf(char);
+    if (val === -1) throw new Error(`Carácter base32 inválido: ${char}`);
+    value = (value << 5) | val;
+    bits += 5;
+    if (bits >= 8) {
+      output[index++] = (value >>> (bits - 8)) & 255;
+      bits -= 8;
+    }
+  }
+  return Buffer.from(output.buffer, output.byteOffset, index);
+}
+
+/**
+ * Genera el código TOTP de 6 dígitos para un instante dado según RFC 6238 / RFC 4226.
+ */
+export function generateTotp(secret: string, timeMs = Date.now()): string {
+  const key = base32Decode(secret);
+  const counter = Math.floor(timeMs / 1000 / 30);
+  const buf = Buffer.alloc(8);
+  buf.writeBigInt64BE(BigInt(counter));
+  const hmac = createHmac('sha1', key).update(buf).digest();
+  const lastByte = hmac[hmac.length - 1];
+  if (lastByte === undefined) throw new Error('HMAC digest vacío');
+  const offset = lastByte & 0x0f;
+  const b0 = hmac[offset] ?? 0;
+  const b1 = hmac[offset + 1] ?? 0;
+  const b2 = hmac[offset + 2] ?? 0;
+  const b3 = hmac[offset + 3] ?? 0;
+  const binary =
+    ((b0 & 0x7f) << 24) |
+    ((b1 & 0xff) << 16) |
+    ((b2 & 0xff) << 8) |
+    (b3 & 0xff);
+  const otp = binary % 1000000;
+  return otp.toString().padStart(6, '0');
+}
+
+/**
+ * Crea un cliente Supabase con credenciales públicas (anon key) sin sesión persistente.
+ */
+export function createE2EClient(
+  url = process.env.NEXT_PUBLIC_SUPABASE_URL || publicEnv.NEXT_PUBLIC_SUPABASE_URL,
+  key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY
+): SupabaseClient<Database> {
+  return createClient<Database>(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+/**
+ * Autentica un usuario con sus credenciales efímeras en memoria y devuelve el cliente con sesión activa.
+ */
+export async function createAuthenticatedClient(
+  credentials: UserCredentials,
+  client?: SupabaseClient<Database>,
+  env: Record<string, string | undefined> = process.env
+): Promise<SupabaseClient<Database>> {
+  assertAllowedE2EEnvironment(env);
+  const targetClient =
+    client ??
+    createE2EClient(
+      env.NEXT_PUBLIC_SUPABASE_URL || publicEnv.NEXT_PUBLIC_SUPABASE_URL,
+      env.NEXT_PUBLIC_SUPABASE_ANON_KEY || publicEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    );
+
+  const { data, error } = await targetClient.auth.signInWithPassword({
+    email: credentials.email,
+    password: credentials.password,
+  });
+
+  if (error || !data.user) {
+    throw new Error(
+      `[E2E Auth Error] Falló el inicio de sesión para ${credentials.email}: ${error?.message || 'Sin usuario retornado'}`
+    );
+  }
+
+  return targetClient;
+}
+
+/**
+ * Crea un usuario administrador en staging con credenciales efímeras en memoria.
+ */
+export async function seedAdminUser(
+  context: StagingSeedContext,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<UserCredentials> {
+  assertAllowedE2EEnvironment(env);
+  const admin = client ?? createAdminClient();
+
+  const adminEmail = `e2e_${context.testRunId}_admin@cadeapp-staging.test`;
+  const adminPassword = `P@ssword_${randomUUID()}!`;
+  const displayName = `E2E Admin ${context.testRunId}`;
+
+  // H12: handle_new_user rechaza el rol 'admin' en signup público/admin.createUser (INVALID_SIGNUP_ROLE).
+  // El bootstrap legítimo de admin crea el usuario con un rol permitido ('merchant'),
+  // elimina el subtipo generado y promueve explícitamente profiles.role = 'admin' con service-role.
+  const { data: authData, error: authError } = await admin.auth.admin.createUser({
+    email: adminEmail,
+    password: adminPassword,
+    email_confirm: true,
+    user_metadata: {
+      role: 'merchant',
+      display_name: displayName,
+    },
+  });
+
+  if (authError || !authData?.user?.id) {
+    throw new Error(
+      `[E2E Seed Error] No se pudo crear usuario base para administrador: ${authError?.message || 'Sin usuario retornado'}`
+    );
+  }
+
+  const adminUserId = authData.user.id;
+  assertValidUuid(adminUserId, 'adminUserId');
+  // Rastrear inmediatamente para garantizar cleanup incluso si los pasos siguientes fallan
+  trackEntityForCleanup(context, 'user', adminUserId);
+
+  // 1. Eliminar la fila temporal de merchants creada por el trigger handle_new_user
+  const { error: merchDeleteErr } = await admin
+    .from('merchants')
+    .delete()
+    .eq('profile_id', adminUserId);
+  if (merchDeleteErr) {
+    throw new Error(
+      `[E2E Seed Error] Falló la eliminación del subtipo merchant temporal para admin: ${merchDeleteErr.message}`
+    );
+  }
+
+  // 2. Promover el profile a admin y asegurar consent_status = 'active'
+  const { error: profileErr } = await admin
+    .from('profiles')
+    .update({
+      role: 'admin',
+      consent_status: 'active',
+      display_name: displayName,
+    })
+    .eq('id', adminUserId);
+
+  if (profileErr) {
+    throw new Error(`[E2E Seed Error] Falló la promoción del profile a admin: ${profileErr.message}`);
+  }
+
+  // 3. Actualizar la metadata del auth user a admin
+  const { error: updateMetaErr } = await admin.auth.admin.updateUserById(adminUserId, {
+    user_metadata: {
+      role: 'admin',
+      display_name: displayName,
+    },
+  });
+  if (updateMetaErr) {
+    throw new Error(
+      `[E2E Seed Error] Falló la actualización de metadata a admin: ${updateMetaErr.message}`
+    );
+  }
+
+  const credentials: UserCredentials = {
+    id: adminUserId,
+    email: adminEmail,
+    password: adminPassword,
+    role: 'admin',
+    displayName,
+  };
+
+  context.adminUser = credentials;
+  return credentials;
+}
+
+/**
+ * Eleva la sesión del cliente administrador a AAL2 mediante enrolamiento y verificación TOTP.
+ */
+export async function elevateAdminToAal2(
+  client: SupabaseClient<Database>,
+  _credentials?: UserCredentials
+): Promise<{ factorId: string }> {
+  const { data: factors, error: listErr } = await client.auth.mfa.listFactors();
+  if (listErr) {
+    throw new Error(`[E2E MFA Error] Error al listar factores MFA: ${listErr.message}`);
+  }
+
+  // Limpiar factores sin verificar de intentos previos si los hubiera
+  const unverified =
+    factors?.all?.filter((f) => f.factor_type === 'totp' && f.status === 'unverified') ?? [];
+  for (const factor of unverified) {
+    await client.auth.mfa.unenroll({ factorId: factor.id });
+  }
+
+  // Enrolar nuevo factor TOTP
+  const { data: enrolled, error: enrollErr } = await client.auth.mfa.enroll({
+    factorType: 'totp',
+  });
+  if (enrollErr || !enrolled?.totp) {
+    throw new Error(`[E2E MFA Error] Falló el enrolamiento MFA: ${enrollErr?.message}`);
+  }
+
+  const secret = enrolled.totp.secret;
+  const code = generateTotp(secret);
+
+  const { error: verifyErr } = await client.auth.mfa.challengeAndVerify({
+    factorId: enrolled.id,
+    code,
+  });
+
+  if (verifyErr) {
+    throw new Error(`[E2E MFA Error] Falló verify MFA: ${verifyErr.message}`);
+  }
+
+  const { data: assurance } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (assurance?.currentLevel !== 'aal2') {
+    throw new Error(
+      `[E2E MFA Error] La sesión no alcanzó nivel aal2 (nivel actual: ${assurance?.currentLevel})`
+    );
+  }
+
+  return { factorId: enrolled.id };
+}
+
+export interface SeedRequestInStateOptions {
+  status: 'draft' | 'published' | 'matched' | 'in_transit' | 'delivered';
+  merchantId?: string;
+  pickupZoneId?: string;
+  dropoffZoneId?: string;
+  assignedCourierId?: string;
+  expiresAt?: string;
+  publishedAt?: string;
+  matchedAt?: string;
+  pickedUpAt?: string;
+  deliveredAt?: string;
+  withContacts?: boolean;
+  withPendingOffersCount?: number;
+  withIncident?: {
+    kind: 'no_show' | 'payment_issue' | 'damaged_goods' | 'safety' | 'other';
+    description: string;
+    reporterId: string;
+  };
+}
+
+export interface SeedRequestInStateResult {
+  requestId: string;
+  acceptedOfferId: string | null;
+  pendingOfferIds: string[];
+  incidentId: string | null;
+}
+
+/**
+ * Prepara las precondiciones de una solicitud en un estado específico usando el cliente service-role.
+ * Solo prepara precondiciones iniciales; NUNCA ejecuta la transición bajo prueba.
+ */
+export async function seedDeliveryRequestInState(
+  context: StagingSeedContext,
+  options: SeedRequestInStateOptions,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<SeedRequestInStateResult> {
+  assertAllowedE2EEnvironment(env);
+  const admin = client ?? createAdminClient();
+
+  const merchantId = options.merchantId ?? context.merchantUser?.id;
+  if (!merchantId) {
+    throw new Error('[E2E Seed Error] Se requiere un merchantId para seedDeliveryRequestInState');
+  }
+  assertValidUuid(merchantId, 'merchantId');
+
+  let pickupZoneId = options.pickupZoneId;
+  let dropoffZoneId = options.dropoffZoneId;
+
+  if (!pickupZoneId || !dropoffZoneId) {
+    const { data: existingZones } = await admin
+      .from('zones')
+      .select('id')
+      .eq('active', true)
+      .limit(2);
+    pickupZoneId = existingZones?.[0]?.id ?? options.pickupZoneId;
+    dropoffZoneId = existingZones?.[1]?.id ?? pickupZoneId;
+    if (!pickupZoneId || !dropoffZoneId) {
+      const newZoneId = randomUUID();
+      await admin.from('zones').insert({
+        id: newZoneId,
+        name: `E2E Zona ${context.testRunId}`,
+        centroid_lat: -27.43,
+        centroid_lng: -65.61,
+        active: true,
+      });
+      trackEntityForCleanup(context, 'zone', newZoneId);
+      pickupZoneId = newZoneId;
+      dropoffZoneId = newZoneId;
+    }
+  }
+
+  assertValidUuid(pickupZoneId, 'pickupZoneId');
+  assertValidUuid(dropoffZoneId, 'dropoffZoneId');
+
+  const requestId = randomUUID();
+  assertValidUuid(requestId, 'requestId');
+
+  let acceptedOfferId: string | null = null;
+  let courierId: string | null = null;
+  const isPostMatched = ['matched', 'in_transit', 'delivered'].includes(options.status);
+
+  if (isPostMatched) {
+    courierId = options.assignedCourierId ?? context.courierUsers?.[0]?.id ?? null;
+    if (!courierId) {
+      throw new Error(
+        '[E2E Seed Error] Se requiere assignedCourierId para solicitudes en estado matched/in_transit/delivered'
+      );
+    }
+    assertValidUuid(courierId, 'assignedCourierId');
+
+    acceptedOfferId = randomUUID();
+    assertValidUuid(acceptedOfferId, 'acceptedOfferId');
+  }
+
+  const nowIso = new Date().toISOString();
+  const publishedAt = options.publishedAt ?? (options.status !== 'draft' ? nowIso : null);
+  const expiresAt =
+    options.expiresAt ??
+    (options.status === 'published' ? new Date(Date.now() + 45 * 60 * 1000).toISOString() : null);
+  const matchedAt = options.matchedAt ?? (isPostMatched ? nowIso : null);
+  const pickedUpAt =
+    options.pickedUpAt ?? (['in_transit', 'delivered'].includes(options.status) ? nowIso : null);
+  const deliveredAt = options.deliveredAt ?? (options.status === 'delivered' ? nowIso : null);
+
+  // 1. Insertar delivery_request primero con accepted_offer_id = null para satisfacer FK offers.request_id -> delivery_requests.id
+  const { error: reqErr } = await admin.from('delivery_requests').insert({
+    id: requestId,
+    merchant_id: merchantId,
+    pickup_zone_id: pickupZoneId,
+    dropoff_zone_id: dropoffZoneId,
+    package_type: 'chico',
+    recipient_payment_method: 'cash',
+    status: options.status,
+    published_at: publishedAt,
+    expires_at: expiresAt,
+    matched_at: matchedAt,
+    picked_up_at: pickedUpAt,
+    delivered_at: deliveredAt,
+    accepted_offer_id: null,
+    notes: `E2E state seed ${context.testRunId}`,
+  });
+
+  if (reqErr) {
+    throw new Error(`[E2E Seed Error] Falló la inserción de delivery_request: ${reqErr.message}`);
+  }
+  trackEntityForCleanup(context, 'request', requestId);
+
+  // 2. Si es post-match, insertar oferta aceptada referenciando el requestId ya persistido
+  if (isPostMatched && acceptedOfferId && courierId) {
+    const { error: offErr } = await admin.from('offers').insert({
+      id: acceptedOfferId,
+      request_id: requestId,
+      courier_id: courierId,
+      amount_ars: 2000,
+      eta_minutes: 15,
+      status: 'accepted',
+      message: 'Oferta aceptada en seed',
+    });
+    if (offErr) {
+      throw new Error(`[E2E Seed Error] Falló la creación de oferta aceptada: ${offErr.message}`);
+    }
+    trackEntityForCleanup(context, 'offer', acceptedOfferId);
+
+    // 3. Vincular accepted_offer_id en delivery_requests
+    const { error: linkErr } = await admin
+      .from('delivery_requests')
+      .update({ accepted_offer_id: acceptedOfferId })
+      .eq('id', requestId);
+    if (linkErr) {
+      throw new Error(`[E2E Seed Error] Falló la vinculación de oferta aceptada: ${linkErr.message}`);
+    }
+  }
+
+  if (options.withContacts) {
+    const { error: contErr } = await admin.from('delivery_request_contacts').insert({
+      request_id: requestId,
+      pickup_address: 'Alberdi 150, Aguilares',
+      pickup_lat: -27.432,
+      pickup_lng: -65.612,
+      dropoff_address: 'San Martín 400, Aguilares',
+      dropoff_lat: -27.435,
+      dropoff_lng: -65.615,
+      recipient_name: 'Destinatario E2E',
+      recipient_phone: '+5493865123456',
+      recipient_consent_declared: true,
+    });
+    if (contErr) {
+      throw new Error(`[E2E Seed Error] Falló la inserción de contactos: ${contErr.message}`);
+    }
+    trackEntityForCleanup(context, 'contact', requestId);
+  }
+
+  const pendingOfferIds: string[] = [];
+  const pendingCount = options.withPendingOffersCount ?? 0;
+  const couriers = context.courierUsers;
+  if (pendingCount > 0 && couriers && couriers.length > 0) {
+    for (let i = 0; i < pendingCount; i++) {
+      const courier = couriers[i % couriers.length];
+      if (!courier) continue;
+      const pOfferId = randomUUID();
+      const { error: pOffErr } = await admin.from('offers').insert({
+        id: pOfferId,
+        request_id: requestId,
+        courier_id: courier.id,
+        amount_ars: 1500 + i * 200,
+        eta_minutes: 10 + i * 5,
+        status: 'pending',
+        message: `Oferta pendiente ${i + 1}`,
+      });
+      if (pOffErr) {
+        throw new Error(
+          `[E2E Seed Error] Falló la inserción de oferta pendiente ${i}: ${pOffErr.message}`
+        );
+      }
+      trackEntityForCleanup(context, 'offer', pOfferId);
+      pendingOfferIds.push(pOfferId);
+    }
+  }
+
+  let incidentId: string | null = null;
+  if (options.withIncident) {
+    incidentId = randomUUID();
+    const { error: incErr } = await admin.from('incidents').insert({
+      id: incidentId,
+      request_id: requestId,
+      reporter_id: options.withIncident.reporterId,
+      kind: options.withIncident.kind,
+      description: options.withIncident.description,
+      status: 'open',
+    });
+    if (incErr) {
+      throw new Error(`[E2E Seed Error] Falló la creación de incidente: ${incErr.message}`);
+    }
+    trackEntityForCleanup(context, 'incident', incidentId);
+  }
+
+  return {
+    requestId,
+    acceptedOfferId,
+    pendingOfferIds,
+    incidentId,
+  };
+}
+
+/**
+ * Obtiene el valor numérico de una configuración de plataforma desde PostgreSQL.
+ * Principio fail-closed: lanza excepción si la clave no existe, la consulta falla
+ * o el valor no es un número finito válido (H13).
+ */
+export async function getPlatformSettingNumber(
+  key: string,
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<number> {
+  assertAllowedE2EEnvironment(env);
+  const admin = client ?? createAdminClient();
+  const { data, error } = await admin
+    .from('platform_settings')
+    .select('value')
+    .eq('key', key)
+    .single();
+
+  if (error) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': ${error.message}`
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': fila no encontrada`
+    );
+  }
+
+  const rawValue = (data as { value: unknown }).value;
+  if (rawValue === null || rawValue === undefined) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': el valor es nulo o indefinido`
+    );
+  }
+
+  const num = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+  if (!Number.isFinite(num)) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': el valor '${String(rawValue)}' no es un número finito`
+    );
+  }
+
+  return num;
+}
+
+/**
+ * Actualiza el estado de suscripción de un comercio para pruebas E2E de precondiciones.
+ */
+export async function setMerchantSubscriptionStatus(
+  merchantId: string,
+  status: 'pilot' | 'active' | 'expired' | 'cancelled',
+  client?: AdminClientType,
+  env: Record<string, string | undefined> = process.env
+): Promise<void> {
+  assertAllowedE2EEnvironment(env);
+  assertValidUuid(merchantId, 'merchantId');
+  const admin = client ?? createAdminClient();
+  const { error } = await admin
+    .from('merchants')
+    .update({ subscription_status: status })
+    .eq('profile_id', merchantId);
+  if (error) {
+    throw new Error(`[E2E Seed Error] Error al actualizar suscripción de comercio: ${error.message}`);
+  }
+}
+
