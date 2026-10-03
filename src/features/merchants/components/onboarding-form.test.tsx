@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MerchantOnboardingForm } from './onboarding-form';
 import { merchantOnboardingAction } from '../actions';
@@ -71,6 +71,16 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
   };
   const mockZones = [zoneA, zoneB, zoneC];
 
+  function zoneTrigger() {
+    return screen.getByLabelText(/barrio de retiro/i);
+  }
+
+  /** Elige un barrio como lo hace una persona: abre el combobox y toca la opción del listbox. */
+  function chooseZone(zone: { readonly name: string }) {
+    fireEvent.click(zoneTrigger());
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: zone.name }));
+  }
+
   function fillBaseForm() {
     fireEvent.change(screen.getByLabelText(/nombre del negocio/i), {
       target: { value: 'Comercio Aguilares' },
@@ -113,8 +123,7 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
 
     fillBaseForm();
 
-    const zoneSelect = screen.getByLabelText(/barrio de retiro/i);
-    fireEvent.change(zoneSelect, { target: { value: zoneA.id } });
+    chooseZone(zoneA);
 
     fireEvent.click(screen.getByRole('button', { name: /empezar/i }));
 
@@ -141,9 +150,8 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
 
     fillBaseForm();
 
-    const zoneSelect = screen.getByLabelText(/barrio de retiro/i);
-    fireEvent.change(zoneSelect, { target: { value: zoneA.id } });
-    fireEvent.change(zoneSelect, { target: { value: zoneB.id } });
+    chooseZone(zoneA);
+    chooseZone(zoneB);
 
     fireEvent.click(screen.getByRole('button', { name: /empezar/i }));
 
@@ -170,8 +178,7 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
 
     fillBaseForm();
 
-    const zoneSelect = screen.getByLabelText(/barrio de retiro/i);
-    fireEvent.change(zoneSelect, { target: { value: zoneA.id } });
+    chooseZone(zoneA);
 
     // Fija pin explícito (-27.435, -65.615)
     fireEvent.click(pinBtn);
@@ -200,8 +207,7 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
 
     fillBaseForm();
 
-    const zoneSelect = screen.getByLabelText(/barrio de retiro/i);
-    fireEvent.change(zoneSelect, { target: { value: zoneC.id } });
+    chooseZone(zoneC);
 
     fireEvent.click(screen.getByRole('button', { name: /empezar/i }));
 
@@ -412,8 +418,7 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       expect(submitBtn).toHaveProperty('disabled', true);
 
       // B2. Con zona cuyo centroide está fuera de Aguilares
-      const zoneSelect = screen.getByLabelText(/barrio de retiro/i);
-      fireEvent.change(zoneSelect, { target: { value: zoneOutOfBounds.id } });
+      chooseZone(zoneOutOfBounds);
       expect(submitBtn).toHaveProperty('disabled', true);
     });
 
@@ -457,6 +462,127 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       const callArgs = firstCall[0] as Record<string, unknown>;
       expect(callArgs['defaultPickupLat']).toBe(-27.435);
       expect(callArgs['defaultPickupLng']).toBe(-65.615);
+    });
+  });
+
+  describe('T-326: selector de barrio con el Select del proyecto', () => {
+    const barrios = [
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', name: 'Aguilares - Centro', centroidLat: null, centroidLng: null },
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', name: 'Chacarita', centroidLat: null, centroidLng: null },
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3', name: 'Evita', centroidLat: null, centroidLng: null },
+      { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4', name: 'San Martín', centroidLat: null, centroidLng: null },
+    ];
+
+    async function submitAndReadPayload() {
+      vi.mocked(merchantOnboardingAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /empezar/i }));
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+      return vi.mocked(merchantOnboardingAction).mock.calls[0]?.[0] as Record<string, unknown>;
+    }
+
+    it('no renderiza un <select> nativo operable: el barrio se elige con un combobox', () => {
+      const { container } = render(<MerchantOnboardingForm zones={barrios} />);
+
+      const trigger = zoneTrigger();
+      expect(trigger.tagName).toBe('BUTTON');
+      expect(trigger.getAttribute('role')).toBe('combobox');
+      expect(trigger.getAttribute('aria-haspopup')).toBe('listbox');
+      // Radix deja un <select aria-hidden tabindex=-1> interno; lo que no puede haber es uno operable.
+      expect(container.querySelector('select:not([aria-hidden="true"])')).toBeNull();
+    });
+
+    it('muestra el placeholder y, al abrir, un listbox con todos los barrios en el orden recibido', () => {
+      render(<MerchantOnboardingForm zones={barrios} />);
+
+      const trigger = zoneTrigger();
+      expect(trigger.textContent).toContain('Seleccioná un barrio');
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(screen.queryByRole('listbox')).toBeNull();
+
+      fireEvent.click(trigger);
+
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      const listbox = screen.getByRole('listbox');
+      expect(trigger.getAttribute('aria-controls')).toBe(listbox.id);
+      expect(within(listbox).getAllByRole('option').map((o) => o.textContent)).toEqual([
+        'Aguilares - Centro',
+        'Chacarita',
+        'Evita',
+        'San Martín',
+      ]);
+    });
+
+    it('al elegir un barrio lo muestra en el control, cierra el listbox y marca la opción elegida', () => {
+      render(<MerchantOnboardingForm zones={barrios} />);
+
+      chooseZone({ name: 'Evita' });
+
+      const trigger = zoneTrigger();
+      expect(trigger.textContent).toContain('Evita');
+      expect(trigger.textContent).not.toContain('Seleccioná un barrio');
+      expect(screen.queryByRole('listbox')).toBeNull();
+
+      fireEvent.click(trigger);
+      const selected = within(screen.getByRole('listbox'))
+        .getAllByRole('option')
+        .filter((o) => o.getAttribute('aria-selected') === 'true');
+      expect(selected.map((o) => o.textContent)).toEqual(['Evita']);
+    });
+
+    it('persiste en el submit el UUID del barrio elegido, también después de cambiar de barrio', async () => {
+      render(<MerchantOnboardingForm zones={barrios} />);
+      await screen.findByTestId('map-picker');
+      fillBaseForm();
+
+      chooseZone({ name: 'Chacarita' });
+      chooseZone({ name: 'San Martín' });
+
+      const payload = await submitAndReadPayload();
+      expect(payload['defaultPickupZoneId']).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4');
+    });
+
+    it('un barrio sin centroide no fabrica coordenadas: ni en el mapa ni en el submit', async () => {
+      render(<MerchantOnboardingForm zones={barrios} />);
+      await screen.findByTestId('map-picker');
+      fillBaseForm();
+
+      chooseZone({ name: 'Aguilares - Centro' });
+
+      expect(screen.getByTestId('map-default-zone-center').textContent).toBe('null');
+      expect(screen.getByTestId('map-value').textContent).toBe('null');
+
+      const payload = await submitAndReadPayload();
+      expect(payload['defaultPickupZoneId']).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1');
+      expect(payload['defaultPickupLat']).toBeNull();
+      expect(payload['defaultPickupLng']).toBeNull();
+    });
+
+    it('con un barrio sin centroide, el pin del mapa sigue siendo la ubicación precisa', async () => {
+      render(<MerchantOnboardingForm zones={barrios} />);
+      await screen.findByTestId('map-picker');
+      fillBaseForm();
+
+      chooseZone({ name: 'Evita' });
+      fireEvent.click(screen.getByTestId('simulate-map-pin'));
+
+      const payload = await submitAndReadPayload();
+      expect(payload['defaultPickupZoneId']).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3');
+      expect(payload['defaultPickupLat']).toBe(-27.435);
+      expect(payload['defaultPickupLng']).toBe(-65.615);
+    });
+
+    it('sin elegir barrio el alta sigue siendo posible y no se envía un barrio inventado', async () => {
+      render(<MerchantOnboardingForm zones={barrios} />);
+      await screen.findByTestId('map-picker');
+      fillBaseForm();
+
+      const payload = await submitAndReadPayload();
+      expect(payload['defaultPickupZoneId']).toBeUndefined();
     });
   });
 });

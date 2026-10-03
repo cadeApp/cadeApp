@@ -113,15 +113,11 @@ jobs:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           E2E_TEST: 'true'
         shell: bash
+        # T-331: los specs se descubren por proyecto de playwright.config.ts: chromium corre todos los del SHA
+        # exacto y global-settings, después y en serie. Un spec nuevo entra solo, sin tocar .github/**.
         run: |
-          specs=(e2e/specs/smoke.spec.ts e2e/specs/main-flow.spec.ts)
-          if [ -f e2e/specs/request-states.spec.ts ]; then
-            specs+=(e2e/specs/request-states.spec.ts)
-          fi
-          pnpm exec playwright test "${specs[@]}" --project=chromium --workers=1
-          if [ -f e2e/specs/subscription.global-settings.spec.ts ]; then
-            pnpm exec playwright test e2e/specs/subscription.global-settings.spec.ts --project=global-settings --workers=1
-          fi
+          pnpm exec playwright test --project=chromium --workers=1
+          pnpm exec playwright test --project=global-settings --workers=1 --pass-with-no-tests
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
