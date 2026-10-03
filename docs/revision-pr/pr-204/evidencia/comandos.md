@@ -211,3 +211,64 @@ El `refs/pull/204/merge` observable contiene authorization + request-states, per
 ### H05
 
 El body ya corrigió casi todo, pero el informe quedó sin saltos: `...Lautaro073Resultado: CON BLOQUEANTES...`. Debe reemplazarse por el informe literal de Ronda 3 y luego actualizar el run exact-head tras la sincronización.
+
+## Ronda 4
+
+**SHA:** `dd29da076a1d8d7194f90568c8a1ae53e1ad5c72`
+
+### H05 — validación estructural del body
+
+Resultado:
+```json
+{"refs":true,"mutationUnchecked":true,"reportTitle":true,"result":true,"checks":true,"blockers":true,"improvements":true,"doubts":true,"rollbackReal":true}
+```
+
+H05 se cierra.
+
+### Estado de base
+
+```text
+develop = 20db1bdbfd44f5a398dbfa984cc8ea291a56a493
+head    = dd29da076a1d8d7194f90568c8a1ae53e1ad5c72
+ahead   = 19
+behind  = 49
+mergeable = false
+mergeable_state = dirty
+```
+
+### T-331
+
+Develop actual:
+```bash
+pnpm exec playwright test --project=chromium --workers=1
+pnpm exec playwright test --project=global-settings --workers=1 --pass-with-no-tests
+```
+
+`e2e/AGENTS.md`: todo spec en `e2e/specs/` entra solo a los gates; no hace falta tocar `.github/**`.
+
+Issue #37 fue actualizado para dejar constancia de que T-331 supersede la mecánica de 1-A/3-A.
+
+### CI 37088795092
+
+```text
+unit: 114 archivos / 1687 tests PASS
+verify-workflows: 47/47 PASS
+ADR: 6/6 PASS
+db-tests: 15 archivos / 1671 tests PASS
+typecheck/lint/build/bundle: PASS
+audit: FAIL — GHSA-vfj7-8cjw-p6xm (advisory; sin cambios de dependencias en T-305)
+```
+
+### e2e-preview 37088866612
+
+GREEN, pero no es evidencia de T-305:
+```text
+Running 9 tests using 1 worker
+9 passed
+Running 3 tests using 1 worker
+3 passed
+```
+
+Los nombres del log muestran main-flow/smoke + subscription.global-settings; no aparece `authorization.spec.ts` ni T-305.
+
+El próximo run, una vez integrado T-331, debe mostrar explícitamente los cuatro casos de authorization en GREEN.

@@ -24,3 +24,11 @@ No se abre AG nueva.
 
 - Cuando develop avanza sobre el mismo workflow durante una revisión, un CI GREEN del head no basta si el merge ref observable no refleja la base actual; hay que re-sincronizar y revalidar.
 - Los informes pegados por CLI deben conservar saltos de línea; concatenar la cabecera rompe el formato literal aunque el contenido semántico esté presente.
+
+## Ronda 4
+
+No se abre AG nueva.
+
+- Un cambio de infraestructura puede volver obsoleta una decisión de bootstrap sin cambiar su intención. T-331 resolvió de forma general el problema que 1-A/3-A habían resuelto de forma específica.
+- Un status E2E GREEN solo sirve como evidencia de una tarea si el log demuestra que ejecutó el spec de esa tarea.
+- Cuando el gate pasa de lista manual a autodiscovery, las PR viejas deben retirar su personalización local al sincronizar para no reintroducir el antipatrón.
