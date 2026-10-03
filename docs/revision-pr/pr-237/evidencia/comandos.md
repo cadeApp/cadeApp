@@ -1,51 +1,74 @@
 # Comandos reproducibles — PR #237
 
-**SHA revisado:** 7d65e8649302a788a8f9c2cdbf28d72295f6666d
+## Ronda 1
 
-Ronda 1 tuvo acceso de lectura por conectores y no un checkout ejecutable. Por eso no se registra RED ejecutado por el revisor y no se apropia la evidencia MU1–MU7 del autor.
+**SHA:** `7d65e8649302a788a8f9c2cdbf28d72295f6666d`
 
-## Arranque reproducido
+La sesión tuvo acceso de lectura pero no checkout ejecutable. Ver `revisiones/ronda-1.md`.
 
-GitHub compare: status ahead; ahead_by 2; behind_by 0; base/merge-base e39569b59fa8203df9893dbb824cbc4a317d4181.
-Vercel: deployment de 7d65e8649302a788a8f9c2cdbf28d72295f6666d READY en feat/T-325-unified-document-upload.
+## Ronda 2
 
-## H01 — matriz requerida para Ronda 2
+**SHA:** `40929053157569b68ec19d06d74e63c168248eb1`
 
-Ejecutar:
+### Sincronización reproducida por GitHub
+
+- `f8707abc..40929053157569b68ec19d06d74e63c168248eb1`: 3 commits adelante, 0 atrás.
+- `develop..HEAD`: 6 commits adelante, 0 atrás.
+- `docs/revision-pr/pr-237/revisiones/ronda-1.md` conserva SHA de blob `ca9e2fac...`.
+- `hallazgos.jsonl` conservaba SHA de blob `a69cb2b5...` antes de este commit de R2.
+
+### Limitación de ejecución
+
+El contenedor de revisión no resuelve `github.com`, por lo que no fue posible crear un worktree ni repetir Vitest/mutaciones. No se registra un RED ficticio.
+
+Intento de conectividad:
+
+    git ls-remote https://github.com/cadeApp/cadeApp.git refs/heads/feat/T-325-unified-document-upload
+    fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/': Could not resolve host: github.com
+
+### H01 — mutación a repetir en ronda final
+
+Baseline:
 
     pnpm vitest run src/features/courier-onboarding/components.test.tsx -t "T-325"
 
-Casos nuevos:
-- license + compression rejects after previous success -> old path retained
-- license + upload rejects after previous success -> old path retained
-- insurance + compression rejects after previous success -> old path retained
-- insurance + upload rejects after previous success -> old path retained
+Mutación independiente:
 
-Mutación independiente: reinsertar temporalmente el setOptionalDocs(...undefined) previo al try. Los cuatro deben quedar RED; restaurado, GREEN.
+    # En handleOptionalUpload, antes del try, insertar temporalmente:
+    setOptionalDocs((prev) => ({ ...prev, [kind]: undefined }));
 
-## H02 — foco
+Esperado: los cuatro casos `license|insurance × compresión|subida` deben quedar RED. Restaurado: GREEN.
 
-Ejecutar la misma suite T-325 y comprobar navegador con Tab. Mutación independiente: quitar focus-within:ring-2 de DocumentUploadCard; el control debe quedar RED y el proxy visible perder foco.
+### H02 — mutación a repetir en ronda final
 
-## H03 — navegador
+Mutación independiente:
 
-No modificar .github/** ni e2e/**. Usar Preview + flujo Develop autorizado. Evidencia mínima:
-- 390 px: idle + loading
-- 360 px: error/Reintentar + success/Cargado
-- foco visible
-- nota de targets >=48, overflow, contraste y reduced motion
-- revisión Diseño + Frontend + Persona
+    # Quitar temporalmente focus-within:ring-2 de DocumentUploadCard
 
-## Revalidación final
+Esperado: los dos casos PR237-H02 deben quedar RED. Restaurado: GREEN.
 
+### H03 — cierre visual
+
+No tocar SQL/RLS. Crear una cuenta courier nueva desde `/register` en Develop, aceptar TOS/Privacy, iniciar sesión y abrir el onboarding. El registro llama `activate_account_consents`; CC-007 actualiza `consent_status='active'`.
+
+Capturar:
+
+    src/features/courier-onboarding/evidence/T-325/360-05-cargado.jpg
+
+o equivalente a 390 px, mostrando archivo + «Cargado».
+
+Actualizar el README de evidencia y la bitácora.
+
+### Revalidación final
+
+    pnpm vitest run src/features/courier-onboarding/components.test.tsx
     pnpm typecheck
     pnpm lint
-    pnpm vitest run src/features/courier-onboarding/components.test.tsx
     pnpm test
     git diff --check
-    node tools/verify-fichas.test.ts
+    pnpm vitest run tools/verify-fichas.test.ts
     node .github/workflows/verify-workflows.test.mjs
     node docs/adr/verify-adr.test.mjs
     node docs/revision-pr/analizar.mjs verificacion
 
-CI detallado recién sin bloqueantes.
+Cuando no queden bloqueantes, auditar también los logs de CI del SHA exacto.
