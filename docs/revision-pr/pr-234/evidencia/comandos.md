@@ -1,10 +1,8 @@
 # Comandos reproducibles — PR #234
 
-Cada mutación de esta revisión se hizo sobre una copia en memoria del workflow; no se escribió `.github/workflows/ci.yml`.
+Las mutaciones de la revisión se aplican sobre copias en memoria o temporalmente y se restauran. `.github/workflows/ci.yml` no queda modificado en la rama.
 
-## Ronda 1 — H01: presencia textual no prueba alcanzabilidad
-
-Sobre `3fd36b865f5eeb8a957d7048aff9fb4d5911e78d`, el guard de R1 quedó:
+## Ronda 1
 
 ```
 baseline                           GREEN
@@ -13,11 +11,7 @@ if: false en el step              GREEN
 continue-on-error en el job       GREEN
 ```
 
-Las tres últimas debían ser RED.
-
-## Ronda 2 — H01: el entorno del job/step seguía abierto
-
-Sobre `2a3dc3a77cf453715d9806fba8bdc646aaafc40e`:
+## Ronda 2
 
 ```
 baseline                           GREEN
@@ -29,11 +23,7 @@ job_defaults_shell                 GREEN
 extra_prior_step                   GREEN
 ```
 
-Las tres últimas debían ser RED.
-
-## Ronda 3 — allowlist del job verificada y residual global
-
-Sobre `7b088c87fb97b93e5f90565268f35e858438f963`, reproduciendo la lógica del test actual:
+## Ronda 3
 
 ```
 baseline                          GREEN
@@ -46,37 +36,34 @@ r1_job_continue                   RED
 workflow_defaults_shell           GREEN
 ```
 
-La mutación nueva es:
+## Ronda 4
 
-```yaml
-defaults:
-  run:
-    shell: bash {0}; exit 0
+Sobre `3b93acf2433c8ae0dd44ae854add2f395c99cf0e`:
+
+```
+baseline                          GREEN
+workflow_defaults_shell           RED
+r2_step_shell                     RED
+r2_job_defaults                   RED
+r2_extra_step                     RED
+r1_exit0                          RED
+r1_step_if                        RED
+r1_job_continue                   RED
+pr_develop_removed                GREEN
+pr_paths_ignore_all               GREEN
+pr_event_removed                  GREEN
 ```
 
-insertada como clave top-level del workflow. El job `audit` queda textualmente idéntico, por eso la allowlist actual no la ve.
+`verify-workflows.test.mjs` solo exige que exista el texto `pull_request:`; por eso cubre `pr_event_removed`, pero no `pr_develop_removed` ni `pr_paths_ignore_all`.
 
-### Mutación obligatoria para el próximo arreglo
+### Mutaciones obligatorias para el próximo arreglo
 
-Una por vez y restaurada:
+Una por vez:
 
-1. agregar a nivel workflow:
-   ```yaml
-   defaults:
-     run:
-       shell: bash {0}; exit 0
-   ```
-2. ejecutar:
-   ```bash
-   pnpm vitest run tools/verify-audit-exceptions.test.ts
-   ```
-3. Esperado: RED por la allowlist de claves top-level.
-4. Restaurado: GREEN `5 passed (5)`.
+1. `branches: [develop, staging, main]` → `branches: [staging, main]` bajo `pull_request`;
+2. agregar `paths-ignore: ['**']` bajo `pull_request`;
+3. quitar por completo el bloque `pull_request`.
 
-Después volver a correr las seis mutaciones anteriores para asegurar que siguen RED.
+Esperado: las tres RED por la igualdad del bloque `on:`.
 
-## T-333 / verify-fichas
-
-El test `tools/verify-fichas.test.ts` construye la celda DoD del plan y exige que sea idéntica al primer ítem del DoD de cada ficha no exceptuada. T-333 incumple esa igualdad en develop `bc6329d941a510cc37d23827f5e3798e3839c065`.
-
-Se registró en issue #229. No corregir desde T-332.
+Después volver a reproducir las siete mutaciones anteriores. Restaurado: `5 passed (5)`.
