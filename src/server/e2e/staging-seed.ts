@@ -899,7 +899,7 @@ export async function cleanupStagingData(
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('Unexpected table delivery_requests')) {
+      if (!msg.includes('Unexpected table delivery_requests') && !msg.includes('Unexpected table: delivery_requests')) {
         cleanupErrors.push({
           entity: 'discovery.delivery_requests',
           ids: [context.merchantUser.id],
@@ -934,7 +934,7 @@ export async function cleanupStagingData(
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('Unexpected table offers')) {
+      if (!msg.includes('Unexpected table offers') && !msg.includes('Unexpected table: offers')) {
         cleanupErrors.push({
           entity: 'discovery.offers',
           ids: context.createdRequestIds,
@@ -943,36 +943,72 @@ export async function cleanupStagingData(
       }
     }
 
-    // 3. Descubrir contactos correspondientes
+  // 3. Descubrir contactos correspondientes
+  try {
+    const contactsBuilder = admin.from('delivery_request_contacts');
+    if (typeof (contactsBuilder as { select?: unknown }).select === 'function') {
+      const { data: foundContacts, error: contactsErr } = await contactsBuilder
+        .select('request_id')
+        .in('request_id', context.createdRequestIds);
+
+      if (contactsErr) {
+        cleanupErrors.push({
+          entity: 'discovery.delivery_request_contacts',
+          ids: context.createdRequestIds,
+          error: contactsErr.message,
+        });
+      } else if (foundContacts) {
+        if (!context.createdContactRequestIds) {
+          context.createdContactRequestIds = [];
+        }
+        for (const row of foundContacts) {
+          if (row.request_id && !context.createdContactRequestIds.includes(row.request_id)) {
+            context.createdContactRequestIds.push(row.request_id);
+          }
+        }
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes('Unexpected table delivery_request_contacts') && !msg.includes('Unexpected table: delivery_request_contacts')) {
+      cleanupErrors.push({
+        entity: 'discovery.delivery_request_contacts',
+        ids: context.createdRequestIds,
+        error: msg,
+      });
+    }
+  }
+
+    // 3b. Descubrir incidentes creados para las solicitudes de la corrida (H11)
     try {
-      const contactsBuilder = admin.from('delivery_request_contacts');
-      if (typeof (contactsBuilder as { select?: unknown }).select === 'function') {
-        const { data: foundContacts, error: contactsErr } = await contactsBuilder
-          .select('request_id')
+      const incidentsBuilder = admin.from('incidents');
+      if (typeof (incidentsBuilder as { select?: unknown }).select === 'function') {
+        const { data: foundIncidents, error: incidentsErr } = await incidentsBuilder
+          .select('id')
           .in('request_id', context.createdRequestIds);
 
-        if (contactsErr) {
+        if (incidentsErr) {
           cleanupErrors.push({
-            entity: 'discovery.delivery_request_contacts',
+            entity: 'discovery.incidents',
             ids: context.createdRequestIds,
-            error: contactsErr.message,
+            error: incidentsErr.message,
           });
-        } else if (foundContacts) {
-          if (!context.createdContactRequestIds) {
-            context.createdContactRequestIds = [];
+        } else if (foundIncidents) {
+          if (!context.createdIncidentIds) {
+            context.createdIncidentIds = [];
           }
-          for (const row of foundContacts) {
-            if (row.request_id && !context.createdContactRequestIds.includes(row.request_id)) {
-              context.createdContactRequestIds.push(row.request_id);
+          for (const row of foundIncidents) {
+            if (row.id && !context.createdIncidentIds.includes(row.id)) {
+              context.createdIncidentIds.push(row.id);
             }
           }
         }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('Unexpected table delivery_request_contacts')) {
+      if (!msg.includes('Unexpected table incidents') && !msg.includes('Unexpected table: incidents')) {
         cleanupErrors.push({
-          entity: 'discovery.delivery_request_contacts',
+          entity: 'discovery.incidents',
           ids: context.createdRequestIds,
           error: msg,
         });
@@ -1001,6 +1037,25 @@ export async function cleanupStagingData(
       cleanupErrors.push({
         entity: 'delivery_requests.unlink_accepted_offer',
         ids: context.createdRequestIds,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // 0b. Limpieza de incidents (H11: debe eliminarse antes de delivery_requests y profiles)
+  if (context.createdIncidentIds && context.createdIncidentIds.length > 0) {
+    const toDelete = [...context.createdIncidentIds];
+    try {
+      const { error } = await admin.from('incidents').delete().in('id', toDelete);
+      if (error) {
+        cleanupErrors.push({ entity: 'incidents', ids: toDelete, error: error.message });
+      } else {
+        context.createdIncidentIds = context.createdIncidentIds.filter((id) => !toDelete.includes(id));
+      }
+    } catch (err: unknown) {
+      cleanupErrors.push({
+        entity: 'incidents',
+        ids: toDelete,
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -1350,35 +1405,66 @@ export async function seedAdminUser(
   const adminPassword = `P@ssword_${randomUUID()}!`;
   const displayName = `E2E Admin ${context.testRunId}`;
 
+  // H12: handle_new_user rechaza el rol 'admin' en signup público/admin.createUser (INVALID_SIGNUP_ROLE).
+  // El bootstrap legítimo de admin crea el usuario con un rol permitido ('merchant'),
+  // elimina el subtipo generado y promueve explícitamente profiles.role = 'admin' con service-role.
   const { data: authData, error: authError } = await admin.auth.admin.createUser({
     email: adminEmail,
     password: adminPassword,
     email_confirm: true,
     user_metadata: {
-      role: 'admin',
+      role: 'merchant',
       display_name: displayName,
     },
   });
 
   if (authError || !authData?.user?.id) {
     throw new Error(
-      `[E2E Seed Error] No se pudo crear usuario administrador: ${authError?.message || 'Sin usuario retornado'}`
+      `[E2E Seed Error] No se pudo crear usuario base para administrador: ${authError?.message || 'Sin usuario retornado'}`
     );
   }
 
   const adminUserId = authData.user.id;
   assertValidUuid(adminUserId, 'adminUserId');
+  // Rastrear inmediatamente para garantizar cleanup incluso si los pasos siguientes fallan
   trackEntityForCleanup(context, 'user', adminUserId);
 
-  const { error: profileErr } = await admin.from('profiles').upsert({
-    id: adminUserId,
-    role: 'admin',
-    display_name: displayName,
-    consent_status: 'active',
-  });
+  // 1. Eliminar la fila temporal de merchants creada por el trigger handle_new_user
+  const { error: merchDeleteErr } = await admin
+    .from('merchants')
+    .delete()
+    .eq('profile_id', adminUserId);
+  if (merchDeleteErr) {
+    throw new Error(
+      `[E2E Seed Error] Falló la eliminación del subtipo merchant temporal para admin: ${merchDeleteErr.message}`
+    );
+  }
+
+  // 2. Promover el profile a admin y asegurar consent_status = 'active'
+  const { error: profileErr } = await admin
+    .from('profiles')
+    .update({
+      role: 'admin',
+      consent_status: 'active',
+      display_name: displayName,
+    })
+    .eq('id', adminUserId);
 
   if (profileErr) {
-    throw new Error(`[E2E Seed Error] Falló el upsert en profiles (admin): ${profileErr.message}`);
+    throw new Error(`[E2E Seed Error] Falló la promoción del profile a admin: ${profileErr.message}`);
+  }
+
+  // 3. Actualizar la metadata del auth user a admin
+  const { error: updateMetaErr } = await admin.auth.admin.updateUserById(adminUserId, {
+    user_metadata: {
+      role: 'admin',
+      display_name: displayName,
+    },
+  });
+  if (updateMetaErr) {
+    throw new Error(
+      `[E2E Seed Error] Falló la actualización de metadata a admin: ${updateMetaErr.message}`
+    );
   }
 
   const credentials: UserCredentials = {
@@ -1669,10 +1755,11 @@ export async function seedDeliveryRequestInState(
 
 /**
  * Obtiene el valor numérico de una configuración de plataforma desde PostgreSQL.
+ * Principio fail-closed: lanza excepción si la clave no existe, la consulta falla
+ * o el valor no es un número finito válido (H13).
  */
 export async function getPlatformSettingNumber(
   key: string,
-  defaultValue = 45,
   client?: AdminClientType,
   env: Record<string, string | undefined> = process.env
 ): Promise<number> {
@@ -1683,10 +1770,34 @@ export async function getPlatformSettingNumber(
     .select('value')
     .eq('key', key)
     .single();
-  if (error || !data) return defaultValue;
+
+  if (error) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': ${error.message}`
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': fila no encontrada`
+    );
+  }
+
   const rawValue = (data as { value: unknown }).value;
+  if (rawValue === null || rawValue === undefined) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': el valor es nulo o indefinido`
+    );
+  }
+
   const num = typeof rawValue === 'number' ? rawValue : Number(rawValue);
-  return Number.isFinite(num) ? num : defaultValue;
+  if (!Number.isFinite(num)) {
+    throw new Error(
+      `[E2E Inspection Error] No se pudo leer la configuración '${key}': el valor '${String(rawValue)}' no es un número finito`
+    );
+  }
+
+  return num;
 }
 
 /**

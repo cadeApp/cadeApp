@@ -2144,8 +2144,220 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       });
     });
 
-    describe('seedAdminUser', () => {
-      it('crea usuario administrador en auth y profiles sin filtrar contraseñas en logs', async () => {
+    describe('Limpieza de incidents (H11)', () => {
+      it('consulta incidents para request_ids creados y agrega los IDs descubiertos a createdIncidentIds', async () => {
+        const ctx = createStagingSeedContext();
+        const reqId = '11111111-1111-4111-8111-111111111111';
+        const incId = '22222222-2222-4222-8222-222222222222';
+        ctx.createdRequestIds = [reqId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: [{ id: incId }],
+                    error: null,
+                  }),
+                }),
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient, validEnv);
+        expect(mockClient.from).toHaveBeenCalledWith('incidents');
+      });
+
+      it('ejecuta delete() sobre incidents antes de delivery_requests', async () => {
+        const ctx = createStagingSeedContext();
+        const reqId = '11111111-1111-4111-8111-111111111111';
+        const incId = '22222222-2222-4222-8222-222222222222';
+        ctx.createdRequestIds = [reqId];
+        ctx.createdIncidentIds = [incId];
+
+        const callOrder: string[] = [];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ data: [], error: null }),
+                }),
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockImplementation(() => {
+                    callOrder.push('incidents.delete');
+                    return Promise.resolve({ error: null });
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockImplementation(() => {
+                    callOrder.push('delivery_requests.delete');
+                    return Promise.resolve({ error: null });
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient, validEnv);
+        expect(callOrder).toEqual(['incidents.delete', 'delivery_requests.delete']);
+        expect(ctx.createdIncidentIds).toHaveLength(0);
+        expect(ctx.createdRequestIds).toHaveLength(0);
+      });
+
+      it('si el delete de incidents falla, conserva los IDs en createdIncidentIds y reporta cleanupErrors', async () => {
+        const ctx = createStagingSeedContext();
+        const incId = '22222222-2222-4222-8222-222222222222';
+        ctx.createdIncidentIds = [incId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: { message: 'FK violation or DB error' } }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(cleanupStagingData(ctx, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Cleanup Error\] Falló la limpieza de staging: incidents.*FK violation or DB error/i
+        );
+        expect(ctx.createdIncidentIds).toContain(incId);
+      });
+
+      it('no intenta delete() sobre incidents si no hay ninguno registrado ni descubierto', async () => {
+        const ctx = createStagingSeedContext();
+        let incidentsDeleteCalled = false;
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                delete: vi.fn().mockImplementation(() => {
+                  incidentsDeleteCalled = true;
+                  return { in: vi.fn().mockResolvedValue({ error: null }) };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient, validEnv);
+        expect(incidentsDeleteCalled).toBe(false);
+      });
+    });
+
+    describe('seedAdminUser (H12)', () => {
+      it('crea usuario administrador en auth y profiles con bootstrap legítimo y tracking', async () => {
+        const ctx = createStagingSeedContext();
+        const mockAdminId = '99999999-8888-7777-6666-555555555555';
+
+        const createUserMock = vi.fn().mockResolvedValue({
+          data: { user: { id: mockAdminId } },
+          error: null,
+        });
+        const updateUserByIdMock = vi.fn().mockResolvedValue({
+          data: { user: { id: mockAdminId } },
+          error: null,
+        });
+
+        const merchantsDeleteEqMock = vi.fn().mockResolvedValue({ error: null });
+        const profilesUpdateEqMock = vi.fn().mockResolvedValue({ error: null });
+
+        let profilesUpdatePayload: unknown = null;
+
+        const mockClient = {
+          auth: {
+            admin: {
+              createUser: createUserMock,
+              updateUserById: updateUserByIdMock,
+            },
+          },
+          from: vi.fn((table: string) => {
+            if (table === 'merchants') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  eq: merchantsDeleteEqMock,
+                }),
+              };
+            }
+            if (table === 'profiles') {
+              return {
+                update: vi.fn((payload) => {
+                  profilesUpdatePayload = payload;
+                  return {
+                    eq: profilesUpdateEqMock,
+                  };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const creds = await seedAdminUser(ctx, mockClient, validEnv);
+
+        // 1. auth.admin.createUser recibe role: 'merchant' (no 'admin' para evitar INVALID_SIGNUP_ROLE)
+        expect(createUserMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            user_metadata: expect.objectContaining({ role: 'merchant' }),
+          })
+        );
+
+        // 2. se ejecuta delete sobre merchants con eq('profile_id', adminUserId)
+        expect(merchantsDeleteEqMock).toHaveBeenCalledWith('profile_id', mockAdminId);
+
+        // 3. se ejecuta update sobre profiles con role: 'admin'
+        expect(profilesUpdatePayload).toEqual(
+          expect.objectContaining({
+            role: 'admin',
+            consent_status: 'active',
+          })
+        );
+        expect(profilesUpdateEqMock).toHaveBeenCalledWith('id', mockAdminId);
+
+        // 4. se ejecuta updateUserById con role: 'admin'
+        expect(updateUserByIdMock).toHaveBeenCalledWith(
+          mockAdminId,
+          expect.objectContaining({
+            user_metadata: expect.objectContaining({ role: 'admin' }),
+          })
+        );
+
+        // Credenciales y tracking
+        expect(creds.id).toBe(mockAdminId);
+        expect(creds.role).toBe('admin');
+        expect(creds.email).toContain('admin@cadeapp-staging.test');
+        expect(ctx.createdUserIds).toContain(mockAdminId);
+        expect(ctx.adminUser).toEqual(creds);
+      });
+
+      it('si el update de profiles falla, se lanza error y el usuario ya está en createdUserIds', async () => {
         const ctx = createStagingSeedContext();
         const mockAdminId = '99999999-8888-7777-6666-555555555555';
 
@@ -2159,22 +2371,30 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             },
           },
           from: vi.fn((table: string) => {
+            if (table === 'merchants') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
             if (table === 'profiles') {
               return {
-                upsert: vi.fn().mockResolvedValue({ error: null }),
+                update: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({ error: { message: 'Database lock or constraint error' } }),
+                }),
               };
             }
             throw new Error(`Unexpected table: ${table}`);
           }),
         } as unknown as AdminClientType;
 
-        const creds = await seedAdminUser(ctx, mockClient, validEnv);
+        await expect(seedAdminUser(ctx, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Seed Error\] Falló la promoción del profile a admin: Database lock or constraint error/i
+        );
 
-        expect(creds.id).toBe(mockAdminId);
-        expect(creds.role).toBe('admin');
-        expect(creds.email).toContain('admin@cadeapp-staging.test');
+        // El usuario ya quedó registrado para cleanup a pesar del fallo
         expect(ctx.createdUserIds).toContain(mockAdminId);
-        expect(ctx.adminUser).toEqual(creds);
       });
     });
 
@@ -2395,8 +2615,8 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       });
     });
 
-    describe('getPlatformSettingNumber y setMerchantSubscriptionStatus (H09)', () => {
-      it('obtiene valor numérico de platform_settings', async () => {
+    describe('getPlatformSettingNumber fail-closed (H13)', () => {
+      it('1. lectura exitosa de un número entero', async () => {
         const mockClient = {
           from: vi.fn((table: string) => {
             if (table === 'platform_settings') {
@@ -2404,7 +2624,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                 select: vi.fn().mockReturnValue({
                   eq: vi.fn().mockReturnValue({
                     single: vi.fn().mockResolvedValue({
-                      data: { value: 30 },
+                      data: { value: 45 },
                       error: null,
                     }),
                   }),
@@ -2415,9 +2635,124 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
           }),
         } as unknown as AdminClientType;
 
-        const value = await getPlatformSettingNumber('request_ttl_minutes', 45, mockClient, validEnv);
-        expect(value).toBe(30);
+        const val = await getPlatformSettingNumber('request_ttl_minutes', mockClient, validEnv);
+        expect(val).toBe(45);
       });
+
+      it('2. lectura exitosa de un número en string numérico (ej: "45")', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { value: '45' },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const val = await getPlatformSettingNumber('request_ttl_minutes', mockClient, validEnv);
+        expect(val).toBe(45);
+      });
+
+      it('3. error si la fila no existe', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: null,
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getPlatformSettingNumber('missing_key', mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'missing_key': fila no encontrada/i
+        );
+      });
+
+      it('4. error si la consulta devuelve error de PostgREST', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: null,
+                      error: { message: 'connection refused' },
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getPlatformSettingNumber('request_ttl_minutes', mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'request_ttl_minutes': connection refused/i
+        );
+      });
+
+      it('5. error si el valor es null, NaN, string no numérico o no finito', async () => {
+        const createClientWithValue = (val: unknown) =>
+          ({
+            from: vi.fn((table: string) => {
+              if (table === 'platform_settings') {
+                return {
+                  select: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockReturnValue({
+                      single: vi.fn().mockResolvedValue({
+                        data: { value: val },
+                        error: null,
+                      }),
+                    }),
+                  }),
+                };
+              }
+              throw new Error(`Unexpected table: ${table}`);
+            }),
+          }) as unknown as AdminClientType;
+
+        await expect(getPlatformSettingNumber('key1', createClientWithValue(null), validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key1': el valor es nulo o indefinido/i
+        );
+
+        await expect(getPlatformSettingNumber('key2', createClientWithValue(undefined), validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key2': el valor es nulo o indefinido/i
+        );
+
+        await expect(
+          getPlatformSettingNumber('key3', createClientWithValue('not-a-number'), validEnv)
+        ).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key3': el valor 'not-a-number' no es un número finito/i
+        );
+
+        await expect(
+          getPlatformSettingNumber('key4', createClientWithValue(Infinity), validEnv)
+        ).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key4': el valor 'Infinity' no es un número finito/i
+        );
+      });
+    });
+
+    describe('setMerchantSubscriptionStatus (H09)', () => {
 
       it('actualiza el subscription_status en merchants', async () => {
         const merchantId = '11111111-1111-4111-8111-111111111111';

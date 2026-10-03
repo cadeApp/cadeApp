@@ -94,8 +94,8 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(inspection.publishedAt).not.toBeNull();
     expect(inspection.expiresAt).not.toBeNull();
 
-    // expires_at debe ser exactamente now + request_ttl_minutes según configuración real en platform_settings (H09)
-    const ttlMinutes = await getPlatformSettingNumber('request_ttl_minutes', 45);
+    // expires_at debe ser exactamente now + request_ttl_minutes según configuración real en platform_settings (H09, H13)
+    const ttlMinutes = await getPlatformSettingNumber('request_ttl_minutes');
     const pubTime = new Date(inspection.publishedAt ?? '').getTime();
     const expTime = new Date(inspection.expiresAt ?? '').getTime();
     expect(expTime).toBeGreaterThan(pubTime);
@@ -522,12 +522,11 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     const offer = inspection.offers.find((o) => o.id === acceptedOfferId);
     expect(offer?.status).toBe('cancelled');
 
-    // 4. §5.1: Motivo persistido y gap contractual de notificación documentado
-    // Gap contractual (§5.1 vs backend): La matriz §5.1 define que al pasar de matched a cancelled
-    // 'Se notifica al repartidor'. La RPC cancel_request / request_cycle actualiza delivery_requests
-    // y offers a 'cancelled', registra cancel_reason y crea fila en request_cancellation_reasons,
-    // pero no emite eventos ni despacha push en la capa de datos (el push es best-effort y se maneja en Edge).
-    // Verificamos toda la persistencia real sin fingir señales inexistentes en base de datos.
+    // 4. §5.1: Motivo persistido y trazabilidad de cancelación (H14)
+    // T-304 prueba la máquina de estados y las transiciones RPC a nivel de base de datos.
+    // El despacho de push notifications ('Se notifica al repartidor') vive en la capa de
+    // orquestación de servidor (src/server/rpc/requests.ts, T-206 / PR #118) y está cubierto
+    // por su propia suite de pruebas unitarias. Verificamos la persistencia en base de datos.
     expect(inspection.cancellationReasons?.length).toBeGreaterThanOrEqual(1);
     const cancelReasonRow = inspection.cancellationReasons?.find(
       (r) => r.action === 'cancel_request'
@@ -626,6 +625,10 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       }),
       'INCIDENT_WINDOW_EXPIRED'
     );
+
+    // 4. H15: Verificar que efectivamente NO se haya creado un incidente para la solicitud expirada
+    const expiredInspection = await getRequestInspectionData(stagingContext, expiredRequestId);
+    expect(expiredInspection.incidents ?? []).toHaveLength(0);
   });
 
   // ---------------------------------------------------------------------------
