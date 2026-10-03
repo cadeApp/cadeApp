@@ -172,7 +172,7 @@ Si la misma oferta ya estaba aceptada, devuelve éxito (idempotente). Cualquier 
 | `platform_settings` | `key`, `value` | `min_offer_ars=1000`, `request_ttl_minutes=30`, `pilot_active=true`, `pilot_terms_version`, `subscription_grace_days=0`. |
 | `rate_limits` | `subject`, `action`, `window_start`, `count` | Contadores para limitar abuso. |
 
-**Operaciones críticas: solo por RPC** (`security definer` con chequeo explícito de `auth.uid()` y rol): `publish_request`, `cancel_request`, `submit_offer`, `withdraw_offer`, `accept_offer`, `mark_picked_up`, `mark_delivered`, `report_no_show`, `courier_cancel_match`, `republish_request`, `report_incident`, `set_availability`, `calculate_route_distance`, `admin_decide_courier`, `admin_suspend_courier`, `admin_verify_document`, `admin_set_subscription`, `admin_update_setting`. La RLS **niega** `insert`/`update` directos sobre `status`, `offers`, `couriers.status` y `merchants.subscription_*`. Los puntos fuera de Aguilares (lat: -27.4550 a -27.4100, lng: -65.6400 a -65.5950) son rechazados por validación en Postgres.
+**Operaciones críticas: solo por RPC** (`security definer` con chequeo explícito de `auth.uid()` y rol): `publish_request`, `cancel_request`, `submit_offer`, `withdraw_offer`, `accept_offer`, `mark_picked_up`, `mark_delivered`, `report_no_show`, `courier_cancel_match`, `republish_request`, `report_incident`, `set_availability`, `calculate_route_distance`, `admin_decide_courier`, `admin_suspend_courier`, `admin_verify_document`, `admin_set_subscription`, `admin_update_setting`. La RLS **niega** `insert`/`update` directos sobre `status`, `offers`, `couriers.status` y `merchants.subscription_*`. Los puntos fuera de Aguilares (lat: -27.4800 a -27.3800, lng: -65.6450 a -65.5800; CC-019) son rechazados por validación en Postgres.
 
 ## 8. Arquitectura
 
@@ -308,7 +308,7 @@ Legal (sin acceso a fuentes durante la revisión) dejó estos puntos. **Antes de
 
 ## 13. Estrategia de pruebas (D10)
 
-1. **Unitarias** (Vitest): máquinas de estado, validaciones Zod, reglas de piso y prioridad, armado del link de WhatsApp, compresión de imágenes, fórmula esférica de Haversine con factor 1.30 y redondeo a 0,5 km, y validación de bounding box de Aguilares (-27.4550 a -27.4100 lat, -65.6400 a -65.5950 lng).
+1. **Unitarias** (Vitest): máquinas de estado, validaciones Zod, reglas de piso y prioridad, armado del link de WhatsApp, compresión de imágenes, fórmula esférica de Haversine con factor 1.30 y redondeo a 0,5 km, y validación de bounding box de Aguilares (-27.4800 a -27.3800 lat, -65.6450 a -65.5800 lng; CC-019).
 2. **Base de datos** (pgTAP y tests de RPC contra Supabase local):
    - matriz RLS por rol;
    - verificación de que un repartidor no aceptado recibe NULL o error al intentar leer coordenadas de `delivery_request_contacts`;

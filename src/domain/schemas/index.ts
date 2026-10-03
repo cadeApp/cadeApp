@@ -120,11 +120,12 @@ export const PLATFORM_SETTING_KEYS = [
 export type PlatformSettingKey = (typeof PLATFORM_SETTING_KEYS)[number];
 export const platformSettingKeySchema = z.enum(PLATFORM_SETTING_KEYS);
 
+// CC-019: área de servicio con los barrios periféricos del plano municipal (Santa Rosa, San Miguel, Monte Rico).
 export const AGUILARES_BOUNDS = {
-  minLat: -27.455,
-  maxLat: -27.41,
-  minLng: -65.64,
-  maxLng: -65.595,
+  minLat: -27.48,
+  maxLat: -27.38,
+  minLng: -65.645,
+  maxLng: -65.58,
 } as const;
 
 export const AGUILARES_URBAN_DETOUR_FACTOR = 1.3;
