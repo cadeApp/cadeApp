@@ -7,7 +7,14 @@
 - Vercel despliega develop/previews mediante Git Integration; GitHub Actions no despliega Vercel Develop.
 - Las PR con migraciones no aplican schema remotamente a Supabase Develop antes del merge.
 
-`e2e-staging.yml` no cambia: sigue corriendo `smoke` + `main-flow` después del deploy a staging.
+`e2e-staging.yml` corre después del deploy a staging. Desde T-331 ningún gate lista specs: corren los proyectos de
+`playwright.config.ts`.
+
+- **`chromium`:** todos los `e2e/specs/*.spec.ts` salvo `*.global-settings.spec.ts`; corre en preview y en staging.
+- **`global-settings`:** los `*.global-settings.spec.ts`, en serie; corre solo en preview, porque cambia
+  `platform_settings` de la base compartida.
+
+Un spec nuevo de una tarea entra solo al gate, sin tocar `.github/**`.
 
 ## Circuito
 
@@ -17,7 +24,8 @@ push a la rama de la PR
   → Vercel avisa a GitHub con repository_dispatch (vercel.deployment.success / .ready)
   → e2e-preview.yml · resolve-preview: ¿es cadeApp-develop? ¿hay UNA PR interna abierta contra develop
     cuyo head es ese SHA? ¿toca supabase/migrations?
-  → e2e-preview.yml · e2e-preview: checkout del SHA, health check, smoke + main-flow con --workers=1
+  → e2e-preview.yml · e2e-preview: checkout del SHA, health check, proyecto chromium y después global-settings,
+    con --workers=1
   → commit status `e2e-preview` en el SHA de la PR
 ```
 
@@ -27,7 +35,7 @@ PR. Lo que se ve en la PR es el commit status `e2e-preview`, que enlaza al run.
 | Estado de `e2e-preview` | Significado |
 |---|---|
 | `pending` | Preview listo, E2E en cola o corriendo |
-| `success` | `smoke` + `main-flow` verdes contra ese Preview |
+| `success` | Todos los specs del SHA (proyectos `chromium` y `global-settings`) verdes contra ese Preview |
 | `failure` | Algún spec falló: se corrige la PR |
 | `error` · `BLOCKED / REQUIRES DEVELOP MIGRATION` | La PR toca `supabase/migrations/**`: no se corre E2E remoto |
 | `error` · `E2E no corrió (...)` | El job se canceló o no arrancó: re-ejecutar el run |
