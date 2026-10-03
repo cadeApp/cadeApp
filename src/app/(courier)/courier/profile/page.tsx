@@ -80,6 +80,8 @@ export default async function CourierProfilePage() {
     licenseStatus: courier.license_status,
     insuranceStatus: courier.insurance_status,
     courierStatus: courier.status,
+    // T-334: misma definición que el guard (`parseOnboardingComplete`): sin vehículo declarado no hay registro enviado.
+    onboardingComplete: courier.vehicle_type !== null,
   };
 
   return (

@@ -17,7 +17,7 @@ import {
   updatePasswordSchema,
   type SignupRole,
 } from './schemas';
-import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
+import { getRoleDefaultPath, parseOnboardingComplete, resolvePostLoginRedirect } from './guards';
 import { areCurrentLegalVersions } from '@/features/legal';
 import { publicEnv } from '@/lib/env.public';
 
@@ -66,7 +66,33 @@ export async function loginAction(
 
   const role = roleParsed.data;
   const consentStatus = consentParsed.data;
-  const redirectTo = resolvePostLoginRedirect(parsed.data.redirectTo, role, consentStatus);
+
+  // T-334: con onboarding incompleto el destino es el onboarding. Cliente del usuario (RLS *_select_self).
+  let onboardingComplete: boolean | undefined;
+  if (consentStatus === 'active' && (role === 'merchant' || role === 'courier')) {
+    const onboarding =
+      role === 'merchant'
+        ? await supabase
+            .from('merchants')
+            .select('business_name')
+            .eq('profile_id', data.user.id)
+            .maybeSingle()
+        : await supabase
+            .from('couriers')
+            .select('vehicle_type')
+            .eq('profile_id', data.user.id)
+            .maybeSingle();
+    if (!onboarding.error) {
+      onboardingComplete = parseOnboardingComplete(role, onboarding.data);
+    }
+  }
+
+  const redirectTo = resolvePostLoginRedirect(
+    parsed.data.redirectTo,
+    role,
+    consentStatus,
+    onboardingComplete
+  );
 
   return ok({
     userId: data.user.id,

@@ -29,7 +29,8 @@ export default async function MerchantDashboardPage() {
     throw new Error(`Error al consultar perfil del comercio: ${merchantError.message}`);
   }
 
-  if (!merchantProfile) {
+  // T-334: la fila la crea handle_new_user al registrarse; el onboarding está completo solo con business_name.
+  if (!merchantProfile || merchantProfile.business_name.trim() === '') {
     redirect('/merchant/onboarding');
   }
 
