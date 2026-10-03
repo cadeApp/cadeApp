@@ -1,159 +1,122 @@
 # Evidencia reproducible — PR #236 / T-333
 
-## Ronda 1
-
-Ver `revisiones/ronda-1.md`. SHA técnico: `371848d3ae7d25a2aaec1608f8ad16a64ef5afb7`.
-
-Trusted E2E de origen, PR #180 / run `37138561471`:
-
-```text
-GET inicial ofertas: HTTP 200
-baseline: 1
-offline: aviso visible
-online: aviso desaparece
-15 s después: count = 1
-resultado reconnect: RED
-```
-
-## Ronda 2 — SHA y delta
+## Ronda 3 — SHA
 
 ```text
 base develop: bc6329d941a510cc37d23827f5e3798e3839c065
-commit revisión R1: 47bd862d184d9319ba51be6b8121a86a96495d4d
-head R2: 7a0247af065864f3906887f54160542e977d04aa
-delta desde R1: 1 commit
-archivos del autor desde R1:
+commit revisión R2: 52d492c845c61489c54fcb46e2f360d86bc827d6
+head técnico R3: 6a080cf2ccdd675e6be9ae69a517200f172af506
+delta autor desde R2:
   docs/tasks/log/T-333.md
   src/app/providers.test.tsx
   src/app/providers.tsx
 ```
 
-## CI exact-head R2
+## CI exact-head
 
-CI `37144660539`:
+CI `37146402120`:
 
 ```text
-unit: SUCCESS
-  src/app/providers.test.tsx                   1/1
-  src/features/requests/hooks/use-request-offers.test.tsx 14/14
-  src/lib/hooks/use-realtime-invalidation.test.tsx        12/12
-  Test Files: 115 passed (115)
-  Tests: 1744 passed (1744)
-typecheck: SUCCESS
-lint: SUCCESS
-build: SUCCESS
-db-tests: SUCCESS
-bundle-budget: SUCCESS
-audit: FAILURE
-  braces <= 3.0.3
-  Severity: 2 moderate | 1 high
-  externo a T-333 / canalizado por T-332
+src/features/requests/hooks/use-request-offers.test.tsx  14/14
+src/lib/hooks/use-realtime-invalidation.test.tsx        12/12
+src/app/providers.test.tsx                               1/1
+Test Files: 115 passed (115)
+Tests: 1744 passed (1744)
+typecheck: success
+lint: success
+build: success
+db-tests: success
+bundle-budget: success
+audit: failure por braces (externo a T-333/T-332)
 ```
 
-Preview trusted `37144748472`:
+Preview `37146488624`:
 
 ```text
-checkout: 7a0247af065864f3906887f54160542e977d04aa
+checkout: 6a080cf2ccdd675e6be9ae69a517200f172af506
 chromium: 20 passed
 global-settings: 3 passed
-notifications.spec.ts: no está en este SHA
+notifications.spec.ts: no forma parte de este SHA
 ```
 
-## Comportamiento documentado de TanStack
+## Trace trusted que identifica la carrera
 
-Documentación oficial de TanStack Query v5:
+Fuente: artifact `playwright-report` de PR #180 / run `37138561471`. Se omiten deliberadamente cookies, credenciales y datos de fixtures.
 
-- `onlineManager` asume conexión activa y escucha por defecto `online` / `offline` en `window`.
-- `onlineManager.setEventListener` reemplaza la fuente de conectividad.
-- `QueryClientProvider` llama `client.mount()/unmount()`, y el cliente se suscribe a eventos focus/online.
+Tiempos monotónicos seguros:
 
-Referencias:
-- https://tanstack.com/query/latest/docs/framework/react/reference/interfaces/OnlineManager
-- https://tanstack.com/query/latest/docs/framework/react/reference/functions/QueryClientProvider
+```text
+GET /api/live/requests/<id>/offers
+  inicio:              257772.302
+  duración snapshot:      584.964 ms
+  fin aprox.:          258357.266
 
-Esto hace que el mapping de eventos del bridge nuevo no sea, por sí solo, una diferencia respecto del comportamiento default.
+setOffline(true):       258355.249
+chunk dinámico:
+  inicio:              258357.606
+  fin:                 258388.389
+setOffline(false):      258371.588
+```
 
-## Mutación que falta — M3b: solo sync inicial
+Deducción:
 
-Reemplazar temporalmente el effect actual por:
+- offline empieza ~2 ms antes de terminar la GET;
+- el chunk dinámico arranca inmediatamente después de la GET;
+- online ocurre mientras ese chunk sigue descargándose;
+- `useRequestOffers.queryFn` ejecuta `await import('@/lib/live-contracts')` después del `res.json()`;
+- por lo tanto la query sigue activa durante la reconexión.
+
+## Contrato TanStack relevante
+
+Código actual de TanStack Query v5:
 
 ```ts
-useEffect(() => {
-  onlineManager.setOnline(navigator.onLine !== false);
-}, []);
+onOnline(): void {
+  const observer = this.observers.find((x) => x.shouldFetchOnReconnect())
+  observer?.refetch({ cancelRefetch: false })
+  this.#retryer?.continue()
+}
 ```
 
-Sin `setEventListener` personalizado.
-
-Ejecutar:
-
-```bash
-pnpm vitest run src/app/providers.test.tsx
-```
-
-Interpretación:
-
-- GREEN: el test actual no demuestra que el bridge sea necesario; solo demuestra sync inicial.
-- RED: inspeccionar exactamente qué aserción falla antes de atribuirlo al reconnect.
-
-Restaurar en `finally`.
-
-## Control discriminante obligatorio — secuencia real
-
-En `src/app/providers.test.tsx`, usar el `Providers` real y un hijo con query activa.
-
-Propiedad:
+`RefetchOptions.cancelRefetch` documenta:
 
 ```text
-inicio online
-fetch inicial terminado
-baseline = N
-offline event -> onlineManager false
-online event  -> onlineManager true
-queryFn calls > baseline
+false => no se hace un nuevo refetch si ya existe una request en curso
 ```
 
-No usar sleeps ni refetch manual.
+Referencias públicas:
+- https://github.com/TanStack/query/blob/main/packages/query-core/src/query.ts
+- https://tanstack.com/query/latest/docs/framework/react/reference/interfaces/RefetchOptions
 
-Ejecutar en dos árboles:
+## RED requerido
+
+Crear en `use-request-offers.test.tsx` un fetcher diferido:
 
 ```text
-A) 47bd862 + solo el import React requerido por Vitest
-B) HEAD actual
+call #1 empieza y queda pendiente
+isRefetching = true
+onlineManager false
+onlineManager true
+call #1 sigue pendiente
+resolver call #1 con datos viejos
+esperar call #2
+call #2 devuelve datos nuevos
 ```
 
-Esperado metodológico, no resultado prefijado:
+HEAD actual esperado: **RED** (queda en una sola llamada).
 
-- A RED / B GREEN => el bridge queda demostrado.
-- A GREEN / B GREEN => el bridge no explica el trusted E2E; no fabricar RED.
-- ambos RED => el problema sigue abierto.
+Luego implementar la garantía de una segunda llamada post-settle, sin duplicar el camino de reconnect normal/idle.
 
-## Mutaciones ya conservadas
+## Mutación del arreglo futuro
 
-M1:
+Neutralizar solo el mecanismo que recuerda «reconnect pendiente durante fetch en vuelo».
+
+Esperado:
 
 ```text
-refetchOnReconnect:'always' -> false
-esperado: reconnect posterior al baseline RED
-restaurado: offers 14/14
+idle reconnect test: GREEN
+in-flight reconnect test: RED
+readiness realtime: GREEN
 ```
 
-M2:
-
-```text
-quitar catch-up SUBSCRIBED
-esperado: readiness RED
-restaurado: realtime 12/12
-```
-
-## Mejora H02
-
-El body del PR todavía contiene:
-
-```text
-src/app/providers.tsx: sin cambios
-Diagnóstico de reconexión (abierto)
-... un bridge en Providers lo duplicaría ...
-```
-
-Eso ya no describe el HEAD `7a0247af065864f3906887f54160542e977d04aa`. Actualizarlo antes de cierre.
+Restaurado: todos GREEN.
