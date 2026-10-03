@@ -134,11 +134,13 @@ select is(
   pg_temp.publish_from(lat, lng) -> 'data' ->> 'status',
   'published', 'CC-019 delivery_request_contacts y publish_request aceptan retiro en ' || name) from cc019_inside;
 
+-- La publicación va en su propia sentencia: una subconsulta en la misma sentencia vería la foto previa.
+select pg_temp.publish_from(-27.383486, -65.627223) -> 'data' ->> 'status' as cc019_last_publish;
 select is(
   (select array[pickup_lat, pickup_lng] from public.delivery_request_contacts where request_id = pg_temp.actor(20)),
   array[-27.383486, -65.627223]::numeric[],
   'CC-019 delivery_request_contacts conserva el pin periférico tal cual'
-) from (select pg_temp.publish_from(-27.383486, -65.627223)) last_publish;
+);
 
 -- 4. Fuera del área: los CHECK rechazan (23514).
 select is(
