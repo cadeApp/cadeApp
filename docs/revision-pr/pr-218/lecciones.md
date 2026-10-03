@@ -25,3 +25,11 @@ La evidencia distingue correctamente “punto representativo derivado” de “c
 Un advisory de dependencias que aparece sin cambio de `package.json` ni lockfile debe separarse de una regresión de la PR. En este caso el propio workflow lo declara advisory hasta contracts-v1; no corresponde modificar dependencias fuera del alcance de T-326 para conseguir un verde cosmético.
 
 La prueba de H04 es un buen patrón para migraciones idempotentes: alterar el estado previo y reejecutar la migración real registrada detecta divergencias que una base limpia no puede revelar.
+
+## Ronda 3 — aprobación de datos no reemplaza un contract-change
+
+Una ubicación puede estar perfectamente documentada y aprobada como dato y aun así no ser válida para una columna/semántica compartida. Si un contrato dice “derivado o NULL”, introducir una tercera categoría en la ficha de la tarea no modifica ese contrato. Primero debe cambiarse el contrato y explicitar qué consumidores pueden tratar ese punto como fallback.
+
+## Ronda 3 — evidencia por capas
+
+La cadena `points/area17/referencias-locales → final.py → barrios-centroides → gen_sql → migration/seed/pgTAP` permite revisar por separado procedencia y materialización. En esta ronda la cadena actual quedó consistente; el problema detectado es semántico, no de generación.

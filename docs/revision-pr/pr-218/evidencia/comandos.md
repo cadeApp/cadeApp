@@ -199,3 +199,89 @@ advisory: GHSA-vfj7-8cjw-p6xm
 package: braces <=3.0.3
 path: eslint-config-next -> @next/eslint-plugin-next -> fast-glob -> micromatch -> braces
 ```
+
+---
+
+# Evidencia reproducible — PR #218 / Ronda 3
+
+**SHA funcional/integrado:** `77c40b3f349f2928b982c22b5a8f9b39193fa9dd`
+
+## Sincronización
+
+```text
+develop: 973d7fae30c1db610eedf3f07aa52fbff3163a29
+head: 77c40b3f349f2928b982c22b5a8f9b39193fa9dd
+behind: 0
+```
+
+## Cadena de datos
+
+```text
+source rows: 63
+JSON rows: 63
+derivado: 56
+referencia_local: 7
+null: 0
+source-chain mismatches: 0
+migration tuples: 63
+seed tuples: 63
+migration mismatches: 0
+seed mismatches: 0
+out-of-bounds: 0
+unexpected duplicate points: 0
+only shared point: Villa Nueva / El Alto
+```
+
+## Mutación T-326
+
+```text
+mutation: 8714e3122cd337fc131517c6940fa04497bb7ae8
+run: 37099840416
+db-tests: FAIL
+t326 failed: 3/20 (12,18,20)
+```
+
+Revert:
+
+```text
+e00608e
+695e766...e00608e files: 0
+run 37100093628: PASS
+```
+
+## HEAD integrado
+
+Run `37101643494`:
+
+```text
+typecheck success
+lint success
+unit success — 114 files / 1738 tests
+build success
+db-tests success — 17 files / 1807 tests
+bundle-budget success
+database.types.ts sin diff
+Vercel READY
+audit failure — braces advisory externo
+e2e-preview BLOCKED / REQUIRES DEVELOP MIGRATION
+```
+
+## H06
+
+CC-017 vigente:
+
+```text
+dato aceptado = centroide cartográfico derivado o NULL
+```
+
+T-326 R3:
+
+```text
+56 derivado
+7 referencia_local
+0 NULL
+```
+
+Los 7 `referencia_local` quedan en `zones.centroid_lat/lng`, y los consumidores actuales no distinguen su procedencia.
+
+Contract-change creado: **CC-020 / #230**.
