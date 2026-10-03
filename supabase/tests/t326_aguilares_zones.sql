@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(14);
+select plan(18);
 
 -- Esperado: lista aprobada (barrios-fuente.md) + estado por barrio (georref/barrios-centroides.json).
 -- Generado con docs/tasks/evidence/T-326/georref/gen_sql.py.
@@ -17,6 +17,7 @@ insert into t326_expected (name, derived, lat, lng)
 values
   ('Chacarita', true, -27.422618, -65.616127),
   ('San José', true, -27.422884, -65.611733),
+  ('1º de Mayo', true, -27.425778, -65.614882),
   ('Santo Domingo', true, -27.426663, -65.611599),
   ('J. F. Kennedy', true, -27.429432, -65.611460),
   ('El Porvenir', true, -27.434205, -65.611323),
@@ -78,10 +79,10 @@ values
   ('FOTIA', true, -27.450713, -65.607055),
   ('Virgen de la Merced', false, null, null);
 
-select is((select count(*)::integer from t326_expected), 62, 'the approved list has 62 barrios');
+select is((select count(*)::integer from t326_expected), 63, 'the approved list has 63 barrios');
 
 -- 1. Exactamente los barrios aprobados están activos
-select is((select count(*)::integer from public.zones where active), 62, 'exactly 62 zones are active');
+select is((select count(*)::integer from public.zones where active), 63, 'exactly 63 zones are active');
 
 select is_empty(
   $$ select name from t326_expected
@@ -126,8 +127,8 @@ select is(
 -- 4. Centroides: solo los derivados documentados, el resto null
 select is(
   (select count(*)::integer from t326_expected where derived),
-  51,
-  'the evidence documents 51 derived centroids'
+  52,
+  'the evidence documents 52 derived centroids'
 );
 
 select is_empty(
@@ -188,6 +189,67 @@ select is(
   ),
   0,
   'every centroid on an active zone stays inside the Aguilares bounding box'
+);
+
+-- 5. PR218-H04: el upsert real de la migración T-326 hace converger filas preexistentes divergentes.
+-- Se re-ejecutan las sentencias que el CLI registró al aplicar la migración, no una copia del test.
+select is(
+  (
+    select count(*)::integer
+    from supabase_migrations.schema_migrations
+    where version = '20261002233000'
+      and cardinality(statements) > 0
+  ),
+  1,
+  'the applied T-326 migration is recorded with its statements'
+);
+
+-- Barrio sin centroide en la evidencia, con coordenadas viejas.
+update public.zones
+set centroid_lat = -27.450000, centroid_lng = -65.600000, active = false
+where name = 'San Lorenzo';
+
+-- Barrio derivado con coordenadas distintas de la evidencia.
+update public.zones
+set centroid_lat = -27.451000, centroid_lng = -65.601000, active = false
+where name = 'Chacarita';
+
+do $$
+declare
+  stmt text;
+begin
+  for stmt in
+    select unnest(statements)
+    from supabase_migrations.schema_migrations
+    where version = '20261002233000'
+  loop
+    -- Un fragmento que solo tiene comentarios no es una sentencia ejecutable.
+    continue when btrim(regexp_replace(stmt, '--[^\n]*', '', 'g'), E' \n\r\t') = '';
+    execute stmt;
+  end loop;
+end
+$$;
+
+select is(
+  (select array[centroid_lat, centroid_lng] from public.zones where name = 'San Lorenzo' and active),
+  array[null, null]::numeric[],
+  'a stale centroid on a barrio without georeferencing converges to null'
+);
+
+select is(
+  (select array[centroid_lat, centroid_lng] from public.zones where name = 'Chacarita' and active),
+  (select array[lat, lng] from t326_expected where name = 'Chacarita'),
+  'a stale centroid on a derived barrio converges to the documented value'
+);
+
+select is_empty(
+  $$ select e.name
+     from t326_expected e
+     join public.zones z on z.name = e.name
+     where not z.active
+        or z.centroid_lat is distinct from e.lat
+        or z.centroid_lng is distinct from e.lng $$,
+  'after re-applying the migration every barrio matches the evidence'
 );
 
 select * from finish();

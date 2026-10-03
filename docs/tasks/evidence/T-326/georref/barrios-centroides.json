@@ -18,6 +18,15 @@
   "lng": -65.611733
  },
  {
+  "num": "03",
+  "name": "1º de Mayo",
+  "estado": "derivado",
+  "x": 350.0,
+  "y": 291.2,
+  "lat": -27.425778,
+  "lng": -65.614882
+ },
+ {
   "num": "04",
   "name": "Santo Domingo",
   "estado": "derivado",

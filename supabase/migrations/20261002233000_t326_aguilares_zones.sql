@@ -1,9 +1,9 @@
 -- ============================================================================
 -- T-326: barrios reales de Aguilares para el onboarding de comercio
 -- ============================================================================
--- Fuente: plano municipal «CIUDAD DE AGUILARES Y DIVISIONES DE BARRIOS» (nov. 2015); lista de 62 entradas
+-- Fuente: plano municipal «CIUDAD DE AGUILARES Y DIVISIONES DE BARRIOS» (nov. 2015); lista de 63 entradas
 -- aprobada en docs/tasks/evidence/T-326/barrios-fuente.md.
--- 51 barrios con centroide cartográfico DERIVADO del plano municipal 2015 (no es una coordenada
+-- 52 barrios con centroide cartográfico DERIVADO del plano municipal 2015 (no es una coordenada
 -- oficial: punto representativo = centro del rótulo circular del barrio, llevado a WGS84 con un ajuste afín
 -- sobre intersecciones de calles de OpenStreetMap) y 11 sin centroide. Detalle y reproducción:
 -- docs/tasks/evidence/T-326/georreferenciacion.md
@@ -14,11 +14,12 @@ update public.zones
 set active = false
 where name = 'Aguilares';
 
--- 2. Barrios aprobados. Si la fila ya existe solo se activa: no se pisa un centroide existente.
+-- 2. Barrios aprobados. Una fila que ya existe converge a la evidencia: centroide (incluido null) y active.
 insert into public.zones (name, centroid_lat, centroid_lng, active)
 values
   ('Chacarita', -27.422618, -65.616127, true),
   ('San José', -27.422884, -65.611733, true),
+  ('1º de Mayo', -27.425778, -65.614882, true),
   ('Santo Domingo', -27.426663, -65.611599, true),
   ('J. F. Kennedy', -27.429432, -65.611460, true),
   ('El Porvenir', -27.434205, -65.611323, true),
@@ -80,4 +81,6 @@ values
   ('FOTIA', -27.450713, -65.607055, true),
   ('Virgen de la Merced', null, null, true)
 on conflict (name) do update
-set active = true;
+set centroid_lat = excluded.centroid_lat,
+    centroid_lng = excluded.centroid_lng,
+    active = excluded.active;

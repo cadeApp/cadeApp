@@ -9,7 +9,7 @@ pts = json.load(open(f'{BASE}/geo/points.json', encoding='utf-8'))
 src = io.open(f'{REPO}/docs/tasks/evidence/T-326/barrios-fuente.md', encoding='utf-8').read()
 rows = [(m.group(1), m.group(3).strip()) for m in
         re.finditer(r'^\| (\d{2}) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$', src, re.M)]
-assert len(rows) == 62
+assert len(rows) == 63
 
 NULL_REASON = {
     24: 'rótulos 24-25-26 agrupados en el borde norte, sin área propia distinguible',
