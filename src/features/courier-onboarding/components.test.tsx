@@ -622,7 +622,11 @@ describe('T-325: licencia y seguro usan el mismo sistema de carga que el paso 2'
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    vi.mocked(compressImage).mockImplementation((file: File) => Promise.resolve(file));
+    // mockReset descarta implementaciones `Once` que un test fallido haya dejado sin consumir.
+    mockUploadCourierDocument.mockReset();
+    vi.mocked(compressImage)
+      .mockReset()
+      .mockImplementation((file: File) => Promise.resolve(file));
   });
 
   const OPTIONAL_DOCS = [
@@ -713,11 +717,13 @@ describe('T-325: licencia y seguro usan el mismo sistema de carga que el paso 2'
 
       render(<VehicleForm courierId="c-1" initialDni="38123456" />);
       const { input, card } = uploadCard(label);
+      // En jsdom el value de un input file siempre es '', así que se observa el setter: el input se limpia
+      // tras cada intento para que elegir el mismo archivo vuelva a disparar la subida en el navegador.
+      const valueSetter = vi.spyOn(input, 'value', 'set');
       selectFile(input, `${kind}.jpg`);
       await waitFor(() => expect(card.getAttribute('data-status')).toBe('error'));
 
-      // El input se limpia tras cada intento para que elegir el mismo archivo vuelva a disparar la subida.
-      expect(input.value).toBe('');
+      expect(valueSetter).toHaveBeenCalledWith('');
       selectFile(input, `${kind}.jpg`);
 
       await waitFor(() => expect(card.getAttribute('data-status')).toBe('success'));
