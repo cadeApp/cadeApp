@@ -12,6 +12,7 @@ import {
   aguilaresCoordinatesSchema,
   type MapCoordinates,
 } from './map';
+import { AGUILARES_BOUNDS as DOMAIN_AGUILARES_BOUNDS } from '@/domain/schemas';
 import { MapSkeleton } from './map-skeleton';
 
 // Configuración dinámica de mocks
@@ -1199,6 +1200,31 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
       const res = aguilaresCoordinatesSchema.safeParse({ lat: -27.50, lng: -65.70 });
       expect(res.success).toBe(false);
       expect(isWithinAguilaresBounds(-27.50, -65.70)).toBe(false);
+    });
+
+    it('CC-019: AGUILARES_BOUNDS del mapa es igual al del dominio', () => {
+      expect(AGUILARES_BOUNDS).toEqual(DOMAIN_AGUILARES_BOUNDS);
+    });
+
+    it('CC-019: acepta los barrios periféricos y rechaza apenas fuera de cada borde', () => {
+      for (const point of [
+        { lat: -27.4671558, lng: -65.6196513 },
+        { lat: -27.4284408, lng: -65.5892114 },
+        { lat: -27.3964375, lng: -65.6359375 },
+        { lat: -27.383486, lng: -65.627223 },
+      ]) {
+        expect(aguilaresCoordinatesSchema.safeParse(point).success).toBe(true);
+        expect(isWithinAguilaresBounds(point.lat, point.lng)).toBe(true);
+      }
+      for (const point of [
+        { lat: -27.4801, lng: -65.615 },
+        { lat: -27.3799, lng: -65.615 },
+        { lat: -27.432, lng: -65.6451 },
+        { lat: -27.432, lng: -65.5799 },
+      ]) {
+        expect(aguilaresCoordinatesSchema.safeParse(point).success).toBe(false);
+        expect(isWithinAguilaresBounds(point.lat, point.lng)).toBe(false);
+      }
     });
 
     it('muestra role="alert" cuando value está fuera del bounding box', () => {

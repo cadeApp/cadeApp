@@ -98,7 +98,7 @@ select throws_ok(
   'calculate_route_distance rejects unauthenticated calls'
 );
 
--- 4. OUT_OF_BOUNDS_AGUILARES ante latitud fuera de Aguilares (-27.4550 a -27.4100)
+-- 4. OUT_OF_BOUNDS_AGUILARES ante latitud fuera de Aguilares (CC-019: -27.4800 a -27.3800)
 select pg_temp.act_as('authenticated', pg_temp.merchant_id());
 select throws_ok(
   $$select public.calculate_route_distance(-26.800000, -65.615000, -27.425000, -65.608000)$$,
@@ -107,7 +107,7 @@ select throws_ok(
   'calculate_route_distance rejects origin latitude outside Aguilares bounding box'
 );
 
--- 5. OUT_OF_BOUNDS_AGUILARES ante longitud fuera de Aguilares (-65.6400 a -65.5950)
+-- 5. OUT_OF_BOUNDS_AGUILARES ante longitud fuera de Aguilares (CC-019: -65.6450 a -65.5800)
 select throws_ok(
   $$select public.calculate_route_distance(-27.432000, -65.200000, -27.425000, -65.608000)$$,
   'P0001',
@@ -117,7 +117,7 @@ select throws_ok(
 
 -- 6. OUT_OF_BOUNDS_AGUILARES en coordenadas de destino
 select throws_ok(
-  $$select public.calculate_route_distance(-27.432000, -65.615000, -27.460000, -65.608000)$$,
+  $$select public.calculate_route_distance(-27.432000, -65.615000, -27.490000, -65.608000)$$,
   'P0001',
   'OUT_OF_BOUNDS_AGUILARES',
   'calculate_route_distance rejects destination coordinates outside Aguilares bounding box'

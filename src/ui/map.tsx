@@ -37,11 +37,12 @@ export const AGUILARES_CENTER: MapCoordinates = {
   lng: -65.6167,
 };
 
+// CC-019: igual a AGUILARES_BOUNDS de src/domain/schemas (map.test.tsx lo verifica).
 export const AGUILARES_BOUNDS = {
-  minLat: -27.4550,
-  maxLat: -27.4100,
-  minLng: -65.6400,
-  maxLng: -65.5950,
+  minLat: -27.4800,
+  maxLat: -27.3800,
+  minLng: -65.6450,
+  maxLng: -65.5800,
 } as const;
 
 export const aguilaresCoordinatesSchema = z.object({

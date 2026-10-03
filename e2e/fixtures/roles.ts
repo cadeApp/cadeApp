@@ -3,6 +3,7 @@ import { MerchantPage, CourierPage, AdminPage, LoginPage, TripPage } from '../pa
 import {
   createStagingSeedContext,
   seedStagingData,
+  seedAdminUser,
   cleanupStagingData,
   type StagingSeedContext,
   type UserCredentials,
@@ -17,6 +18,7 @@ export interface RoleFixtures {
   stagingContext: StagingSeedContext;
   loginAsMerchant: (pageInstance?: Page) => Promise<{ page: Page; merchantPage: MerchantPage; user: UserCredentials }>;
   loginAsCourier: (courierIndex?: number, pageInstance?: Page) => Promise<{ page: Page; courierPage: CourierPage; user: UserCredentials }>;
+  loginAsAdmin: (pageInstance?: Page) => Promise<{ page: Page; adminPage: AdminPage; user: UserCredentials }>;
 }
 
 /**
@@ -112,6 +114,22 @@ export const test = baseTest.extend<RoleFixtures>({
       await lp.navigate();
       await lp.login(courier.email, courier.password);
       return { page: p, courierPage: cp, user: courier };
+    };
+    await use(loginHelper);
+  },
+
+  loginAsAdmin: async ({ page, stagingContext }, use) => {
+    const loginHelper = async (pageInstance?: Page) => {
+      const p = pageInstance ?? page;
+      const lp = new LoginPage(p);
+      const ap = new AdminPage(p);
+      if (!stagingContext.adminUser) {
+        await seedAdminUser(stagingContext);
+      }
+      const admin = stagingContext.adminUser!;
+      await lp.navigate();
+      await lp.login(admin.email, admin.password);
+      return { page: p, adminPage: ap, user: admin };
     };
     await use(loginHelper);
   },
