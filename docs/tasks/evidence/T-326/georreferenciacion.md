@@ -2,9 +2,17 @@
 
 ## Estado
 
-**EJECUTADA el 2026-10-02.** 52 de los 63 barrios aprobados tienen un centroide cartográfico **derivado**; 11 quedan
-**sin centroide** (`NULL`/`NULL`), cada uno con su motivo. La lista pasó de 62 a 63 con la incorporación de
-`03 — 1º de Mayo` (decisión P1, opción A, hallazgo PR218-H05); su punto sale del mismo pipeline, sin ajuste manual.
+**EJECUTADA el 2026-10-02; completada el 2026-10-03.** Los 63 barrios aprobados tienen punto:
+
+- **56 `derivado`** del plano municipal: 55 desde el centro del rótulo circular y 1 (17 San Lorenzo) desde el centro
+  del área rosa del plano.
+- **7 `referencia_local`**, aprobados por Lautaro073 (24, 25, 26, 55, 56, 57 y 65): el plano no los ubica o los deja
+  agrupados en el borde.
+- **0 `NULL`.**
+
+19, 20, 67 y el área de 17 caen al sur del recuadro original. Entran gracias a CC-019 (#225, issue #226), que amplió el
+área de servicio a lat -27.4800..-27.3800 y lng -65.6450..-65.5800. La lista pasó de 62 a 63 con la incorporación de
+`03 — 1º de Mayo` (decisión P1, opción A, hallazgo PR218-H05).
 
 Los puntos derivados son **aproximados y no oficiales**: sirven para recentrar el mapa y como fallback aproximado.
 La ubicación precisa del comercio sigue siendo la dirección, el pin o el GPS.
@@ -98,10 +106,12 @@ Afín de 6 parámetros, mínimos cuadrados, de coordenadas del plano (pt) a metr
 
 Estados:
 - `derivado`: punto reproducible, dentro del recuadro de Aguilares que valida la DB.
-- `null`: sin rótulo propio, rótulo ambiguo, o punto fuera del recuadro de Aguilares del producto
-  (`CHECK zones_centroid_lat_bounds`).
+- `referencia_local`: el plano no ubica el barrio (sin rótulo circular, o rótulos agrupados en el borde del plano).
+  El punto es el lugar que Lautaro073 señaló con capturas de Google Maps, leído de Google Maps u OpenStreetMap. No es
+  geocodificación automática por nombre. Detalle en `georref/referencias-locales.json` y en la sección siguiente.
+- `null`: sin punto confiable. Hoy ningún barrio queda en este estado.
 
-| Nº plano | Barrio | rótulo en el plano (x, y) | método de punto | lat derivada | lng derivada | estado | motivo si es null |
+| Nº plano | Barrio | punto en el plano (x, y) | método de punto | lat | lng | estado | nota / motivo si es null |
 |---:|---|---|---|---:|---:|---|---|
 | 01 | Chacarita | (332.8, 243.2) | centro del rótulo circular | -27.422618 | -65.616127 | derivado | |
 | 02 | San José | (393.9, 247.0) | centro del rótulo circular | -27.422884 | -65.611733 | derivado | |
@@ -119,14 +129,14 @@ Estados:
 | 14 | Virgen del Carmen | (276.8, 674.9) | centro del rótulo circular | -27.450990 | -65.620061 | derivado | |
 | 15 | Hostería | (360.1, 600.3) | centro del rótulo circular | -27.446101 | -65.614088 | derivado | |
 | 16 | Sofía | (442.0, 663.5) | centro del rótulo circular | -27.450276 | -65.608179 | derivado | |
-| 17 | San Lorenzo | — | — | — | — | null | dos rótulos (17A y 17) en sectores distintos; el 17 cae fuera del recuadro de Aguilares |
+| 17 | San Lorenzo | (359.3, 750.6) | centro del área rosa del plano | -27.455981 | -65.614109 | derivado | |
 | 18 | Cristo - Centro | (429.1, 720.2) | centro del rótulo circular | -27.453997 | -65.609098 | derivado | |
-| 19 | Gambarte | (504.9, 752.6) | — | — | — | null | punto derivado (-27.456143, -65.603636) fuera del recuadro de Aguilares del producto |
-| 20 | Terán | (525.8, 755.5) | — | — | — | null | punto derivado (-27.456337, -65.602134) fuera del recuadro de Aguilares del producto |
+| 19 | Gambarte | (504.9, 752.6) | centro del rótulo circular | -27.456143 | -65.603636 | derivado | |
+| 20 | Terán | (525.8, 755.5) | centro del rótulo circular | -27.456337 | -65.602134 | derivado | |
 | 23 | Villa Nueva | (386.7, 142.0) | centro del rótulo circular | -27.415980 | -65.612274 | derivado | |
-| 24 | El Alto | — | — | — | — | null | rótulos 24-25-26 agrupados en el borde norte, sin área propia distinguible |
-| 25 | El Ceibal | — | — | — | — | null | rótulos 24-25-26 agrupados en el borde norte, sin área propia distinguible |
-| 26 | Santa Emilia | — | — | — | — | null | rótulos 24-25-26 agrupados en el borde norte, sin área propia distinguible |
+| 24 | El Alto | — | referencia local | -27.415980 | -65.612274 | referencia_local | mismo punto que 23 Villa Nueva |
+| 25 | El Ceibal | — | referencia local | -27.396438 | -65.635938 | referencia_local | ver «Referencias locales» |
+| 26 | Santa Emilia | — | referencia local | -27.395470 | -65.613699 | referencia_local | ver «Referencias locales» |
 | 27 | Evita | (296.6, 239.3) | centro del rótulo circular | -27.422358 | -65.618734 | derivado | |
 | 28 | Ampliación Evita | (287.6, 212.2) | centro del rótulo circular | -27.420573 | -65.619387 | derivado | |
 | 29 | Municipal | (266.6, 234.7) | centro del rótulo circular | -27.422044 | -65.620893 | derivado | |
@@ -154,19 +164,43 @@ Estados:
 | 52 | Belgrano | (386.1, 494.5) | centro del rótulo circular | -27.439149 | -65.612238 | derivado | |
 | 53 | Colón | (428.6, 480.7) | centro del rótulo circular | -27.438251 | -65.609186 | derivado | |
 | 54 | 11 de Marzo | (453.1, 477.4) | centro del rótulo circular | -27.438043 | -65.607426 | derivado | |
-| 55 | San Miguel | — | — | — | — | null | sin rótulo circular en el plano (el 55 violeta es un equipamiento) |
-| 56 | San Antonio | — | — | — | — | null | sin rótulo circular en el plano (el 56 violeta es un equipamiento) |
-| 57 | Finca Lolita | — | — | — | — | null | sin rótulo circular en el plano (el 57 violeta es un equipamiento) |
+| 55 | San Miguel | — | referencia local | -27.428441 | -65.589211 | referencia_local | ver «Referencias locales» |
+| 56 | San Antonio | — | referencia local | -27.427272 | -65.595871 | referencia_local | ver «Referencias locales» |
+| 57 | Finca Lolita | — | referencia local | -27.434197 | -65.602335 | referencia_local | ver «Referencias locales» |
 | 59 | Mercantil | (230.6, 515.2) | centro del rótulo circular | -27.440480 | -65.623419 | derivado | |
 | 60 | Universitario | (172.2, 425.5) | centro del rótulo circular | -27.434567 | -65.627642 | derivado | |
 | 61 | Virgen del Valle | (198.4, 194.2) | centro del rótulo circular | -27.419371 | -65.625804 | derivado | |
 | 62 | Loteo Buffo | (236.1, 572.6) | centro del rótulo circular | -27.444252 | -65.623009 | derivado | |
 | 63 | Loteo Alpargatas | (207.3, 572.0) | centro del rótulo circular | -27.444206 | -65.625081 | derivado | |
 | 64 | Loteo Lizárraga | (210.0, 514.1) | centro del rótulo circular | -27.440405 | -65.624904 | derivado | |
-| 65 | Santa Rosa | — | — | — | — | null | sin rótulo circular en el plano (el 65 violeta es un equipamiento) |
+| 65 | Santa Rosa | — | referencia local | -27.466365 | -65.619503 | referencia_local | ver «Referencias locales» |
 | 66 | FOTIA | (457.6, 670.1) | centro del rótulo circular | -27.450713 | -65.607055 | derivado | |
-| 67 | Virgen de la Merced | (525.8, 738.7) | — | — | — | null | punto derivado (-27.455233, -65.602138) fuera del recuadro de Aguilares del producto |
+| 67 | Virgen de la Merced | (525.8, 738.7) | centro del rótulo circular | -27.455233 | -65.602138 | derivado | |
 
+
+## Barrio 17: centro del área rosa
+
+El plano tiene dos rótulos, 17A y 17. Por decisión de Lautaro073, el barrio 17 San Lorenzo es **toda el área pintada de
+rosa**: la franja bajo 17A y las cuatro manzanas alrededor de (17). `georref/area17.py` toma los 49 rellenos
+vectoriales de ese color en la zona, cuenta 22 009 píxeles rosas en el render a 400 ppp y calcula su centroide:
+(359.3, 750.6) pt → **-27.455981, -65.614109**, a unos 16 m del rótulo (17). La máscara está en
+`georref/area-17-mascara.png` y coincide con la captura de Lautaro073. El error del ajuste en el sur es el de CP11
+(LOO 62,7 m).
+
+## Referencias locales
+
+Aprobadas por Lautaro073 el 2026-10-03, con capturas de Google Maps del lugar de cada barrio. Fuente y enlace en
+`georref/referencias-locales.json`.
+
+| Nº | Barrio | lat | lng | lugar de referencia |
+|---:|---|---:|---:|---|
+| 24 | El Alto | -27.415980 | -65.612274 | «va junto con la Villa Nueva»: mismo punto que 23 Villa Nueva (único punto compartido) |
+| 25 | El Ceibal | -27.396438 | -65.635938 | Google Maps «El ceival Monte rico»; OSM «El Ceibal» a ~60 m |
+| 26 | Santa Emilia | -27.395470 | -65.613699 | OpenStreetMap «Barrio Santa Emilia»; elegido frente a «Monte Rico Alto» |
+| 55 | San Miguel | -27.428441 | -65.589211 | Google Maps «Canchita de barrio San miguel», pasando Tagusa sobre Av. Belgrano |
+| 56 | San Antonio | -27.427272 | -65.595871 | Google Maps «Capilla San Antonio de Padua», mismo sector |
+| 57 | Finca Lolita | -27.434197 | -65.602335 | Google Maps «Finca Lolita» |
+| 65 | Santa Rosa | -27.466365 | -65.619503 | OpenStreetMap «Santa Rosa» (suburb), sobre la Ruta 38 entre «La casa de Tiziano» y «Motel Grey» |
 
 ## Reproducción
 
@@ -177,11 +211,14 @@ y `pdftoppm` para el render. `BASE` es una carpeta de trabajo con `plano/plano.p
 2. Rótulos circulares: `georref/rotulos-circulares.json` (palabras numéricas de 4,9 pt del PDF, fuera de la leyenda).
 3. `python georref/controls.py BASE` → `controls.json` (puntos de control).
 4. `python georref/fit.py BASE 40` → `transform.json` y residuos (`georref/ajuste-salida.txt`).
-5. `python georref/points.py BASE` → `points.json` y la superposición con OSM.
+5. `python georref/points.py BASE` → `points.json` y la superposición con OSM. `in_bounds` usa el recuadro de
+   CC-019.
+5b. `python georref/area17.py BASE` → `area-17.json` y `area-17-mascara.png` (barrio 17).
 6. `python georref/final.py BASE <repo>` → `BASE/geo/final.json`, que se copia sin cambios como
-   `barrios-centroides.json` (estado por barrio). Exige las 63 entradas de `barrios-fuente.md`.
+   `barrios-centroides.json` (estado por barrio). Exige las 63 entradas de `barrios-fuente.md` y combina
+   `points.json`, `area-17.json` y `georref/referencias-locales.json`.
 7. `python docs/tasks/evidence/T-326/georref/gen_sql.py`, desde la raíz del repo, regenera la migración, el seed y el
-   pgTAP desde `barrios-fuente.md` + `barrios-centroides.json`. Salida actual: `ok · derivados=52 · null=11`.
+   pgTAP desde `barrios-fuente.md` + `barrios-centroides.json`. Salida actual: `ok · derivados=56 · referencia_local=7 · null=0`.
    La migración y el seed comparten el mismo upsert (`on conflict (name) do update set centroid_lat, centroid_lng,
    active` desde `excluded`): una fila preexistente converge a la evidencia, también a `NULL`/`NULL` (PR218-H04).
    El pgTAP precarga dos filas divergentes y re-ejecuta las sentencias registradas de la migración aplicada.
@@ -192,6 +229,7 @@ y `pdftoppm` para el render. `BASE` es una carpeta de trabajo con `plano/plano.p
 - No copiar el centro de Aguilares ni el centroide general de otra zona. El pgTAP verifica que ningún barrio lo tenga y
   que ningún punto se repita.
 - No elegir coordenadas a ojo: todo punto sale de un rótulo del PDF y de una transformación con residuos documentados.
-- Si hay barrio multipartito o rótulo ambiguo, el centroide queda `NULL`.
+- Si hay barrio multipartito o rótulo ambiguo, el centroide queda `NULL`, salvo que Lautaro073 apruebe una referencia
+  local documentada.
 - En UI, el centroide derivado sirve para recentrado o fallback aproximado; no reemplaza el pin o la dirección precisa
   del comercio.
