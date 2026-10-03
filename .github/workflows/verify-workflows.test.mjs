@@ -24,23 +24,153 @@ function job(yaml, name) {
   return next === -1 ? normalized.slice(start) : normalized.slice(start, start + next + 1);
 }
 
-const chromiumRun = /pnpm exec playwright test "\$\{specs\[@\]\}" --project=chromium --workers=1/;
+// T-331: los gates corren proyectos de Playwright, no listas de specs. Un spec nuevo en e2e/specs/ entra solo.
+const chromiumProjectRun = /^ *pnpm exec playwright test --project=chromium --workers=1$/m;
+const globalSettingsProjectRun =
+  /^ *pnpm exec playwright test --project=global-settings --workers=1 --pass-with-no-tests$/m;
 
 /**
- * Un spec opcional solo corre si se agrega al array antes de la invocación chromium.
- * @param {string} script @param {string} spec @param {string} message
+ * El gate descubre los specs por proyecto: ninguna ruta de spec ni array de specs hardcodeado.
+ * @param {string} script @param {string} gate
  */
-function assertOptionalSpecBeforeChromiumRun(script, spec, message) {
-  const escaped = spec.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-  const block = new RegExp(
-    `if \\[ -f ${escaped} \\]; then\\n\\s*specs\\+=\\(${escaped}\\)\\n\\s*fi\\n`
+function assertSpecsDiscoveredByProject(script, gate) {
+  assert.match(
+    script,
+    chromiumProjectRun,
+    `${gate} must run the whole chromium project, serial, without listing spec files`
   );
-  const blockMatch = block.exec(script);
-  assert.ok(blockMatch, message);
-  const runMatch = chromiumRun.exec(script);
-  assert.ok(runMatch, 'the chromium Playwright invocation must exist');
-  assert.ok(blockMatch.index < runMatch.index, `${message} (before the chromium invocation)`);
+  assert.doesNotMatch(
+    script,
+    /e2e\/specs\/|\.spec\.ts|specs=\(|specs\+=/,
+    `${gate} must not hardcode spec paths: a new e2e/specs/<flujo>.spec.ts has to run without touching .github/**`
+  );
+  assert.doesNotMatch(script, /continue-on-error|\|\| true/, `${gate} failures must fail the gate`);
 }
+
+test('playwright.config.ts splits e2e/specs into the chromium and serial global-settings projects', () => {
+  const config = workflow('../../playwright.config.ts').replace(/\r\n/g, '\n');
+  assert.match(config, /testDir: '\.\/e2e\/specs'/, 'specs are discovered from e2e/specs');
+  assert.match(
+    config,
+    /name: 'chromium',\n\s*testIgnore: \/global-settings\\\.spec\\\.ts\$\//,
+    'chromium takes every spec except *.global-settings.spec.ts'
+  );
+  assert.match(
+    config,
+    /name: 'global-settings',\n\s*testMatch: \/global-settings\\\.spec\\\.ts\$\/,\n\s*fullyParallel: false,/,
+    'global-settings takes only *.global-settings.spec.ts and runs serially'
+  );
+});
+
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
+const specsDir = join(repoRoot, 'e2e', 'specs');
+// Patrón por defecto de Playwright para archivos de test.
+const PLAYWRIGHT_DEFAULT_TEST_MATCH = '**/*.@(spec|test).?(c|m)[jt]s?(x)';
+const specFilePattern = /\.(spec|test)\.[cm]?[jt]sx?$/;
+const globalSettingsSpec = /global-settings\.spec\.ts$/;
+
+/**
+ * Tests que Playwright descubre con `--list`, contados por `proyecto|archivo`.
+ * @param {string} configPath
+ * @returns {Map<string, number>}
+ */
+function playwrightListByProjectAndFile(configPath) {
+  const cli = fileURLToPath(new URL('../../node_modules/@playwright/test/cli.js', import.meta.url));
+  const result = spawnSync(
+    process.execPath,
+    [cli, 'test', '--list', '--reporter=json', '--config', configPath],
+    { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+  );
+  assert.equal(
+    result.status,
+    0,
+    `playwright test --list failed:\n${result.stderr}\n${result.stdout}`
+  );
+  /** @typedef {{ file?: string, specs?: { file: string, tests?: { projectName: string }[] }[], suites?: Suite[] }} Suite */
+  /** @type {{ suites?: Suite[] }} */
+  const report = JSON.parse(result.stdout);
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  /** @param {Suite} suite */
+  const walk = (suite) => {
+    for (const spec of suite.specs ?? []) {
+      for (const t of spec.tests ?? []) {
+        const key = `${t.projectName}|${spec.file}`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    for (const child of suite.suites ?? []) walk(child);
+  };
+  for (const suite of report.suites ?? []) walk(suite);
+  return counts;
+}
+
+/** @param {string} dir @param {string} [prefix] @returns {string[]} */
+function specFilesUnder(dir, prefix = '') {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? specFilesUnder(join(dir, entry.name), `${prefix}${entry.name}/`)
+      : specFilePattern.test(entry.name)
+        ? [`${prefix}${entry.name}`]
+        : []
+  );
+}
+
+test('the chromium and global-settings projects effectively discover every spec of e2e/specs, with no narrowing', () => {
+  // PR233-H01: no alcanza con mirar testIgnore. Se compara lo que Playwright descubre de verdad con una línea base
+  // que importa la misma config y le quita todo filtro (testDir, testMatch, testIgnore, grep, grepInvert, projects).
+  // Un testMatch, grep o grepInvert extra, global o del proyecto, deja tests afuera y rompe la igualdad.
+  const directory = mkdtempSync(join(tmpdir(), 'cadeapp-pw-baseline-'));
+  try {
+    const baselineConfig = join(directory, 'baseline.config.ts');
+    writeFileSync(
+      baselineConfig,
+      [
+        `import config from ${JSON.stringify(join(repoRoot, 'playwright.config.ts'))};`,
+        'export default {',
+        '  ...config,',
+        `  testDir: ${JSON.stringify(specsDir)},`,
+        `  testMatch: ${JSON.stringify(PLAYWRIGHT_DEFAULT_TEST_MATCH)},`,
+        '  testIgnore: [],',
+        '  grep: /.*/,',
+        '  grepInvert: undefined,',
+        "  projects: [{ name: 'baseline' }],",
+        '};',
+        '',
+      ].join('\n')
+    );
+    const baseline = playwrightListByProjectAndFile(baselineConfig);
+
+    // La línea base cubre todos los archivos de spec que hay en e2e/specs, cada uno con al menos un test.
+    const files = specFilesUnder(specsDir).sort();
+    assert.ok(files.length > 0, 'e2e/specs must contain specs');
+    assert.deepEqual(
+      [...baseline.keys()].map((key) => key.replace(/^baseline\|/, '')).sort(),
+      files,
+      'every spec file under e2e/specs must have tests in the unfiltered baseline'
+    );
+
+    // chromium = todo menos *.global-settings.spec.ts; global-settings = todos y solo esos. Mismos tests por archivo.
+    /** @type {Map<string, number>} */
+    const expected = new Map();
+    for (const [key, count] of baseline) {
+      const file = key.replace(/^baseline\|/, '');
+      expected.set(
+        `${globalSettingsSpec.test(file) ? 'global-settings' : 'chromium'}|${file}`,
+        count
+      );
+    }
+    const actual = playwrightListByProjectAndFile(join(repoRoot, 'playwright.config.ts'));
+    assert.deepEqual(
+      [...actual].sort(),
+      [...expected].sort(),
+      'chromium must discover every spec except *.global-settings.spec.ts and global-settings exactly those, ' +
+        'with all their tests: no testMatch, grep or grepInvert may narrow either project'
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test('CI gates pull requests with typecheck, lint, unit tests, build and cached dependencies', () => {
   const ci = workflow('ci.yml');
@@ -677,19 +807,14 @@ test('board-sync preserves Lautaro073 task assignments and assigns unassigned ta
   assert.equal(t303?.targetAssignees, undefined);
 });
 
-test('staging E2E gate runs core specs and includes optional task specs when the target SHA contains them', () => {
-  const e2eJob = job(workflow('e2e-staging.yml'), 'e2e');
+test('staging E2E gate runs every chromium spec of the target SHA, discovered by project', () => {
+  const e2eJob = job(workflow('e2e-staging.yml').replace(/\r\n/g, '\n'), 'e2e');
 
-  assert.match(e2eJob, /specs=\(e2e\/specs\/smoke\.spec\.ts e2e\/specs\/main-flow\.spec\.ts\)/);
-  assertOptionalSpecBeforeChromiumRun(
+  assertSpecsDiscoveredByProject(e2eJob, 'staging E2E');
+  assert.doesNotMatch(
     e2eJob,
-    'e2e/specs/request-states.spec.ts',
-    'staging must include T-304 request-states when that spec exists in the exact target SHA'
-  );
-  assertOptionalSpecBeforeChromiumRun(
-    e2eJob,
-    'e2e/specs/notifications.spec.ts',
-    'staging must include T-307 notifications when that spec exists in the exact target SHA'
+    /--project=global-settings/,
+    'staging keeps global-settings out: it mutates platform_settings on the shared staging database (T-329)'
   );
   assert.match(
     e2eJob,
@@ -974,7 +1099,7 @@ test('preview target is resolved by trusted code with the project id from the de
   );
 });
 
-test('preview E2E runs core specs plus optional request-states, notifications and global-settings against the resolved SHA and URL', () => {
+test('preview E2E runs every chromium spec and then the serial global-settings project against the resolved SHA and URL', () => {
   const preview = workflow('e2e-preview.yml').replace(/\r\n/g, '\n');
   const e2eJob = job(preview, 'e2e');
   assert.match(e2eJob, /^ {4}needs: resolve$/m);
@@ -999,22 +1124,15 @@ test('preview E2E runs core specs plus optional request-states, notifications an
   );
 
   const run = step(e2eJob, 'Run preview E2E gate');
-  assert.match(run, /specs=\(e2e\/specs\/smoke\.spec\.ts e2e\/specs\/main-flow\.spec\.ts\)/);
-  assertOptionalSpecBeforeChromiumRun(
-    run,
-    'e2e/specs/request-states.spec.ts',
-    'T-304 request-states must run when the exact Preview SHA contains the spec'
+  assertSpecsDiscoveredByProject(run, 'preview E2E');
+  const chromiumAt = run.search(chromiumProjectRun);
+  const globalSettingsAt = run.search(globalSettingsProjectRun);
+  assert.notEqual(
+    globalSettingsAt,
+    -1,
+    'every *.global-settings.spec.ts of the exact Preview SHA must run serially; none is not a failure'
   );
-  assertOptionalSpecBeforeChromiumRun(
-    run,
-    'e2e/specs/notifications.spec.ts',
-    'T-307 notifications must run when the exact Preview SHA contains the spec'
-  );
-  assert.match(
-    run,
-    /if \[ -f e2e\/specs\/subscription\.global-settings\.spec\.ts \]; then[\s\S]*pnpm exec playwright test e2e\/specs\/subscription\.global-settings\.spec\.ts --project=global-settings --workers=1[\s\S]*fi/,
-    'T-306 global-settings must run serially when the exact Preview SHA contains the spec'
-  );
+  assert.ok(chromiumAt < globalSettingsAt, 'global-settings runs after the chromium project');
   assert.ok(
     run.includes('\n          PLAYWRIGHT_TEST_BASE_URL: ${{ needs.resolve.outputs.url }}\n'),
     'Playwright apunta al Preview resuelto'
