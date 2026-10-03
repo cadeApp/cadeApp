@@ -24,6 +24,24 @@ function job(yaml, name) {
   return next === -1 ? normalized.slice(start) : normalized.slice(start, start + next + 1);
 }
 
+const chromiumRun = /pnpm exec playwright test "\$\{specs\[@\]\}" --project=chromium --workers=1/;
+
+/**
+ * Un spec opcional solo corre si se agrega al array antes de la invocación chromium.
+ * @param {string} script @param {string} spec @param {string} message
+ */
+function assertOptionalSpecBeforeChromiumRun(script, spec, message) {
+  const escaped = spec.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const block = new RegExp(
+    `if \\[ -f ${escaped} \\]; then\\n\\s*specs\\+=\\(${escaped}\\)\\n\\s*fi\\n`
+  );
+  const blockMatch = block.exec(script);
+  assert.ok(blockMatch, message);
+  const runMatch = chromiumRun.exec(script);
+  assert.ok(runMatch, 'the chromium Playwright invocation must exist');
+  assert.ok(blockMatch.index < runMatch.index, `${message} (before the chromium invocation)`);
+}
+
 test('CI gates pull requests with typecheck, lint, unit tests, build and cached dependencies', () => {
   const ci = workflow('ci.yml');
   for (const required of [
@@ -663,17 +681,16 @@ test('staging E2E gate runs core specs and includes optional task specs when the
   const e2eJob = job(workflow('e2e-staging.yml'), 'e2e');
 
   assert.match(e2eJob, /specs=\(e2e\/specs\/smoke\.spec\.ts e2e\/specs\/main-flow\.spec\.ts\)/);
-  assert.match(
+  assertOptionalSpecBeforeChromiumRun(
     e2eJob,
-    /if \[ -f e2e\/specs\/request-states\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/request-states\.spec\.ts\)/,
+    'e2e/specs/request-states.spec.ts',
     'staging must include T-304 request-states when that spec exists in the exact target SHA'
   );
-  assert.match(
+  assertOptionalSpecBeforeChromiumRun(
     e2eJob,
-    /if \[ -f e2e\/specs\/notifications\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/notifications\.spec\.ts\)/,
+    'e2e/specs/notifications.spec.ts',
     'staging must include T-307 notifications when that spec exists in the exact target SHA'
   );
-  assert.match(e2eJob, /pnpm exec playwright test "\$\{specs\[@\]\}" --project=chromium --workers=1/);
   assert.match(
     e2eJob,
     /--workers=1/,
@@ -983,17 +1000,16 @@ test('preview E2E runs core specs plus optional request-states, notifications an
 
   const run = step(e2eJob, 'Run preview E2E gate');
   assert.match(run, /specs=\(e2e\/specs\/smoke\.spec\.ts e2e\/specs\/main-flow\.spec\.ts\)/);
-  assert.match(
+  assertOptionalSpecBeforeChromiumRun(
     run,
-    /if \[ -f e2e\/specs\/request-states\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/request-states\.spec\.ts\)/,
+    'e2e/specs/request-states.spec.ts',
     'T-304 request-states must run when the exact Preview SHA contains the spec'
   );
-  assert.match(
+  assertOptionalSpecBeforeChromiumRun(
     run,
-    /if \[ -f e2e\/specs\/notifications\.spec\.ts \]; then[\s\S]*specs\+=\(e2e\/specs\/notifications\.spec\.ts\)/,
+    'e2e/specs/notifications.spec.ts',
     'T-307 notifications must run when the exact Preview SHA contains the spec'
   );
-  assert.match(run, /pnpm exec playwright test "\$\{specs\[@\]\}" --project=chromium --workers=1/);
   assert.match(
     run,
     /if \[ -f e2e\/specs\/subscription\.global-settings\.spec\.ts \]; then[\s\S]*pnpm exec playwright test e2e\/specs\/subscription\.global-settings\.spec\.ts --project=global-settings --workers=1[\s\S]*fi/,
