@@ -310,14 +310,14 @@ El cierre automático de #229 coincidió con el merge de #233, aunque ninguna co
 
 Corrección del revisor:
 - #229 reabierto;
-- renombrado a **T-332**;
+- renombrado a **T-333**;
 - labels restablecidas a P2 + fase-3;
-- body y rutas documentales actualizados a `docs/tasks/T-332.md` / `docs/tasks/log/T-332.md`.
+- body y rutas documentales actualizados a `docs/tasks/T-333.md` / `docs/tasks/log/T-333.md`.
 
 Estado real:
 ```text
 T-327 runner: RESUELTO
 T-331: autodiscovery E2E, mergeado
-T-332/#229: ABIERTO, bloquea T-307
+T-333/#229: ABIERTO, bloquea T-307
 PR #180: no mergeable por DoD funcional, aunque GitHub diga mergeable
 ```

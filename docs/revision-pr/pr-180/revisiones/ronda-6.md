@@ -3,7 +3,7 @@
 **SHA revisado:** `cfea63d76850692c3bf99c832cf4044b3859f792`  
 **Base actual:** `develop@20db1bdbfd44f5a398dbfa984cc8ea291a56a493`  
 **Estado de rama:** 17 ahead / 6 behind  
-**Resultado:** **CON BLOQUEANTE T-332 / #229**
+**Resultado:** **CON BLOQUEANTE T-333 / #229**
 
 ## Cambio del autor
 
@@ -48,8 +48,8 @@ El compare desde el primer trusted RED hasta develop actual no contiene cambios 
 
 Corrección realizada:
 - #229 reabierto;
-- renombrado a **T-332**;
-- referencias de T-307 corregidas a T-332/#229.
+- renombrado a **T-333**;
+- referencias de T-307 corregidas a T-333/#229.
 
 ## Estado de hallazgos
 
@@ -61,8 +61,8 @@ Corrección realizada:
 - H06 ✅ verificado por ejecución remota
 - H07 ✅ desacoplamiento de #200 verificado
 - H08 ✅ colisión de seguimiento corregida
-- **Producto T-332/#229 🔴 pendiente**
+- **Producto T-333/#229 🔴 pendiente**
 
-No corresponde hacer las mutaciones finales H02/H05 mientras el producto base ya está RED; primero T-332 debe llevar el trusted spec a GREEN.
+No corresponde hacer las mutaciones finales H02/H05 mientras el producto base ya está RED; primero T-333 debe llevar el trusted spec a GREEN.
 
 No aprobar ni mergear PR #180.
