@@ -212,3 +212,39 @@ Regresión E2E requerida:
     page.goto('/t336-404-session-regression')
     click 'Ir al inicio'
     expect pathname === '/courier/feed'
+
+
+## Ronda 5
+
+HEAD:
+
+    0a495a15386c32ec39d7c1029ecef0f774f11a07
+
+Diff desde R4 reviewer commit:
+- docs/tasks/log/T-336.md
+- e2e/specs/smoke.spec.ts
+- src/features/notifications/offline/error-view.tsx
+- src/features/notifications/offline/error-views.test.tsx
+- src/features/notifications/offline/not-found-view.tsx
+
+Vercel:
+
+    success
+
+CI al momento de registrar:
+- lint success
+- typecheck success
+- build success
+- unit success
+- bundle-budget success
+- db-tests in_progress
+
+Problema del E2E actual:
+
+    click -> /login  # fallo real
+    if pathname === /login:
+        page.goto('/login')  # autocorrección
+    -> /courier/feed
+    assertion passes
+
+El E2E final debe eliminar esa autocorrección y asertar el resultado del click directamente.

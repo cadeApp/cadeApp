@@ -57,3 +57,16 @@ La validación personal posterior encontró una diferencia que los tests del gua
 Cuando una regla depende de middleware/sesión y el origen es un Link cliente, hace falta al menos una regresión browser-level que preserve el mismo contexto y cookies entre login → 404 → retorno.
 
 No se concluye todavía si la causa es router cache o pérdida de cookie; el diagnóstico debe distinguirlas antes de tocar auth.
+
+
+## Ronda 5
+
+El producto puede estar bien arreglado y, aun así, la regresión quedar sin protección si el test contiene pasos de diagnóstico que corrigen el fallo antes de la aserción.
+
+En E2E, una rama tipo «si falló, hacé la navegación que sabemos que funciona y después comprobá el destino» convierte un control real en uno no discriminante.
+
+La regla práctica es:
+- diagnóstico manual/pre-fix puede incluir controles A/B;
+- el test permanente debe reproducir exactamente la acción del usuario y fallar en el primer desvío.
+
+No se propone AG nueva: es P04/P08 ya existente.
