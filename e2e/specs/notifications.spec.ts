@@ -209,9 +209,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
   });
 
   test('diagnóstico H10: subscriber autenticado directo recibe INSERT de oferta por Postgres Changes', async ({
-    page,
     stagingContext,
-    loginAsMerchant,
   }) => {
     test.setTimeout(45_000);
 
@@ -255,6 +253,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     let nodeChannelError: unknown = null;
     let nodeEventReceived = false;
     let nodeEventTimestamp = 0;
+    let nodePayload: unknown = null;
 
     const nodeChannel = nodeClient.channel(`diag-node-offers-${requestId}`);
 
@@ -275,6 +274,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
           (payload) => {
             nodeEventReceived = true;
             nodeEventTimestamp = Date.now();
+            nodePayload = payload;
             console.log('[Diagnóstico H10 - Node] Evento recibido:', JSON.stringify(payload));
           }
         )
@@ -295,54 +295,7 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
 
     await nodeSubscribePromise;
 
-    // 4. Autenticar también en navegador vía loginAsMerchant y suscribir cliente de browser para comparar
-    await loginAsMerchant(page);
-    await page.goto(`/merchant/requests/${requestId}`);
-    await waitForNoSkeletons(page);
-
-    const browserDiag = await page.evaluate(
-      async ({ reqId }) => {
-        const win = window as any;
-        const { createClient: createBrowserClient } = await import('@/lib/supabase/browser');
-        const browserClient = createBrowserClient();
-        win.__diagBrowserReceived = false;
-        win.__diagBrowserPayload = null;
-        win.__diagBrowserStatus = 'INIT';
-
-        const chan = browserClient.channel(`diag-browser-offers-${reqId}`);
-        chan
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'offers',
-              filter: `request_id=eq.${reqId}`,
-            },
-            (payload: unknown) => {
-              win.__diagBrowserReceived = true;
-              win.__diagBrowserPayload = payload;
-            }
-          )
-          .subscribe((status: string, err: unknown) => {
-            win.__diagBrowserStatus = status;
-            win.__diagBrowserError = err;
-          });
-
-        const start = Date.now();
-        while (win.__diagBrowserStatus !== 'SUBSCRIBED' && Date.now() - start < 10_000) {
-          await new Promise((r) => setTimeout(r, 200));
-        }
-        return {
-          status: win.__diagBrowserStatus,
-          error: win.__diagBrowserError ?? null,
-        };
-      },
-      { reqId: requestId }
-    );
-    console.log('[Diagnóstico H10 - Browser] Status:', browserDiag);
-
-    // 5. Insertar una oferta real mediante el admin de la fixture
+    // 4. Insertar una oferta real mediante el admin de la fixture
     const admin = createAdminClient();
     const offerId = randomUUID();
     const offerMarker = `T307 diag ${stagingContext.testRunId}`;
@@ -363,38 +316,27 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     trackEntityForCleanup(stagingContext, 'offer', offerId);
     console.log(`[Diagnóstico H10] Oferta insertada correctamente (id: ${offerId})`);
 
-    // 6. Esperar hasta 25 s (< 30 s de polling) la llegada del evento a los subscribers
+    // 5. Esperar hasta 25 s la llegada del evento al subscriber
     const maxWait = 25_000;
     const pollStart = Date.now();
-    let browserReceived = false;
 
-    while (Date.now() - pollStart < maxWait) {
-      if (!browserReceived) {
-        browserReceived = await page.evaluate(() => Boolean((window as any).__diagBrowserReceived));
-      }
-      if (nodeEventReceived && browserReceived) {
-        break;
-      }
+    while (Date.now() - pollStart < maxWait && !nodeEventReceived) {
       await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!browserReceived) {
-      browserReceived = await page.evaluate(() => Boolean((window as any).__diagBrowserReceived));
     }
 
     const nodeLatency = nodeEventReceived ? nodeEventTimestamp - insertStartTime : null;
 
     const diagnosticReport = {
-      SUBSCRIBED_node: nodeSubscribed,
-      channel_status_node: nodeChannelStatus,
-      channel_error_node: nodeChannelError,
-      SUBSCRIBED_browser: browserDiag.status === 'SUBSCRIBED',
-      channel_status_browser: browserDiag.status,
+      SUBSCRIBED: nodeSubscribed,
+      channel_status: nodeChannelStatus,
+      channel_error: nodeChannelError,
       INSERT_real: true,
-      evento_recibido_node: nodeEventReceived,
-      latencia_ms_node: nodeLatency,
-      evento_recibido_browser: browserReceived,
+      evento_recibido: nodeEventReceived,
+      latencia_ms: nodeLatency,
+      payload: nodePayload,
     };
 
+    console.log('========================================');
     console.log('=== [DIAGNÓSTICO H10 REPORTE FINAL] ===');
     console.log(JSON.stringify(diagnosticReport, null, 2));
     console.log('========================================');
@@ -402,8 +344,8 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     await nodeClient.removeChannel(nodeChannel);
 
     expect(
-      nodeEventReceived || browserReceived,
-      `[Diagnóstico H10] Evento Postgres Changes INSERT recibido por al menos un subscriber directo (Node: ${nodeEventReceived}, Browser: ${browserReceived})`
+      nodeEventReceived,
+      `[Diagnóstico H10] Evento Postgres Changes INSERT recibido por el subscriber directo autenticado: ${nodeEventReceived}`
     ).toBe(true);
   });
 });
