@@ -321,3 +321,102 @@ T-331: autodiscovery E2E, mergeado
 T-333/#229: ABIERTO, bloquea T-307
 PR #180: no mergeable por DoD funcional, aunque GitHub diga mergeable
 ```
+
+
+## Ronda 7 — post T-333
+
+SHA revisado: `47152d69d1de0a6b32db21f0ab98a8f36e27e8d9`.
+
+Sincronización:
+```text
+base develop: b4119ef3e16170decda0a1649fc35db207faa8b0
+head: 47152d69d1de0a6b32db21f0ab98a8f36e27e8d9
+ahead_by: 22
+behind_by: 0
+```
+
+El compare desde el HEAD previo de T-307 `5f8d78a9` hasta el actual muestra **0 cambios** en `e2e/specs/notifications.spec.ts`.
+
+### Trusted run registrado por el autor
+
+Run `37163278613` sobre `9e465671517f9b71b5f095ea587c79a9b3edb379`:
+
+```text
+Realtime: RED 3/3
+offline/form: GREEN
+reconnect: GREEN
+global: 22 passed / 1 failed
+```
+
+Fallo Realtime:
+```text
+notifications.spec.ts:99
+Expected offersRequestCount > baseline
+Expected: > 2
+Received: 2
+timeout: 15 s
+```
+
+### Trusted run del HEAD documental actual
+
+Run `37163835724`:
+
+```text
+Realtime: RED 3/3
+offline/form: GREEN
+reconnect: GREEN
+global: 22 passed / 1 failed
+```
+
+Mismo fallo exacto en línea 99. La repetición descarta que el resultado post-T-333 haya sido un run aislado.
+
+### CI exact-head
+
+Run `37163772846`: **SUCCESS**.
+
+Jobs:
+- typecheck ✅
+- lint ✅
+- unit ✅
+- db-tests ✅
+- build ✅
+- audit ✅
+- bundle-budget ✅
+
+### Diagnóstico del residual Realtime
+
+Se inspeccionaron:
+- todos los archivos de `supabase/migrations/**` de develop;
+- `supabase/config.toml`;
+- los tres consumidores de `useRealtimeInvalidation`.
+
+Consumidores Postgres Changes:
+```text
+useRequestOffers        -> public.offers
+useAvailableRequests    -> public.delivery_requests + public.offers
+useTrip                 -> public.delivery_requests
+```
+
+No existe en el repositorio:
+```text
+ALTER PUBLICATION supabase_realtime ADD TABLE ...
+pg_publication_tables
+configuración versionada de offers/delivery_requests en supabase_realtime
+```
+
+La RLS de `offers` sí permite al merchant dueño leer ofertas:
+```sql
+create policy offers_select_merchant on public.offers
+  for select to authenticated
+  using (app_private.is_request_merchant(request_id, auth.uid()));
+```
+
+Supabase exige que una tabla esté añadida a la publicación `supabase_realtime` para Postgres Changes y documenta `pg_publication_tables` como verificación.
+
+Conclusión de revisión:
+- el E2E no debe tocarse;
+- T-333 resolvió reconnect;
+- el siguiente diagnóstico/fix corresponde a DB/plataforma y debe comprobar primero la membresía real de la publicación;
+- se creó **T-335 / #244**.
+
+No se declara todavía que la ausencia remota esté demostrada únicamente por inspección de repo; T-335 debe comprobarla con SQL/DB test y cerrar la configuración de forma declarativa.

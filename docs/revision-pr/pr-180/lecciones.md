@@ -46,3 +46,11 @@ No se agrega número AG nuevo.
 - Los IDs de tarea son claves de coordinación: reutilizar `T-331` para dos trabajos distintos puede hacer que automatizaciones cierren el issue equivocado.
 - Un issue marcado `hecha` no es evidencia de implementación. Siempre cruzar el cierre con el diff de producto y con el E2E que detectó el defecto.
 - La repetición del mismo RED bajo un runner distinto (lista explícita vs autodiscovery) aumenta la confianza en que el problema está en producto y no en la selección del spec.
+
+
+## Ronda 7
+
+- Un hook Realtime correcto no alcanza si la base no publica la tabla. La publicación de Postgres Changes forma parte del contrato operativo y debe quedar versionada junto con las migraciones.
+- Los mocks de `channel.subscribe` prueban la lógica del cliente, pero no pueden demostrar que Supabase emita eventos reales para una tabla.
+- Un resultado parcial post-fix es informativo: reconnect pasó de RED a GREEN tras T-333, mientras Realtime permaneció RED. Eso separa causas y evita reabrir una corrección ya cerrada.
+- No asumir que una configuración manual de Dashboard existe o es igual entre entornos; el diagnóstico debe consultar `pg_publication_tables` y el fix debe ser declarativo.
