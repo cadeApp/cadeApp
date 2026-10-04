@@ -150,7 +150,7 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
             },
             (payload: unknown) => {
               optionsRef.current.onEvent?.(payload);
-              triggerInvalidation(sub.queryKey ?? currentOptions.queryKey);
+              // REVIEW MUTATION H05: intentionally suppress query invalidation on Realtime event.
             }
           );
         }
