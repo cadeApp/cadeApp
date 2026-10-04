@@ -70,3 +70,17 @@ La regla práctica es:
 - el test permanente debe reproducir exactamente la acción del usuario y fallar en el primer desvío.
 
 No se propone AG nueva: es P04/P08 ya existente.
+
+
+## Ronda 6
+
+La diferencia entre «la función middleware está testeada» y «Next realmente descubrió el entrypoint middleware» es crítica.
+
+Con `src/app`, la ubicación física del entrypoint es parte del contrato ejecutable. Los unit tests de `evaluateRouteGuard` y `updateSession` pueden estar completamente verdes mientras el framework nunca llama esa lógica.
+
+Nuevo aprendizaje concreto:
+- revisar el output del build para entrypoints especiales;
+- proteger la convención de ubicación;
+- usar E2E real para fronteras framework/auth.
+
+No se propone AG nueva por ahora: el caso puede quedar como lección P15 si el control estructural se incorpora en T-336.

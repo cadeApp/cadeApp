@@ -248,3 +248,48 @@ Problema del E2E actual:
     assertion passes
 
 El E2E final debe eliminar esa autocorrección y asertar el resultado del click directamente.
+
+
+## Ronda 6
+
+HEAD revisado:
+
+    cbe3a4ca59c232f06c1c6e2dfb863f94173677ed
+
+CI exact-head:
+
+    run 37190624714
+    Test Files 118 passed (118)
+    Tests      1880 passed (1880)
+    DB probe   10/10 PASS
+    DB suite   1811/1811 PASS
+    lint/typecheck/build/bundle PASS
+
+Build:
+- App Router usa src/app.
+- No aparece entrada Middleware en el output de next build.
+
+RED runtime relevante:
+
+    e2e-preview run 37190004737
+    TARGET_SHA=968fc862e251fc797700a800703993c86e691899
+    RESULT=failure
+    T-336: 3 intentos fallidos
+    cookie sb-* presente
+    click -> /login
+    hard navigation /login -> /login
+    GET /login -> 200
+
+Fixture:
+    
+    profiles.consent_status = 'active'
+
+Runtime Vercel:
+
+    deployment dpl_7fZoDeJHbDG25qfKjBTiMygZ2pES
+    GET /login 200
+    no edge-middleware logs observados
+
+Root cause a corregir:
+
+    middleware.ts -> src/middleware.ts

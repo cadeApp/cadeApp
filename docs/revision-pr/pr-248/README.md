@@ -7,52 +7,59 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-336-retorno-home-real` → `develop` |
 | **Base** | `59d9d1783a936c9c7d5331cc5b2c07b4ed7d05b3` |
-| **HEAD R5** | `0a495a15386c32ec39d7c1029ecef0f774f11a07` |
-| **Estado** | **Ronda 5 · CON BLOQUEANTE RESIDUAL (1)** |
+| **HEAD R6 revisado** | `cbe3a4ca59c232f06c1c6e2dfb863f94173677ed` |
+| **Estado** | **Ronda 6 · CON 1 BLOQUEANTE RAÍZ** |
 
-## Estado
+## Estado de hallazgos
 
 - PR248-H01 → arreglado-verificado
 - PR248-H02 → arreglado-verificado
 - PR248-H03 → arreglado-verificado
-- PR248-H04 → **abierto / bloqueante residual**
+- PR248-H04 → abierto, dependiente de H05
+- PR248-H05 → **abierto / bloqueante alto**
 
-## Diagnóstico R5
+## Hallazgo raíz R6
 
-La corrección de producto confirma **Caso A**:
+El E2E permanente ya es discriminante, pero el Preview real demuestra que el producto sigue fallando.
 
-- las cookies Supabase permanecen presentes;
-- la navegación suave con `next/link` a `/login` reutilizaba el Client Router Cache;
-- una hard navigation documental a `/login` sí llega a middleware y redirige al home real;
-- ErrorView/NotFoundView ahora usan `<a href="/login">`.
+Preview probado:
+`968fc862e251fc797700a800703993c86e691899`
 
-Eso es coherente con el bug manual reproducido por Lautaro073.
+Run E2E:
+`37190004737`
 
-## Bloqueante residual
+Resultado real:
+- cookie Supabase presente después del login;
+- cookie presente después del 404;
+- click «Ir al inicio» → `/login`;
+- hard navigation posterior a `/login` → **también** `/login`;
+- tres intentos fallaron;
+- status `e2e-preview = failure`.
 
-El E2E nuevo de `e2e/specs/smoke.spec.ts` **no es discriminante**.
+El courier seed tiene `consent_status='active'`, por lo que CC-007 no explica el 200 de `/login`.
 
-Después del click:
+## Causa raíz
 
-1. espera 2 segundos;
-2. si quedó incorrectamente en `/login`, ejecuta `page.goto('/login')`;
-3. esa hard navigation corrige el estado;
-4. recién después exige `/courier/feed`.
+El proyecto usa `src/app`, pero el middleware está en `/middleware.ts` en la raíz.
 
-Por lo tanto, **el test también podría pasar con el bug original**. No demuestra que el click por sí solo esté arreglado y no cumpliría el RED pre-fix exigido.
+Next.js 15 requiere que el middleware esté dentro de `src` cuando se usa `src/app`, al mismo nivel que `app`.
 
-## Housekeeping del revisor
+Evidencia independiente:
+- el output de `next build` del run `37190624714` lista todas las rutas pero **no lista Middleware**;
+- runtime logs del Preview no muestran actividad de `edge-middleware`;
+- `GET /login` responde 200 con cookie autenticada.
 
-`e2e/specs/smoke.spec.ts` no figuraba en la lista original de archivos permitidos de T-336, aunque el revisor lo autorizó expresamente en Ronda 4. La ficha se corrige en esta ronda para reflejar esa autorización. No se registra como fallo del agente.
+## CI HEAD R6
 
-## CI parcial del HEAD
+Run `37190624714`:
+- 118 test files / 1880 tests PASS;
+- DB 10/10 + 1811/1811 PASS;
+- lint/typecheck/build/bundle GREEN;
+- `/courier/feed 159 kB`;
+- `/courier/profile 178 kB`.
 
-Al registrar R5:
-- Vercel: success;
-- lint/typecheck/build/unit/bundle: success;
-- DB seguía ejecutándose;
-- e2e-preview aún no estaba publicado para el nuevo HEAD.
+Esos checks no validan que Next haya descubierto el middleware.
 
 ## Resultado
 
-No mergear todavía. Falta únicamente hacer discriminante el E2E browser-level de H04 y revalidarlo.
+No mergear. Mover/activar el middleware real y repetir el E2E Preview.
