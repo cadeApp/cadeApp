@@ -320,3 +320,55 @@ Compatibilidad inspeccionada:
 - sesiones contractuales del test usan `onboardingComplete=undefined`, que no activa el redirect de onboarding.
 
 La inspección reduce el riesgo, pero no sustituye la reejecución exact-head después del merge de develop.
+
+## Ronda 6 — cierre final
+
+**SHA funcional:** `206a29bfbc99bd215200367264039b7aefa02607`  
+**HEAD documental:** `006b70510bdeb688cc9543dadd44b870fa7ae932`
+
+### Sync
+
+```text
+base develop = 59d9d1783a936c9c7d5331cc5b2c07b4ed7d05b3
+behind = 0
+mergeable = true
+```
+
+### E2E T-305 post-T-334
+
+Run `37184438349`, job `111383374009`:
+
+```text
+Run pnpm exec playwright test --project=chromium --workers=1
+Running 24 tests using 1 worker
+T-305 DoD 1: primer intento timeout en LoginPage.login; retry #1 PASS
+T-305 DoD 2: PASS
+T-305 DoD 3: PASS
+T-305 DoD 4: PASS
+23 passed, 1 flaky
+Global settings: 3 passed
+Final status: success
+```
+
+La flake ocurre en `e2e/pages/login.page.ts:37`, helper compartido. Seguimiento separado: issue #250.
+
+### CI funcional
+
+Run `37184369942`:
+- typecheck PASS
+- lint PASS
+- audit PASS
+- build PASS
+- db-tests PASS
+- bundle-budget PASS
+- unit FAIL solo por `tools/verify-fichas.test.ts` / T-336 baseline.
+
+### HEAD documental posterior
+
+`7dcb71a` solo cambia `docs/tasks/log/T-305.md`; `006b705` solo marca el DoD de la ficha. No modifican código ni tests.
+
+En el run documental posterior se observó además un fallo transitorio de `next/font`; el mismo código funcional había compilado GREEN en `37184369942`, por lo que no se atribuye a T-305.
+
+### H02
+
+No se eleva artificialmente a verificado-runtime. Sigue `arreglado-sin-verificar`: la evidencia RED corregida es coherente, pero el reviewer no pudo reproducirla localmente por limitación de red del entorno.

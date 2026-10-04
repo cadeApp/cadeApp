@@ -40,3 +40,11 @@ No se abre AG nueva.
 - T-331 permitió por fin verificar T-305 en remoto pre-merge: un GREEN útil requiere que el log nombre el spec y sus casos, no solo el status.
 - Drift de base no debe bloquear mecánicamente si es irrelevante; en esta ronda sí es material porque T-334 modifica exactamente la capa de auth/guards que T-305 cubre.
 - Cuando los rojos de CI pertenecen al baseline y sus fixes ya están en develop, no se corrigen desde la tarea atrasada: se integra la base y se revalida.
+
+## Ronda 6
+
+No se abre AG nueva.
+
+- La evidencia funcional debe anclarse al último SHA que cambió código/tests; commits posteriores solo documentales no invalidan un E2E remoto ya ejecutado sobre el mismo árbol funcional.
+- Un retry exitoso no borra una flake: si el síntoma pertenece a infraestructura compartida, se separa en un issue propio (#250) en vez de inflar el alcance de la tarea revisada.
+- Un baseline rojo puede convivir con “SIN BLOQUEANTES” de una PR si se demuestra que no fue introducido por la PR y se documenta con precisión; no se lo maquilla como GREEN.
