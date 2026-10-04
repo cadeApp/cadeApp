@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import Link from 'next/link';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { Button, buttonVariants } from '@/ui/button';
 import { cn } from '@/ui/cn';
@@ -70,15 +69,15 @@ export function ErrorView({ error, reset }: ErrorViewProps) {
             Reintentar
           </Button>
 
-          <Link
-            href="/"
+          <a
+            href="/login"
             className={cn(
               buttonVariants({ variant: 'ghost' }),
               'h-12 w-full text-base text-muted-foreground hover:text-foreground sm:w-auto sm:min-w-[140px]'
             )}
           >
             Ir al inicio
-          </Link>
+          </a>
         </div>
       </div>
     </main>
