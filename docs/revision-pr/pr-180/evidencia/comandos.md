@@ -552,3 +552,70 @@ Run `37182887607`:
 - unit ❌ únicamente por el defecto heredado de `develop` en `tools/verify-fichas.test.ts` / T-336.
 
 El mismo fallo ya existe en `develop@59d9d178...` (run `37179295025`), por lo que no se atribuye a T-307.
+
+---
+
+## Ronda 9 — GREEN técnico + mutaciones finales
+
+HEAD final: `99cae80ae81c1f0a98e5824d14911ce1ec34ac6a`.
+
+El árbol final es idéntico al HEAD sano de Asako `e72383d61439961c5857340ba6735420c3a7ee6d`: el compare registra 4 commits de revisión por mutaciones/restauraciones y 0 archivos con diff neto.
+
+### GREEN base exact-head
+
+- CI `37217156049`: SUCCESS.
+- trusted `37217237829`: SUCCESS.
+- Realtime: GREEN.
+- offline/form: GREEN.
+- reconnect: GREEN.
+- subscriber H10: GREEN.
+- total notifications + suite: GREEN.
+
+### H05 — mutación Realtime
+
+- Mutation SHA: `a461853ed20d5c2913f58a85373d6771c47062eb`.
+- Se anuló únicamente la invalidación disparada por el callback `postgres_changes`.
+- Trusted `37215513829`: 23 passed / 1 failed.
+- Realtime RED 3/3 con baseline 2 y received 2.
+- offline/form GREEN.
+- reconnect GREEN.
+- subscriber directo GREEN.
+
+Esto demuestra que el test Realtime depende del callback real y no de polling/catch-up/falso positivo.
+
+### H02 — mutación reconnect
+
+- Primera mutación `5b61b3d30fd96628a49e4b4b5317321414e5d95a`: `refetchOnReconnect: 'always' -> false`.
+- Trusted `37216094876`: GREEN. No se contó falsamente como RED porque el latch de T-333 todavía podía producir el refetch.
+- Segunda mutación `7064ba59dc61796153f1dc1ef27b7d04fe8dcda6`: se suprimió también el mecanismo/latch efectivo de reconnect.
+- Trusted `37216660101`: 23 passed / 1 failed.
+- Realtime GREEN.
+- offline/form GREEN.
+- reconnect RED 3/3 con baseline 2 y received 2.
+- subscriber directo GREEN.
+
+Restauración final `99cae80ae81c1f0a98e5824d14911ce1ec34ac6a`: trusted `37217237829` GREEN y CI `37217156049` GREEN.
+
+### H10 — corrección técnica
+
+El subscriber directo autenticado queda SUBSCRIBED, inserta una oferta real y recibe el INSERT. En el run exact-head previo la latencia observada fue ~293 ms.
+
+La corrección de Asako hace `getSession()` y `realtime.setAuth(access_token)` antes de `channel.subscribe()`. La documentación actual de Supabase define `realtime.setAuth(token)` como el mecanismo que fija el JWT usado para autorización de canales y Realtime RLS. El GREEN real y las mutaciones corroboran que la corrección actúa en la frontera correcta.
+
+### Único residual: alcance
+
+La ficha original en `510ab35c...` permitía solo:
+- `e2e/specs/notifications.spec.ts`
+- `docs/tasks/T-307.md`
+- `docs/tasks/log/T-307.md`
+- `docs/revision-pr/**`
+
+Asako modificó:
+- `src/lib/hooks/use-realtime-invalidation.ts`
+- `src/lib/hooks/use-realtime-invalidation.test.tsx`
+
+y luego agregó esas rutas a la propia ficha.
+
+`AGENTS.md` y la regla 50 ordenan detenerse y pedir autorización a Lautaro cuando hace falta tocar archivos fuera de ficha. El agente no puede autoampliar su alcance.
+
+No se cuestiona el fix técnico; falta una decisión P1 explícita para regularizar el alcance o separar el fix.

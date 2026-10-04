@@ -62,3 +62,9 @@ No se agrega número AG nuevo.
 - Un fix de infraestructura puede cerrar una causa concreta y revelar otra sin que la primera corrección haya sido incorrecta; separar H09 de H10 evita reescribir la historia.
 - Un segundo GET disparado al llegar `SUBSCRIBED` demuestra readiness/catch-up del canal, pero no demuestra que un cambio posterior atraviese publicación, RLS, Realtime y callback.
 - Cuando el E2E real sigue RED después de una migración, no ampliar RLS, usar `REPLICA IDENTITY FULL` ni relajar el test “por si acaso”: primero aislar en qué frontera desaparece el evento.
+
+## Ronda 9
+
+- Una mutación que no discrimina no debe presentarse como evidencia: `refetchOnReconnect:false` quedó GREEN porque el latch de T-333 seguía cumpliendo la propiedad; hubo que mutar el mecanismo efectivo completo.
+- Un GREEN exact-head + RED bajo mutación + GREEN restaurado da evidencia fuerte de que el E2E protege la propiedad real.
+- Un fix técnicamente correcto no autoriza al agente a ampliar su propia ficha. Cuando el diagnóstico exige otro archivo, debe detenerse y obtener autorización del dueño.
