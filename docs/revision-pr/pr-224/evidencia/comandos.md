@@ -80,7 +80,7 @@ El flujo de `/trips/[id]` depende de `get_trip_details`, por lo que la precondic
 ```text
 incidents.spec.ts:241-245:
   await loginPage.login(...)
-  await waitForURL(/\/login\/mfa/)
+  await waitForURL(/\\/login\\/mfa/)
 
 e2e/pages/login.page.ts:33-41:
   login() espera hasta que pathname != /login
@@ -119,3 +119,120 @@ No se inspeccionó el CI completo en esta ronda porque todavía existen bloquean
 ## Mutaciones de revisión
 
 No se modificó código ni se ejecutaron mutaciones remotas en esta ronda. H01-H03 son contradicciones deterministas entre el spec y contratos presentes en el propio SHA base. En la siguiente ronda, sobre el arreglo, la revisión reproducirá la evidencia RED que deje el autor y agregará sondas independientes.
+
+
+---
+
+# Evidencia — PR #224 / Ronda 2
+
+## SHA y sincronización
+
+```text
+HEAD revisado: 4370ddc741bd8be21e7ab5b93add6b9455034ed9
+merge develop del autor: 508d619c59190c190ecef0f53b9f242de3bf52bc
+develop actual: 3e5d5381dbf59717763f1927e1cf080504a9ebf1
+behind actual: 5
+```
+
+## Gate E2E real
+
+Commit status:
+
+```text
+context: e2e-preview
+state: failure
+description: trusted E2E gate RED contra el Preview
+run: 37144346616
+```
+
+Job `e2e-preview`:
+
+```text
+23 passed
+1 failed
+```
+
+Único fallo:
+
+```text
+DoD 1: El reporte llega a la bandeja de administración
+e2e/specs/incidents.spec.ts:66
+
+Locator: getByRole('radio', { name: /problema con el pago/i })
+Expected: visible
+Received: <element(s) not found>
+Timeout: 10000ms
+```
+
+El mismo fallo ocurrió en ejecución inicial y retries #1/#2.
+
+DoD 2/3/4 pasaron.
+
+## Copy real
+
+```text
+src/features/incidents/copy.ts:9
+payment_issue: 'Problema con el cobro'
+
+:33
+descriptionLabel: '¿Qué pasó?'
+
+:39
+success: 'Recibimos tu reporte. La administración lo va a revisar.'
+```
+
+Selectores desactualizados enumerados en el spec:
+
+```text
+:65  /problema con el pago/i
+:69  /¿qué sucedió\?/i
+:77  /reporte enviado/i
+:117 /problema con el pago/i
+```
+
+## CI normal
+
+Run:
+
+```text
+37144198984
+```
+
+Jobs:
+
+```text
+typecheck       success
+lint            success
+build           success
+db-tests        success
+bundle-budget   success
+audit           failure
+unit            failure
+```
+
+Unit:
+
+```text
+Test Files: 113 passed / 1 failed
+Tests: 1737 passed / 1 failed
+único fallo: tools/verify-fichas.test.ts
+Desincronizadas: T-333
+```
+
+Audit: advisory `braces`.
+
+Los 5 commits actuales de develop incluyen:
+
+- T-333: sincroniza/cierra la inconsistencia de T-333;
+- T-332: excepción audit de `braces` documentada y guardada;
+- T-334: cambios de auth/guards relevantes para revalidar H03.
+
+## Estados R2
+
+```text
+H01 arreglado-verificado — gate real DoD2/3
+H02 arreglado-verificado — DoD1 llegó al Dialog
+H03 arreglado-sin-verificar — flujo MFA aún no alcanzado
+H04 parcial — gate real existe, pero está RED y no hay mutaciones RED ejecutadas
+H05 abierto — cuatro copies viejos; primer caso verificado-runtime
+```
