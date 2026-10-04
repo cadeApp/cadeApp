@@ -10,15 +10,20 @@ import { Radio, AlertCircle } from 'lucide-react';
 import { OFFERS_COPY } from '../copy';
 import type { AvailableRequestItem, CourierStatus } from '../schemas';
 import dynamic from 'next/dynamic';
-import { UnderReview } from './under-review';
 import { RequestCard } from './request-card';
 import type { OfferSheetProps } from './offer-sheet';
 import type { EmptyStateProps } from '@/ui/empty-state';
 import { FeedSkeleton } from './feed-skeleton';
 import { useAvailableRequests } from '../hooks/use-available-requests';
 import { useOfflineStatus } from '@/features/notifications';
+import type { CourierDocumentMetadata, StatusViewProps } from '@/features/courier-onboarding';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
+
+// Hotfix T-325: la vista de revisión real se carga solo para `pending`, fuera del First Load JS del feed.
+const StatusView = dynamic<StatusViewProps>(() =>
+  import('@/features/courier-onboarding').then((mod) => mod.StatusView)
+);
 
 const EmptyState = dynamic<EmptyStateProps>(
   () => import('@/ui/empty-state').then((mod) => mod.EmptyState),
@@ -30,6 +35,8 @@ const OfferSheet = dynamic<OfferSheetProps>(
   { ssr: false }
 );
 
+const EMPTY_DOCUMENTS: readonly CourierDocumentMetadata[] = [];
+
 export interface CourierFeedProps {
   courierStatus: CourierStatus;
   isAvailable: boolean;
@@ -37,6 +44,8 @@ export interface CourierFeedProps {
   initialNextCursor?: LivePageCursor | null;
   minOfferArs: number;
   isLoading?: boolean;
+  /** Documentos persistidos del repartidor; solo se usan en estado `pending`. */
+  documents?: readonly CourierDocumentMetadata[];
 }
 
 export function CourierFeed({
@@ -46,6 +55,7 @@ export function CourierFeed({
   initialNextCursor,
   minOfferArs,
   isLoading = false,
+  documents = EMPTY_DOCUMENTS,
 }: CourierFeedProps) {
   const [available, setAvailable] = useState<boolean>(initialAvailable);
   const [selectedRequest, setSelectedRequest] = useState<AvailableRequestItem | null>(null);
@@ -64,9 +74,14 @@ export function CourierFeed({
   });
   const requests = liveRequests ?? initialRequests;
 
-  // DoD 1: Repartidor en estado pending ve "En revisión" (R03)
+  // DoD 1: Repartidor en estado pending ve "En revisión" (R03). Hotfix T-325: la misma vista de T-324 con los
+  // documentos persistidos; antes era una lista fija que siempre mostraba licencia y seguro como no cargados.
   if (courierStatus === 'pending') {
-    return <UnderReview />;
+    return (
+      <div className="flex flex-col items-center justify-start px-4 py-6">
+        <StatusView documents={documents} showFeedButton={false} />
+      </div>
+    );
   }
 
   // Estado rechazado
@@ -189,7 +204,7 @@ export function CourierFeed({
               </div>
 
               {requests.length > 0 && (
-                <div className={`space-y-3 ${isOffline ? 'grayscale-[20%] opacity-80' : ''}`}>
+                <div className={`space-y-3 ${isOffline ? 'opacity-80 grayscale-[20%]' : ''}`}>
                   {requests.map((req) => (
                     <RequestCard
                       key={req.id}
@@ -208,7 +223,7 @@ export function CourierFeed({
               description={OFFERS_COPY.emptyFeedDescription}
             />
           ) : (
-            <div className={`space-y-3 ${isOffline ? 'grayscale-[20%] opacity-80' : ''}`}>
+            <div className={`space-y-3 ${isOffline ? 'opacity-80 grayscale-[20%]' : ''}`}>
               {requests.map((req) => (
                 <RequestCard
                   key={req.id}

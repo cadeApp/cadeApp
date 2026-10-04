@@ -12,6 +12,8 @@ import type { CourierDocumentMetadata } from '../queries';
 export interface StatusViewProps {
   readonly documents: readonly CourierDocumentMetadata[];
   readonly onGoToFeed?: () => void;
+  /** PR242-H02: el feed ya es el panel, así que ahí no se muestra el botón hacia sí mismo. */
+  readonly showFeedButton?: boolean;
 }
 
 type ItemStatus = 'uploaded' | 'rejected' | 'pending' | 'optional_missing';
@@ -21,7 +23,7 @@ function getItemPresentation(status: ItemStatus) {
     case 'uploaded':
       return {
         label: 'Listo',
-        icon: <CheckCircle2 className="h-4 w-4 shrink-0 text-success" aria-hidden="true" />,
+        icon: <CheckCircle2 className="text-success h-4 w-4 shrink-0" aria-hidden="true" />,
         textClass: 'text-muted-foreground',
       };
     case 'rejected':
@@ -45,7 +47,7 @@ function getItemPresentation(status: ItemStatus) {
   }
 }
 
-export function StatusView({ documents, onGoToFeed }: StatusViewProps) {
+export function StatusView({ documents, onGoToFeed, showFeedButton = true }: StatusViewProps) {
   const router = useRouter();
 
   const handleNavigate = () => {
@@ -169,9 +171,7 @@ export function StatusView({ documents, onGoToFeed }: StatusViewProps) {
                     {presentation.icon}
                     <span className="text-sm font-medium text-foreground">{item.title}</span>
                   </div>
-                  <span className={`text-sm ${presentation.textClass}`}>
-                    {presentation.label}
-                  </span>
+                  <span className={`text-sm ${presentation.textClass}`}>{presentation.label}</span>
                 </div>
               );
             })}
@@ -180,10 +180,12 @@ export function StatusView({ documents, onGoToFeed }: StatusViewProps) {
       </div>
 
       {/* Botón hacia el feed */}
-      <Button type="button" size="lg" onClick={handleNavigate} className="w-full font-bold">
-        <span>{COURIER_ONBOARDING_COPY.btnGoToFeed}</span>
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </Button>
+      {showFeedButton && (
+        <Button type="button" size="lg" onClick={handleNavigate} className="w-full font-bold">
+          <span>{COURIER_ONBOARDING_COPY.btnGoToFeed}</span>
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      )}
     </Card>
   );
 }

@@ -1,3 +1,4 @@
+import * as React from 'react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Bell } from 'lucide-react';
@@ -77,8 +78,8 @@ export default async function CourierProfilePage() {
     plate: courier.vehicle_plate,
     dniStatus,
     selfieStatus: selfie,
-    licenseStatus: courier.license_status,
-    insuranceStatus: courier.insurance_status,
+    licenseStatus: docs.find((d) => d.kind === 'license')?.status ?? 'none',
+    insuranceStatus: docs.find((d) => d.kind === 'insurance')?.status ?? 'none',
     courierStatus: courier.status,
     // T-334: misma definición que el guard (`parseOnboardingComplete`): sin vehículo declarado no hay registro enviado.
     onboardingComplete: courier.vehicle_type !== null,
