@@ -743,6 +743,113 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
   });
 
   describe('T-336: Integridad de navegación de retorno y 404 al home real', () => {
+    interface RootNavigationOccurrence {
+      file: string;
+      line: number;
+      kind: 'href' | 'router.push' | 'router.replace' | 'redirect' | 'redirectTo' | 'propDefault';
+      match: string;
+    }
+
+    interface AllowedOccurrenceRule {
+      allowedKind: RootNavigationOccurrence['kind'];
+      maxCount: number;
+      reason: string;
+    }
+
+    const ROOT_NAV_PRODUCER_PATTERNS: Array<{
+      kind: RootNavigationOccurrence['kind'];
+      createRegex: () => RegExp;
+    }> = [
+      { kind: 'href', createRegex: () => /\bhref\s*[:=]\s*(?:\{\s*)?['"]\/['"](?:\s*\})?/g },
+      { kind: 'router.push', createRegex: () => /\brouter\.push\s*\(\s*['"]\/['"]\s*\)/g },
+      { kind: 'router.replace', createRegex: () => /\brouter\.replace\s*\(\s*['"]\/['"]\s*\)/g },
+      { kind: 'redirect', createRegex: () => /\bredirect\s*\(\s*['"]\/['"]\s*\)/g },
+      { kind: 'redirectTo', createRegex: () => /\bredirectTo\s*:\s*['"]\/['"]/g },
+      { kind: 'propDefault', createRegex: () => /\blogoHref\s*=\s*['"]\/['"]/g },
+    ];
+
+    function scanRootNavigationOccurrences(sourceCode: string, fileLabel: string): RootNavigationOccurrence[] {
+      const occurrences: RootNavigationOccurrence[] = [];
+
+      for (const { kind, createRegex } of ROOT_NAV_PRODUCER_PATTERNS) {
+        const rx = createRegex();
+        let m: RegExpExecArray | null = rx.exec(sourceCode);
+        while (m !== null) {
+          const line = sourceCode.slice(0, m.index).split('\n').length;
+          occurrences.push({
+            file: fileLabel,
+            line,
+            kind,
+            match: m[0],
+          });
+          m = rx.exec(sourceCode);
+        }
+      }
+
+      return occurrences.sort((a, b) => a.line - b.line);
+    }
+
+    const ALLOWED_ROOT_NAV_RULES: Record<string, AllowedOccurrenceRule> = {
+      'src/app/(public)/legal/page.tsx': {
+        allowedKind: 'href',
+        maxCount: 1,
+        reason: 'Landing legal pública: botón volver al inicio enlaza a la landing pública',
+      },
+      'src/app/(public)/login/page.tsx': {
+        allowedKind: 'href',
+        maxCount: 1,
+        reason: 'Página pública de login: botón volver al inicio enlaza a la landing pública',
+      },
+      'src/app/(public)/register/page.tsx': {
+        allowedKind: 'href',
+        maxCount: 1,
+        reason: 'Página pública de registro: botón volver al inicio enlaza a la landing pública',
+      },
+      'src/ui/top-bar.tsx': {
+        allowedKind: 'propDefault',
+        maxCount: 1,
+        reason: 'TopBar componente base: valor por defecto de logoHref = "/" cuando no se especifica',
+      },
+    };
+
+    function auditRootNavigationViolations(
+      occurrences: RootNavigationOccurrence[]
+    ): Array<{ occurrence: RootNavigationOccurrence; reason: string }> {
+      const fileCounts: Record<string, number> = {};
+      const violations: Array<{ occurrence: RootNavigationOccurrence; reason: string }> = [];
+
+      for (const occ of occurrences) {
+        const rule = ALLOWED_ROOT_NAV_RULES[occ.file];
+        if (!rule) {
+          violations.push({
+            occurrence: occ,
+            reason: `Archivo no autorizado para navegación root (${occ.kind}: ${occ.match})`,
+          });
+          continue;
+        }
+
+        if (occ.kind !== rule.allowedKind) {
+          violations.push({
+            occurrence: occ,
+            reason: `Tipo de navegación root "${occ.kind}" no permitido en ${occ.file} (esperado: "${rule.allowedKind}")`,
+          });
+          continue;
+        }
+
+        const currentCount = (fileCounts[occ.file] ?? 0) + 1;
+        fileCounts[occ.file] = currentCount;
+
+        if (currentCount > rule.maxCount) {
+          violations.push({
+            occurrence: occ,
+            reason: `Exceso de ocurrencias de navegación root en ${occ.file} (${currentCount} > máximo permitido: ${rule.maxCount})`,
+          });
+        }
+      }
+
+      return violations;
+    }
+
     it('ErrorView y NotFoundView usan /login como gateway de retorno y no enlazan a la landing pública /', () => {
       const errorViewPath = path.resolve(ROOT_DIR, 'features/notifications/offline/error-view.tsx');
       const notFoundViewPath = path.resolve(ROOT_DIR, 'features/notifications/offline/not-found-view.tsx');
@@ -751,20 +858,13 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       const notFoundViewContent = fs.readFileSync(notFoundViewPath, 'utf-8');
 
       expect(errorViewContent).toContain('href="/login"');
-      expect(errorViewContent).not.toMatch(/href=["']\/["']/);
+      expect(scanRootNavigationOccurrences(errorViewContent, 'error-view.tsx')).toEqual([]);
 
       expect(notFoundViewContent).toContain('href="/login"');
-      expect(notFoundViewContent).not.toMatch(/href=["']\/["']/);
+      expect(scanRootNavigationOccurrences(notFoundViewContent, 'not-found-view.tsx')).toEqual([]);
     });
 
-    it('los enlaces directos a la landing pública / están restringidos exclusivamente a la allowlist documentada', () => {
-      const allowedFilesWithRootLink = new Set<string>([
-        path.resolve(ROOT_DIR, 'app/(public)/legal/page.tsx'),
-        path.resolve(ROOT_DIR, 'app/(public)/login/page.tsx'),
-        path.resolve(ROOT_DIR, 'app/(public)/register/page.tsx'),
-        path.resolve(ROOT_DIR, 'ui/top-bar.tsx'),
-      ]);
-
+    it('PR248-H02: las ocurrencias de navegación a la landing pública / en producción están estrictamente limitadas a la allowlist auditada', () => {
       const candidateDirs = [
         path.resolve(ROOT_DIR, 'app'),
         path.resolve(ROOT_DIR, 'features'),
@@ -776,48 +876,109 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
         allProductionFiles.push(...walkProductionFiles(dir));
       }
 
-      const violations: string[] = [];
-      const rootLinkRegex = /\bhref\s*[:=]\s*["']\/["']/g;
-
+      const allOccurrences: RootNavigationOccurrence[] = [];
       for (const filePath of allProductionFiles) {
         const content = fs.readFileSync(filePath, 'utf-8');
-        if (rootLinkRegex.test(content)) {
-          if (!allowedFilesWithRootLink.has(filePath)) {
-            const rel = path.relative(path.resolve(ROOT_DIR, '..'), filePath).replace(/\\/g, '/');
-            violations.push(rel);
-          }
-        }
+        const rel = path.relative(path.resolve(ROOT_DIR, '..'), filePath).replace(/\\/g, '/');
+        const occurrences = scanRootNavigationOccurrences(content, rel);
+        allOccurrences.push(...occurrences);
       }
 
+      const violations = auditRootNavigationViolations(allOccurrences);
       expect(violations).toEqual([]);
+
+      // Valida que cada archivo autorizado tenga exactamente una ocurrencia registrada
+      const detectedFiles = new Set(allOccurrences.map((o) => o.file));
+      expect(Array.from(detectedFiles).sort()).toEqual(Object.keys(ALLOWED_ROOT_NAV_RULES).sort());
     });
 
-    it('mutación: reintroducir href="/" en ErrorView o NotFoundView es detectado y rechazado', () => {
-      const simulatedErrorView = '<Link href="/">Ir al inicio</Link>';
-      const simulatedNotFoundView = '<Link href="/">Ir al inicio</Link>';
-
-      expect(simulatedErrorView).toMatch(/href=["']\/["']/);
-      expect(simulatedErrorView.includes('href="/login"')).toBe(false);
-
-      expect(simulatedNotFoundView).toMatch(/href=["']\/["']/);
-      expect(simulatedNotFoundView.includes('href="/login"')).toBe(false);
+    it('PR248-H02: detecta violación discriminante ante router.push("/")', () => {
+      const synthetic = `function goToHome() { router.push('/'); }`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('router.push');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
     });
 
-    it('mutación: hacer que admin autenticado en /login vuelva a / deja tests RED', () => {
-      const adminSession: AuthSession = {
-        userId: 'adm-mut',
-        email: 'adm@mut.com',
-        role: 'admin',
-        aal: 'aal1',
-        consentStatus: 'active',
-      };
-      // Demostración de mutación que devuelve '/'
-      const mutatedGuard = (_path: string, _session: AuthSession) => ({
-        action: 'redirect' as const,
-        redirectTo: '/',
-      });
-      const mutatedResult = mutatedGuard('/login', adminSession);
-      expect(mutatedResult.redirectTo).not.toBe('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+    it('PR248-H02: detecta violación discriminante ante router.replace("/")', () => {
+      const synthetic = `function replaceHome() { router.replace('/'); }`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('router.replace');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación discriminante ante redirect("/")', () => {
+      const synthetic = `redirect('/');`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('redirect');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación discriminante ante redirectTo: "/"', () => {
+      const synthetic = `return { action: 'redirect', redirectTo: '/' };`;
+      const occ = scanRootNavigationOccurrences(synthetic, 'src/app/test-comp.tsx');
+      expect(occ).toHaveLength(1);
+      expect(occ[0]?.kind).toBe('redirectTo');
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Archivo no autorizado');
+    });
+
+    it('PR248-H02: detecta violación cuando un archivo allowlisteado incluye una segunda navegación root no autorizada', () => {
+      const realLoginContent = fs.readFileSync(
+        path.resolve(ROOT_DIR, 'app/(public)/login/page.tsx'),
+        'utf-8'
+      );
+      const mutatedContent = `${realLoginContent}\n<Link href="/">Segundo enlace no documentado</Link>`;
+      const occ = scanRootNavigationOccurrences(mutatedContent, 'src/app/(public)/login/page.tsx');
+      expect(occ).toHaveLength(2);
+      const violations = auditRootNavigationViolations(occ);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]?.reason).toContain('Exceso de ocurrencias');
+    });
+
+    it('PR248-H02: detecta violaciones en fuentes consecutivas sin fuga de estado de RegExp entre escaneos', () => {
+      const sourceA = `const a = <Link href="/">Inicio A</Link>;`;
+      const sourceB = `function nav() { router.push('/'); }`;
+
+      const occA = scanRootNavigationOccurrences(sourceA, 'src/app/fileA.tsx');
+      const occB = scanRootNavigationOccurrences(sourceB, 'src/app/fileB.tsx');
+
+      expect(occA).toHaveLength(1);
+      expect(occA[0]?.kind).toBe('href');
+
+      expect(occB).toHaveLength(1);
+      expect(occB[0]?.kind).toBe('router.push');
+
+      expect(auditRootNavigationViolations(occA)).toHaveLength(1);
+      expect(auditRootNavigationViolations(occB)).toHaveLength(1);
+    });
+
+    it('PR248-H02: login, register y legal conservan únicamente sus usos públicos legítimos', () => {
+      const allowedPaths = [
+        'src/app/(public)/legal/page.tsx',
+        'src/app/(public)/login/page.tsx',
+        'src/app/(public)/register/page.tsx',
+        'src/ui/top-bar.tsx',
+      ];
+
+      for (const relPath of allowedPaths) {
+        const fullPath = path.resolve(ROOT_DIR, '..', relPath);
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const occ = scanRootNavigationOccurrences(content, relPath);
+
+        expect(occ).toHaveLength(1);
+        const violations = auditRootNavigationViolations(occ);
+        expect(violations).toEqual([]);
+      }
     });
   });
 });

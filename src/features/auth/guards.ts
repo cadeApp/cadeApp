@@ -63,7 +63,7 @@ export function parseOnboardingComplete(role: ProfileRole, row: unknown): boolea
 }
 
 /** Pantalla de inicio del admin. El guard la protege con MFA (AAL2). */
-const ADMIN_HOME = '/admin/applicants';
+export const ADMIN_HOME = '/admin/applicants';
 
 /** El chequeo de onboarding aplica solo a comercio y repartidor con consentimiento activo (CC-007 va antes). */
 function hasIncompleteOnboarding(session: AuthSession): boolean {
@@ -337,42 +337,42 @@ export function evaluateRouteGuard(
     if (session.role === 'courier') {
       return { action: 'redirect', redirectTo: '/courier/onboarding/identity' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/onboarding/identity') {
     if (session.role === 'courier') {
       return { action: 'redirect', redirectTo: '/courier/onboarding/identity' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/onboarding/vehicle') {
     if (session.role === 'courier') {
       return { action: 'redirect', redirectTo: '/courier/onboarding/vehicle' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/onboarding/status') {
     if (session.role === 'courier') {
       return { action: 'redirect', redirectTo: '/courier/onboarding/status' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/requests') {
     if (session.role === 'merchant') {
       return { action: 'redirect', redirectTo: '/merchant/dashboard' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/requests/new') {
     if (session.role === 'merchant') {
       return { action: 'redirect', redirectTo: '/merchant/requests/new' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname.startsWith('/requests/')) {
@@ -380,28 +380,28 @@ export function evaluateRouteGuard(
     if (session.role === 'merchant' && requestId && !requestId.includes('/')) {
       return { action: 'redirect', redirectTo: `/merchant/requests/${requestId}` };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/feed') {
     if (session.role === 'courier') {
       return { action: 'redirect', redirectTo: '/courier/feed' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/offers') {
     if (session.role === 'courier') {
       return { action: 'redirect', redirectTo: '/courier/offers' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   if (pathname === '/profile') {
     if (session.role === 'courier') {
       return { action: 'redirect', redirectTo: '/courier/profile' };
     }
-    return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
+    return { action: 'redirect', redirectTo: getSessionHomePath(session) };
   }
 
   // 2.c. T-334: onboarding incompleto. Toda ruta propia del rol va al onboarding, salvo las exentas (sin loop).
@@ -447,7 +447,7 @@ export function evaluateRouteGuard(
     if (session.role !== 'merchant') {
       return {
         action: 'redirect',
-        redirectTo: session.role === 'admin' ? getRoleDefaultPath('admin') : getSessionHomePath(session),
+        redirectTo: getSessionHomePath(session),
       };
     }
     return { action: 'allow' };
@@ -458,7 +458,7 @@ export function evaluateRouteGuard(
     if (session.role !== 'courier') {
       return {
         action: 'redirect',
-        redirectTo: session.role === 'admin' ? getRoleDefaultPath('admin') : getSessionHomePath(session),
+        redirectTo: getSessionHomePath(session),
       };
     }
     return { action: 'allow' };

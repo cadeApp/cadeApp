@@ -218,7 +218,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(incidentsAttempt.action).toBe('redirect');
   });
 
-  it('PR60-H02: admin con aal1 no entra a merchant ni courier y no cicla en /login/mfa', () => {
+  it('PR60-H02: admin con aal1 no entra a merchant ni courier, no cicla en /login/mfa y vuelve a su home real', () => {
     const adminAal1: AuthSession = {
       userId: 'usr-admin',
       email: 'admin@test.com',
@@ -230,11 +230,75 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     const merchantAttempt = evaluateRouteGuard('/merchant/dashboard', adminAal1);
     expect(merchantAttempt.action).toBe('redirect');
     if (merchantAttempt.action === 'redirect') {
-      expect(merchantAttempt.redirectTo).toBe(getRoleDefaultPath('admin'));
+      expect(merchantAttempt.redirectTo).toBe('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+      expect(merchantAttempt.redirectTo).not.toBe('/');
+    }
+
+    const courierAttempt = evaluateRouteGuard('/courier/feed', adminAal1);
+    expect(courierAttempt.action).toBe('redirect');
+    if (courierAttempt.action === 'redirect') {
+      expect(courierAttempt.redirectTo).toBe('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+      expect(courierAttempt.redirectTo).not.toBe('/');
     }
 
     const mfaAttempt = evaluateRouteGuard('/login/mfa', adminAal1);
     expect(mfaAttempt.action).toBe('allow');
+  });
+
+  describe('PR248-H01: ningún admin autenticado cae en / al acceder a rutas de otro rol o aliases legacy', () => {
+    const adminAal1: AuthSession = {
+      userId: 'usr-admin-aal1',
+      email: 'admin@test.com',
+      role: 'admin',
+      aal: 'aal1',
+      consentStatus: 'active',
+    };
+    const adminAal2: AuthSession = {
+      ...adminAal1,
+      userId: 'usr-admin-aal2',
+      aal: 'aal2',
+    };
+
+    const testCases: Array<{
+      path: string;
+      session: AuthSession;
+      expectedRedirect: string;
+    }> = [
+      { path: '/merchant/dashboard', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/merchant/dashboard', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/courier/feed', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/courier/feed', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/requests', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/requests', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/requests/new', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/requests/new', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/feed', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/feed', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/offers', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/offers', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/profile', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/profile', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding/identity', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding/identity', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding/vehicle', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding/vehicle', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding/status', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding/status', session: adminAal2, expectedRedirect: '/admin/applicants' },
+    ];
+
+    it.each(testCases)(
+      'admin ($session.aal) accediendo a $path redirige a $expectedRedirect y nunca a /',
+      ({ path, session, expectedRedirect }) => {
+        const result = evaluateRouteGuard(path, session);
+        expect(result.action).toBe('redirect');
+        if (result.action === 'redirect') {
+          expect(result.redirectTo).toBe(expectedRedirect);
+          expect(result.redirectTo).not.toBe('/');
+        }
+      }
+    );
   });
 
   it('PR60-H04: resolvePostLoginRedirect previene Open Redirect y respeta rol', () => {
