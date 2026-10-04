@@ -10,6 +10,7 @@ import { Card } from '@/ui/card';
 import { Input } from '@/ui/input';
 import { loginAction } from '../actions';
 import { authCopy } from '../copy';
+import { resolvePostLoginRedirect } from '../guards';
 
 export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string }) {
   const router = useRouter();
@@ -36,9 +37,15 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
         return;
       }
 
-      // El Server Action ya resolvió y saneó el destino final, incluyendo el estado de onboarding.
-      // No recalcularlo en el cliente: hacerlo perdería onboardingComplete y podría mandar un courier incompleto al feed.
-      router.push(result.data.redirectTo);
+      // T-334: el cliente conserva la auditoría canónica de rutas, pero usa el mismo dato de onboarding
+      // que calculó el Server Action. Sin el cuarto argumento, un courier incompleto se recalcularía a /courier/feed.
+      const targetUrl = resolvePostLoginRedirect(
+        initialRedirectTo,
+        result.data.role,
+        result.data.consentStatus,
+        result.data.onboardingComplete
+      );
+      router.push(targetUrl);
       router.refresh();
     } catch {
       setErrorMessage(authCopy.login.errorGeneric);

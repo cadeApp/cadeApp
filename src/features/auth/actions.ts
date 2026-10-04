@@ -25,7 +25,13 @@ export async function loginAction(
   input: unknown
 ): Promise<
   ActionResult<
-    { userId: string; role: ProfileRole; consentStatus: ConsentStatus; redirectTo: string },
+    {
+      userId: string;
+      role: ProfileRole;
+      consentStatus: ConsentStatus;
+      onboardingComplete?: boolean;
+      redirectTo: string;
+    },
     DomainErrorCode
   >
 > {
@@ -98,6 +104,7 @@ export async function loginAction(
     userId: data.user.id,
     role,
     consentStatus,
+    onboardingComplete,
     redirectTo,
   });
 }
