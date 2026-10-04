@@ -1,71 +1,85 @@
 # Evidencia reproducible — PR #240
 
-## Ronda 1
+## Rondas 1–3
 
-Ver historia para evidencia del SHA `5c31ed8`.
+Ver historia del archivo.
 
-## Ronda 2
-
-Ver historia para evidencia del SHA `94cf3db`.
-
-## Ronda 3 — H04
+## Ronda 4 — H05
 
 ### RED manual
 
-Lautaro073 reprodujo en localhost el caso courier incompleto:
+Lautaro073 informó:
 
 ```text
-estado mostrado: "En revisión manual"
-DNI frente/dorso: Pendiente
-Selfie: Pendiente
-Foto perfil: Pendiente
-Vehículo y consentimientos: Listo
-acción: "Ir al panel de repartidor"
-resultado: no avanza correctamente y el usuario no vuelve a completar onboarding
+cuenta courier recién creada
+onboarding no completado
+login
+resultado observado: /courier/feed
+resultado esperado: /courier/onboarding/identity
 ```
 
-### Causa en el SHA anterior
+### Causa
+
+`loginAction` ya devolvía identity para `vehicle_type = null`, pero el cliente ejecutaba:
 
 ```ts
-matchesSegment(pathname, '/courier/onboarding') ||
-pathname === '/courier/profile'
+resolvePostLoginRedirect(
+  initialRedirectTo,
+  result.data.role,
+  result.data.consentStatus
+)
 ```
 
-La primera condición incluye `/courier/onboarding/status`.
+Sin `onboardingComplete`, el resolver toma el default del rol: `/courier/feed`.
 
-### Fix `4bf9cfacf20aabd9b217eb8681febb0c04e96153`
+### Intento intermedio
+
+Commit `3cfe1b0` usó `router.push(result.data.redirectTo)`.
+
+CI detectó correctamente:
+
+```text
+src/features/auth/components/login-form.tsx navega a redirectTo indirecto
+sin productor verificable (inexistente): result.data.redirectTo
+```
+
+Origen: `src/app/route-integrity.test.ts`, T-118. No se modificó ese test.
+
+### Fix definitivo `db42f5283a915eeb17fe50ab9fb6aea438b063ab`
+
+`loginAction` devuelve `onboardingComplete` y `LoginForm` lo usa:
 
 ```ts
-pathname === '/courier/onboarding/identity' ||
-pathname === '/courier/onboarding/vehicle' ||
-pathname === '/courier/profile'
+const targetUrl = resolvePostLoginRedirect(
+  initialRedirectTo,
+  result.data.role,
+  result.data.consentStatus,
+  result.data.onboardingComplete
+);
 ```
 
-### Tests de contrato
+`updatePasswordAction` también carga `business_name` / `vehicle_type` antes de resolver su destino.
 
-Courier incompleto:
+### Controles
 
-```ts
-expect(followGuard('/courier/onboarding/status', session))
-  .toBe('/courier/onboarding/identity');
+`login-form.test.tsx`:
+- merchant false → `/merchant/onboarding`;
+- courier false → `/courier/onboarding/identity`;
+- merchant/courier true → destino normal;
+- admin MFA;
+- redirect hostil.
 
-expect(followGuard('/onboarding/status', session))
-  .toBe('/courier/onboarding/identity');
-```
+`actions.test.ts`:
+- reset merchant incompleto;
+- reset courier incompleto;
+- reset courier completo;
+- D02 fail-open.
 
-Courier completo:
+Mutación equivalente: eliminar el cuarto argumento en `LoginForm`; courier false vuelve a feed y el test queda RED.
 
-```ts
-expect(
-  evaluateRouteGuard('/courier/onboarding/status', baseSession('courier', true))
-).toEqual({ action: 'allow' });
-```
+### CI definitivo
 
-Volver a la mutación amplia `matchesSegment('/courier/onboarding')` rompe el primer control porque status queda permitido.
-
-### CI
-
-GitHub Actions run **#1075 / 37160178864**, SHA `4bf9cfacf20aabd9b217eb8681febb0c04e96153`: **SUCCESS**.
+GitHub Actions run **#1082 / 37166448240**, SHA `db42f5283a915eeb17fe50ab9fb6aea438b063ab`: **SUCCESS**.
 
 ```text
 unit           success
@@ -75,14 +89,9 @@ lint           success
 db-tests       success
 audit          success
 bundle-budget  success
+Vercel         success
 ```
 
-### Pendiente manual H03
+### Pendiente H03
 
-Comercio: PASS ya informado.
-
-Courier: repetir sobre `4bf9cfacf20aabd9b217eb8681febb0c04e96153` o posterior:
-1. entrar con cuenta incompleta;
-2. feed/ofertas/status → identity;
-3. profile exacto → permitido + “Completá tu registro”;
-4. profile/notifications → identity.
+Repetir el flujo manual courier sobre `db42f5283a915eeb17fe50ab9fb6aea438b063ab` o un SHA posterior con el mismo código.
