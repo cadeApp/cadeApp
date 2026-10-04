@@ -207,4 +207,203 @@ test.describe('E2E: Notificaciones y Resiliencia (T-307)', () => {
     // sin fetch('/api/health'), sin router.refresh() y sin fallback a navigator.onLine
     await expect.poll(() => count, { timeout: 15_000 }).toBeGreaterThan(baseline);
   });
+
+  test('diagnóstico H10: subscriber autenticado directo recibe INSERT de oferta por Postgres Changes', async ({
+    page,
+    stagingContext,
+    loginAsMerchant,
+  }) => {
+    test.setTimeout(45_000);
+
+    // 1. Obtener solicitud y credenciales de comercio y repartidor
+    const requestId = stagingContext.createdRequestIds[0];
+    if (!requestId) {
+      throw new Error('[Diagnóstico H10] No se encontró requestId en stagingContext');
+    }
+    const merchant = stagingContext.merchantUser;
+    if (!merchant) {
+      throw new Error('[Diagnóstico H10] No se encontró merchantUser en stagingContext');
+    }
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[Diagnóstico H10] No se encontró courier en stagingContext');
+    }
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error('[Diagnóstico H10] Faltan variables públicas de Supabase en el entorno');
+    }
+
+    // 2. Autenticar cliente directo Supabase en Node como el merchant
+    const { createClient } = await import('@supabase/supabase-js');
+    const nodeClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: authData, error: authError } = await nodeClient.auth.signInWithPassword({
+      email: merchant.email,
+      password: merchant.password,
+    });
+    if (authError || !authData.session) {
+      throw new Error(`[Diagnóstico H10] Error autenticando merchant en Node: ${authError?.message}`);
+    }
+    await nodeClient.realtime.setAuth(authData.session.access_token);
+
+    // 3. Suscribirse a { event: 'INSERT', schema: 'public', table: 'offers', filter: request_id=eq.${requestId} }
+    let nodeSubscribed = false;
+    let nodeChannelStatus = 'INIT';
+    let nodeChannelError: unknown = null;
+    let nodeEventReceived = false;
+    let nodeEventTimestamp = 0;
+
+    const nodeChannel = nodeClient.channel(`diag-node-offers-${requestId}`);
+
+    const nodeSubscribePromise = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Timeout esperando SUBSCRIBED en Node (status: ${nodeChannelStatus})`));
+      }, 15_000);
+
+      nodeChannel
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'offers',
+            filter: `request_id=eq.${requestId}`,
+          },
+          (payload) => {
+            nodeEventReceived = true;
+            nodeEventTimestamp = Date.now();
+            console.log('[Diagnóstico H10 - Node] Evento recibido:', JSON.stringify(payload));
+          }
+        )
+        .subscribe((status, err) => {
+          nodeChannelStatus = status;
+          nodeChannelError = err;
+          console.log(`[Diagnóstico H10 - Node] Channel status: ${status}`, err ? `Error: ${JSON.stringify(err)}` : '');
+          if (status === 'SUBSCRIBED') {
+            nodeSubscribed = true;
+            clearTimeout(timer);
+            resolve();
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            clearTimeout(timer);
+            reject(new Error(`Node channel falló: ${status} error: ${JSON.stringify(err)}`));
+          }
+        });
+    });
+
+    await nodeSubscribePromise;
+
+    // 4. Autenticar también en navegador vía loginAsMerchant y suscribir cliente de browser para comparar
+    await loginAsMerchant(page);
+    await page.goto(`/merchant/requests/${requestId}`);
+    await waitForNoSkeletons(page);
+
+    const browserDiag = await page.evaluate(
+      async ({ reqId }) => {
+        const win = window as any;
+        const { createClient: createBrowserClient } = await import('@/lib/supabase/browser');
+        const browserClient = createBrowserClient();
+        win.__diagBrowserReceived = false;
+        win.__diagBrowserPayload = null;
+        win.__diagBrowserStatus = 'INIT';
+
+        const chan = browserClient.channel(`diag-browser-offers-${reqId}`);
+        chan
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'offers',
+              filter: `request_id=eq.${reqId}`,
+            },
+            (payload: unknown) => {
+              win.__diagBrowserReceived = true;
+              win.__diagBrowserPayload = payload;
+            }
+          )
+          .subscribe((status: string, err: unknown) => {
+            win.__diagBrowserStatus = status;
+            win.__diagBrowserError = err;
+          });
+
+        const start = Date.now();
+        while (win.__diagBrowserStatus !== 'SUBSCRIBED' && Date.now() - start < 10_000) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        return {
+          status: win.__diagBrowserStatus,
+          error: win.__diagBrowserError ?? null,
+        };
+      },
+      { reqId: requestId }
+    );
+    console.log('[Diagnóstico H10 - Browser] Status:', browserDiag);
+
+    // 5. Insertar una oferta real mediante el admin de la fixture
+    const admin = createAdminClient();
+    const offerId = randomUUID();
+    const offerMarker = `T307 diag ${stagingContext.testRunId}`;
+    const insertStartTime = Date.now();
+
+    const { error: offerError } = await admin.from('offers').insert({
+      id: offerId,
+      request_id: requestId,
+      courier_id: courier.id,
+      amount_ars: 2500,
+      eta_minutes: 12,
+      message: offerMarker,
+      status: 'pending',
+    });
+    if (offerError) {
+      throw new Error(`[Diagnóstico H10] Error insertando oferta: ${offerError.message}`);
+    }
+    trackEntityForCleanup(stagingContext, 'offer', offerId);
+    console.log(`[Diagnóstico H10] Oferta insertada correctamente (id: ${offerId})`);
+
+    // 6. Esperar hasta 25 s (< 30 s de polling) la llegada del evento a los subscribers
+    const maxWait = 25_000;
+    const pollStart = Date.now();
+    let browserReceived = false;
+
+    while (Date.now() - pollStart < maxWait) {
+      if (!browserReceived) {
+        browserReceived = await page.evaluate(() => Boolean((window as any).__diagBrowserReceived));
+      }
+      if (nodeEventReceived && browserReceived) {
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!browserReceived) {
+      browserReceived = await page.evaluate(() => Boolean((window as any).__diagBrowserReceived));
+    }
+
+    const nodeLatency = nodeEventReceived ? nodeEventTimestamp - insertStartTime : null;
+
+    const diagnosticReport = {
+      SUBSCRIBED_node: nodeSubscribed,
+      channel_status_node: nodeChannelStatus,
+      channel_error_node: nodeChannelError,
+      SUBSCRIBED_browser: browserDiag.status === 'SUBSCRIBED',
+      channel_status_browser: browserDiag.status,
+      INSERT_real: true,
+      evento_recibido_node: nodeEventReceived,
+      latencia_ms_node: nodeLatency,
+      evento_recibido_browser: browserReceived,
+    };
+
+    console.log('=== [DIAGNÓSTICO H10 REPORTE FINAL] ===');
+    console.log(JSON.stringify(diagnosticReport, null, 2));
+    console.log('========================================');
+
+    await nodeClient.removeChannel(nodeChannel);
+
+    expect(
+      nodeEventReceived || browserReceived,
+      `[Diagnóstico H10] Evento Postgres Changes INSERT recibido por al menos un subscriber directo (Node: ${nodeEventReceived}, Browser: ${browserReceived})`
+    ).toBe(true);
+  });
 });
