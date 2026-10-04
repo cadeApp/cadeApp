@@ -62,19 +62,19 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const kindRadio = page.getByRole('radio', { name: /problema con el pago/i });
+    const kindRadio = page.getByRole('radio', { name: /problema con el cobro/i });
     await expect(kindRadio).toBeVisible();
     await kindRadio.click();
 
-    const descInput = page.getByLabel(/¿qué sucedió\?/i);
-    const incidentDescription = `Incidente E2E ${stagingContext.testRunId}: El repartidor tuvo un problema con el pago acordado.`;
+    const descInput = page.getByLabel(/¿qué pasó\?/i);
+    const incidentDescription = `Incidente E2E ${stagingContext.testRunId}: El repartidor tuvo un problema con el cobro acordado.`;
     await descInput.fill(incidentDescription);
 
     const submitBtn = page.getByRole('button', { name: /enviar reporte/i });
     await submitBtn.click();
 
     // 5. Confirmación en pantalla
-    await expect(page.getByText(/reporte enviado/i)).toBeVisible();
+    await expect(page.getByText(/recibimos tu reporte/i)).toBeVisible();
 
     // 6. Administrador E2E con AAL2 verificado vía helper canónico (PR224-H01)
     const adminCredentials = await seedAdminUser(stagingContext);
@@ -114,7 +114,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await waitForNoSkeletons(adminPage);
 
     // Verificar presencia del incidente en la bandeja
-    await expect(adminPage.getByText(/problema con el pago/i)).toBeVisible();
+    await expect(adminPage.getByText(/problema con el cobro/i)).toBeVisible();
     await expect(adminPage.getByText(incidentDescription)).toBeVisible();
   });
 
