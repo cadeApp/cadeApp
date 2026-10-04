@@ -23,44 +23,85 @@ function submit(initialRedirectTo?: string) {
   );
 }
 
-describe('T-317 / PR139-H14: destino del formulario de login', () => {
+describe('T-317 / T-334: destino del formulario de login', () => {
   beforeEach(() => {
     push.mockReset();
     refresh.mockReset();
     loginAction.mockReset();
   });
 
-  it('admin sin redirectTo → navega al MFA hacia /admin/applicants, nunca a /', async () => {
+  it('usa exactamente el redirectTo saneado por loginAction para admin', async () => {
     loginAction.mockResolvedValue({
       ok: true,
-      data: { userId: 'adm-1', role: 'admin', consentStatus: 'active', redirectTo: '/ignored' },
+      data: {
+        userId: 'adm-1',
+        role: 'admin',
+        consentStatus: 'active',
+        redirectTo: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants',
+      },
     });
+
     submit();
+
     await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
     expect(push).toHaveBeenCalledWith('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
-    expect(push).not.toHaveBeenCalledWith('/');
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['merchant', '/merchant/onboarding'],
+    ['courier', '/courier/onboarding/identity'],
+  ])(
+    'T-334: %s incompleto navega al onboarding devuelto por el servidor (%s)',
+    async (role, redirectTo) => {
+      loginAction.mockResolvedValue({
+        ok: true,
+        data: { userId: 'usr-1', role, consentStatus: 'active', redirectTo },
+      });
+
+      submit();
+
+      await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+      expect(push).toHaveBeenCalledWith(redirectTo);
+      expect(refresh).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it.each([
     ['merchant', '/merchant/dashboard'],
     ['courier', '/courier/feed'],
-  ])('%s sin redirectTo conserva su destino (%s)', async (role, expected) => {
+  ])('%s completo conserva el destino devuelto por loginAction (%s)', async (role, redirectTo) => {
     loginAction.mockResolvedValue({
       ok: true,
-      data: { userId: 'usr-1', role, consentStatus: 'active', redirectTo: '/ignored' },
+      data: { userId: 'usr-1', role, consentStatus: 'active', redirectTo },
     });
+
     submit();
+
     await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
-    expect(push).toHaveBeenCalledWith(expected);
+    expect(push).toHaveBeenCalledWith(redirectTo);
   });
 
-  it('admin con redirectTo hostil → sigue saneado hacia el MFA', async () => {
+  it('un redirectTo hostil se envía al Server Action pero el cliente solo usa el destino saneado que vuelve', async () => {
     loginAction.mockResolvedValue({
       ok: true,
-      data: { userId: 'adm-1', role: 'admin', consentStatus: 'active', redirectTo: '/ignored' },
+      data: {
+        userId: 'adm-1',
+        role: 'admin',
+        consentStatus: 'active',
+        redirectTo: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants',
+      },
     });
+
     submit('https://evil.com/phish');
-    await waitFor(() => expect(push).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(1));
+    expect(loginAction).toHaveBeenCalledWith({
+      email: 'usuario@test.com',
+      password: 'una-clave',
+      redirectTo: 'https://evil.com/phish',
+    });
     expect(push).toHaveBeenCalledWith('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+    expect(push).not.toHaveBeenCalledWith('https://evil.com/phish');
   });
 });

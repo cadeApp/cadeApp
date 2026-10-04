@@ -1351,3 +1351,87 @@ describe('T-334: loginAction manda al onboarding cuando está incompleto', () =>
     if (result.ok) expect(result.data.redirectTo).toBe('/courier/feed');
   });
 });
+
+
+describe('T-334: updatePasswordAction también respeta onboarding incompleto', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function mockResetClient(
+    role: 'merchant' | 'courier',
+    marker: Record<string, unknown> | null,
+    markerError: unknown = null
+  ) {
+    const tables: string[] = [];
+    const updateUser = vi.fn().mockResolvedValue({
+      data: { user: { id: 'usr-reset-t334' } },
+      error: null,
+    });
+    const signOut = vi.fn().mockResolvedValue({ error: null });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        updateUser,
+        signOut,
+      },
+      from: vi.fn((table: string) => {
+        tables.push(table);
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              maybeSingle: vi.fn().mockResolvedValue(
+                table === 'profiles'
+                  ? { data: { role, consent_status: 'active' }, error: null }
+                  : { data: markerError ? null : marker, error: markerError }
+              ),
+            })),
+          })),
+        };
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    return { tables, updateUser, signOut };
+  }
+
+  it.each([
+    ['merchant', { business_name: '' }, '/merchant/onboarding', 'merchants'],
+    ['courier', { vehicle_type: null }, '/courier/onboarding/identity', 'couriers'],
+  ] as const)(
+    '%s incompleto vuelve a su onboarding después de resetear contraseña',
+    async (role, marker, expected, table) => {
+      const { tables, signOut } = mockResetClient(role, marker);
+
+      const result = await updatePasswordAction({
+        password: 'nuevaPassword123',
+        confirmPassword: 'nuevaPassword123',
+      });
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: expected } });
+      expect(tables).toContain(table);
+      expect(signOut).toHaveBeenCalledWith({ scope: 'others' });
+    }
+  );
+
+  it('courier completo conserva /courier/feed después del reset', async () => {
+    mockResetClient('courier', { vehicle_type: 'bike' });
+
+    const result = await updatePasswordAction({
+      password: 'nuevaPassword123',
+      confirmPassword: 'nuevaPassword123',
+    });
+
+    expect(result).toEqual({ ok: true, data: { redirectTo: '/courier/feed' } });
+  });
+
+  it('si falla la lectura del marcador conserva D02 fail-open también en reset', async () => {
+    mockResetClient('courier', null, { message: 'transient read error', code: '57014' });
+
+    const result = await updatePasswordAction({
+      password: 'nuevaPassword123',
+      confirmPassword: 'nuevaPassword123',
+    });
+
+    expect(result).toEqual({ ok: true, data: { redirectTo: '/courier/feed' } });
+  });
+});

@@ -312,7 +312,35 @@ export async function updatePasswordAction(
   const consentParsed = consentStatusSchema.safeParse(profile?.consent_status);
 
   if (roleParsed.success && consentParsed.success) {
-    redirectTo = resolvePostLoginRedirect(null, roleParsed.data, consentParsed.data);
+    let onboardingComplete: boolean | undefined;
+    if (
+      consentParsed.data === 'active' &&
+      (roleParsed.data === 'merchant' || roleParsed.data === 'courier')
+    ) {
+      const onboarding =
+        roleParsed.data === 'merchant'
+          ? await supabase
+              .from('merchants')
+              .select('business_name')
+              .eq('profile_id', data.user.id)
+              .maybeSingle()
+          : await supabase
+              .from('couriers')
+              .select('vehicle_type')
+              .eq('profile_id', data.user.id)
+              .maybeSingle();
+
+      if (!onboarding.error) {
+        onboardingComplete = parseOnboardingComplete(roleParsed.data, onboarding.data);
+      }
+    }
+
+    redirectTo = resolvePostLoginRedirect(
+      null,
+      roleParsed.data,
+      consentParsed.data,
+      onboardingComplete
+    );
   } else if (roleParsed.success) {
     redirectTo = getRoleDefaultPath(roleParsed.data);
   }
