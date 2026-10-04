@@ -1,21 +1,18 @@
 # Lecciones — PR #242 / T-325 hotfix
 
-## Ronda 3
+## Ronda 4
 
-La ampliación de `/courier/profile` fue confirmada como autorizada por Lautaro073; no se trata como desvío.
+H05 confirma un caso de integración temporal: una rama puede quedar técnicamente correcta respecto de su base antigua y perder un contrato nuevo cuando `develop` avanza. La prevención útil no es una AG nueva sino la sincronización final de base + tests discriminantes sobre los consumidores compartidos.
 
-El nuevo problema no es la autorización sino **la integración temporal entre ramas**:
-
-- T-325 amplió perfil sobre una base anterior;
-- mientras la PR seguía abierta, T-334 se mergeó a `develop` y cambió los mismos archivos;
-- el branch quedó diverged y su árbol aislado no contiene `onboardingComplete`.
-
-Esto encaja en controles existentes: un check verde del branch no prueba compatibilidad con un contrato que aterrizó después en base. No se propone AG nueva; la regla práctica ya es sincronizar base antes del cierre final y revalidar consumidores compartidos.
-
-## Evidencia
-
-H04 demostró otra vez que abrir la captura real aporta información distinta de leer el README. Se verificó directamente `360-06`.
+H06 muestra el límite opuesto: un proveedor externo puede impedir la evidencia manual aunque código y CI estén verdes. Eso no autoriza a:
+- fabricar capturas;
+- reutilizar evidencia de un SHA anterior;
+- bajar el DoD visual;
+- crear cambios de código innecesarios.
 
 ## Sin AG nueva
 
-H05 se puede prevenir con la rutina de sincronización final + tests que fijen los dos contratos. H06 es la directiva visual ya existente.
+Los controles existentes cubren ambos casos:
+- sincronizar base antes del cierre;
+- conservar contratos de ambos lados;
+- distinguir evidencia ejecutable de evidencia pendiente por entorno externo.

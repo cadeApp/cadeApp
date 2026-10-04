@@ -1,79 +1,77 @@
 # Evidencia reproducible — PR #242
 
-## Ronda 3
+## Ronda 4
 
 HEAD:
 
-    320bab2cc25c2a772dad4c0826345c3be47e1e44
+    c14fead12f0e42ecf42216b1de9b8ea2f3546907
 
-develop actual:
+SHA funcional combinado:
 
-    3e5d5381dbf59717763f1927e1cf080504a9ebf1
+    ef40e47e8c5c6f7bd7b9850fc40fa88e626e67b3
 
-Comparación:
+Base:
 
-    status: diverged
-    ahead_by: 8
-    behind_by: 1
-    mergeable: false
+    develop@3e5d5381dbf59717763f1927e1cf080504a9ebf1
 
-El commit de develop que falta es T-334 (#240).
+GitHub compare:
 
-### Diferencia contractual
+    status: ahead
+    ahead_by: 12
+    behind_by: 0
+    mergeable: true
 
-develop:
+### H05
 
-    CourierProfileData.onboardingComplete: boolean
-    profileData.onboardingComplete = courier.vehicle_type !== null
-    courier incompleto -> "Completá tu registro"
-    courier incompleto -> CTA "Continuar registro"
-    courier incompleto -> no "En revisión administrativa"
+Árbol combinado conserva:
 
-HEAD #242:
+    onboardingComplete: courier.vehicle_type !== null
+    licenseStatus: courier_documents[license].status ?? none
+    insuranceStatus: courier_documents[insurance].status ?? none
+    "Completá tu registro"
+    "Continuar registro"
+    "Notificaciones"
+    /legal/terms
+    /legal/privacy
+    /legal/courier
 
-    no onboardingComplete
-    no bloque de registro incompleto
+Mutaciones registradas por el autor:
 
-### Fuente documental
+    onboardingComplete=true -> 1 failed | 4 passed
+    badge incompleto roto   -> 1 failed | 1 passed | 59 filtered
+    restaurado              -> 90 passed
 
-`admin_verify_document` actualiza:
+CI #1094 HEAD actual:
 
-    update public.courier_documents set status = v_target_status
-    if kind=license -> couriers.license_status = v_target_status
-    if kind=insurance -> couriers.insurance_status = v_target_status
+    Test Files 118 passed (118)
+    Tests      1835 passed (1835)
+    lint       success
+    typecheck  success
+    build      success
+    bundle     success
+    /courier/feed    159 kB
+    /courier/profile 178 kB
 
-Por eso `courier_documents.status` es una fuente válida y más inmediata para submitted.
+DB seguía en ejecución al cerrar R4.
 
-### Evidencia H04
+### H06
 
-Se abrió directamente:
+No existen:
 
-    src/features/courier-onboarding/evidence/T-325/360-06-feed-pending-real-docs.jpg
+    src/features/courier-onboarding/evidence/T-325/360-07-profile-documents.jpg
+    src/features/courier-onboarding/evidence/T-325/360-08-profile-settings.jpg
 
-Observado:
+Vercel:
 
-    licencia -> Listo
-    seguro -> Listo
-    sin CTA "Ir al panel de repartidor"
+    ef40e47 -> failure: api-deployments-free-per-day
+    633aace -> failure: api-deployments-free-per-day
+    c14fead -> failure: api-deployments-free-per-day
 
-### Checks HEAD actual
+No hay Preview combinado ni e2e-preview para cerrar H06.
 
-    Vercel: success
-    e2e-preview: pending al cierre de R3
-    CI workflow completo: aún sin run registrado para 320bab2
-
-### Cierre siguiente
-
-Después de mergear origin/develop:
-
-    pnpm vitest run       "src/app/(courier)/courier/profile/page.test.tsx"       "src/app/(courier)/courier/feed/page.test.tsx"       src/features/courier-onboarding/components.test.tsx       src/features/offers/courier-panel.test.tsx
-    pnpm typecheck
-    pnpm lint
-    pnpm test
-    pnpm build
-    git diff --check
-    pnpm vitest run tools/verify-fichas.test.ts
-    node .github/workflows/verify-workflows.test.mjs
-    node docs/adr/verify-adr.test.mjs
-
-Revisión final: auditar CI/E2E del SHA combinado y evidencia visual de perfil.
+Cuando se libere la cuota:
+- reintentar deployment del HEAD actual;
+- abrir /courier/profile a 360 px;
+- capturar documentos y ajustes;
+- verificar 3 destinos legales y overflow;
+- registrar evidencia y solicitar ronda final.
