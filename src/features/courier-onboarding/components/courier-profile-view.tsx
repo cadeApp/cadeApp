@@ -44,6 +44,8 @@ export interface CourierProfileData {
   readonly licenseStatus: DocumentReviewStatus;
   readonly insuranceStatus: DocumentReviewStatus;
   readonly courierStatus: CourierReviewStatus;
+  /** T-334: `false` si el repartidor nunca envió el onboarding (`couriers.vehicle_type` nulo). */
+  readonly onboardingComplete: boolean;
 }
 
 export function getDocumentStatusPresentation(status: DocumentReviewStatus) {
@@ -227,11 +229,36 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
             <h2 className="truncate font-display text-lg font-bold text-foreground">
               {profile.displayName}
             </h2>
-            {getCourierStatusBadge(profile.courierStatus)}
+            {profile.onboardingComplete ? (
+              getCourierStatusBadge(profile.courierStatus)
+            ) : (
+              <Badge variant="outline" className="text-sm">
+                Completá tu registro
+              </Badge>
+            )}
           </div>
           <p className="truncate text-sm text-muted-foreground">{profile.email}</p>
         </div>
       </Card>
+
+      {!profile.onboardingComplete && (
+        <Card role="status" className="space-y-3 p-4 sm:p-5">
+          <div className="space-y-1">
+            <h2 className="font-display text-base font-bold text-foreground">
+              Todavía no enviaste tu registro
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Para empezar la revisión, terminá de cargar tu documento, selfie y vehículo.
+            </p>
+          </div>
+          <Link
+            href="/courier/onboarding/identity"
+            className={cn(buttonVariants({ variant: 'default', size: 'lg' }), 'w-full sm:w-auto')}
+          >
+            Continuar registro
+          </Link>
+        </Card>
+      )}
 
       {/* Vehículo registrado */}
       <Card className="space-y-3 p-4 sm:p-5">

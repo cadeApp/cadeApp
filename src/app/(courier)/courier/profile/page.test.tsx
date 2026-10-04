@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   CourierProfileView: vi.fn((_props: { profile: CourierProfileData | null }) => null),
   getUser: vi.fn(),
   from: vi.fn(),
+  vehicleType: 'motorcycle' as string | null,
   documents: [] as Array<{ kind: string; status: DocumentReviewStatus }>,
 }));
 
@@ -34,6 +35,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.documents = [];
+    mocks.vehicleType = 'motorcycle';
     mocks.getUser.mockResolvedValue({
       data: { user: { id: 'courier-123', email: 'courier@example.test' } },
       error: null,
@@ -47,7 +49,7 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
             table === 'profiles'
               ? { display_name: 'Repartidor de prueba', role: 'courier' }
               : {
-                  vehicle_type: 'motorcycle',
+                  vehicle_type: mocks.vehicleType,
                   vehicle_plate: null,
                   license_status: 'none',
                   insurance_status: 'none',
@@ -73,9 +75,16 @@ describe('Hotfix T-325: /courier/profile usa los documentos persistidos', () => 
     ];
 
     expect(await renderPage()).toMatchObject({
+      onboardingComplete: true,
       licenseStatus: 'submitted',
       insuranceStatus: 'submitted',
     });
+  });
+
+  it('T-334: vehicle_type null indica onboarding incompleto', async () => {
+    mocks.vehicleType = null;
+
+    expect(await renderPage()).toMatchObject({ onboardingComplete: false });
   });
 
   it('sin licencia ni seguro persistidos ambos estados son none', async () => {

@@ -81,6 +81,8 @@ export default async function CourierProfilePage() {
     licenseStatus: docs.find((d) => d.kind === 'license')?.status ?? 'none',
     insuranceStatus: docs.find((d) => d.kind === 'insurance')?.status ?? 'none',
     courierStatus: courier.status,
+    // T-334: misma definición que el guard (`parseOnboardingComplete`): sin vehículo declarado no hay registro enviado.
+    onboardingComplete: courier.vehicle_type !== null,
   };
 
   return (

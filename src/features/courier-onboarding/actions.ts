@@ -101,22 +101,6 @@ export async function courierOnboardingAction(
     }
   }
 
-  // 6. Persistencia de dni_hmac y vehículo en couriers via adminClient
-  const courierUpdatePayload: TablesUpdate<'couriers'> = {
-    dni_hmac: dniHmac,
-    vehicle_type: parsed.data.vehicleType,
-    vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
-  };
-
-  const { error: courierUpdateError } = await adminClient
-    .from('couriers')
-    .update(courierUpdatePayload as never)
-    .eq('profile_id', user.id);
-
-  if (courierUpdateError) {
-    return err('INTERNAL_ERROR');
-  }
-
   // 7. Inserción de consentimientos en consents
   const consentsPayload: TablesInsert<'consents'>[] = [
     {
@@ -198,6 +182,24 @@ export async function courierOnboardingAction(
     .upsert(documentEntries as never);
 
   if (documentsError) {
+    return err('INTERNAL_ERROR');
+  }
+
+  // 6. Persistencia de dni_hmac y vehículo en couriers via adminClient.
+  // T-334 / D01: va al final porque vehicle_type marca el onboarding como enviado; si consentimientos o
+  // documentos fallan antes, el courier queda con vehicle_type null y el guard lo devuelve al onboarding.
+  const courierUpdatePayload: TablesUpdate<'couriers'> = {
+    dni_hmac: dniHmac,
+    vehicle_type: parsed.data.vehicleType,
+    vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
+  };
+
+  const { error: courierUpdateError } = await adminClient
+    .from('couriers')
+    .update(courierUpdatePayload as never)
+    .eq('profile_id', user.id);
+
+  if (courierUpdateError) {
     return err('INTERNAL_ERROR');
   }
 
