@@ -176,7 +176,7 @@ export function useRequestOffers(
         return;
       }
       if (generationAtOffline !== null && fetching && generation === generationAtOffline) {
-        reconnectDuringFetchRef.current = generation;
+        reconnectDuringFetchRef.current = null; // REVIEW MUTATION H02: suppress reconnect latch
       }
       generationAtOffline = null;
     });
