@@ -75,3 +75,38 @@ Cuando se libere la cuota:
 - capturar documentos y ajustes;
 - verificar 3 destinos legales y overflow;
 - registrar evidencia y solicitar ronda final.
+
+
+## Ronda 5 final
+
+SHA verificado:
+
+    6c68e2feb1b2cf9ed2528efae9a9ac2cfef6e7b0
+
+CI:
+
+    run 37171385728
+    Test Files 118 passed (118)
+    Tests      1835 passed (1835)
+    DB probe   Files=1, Tests=10, Result=PASS
+    DB suite   Files=17, Tests=1807, Result=PASS
+    /courier/feed    159 kB
+    /courier/profile 178 kB
+
+Preview:
+
+    Vercel      success
+    e2e-preview success
+    run 37171444673
+    Chromium        20 passed
+    global-settings 3 passed
+    TARGET_SHA=6c68e2feb1b2cf9ed2528efae9a9ac2cfef6e7b0
+    RESULT=success
+
+Evidencia manual inspeccionada por el revisor:
+- /courier/profile, viewport interior 360 px, documentos en En revisión;
+- /courier/profile, viewport interior 360 px, Notificaciones + 3 links legales;
+- Lautaro073 confirmó apertura correcta de /legal/terms, /legal/privacy y /legal/courier;
+- sin overflow horizontal visible.
+
+Los archivos exportados de screenshot incluyen marco de DevTools y por eso sus dimensiones exteriores exceden 360 px. No se alteraron para aparentar otra medida.

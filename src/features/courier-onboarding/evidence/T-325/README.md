@@ -84,3 +84,45 @@ de repartidor ya abierta en ese navegador. No hubo Vercel Preview: el deployment
 - No se repitieron navegación legal, medición de overflow ni inspección manual del perfil completo/pending. Quedan pendientes junto con H06.
 - Tampoco se repitió manualmente el courier incompleto. El contrato T-334 está respaldado por los tests de página y vista ejecutados sobre el código combinado, con dos mutaciones discriminantes RED y restauración GREEN (90/90 en la suite dirigida).
 - Próximo paso: cuando Vercel permita generar el Preview de este SHA (o de su cierre documental con idéntico código productivo), iniciar sesión interactivamente con el repartidor de prueba de Develop, capturar documentación/ajustes y abrir los tres enlaces legales. Sin cambios de DB, props, DOM ni respuestas.
+
+
+## Cierre H06 — perfil combinado T-334 + T-325 — 2026-10-04
+
+El bloqueo de cuota de Vercel se liberó para el HEAD de revisión `6c68e2feb1b2cf9ed2528efae9a9ac2cfef6e7b0`: el commit quedó con **Vercel success** y **e2e-preview success**. Ese HEAD contiene el mismo código funcional combinado de `ef40e47e8c5c6f7bd7b9850fc40fa88e626e67b3` más documentación de revisión.
+
+La evidencia visual final fue aportada directamente a la revisión independiente con el navegador responsive configurado a **360 px**. Las exportaciones incluyen parte del marco de DevTools, por lo que el archivo exterior mide más de 360 px; el viewport interior de la aplicación fue 360 px.
+
+### Perfil — documentación
+
+La captura manual muestra:
+
+- `/courier/profile`;
+- DNI (frente y dorso): **En revisión**;
+- selfie de identidad: **En revisión**;
+- licencia de conducir: **En revisión**;
+- seguro de accidentes: **En revisión**;
+- badge general: **En revisión administrativa**;
+- vehículo/patente visibles;
+- sin overflow horizontal visible.
+
+### Perfil — ajustes y legales
+
+La segunda captura manual muestra:
+
+- **Notificaciones**;
+- **Términos para repartidores**;
+- **Política de privacidad**;
+- **Condiciones para repartidores**;
+- cerrar sesión;
+- acceso a configuración de avisos;
+- sin overflow horizontal visible.
+
+Lautaro073 abrió y comprobó manualmente los tres destinos legales:
+
+- `/legal/terms` → carga correctamente;
+- `/legal/privacy` → carga correctamente;
+- `/legal/courier` → carga correctamente.
+
+Las capturas fueron entregadas directamente al revisor en la conversación de Ronda 5 y no se versionan como nuevos binarios en este commit; la revisión formal deja constancia de su inspección directa. No se alteró DOM, no se inyectaron props, no se tocó DB/RLS y no se reutilizó una captura de un estado distinto para afirmar otro.
+
+El caso de courier incompleto no se fabricó manualmente. Sigue cubierto por los tests exact-head T-334 (`onboardingComplete=false`, «Completá tu registro», «Continuar registro» y ausencia del estado administrativo normal).

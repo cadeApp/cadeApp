@@ -16,3 +16,15 @@ Los controles existentes cubren ambos casos:
 - sincronizar base antes del cierre;
 - conservar contratos de ambos lados;
 - distinguir evidencia ejecutable de evidencia pendiente por entorno externo.
+
+
+## Ronda 5
+
+H06 se cerró cuando el proveedor volvió a aceptar deployments. La evidencia final confirmó que no hacía falta ningún cambio de código: el bloqueo era exclusivamente operacional.
+
+La lección es conservar la separación entre:
+- **código verificado** por CI/tests;
+- **evidencia visual** pendiente por disponibilidad del entorno;
+- **fallo externo** de deployment que no justifica debilitar el DoD.
+
+No se propone AG nueva.
