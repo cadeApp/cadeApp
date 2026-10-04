@@ -39,3 +39,12 @@ H02 deja una lección más precisa sobre P08: **enumerar más sintaxis directa n
 No se propone AG nueva: refuerza AG-61/P08.
 
 H04 confirma que combinar evidencia manual con un probe independiente del Preview y CI exact-head permite cerrar la navegación real sin inventar estados.
+
+
+## Ronda 3 final
+
+H02 cierra al cambiar de una lista de formas directas a un control que **resuelve el productor simple del destino**.
+
+La lección es concreta: para controles de navegación, cubrir `router.push('/')` no basta si `router.push(target)` puede recibir un literal root definido localmente. El alcance razonable no requiere análisis de flujo interarchivo, pero sí las variables/helpers locales simples que el propio módulo puede resolver de manera determinista.
+
+No se propone AG nueva; queda cubierto por P08 / AG-61 y por la exigencia de mutaciones discriminantes.

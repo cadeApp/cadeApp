@@ -135,3 +135,48 @@ El scanner actual detecta directos, pero estas formas no producen ocurrencia:
     router.replace(home());
 
 El cierre requiere seguir estos productores indirectos simples.
+
+
+## Ronda 3 final
+
+SHA funcional final:
+
+    76d174027202db06c3e06c7da6f8b53b7b98e2d4
+
+Diff desde R2 reviewer commit:
+
+    src/app/route-integrity.test.ts
+    docs/tasks/log/T-336.md
+
+CI exact-head:
+
+    run 37184391888
+    Test Files 118 passed (118)
+    Tests      1879 passed (1879)
+    DB probe   Files=1, Tests=10, PASS
+    DB suite   Files=18, Tests=1811, PASS
+    lint       PASS
+    typecheck  PASS
+    build      PASS
+    bundle     PASS
+    /courier/feed    159 kB
+    /courier/profile 178 kB
+
+Mutación indirecta registrada:
+
+    const __t336Probe = '/';
+    router.push(__t336Probe);
+
+Resultado esperado y observado:
+
+    PR248-H02 integrity test -> RED
+    occurrence kind: router.push
+    match: router.push(__t336Probe)
+
+Tras restaurar:
+
+    route-integrity.test.ts -> 66/66 GREEN
+
+Vercel del SHA final:
+- failure por `api-deployments-free-per-day`;
+- no requiere revalidación visual porque R3 no modifica runtime/producto.
