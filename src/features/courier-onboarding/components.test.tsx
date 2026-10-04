@@ -240,6 +240,13 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByRole('button', { name: /Ir al panel de repartidor/i })).toBeDefined();
     });
 
+    it('PR242-H02: con showFeedButton={false} no muestra el botón al panel', () => {
+      render(<StatusView documents={[]} showFeedButton={false} />);
+
+      expect(screen.getByText('Estamos revisando tus datos')).toBeDefined();
+      expect(screen.queryByRole('button', { name: /Ir al panel de repartidor/i })).toBeNull();
+    });
+
     it('DoD T-324: muestra documentos obligatorios y opcionales como "Listo" cuando licencia y seguro están presentes (submitted o verified)', () => {
       const documents = [
         { kind: 'dni_front' as const, status: 'submitted' as const },
@@ -498,6 +505,40 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
 
       render(<CourierProfileView profile={null} />);
       expect(screen.getByText(/Todavía no completaste tu legajo de repartidor/i)).toBeDefined();
+    });
+
+    it('Hotfix T-325: ajustes muestran "Notificaciones" y enlaces a los documentos legales publicados', () => {
+      render(
+        <CourierProfileView
+          profile={{
+            displayName: 'Carlos Gómez',
+            email: 'carlos@test.com',
+            vehicleType: 'motorcycle',
+            plate: 'AB 123 CD',
+            dniStatus: 'submitted',
+            selfieStatus: 'submitted',
+            licenseStatus: 'none',
+            insuranceStatus: 'none',
+            courierStatus: 'pending',
+            onboardingComplete: true,
+          }}
+        />
+      );
+
+      expect(screen.getByText('Notificaciones')).toBeDefined();
+      expect(screen.getByRole('switch', { name: 'Alternar notificaciones' })).toBeDefined();
+      expect(screen.queryByText(/sonoras/i)).toBeNull();
+      expect(screen.queryByText(/T-311|en publicación/i)).toBeNull();
+
+      for (const [name, href] of [
+        [/Términos para repartidores/i, '/legal/terms'],
+        [/Política de privacidad/i, '/legal/privacy'],
+        [/Condiciones para repartidores/i, '/legal/courier'],
+      ] as const) {
+        const link = screen.getByRole('link', { name });
+        expect(link.getAttribute('href')).toBe(href);
+        expect(link.className).toMatch(/min-h-12/);
+      }
     });
 
     describe('T-334: repartidor recién registrado sin onboarding enviado', () => {

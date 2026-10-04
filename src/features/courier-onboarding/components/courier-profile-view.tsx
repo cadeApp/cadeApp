@@ -14,6 +14,7 @@ import {
   LogOut,
   CheckCircle2,
   Clock,
+  ChevronRight,
 } from 'lucide-react';
 import { Card } from '@/ui/card';
 import { Badge } from '@/ui/badge';
@@ -365,13 +366,13 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
         <div className="flex items-center justify-between p-3.5">
           <div className="flex items-center gap-2.5">
             <Bell className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-            <span className="font-medium text-foreground">Notificaciones sonoras</span>
+            <span className="font-medium text-foreground">Notificaciones</span>
           </div>
           <button
             type="button"
             role="switch"
             aria-checked={notificationsEnabled}
-            aria-label="Alternar notificaciones sonoras"
+            aria-label="Alternar notificaciones"
             onClick={() => setNotificationsEnabled(!notificationsEnabled)}
             className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-lg px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -389,10 +390,21 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
           </button>
         </div>
 
-        {/* Estado legal pendiente T-311 */}
-        <div className="flex items-center justify-between p-3.5 text-muted-foreground">
-          <span>Términos y privacidad (en publicación · T-311)</span>
-        </div>
+        {/* Documentos legales publicados (T-311), con targets >= 48px */}
+        {[
+          { href: '/legal/terms', label: 'Términos para repartidores' },
+          { href: '/legal/privacy', label: 'Política de privacidad' },
+          { href: '/legal/courier', label: 'Condiciones para repartidores' },
+        ].map((doc) => (
+          <Link
+            key={doc.href}
+            href={doc.href}
+            className="flex min-h-12 items-center justify-between px-3.5 font-medium text-primary-dark underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span>{doc.label}</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+          </Link>
+        ))}
       </Card>
 
       {/* Botón de Cerrar Sesión */}

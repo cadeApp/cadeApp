@@ -4,7 +4,6 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { CourierFeed } from './components/courier-feed';
-import { UnderReview } from './components/under-review';
 import { OfferSheet } from './components/offer-sheet';
 import { MyOffersList } from './components/my-offers-list';
 import { OFFERS_COPY } from './copy';
@@ -61,7 +60,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     myOfferAmountArs: null,
   };
 
-  it('DoD 1: Un repartidor pending ve la pantalla "en revisión"', () => {
+  it('DoD 1: Un repartidor pending ve la pantalla "en revisión"', async () => {
     render(
       <CourierFeed
         courierStatus="pending"
@@ -71,9 +70,79 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       />
     );
 
-    expect(screen.getByText(/estamos revisando tus datos/i)).toBeDefined();
+    // La vista de revisión se carga con next/dynamic (hotfix T-325): se espera a que monte.
+    expect(await screen.findByText(/estamos revisando tus datos/i)).toBeDefined();
     expect(screen.getByText(/te avisamos por acá y por notificación/i)).toBeDefined();
     expect(screen.queryByText(/solicitudes abiertas/i)).toBeNull();
+    // PR242-H02: dentro del feed no hay CTA hacia el propio feed.
+    expect(screen.queryByRole('button', { name: /Ir al panel de repartidor/i })).toBeNull();
+  });
+
+  describe('Hotfix T-325: el feed pending muestra los documentos reales, no una lista fija', () => {
+    const MANDATORY = [
+      { kind: 'dni_front', status: 'submitted' },
+      { kind: 'dni_back', status: 'submitted' },
+      { kind: 'selfie', status: 'submitted' },
+      { kind: 'avatar', status: 'submitted' },
+    ] as const;
+
+    function rowOf(label: RegExp) {
+      return screen.getByText(label).closest('div[class*="flex items-center justify-between"]');
+    }
+
+    it('licencia y seguro enviados figuran cargados ("Listo"), nunca "No cargada"', async () => {
+      render(
+        <CourierFeed
+          courierStatus="pending"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+          documents={[
+            ...MANDATORY,
+            { kind: 'license', status: 'submitted' },
+            { kind: 'insurance', status: 'verified' },
+          ]}
+        />
+      );
+
+      await screen.findByText(/estamos revisando tus datos/i);
+      expect(rowOf(/Licencia/)?.textContent).toContain('Listo');
+      expect(rowOf(/Seguro/)?.textContent).toContain('Listo');
+      expect(screen.queryByText('No cargada')).toBeNull();
+    });
+
+    it('sin licencia ni seguro figuran como opcionales ausentes', async () => {
+      render(
+        <CourierFeed
+          courierStatus="pending"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+          documents={[...MANDATORY]}
+        />
+      );
+
+      await screen.findByText(/estamos revisando tus datos/i);
+      expect(rowOf(/Licencia/)?.textContent).toContain('No cargado (opcional)');
+      expect(rowOf(/Seguro/)?.textContent).toContain('No cargado (opcional)');
+    });
+
+    it('sin documentos persistidos no inventa obligatorios cargados', async () => {
+      render(
+        <CourierFeed
+          courierStatus="pending"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+          documents={[]}
+        />
+      );
+
+      await screen.findByText(/estamos revisando tus datos/i);
+      expect(rowOf(/DNI frente y dorso/)?.textContent).toContain('Pendiente');
+      expect(rowOf(/Selfie de seguridad/)?.textContent).toContain('Pendiente');
+      expect(screen.queryByText('Cargado')).toBeNull();
+    });
   });
 
   it('DoD 2: Una oferta bajo el piso muestra el error del servidor', async () => {
