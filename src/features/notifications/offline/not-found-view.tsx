@@ -35,7 +35,7 @@ export function NotFoundView() {
 
         <div className="mt-8 flex justify-center">
           <Link
-            href="/"
+            href="/login"
             className={cn(
               buttonVariants({ variant: 'default' }),
               'h-12 w-full text-base font-semibold sm:w-auto sm:min-w-[160px]'

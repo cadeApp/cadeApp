@@ -62,6 +62,9 @@ export function parseOnboardingComplete(role: ProfileRole, row: unknown): boolea
   return typeof value === 'string' ? true : undefined;
 }
 
+/** Pantalla de inicio del admin. El guard la protege con MFA (AAL2). */
+const ADMIN_HOME = '/admin/applicants';
+
 /** El chequeo de onboarding aplica solo a comercio y repartidor con consentimiento activo (CC-007 va antes). */
 function hasIncompleteOnboarding(session: AuthSession): boolean {
   return (
@@ -71,8 +74,13 @@ function hasIncompleteOnboarding(session: AuthSession): boolean {
   );
 }
 
-/** Inicio de la sesión: el onboarding si está incompleto, si no el panel del rol. */
+/** Inicio de la sesión: el onboarding si está incompleto, si no el panel del rol (o MFA / applicants para admin). */
 function getSessionHomePath(session: AuthSession): string {
+  if (session.role === 'admin') {
+    return session.aal === 'aal2'
+      ? ADMIN_HOME
+      : `/login/mfa?redirectTo=${encodeURIComponent(ADMIN_HOME)}`;
+  }
   return hasIncompleteOnboarding(session)
     ? getOnboardingPath(session.role)
     : getRoleDefaultPath(session.role);
@@ -196,9 +204,6 @@ export function isKnownExistingRouteForRole(pathname: string, role: ProfileRole)
   return false;
 }
 
-/** Pantalla de inicio del admin. El guard la protege con MFA (AAL2). */
-const ADMIN_HOME = '/admin/applicants';
-
 /**
  * Destino por defecto después del login. Para el admin no es `getRoleDefaultPath` (`/`): un login con
  * contraseña deja la sesión en AAL1, así que el guard decide el paso por el MFA antes de `/admin/applicants`.
@@ -208,24 +213,14 @@ function defaultPostLoginPath(
   consentStatus: ConsentStatus,
   onboardingComplete: boolean | undefined
 ): string {
-  if (role !== 'admin') {
-    return getSessionHomePath({
-      userId: 'check',
-      email: '',
-      role,
-      aal: 'aal1',
-      consentStatus,
-      onboardingComplete,
-    });
-  }
-  const guardResult = evaluateRouteGuard(ADMIN_HOME, {
+  return getSessionHomePath({
     userId: 'check',
     email: '',
     role,
     aal: 'aal1',
     consentStatus,
+    onboardingComplete,
   });
-  return guardResult.action === 'redirect' ? guardResult.redirectTo : ADMIN_HOME;
 }
 
 export function resolvePostLoginRedirect(
@@ -434,7 +429,7 @@ export function evaluateRouteGuard(
       }
       return {
         action: 'redirect',
-        redirectTo: getRoleDefaultPath('admin'),
+        redirectTo: ADMIN_HOME,
       };
     }
     // Resto de admin exige MFA (AAL2)
@@ -452,7 +447,7 @@ export function evaluateRouteGuard(
     if (session.role !== 'merchant') {
       return {
         action: 'redirect',
-        redirectTo: getSessionHomePath(session),
+        redirectTo: session.role === 'admin' ? getRoleDefaultPath('admin') : getSessionHomePath(session),
       };
     }
     return { action: 'allow' };
@@ -463,7 +458,7 @@ export function evaluateRouteGuard(
     if (session.role !== 'courier') {
       return {
         action: 'redirect',
-        redirectTo: getSessionHomePath(session),
+        redirectTo: session.role === 'admin' ? getRoleDefaultPath('admin') : getSessionHomePath(session),
       };
     }
     return { action: 'allow' };

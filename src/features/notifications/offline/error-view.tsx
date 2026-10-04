@@ -71,7 +71,7 @@ export function ErrorView({ error, reset }: ErrorViewProps) {
           </Button>
 
           <Link
-            href="/"
+            href="/login"
             className={cn(
               buttonVariants({ variant: 'ghost' }),
               'h-12 w-full text-base text-muted-foreground hover:text-foreground sm:w-auto sm:min-w-[140px]'
