@@ -293,3 +293,56 @@ Runtime Vercel:
 Root cause a corregir:
 
     middleware.ts -> src/middleware.ts
+
+
+## Ronda 7 final
+
+SHA exacto:
+
+    ab2f52512a103f81d70bc46bcabe437a02f87439
+
+CI:
+
+    run 37192309514
+    Test Files 119 passed (119)
+    Tests      1898 passed (1898)
+    DB probe   10/10 PASS
+    DB suite   1811/1811 PASS
+    lint/typecheck/build/audit/bundle PASS
+
+Build:
+
+    ƒ Middleware                                136 kB
+    /courier/feed                               159 kB
+    /courier/profile                            178 kB
+
+Preview:
+
+    Vercel = success
+
+Trusted E2E:
+
+    run 37192403607
+    TARGET_SHA=ab2f52512a103f81d70bc46bcabe437a02f87439
+    T-336: PASS (11.3s)
+    Chromium: 21 passed
+    global-settings: 3 passed
+    RESULT=success
+
+Browser-level:
+
+    cookie sb-* presente después de login
+    cookie sb-* presente después de 404
+    courier/feed -> 404 -> click Ir al inicio -> courier/feed
+
+RED pre-fix de referencia:
+
+    run 37190004737
+    T-336 failed x3
+    middleware no descubierto por Next
+
+Compare al cierre:
+
+    ahead_by=16
+    behind_by=1
+    status=diverged

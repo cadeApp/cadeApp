@@ -7,59 +7,59 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-336-retorno-home-real` → `develop` |
 | **Base** | `59d9d1783a936c9c7d5331cc5b2c07b4ed7d05b3` |
-| **HEAD R6 revisado** | `cbe3a4ca59c232f06c1c6e2dfb863f94173677ed` |
-| **Estado** | **Ronda 6 · CON 1 BLOQUEANTE RAÍZ** |
+| **SHA final verificado** | `ab2f52512a103f81d70bc46bcabe437a02f87439` |
+| **Estado** | **SIN BLOQUEANTES — revisión independiente cerrada** |
 
-## Estado de hallazgos
+## Estado final de hallazgos
 
 - PR248-H01 → arreglado-verificado
 - PR248-H02 → arreglado-verificado
 - PR248-H03 → arreglado-verificado
-- PR248-H04 → abierto, dependiente de H05
-- PR248-H05 → **abierto / bloqueante alto**
+- PR248-H04 → arreglado-verificado
+- PR248-H05 → arreglado-verificado
 
-## Hallazgo raíz R6
+## Verificación final R7
 
-El E2E permanente ya es discriminante, pero el Preview real demuestra que el producto sigue fallando.
+### Middleware real
 
-Preview probado:
-`968fc862e251fc797700a800703993c86e691899`
+- entrypoint movido de `middleware.ts` a `src/middleware.ts`;
+- no queda copia activa en raíz;
+- `src/middleware.test.ts` prueba la `config` real con `unstable_doesMiddlewareMatch`;
+- `package.json` ya no referencia la ubicación legacy.
 
-Run E2E:
-`37190004737`
+### Build exact-head
 
-Resultado real:
-- cookie Supabase presente después del login;
-- cookie presente después del 404;
-- click «Ir al inicio» → `/login`;
-- hard navigation posterior a `/login` → **también** `/login`;
-- tres intentos fallaron;
-- status `e2e-preview = failure`.
+CI run `37192309514`:
+- `119/119` archivos de test PASS;
+- `1898/1898` tests PASS;
+- DB probe: `10/10` PASS;
+- DB suite: `1811/1811` PASS;
+- lint/typecheck/build/audit/bundle-budget GREEN;
+- `ƒ Middleware 136 kB`;
+- `/courier/feed = 159 kB`;
+- `/courier/profile = 178 kB`.
 
-El courier seed tiene `consent_status='active'`, por lo que CC-007 no explica el 200 de `/login`.
+### Preview / browser real
 
-## Causa raíz
+Vercel del SHA `ab2f52512a103f81d70bc46bcabe437a02f87439`: GREEN.
 
-El proyecto usa `src/app`, pero el middleware está en `/middleware.ts` en la raíz.
+Trusted e2e-preview run `37192403607`: GREEN.
 
-Next.js 15 requiere que el middleware esté dentro de `src` cuando se usa `src/app`, al mismo nivel que `app`.
+Resultado:
+- Chromium: **21/21 PASS**;
+- global-settings: **3/3 PASS**;
+- T-336 browser-level: PASS en 11.3 s;
+- cookie Supabase presente después del login y del 404;
+- courier autenticado:
+  `/courier/feed → 404 → Ir al inicio → /courier/feed`;
+- sin navegación de rescate, relogin ni retry manual dentro del spec.
 
-Evidencia independiente:
-- el output de `next build` del run `37190624714` lista todas las rutas pero **no lista Middleware**;
-- runtime logs del Preview no muestran actividad de `edge-middleware`;
-- `GET /login` responde 200 con cookie autenticada.
+La evidencia RED previa queda en run `37190004737`, donde el mismo contrato fallaba tres veces antes de activar el middleware.
 
-## CI HEAD R6
+## Rama
 
-Run `37190624714`:
-- 118 test files / 1880 tests PASS;
-- DB 10/10 + 1811/1811 PASS;
-- lint/typecheck/build/bundle GREEN;
-- `/courier/feed 159 kB`;
-- `/courier/profile 178 kB`.
-
-Esos checks no validan que Next haya descubierto el middleware.
+Al cierre de R7 la rama está `ahead 16 / behind 1` respecto del `develop` actual. Esto no invalida la corrección, pero debe sincronizarse antes del merge si GitHub/flujo del repo lo requiere.
 
 ## Resultado
 
-No mergear. Mover/activar el middleware real y repetir el E2E Preview.
+**PR #248 sin bloqueantes técnicos ni de evidencia.**

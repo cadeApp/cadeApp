@@ -84,3 +84,19 @@ Nuevo aprendizaje concreto:
 - usar E2E real para fronteras framework/auth.
 
 No se propone AG nueva por ahora: el caso puede quedar como lección P15 si el control estructural se incorpora en T-336.
+
+
+## Ronda 7 final
+
+H05 confirma la lección de R6: para entrypoints convencionales del framework, **la ubicación física es parte del contrato ejecutable**.
+
+La combinación que finalmente resultó discriminante fue:
+
+1. test estructural/matcher;
+2. output real de `next build` mostrando `ƒ Middleware`;
+3. trusted E2E sobre Preview;
+4. RED real histórico antes del fix.
+
+El unit test del guard nunca habría detectado por sí solo que Next no estaba cargando el middleware.
+
+No se agrega AG nueva: la protección quedó codificada en `src/middleware.test.ts` y en la evidencia de build/E2E.
