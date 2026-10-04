@@ -272,3 +272,51 @@ Running 3 tests using 1 worker
 Los nombres del log muestran main-flow/smoke + subscription.global-settings; no aparece `authorization.spec.ts` ni T-305.
 
 El próximo run, una vez integrado T-331, debe mostrar explícitamente los cuatro casos de authorization en GREEN.
+
+## Ronda 5
+
+**SHA:** `39aa7f642a106dfa50c243f88137ffd712847ff0`
+
+### e2e-preview — verificación real de T-305
+
+Run `37147634593`, job `111274792156`:
+
+```text
+Running 24 tests using 1 worker
+✓ authorization.spec.ts — pending ...
+✓ authorization.spec.ts — suspendido ...
+✓ authorization.spec.ts — merchant/courier ...
+✓ authorization.spec.ts — sensibilidad ...
+24 passed
+Running 3 tests using 1 worker
+3 passed
+```
+
+H01/H03/H04/H06 pasan a `arreglado-verificado` en `39aa7f642a106dfa50c243f88137ffd712847ff0`.
+
+### CI exact-head
+
+Run `37147513421`:
+- typecheck/lint/build/db/bundle: PASS
+- unit: 1 fallo / 1738 tests — `tools/verify-fichas.test.ts`, T-333 desincronizada
+- audit: FAIL por braces advisory
+
+Los 5 commits pendientes de develop incluyen los fixes T-333 y T-332, por lo que no se abre hallazgo T-305 por esos dos rojos.
+
+### Drift relevante
+
+```text
+develop = 3e5d5381dbf59717763f1927e1cf080504a9ebf1
+head    = 39aa7f642a106dfa50c243f88137ffd712847ff0
+behind  = 5
+```
+
+T-334 modifica `src/features/auth/guards.ts`, `actions.ts`, `server.ts` y login.
+
+Compatibilidad inspeccionada:
+- seed merchant → `business_name` no vacío;
+- seed courier → `vehicle_type: 'moto'`;
+- T-334 los considera onboarding-complete;
+- sesiones contractuales del test usan `onboardingComplete=undefined`, que no activa el redirect de onboarding.
+
+La inspección reduce el riesgo, pero no sustituye la reejecución exact-head después del merge de develop.

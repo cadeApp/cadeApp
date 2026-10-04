@@ -4,11 +4,12 @@
 - **Tarea:** T-305 / issue #37
 - **Rama:** `feat/T-305-authorization-e2e`
 - **Base:** `develop`
-- **Ronda actual:** 4
+- **Ronda actual:** 5
 - **SHA funcional revisado (Ronda 1):** `8eeee50c4a7412734075ea0d07a4bb2d5dc5e82c`
 - **SHA funcional Ronda 2:** `328e63ad9ba44f3fd2281fb8bc758b95533d3429`
 - **SHA funcional Ronda 3:** `b20d7cb4f5d1199e06610d6b9ed604ab07f172d8`
 - **SHA funcional Ronda 4:** `dd29da076a1d8d7194f90568c8a1ae53e1ad5c72`
+- **SHA funcional Ronda 5:** `39aa7f642a106dfa50c243f88137ffd712847ff0`
 - **SHA decisiones P1:** `23cf11f8e86a6c9ff7f5387f9ab673a328397de1` + `b9e2a05847cfd273076025aad45400a8398531c4`
 - **Resultado:** **CON BLOQUEANTES (1)**
 - **Fecha:** 2026-10-03
@@ -23,14 +24,16 @@ Decisiones P1 ya registradas en Issue #37 y en `docs/tasks/T-305.md`:
 2. El «o» del DoD es literal: RED auténtico rompiendo la guarda; `submit_offer` se prueba GREEN contra Supabase Develop y no se muta la RPC compartida.
 3. Por bootstrap de `repository_dispatch`, #204 puede quedar apta para merge sin haber corrido remotamente `authorization.spec.ts` en ese mismo PR. **T-305/#37 sigue abierta** hasta observar en una PR posterior un `e2e-preview` GREEN que incluya ese spec; #204 debe usar `Refs #37`, no `Closes #37`.
 
-## Estado Ronda 4
+## Estado Ronda 5
 
-H05 quedó corregido y validado contra el body vivo de GitHub: `Refs #37`, checkbox de mutaciones sin marcar, secciones literales requeridas y rollback real.
+La funcionalidad de T-305 quedó demostrada remotamente en el SHA actual:
+- e2e-preview `37147634593`: `authorization.spec.ts` corrió **4/4 GREEN**;
+- H01, H03, H04 y H06 quedan verificados por runtime;
+- H05 continúa cerrado;
+- el residual histórico de 3-A quedó satisfecho pre-merge gracias a T-331.
 
 Único bloqueante actual:
-- **PR204-H07:** la rama está 49 commits detrás de `develop` y GitHub la reporta `mergeable_state=dirty`. Desde T-331, `develop` ya no enumera specs: ejecuta todos los specs `chromium` automáticamente. Por lo tanto T-305 debe integrar `origin/develop` y resolver el conflicto quedándose con el workflow nuevo de `develop`, sin conservar un diff propio en `.github/workflows/e2e-preview.yml`.
-
-T-331 también vuelve obsoleta la mecánica de 1-A/3-A: una vez sincronizada la rama, el gate confiable puede ejecutar `authorization.spec.ts` **pre-merge**. Si un run exact-head muestra los cuatro tests T-305 GREEN, el residual de 3-A desaparece y #37 puede pasar de `Refs` a `Closes`.
+- **PR204-H07:** la rama está 5 commits detrás de `develop`. Esos commits incluyen T-334, que modifica `evaluateRouteGuard`, login y `updateSession`, justamente la superficie de T-305. También incluyen las correcciones de T-333 y del audit que explican los dos rojos del CI actual. Debe integrarse `origin/develop` y repetir CI/e2e exact-head.
 
 ## Revisiones
 
@@ -38,3 +41,4 @@ T-331 también vuelve obsoleta la mecánica de 1-A/3-A: una vez sincronizada la 
 - `revisiones/ronda-2.md`
 - `revisiones/ronda-3.md`
 - `revisiones/ronda-4.md`
+- `revisiones/ronda-5.md`
