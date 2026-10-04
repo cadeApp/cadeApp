@@ -154,6 +154,6 @@ CI de `e5f560810838d4678e29ba62cbe203bdb6b174ac`, run `37175915768`:
 - build ✅
 - audit ✅
 - bundle-budget ✅
-- db-tests relanzado sin cambios SQL posteriores.
+- db-tests ✅
 
 Vercel falla por cuota externa `api-deployments-free-per-day`; no es regresión de T-335.

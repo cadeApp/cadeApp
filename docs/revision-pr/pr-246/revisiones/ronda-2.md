@@ -14,7 +14,7 @@ El arreglo del autor toca solo ficha y bitácora. Migración, DB test, RLS, hook
 
 ## Checks
 - CI funcional previo: GREEN completo.
-- CI `37175915768`: typecheck ✅ · lint ✅ · unit ✅ · build ✅ · audit ✅ · bundle-budget ✅ · db-tests relanzado.
+- CI `37175915768`: typecheck ✅ · lint ✅ · unit ✅ · build ✅ · audit ✅ · bundle-budget ✅ · db-tests ✅.
 - Vercel actual: fallo externo por cuota diaria, no por código.
 
 ## Residual deliberado
