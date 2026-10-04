@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateRouteGuard,
+  getOnboardingPath,
   getRoleDefaultPath,
   isMerchantRoute,
   isCourierRoute,
@@ -461,5 +462,166 @@ describe('T-320: Guardas para /auth/confirm y /reset-password', () => {
       consentStatus: 'active',
     };
     expect(evaluateRouteGuard('/reset-password', sessionActive)).toEqual({ action: 'allow' });
+  });
+});
+
+describe('T-334: onboarding incompleto redirige al onboarding sin loops', () => {
+  const baseSession = (
+    role: 'merchant' | 'courier' | 'admin',
+    onboardingComplete: boolean | undefined,
+    consentStatus: AuthSession['consentStatus'] = 'active'
+  ): AuthSession => ({
+    userId: `user-${role}`,
+    email: `${role}@cadeapp.test`,
+    role,
+    aal: role === 'admin' ? 'aal2' : 'aal1',
+    consentStatus,
+    onboardingComplete,
+  });
+
+  /** Sigue los redirects del guard como lo haría el navegador y falla ante un loop. */
+  function followGuard(start: string, session: AuthSession): string {
+    const visited: string[] = [];
+    let current = start;
+    for (let hop = 0; hop < 6; hop += 1) {
+      const [pathname = '/'] = current.split('?');
+      if (visited.includes(pathname)) {
+        throw new Error(`Loop de redirección: ${[...visited, pathname].join(' → ')}`);
+      }
+      visited.push(pathname);
+      const result = evaluateRouteGuard(pathname, session);
+      if (result.action === 'allow') return pathname;
+      current = result.redirectTo;
+    }
+    throw new Error(`Demasiados redirects desde ${start}: ${visited.join(' → ')}`);
+  }
+
+  const MERCHANT_OPERATIONAL = [
+    '/merchant/dashboard',
+    '/merchant/history',
+    '/merchant/plan',
+    '/merchant/requests',
+    '/merchant/requests/new',
+    '/merchant/requests/req-1',
+    '/requests',
+    '/requests/new',
+    '/requests/req-1',
+    '/dashboard',
+    '/history',
+    '/plan',
+  ];
+  const COURIER_OPERATIONAL = ['/courier', '/courier/feed', '/courier/offers', '/feed', '/offers'];
+  const PUBLIC_ROUTES = ['/', '/design-system', '/forgot-password', '/reset-password', '/auth/confirm'];
+
+  it('expone la ruta de onboarding de cada rol', () => {
+    expect(getOnboardingPath('merchant')).toBe('/merchant/onboarding');
+    expect(getOnboardingPath('courier')).toBe('/courier/onboarding/identity');
+  });
+
+  it.each(MERCHANT_OPERATIONAL)('comercio incompleto en %s termina en /merchant/onboarding', (path) => {
+    expect(followGuard(path, baseSession('merchant', false))).toBe('/merchant/onboarding');
+  });
+
+  it.each(COURIER_OPERATIONAL)(
+    'repartidor incompleto en %s termina en /courier/onboarding/identity',
+    (path) => {
+      expect(followGuard(path, baseSession('courier', false))).toBe('/courier/onboarding/identity');
+    }
+  );
+
+  it('rutas de onboarding, públicas, de auth y alias quedan accesibles sin loops (comercio)', () => {
+    const session = baseSession('merchant', false);
+    expect(followGuard('/merchant/onboarding', session)).toBe('/merchant/onboarding');
+    expect(followGuard('/onboarding', session)).toBe('/merchant/onboarding');
+    for (const path of PUBLIC_ROUTES) {
+      expect(followGuard(path, session)).toBe(path);
+    }
+    expect(followGuard('/login', session)).toBe('/merchant/onboarding');
+    expect(followGuard('/register', session)).toBe('/merchant/onboarding');
+    // Rutas del otro rol: terminan en el onboarding propio, sin ciclar.
+    expect(followGuard('/courier/feed', session)).toBe('/merchant/onboarding');
+  });
+
+  it('solo identity/vehicle y perfil quedan accesibles con onboarding incompleto; status vuelve a identity', () => {
+    const session = baseSession('courier', false);
+    for (const path of ['/courier/onboarding/identity', '/courier/onboarding/vehicle']) {
+      expect(followGuard(path, session)).toBe(path);
+    }
+    expect(followGuard('/courier/onboarding/status', session)).toBe(
+      '/courier/onboarding/identity'
+    );
+    expect(followGuard('/onboarding', session)).toBe('/courier/onboarding/identity');
+    expect(followGuard('/onboarding/identity', session)).toBe('/courier/onboarding/identity');
+    expect(followGuard('/onboarding/vehicle', session)).toBe('/courier/onboarding/vehicle');
+    expect(followGuard('/onboarding/status', session)).toBe('/courier/onboarding/identity');
+    // El perfil muestra «Completá tu registro» (y tiene el cierre de sesión): no se redirige.
+    expect(followGuard('/courier/profile', session)).toBe('/courier/profile');
+    expect(followGuard('/profile', session)).toBe('/courier/profile');
+    for (const path of PUBLIC_ROUTES) {
+      expect(followGuard(path, session)).toBe(path);
+    }
+    expect(followGuard('/login', session)).toBe('/courier/onboarding/identity');
+    expect(followGuard('/merchant/dashboard', session)).toBe('/courier/onboarding/identity');
+  });
+
+  it('PR240-H01: la excepción del perfil es exacta; sus subrutas siguen yendo al onboarding', () => {
+    // /courier/profile exacto sigue accesible (muestra «Completá tu registro»).
+    expect(followGuard('/courier/profile', baseSession('courier', false))).toBe('/courier/profile');
+    expect(
+      followGuard('/courier/profile/notifications', baseSession('courier', false))
+    ).toBe('/courier/onboarding/identity');
+  });
+
+  it('con onboarding completo no cambia nada', () => {
+    for (const path of ['/merchant/dashboard', '/merchant/requests/new', '/merchant/onboarding']) {
+      expect(evaluateRouteGuard(path, baseSession('merchant', true))).toEqual({ action: 'allow' });
+    }
+    for (const path of [
+      '/courier/feed',
+      '/courier/offers',
+      '/courier/profile',
+      '/courier/onboarding/status',
+    ]) {
+      expect(evaluateRouteGuard(path, baseSession('courier', true))).toEqual({ action: 'allow' });
+    }
+    expect(followGuard('/login', baseSession('merchant', true))).toBe('/merchant/dashboard');
+    expect(followGuard('/login', baseSession('courier', true))).toBe('/courier/feed');
+  });
+
+  it('CC-007 sigue primero: consentimiento no activo bloquea antes que el onboarding', () => {
+    const result = evaluateRouteGuard(
+      '/merchant/dashboard',
+      baseSession('merchant', false, 'pending')
+    );
+    expect(result).toEqual({
+      action: 'redirect',
+      redirectTo: '/login?consentRequired=1&redirectTo=%2Fmerchant%2Fdashboard',
+    });
+  });
+
+  it('admin no cambia aunque llegue un dato de onboarding', () => {
+    expect(evaluateRouteGuard('/admin/applicants', baseSession('admin', false))).toEqual({
+      action: 'allow',
+    });
+  });
+
+  it('resolvePostLoginRedirect manda al onboarding cuando está incompleto', () => {
+    expect(resolvePostLoginRedirect(null, 'merchant', 'active', false)).toBe('/merchant/onboarding');
+    expect(resolvePostLoginRedirect(null, 'courier', 'active', false)).toBe(
+      '/courier/onboarding/identity'
+    );
+    expect(resolvePostLoginRedirect('/merchant/requests/new', 'merchant', 'active', false)).toBe(
+      '/merchant/onboarding'
+    );
+    expect(resolvePostLoginRedirect('/courier/onboarding/vehicle', 'courier', 'active', false)).toBe(
+      '/courier/onboarding/vehicle'
+    );
+    // Completo: mismos destinos que antes.
+    expect(resolvePostLoginRedirect(null, 'merchant', 'active', true)).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect(null, 'courier', 'active', true)).toBe('/courier/feed');
+    // CC-007 sigue primero.
+    expect(resolvePostLoginRedirect(null, 'courier', 'pending', false)).toBe(
+      '/login?consentRequired=1'
+    );
   });
 });

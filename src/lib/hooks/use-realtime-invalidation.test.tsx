@@ -14,6 +14,7 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
   let mockOn: ReturnType<typeof vi.fn>;
   let mockChannel: { on: typeof mockOn; subscribe: typeof mockSubscribe };
   let realtimeCallbacks: Array<(payload: unknown) => void> = [];
+  let statusCallback: ((status: string, err?: Error) => void) | null = null;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -27,7 +28,11 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
 
     realtimeCallbacks = [];
     mockRemoveChannel = vi.fn();
-    mockSubscribe = vi.fn().mockReturnThis();
+    statusCallback = null;
+    mockSubscribe = vi.fn().mockImplementation((callback?: (status: string) => void) => {
+      statusCallback = callback ?? null;
+      return mockChannel;
+    });
     mockOn = vi.fn().mockImplementation((_event, _filter, callback) => {
       realtimeCallbacks.push(callback);
       return mockChannel;
@@ -314,5 +319,87 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
     // Avanzar temporizadores: ninguna invalidación tardía
     vi.advanceTimersByTime(500);
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  describe('T-333: catch-up de invalidación al quedar SUBSCRIBED', () => {
+    const offersKey = ['requests', 'detail', 'req-333', 'offers'] as const;
+    const detailKey = ['requests', 'detail', 'req-333'] as const;
+
+    function renderReadinessHook() {
+      return renderHook(
+        () =>
+          useRealtimeInvalidation({
+            channelName: 'offers-req-333',
+            subscriptions: [
+              { table: 'offers', filter: 'request_id=eq.req-333', queryKey: offersKey },
+              { table: 'delivery_requests', filter: 'id=eq.req-333', queryKey: detailKey },
+            ],
+            debounceMs: 300,
+          }),
+        { wrapper }
+      );
+    }
+
+    it('antes de readiness no invalida; SUBSCRIBED invalida todas las keys del canal tras el debounce y nunca escribe la caché', async () => {
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const setQueryDataSpy = vi.spyOn(queryClient, 'setQueryData');
+
+      renderReadinessHook();
+      await flushRealtimeSetup();
+
+      expect(mockSubscribe).toHaveBeenCalledTimes(1);
+      expect(statusCallback).toBeTypeOf('function');
+
+      // Setup completo pero el canal todavía no está listo: no hay catch-up.
+      vi.advanceTimersByTime(1000);
+      expect(invalidateSpy).not.toHaveBeenCalled();
+
+      act(() => {
+        statusCallback?.('SUBSCRIBED');
+      });
+
+      // Programado, pero respeta el debounce.
+      vi.advanceTimersByTime(299);
+      expect(invalidateSpy).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(1);
+      expect(invalidateSpy).toHaveBeenCalledTimes(2);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: offersKey });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: detailKey });
+      expect(setQueryDataSpy).toHaveBeenCalledTimes(0);
+    });
+
+    it.each(['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'])(
+      'un status %s no dispara invalidación',
+      async (status) => {
+        const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+        renderReadinessHook();
+        await flushRealtimeSetup();
+        expect(statusCallback).toBeTypeOf('function');
+
+        act(() => {
+          statusCallback?.(status);
+        });
+        vi.advanceTimersByTime(1000);
+
+        expect(invalidateSpy).not.toHaveBeenCalled();
+      }
+    );
+
+    it('un SUBSCRIBED tardío después de desmontar no invalida', async () => {
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+      const { unmount } = renderReadinessHook();
+      await flushRealtimeSetup();
+      expect(statusCallback).toBeTypeOf('function');
+      unmount();
+
+      statusCallback?.('SUBSCRIBED');
+      vi.advanceTimersByTime(1000);
+
+      expect(mockRemoveChannel).toHaveBeenCalledTimes(1);
+      expect(invalidateSpy).not.toHaveBeenCalled();
+    });
   });
 });

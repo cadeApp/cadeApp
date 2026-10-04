@@ -2,13 +2,14 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, Camera, CheckCircle2, RotateCw, AlertCircle, ArrowRight } from 'lucide-react';
+import { ShieldCheck, ArrowRight } from 'lucide-react';
 import { Button } from '@/ui/button';
 import { Input } from '@/ui/input';
 import { Card } from '@/ui/card';
 import { compressImage } from '@/lib/image-compression';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import { StepIndicator } from './step-indicator';
+import { DocumentUploadCard, type DocumentUploadStatus } from './document-upload-card';
 import {
   type CourierDocumentKind,
   createDocumentUploadManager,
@@ -50,11 +51,7 @@ const REQUIRED_DOCS: DocConfig[] = [
   },
 ];
 
-export function IdentityForm({
-  courierId,
-  initialDni = '',
-  onNext,
-}: IdentityFormProps) {
+export function IdentityForm({ courierId, initialDni = '', onNext }: IdentityFormProps) {
   const router = useRouter();
   const [dni, setDni] = React.useState(initialDni);
   const [dniTouched, setDniTouched] = React.useState(false);
@@ -65,7 +62,7 @@ export function IdentityForm({
     Partial<Record<CourierDocumentKind, string>>
   >({});
   const [statuses, setStatuses] = React.useState<
-    Partial<Record<CourierDocumentKind, 'idle' | 'uploading' | 'success' | 'error'>>
+    Partial<Record<CourierDocumentKind, DocumentUploadStatus>>
   >({});
   const [fileNames, setFileNames] = React.useState<Partial<Record<CourierDocumentKind, string>>>(
     {}
@@ -82,9 +79,7 @@ export function IdentityForm({
       if (savedDocs) {
         const parsed = JSON.parse(savedDocs);
         setUploadedPaths(parsed);
-        const initialStatuses: Partial<
-          Record<CourierDocumentKind, 'idle' | 'uploading' | 'success' | 'error'>
-        > = {};
+        const initialStatuses: Partial<Record<CourierDocumentKind, DocumentUploadStatus>> = {};
         for (const k of Object.keys(parsed) as CourierDocumentKind[]) {
           initialStatuses[k] = 'success';
         }
@@ -212,97 +207,18 @@ export function IdentityForm({
             </span>
           </div>
 
-          {REQUIRED_DOCS.map((doc) => {
-            const status = statuses[doc.kind] || 'idle';
-            const isCompress = compressing[doc.kind];
-            const fileName = fileNames[doc.kind];
-
-            return (
-              <Card
-                key={doc.kind}
-                className={`relative p-3.5 transition-colors ${
-                  status === 'success'
-                    ? 'border-border bg-card'
-                    : status === 'error'
-                      ? 'border-destructive bg-destructive/5'
-                      : 'border-2 border-dashed border-primary/40 bg-card hover:bg-primary/5'
-                }`}
-              >
-                <label
-                  htmlFor={`file-input-${doc.kind}`}
-                  className="flex min-h-[56px] cursor-pointer items-center justify-between gap-3"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div
-                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${
-                        status === 'success'
-                          ? 'bg-success/15 text-success'
-                          : status === 'error'
-                            ? 'bg-destructive/15 text-destructive'
-                            : 'bg-primary/15 text-primary'
-                      }`}
-                    >
-                      {status === 'success' ? (
-                        <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
-                      ) : status === 'error' ? (
-                        <AlertCircle className="h-6 w-6" aria-hidden="true" />
-                      ) : (
-                        <Camera className="h-6 w-6" aria-hidden="true" />
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate text-sm font-semibold text-foreground">
-                        {doc.title}
-                      </span>
-                      <span className="truncate text-sm text-muted-foreground">
-                        {status === 'success' && fileName
-                          ? fileName
-                          : isCompress
-                            ? COURIER_ONBOARDING_COPY.btnCompressing
-                            : status === 'uploading'
-                              ? COURIER_ONBOARDING_COPY.btnUploading
-                              : status === 'error'
-                                ? 'Error al subir. Tocá para reintentar.'
-                                : doc.subtitle}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    {status === 'success' ? (
-                      <span className="text-success flex items-center gap-1 text-sm font-semibold">
-                        {COURIER_ONBOARDING_COPY.btnUploaded}
-                      </span>
-                    ) : status === 'uploading' || isCompress ? (
-                      <RotateCw
-                        className="h-5 w-5 text-primary"
-                        aria-label="Cargando"
-                      />
-                    ) : status === 'error' ? (
-                      <span className="text-sm font-semibold text-destructive">
-                        {COURIER_ONBOARDING_COPY.btnRetry}
-                      </span>
-                    ) : (
-                      <span className="text-sm font-semibold text-primary">
-                        {COURIER_ONBOARDING_COPY.btnUpload}
-                      </span>
-                    )}
-                  </div>
-                </label>
-                <input
-                  id={`file-input-${doc.kind}`}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] || null;
-                    void handleFileChange(doc.kind, file);
-                  }}
-                  disabled={status === 'uploading' || isCompress}
-                />
-              </Card>
-            );
-          })}
+          {REQUIRED_DOCS.map((doc) => (
+            <DocumentUploadCard
+              key={doc.kind}
+              kind={doc.kind}
+              title={doc.title}
+              subtitle={doc.subtitle}
+              status={statuses[doc.kind] || 'idle'}
+              compressing={compressing[doc.kind]}
+              fileName={fileNames[doc.kind]}
+              onFileSelected={(file) => void handleFileChange(doc.kind, file)}
+            />
+          ))}
         </section>
 
         {/* Tip de compresión y formatos */}

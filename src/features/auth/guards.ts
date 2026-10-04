@@ -6,6 +6,11 @@ export interface AuthSession {
   readonly role: ProfileRole;
   readonly aal: 'aal1' | 'aal2';
   readonly consentStatus: ConsentStatus;
+  /**
+   * T-334: si el comercio o repartidor terminó su onboarding (`business_name` no vacío / `vehicle_type` no nulo).
+   * `false` lo manda al onboarding; `undefined` (dato no leído, admin o llamadores que no lo cargan) no cambia nada.
+   */
+  readonly onboardingComplete?: boolean;
 }
 
 export type RouteGuardAction =
@@ -26,6 +31,70 @@ export function getRoleDefaultPath(role: ProfileRole): string {
     default:
       return '/';
   }
+}
+
+/** T-334: primera pantalla del onboarding de cada rol. */
+export function getOnboardingPath(role: ProfileRole): string {
+  switch (role) {
+    case 'merchant':
+      return '/merchant/onboarding';
+    case 'courier':
+      return '/courier/onboarding/identity';
+    default:
+      return getRoleDefaultPath(role);
+  }
+}
+
+/**
+ * T-334: interpreta la fila de `merchants` (`business_name`) o `couriers` (`vehicle_type`) leída con el cliente del
+ * usuario. Sin fila → incompleto. Solo un valor explícito decide; si la columna no llega, el estado queda
+ * desconocido (`undefined`) y el guard no redirige.
+ */
+export function parseOnboardingComplete(role: ProfileRole, row: unknown): boolean | undefined {
+  if (role !== 'merchant' && role !== 'courier') return undefined;
+  if (row === null) return false;
+  if (typeof row !== 'object' || row === undefined) return undefined;
+  const value = (row as Record<string, unknown>)[role === 'merchant' ? 'business_name' : 'vehicle_type'];
+  if (role === 'merchant') {
+    return typeof value === 'string' ? value.trim() !== '' : undefined;
+  }
+  if (value === null) return false;
+  return typeof value === 'string' ? true : undefined;
+}
+
+/** El chequeo de onboarding aplica solo a comercio y repartidor con consentimiento activo (CC-007 va antes). */
+function hasIncompleteOnboarding(session: AuthSession): boolean {
+  return (
+    (session.role === 'merchant' || session.role === 'courier') &&
+    session.consentStatus === 'active' &&
+    session.onboardingComplete === false
+  );
+}
+
+/** Inicio de la sesión: el onboarding si está incompleto, si no el panel del rol. */
+function getSessionHomePath(session: AuthSession): string {
+  return hasIncompleteOnboarding(session)
+    ? getOnboardingPath(session.role)
+    : getRoleDefaultPath(session.role);
+}
+
+/**
+ * Rutas propias del rol que siguen abiertas con onboarding incompleto: solo los pasos editables del onboarding y,
+ * para el repartidor, el perfil (muestra «Completá tu registro» y el cierre de sesión). La pantalla status exige que
+ * el onboarding ya haya sido enviado; dejarla abierta antes de eso mostraría falsamente «En revisión manual».
+ */
+function isAllowedWhileOnboardingIncomplete(pathname: string, role: ProfileRole): boolean {
+  if (role === 'merchant') {
+    return matchesSegment(pathname, '/merchant/onboarding');
+  }
+  if (role === 'courier') {
+    return (
+      pathname === '/courier/onboarding/identity' ||
+      pathname === '/courier/onboarding/vehicle' ||
+      pathname === '/courier/profile'
+    );
+  }
+  return false;
 }
 
 export function isAdminRoute(pathname: string): boolean {
@@ -134,9 +203,20 @@ const ADMIN_HOME = '/admin/applicants';
  * Destino por defecto después del login. Para el admin no es `getRoleDefaultPath` (`/`): un login con
  * contraseña deja la sesión en AAL1, así que el guard decide el paso por el MFA antes de `/admin/applicants`.
  */
-function defaultPostLoginPath(role: ProfileRole, consentStatus: ConsentStatus): string {
+function defaultPostLoginPath(
+  role: ProfileRole,
+  consentStatus: ConsentStatus,
+  onboardingComplete: boolean | undefined
+): string {
   if (role !== 'admin') {
-    return getRoleDefaultPath(role);
+    return getSessionHomePath({
+      userId: 'check',
+      email: '',
+      role,
+      aal: 'aal1',
+      consentStatus,
+      onboardingComplete,
+    });
   }
   const guardResult = evaluateRouteGuard(ADMIN_HOME, {
     userId: 'check',
@@ -151,7 +231,8 @@ function defaultPostLoginPath(role: ProfileRole, consentStatus: ConsentStatus): 
 export function resolvePostLoginRedirect(
   rawRedirectTo: unknown,
   role: ProfileRole,
-  consentStatus: ConsentStatus
+  consentStatus: ConsentStatus,
+  onboardingComplete?: boolean
 ): string {
   if (role !== 'admin' && consentStatus !== 'active') {
     return '/login?consentRequired=1';
@@ -165,7 +246,7 @@ export function resolvePostLoginRedirect(
     rawRedirectTo.includes('\\') ||
     /[\r\n]/.test(rawRedirectTo)
   ) {
-    return defaultPostLoginPath(role, consentStatus);
+    return defaultPostLoginPath(role, consentStatus, onboardingComplete);
   }
 
   const [pathname, query] = rawRedirectTo.split('?');
@@ -176,7 +257,7 @@ export function resolvePostLoginRedirect(
     pathname === '/reset-password' ||
     pathname === '/auth/confirm'
   ) {
-    return defaultPostLoginPath(role, consentStatus);
+    return defaultPostLoginPath(role, consentStatus, onboardingComplete);
   }
 
   const mockSession: AuthSession = {
@@ -185,6 +266,7 @@ export function resolvePostLoginRedirect(
     role,
     aal: 'aal1',
     consentStatus,
+    onboardingComplete,
   };
 
   const guardResult = evaluateRouteGuard(pathname, mockSession);
@@ -199,7 +281,7 @@ export function resolvePostLoginRedirect(
     }
   }
 
-  return defaultPostLoginPath(role, consentStatus);
+  return defaultPostLoginPath(role, consentStatus, onboardingComplete);
 }
 
 export function evaluateRouteGuard(
@@ -214,7 +296,7 @@ export function evaluateRouteGuard(
       }
       return {
         action: 'redirect',
-        redirectTo: getRoleDefaultPath(session.role),
+        redirectTo: getSessionHomePath(session),
       };
     }
     return { action: 'allow' };
@@ -327,12 +409,22 @@ export function evaluateRouteGuard(
     return { action: 'redirect', redirectTo: getRoleDefaultPath(session.role) };
   }
 
+  // 2.c. T-334: onboarding incompleto. Toda ruta propia del rol va al onboarding, salvo las exentas (sin loop).
+  if (
+    hasIncompleteOnboarding(session) &&
+    ((session.role === 'merchant' && isMerchantRoute(pathname)) ||
+      (session.role === 'courier' && isCourierRoute(pathname))) &&
+    !isAllowedWhileOnboardingIncomplete(pathname, session.role)
+  ) {
+    return { action: 'redirect', redirectTo: getOnboardingPath(session.role) };
+  }
+
   // 3. Rutas protegidas de administrador (admin)
   if (isAdminRoute(pathname)) {
     if (session.role !== 'admin') {
       return {
         action: 'redirect',
-        redirectTo: getRoleDefaultPath(session.role),
+        redirectTo: getSessionHomePath(session),
       };
     }
     // Pantallas de ingreso MFA para admin
@@ -360,7 +452,7 @@ export function evaluateRouteGuard(
     if (session.role !== 'merchant') {
       return {
         action: 'redirect',
-        redirectTo: getRoleDefaultPath(session.role),
+        redirectTo: getSessionHomePath(session),
       };
     }
     return { action: 'allow' };
@@ -371,7 +463,7 @@ export function evaluateRouteGuard(
     if (session.role !== 'courier') {
       return {
         action: 'redirect',
-        redirectTo: getRoleDefaultPath(session.role),
+        redirectTo: getSessionHomePath(session),
       };
     }
     return { action: 'allow' };
