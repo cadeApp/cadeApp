@@ -6,30 +6,63 @@
 | **Tarea** | T-336 · issue #247 |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-336-retorno-home-real` → `develop` |
-| **Base revisada** | `59d9d1783a936c9c7d5331cc5b2c07b4ed7d05b3` |
-| **SHA funcional** | `0638339d0b4a7027e17fba51310d93005d99cf1d` |
-| **SHA revisado** | `752707bf5cc885d14924d01eb281d0313406298f` |
-| **Estado** | **Ronda 1 · CON BLOQUEANTES (4)** |
+| **Base** | `59d9d1783a936c9c7d5331cc5b2c07b4ed7d05b3` |
+| **SHA funcional R2** | `f09b0088c44f33f767a2912901b956f1a65986ca` |
+| **SHA revisado R2** | `89bc392f096ebb1da6f79d5407d7612c15e68cea` |
+| **Estado** | **Ronda 2 · CON BLOQUEANTE RESIDUAL (1)** |
 
-## Arranque
+## Rondas
 
-- Rama: **ahead 3 / behind 0** de `develop`.
-- GitHub reporta `mergeable=true`.
-- Los 8 archivos del autor están dentro de los archivos permitidos de T-336.
-- El autor no tocó `docs/revision-pr/pr-248/**`.
-- Preview de Vercel del SHA funcional `0638339d0b4a7027e17fba51310d93005d99cf1d`: **Ready**.
-- El HEAD documental `752707bf5cc885d14924d01eb281d0313406298f` volvió a golpear la cuota diaria de Vercel; no se atribuye al código.
-- CI detallado se difiere hasta cerrar bloqueantes.
+| Ronda | SHA | Resultado |
+|---|---|---|
+| 1 | `752707bf5cc885d14924d01eb281d0313406298f` | H01–H04 abiertos |
+| 2 | `89bc392f096ebb1da6f79d5407d7612c15e68cea` | H01/H03/H04 cerrados; H02 abierto |
 
-## Hallazgos
+## Estado de hallazgos
 
-| ID | Sev. | Estado | Resumen |
-|---|---|---|---|
-| PR248-H01 | alto | abierto | Admin autenticado todavía cae en `/` por fallbacks viejos fuera de `/login` |
-| PR248-H02 | medio | abierto | El control de integridad no cubre toda la clase de hardcodes genéricos a `/` |
-| PR248-H03 | medio | abierto | Hay “tests de mutación” tautológicos que siempre pasan |
-| PR248-H04 | medio | abierto | Falta la verificación manual de Preview exigida por el DoD |
+| ID | Sev. | Estado |
+|---|---|---|
+| PR248-H01 | alto | arreglado-verificado |
+| PR248-H02 | medio | abierto |
+| PR248-H03 | medio | arreglado-verificado |
+| PR248-H04 | medio | arreglado-verificado |
+
+## Verificación R2
+
+- H01:
+  - todos los fallbacks auditados usan `getSessionHomePath`;
+  - tabla de 22 casos admin AAL1/AAL2;
+  - CI exact-head GREEN.
+- H03:
+  - eliminados los tests tautológicos de mutante local;
+  - controles permanentes ejercen producción/helper real.
+- H04:
+  - Preview funcional Ready;
+  - navegador real a 360 px registrado en bitácora;
+  - fetch independiente del revisor confirmó 404 real con `href="/login"`;
+  - E2E Preview exact-head publicó success.
+- H02:
+  - el scanner ahora cubre productores directos y allowlist por ocurrencia;
+  - **residual:** no sigue productores indirectos como `const target='/'; router.push(target)` o helpers que devuelven `/`.
+
+## CI
+
+SHA funcional `f09b0088c44f33f767a2912901b956f1a65986ca`:
+- CI #1113: success;
+- 118 archivos / 1875 tests;
+- DB 10/10 + 1811/1811 PASS;
+- build/lint/typecheck/bundle GREEN;
+- `/courier/feed 159 kB`;
+- `/courier/profile 178 kB`.
+- e2e-preview: success;
+- Chromium 20/20;
+- global-settings: 1 flaky ajeno a T-336, pasó en retry; issue #249.
+
+SHA documental `89bc392f096ebb1da6f79d5407d7612c15e68cea`:
+- CI #1116: success;
+- mismo código funcional;
+- Vercel falló por cuota diaria externa.
 
 ## Resultado
 
-No mergear todavía. No hay decisiones 🔵 pendientes.
+**No mergear todavía.** Falta únicamente cerrar PR248-H02.

@@ -88,3 +88,50 @@ Preview Ready del SHA funcional:
 - viewport 360 px, sin overflow, targets >=48.
 
 Registrar SHA, cuentas de prueba no sensibles y resultados. No persistir credenciales.
+
+
+## Ronda 2
+
+### CI SHA funcional f09b0088c44f33f767a2912901b956f1a65986ca
+
+    run 37181655067
+    Test Files 118 passed (118)
+    Tests      1875 passed (1875)
+    DB probe   Files=1, Tests=10, PASS
+    DB suite   Files=18, Tests=1811, PASS
+    /courier/feed    159 kB
+    /courier/profile 178 kB
+
+### E2E Preview
+
+    run 37181721851
+    TARGET_SHA=f09b0088c44f33f767a2912901b956f1a65986ca
+    Chromium: 20 passed
+    global-settings: 1 flaky, 2 passed
+    RESULT=success
+
+Flaky T-306 registrado en issue #249.
+
+### Preview independiente
+
+El revisor consultó directamente:
+
+    https://cadeapp-develop-i68p3wept-lautaroj073.vercel.app/not-found-page-test-360
+
+y verificó que el HTML real contiene:
+
+    Página no encontrada
+    href="/login"
+    Ir al inicio
+
+### Residual H02
+
+El scanner actual detecta directos, pero estas formas no producen ocurrencia:
+
+    const target = '/';
+    router.push(target);
+
+    const home = () => '/';
+    router.replace(home());
+
+El cierre requiere seguir estos productores indirectos simples.

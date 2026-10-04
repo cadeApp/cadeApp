@@ -28,3 +28,14 @@ Las reglas ya existentes cubren estos casos:
 - controles discriminantes;
 - no tests tautológicos;
 - evidencia real en Preview.
+
+
+## Ronda 2
+
+H01 y H03 cierran de forma robusta.
+
+H02 deja una lección más precisa sobre P08: **enumerar más sintaxis directa no equivale a seguir el productor del destino**. Es la misma distinción que apareció en PR #87. Un control de navegación root debe seguir, al menos, las variables/helpers locales que el propio archivo ya sabe resolver para rutas inexistentes.
+
+No se propone AG nueva: refuerza AG-61/P08.
+
+H04 confirma que combinar evidencia manual con un probe independiente del Preview y CI exact-head permite cerrar la navegación real sin inventar estados.
