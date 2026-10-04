@@ -624,4 +624,142 @@ describe('T-334: onboarding incompleto redirige al onboarding sin loops', () => 
       '/login?consentRequired=1'
     );
   });
+
+  describe('T-336: Navegación de retorno y 404 al home real de la sesión (/login como gateway)', () => {
+    it('usuario anónimo permanece en /login sin redirigir', () => {
+      expect(evaluateRouteGuard('/login', null)).toEqual({ action: 'allow' });
+    });
+
+    it('merchant completo en /login es redirigido a /merchant/dashboard', () => {
+      const session: AuthSession = {
+        userId: 'usr-m-complete',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: true,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/merchant/dashboard',
+      });
+      expect(followGuard('/login', session)).toBe('/merchant/dashboard');
+    });
+
+    it('merchant incompleto en /login es redirigido a /merchant/onboarding', () => {
+      const session: AuthSession = {
+        userId: 'usr-m-incomplete',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: false,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/merchant/onboarding',
+      });
+      expect(followGuard('/login', session)).toBe('/merchant/onboarding');
+    });
+
+    it('courier completo en /login es redirigido a /courier/feed', () => {
+      const session: AuthSession = {
+        userId: 'usr-c-complete',
+        email: 'c@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: true,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/courier/feed',
+      });
+      expect(followGuard('/login', session)).toBe('/courier/feed');
+    });
+
+    it('courier incompleto en /login es redirigido a /courier/onboarding/identity', () => {
+      const session: AuthSession = {
+        userId: 'usr-c-incomplete',
+        email: 'c@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: false,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/courier/onboarding/identity',
+      });
+      expect(followGuard('/login', session)).toBe('/courier/onboarding/identity');
+    });
+
+    it('admin AAL1 en /login no cae en la landing y es redirigido al flujo MFA hacia /admin/applicants', () => {
+      const session: AuthSession = {
+        userId: 'usr-admin-aal1',
+        email: 'admin@test.com',
+        role: 'admin',
+        aal: 'aal1',
+        consentStatus: 'active',
+      };
+      const result = evaluateRouteGuard('/login', session);
+      expect(result).toEqual({
+        action: 'redirect',
+        redirectTo: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants',
+      });
+      expect(followGuard('/login', session)).toBe('/login/mfa');
+    });
+
+    it('admin AAL2 en /login no cae en la landing y es redirigido a /admin/applicants', () => {
+      const session: AuthSession = {
+        userId: 'usr-admin-aal2',
+        email: 'admin@test.com',
+        role: 'admin',
+        aal: 'aal2',
+        consentStatus: 'active',
+      };
+      const result = evaluateRouteGuard('/login', session);
+      expect(result).toEqual({
+        action: 'redirect',
+        redirectTo: '/admin/applicants',
+      });
+      expect(followGuard('/login', session)).toBe('/admin/applicants');
+    });
+
+    it('admin AAL2 en /login/mfa es redirigido a /admin/applicants en vez de a /', () => {
+      const session: AuthSession = {
+        userId: 'usr-admin-aal2',
+        email: 'admin@test.com',
+        role: 'admin',
+        aal: 'aal2',
+        consentStatus: 'active',
+      };
+      const result = evaluateRouteGuard('/login/mfa', session);
+      expect(result).toEqual({
+        action: 'redirect',
+        redirectTo: '/admin/applicants',
+      });
+      expect(followGuard('/login/mfa', session)).toBe('/admin/applicants');
+    });
+
+    it('CC-007 conserva prioridad: merchant o courier con consentimiento no activo permanecen en /login', () => {
+      const pendingMerchant: AuthSession = {
+        userId: 'usr-m-pending',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'pending',
+      };
+      expect(evaluateRouteGuard('/login', pendingMerchant)).toEqual({ action: 'allow' });
+
+      const reconsentCourier: AuthSession = {
+        userId: 'usr-c-reconsent',
+        email: 'c@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'reconsent_required',
+      };
+      expect(evaluateRouteGuard('/login', reconsentCourier)).toEqual({ action: 'allow' });
+    });
+  });
 });

@@ -29,7 +29,7 @@ describe('T-201: Error and NotFound Views (T04)', () => {
     expect(mockReset).toHaveBeenCalledTimes(1);
 
     const homeLink = screen.getByRole('link', { name: /Ir al inicio/i });
-    expect(homeLink.getAttribute('href')).toBe('/');
+    expect(homeLink.getAttribute('href')).toBe('/login');
   });
 
   it('DoD: NotFound debe tener diseño consistente, copy es-AR y enlace para volver al inicio', () => {
@@ -39,6 +39,6 @@ describe('T-201: Error and NotFound Views (T04)', () => {
     expect(screen.getByText(/No encontramos lo que buscabas/i)).toBeTruthy();
 
     const homeLink = screen.getByRole('link', { name: /Ir al inicio/i });
-    expect(homeLink.getAttribute('href')).toBe('/');
+    expect(homeLink.getAttribute('href')).toBe('/login');
   });
 });

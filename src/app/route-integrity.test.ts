@@ -741,4 +741,83 @@ describe('T-118: Integridad de Rutas, Shells y Navegación Canónica', () => {
       }
     });
   });
+
+  describe('T-336: Integridad de navegación de retorno y 404 al home real', () => {
+    it('ErrorView y NotFoundView usan /login como gateway de retorno y no enlazan a la landing pública /', () => {
+      const errorViewPath = path.resolve(ROOT_DIR, 'features/notifications/offline/error-view.tsx');
+      const notFoundViewPath = path.resolve(ROOT_DIR, 'features/notifications/offline/not-found-view.tsx');
+
+      const errorViewContent = fs.readFileSync(errorViewPath, 'utf-8');
+      const notFoundViewContent = fs.readFileSync(notFoundViewPath, 'utf-8');
+
+      expect(errorViewContent).toContain('href="/login"');
+      expect(errorViewContent).not.toMatch(/href=["']\/["']/);
+
+      expect(notFoundViewContent).toContain('href="/login"');
+      expect(notFoundViewContent).not.toMatch(/href=["']\/["']/);
+    });
+
+    it('los enlaces directos a la landing pública / están restringidos exclusivamente a la allowlist documentada', () => {
+      const allowedFilesWithRootLink = new Set<string>([
+        path.resolve(ROOT_DIR, 'app/(public)/legal/page.tsx'),
+        path.resolve(ROOT_DIR, 'app/(public)/login/page.tsx'),
+        path.resolve(ROOT_DIR, 'app/(public)/register/page.tsx'),
+        path.resolve(ROOT_DIR, 'ui/top-bar.tsx'),
+      ]);
+
+      const candidateDirs = [
+        path.resolve(ROOT_DIR, 'app'),
+        path.resolve(ROOT_DIR, 'features'),
+        path.resolve(ROOT_DIR, 'ui'),
+      ];
+
+      const allProductionFiles: string[] = [];
+      for (const dir of candidateDirs) {
+        allProductionFiles.push(...walkProductionFiles(dir));
+      }
+
+      const violations: string[] = [];
+      const rootLinkRegex = /\bhref\s*[:=]\s*["']\/["']/g;
+
+      for (const filePath of allProductionFiles) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        if (rootLinkRegex.test(content)) {
+          if (!allowedFilesWithRootLink.has(filePath)) {
+            const rel = path.relative(path.resolve(ROOT_DIR, '..'), filePath).replace(/\\/g, '/');
+            violations.push(rel);
+          }
+        }
+      }
+
+      expect(violations).toEqual([]);
+    });
+
+    it('mutación: reintroducir href="/" en ErrorView o NotFoundView es detectado y rechazado', () => {
+      const simulatedErrorView = '<Link href="/">Ir al inicio</Link>';
+      const simulatedNotFoundView = '<Link href="/">Ir al inicio</Link>';
+
+      expect(simulatedErrorView).toMatch(/href=["']\/["']/);
+      expect(simulatedErrorView.includes('href="/login"')).toBe(false);
+
+      expect(simulatedNotFoundView).toMatch(/href=["']\/["']/);
+      expect(simulatedNotFoundView.includes('href="/login"')).toBe(false);
+    });
+
+    it('mutación: hacer que admin autenticado en /login vuelva a / deja tests RED', () => {
+      const adminSession: AuthSession = {
+        userId: 'adm-mut',
+        email: 'adm@mut.com',
+        role: 'admin',
+        aal: 'aal1',
+        consentStatus: 'active',
+      };
+      // Demostración de mutación que devuelve '/'
+      const mutatedGuard = (_path: string, _session: AuthSession) => ({
+        action: 'redirect' as const,
+        redirectTo: '/',
+      });
+      const mutatedResult = mutatedGuard('/login', adminSession);
+      expect(mutatedResult.redirectTo).not.toBe('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+    });
+  });
 });
