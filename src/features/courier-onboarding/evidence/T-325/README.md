@@ -74,3 +74,13 @@ de repartidor ya abierta en ese navegador. No hubo Vercel Preview: el deployment
   `rgb(18, 24, 44)` (`foreground`) y el fondo del ícono queda transparente. El estado se distingue por el ícono de
   check, el nombre del archivo y «Cargado»; agregar el token requiere tocar `tailwind.config.ts` o `src/ui`, fuera de
   esta ficha.
+
+## Perfil combinado con T-334 — 2026-10-03 (pendiente por Vercel)
+
+- SHA funcional combinado: `ef40e47e8c5c6f7bd7b9850fc40fa88e626e67b3`.
+- Merge normal de `develop` / T-334: `3e5d5381dbf59717763f1927e1cf080504a9ebf1`.
+- El status Vercel de ese SHA respondió `failure`: **Deployment rate limited — retry in 24 hours.** No se generó un Preview usable para esta verificación.
+- No se crearon `360-07-profile-documents.jpg` ni `360-08-profile-settings.jpg`: faltan las capturas reales a 360 px sobre el Preview combinado. Las capturas anteriores no prueban este SHA.
+- No se repitieron navegación legal, medición de overflow ni inspección manual del perfil completo/pending. Quedan pendientes junto con H06.
+- Tampoco se repitió manualmente el courier incompleto. El contrato T-334 está respaldado por los tests de página y vista ejecutados sobre el código combinado, con dos mutaciones discriminantes RED y restauración GREEN (90/90 en la suite dirigida).
+- Próximo paso: cuando Vercel permita generar el Preview de este SHA (o de su cierre documental con idéntico código productivo), iniciar sesión interactivamente con el repartidor de prueba de Develop, capturar documentación/ajustes y abrir los tres enlaces legales. Sin cambios de DB, props, DOM ni respuestas.
