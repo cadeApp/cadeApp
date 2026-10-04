@@ -116,7 +116,7 @@ export function useRequestOffers(
       staleTime: 0,
       retry: false,
       refetchOnWindowFocus: 'always',
-      refetchOnReconnect: false, // REVIEW MUTATION H02
+      refetchOnReconnect: 'always',
       refetchInterval: 30_000,
       refetchIntervalInBackground: false,
       enabled,
@@ -176,7 +176,7 @@ export function useRequestOffers(
         return;
       }
       if (generationAtOffline !== null && fetching && generation === generationAtOffline) {
-        reconnectDuringFetchRef.current = null; // REVIEW MUTATION H02: suppress reconnect latch
+        reconnectDuringFetchRef.current = generation;
       }
       generationAtOffline = null;
     });
