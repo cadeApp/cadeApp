@@ -54,3 +54,11 @@ No se agrega número AG nuevo.
 - Los mocks de `channel.subscribe` prueban la lógica del cliente, pero no pueden demostrar que Supabase emita eventos reales para una tabla.
 - Un resultado parcial post-fix es informativo: reconnect pasó de RED a GREEN tras T-333, mientras Realtime permaneció RED. Eso separa causas y evita reabrir una corrección ya cerrada.
 - No asumir que una configuración manual de Dashboard existe o es igual entre entornos; el diagnóstico debe consultar `pg_publication_tables` y el fix debe ser declarativo.
+
+
+## Ronda 8
+
+- Verificar que una tabla figure en `pg_publication_tables` es necesario, pero no prueba la entrega end-to-end de Postgres Changes.
+- Un fix de infraestructura puede cerrar una causa concreta y revelar otra sin que la primera corrección haya sido incorrecta; separar H09 de H10 evita reescribir la historia.
+- Un segundo GET disparado al llegar `SUBSCRIBED` demuestra readiness/catch-up del canal, pero no demuestra que un cambio posterior atraviese publicación, RLS, Realtime y callback.
+- Cuando el E2E real sigue RED después de una migración, no ampliar RLS, usar `REPLICA IDENTITY FULL` ni relajar el test “por si acaso”: primero aislar en qué frontera desaparece el evento.

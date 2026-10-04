@@ -15,3 +15,5 @@
 - **Revisión independiente — ronda 6:** SHA `cfea63d76850692c3bf99c832cf4044b3859f792` — RED reproducido con autodiscovery; colisión T-331 corregida renombrando/reabriendo #229 como T-333.
 
 - **Revisión independiente — ronda 7:** SHA `47152d69d1de0a6b32db21f0ab98a8f36e27e8d9` — reconnect GREEN, offline/form GREEN, Realtime RED 3/3 en dos trusted runs; nuevo bloqueo T-335/#244.
+
+- **Revisión independiente — ronda 8:** SHA `a3f85191c476a93ba7b6bdf4e8feccd2d1dc29ae` — Preview exacto READY; T-335 aplicada al mismo Supabase Develop; offline/form ✅, reconnect ✅, **Realtime ❌ 3/3**. H09 cerrado en su alcance de versionado; nuevo bloqueante H10: Postgres Changes no entrega el INSERT real.

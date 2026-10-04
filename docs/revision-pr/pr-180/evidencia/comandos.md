@@ -420,3 +420,135 @@ Conclusión de revisión:
 - se creó **T-335 / #244**.
 
 No se declara todavía que la ausencia remota esté demostrada únicamente por inspección de repo; T-335 debe comprobarla con SQL/DB test y cerrar la configuración de forma declarativa.
+
+
+---
+
+## Ronda 8 — post T-335 sobre Preview exacto
+
+SHA revisado:
+
+```text
+a3f85191c476a93ba7b6bdf4e8feccd2d1dc29ae
+```
+
+### Preview y trusted gate
+
+Vercel creó el deployment exacto:
+
+```text
+deployment: dpl_3oRCVBVgPzjB4AY79DfT4ymnptWj
+sha: a3f85191c476a93ba7b6bdf4e8feccd2d1dc29ae
+state: READY
+```
+
+El status `e2e-preview` está publicado sobre ese SHA y apunta al run:
+
+```text
+37182950321
+```
+
+Aunque `repository_dispatch` muestra el HEAD de `develop` en la metadata del run, el workflow trusted resuelve el SHA del payload de Vercel y hace checkout de `needs.resolve.outputs.sha`. El job `resolve-preview` concluyó:
+
+```text
+Preview listo para E2E.
+```
+
+Por lo tanto la evidencia corresponde al Preview de T-307, no al deployment de develop.
+
+### Resultado de notifications.spec.ts
+
+```text
+23 tests using 1 worker
+
+Realtime oferta nueva:
+  RED
+  intento 1: 27.1 s
+  retry #1: 29.3 s
+  retry #2: 29.2 s
+
+offline/form:
+  GREEN 1.2 s
+
+reconnect/refetch:
+  GREEN 11.4 s
+
+global:
+  22 passed
+  1 failed
+```
+
+Fallo exacto:
+
+```text
+e2e/specs/notifications.spec.ts:99
+Expected offersRequestCount > baseline
+Expected: > 2
+Received: 2
+Timeout 15000ms
+```
+
+No hubo GET posterior al INSERT dentro de la ventana que excluye el polling de 30 s.
+
+### T-335 sí llegó al mismo Supabase Develop
+
+PR #246 fue mergeada en:
+
+```text
+82ac75598705cb77b69ce0ce5da260db30c2a8c8
+```
+
+Migrate run:
+
+```text
+37176425603
+migrate-develop: GREEN
+20261004000000_t335_realtime_publication.sql aplicada
+types drift: GREEN
+```
+
+El workflow `migrate.yml` y el trusted `e2e-preview.yml` usan el mismo Environment `develop`, la misma variable `SUPABASE_DEVELOP_PROJECT_REF` y ambos validan que `NEXT_PUBLIC_SUPABASE_URL` corresponda a ese ref. Se descarta que la migración se haya aplicado deliberadamente a otro proyecto mientras el E2E usa Develop.
+
+### H09 — cerrado en su alcance
+
+T-335:
+- versionó `public.offers` en `supabase_realtime`;
+- versionó `public.delivery_requests`;
+- agregó DB test sobre `pg_publication_tables`;
+- aplicó la migración a Supabase Develop.
+
+Eso corrige el defecto concreto de H09: la membresía de las tablas ya no queda implícita/manual.
+
+**No** demuestra por sí solo que el servicio entregue eventos reales.
+
+### H10 — nuevo bloqueo
+
+El INSERT real sigue sin provocar el callback Postgres Changes.
+
+Inspección del camino actual:
+- `useRequestOffers` escucha `public.offers` con filtro `request_id=eq.<uuid>`;
+- `useRealtimeInvalidation` invalida solo al callback de `postgres_changes` y hace catch-up cuando el canal queda `SUBSCRIBED`;
+- el trace muestra dos GET previos al INSERT, consistente con carga inicial + catch-up de readiness;
+- la sesión del merchant existe en navegador y el endpoint server-side con esa misma identidad puede leer las ofertas bajo RLS;
+- `offers_select_merchant` permite SELECT al comercio dueño.
+
+La causa exacta de la falta de entrega **no está demostrada**. Antes de cambiar código se debe comprobar en el Supabase Develop real:
+1. flags de `pg_publication`, especialmente `pubinsert`;
+2. membresía remota efectiva de ambas tablas;
+3. que Realtime del proyecto esté habilitado y revisar sus logs;
+4. si un subscriber autenticado directo recibe el mismo INSERT.
+
+No tocar el E2E para fabricar verde.
+
+### CI normal del SHA
+
+Run `37182887607`:
+- typecheck ✅
+- lint ✅
+- audit ✅
+- build ✅
+- db-tests ✅
+- bundle-budget ✅
+- unit ❌ únicamente por el defecto heredado de `develop` en `tools/verify-fichas.test.ts` / T-336.
+
+El mismo fallo ya existe en `develop@59d9d178...` (run `37179295025`), por lo que no se atribuye a T-307.
