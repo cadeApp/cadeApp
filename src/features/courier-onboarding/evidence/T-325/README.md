@@ -12,6 +12,26 @@ de repartidor ya abierta en ese navegador. No hubo Vercel Preview: el deployment
 | `360-03-error-reintentar.jpg` | 360 px | Seguro en error: «Error al subir. Tocá para reintentar.» completo, sin truncar, y «Reintentar» |
 | `360-04-foco-teclado.jpg` | 360 px | Foco de teclado con Tab desde la patente: input `:focus-visible` y anillo `ring-ring` en la tarjeta |
 | `360-05-cargado.jpg` | 360 px | Licencia y seguro en éxito real: `licencia.png` / `poliza.png` y «Cargado» |
+| `360-06-feed-pending-real-docs.jpg` | 360 px | Hotfix #241: `/courier/feed` de un repartidor `pending` con los documentos persistidos, licencia y seguro en «Listo», sin «Ir al panel de repartidor» |
+
+### Hotfix del feed `pending` (`360-06-feed-pending-real-docs.jpg`)
+
+- **Entorno:** Vercel Preview de la PR #242 con el código funcional `3c469698bd551cd42022b3388562b935431e2999`
+  (`cadeapp-develop-fbmynv3en-lautaroj073.vercel.app`), contra Supabase Develop.
+- **Cuenta:** el mismo repartidor `pending` de prueba de la captura `360-05`, creado por el registro normal y con el
+  onboarding enviado. Lautaro073 inició sesión en el navegador del panel; no se registran identidad ni credenciales.
+  No hubo cambios de DB, RLS, consola ni SQL, ni se alteró el DOM, se interceptaron respuestas o se inyectaron props.
+- **`/courier/feed` a 360 px:**
+  - muestra la vista de revisión con los documentos persistidos: DNI frente y dorso, selfie, foto de perfil,
+    vehículo y consentimientos, licencia y seguro en «Listo»;
+  - no aparece el botón «Ir al panel de repartidor»;
+  - sin overflow horizontal (`scrollWidth` 360).
+- **`/courier/onboarding/status` con la misma sesión:** conserva el botón «Ir al panel de repartidor» y muestra
+  licencia y seguro en «Listo». No se capturó; queda registrado acá y en la bitácora.
+- **Sesión vencida:** el primer intento en el Preview mostró la pantalla de error en `/courier/feed`,
+  `/courier/onboarding/status` y `/courier/profile` (esta última no la toca la rama), con una sesión de horas
+  antes. Después de volver a iniciar sesión, `/courier/feed` y `/courier/onboarding/status` cargaron bien;
+  `/courier/profile` no se volvió a abrir.
 
 ### Captura de éxito (`360-05-cargado.jpg`)
 
