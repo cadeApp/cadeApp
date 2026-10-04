@@ -16,3 +16,11 @@ No se agrega número AG nuevo.
 - **AG-37 vuelve a aplicar literalmente:** el gate mostró un copy viejo en el primer radio; barrer todos los selectores de DoD 1 encontró tres copies viejos adicionales antes de devolver el trabajo.
 - **AG-70 se refuerza:** la bitácora decía «Salida GREEN real: evaluada en el gate» antes de que existiera el resultado; cuando el gate corrió, quedó RED. La salida se copia después de ejecutar, no se anticipa.
 - **AG-71 vuelve a ser relevante:** entre la reparación y la revisión, develop avanzó 5 commits y T-334 cambió auth/guards. Un arreglo MFA no se cierra contra un árbol anterior al que se va a mergear.
+
+## Ronda 3
+
+No se agrega número AG nuevo.
+
+- **No convertir un bloqueo de infraestructura en evidencia:** el autor hizo lo correcto al registrar el rate limit de Vercel y dejar M1–M4 pendientes en vez de fabricar RED/GREEN.
+- **`arreglado-sin-verificar` existe para esto:** H03 y H05 parecen corregidos por inspección, pero sin ejecución independiente no pasan a verificados.
+- **No generar commits inútiles mientras el gate no puede dispararse:** más pushes no aportan señal si Vercel rechaza el deployment antes de crear Preview.

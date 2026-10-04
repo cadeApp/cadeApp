@@ -236,3 +236,104 @@ H03 arreglado-sin-verificar — flujo MFA aún no alcanzado
 H04 parcial — gate real existe, pero está RED y no hay mutaciones RED ejecutadas
 H05 abierto — cuatro copies viejos; primer caso verificado-runtime
 ```
+
+
+---
+
+# Evidencia — PR #224 / Ronda 3
+
+## SHA y sincronización
+
+```text
+HEAD revisado: cc3813f05d110c9248f5186decf0fe941f39880a
+develop: 59d9d1783a936c9c7d5331cc5b2c07b4ed7d05b3
+behind: 0
+ahead: 10
+```
+
+## Commits posteriores a R2
+
+```text
+d4c7a665 merge origin/develop
+72f95c8 fix selectors H05
+cc3813f update bitácora y bloqueo Vercel
+```
+
+El autor no tocó `docs/revision-pr/pr-224/**`.
+
+## H05
+
+Spec final:
+
+```text
+:65  /problema con el cobro/i
+:69  /¿qué pasó\?/i
+:77  /recibimos tu reporte/i
+:117 /problema con el cobro/i
+```
+
+Coinciden con el copy canónico inspeccionado en R2.
+
+No existe E2E runtime posterior al arreglo.
+
+## Vercel
+
+Status de `72f95c8` y `cc3813f0`:
+
+```text
+context: Vercel
+state: failure
+target: upgradeToPro=build-rate-limit
+```
+
+Comentario de Vercel en la PR:
+
+```text
+Resource is limited - try again in 24 hours
+(more than 100, code: "api-deployments-free-per-day")
+```
+
+El workflow `.github/workflows/e2e-preview.yml` solo se activa por:
+
+```text
+repository_dispatch:
+  vercel.deployment.success
+  vercel.deployment.ready
+```
+
+y luego ejecuta Playwright contra la URL resuelta del deployment exacto. Sin deployment no existe gate para el SHA nuevo.
+
+## CI final
+
+Run `37184458436` sobre `cc3813f0` al corte:
+
+```text
+audit           success
+lint            success
+typecheck       success
+build           success
+bundle-budget   success
+unit            failure
+db-tests        in_progress
+```
+
+El único unit rojo:
+
+```text
+tools/verify-fichas.test.ts
+Desincronizadas: T-336
+Test Files: 117 passed / 1 failed
+Tests: 1834 passed / 1 failed
+```
+
+No es un cambio de T-308; viene del develop integrado.
+
+## Estados R3
+
+```text
+H01 arreglado-verificado
+H02 arreglado-verificado
+H03 arreglado-sin-verificar
+H04 parcial
+H05 arreglado-sin-verificar
+```

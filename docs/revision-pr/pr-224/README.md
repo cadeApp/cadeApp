@@ -6,73 +6,51 @@
 | **Tarea** | T-308 · Issue #40 |
 | **Autor** | @KiraK72 |
 | **Rama** | `feat/T-308-incidents-e2e` → `develop` |
-| **SHA funcional revisado R2** | `4370ddc741bd8be21e7ab5b93add6b9455034ed9` |
-| **develop al revisar R2** | `3e5d5381dbf59717763f1927e1cf080504a9ebf1` |
-| **Estado** | Draft · CON 3 BLOQUEANTES · behind=5 |
+| **SHA funcional revisado R3** | `cc3813f05d110c9248f5186decf0fe941f39880a` |
+| **develop al revisar R3** | `59d9d1783a936c9c7d5331cc5b2c07b4ed7d05b3` |
+| **Estado** | Draft · CON 3 BLOQUEANTES DE VERIFICACIÓN · behind=0 |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `9c2a5f3447f0b8e3c4c215cda0846088e75b8507` | 4 bloqueantes + rama 49 commits detrás | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
-| 2 | `4370ddc741bd8be21e7ab5b93add6b9455034ed9` | H01/H02 verificados; H03 sin verificar; H04 parcial; H05 nuevo; rama 5 commits detrás | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 2 | `4370ddc741bd8be21e7ab5b93add6b9455034ed9` | H01/H02 verificados; H03 sin verificar; H04 parcial; H05 nuevo; behind=5 | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| 3 | `cc3813f05d110c9248f5186decf0fe941f39880a` | H05 corregido; H03/H05 sin runtime; H04 pendiente por rate limit de Vercel; behind=0 | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
 
 ## Hallazgos
 
 | ID | Sev. | Estado | Resumen |
 |---|---:|---|---|
-| PR224-H01 | alto | arreglado-verificado | Bootstrap admin migrado a fixtures canónicas; DoD 2/3 pasaron en gate real. |
-| PR224-H02 | alto | arreglado-verificado | DoD 1 usa `seedDeliveryRequestInState`; el gate llegó a renderizar viaje y Dialog. |
-| PR224-H03 | medio | arreglado-sin-verificar · bloqueante | Se quitó `LoginPage.login()`, pero DoD 1 falla antes de alcanzar MFA. |
-| PR224-H04 | alto | parcial · bloqueante | Ya hubo E2E real, pero quedó RED; no existen RED de mutación ejecutados y la bitácora aún habla de GREEN esperado. |
-| PR224-H05 | medio | abierto · bloqueante | DoD 1 usa cuatro textos obsoletos respecto del copy real; el primero ya dejó el gate RED. |
+| PR224-H01 | alto | arreglado-verificado | Bootstrap admin+AAL2 comprobado en gate real. |
+| PR224-H02 | alto | arreglado-verificado | Matched canónico comprobado en gate real. |
+| PR224-H03 | medio | arreglado-sin-verificar · bloqueante | Flujo MFA corregido y compatible por análisis, pero aún no alcanzado por un E2E del árbol final. |
+| PR224-H04 | alto | parcial · bloqueante | DoD 2/3/4 tuvieron GREEN previo; faltan M1–M4 RED reales y GREEN final. Vercel no despliega por límite diario. |
+| PR224-H05 | medio | arreglado-sin-verificar · bloqueante | Los cuatro selectors ya coinciden con el copy canónico; falta ejecución E2E del SHA final. |
 
-## R2 — ejecución real
+## R3
 
-Commit status `e2e-preview` sobre `4370ddc`:
+La rama sí integró el `develop` actual mediante merge y quedó `behind=0`.
 
-```text
-failure
-run 37144346616
-23 passed
-1 failed
-```
+El arreglo de H05 toca únicamente el spec permitido y reemplaza los cuatro textos observados en R2 por los labels canónicos. La bitácora también registra correctamente que las sondas **no se ejecutaron**.
 
-Falló únicamente:
+No existe un Preview nuevo para `72f95c8` ni `cc3813f0`: Vercel responde:
 
 ```text
-DoD 1: El reporte llega a la bandeja de administración
-incidents.spec.ts:66
-getByRole('radio', { name: /problema con el pago/i })
-element(s) not found
+Deployment failed
+Resource is limited - try again in 24 hours
+api-deployments-free-per-day
 ```
 
-DoD 2, DoD 3 y DoD 4 sí quedaron verdes en el gate confiable.
+Por eso no se puede promover H03/H05 a `arreglado-verificado` ni cerrar H04 sin inventar evidencia.
 
-## R2 — CI normal
-
-Run `37144198984`:
-
-- typecheck ✅
+CI del árbol final:
+- audit ✅
 - lint ✅
+- typecheck ✅
 - build ✅
-- db-tests ✅
 - bundle-budget ✅
-- audit ❌ por `braces` — corregido posteriormente en develop por T-332
-- unit ❌ solo por `verify-fichas` / T-333 — corregido posteriormente en develop por T-333
+- unit ❌ únicamente por `tools/verify-fichas.test.ts` / T-336 heredado de develop
+- db-tests estaba aún ejecutándose al registrar la ronda
 
-Los dos rojos no funcionales de CI están precisamente dentro de los 5 commits que la rama todavía debe integrar desde develop.
-
-## Precondición de la próxima ronda
-
-La rama está **5 commits detrás de develop**. Entre ellos está T-334, que modifica autenticación/guards, por lo que H03 no puede cerrarse hasta volver a integrar y ejecutar.
-
-```bash
-git pull
-git fetch origin
-git merge origin/develop
-```
-
-Sin rebase, force-push ni amend.
-
-**No mergear todavía.**
+**No mergear todavía. No hace falta otro cambio funcional por ahora.**
