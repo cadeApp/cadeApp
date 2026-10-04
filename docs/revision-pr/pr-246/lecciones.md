@@ -6,3 +6,9 @@
 - Los tests de catálogo (`pg_publication_tables`) son un buen control para configuración de Realtime: ejercen el contrato real de PostgreSQL en lugar de mockear el cliente.
 - La justificación de `REPLICA IDENTITY` debe describir qué datos consume el callback, no confundir “no usamos OLD completo” con “solo escuchamos INSERT”.
 - Postgres Changes entrega filas permitidas por RLS al navegador aunque la aplicación use el evento solo para invalidar. Separar datos de contacto/PII en otra tabla evita que publicar la tabla de estado publique esos datos.
+
+
+## Ronda 2
+
+- Un DoD post-merge puede dejar una PR lista para merge sin declarar la tarea cerrada: PR mergeable e issue abierto son estados distintos.
+- En correcciones documentales, verificar también que no haya cambios funcionales evita reabrir evidencia RED/GREEN ya demostrada.

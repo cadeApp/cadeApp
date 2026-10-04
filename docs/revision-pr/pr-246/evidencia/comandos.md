@@ -123,3 +123,37 @@ Eso no coincide con el código:
 - `useRealtimeInvalidation` usa `event ?? '*'`.
 
 La decisión de mantener `REPLICA IDENTITY DEFAULT` sigue siendo razonable porque los callbacks solo usan el evento como señal para invalidar y no dependen del contenido completo de `OLD`. La corrección requerida es documental, no `REPLICA IDENTITY FULL`.
+
+
+## Ronda 2 — correcciones de H01/H02
+
+SHA verificado: `e5f560810838d4678e29ba62cbe203bdb6b174ac`.
+
+Desde el commit de revisión R1 `4f07e258b3e8541c1c65645043059f9d8148d1aa`, el autor solo cambió:
+- `docs/tasks/T-335.md`
+- `docs/tasks/log/T-335.md`
+
+No cambió migración, DB test, RLS, hooks, E2E, workflows ni `docs/revision-pr/**`.
+
+### H01
+- DoD post-merge restaurado como `[ ]`.
+- PR body usa `Refs #244`.
+- El body repite el DoD post-merge abierto.
+- La bitácora es append-only y deja #244 abierta.
+
+### H02
+El body ahora explica correctamente que `REPLICA IDENTITY DEFAULT` alcanza porque los eventos se usan como señal de invalidación y no se depende de `OLD` completo.
+
+### Checks
+CI previo funcional `37175300008`: GREEN completo.
+
+CI de `e5f560810838d4678e29ba62cbe203bdb6b174ac`, run `37175915768`:
+- typecheck ✅
+- lint ✅
+- unit ✅
+- build ✅
+- audit ✅
+- bundle-budget ✅
+- db-tests relanzado sin cambios SQL posteriores.
+
+Vercel falla por cuota externa `api-deployments-free-per-day`; no es regresión de T-335.

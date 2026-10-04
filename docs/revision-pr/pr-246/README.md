@@ -14,9 +14,8 @@
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `7f6cf8b81b8e9fa7e35a82de47d5456fa40556a5` | 1 bloqueante + 1 mejora | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `e5f560810838d4678e29ba62cbe203bdb6b174ac` | **SIN BLOQUEANTES** | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado
 
-La implementación SQL está bien encaminada y el RED/GREEN remoto es auténtico. El bloqueo no está en la migración sino en el cierre de tarea: #244 exige una validación post-merge sobre Supabase Develop + PR #180, pero la ficha de la rama eliminó ese DoD y el PR usa `Closes #244`.
-
-No aprobar ni mergear hasta corregir PR246-H01.
+La implementación SQL y su RED/GREEN están verificadas. PR246-H01 y PR246-H02 quedaron corregidos en la Ronda 2. La PR puede mergearse; **#244 debe permanecer abierta** porque su último DoD solo puede validarse después de `migrate-develop` y de sincronizar PR #180.
