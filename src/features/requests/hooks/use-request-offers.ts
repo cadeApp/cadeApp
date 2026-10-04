@@ -116,7 +116,7 @@ export function useRequestOffers(
       staleTime: 0,
       retry: false,
       refetchOnWindowFocus: 'always',
-      refetchOnReconnect: 'always',
+      refetchOnReconnect: false, // REVIEW MUTATION H02
       refetchInterval: 30_000,
       refetchIntervalInBackground: false,
       enabled,
