@@ -1,90 +1,79 @@
-# Evidencia y comandos reproducibles — PR #242
+# Evidencia reproducible — PR #242
 
-## Ronda 1
+## Ronda 3
 
-SHA: `ddf7f5991257f98b2371f8f51659ea9d6e6d1c87`.
+HEAD:
 
-El contenedor no pudo resolver GitHub y no se inventó ejecución independiente. Ver `revisiones/ronda-1.md`.
+    320bab2cc25c2a772dad4c0826345c3be47e1e44
 
-## Ronda 2
+develop actual:
 
-SHA funcional: `3c469698bd551cd42022b3388562b935431e2999`.
+    3e5d5381dbf59717763f1927e1cf080504a9ebf1
 
-### CI #1076
+Comparación:
 
-Unit/coverage:
+    status: diverged
+    ahead_by: 8
+    behind_by: 1
+    mergeable: false
 
-    src/app/(courier)/courier/feed/page.test.tsx (3 tests) PASS
-    Test Files 117 passed (117)
-    Tests      1781 passed (1781)
+El commit de develop que falta es T-334 (#240).
 
-Build:
+### Diferencia contractual
 
-    ✓ Compiled successfully
-    /courier/feed  3.95 kB  159 kB
+develop:
 
-Bundle report:
+    CourierProfileData.onboardingComplete: boolean
+    profileData.onboardingComplete = courier.vehicle_type !== null
+    courier incompleto -> "Completá tu registro"
+    courier incompleto -> CTA "Continuar registro"
+    courier incompleto -> no "En revisión administrativa"
 
-    /courier/feed | 159 kB | OK
+HEAD #242:
 
-Workflow validators:
+    no onboardingComplete
+    no bloque de registro incompleto
 
-    verify-workflows: tests 49 · pass 49 · fail 0
-    verify-adr:       tests 6  · pass 6  · fail 0
+### Fuente documental
 
-### E2E Preview
+`admin_verify_document` actualiza:
 
-Run: `37160321196`
+    update public.courier_documents set status = v_target_status
+    if kind=license -> couriers.license_status = v_target_status
+    if kind=insurance -> couriers.insurance_status = v_target_status
 
-Status publicado:
+Por eso `courier_documents.status` es una fuente válida y más inmediata para submitted.
 
-    RESULT: success
-    TARGET_SHA: 3c469698bd551cd42022b3388562b935431e2999
+### Evidencia H04
 
-Chromium:
+Se abrió directamente:
 
-    1 flaky
-    main-flow.spec.ts:431 T-303 Flujo 5
-    primer intento: page.waitForURL timeout 30000 ms al salir de /login
-    retry #1: PASS
-    19 passed
+    src/features/courier-onboarding/evidence/T-325/360-06-feed-pending-real-docs.jpg
 
-Global settings:
+Observado:
 
-    3 passed
+    licencia -> Listo
+    seguro -> Listo
+    sin CTA "Ir al panel de repartidor"
 
-El flaky quedó registrado en issue #245 y no se atribuye a T-325.
+### Checks HEAD actual
 
-### Residual H04
+    Vercel: success
+    e2e-preview: pending al cierre de R3
+    CI workflow completo: aún sin run registrado para 320bab2
 
-No hay captura nueva ni sesión final:
+### Cierre siguiente
 
-    docs/tasks/log/T-325.md
-    # última entrada: Hotfix inicial, antes de arreglar H01/H02/H03
+Después de mergear origin/develop:
 
-    src/features/courier-onboarding/evidence/T-325/
-    # no existe 360-06-feed-pending-real-docs.jpg
-
-El cuerpo del PR sigue mostrando:
-
-    pnpm test -> 1 failed | 1776 passed
-    pnpm build -> /courier/feed 160 kB
-    Pendiente -> Verificar en navegador
-
-mientras el SHA actual ya tiene CI 1781/1781, bundle 159 kB y Vercel Ready.
-
-### Cierre esperado
-
-Sin cambios de código:
-
+    pnpm vitest run       "src/app/(courier)/courier/profile/page.test.tsx"       "src/app/(courier)/courier/feed/page.test.tsx"       src/features/courier-onboarding/components.test.tsx       src/features/offers/courier-panel.test.tsx
+    pnpm typecheck
+    pnpm lint
+    pnpm test
+    pnpm build
     git diff --check
+    pnpm vitest run tools/verify-fichas.test.ts
+    node .github/workflows/verify-workflows.test.mjs
+    node docs/adr/verify-adr.test.mjs
 
-Browser:
-- Preview de `fix/T-325-feed-real-documents`;
-- courier pending real;
-- confirmar licencia/seguro según persistencia;
-- confirmar ausencia de CTA hacia el mismo feed;
-- confirmar que /courier/onboarding/status sí conserva el CTA;
-- captura 360 px en evidence/T-325.
-
-Después actualizar bitácora, README evidencia, DoD de hotfix y cuerpo de PR.
+Revisión final: auditar CI/E2E del SHA combinado y evidencia visual de perfil.

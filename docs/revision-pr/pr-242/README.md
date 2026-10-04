@@ -1,4 +1,4 @@
-# PR #242 — T-325 hotfix · Feed pending con documentos reales
+# PR #242 — T-325 hotfix · Feed pending + perfil con documentos reales
 
 | | |
 |---|---|
@@ -6,42 +6,44 @@
 | **Tarea** | T-325 hotfix · issue #241 |
 | **Autor** | @Lautaro073 |
 | **Rama** | `fix/T-325-feed-real-documents` → `develop` |
-| **Base revisada** | `b4119ef3e16170decda0a1649fc35db207faa8b0` |
-| **SHA funcional R2** | `3c469698bd551cd42022b3388562b935431e2999` |
-| **Estado** | **Ronda 2 · CON BLOQUEANTE RESIDUAL (1)** |
+| **HEAD R3** | `320bab2cc25c2a772dad4c0826345c3be47e1e44` |
+| **develop actual** | `3e5d5381dbf59717763f1927e1cf080504a9ebf1` |
+| **Estado** | **Ronda 3 · CON BLOQUEANTES (2)** |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA | Resultado |
+|---|---|---|
+| 1 | `ddf7f5991257f98b2371f8f51659ea9d6e6d1c87` | H01–H03 abiertos |
+| 2 | `3c469698bd551cd42022b3388562b935431e2999` | H01–H03 cerrados; H04 abierto |
+| 3 | `320bab2cc25c2a772dad4c0826345c3be47e1e44` | H04 cerrado; H05–H06 abiertos |
+
+## Estado
+
+| ID | Sev. | Estado | Resumen |
 |---|---|---|---|
-| 1 | `ddf7f5991257f98b2371f8f51659ea9d6e6d1c87` | 3 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
-| 2 | `3c469698bd551cd42022b3388562b935431e2999` | H01/H02/H03 cerrados; H04 abierto | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
+| PR242-H01 | alto | arreglado-verificado | page → documentos reales |
+| PR242-H02 | medio | arreglado-verificado | sin CTA circular |
+| PR242-H03 | medio | arreglado-verificado | authError no se degrada |
+| PR242-H04 | medio | arreglado-verificado | evidencia/bitácora del feed cerradas |
+| PR242-H05 | alto | abierto | la rama diverge de T-334 y hoy pierde `onboardingComplete` |
+| PR242-H06 | medio | abierto | cambios autorizados de perfil sin evidencia de navegador del head combinado |
 
-## Estado por hallazgo
+## Alcance
 
-| ID | Título | Sev. | Estado |
-|---|---|---|---|
-| PR242-H01 | Los tests no cubrían el cableado page → courier_documents | alto | arreglado-verificado |
-| PR242-H02 | StatusView dejaba un CTA circular dentro del feed | medio | arreglado-verificado |
-| PR242-H03 | authError se degradaba a documents=[] | medio | arreglado-verificado |
-| PR242-H04 | La entrega no cerró bitácora/evidencia del SHA corregido | medio | abierto |
+Lautaro073 confirmó explícitamente durante Ronda 3 que las ampliaciones de `/courier/profile` fueron autorizadas. No se consideran desvío de alcance.
 
-## Verificación R2
+La fuente documental elegida es válida: `admin_verify_document` actualiza `courier_documents.status` y también los campos espejo de `couriers`; leer `courier_documents` permite mostrar `submitted` antes de la revisión admin.
 
-- CI #1076 del SHA `3c469698bd551cd42022b3388562b935431e2999`: success.
-- Unit/coverage: **117 archivos · 1781/1781 tests**.
-- `page.test.tsx`: **3/3**.
-- Build: `/courier/feed` **159 kB** First Load JS (presupuesto 180 kB).
-- Vercel: success.
-- E2E Preview publicó success sobre `TARGET_SHA=3c469698bd551cd42022b3388562b935431e2999`.
-- E2E tuvo 1 flaky ajeno a T-325 (T-303 Flujo 5, login); registrado como issue #245.
+## Estado de rama
 
-## Residual
+Contra el `develop` actual:
 
-No hay arreglo de producto pendiente. Falta cerrar la **entrega**:
+- ahead: 8
+- behind: 1
+- status: diverged
+- GitHub: **mergeable=false**
 
-1. entrada append-only de Ronda 1/2 del hotfix en `docs/tasks/log/T-325.md`;
-2. evidencia de navegador del Preview ya disponible, con un courier pending real;
-3. actualizar README de evidencia, DoD del hotfix y cuerpo del PR con el SHA/checks actuales.
+El commit que falta es T-334 (#240), que modificó exactamente `profile/page.tsx`, `courier-profile-view.tsx` y sus tests.
 
-No aprobar ni mergear hasta cerrar H04.
+No mergear hasta integrar `develop`, preservar ambos contratos y revalidar el SHA resultante.

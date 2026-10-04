@@ -1,24 +1,21 @@
-# Lecciones — PR #242 (T-325 hotfix)
+# Lecciones — PR #242 / T-325 hotfix
 
-## Ronda 1
+## Ronda 3
 
-No se propuso AG nueva. H01/H03 repiten P08 y H02 P06.
+La ampliación de `/courier/profile` fue confirmada como autorizada por Lautaro073; no se trata como desvío.
 
-## Ronda 2
+El nuevo problema no es la autorización sino **la integración temporal entre ramas**:
 
-Los tres defectos técnicos quedaron cerrados. Aparece un único patrón de proceso:
+- T-325 amplió perfil sobre una base anterior;
+- mientras la PR seguía abierta, T-334 se mergeó a `develop` y cambió los mismos archivos;
+- el branch quedó diverged y su árbol aislado no contiene `onboardingComplete`.
 
-- **H04** no necesita regla nueva: `revisar-pr` ya dice que checks sin evidencia pegada o bitácora sin sesión final son bloqueantes.
-- El dato útil es que un commit puede estar técnicamente correcto y CI puede estar completamente verde, pero el cuerpo/bitácora seguir describiendo el SHA anterior. Es una variante de `P03-comentario-contradice-codigo`.
+Esto encaja en controles existentes: un check verde del branch no prueba compatibilidad con un contrato que aterrizó después en base. No se propone AG nueva; la regla práctica ya es sincronizar base antes del cierre final y revalidar consumidores compartidos.
 
-### Flaky ajeno
+## Evidencia
 
-El E2E exact-head de T-325 expuso un flaky en T-303 al esperar salir de `/login`. Como la regla 40 obliga a registrar pruebas inestables en vez de confiar en retries, se abrió **issue #245**. No se carga como hallazgo de PR #242 porque no toca sus archivos ni su comportamiento.
+H04 demostró otra vez que abrir la captura real aporta información distinta de leer el README. Se verificó directamente `360-06`.
 
 ## Sin AG nueva
 
-La prevención ya existe:
-
-1. cerrar sesión append-only después del último commit funcional;
-2. actualizar el cuerpo con outputs del SHA actual;
-3. no confundir CI verde con evidencia manual cuando la PR declara esa verificación pendiente.
+H05 se puede prevenir con la rutina de sincronización final + tests que fijen los dos contratos. H06 es la directiva visual ya existente.
