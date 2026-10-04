@@ -48,3 +48,12 @@ H02 cierra al cambiar de una lista de formas directas a un control que **resuelv
 La lección es concreta: para controles de navegación, cubrir `router.push('/')` no basta si `router.push(target)` puede recibir un literal root definido localmente. El alcance razonable no requiere análisis de flujo interarchivo, pero sí las variables/helpers locales simples que el propio módulo puede resolver de manera determinista.
 
 No se propone AG nueva; queda cubierto por P08 / AG-61 y por la exigencia de mutaciones discriminantes.
+
+
+## Ronda 4 extraordinaria
+
+La validación personal posterior encontró una diferencia que los tests del guard no podían ver: **calcular correctamente el destino no garantiza que una navegación cliente vuelva a ejecutar la frontera que calcula ese destino**.
+
+Cuando una regla depende de middleware/sesión y el origen es un Link cliente, hace falta al menos una regresión browser-level que preserve el mismo contexto y cookies entre login → 404 → retorno.
+
+No se concluye todavía si la causa es router cache o pérdida de cookie; el diagnóstico debe distinguirlas antes de tocar auth.

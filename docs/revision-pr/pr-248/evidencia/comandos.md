@@ -180,3 +180,35 @@ Tras restaurar:
 Vercel del SHA final:
 - failure por `api-deployments-free-per-day`;
 - no requiere revalidación visual porque R3 no modifica runtime/producto.
+
+
+## Ronda 4 — validación manual que reabre H04
+
+Origen informado:
+
+    http://localhost:3000
+
+Resultado:
+
+    login courier -> /courier/feed
+    404 -> visible
+    Ir al inicio href=/login
+    click -> /login   # FAIL, esperado /courier/feed
+
+Anónimo:
+
+    404 -> /login     # PASS
+
+Diagnóstico requerido:
+
+    misma page + mismo browser context
+    inspeccionar solo cookie names/domain/path, nunca valores
+    comparar antes de 404 / después de 404 / después de click
+    si click queda en /login, hard navigate /login sin reloguear
+
+Regresión E2E requerida:
+
+    loginAsCourier()
+    page.goto('/t336-404-session-regression')
+    click 'Ir al inicio'
+    expect pathname === '/courier/feed'
