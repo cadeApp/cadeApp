@@ -693,3 +693,106 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
     expect(fakeConsents.store.get(`${currentUserId}:courier_contract:1.0`)?.accepted_at).toBe(initialTimestamp);
   });
 });
+
+describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboarding exitoso', () => {
+  const currentUserId = 'courier-current-user-uuid';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** Mismo cableado que el happy path; solo cambia el error del paso que falla. */
+  function setupClients(failures: { consents?: boolean; documents?: boolean }) {
+    const consentsResult = {
+      error: failures.consents ? { message: 'consents write failed' } : null,
+    };
+    const mockUpsertConsents = vi.fn().mockResolvedValue(consentsResult);
+    const mockUpsertDocuments = vi.fn().mockResolvedValue({
+      error: failures.documents ? { message: 'courier_documents write failed' } : null,
+    });
+
+    vi.mocked(serverAuth.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+          error: null,
+        }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+          };
+        }
+        if (table === 'courier_documents') {
+          return { upsert: mockUpsertDocuments };
+        }
+        return { select: vi.fn().mockReturnThis() };
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+    const mockAdminUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    });
+    vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'couriers') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            update: mockAdminUpdate,
+          };
+        }
+        if (table === 'consents') {
+          return { upsert: mockUpsertConsents };
+        }
+        return { select: vi.fn().mockReturnThis() };
+      }),
+    } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+    return { mockAdminUpdate, mockUpsertConsents, mockUpsertDocuments };
+  }
+
+  const validInput = {
+    dni: '38123456',
+    vehicleType: 'moto',
+    vehiclePlate: 'A 123 BCD',
+    documents: {
+      dni_front: 'courier/courier-current-user-uuid/dni_front_1.jpg',
+      dni_back: 'courier/courier-current-user-uuid/dni_back_1.jpg',
+      selfie: 'courier/courier-current-user-uuid/selfie_1.jpg',
+      avatar: 'courier/courier-current-user-uuid/avatar_1.jpg',
+    },
+    consents: {
+      tos: true,
+      privacy: true,
+      courierContract: true,
+      tosVersion: '1.0',
+      privacyVersion: '1.1',
+      courierContractVersion: '1.0',
+    },
+  };
+
+  it('si falla el upsert de consentimientos, no se escribe el marcador del courier', async () => {
+    const { mockAdminUpdate, mockUpsertConsents } = setupClients({ consents: true });
+
+    const result = await courierOnboardingAction(validInput);
+
+    expect(mockUpsertConsents).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    expect(mockAdminUpdate).not.toHaveBeenCalled();
+  });
+
+  it('si falla el upsert de documentos, no se escribe el marcador del courier', async () => {
+    const { mockAdminUpdate, mockUpsertDocuments } = setupClients({ documents: true });
+
+    const result = await courierOnboardingAction(validInput);
+
+    expect(mockUpsertDocuments).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    expect(mockAdminUpdate).not.toHaveBeenCalled();
+  });
+});
