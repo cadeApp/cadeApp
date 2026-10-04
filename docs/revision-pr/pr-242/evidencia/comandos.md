@@ -1,135 +1,90 @@
 # Evidencia y comandos reproducibles — PR #242
 
-## SHA de Ronda 1
+## Ronda 1
 
-`ddf7f5991257f98b2371f8f51659ea9d6e6d1c87`
+SHA: `ddf7f5991257f98b2371f8f51659ea9d6e6d1c87`.
 
-Base: `b4119ef3e16170decda0a1649fc35db207faa8b0`.
+El contenedor no pudo resolver GitHub y no se inventó ejecución independiente. Ver `revisiones/ronda-1.md`.
 
-GitHub compare informó:
+## Ronda 2
 
-    status: ahead
-    ahead_by: 1
-    behind_by: 0
+SHA funcional: `3c469698bd551cd42022b3388562b935431e2999`.
 
-## Limitación del entorno
+### CI #1076
 
-Intento real del revisor:
+Unit/coverage:
 
-    git ls-remote https://github.com/cadeApp/cadeApp.git       refs/heads/fix/T-325-feed-real-documents refs/heads/develop
+    src/app/(courier)/courier/feed/page.test.tsx (3 tests) PASS
+    Test Files 117 passed (117)
+    Tests      1781 passed (1781)
 
-Resultado:
+Build:
 
-    fatal: unable to access 'https://github.com/cadeApp/cadeApp.git/':
-    Could not resolve host: github.com
+    ✓ Compiled successfully
+    /courier/feed  3.95 kB  159 kB
 
-Por eso no se registra ningún RED/GREEN como ejecutado por la revisión en R1.
+Bundle report:
 
-## Batería independiente para reproducir en R2
+    /courier/feed | 159 kB | OK
 
-El siguiente arnés se corre en un worktree limpio del SHA a revisar. Las mutaciones se hacen solo dentro del worktree temporal y se restauran copiando el archivo original guardado en `/tmp`, nunca con rebase/amend.
+Workflow validators:
 
-### H01 — cortar el cableado página → CourierFeed
+    verify-workflows: tests 49 · pass 49 · fail 0
+    verify-adr:       tests 6  · pass 6  · fail 0
 
-Baseline esperado:
+### E2E Preview
 
-    pnpm vitest run       "src/app/(courier)/courier/feed/page.test.tsx"       src/features/offers/courier-panel.test.tsx
+Run: `37160321196`
 
-Mutación:
+Status publicado:
 
-```bash
-set -euo pipefail
-FILE='src/app/(courier)/courier/feed/page.tsx'
-TMP="$(mktemp -d)"
-cp "$FILE" "$TMP/page.tsx"
+    RESULT: success
+    TARGET_SHA: 3c469698bd551cd42022b3388562b935431e2999
 
-python - <<'PY'
-from pathlib import Path
-p=Path("src/app/(courier)/courier/feed/page.tsx")
-s=p.read_text()
-old="      documents={documents}\n"
-if old not in s:
-    raise SystemExit("objetivo H01 no encontrado")
-p.write_text(s.replace(old, "      documents={undefined}\n", 1))
-PY
+Chromium:
 
-pnpm vitest run "src/app/(courier)/courier/feed/page.test.tsx"
-cp "$TMP/page.tsx" "$FILE"
-pnpm vitest run "src/app/(courier)/courier/feed/page.test.tsx"
-```
+    1 flaky
+    main-flow.spec.ts:431 T-303 Flujo 5
+    primer intento: page.waitForURL timeout 30000 ms al salir de /login
+    retry #1: PASS
+    19 passed
 
-Criterio: mutado RED por pérdida de los documentos; restaurado GREEN.
+Global settings:
 
-### H02 — reintroducir el CTA circular
+    3 passed
 
-Tras el arreglo esperado `showFeedButton={false}`:
+El flaky quedó registrado en issue #245 y no se atribuye a T-325.
 
-```bash
-set -euo pipefail
-FILE='src/features/offers/components/courier-feed.tsx'
-TMP="$(mktemp -d)"
-cp "$FILE" "$TMP/courier-feed.tsx"
+### Residual H04
 
-python - <<'PY'
-from pathlib import Path
-p=Path("src/features/offers/components/courier-feed.tsx")
-s=p.read_text()
-old='<StatusView documents={documents} showFeedButton={false} />'
-if old not in s:
-    raise SystemExit("objetivo H02 no encontrado")
-p.write_text(s.replace(old, '<StatusView documents={documents} />', 1))
-PY
+No hay captura nueva ni sesión final:
 
-pnpm vitest run src/features/offers/courier-panel.test.tsx
-cp "$TMP/courier-feed.tsx" "$FILE"
-pnpm vitest run src/features/offers/courier-panel.test.tsx
-```
+    docs/tasks/log/T-325.md
+    # última entrada: Hotfix inicial, antes de arreglar H01/H02/H03
 
-Criterio: mutado RED porque reaparece «Ir al panel de repartidor» en el feed pending; restaurado GREEN.
+    src/features/courier-onboarding/evidence/T-325/
+    # no existe 360-06-feed-pending-real-docs.jpg
 
-### H03 — volver a ignorar authError
+El cuerpo del PR sigue mostrando:
 
-Tras agregar el guard:
+    pnpm test -> 1 failed | 1776 passed
+    pnpm build -> /courier/feed 160 kB
+    Pendiente -> Verificar en navegador
 
-```bash
-set -euo pipefail
-FILE='src/app/(courier)/courier/feed/page.tsx'
-TMP="$(mktemp -d)"
-cp "$FILE" "$TMP/page.tsx"
+mientras el SHA actual ya tiene CI 1781/1781, bundle 159 kB y Vercel Ready.
 
-python - <<'PY'
-from pathlib import Path
-p=Path("src/app/(courier)/courier/feed/page.tsx")
-s=p.read_text()
-needle="""  if (authError) {
-    throw new Error('Error al verificar sesión del repartidor');
-  }
+### Cierre esperado
 
-"""
-if needle not in s:
-    raise SystemExit("objetivo H03 no encontrado")
-p.write_text(s.replace(needle, "", 1))
-PY
+Sin cambios de código:
 
-pnpm vitest run "src/app/(courier)/courier/feed/page.test.tsx"
-cp "$TMP/page.tsx" "$FILE"
-pnpm vitest run "src/app/(courier)/courier/feed/page.test.tsx"
-```
-
-Criterio: mutado RED en el caso authError; restaurado GREEN.
-
-## Checks de cierre de la próxima ronda
-
-    pnpm vitest run       "src/app/(courier)/courier/feed/page.test.tsx"       src/features/offers/courier-panel.test.tsx       src/features/courier-onboarding/components.test.tsx
-    pnpm typecheck
-    pnpm lint
-    pnpm test
-    pnpm build
     git diff --check
-    pnpm vitest run tools/verify-fichas.test.ts
-    node .github/workflows/verify-workflows.test.mjs
-    node docs/adr/verify-adr.test.mjs
 
-En `pnpm build`, leer el número de `/courier/feed`: debe ser <= 180 kB; no alcanza con que el job sea verde.
+Browser:
+- Preview de `fix/T-325-feed-real-documents`;
+- courier pending real;
+- confirmar licencia/seguro según persistencia;
+- confirmar ausencia de CTA hacia el mismo feed;
+- confirmar que /courier/onboarding/status sí conserva el CTA;
+- captura 360 px en evidence/T-325.
 
-CI detallado se audita solo cuando los bloqueantes estén resueltos.
+Después actualizar bitácora, README evidencia, DoD de hotfix y cuerpo de PR.

@@ -7,33 +7,41 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `fix/T-325-feed-real-documents` → `develop` |
 | **Base revisada** | `b4119ef3e16170decda0a1649fc35db207faa8b0` |
-| **SHA funcional revisado** | `ddf7f5991257f98b2371f8f51659ea9d6e6d1c87` |
-| **Estado** | **Ronda 1 · CON BLOQUEANTES (3)** |
-
-## Alcance
-
-La ficha de `develop` todavía no contiene el hotfix y la rama la amplía a archivos de `offers/feed`. No se registra A01 porque el issue #241 fue creado por `Lautaro073` y documenta explícitamente la decisión de resolverlo como hotfix de T-325 con `StatusView` + `getCourierDocumentsStatus`. La ampliación de producto ya tiene decisión de P1; la revisión controla que la expansión técnica quede acotada.
-
-El SHA revisado está **1 commit adelante / 0 atrás** de `develop` y GitHub lo reporta mergeable. El autor no creó ni tocó `docs/revision-pr/pr-242/**`.
+| **SHA funcional R2** | `3c469698bd551cd42022b3388562b935431e2999` |
+| **Estado** | **Ronda 2 · CON BLOQUEANTE RESIDUAL (1)** |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `ddf7f5991257f98b2371f8f51659ea9d6e6d1c87` | 3 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `3c469698bd551cd42022b3388562b935431e2999` | H01/H02/H03 cerrados; H04 abierto | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
-## Hallazgos
+## Estado por hallazgo
 
-| ID | Sev. | Estado | Resumen |
+| ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR242-H01 | alto | abierto | Los tests prueban `CourierFeed(documents=...)`, no que la página productiva lea/pase `courier_documents` |
-| PR242-H02 | medio | abierto | Reusar `StatusView` dentro de `/courier/feed` agrega un CTA que navega a la misma ruta |
-| PR242-H03 | medio | abierto | Un error de `auth.getUser()` se degrada a `documents=[]` y muestra estados falsos |
+| PR242-H01 | Los tests no cubrían el cableado page → courier_documents | alto | arreglado-verificado |
+| PR242-H02 | StatusView dejaba un CTA circular dentro del feed | medio | arreglado-verificado |
+| PR242-H03 | authError se degradaba a documents=[] | medio | arreglado-verificado |
+| PR242-H04 | La entrega no cerró bitácora/evidencia del SHA corregido | medio | abierto |
 
-## No auditado todavía
+## Verificación R2
 
-CI detallado se difiere hasta que no queden bloqueantes, conforme al protocolo. El comentario de Vercel indica cuota diaria agotada; no se interpreta como defecto de código.
+- CI #1076 del SHA `3c469698bd551cd42022b3388562b935431e2999`: success.
+- Unit/coverage: **117 archivos · 1781/1781 tests**.
+- `page.test.tsx`: **3/3**.
+- Build: `/courier/feed` **159 kB** First Load JS (presupuesto 180 kB).
+- Vercel: success.
+- E2E Preview publicó success sobre `TARGET_SHA=3c469698bd551cd42022b3388562b935431e2999`.
+- E2E tuvo 1 flaky ajeno a T-325 (T-303 Flujo 5, login); registrado como issue #245.
 
-## Entorno de revisión
+## Residual
 
-El contenedor de revisión no pudo resolver `github.com` por DNS, por lo que no hubo checkout local ni se inventan ejecuciones RED/GREEN. La inspección se hizo sobre blobs/patches del SHA remoto exacto. Las mutaciones independientes a reproducir están en [`evidencia/comandos.md`](evidencia/comandos.md).
+No hay arreglo de producto pendiente. Falta cerrar la **entrega**:
+
+1. entrada append-only de Ronda 1/2 del hotfix en `docs/tasks/log/T-325.md`;
+2. evidencia de navegador del Preview ya disponible, con un courier pending real;
+3. actualizar README de evidencia, DoD del hotfix y cuerpo del PR con el SHA/checks actuales.
+
+No aprobar ni mergear hasta cerrar H04.

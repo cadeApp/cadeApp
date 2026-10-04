@@ -1,23 +1,24 @@
 # Lecciones — PR #242 (T-325 hotfix)
 
-**Fuente:** 3 bloqueantes en Ronda 1.
+## Ronda 1
 
-## Sin AG nueva en esta ronda
+No se propuso AG nueva. H01/H03 repiten P08 y H02 P06.
 
-Los hallazgos repiten controles ya conocidos:
+## Ronda 2
 
-- **PR242-H01** es `P08-control-no-cubre-lo-que-dice` y la misma familia de pr-82/AG-88: demostrar el comportamiento con un dato inyectado no demuestra que el consumidor productivo tenga una fuente viva/real.
-- **PR242-H02** es enumeración incompleta (`P06`): al reutilizar una vista no alcanza con enumerar sus datos; también hay que enumerar las acciones contextuales que hereda.
-- **PR242-H03** vuelve a `P08`: una frontera de error que no está en la prueba permite que una falla de infraestructura se convierta en un estado de dominio aparentemente válido.
+Los tres defectos técnicos quedaron cerrados. Aparece un único patrón de proceso:
 
-No conviene agregar prosa nueva a AGENTS.md todavía; la mejora concreta es cerrar estos huecos con tests ejecutables.
+- **H04** no necesita regla nueva: `revisar-pr` ya dice que checks sin evidencia pegada o bitácora sin sesión final son bloqueantes.
+- El dato útil es que un commit puede estar técnicamente correcto y CI puede estar completamente verde, pero el cuerpo/bitácora seguir describiendo el SHA anterior. Es una variante de `P03-comentario-contradice-codigo`.
 
-## Decisión de alcance ya existente
+### Flaky ajeno
 
-La ficha de `develop` no contenía el hotfix al abrir la PR, pero el issue #241 fue creado por Lautaro073 y registra explícitamente la decisión de resolverlo dentro de T-325. Por eso no se genera un hallazgo de alcance por tocar `offers/feed`.
+El E2E exact-head de T-325 expuso un flaky en T-303 al esperar salir de `/login`. Como la regla 40 obliga a registrar pruebas inestables en vez de confiar en retries, se abrió **issue #245**. No se carga como hallazgo de PR #242 porque no toca sus archivos ni su comportamiento.
 
-La expansión adicional que pide la revisión (`page.test.tsx`, `status-view.tsx`, `components.test.tsx`) es consecuencia técnica de cerrar los hallazgos; debe quedar escrita en la sección Hotfix de la ficha antes del cierre.
+## Sin AG nueva
 
-## Advertencia de método
+La prevención ya existe:
 
-La sesión de revisión no tuvo checkout ejecutable: DNS del contenedor no resolvió `github.com`. La carpeta registra inspección y mutaciones a reproducir, pero no inventa resultados RED/GREEN. La Ronda 2 debe ejecutar la batería independiente sobre el SHA remoto nuevo.
+1. cerrar sesión append-only después del último commit funcional;
+2. actualizar el cuerpo con outputs del SHA actual;
+3. no confundir CI verde con evidencia manual cuando la PR declara esa verificación pendiente.
