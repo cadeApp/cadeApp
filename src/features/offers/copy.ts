@@ -60,20 +60,6 @@ export const OFFERS_COPY = {
   withdrawConfirmDescription: 'Si la retirás, el comercio ya no podrá aceptarla para este pedido.',
   withdrawConfirmAction: 'Sí, retirar oferta',
 
-  // En revisión (R03)
-  underReviewTitle: 'Estamos revisando tus datos',
-  underReviewDescription: 'Te avisamos por acá y por notificación cuando estés aprobado.',
-  docDniFront: 'DNI frente',
-  docDniBack: 'DNI dorso',
-  docSelfie: 'Selfie',
-  docProfilePhoto: 'Foto de perfil',
-  docLicense: 'Licencia de conducir (opcional)',
-  docInsurance: 'Seguro (opcional)',
-  docUploaded: 'Cargado',
-  docNotUploaded: 'No cargada',
-  completeDocsButton: 'Completar documentación opcional',
-  logoutButton: 'Cerrar sesión',
-
   // Navegación
   navRequests: 'Solicitudes',
   navMyOffers: 'Mis ofertas',

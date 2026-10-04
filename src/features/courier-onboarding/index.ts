@@ -6,6 +6,7 @@ export * from './schemas';
 export * from './copy';
 export { StepIndicator, type StepIndicatorProps } from './components/step-indicator';
 export { StatusView, type StatusViewProps } from './components/status-view';
+export type { CourierDocumentMetadata } from './queries';
 export {
   CourierProfileView,
   getDocumentStatusPresentation,

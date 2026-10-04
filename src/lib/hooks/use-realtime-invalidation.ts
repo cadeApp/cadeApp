@@ -138,7 +138,14 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
           );
         }
         channel = nextChannel;
-        channel.subscribe();
+        // T-333: un evento ocurrido entre el GET inicial y la readiness del canal se pierde.
+        // Al quedar SUBSCRIBED (también tras reconectar) se invalida una vez cada key del canal.
+        channel.subscribe((status: string) => {
+          if (disposed || status !== 'SUBSCRIBED') return;
+          for (const sub of subs) {
+            triggerInvalidation(sub.queryKey ?? currentOptions.queryKey);
+          }
+        });
       })
       .catch(() => {
         // mismo comportamiento tolerante que el catch previo de createClient;

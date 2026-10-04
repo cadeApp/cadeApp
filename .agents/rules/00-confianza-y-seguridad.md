@@ -40,4 +40,8 @@
 
 ## Dependencias
 - Solo las que lista la ficha, con versión exacta. Verificá el nombre exacto del paquete (typosquatting).
-- `pnpm audit` corre en CI; no lo silencies.
+- `pnpm audit` corre en CI y no se debilita. Solo se admite ignorar un GHSA puntual cuando no existe
+  versión corregida, el paquete no llega a producción, Lautaro073 lo aprobó y la excepción está documentada
+  en `docs/runbooks/excepciones-de-auditoria.md` y vigilada por `tools/verify-audit-exceptions.test.ts`.
+  Nunca bajar el umbral, usar `--prod`, `|| true`, `continue-on-error`, ignorar paquetes completos ni
+  agregar otra vía de bypass.
