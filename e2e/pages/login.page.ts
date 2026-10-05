@@ -1,5 +1,12 @@
-import type { Page, Locator } from '@playwright/test';
+import { expect, type Page, type Locator } from '@playwright/test';
+import { authCopy } from '@/features/auth/copy';
+import { waitForFormHydration } from '../helpers/hydration';
 import { BasePage } from './base.page';
+
+const isOutsideLogin = (url: URL): boolean =>
+  url.pathname !== '/login' && !url.pathname.startsWith('/login/');
+
+type LoginOutcome = 'navigated' | 'form-error' | 'pending';
 
 /**
  * Page Object para la pantalla de inicio de sesión (/login).
@@ -26,18 +33,46 @@ export class LoginPage extends BasePage {
     return this.page.getByRole('link', { name: /registrarse|crear cuenta/i });
   }
 
+  /**
+   * Error que muestra el formulario. Se busca por texto: `getByRole('alert')` también encuentra el
+   * `next-route-announcer` de Next.
+   */
+  get formError(): Locator {
+    return this.page
+      .getByText(authCopy.login.errorInvalidCredentials)
+      .or(this.page.getByText(authCopy.login.errorGeneric));
+  }
+
   async navigate(): Promise<void> {
     await this.goto('/login');
   }
 
   async login(email: string, password: string): Promise<void> {
+    // T-337: antes de hidratar, el click hace un submit nativo y lo tipeado no llega al estado de React.
+    await waitForFormHydration(this.submitButton);
     await this.emailInput.fill(email);
     await this.passwordInput.fill(password);
+    await expect(this.emailInput).toHaveValue(email);
+    await expect(this.passwordInput).toHaveValue(password);
     await this.submitButton.click();
-    await this.page.waitForURL(
-      (url) => url.pathname !== '/login' && !url.pathname.startsWith('/login/'),
-      { timeout: 30000 }
-    );
+
+    // Sale de /login o el formulario muestra su error: con error se falla ya, con su texto.
+    const outcome = async (): Promise<LoginOutcome> => {
+      if (isOutsideLogin(new URL(this.page.url()))) return 'navigated';
+      return (await this.formError.isVisible()) ? 'form-error' : 'pending';
+    };
+    await expect
+      .poll(outcome, {
+        timeout: 30_000,
+        message: 'El login no salió de /login ni mostró un error del formulario',
+      })
+      .not.toBe('pending');
+    if ((await outcome()) === 'form-error') {
+      const shown = await this.formError.first().innerText();
+      throw new Error(`LoginPage.login: el formulario mostró «${shown}» y se quedó en /login`);
+    }
+
+    await this.page.waitForURL(isOutsideLogin, { timeout: 30000 });
     await this.waitForNoSkeletons();
   }
 }
