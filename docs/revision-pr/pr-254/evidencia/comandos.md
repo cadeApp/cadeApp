@@ -79,3 +79,70 @@ git status --short
 ```
 
 Además, registrar en `docs/tasks/log/T-302.md` la mutación concreta, el comando y las líneas de resumen RED y verde. No crear ni adulterar tests para obtener verde.
+
+---
+
+# Ronda 2 — SHA `13caf3f68c5c28613487290a0797852c8a161b7c`
+
+## Verificación estática de H01–H04
+
+```bash
+grep -nE 'if \(await .*isVisible|if \(await .*isEnabled|page\.goto\(.*/courier/onboarding/status|adminClient\.rpc\(.admin_decide_courier' e2e/specs/courier-onboarding.spec.ts
+```
+
+En el SHA R2 no aparecen los escapes originales.
+
+```bash
+grep -nE 'resetCourierToPendingOnboarding|enrollAdminTotpFactor|#totp-code|decision-reason|DNI_HMAC_SECRET' e2e/specs/courier-onboarding.spec.ts
+```
+
+Resultado relevante observado:
+- helper de reset: línea 37;
+- helper TOTP: línea 63;
+- fallback de secreto HMAC: líneas 214 y 456;
+- flujo browser MFA/aprobación presente en la sección final.
+
+## H05 · E2E no ejecutado post-arreglo
+
+La sesión de bitácora R2 enumera:
+
+```text
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm exec playwright test --list
+```
+
+No registra:
+
+```bash
+pnpm exec playwright test e2e/specs/courier-onboarding.spec.ts --project=chromium --workers=1
+```
+
+Tampoco registra las cuatro mutaciones RED solicitadas en R1.
+
+## H06 · Paridad del secreto DNI
+
+```bash
+grep -n "DNI_HMAC_SECRET" e2e/specs/courier-onboarding.spec.ts src/server/env.ts src/features/courier-onboarding/actions.ts
+```
+
+El spec usa fallback; `server/env.ts` declara el secreto obligatorio y la action usa el valor de servidor.
+
+## CI observado en R2
+
+```text
+branch: ahead 6 / behind 0
+Vercel: success
+CI typecheck: success
+CI unit: success
+CI db-tests: success
+CI build: success
+CI lint: cancelled
+CI audit: cancelled
+CI bundle-budget: queued (al momento de revisar)
+approval-policy: failure — El PR requiere aprobación vigente de Lautaro073.
+e2e-preview: repository_dispatch en cola/pendiente; sin status publicado para el SHA
+```
+
+La aprobación de Lautaro no se pide hasta que esta revisión quede sin bloqueantes.

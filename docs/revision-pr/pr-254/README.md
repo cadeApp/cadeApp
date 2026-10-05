@@ -6,9 +6,8 @@
 | **Tarea** | T-302 (Fase 3) |
 | **Autor** | @asako669 |
 | **Rama** | `feat/T-302-courier-onboarding-e2e` → `develop` |
-| **Base revisada** | `ba3ade599b4dd5aed39f9720ad5a256cf26efb82` |
-| **Head revisado** | `32477a05841ca669ac9ac7a36f929f2261e4c926` |
-| **Tamaño original de la ronda** | 2 archivos, +524 / -0 |
+| **Base revisada (R2)** | `f1ae16106e61bbb6707b4adf17f7572bafbbd23b` |
+| **Head revisado (R2)** | `13caf3f68c5c28613487290a0797852c8a161b7c` |
 | **Estado** | bloqueada |
 
 ## Rondas
@@ -16,25 +15,29 @@
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `32477a05841ca669ac9ac7a36f929f2261e4c926` | 4 bloqueantes | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `13caf3f68c5c28613487290a0797852c8a161b7c` | 2 bloqueantes nuevos; H01–H04 arreglados sin verificar | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR254-H01 | La prueba DoD de DNI no ejecuta la deduplicación de producción | alta | abierto |
-| PR254-H02 | Los flujos UI tienen escapes que permiten verde sin interacción obligatoria | alta | abierto |
-| PR254-H03 | El courier del fixture ya llega aprobado y con onboarding completo | alta | abierto |
-| PR254-H04 | El MFA se eleva en otra sesión y la RPC directa oculta el fallo del navegador | alta | abierto |
+| PR254-H01 | La prueba DoD de DNI no ejecuta la deduplicación de producción | alta | arreglado-sin-verificar |
+| PR254-H02 | Los flujos UI tienen escapes que permiten verde sin interacción obligatoria | alta | arreglado-sin-verificar |
+| PR254-H03 | El courier del fixture ya llega aprobado y con onboarding completo | alta | arreglado-sin-verificar |
+| PR254-H04 | El MFA se eleva en otra sesión y la RPC directa oculta el fallo del navegador | alta | arreglado-sin-verificar |
+| PR254-H05 | No hay ejecución GREEN del E2E corregido ni mutaciones RED de Ronda 1 | alta | abierto |
+| PR254-H06 | El spec inventa un DNI_HMAC_SECRET alternativo | alta | abierto |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. Corregir los cuatro bloqueantes únicamente en el spec y actualizar la bitácora.
-2. Demostrar RED/verde con mutaciones reales sobre las propiedades corregidas; no sustituir el flujo por consultas/RPC directas.
-3. Ejecutar `pnpm typecheck && pnpm lint && pnpm test` y el E2E de T-302 contra el Preview.
-4. Pedir una nueva ronda independiente. Los estados `verificado_en_sha` quedan exclusivamente para la revisión.
+1. Ejecutar el spec T-302 completo en GREEN después de los arreglos.
+2. Ejecutar y documentar las cuatro mutaciones RED pedidas en Ronda 1, restaurando todo antes del commit.
+3. Eliminar el secreto HMAC de fallback y fallar explícitamente si `DNI_HMAC_SECRET` no existe.
+4. Devolver el primer checkbox del DoD a pendiente hasta que exista la evidencia RED/GREEN; no reescribir sesiones anteriores de la bitácora.
+5. Pedir Ronda 3. La aprobación de Lautaro073 se hace recién cuando la revisión quede sin bloqueantes.
 
 ## Para el análisis posterior
 
-Esta ronda no propone AG nueva: repite P04/P08 y la lección de enumerar la clase completa. Ver [`lecciones.md`](lecciones.md).
+Ronda 2 no agrega una AG nueva: H05 refuerza P08/AG-70 (evidencia que no prueba la propiedad) y H06 es otra instancia de una precondición de test que puede divergir de producción.

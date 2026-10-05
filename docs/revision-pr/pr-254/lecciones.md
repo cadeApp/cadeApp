@@ -1,28 +1,25 @@
 # Lecciones de la PR #254 para `AGENTS.md` y las reglas
 
-**Fuente:** 4 hallazgos de la ronda 1. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 6 hallazgos tras dos rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
 
-El E2E fue escrito como "best effort": si un elemento no está, se omite; si una transición UI no funciona, se reemplaza por navegación/RPC directa. Eso produce controles verdes que prueban precondiciones o efectos laterales, no el flujo que nombran.
+El patrón sigue siendo P08: un control puede parecer alineado con el flujo y aun medir otra cosa. R1 lo mostró con fallbacks; R2 lo muestra con evidencia de `--list` presentada como si validara ejecución y con una precondición criptográfica que puede usar otra clave.
 
 ## Lecciones propuestas
 
-No se agrega una AG nueva en esta ronda. Los cuatro casos ya están cubiertos por patrones existentes:
+No se agrega AG nueva en R2.
 
-- **P04-test-tautologico:** un camino condicional sin aserción positiva puede pasar sin ejecutar la conducta.
-- **P08-control-no-cubre-lo-que-dice:** UNIQUE + boolean local no prueban la deduplicación de la action; un courier ya aprobado no prueba onboarding.
-- **AG-37:** al encontrar el primer `if (isVisible)` se barrió la clase completa antes de cerrar la ronda.
-- **AG-76 (analogía):** una ausencia/negativa no alcanza; el control debe afirmar la acción positiva que la arquitectura promete.
+- H05 refuerza **AG-70 / P08**: descubrir tests no equivale a ejecutarlos, y un RED anterior no verifica una prueba que fue reescrita después.
+- H06 refuerza la regla de paridad entre test y producción: una precondición criptográfica usa la misma clave/configuración o falla cerrada; nunca inventa un valor alternativo.
 
 ## Qué cambiar, en orden de impacto
 
-1. Hacer obligatorias las interacciones UI y eliminar fallbacks que ejecutan la transición por otra vía.
-2. Preparar estados iniciales que representen el escenario real bajo prueba.
-3. Mantener la misma sesión de autenticación cuando el invariante depende de AAL/MFA.
-4. Para cada arreglo, demostrar una mutación que rompa exactamente esa propiedad y haga fallar el E2E corregido.
+1. Exigir GREEN real del E2E después de cada reescritura sustancial.
+2. Guardar salida RED de las mutaciones exactas que protegen cada invariante.
+3. Fallar cerrado cuando falta configuración sensible que define la semántica del escenario.
 
 ## Advertencias
 
-- Esta PR es una tarea puramente E2E: sustituir UI por llamadas directas tiene más impacto que en un test de integración común.
-- No se propone tocar fixtures compartidos ni producción; la ficha permite resolver los cuatro hallazgos dentro del spec.
+- `approval-policy` rojo no es un hallazgo técnico aquí: pide la aprobación humana de Lautaro073 y debe quedar para el final.
+- La bitácora es append-only: errores narrativos previos se aclaran en una entrada nueva, no se reescriben.
