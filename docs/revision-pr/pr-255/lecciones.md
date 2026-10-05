@@ -10,18 +10,19 @@ Esto cae directamente en **P01 — contrato de framework no verificado**.
 
 ## Lecciones propuestas
 
-No se propone una AG nueva en esta ronda.
+No se propone una AG nueva.
 
-Ya existe la regla general que obliga a demostrar el comportamiento del control y el catálogo ya tiene P01. El dato útil de esta PR es un ejemplo nuevo: al usar internals de un framework como señal de readiness, hay que comparar esa señal contra la condición que usa el propio framework para aceptar eventos, no contra una propiedad que aparece durante una fase anterior.
+Ya existe la regla general que obliga a demostrar el comportamiento del control y el catálogo ya tiene P01. La ronda 2 confirmó la lección concreta: cuando una espera depende de internals de framework, el control debe imitar la condición que usa el propio framework para considerar el objeto operativo, y la prueba tiene que construir explícitamente el estado intermedio que diferencia ambas señales.
 
-## Qué cambiar, en orden de impacto
+## Qué se cambió
 
-1. Corregir H01 manteniendo la solución en E2E.
-2. Dejar en la ficha la señal real que se verificó, no «`onSubmit` existe» como sinónimo de commit.
-3. Conservar el test real de chunks y sumar un caso dirigido que haga fallar el falso positivo pre-commit.
-4. No tocar `AGENTS.md` por un único caso no crítico.
+1. `waitForFormHydration` dejó de usar `onSubmit` como señal suficiente.
+2. La ficha documenta `onSubmit + Fiber mounted`.
+3. Se conservó el E2E con chunks retenidos.
+4. Se sumó un test dirigido a «props presentes + Fiber Hydrating».
+5. La ronda independiente atacó además ancestro Hydrating, Placement, árbol detached, falta de Fiber y ciclo.
 
 ## Advertencias
 
-- T-337 es una tarea deliberadamente apoyada en internals de React 18.3.1; el patrón puede no generalizar a tareas de producto.
-- Si React cambia de versión, los nombres/flags internos deben revalidarse antes de reutilizar el helper.
+- T-337 se apoya deliberadamente en internals de React 18.3.1; si React cambia de versión, las keys, flags y criterio deben revalidarse.
+- Un solo caso no crítico no alcanza para sumar otra regla a `AGENTS.md`.
