@@ -619,3 +619,29 @@ y luego agregó esas rutas a la propia ficha.
 `AGENTS.md` y la regla 50 ordenan detenerse y pedir autorización a Lautaro cuando hace falta tocar archivos fuera de ficha. El agente no puede autoampliar su alcance.
 
 No se cuestiona el fix técnico; falta una decisión P1 explícita para regularizar el alcance o separar el fix.
+
+---
+
+## Ronda 10 — decisión P1 y cierre
+
+P1 eligió **A** y autorizó explícitamente la ampliación excepcional de T-307 a:
+
+```text
+src/lib/hooks/use-realtime-invalidation.ts
+src/lib/hooks/use-realtime-invalidation.test.tsx
+```
+
+Con esto PR180-H11 queda cerrado.
+
+Evidencia técnica ya verificada en Ronda 9:
+- CI final `37217156049`: GREEN.
+- trusted exact-head `37217237829`: GREEN.
+- Realtime: GREEN.
+- offline/form: GREEN.
+- reconnect: GREEN.
+- subscriber H10: GREEN.
+- mutación H05: RED selectivo en `37215513829`.
+- mutación H02 efectiva: RED selectivo en `37216660101`.
+- restauración final: GREEN.
+
+Resultado final: **SIN BLOQUEANTES**.

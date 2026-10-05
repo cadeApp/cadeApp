@@ -68,3 +68,8 @@ No se agrega número AG nuevo.
 - Una mutación que no discrimina no debe presentarse como evidencia: `refetchOnReconnect:false` quedó GREEN porque el latch de T-333 seguía cumpliendo la propiedad; hubo que mutar el mecanismo efectivo completo.
 - Un GREEN exact-head + RED bajo mutación + GREEN restaurado da evidencia fuerte de que el E2E protege la propiedad real.
 - Un fix técnicamente correcto no autoriza al agente a ampliar su propia ficha. Cuando el diagnóstico exige otro archivo, debe detenerse y obtener autorización del dueño.
+
+## Ronda 10
+
+- Una ampliación de alcance necesaria puede regularizarse por decisión explícita del dueño, pero nunca por autoautorización del agente.
+- La autorización P1 no sustituye la evidencia técnica: en este caso el fix ya tenía GREEN exact-head y mutaciones discriminantes antes de regularizar el alcance.

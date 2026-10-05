@@ -19,3 +19,5 @@
 - **Revisión independiente — ronda 8:** SHA `a3f85191c476a93ba7b6bdf4e8feccd2d1dc29ae` — Preview exacto READY; T-335 aplicada al mismo Supabase Develop; offline/form ✅, reconnect ✅, **Realtime ❌ 3/3**. H09 cerrado en su alcance de versionado; nuevo bloqueante H10: Postgres Changes no entrega el INSERT real.
 
 - **Revisión independiente — ronda 9:** HEAD final `99cae80ae81c1f0a98e5824d14911ce1ec34ac6a` — código/CI/E2E técnicamente GREEN; mutaciones H05 y H02 discriminan correctamente; queda 1 decisión P1 por ampliación de archivos fuera de ficha autoautorizada por Asako.
+
+- **Revisión independiente — ronda 10:** P1 autorizó explícitamente la ampliación excepcional de alcance; H11 cerrado. Resultado final: **SIN BLOQUEANTES**. PR #180 lista para merge.
