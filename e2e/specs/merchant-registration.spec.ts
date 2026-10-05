@@ -72,6 +72,31 @@ function uniquePassword(): string {
   return `P@ssword_${randomUUID()}!`;
 }
 
+async function trackCreatedUserByEmailIfPresent(
+  registrationContext: StagingSeedContext,
+  exactEmail: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const perPage = 50;
+  const maxPages = 5;
+
+  for (let page = 1; page <= maxPages; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      throw new Error(`[E2E Admin Error] listUsers: ${error.message}`);
+    }
+    const match = data.users.find((u) => u.email === exactEmail);
+    if (match) {
+      trackEntityForCleanup(registrationContext, 'user', match.id);
+      return match.id;
+    }
+    if (!data.nextPage || data.users.length < perPage) {
+      break;
+    }
+  }
+  return null;
+}
+
 async function findProfileIdByDisplayName(displayName: string): Promise<string> {
   const admin = createAdminClient();
   let foundId: string | null = null;
@@ -141,6 +166,7 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
       .getByRole('checkbox', { name: /acepto los términos y la política de privacidad/i })
       .check();
     await page.getByRole('button', { name: /^crear cuenta$/i }).click();
+    await trackCreatedUserByEmailIfPresent(registrationContext, email);
 
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /revisá tu email/i })).toBeVisible();
@@ -264,6 +290,7 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     trackEntityForCleanup(registrationContext, 'user', profileId);
 
     const state = await readConsentState(profileId);
+    expect(state.profile?.role).toBe('merchant');
     expect(state.profile?.consent_status).toBe('pending');
     expect(state.consents).toEqual([]);
 
