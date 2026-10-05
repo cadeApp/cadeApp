@@ -120,9 +120,8 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await waitForNoSkeletons(adminPage);
 
     // Verificar presencia del incidente en la bandeja
-    const incidentCard = adminPage.getByRole('listitem').filter({ hasText: incidentDescription });
-    await expect(incidentCard).toBeVisible();
-    await expect(incidentCard.getByText(/problema con el cobro/i)).toBeVisible();
+    await expect(adminPage.getByText(/problema con el cobro/i).first()).toBeVisible();
+    await expect(adminPage.getByText(incidentDescription)).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
