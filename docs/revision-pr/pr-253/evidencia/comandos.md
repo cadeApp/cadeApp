@@ -21,3 +21,83 @@ git clone --branch feat/T-309-uploads-a11y --single-branch https://github.com/ca
 fatal: Could not resolve host: github.com
 ~~~
 No se presentan checks locales como ejecutados. CI no se inspecciona para cierre con bloqueantes.
+
+
+---
+
+# Ronda 2 — evidencia sobre 64f5b9153a5614ba2920e622857db18910137a42
+
+## Estado remoto
+~~~text
+PR Draft: true
+mergeable: true
+develop...branch: ahead 11 / behind 0
+diff actual: 10 archivos, todos dentro de T-309/revisión
+~~~
+
+## Cerrados
+- H01: dependency explícita 4.13.0 + AxeBuilder.
+- H03: sesiones ya no se reutilizan.
+- H04: seed matched con courier asignado.
+- H05: tags 2.0/2.1/2.2 A/AA.
+
+## H02 residual
+`DocumentUploadCard` pone el filename dentro de `role=status` al quedar success. El spec busca:
+~~~text
+getByRole('status').filter({ hasText: /cargado/i })
+~~~
+El texto “Cargado” está en otro span sin role=status.
+
+T-337 registra además que `getByRole('alert')` sin filtro encuentra también el next-route-announcer.
+
+## H09 — baseURL perdido
+Config:
+~~~text
+use.baseURL = PLAYWRIGHT_TEST_BASE_URL || https://cadeapp-staging.vercel.app
+use.contextOptions.reducedMotion = reduce
+~~~
+Spec:
+~~~text
+browser.newContext()
+browser.newContext()
+browser.newContext()
+~~~
+Los contextos manuales no reciben esas opciones y luego navegan con rutas relativas.
+
+## H10 — non-null
+~~~text
+const parsedDocs = JSON.parse(rawDocs!);
+~~~
+AGENTS §4 prohíbe `! non-null`.
+
+## H11 — JPEG truncado
+Probe:
+~~~text
+Buffer.from(base64,'base64').subarray(-2).toString('hex')
+=> 3f10
+~~~
+EOI JPEG esperado: `ffd9`.
+
+`compressImage` usa `new Image()` y rechaza en `img.onerror` antes de llamar a Storage.
+
+## H12 — rechazo por razón equivocada
+~~~text
+/mime type not allowed|mime type|invalid|violates/i
+~~~
+`violates` permite que una rotura RLS pase por “archivo inválido”.
+
+## H06 — cleanup
+El path se obtiene recién después del success locator + sessionStorage + JSON.parse. Si el objeto ya se creó y cualquiera de esos pasos falla, finally no recibe path.
+
+## H07
+Bitácora conserva salida concreta solo para quitar tags WCAG 2.2. Las demás mutaciones no incluyen fallo/exit code reproducible.
+
+## H08
+`package.json`:
+~~~text
+test = vitest run && workflow tests && ADR tests
+~~~
+Bitácora R2 registra esos componentes por separado, pero no `pnpm test` literal.
+
+## CI
+No inspeccionado como cierre por existir bloqueantes.
