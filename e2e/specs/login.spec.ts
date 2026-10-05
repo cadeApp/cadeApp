@@ -1,6 +1,6 @@
 import { test, expect, type Request, type Route } from '@playwright/test';
 import { authCopy } from '@/features/auth/copy';
-import { HYDRATION_WAIT_FLAG } from '../helpers/hydration';
+import { HYDRATION_WAIT_FLAG, waitForFormHydration } from '../helpers/hydration';
 import { LoginPage } from '../pages/login.page';
 
 /**
@@ -73,5 +73,40 @@ test.describe('T-337 — LoginPage.login espera la hidratación del formulario',
     expect(serverActionPosts).toHaveLength(1);
     expect(loginDocuments).toHaveLength(1);
     await expect(page).toHaveURL(/\/login$/);
+  });
+
+  // Contrato del helper (PR255-H01): React escribe las props antes del commit de la hidratación, así que un
+  // `onSubmit` presente no alcanza mientras el Fiber siga en Hydrating. No reemplaza el caso real de arriba.
+  test('waitForFormHydration espera a que el Fiber del formulario esté montado, no solo su onSubmit', async ({
+    page,
+  }) => {
+    await page.setContent('<form><button type="submit">Ingresar</button></form>');
+
+    // HostComponent (flags = Hydrating) → return → HostRoot (tag 3, flags 0), sin alternate: React 18.3.1.
+    await page.evaluate(() => {
+      const form = document.querySelector('form');
+      if (!form) throw new Error('[E2E Error] Falta el form del contrato');
+      const hostRoot = { tag: 3, flags: 0, return: null, alternate: null };
+      const target = { tag: 5, flags: 4096, return: hostRoot, alternate: null };
+      Reflect.set(form, '__reactProps$test', { onSubmit() {} });
+      Reflect.set(form, '__reactFiber$test', target);
+    });
+    const submit = page.getByRole('button', { name: 'Ingresar' });
+
+    await expect(waitForFormHydration(submit, { timeout: 2_000 })).rejects.toThrow(
+      /El formulario no se hidrató/
+    );
+
+    await page.evaluate(() => {
+      const form = document.querySelector('form');
+      if (!form) throw new Error('[E2E Error] Falta el form del contrato');
+      const target: unknown = Reflect.get(form, '__reactFiber$test');
+      if (typeof target !== 'object' || target === null) {
+        throw new Error('[E2E Error] Falta el Fiber del contrato');
+      }
+      Reflect.set(target, 'flags', 0);
+    });
+
+    await expect(waitForFormHydration(submit, { timeout: 2_000 })).resolves.toBeUndefined();
   });
 });
