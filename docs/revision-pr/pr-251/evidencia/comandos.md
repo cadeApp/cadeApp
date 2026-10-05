@@ -1,88 +1,48 @@
 # Evidencia y comandos — PR #251
 
-## Ronda 2
+## Ronda 4 — SHA `c175443f2b7eb76f99a1185a4a1f28f0ea703808`
 
-Ver `revisiones/ronda-2.md`.
-
-## Ronda 3 — SHA `362dd4e1d44de99b49241a4941e2c1e93f367305`
-
-### Sincronización
-
-Al revisar:
-- rama: 11 ahead / 1 behind;
-- `develop`: `f1ae16106e61bbb6707b4adf17f7572bafbbd23b`.
-
-El commit faltante es T-337 y modifica `e2e/pages/login.page.ts`, consumidor directo del spec T-313.
-
-### CI
-
-Run `37359359931`: GREEN.
-
-Jobs:
-- audit ✅
-- unit ✅
-- typecheck ✅
-- build ✅
-- db-tests ✅
-- lint ✅
-- bundle-budget ✅
+### Alcance y sincronización
+- rama 14 ahead / 0 behind contra `develop`.
+- desde ronda 3 solo se incorporó T-337 + bitácora de T-313; el spec T-313 no cambió.
 
 ### Preview
-
-Run `37359531243`, job `111930462102`.
-
-Resultado Chromium:
+Run `37365402672`, job `111973257046`:
 ```text
+33 passed
 1 failed
-30 passed
 ```
+T-313:
+- courier ✅
+- sin consentimiento ✅
+- alta completa ❌ en línea 145
 
-Único fallo:
+Artifact:
+- intento inicial: error genérico de registro
+- retries: mensaje de rate-limit
+- no contiene causa Auth que identifique SMTP
+
+### H05 — enumeración de creación/cleanup
 ```text
-e2e/specs/merchant-registration.spec.ts:120
-DoD: Alta completa y panel visible con la versión de consentimiento registrada
-
-merchant-registration.spec.ts:145
-Locator: getByRole('alert')
-Expected: 0
-Received: 2
+UI alta: click 143 -> asserts 145/146 -> track 150  [GAP]
+createUser sin consentimiento: create 248 -> track 264 [OK]
+courier: loginAsCourier -> fixture compartido [OK]
 ```
+`cleanupStagingData` usa `createdUserIds`; discovery de requests depende de `merchantUser`, ausente en este registrationContext.
 
-Casos T-313 que sí pasaron:
-```text
-DoD: Un courier no entra a (merchant) ✅
-DoD: Sin consentimiento guardado el comercio no llega al panel ✅
-```
+### H06
+`readConsentState` devuelve `role, consent_status`.
+Caso positivo afirma role merchant; caso negativo no lo hace.
 
-Esto verifica que el merge de T-336 resolvió los dos rojos de guardas de ronda 2.
+### H07
+Ocurrencias de SMTP como causa definitiva en bitácora: líneas 48, 57, 78, 89, 110, 118 (además de menciones condicionales previas).
 
-### H04
+### H08
+Template oficial comparado con body actual. Faltan secciones obligatorias de evidencia, RED, informe de agy, rutas/dependencias/rollback.
 
-D02-A no debe ejecutarse mientras este baseline permanezca rojo.
+### CI/policy
+CI `37365268821`: conclusion failure; lint/audit success, build/unit/typecheck/db-tests cancelled.
+approval-policy `37367274175`: failure con mensaje `El PR requiere aprobación vigente de Lautaro073.`
 
-Secuencia restante:
-```text
-Auth Develop sin SMTP real
-→ baseline T-313 GREEN
-→ probe temporal guards
-→ RED discriminante courier
-→ git revert
-→ GREEN final
-```
-
-### P3
-
-Reviews de PR al cierre de ronda: 0.
-
-### Analizador
-
-`node docs/revision-pr/analizar.mjs verificacion`:
-```text
-4 hallazgos en 1 PR(s)
-corregidos y VERIFICADOS ejecutando: 3
-corregidos SIN verificar:            0
-desvios ACEPTADOS por decision:      0
-decisiones PENDIENTES:               0
-otros (parcial/abierto):             1
-~ PR251-H04 [abierto] Falta una demostración RED discriminante seguida por GREEN final sobre baseline sano
-```
+### Nota de instrumento
+No se pudo clonar el repo desde el contenedor por falta de resolución de red; la evidencia ejecutable se tomó de los logs/artifacts oficiales del SHA revisado y la lectura directa de GitHub.
