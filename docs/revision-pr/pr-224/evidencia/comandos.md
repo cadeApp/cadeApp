@@ -337,3 +337,134 @@ H03 arreglado-sin-verificar
 H04 parcial
 H05 arreglado-sin-verificar
 ```
+
+
+---
+
+# Evidencia — PR #224 / Ronda 4
+
+## SHA y sincronización
+
+```text
+HEAD revisado: 593c2b845fa30f7e43666d993f27679f53d8560b
+develop actual: 1cd3da01b3af9619e4a19107ba5e8354a18c2159
+behind: 4
+ahead: 12
+```
+
+## Status y CI
+
+```text
+Vercel       success
+e2e-preview  failure
+CI run       37334306037 — success
+E2E run      37334483825 — failure
+```
+
+CI normal:
+
+```text
+db-tests        success
+lint            success
+typecheck       success
+build           success
+audit           success
+unit            success
+bundle-budget   success
+```
+
+## E2E real
+
+Job `111845750704`:
+
+```text
+23 passed
+1 failed
+```
+
+Único test fallido:
+
+```text
+DoD 1: El reporte llega a la bandeja de administración
+e2e/specs/incidents.spec.ts:77
+Locator: getByText(/recibimos tu reporte/i)
+Expected: visible
+Received: <element(s) not found>
+```
+
+DoD2, DoD3 y DoD4 pasaron.
+
+## Artefacto Playwright
+
+Run artifact:
+
+```text
+id: 11356730870
+name: playwright-report
+digest: sha256:cb7fb6297d33d67c6574756b6f3a7423ae7d657ae941a29e50267a714359cff5
+```
+
+Los tres `error-context.md` muestran el mismo estado del formulario:
+
+```text
+radio "Problema con el cobro" [checked]
+textbox "¿Qué pasó?":
+  "Incidente E2E e2e_1791215...: El repartidor tuvo un problema con el cobro acordado."
+
+alert:
+  "Sacá los teléfonos o correos del relato: no se pueden compartir datos de contacto."
+```
+
+El Dialog sigue abierto; por eso no es un problema del toast de éxito: el submit no llega a ejecutarse.
+
+## Contrato CC-012
+
+`src/domain/schemas/index.ts`:
+
+```ts
+export const INCIDENT_CONTACT_PHONE_PATTERN = /\+?\d(?:[\s.()-]*\d){6,}/;
+```
+
+Comentario del contrato:
+
+```text
+7 o más dígitos seguidos (con espacios, puntos, guiones o paréntesis entre medio)
+```
+
+`stagingContext.testRunId` contiene un timestamp de 13 dígitos y hace inválido el relato.
+
+## Barrido del patrón
+
+Usos de `testRunId` en T-308:
+
+```text
+incidentDescription                  ← pasa por CC-012; defectuoso
+p_reason DoD2 suspensión             ← no pasa por schema de relato
+p_reason DoD3 suspensión             ← no pasa por schema de relato
+```
+
+No se encontró otro relato de incidente con este patrón dentro del spec.
+
+## Develop nuevo
+
+Desde el base integrado por la rama entraron 4 commits:
+
+```text
+e2ff65c  T-305 E2E autorización
+4776277  T-336 navegación/auth/middleware
+ba3ade5  T-307 E2E notificaciones/realtime
+1cd3da0  T-337 ficha LoginPage
+```
+
+T-336 modifica `src/features/auth/guards.ts` y middleware, por lo que es material para revalidar H03.
+
+## Estados R4
+
+```text
+H01 arreglado-verificado
+H02 arreglado-verificado
+H03 arreglado-sin-verificar
+H04 parcial
+H05 arreglado-sin-verificar
+H06 abierto
+```

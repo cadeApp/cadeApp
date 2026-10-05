@@ -24,3 +24,12 @@ No se agrega número AG nuevo.
 - **No convertir un bloqueo de infraestructura en evidencia:** el autor hizo lo correcto al registrar el rate limit de Vercel y dejar M1–M4 pendientes en vez de fabricar RED/GREEN.
 - **`arreglado-sin-verificar` existe para esto:** H03 y H05 parecen corregidos por inspección, pero sin ejecución independiente no pasan a verificados.
 - **No generar commits inútiles mientras el gate no puede dispararse:** más pushes no aportan señal si Vercel rechaza el deployment antes de crear Preview.
+
+## Ronda 4
+
+No se agrega número AG nuevo.
+
+- **AG-37 también aplica a los datos sintéticos:** no alcanza con enumerar selectors y estados; cada dato que el E2E inyecta debe respetar los contratos reales del producto.
+- **Agujero de la revisión anterior:** R2/R3 miraron copy y MFA, pero no contrastaron `incidentDescription` con CC-012. El Preview real mostró que `testRunId` hace inválido el relato.
+- **Baseline primero, mutaciones después:** una batería RED no aporta evidencia si el caso sano ya está rojo. H06 debe cerrarse antes de M1–M4.
+- **AG-71 vuelve a aplicar:** develop avanzó con T-336 en auth/middleware mientras se esperaba el Preview; H03 debe revalidarse sobre el árbol actualizado.
