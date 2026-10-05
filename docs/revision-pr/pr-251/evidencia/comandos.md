@@ -1,98 +1,82 @@
-# Evidencia y comandos — PR #251 · ronda 1
+# Evidencia y comandos — PR #251
 
-SHA revisado: afdb326128cef1972b42bb3822a43cbd468fbd61
-Base develop: e2ff65cd29aee3292f280afc268b1c406fddc18c
+## Ronda 2
 
-## Sincronización y alcance
+SHA funcional revalidado: `79c6985e8c9717cf00f28c1baa6e7e4fbd38e726`  
+SHA de cierre: `604d028b5573aa6addf7514e20eb5d7b6686a030`
 
-GitHub compare observado:
-- ahead_by = 3
-- behind_by = 0
-- archivos del trabajo: docs/tasks/log/T-313.md y e2e/specs/merchant-registration.spec.ts
+`604d028` solo agrega bitácora; no toca el spec.
 
-Reproducción:
-git fetch origin
-git diff --name-only origin/develop...origin/feat/T-313-merchant-registration-e2e
-git rev-list --left-right --count origin/develop...origin/feat/T-313-merchant-registration-e2e
+### Sincronización
+`develop...rama`: 6 ahead / 3 behind.
 
-## H01 — enumeración de (merchant)
+### CI funcional
+Run `37350422473`:
+- lint ✅
+- typecheck ✅
+- unit ✅
+- db-tests ✅
+- audit ✅
+- build ✅
+- bundle-budget ✅
 
-Comando:
-find 'src/app/(merchant)' -name page.tsx -print | sort
+Unit:
+```text
+Test Files 119 passed (119)
+Tests 1899 passed (1899)
+tools/verify-fichas.test.ts: 7 passed
+```
 
-Árbol observado:
-- merchant/dashboard/page.tsx
-- merchant/history/page.tsx
-- merchant/onboarding/page.tsx
-- merchant/plan/page.tsx
-- merchant/requests/page.tsx
-- merchant/requests/new/page.tsx
-- merchant/requests/[id]/page.tsx
-- onboarding/page.tsx
-- requests/page.tsx
-- requests/new/page.tsx
-- requests/[id]/page.tsx
+### Preview T-313
+Run `37350595553`, job `111900261949`:
 
-Lista actual:
-sed -n '204,216p' e2e/specs/merchant-registration.spec.ts
+```text
+3 failed
+T-313 Alta completa...
+T-313 Un courier no entra a (merchant)
+T-313 Sin consentimiento guardado...
+```
 
-Huecos:
-- /merchant/history
-- /merchant/requests
-- /merchant/requests/<id>
-- /onboarding
-- /requests
-- /requests/<id>
+Alta:
+```text
+merchant-registration.spec.ts:145
+Expected alert count 0
+Received 2
+```
+El snapshot muestra error de registro y luego rate-limit.
 
-RED a demostrar cuando haya entorno: romper la guarda de una ruta hoy omitida, por ejemplo /merchant/history,
-sin tocar el spec. El test actual puede seguir verde; tras ampliar la tabla debe quedar rojo.
+Courier:
+```text
+Expected /\/courier\/feed/
+Received .../merchant/onboarding
+```
 
-## H02 — lifecycle/cleanup
+Sin consentimiento:
+```text
+Expected /\/login\?consentRequired=1/
+Received .../merchant/onboarding
+```
 
-sed -n '35,53p' e2e/specs/merchant-registration.spec.ts
-sed -n '20,70p' e2e/fixtures/roles.ts
+### Causa de guards
+La rama no contiene todavía los 3 commits nuevos de develop; T-336 está entre ellos y mueve el entrypoint a `src/middleware.ts`.
 
-Caso perdido hoy:
-testError != null + cleanupStagingData lanza cleanupError => cleanupError queda silenciado.
+### D02-A
+Baseline GREEN primero.
 
-La corrección debe conservar ambos errores con E2E Lifecycle Error, siguiendo roles.ts.
+Probe temporal:
+`src/features/auth/guards.ts` → `evaluateRouteGuard` → merchant route guard.
 
-## H03 — comandos obligatorios
+Reemplazar temporalmente la redirección del actor no merchant por:
+```ts
+return { action: 'allow' };
+```
 
-sed -n '23,28p' docs/tasks/T-313.md
-sed -n '25,33p' docs/tasks/log/T-313.md
+No tocar el spec.
 
-Cierre requerido:
-pnpm typecheck && pnpm lint && pnpm test
+Después del RED:
+```bash
+git revert --no-edit <sha-probe>
+git push
+```
 
-## H04 — RED/GREEN E2E
-
-La bitácora declara 3 failed por entorno y dice expresamente “RED de ambiente, no de comportamiento”.
-
-Vercel en PR #251:
-Resource is limited - try again in 24 hours (more than 100, code: "api-deployments-free-per-day")
-
-Cuando haya Preview:
-pnpm exec playwright test e2e/specs/merchant-registration.spec.ts --project=chromium --workers=1
-
-Reglas del RED:
-- no modificar expectativas para fabricar rojo;
-- no crear tests falsos o alternativos para reemplazar el DoD;
-- no usar emails reales;
-- no cambiar Staging;
-- romper la propiedad de producción;
-- si no puede hacerse de forma segura, reportar el bloqueo y no inventar evidencia.
-
-## D01
-
-Develop/Preview: el E2E no depende de SMTP real.
-Staging: conserva SMTP/sender configurado.
-
-Si Auth de Develop falla por correo, se corrige el entorno Develop; no se debilita el spec.
-
-## Validación
-
-hallazgos.jsonl contiene 4 objetos JSON con estado abierto y verificado_en_sha = null.
-
-Con clon local:
-node docs/revision-pr/analizar.mjs verificacion
+y exigir GREEN final.
