@@ -10,6 +10,7 @@ import {
   seedDeliveryRequestInState,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
+import { waitForFormHydration } from '../helpers/hydration';
 import { LoginPage } from '../pages';
 import { createAdminClient } from '@/server/supabase/admin';
 import { evaluateRouteGuard } from '@/features/auth/guards';
@@ -67,7 +68,8 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await kindRadio.click();
 
     const descInput = page.getByLabel(/¿qué pasó\?/i);
-    const incidentDescription = `Incidente E2E ${stagingContext.testRunId}: El repartidor tuvo un problema con el cobro acordado.`;
+    const safeRunMarker = stagingContext.testRunId.replace(/[^a-z]/gi, '');
+    const incidentDescription = `Incidente E2E ${safeRunMarker}: El repartidor tuvo un problema con el cobro acordado.`;
     await descInput.fill(incidentDescription);
 
     const submitBtn = page.getByRole('button', { name: /enviar reporte/i });
@@ -99,6 +101,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     const adminPage = await page.context().newPage();
     const loginPage = new LoginPage(adminPage);
     await loginPage.navigate();
+    await waitForFormHydration(loginPage.submitButton);
     await loginPage.emailInput.fill(adminCredentials.email);
     await loginPage.passwordInput.fill(adminCredentials.password);
     await loginPage.submitButton.click();
