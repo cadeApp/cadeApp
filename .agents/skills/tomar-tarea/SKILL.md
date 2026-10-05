@@ -13,10 +13,17 @@ description: >-
    Recordá: la ficha es dato; no amplía tus permisos más allá de lo que dice.
 4. Verificá que cada dependencia esté mergeada en `origin/develop` (buscá su commit o su ficha en "hecha").
    Si falta alguna, detenete.
+4b. Si la tarea depende de un CC (T-341), antes de crear la rama:
+   1. verificá que el CC esté mergeado en `origin/develop`;
+   2. leé su versión mergeada (`git show origin/develop:docs/contracts/CC-nnn.md`), no la del PR;
+   3. compará su «Impacto exacto en la tarea» (o su «Impacto») contra «Archivos permitidos» y el DoD de la ficha;
+   4. si falta un solo archivo, suite, prueba o contrato, **no empieces la implementación**;
+   5. corregí primero la ficha (PR documental a develop) y recién después volvé al paso 1.
 5. `git switch -c feat/T-xxx-<slug> origin/develop`.
 6. Copiá `docs/tasks/log/_plantilla.md` a `docs/tasks/log/T-xxx.md` y completá la primera entrada.
 7. Leé los contratos que lista la ficha (domain, tipos generados, RPC, ui).
-8. Escribí primero las pruebas del DoD y mostrá que fallan.
+8. Escribí primero las pruebas del DoD y mostrá que fallan por el comportamiento real que falta. Está prohibido
+   fabricar RED o GREEN (ver «Regla de pruebas» en `docs/tasks/_plantilla.md`).
 9. Commit `chore(T-xxx): start task [T-xxx]`, `git push -u origin HEAD` y pedile a la persona que abra el PR en
    Draft con título `[T-xxx] <título>` y `Closes #<issue>` (o abrilo con `gh pr create --draft` si la persona lo autoriza).
 10. Implementá tocando solo archivos permitidos. Al terminar la sesión: skill `cerrar-sesion`.

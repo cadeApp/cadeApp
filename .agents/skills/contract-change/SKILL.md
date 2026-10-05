@@ -15,5 +15,25 @@ description: >-
    - Dominio y RPC no coinciden: NO gana nadie por defecto. Lo valida P2 (dueña de `src/domain`) junto con P1.
    - Si el cambio altera una decisión D1–D14 o un comportamiento que ve el usuario: decide Lautaro073 antes del merge.
    - Nunca se debilita un chequeo de seguridad de la RPC o de RLS para que coincida con el dominio.
-5. El PR del contract-change se mergea antes que las tareas afectadas; después se desbloquean y se retoman
+5. Reglas de contenido (T-341). Antes de pedir el merge, el CC tiene que cumplirlas todas; cada sección
+   «Obligatoria» de la plantilla se completa o dice «no aplica» con el motivo:
+   - **Cero decisiones de producto abiertas.** Un CC con decisiones abiertas que cambien comportamiento observable no
+     se mergea: se preguntan a Lautaro073 y se registran en «Decisiones de producto» con fecha.
+   - **Helper de base interno** (`app_private.*` u otro): declarar permisos explícitos (`security definer/invoker`,
+     `search_path`, `revoke all … from public, anon, authenticated`, sin `grant` a clientes), qué RPC lo llaman y sus
+     validaciones defensivas. El Impacto exige pgTAP de que los clientes no pueden ejecutarlo.
+   - **Operación transaccional** (cambia estado, asigna, cobra cupo): definir idempotencia (qué devuelve un reintento y
+     si emite eventos), locks y su orden respecto de las RPC existentes, y las carreras relevantes, con sus pruebas.
+   - **Esquema consumido por una UI que ya se puede desplegar:** definir un rollout compatible hacia atrás (qué pasa con
+     la UI vieja contra el esquema nuevo), backfill, el orden de despliegue y la condición para retirar la
+     compatibilidad.
+   - **Campos que solo cambian las RPC:** barrera real en PostgreSQL (grants por columna o `with check` contra el valor
+     previo) y un test de bypass por campo.
+   - **Privacidad:** matriz de exposición por actor, antes y después de cada transición (D3).
+   - **Verificar contra el repo:** cada afirmación de «Actual» se contrasta con el código (archivo:línea), y cada
+     setting nuevo se suma a todo su contrato (dominio, SQL, admin, formulario).
+6. **Antes de cerrar el CC, reconciliar** «Impacto exacto en la tarea» con la ficha de cada tarea bloqueada:
+   «Archivos permitidos» tiene que cubrir cada archivo y suite, y el DoD cada prueba exigida. Si la ficha no
+   coincide, se corrige la ficha (por PR) antes del merge del CC.
+7. El PR del contract-change se mergea antes que las tareas afectadas; después se desbloquean y se retoman
    con la skill `retomar-tarea`.
