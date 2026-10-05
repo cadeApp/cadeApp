@@ -55,8 +55,24 @@ La evidencia RED tiene que fallar por el comportamiento real que falta. Está pr
 - usando mocks que eviten el camino de producción;
 - debilitando una aserción solo para que pase CI.
 
-Una mutación temporal para demostrar que un test protege una regla es válida solo si se describe en la bitácora y
-no se commitea.
+Una **mutación** que rompe a propósito la regla para demostrar que el test la protege es válida, con estas condiciones:
+
+- **Preferido:** una mutación local temporal, restaurada y sin commit, si con eso alcanza. Se describe en la bitácora
+  con la mutación exacta y las líneas resumen de RED y GREEN.
+- **Si hace falta evidencia de CI** (por ejemplo `pnpm test:db` o `e2e-preview`, que no corren en local):
+  - se usa una rama y PR **aislada** `review/T-xxx-<mutacion>`, marcada en el título y en el cuerpo como
+    **`REVIEW ONLY / NEVER MERGE`**;
+  - el commit mutado nunca se mezcla con la rama de la tarea;
+  - se registran en la bitácora el SHA mutado y el run de CI como evidencia;
+  - después de capturar la evidencia, la PR de mutación se cierra sin mergear;
+  - la rama real queda con el código correcto.
+
+Sigue prohibido:
+- adulterar tests o debilitar expectations;
+- mocks que eviten el camino de producción;
+- ramas `if (test)`;
+- dejar la mutación en la PR real;
+- mergear una mutación.
 
 ## Notas para quien retome
 <riesgos conocidos, decisiones ya tomadas en la ficha>

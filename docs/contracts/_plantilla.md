@@ -18,14 +18,38 @@
 - **`security definer` / `invoker`** de cada función, y su `set search_path = public, pg_temp`.
 - **Helpers internos (`app_private.*`):** `revoke all … from public, anon, authenticated`, sin `grant` a clientes,
   validaciones defensivas internas y qué RPC públicas los llaman.
-- **Acceso directo frente a RPC:** qué campos solo cambian las RPC y qué barrera de PostgreSQL lo garantiza (grants
-  por columna o `with check` contra el valor previo). Test de bypass por campo.
+- **Acceso directo frente a RPC:** qué campos solo cambian las RPC y qué barrera de PostgreSQL lo garantiza.
+  - Un `with check` que solo mira la fila nueva **no alcanza** para congelar un campo: valida el valor nuevo, no lo
+    compara con el anterior.
+  - Se admite cualquiera de estas dos barreras:
+    1. revocar el `update` (o `insert`) de tabla y conceder `update` solo sobre las columnas permitidas (grants por
+       columna); o
+    2. una policy o helper que compare **explícitamente** el valor nuevo contra el previo con un patrón ya probado.
+       Por ejemplo, el subselect sobre la fila vigente que usa `delivery_requests_update_merchant`, o un trigger
+       `before update` que compare `OLD` y `NEW`.
+  - En los dos casos es obligatorio un **test de bypass por campo**: un intento directo de cambiarlo que la base
+    rechaza.
 
 ## Concurrencia e idempotencia
 <!-- Obligatoria si toca una operación transaccional. -->
 - **Locks** que toma cada operación y su **orden**, compatible con las RPC existentes para no generar deadlocks.
 - **Reintentos:** qué devuelve una llamada repetida (por ejemplo `idempotent: true`) y si emite eventos.
 - **Carreras relevantes** y su resultado: dos actores a la vez, cambio de elegibilidad concurrente, etc.
+
+## Invariantes y fuentes de verdad afectadas
+<!-- Obligatoria. Revisar explícitamente cada fuente y decir si el CC la cumple o la cambia. -->
+| Fuente | ¿Afectada? | Qué dice hoy | Qué cambia (y dónde se actualiza) |
+|---|---|---|---|
+| `AGENTS.md` (invariantes §2, seguridad §6) | | | |
+| `docs/master-plan.md` (secciones relevantes) | | | |
+| Decisiones D1–Dn relevantes | | | |
+| Schemas y RPC compartidas (`src/domain/**`, `rpc-contracts.ts`, RPC vigentes) | | | |
+| Reglas de privacidad y seguridad (`.agents/rules/00`, `30`) | | | |
+
+- Si el CC propone algo incompatible con una de esas fuentes, **no puede afirmar que la cumple sin actualizarla**:
+  la actualiza en la misma PR del CC (con autorización de Lautaro073 si es `AGENTS.md` o `.agents/**`) o abre el
+  cambio documental coordinado y lo enlaza acá.
+- La tarea de implementación no empieza mientras las fuentes de verdad se contradigan.
 
 ## Privacidad / matriz de exposición
 <!-- Qué ve cada actor antes y después de cada transición (D3). -->

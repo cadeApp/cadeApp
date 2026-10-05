@@ -27,8 +27,15 @@ description: >-
    - **Esquema consumido por una UI que ya se puede desplegar:** definir un rollout compatible hacia atrás (qué pasa con
      la UI vieja contra el esquema nuevo), backfill, el orden de despliegue y la condición para retirar la
      compatibilidad.
-   - **Campos que solo cambian las RPC:** barrera real en PostgreSQL (grants por columna o `with check` contra el valor
-     previo) y un test de bypass por campo.
+   - **Campos que solo cambian las RPC:** barrera real en PostgreSQL. Un `with check` que solo evalúa la fila nueva
+     **no** congela un campo. Vale revocar el `update` de tabla y conceder `update` solo sobre las columnas permitidas,
+     o una policy o helper que compare explícitamente el valor nuevo contra el previo con un patrón probado (subselect
+     sobre la fila vigente o trigger que compare `OLD` y `NEW`). En los dos casos, un test de bypass por campo.
+   - **Invariantes y fuentes de verdad:** completar la sección de la plantilla revisando `AGENTS.md`,
+     `docs/master-plan.md`, las decisiones D relevantes, los schemas y RPC compartidas y las reglas de privacidad y
+     seguridad. Si el CC es incompatible con alguna, no puede decir que la cumple: la actualiza en la misma PR (con
+     autorización de Lautaro073 para `AGENTS.md` o `.agents/**`) o abre el cambio documental coordinado. Ninguna
+     tarea bloqueada empieza con fuentes de verdad contradictorias.
    - **Privacidad:** matriz de exposición por actor, antes y después de cada transición (D3).
    - **Verificar contra el repo:** cada afirmación de «Actual» se contrasta con el código (archivo:línea), y cada
      setting nuevo se suma a todo su contrato (dominio, SQL, admin, formulario).

@@ -23,7 +23,10 @@ description: >-
 6. Copiá `docs/tasks/log/_plantilla.md` a `docs/tasks/log/T-xxx.md` y completá la primera entrada.
 7. Leé los contratos que lista la ficha (domain, tipos generados, RPC, ui).
 8. Escribí primero las pruebas del DoD y mostrá que fallan por el comportamiento real que falta. Está prohibido
-   fabricar RED o GREEN (ver «Regla de pruebas» en `docs/tasks/_plantilla.md`).
+   fabricar RED o GREEN (ver «Regla de pruebas» en `docs/tasks/_plantilla.md`). Para demostrar que un test protege una
+   regla, preferí una mutación local temporal y restaurada. Si necesitás evidencia de CI, usá una PR aislada
+   `review/T-xxx-...` marcada `REVIEW ONLY / NEVER MERGE`, registrá el SHA y el run en la bitácora, cerrala sin
+   mergear y dejá la rama real con el código correcto.
 9. Commit `chore(T-xxx): start task [T-xxx]`, `git push -u origin HEAD` y pedile a la persona que abra el PR en
    Draft con título `[T-xxx] <título>` y `Closes #<issue>` (o abrilo con `gh pr create --draft` si la persona lo autoriza).
 10. Implementá tocando solo archivos permitidos. Al terminar la sesión: skill `cerrar-sesion`.
