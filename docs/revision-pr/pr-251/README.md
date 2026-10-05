@@ -1,49 +1,53 @@
 # PR #251 — T-313 · E2E de registro de comercio y consentimientos
 
-> ❌ Ronda 2 · CON BLOQUEANTES (1) · 3 de 4 hallazgos cerrados
+> ❌ Ronda 3 · CON BLOQUEANTES (1) · 3 de 4 hallazgos cerrados
 
 | Campo | Valor |
 |---|---|
 | PR | #251 · `feat/T-313-merchant-registration-e2e` → `develop` |
 | Tarea | T-313 · Issue #45 |
 | Autor | KiraK72 |
-| SHA de cierre de ronda | `604d028b5573aa6addf7514e20eb5d7b6686a030` |
-| SHA funcional revalidado | `79c6985e8c9717cf00f28c1baa6e7e4fbd38e726` |
-| `develop` observado | `1cd3da01b3af9619e4a19107ba5e8354a18c2159` |
-| Divergencia | 6 ahead / 3 behind |
-| Preview T-313 | run `37350595553` · RED |
+| SHA revisado | `362dd4e1d44de99b49241a4941e2c1e93f367305` |
+| `develop` actual | `f1ae16106e61bbb6707b4adf17f7572bafbbd23b` |
+| Sincronización | 11 ahead / 1 behind |
+| CI | `37359359931` · GREEN |
+| e2e-preview | `37359531243` · RED: 30 passed / 1 failed |
 
 ## Rondas
 
 | Ronda | SHA | Resultado |
 |---|---|---|
 | 1 | `afdb326` | ❌ 4 bloqueantes |
-| 2 | `604d028` | ❌ 1 bloqueante · H01/H02/H03 cerrados |
+| 2 | `604d028` | ❌ 1 bloqueante |
+| 3 | `362dd4e` | ❌ 1 bloqueante · sin hallazgos nuevos |
 
-## Hallazgos
+## Estado de hallazgos
 
-- ✅ **PR251-H01** — la clase actual de rutas `(merchant)` quedó completamente enumerada.
-- ✅ **PR251-H02** — el fixture ya preserva error principal + error de cleanup.
-- ✅ **PR251-H03** — desapareció la declaración falsa de checks; CI integrado del SHA funcional quedó verde.
-- ❌ **PR251-H04** — falta completar una secuencia válida baseline GREEN → mutación RED → revert → GREEN final.
+- ✅ **PR251-H01** — cobertura completa de `(merchant)`.
+- ✅ **PR251-H02** — cleanup preserva ambos errores.
+- ✅ **PR251-H03** — evidencia/checklist coherentes y CI integrado verde.
+- ❌ **PR251-H04** — el baseline de Preview sigue rojo por el alta de Auth en Supabase Develop.
 
-## Decisiones de Lautaro073
+## Qué cambió desde ronda 2
 
-- **D01:** Develop/Preview no depende de SMTP real. Staging conserva SMTP/sender.
-- **D02:** opción **A**. Se autoriza una mutación temporal y controlada de código productivo fuera del alcance normal de T-313, exclusivamente para demostrar el RED. Debe ir en commit separado y revertirse con `git revert`.
+Kira:
+- mergeó `develop` con T-336;
+- reejecutó checks;
+- dejó intacto el spec;
+- frenó correctamente antes del probe D02-A al no tener baseline GREEN.
 
-## Condiciones antes de D02
+Resultado del Preview actual:
+- DoD courier → ✅ GREEN;
+- DoD sin consentimiento → ✅ GREEN;
+- DoD alta completa → ❌ falla en `merchant-registration.spec.ts:145` porque la UI muestra alert de registro;
+- resumen Chromium: **30 passed / 1 failed**.
 
-La mutación no se ejecuta sobre un baseline ya rojo. Primero:
-1. sincronizar la rama con `develop`;
-2. conseguir que Auth de **Supabase Develop** no dependa del envío de correo;
-3. obtener `e2e-preview` GREEN normal.
+## Condiciones pendientes
 
-Después se ejecuta el probe autorizado, se registra el RED, se revierte y se exige GREEN final.
-
-## P3
-
-La solicitud existe, pero no hay visto bueno explícito registrado.
+1. **Supabase Develop:** el alta de prueba debe funcionar sin depender de SMTP real (D01).
+2. **Sincronización:** `develop` avanzó un commit con T-337, que modifica `e2e/pages/login.page.ts`, utilizado por T-313.
+3. **H04:** baseline GREEN → probe D02-A → RED discriminante → `git revert` → GREEN final.
+4. **P3:** visto bueno explícito del spec todavía no registrado.
 
 ## Estado
 

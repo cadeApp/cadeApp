@@ -2,81 +2,87 @@
 
 ## Ronda 2
 
-SHA funcional revalidado: `79c6985e8c9717cf00f28c1baa6e7e4fbd38e726`  
-SHA de cierre: `604d028b5573aa6addf7514e20eb5d7b6686a030`
+Ver `revisiones/ronda-2.md`.
 
-`604d028` solo agrega bitácora; no toca el spec.
+## Ronda 3 — SHA `362dd4e1d44de99b49241a4941e2c1e93f367305`
 
 ### Sincronización
-`develop...rama`: 6 ahead / 3 behind.
 
-### CI funcional
-Run `37350422473`:
-- lint ✅
-- typecheck ✅
-- unit ✅
-- db-tests ✅
+Al revisar:
+- rama: 11 ahead / 1 behind;
+- `develop`: `f1ae16106e61bbb6707b4adf17f7572bafbbd23b`.
+
+El commit faltante es T-337 y modifica `e2e/pages/login.page.ts`, consumidor directo del spec T-313.
+
+### CI
+
+Run `37359359931`: GREEN.
+
+Jobs:
 - audit ✅
+- unit ✅
+- typecheck ✅
 - build ✅
+- db-tests ✅
+- lint ✅
 - bundle-budget ✅
 
-Unit:
+### Preview
+
+Run `37359531243`, job `111930462102`.
+
+Resultado Chromium:
 ```text
-Test Files 119 passed (119)
-Tests 1899 passed (1899)
-tools/verify-fichas.test.ts: 7 passed
+1 failed
+30 passed
 ```
 
-### Preview T-313
-Run `37350595553`, job `111900261949`:
-
+Único fallo:
 ```text
-3 failed
-T-313 Alta completa...
-T-313 Un courier no entra a (merchant)
-T-313 Sin consentimiento guardado...
-```
+e2e/specs/merchant-registration.spec.ts:120
+DoD: Alta completa y panel visible con la versión de consentimiento registrada
 
-Alta:
-```text
 merchant-registration.spec.ts:145
-Expected alert count 0
-Received 2
+Locator: getByRole('alert')
+Expected: 0
+Received: 2
 ```
-El snapshot muestra error de registro y luego rate-limit.
 
-Courier:
+Casos T-313 que sí pasaron:
 ```text
-Expected /\/courier\/feed/
-Received .../merchant/onboarding
+DoD: Un courier no entra a (merchant) ✅
+DoD: Sin consentimiento guardado el comercio no llega al panel ✅
 ```
 
-Sin consentimiento:
+Esto verifica que el merge de T-336 resolvió los dos rojos de guardas de ronda 2.
+
+### H04
+
+D02-A no debe ejecutarse mientras este baseline permanezca rojo.
+
+Secuencia restante:
 ```text
-Expected /\/login\?consentRequired=1/
-Received .../merchant/onboarding
+Auth Develop sin SMTP real
+→ baseline T-313 GREEN
+→ probe temporal guards
+→ RED discriminante courier
+→ git revert
+→ GREEN final
 ```
 
-### Causa de guards
-La rama no contiene todavía los 3 commits nuevos de develop; T-336 está entre ellos y mueve el entrypoint a `src/middleware.ts`.
+### P3
 
-### D02-A
-Baseline GREEN primero.
+Reviews de PR al cierre de ronda: 0.
 
-Probe temporal:
-`src/features/auth/guards.ts` → `evaluateRouteGuard` → merchant route guard.
+### Analizador
 
-Reemplazar temporalmente la redirección del actor no merchant por:
-```ts
-return { action: 'allow' };
+`node docs/revision-pr/analizar.mjs verificacion`:
+```text
+4 hallazgos en 1 PR(s)
+corregidos y VERIFICADOS ejecutando: 3
+corregidos SIN verificar:            0
+desvios ACEPTADOS por decision:      0
+decisiones PENDIENTES:               0
+otros (parcial/abierto):             1
+~ PR251-H04 [abierto] Falta una demostración RED discriminante seguida por GREEN final sobre baseline sano
 ```
-
-No tocar el spec.
-
-Después del RED:
-```bash
-git revert --no-edit <sha-probe>
-git push
-```
-
-y exigir GREEN final.
