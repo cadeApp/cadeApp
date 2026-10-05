@@ -76,7 +76,8 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await submitBtn.click();
 
     // 5. Confirmación en pantalla
-    await expect(page.getByText(/recibimos tu reporte/i)).toBeVisible();
+    await expect(page.getByRole('status')).toBeVisible();
+    await expect(page.getByRole('status')).toContainText(/recibimos tu reporte/i);
 
     // 6. Administrador E2E con AAL2 verificado vía helper canónico (PR224-H01)
     const adminCredentials = await seedAdminUser(stagingContext);
@@ -98,6 +99,8 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     }
 
     // 7. Navegación manual en browser sin LoginPage.login (PR224-H03)
+    await page.context().clearCookies();
+    await page.evaluate(() => localStorage.clear()).catch(() => undefined);
     const adminPage = await page.context().newPage();
     const loginPage = new LoginPage(adminPage);
     await loginPage.navigate();
@@ -117,7 +120,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await waitForNoSkeletons(adminPage);
 
     // Verificar presencia del incidente en la bandeja
-    await expect(adminPage.getByText(/problema con el cobro/i)).toBeVisible();
+    await expect(adminPage.getByText(/problema con el cobro/i).first()).toBeVisible();
     await expect(adminPage.getByText(incidentDescription)).toBeVisible();
   });
 
