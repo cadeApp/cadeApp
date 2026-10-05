@@ -45,8 +45,18 @@ const test = roleTest.extend<RegistrationFixtures>({
     } finally {
       try {
         await cleanupStagingData(context);
-      } catch (cleanupError) {
-        if (!testError) throw cleanupError;
+      } catch (cleanupErr) {
+        if (testError) {
+          const combined = new Error(
+            `[E2E Lifecycle Error] Falló la ejecución principal y el cleanup posterior.\n` +
+              `Error principal: ${testError instanceof Error ? testError.message : String(testError)}\n` +
+              `Error de cleanup: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+            { cause: testError }
+          );
+          throw combined;
+        } else {
+          throw cleanupErr;
+        }
       }
     }
   },
@@ -204,14 +214,22 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
   test('DoD: Un courier no entra a (merchant)', async ({ page, loginAsCourier }) => {
     await loginAsCourier(0, page);
 
-    for (const path of [
-      '/merchant/dashboard',
-      '/merchant/onboarding',
-      '/merchant/requests/new',
-      '/merchant/plan',
-      '/requests/new',
-    ]) {
-      await expectMerchantPanelBlocked(page, path, /\/courier\/feed/);
+    const routes: Array<{ path: string; expectedUrl: RegExp }> = [
+      { path: '/merchant/dashboard', expectedUrl: /\/courier\/feed/ },
+      { path: '/merchant/history', expectedUrl: /\/courier\/feed/ },
+      { path: '/merchant/onboarding', expectedUrl: /\/courier\/feed/ },
+      { path: '/merchant/plan', expectedUrl: /\/courier\/feed/ },
+      { path: '/merchant/requests', expectedUrl: /\/courier\/feed/ },
+      { path: '/merchant/requests/new', expectedUrl: /\/courier\/feed/ },
+      { path: '/merchant/requests/e2e-denied', expectedUrl: /\/courier\/feed/ },
+      { path: '/onboarding', expectedUrl: /\/courier\/onboarding\/identity/ },
+      { path: '/requests', expectedUrl: /\/courier\/feed/ },
+      { path: '/requests/new', expectedUrl: /\/courier\/feed/ },
+      { path: '/requests/e2e-denied', expectedUrl: /\/courier\/feed/ },
+    ];
+
+    for (const { path, expectedUrl } of routes) {
+      await expectMerchantPanelBlocked(page, path, expectedUrl);
     }
   });
 
