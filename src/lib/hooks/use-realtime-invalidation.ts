@@ -113,7 +113,7 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
     let channel: BrowserRealtimeChannel | null = null;
 
     void import('@/lib/supabase/browser')
-      .then(({ createClient }) => {
+      .then(async ({ createClient }) => {
         if (disposed) return;
         try {
           supabase = createClient();
@@ -121,6 +121,23 @@ export function useRealtimeInvalidation(options: UseRealtimeInvalidationOptions)
           return;
         }
         if (disposed || !supabase) return;
+
+        // T-307 / PR180-H10: Asegurar que Realtime tenga el token de sesión autenticado
+        // antes de suscribir el canal; de lo contrario el socket se suscribe como 'anon'
+        // y RLS de Postgres Changes descarta los eventos de tablas protegidas (offers, delivery_requests).
+        try {
+          if ('auth' in supabase && typeof supabase.auth?.getSession === 'function') {
+            const sessionRes = await supabase.auth.getSession();
+            const token = sessionRes.data?.session?.access_token;
+            if (token && 'realtime' in supabase && typeof supabase.realtime?.setAuth === 'function') {
+              await supabase.realtime.setAuth(token);
+            }
+          }
+        } catch {
+          // continuar con el cliente disponible si no hay sesión o falla setAuth
+        }
+
+        if (disposed) return;
         let nextChannel = supabase.channel(channelName);
         for (const sub of subs) {
           nextChannel = nextChannel.on(

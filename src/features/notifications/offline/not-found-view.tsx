@@ -1,5 +1,4 @@
 import React from 'react';
-import Link from 'next/link';
 import { Compass, Home } from 'lucide-react';
 import { buttonVariants } from '@/ui/button';
 import { cn } from '@/ui/cn';
@@ -34,8 +33,8 @@ export function NotFoundView() {
         </p>
 
         <div className="mt-8 flex justify-center">
-          <Link
-            href="/"
+          <a
+            href="/login"
             className={cn(
               buttonVariants({ variant: 'default' }),
               'h-12 w-full text-base font-semibold sm:w-auto sm:min-w-[160px]'
@@ -43,7 +42,7 @@ export function NotFoundView() {
           >
             <Home className="mr-2 h-4 w-4" aria-hidden="true" />
             Ir al inicio
-          </Link>
+          </a>
         </div>
       </div>
     </main>

@@ -401,5 +401,43 @@ describe('T-204 DoD: useRealtimeInvalidation', () => {
       expect(mockRemoveChannel).toHaveBeenCalledTimes(1);
       expect(invalidateSpy).not.toHaveBeenCalled();
     });
+
+    it('T-307 / PR180-H10: propaga el access_token de la sesión a realtime.setAuth antes de suscribir', async () => {
+      const mockSetAuth = vi.fn().mockResolvedValue(undefined);
+      const mockGetSession = vi.fn().mockResolvedValue({
+        data: {
+          session: {
+            access_token: 'valid-jwt-token',
+          },
+        },
+      });
+
+      vi.spyOn(browserClient, 'createClient').mockReturnValue({
+        channel: vi.fn().mockReturnValue(mockChannel),
+        removeChannel: mockRemoveChannel,
+        auth: {
+          getSession: mockGetSession,
+        },
+        realtime: {
+          setAuth: mockSetAuth,
+        },
+      } as unknown as ReturnType<typeof browserClient.createClient>);
+
+      renderHook(
+        () =>
+          useRealtimeInvalidation({
+            channelName: 'offers-req-auth',
+            table: 'offers',
+            queryKey: ['requests', 'detail', 'req-auth', 'offers'],
+          }),
+        { wrapper }
+      );
+
+      await flushRealtimeSetup();
+
+      expect(mockGetSession).toHaveBeenCalledTimes(1);
+      expect(mockSetAuth).toHaveBeenCalledWith('valid-jwt-token');
+      expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    });
   });
 });
