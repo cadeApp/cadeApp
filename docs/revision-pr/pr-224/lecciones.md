@@ -33,3 +33,12 @@ No se agrega número AG nuevo.
 - **Agujero de la revisión anterior:** R2/R3 miraron copy y MFA, pero no contrastaron `incidentDescription` con CC-012. El Preview real mostró que `testRunId` hace inválido el relato.
 - **Baseline primero, mutaciones después:** una batería RED no aporta evidencia si el caso sano ya está rojo. H06 debe cerrarse antes de M1–M4.
 - **AG-71 vuelve a aplicar:** develop avanzó con T-336 en auth/middleware mientras se esperaba el Preview; H03 debe revalidarse sobre el árbol actualizado.
+
+## Ronda 5
+
+No se agrega número AG nuevo.
+
+- **AG-68 se refuerza con un caso concreto:** una mutación no cuenta si para volverla roja hay que cambiar también la expectativa. La propiedad tiene que estar protegida por el test final, no por un oráculo temporal.
+- **P07 — coincidencia demasiado amplia:** un locator puede ser sintácticamente correcto y aun así comprobar el elemento equivocado. Un texto esperado que también aparece dentro de un campo libre necesita scope + match exacto.
+- **Las mutaciones sirven también para auditar el oráculo:** M1 descubrió que el test final no distinguía el kind del contenido del relato. Eso es justamente la señal que la fase RED debía producir.
+- **No repetir evidencia válida por rutina:** M2–M4 ya tienen RED reproducible y específico; corregir H07 solo exige repetir M1 y cerrar con GREEN final.

@@ -468,3 +468,174 @@ H04 parcial
 H05 arreglado-sin-verificar
 H06 abierto
 ```
+
+
+---
+
+# Evidencia — PR #224 / Ronda 5
+
+## SHA y sincronización
+
+```text
+HEAD revisado: e4db646767baebda61ab74012a7591c64c33e222
+develop: 865a82fbaeb2249e41f9ba22e4ec66a78b9b6f57
+behind: 0
+ahead: 25
+PR: ready (no draft)
+```
+
+## Alcance final
+
+Archivos que difieren contra develop:
+
+```text
+docs/revision-pr/pr-224/README.md
+docs/revision-pr/pr-224/evidencia/comandos.md
+docs/revision-pr/pr-224/hallazgos.jsonl
+docs/revision-pr/pr-224/lecciones.md
+docs/revision-pr/pr-224/revisiones/ronda-1.md
+docs/revision-pr/pr-224/revisiones/ronda-2.md
+docs/revision-pr/pr-224/revisiones/ronda-3.md
+docs/revision-pr/pr-224/revisiones/ronda-4.md
+docs/tasks/log/T-308.md
+e2e/specs/incidents.spec.ts
+```
+
+No hay desvíos de los archivos permitidos. El autor no modificó `docs/revision-pr/pr-224/**` después de la revisión R4.
+
+## Baseline GREEN
+
+```text
+SHA: 5e574b308a6b4e2495d824943e0a3e58606b3ed9
+run: 37378544680
+job: 111994393320
+chromium: 35 passed
+global-settings: 3 passed
+DoD1: pass
+DoD2: pass
+DoD3: pass
+DoD4: pass
+```
+
+## Mutación v1
+
+```text
+SHA: f3978968fbc30ca0abdf81f78a5b3de784327557
+run: 37380513473
+```
+
+Resultado T-308:
+
+```text
+DoD1: PASS  ← M1 NO mató el test
+DoD2: FAIL  ← heading de suspendido ausente tras restaurar approved
+DoD3: FAIL  ← accept_offer devuelve matched
+DoD4: FAIL  ← accept_offer devuelve matched
+```
+
+M2–M4 son RED válidos.
+
+## Mutación M1 v2
+
+```text
+SHA: ea4c7e47026a024267b995a254dc6554fa31339c
+run: 37382368895
+```
+
+Se acota a la fila por `incidentDescription`, pero el matcher de kind sigue siendo no exacto.
+
+Resultado:
+
+```text
+DoD1: PASS
+DoD2: FAIL
+DoD3: FAIL
+DoD4: FAIL
+```
+
+La descripción dentro de la misma fila contiene «problema con el cobro acordado», por lo que el matcher sigue resolviendo.
+
+## Mutación M1 v3
+
+```text
+SHA: 2c0dae6a2a56545f4a511e951f6be78fca243bec
+run: 37384194749
+job: 112013392777
+```
+
+Se cambia además el oráculo temporalmente:
+
+```ts
+incidentCard.getByText(/^problema con el cobro$/i)
+```
+
+Resultado:
+
+```text
+DoD1: FAIL — locator exacto del kind no existe porque la sonda seleccionó Otro
+DoD2: FAIL — propiedad M2
+DoD3: FAIL — propiedad M3
+DoD4: FAIL — propiedad M4
+31 passed / 4 failed
+```
+
+Ese RED demuestra que el **oráculo exacto** detecta M1, pero no demuestra que el test final actual lo haga.
+
+## Reverts y GREEN
+
+Reverts:
+
+```text
+1f8a267 — revierte exact match M1
+2ed714a — revierte scope por fila
+e1d96df — revierte M1–M4
+```
+
+Al revertir también el oráculo se vuelve al matcher amplio.
+
+Post-revert:
+
+```text
+SHA e1d96df
+run 37386075436
+35 passed chromium + 3 passed global-settings
+```
+
+Final tras merge develop y actualización de bitácora:
+
+```text
+SHA e4db646
+CI 37388327450: success
+e2e-preview 37388458786: success
+35 passed chromium + 3 passed global-settings
+behind=0
+```
+
+## Por qué M1 no cuenta
+
+Árbol final:
+
+```ts
+await expect(adminPage.getByText(/problema con el cobro/i).first()).toBeVisible();
+await expect(adminPage.getByText(incidentDescription)).toBeVisible();
+```
+
+Relato:
+
+```text
+Incidente E2E <marker>: El repartidor tuvo un problema con el cobro acordado.
+```
+
+La misma cadena esperada aparece dentro del relato. Por eso `kind=Otro` no mata el test final.
+
+## Estados R5
+
+```text
+H01 arreglado-verificado
+H02 arreglado-verificado
+H03 arreglado-verificado
+H04 parcial
+H05 arreglado-verificado
+H06 arreglado-verificado
+H07 abierto
+```
