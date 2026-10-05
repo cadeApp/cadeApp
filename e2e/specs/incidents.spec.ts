@@ -63,7 +63,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const kindRadio = page.getByRole('radio', { name: /problema con el cobro/i });
+    const kindRadio = page.getByRole('radio', { name: /otro/i });
     await expect(kindRadio).toBeVisible();
     await kindRadio.click();
 
@@ -151,6 +151,9 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
       throw new Error(`[E2E Admin Error] Falló admin_suspend_courier: ${suspendErr.message}`);
     }
 
+    // Sonda RED M2: restaurar repartidor para probar que el test detecta la falla si no estuviera suspendido
+    await createAdminClient().from('couriers').update({ status: 'approved', available: true }).eq('profile_id', courier.id);
+
     // 2. Repartidor suspendido inicia sesión y accede al feed
     await loginAsCourier(0, page);
     await page.goto('/courier/feed');
@@ -224,6 +227,9 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
 
     // 3. Forzar que la oferta permanezca en pending para probar la revalidación estricta de accept_offer
     await admin.from('offers').update({ status: 'pending' }).eq('id', offerData.id);
+
+    // Sonda RED M3: restaurar repartidor para probar que el test detecta la falla si no estuviera suspendido
+    await createAdminClient().from('couriers').update({ status: 'approved', available: true }).eq('profile_id', courier.id);
 
     // 4. Comercio autenticado intenta aceptar la oferta
     const merchantClient = await createAuthenticatedClient(merchant);
@@ -328,6 +334,9 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
 
     // Asegurar que la oferta permanece en pending (para simular concurrencia / bypass)
     await admin.from('offers').update({ status: 'pending' }).eq('id', offerData.id);
+
+    // Sonda RED M4: restaurar repartidor para probar que el test detecta la falla si no revalida
+    await admin.from('couriers').update({ status: 'approved', available: true }).eq('profile_id', courier.id);
 
     // Invocación a accept_offer debe fallar en el paso 8 de elegibilidad
     const merchantClient = await createAuthenticatedClient(merchant);
