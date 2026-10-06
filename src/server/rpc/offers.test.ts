@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RPC_CONTRACTS, type RpcErrorCode } from '@/domain/rpc-contracts';
 import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
 import {
@@ -1115,6 +1115,12 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
   });
 
   describe('T-206: Cableado de push en transiciones de negocio (offers)', () => {
+    // Vitest 4 reutiliza un spy ya creado sobre el mismo método: sin restaurar entre casos, las llamadas de un test
+    // se acumulan en el siguiente (T-344, decisión 1-A).
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('submit_offer despacha push al comercio solicitante después del éxito de la RPC', async () => {
       const push = await import('@/server/push');
       const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
