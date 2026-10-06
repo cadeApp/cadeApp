@@ -93,6 +93,17 @@ async function enrollAdminTotpFactor(admin: UserCredentials): Promise<{ secret: 
   return { secret };
 }
 
+/**
+ * Obtiene el secreto HMAC para DNI de forma estricta (H06).
+ */
+function requireDniHmacSecret(): string {
+  const secret = process.env.DNI_HMAC_SECRET;
+  if (!secret) {
+    throw new Error('[E2E Precondition Error] DNI_HMAC_SECRET es obligatorio para T-302');
+  }
+  return secret;
+}
+
 test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y DNI duplicado', () => {
   // ---------------------------------------------------------------------------
   // DoD Invariante 1: Falla si se quita el chequeo de MFA en aprobación
@@ -211,7 +222,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const dbAdmin = createAdminClient();
 
     // 1. Simular registro previo de DNI para courier 1 calculando dni_hmac
-    const hmacSecret = process.env.DNI_HMAC_SECRET || 'test-e2e-dni-hmac-secret-min32chars!';
+    const hmacSecret = requireDniHmacSecret();
     const dniHmac = createHmac('sha256', hmacSecret).update(testDni).digest('hex');
 
     const { error: seedDniErr } = await dbAdmin
@@ -453,7 +464,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     // 1. Asignar DNI fijo a courier 1 en base de datos
     const existingDni = '35999888';
-    const hmacSecret = process.env.DNI_HMAC_SECRET || 'test-e2e-dni-hmac-secret-min32chars!';
+    const hmacSecret = requireDniHmacSecret();
     const existingHmac = createHmac('sha256', hmacSecret).update(existingDni).digest('hex');
 
     const dbAdmin = createAdminClient();
