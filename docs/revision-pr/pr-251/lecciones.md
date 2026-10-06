@@ -1,6 +1,5 @@
 # Lecciones — PR #251 / T-313
 
-- H05: la ownership de recursos E2E creados por UI debe registrarse antes de disparar la acción y reconciliarse desde teardown, no desde el happy path.
-- H06: un RED discriminante necesita fallar exactamente en la propiedad añadida y luego volver a GREEN tras revert; los runs 37425374360 y 37428952648 son el ejemplo válido.
-- H04 confirma la separación entre CI estructural GREEN y gate funcional E2E RED: ambos datos deben mantenerse visibles.
-- No se agrega AG nueva en esta ronda; los patrones siguen cubiertos por P08.
+- H09: en Next.js, `getByRole('alert')` a nivel de `page` puede capturar `#__next-route-announcer__`; para verificar errores de un formulario, acotar el locator al componente/landmark dueño del error.
+- El cambio de entorno debe revalidarse con artifact/trace, no solo con cantidad de fallos: pasar de 2 alerts a 1 parecía parcial, pero el snapshot mostró que el flujo funcional ya había terminado con éxito.
+- No se agrega una regla global nueva todavía; H09 se registra como P07 y se observará reincidencia.

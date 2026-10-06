@@ -1,80 +1,61 @@
 # Evidencia y comandos — PR #251
 
-## Ronda 6 — SHA `bce333fede77737a66d3afae8b43a19ce6dc8747`
+## Ronda 7 — revalidación ambiental
 
-### Alcance
-Diff actual contra `develop`:
-- `e2e/specs/merchant-registration.spec.ts`
-- `docs/tasks/log/T-313.md`
-- `docs/revision-pr/pr-251/**`
+### Run
+`e2e-preview` `37433304282`, attempt 2, job `112489877756`.
 
-La ficha T-313 no fue ampliada.
+Resultado:
 
-### H05
-Símbolos verificados:
 ```text
-LocalRegistrationContext.pendingCleanupEmails
-registrationContext.pendingCleanupEmails.add(email)  # antes del click
-fixture finally -> listUsers(page, perPage)
-match exacto u.email === targetEmail
-while hasta !data.nextPage
-trackEntityForCleanup(...)
-cleanupStagingData(context)
-```
-
-### H06 RED
-Run `37425374360`, job `112148952569`:
-```text
-Expected: "merchant"
-Received: "courier"
-at merchant-registration.spec.ts:306:33
-34 passed
-2 failed
-```
-El otro fallo fue H04/alta UI.
-
-### H06 revert
-Run `37428952648`, job `112162454301`:
-```text
-DoD: Sin consentimiento guardado el comercio no llega al panel  GREEN
 35 passed
 1 failed
 ```
-Único fallo: H04/alta UI.
 
-### HEAD actual
-Run `37433304282`, job `112169072675`:
+### T-313
 ```text
-DoD courier                               GREEN
-DoD sin consentimiento                   GREEN
-DoD alta completa                        RED
-35 passed
-1 failed
+DoD courier                    GREEN
+DoD sin consentimiento         GREEN
+DoD alta completa              RED
 ```
+
 Fallo:
+
 ```text
-line 184
-getByRole('alert')
+merchant-registration.spec.ts:184
+Locator: getByRole('alert')
 Expected: 0
-Received: 2
+Received: 1
 ```
 
-### CI
-Run `37433113069`:
-- unit: 121 files / 1921 tests passed
-- db-tests: Files=18, Tests=1811, Result: PASS
-- typecheck: success
-- lint: ESLint 0 warnings/errors
-- build: success
-- bundle-budget: success
-- audit: success
+### Artifact
+Artifact `11443831505`, `playwright-report`.
+
+Page snapshot final:
+- heading `Revisá tu email`
+- copy neutral de registro exitoso
+- un único `alert` vacío
+
+Trace:
+```html
+<NEXT-ROUTE-ANNOUNCER>
+  <template shadow-root="open">
+    <div
+      aria-live="assertive"
+      id="__next-route-announcer__"
+      role="alert"
+    />
+  </template>
+</NEXT-ROUTE-ANNOUNCER>
+```
+
+El mismo route announcer aparece en el snapshot inicial, antes de enviar el formulario.
+
+### Conclusión
+La modificación manual en Supabase Develop permitió completar el alta. El rojo actual es un falso positivo del selector E2E global, no evidencia de error de Auth.
 
 ### Sincronización
-`develop...rama`: 22 ahead / 33 behind.
+Rama: 23 ahead / 34 behind respecto de develop `5c7febf6c2a4cba97d29148cc797e373103bd838`.
 
-Desde `80f0b56` hasta develop actual, los 33 commits solo cambian T-308/incidents y documentación; no tocan auth ni merchant-registration.
-
-### Approval / P3
-- approval-policy `37433110341`: GREEN
-- Lautaro073: APPROVED
-- P3: sin visto bueno explícito registrado
+### P3
+Solicitud existe en comment `5999858656`; no hay respuesta explícita P3 registrada.
