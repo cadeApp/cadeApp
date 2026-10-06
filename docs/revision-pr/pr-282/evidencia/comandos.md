@@ -220,3 +220,74 @@ Vercel         success
 e2e-preview    success
 approval-policy failure (informe independiente aún bloqueante)
 ```
+
+---
+
+## Ronda 5 — cierre
+
+HEAD funcional: `3fed8cf77f4c5906d63ea60ebec8e9bd36163d95`.
+
+### Integración
+
+```text
+develop = 3a1de345eaf71ab1aeff060ead097d9d6442ac81
+HEAD    = 3fed8cf77f4c5906d63ea60ebec8e9bd36163d95
+behind  = 0
+ahead   = 10
+```
+
+Commit final de integración:
+
+```text
+Merge remote-tracking branch 'origin/develop' into cc/CC-023-courier-private-fields
+parent 1 = 0ef321364334816e6a0511750b40f86940f8c39c
+parent 2 = 3a1de345eaf71ab1aeff060ead097d9d6442ac81
+```
+
+### E2E exact-head
+
+Run: `37492059152`.
+
+```text
+Running 37 tests using 1 worker
+incidents.spec.ts:
+  DoD 1 PASS
+  DoD 2 PASS
+  DoD 3 PASS
+  DoD 4 PASS
+37 passed
+
+Running 3 tests using 1 worker
+3 passed
+```
+
+Total: **40/40 PASS**.
+
+### CI
+
+```text
+typecheck      success
+lint           success
+unit           success
+build          success
+bundle-budget  success
+db-tests       success
+Vercel         success
+e2e-preview    success
+audit          failure — CVE-2026-96889 en next > sharp
+approval-policy failure — informe anterior todavía bloqueante
+```
+
+### Audit fuera del diff
+
+```text
+package.json:
+  HEAD    01e8a38966a4cb2435e162b35cec452e599f5d4e
+  develop 01e8a38966a4cb2435e162b35cec452e599f5d4e
+
+pnpm-lock.yaml:
+  HEAD    47abcb1947febc031b6cf30d5d9b4f62f9d1f0e6
+  develop 47abcb1947febc031b6cf30d5d9b4f62f9d1f0e6
+```
+
+No hay cambio de dependencias atribuible a #282.

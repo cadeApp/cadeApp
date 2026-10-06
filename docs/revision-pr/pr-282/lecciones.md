@@ -29,3 +29,11 @@ No se agrega numeración AG nueva en esta ronda.
 PR282-H07 refuerza P08: un check puede cubrir perfectamente el SHA que recibió y aun así no cubrir el árbol que realmente se integrará si el target avanzó. En este caso el gate E2E descubre todos los specs del SHA, pero la rama vieja ni siquiera contiene `incidents.spec.ts` ya presente en develop.
 
 Antes de cerrar una ronda final hay que comparar HEAD contra el target actual y, si está detrás, sincronizar y repetir los checks. No se agrega numeración AG nueva.
+
+## Ronda 5 — cierre
+
+H07 quedó resuelto siguiendo la propia lección de Ronda 4: sincronizar primero y volver a ejecutar el gate completo. El E2E pasó de no contener `incidents.spec.ts` a ejecutarlo explícitamente con 4/4 casos verdes.
+
+El fallo de `audit` no genera una lección de esta PR: el árbol de dependencias es idéntico a develop y el advisory apareció fuera del cambio revisado. Debe tratarse como mantenimiento de dependencias separado, sin expandir silenciosamente CC-023.
+
+No se agrega numeración AG nueva.
