@@ -293,9 +293,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await submitBtn.click();
 
     // 5. La UI productiva despliega el error específico de DNI duplicado
-    const alert = page.getByRole('alert');
-    await expect(alert).toBeVisible({ timeout: 10000 });
-    await expect(alert).toContainText(/ya está registrado|rechazado anteriormente/i);
+    const duplicateDniAlert = page.getByRole('alert').filter({
+      hasText: /ya está registrado|rechazado anteriormente/i,
+    });
+    await expect(duplicateDniAlert).toBeVisible({ timeout: 10000 });
+    await expect(duplicateDniAlert).toContainText(
+      /ya está registrado|rechazado anteriormente/i
+    );
 
     // Invariante de navegación: el postulante no avanza a status
     expect(page.url()).not.toContain('/courier/onboarding/status');
@@ -399,9 +403,11 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     ).toBeVisible();
 
     // 5. Seleccionar tipo de vehículo, patente y aceptar consentimientos legales sin omitir controles (H02)
-    const motoRadio = page.getByText(COURIER_ONBOARDING_COPY.transportMoto, { exact: false });
-    await expect(motoRadio).toBeVisible();
-    await motoRadio.click();
+    const motoRadio = page.getByRole('radio', {
+      name: new RegExp(COURIER_ONBOARDING_COPY.transportMoto, 'i'),
+    });
+    await motoRadio.check();
+    await expect(motoRadio).toBeChecked();
 
     const plateInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.platePlaceholder);
     await expect(plateInput).toBeVisible();
@@ -537,9 +543,13 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await submitBtn.click();
 
     // Debe aparecer el alert accesible notificando DNI duplicado
-    const alert = page.getByRole('alert');
-    await expect(alert).toBeVisible({ timeout: 10000 });
-    await expect(alert).toContainText(/ya está registrado|rechazado anteriormente/i);
+    const duplicateDniAlert = page.getByRole('alert').filter({
+      hasText: /ya está registrado|rechazado anteriormente/i,
+    });
+    await expect(duplicateDniAlert).toBeVisible({ timeout: 10000 });
+    await expect(duplicateDniAlert).toContainText(
+      /ya está registrado|rechazado anteriormente/i
+    );
 
     // Invariante de navegación: el usuario no avanza al visor de estado
     expect(page.url()).not.toContain('/courier/onboarding/status');
