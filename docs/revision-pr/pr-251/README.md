@@ -1,37 +1,34 @@
 # PR #251 — T-313 · E2E de registro de comercio y consentimientos
 
-> ❌ Ronda 4 · CON BLOQUEANTES (5) · 3 cerrados · 5 abiertos
+> ❌ Ronda 5 · CON BLOQUEANTES (3) · H07/H08 cerrados
 
 | Campo | Valor |
 |---|---|
 | PR | #251 · `feat/T-313-merchant-registration-e2e` → `develop` |
 | Tarea | T-313 |
 | Autor | KiraK72 |
-| SHA revisado | `c175443f2b7eb76f99a1185a4a1f28f0ea703808` |
-| Base `develop` | `f1ae16106e61bbb6707b4adf17f7572bafbbd23b` |
-| Sincronización | 14 ahead / 0 behind |
-| Preview | run `37365402672`: 33 passed / 1 failed |
-| CI | run `37365268821`: failure; lint/audit green, otros jobs cancelados |
+| SHA revisado | `1b23706d743664851fe7bf44e7a4c81d67577e55` |
+| `develop` actual | `865a82fbaeb2249e41f9ba22e4ec66a78b9b6f57` |
+| Sincronización | 16 ahead / 4 behind |
+| CI | `37375915213` · GREEN |
+| e2e-preview | `37376151360` · cancelado antes de Playwright |
+| approval-policy | `37375911376` · GREEN |
 | P3 | visto bueno pendiente |
-
-## Rondas
-
-| Ronda | Resultado |
-|---|---|
-| 1 | ❌ 4 bloqueantes |
-| 2 | ❌ H04 abierto |
-| 3 | ❌ H04 abierto |
-| 4 | ❌ H04 + H05-H08 |
 
 ## Estado
 
-- ✅ H01 — cobertura de `(merchant)`.
+- ✅ H01 — cobertura completa de `(merchant)`.
 - ✅ H02 — doble error test/cleanup.
 - ✅ H03 — checklist/evidencia coherentes.
 - ❌ H04 — falta baseline GREEN + probe D02-A + revert + GREEN final.
-- ❌ H05 — ventana de usuario E2E sin registrar para cleanup.
-- ❌ H06 — el caso sin consentimiento no prueba que el perfil sea merchant.
-- ❌ H07 — la bitácora presenta SMTP como causa sin evidencia de causa raíz.
-- ❌ H08 — el body no sigue la plantilla obligatoria del repo.
+- 🟠 H05 — arreglo parcial: sigue existiendo carrera/ventana de cleanup.
+- 🟠 H06 — aserción agregada, pero RED comportamental no demostrado.
+- ✅ H07 — bitácora ya no presenta SMTP como causa confirmada.
+- ✅ H08 — body ya sigue la plantilla obligatoria.
+
+## Condiciones externas
+
+- Sincronizar los 4 commits nuevos de `develop` antes del cierre final.
+- Visto bueno explícito P3 aún pendiente.
 
 No apruebo ni mergeo.

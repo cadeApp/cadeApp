@@ -1,48 +1,73 @@
 # Evidencia y comandos — PR #251
 
-## Ronda 4 — SHA `c175443f2b7eb76f99a1185a4a1f28f0ea703808`
+## Ronda 5 — SHA `1b23706d743664851fe7bf44e7a4c81d67577e55`
 
-### Alcance y sincronización
-- rama 14 ahead / 0 behind contra `develop`.
-- desde ronda 3 solo se incorporó T-337 + bitácora de T-313; el spec T-313 no cambió.
+### Diff desde ronda 4
+Solo:
+- `e2e/specs/merchant-registration.spec.ts`
+- `docs/tasks/log/T-313.md`
+- body de PR
 
-### Preview
-Run `37365402672`, job `111973257046`:
+### CI
+Run `37375915213`: GREEN.
+
+### e2e-preview
+Run `37376151360`:
+- `resolve-preview`: success
+- `e2e-preview`: cancelled antes de ejecutar pasos
+- `report-preview-status`: publica `error` al SHA
+- Resultado funcional: ninguno
+
+### H05
+Implementación:
 ```text
-33 passed
-1 failed
+perPage = 50
+maxPages = 5
+for page 1..5:
+  listUsers(...)
+  exact email match
+  track user if found
+return null
 ```
-T-313:
-- courier ✅
-- sin consentimiento ✅
-- alta completa ❌ en línea 145
+Se llama inmediatamente después de `click()`, antes de asserts.
 
-Artifact:
-- intento inicial: error genérico de registro
-- retries: mensaje de rate-limit
-- no contiene causa Auth que identifique SMTP
-
-### H05 — enumeración de creación/cleanup
-```text
-UI alta: click 143 -> asserts 145/146 -> track 150  [GAP]
-createUser sin consentimiento: create 248 -> track 264 [OK]
-courier: loginAsCourier -> fixture compartido [OK]
-```
-`cleanupStagingData` usa `createdUserIds`; discovery de requests depende de `merchantUser`, ausente en este registrationContext.
+Residual:
+- una sola observación temporal;
+- máximo 250 usuarios;
+- si retorna null, no hay reconciliación posterior en finally/teardown.
 
 ### H06
-`readConsentState` devuelve `role, consent_status`.
-Caso positivo afirma role merchant; caso negativo no lo hace.
+La aserción `role === merchant` está presente.
+La bitácora declara mutación temporal a courier, pero la corrida murió en `E2E Fail-Closed` antes de llegar a la aserción.
+No cuenta como RED de H06.
 
 ### H07
-Ocurrencias de SMTP como causa definitiva en bitácora: líneas 48, 57, 78, 89, 110, 118 (además de menciones condicionales previas).
+Chequeo determinista sobre toda la bitácora:
+```text
+categorical_unqualified = []
+PASS
+```
 
 ### H08
-Template oficial comparado con body actual. Faltan secciones obligatorias de evidencia, RED, informe de agy, rutas/dependencias/rollback.
+Chequeo determinista del body:
+```text
+Qué cambia                 present
+DoD                        present
+Evidencia de checks        present
+Informe revisión agy       present
+Rutas de otra zona         present
+Dependencias nuevas        present
+Rollback                   present
+checkbox RED               present
+checkbox bitácora          present
+PASS
+```
+`approval-policy` `37375911376`: GREEN.
 
-### CI/policy
-CI `37365268821`: conclusion failure; lint/audit success, build/unit/typecheck/db-tests cancelled.
-approval-policy `37367274175`: failure con mensaje `El PR requiere aprobación vigente de Lautaro073.`
+### Sincronización
+`develop...rama`: 16 ahead / 4 behind.
+Los 4 commits faltantes agregan contratos/skills/fichas T-338–T-341; no cambian runtime T-313.
 
-### Nota de instrumento
-No se pudo clonar el repo desde el contenedor por falta de resolución de red; la evidencia ejecutable se tomó de los logs/artifacts oficiales del SHA revisado y la lectura directa de GitHub.
+### P3
+No hay visto bueno explícito P3 registrado sobre el spec.
+La aprobación de Lautaro073 existe y satisface approval-policy, pero es un requisito distinto.
