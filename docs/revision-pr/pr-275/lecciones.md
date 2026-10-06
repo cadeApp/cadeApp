@@ -1,34 +1,20 @@
 # Lecciones de la PR #275 para `AGENTS.md` y las reglas
 
-**Fuente:** 3 hallazgos de ronda 1.
+## AG-01 · Un error de contrato no debe degradarse a “sin datos”
+**Origen:** PR275-H01 — corregido en ronda 2.
 
-## Patrón dominante
+Un fallo de parseo en una frontera debe activar el estado de error cuando la UI distingue error de lista vacía.
 
-La alineación de vocabulario canónico está bien implementada en el camino feliz, pero el caso de dato inválido quedó con semántica distinta entre SSR y live: live falla explícitamente; SSR silencia el problema como lista vacía.
+## AG-02 · Mantener el informe de PR como contrato machine-readable
+**Origen:** PR275-H03 — corregido en ronda 2.
 
-## Lecciones propuestas
+El formato exacto vuelve a ser necesario para `approval-policy`.
 
-### AG-01 · Un error de contrato no debe degradarse a “sin datos”
-**Origen:** PR275-H01
+## AG-03 · No mezclar evidencia de comandos distintos
+**Origen:** PR275-H04
 
-Cuando una frontera valida datos externos con Zod, un fallo de contrato no debe reutilizar el mismo valor que representa un resultado legítimamente vacío.
+Un targeted test verde o un job equivalente de CI no permite marcar otro comando como verde si ese comando local terminó en fallo.
 
-> **Regla propuesta.** Si la UI tiene estado de error separado, un fallo de parseo/contrato en una consulta de datos debe activar ese estado; no convertirlo en `[]`, `null` o un default que también signifique “sin datos”.
+> **Regla propuesta.** En `Checks locales`, cada símbolo refleja literalmente la última salida del comando nombrado. Evidencia complementaria de CI o ejecuciones aisladas se anota aparte y nunca reemplaza el resultado del comando.
 
-### AG-02 · Mantener el informe de PR como contrato machine-readable
-**Origen:** PR275-H03
-
-Mismo patrón ya visto en #273: resumir `revisar-pr` rompe `approval-policy`.
-
-> **Regla propuesta.** El bloque emitido por `revisar-pr` se pega completo y con sus encabezados exactos; un resumen adicional no lo reemplaza.
-
-## Qué cambiar, en orden de impacto
-
-1. Corregir la semántica de error SSR y su test.
-2. Resolver la decisión de alcance de `feed-privacy.test.tsx`.
-3. Pegar el formato exacto de `revisar-pr` en el body.
-
-## Advertencias
-
-- El hallazgo de alcance es una decisión, no un defecto funcional del fixture.
-- `audit` no se atribuye a T-343.
+Esto refuerza una regla que ya existe en `AGENTS.md §4`: nunca declarar verde sin evidencia.

@@ -1,45 +1,48 @@
 # Evidencia y comandos reproducibles — PR #275
 
-## PR275-H01 · enum inválido en SSR
+## Ronda 2 — H01
 
-Inspección del HEAD revisado:
-
-```ts
-const packageType = packageTypeSchema.safeParse(req.package_type);
-const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
-if (!packageType.success || !recipientPaymentMethod.success) {
-  return { requests: [], nextCursor: null };
-}
-```
-
-El test actual también espera:
-
-```ts
-expect(result.requests).toEqual([]);
-```
-
-Verificación esperada tras el arreglo: el caso inválido debe rechazar/lanzar y la ruta SSR debe poder activar `src/app/(courier)/courier/feed/error.tsx`.
-
-## PR275-A01 · alcance
+Diff nuevo desde el registro de decisión:
 
 ```bash
-git show origin/develop:docs/tasks/T-343.md | grep -F "feed-privacy.test.tsx" || echo "NO AUTORIZADO EN DEVELOP"
-git diff --name-only origin/develop...origin/feat/T-343-feed-canonical-vocabulary | grep -F "feed-privacy.test.tsx"
+git diff c8daf3ae69e70f5bbfcbf40727c01df9fd807d05..bee887e9ee66313be532354b2ead22b4329f7a14 --   src/features/offers/queries.ts   src/features/offers/queries.test.ts
 ```
 
-En el SHA revisado, el primer comando no encuentra el archivo en la ficha base y el segundo sí lo encuentra en el diff.
+Resultado inspeccionado:
 
-## PR275-H03 · approval-policy
+- enum inválido en SSR → `throw Error`;
+- tests para `package_type` y `recipient_payment_method` → `rejects.toThrow`.
 
-Runs observados sobre el HEAD:
+CI `unit` del HEAD → success.
 
-- approval-policy #1590 ❌
-- approval-policy #1591 ❌
-- approval-policy #1592 ❌
+## Ronda 2 — H03
 
-El workflow exige la sección `### Informe de revisión de agy` y los marcadores definidos por `hasCompleteReport()`.
+`approval-policy` run `37409596878` → **success**.
 
-## Batería CI observada
+## Ronda 2 — H04
+
+Evidencia del propio body:
+
+```text
+Checks locales: ... test ✅ ...
+pnpm test completo 1917 passed y 4 timeouts intermitentes
+```
+
+Evidencia de la bitácora:
+
+```text
+pnpm test completo → 1917 passed | 4 failed
+```
+
+Verificación requerida:
+
+```bash
+pnpm test
+```
+
+Solo si ese comando termina GREEN corresponde declarar `test ✅`.
+
+## CI observado sobre bee887e
 
 - typecheck ✅
 - lint ✅
@@ -49,4 +52,5 @@ El workflow exige la sección `### Informe de revisión de agy` y los marcadores
 - bundle-budget ✅
 - Vercel ✅
 - e2e-preview ✅
+- approval-policy ✅
 - audit ❌ — advisories externos a T-343

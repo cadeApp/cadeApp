@@ -7,35 +7,41 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-343-feed-canonical-vocabulary` → `develop` |
 | **Base** | `83aeb34f00d2a4e78332d4da9004e1bdaab6def5` |
-| **Tamaño** | 21 archivos, +547 / -70 líneas |
-| **Estado** | bloqueada: H01 técnico + H03 body/approval-policy |
+| **Estado** | bloqueada en ronda 2 por evidencia local de `pnpm test` |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `4d9b4a19917a94b979f67add1a78f159c9b2cf3c` | 3 | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 1 | `4d9b4a19917a94b979f67add1a78f159c9b2cf3c` | 3 hallazgos | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `bee887e9ee66313be532354b2ead22b4329f7a14` | 1 bloqueante nuevo | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR275-H01 | El SSR convierte un enum inválido en “feed vacío” en vez de error | alto | abierto |
-| PR275-A01 | `feed-privacy.test.tsx` no está autorizado en la ficha base | decision | **aceptado** por Lautaro073 |
-| PR275-H03 | El body no cumple el contrato de `approval-policy` | medio | abierto |
-
-Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Evidencia: [`evidencia/comandos.md`](evidencia/comandos.md)
-
-## Decisión registrada — 2026-10-06
-
-Lautaro073 eligió **Opción A**: T-343 puede ampliar su alcance dentro de la misma PR #275 para tocar únicamente `src/features/offers/components/feed-privacy.test.tsx` y adaptar el fixture `packageType: 'small'` → `'chico'`. PR275-A01 deja de bloquear y se registra como `aceptado`.
+| PR275-H01 | El SSR convertía un enum inválido en feed vacío | alto | **arreglado-verificado** |
+| PR275-A01 | `feed-privacy.test.tsx` fuera de ficha base | decision | **aceptado** por Lautaro073 |
+| PR275-H03 | Body sin formato requerido por `approval-policy` | medio | **arreglado-verificado** |
+| PR275-H04 | El body marca `test ✅` aunque `pnpm test` local terminó con 4 fallos | medio | **abierto** |
 
 ## Qué queda por hacer
 
-1. Hacer que un valor canónico inválido en el SSR produzca un error de lectura real y active el error boundary; no devolver `requests: []`.
-2. Tras ese arreglo, volver a correr `revisar-pr` y pegar el informe completo en el body para que `approval-policy` pueda pasar.
-3. Pedir ronda 2 de revisión independiente.
+1. Reejecutar `pnpm test` completo hasta obtener una corrida GREEN real, o si vuelve a fallar, dejar el check local como ❌ y tratar los timeouts según corresponda.
+2. Corregir el body para que `Checks locales:` refleje exactamente el resultado real; no mezclar targeted tests o CI como si fueran el resultado de `pnpm test` local.
+3. Pedir ronda 3.
 
-## Para el análisis posterior
+## Estado de CI observado sobre `bee887e`
 
-La corrección principal del vocabulario canónico está bien orientada. El defecto técnico de ronda 1 está en el tratamiento del caso inválido del camino SSR, no en los valores canónicos ni en las etiquetas.
+- typecheck ✅
+- lint ✅
+- unit ✅
+- build ✅
+- db-tests ✅
+- bundle-budget ✅
+- Vercel ✅
+- e2e-preview ✅
+- approval-policy ✅
+- audit ❌ — advisories externos a T-343
+
+El código funcional de H01 quedó correcto; el único bloqueante restante es de evidencia/DoD.
