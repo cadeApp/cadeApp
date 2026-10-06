@@ -242,12 +242,16 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     ).toBe(true);
   });
 
-  it('T-343: un valor fuera del dominio canónico no se fuerza ni se inventa', async () => {
-    mockFeedRows([feedRow(1, 'small', 'cash'), feedRow(2, 'chico', 'card')]);
+  it('T-343 / PR275-H01: un tipo de paquete fuera del dominio es un error de lectura, no un feed vacío', async () => {
+    mockFeedRows([feedRow(1, 'chico', 'cash'), feedRow(2, 'small', 'cash')]);
 
-    const result = await getAvailableRequests();
+    await expect(getAvailableRequests()).rejects.toThrow(/package_type/);
+  });
 
-    expect(result.requests).toEqual([]);
+  it('T-343 / PR275-H01: un medio de pago fuera del dominio es un error de lectura, no un feed vacío', async () => {
+    mockFeedRows([feedRow(1, 'chico', 'cash'), feedRow(2, 'chico', 'card')]);
+
+    await expect(getAvailableRequests()).rejects.toThrow(/recipient_payment_method/);
   });
 
   it('T-343: el render inicial (SSR) y el refresco en vivo representan la misma fila de la misma forma', async () => {

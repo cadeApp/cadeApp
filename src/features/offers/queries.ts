@@ -129,11 +129,17 @@ export async function getAvailableRequests(): Promise<{
   const mapped: AvailableRequestItem[] = [];
   for (const req of pageRows) {
     // Mismo contrato que el feed en vivo (src/server/live/t204.ts): vocabulario canónico de src/domain/schemas.
-    // Un valor fuera del dominio no se fuerza ni se traduce; se trata como error de lectura.
+    // Un valor fuera del dominio no se fuerza, no se traduce ni se descarta: es un error de lectura real que llega
+    // al error boundary de la ruta (courier/feed/error.tsx), en lugar de esconder los pedidos válidos.
     const packageType = packageTypeSchema.safeParse(req.package_type);
+    if (!packageType.success) {
+      throw new Error(`Error al leer el feed: package_type fuera del dominio en la solicitud ${req.id}`);
+    }
     const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
-    if (!packageType.success || !recipientPaymentMethod.success) {
-      return { requests: [], nextCursor: null };
+    if (!recipientPaymentMethod.success) {
+      throw new Error(
+        `Error al leer el feed: recipient_payment_method fuera del dominio en la solicitud ${req.id}`
+      );
     }
 
     const pickupZone = Array.isArray(req.pickup_zone)
