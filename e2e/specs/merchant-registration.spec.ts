@@ -289,7 +289,7 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
       password,
       email_confirm: true,
       user_metadata: {
-        role: 'courier',
+        role: 'merchant',
         display_name: `E2E Sin Consentimiento ${registrationContext.testRunId}`,
         phone: '+5493865000098',
       },
