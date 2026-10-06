@@ -782,6 +782,10 @@ export type Database = {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
       }
+      get_merchant_request_private_fields: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
       get_request_offer_couriers: {
         Args: { p_request_id: string }
         Returns: Json
