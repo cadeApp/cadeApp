@@ -47,7 +47,7 @@ describe('PR87-R06: mutaciones de ofertas no dependen de notify', () => {
     pickupZoneName: 'Centro',
     dropoffZoneName: 'Barrio Norte',
     approxDistanceKm: '2,5',
-    packageType: 'small',
+    packageType: 'chico',
     recipientPaymentMethod: 'cash',
     needsChange: false,
     publishedAt: '2026-09-25T03:00:00Z',

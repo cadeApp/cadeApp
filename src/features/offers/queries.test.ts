@@ -1,6 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
 import { getAvailableRequests, getCourierStatusAndAvailability, getMyOffers } from './queries';
+import { liveFeedResponseSchema } from '@/lib/live-contracts';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { getAvailableRequestsLiveServer } from '@/server/live/t204';
+import { RequestCard } from './components/request-card';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -40,7 +45,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
           {
             id: 'req-1',
             approx_distance_m: 2500,
-            package_type: 'small',
+            package_type: 'chico',
             recipient_payment_method: 'cash',
             needs_change: true,
             cash_change_amount: 5000,
@@ -123,7 +128,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
       id: 'req-1',
       created_at: '2026-09-23T18:00:00.000Z',
       approx_distance_m: 2500,
-      package_type: 'small',
+      package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: true,
       cash_change_amount: 5000,
@@ -182,12 +187,131 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     expect(serialized).not.toContain('5000');
   });
 
+  function mockFeedRows(rows: readonly unknown[]) {
+    const requestsBuilder = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      then: (resolve: (val: unknown) => void) => resolve({ data: rows, error: null }),
+    };
+    const offersBuilder = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      then: (resolve: (val: unknown) => void) => resolve({ data: [], error: null }),
+    };
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: validCourierUser }, error: null }),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'delivery_requests') return requestsBuilder;
+        if (table === 'offers') return offersBuilder;
+        return {};
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+  }
+
+  function feedRow(i: number, packageType: string, method: string) {
+    return {
+      id: `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
+      created_at: '2026-09-26T12:00:00.000Z',
+      approx_distance_m: 1000,
+      package_type: packageType,
+      recipient_payment_method: method,
+      needs_change: false,
+      published_at: '2026-09-26T12:00:00.000Z',
+      expires_at: null,
+      pickup_zone: { name: 'Centro' },
+      dropoff_zone: { name: 'Aguilares' },
+    };
+  }
+
+  it('T-343: el feed SSR conserva los valores reales de la base y pasa el contrato del feed en vivo', async () => {
+    const combos = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType) =>
+      (['cash', 'transfer', 'to_agree'] as const).map((method) => [packageType, method] as const)
+    );
+    mockFeedRows(combos.map(([packageType, method], i) => feedRow(i + 1, packageType, method)));
+
+    const result = await getAvailableRequests();
+
+    expect(result.requests.map((r) => [r.packageType, r.recipientPaymentMethod])).toEqual(combos);
+    expect(
+      liveFeedResponseSchema.safeParse({ data: result.requests, nextCursor: null }).success
+    ).toBe(true);
+  });
+
+  it('T-343 / PR275-H01: un tipo de paquete fuera del dominio es un error de lectura, no un feed vacío', async () => {
+    mockFeedRows([feedRow(1, 'chico', 'cash'), feedRow(2, 'small', 'cash')]);
+
+    await expect(getAvailableRequests()).rejects.toThrow(/package_type/);
+  });
+
+  it('T-343 / PR275-H01: un medio de pago fuera del dominio es un error de lectura, no un feed vacío', async () => {
+    mockFeedRows([feedRow(1, 'chico', 'cash'), feedRow(2, 'chico', 'card')]);
+
+    await expect(getAvailableRequests()).rejects.toThrow(/recipient_payment_method/);
+  });
+
+  it('T-343: el render inicial (SSR) y el refresco en vivo representan la misma fila de la misma forma', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-26T12:05:00.000Z'));
+    try {
+      const combos = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType) =>
+        (['cash', 'transfer', 'to_agree'] as const).map((method) => [packageType, method] as const)
+      );
+      const rows = combos.map(([packageType, method], i) => feedRow(i + 1, packageType, method));
+      const builder = (data: unknown) => {
+        const b = {
+          select: vi.fn(() => b),
+          eq: vi.fn(() => b),
+          order: vi.fn(() => b),
+          limit: vi.fn(() => b),
+          or: vi.fn(() => b),
+          in: vi.fn(() => b),
+          then: (resolve: (val: unknown) => unknown) =>
+            Promise.resolve({ data, error: null }).then(resolve),
+        };
+        return b;
+      };
+      vi.mocked(serverSupabase.createClient).mockImplementation(
+        async () =>
+          ({
+            auth: {
+              getUser: vi.fn().mockResolvedValue({ data: { user: validCourierUser }, error: null }),
+            },
+            from: vi.fn((table: string) => builder(table === 'delivery_requests' ? rows : [])),
+          }) as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const ssr = await getAvailableRequests();
+      const live = await getAvailableRequestsLiveServer();
+      expect(live.ok).toBe(true);
+      if (!live.ok) return;
+      const liveItems = liveFeedResponseSchema.parse(live.data).data;
+
+      expect(ssr.requests).toHaveLength(combos.length);
+      expect(liveItems).toEqual(ssr.requests);
+
+      const markup = (request: (typeof ssr.requests)[number]) =>
+        renderToStaticMarkup(createElement(RequestCard, { request, onOfferClick: () => {} }));
+      ssr.requests.forEach((ssrItem, i) => {
+        const liveItem = liveItems[i];
+        if (!liveItem) throw new Error('Live item should be defined');
+        expect(markup(liveItem)).toBe(markup(ssrItem));
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('pagina más de 50 filas retornando 50 ítems y nextCursor con createdAt y id de la fila 50', async () => {
     const fiftyOneRows = Array.from({ length: 51 }, (_, i) => ({
       id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
       created_at: `2026-09-26T12:${String(59 - i).padStart(2, '0')}:00.000Z`,
       approx_distance_m: 1000,
-      package_type: 'small',
+      package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
       cash_change_amount: null,
