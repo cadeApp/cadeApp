@@ -101,3 +101,72 @@ Bitácora R2 registra esos componentes por separado, pero no `pnpm test` literal
 
 ## CI
 No inspeccionado como cierre por existir bloqueantes.
+
+
+---
+
+# Ronda 3 — evidencia sobre d7b7f40a80d8619ad126df6369ddaa8e45f9ad10
+
+## Estado
+~~~text
+develop = 6e2da8fb02d4797b9add222206342e6055f1d81c
+HEAD    = d7b7f40a80d8619ad126df6369ddaa8e45f9ad10
+compare = ahead 19 / behind 2
+PR Draft = true
+mergeable = true
+~~~
+
+El diff actual contra develop contiene solo T-309 + docs/revision-pr/pr-253/**.
+
+## Cerrados
+H02, H06, H09, H10, H11 y H12 se revalidaron por inspección.
+
+### PNG
+Probe independiente del Base64:
+~~~text
+format = PNG
+size = (2, 2)
+mode = RGB
+load() = OK
+~~~
+
+### Cleanup
+El POST exitoso captura path antes de continue; finally elimina y lista el folder para comprobar ausencia.
+
+### Contextos
+No quedan browser.newContext() manuales. Las páginas de a11y usan fixture page.
+
+## H07 pendiente
+Bitácora R3 contiene RED concreto para:
+- tags 2.2;
+- image-alt en login;
+- URL canónica incorrecta.
+
+Falta evidencia de:
+- retry roto;
+- selector roto;
+- MIME permitido;
+- image-alt en crear solicitud;
+- image-alt en feed;
+- image-alt en viaje;
+- image-alt en onboarding.
+
+## H08 pendiente
+~~~text
+pnpm test -> exit 1
+117 test files passed
+2 test files failed
+~~~
+
+La alternativa serial 119/119 no reemplaza al comando del DoD.
+
+En develop actual, cc007.test.ts crea un git worktree temporal para sus mutaciones:
+~~~text
+git worktree add --detach <tmp> HEAD
+~~~
+y documenta que así no contamina otros tests paralelos.
+
+La rama está 2 commits detrás de ese develop; debe sincronizar y reintentar el comando exacto.
+
+## CI
+No inspeccionado como evidencia de cierre porque H07/H08 siguen bloqueantes.
