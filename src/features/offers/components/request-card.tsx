@@ -42,6 +42,7 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
   return (
     <Card
       data-testid="request-card"
+      data-request-id={request.id}
       className="p-4 shadow-sm border border-border hover:border-primary/40 transition-colors"
     >
       <CardContent className="p-0 space-y-3">

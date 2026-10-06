@@ -26,6 +26,7 @@ const CHANGE_AMOUNT = 5000;
 test.describe('T-342 — privacidad del feed del repartidor antes del match', () => {
   test('DoD: antes del match no se ven indicaciones ni monto de cambio; después de aceptar sí', async ({
     page,
+    courierPage,
     stagingContext,
     loginAsCourier,
   }) => {
@@ -55,9 +56,11 @@ test.describe('T-342 — privacidad del feed del repartidor antes del match', ()
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
 
-    const cardsWithChange = page.getByTestId('request-card').filter({ hasText: /necesita cambio/i });
-    await expect(cardsWithChange.first()).toBeVisible();
-    await expect(page.getByText(/paga en efectivo/i).first()).toBeVisible();
+    const seededCard = courierPage.requestCardById(requestId);
+    await expect(seededCard).toBeVisible();
+    await expect(seededCard.getByText(/paga en efectivo/i)).toBeVisible();
+    await expect(seededCard.getByText(/necesita cambio/i)).toHaveText('Necesita cambio');
+    await expect(seededCard.getByText(amountLabel)).toHaveCount(0);
 
     // Ninguna tarjeta del feed muestra indicaciones ni monto de cambio (incluida la sembrada)
     await expect(page.getByText(notes)).toHaveCount(0);
@@ -66,13 +69,14 @@ test.describe('T-342 — privacidad del feed del repartidor antes del match', ()
       expect(badgeText.trim()).toBe('Necesita cambio');
     }
 
-    // 3. Hoja de oferta de una solicitud que necesita cambio
-    await cardsWithChange.first().getByRole('button', { name: /^ofertar$/i }).click();
+    // 3. Hoja de oferta de la solicitud sembrada
+    await seededCard.getByRole('button', { name: /^ofertar$/i }).click();
     const sheet = page.getByRole('dialog');
     await expect(sheet).toBeVisible();
     await expect(sheet.getByText(/necesita cambio/i)).toHaveText('Necesita cambio');
     await expect(sheet.getByText(/indicaciones/i)).toHaveCount(0);
     await expect(sheet.getByText(notes)).toHaveCount(0);
+    await expect(sheet.getByText(amountLabel)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
 
