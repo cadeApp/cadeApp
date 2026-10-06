@@ -26,8 +26,14 @@ una RPC, migrar los lectores y recién después revocar permisos). Condiciones:
 - **Cada paso:** rama propia `feat/T-xxx-<paso>`, PR propio, CI propio y revisión independiente propia.
 - **Secuencial:** no es trabajo paralelo sobre la misma tarea. El paso siguiente no se empieza ni se mergea hasta
   cumplir el checkpoint documentado del anterior.
-- **Issue:** los PR intermedios usan `Refs #<issue>` y solo el último usa `Closes #<issue>`, para que la tarea no se
-  cierre ni pase a «Hecha» antes de terminar el rollout.
+- **Issue:** según la variante que declare el CC:
+  - **sin gate posterior al merge:** los PR intermedios usan `Refs #<issue>` y el último `Closes #<issue>`;
+  - **con gate posterior al merge** (por ejemplo, un E2E que solo puede correr con la migración ya aplicada en
+    Develop): todos los PR mergeables usan `Refs #<issue>`, el issue queda abierto y se cierra a mano recién con el
+    gate documentado en verde.
+- **Marcador de la ficha:** `- **Rollout multi-PR:** sí`, exacto. Con él, `board-sync` no da por terminada la tarea por
+  un PR mergeado mientras el issue siga abierto: la deja «En curso» (o «En review» con un PR listo), no la cierra sola
+  y no desbloquea dependencias hasta que el issue se cierra.
 - **Bitácora única:** `docs/tasks/log/T-xxx.md` registra cada paso y su PR.
 
 Autorizada por Lautaro073 el 2026-10-06 para T-345 / CC-023 (PR #282).
