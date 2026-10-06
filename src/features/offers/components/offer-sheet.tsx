@@ -147,15 +147,9 @@ export function OfferSheet({
             {request.needsChange && (
               <Badge variant="in_transit" className="text-sm">
                 {OFFERS_COPY.changeNeededBadge}
-                {request.cashChangeAmount ? ` (${formatArs(request.cashChangeAmount)})` : ''}
               </Badge>
             )}
           </div>
-          {request.notes && (
-            <p className="pt-1 text-sm italic text-muted-foreground">
-              Indicaciones: {request.notes}
-            </p>
-          )}
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">

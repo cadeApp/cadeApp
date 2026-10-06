@@ -8,8 +8,6 @@ export const liveAvailableRequestItemSchema = z.object({
   packageType: z.enum(['small', 'medium', 'large']),
   recipientPaymentMethod: z.enum(['cash', 'transfer']),
   needsChange: z.boolean(),
-  cashChangeAmount: z.number().int().nullable(),
-  notes: z.string().nullable(),
   publishedAt: z.string(),
   expiresAt: z.string().nullable(),
   hasMyOffer: z.boolean(),

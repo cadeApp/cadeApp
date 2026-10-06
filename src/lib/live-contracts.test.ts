@@ -19,8 +19,6 @@ describe('T-204: live-contracts client-safe schemas', () => {
     packageType: 'small',
     recipientPaymentMethod: 'cash',
     needsChange: false,
-    cashChangeAmount: null,
-    notes: null,
     publishedAt: '2026-09-26T12:00:00Z',
     expiresAt: null,
     hasMyOffer: true,
@@ -87,6 +85,28 @@ describe('T-204: live-contracts client-safe schemas', () => {
   it('falla feed response si falta nextCursor (no es opcional)', () => {
     const parsed = liveFeedResponseSchema.safeParse({ data: [validRequest] });
     expect(parsed.success).toBe(false);
+  });
+
+  it('T-342 D3: el contrato del feed en vivo no tiene indicaciones ni monto exacto de cambio', () => {
+    expect(Object.keys(liveAvailableRequestItemSchema.shape)).not.toContain('notes');
+    expect(Object.keys(liveAvailableRequestItemSchema.shape)).not.toContain('cashChangeAmount');
+
+    const parsed = liveFeedResponseSchema.parse({
+      data: [
+        {
+          ...validRequest,
+          needsChange: true,
+          cashChangeAmount: 5000,
+          notes: 'Portón negro, tocar timbre 2B',
+        },
+      ],
+      nextCursor: null,
+    });
+    const first = parsed.data[0];
+    if (!first) throw new Error('First request should be defined');
+    expect(first).not.toHaveProperty('notes');
+    expect(first).not.toHaveProperty('cashChangeAmount');
+    expect(first.needsChange).toBe(true);
   });
 
   it('falla feed response si un campo requerido falta o es inválido', () => {

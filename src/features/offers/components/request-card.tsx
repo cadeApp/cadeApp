@@ -75,17 +75,9 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
           {request.needsChange && (
             <Badge variant="in_transit" className="text-sm font-semibold">
               {OFFERS_COPY.changeNeededBadge}
-              {request.cashChangeAmount ? ` (${formatArs(request.cashChangeAmount)})` : ''}
             </Badge>
           )}
         </div>
-
-        {/* Indicaciones si hay */}
-        {request.notes && (
-          <p className="text-sm text-muted-foreground italic">
-            Indicaciones: {request.notes}
-          </p>
-        )}
 
         {/* Tiempos de publicación y vencimiento (piso 14px -> text-sm) */}
         <div className="flex items-center gap-1 text-sm text-muted-foreground pt-1">
