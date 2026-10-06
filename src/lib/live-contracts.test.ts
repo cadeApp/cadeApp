@@ -16,11 +16,9 @@ describe('T-204: live-contracts client-safe schemas', () => {
     pickupZoneName: 'Centro',
     dropoffZoneName: 'Aguilares',
     approxDistanceKm: '1,5',
-    packageType: 'small',
+    packageType: 'chico',
     recipientPaymentMethod: 'cash',
     needsChange: false,
-    cashChangeAmount: null,
-    notes: null,
     publishedAt: '2026-09-26T12:00:00Z',
     expiresAt: null,
     hasMyOffer: true,
@@ -87,6 +85,54 @@ describe('T-204: live-contracts client-safe schemas', () => {
   it('falla feed response si falta nextCursor (no es opcional)', () => {
     const parsed = liveFeedResponseSchema.safeParse({ data: [validRequest] });
     expect(parsed.success).toBe(false);
+  });
+
+  it('T-342 D3: el contrato del feed en vivo no tiene indicaciones ni monto exacto de cambio', () => {
+    expect(Object.keys(liveAvailableRequestItemSchema.shape)).not.toContain('notes');
+    expect(Object.keys(liveAvailableRequestItemSchema.shape)).not.toContain('cashChangeAmount');
+
+    const parsed = liveFeedResponseSchema.parse({
+      data: [
+        {
+          ...validRequest,
+          needsChange: true,
+          cashChangeAmount: 5000,
+          notes: 'Portón negro, tocar timbre 2B',
+        },
+      ],
+      nextCursor: null,
+    });
+    const first = parsed.data[0];
+    if (!first) throw new Error('First request should be defined');
+    expect(first).not.toHaveProperty('notes');
+    expect(first).not.toHaveProperty('cashChangeAmount');
+    expect(first.needsChange).toBe(true);
+  });
+
+  it('T-343: acepta los cuatro tipos de paquete y los tres medios de pago reales de la base', () => {
+    const data = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType, i) =>
+      (['cash', 'transfer', 'to_agree'] as const).map((recipientPaymentMethod, j) => ({
+        ...validRequest,
+        id: `a0000000-0000-0000-0000-0000000000${i}${j}`,
+        packageType,
+        recipientPaymentMethod,
+      }))
+    );
+
+    const parsed = liveFeedResponseSchema.safeParse({ data, nextCursor: null });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.data.map((r) => [r.packageType, r.recipientPaymentMethod])).toEqual(
+      data.map((r) => [r.packageType, r.recipientPaymentMethod])
+    );
+  });
+
+  it('T-343: rechaza el vocabulario inventado small/medium/large', () => {
+    for (const packageType of ['small', 'medium', 'large']) {
+      expect(
+        liveAvailableRequestItemSchema.safeParse({ ...validRequest, packageType }).success
+      ).toBe(false);
+    }
   });
 
   it('falla feed response si un campo requerido falta o es inválido', () => {

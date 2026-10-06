@@ -21,7 +21,9 @@ para que cualquiera pueda continuar el trabajo de otro sin romper nada.
 ## 2. Invariantes del producto (nunca se rompen)
 - Estados, piso de oferta, aceptación y autorización se validan en RPC de Postgres + RLS. La UI solo refleja.
 - El piso sale de `platform_settings.min_offer_ars`. Montos: enteros en ARS. Nunca hardcodear 1000.
-- Datos del destinatario solo en `delivery_request_contacts`. Jamás en logs, push, analytics ni URLs.
+- Datos sensibles del destinatario (dirección, nombre, teléfono, pin, indicaciones y monto exacto de cambio) solo en
+  las tablas privadas de contactos: `delivery_request_contacts` (modelo de 1 entrega) y `delivery_request_drop_contacts`
+  (varias entregas, CC-022). Jamás en logs, push, analytics, URLs ni tablas visibles antes del match.
 - DNI/selfie: bucket privado `courier-docs`; lectura solo con URL firmada server-side para admin + `audit_log`.
 - Service role key solo en `src/server/supabase/admin.ts` (con `import 'server-only'`). Nunca en código cliente.
 - El envío lo paga quien recibe; cadeApp no procesa ni registra ese pago.
@@ -49,6 +51,9 @@ Prohibido: `any`, `@ts-ignore`, `!` non-null, `.only`, `.skip` sin issue, desact
 
 ## 5. Coordinación (resumen; detalle en `.agents/rules/50-git-y-coordinacion.md`)
 - Una tarea = un issue = una rama `feat/T-xxx-slug` = un PR (Draft desde el primer push).
+  Excepción acotada: un CC puede exigir varios PR sucesivos para una misma tarea cuando un único merge no es seguro
+  por el orden de rollout entre esquema y aplicación. Requiere decisión explícita de Lautaro073 en el CC y en la
+  ficha; detalle en la regla 50.
 - Al terminar CADA sesión: skill `cerrar-sesion` (bitácora `docs/tasks/log/T-xxx.md`, commit, push). Nunca dejes
   trabajo solo en tu máquina: otra persona puede necesitar retomarlo.
 - Rebase sobre develop al empezar cada sesión. Conflictos: solo en tus archivos; lockfile → ver regla 50.
