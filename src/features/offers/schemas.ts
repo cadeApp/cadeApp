@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { uuidSchema } from '@/domain/rpc-contracts';
 import { courierStatusSchema } from '@/domain/schemas';
+import type { PackageType, RecipientPaymentMethod } from '@/domain/schemas';
 
 export const submitOfferFormSchema = z.object({
   requestId: uuidSchema,
@@ -47,11 +48,9 @@ export interface AvailableRequestItem {
   readonly pickupZoneName: string;
   readonly dropoffZoneName: string;
   readonly approxDistanceKm: string;
-  readonly packageType: 'small' | 'medium' | 'large';
-  readonly recipientPaymentMethod: 'cash' | 'transfer';
+  readonly packageType: PackageType;
+  readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;
-  readonly cashChangeAmount: number | null;
-  readonly notes: string | null;
   readonly publishedAt: string;
   readonly expiresAt: string | null;
   readonly hasMyOffer: boolean;

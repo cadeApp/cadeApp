@@ -1,15 +1,14 @@
 import { z } from 'zod';
+import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
 
 export const liveAvailableRequestItemSchema = z.object({
   id: z.string().uuid(),
   pickupZoneName: z.string().min(1),
   dropoffZoneName: z.string().min(1),
   approxDistanceKm: z.string(),
-  packageType: z.enum(['small', 'medium', 'large']),
-  recipientPaymentMethod: z.enum(['cash', 'transfer']),
+  packageType: packageTypeSchema,
+  recipientPaymentMethod: recipientPaymentMethodSchema,
   needsChange: z.boolean(),
-  cashChangeAmount: z.number().int().nullable(),
-  notes: z.string().nullable(),
   publishedAt: z.string(),
   expiresAt: z.string().nullable(),
   hasMyOffer: z.boolean(),

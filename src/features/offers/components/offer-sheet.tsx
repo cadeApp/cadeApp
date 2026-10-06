@@ -116,17 +116,8 @@ export function OfferSheet({
       .catch(() => {});
   };
 
-  const packageLabel =
-    request.packageType === 'small'
-      ? OFFERS_COPY.packageSmall
-      : request.packageType === 'medium'
-        ? OFFERS_COPY.packageMedium
-        : OFFERS_COPY.packageLarge;
-
-  const paymentLabel =
-    request.recipientPaymentMethod === 'cash'
-      ? OFFERS_COPY.cashPayment
-      : OFFERS_COPY.transferPayment;
+  const packageLabel = OFFERS_COPY.packageLabels[request.packageType];
+  const paymentLabel = OFFERS_COPY.paymentLabels[request.recipientPaymentMethod];
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -147,15 +138,9 @@ export function OfferSheet({
             {request.needsChange && (
               <Badge variant="in_transit" className="text-sm">
                 {OFFERS_COPY.changeNeededBadge}
-                {request.cashChangeAmount ? ` (${formatArs(request.cashChangeAmount)})` : ''}
               </Badge>
             )}
           </div>
-          {request.notes && (
-            <p className="pt-1 text-sm italic text-muted-foreground">
-              Indicaciones: {request.notes}
-            </p>
-          )}
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
