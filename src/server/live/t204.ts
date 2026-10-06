@@ -1,5 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
+import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsRpc } from '@/server/rpc/trips';
 import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
@@ -34,8 +35,6 @@ interface RawAvailableRequestRow {
   readonly package_type: string;
   readonly recipient_payment_method: string;
   readonly needs_change: boolean;
-  readonly cash_change_amount: number | null;
-  readonly notes: string | null;
   readonly published_at: string | null;
   readonly expires_at: string | null;
   readonly pickup_zone?: { name: string } | Array<{ name: string }> | null;
@@ -57,7 +56,7 @@ interface RawOfferRow {
  * - Requiere sesión activa de usuario.
  * - Lee delivery_requests en status=published con SOLO columnas públicas de feed.
  * - Consulta ofertas pendientes del courier para computar hasMyOffer y myOfferAmountArs.
- * - Jamás lee contactos, direcciones exactas ni coordenadas.
+ * - Jamás lee contactos, direcciones exactas, coordenadas, indicaciones ni monto exacto de cambio (D3).
  */
 export async function getAvailableRequestsLiveServer(
   cursor: LivePageCursor | null = null
@@ -81,8 +80,6 @@ export async function getAvailableRequestsLiveServer(
       package_type,
       recipient_payment_method,
       needs_change,
-      cash_change_amount,
-      notes,
       published_at,
       expires_at,
       pickup_zone:zones!pickup_zone_id(name),
@@ -137,28 +134,33 @@ export async function getAvailableRequestsLiveServer(
     }
   }
 
-  const mapped: LiveAvailableRequestItem[] = pageRows.map((req) => {
+  const mapped: LiveAvailableRequestItem[] = [];
+  for (const req of pageRows) {
+    // Vocabulario canónico (src/domain/schemas): un valor fuera del dominio no se fuerza ni se traduce.
+    const packageType = packageTypeSchema.safeParse(req.package_type);
+    const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
+    if (!packageType.success || !recipientPaymentMethod.success) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
 
-    return {
+    mapped.push({
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
       dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: (req.package_type as LiveAvailableRequestItem['packageType']) ?? 'small',
-      recipientPaymentMethod:
-        (req.recipient_payment_method as LiveAvailableRequestItem['recipientPaymentMethod']) ?? 'cash',
+      packageType: packageType.data,
+      recipientPaymentMethod: recipientPaymentMethod.data,
       needsChange: Boolean(req.needs_change),
-      cashChangeAmount: req.cash_change_amount,
-      notes: req.notes,
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
-    };
-  });
+    });
+  }
 
   const tail = pageRows.at(-1);
   const nextCursor: LivePageCursor | null =

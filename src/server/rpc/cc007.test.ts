@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { consentStatusSchema } from '@/domain/schemas';
 
 describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis estático y mutaciones', () => {
@@ -101,20 +102,65 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
   });
 
   describe('9. Demostración de mutaciones rojas reales (H06)', () => {
+    // Las mutaciones se aplican en un git worktree temporal y nunca sobre el checkout principal: la suite completa
+    // corre archivos en paralelo y otros tests (p. ej. guards.test.ts) leerían el código mutado (PR275-H04).
+    const repoRoot = process.cwd();
+    let mutationRoot = '';
+    let mutationWorktree = '';
+    let nodeModulesLink = '';
+
+    beforeAll(() => {
+      mutationRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cadeapp-cc007-'));
+      mutationWorktree = path.join(mutationRoot, 'repo');
+
+      const created = spawnSync('git', ['worktree', 'add', '--detach', mutationWorktree, 'HEAD'], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      });
+      if (created.status !== 0) {
+        throw new Error(created.stderr || 'No se pudo crear el worktree de mutación');
+      }
+
+      nodeModulesLink = path.join(mutationWorktree, 'node_modules');
+      fs.symlinkSync(
+        path.resolve(repoRoot, 'node_modules'),
+        nodeModulesLink,
+        process.platform === 'win32' ? 'junction' : 'dir'
+      );
+    });
+
+    afterAll(() => {
+      // Primero se quita el enlace a node_modules, para que ningún borrado recursivo lo siga hasta el repo principal.
+      if (nodeModulesLink && fs.existsSync(nodeModulesLink)) {
+        fs.unlinkSync(nodeModulesLink);
+      }
+      if (mutationWorktree) {
+        spawnSync('git', ['worktree', 'remove', '--force', mutationWorktree], {
+          cwd: repoRoot,
+          encoding: 'utf8',
+        });
+      }
+      if (mutationRoot) {
+        fs.rmSync(mutationRoot, { recursive: true, force: true });
+      }
+    });
+
     function executeMutation(
-      filePath: string,
+      relativeFilePath: string,
       mutator: (content: string) => string,
       testArgs: string[]
     ) {
+      const filePath = path.join(mutationWorktree, relativeFilePath);
       const original = fs.readFileSync(filePath, 'utf8');
       const mutated = mutator(original);
       if (mutated === original) {
-        throw new Error(`Target text to mutate was not found in: ${filePath}`);
+        throw new Error(`Target text to mutate was not found in: ${relativeFilePath}`);
       }
 
       try {
         fs.writeFileSync(filePath, mutated, 'utf8');
         const res = spawnSync('pnpm', testArgs, {
+          cwd: mutationWorktree,
           shell: true,
           encoding: 'utf8',
         });
@@ -128,9 +174,8 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
       'mutación A: omitir verificación de consentStatus en guards hace fallar guards.test.ts con exit != 0',
       { timeout: 15000 },
       () => {
-        const guardsFile = path.resolve('src/features/auth/guards.ts');
         const res = executeMutation(
-          guardsFile,
+          'src/features/auth/guards.ts',
           (content) =>
             content.replace(
               "session.role !== 'admin' && session.consentStatus !== 'active'",
@@ -148,9 +193,8 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
       'mutación B: ignorar validación de consent_status en getServerSession hace fallar queries.test.ts con exit != 0',
       { timeout: 15000 },
       () => {
-        const queriesFile = path.resolve('src/features/auth/queries.ts');
         const res = executeMutation(
-          queriesFile,
+          'src/features/auth/queries.ts',
           (content) =>
             content.replace(
               'const consentParsed = consentStatusSchema.safeParse(profileResult.data.consent_status);',
@@ -168,9 +212,8 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
       'mutación C: hardcodear consentStatus active en loginAction hace fallar actions.test.ts con exit != 0',
       { timeout: 15000 },
       () => {
-        const actionsFile = path.resolve('src/features/auth/actions.ts');
         const res = executeMutation(
-          actionsFile,
+          'src/features/auth/actions.ts',
           (content) =>
             content.replace(
               'const consentStatus = consentParsed.data;',
@@ -189,7 +232,7 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
       { timeout: 15000 },
       () => {
         const res = executeMutation(
-          migrationPath,
+          'supabase/migrations/20260925170000_cc007_consent_enforcement.sql',
           (content) =>
             content.replace(
               'using (profile_id = auth.uid() and app_private.is_active_operational_actor());',
