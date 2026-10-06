@@ -77,3 +77,80 @@ Vercel         success
 e2e-preview    error: job e2e-preview cancelled; no fallo funcional reportado
 approval-policy failure: todavía hay bloqueantes
 ```
+
+---
+
+## Ronda 3
+
+SHA: `1f134ce4ef219bf504dd954ee9cacc5a730a74da`.
+
+### H03 verificado
+
+`AGENTS.md §5` conserva la regla general y delega el detalle de la excepción multi-PR a regla 50. Regla 50 exige decisión explícita, ramas/PR/checks/revisión por paso, secuencia y bitácora única. T-345 registra decisión B y tres ramas.
+
+### H04 verificado
+
+T-345 PR 1 incluye:
+
+```text
+supabase/migrations/*_t345_cc023_merchant_private_fields_rpc.sql
+supabase/tests/cc023_private_columns.sql (parte RPC)
+src/types/database.types.ts
+```
+
+El checkpoint exige `db-tests` y drift de tipos verde.
+
+### H05 — comportamiento real de board-sync
+
+`.github/workflows/board-sync.mjs`:
+
+```text
+merged PR feat/T-345-* -> mergedTaskIds += T-345
+completedTasks = Set(mergedTaskIds)
+isCompleted = (issue closed || completedTasks.has(T-345)) && !openPr
+targetState = hecha
+shouldCloseIssue = isCompleted && !isClosed
+PATCH issue state=closed
+```
+
+No se inspecciona el body de la PR ni `Refs/Closes`.
+
+Decisión R3 1-A: multi-PR abierto no se considera completado por un merge intermedio; queda En curso y tampoco satisface dependencias.
+
+### H06 — gate real de migraciones
+
+`.github/workflows/verify-workflows.test.mjs` ya verifica:
+
+```text
+preview gate blocks pull requests with migrations instead of reporting green
+BLOCKED_BY_MIGRATION = 'BLOCKED / REQUIRES DEVELOP MIGRATION'
+```
+
+`.github/workflows/e2e-preview.yml` no ejecuta `supabase db push` ni `supabase link`.
+
+`.github/workflows/migrate.yml` aplica migraciones a Supabase Develop solo por `push` a `develop`.
+
+`docs/runbooks/e2e-preview.md`:
+
+```text
+Una PR que toca supabase/migrations/** se valida con db-tests.
+Su e2e-preview queda BLOCKED / REQUIRES DEVELOP MIGRATION;
+el E2E remoto se hace después del merge.
+```
+
+Decisión R3 2-A: PR 1/3 aceptan ese estado esperado; PR 2 exige GREEN; tras PR 3 + migrate-develop se usa PR review-only sin migraciones para ejecutar el E2E real y solo entonces se cierra #281.
+
+### CI exact-head de #282
+
+```text
+typecheck      success
+lint           success
+unit           success
+build          success
+audit          success
+bundle-budget  success
+db-tests       success
+Vercel         success
+e2e-preview    success
+approval-policy failure (informe anterior aún CON BLOQUEANTES)
+```

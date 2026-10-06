@@ -15,3 +15,11 @@ PR282-H03 muestra que un rollout técnicamente correcto puede ser inválido para
 PR282-H04 refuerza P15: en un repo con drift check de tipos, la migración y el archivo generado forman un entregable atómico. Postergar `database.types.ts` a un PR posterior hace que el primer PR no sea mergeable aunque su SQL sea correcto.
 
 No se asigna un nuevo número AG en esta ronda; H03/H04 reutilizan patrones existentes.
+
+## Ronda 3 — una excepción de proceso tiene que llegar hasta la automatización
+
+PR282-H05 refuerza P03: documentar una excepción no cambia un workflow que calcula estado por otro criterio. Cuando una regla humana cambia la semántica de «terminado», hay que enumerar todos los automatismos que derivan ese estado —issue, tablero, dependencias y cierre— y reconciliarlos juntos.
+
+PR282-H06 refuerza P01: un DoD no puede exigir un check en un momento donde el propio gate está diseñado para bloquearlo. En PRs con migraciones, el contrato real de T-327 es DB/CI pre-merge y E2E remoto post-merge; la ficha debe modelar ese orden explícitamente.
+
+No se agrega numeración AG nueva en esta ronda.
