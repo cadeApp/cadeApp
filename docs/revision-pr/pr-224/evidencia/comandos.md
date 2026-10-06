@@ -639,3 +639,169 @@ H05 arreglado-verificado
 H06 arreglado-verificado
 H07 abierto
 ```
+
+
+---
+
+# Evidencia — PR #224 / Ronda 6
+
+## SHA y sincronización
+
+```text
+HEAD funcional revisado: 45aaf08f13b2bed3c65cb16d00143c6e90891483
+develop: 80f0b56a9ff94d3c4e10fb215c63faccd9097365
+behind: 0
+ahead: 31
+mergeable: true
+draft: false
+```
+
+## Autoría de la carpeta de revisión
+
+Comparación desde el commit de R5 `4ecbc027` hasta `45aaf08`:
+
+```text
+docs/revision-pr/pr-224/** tocado por autor: ninguno
+```
+
+Los archivos extra del intervalo provienen de merges de develop. El diff final de la PR contiene únicamente:
+
+```text
+docs/revision-pr/pr-224/**
+docs/tasks/log/T-308.md
+e2e/specs/incidents.spec.ts
+```
+
+## H07 baseline
+
+```text
+SHA 220fdf11d7e5aabbb6b88022f95792f2b57a8fe1
+run 37423810415
+job 112143227739
+37 passed chromium
+3 passed global-settings
+DoD1–DoD4 PASS
+```
+
+Oráculo permanente:
+
+```ts
+const incidentCard = adminPage
+  .getByRole('listitem')
+  .filter({ hasText: incidentDescription });
+await expect(incidentCard).toBeVisible();
+await expect(
+  incidentCard.getByText(/^problema con el cobro$/i)
+).toBeVisible();
+```
+
+## M1 RED válida
+
+Entre baseline y mutación:
+
+```text
+220fdf1 → 83b7522
+archivo: e2e/specs/incidents.spec.ts
+cambio funcional: 1 línea
+radio /problema con el cobro/i → /otro/i
+oráculo: sin cambios
+```
+
+Run:
+
+```text
+37426463481
+job 112147202221
+DoD1 FAIL
+DoD2 PASS
+DoD3 PASS
+DoD4 PASS
+36 passed / 1 failed
+```
+
+Fallo:
+
+```text
+Locator:
+getByRole('listitem')
+  .filter({ hasText: incidentDescription })
+  .getByText(/^problema con el cobro$/i)
+
+Expected: visible
+Received: <element(s) not found>
+```
+
+Los tres retries fallan en el mismo punto.
+
+## Revert
+
+```text
+SHA 88e1afcce71d53121844858aff93a34108374915
+revierte únicamente la línea del radio
+oráculo exacto permanece
+run 37427959162
+37 passed chromium
+3 passed global-settings
+```
+
+## HEAD final
+
+```text
+SHA 45aaf08f13b2bed3c65cb16d00143c6e90891483
+e2e-preview 37430628022:
+  37 passed chromium
+  3 passed global-settings
+
+CI 37430488444:
+  audit success
+  lint success
+  typecheck success
+  unit success
+  db-tests success
+  build success
+  bundle-budget success
+
+approval-policy:
+  success
+```
+
+Detalle inspeccionado:
+
+```text
+unit:
+  Test Files 121 passed (121)
+  Tests 1921 passed (1921)
+
+db-tests:
+  Files=1, Tests=10, Result: PASS
+  Files=18, Tests=1811, Result: PASS
+
+build:
+  Compiled successfully in 26.0s
+  Generating static pages (50/50)
+```
+
+## Barrido final del spec
+
+```text
+.only: ninguno
+.skip: ninguno
+waitForTimeout: ninguno
+setTimeout: ninguno
+TODO/FIXME: ninguno
+mocks/fakes nuevos: ninguno
+```
+
+## Estados R6
+
+```text
+H01 arreglado-verificado
+H02 arreglado-verificado
+H03 arreglado-verificado
+H04 arreglado-verificado
+H05 arreglado-verificado
+H06 arreglado-verificado
+H07 arreglado-verificado
+```
+
+Resultado: SIN BLOQUEANTES.

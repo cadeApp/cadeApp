@@ -42,3 +42,13 @@ No se agrega número AG nuevo.
 - **P07 — coincidencia demasiado amplia:** un locator puede ser sintácticamente correcto y aun así comprobar el elemento equivocado. Un texto esperado que también aparece dentro de un campo libre necesita scope + match exacto.
 - **Las mutaciones sirven también para auditar el oráculo:** M1 descubrió que el test final no distinguía el kind del contenido del relato. Eso es justamente la señal que la fase RED debía producir.
 - **No repetir evidencia válida por rutina:** M2–M4 ya tienen RED reproducible y específico; corregir H07 solo exige repetir M1 y cerrar con GREEN final.
+
+
+## Ronda 6
+
+No se agrega número AG nuevo.
+
+- **AG-68 queda satisfecha, no solo declarada:** M1 finalmente cambia únicamente la precondición y mata el test final sin tocar el oráculo.
+- **El oráculo sensible debe sobrevivir al experimento:** el fix de H07 queda permanente; la mutación se revierte, la expectativa no.
+- **La evidencia mínima también puede ser fuerte:** para cerrar H04 no fue necesario repetir M2–M4; se conservó la evidencia RED ya válida y se reprodujo únicamente la pieza defectuosa, M1.
+- **Cierre con CI por dentro:** antes de mergear se comprobaron los conteos reales de unit, db-tests, build y E2E, no solo los badges.
