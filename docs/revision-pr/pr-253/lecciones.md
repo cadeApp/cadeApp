@@ -17,3 +17,12 @@ Tampoco se agrega AG nueva.
 - H11 es P08: el fixture del test es parte de la propiedad. Un “JPEG” corrupto puede volver rojo el test antes de la capa que dice probar.
 - H12 es P08: “el servidor devolvió error” no equivale a “el servidor rechazó por MIME”; la razón del error forma parte del contrato.
 - H06 deja una regla operacional: los recursos remotos se capturan para cleanup antes de cualquier aserción que pueda abortar el test.
+
+
+## Ronda 3
+No se agrega numeración AG nueva.
+
+- H02/H06/H09-H12 quedan cerrados sin reglas nuevas: fueron aplicaciones directas de P08, cleanup E2E y convenciones ya vigentes.
+- H07 deja una precisión operacional: si el guard fail-closed impide demostrar una mutación local que depende de staging, la evidencia RED debe obtenerse en Preview/CI con commits temporales explícitos y revertidos, nunca declararse por narración.
+- H08 refuerza que ejecutar las suites “equivalentes” no sustituye un comando textual del DoD cuando ese comando devuelve exit distinto de cero.
+- Separar superficies E2E independientes reduce enmascaramiento y permite demostrar varias mutaciones en un único run remoto.
