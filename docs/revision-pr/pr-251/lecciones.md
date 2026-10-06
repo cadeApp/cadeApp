@@ -1,6 +1,6 @@
 # Lecciones — PR #251 / T-313
 
-- H05: mover un lookup “antes del assert” no equivale a garantizar cleanup; la reconciliación de recursos creados por UI tiene que vivir en un camino de teardown/finally.
-- H06: un RED que muere en una barrera ambiental antes de la aserción objetivo no demuestra sensibilidad del test.
-- H07/H08: para convenciones/documentación conviene verificar por enumeración determinista completa, no por muestra.
-- No se agrega AG nueva: H05/H06 siguen siendo P08.
+- H05: la ownership de recursos E2E creados por UI debe registrarse antes de disparar la acción y reconciliarse desde teardown, no desde el happy path.
+- H06: un RED discriminante necesita fallar exactamente en la propiedad añadida y luego volver a GREEN tras revert; los runs 37425374360 y 37428952648 son el ejemplo válido.
+- H04 confirma la separación entre CI estructural GREEN y gate funcional E2E RED: ambos datos deben mantenerse visibles.
+- No se agrega AG nueva en esta ronda; los patrones siguen cubiertos por P08.

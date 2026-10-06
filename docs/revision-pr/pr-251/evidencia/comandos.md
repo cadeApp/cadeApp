@@ -1,73 +1,80 @@
 # Evidencia y comandos — PR #251
 
-## Ronda 5 — SHA `1b23706d743664851fe7bf44e7a4c81d67577e55`
+## Ronda 6 — SHA `bce333fede77737a66d3afae8b43a19ce6dc8747`
 
-### Diff desde ronda 4
-Solo:
+### Alcance
+Diff actual contra `develop`:
 - `e2e/specs/merchant-registration.spec.ts`
 - `docs/tasks/log/T-313.md`
-- body de PR
+- `docs/revision-pr/pr-251/**`
 
-### CI
-Run `37375915213`: GREEN.
-
-### e2e-preview
-Run `37376151360`:
-- `resolve-preview`: success
-- `e2e-preview`: cancelled antes de ejecutar pasos
-- `report-preview-status`: publica `error` al SHA
-- Resultado funcional: ninguno
+La ficha T-313 no fue ampliada.
 
 ### H05
-Implementación:
+Símbolos verificados:
 ```text
-perPage = 50
-maxPages = 5
-for page 1..5:
-  listUsers(...)
-  exact email match
-  track user if found
-return null
-```
-Se llama inmediatamente después de `click()`, antes de asserts.
-
-Residual:
-- una sola observación temporal;
-- máximo 250 usuarios;
-- si retorna null, no hay reconciliación posterior en finally/teardown.
-
-### H06
-La aserción `role === merchant` está presente.
-La bitácora declara mutación temporal a courier, pero la corrida murió en `E2E Fail-Closed` antes de llegar a la aserción.
-No cuenta como RED de H06.
-
-### H07
-Chequeo determinista sobre toda la bitácora:
-```text
-categorical_unqualified = []
-PASS
+LocalRegistrationContext.pendingCleanupEmails
+registrationContext.pendingCleanupEmails.add(email)  # antes del click
+fixture finally -> listUsers(page, perPage)
+match exacto u.email === targetEmail
+while hasta !data.nextPage
+trackEntityForCleanup(...)
+cleanupStagingData(context)
 ```
 
-### H08
-Chequeo determinista del body:
+### H06 RED
+Run `37425374360`, job `112148952569`:
 ```text
-Qué cambia                 present
-DoD                        present
-Evidencia de checks        present
-Informe revisión agy       present
-Rutas de otra zona         present
-Dependencias nuevas        present
-Rollback                   present
-checkbox RED               present
-checkbox bitácora          present
-PASS
+Expected: "merchant"
+Received: "courier"
+at merchant-registration.spec.ts:306:33
+34 passed
+2 failed
 ```
-`approval-policy` `37375911376`: GREEN.
+El otro fallo fue H04/alta UI.
+
+### H06 revert
+Run `37428952648`, job `112162454301`:
+```text
+DoD: Sin consentimiento guardado el comercio no llega al panel  GREEN
+35 passed
+1 failed
+```
+Único fallo: H04/alta UI.
+
+### HEAD actual
+Run `37433304282`, job `112169072675`:
+```text
+DoD courier                               GREEN
+DoD sin consentimiento                   GREEN
+DoD alta completa                        RED
+35 passed
+1 failed
+```
+Fallo:
+```text
+line 184
+getByRole('alert')
+Expected: 0
+Received: 2
+```
+
+### CI
+Run `37433113069`:
+- unit: 121 files / 1921 tests passed
+- db-tests: Files=18, Tests=1811, Result: PASS
+- typecheck: success
+- lint: ESLint 0 warnings/errors
+- build: success
+- bundle-budget: success
+- audit: success
 
 ### Sincronización
-`develop...rama`: 16 ahead / 4 behind.
-Los 4 commits faltantes agregan contratos/skills/fichas T-338–T-341; no cambian runtime T-313.
+`develop...rama`: 22 ahead / 33 behind.
 
-### P3
-No hay visto bueno explícito P3 registrado sobre el spec.
-La aprobación de Lautaro073 existe y satisface approval-policy, pero es un requisito distinto.
+Desde `80f0b56` hasta develop actual, los 33 commits solo cambian T-308/incidents y documentación; no tocan auth ni merchant-registration.
+
+### Approval / P3
+- approval-policy `37433110341`: GREEN
+- Lautaro073: APPROVED
+- P3: sin visto bueno explícito registrado
