@@ -7,31 +7,31 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-342-courier-feed-privacy` → `develop` |
 | **Base** | `888c1148eecdce74e851ae48e3de2b19bba20392` |
-| **Tamaño** | 21 archivos, +410 / -64 líneas |
-| **Estado** | bloqueada en ronda 1 |
+| **Tamaño funcional revisado** | 21 archivos, +410 / -64 líneas |
+| **Estado** | sin bloqueantes de revisión; CI general rojo solo por `audit` ajeno a T-342 |
 
 ## Rondas
 
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `502e46952640aa526ed441333d513ca68f6085da` | 2 | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `49b87b158be4089eb9b6258cafce9982dedb6d66` | 0 abiertos | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
 ## Estado por hallazgo
 
 | ID | Título | Sev. | Estado |
 |---|---|---|---|
-| PR273-A01 | Dos archivos E2E quedan fuera del alcance autorizado en `develop` | alto | abierto |
-| PR273-H02 | El cuerpo no contiene el informe completo que exige `approval-policy` | medio | abierto |
+| PR273-A01 | Dos archivos E2E fuera de la ficha de `develop` | alto | **aceptado** por decisión explícita de Lautaro073 |
+| PR273-H02 | Body sin formato completo de `approval-policy` | medio | **arreglado-verificado** |
 
 Datos estructurados: [`hallazgos.jsonl`](hallazgos.jsonl) · Comandos: [`evidencia/comandos.md`](evidencia/comandos.md)
 
 ## Qué queda por hacer
 
-1. Autorizar `e2e/pages/courier.page.ts` y `e2e/specs/main-flow.spec.ts` desde `develop` antes de mantener esos cambios en T-342; la forma limpia es una PR documental separada, mergearla y rebasar esta rama.
-2. Reejecutar `revisar-pr` y pegar en el cuerpo el informe completo con el formato que consume `approval-policy`.
-3. Pedir ronda 2 de revisión independiente.
-4. El fallo actual de `audit` es ajeno a T-342 (no cambian `package.json` ni `pnpm-lock.yaml`) y requiere tratamiento separado, pero sigue dejando el workflow CI en rojo.
+1. Nada bloqueante de la revisión independiente.
+2. `audit` sigue fallando por advisories de dependencias no modificadas por T-342; tratarlo en una tarea separada.
+3. CC-023 (#267) sigue siendo el cierre del riesgo residual de lectura directa por API.
 
 ## Para el análisis posterior
 
-Ver [`lecciones.md`](lecciones.md). El defecto principal no es la solución funcional de privacidad: es que la ampliación de alcance quedó hecha dentro de la misma PR que usa ese alcance.
+Ver [`lecciones.md`](lecciones.md). En ronda 2, Lautaro073 confirmó personalmente que la ampliación de alcance había sido una decisión suya; por eso PR273-A01 se registra como aceptación y no como arreglo técnico.
