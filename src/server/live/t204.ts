@@ -1,5 +1,6 @@
 import 'server-only';
 import { z } from 'zod';
+import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsRpc } from '@/server/rpc/trips';
 import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
@@ -133,26 +134,33 @@ export async function getAvailableRequestsLiveServer(
     }
   }
 
-  const mapped: LiveAvailableRequestItem[] = pageRows.map((req) => {
+  const mapped: LiveAvailableRequestItem[] = [];
+  for (const req of pageRows) {
+    // Vocabulario canónico (src/domain/schemas): un valor fuera del dominio no se fuerza ni se traduce.
+    const packageType = packageTypeSchema.safeParse(req.package_type);
+    const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
+    if (!packageType.success || !recipientPaymentMethod.success) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
 
-    return {
+    mapped.push({
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
       dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: (req.package_type as LiveAvailableRequestItem['packageType']) ?? 'small',
-      recipientPaymentMethod:
-        (req.recipient_payment_method as LiveAvailableRequestItem['recipientPaymentMethod']) ?? 'cash',
+      packageType: packageType.data,
+      recipientPaymentMethod: recipientPaymentMethod.data,
       needsChange: Boolean(req.needs_change),
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
-    };
-  });
+    });
+  }
 
   const tail = pageRows.at(-1);
   const nextCursor: LivePageCursor | null =

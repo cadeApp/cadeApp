@@ -23,7 +23,7 @@ describe('GET /api/live/available-requests', () => {
         pickupZoneName: 'Centro',
         dropoffZoneName: 'Aguilares',
         approxDistanceKm: '1,5',
-        packageType: 'small' as const,
+        packageType: 'chico' as const,
         recipientPaymentMethod: 'cash' as const,
         needsChange: false,
         publishedAt: '2026-09-26T12:00:00Z',
@@ -48,6 +48,36 @@ describe('GET /api/live/available-requests', () => {
     expect(json.nextCursor).toBeNull();
     expect(serverLive.getAvailableRequestsLiveServer).toHaveBeenCalledWith(null);
     expect(response.headers.get('Cache-Control')).toContain('no-store');
+  });
+
+  it('T-343: con los cuatro tipos de paquete y los tres medios de pago reales el payload pasa el contrato', async () => {
+    const mockData = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType, i) =>
+      (['cash', 'transfer', 'to_agree'] as const).map((recipientPaymentMethod, j) => ({
+        id: `11111111-1111-1111-1111-1111111111${i}${j}`,
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Aguilares',
+        approxDistanceKm: '1,5',
+        packageType,
+        recipientPaymentMethod,
+        needsChange: false,
+        publishedAt: '2026-09-26T12:00:00Z',
+        expiresAt: null,
+        hasMyOffer: false,
+        myOfferAmountArs: null,
+      }))
+    );
+
+    vi.mocked(serverLive.getAvailableRequestsLiveServer).mockResolvedValue({
+      ok: true,
+      data: { data: mockData, nextCursor: null },
+    });
+
+    const response = await GET(new NextRequest('http://localhost/api/live/available-requests'));
+    expect(response.status).toBe(200);
+    const parsed = liveFeedResponseSchema.parse(await response.json());
+    expect(parsed.data.map((r) => [r.packageType, r.recipientPaymentMethod])).toEqual(
+      mockData.map((r) => [r.packageType, r.recipientPaymentMethod])
+    );
   });
 
   it('pasa el cursor validado a getAvailableRequestsLiveServer si viene en query params', async () => {

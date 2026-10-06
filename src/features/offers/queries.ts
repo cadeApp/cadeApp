@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
+import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
 import type {
   AvailableRequestItem,
   CourierOfferItem,
@@ -125,7 +126,16 @@ export async function getAvailableRequests(): Promise<{
     }
   }
 
-  const mapped = pageRows.map((req) => {
+  const mapped: AvailableRequestItem[] = [];
+  for (const req of pageRows) {
+    // Mismo contrato que el feed en vivo (src/server/live/t204.ts): vocabulario canónico de src/domain/schemas.
+    // Un valor fuera del dominio no se fuerza ni se traduce; se trata como error de lectura.
+    const packageType = packageTypeSchema.safeParse(req.package_type);
+    const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
+    if (!packageType.success || !recipientPaymentMethod.success) {
+      return { requests: [], nextCursor: null };
+    }
+
     const pickupZone = Array.isArray(req.pickup_zone)
       ? req.pickup_zone[0]
       : req.pickup_zone;
@@ -135,21 +145,20 @@ export async function getAvailableRequests(): Promise<{
 
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
 
-    return {
+    mapped.push({
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
       dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: (req.package_type as 'small' | 'medium' | 'large') ?? 'small',
-      recipientPaymentMethod:
-        (req.recipient_payment_method as 'cash' | 'transfer') ?? 'cash',
+      packageType: packageType.data,
+      recipientPaymentMethod: recipientPaymentMethod.data,
       needsChange: Boolean(req.needs_change),
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
-    };
-  });
+    });
+  }
 
   const tail = pageRows.at(-1);
   const nextCursor: LivePageCursor | null =

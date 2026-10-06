@@ -20,17 +20,8 @@ function calculateRelativeMinutes(dateIso: string | null): number | null {
 }
 
 export function RequestCard({ request, onOfferClick, isOffline = false }: RequestCardProps) {
-  const packageLabel =
-    request.packageType === 'small'
-      ? OFFERS_COPY.packageSmall
-      : request.packageType === 'medium'
-      ? OFFERS_COPY.packageMedium
-      : OFFERS_COPY.packageLarge;
-
-  const paymentLabel =
-    request.recipientPaymentMethod === 'cash'
-      ? OFFERS_COPY.cashPayment
-      : OFFERS_COPY.transferPayment;
+  const packageLabel = OFFERS_COPY.packageLabels[request.packageType];
+  const paymentLabel = OFFERS_COPY.paymentLabels[request.recipientPaymentMethod];
 
   const minutesPublishedAgo = Math.max(
     1,

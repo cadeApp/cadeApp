@@ -1,3 +1,5 @@
+import type { PackageType, RecipientPaymentMethod } from '@/domain/schemas';
+
 export const OFFERS_COPY = {
   // Feed
   feedTitle: 'Solicitudes abiertas',
@@ -20,15 +22,22 @@ export const OFFERS_COPY = {
   alreadyOfferedPrefix: 'Ya ofertaste',
   changeNeededBadge: 'Necesita cambio',
   changeAmountPrefix: 'Cambio para',
-  cashPayment: 'Paga en efectivo',
-  transferPayment: 'Paga con transferencia',
+  // Medio de pago del destinatario: una etiqueta por valor canónico (RECIPIENT_PAYMENT_METHODS)
+  paymentLabels: {
+    cash: 'Paga en efectivo',
+    transfer: 'Paga con transferencia',
+    to_agree: 'A coordinar',
+  } satisfies Record<RecipientPaymentMethod, string>,
   approxDistancePrefix: '≈',
   kmUnit: 'km',
 
-  // Paquetes
-  packageSmall: 'Paquete chico',
-  packageMedium: 'Mediano',
-  packageLarge: 'Paquete grande',
+  // Paquetes: una etiqueta por valor canónico (PACKAGE_TYPES)
+  packageLabels: {
+    sobre: 'Sobre',
+    chico: 'Paquete chico',
+    mediano: 'Paquete mediano',
+    grande: 'Paquete grande',
+  } satisfies Record<PackageType, string>,
 
   // Bottom Sheet Ofertar (R05)
   offerSheetTitle: 'Tu oferta',

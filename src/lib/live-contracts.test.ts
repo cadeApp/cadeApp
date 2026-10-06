@@ -16,7 +16,7 @@ describe('T-204: live-contracts client-safe schemas', () => {
     pickupZoneName: 'Centro',
     dropoffZoneName: 'Aguilares',
     approxDistanceKm: '1,5',
-    packageType: 'small',
+    packageType: 'chico',
     recipientPaymentMethod: 'cash',
     needsChange: false,
     publishedAt: '2026-09-26T12:00:00Z',
@@ -107,6 +107,32 @@ describe('T-204: live-contracts client-safe schemas', () => {
     expect(first).not.toHaveProperty('notes');
     expect(first).not.toHaveProperty('cashChangeAmount');
     expect(first.needsChange).toBe(true);
+  });
+
+  it('T-343: acepta los cuatro tipos de paquete y los tres medios de pago reales de la base', () => {
+    const data = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType, i) =>
+      (['cash', 'transfer', 'to_agree'] as const).map((recipientPaymentMethod, j) => ({
+        ...validRequest,
+        id: `a0000000-0000-0000-0000-0000000000${i}${j}`,
+        packageType,
+        recipientPaymentMethod,
+      }))
+    );
+
+    const parsed = liveFeedResponseSchema.safeParse({ data, nextCursor: null });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.data.map((r) => [r.packageType, r.recipientPaymentMethod])).toEqual(
+      data.map((r) => [r.packageType, r.recipientPaymentMethod])
+    );
+  });
+
+  it('T-343: rechaza el vocabulario inventado small/medium/large', () => {
+    for (const packageType of ['small', 'medium', 'large']) {
+      expect(
+        liveAvailableRequestItemSchema.safeParse({ ...validRequest, packageType }).success
+      ).toBe(false);
+    }
   });
 
   it('falla feed response si un campo requerido falta o es inválido', () => {

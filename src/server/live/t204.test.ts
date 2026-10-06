@@ -9,6 +9,7 @@ import {
 import * as serverSupabase from '@/server/supabase/server';
 import * as tripsRpc from '@/server/rpc/trips';
 import { ok, err } from '@/domain';
+import { liveFeedResponseSchema } from '@/lib/live-contracts';
 
 vi.mock('@/server/supabase/server');
 vi.mock('@/server/rpc/trips');
@@ -112,7 +113,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       id,
       created_at: createdAt,
       approx_distance_m: 1000,
-      package_type: 'small',
+      package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
       cash_change_amount: null,
@@ -329,6 +330,52 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const serialized = JSON.stringify(result.data);
       expect(serialized).not.toContain('Portón negro');
       expect(serialized).not.toContain('5000');
+    });
+
+    function mockFeedClient(rows: readonly unknown[]) {
+      const reqBuilder = createMockQueryBuilder(rows);
+      const offersBuilder = createMockQueryBuilder([]);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    }
+
+    it('T-343: con los valores reales de la base la respuesta pasa liveFeedResponseSchema sin traducirlos', async () => {
+      const combos = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType) =>
+        (['cash', 'transfer', 'to_agree'] as const).map((method) => [packageType, method] as const)
+      );
+      const rows = combos.map(([packageType, method], i) => ({
+        ...makeRequestRow(i + 1),
+        package_type: packageType,
+        recipient_payment_method: method,
+      }));
+      mockFeedClient(rows);
+
+      const result = await getAvailableRequestsLiveServer();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const parsed = liveFeedResponseSchema.parse(result.data);
+      expect(parsed.data.map((r) => [r.packageType, r.recipientPaymentMethod])).toEqual(combos);
+    });
+
+    it('T-343: un valor fuera del dominio canónico no se fuerza: responde 500', async () => {
+      mockFeedClient([{ ...makeRequestRow(1), package_type: 'small' }]);
+
+      const result = await getAvailableRequestsLiveServer();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(500);
+        expect(result.error).toBe('DATABASE_ERROR');
+      }
     });
 
     it('A & E: Feed con 51 filas -> 50 resultados + nextCursor de fila 50 y hasMyOffer consulta SOLO 50 ids', async () => {

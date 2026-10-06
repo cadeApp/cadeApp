@@ -25,7 +25,7 @@ const baseRequest: AvailableRequestItem = {
   pickupZoneName: 'Centro',
   dropoffZoneName: 'Barrio Norte',
   approxDistanceKm: '2,5',
-  packageType: 'small',
+  packageType: 'chico',
   recipientPaymentMethod: 'cash',
   needsChange: true,
   publishedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
