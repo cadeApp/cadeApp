@@ -63,7 +63,7 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const kindRadio = page.getByRole('radio', { name: /otro/i });
+    const kindRadio = page.getByRole('radio', { name: /problema con el cobro/i });
     await expect(kindRadio).toBeVisible();
     await kindRadio.click();
 
