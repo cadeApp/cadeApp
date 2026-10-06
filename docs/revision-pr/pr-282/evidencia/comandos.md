@@ -154,3 +154,69 @@ Vercel         success
 e2e-preview    success
 approval-policy failure (informe anterior aún CON BLOQUEANTES)
 ```
+
+---
+
+## Ronda 4
+
+SHA revisado: `b6a716e2bfce5a4ea4996a1983ab14983554bee2`.
+
+### H05 verificado
+
+`board-sync.mjs` agrega `parseMultiPrRollout`, `multiPrTasks`, separa `mergedTasks` de `completedTasks` y mantiene `en-curso` mientras el issue multi-PR siga abierto.
+
+CI `unit`, job 112182653880:
+
+```text
+.github/workflows/verify-workflows.test.mjs
+tests 57
+pass 57
+fail 0
+```
+
+### H06 verificado
+
+T-345 y CC-023 establecen:
+
+```text
+PR 1 migration -> e2e BLOCKED esperado
+PR 2 readers   -> e2e GREEN
+PR 3 migration -> e2e BLOCKED esperado
+review-only    -> e2e GREEN
+#281 -> cierre manual después del gate
+```
+
+La regla 50 distingue rollout multi-PR con y sin gate post-merge.
+
+### H07 — target actual
+
+```text
+develop actual: 3a1de345eaf71ab1aeff060ead097d9d6442ac81
+PR head:        b6a716e2bfce5a4ea4996a1983ab14983554bee2
+compare:        ahead 8 / behind 33
+```
+
+Entre la base original y develop actual, los archivos compartidos con #282 conservan el mismo blob; develop agregó:
+
+```text
+e2e/specs/incidents.spec.ts
+docs/tasks/log/T-308.md
+docs/revision-pr/pr-224/**
+```
+
+Por eso la sincronización debería ser mecánica, pero sigue siendo necesaria: el E2E exact-head de la PR no puede ejecutar un spec que todavía no existe en su árbol.
+
+### CI de b6a716e
+
+```text
+typecheck      success
+lint           success
+unit           success
+build          success
+audit          success
+bundle-budget  success
+db-tests       success
+Vercel         success
+e2e-preview    success
+approval-policy failure (informe independiente aún bloqueante)
+```

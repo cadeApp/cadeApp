@@ -23,3 +23,9 @@ PR282-H05 refuerza P03: documentar una excepción no cambia un workflow que calc
 PR282-H06 refuerza P01: un DoD no puede exigir un check en un momento donde el propio gate está diseñado para bloquearlo. En PRs con migraciones, el contrato real de T-327 es DB/CI pre-merge y E2E remoto post-merge; la ficha debe modelar ese orden explícitamente.
 
 No se agrega numeración AG nueva en esta ronda.
+
+## Ronda 4 — GREEN exact-head no reemplaza sincronización con el target
+
+PR282-H07 refuerza P08: un check puede cubrir perfectamente el SHA que recibió y aun así no cubrir el árbol que realmente se integrará si el target avanzó. En este caso el gate E2E descubre todos los specs del SHA, pero la rama vieja ni siquiera contiene `incidents.spec.ts` ya presente en develop.
+
+Antes de cerrar una ronda final hay que comparar HEAD contra el target actual y, si está detrás, sincronizar y repetir los checks. No se agrega numeración AG nueva.
