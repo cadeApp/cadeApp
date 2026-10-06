@@ -1,63 +1,86 @@
 # Evidencia y comandos reproducibles — PR #275
 
-## Ronda 3 — reproducción de H04
+## Ronda 4 — SHA `44f61124f5fa5e2c1a5b62b58f772cb283e84254`
 
-Evidencia aportada por la bitácora y contrastada con el código:
-
-```bash
-pnpm test
-# exit=1
-# Tests 3 failed | 1918 passed (1921)
-```
-
-Repetido dos veces con el mismo patrón.
-
-Diagnóstico de la carrera:
+### Alcance desde ronda 3
 
 ```bash
-pnpm vitest run --exclude src/server/rpc/cc007.test.ts
+git diff --name-only 76bd49aa5bb3d84d11e97736e1bf70e3a7dbeea4..44f61124f5fa5e2c1a5b62b58f772cb283e84254
 ```
 
-Con `cc007.test.ts` fuera, los fallos de `guards.test.ts` desaparecen.
+Resultado:
 
-El patrón peligroso inspeccionado en `src/server/rpc/cc007.test.ts` es:
+```text
+docs/tasks/log/T-343.md
+src/server/rpc/cc007.test.ts
+tools/verify-scaffold.test.ts
+```
+
+### H04-A — propiedad inspeccionada
+
+`executeMutation()` resuelve el archivo con:
 
 ```ts
-fs.writeFileSync(filePath, mutated, 'utf8');
-spawnSync('pnpm', testArgs, ...);
-...
-fs.writeFileSync(filePath, original, 'utf8');
+const filePath = path.join(mutationWorktree, relativeFilePath);
 ```
 
-Eso modifica el checkout compartido mientras Vitest ejecuta otros archivos.
+y el Vitest hijo usa:
 
-## Patrón de arreglo exigido para cc007.test.ts
-
-- Crear un **git worktree temporal y detached** dentro del helper de mutaciones.
-- Las llamadas de mutación deben resolver `filePath` contra ese worktree, nunca contra `process.cwd()` del checkout principal.
-- Ejecutar el Vitest hijo con `cwd` igual al worktree temporal.
-- Reusar el worktree para las mutaciones del bloque si resulta práctico y eliminarlo en `afterAll`.
-- No modificar `guards.ts`, `queries.ts`, `actions.ts` ni la migración en el checkout principal.
-- Mantener las mismas expectations: la mutación tiene que producir exit != 0 y salida FAIL/failed.
-- No usar `.skip`, locks globales ni `fileParallelism: false` como parche.
-
-## Patrón de arreglo exigido para verify-scaffold.test.ts
-
-- Construir una tabla/objeto con todos los paths actualmente usados por el archivo.
-- En `beforeAll`, llamar **una sola vez** a `eslint.lintFiles([...paths])`.
-- Guardar los resultados en un `Map` indexado por `path.resolve(result.filePath)`.
-- Cada `it` obtiene su resultado desde ese Map y conserva las assertions existentes.
-- No aumentar timeout del test ni timeout global.
-
-## GREEN requerido
-
-```bash
-pnpm vitest run src/server/rpc/cc007.test.ts src/features/auth/guards.test.ts
-pnpm vitest run tools/verify-scaffold.test.ts
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm test
+```ts
+cwd: mutationWorktree
 ```
 
-Las dos últimas corridas completas deben terminar con exit 0 de manera consecutiva.
+No hay escritura de archivos mutantes en `repoRoot`.
+
+Evidencia del autor, registrada en bitácora:
+
+```text
+cc007.test.ts + guards.test.ts → 100 passed
+git diff --exit-code sobre guards/queries/actions/migración → exit 0
+pnpm test #1 → exit 0 · Test Files 121 passed (121) · Tests 1921 passed (1921)
+pnpm test #2 → exit 0 · Test Files 121 passed (121) · Tests 1921 passed (1921)
+```
+
+### H04-B — propiedad inspeccionada
+
+`verify-scaffold.test.ts` tiene una sola llamada a `eslint.lintFiles` en `beforeAll` y cada caso consulta `resultFor(FILES.x)`. Las assertions de reglas y cantidad de mensajes permanecen.
+
+### CI independiente del mismo SHA
+
+CI run `37413116003`, job `unit`:
+
+```text
+Test Files 121 passed (121)
+Tests      1921 passed (1921)
+Duration   64.15s
+```
+
+DB job:
+
+```text
+Files=18, Tests=1811
+Result: PASS
+```
+
+E2E run `37413211750`:
+
+```text
+courier-feed-vocabulary.spec.ts ... PASS
+33 passed
+3 passed
+```
+
+Approval-policy run `37414360623`:
+
+```text
+Informe de revisar-pr completo y sin bloqueantes.
+```
+
+### Audit
+
+El job `audit` queda rojo por advisories de dependencias:
+
+- `tinypool` vía `vitest`;
+- `source-map-js` vía `@vitest/coverage-v8`.
+
+El propio workflow lo reporta como “Auditoria de dependencias (no bloquea hasta contracts-v1)”. T-343 no modifica `package.json` ni `pnpm-lock.yaml`.

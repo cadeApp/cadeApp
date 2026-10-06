@@ -1,22 +1,33 @@
-# Lecciones de la PR #275 para `AGENTS.md` y las reglas
+# Lecciones de la PR #275
 
-## AG-01 · Un error de contrato no debe degradarse a “sin datos”
-**Origen:** PR275-H01 — corregido en ronda 2.
+> Esta carpeta evita asignar nuevos números globales `AG-xx` sin enumerar primero todas las ramas remotas. Las observaciones quedan descriptivas y los hallazgos no referencian un número local duplicado.
 
-Un fallo de parseo en una frontera debe activar el estado de error cuando la UI distingue error de lista vacía.
+## Un error de contrato no debe degradarse a “sin datos”
 
-## AG-02 · Mantener el informe de PR como contrato machine-readable
-**Origen:** PR275-H03 — corregido en ronda 2.
+**Origen:** PR275-H01.
 
-El formato exacto vuelve a ser necesario para `approval-policy`.
+Cuando una frontera valida datos externos y la UI diferencia error de lista vacía, un fallo de contrato debe activar el camino de error; no convertirse en `[]`, `null` o un default que signifique “sin datos”.
 
-## AG-03 · No mezclar evidencia de comandos distintos
-**Origen:** PR275-H04
+## El informe del PR es un contrato machine-readable
 
-Un targeted test verde o un job equivalente de CI no permite marcar otro comando como verde si ese comando local terminó en fallo.
+**Origen:** PR275-H03.
 
-> **Regla propuesta.** En `Checks locales`, cada símbolo refleja literalmente la última salida del comando nombrado. Evidencia complementaria de CI o ejecuciones aisladas se anota aparte y nunca reemplaza el resultado del comando.
+El bloque de `revisar-pr` debe conservar encabezados y markers requeridos por `approval-policy`; un resumen no lo reemplaza.
 
-La ronda 3 agrega una consecuencia práctica del mismo hallazgo: los mutation tests que reescriben archivos reales del checkout no son seguros dentro de una suite paralela. La mutación debe ocurrir en un workspace aislado, no sobre el archivo que otros workers pueden importar.
+## No mezclar evidencia de comandos distintos
 
-Esto refuerza reglas ya existentes: no fabricar GREEN, no adulterar tests y no confundir evidencia aislada con el comando completo.
+**Origen:** PR275-H04.
+
+Un targeted test verde o un job de CI no permite afirmar que otro comando local pasó cuando su salida fue roja. Cada check debe reflejar literalmente su propia evidencia.
+
+## Los mutation tests no deben escribir el checkout compartido
+
+**Origen:** PR275-H04.
+
+Una mutación que reescribe archivos que otros workers pueden importar crea carreras y falsos fallos. Si la demostración necesita modificar código real, debe hacerlo en un workspace/worktree aislado y ejecutar el test mutante desde allí.
+
+## Cold-start costoso: preparar una vez, afirmar muchas veces
+
+**Origen:** PR275-H04.
+
+Cuando varias pruebas ejercen el mismo analizador pesado sobre distintos fixtures, conviene ejecutar la preparación determinista una vez y conservar las assertions por caso, en vez de esconder el costo con timeouts mayores.

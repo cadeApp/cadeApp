@@ -7,7 +7,7 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-343-feed-canonical-vocabulary` → `develop` |
 | **Base** | `83aeb34f00d2a4e78332d4da9004e1bdaab6def5` |
-| **Estado** | bloqueada en ronda 3: implementar decisión B para estabilizar `pnpm test` |
+| **Estado** | **SIN BLOQUEANTES — ronda 4** |
 
 ## Rondas
 
@@ -15,7 +15,8 @@
 |---|---|---|---|
 | 1 | `4d9b4a19917a94b979f67add1a78f159c9b2cf3c` | 3 hallazgos | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
 | 2 | `bee887e9ee66313be532354b2ead22b4329f7a14` | 1 bloqueante nuevo | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
-| 3 | `08dffbfb6c8c05750680b876c7b2d55a3eb38c4c` | decisión B: ampliar T-343 y corregir 2 tests de infraestructura | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 3 | `08dffbfb6c8c05750680b876c7b2d55a3eb38c4c` | decisión B; ampliar T-343 para estabilizar suite | [`revisiones/ronda-3.md`](revisiones/ronda-3.md) |
+| 4 | `44f61124f5fa5e2c1a5b62b58f772cb283e84254` | **SIN BLOQUEANTES** | [`revisiones/ronda-4.md`](revisiones/ronda-4.md) |
 
 ## Estado por hallazgo
 
@@ -24,23 +25,20 @@
 | PR275-H01 | El SSR convertía un enum inválido en feed vacío | alto | **arreglado-verificado** |
 | PR275-A01 | `feed-privacy.test.tsx` fuera de ficha base | decision | **aceptado** por Lautaro073 |
 | PR275-H03 | Body sin formato requerido por `approval-policy` | medio | **arreglado-verificado** |
-| PR275-H04 | `pnpm test` local no termina GREEN por dos fallos preexistentes de infraestructura | medio | **abierto — decisión B, arreglo autorizado** |
+| PR275-H04 | Suite completa inestable por mutaciones compartidas + cold-start de ESLint | medio | **arreglado-verificado** |
 
-## Decisión de Lautaro073 — 2026-10-06
+## Verificación final sobre `44f6112`
 
-Lautaro073 eligió **B**: T-343 absorbe dentro de #275 los dos arreglos de infraestructura necesarios para cumplir el DoD local.
+- alcance de ronda 3 respetado: solo `src/server/rpc/cc007.test.ts`, `tools/verify-scaffold.test.ts` y bitácora;
+- `docs/revision-pr/pr-275/**` no fue tocado por el autor;
+- `cc007.test.ts`: las mutaciones escriben solo en un worktree temporal detached y los Vitest hijos usan ese `cwd`;
+- `verify-scaffold.test.ts`: un solo `eslint.lintFiles` batch en `beforeAll`, manteniendo las assertions previas;
+- evidencia local del autor: dos `pnpm test` consecutivos con exit 0, 121/121 archivos y 1921/1921 tests;
+- CI `unit`: 121/121 archivos, 1921/1921 tests, 64.15 s;
+- `db-tests`: 18 archivos, 1811 tests, PASS;
+- E2E preview: 33 + 3 tests PASS; T-343 específico PASS;
+- Vercel ✅;
+- `approval-policy` run 37414360623 ✅;
+- `audit` ❌ advisory externo: `tinypool` / `source-map-js`, sin cambios de dependencias en T-343.
 
-Archivos añadidos al alcance por el commit `eda5e34`:
-
-- `src/server/rpc/cc007.test.ts`: solo aislar las mutaciones para que nunca reescriban el checkout real compartido.
-- `tools/verify-scaffold.test.ts`: solo hacer determinista el lint bajo la suite completa, sin subir timeouts ni debilitar assertions.
-
-## Qué queda por hacer
-
-1. Corregir la carrera de `cc007.test.ts` sin tocar `guards.ts`, `guards.test.ts`, configuración global ni dependencias.
-2. Corregir `verify-scaffold.test.ts` evitando que cada `it` pague un arranque en frío de ESLint; no aumentar timeouts.
-3. Obtener **dos corridas consecutivas** de `pnpm test` completas con exit 0.
-4. Actualizar bitácora y body con evidencia literal.
-5. Pedir ronda 4.
-
-El código funcional de T-343 ya está correcto; el único bloqueo restante es la estabilidad reproducible de la suite completa.
+No quedan bloqueantes técnicos ni decisiones pendientes de esta revisión.
