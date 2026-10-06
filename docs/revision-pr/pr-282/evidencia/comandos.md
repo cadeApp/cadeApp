@@ -1,61 +1,69 @@
-# Evidencia — PR #282 / ronda 1
+# Evidencia — PR #282
 
-## Sincronización
+## Ronda 1
+
+SHA: `ced0add71da9daf7d56a8c951bb9253cd9a20537`.
+
+### H01
+
+`src/features/requests/queries.ts` en develop seleccionaba `cash_change_amount` en dos listados y `notes` + `cash_change_amount` en el detalle; `RequestOffersList` mostraba el monto.
+
+### H02
+
+T-335 publica `public.offers` y `public.delivery_requests`. El fallback original con `SET TABLE` reemplazaba miembros.
+
+---
+
+## Ronda 2
+
+SHA: `39153caa7ad1cb5f617115fd2fc3f2734462c7ee`.
+
+### H01 verificado
+
+CC-023 ahora incluye el inventario completo, la RPC privada del comercio, el contrato Zod, fake, wrapper, tipos, tests y preservación visual de «Paga con $ …».
+
+### H02 verificado
+
+CC-023 §5 ya no usa `SET TABLE`. Solo permite `DROP TABLE public.delivery_requests` + `ADD TABLE public.delivery_requests (<columnas>)` si el E2E prueba que los grants no bastan, y exige conservar `public.offers`.
+
+### H03 — contradicción de coordinación
+
+`docs/tasks/T-345.md`:
 
 ```text
-develop = 80f0b56a9ff94d3c4e10fb215c63faccd9097365
-head    = ced0add71da9daf7d56a8c951bb9253cd9a20537
-ahead_by = 1
-behind_by = 0
+Rollout obligatorio: tres PR, en orden
+Cada paso es una PR propia de esta tarea
 ```
 
-## H01 — lectores directos omitidos
-
-`src/features/requests/queries.ts` en develop:
+`AGENTS.md §5`:
 
 ```text
-getMerchantHistoryRequests: select ... cash_change_amount ...
-getMerchantRequests:        select ... cash_change_amount ...
-getMerchantRequestWithOffers:
-  select ... cash_change_amount, notes ...
+Una tarea = un issue = una rama feat/T-xxx-slug = un PR
 ```
 
-`src/features/requests/components/request-offers-list.tsx`:
+`.agents/rules/50-git-y-coordinacion.md` mantiene la misma unidad tarea/rama/PR.
 
-```text
-request.needsChange && request.cashChangeAmount
-(Paga con $...)
-...
-El destinatario necesita cambio (paga con $...)
+### H04 — drift de tipos
+
+`.github/workflows/ci.yml`, job `db-tests`, después de aplicar migraciones:
+
+```bash
+pnpm supabase test db
+pnpm db:types --local
+git diff --exit-code -- src/types/database.types.ts
 ```
 
-Eso contradice el CC actual, que dice que ningún lector authenticated usa las columnas y que el revoke no cambia nada visible.
+El paso 1 de T-345 crea una función pública nueva. El paso 2, según la ficha, recién lleva «tipos generados». Esa separación hace que el paso 1 genere un diff en `database.types.ts` y falle CI.
 
-## H02 — semántica de publicación
+### Rollout verificado contra workflows
 
-T-335:
+- `migrate.yml`: push a develop → `migrate-develop`.
+- Vercel Develop: integración Git independiente del workflow de migración.
+- `deploy.yml`: staging/main esperan a `migrate`.
 
-```sql
-alter publication supabase_realtime add table public.offers;
-alter publication supabase_realtime add table public.delivery_requests;
-```
+La necesidad de separar compatibilidad → aplicación → enforcement es real; H03 cuestiona la unidad de planificación, no esa necesidad técnica.
 
-Fallback propuesto por CC-023:
-
-```sql
-alter publication supabase_realtime
-set table public.delivery_requests (...);
-```
-
-PostgreSQL 15 documenta que `SET` reemplaza la lista de tablas/esquemas de la publicación; `ADD` y `DROP` modifican miembros puntuales. También exige incluir columnas de replica identity cuando una tabla con column list publica UPDATE/DELETE.
-
-Referencias oficiales verificadas en la revisión:
-- PostgreSQL 15 — ALTER PUBLICATION
-- PostgreSQL 15 — CREATE PUBLICATION / Column Lists
-- PostgreSQL 15 — GRANT
-- Supabase Realtime — Postgres Changes
-
-## CI del SHA revisado
+### CI del SHA de ronda 2
 
 ```text
 typecheck      success
@@ -66,8 +74,6 @@ audit          success
 bundle-budget  success
 db-tests       success
 Vercel         success
-e2e-preview    success
-approval-policy failure (faltaba informe independiente)
+e2e-preview    error: job e2e-preview cancelled; no fallo funcional reportado
+approval-policy failure: todavía hay bloqueantes
 ```
-
-Estos checks no validan la migración futura de T-345 porque #282 solo modifica documentación.
