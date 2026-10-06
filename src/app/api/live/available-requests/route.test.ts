@@ -26,8 +26,6 @@ describe('GET /api/live/available-requests', () => {
         packageType: 'small' as const,
         recipientPaymentMethod: 'cash' as const,
         needsChange: false,
-        cashChangeAmount: null,
-        notes: null,
         publishedAt: '2026-09-26T12:00:00Z',
         expiresAt: null,
         hasMyOffer: true,

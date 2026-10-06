@@ -26,8 +26,6 @@ interface RawAvailableRequest {
   package_type: string;
   recipient_payment_method: string;
   needs_change: boolean;
-  cash_change_amount: number | null;
-  notes: string | null;
   published_at: string | null;
   expires_at: string | null;
   pickup_zone: { name: string } | { name: string }[] | null;
@@ -66,8 +64,9 @@ interface RawOfferWithRequest {
 
 /**
  * Consulta de solicitudes abiertas disponibles para repartidores.
- * CUMPLE REGLAS D3 y D15: No solicita ni expone coordenadas (lat/lng) ni datos
- * de contacto del destinatario (nombre, teléfono, dirección exacta).
+ * CUMPLE REGLAS D3 y D15: No solicita ni expone coordenadas (lat/lng), datos
+ * de contacto del destinatario (nombre, teléfono, dirección exacta), indicaciones
+ * ni monto exacto de cambio. Solo el medio de pago y si necesita cambio.
  */
 export async function getAvailableRequests(): Promise<{
   requests: AvailableRequestItem[];
@@ -88,8 +87,6 @@ export async function getAvailableRequests(): Promise<{
       package_type,
       recipient_payment_method,
       needs_change,
-      cash_change_amount,
-      notes,
       published_at,
       expires_at,
       pickup_zone:zones!pickup_zone_id(name),
@@ -147,8 +144,6 @@ export async function getAvailableRequests(): Promise<{
       recipientPaymentMethod:
         (req.recipient_payment_method as 'cash' | 'transfer') ?? 'cash',
       needsChange: Boolean(req.needs_change),
-      cashChangeAmount: req.cash_change_amount,
-      notes: req.notes,
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,

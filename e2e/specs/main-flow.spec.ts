@@ -307,8 +307,12 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     await courierPage.gotoFeed();
     await waitForNoSkeletons(page);
 
-    // Identificar de forma inequívoca la solicitud correspondiente a la corrida actual
-    const targetCard = courierPage.requestCardByNotes(stagingContext.testRunId);
+    // Identificar de forma inequívoca la solicitud sembrada en la corrida actual
+    const targetRequestId = stagingContext.createdRequestIds[0];
+    if (!targetRequestId) {
+      throw new Error('[E2E Error] No request ID found in stagingContext');
+    }
+    const targetCard = courierPage.requestCardById(targetRequestId);
     await expect(targetCard).toBeVisible();
 
     // Abrir la solicitud

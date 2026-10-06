@@ -209,8 +209,6 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
     packageType: 'small',
     recipientPaymentMethod: 'cash',
     needsChange: true,
-    cashChangeAmount: 5000,
-    notes: 'Frágil',
     publishedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
     expiresAt: new Date(Date.now() + 27 * 60 * 1000).toISOString(),
     hasMyOffer: false,

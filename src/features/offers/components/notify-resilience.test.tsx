@@ -50,8 +50,6 @@ describe('PR87-R06: mutaciones de ofertas no dependen de notify', () => {
     packageType: 'small',
     recipientPaymentMethod: 'cash',
     needsChange: false,
-    cashChangeAmount: null,
-    notes: null,
     publishedAt: '2026-09-25T03:00:00Z',
     expiresAt: '2026-09-25T04:00:00Z',
     hasMyOffer: false,

@@ -34,8 +34,6 @@ interface RawAvailableRequestRow {
   readonly package_type: string;
   readonly recipient_payment_method: string;
   readonly needs_change: boolean;
-  readonly cash_change_amount: number | null;
-  readonly notes: string | null;
   readonly published_at: string | null;
   readonly expires_at: string | null;
   readonly pickup_zone?: { name: string } | Array<{ name: string }> | null;
@@ -57,7 +55,7 @@ interface RawOfferRow {
  * - Requiere sesión activa de usuario.
  * - Lee delivery_requests en status=published con SOLO columnas públicas de feed.
  * - Consulta ofertas pendientes del courier para computar hasMyOffer y myOfferAmountArs.
- * - Jamás lee contactos, direcciones exactas ni coordenadas.
+ * - Jamás lee contactos, direcciones exactas, coordenadas, indicaciones ni monto exacto de cambio (D3).
  */
 export async function getAvailableRequestsLiveServer(
   cursor: LivePageCursor | null = null
@@ -81,8 +79,6 @@ export async function getAvailableRequestsLiveServer(
       package_type,
       recipient_payment_method,
       needs_change,
-      cash_change_amount,
-      notes,
       published_at,
       expires_at,
       pickup_zone:zones!pickup_zone_id(name),
@@ -151,8 +147,6 @@ export async function getAvailableRequestsLiveServer(
       recipientPaymentMethod:
         (req.recipient_payment_method as LiveAvailableRequestItem['recipientPaymentMethod']) ?? 'cash',
       needsChange: Boolean(req.needs_change),
-      cashChangeAmount: req.cash_change_amount,
-      notes: req.notes,
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,

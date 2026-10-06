@@ -117,6 +117,71 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
     expect(serialized).not.toContain('dropoff_address');
   });
 
+  it('T-342 D3: el feed no selecciona ni transporta indicaciones ni monto exacto de cambio antes del match', async () => {
+    let selectProjection = '';
+    const row = {
+      id: 'req-1',
+      created_at: '2026-09-23T18:00:00.000Z',
+      approx_distance_m: 2500,
+      package_type: 'small',
+      recipient_payment_method: 'cash',
+      needs_change: true,
+      cash_change_amount: 5000,
+      notes: 'Portón negro, tocar timbre 2B',
+      published_at: '2026-09-23T18:00:00.000Z',
+      expires_at: null,
+      pickup_zone: { name: 'Centro' },
+      dropoff_zone: { name: 'Barrio Norte' },
+    };
+
+    const requestsBuilder = {
+      select: vi.fn((projection: string) => {
+        selectProjection = projection;
+        return requestsBuilder;
+      }),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      then: (resolve: (val: unknown) => void) => resolve({ data: [row], error: null }),
+    };
+    const offersBuilder = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      then: (resolve: (val: unknown) => void) => resolve({ data: [], error: null }),
+    };
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: validCourierUser },
+          error: null,
+        }),
+      },
+      from: vi.fn((table: string) => {
+        if (table === 'delivery_requests') return requestsBuilder;
+        if (table === 'offers') return offersBuilder;
+        return {};
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const result = await getAvailableRequests();
+
+    const columns = selectProjection.split(/[\s,]+/).filter(Boolean);
+    expect(columns).not.toContain('notes');
+    expect(columns).not.toContain('cash_change_amount');
+
+    const first = result.requests[0];
+    if (!first) throw new Error('First request should be defined');
+    expect(first).not.toHaveProperty('notes');
+    expect(first).not.toHaveProperty('cashChangeAmount');
+    expect(first.recipientPaymentMethod).toBe('cash');
+    expect(first.needsChange).toBe(true);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('Portón negro');
+    expect(serialized).not.toContain('5000');
+  });
+
   it('pagina más de 50 filas retornando 50 ítems y nextCursor con createdAt y id de la fila 50', async () => {
     const fiftyOneRows = Array.from({ length: 51 }, (_, i) => ({
       id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,

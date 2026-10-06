@@ -290,6 +290,47 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
+    it('T-342 D3: no lee ni transporta indicaciones ni monto exacto de cambio antes del match', async () => {
+      const row = {
+        ...makeRequestRow(1),
+        needs_change: true,
+        cash_change_amount: 5000,
+        notes: 'Portón negro, tocar timbre 2B',
+      };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return reqBuilder;
+        if (table === 'offers') return offersBuilder;
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+
+      const projection = String(reqBuilder._calls.select[0]?.[0] ?? '');
+      const columns = projection.split(/[\s,]+/).filter(Boolean);
+      expect(columns).not.toContain('notes');
+      expect(columns).not.toContain('cash_change_amount');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const first = result.data.data[0];
+      if (!first) throw new Error('First request should be defined');
+      expect(first).not.toHaveProperty('notes');
+      expect(first).not.toHaveProperty('cashChangeAmount');
+      expect(first.needsChange).toBe(true);
+      const serialized = JSON.stringify(result.data);
+      expect(serialized).not.toContain('Portón negro');
+      expect(serialized).not.toContain('5000');
+    });
+
     it('A & E: Feed con 51 filas -> 50 resultados + nextCursor de fila 50 y hasMyOffer consulta SOLO 50 ids', async () => {
       const rows51 = Array.from({ length: 51 }, (_, i) => makeRequestRow(i + 1));
       const reqBuilder = createMockQueryBuilder(rows51);

@@ -50,8 +50,6 @@ export interface AvailableRequestItem {
   readonly packageType: 'small' | 'medium' | 'large';
   readonly recipientPaymentMethod: 'cash' | 'transfer';
   readonly needsChange: boolean;
-  readonly cashChangeAmount: number | null;
-  readonly notes: string | null;
   readonly publishedAt: string;
   readonly expiresAt: string | null;
   readonly hasMyOffer: boolean;
