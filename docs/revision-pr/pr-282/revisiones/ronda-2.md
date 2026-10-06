@@ -54,18 +54,18 @@ y `.agents/rules/50-git-y-coordinacion.md`, donde el trabajo en curso de una tar
 
 El rollout técnico en tres despliegues es razonable y está bien justificado por los workflows reales, pero no puede expresarse como tres PR del mismo issue sin una decisión de proceso.
 
-### Decisión pendiente para Lautaro073
+### Decisión de Lautaro073
 
-**A — recomendada:** dividir el rollout en tres tareas/issues consecutivos, cada una con una sola rama/PR:
+**A — descartada:** dividir el rollout en tres tareas/issues consecutivos, cada una con una sola rama/PR:
 - paso 1: RPC de compatibilidad;
 - paso 2: migración de lectores;
 - paso 3: enforcement + Realtime/E2E.
 
 CC-023 bloquea las tres y define sus dependencias encadenadas.
 
-**B:** autorizar una excepción explícita a la regla «una tarea = un PR». Esta opción requiere reconciliar también la regla raíz/documentación de coordinación; no alcanza con escribir la excepción solo dentro de T-345.
+**B — ELEGIDA por Lautaro073 el 2026-10-06:** autorizar una excepción explícita a la regla «una tarea = un PR». La excepción es puntual para T-345 por necesidad de rollout seguro; requiere reconciliar también AGENTS.md §5 y `.agents/rules/50-git-y-coordinacion.md` antes del merge de CC-023. La regla general no se elimina.
 
-No corresponde que agy elija entre A y B.
+La decisión ya no está pendiente: agy debe implementar B en la documentación raíz y corregir H04.
 
 ## PR282-H04 — PR 1 no puede pasar db-tests como está escrito
 
@@ -119,4 +119,4 @@ Sobre `39153ca`:
 
 ## Conclusión
 
-H01/H02 están resueltos. Quedan H03 (decisión humana de estructura de rollout) y H04 (tipos generados deben viajar con la migración que crea la RPC). No se mergea aún.
+H01/H02 están resueltos. H03 ya tiene decisión B de Lautaro073, pero falta reconciliar la excepción en las reglas raíz; H04 sigue abierto. No se mergea aún.
