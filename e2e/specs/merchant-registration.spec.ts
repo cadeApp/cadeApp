@@ -27,15 +27,22 @@ import { getLegalDocument } from '@/features/legal/documents';
  * Credenciales solo en memoria; nunca datos reales.
  */
 
+interface LocalRegistrationContext extends StagingSeedContext {
+  pendingCleanupEmails: Set<string>;
+}
+
 interface RegistrationFixtures {
   /** Contexto propio, sin seed previo: el usuario lo crea el flujo probado y se registra para limpieza. */
-  registrationContext: StagingSeedContext;
+  registrationContext: LocalRegistrationContext;
 }
 
 const test = roleTest.extend<RegistrationFixtures>({
   registrationContext: async ({}, use) => {
     assertAllowedE2EEnvironment();
-    const context = createStagingSeedContext();
+    const baseContext = createStagingSeedContext();
+    const context: LocalRegistrationContext = Object.assign(baseContext, {
+      pendingCleanupEmails: new Set<string>(),
+    });
     let testError: unknown = null;
     try {
       await use(context);
@@ -43,19 +50,50 @@ const test = roleTest.extend<RegistrationFixtures>({
       testError = error;
       throw error;
     } finally {
+      let cleanupPhaseError: unknown = null;
       try {
+        if (context.pendingCleanupEmails.size > 0) {
+          const admin = createAdminClient();
+          for (const targetEmail of context.pendingCleanupEmails) {
+            let page = 1;
+            const perPage = 50;
+            let foundUserId: string | null = null;
+            while (true) {
+              const { data, error: listError } = await admin.auth.admin.listUsers({ page, perPage });
+              if (listError) {
+                throw new Error(`[E2E Admin Error] listUsers: ${listError.message}`);
+              }
+              const match = data.users.find((u) => u.email === targetEmail);
+              if (match) {
+                foundUserId = match.id;
+                break;
+              }
+              if (!data.nextPage || data.users.length < perPage) {
+                break;
+              }
+              page++;
+            }
+            if (foundUserId) {
+              trackEntityForCleanup(context, 'user', foundUserId);
+            }
+          }
+        }
         await cleanupStagingData(context);
       } catch (cleanupErr) {
+        cleanupPhaseError = cleanupErr;
+      }
+
+      if (cleanupPhaseError) {
         if (testError) {
           const combined = new Error(
             `[E2E Lifecycle Error] Falló la ejecución principal y el cleanup posterior.\n` +
               `Error principal: ${testError instanceof Error ? testError.message : String(testError)}\n` +
-              `Error de cleanup: ${cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr)}`,
+              `Error de cleanup: ${cleanupPhaseError instanceof Error ? cleanupPhaseError.message : String(cleanupPhaseError)}`,
             { cause: testError }
           );
           throw combined;
         } else {
-          throw cleanupErr;
+          throw cleanupPhaseError;
         }
       }
     }
@@ -70,31 +108,6 @@ function uniqueEmail(context: StagingSeedContext, suffix: string): string {
 
 function uniquePassword(): string {
   return `P@ssword_${randomUUID()}!`;
-}
-
-async function trackCreatedUserByEmailIfPresent(
-  registrationContext: StagingSeedContext,
-  exactEmail: string
-): Promise<string | null> {
-  const admin = createAdminClient();
-  const perPage = 50;
-  const maxPages = 5;
-
-  for (let page = 1; page <= maxPages; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) {
-      throw new Error(`[E2E Admin Error] listUsers: ${error.message}`);
-    }
-    const match = data.users.find((u) => u.email === exactEmail);
-    if (match) {
-      trackEntityForCleanup(registrationContext, 'user', match.id);
-      return match.id;
-    }
-    if (!data.nextPage || data.users.length < perPage) {
-      break;
-    }
-  }
-  return null;
 }
 
 async function findProfileIdByDisplayName(displayName: string): Promise<string> {
@@ -165,8 +178,8 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     await page
       .getByRole('checkbox', { name: /acepto los términos y la política de privacidad/i })
       .check();
+    registrationContext.pendingCleanupEmails.add(email);
     await page.getByRole('button', { name: /^crear cuenta$/i }).click();
-    await trackCreatedUserByEmailIfPresent(registrationContext, email);
 
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /revisá tu email/i })).toBeVisible();
