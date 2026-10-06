@@ -146,3 +146,113 @@ e2e-preview: repository_dispatch en cola/pendiente; sin status publicado para el
 ```
 
 La aprobación de Lautaro no se pide hasta que esta revisión quede sin bloqueantes.
+
+---
+
+# Ronda 3 — SHA `8a39cab4f7ed740ea7c32e6f8cea14fea3c3760a`
+
+## Sincronización
+
+Resultado de comparar contra `develop` vigente:
+
+```text
+develop @ 6e2da8fb02d4797b9add222206342e6055f1d81c
+head    @ 8a39cab4f7ed740ea7c32e6f8cea14fea3c3760a
+ahead 8 / behind 48
+mergeable: true
+```
+
+Entre los 48 commits nuevos hay cambios E2E; por procedimiento la rama debe mergear `origin/develop` antes de la próxima ronda.
+
+## Autor no tocó la carpeta de revisión
+
+Comparación desde el commit de revisión R2 `7a21a751...` hasta el head R3: un solo commit del autor, modificando únicamente:
+
+```text
+docs/tasks/log/T-302.md
+e2e/specs/courier-onboarding.spec.ts
+```
+
+## H06 · secreto HMAC
+
+Barrido del SHA R3:
+
+```text
+99: function requireDniHmacSecret(): string {
+100:   const secret = process.env.DNI_HMAC_SECRET;
+101:   if (!secret) throw ...
+225: const hmacSecret = requireDniHmacSecret();
+467: const hmacSecret = requireDniHmacSecret();
+```
+
+No queda el literal de fallback. H06 verificado por inspección exacta.
+
+## R01 · clase completa de selectores amplios
+
+Barrido de `courier-onboarding.spec.ts`:
+
+```text
+296: const alert = page.getByRole('alert');
+402: const motoRadio = page.getByText(COURIER_ONBOARDING_COPY.transportMoto, { exact: false });
+540: const alert = page.getByRole('alert');
+```
+
+No hay otra ocurrencia de `getByRole('alert')` ni selector de transporte por texto en el spec.
+
+## e2e-preview exacto del SHA
+
+Run: `37542083437`, job `112537293795`. El checkout confirma HEAD `8a39cab`. Supabase Develop y health check pasan; falla el paso `Run preview E2E gate`.
+
+Resumen T-302 del log:
+
+```text
+✓ DoD MFA
+✘ DoD DNI duplicado (3 intentos)
+✘ Flujo 1 onboarding (3 intentos)
+✘ Flujo 2 DNI duplicado (3 intentos)
+✓ Flujo 3 admin MFA/UI
+```
+
+Errores reproducidos:
+
+```text
+DoD DNI / Flujo 2:
+strict mode violation: getByRole('alert') resolved to 2 elements
+1) alert productivo con 'Ese DNI ya está registrado...'
+2) div#__next-route-announcer__[role=alert]
+
+Flujo 1:
+strict mode violation: getByText('Moto') resolved to 2 elements
+
+Resultado del gate:
+3 failed
+```
+
+Esto separa el comportamiento productivo del defecto de test: el alert correcto sí existe; el locator no es único.
+
+## H05 · contraste con la bitácora del autor
+
+La entrada 2026-10-06 19:35 declara primero que el host local se corta por:
+
+```text
+[E2E Fail-Closed] Proyecto Supabase 'desconocido' no está positivamente identificado como staging
+```
+
+Por lo tanto, un intento local de H01/H02 no puede contarse como RED de la aserción si no muestra que llegó después del seed/fixture. La entrada no copia línea de fallo para H01 ni H02. H03 sí aporta un RED de `actions.test.ts`, que es evidencia complementaria, no la mutación E2E pedida. H04 describe timeout pero no deja una salida completa reproducible.
+
+El runner remoto sí ejecutó el spec real, pero quedó rojo por R01. H05 queda parcial hasta tener Preview GREEN en una rama actualizada y una aclaración append-only de qué evidencia local fue o no reproducible.
+
+## Comandos para la siguiente ronda
+
+```bash
+git fetch origin
+git merge --no-edit origin/develop
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm exec playwright test --list
+git diff --check
+git status --short
+```
+
+El E2E completo se valida con el `e2e-preview` automático del Preview; no disparar workflows manualmente.

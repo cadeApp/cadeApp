@@ -1,25 +1,26 @@
 # Lecciones de la PR #254 para `AGENTS.md` y las reglas
 
-**Fuente:** 6 hallazgos tras dos rondas. Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
+**Fuente:** 8 registros tras tres rondas (`H01`–`H07` y `R01`). Datos crudos en [`hallazgos.jsonl`](hallazgos.jsonl).
 
 ## Patrón dominante
 
-El patrón sigue siendo P08: un control puede parecer alineado con el flujo y aun medir otra cosa. R1 lo mostró con fallbacks; R2 lo muestra con evidencia de `--list` presentada como si validara ejecución y con una precondición criptográfica que puede usar otra clave.
+`P08-control-no-cubre-lo-que-dice` sigue dominando la PR. R3 agrega además una regresión `P07-coincidencia-demasiado-amplia`: al endurecer los E2E se eligieron locators accesibles pero no únicos en el DOM real.
 
-## Lecciones propuestas
+## Ronda 3
 
-No se agrega AG nueva en R2.
+No se propone AG nueva.
 
-- H05 refuerza **AG-70 / P08**: descubrir tests no equivale a ejecutarlos, y un RED anterior no verifica una prueba que fue reescrita después.
-- H06 refuerza la regla de paridad entre test y producción: una precondición criptográfica usa la misma clave/configuración o falla cerrada; nunca inventa un valor alternativo.
+- **R01** refuerza P07: un locator de Playwright debe ser semántico **y único**. `role=alert` global no alcanza en Next porque el route announcer también usa `role=alert`; el selector debe acotarse por el contenido/área que representa el error. Para controles de formulario, preferir el rol real (`radio`, `checkbox`, `button`) sobre texto visible genérico.
+- **H05** vuelve a confirmar **pr-63/AG-70**: una salida RED no se redacta desde lo que se espera. Si el entorno fail-closed corta antes, eso se registra como `no reproducido`, no como demostración de la mutación.
+- **H07** refuerza el chequeo de sincronización de cada ronda: un CI verde sobre una rama 48 commits detrás no certifica la integración que se va a mergear.
 
 ## Qué cambiar, en orden de impacto
 
-1. Exigir GREEN real del E2E después de cada reescritura sustancial.
-2. Guardar salida RED de las mutaciones exactas que protegen cada invariante.
-3. Fallar cerrado cuando falta configuración sensible que define la semántica del escenario.
+1. Corregir locators con la semántica accesible más específica disponible.
+2. Exigir Preview GREEN exacto sobre la rama ya mergeada con `develop`.
+3. Mantener separadas evidencia del autor y verificación independiente; no promocionar a `verificado_en_sha` lo que el reviewer no reprodujo.
 
 ## Advertencias
 
-- `approval-policy` rojo no es un hallazgo técnico aquí: pide la aprobación humana de Lautaro073 y debe quedar para el final.
-- La bitácora es append-only: errores narrativos previos se aclaran en una entrada nueva, no se reescriben.
+- El `e2e-preview` fue útil aquí precisamente porque el host local del autor falla cerrado sin credenciales. No sustituye la honestidad sobre las mutaciones que no se pudieron reproducir.
+- Los fallos de R01 son del spec, no de producción: el propio log muestra el mensaje real de DNI duplicado y los flujos MFA pasan.
