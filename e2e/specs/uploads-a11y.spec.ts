@@ -35,9 +35,9 @@ export async function runAxeAudit(page: Page, _contextDescription: string) {
     .analyze();
 }
 
-// Buffer JPEG mínimo válido de 1x1 píxel para pruebas de subida
-const DUMMY_1X1_JPEG = Buffer.from(
-  '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=',
+// Buffer PNG real 2x2 válido para pruebas de subida (H11)
+const DUMMY_2X2_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==',
   'base64'
 );
 
@@ -65,7 +65,9 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
     page,
     loginAsCourier,
   }) => {
-    let uploadedStoragePath: string | null = null;
+    const uploadTracker: { capturedStoragePath: string | null } = {
+      capturedStoragePath: null,
+    };
 
     try {
       // 1. Iniciar sesión como repartidor y navegar al formulario de identidad del onboarding
@@ -88,9 +90,20 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
       let cutIntercepted = false;
 
       await page.route('**/storage/v1/object/**', async (route) => {
-        if (route.request().method() === 'POST' && simulatedCutActive) {
-          cutIntercepted = true;
-          await route.abort('failed');
+        if (route.request().method() === 'POST') {
+          if (simulatedCutActive) {
+            cutIntercepted = true;
+            await route.abort('failed');
+            return;
+          }
+
+          // H06: Capturar path candidato desde la URL del POST real ANTES de route.continue()
+          const requestUrl = route.request().url();
+          const match = requestUrl.match(/\/storage\/v1\/object\/courier-docs\/(.+?)(\?.*)?$/);
+          if (match?.[1]) {
+            uploadTracker.capturedStoragePath = decodeURIComponent(match[1]);
+          }
+          await route.continue();
           return;
         }
         await route.continue();
@@ -102,15 +115,14 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
 
       // 5. Intentar la primera carga del frente del DNI durante el corte
       await dniFrontInput.setInputFiles({
-        name: 'dni_front.jpg',
-        mimeType: 'image/jpeg',
-        buffer: DUMMY_1X1_JPEG,
+        name: 'dni_front.png',
+        mimeType: 'image/png',
+        buffer: DUMMY_2X2_PNG,
       });
 
-      // 6. Verificar que la pantalla muestra el error por rol accesible
-      const alert = page.getByRole('alert');
+      // 6. H02: Verificar que la pantalla muestra el error con filtro de texto semántico
+      const alert = page.getByRole('alert').filter({ hasText: /Error al subir|reintentar/i });
       await expect(alert).toBeVisible({ timeout: 15000 });
-      await expect(alert).toContainText(/Error al subir|reintentar/i);
       expect(cutIntercepted).toBe(true);
 
       // 7. Restablecer la conectividad (desactivar el corte de red)
@@ -118,30 +130,75 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
 
       // 8. Reintentar la subida del documento usando el MISMO selector accesible
       await dniFrontInput.setInputFiles({
-        name: 'dni_front.jpg',
-        mimeType: 'image/jpeg',
-        buffer: DUMMY_1X1_JPEG,
+        name: 'dni_front.png',
+        mimeType: 'image/png',
+        buffer: DUMMY_2X2_PNG,
       });
 
-      // 9. Verificar éxito por role=status y lectura de storage path real (no clases ni data-status CSS)
-      const statusElement = page.getByRole('status').filter({ hasText: /cargado/i });
-      await expect(statusElement).toBeVisible({ timeout: 30000 });
+      // 9. H02 / H10: Esperar el path con expect.poll sobre sessionStorage
+      await expect.poll(async () => {
+        const raw = await page.evaluate(() => sessionStorage.getItem('cadeapp_onboarding_docs'));
+        if (!raw) return null;
+        try {
+          const parsed: unknown = JSON.parse(raw);
+          if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            'dni_front' in parsed &&
+            typeof (parsed as Record<string, unknown>).dni_front === 'string'
+          ) {
+            return (parsed as Record<string, string>).dni_front;
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      }, {
+        message: 'Timeout esperando que sessionStorage contenga el path de dni_front',
+        timeout: 30000,
+      }).not.toBeNull();
 
-      // Extraer y validar el storage path real guardado en sessionStorage
+      // Validar sessionStorage sin any ni non-null assertions
       const rawDocs = await page.evaluate(() => sessionStorage.getItem('cadeapp_onboarding_docs'));
-      expect(rawDocs).toBeTruthy();
-      const parsedDocs = JSON.parse(rawDocs!);
-      expect(parsedDocs.dni_front).toBeTruthy();
-      uploadedStoragePath = parsedDocs.dni_front;
-      expect(uploadedStoragePath).toMatch(/^courier\/[a-f0-9-]+\/dni_front_\d+\.(jpe?g|png|webp)$/i);
+      if (!rawDocs) {
+        throw new Error('[E2E Error] No se encontró cadeapp_onboarding_docs en sessionStorage tras la carga');
+      }
+      const parsedDocs: unknown = JSON.parse(rawDocs);
+      if (
+        typeof parsedDocs !== 'object' ||
+        parsedDocs === null ||
+        !('dni_front' in parsedDocs) ||
+        typeof (parsedDocs as Record<string, unknown>).dni_front !== 'string'
+      ) {
+        throw new Error('[E2E Error] Estructura inválida de documentos en sessionStorage');
+      }
+      const storagePathFromSession = (parsedDocs as Record<string, string>).dni_front;
+      expect(uploadTracker.capturedStoragePath).not.toBeNull();
+      expect(storagePathFromSession).toBe(uploadTracker.capturedStoragePath);
+      expect(storagePathFromSession).toMatch(/^courier\/[a-f0-9-]+\/dni_front_\d+\.(png|jpe?g|webp)$/i);
+
+      // H02: Verificar role=status con el filename controlado por el test (dni_front.png)
+      const statusElement = page.getByRole('status').filter({ hasText: 'dni_front.png' });
+      await expect(statusElement).toBeVisible({ timeout: 10000 });
     } finally {
-      // H06: Cleanup del objeto real subido a Storage para no dejar basura residual
-      if (uploadedStoragePath) {
+      // H06: Cleanup fail-safe con admin client en Storage
+      const pathToClean = uploadTracker.capturedStoragePath;
+      if (typeof pathToClean === 'string' && pathToClean.length > 0) {
         const admin = createAdminClient();
         const { error: removeError } = await admin.storage
           .from(COURIER_DOCS_BUCKET)
-          .remove([uploadedStoragePath]);
+          .remove([pathToClean]);
         expect(removeError).toBeNull();
+
+        const lastSlashIdx = pathToClean.lastIndexOf('/');
+        const folder = lastSlashIdx !== -1 ? pathToClean.substring(0, lastSlashIdx) : '';
+        const filename = lastSlashIdx !== -1 ? pathToClean.substring(lastSlashIdx + 1) : pathToClean;
+
+        const { data: listData, error: listError } = await admin.storage
+          .from(COURIER_DOCS_BUCKET)
+          .list(folder, { search: filename });
+        expect(listError).toBeNull();
+        expect(listData?.find((item) => item.name === filename)).toBeUndefined();
       }
     }
   });
@@ -157,119 +214,114 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
       throw new Error('[E2E Error] No se encontró courier en stagingContext');
     }
 
-    // 1. Crear cliente autenticado como repartidor
-    const courierClient = await createAuthenticatedClient(courier);
+    let uploadedPathToCleanup: string | null = null;
+    try {
+      // 1. Crear cliente autenticado como repartidor
+      const courierClient = await createAuthenticatedClient(courier);
 
-    // 2. Intentar subir al bucket privado 'courier-docs' un tipo de archivo no permitido (text/plain / ejecutable)
-    const invalidFilePayload = Buffer.from('console.log("invalid file test payload");');
-    const invalidStoragePath = `courier/${courier.id}/dni_front_${Date.now()}.txt`;
+      // 2. Intentar subir al bucket privado 'courier-docs' un tipo de archivo no permitido (text/plain)
+      const invalidFilePayload = Buffer.from('console.log("invalid file test payload");');
+      const invalidStoragePath = `courier/${courier.id}/dni_front_${Date.now()}.txt`;
+      uploadedPathToCleanup = invalidStoragePath;
 
-    const { data, error } = await courierClient.storage
-      .from(COURIER_DOCS_BUCKET)
-      .upload(invalidStoragePath, invalidFilePayload, {
-        contentType: 'text/plain',
-        upsert: false,
-      });
+      const { data, error } = await courierClient.storage
+        .from(COURIER_DOCS_BUCKET)
+        .upload(invalidStoragePath, invalidFilePayload, {
+          contentType: 'text/plain',
+          upsert: false,
+        });
 
-    // 3. El servidor de almacenamiento debe rechazar la subida
-    expect(data).toBeNull();
-    expect(error).not.toBeNull();
-    expect(error?.message).toMatch(/mime type not allowed|mime type|invalid|violates/i);
+      // 3. H12: Rechazo específico de tipo MIME (sin fallback genérico)
+      expect(data).toBeNull();
+      expect(error).not.toBeNull();
+      expect(error?.message).toMatch(/mime type .*not (allowed|supported)|mime type/i);
+    } finally {
+      if (uploadedPathToCleanup) {
+        const admin = createAdminClient();
+        await admin.storage.from(COURIER_DOCS_BUCKET).remove([uploadedPathToCleanup]);
+      }
+    }
   });
 
   // ---------------------------------------------------------------------------
   // DoD 3: axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding
+  // H09: División en tests separados utilizando el fixture page nativo de Playwright
   // ---------------------------------------------------------------------------
-  test('DoD: axe AA en login, crear solicitud, lista del repartidor, viaje y onboarding', async ({
-    browser,
-    stagingContext,
+  test('DoD: axe AA en login (sesión anónima)', async ({ page }) => {
+    await page.goto('/login');
+    await waitForNoSkeletons(page);
+    await expect(page).toHaveURL(/\/login$/);
+    const audit = await runAxeAudit(page, 'login (/login)');
+    expect(
+      audit.violations,
+      `Violaciones WCAG en Login:\n${JSON.stringify(audit.violations, null, 2)}`
+    ).toEqual([]);
+    expect(audit.passes.length).toBeGreaterThan(0);
+  });
+
+  test('DoD: axe AA en crear solicitud (comercio)', async ({
+    page,
     loginAsMerchant,
+  }) => {
+    const { merchantPage } = await loginAsMerchant(page);
+    await merchantPage.gotoNewRequest();
+    await waitForNoSkeletons(page);
+    await expect(page).toHaveURL(/\/merchant\/requests\/new$/);
+    const audit = await runAxeAudit(page, 'crear solicitud (/merchant/requests/new)');
+    expect(
+      audit.violations,
+      `Violaciones WCAG en Crear Solicitud:\n${JSON.stringify(audit.violations, null, 2)}`
+    ).toEqual([]);
+    expect(audit.passes.length).toBeGreaterThan(0);
+  });
+
+  test('DoD: axe AA en feed, viaje y onboarding (repartidor)', async ({
+    page,
+    stagingContext,
     loginAsCourier,
   }) => {
-    // 1. Pantalla de acceso: login (/login) en contexto y page anónima (H03)
-    const anonContext = await browser.newContext();
-    try {
-      const anonPage = await anonContext.newPage();
-      await anonPage.goto('/login');
-      await waitForNoSkeletons(anonPage);
-      await expect(anonPage).toHaveURL(/\/login$/);
-      const loginAudit = await runAxeAudit(anonPage, 'login (/login)');
-      expect(
-        loginAudit.violations,
-        `Violaciones WCAG en Login:\n${JSON.stringify(loginAudit.violations, null, 2)}`
-      ).toEqual([]);
-      expect(loginAudit.passes.length).toBeGreaterThan(0);
-    } finally {
-      await anonContext.close();
+    const { courierPage } = await loginAsCourier(0, page);
+
+    // 1. Lista del repartidor (/courier/feed)
+    await courierPage.gotoFeed();
+    await waitForNoSkeletons(page);
+    await expect(page).toHaveURL(/\/courier\/feed$/);
+    const feedAudit = await runAxeAudit(page, 'lista del repartidor (/courier/feed)');
+    expect(
+      feedAudit.violations,
+      `Violaciones WCAG en Lista del Repartidor:\n${JSON.stringify(feedAudit.violations, null, 2)}`
+    ).toEqual([]);
+    expect(feedAudit.passes.length).toBeGreaterThan(0);
+
+    // 2. Pantalla operativa: viaje (/trips/:id)
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] No se encontró courier en stagingContext');
     }
+    const seededTrip = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    await page.goto(`/trips/${seededTrip.requestId}`);
+    await waitForNoSkeletons(page);
+    await expect(page).toHaveURL(new RegExp(`/trips/${seededTrip.requestId}$`));
+    const tripAudit = await runAxeAudit(page, `viaje (/trips/${seededTrip.requestId})`);
+    expect(
+      tripAudit.violations,
+      `Violaciones WCAG en Viaje:\n${JSON.stringify(tripAudit.violations, null, 2)}`
+    ).toEqual([]);
+    expect(tripAudit.passes.length).toBeGreaterThan(0);
 
-    // 2. Pantalla de comercio: crear solicitud (/merchant/requests/new) en contexto merchant propio (H03)
-    const merchantContext = await browser.newContext();
-    try {
-      const merchantBrowserPage = await merchantContext.newPage();
-      const { merchantPage } = await loginAsMerchant(merchantBrowserPage);
-      await merchantPage.gotoNewRequest();
-      await waitForNoSkeletons(merchantBrowserPage);
-      await expect(merchantBrowserPage).toHaveURL(/\/merchant\/requests\/new$/);
-      const createReqAudit = await runAxeAudit(merchantBrowserPage, 'crear solicitud (/merchant/requests/new)');
-      expect(
-        createReqAudit.violations,
-        `Violaciones WCAG en Crear Solicitud:\n${JSON.stringify(createReqAudit.violations, null, 2)}`
-      ).toEqual([]);
-      expect(createReqAudit.passes.length).toBeGreaterThan(0);
-    } finally {
-      await merchantContext.close();
-    }
-
-    // 3, 4, 5. Pantallas de repartidor: feed, viaje y onboarding en OTRO contexto courier separado (H03)
-    const courierContext = await browser.newContext();
-    try {
-      const courierBrowserPage = await courierContext.newPage();
-      const { courierPage } = await loginAsCourier(0, courierBrowserPage);
-
-      // 3. Lista del repartidor (/courier/feed)
-      await courierPage.gotoFeed();
-      await waitForNoSkeletons(courierBrowserPage);
-      await expect(courierBrowserPage).toHaveURL(/\/courier\/feed$/);
-      const feedAudit = await runAxeAudit(courierBrowserPage, 'lista del repartidor (/courier/feed)');
-      expect(
-        feedAudit.violations,
-        `Violaciones WCAG en Lista del Repartidor:\n${JSON.stringify(feedAudit.violations, null, 2)}`
-      ).toEqual([]);
-      expect(feedAudit.passes.length).toBeGreaterThan(0);
-
-      // 4. Pantalla operativa: viaje (/trips/:id) con solicitud real en estado matched (H04)
-      const courier = stagingContext.courierUsers?.[0];
-      if (!courier) {
-        throw new Error('[E2E Error] No se encontró courier en stagingContext');
-      }
-      const seededTrip = await seedDeliveryRequestInState(stagingContext, {
-        status: 'matched',
-        assignedCourierId: courier.id,
-        withContacts: true,
-      });
-      await courierBrowserPage.goto(`/trips/${seededTrip.requestId}`);
-      await waitForNoSkeletons(courierBrowserPage);
-      await expect(courierBrowserPage).toHaveURL(new RegExp(`/trips/${seededTrip.requestId}$`));
-      const tripAudit = await runAxeAudit(courierBrowserPage, `viaje (/trips/${seededTrip.requestId})`);
-      expect(
-        tripAudit.violations,
-        `Violaciones WCAG en Viaje:\n${JSON.stringify(tripAudit.violations, null, 2)}`
-      ).toEqual([]);
-      expect(tripAudit.passes.length).toBeGreaterThan(0);
-
-      // 5. Pantalla de incorporación: onboarding (/courier/onboarding/identity)
-      await courierBrowserPage.goto('/courier/onboarding/identity');
-      await waitForNoSkeletons(courierBrowserPage);
-      await expect(courierBrowserPage).toHaveURL(/\/courier\/onboarding\/identity$/);
-      const onboardingAudit = await runAxeAudit(courierBrowserPage, 'onboarding (/courier/onboarding/identity)');
-      expect(
-        onboardingAudit.violations,
-        `Violaciones WCAG en Onboarding:\n${JSON.stringify(onboardingAudit.violations, null, 2)}`
-      ).toEqual([]);
-      expect(onboardingAudit.passes.length).toBeGreaterThan(0);
-    } finally {
-      await courierContext.close();
-    }
+    // 3. Pantalla de incorporación: onboarding (/courier/onboarding/identity)
+    await page.goto('/courier/onboarding/identity');
+    await waitForNoSkeletons(page);
+    await expect(page).toHaveURL(/\/courier\/onboarding\/identity$/);
+    const onboardingAudit = await runAxeAudit(page, 'onboarding (/courier/onboarding/identity)');
+    expect(
+      onboardingAudit.violations,
+      `Violaciones WCAG en Onboarding:\n${JSON.stringify(onboardingAudit.violations, null, 2)}`
+    ).toEqual([]);
+    expect(onboardingAudit.passes.length).toBeGreaterThan(0);
   });
 });
