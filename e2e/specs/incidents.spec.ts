@@ -119,9 +119,14 @@ test.describe('T-308 — E2E de incidentes y suspensión cautelar', () => {
     await adminPage.goto('/admin/incidents');
     await waitForNoSkeletons(adminPage);
 
-    // Verificar presencia del incidente en la bandeja
-    await expect(adminPage.getByText(/problema con el cobro/i).first()).toBeVisible();
-    await expect(adminPage.getByText(incidentDescription)).toBeVisible();
+    // Localizar tarjeta del incidente y comprobar el tipo exacto (H07)
+    const incidentCard = adminPage
+      .getByRole('listitem')
+      .filter({ hasText: incidentDescription });
+    await expect(incidentCard).toBeVisible();
+    await expect(
+      incidentCard.getByText(/^problema con el cobro$/i)
+    ).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
