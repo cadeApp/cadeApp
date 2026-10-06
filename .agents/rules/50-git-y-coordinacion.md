@@ -18,6 +18,20 @@
 - `src/types/database.types.ts`: solo lo regenera un PR de migración (`pnpm db:types`).
 - Archivos de otra zona: solo si la ficha nombra la subruta concreta; el PR lo revisa el dueño de esa zona.
 
+## Excepción: varios PR sucesivos para una misma tarea
+Por defecto, una tarea = un issue = una rama = un PR. Excepcionalmente, un CC puede exigir varios PR sucesivos para la
+misma tarea cuando un único merge no es seguro por el orden de rollout entre esquema y aplicación (por ejemplo: crear
+una RPC, migrar los lectores y recién después revocar permisos). Condiciones:
+- **Decisión explícita de Lautaro073**, registrada en el CC y en la ficha, con los pasos y el checkpoint de cada uno.
+- **Cada paso:** rama propia `feat/T-xxx-<paso>`, PR propio, CI propio y revisión independiente propia.
+- **Secuencial:** no es trabajo paralelo sobre la misma tarea. El paso siguiente no se empieza ni se mergea hasta
+  cumplir el checkpoint documentado del anterior.
+- **Issue:** los PR intermedios usan `Refs #<issue>` y solo el último usa `Closes #<issue>`, para que la tarea no se
+  cierre ni pase a «Hecha» antes de terminar el rollout.
+- **Bitácora única:** `docs/tasks/log/T-xxx.md` registra cada paso y su PR.
+
+Autorizada por Lautaro073 el 2026-10-06 para T-345 / CC-023 (PR #282).
+
 ## Ramas y ambientes
 - `feat/T-xxx-*` → PR a `develop` (squash merge). Release semanal: PR `develop → staging` abierto por el
   capitán de release (rota P1 → P2 → P3) solo si develop está verde; el PR de release no resuelve conflictos.
