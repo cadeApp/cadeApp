@@ -17,4 +17,6 @@ Un targeted test verde o un job equivalente de CI no permite marcar otro comando
 
 > **Regla propuesta.** En `Checks locales`, cada símbolo refleja literalmente la última salida del comando nombrado. Evidencia complementaria de CI o ejecuciones aisladas se anota aparte y nunca reemplaza el resultado del comando.
 
-Esto refuerza una regla que ya existe en `AGENTS.md §4`: nunca declarar verde sin evidencia.
+La ronda 3 agrega una consecuencia práctica del mismo hallazgo: los mutation tests que reescriben archivos reales del checkout no son seguros dentro de una suite paralela. La mutación debe ocurrir en un workspace aislado, no sobre el archivo que otros workers pueden importar.
+
+Esto refuerza reglas ya existentes: no fabricar GREEN, no adulterar tests y no confundir evidencia aislada con el comando completo.
