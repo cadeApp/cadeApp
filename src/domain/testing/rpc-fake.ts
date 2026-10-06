@@ -269,6 +269,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   calculate_route_distance: ['merchant', 'courier', 'admin'],
   get_trip_details: ['merchant', 'courier'],
   get_request_offer_couriers: ['merchant'],
+  get_merchant_request_private_fields: ['merchant'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_verify_document: ['admin'],
@@ -532,6 +533,13 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (!actor.userId || !actor.role) {
       return err('UNAUTHENTICATED' as RpcErrorCode<K>);
     }
+    // CC-023: la RPC valida el id antes del rol (misma precedencia que la función SQL).
+    if (
+      rpcName === 'get_merchant_request_private_fields' &&
+      !RPC_CONTRACTS[rpcName].inputSchema.safeParse(rawInput).success
+    ) {
+      return err('VALIDATION_ERROR' as RpcErrorCode<K>);
+    }
     if (!ALLOWED_ROLES_BY_RPC[rpcName].includes(actor.role)) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
     }
@@ -540,6 +548,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (
       (rpcName === 'get_trip_details' ||
         rpcName === 'get_request_offer_couriers' ||
+        rpcName === 'get_merchant_request_private_fields' ||
         rpcName === 'report_incident') &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
@@ -1267,6 +1276,17 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
               },
             ];
           }),
+        });
+      }),
+
+    get_merchant_request_private_fields: (rawInput) =>
+      executeRpc('get_merchant_request_private_fields', rawInput, false, (input) => {
+        const req = requests.get(input.requestId);
+        if (!req || req.merchantId !== actor.userId) return err('NOT_FOUND');
+        return ok({
+          requestId: req.requestId,
+          notes: req.notes,
+          cashChangeAmount: req.cashChangeAmount,
         });
       }),
 
