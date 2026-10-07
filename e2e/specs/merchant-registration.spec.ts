@@ -11,6 +11,7 @@ import {
 } from '../fixtures';
 import { LoginPage } from '../pages';
 import { waitForNoSkeletons } from '../helpers/skeletons';
+import { waitForFormHydration } from '../helpers/hydration';
 import { createAdminClient } from '@/server/supabase/admin';
 import { getLegalDocument } from '@/features/legal/documents';
 
@@ -269,13 +270,15 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     await expect(page).toHaveURL(/\/merchant\/onboarding/);
 
     // 6. Onboarding completo aceptando los Términos del piloto
+    const submitOnboardingBtn = page.getByRole('button', { name: /^empezar$/i });
+    await waitForFormHydration(submitOnboardingBtn);
     await page.getByLabel(/^nombre del negocio$/i).fill(businessName);
     await page.getByLabel(/^teléfono de contacto$/i).fill('+5493865000099');
     await page.getByRole('combobox', { name: /barrio de retiro habitual/i }).click();
     await page.getByRole('option').first().click();
     await page.getByLabel(/^dirección de retiro habitual$/i).fill('Alberdi 150, Aguilares');
     await page.getByRole('checkbox', { name: /acepto los términos del piloto/i }).check();
-    await page.getByRole('button', { name: /^empezar$/i }).click();
+    await submitOnboardingBtn.click();
 
     // 7. Panel del comercio visible
     try {
