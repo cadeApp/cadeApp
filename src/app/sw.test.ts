@@ -294,7 +294,9 @@ describe('PR117-H02 / D03: Service Worker Runtime Execution (public/sw.js via no
 
     expect(response).not.toBeNull();
     expect(response?.status).toBe(503);
+    expect(response?.headers.get('content-type')).toBe('text/html; charset=utf-8');
     const bodyText = await response?.text();
+    expect(bodyText).toMatch(/<!DOCTYPE html>[\s\S]*<html[\s\S]*<body[\s\S]*<h1>Sin conexión<\/h1>/i);
     expect(bodyText).toContain('Sin conexión');
     expect(bodyText).not.toContain('cadeApp Shell');
     expect(sw.mockCache.match).not.toHaveBeenCalledWith('/');
@@ -331,6 +333,7 @@ describe('PR117-H02 / D03: Service Worker Runtime Execution (public/sw.js via no
 
   it('8. install cachea los assets del shell (sin /) y activate limpia cachés anteriores incluyendo v1', async () => {
     await sw.dispatchInstall();
+    expect(sw.mockCaches.open).toHaveBeenCalledWith('cadeapp-shell-v2');
     expect(sw.mockCache.addAll).toHaveBeenCalledWith(
       expect.not.arrayContaining(['/'])
     );

@@ -1,6 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { isStandalone } from './is-standalone';
 
 export interface StandaloneBackLinkProps {
   href: string;
@@ -12,14 +14,33 @@ export interface StandaloneBackLinkProps {
 
 export function StandaloneBackLink({
   href,
+  standaloneMode,
   className,
   'aria-label': ariaLabel,
   children,
 }: StandaloneBackLinkProps) {
-  // Stub inicial para fase RED: siempre devuelve enlace hacia href
+  const [standalone, setStandalone] = useState(false);
+
+  useEffect(() => {
+    if (isStandalone()) {
+      setStandalone(true);
+    }
+  }, []);
+
+  if (standalone && standaloneMode === 'hide') {
+    return null;
+  }
+
+  const effectiveHref = standalone && standaloneMode === 'login' ? '/login' : href;
+  const standaloneCss = standaloneMode === 'hide' ? ' [@media(display-mode:standalone)]:hidden' : '';
+
   return (
-    <a href={href} className={className} aria-label={ariaLabel}>
+    <Link
+      href={effectiveHref}
+      aria-label={ariaLabel}
+      className={className ? `${className}${standaloneCss}` : standaloneCss.trim()}
+    >
       {children}
-    </a>
+    </Link>
   );
 }

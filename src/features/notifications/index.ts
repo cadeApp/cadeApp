@@ -1,4 +1,7 @@
 export { isIosSafariNonStandalone } from './install/is-ios';
+export { isStandalone } from './install/is-standalone';
+export { StandaloneRedirect } from './install/standalone-redirect';
+export { StandaloneBackLink } from './install/standalone-back-link';
 export { useOfflineStatus } from './offline/use-offline-status';
 
 export const loadOfflineBanner = () =>

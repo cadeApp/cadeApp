@@ -107,4 +107,106 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
       expect(link.getAttribute('href')).toBe('/login');
     });
   });
+
+  describe('4. Consumidores reales de navegación y guards', { timeout: 15000 }, () => {
+    describe('HomePage (src/app/page.tsx)', () => {
+      it('en navegador común (isStandalone = false) muestra el heading de landing', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
+
+        const { default: HomePage } = await import('@/app/page');
+        render(<HomePage />);
+
+        expect(
+          screen.getByRole('heading', { name: /Tu envío, al precio que elijas/i })
+        ).toBeTruthy();
+        expect(mockReplace).not.toHaveBeenCalled();
+      });
+
+      it('en modo instalado (isStandalone = true) termina usando el guard que deriva a /login y no deja contenido visible', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
+
+        const { default: HomePage } = await import('@/app/page');
+        render(<HomePage />);
+
+        expect(mockReplace).toHaveBeenCalledWith('/login');
+        expect(
+          screen.queryByRole('heading', { name: /Tu envío, al precio que elijas/i })
+        ).toBeNull();
+      });
+    });
+
+    describe('LoginPage (src/app/(public)/login/page.tsx)', () => {
+      it('en navegador común conserva "Volver al inicio" hacia /', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
+
+        const { default: LoginPage } = await import('@/app/(public)/login/page');
+        const pageJsx = await LoginPage({ searchParams: Promise.resolve({}) });
+        render(pageJsx);
+
+        const backLink = screen.getByRole('link', { name: /Volver al inicio/i });
+        expect(backLink).toBeTruthy();
+        expect(backLink.getAttribute('href')).toBe('/');
+      });
+
+      it('en modo instalado no renderiza ese enlace', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
+
+        const { default: LoginPage } = await import('@/app/(public)/login/page');
+        const pageJsx = await LoginPage({ searchParams: Promise.resolve({}) });
+        render(pageJsx);
+
+        expect(screen.queryByRole('link', { name: /Volver al inicio/i })).toBeNull();
+      });
+    });
+
+    describe('RegisterPage (src/app/(public)/register/page.tsx)', () => {
+      it('en navegador común conserva /', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
+
+        const { default: RegisterPage } = await import('@/app/(public)/register/page');
+        const pageJsx = await RegisterPage({ searchParams: Promise.resolve({}) });
+        render(pageJsx);
+
+        const backLink = screen.getByRole('link', { name: /Volver al inicio/i });
+        expect(backLink).toBeTruthy();
+        expect(backLink.getAttribute('href')).toBe('/');
+      });
+
+      it('en modo instalado cambia ese control a /login', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
+
+        const { default: RegisterPage } = await import('@/app/(public)/register/page');
+        const pageJsx = await RegisterPage({ searchParams: Promise.resolve({}) });
+        render(pageJsx);
+
+        const backLink = screen.getByRole('link', { name: /Volver al inicio/i });
+        expect(backLink).toBeTruthy();
+        expect(backLink.getAttribute('href')).toBe('/login');
+      });
+    });
+
+    describe('LegalIndexPage (src/app/(public)/legal/page.tsx)', () => {
+      it('en navegador común conserva /', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
+
+        const { default: LegalIndexPage } = await import('@/app/(public)/legal/page');
+        render(<LegalIndexPage />);
+
+        const backLink = screen.getByRole('link', { name: /Volver al inicio/i });
+        expect(backLink).toBeTruthy();
+        expect(backLink.getAttribute('href')).toBe('/');
+      });
+
+      it('en modo instalado cambia ese control a /login', async () => {
+        vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
+
+        const { default: LegalIndexPage } = await import('@/app/(public)/legal/page');
+        render(<LegalIndexPage />);
+
+        const backLink = screen.getByRole('link', { name: /Volver al inicio/i });
+        expect(backLink).toBeTruthy();
+        expect(backLink.getAttribute('href')).toBe('/login');
+      });
+    });
+  });
 });
