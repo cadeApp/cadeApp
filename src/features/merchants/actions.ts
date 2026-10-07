@@ -120,24 +120,24 @@ export async function merchantOnboardingAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 6. Registro / Upsert del comercio en estado 'pilot'
-  const merchantPayload: TablesInsert<'merchants'> = {
-    profile_id: user.id,
+  // 6. Actualización de datos del comercio (la fila fue creada en handle_new_user)
+  const merchantPayload: TablesUpdate<'merchants'> = {
     business_name: parsed.data.businessName,
     default_pickup_address: parsed.data.defaultPickupAddress,
     default_pickup_lat: parsed.data.defaultPickupLat ?? null,
     default_pickup_lng: parsed.data.defaultPickupLng ?? null,
     default_pickup_zone_id: parsed.data.defaultPickupZoneId ?? null,
     notes: parsed.data.notes ?? null,
-    subscription_status: 'pilot',
-    paid_until: null,
   };
 
-  const { error: merchantError } = await supabase
+  const { data: merchant, error: merchantError } = await supabase
     .from('merchants')
-    .upsert(merchantPayload as never);
+    .update(merchantPayload as never)
+    .eq('profile_id', user.id)
+    .select('profile_id')
+    .maybeSingle();
 
-  if (merchantError) {
+  if (merchantError || !merchant) {
     return err('INTERNAL_ERROR');
   }
 

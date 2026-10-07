@@ -354,11 +354,15 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({
-            error: { message: 'Database error', code: '500' },
-          }),
-          insert: vi.fn().mockResolvedValue({
-            error: { message: 'Database error', code: '500' },
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'Database error', code: '500' },
+                }),
+              }),
+            }),
           }),
         };
       }
@@ -541,8 +545,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
-          insert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
@@ -744,7 +756,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
@@ -885,7 +906,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
