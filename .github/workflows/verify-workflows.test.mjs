@@ -1503,3 +1503,443 @@ test('preview target helper declares no any in its types', () => {
   }
   assert.doesNotMatch(script, /@ts-(ignore|expect-error|nocheck)|eslint-disable/);
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// T-347: e2e-mutation — mutaciones RED de E2E contra un build efímero en el runner trusted
+// ---------------------------------------------------------------------------------------------------------------
+
+const MUTATION_REPOSITORY = 'cadeApp/cadeApp';
+const MUTATION_SHA = 'c'.repeat(40);
+
+/** @param {Record<string, unknown>} [overrides] */
+function mutationPull(overrides = {}) {
+  return {
+    number: 289,
+    state: 'open',
+    base: { ref: 'develop', repo: { full_name: MUTATION_REPOSITORY } },
+    head: { sha: MUTATION_SHA, repo: { full_name: MUTATION_REPOSITORY } },
+    ...overrides,
+  };
+}
+
+function mutationWorkflow() {
+  return workflow('e2e-mutation.yml').replace(/\r\n/g, '\n');
+}
+
+test('e2e-mutation payload: only { target, mutation } with a PR number or develop', async () => {
+  const { parsePayload } = await import('./e2e-mutation.mjs');
+  assert.deepEqual(parsePayload({ target: 'develop', mutation: 't302-mfa-route-guard' }), {
+    ok: true,
+    target: { kind: 'develop' },
+    mutation: 't302-mfa-route-guard',
+  });
+  assert.deepEqual(parsePayload({ target: 291, mutation: 'abc-def' }), {
+    ok: true,
+    target: { kind: 'pr', number: 291 },
+    mutation: 'abc-def',
+  });
+  assert.deepEqual(parsePayload({ target: '291', mutation: 'abc-def' }), {
+    ok: true,
+    target: { kind: 'pr', number: 291 },
+    mutation: 'abc-def',
+  });
+  for (const target of ['main', 'staging', MUTATION_SHA, 'refs/heads/develop', '0', '-1', 1.5, 0, null, [291], {}]) {
+    assert.equal(parsePayload({ target, mutation: 'abc-def' }).ok, false, `target ${JSON.stringify(target)}`);
+  }
+  for (const mutation of ['', 'A', '../x', 'x y', 'a'.repeat(80), 42, null]) {
+    assert.equal(parsePayload({ target: 'develop', mutation }).ok, false, `mutation ${JSON.stringify(mutation)}`);
+  }
+  assert.equal(parsePayload(null).ok, false);
+  assert.equal(parsePayload('develop').ok, false);
+});
+
+test('e2e-mutation target PR: open, same repo, base develop, full SHA and no migrations', async () => {
+  const { parsePull, validatePull, BLOCKED_BY_MIGRATION } = await import('./e2e-mutation.mjs');
+  /** @param {Record<string, unknown>} [overrides] @param {string[]} [changedFiles] */
+  const check = (overrides = {}, changedFiles = ['src/a.ts']) =>
+    validatePull({
+      pull: parsePull(mutationPull(overrides)),
+      expectedNumber: 289,
+      repository: MUTATION_REPOSITORY,
+      changedFiles,
+    });
+
+  assert.deepEqual(check(), { ok: true, sha: MUTATION_SHA });
+  assert.equal(check({ state: 'closed' }).ok, false, 'closed PR');
+  assert.equal(
+    check({ head: { sha: MUTATION_SHA, repo: { full_name: 'someone/cadeApp' } } }).ok,
+    false,
+    'fork PR'
+  );
+  assert.equal(
+    check({ base: { ref: 'main', repo: { full_name: MUTATION_REPOSITORY } } }).ok,
+    false,
+    'other base'
+  );
+  assert.equal(
+    check({ base: { ref: 'develop', repo: { full_name: 'other/repo' } } }).ok,
+    false,
+    'other base repo'
+  );
+  for (const sha of ['c'.repeat(39), 'C'.repeat(40), 'g'.repeat(40), '']) {
+    assert.equal(check({ head: { sha, repo: { full_name: MUTATION_REPOSITORY } } }).ok, false, `sha ${sha}`);
+  }
+  assert.equal(check({ number: 290 }).ok, false, 'API returned another PR');
+  assert.deepEqual(check({}, ['supabase/migrations/20261007000000_x.sql']), {
+    ok: false,
+    reason: BLOCKED_BY_MIGRATION,
+  });
+});
+
+test('e2e-mutation catalog: unknown ids, generic expectedFailure and non-chromium specs are rejected', async () => {
+  const { parseManifest, findMutation } = await import('./e2e-mutation.mjs');
+  const entry = {
+    id: 'demo-mutation',
+    invariant: 'regla',
+    patch: 'demo-mutation.patch',
+    spec: 'e2e/specs/demo.spec.ts',
+    grep: 'DoD: caso',
+    expectedFailure: ['toEqual', '/login/mfa?redirectTo=%2Fadmin'],
+  };
+  const parsed = parseManifest({ version: 1, mutations: [entry] });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(findMutation(parsed.mutations, 'demo-mutation').ok, true);
+  assert.equal(findMutation(parsed.mutations, 'otra-mutacion').ok, false, 'id inexistente');
+
+  /** @param {Record<string, unknown>} change */
+  const invalid = (change) => parseManifest({ version: 1, mutations: [{ ...entry, ...change }] }).ok;
+  assert.equal(invalid({ expectedFailure: ['Error'] }), false, 'generic expectedFailure');
+  assert.equal(invalid({ expectedFailure: ['expect(', 'failed'] }), false, 'generic expectedFailure');
+  assert.equal(invalid({ expectedFailure: [] }), false);
+  assert.equal(invalid({ expectedFailure: 'toEqual' }), false);
+  assert.equal(invalid({ spec: 'e2e/specs/demo.global-settings.spec.ts' }), false, 'global-settings');
+  assert.equal(invalid({ spec: 'src/demo.spec.ts' }), false);
+  assert.equal(invalid({ patch: 'otro.patch' }), false, 'patch must be <id>.patch');
+  assert.equal(invalid({ patch: '../demo-mutation.patch' }), false);
+  assert.equal(invalid({ grep: '' }), false);
+  assert.equal(parseManifest({ version: 1, mutations: [entry, entry] }).ok, false, 'duplicated id');
+  assert.equal(parseManifest({ version: 2, mutations: [entry] }).ok, false);
+});
+
+test('e2e-mutation patches can only touch production code under src/**', async () => {
+  const { validatePatch } = await import('./e2e-mutation.mjs');
+  /** @param {string} path */
+  const diffFor = (path) =>
+    [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, '@@ -1 +1 @@', '-a', '+b', ''].join('\n');
+
+  assert.deepEqual(validatePatch(diffFor('src/features/auth/guards.ts')), {
+    ok: true,
+    paths: ['src/features/auth/guards.ts'],
+  });
+  for (const path of [
+    'e2e/specs/courier-onboarding.spec.ts',
+    'e2e/mutations/manifest.json',
+    '.github/workflows/e2e-mutation.mjs',
+    'supabase/migrations/20261007000000_x.sql',
+    'playwright.config.ts',
+    'package.json',
+    'pnpm-lock.yaml',
+    'src/features/auth/guards.test.ts',
+    'src/features/auth/guards.test.tsx',
+    'src/server/e2e/staging-seed.ts',
+    'src/../e2e/specs/x.spec.ts',
+  ]) {
+    assert.equal(validatePatch(diffFor(path)).ok, false, path);
+  }
+  const rename = [
+    'diff --git a/src/a.ts b/e2e/a.ts',
+    'similarity index 100%',
+    'rename from src/a.ts',
+    'rename to e2e/a.ts',
+    '',
+  ].join('\n');
+  assert.equal(validatePatch(rename).ok, false, 'rename outside src');
+  assert.equal(
+    validatePatch(`${diffFor('src/a.png')}GIT binary patch\nliteral 1\n`).ok,
+    false,
+    'binary patch'
+  );
+  assert.equal(validatePatch('').ok, false, 'empty patch');
+});
+
+test('e2e-mutation refuses production and any target other than Supabase Develop', async () => {
+  const { checkEnvironmentRefs } = await import('./e2e-mutation.mjs');
+  const ok = {
+    supabaseUrl: 'https://developref1234.supabase.co',
+    developRef: 'developref1234',
+    stagingRef: 'stagingref1234',
+    productionRef: 'productionref1234',
+  };
+  assert.deepEqual(checkEnvironmentRefs(ok), { ok: true });
+  assert.equal(checkEnvironmentRefs({ ...ok, productionRef: '' }).ok, false, 'missing production ref');
+  assert.equal(
+    checkEnvironmentRefs({ ...ok, productionRef: 'developref1234' }).ok,
+    false,
+    'develop ref equals production'
+  );
+  assert.equal(checkEnvironmentRefs({ ...ok, stagingRef: 'developref1234' }).ok, false);
+  assert.equal(
+    checkEnvironmentRefs({ ...ok, supabaseUrl: 'https://productionref1234.supabase.co' }).ok,
+    false,
+    'URL of another project'
+  );
+  assert.equal(checkEnvironmentRefs({ ...ok, developRef: '' }).ok, false);
+});
+
+test('e2e-mutation only targets a local build on http://127.0.0.1:<port>', async () => {
+  const { checkBaseUrl } = await import('./e2e-mutation.mjs');
+  assert.deepEqual(checkBaseUrl('http://127.0.0.1:3100'), { ok: true, port: 3100 });
+  for (const url of [
+    'http://localhost:3100',
+    'https://127.0.0.1:3100',
+    'http://0.0.0.0:3100',
+    'http://127.0.0.1:3100/',
+    'http://127.0.0.1',
+    'http://127.0.0.1:80',
+    'https://cadeapp-develop.vercel.app',
+    'http://127.0.0.1:3100@evil.example',
+    '',
+  ]) {
+    assert.equal(checkBaseUrl(url).ok, false, url);
+  }
+});
+
+test('e2e-mutation runs control and mutant with the same commands, no retries nor repetitions', async () => {
+  const { phaseCommands } = await import('./e2e-mutation.mjs');
+  const commands = phaseCommands({
+    spec: 'e2e/specs/courier-onboarding.spec.ts',
+    grep: 'DoD: Falla si se quita (MFA)',
+    port: 3100,
+  });
+  assert.deepEqual(commands.build, ['pnpm', 'build']);
+  assert.deepEqual(commands.start, ['pnpm', 'start', '-H', '127.0.0.1', '-p', '3100']);
+  assert.deepEqual(commands.test, [
+    'pnpm',
+    'exec',
+    'playwright',
+    'test',
+    'e2e/specs/courier-onboarding.spec.ts',
+    '--project=chromium',
+    '--workers=1',
+    '--retries=0',
+    '--grep=DoD: Falla si se quita \\(MFA\\)',
+    '--reporter=list,json',
+  ]);
+  const script = workflow('e2e-mutation.mjs');
+  assert.doesNotMatch(script, /--repeat-each|--timeout|setTimeout\(\s*\w+,\s*[1-9]\d{5,}/);
+  assert.equal(
+    (script.match(/phaseCommands\(/g) ?? []).length,
+    3,
+    'una definición, el run de cada fase y el resumen: control y mutante comparten comandos'
+  );
+});
+
+test('e2e-mutation classifies RED only when the expected assertion fails after a GREEN control', async () => {
+  const { classify, caseResults } = await import('./e2e-mutation.mjs');
+  const expectedFailure = ['toEqual', '/login/mfa?redirectTo=%2Fadmin%2Fapplicants'];
+  const passed = [{ status: 'passed', errors: [] }];
+  const expectedRed = [
+    {
+      status: 'failed',
+      errors: ['expect(received).toEqual(expected)\n-   "redirectTo": "/login/mfa?redirectTo=%2Fadmin%2Fapplicants",'],
+    },
+  ];
+
+  assert.equal(
+    classify({ control: passed, patchApplied: true, mutant: expectedRed, expectedFailure }).outcome,
+    'RED_CONFIRMED'
+  );
+  assert.equal(
+    classify({ control: [{ status: 'failed', errors: ['x'] }], patchApplied: true, mutant: expectedRed, expectedFailure })
+      .outcome,
+    'CONTROL_NOT_GREEN'
+  );
+  assert.equal(
+    classify({ control: [], patchApplied: true, mutant: expectedRed, expectedFailure }).outcome,
+    'CONTROL_NOT_GREEN',
+    'el caso no existe'
+  );
+  assert.equal(
+    classify({ control: null, patchApplied: true, mutant: expectedRed, expectedFailure }).outcome,
+    'CONTROL_NOT_GREEN',
+    'sin reporte de control'
+  );
+  assert.equal(
+    classify({ control: passed, patchApplied: false, mutant: null, expectedFailure }).outcome,
+    'PATCH_DID_NOT_APPLY'
+  );
+  assert.equal(
+    classify({ control: passed, patchApplied: true, mutant: passed, expectedFailure }).outcome,
+    'MUTANT_SURVIVED'
+  );
+  assert.equal(
+    classify({
+      control: passed,
+      patchApplied: true,
+      mutant: [{ status: 'failed', errors: ['Timed out waiting for page.goto'] }],
+      expectedFailure,
+    }).outcome,
+    'UNEXPECTED_FAILURE',
+    'falla por otra razón'
+  );
+  assert.equal(
+    classify({
+      control: passed,
+      patchApplied: true,
+      mutant: [{ status: 'timedOut', errors: expectedRed[0]?.errors ?? [] }],
+      expectedFailure,
+    }).outcome,
+    'UNEXPECTED_FAILURE',
+    'un timeout del test no es el RED esperado'
+  );
+  assert.equal(
+    classify({ control: passed, patchApplied: true, mutant: null, expectedFailure }).outcome,
+    'UNEXPECTED_FAILURE',
+    'el build o el servidor del mutante fallaron'
+  );
+
+  const esc = String.fromCharCode(27);
+  const report = {
+    suites: [
+      {
+        title: 'courier-onboarding.spec.ts',
+        specs: [],
+        suites: [
+          {
+            title: 'T-302',
+            specs: [
+              {
+                title: 'DoD: caso',
+                tests: [
+                  {
+                    results: [
+                      { status: 'failed', errors: [{ message: `${esc}[31mexpect(received).toEqual${esc}[39m` }] },
+                    ],
+                  },
+                ],
+              },
+              { title: 'Otro caso', tests: [{ results: [{ status: 'passed', errors: [] }] }] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(caseResults(report, 'DoD: caso'), [
+    { status: 'failed', errors: ['expect(received).toEqual'] },
+  ]);
+  assert.deepEqual(caseResults(report, 'No existe'), []);
+});
+
+test('e2e-mutation catalog is valid and each patch applies cleanly to the current code', async () => {
+  const { parseManifest, validatePatch } = await import('./e2e-mutation.mjs');
+  const catalog = new URL('../../e2e/mutations/', import.meta.url);
+  const manifest = parseManifest(JSON.parse(readFileSync(new URL('manifest.json', catalog), 'utf8')));
+  assert.equal(manifest.ok, true, manifest.ok ? '' : manifest.reason);
+  if (!manifest.ok) return;
+  assert.deepEqual(
+    manifest.mutations.map((mutation) => mutation.id),
+    ['t302-mfa-route-guard', 't302-dni-dedup-other-courier'],
+    'catálogo inicial de PR254-H05'
+  );
+  const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+  for (const mutation of manifest.mutations) {
+    const patchPath = fileURLToPath(new URL(mutation.patch, catalog));
+    const validated = validatePatch(readFileSync(patchPath, 'utf8'));
+    assert.equal(validated.ok, true, `${mutation.id}: ${validated.ok ? '' : validated.reason}`);
+    const spec = readFileSync(new URL(`../../${mutation.spec}`, import.meta.url), 'utf8');
+    assert.ok(spec.includes(`test('${mutation.grep}'`), `${mutation.id}: el caso existe en ${mutation.spec}`);
+    const check = spawnSync('git', ['apply', '--check', patchPath], { cwd: repoRoot, encoding: 'utf8' });
+    assert.equal(check.status, 0, `${mutation.id}: ${check.stderr}`);
+  }
+});
+
+test('e2e-mutation workflow is triggered only by repository_dispatch e2e.mutation.requested', () => {
+  const yaml = mutationWorkflow();
+  const trigger = yaml.slice(yaml.indexOf('\non:\n'), yaml.indexOf('\npermissions:'));
+  assert.equal(
+    trigger.trim(),
+    ['on:', '  repository_dispatch:', '    types:', '      - e2e.mutation.requested'].join('\n'),
+    'un único disparador trusted: repository_dispatch con su type dedicado'
+  );
+  assert.doesNotMatch(yaml, /workflow_dispatch|pull_request|workflow_call|\bpush:/);
+  const preview = workflow('e2e-preview.yml');
+  assert.doesNotMatch(preview, /e2e\.mutation\.requested/, 'e2e-preview no reacciona a pedidos de mutación');
+});
+
+test('e2e-mutation workflow keeps minimal permissions, the develop environment and the shared E2E lock', () => {
+  const yaml = mutationWorkflow();
+  assert.match(yaml, /^permissions: \{\}$/m);
+  const mutationJob = job(yaml, 'mutation');
+  assert.match(mutationJob, /\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {4}\S/);
+  assert.doesNotMatch(yaml, /statuses|: write\b|id-token/);
+  assert.match(mutationJob, /\n {4}environment: develop\n/);
+  assert.match(mutationJob, /\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false\n/);
+  assert.match(mutationJob, /timeout-minutes: 30\n/);
+});
+
+test('e2e-mutation control plane comes from the default branch, never from the target SHA', () => {
+  const yaml = mutationWorkflow();
+  const checkouts = [...yaml.matchAll(/uses: actions\/checkout@[a-f0-9]{40} # v4\n {8}with:\n((?: {10}.+\n)+)/g)].map(
+    (match) => match[1] ?? ''
+  );
+  assert.equal(checkouts.length, 2, 'un checkout trusted y uno del SHA objetivo');
+  const [trusted, target] = checkouts;
+  assert.equal(trusted, '          path: trusted\n          persist-credentials: false\n', 'sin ref: la rama por defecto');
+  assert.equal(
+    target,
+    '          ref: ${{ steps.target.outputs.sha }}\n          path: target\n          persist-credentials: false\n'
+  );
+  for (const line of yaml.split('\n').filter((l) => l.includes('e2e-mutation.mjs') && l.includes('run:'))) {
+    assert.match(line, /run: node trusted\/\.github\/workflows\/e2e-mutation\.mjs /, line);
+  }
+  assert.match(yaml, /MUTATION_CATALOG_DIR: \$\{\{ github\.workspace \}\}\/trusted\/e2e\/mutations\n/);
+  assert.match(yaml, /PATCH_FILE: \$\{\{ github\.workspace \}\}\/trusted\/e2e\/mutations\//);
+  // El payload solo lo lee e2e-mutation.mjs desde GITHUB_EVENT_PATH: nunca se interpola en el workflow.
+  const payloadUses = yaml
+    .split('\n')
+    .filter((line) => line.includes('client_payload') && !line.trimStart().startsWith('#'));
+  assert.deepEqual(payloadUses, []);
+});
+
+test('e2e-mutation never deploys, publishes statuses or keeps the mutation', () => {
+  const yaml = mutationWorkflow();
+  const script = workflow('e2e-mutation.mjs');
+  for (const source of [yaml, script]) {
+    assert.doesNotMatch(source, /VERCEL_TOKEN|VERCEL_ORG_ID|vercel (deploy|build|pull)|--prebuilt|--prod\b/);
+    assert.doesNotMatch(source, /\/statuses|git push|git commit|git tag/);
+  }
+  assert.doesNotMatch(yaml, /continue-on-error|\bsleep\b|--repeat-each|retries/);
+  assert.match(yaml, /git apply --check "\$PATCH_FILE" && git apply "\$PATCH_FILE"/);
+  assert.match(yaml, /git apply -R "\$PATCH_FILE"\n {10}git diff --exit-code\n/);
+  assert.match(yaml, /PLAYWRIGHT_TEST_BASE_URL: http:\/\/127\.0\.0\.1:3100\n/);
+  assert.equal((yaml.match(/NEXT_PUBLIC_APP_URL: http:\/\/127\.0\.0\.1:3100\n/g) ?? []).length, 2);
+});
+
+test('e2e-mutation guards production before any build and keeps secrets out of job env and artifacts', () => {
+  const yaml = mutationWorkflow();
+  const guard = yaml.indexOf('mjs check-env');
+  const firstBuild = yaml.indexOf('run-phase control');
+  assert.ok(guard > 0 && guard < firstBuild, 'check-env corre antes del primer build');
+  assert.equal(
+    (yaml.match(/SUPABASE_PRODUCTION_PROJECT_REF: \$\{\{ vars\.SUPABASE_PRODUCTION_PROJECT_REF \}\}/g) ?? []).length,
+    3,
+    'check-env y las dos fases conocen el ref de producción, así isAllowedE2EEnvironment lo bloquea'
+  );
+  const jobEnv = yaml.slice(yaml.indexOf('\n    env:\n'), yaml.indexOf('\n    steps:\n'));
+  assert.doesNotMatch(jobEnv, /secrets\./, 'ningún secreto a nivel job');
+  assert.doesNotMatch(yaml, /set -x|printenv|env \|/);
+  assert.match(yaml, /\n {12}\$\{\{ runner\.temp \}\}\/e2e-mutation\/\n {12}!\$\{\{ runner\.temp \}\}\/e2e-mutation\/\*\*\/\.env\*\n/);
+  assert.match(yaml, /retention-days: 14\n/);
+  const script = workflow('e2e-mutation.mjs');
+  assert.doesNotMatch(script, /process\.env\)|JSON\.stringify\(process\.env|console\.log\(process\.env/);
+});
+
+test('e2e-mutation helper declares no any and disables no checks', () => {
+  const script = workflow('e2e-mutation.mjs');
+  for (const comment of script.match(/\/\*\*[\s\S]*?\*\//g) ?? []) {
+    assert.doesNotMatch(comment, /@(type|typedef|param|returns)\b[^\n]*\bany\b/, comment);
+  }
+  assert.doesNotMatch(script, /@ts-(ignore|expect-error|nocheck)|eslint-disable/);
+});
