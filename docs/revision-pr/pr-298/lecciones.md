@@ -2,8 +2,16 @@
 
 ## Ronda 1
 
-El patrón dominante es **P08-control-no-cubre-lo-que-dice**: DOM sin red, wrapper que no distingue fallback y requisitos detrás de ramas opcionales. H04 es **P04-test-tautologico** puro.
+Los patrones dominantes fueron P08 (el test no cubre lo que dice) y P04 (test tautológico).
 
-Un fail-closed de entorno no es una fase RED funcional: RED debe romper la propiedad que el test dice proteger y fallar por esa propiedad.
+## Ronda 2
 
-No se propone AG nueva; P04 y P08 ya cubren la causa raíz.
+### Un colector asíncrono debe probar que observó el canal
+
+Una lista de fugas vacía no demuestra privacidad si el response relevante todavía no ocurrió. Para invariantes de red, la prueba debe exigir una evidencia positiva de observación (URL/evento/canal) y recién después afirmar ausencia del dato prohibido.
+
+### Un locator accesible también debe ser unívoco
+
+Usar rol + nombre es correcto, pero si la pantalla tiene dos controles con el mismo nombre la prueba debe acotar por región/sección o comprobar explícitamente cuál elige.
+
+No se propone AG nueva: ambos casos siguen siendo P08 y ya caben en las reglas actuales.
