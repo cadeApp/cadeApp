@@ -1,12 +1,5 @@
 import { spawn } from 'node:child_process';
-import {
-  appendFileSync,
-  createWriteStream,
-  existsSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,12 +9,16 @@ import { fileURLToPath } from 'node:url';
  *
  * Corre siempre con el workflow de la rama por defecto (`repository_dispatch`), y este módulo, el manifest y los
  * patches se leen de ese checkout. El `client_payload` y todo lo que llega de la API de GitHub es dato: se valida
- * antes de resolver el SHA objetivo o de tocar un secreto. Del SHA objetivo solo se usan el código de la app y el
- * spec. La mutación se aplica al checkout efímero de ese SHA y nunca se commitea, se pushea ni se despliega.
+ * antes de resolver el SHA objetivo o de tocar un secreto. El único target es la punta mergeada de `develop`
+ * (PR294-A01): ninguna PR aporta código a un job con secretos. La mutación se aplica al checkout efímero de ese
+ * SHA y nunca se commitea, se pushea ni se despliega.
+ *
+ * Evidencia segura por construcción (PR294-H02): los reportes de Playwright y la salida de los procesos se
+ * generan con secretos en el entorno, así que nunca se persisten. `buildEvidence` decide con el reporte crudo y
+ * devuelve solo datos allowlisted (catálogo trusted, estados de una lista cerrada y booleanos).
  */
 
 export const MUTATION_EVENT_TYPE = 'e2e.mutation.requested';
-export const BLOCKED_BY_MIGRATION = 'BLOCKED / REQUIRES DEVELOP MIGRATION';
 
 /** @typedef {'RED_CONFIRMED' | 'CONTROL_NOT_GREEN' | 'MUTANT_SURVIVED' | 'UNEXPECTED_FAILURE' | 'PATCH_DID_NOT_APPLY'} Outcome */
 export const OUTCOMES = /** @type {const} */ ([
@@ -33,6 +30,8 @@ export const OUTCOMES = /** @type {const} */ ([
 ]);
 
 const SHA = /^[0-9a-f]{40}$/;
+// Estados de un resultado de Playwright que pueden persistir; cualquier otro valor se escribe como `unknown`.
+const CASE_STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'];
 const MUTATION_ID = /^[a-z0-9][a-z0-9-]{2,63}$/;
 const PATCH_FILE = /^[a-z0-9][a-z0-9-]{2,63}\.patch$/;
 // Solo specs del proyecto chromium: el workflow corre `--project=chromium`.
@@ -63,12 +62,12 @@ function list(value) {
 }
 
 /**
- * @typedef {{ kind: 'pr', number: number } | { kind: 'develop' }} Target
+ * @typedef {{ kind: 'develop' }} Target
  * @typedef {{ ok: true, target: Target, mutation: string } | { ok: false, reason: string }} PayloadResult
  */
 
 /**
- * Valida el `client_payload`: `{ target, mutation }` y nada más interpretable.
+ * Valida el `client_payload`: `{ target, mutation }`, con `target` solo el literal `develop` (PR294-A01).
  * @param {unknown} payload
  * @returns {PayloadResult}
  */
@@ -78,22 +77,11 @@ export function parsePayload(payload) {
   if (typeof mutation !== 'string' || !MUTATION_ID.test(mutation)) {
     return { ok: false, reason: 'client_payload.mutation no es un id de catálogo válido.' };
   }
-  const target = data.target;
-  if (target === 'develop') return { ok: true, target: { kind: 'develop' }, mutation };
-  // Un número de PR llega como número o como string de dígitos; nada de rutas, SHAs ni refs libres.
-  const number =
-    typeof target === 'number'
-      ? target
-      : typeof target === 'string' && /^[1-9][0-9]{0,9}$/.test(target)
-        ? Number(target)
-        : Number.NaN;
-  if (!Number.isSafeInteger(number) || number <= 0) {
-    return {
-      ok: false,
-      reason: 'client_payload.target tiene que ser un número de PR o «develop».',
-    };
+  // Ni números de PR, ni SHAs, ni refs: el código bajo prueba es siempre el ya mergeado en develop.
+  if (data.target !== 'develop') {
+    return { ok: false, reason: 'client_payload.target solo puede ser «develop».' };
   }
-  return { ok: true, target: { kind: 'pr', number }, mutation };
+  return { ok: true, target: { kind: 'develop' }, mutation };
 }
 
 /**
@@ -219,49 +207,6 @@ export function validatePatch(patchText) {
     };
   }
   return { ok: true, paths };
-}
-
-/**
- * @typedef {{ number: number, state: string, base: { ref: string, repo: string }, head: { sha: string, repo: string } }} Pull
- */
-
-/** @param {unknown} item @returns {Pull} */
-export function parsePull(item) {
-  const pull = record(item);
-  const base = record(pull.base);
-  const head = record(pull.head);
-  return {
-    number: typeof pull.number === 'number' ? pull.number : Number.NaN,
-    state: text(pull.state),
-    base: { ref: text(base.ref), repo: text(record(base.repo).full_name) },
-    head: { sha: text(head.sha), repo: text(record(head.repo).full_name) },
-  };
-}
-
-/**
- * La PR tiene que ser interna, abierta, contra develop y con un SHA completo. Con migraciones no hay evidencia:
- * Supabase Develop no tiene ese esquema hasta el merge.
- * @param {{ pull: Pull, expectedNumber: number, repository: string, changedFiles: string[] }} input
- * @returns {{ ok: true, sha: string } | { ok: false, reason: string }}
- */
-export function validatePull({ pull, expectedNumber, repository, changedFiles }) {
-  if (pull.number !== expectedNumber) return { ok: false, reason: 'La API devolvió otra PR.' };
-  if (pull.state !== 'open')
-    return { ok: false, reason: `La PR #${expectedNumber} no está abierta.` };
-  if (pull.base.ref !== 'develop' || pull.base.repo !== repository) {
-    return { ok: false, reason: `La PR #${expectedNumber} no apunta a develop de este repo.` };
-  }
-  if (pull.head.repo !== repository) {
-    return {
-      ok: false,
-      reason: `La PR #${expectedNumber} viene de un fork: no recibe secretos de develop.`,
-    };
-  }
-  if (!SHA.test(pull.head.sha)) return { ok: false, reason: 'La PR no trae un head SHA completo.' };
-  if (changedFiles.some((file) => file.startsWith('supabase/migrations/'))) {
-    return { ok: false, reason: BLOCKED_BY_MIGRATION };
-  }
-  return { ok: true, sha: pull.head.sha };
 }
 
 /**
@@ -433,6 +378,96 @@ export function classify({ control, patchApplied, mutant, expectedFailure }) {
   };
 }
 
+/** @param {string} status */
+function allowedStatus(status) {
+  return CASE_STATUSES.includes(status) ? status : 'unknown';
+}
+
+/**
+ * Resumen persistible de una fase: solo el título trusted, un estado de lista cerrada, la cantidad de resultados y
+ * si el error contiene `expectedFailure`. Nunca mensajes, stacks, stdout, stderr ni adjuntos.
+ * @param {string} title @param {CaseResult[] | null} results @param {string[]} expectedFailure
+ */
+function phaseEvidence(title, results, expectedFailure) {
+  const [first] = results ?? [];
+  const errors = first ? first.errors.join('\n') : '';
+  return {
+    title,
+    status: !results || !first ? 'missing' : allowedStatus(first.status),
+    results: results ? results.length : 0,
+    expectedFailureMatched:
+      Boolean(first) && expectedFailure.every((expected) => errors.includes(expected)),
+  };
+}
+
+/**
+ * Decide el resultado con los reportes crudos y arma la única evidencia que se sube como artifact.
+ * @param {{
+ *   mutation: Mutation,
+ *   patchText: string,
+ *   baseSha: string,
+ *   port: number,
+ *   patchApplied: boolean | null,
+ *   controlReport: unknown,
+ *   mutantReport: unknown,
+ * }} input
+ * @returns {{ outcome: Outcome, reason: string, files: Record<string, string> }}
+ */
+export function buildEvidence({
+  mutation,
+  patchText,
+  baseSha,
+  port,
+  patchApplied,
+  controlReport,
+  mutantReport,
+}) {
+  /** @param {unknown} report @returns {CaseResult[] | null} */
+  const results = (report) =>
+    report === null
+      ? null
+      : caseResults(report, mutation.grep).map((result) => ({
+          status: allowedStatus(result.status),
+          errors: result.errors,
+        }));
+  const control = results(controlReport);
+  const mutant = results(mutantReport);
+  const result = classify({
+    control,
+    patchApplied,
+    mutant,
+    expectedFailure: mutation.expectedFailure,
+  });
+  const commands = phaseCommands({ spec: mutation.spec, grep: mutation.grep, port });
+  const summary = {
+    baseSha: SHA.test(baseSha) ? baseSha : '',
+    mutation: mutation.id,
+    invariant: mutation.invariant,
+    patch: mutation.patch,
+    patchSha256: createHash('sha256').update(patchText).digest('hex'),
+    spec: mutation.spec,
+    grep: mutation.grep,
+    expectedFailure: mutation.expectedFailure,
+    commands: Object.fromEntries(
+      Object.entries(commands).map(([name, cmd]) => [name, cmd.join(' ')])
+    ),
+    outcome: result.outcome,
+    reason: result.reason,
+  };
+  /** @param {unknown} value */
+  const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
+  return {
+    outcome: result.outcome,
+    reason: result.reason,
+    files: {
+      'summary.json': json(summary),
+      [mutation.patch]: patchText,
+      'control.json': json(phaseEvidence(mutation.grep, control, mutation.expectedFailure)),
+      'mutant.json': json(phaseEvidence(mutation.grep, mutant, mutation.expectedFailure)),
+    },
+  };
+}
+
 // --------------------------------------------------------------------------------------------------------------
 // CLI: cada subcomando es un paso del workflow. Nunca imprime variables de entorno.
 // --------------------------------------------------------------------------------------------------------------
@@ -451,21 +486,6 @@ async function githubApi(repository, token, path) {
   });
   if (!response.ok) throw new Error(`GitHub API devolvió ${response.status} al consultar ${path}`);
   return response.json();
-}
-
-/**
- * @param {string} repository @param {string} token @param {string} path
- * @returns {Promise<unknown[]>}
- */
-async function githubList(repository, token, path) {
-  /** @type {unknown[]} */
-  const items = [];
-  for (let page = 1; ; page += 1) {
-    const batch = await githubApi(repository, token, `${path}?per_page=100&page=${page}`);
-    if (!Array.isArray(batch)) throw new Error(`GitHub API no devolvió una lista en ${path}`);
-    items.push(...batch);
-    if (batch.length < 100) return items;
-  }
 }
 
 /** @param {string} name */
@@ -497,7 +517,7 @@ function loadMutation(catalogDir, id) {
   return found.mutation;
 }
 
-/** Paso `resolve`: valida el payload y la PR, y fija el SHA, el patch y el caso. */
+/** Paso `resolve`: valida el payload, fija la punta de develop y el patch del catálogo trusted. */
 async function resolveCommand() {
   const repository = requiredEnv('GITHUB_REPOSITORY');
   const token = requiredEnv('GITHUB_TOKEN');
@@ -516,31 +536,22 @@ async function resolveCommand() {
   const patch = validatePatch(patchText);
   if (!patch.ok) throw new Error(patch.reason);
 
-  /** @type {string} */
-  let sha;
-  if (payload.target.kind === 'develop') {
-    const branch = record(await githubApi(repository, token, '/branches/develop'));
-    sha = text(record(branch.commit).sha);
-    if (!SHA.test(sha)) throw new Error('develop no trae un SHA completo.');
-  } else {
-    const pull = parsePull(await githubApi(repository, token, `/pulls/${payload.target.number}`));
-    const files = (
-      await githubList(repository, token, `/pulls/${payload.target.number}/files`)
-    ).map(record);
-    const checked = validatePull({
-      pull,
-      expectedNumber: payload.target.number,
-      repository,
-      changedFiles: files.flatMap((file) => [text(file.filename), text(file.previous_filename)]),
-    });
-    if (!checked.ok) throw new Error(checked.reason);
-    sha = checked.sha;
-  }
+  const branch = record(await githubApi(repository, token, '/branches/develop'));
+  const sha = text(record(branch.commit).sha);
+  if (!SHA.test(sha)) throw new Error('develop no trae un SHA completo.');
 
-  console.log(`Mutación ${mutation.id} sobre ${sha} (${mutation.spec} › ${mutation.grep}).`);
+  console.log(
+    `Mutación ${mutation.id} sobre develop ${sha} (${mutation.spec} › ${mutation.grep}).`
+  );
   appendFileSync(
     outputPath,
-    [`sha=${sha}`, `mutation=${mutation.id}`, `patch=${mutation.patch}`, ''].join('\n')
+    [
+      `sha=${sha}`,
+      `sha7=${sha.slice(0, 7)}`,
+      `mutation=${mutation.id}`,
+      `patch=${mutation.patch}`,
+      '',
+    ].join('\n')
   );
 }
 
@@ -559,28 +570,21 @@ function checkEnvCommand() {
 }
 
 /**
- * @param {string[]} command @param {string} cwd @param {string} logPath
+ * La salida del proceso va solo a la consola del job: nunca a un archivo (PR294-H02).
+ * @param {string[]} command @param {string} cwd
  * @returns {Promise<number>}
  */
-function run(command, cwd, logPath) {
+function run(command, cwd) {
   const [bin, ...args] = command;
   if (!bin) return Promise.resolve(1);
-  const log = createWriteStream(logPath, { flags: 'a' });
-  log.write(`$ ${command.join(' ')}\n`);
+  console.log(`$ ${command.join(' ')}`);
   return new Promise((resolveExit) => {
-    const child = spawn(bin, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
-    child.stdout.on('data', (chunk) => {
-      process.stdout.write(chunk);
-      log.write(chunk);
+    const child = spawn(bin, args, {
+      cwd,
+      env: process.env,
+      stdio: ['ignore', 'inherit', 'inherit'],
     });
-    child.stderr.on('data', (chunk) => {
-      process.stderr.write(chunk);
-      log.write(chunk);
-    });
-    child.on('close', (code) => {
-      log.end();
-      resolveExit(code ?? 1);
-    });
+    child.on('close', (code) => resolveExit(code ?? 1));
   });
 }
 
@@ -606,18 +610,18 @@ async function runPhaseCommand(/** @type {string} */ phase) {
   if (phase !== 'control' && phase !== 'mutant') throw new Error('Fase inválida.');
   const catalogDir = requiredEnv('MUTATION_CATALOG_DIR');
   const targetDir = requiredEnv('MUTATION_TARGET_DIR');
-  const evidenceDir = requiredEnv('MUTATION_EVIDENCE_DIR');
+  const rawDir = requiredEnv('MUTATION_RAW_DIR');
   const mutation = loadMutation(catalogDir, requiredEnv('MUTATION_ID'));
   const base = checkBaseUrl(process.env.PLAYWRIGHT_TEST_BASE_URL ?? '');
   if (!base.ok) throw new Error(base.reason);
 
   const commands = phaseCommands({ spec: mutation.spec, grep: mutation.grep, port: base.port });
-  const logPath = join(evidenceDir, `${phase}.log`);
-  const reportPath = join(evidenceDir, `${phase}.json`);
+  // El reporte completo se genera con secretos en el entorno: vive solo en el directorio raw.
+  const reportPath = join(rawDir, `${phase}.json`);
   rmSync(join(targetDir, '.next'), { recursive: true, force: true });
   rmSync(reportPath, { force: true });
 
-  if ((await run(commands.build, targetDir, logPath)) !== 0) {
+  if ((await run(commands.build, targetDir)) !== 0) {
     console.log(`::warning::El build de la fase ${phase} falló.`);
     return;
   }
@@ -635,7 +639,7 @@ async function runPhaseCommand(/** @type {string} */ phase) {
       return;
     }
     process.env.PLAYWRIGHT_JSON_OUTPUT_NAME = reportPath;
-    const code = await run(commands.test, targetDir, logPath);
+    const code = await run(commands.test, targetDir);
     console.log(`Fase ${phase}: playwright terminó con ${code}.`);
   } finally {
     if (server.pid) {
@@ -653,62 +657,43 @@ function readJsonIfPresent(path) {
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
 }
 
-/** Paso `classify`: escribe la evidencia y falla el job salvo RED_CONFIRMED. */
+/** Paso `classify`: decide con los reportes crudos, escribe solo la evidencia allowlisted y falla salvo RED. */
 function classifyCommand() {
   const catalogDir = requiredEnv('MUTATION_CATALOG_DIR');
+  const rawDir = requiredEnv('MUTATION_RAW_DIR');
   const evidenceDir = requiredEnv('MUTATION_EVIDENCE_DIR');
   const mutation = loadMutation(catalogDir, requiredEnv('MUTATION_ID'));
-  const patchText = readFileSync(join(catalogDir, mutation.patch), 'utf8');
-  const controlReport = readJsonIfPresent(join(evidenceDir, 'control.json'));
-  const mutantReport = readJsonIfPresent(join(evidenceDir, 'mutant.json'));
-  const applied = process.env.MUTATION_PATCH_APPLIED;
-  const result = classify({
-    control: controlReport === null ? null : caseResults(controlReport, mutation.grep),
-    patchApplied: applied === 'true' ? true : applied === 'false' ? false : null,
-    mutant: mutantReport === null ? null : caseResults(mutantReport, mutation.grep),
-    expectedFailure: mutation.expectedFailure,
-  });
   const port = checkBaseUrl(process.env.PLAYWRIGHT_TEST_BASE_URL ?? '');
-  const commands = phaseCommands({
-    spec: mutation.spec,
-    grep: mutation.grep,
-    port: port.ok ? port.port : 0,
-  });
-  const summary = {
+  const applied = process.env.MUTATION_PATCH_APPLIED;
+  const evidence = buildEvidence({
+    mutation,
+    patchText: readFileSync(join(catalogDir, mutation.patch), 'utf8'),
     baseSha: process.env.MUTATION_TARGET_SHA ?? '',
-    mutation: mutation.id,
-    invariant: mutation.invariant,
-    patch: mutation.patch,
-    patchSha256: createHash('sha256').update(patchText).digest('hex'),
-    spec: mutation.spec,
-    grep: mutation.grep,
-    expectedFailure: mutation.expectedFailure,
-    commands: Object.fromEntries(
-      Object.entries(commands).map(([name, cmd]) => [name, cmd.join(' ')])
-    ),
-    outcome: result.outcome,
-    reason: result.reason,
-  };
-  writeFileSync(join(evidenceDir, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-  writeFileSync(join(evidenceDir, mutation.patch), patchText);
+    port: port.ok ? port.port : 0,
+    patchApplied: applied === 'true' ? true : applied === 'false' ? false : null,
+    controlReport: readJsonIfPresent(join(rawDir, 'control.json')),
+    mutantReport: readJsonIfPresent(join(rawDir, 'mutant.json')),
+  });
+  for (const [name, content] of Object.entries(evidence.files)) {
+    writeFileSync(join(evidenceDir, name), content);
+  }
   const stepSummary = process.env.GITHUB_STEP_SUMMARY;
   if (stepSummary) {
     appendFileSync(
       stepSummary,
       [
-        `## e2e-mutation: ${result.outcome}`,
+        `## e2e-mutation: ${evidence.outcome}`,
         '',
         `- Mutación: \`${mutation.id}\` (${mutation.invariant})`,
-        `- SHA base: \`${summary.baseSha}\``,
+        `- SHA base: \`${process.env.MUTATION_TARGET_SHA ?? ''}\``,
         `- Caso: \`${mutation.spec}\` › ${mutation.grep}`,
-        `- Patch SHA-256: \`${summary.patchSha256}\``,
-        `- ${result.reason}`,
+        `- ${evidence.reason}`,
         '',
       ].join('\n')
     );
   }
-  console.log(`${result.outcome}: ${result.reason}`);
-  if (result.outcome !== 'RED_CONFIRMED') process.exitCode = 1;
+  console.log(`${evidence.outcome}: ${evidence.reason}`);
+  if (evidence.outcome !== 'RED_CONFIRMED') process.exitCode = 1;
 }
 
 async function main() {

@@ -1,13 +1,17 @@
 name: e2e-mutation
 
 # T-347: mutaciones RED de E2E sin pushear ni desplegar código roto. Un `repository_dispatch` con el type
-# `e2e.mutation.requested` y `client_payload` `{ target, mutation }` pide aplicar una mutación del catálogo
-# revisado (`e2e/mutations/`) a un checkout efímero del SHA objetivo y demostrar control GREEN y mutante RED contra
-# un build en 127.0.0.1 dentro de este runner.
+# `e2e.mutation.requested` y `client_payload` `{ target: "develop", mutation }` pide aplicar una mutación del
+# catálogo revisado (`e2e/mutations/`) a un checkout efímero de la punta mergeada de develop y demostrar control
+# GREEN y mutante RED contra un build en 127.0.0.1 dentro de este runner. Ninguna PR es target (PR294-A01).
 #
 # `repository_dispatch` corre siempre con el workflow de la rama por defecto: el control plane (este archivo,
-# e2e-mutation.mjs, el manifest y los patches) sale de ese checkout y la PR bajo prueba no lo puede reescribir.
-# El `client_payload` es dato: solo lo lee e2e-mutation.mjs desde GITHUB_EVENT_PATH y nunca se interpola acá.
+# e2e-mutation.mjs, el manifest y los patches) sale de ese checkout. El `client_payload` es dato: solo lo lee
+# e2e-mutation.mjs desde GITHUB_EVENT_PATH y nunca se interpola acá.
+#
+# Evidencia segura por construcción (PR294-H02): los reportes crudos y la salida de los procesos se generan con
+# secretos en el entorno; viven en MUTATION_RAW_DIR, que nunca se sube y se borra al final. El artifact es una
+# allowlist de archivos minimizados que arma e2e-mutation.mjs.
 on:
   repository_dispatch:
     types:
@@ -23,7 +27,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      pull-requests: read
     # El mismo grupo que e2e-preview: Supabase Develop es compartido.
     concurrency:
       group: cadeapp-develop-e2e
@@ -31,6 +34,7 @@ jobs:
     env:
       MUTATION_CATALOG_DIR: ${{ github.workspace }}/trusted/e2e/mutations
       MUTATION_TARGET_DIR: ${{ github.workspace }}/target
+      MUTATION_RAW_DIR: ${{ runner.temp }}/e2e-mutation-raw
       MUTATION_EVIDENCE_DIR: ${{ runner.temp }}/e2e-mutation
       PLAYWRIGHT_TEST_BASE_URL: http://127.0.0.1:3100
     steps:
@@ -74,8 +78,8 @@ jobs:
           SUPABASE_STAGING_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
           SUPABASE_PRODUCTION_PROJECT_REF: ${{ vars.SUPABASE_PRODUCTION_PROJECT_REF }}
         run: node trusted/.github/workflows/e2e-mutation.mjs check-env
-      - name: Prepare evidence directory
-        run: mkdir -p "$MUTATION_EVIDENCE_DIR"
+      - name: Prepare raw and evidence directories
+        run: mkdir -p "$MUTATION_RAW_DIR" "$MUTATION_EVIDENCE_DIR"
       - name: Control run (unmutated)
         env:
           MUTATION_ID: ${{ steps.target.outputs.mutation }}
@@ -132,8 +136,15 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always() && steps.target.outcome == 'success'
         with:
-          name: e2e-mutation-${{ steps.target.outputs.mutation }}-${{ steps.target.outputs.sha }}
+          name: e2e-mutation-${{ steps.target.outputs.mutation }}-${{ steps.target.outputs.sha7 }}
+          # Allowlist explícita de la evidencia minimizada: nunca el directorio raw ni salidas de procesos.
           path: |
-            ${{ runner.temp }}/e2e-mutation/
-            !${{ runner.temp }}/e2e-mutation/**/.env*
+            ${{ runner.temp }}/e2e-mutation/summary.json
+            ${{ runner.temp }}/e2e-mutation/control.json
+            ${{ runner.temp }}/e2e-mutation/mutant.json
+            ${{ runner.temp }}/e2e-mutation/${{ steps.target.outputs.patch }}
+          if-no-files-found: error
           retention-days: 14
+      - name: Remove raw reports
+        if: always()
+        run: rm -rf "$MUTATION_RAW_DIR"

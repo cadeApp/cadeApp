@@ -1508,42 +1508,33 @@ test('preview target helper declares no any in its types', () => {
 // T-347: e2e-mutation — mutaciones RED de E2E contra un build efímero en el runner trusted
 // ---------------------------------------------------------------------------------------------------------------
 
-const MUTATION_REPOSITORY = 'cadeApp/cadeApp';
-const MUTATION_SHA = 'c'.repeat(40);
-
-/** @param {Record<string, unknown>} [overrides] */
-function mutationPull(overrides = {}) {
-  return {
-    number: 289,
-    state: 'open',
-    base: { ref: 'develop', repo: { full_name: MUTATION_REPOSITORY } },
-    head: { sha: MUTATION_SHA, repo: { full_name: MUTATION_REPOSITORY } },
-    ...overrides,
-  };
-}
-
 function mutationWorkflow() {
   return workflow('e2e-mutation.yml').replace(/\r\n/g, '\n');
 }
 
-test('e2e-mutation payload: only { target, mutation } with a PR number or develop', async () => {
+test('e2e-mutation payload: target is only the literal develop (PR294-A01)', async () => {
   const { parsePayload } = await import('./e2e-mutation.mjs');
   assert.deepEqual(parsePayload({ target: 'develop', mutation: 't302-mfa-route-guard' }), {
     ok: true,
     target: { kind: 'develop' },
     mutation: 't302-mfa-route-guard',
   });
-  assert.deepEqual(parsePayload({ target: 291, mutation: 'abc-def' }), {
-    ok: true,
-    target: { kind: 'pr', number: 291 },
-    mutation: 'abc-def',
-  });
-  assert.deepEqual(parsePayload({ target: '291', mutation: 'abc-def' }), {
-    ok: true,
-    target: { kind: 'pr', number: 291 },
-    mutation: 'abc-def',
-  });
-  for (const target of ['main', 'staging', MUTATION_SHA, 'refs/heads/develop', '0', '-1', 1.5, 0, null, [291], {}]) {
+  for (const target of [
+    291,
+    '291',
+    'c'.repeat(40),
+    'main',
+    'staging',
+    'refs/heads/develop',
+    'origin/develop',
+    'Develop',
+    ' develop',
+    0,
+    null,
+    undefined,
+    ['develop'],
+    { kind: 'develop' },
+  ]) {
     assert.equal(parsePayload({ target, mutation: 'abc-def' }).ok, false, `target ${JSON.stringify(target)}`);
   }
   for (const mutation of ['', 'A', '../x', 'x y', 'a'.repeat(80), 42, null]) {
@@ -1553,42 +1544,16 @@ test('e2e-mutation payload: only { target, mutation } with a PR number or develo
   assert.equal(parsePayload('develop').ok, false);
 });
 
-test('e2e-mutation target PR: open, same repo, base develop, full SHA and no migrations', async () => {
-  const { parsePull, validatePull, BLOCKED_BY_MIGRATION } = await import('./e2e-mutation.mjs');
-  /** @param {Record<string, unknown>} [overrides] @param {string[]} [changedFiles] */
-  const check = (overrides = {}, changedFiles = ['src/a.ts']) =>
-    validatePull({
-      pull: parsePull(mutationPull(overrides)),
-      expectedNumber: 289,
-      repository: MUTATION_REPOSITORY,
-      changedFiles,
-    });
-
-  assert.deepEqual(check(), { ok: true, sha: MUTATION_SHA });
-  assert.equal(check({ state: 'closed' }).ok, false, 'closed PR');
-  assert.equal(
-    check({ head: { sha: MUTATION_SHA, repo: { full_name: 'someone/cadeApp' } } }).ok,
-    false,
-    'fork PR'
-  );
-  assert.equal(
-    check({ base: { ref: 'main', repo: { full_name: MUTATION_REPOSITORY } } }).ok,
-    false,
-    'other base'
-  );
-  assert.equal(
-    check({ base: { ref: 'develop', repo: { full_name: 'other/repo' } } }).ok,
-    false,
-    'other base repo'
-  );
-  for (const sha of ['c'.repeat(39), 'C'.repeat(40), 'g'.repeat(40), '']) {
-    assert.equal(check({ head: { sha, repo: { full_name: MUTATION_REPOSITORY } } }).ok, false, `sha ${sha}`);
-  }
-  assert.equal(check({ number: 290 }).ok, false, 'API returned another PR');
-  assert.deepEqual(check({}, ['supabase/migrations/20261007000000_x.sql']), {
-    ok: false,
-    reason: BLOCKED_BY_MIGRATION,
-  });
+test('e2e-mutation has no pull request target path left (PR294-H01)', async () => {
+  const mutationModule = await import('./e2e-mutation.mjs');
+  assert.equal('parsePull' in mutationModule, false, 'parsePull ya no existe');
+  assert.equal('validatePull' in mutationModule, false, 'validatePull ya no existe');
+  const script = workflow('e2e-mutation.mjs');
+  assert.doesNotMatch(script, /\/pulls\//, 'el helper no consulta PRs');
+  assert.match(script, /'\/branches\/develop'/, 'resolve consulta solo la punta de develop');
+  const yaml = mutationWorkflow();
+  assert.doesNotMatch(yaml, /pull-requests: read/);
+  assert.doesNotMatch(yaml, /pull-requests/);
 });
 
 test('e2e-mutation catalog: unknown ids, generic expectedFailure and non-chromium specs are rejected', async () => {
@@ -1872,7 +1837,7 @@ test('e2e-mutation workflow keeps minimal permissions, the develop environment a
   const yaml = mutationWorkflow();
   assert.match(yaml, /^permissions: \{\}$/m);
   const mutationJob = job(yaml, 'mutation');
-  assert.match(mutationJob, /\n {4}permissions:\n {6}contents: read\n {6}pull-requests: read\n {4}\S/);
+  assert.match(mutationJob, /\n {4}permissions:\n {6}contents: read\n {4}\S/);
   assert.doesNotMatch(yaml, /statuses|: write\b|id-token/);
   assert.match(mutationJob, /\n {4}environment: develop\n/);
   assert.match(mutationJob, /\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false\n/);
@@ -1930,10 +1895,181 @@ test('e2e-mutation guards production before any build and keeps secrets out of j
   const jobEnv = yaml.slice(yaml.indexOf('\n    env:\n'), yaml.indexOf('\n    steps:\n'));
   assert.doesNotMatch(jobEnv, /secrets\./, 'ningún secreto a nivel job');
   assert.doesNotMatch(yaml, /set -x|printenv|env \|/);
-  assert.match(yaml, /\n {12}\$\{\{ runner\.temp \}\}\/e2e-mutation\/\n {12}!\$\{\{ runner\.temp \}\}\/e2e-mutation\/\*\*\/\.env\*\n/);
-  assert.match(yaml, /retention-days: 14\n/);
   const script = workflow('e2e-mutation.mjs');
   assert.doesNotMatch(script, /process\.env\)|JSON\.stringify\(process\.env|console\.log\(process\.env/);
+});
+
+test('e2e-mutation persistable evidence never carries raw Playwright output (PR294-H02 canary)', async () => {
+  const { buildEvidence } = await import('./e2e-mutation.mjs');
+  const CANARY = 'TOP_SECRET_CANARY_294_DO_NOT_PERSIST';
+  const mutation = {
+    id: 't302-mfa-route-guard',
+    invariant: 'regla trusted',
+    patch: 't302-mfa-route-guard.patch',
+    spec: 'e2e/specs/courier-onboarding.spec.ts',
+    grep: 'DoD: caso',
+    expectedFailure: ['toEqual', '/login/mfa?redirectTo=%2Fadmin%2Fapplicants'],
+  };
+  /** @param {string} status @param {string} message */
+  const report = (status, message) => ({
+    config: { metadata: { env: CANARY } },
+    errors: [{ message: CANARY }],
+    suites: [
+      {
+        title: `courier-onboarding.spec.ts ${CANARY}`,
+        specs: [],
+        suites: [
+          {
+            title: 'T-302',
+            specs: [
+              {
+                title: 'DoD: caso',
+                tests: [
+                  {
+                    annotations: [{ type: 'note', description: CANARY }],
+                    results: [
+                      {
+                        status,
+                        errors: message ? [{ message, stack: `${message}\n    at ${CANARY}` }] : [],
+                        stdout: [{ text: `SUPABASE_SERVICE_ROLE_KEY=${CANARY}` }],
+                        stderr: [{ text: CANARY }],
+                        attachments: [{ name: 'trace', path: `/tmp/${CANARY}.zip`, body: CANARY }],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  const evidence = buildEvidence({
+    mutation,
+    patchText: 'diff --git a/src/a.ts b/src/a.ts\n',
+    baseSha: 'c'.repeat(40),
+    port: 3100,
+    patchApplied: true,
+    controlReport: report('passed', ''),
+    mutantReport: report(
+      'failed',
+      `expect(received).toEqual(expected)\n"redirectTo": "/login/mfa?redirectTo=%2Fadmin%2Fapplicants" ${CANARY}`
+    ),
+  });
+
+  const serialized = JSON.stringify(evidence.files);
+  assert.equal(serialized.includes(CANARY), false, 'el canario no llega a ningún archivo del artifact');
+  assert.deepEqual(Object.keys(evidence.files).sort(), [
+    'control.json',
+    'mutant.json',
+    'summary.json',
+    't302-mfa-route-guard.patch',
+  ]);
+  assert.equal(evidence.outcome, 'RED_CONFIRMED', 'el canario no impide clasificar con el reporte crudo');
+  const summary = JSON.parse(evidence.files['summary.json'] ?? '{}');
+  assert.equal(summary.outcome, 'RED_CONFIRMED');
+  assert.equal(summary.baseSha, 'c'.repeat(40));
+  assert.deepEqual(Object.keys(summary).sort(), [
+    'baseSha',
+    'commands',
+    'expectedFailure',
+    'grep',
+    'invariant',
+    'mutation',
+    'outcome',
+    'patch',
+    'patchSha256',
+    'reason',
+    'spec',
+  ]);
+  assert.deepEqual(JSON.parse(evidence.files['control.json'] ?? '{}'), {
+    title: 'DoD: caso',
+    status: 'passed',
+    results: 1,
+    expectedFailureMatched: false,
+  });
+  assert.deepEqual(JSON.parse(evidence.files['mutant.json'] ?? '{}'), {
+    title: 'DoD: caso',
+    status: 'failed',
+    results: 1,
+    expectedFailureMatched: true,
+  });
+
+  // Un estado fuera de la allowlist tampoco se copia tal cual.
+  const odd = buildEvidence({
+    mutation,
+    patchText: '',
+    baseSha: 'c'.repeat(40),
+    port: 3100,
+    patchApplied: true,
+    controlReport: report('passed', ''),
+    mutantReport: report(CANARY, CANARY),
+  });
+  assert.equal(JSON.stringify(odd.files).includes(CANARY), false, 'status arbitrario no persiste');
+  assert.equal(JSON.parse(odd.files['mutant.json'] ?? '{}').status, 'unknown');
+  assert.equal(odd.outcome, 'UNEXPECTED_FAILURE');
+
+  // Sin reporte del mutante (build o servidor caídos) la evidencia sigue existiendo, minimizada.
+  const missing = buildEvidence({
+    mutation,
+    patchText: '',
+    baseSha: 'c'.repeat(40),
+    port: 3100,
+    patchApplied: true,
+    controlReport: report('passed', ''),
+    mutantReport: null,
+  });
+  assert.deepEqual(JSON.parse(missing.files['mutant.json'] ?? '{}'), {
+    title: 'DoD: caso',
+    status: 'missing',
+    results: 0,
+    expectedFailureMatched: false,
+  });
+});
+
+test('e2e-mutation keeps raw reports out of the artifact and uploads an explicit allowlist (PR294-H02)', () => {
+  const yaml = mutationWorkflow();
+  const script = workflow('e2e-mutation.mjs');
+  assert.match(yaml, /MUTATION_RAW_DIR: \$\{\{ runner\.temp \}\}\/e2e-mutation-raw\n/);
+  assert.match(yaml, /MUTATION_EVIDENCE_DIR: \$\{\{ runner\.temp \}\}\/e2e-mutation\n/);
+  // Los reportes crudos de Playwright y la salida de los procesos nunca se escriben en el directorio del artifact.
+  assert.match(script, /join\(rawDir, `\$\{phase\}\.json`\)/);
+  assert.doesNotMatch(script, /createWriteStream|\.log`/, 'stdout/stderr van solo a la consola, no a archivos');
+  const upload = yaml.slice(yaml.indexOf('actions/upload-artifact@'));
+  const path = upload.slice(upload.indexOf('path: |\n'), upload.indexOf('\n          if-no-files-found:'));
+  assert.equal(
+    path,
+    [
+      'path: |',
+      '            ${{ runner.temp }}/e2e-mutation/summary.json',
+      '            ${{ runner.temp }}/e2e-mutation/control.json',
+      '            ${{ runner.temp }}/e2e-mutation/mutant.json',
+      '            ${{ runner.temp }}/e2e-mutation/${{ steps.target.outputs.patch }}',
+    ].join('\n'),
+    'allowlist explícita, sin directorios ni comodines'
+  );
+  assert.doesNotMatch(upload, /e2e-mutation-raw|\*/);
+  assert.match(upload, /\n {10}if-no-files-found: error\n {10}retention-days: 14\n/);
+  assert.match(
+    yaml,
+    /- name: Remove raw reports\n {8}if: always\(\)\n {8}run: rm -rf "\$MUTATION_RAW_DIR"\n/,
+    'el directorio raw se borra siempre'
+  );
+  assert.ok(yaml.indexOf('Remove raw reports') > yaml.indexOf('actions/upload-artifact@'));
+});
+
+test('e2e-mutation artifact name uses the short SHA (PR294-M01)', () => {
+  const yaml = mutationWorkflow();
+  assert.match(
+    yaml,
+    /name: e2e-mutation-\$\{\{ steps\.target\.outputs\.mutation \}\}-\$\{\{ steps\.target\.outputs\.sha7 \}\}\n/
+  );
+  const upload = yaml.slice(yaml.indexOf('actions/upload-artifact@'));
+  assert.doesNotMatch(upload, /outputs\.sha \}\}/, 'el SHA de 40 caracteres no va en el nombre');
+  const script = workflow('e2e-mutation.mjs');
+  assert.match(script, /`sha7=\$\{sha\.slice\(0, 7\)\}`/);
 });
 
 test('e2e-mutation helper declares no any and disables no checks', () => {
