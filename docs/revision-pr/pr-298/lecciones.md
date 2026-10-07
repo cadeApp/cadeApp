@@ -15,3 +15,20 @@ Una lista de fugas vacía no demuestra privacidad si el response relevante todav
 Usar rol + nombre es correcto, pero si la pantalla tiene dos controles con el mismo nombre la prueba debe acotar por región/sección o comprobar explícitamente cuál elige.
 
 No se propone AG nueva: ambos casos siguen siendo P08 y ya caben en las reglas actuales.
+
+## Ronda 3
+
+### P08 — rojo del E2E no es rojo de una mutación
+El Preview real detectó cinco fallos de una suite recién incorporada. `pnpm typecheck`, `pnpm lint`, `pnpm test` y discovery de Playwright no son evidencia de E2E funcional; toda afirmación de GREEN debe referir al SHA y run real.
+
+### P08 — `.first()` de un ancestro no define ámbito semántico
+Un `div` que contiene el encabezado puede abarcar el formulario entero. Para un control homónimo, el ámbito debe ser la Card más cercana que contenga ambos, o una región accesible inequívoca.
+
+### P08 — pruebas de rol deben entrar autenticadas
+Seed de datos no equivale a sesión del navegador. Al cambiar de courier a comercio, cambiar sesión/contexto de forma explícita antes de visitar rutas protegidas.
+
+La regla de `e2e/AGENTS.md` (GREEN del caso base y mutaciones trusted después de mergear) ya establece el proceso; sin nueva regla AG.
+
+### No leer cuerpos de responses CDP después de un momento arbitrario
+
+El nuevo control de privacidad observa el response vivo pero falla al hacer `response.text()` por `Network.getResponseBody` sin recurso. Para pruebas críticas, conservar el body en el momento de interceptarlo mediante `route.fetch` y fallar explícitamente ante imposibilidad de lectura.
