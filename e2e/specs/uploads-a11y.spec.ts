@@ -125,8 +125,8 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
       await expect(alert).toBeVisible({ timeout: 15000 });
       expect(cutIntercepted).toBe(true);
 
-      // 7. Mutación M1: Mantener el corte activo en el segundo intento
-      simulatedCutActive = true;
+      // 7. Restablecer la conectividad (desactivar el corte de red)
+      simulatedCutActive = false;
 
       // 8. Reintentar la subida del documento usando el MISMO selector accesible
       await dniFrontInput.setInputFiles({
@@ -219,15 +219,15 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
       // 1. Crear cliente autenticado como repartidor
       const courierClient = await createAuthenticatedClient(courier);
 
-      // Mutación M1: Subir un archivo válido JPEG para forzar fallo en la expectativa de rechazo
-      const invalidFilePayload = DUMMY_2X2_PNG;
-      const invalidStoragePath = `courier/${courier.id}/dni_front_${Date.now()}.jpg`;
+      // 2. Intentar subir al bucket privado 'courier-docs' un tipo de archivo no permitido (text/plain)
+      const invalidFilePayload = Buffer.from('console.log("invalid file test payload");');
+      const invalidStoragePath = `courier/${courier.id}/dni_front_${Date.now()}.txt`;
       uploadedPathToCleanup = invalidStoragePath;
 
       const { data, error } = await courierClient.storage
         .from(COURIER_DOCS_BUCKET)
         .upload(invalidStoragePath, invalidFilePayload, {
-          contentType: 'image/jpeg',
+          contentType: 'text/plain',
           upsert: false,
         });
 
@@ -251,11 +251,6 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
     await page.goto('/login');
     await waitForNoSkeletons(page);
     await expect(page).toHaveURL(/\/login$/);
-    await page.evaluate(() => {
-      const img = document.createElement('img');
-      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-      document.body.appendChild(img);
-    });
     const audit = await runAxeAudit(page, 'login (/login)');
     expect(
       audit.violations,
@@ -272,11 +267,6 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
     await merchantPage.gotoNewRequest();
     await waitForNoSkeletons(page);
     await expect(page).toHaveURL(/\/merchant\/requests\/new$/);
-    await page.evaluate(() => {
-      const img = document.createElement('img');
-      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-      document.body.appendChild(img);
-    });
     const audit = await runAxeAudit(page, 'crear solicitud (/merchant/requests/new)');
     expect(
       audit.violations,
@@ -285,33 +275,25 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
     expect(audit.passes.length).toBeGreaterThan(0);
   });
 
-  test('DoD: axe AA en lista del repartidor', async ({
+  test('DoD: axe AA en feed, viaje y onboarding (repartidor)', async ({
     page,
+    stagingContext,
     loginAsCourier,
   }) => {
     const { courierPage } = await loginAsCourier(0, page);
+
+    // 1. Lista del repartidor (/courier/feed)
     await courierPage.gotoFeed();
     await waitForNoSkeletons(page);
     await expect(page).toHaveURL(/\/courier\/feed$/);
-    await page.evaluate(() => {
-      const img = document.createElement('img');
-      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-      document.body.appendChild(img);
-    });
     const feedAudit = await runAxeAudit(page, 'lista del repartidor (/courier/feed)');
     expect(
       feedAudit.violations,
       `Violaciones WCAG en Lista del Repartidor:\n${JSON.stringify(feedAudit.violations, null, 2)}`
     ).toEqual([]);
     expect(feedAudit.passes.length).toBeGreaterThan(0);
-  });
 
-  test('DoD: axe AA en viaje', async ({
-    page,
-    stagingContext,
-    loginAsCourier,
-  }) => {
-    await loginAsCourier(0, page);
+    // 2. Pantalla operativa: viaje (/trips/:id)
     const courier = stagingContext.courierUsers?.[0];
     if (!courier) {
       throw new Error('[E2E Error] No se encontró courier en stagingContext');
@@ -324,32 +306,17 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
     await page.goto(`/trips/${seededTrip.requestId}`);
     await waitForNoSkeletons(page);
     await expect(page).toHaveURL(new RegExp(`/trips/${seededTrip.requestId}$`));
-    await page.evaluate(() => {
-      const img = document.createElement('img');
-      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-      document.body.appendChild(img);
-    });
     const tripAudit = await runAxeAudit(page, `viaje (/trips/${seededTrip.requestId})`);
     expect(
       tripAudit.violations,
       `Violaciones WCAG en Viaje:\n${JSON.stringify(tripAudit.violations, null, 2)}`
     ).toEqual([]);
     expect(tripAudit.passes.length).toBeGreaterThan(0);
-  });
 
-  test('DoD: axe AA en onboarding', async ({
-    page,
-    loginAsCourier,
-  }) => {
-    await loginAsCourier(0, page);
+    // 3. Pantalla de incorporación: onboarding (/courier/onboarding/identity)
     await page.goto('/courier/onboarding/identity');
     await waitForNoSkeletons(page);
     await expect(page).toHaveURL(/\/courier\/onboarding\/identity$/);
-    await page.evaluate(() => {
-      const img = document.createElement('img');
-      img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-      document.body.appendChild(img);
-    });
     const onboardingAudit = await runAxeAudit(page, 'onboarding (/courier/onboarding/identity)');
     expect(
       onboardingAudit.violations,
