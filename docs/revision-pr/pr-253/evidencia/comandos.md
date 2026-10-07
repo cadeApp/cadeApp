@@ -170,3 +170,103 @@ La rama está 2 commits detrás de ese develop; debe sincronizar y reintentar el
 
 ## CI
 No inspeccionado como evidencia de cierre porque H07/H08 siguen bloqueantes.
+
+
+---
+
+# Ronda 4 — evidencia
+
+SHA funcional revisado: `f3d783ba44c5cbe15f8b5c2485a18d91a93d202d`.
+
+## H07 — RED remoto
+
+### M1
+- commit: `c8a90db0dc1573894461030f8ce4ea876cfdad09`
+- run: `37548183777`
+- job: `112557207995`
+- resultado: failure esperado.
+- 7 tests T-309 fallan por las mutaciones prescritas: retry, MIME y las 5 superficies axe.
+- revert: `76c086bb7f638aa7bd0989e6efbe6a162fa19fff`.
+
+### M2
+- commit: `ee571ff71a37485f17f149443723676960edce3a`
+- run: `37550262717`
+- job: `112563834547`
+- resultado: failure esperado.
+- error exacto: `getByLabel(/selector-inexistente-t309/i)` no se adjunta.
+- revert: `8cd5eb33cfd485078c30582db566870651a9e050`.
+
+## H08 y CI exact-head
+
+Bitácora:
+~~~text
+pnpm typecheck -> exit 0
+pnpm lint      -> exit 0
+pnpm test      -> exit 0
+121/121 test files
+1921/1921 tests
+57 workflow tests
+6 ADR tests
+~~~
+
+Run CI `37554842296`:
+~~~text
+typecheck     success
+lint          success
+unit          success
+build         success
+db-tests      success
+audit         success
+bundle-budget success
+~~~
+
+Vercel: success.
+
+## e2e-preview exact-head
+
+Run `37554952589`, job `112578994444`:
+~~~text
+43 passed
+2 failed
+- axe AA en viaje
+- axe AA en onboarding
+exit 1
+~~~
+
+Viaje:
+~~~text
+aria-hidden-focus
+<div tabindex="0" aria-hidden="true"></div>
+
+color-contrast
+fg #09babd
+bg #f1f9f8
+ratio 2.24
+expected 4.5:1
+~~~
+
+Onboarding:
+~~~text
+color-contrast
+fg #09babd
+bg #f3fcfc -> 2.29
+bg #ffffff -> 2.39
+expected 4.5:1
+~~~
+
+## Prueba de preexistencia
+
+Rama y develop tienen los mismos blobs:
+~~~text
+trip-courier-view.tsx  32e189c15cac0f5d2dbfb3cec533d77c5806ebce
+trip-route-map.tsx     b98cf080172c60db5633b0d41d2c07b186480b3a
+document-upload-card   26ca248d2898a4e363ed687129617d14c32828de
+~~~
+
+No son regresiones de T-309.
+
+Issues abiertos por la revisión:
+- #296
+- #297
+
+T-205 / #32 ya tiene alcance para `src/features/trips/**` y `src/features/courier-onboarding/**` y exige axe AA sin violaciones.
