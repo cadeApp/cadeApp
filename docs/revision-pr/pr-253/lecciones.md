@@ -26,3 +26,14 @@ No se agrega numeración AG nueva.
 - H07 deja una precisión operacional: si el guard fail-closed impide demostrar una mutación local que depende de staging, la evidencia RED debe obtenerse en Preview/CI con commits temporales explícitos y revertidos, nunca declararse por narración.
 - H08 refuerza que ejecutar las suites “equivalentes” no sustituye un comando textual del DoD cuando ese comando devuelve exit distinto de cero.
 - Separar superficies E2E independientes reduce enmascaramiento y permite demostrar varias mutaciones en un único run remoto.
+
+
+## Ronda 4
+
+No se agrega numeración AG nueva.
+
+- Un E2E de accesibilidad que encuentra una violación real **está funcionando**, aunque el gate quede rojo. La salida correcta no es silenciar axe sino abrir/corregir el defecto de producto.
+- Para distinguir regresión del PR de deuda preexistente se compararon blobs rama/develop. Los componentes que originan #296 y #297 son byte-a-byte los mismos en ambos refs.
+- Un defecto preexistente sigue bloqueando un DoD que explícitamente exige “axe AA sin violaciones”; no se convierte automáticamente en waiver por ser anterior.
+- Los fixes externos pertenecen naturalmente a la pasada de accesibilidad T-205 / #32, pero T-309 debe conservarse acotada y revalidarse después de que esos cambios lleguen a develop.
+- Las mutaciones RED remotas pueden vivir como commits temporales **solo si quedan identificadas, su CI demuestra la sensibilidad y luego se revierten sin reescribir historia**.
