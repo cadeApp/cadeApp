@@ -110,7 +110,7 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
       });
 
       // 4. Localizar input mediante label accesible (H02: sin selectores CSS ni IDs frágiles)
-      const dniFrontInput = page.getByLabel(/selector-inexistente-t309/i);
+      const dniFrontInput = page.getByLabel(/DNI frente/i);
       await expect(dniFrontInput).toBeAttached();
 
       // 5. Intentar la primera carga del frente del DNI durante el corte
