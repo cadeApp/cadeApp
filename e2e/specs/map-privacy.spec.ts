@@ -197,11 +197,38 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     });
 
     await loginAsCourier(0, page);
+
+    // Espera explícita y obligatoria del fetch vivo que refresca el feed (H01)
+    const liveFeedResponsePromise = page.waitForResponse((response) => {
+      let pathname = '';
+      try {
+        pathname = new URL(response.url()).pathname;
+      } catch {
+        return false;
+      }
+      return (
+        pathname === '/api/live/available-requests' &&
+        ['fetch', 'xhr'].includes(response.request().resourceType())
+      );
+    });
+
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
 
     const card = courierPage.requestCardById(requestId);
     await expect(card).toBeVisible();
+
+    // Exigir positivamente que el endpoint vivo fue observado y responder con 200 (H01)
+    const liveFeedResponse = await liveFeedResponsePromise;
+    expect(liveFeedResponse.status()).toBe(200);
+
+    const liveFeedBody = await liveFeedResponse.text();
+    for (const sentinel of SENTINEL_COORDINATES) {
+      expect(
+        liveFeedBody,
+        `fuga en endpoint vivo ${liveFeedResponse.url()}: centinela ${sentinel}`
+      ).not.toContain(sentinel);
+    }
 
     // Comprobar ausencia total de centinelas en las cargas de red y RSC (H01)
     await Promise.all(pendingResponseReads);
@@ -324,16 +351,25 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     });
     await expect(outsideAlert).toBeVisible();
 
-    // Validación complementaria vía GPS fuera de radio (sin condicionales)
+    // Validación complementaria vía GPS fuera de radio (sin condicionales y con locator unívoco de entrega) (H02)
     await page.context().setGeolocation({
       latitude: -27.5500,
       longitude: -65.7000,
     });
     await page.context().grantPermissions(['geolocation']);
 
-    const useGpsBtn = page.getByRole('button', { name: /usar mi ubicación/i });
-    await expect(useGpsBtn).toBeVisible();
-    await useGpsBtn.click();
+    // Verificar que existen exactamente 2 botones "Usar mi ubicación" (retiro y entrega) en el formulario
+    const allLocationButtons = page.getByRole('button', { name: /^usar mi ubicación$/i });
+    await expect(allLocationButtons).toHaveCount(2);
+
+    // Acotar de forma estable y semántica al bloque de destino y entrega (H02)
+    const dropoffSection = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { name: /destino y entrega/i }) })
+      .first();
+    const useDropoffGpsBtn = dropoffSection.getByRole('button', { name: /^usar mi ubicación$/i });
+    await expect(useDropoffGpsBtn).toBeVisible();
+    await useDropoffGpsBtn.click();
     await expect(
       page.getByText(/la ubicación está fuera del radio urbano de aguilares|fuera de aguilares/i)
     ).toBeVisible();
