@@ -144,6 +144,59 @@ async function readConsentState(profileId: string) {
   return { profile, consents: consents ?? [] };
 }
 
+async function readMerchantOnboardingDiagnostic(profileId: string, businessName: string) {
+  const admin = createAdminClient();
+  const [
+    { data: setting, error: settingError },
+    { data: pilotConsent, error: pilotConsentError },
+    { data: profile, error: profileError },
+    { data: merchant, error: merchantError },
+  ] = await Promise.all([
+    admin
+      .from('platform_settings')
+      .select('value')
+      .eq('key', 'pilot_terms_version')
+      .maybeSingle(),
+    admin
+      .from('consents')
+      .select('version')
+      .eq('profile_id', profileId)
+      .eq('document', 'pilot_terms')
+      .maybeSingle(),
+    admin
+      .from('profiles')
+      .select('display_name')
+      .eq('id', profileId)
+      .maybeSingle(),
+    admin
+      .from('merchants')
+      .select('business_name, default_pickup_address, subscription_status')
+      .eq('profile_id', profileId)
+      .maybeSingle(),
+  ]);
+  if (settingError) {
+    throw new Error(`[E2E Query Error] platform_settings:${settingError.code}`);
+  }
+  if (pilotConsentError) {
+    throw new Error(`[E2E Query Error] consents:${pilotConsentError.code}`);
+  }
+  if (profileError) {
+    throw new Error(`[E2E Query Error] profiles:${profileError.code}`);
+  }
+  if (merchantError) {
+    throw new Error(`[E2E Query Error] merchants:${merchantError.code}`);
+  }
+  return {
+    settingVersion: String(setting?.value ?? 'missing'),
+    pilotConsentVersion: pilotConsent?.version ?? 'missing',
+    profileUpdated: profile?.display_name === businessName,
+    merchantUpdated:
+      merchant?.business_name === businessName &&
+      merchant?.default_pickup_address === 'Alberdi 150, Aguilares' &&
+      merchant?.subscription_status === 'pilot',
+  };
+}
+
 async function expectMerchantPanelBlocked(page: Page, path: string, expectedUrl: RegExp) {
   await page.goto(path);
   await expect(page).toHaveURL(expectedUrl);
@@ -225,7 +278,19 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     await page.getByRole('button', { name: /^empezar$/i }).click();
 
     // 7. Panel del comercio visible
-    await expect(page).toHaveURL(/\/merchant\/dashboard/);
+    try {
+      await expect(page).toHaveURL(/\/merchant\/dashboard/);
+    } catch (navigationError) {
+      const diagnostic = await readMerchantOnboardingDiagnostic(profileId, businessName);
+      throw new Error(
+        '[T-313 Onboarding Diagnostic] ' +
+          `setting=${diagnostic.settingVersion}; ` +
+          `pilotConsent=${diagnostic.pilotConsentVersion}; ` +
+          `profileUpdated=${diagnostic.profileUpdated}; ` +
+          `merchantUpdated=${diagnostic.merchantUpdated}\n` +
+          `Navigation: ${navigationError instanceof Error ? navigationError.message : String(navigationError)}`
+      );
+    }
     await waitForNoSkeletons(page);
     await expect(page.getByRole('heading', { name: MERCHANT_PANEL_HEADING })).toBeVisible();
 
