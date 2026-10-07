@@ -7,37 +7,32 @@
 | **Autor** | @Lautaro073 |
 | **Rama** | `docs/T-347-ficha` → `develop` |
 | **Base** | `64dfdf653219c6cf08a223c0df829353d9d9d8f1` |
-| **HEAD revisado** | `dfb5fb1cf9db5013a322c11129b97b063a6ded8b` |
-| **Estado** | **CON BLOQUEANTE — ronda 1** |
+| **HEAD funcional revisado** | `92a9f5ee3d5f16b3f4304cfbefb0e0ff5ba80952` |
+| **Estado** | **SIN BLOQUEANTES — ronda 2** |
 
-## Ronda 1
+## Rondas
 
-La ficha propone un mecanismo correcto en intención, pero su frontera de confianza parte de una premisa incorrecta: `workflow_dispatch` no garantiza que la ejecución use el workflow de la rama por defecto.
+| Ronda | SHA revisado | Resultado | Informe |
+|---|---|---|---|
+| 1 | `dfb5fb1cf9db5013a322c11129b97b063a6ded8b` | CON BLOQUEANTE | [`revisiones/ronda-1.md`](revisiones/ronda-1.md) |
+| 2 | `92a9f5ee3d5f16b3f4304cfbefb0e0ff5ba80952` | **SIN BLOQUEANTES** | [`revisiones/ronda-2.md`](revisiones/ronda-2.md) |
 
-Hallazgo abierto: `PR293-H01`.
+## Estado de hallazgos
 
-## Decisiones de Lautaro073
+- `PR293-H01` ✅ arreglado-verificado en Ronda 2.
+- `PR293-A01..A04` ✅ decisiones aceptadas de Lautaro073.
 
-El 2026-10-07 quedaron resueltas las cuatro decisiones de diseño:
+No quedan decisiones 🔵, bloqueantes ni mejoras pendientes en la ficha.
 
-- **PR293-A01 / 0-B:** usar `repository_dispatch` con un `event_type` específico y `client_payload { target, mutation }`.
-- **PR293-A02 / 1-A:** catálogo de mutaciones versionado y revisado en `develop`; no patches ad hoc.
-- **PR293-A03 / 2-A:** build de control y mutante con `next start` solo en `127.0.0.1` dentro del runner; no Vercel Preview.
-- **PR293-A04 / 3-A:** validación de punta a punta después del merge; si falla y `board-sync` cerró #289, se reabre.
+## Qué queda después del merge
 
-Las cuatro decisiones quedan en estado `aceptado`.
+Esta PR solo incorpora la ficha y documentación de T-347. **No implementa el workflow.**
 
-## CI
+Por eso:
 
-Sobre el HEAD funcional revisado:
-
-- CI principal: ✅ completo;
-- Vercel: ✅;
-- `approval-policy`: ❌ esperado mientras el informe independiente tenga bloqueantes;
-- `e2e-preview`: no es evidencia necesaria para cerrar esta ronda documental mientras H01 siga abierto.
-
-## Siguiente paso
-
-Corregir la ficha y la bitácora con las decisiones anteriores. No implementar todavía T-347 en esta PR.
+1. #289 permanece abierto.
+2. Después del merge se toma T-347 para implementar `e2e-mutation` con el contrato aprobado.
+3. La validación punta a punta ocurre después de mergear la implementación a `develop`, según decisión 3-A.
+4. Si una mutación no termina `RED_CONFIRMED`, #289 permanece/reabre y no se adulteran specs ni `expectedFailure`.
 
 La revisión independiente no aprueba ni mergea la PR.
