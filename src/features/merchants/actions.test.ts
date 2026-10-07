@@ -480,7 +480,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
@@ -585,7 +594,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
 
   it('falla con INTERNAL_ERROR sin escribir consent ni merchant si el setting tiene una versión futura no publicada (H04)', async () => {
     const insertConsentSpy = vi.fn();
-    const upsertMerchantSpy = vi.fn();
+    const updateMerchantSpy = vi.fn();
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -616,8 +625,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: upsertMerchantSpy,
-          insert: upsertMerchantSpy,
+          update: updateMerchantSpy,
+          upsert: updateMerchantSpy,
+          insert: updateMerchantSpy,
         };
       }
       return {};
@@ -648,12 +658,12 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       expect(result.code).toBe('INTERNAL_ERROR');
     }
     expect(insertConsentSpy).not.toHaveBeenCalled();
-    expect(upsertMerchantSpy).not.toHaveBeenCalled();
+    expect(updateMerchantSpy).not.toHaveBeenCalled();
   });
 
   it('rechaza con VALIDATION_ERROR sin escribir consent ni merchant si el input tiene versión desactualizada 0.9 (H05)', async () => {
     const insertConsentSpy = vi.fn();
-    const upsertMerchantSpy = vi.fn();
+    const updateMerchantSpy = vi.fn();
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -684,8 +694,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: upsertMerchantSpy,
-          insert: upsertMerchantSpy,
+          update: updateMerchantSpy,
+          upsert: updateMerchantSpy,
+          insert: updateMerchantSpy,
         };
       }
       return {};
@@ -716,7 +727,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       expect(result.code).toBe('VALIDATION_ERROR');
     }
     expect(insertConsentSpy).not.toHaveBeenCalled();
-    expect(upsertMerchantSpy).not.toHaveBeenCalled();
+    expect(updateMerchantSpy).not.toHaveBeenCalled();
   });
 
   it('reintento merchant después de fallo posterior: no falla aunque pilot_terms ya exista y no reescribe accepted_at (H13)', async () => {
