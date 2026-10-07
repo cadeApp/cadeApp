@@ -114,12 +114,13 @@ begin
 end;
 $$;
 
--- 1. anon no ve delivery_requests
+-- 1. anon no ve delivery_requests: desde CC-023 no tiene SELECT sobre la tabla (antes: 0 filas por RLS)
 select pg_temp.act_as('anon');
-select is(
-  (select count(*) from public.delivery_requests),
-  0::bigint,
-  'anon sees 0 delivery_requests'
+select throws_ok(
+  'select count(*) from public.delivery_requests',
+  '42501'::char(5),
+  null::text,
+  'anon has no SELECT on delivery_requests'
 );
 
 -- 2. anon no ve delivery_request_contacts
