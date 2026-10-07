@@ -2,39 +2,18 @@
 
 | | |
 |---|---|
-| **PR** | https://github.com/cadeApp/cadeApp/pull/294 |
+| **PR** | #294 |
 | **Tarea** | T-347 |
-| **Autor** | @Lautaro073 |
-| **Rama** | `feat/T-347-e2e-mutation` → `develop` |
-| **Base** | `a773c05cc488a1fc60bfb36512cdca35d12d1271` |
-| **HEAD revisado** | `a0d860d46d96f1a03851cc2ffd2f17923c12aae0` |
-| **Estado** | **CON BLOQUEANTES — ronda 1** |
+| **HEAD ronda 2** | `5d7e0aa6a563607466b07618d78a843b58f8fbd6` |
+| **Estado** | **APTO PARA MERGE — ronda 2** |
 
-## Ronda 1
+## Ronda 2
 
-- `PR294-H01`: el workflow permite ejecutar un SHA de PR no mergeado en el mismo runner que posteriormente recibe secretos de Develop.
-- `PR294-H02`: stdout/stderr y reportes generados durante fases con secretos se guardan como artifact sin sanitización demostrable.
+- PR294-H01 ✅ cerrado: solo `target=develop`; desapareció la ruta de PR.
+- PR294-H02 ✅ cerrado: evidencia raw separada y artifact con allowlist minimizada.
+- PR294-M01 ✅ cerrado: artifact con `sha7`.
+- PR294-A01 ✅ implementada.
 
-## Decisión de Lautaro073
+CI, Vercel y e2e-preview están GREEN sobre el HEAD exacto. `approval-policy` estaba rojo antes de publicar esta ronda porque el body todavía reflejaba la ronda 1.
 
-El 2026-10-07 Lautaro073 eligió **A**:
-
-- T-347 pasa a admitir **solo `target=develop`**;
-- se elimina el soporte de PRs como target;
-- se elimina la necesidad de `pull-requests: read` y de resolver/validar PRs;
-- el objetivo post-merge requerido por T-347 sigue cubierto.
-
-Decisión registrada como `PR294-A01`, estado `aceptado`.
-
-## Mejora
-
-- `PR294-M01`: el artifact usa actualmente SHA de 40 caracteres; la ficha pide `sha7`.
-
-## Checks del HEAD revisado
-
-- CI ✅
-- Vercel ✅
-- e2e-preview ✅ exact-head
-- approval-policy ❌ esperado mientras existan bloqueantes
-
-La revisión independiente no aprueba ni mergea la PR.
+La revisión independiente no aprobó ni mergeó la PR.
