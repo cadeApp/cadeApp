@@ -1,5 +1,6 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { createClient } from '@/server/supabase/server';
 import { createAdminClient } from '@/server/supabase/admin';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
@@ -140,6 +141,9 @@ export async function merchantOnboardingAction(
   if (merchantError || !merchant) {
     return err('INTERNAL_ERROR');
   }
+
+  revalidatePath('/merchant/dashboard');
+  revalidatePath('/merchant/onboarding');
 
   return ok({
     redirectTo: '/merchant/dashboard',

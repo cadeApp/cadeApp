@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { revalidatePath } from 'next/cache';
 import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
 import { merchantOnboardingAction } from './actions';
@@ -9,6 +10,10 @@ vi.mock('@/server/supabase/server', () => ({
 
 vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
+}));
+
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
 }));
 
 describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
@@ -249,6 +254,10 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       display_name: 'Panadería La Espiga',
       phone: '3815550123',
     });
+
+    // Verificación 4: rutas invalidadas en cache
+    expect(revalidatePath).toHaveBeenCalledWith('/merchant/dashboard');
+    expect(revalidatePath).toHaveBeenCalledWith('/merchant/onboarding');
   });
 
   it('falla con INTERNAL_ERROR si la fila merchants no existe o UPDATE afecta 0 filas', async () => {
