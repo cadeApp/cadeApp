@@ -329,15 +329,23 @@ select lives_ok(
   'merchant can update business_name and notes'
 );
 
--- 24b. T-348/H11: merchants insert denegado a actor autenticado
+-- 24b. T-348/H11 (PR302-H01): un merchant activo no puede insertar su propia fila merchants.
+-- merchant_idle no se vuelve a usar después del caso 11; se borra su fila para que el INSERT self solo dependa de RLS.
+select pg_temp.reset_actor();
+
+delete from public.merchants
+where profile_id = pg_temp.merchant_idle_id();
+
+select pg_temp.act_as('authenticated', pg_temp.merchant_idle_id());
 select throws_ok(
-  'insert into public.merchants (profile_id) values (pg_temp.courier_approved_1_id())',
+  'insert into public.merchants (profile_id) values (pg_temp.merchant_idle_id())',
   '42501'::char(5),
   null::text,
-  'merchant cannot insert merchant rows directly'
+  'merchant cannot insert its own merchant row directly'
 );
 
 -- 25. H02: merchants update rechaza autoconcederse suscripción
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select throws_ok(
   'update public.merchants set subscription_status = ''active'', paid_until = ''2099-12-31'' where profile_id = pg_temp.merchant_1_id()',
   '42501'::char(5),
