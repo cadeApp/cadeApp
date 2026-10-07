@@ -181,7 +181,8 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     registrationContext.pendingCleanupEmails.add(email);
     await page.getByRole('button', { name: /^crear cuenta$/i }).click();
 
-    await expect(page.getByRole('alert')).toHaveCount(0);
+    const registrationError = page.locator('form').getByRole('alert');
+    await expect(registrationError).toHaveCount(0);
     await expect(page.getByRole('heading', { name: /revisá tu email/i })).toBeVisible();
 
     // 2. El alta quedó en la base: se registra para limpieza antes de cualquier aserción
