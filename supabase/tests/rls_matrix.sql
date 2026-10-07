@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(64);
+select plan(65);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -322,11 +322,19 @@ select throws_ok(
   'courier cannot forge decided_by approval record'
 );
 
--- 24. H05: merchants update legítimo permitido
+-- 24. H05: merchants update legítimo permitido (business_name y notes)
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select lives_ok(
-  'update public.merchants set business_name = ''Pizzeria Centro'' where profile_id = pg_temp.merchant_1_id()',
-  'merchant can update business_name'
+  'update public.merchants set business_name = ''Pizzeria Centro'', notes = ''Entrada por calle lateral'' where profile_id = pg_temp.merchant_1_id()',
+  'merchant can update business_name and notes'
+);
+
+-- 24b. T-313 / H11: merchants insert denegado a actor autenticado
+select throws_ok(
+  'insert into public.merchants (profile_id) values (pg_temp.courier_approved_1_id())',
+  '42501'::char(5),
+  null::text,
+  'merchant cannot insert merchant rows directly'
 );
 
 -- 25. H02: merchants update rechaza autoconcederse suscripción
