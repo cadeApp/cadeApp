@@ -168,3 +168,101 @@ Conclusión: la causa raíz exacta sigue **no demostrada**.
 ### P3
 
 Solicitud: comentario `5999858656`. No existe visto bueno explícito P3 en las reviews/comentarios actuales.
+
+## Ronda 9 — causa raíz productiva + decisión D03-A
+
+### HEAD y sincronización
+
+```text
+HEAD    4f3dacd01dc350c36f937a629ddfd6bf1f2a9f78
+develop a773c05cc488a1fc60bfb36512cdca35d12d1271
+ahead   31
+behind  1
+```
+
+El commit pendiente de develop es T-347 documental.
+
+### Checks
+
+```text
+CI              37576126221  success
+approval-policy 37576188205  success
+Vercel                         success
+e2e-preview HEAD 37576209756 cancelled
+```
+
+El Preview funcional usado para diagnóstico sigue siendo:
+
+```text
+run 37575010421
+SHA 9cd4bdb763ddf4266c30068a3e8511af8bf1af2d
+45 passed / 1 failed
+```
+
+Línea discriminante:
+
+```text
+[T-313 Onboarding Diagnostic] setting=v1; pilotConsent=1.0; profileUpdated=true; merchantUpdated=false
+```
+
+### Enumeración completa del tramo merchants
+
+`handle_new_user()`:
+
+```sql
+if requested_role = 'merchant' then
+  insert into public.merchants (profile_id) values (new.id);
+end if;
+```
+
+Por lo tanto la fila merchant ya existe antes del onboarding.
+
+Action actual:
+
+```ts
+await supabase
+  .from('merchants')
+  .upsert(merchantPayload as never);
+```
+
+Policies self-service vigentes:
+- `merchants_select_self`;
+- `merchants_update_self`;
+- no existe `merchants_insert_self`.
+
+La policy UPDATE además congela:
+- `subscription_status`;
+- `paid_until`;
+- `notes`.
+
+El formulario y el schema sí exponen `notes` como dato editable del onboarding.
+
+### Conclusión
+
+La causa raíz ya no es una hipótesis ambiental:
+
+1. la action usa semántica INSERT/UPSERT sobre una fila que el trigger ya creó;
+2. el actor authenticated no tiene INSERT self;
+3. aunque se cambiara solo a UPDATE, `notes` seguiría siendo bloqueado por la policy actual cuando la persona escriba una referencia.
+
+### Decisión
+
+Lautaro073 eligió **D03-A**: corregir el bug productivo en esta misma PR.
+
+Guardas de la decisión:
+- no agregar INSERT self;
+- no usar admin/service role para merchant;
+- UPDATE solo de campos editables;
+- permitir `notes`;
+- mantener protegidos `subscription_status` y `paid_until`;
+- exigir pruebas unitarias, pgTAP y E2E.
+
+### Body
+
+El body ya usa los runs recientes, pero todavía contiene:
+- `pnpm test` pasado arriba y `test ❌` dentro del informe;
+- rollback que afirma que no toca producción, incompatible con D03-A.
+
+### P3
+
+No hay visto bueno explícito P3. Como el spec se modificará para cubrir notas, P3 debe revisar la versión final.
