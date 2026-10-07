@@ -14,31 +14,62 @@ import { AGUILARES_BOUNDS } from '@/domain/schemas';
  *
  * DoD:
  * 1. Playwright mockea Maps API (0 llamadas a Google).
- * 2. Valida que el feed abierto no tenga tags con coordenadas (D3/D15).
+ * 2. Valida que el feed abierto no tenga tags con coordenadas (D3/D15: DOM + red/RSC).
  * 3. Valida selección de pin en alta y solicitud.
  * 4. Valida error inline con pin fuera de Aguilares.
  * 5. Valida que tras matched aparezca el mapa y botón Google Maps.
  * 6. Valida degradación cuando Maps falla.
  */
 
+const SENTINEL_COORDINATES = ['-27.432', '-65.612', '-27.435', '-65.615'] as const;
+
+const GOOGLE_MAPS_DOMAINS_REGEX = /(maps\.googleapis\.com|maps\.google\.com|maps\.gstatic\.com)/i;
+
+export interface GoogleMapsMockController {
+  interceptedUrls: string[];
+  unexpectedGoogleUrls: string[];
+}
+
 /**
- * Configura la intercepción estricta de Google Maps API en Playwright (0 llamadas reales a Google).
+ * Configura la intercepción estricta fail-closed de Google Maps API en Playwright (0 llamadas reales a Google).
  */
 async function setupGoogleMapsMock(
   page: Page,
-  options: { failApi?: boolean } = {}
-): Promise<{ getInterceptedCount: () => number }> {
-  let interceptedCount = 0;
+  options: { failApi?: boolean; simulatedUnexpectedHost?: string } = {}
+): Promise<GoogleMapsMockController> {
+  const interceptedUrls: string[] = [];
+  const unexpectedGoogleUrls: string[] = [];
 
-  await page.route(/.*(maps\.googleapis\.com|maps\.google\.com).*/, async (route) => {
-    interceptedCount++;
+  await page.route(GOOGLE_MAPS_DOMAINS_REGEX, async (route) => {
+    const url = route.request().url();
+    let hostname = '';
+    try {
+      hostname = new URL(url).hostname.toLowerCase();
+    } catch {
+      // Ignorar URLs malformadas
+    }
+
+    const isExpectedHost =
+      hostname === 'maps.googleapis.com' ||
+      hostname === 'maps.gstatic.com' ||
+      hostname === 'maps.google.com';
+
+    if (
+      !isExpectedHost ||
+      (options.simulatedUnexpectedHost && url.includes(options.simulatedUnexpectedHost))
+    ) {
+      unexpectedGoogleUrls.push(url);
+      await route.abort('failed');
+      return;
+    }
+
+    interceptedUrls.push(url);
 
     if (options.failApi) {
       await route.abort('failed');
       return;
     }
 
-    const url = route.request().url();
     if (url.includes('/maps/api/js')) {
       const mockScript = `
         window.google = window.google || {};
@@ -100,15 +131,16 @@ async function setupGoogleMapsMock(
   });
 
   return {
-    getInterceptedCount: () => interceptedCount,
+    interceptedUrls,
+    unexpectedGoogleUrls,
   };
 }
 
 test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradación graceful', () => {
   // ---------------------------------------------------------------------------
-  // 1. Privacidad: feed abierto sin tags ni atributos con coordenadas (D3/D15)
+  // 1. Privacidad D3/D15: feed abierto sin tags ni coordenadas en DOM ni red/RSC (PR298-D01=A / H01)
   // ---------------------------------------------------------------------------
-  test('DoD: el feed abierto del repartidor no tiene tags ni atributos con coordenadas', async ({
+  test('DoD: el feed abierto del repartidor no tiene tags ni atributos con coordenadas (DOM y red/RSC)', async ({
     page,
     courierPage,
     stagingContext,
@@ -121,12 +153,59 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
       throw new Error('[E2E Precondition Error] Se requiere una solicitud sembrada en stagingContext');
     }
 
+    // Colector de respuestas textuales/JSON/RSC para detectar fugas de red de centinelas del seed (H01)
+    const leakedResponses: Array<{ url: string; sentinel: string }> = [];
+    const pendingResponseReads: Promise<void>[] = [];
+
+    page.on('response', (response) => {
+      const resourceType = response.request().resourceType();
+      if (resourceType !== 'document' && resourceType !== 'fetch' && resourceType !== 'xhr') {
+        return;
+      }
+
+      const url = response.url();
+      if (GOOGLE_MAPS_DOMAINS_REGEX.test(url)) {
+        return;
+      }
+
+      const contentType = (response.headers()['content-type'] ?? '').toLowerCase();
+      const isTextual =
+        contentType.includes('application/json') ||
+        contentType.includes('text/html') ||
+        contentType.includes('text/plain') ||
+        contentType.includes('text/x-component') ||
+        contentType.includes('application/x-component');
+
+      if (!isTextual) {
+        return;
+      }
+
+      pendingResponseReads.push(
+        response
+          .text()
+          .then((body) => {
+            for (const sentinel of SENTINEL_COORDINATES) {
+              if (body.includes(sentinel)) {
+                leakedResponses.push({ url, sentinel });
+              }
+            }
+          })
+          .catch(() => {
+            // Respuestas canceladas antes del cierre
+          })
+      );
+    });
+
     await loginAsCourier(0, page);
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
 
     const card = courierPage.requestCardById(requestId);
     await expect(card).toBeVisible();
+
+    // Comprobar ausencia total de centinelas en las cargas de red y RSC (H01)
+    await Promise.all(pendingResponseReads);
+    expect(leakedResponses).toEqual([]);
 
     // 1. Verificación en el DOM de tarjetas: cero atributos con coordenadas
     const coordinateAttributes = ['data-lat', 'data-lng', 'data-coordinates', 'data-coords'];
@@ -151,7 +230,7 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
   });
 
   // ---------------------------------------------------------------------------
-  // 2. Selección de pin en alta de comercio y error inline fuera de Aguilares
+  // 2. Selección de pin en alta de comercio y error inline fuera de Aguilares (H02)
   // ---------------------------------------------------------------------------
   test('DoD: selección de pin en alta de comercio valida límites y muestra error inline fuera de Aguilares', async ({
     page,
@@ -168,21 +247,27 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     const mapContainer = page.locator('[data-testid="map-container"]');
     await expect(mapContainer).toBeVisible();
 
-    // Inicialmente centrado en zona / Aguilares sin alerta de fuera de rango
     const outsideAlert = page.getByRole('alert').filter({
       hasText: /ubicación fuera de aguilares/i,
     });
     await expect(outsideAlert).toHaveCount(0);
 
-    // Simular desplazamiento con flechas del teclado fuera del radio de Aguilares
-    // Cada pulsación mueve 0.0001; simular muchas pulsaciones hacia el sur (latitud más negativa)
+    // Mover el pin suficientes pasos con el teclado hasta cruzar minLat (-27.4800) desde el centro (-27.4333) (H02)
     await mapContainer.focus();
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 500; i++) {
       await page.keyboard.press('ArrowDown');
     }
 
-    // Verificar si la alerta inline accesible se activa cuando se sobrepasa el límite
-    // O probando posición explícita fuera de rango vía geolocalización simulada
+    // Exigir obligatoriamente la alerta accesible fuera de Aguilares generada por el pin (H02)
+    await expect(outsideAlert).toBeVisible();
+
+    // Mover el pin de regreso dentro de los límites
+    for (let i = 0; i < 500; i++) {
+      await page.keyboard.press('ArrowUp');
+    }
+    await expect(outsideAlert).toHaveCount(0);
+
+    // Validación complementaria vía GPS/geolocalización simulada fuera de radio (sin condicionales)
     await page.context().setGeolocation({
       latitude: AGUILARES_BOUNDS.minLat - 0.05,
       longitude: AGUILARES_BOUNDS.minLng - 0.05,
@@ -190,16 +275,13 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     await page.context().grantPermissions(['geolocation']);
 
     const useMyLocationBtn = page.getByRole('button', { name: /usar mi ubicación/i });
-    if (await useMyLocationBtn.isVisible()) {
-      await useMyLocationBtn.click();
-      await expect(
-        page.getByRole('alert').filter({ hasText: /fuera de aguilares/i })
-      ).toBeVisible();
-    }
+    await expect(useMyLocationBtn).toBeVisible();
+    await useMyLocationBtn.click();
+    await expect(outsideAlert).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
-  // 3. Selección de pin en creación de solicitud y error inline fuera de rango
+  // 3. Selección de pin en creación de solicitud y error inline fuera de rango (H02)
   // ---------------------------------------------------------------------------
   test('DoD: selección de pin en solicitud muestra mapa y valida error inline fuera de Aguilares', async ({
     page,
@@ -213,19 +295,18 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     await merchantPage.gotoNewRequest();
     await waitForNoSkeletons(page);
 
-    // Desplegar mapa interactivo mediante el botón accesible
+    // Desplegar mapa interactivo mediante el botón accesible obligatorio (H02)
     const openMapBtn = page.getByRole('button', { name: /fijar en mapa interactivo/i });
     await expect(openMapBtn).toBeVisible();
     await openMapBtn.click();
 
-    // El mapa interactivo se despliega
     const mapPicker = page.locator('[data-testid="map-picker"]');
     await expect(mapPicker).toBeVisible();
 
     const mapContainer = page.locator('[data-testid="map-container"]');
     await expect(mapContainer).toBeVisible();
 
-    // Interactuar con el mapa con teclas para seleccionar un punto
+    // Interactuar con el mapa con teclas para seleccionar un punto dentro de rango
     await mapContainer.focus();
     await page.keyboard.press('ArrowUp');
     await page.keyboard.press('ArrowRight');
@@ -233,24 +314,33 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     // Comprobar indicador accesible de pin fijado
     await expect(page.getByText(/pin fijado/i)).toBeVisible();
 
-    // Configurar geolocalización fuera de radio y validar error inline
+    // Mover el pin suficientes pasos con el teclado hasta cruzar fuera del límite de Aguilares (H02)
+    for (let i = 0; i < 500; i++) {
+      await page.keyboard.press('ArrowDown');
+    }
+
+    const outsideAlert = page.getByRole('alert').filter({
+      hasText: /fuera de aguilares/i,
+    });
+    await expect(outsideAlert).toBeVisible();
+
+    // Validación complementaria vía GPS fuera de radio (sin condicionales)
     await page.context().setGeolocation({
-      latitude: -27.5500, // Fuera de AGUILARES_BOUNDS.minLat (-27.48)
+      latitude: -27.5500,
       longitude: -65.7000,
     });
     await page.context().grantPermissions(['geolocation']);
 
     const useGpsBtn = page.getByRole('button', { name: /usar mi ubicación/i });
-    if (await useGpsBtn.isVisible()) {
-      await useGpsBtn.click();
-      await expect(
-        page.getByText(/la ubicación está fuera del radio urbano de aguilares|fuera de aguilares/i)
-      ).toBeVisible();
-    }
+    await expect(useGpsBtn).toBeVisible();
+    await useGpsBtn.click();
+    await expect(
+      page.getByText(/la ubicación está fuera del radio urbano de aguilares|fuera de aguilares/i)
+    ).toBeVisible();
   });
 
   // ---------------------------------------------------------------------------
-  // 4. Tras matched aparece el mapa y el botón "Abrir en Google Maps"
+  // 4. Tras matched aparece el mapa y el botón "Abrir en Google Maps" (H03)
   // ---------------------------------------------------------------------------
   test('DoD: tras matched aparece el mapa de recorrido y botón Google Maps en vista de viaje', async ({
     page,
@@ -283,21 +373,33 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     await page.goto(`/trips/${requestId}`);
     await waitForNoSkeletons(page);
 
-    // 1. El mapa de recorrido debe estar presente y visible
+    // 1. El mapa de recorrido real debe estar presente y visible, sin fallback (H03)
     const routeMap = page.locator('[data-testid="trip-route-map"]');
     await expect(routeMap).toBeVisible();
+    await expect(page.locator('[data-testid="route-map-fallback"]')).toHaveCount(0);
 
-    // 2. Botón "Abrir en Google Maps" debe estar presente, visible y accesible
+    // 2. Elementos exclusivos del mapa real presentes (H03)
+    await expect(page.locator('[data-testid="map-pin-pickup"]')).toBeVisible();
+    await expect(page.locator('[data-testid="map-pin-dropoff"]')).toBeVisible();
+
+    // 3. Botón "Abrir en Google Maps" debe estar presente, visible y accesible
     const openGoogleMapsLink = page.getByRole('link', { name: /abrir en google maps/i });
     await expect(openGoogleMapsLink).toBeVisible();
-
-    // 3. Valida atributos de seguridad y URL canónica
-    const href = await openGoogleMapsLink.getAttribute('href');
-    expect(href).toMatch(/^https:\/\/www\.google\.com\/maps\/dir\/\?api=1/);
     await expect(openGoogleMapsLink).toHaveAttribute('target', '_blank');
+
     const rel = await openGoogleMapsLink.getAttribute('rel');
     expect(rel).toContain('noopener');
     expect(rel).toContain('noreferrer');
+
+    // 4. Valida URL canónica con new URL(...) (H03)
+    const href = await openGoogleMapsLink.getAttribute('href');
+    expect(href).toBeTruthy();
+    const parsedUrl = new URL(href!);
+    expect(parsedUrl.origin).toBe('https://www.google.com');
+    expect(parsedUrl.pathname).toBe('/maps/dir/');
+    expect(parsedUrl.searchParams.get('api')).toBe('1');
+    expect(parsedUrl.searchParams.get('origin')).toBeTruthy();
+    expect(parsedUrl.searchParams.get('destination')).toBeTruthy();
   });
 
   // ---------------------------------------------------------------------------
@@ -349,32 +451,19 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
   });
 
   // ---------------------------------------------------------------------------
-  // 6. Playwright mockea Maps API (0 llamadas a Google)
+  // 6. Playwright mockea Maps API con 0 llamadas no interceptadas a Google (H04)
   // ---------------------------------------------------------------------------
   test('DoD: Playwright mockea Maps API y garantiza 0 llamadas externas reales a Google', async ({
     page,
   }) => {
-    let unmockedGoogleRequests = 0;
-
-    page.on('request', (req) => {
-      const url = req.url();
-      if (
-        (url.includes('maps.googleapis.com') || url.includes('maps.google.com')) &&
-        !req.isNavigationRequest()
-      ) {
-        // Toda petición a Google debe ser respondida localmente por el mock
-      }
-    });
-
     const mock = await setupGoogleMapsMock(page);
 
-    // Navegar y activar carga de Maps
+    // Navegar y activar carga de Maps interactivo
     await page.goto('/merchant/onboarding');
     await waitForNoSkeletons(page);
 
-    // Todas las solicitudes deben ser interceptadas por Playwright (0 solicitudes salientes a servidores de Google)
-    expect(unmockedGoogleRequests).toBe(0);
-    // El mock interceptó correctamente peticiones en caso de existir invocación
-    expect(mock.getInterceptedCount()).toBeGreaterThanOrEqual(0);
+    // Exigir que el mock haya interceptado peticiones (> 0) y cero peticiones inesperadas (H04)
+    expect(mock.interceptedUrls.length).toBeGreaterThan(0);
+    expect(mock.unexpectedGoogleUrls).toEqual([]);
   });
 });
