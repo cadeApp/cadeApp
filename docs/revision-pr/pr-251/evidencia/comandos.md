@@ -302,3 +302,66 @@ e2e-preview         -> onboarding normal llega al dashboard con la action correg
 
 No se aplica la migración de la feature manualmente a Develop.
 
+## Ronda 11 — RED H11 verificado
+
+### SHA
+
+```text
+ced6acd316398707f626de0cc30db3ed1e34da79
+```
+
+Rama respecto de develop:
+
+```text
+ahead 35
+behind 0
+```
+
+### CI 37591045310
+
+```text
+typecheck      PASS
+lint           PASS
+build          PASS
+audit          PASS
+bundle-budget  PASS
+unit           FAIL esperado
+db-tests       FAIL esperado
+```
+
+### Unit — job 112692332103
+
+```text
+src/features/merchants/actions.test.ts
+13 tests | 2 failed
+
+alta exitosa...
+TypeError: supabase.from(...).upsert is not a function
+actions.ts:138
+
+fila merchants no existe / UPDATE afecta 0 filas
+TypeError: supabase.from(...).upsert is not a function
+actions.ts:138
+```
+
+El RED demuestra que producción todavía usa UPSERT mientras los dos casos nuevos exigen el contrato UPDATE.
+
+### pgTAP — job 112692332530
+
+```text
+Failed test 27: merchant can update business_name and notes
+42501: new row violates row-level security policy for table "merchants"
+Looks like you failed 1 test of 65
+```
+
+El RED demuestra que la policy actual bloquea `notes`.
+
+La prueba nueva de INSERT directo no falla; la ausencia de INSERT self sigue protegida.
+
+### e2e-preview
+
+El status del HEAD apunta al run `37591175443`, cuyo job E2E quedó `cancelled`. No se usa como evidencia nueva: este commit solo agregó tests RED y no cambió producción.
+
+### P3
+
+Sin visto bueno explícito.
