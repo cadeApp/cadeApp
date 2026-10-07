@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { sortOffersForMerchant } from '@/domain/priority';
 import * as serverSupabase from '@/server/supabase/server';
@@ -875,6 +875,18 @@ describe('T-112 / T-118: queries de requests e historial', () => {
 
   describe('getMerchantRequestWithOffers', () => {
     const validUuid = '11111111-1111-1111-1111-111111111111';
+    // CC-023: el detalle también llama a get_merchant_request_private_fields; el resto de las RPC van al mock
+    // de cada test.
+    type RpcMock = Mock<(fn: string, args?: Record<string, unknown>) => unknown>;
+    const withPrivateFields = (couriersRpc: ReturnType<typeof vi.fn>) =>
+      vi.fn((fn: string, args?: Record<string, unknown>) =>
+        fn === 'get_merchant_request_private_fields'
+          ? Promise.resolve({
+              data: { requestId: validUuid, notes: null, cashChangeAmount: null },
+              error: null,
+            })
+          : (couriersRpc as RpcMock)(fn, args)
+      );
     const courierUuid = (i: number) => `10000000-0000-0000-0000-${String(i).padStart(12, '0')}`;
     const mockRequestRow = {
       id: validUuid,
@@ -940,7 +952,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
           }
           return {};
         }),
-        rpc: couriersRpc,
+        rpc: withPrivateFields(couriersRpc),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
@@ -1004,7 +1016,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
           }
           return {};
         }),
-        rpc: couriersRpc,
+        rpc: withPrivateFields(couriersRpc),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
@@ -1036,7 +1048,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
           }
           return {};
         }),
-        rpc,
+        rpc: withPrivateFields(rpc),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
     }
 
@@ -1131,6 +1143,130 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         'Courier Doc0',
         'Courier Doc2',
       ]);
+    });
+  });
+
+  const validUuidB = '33333333-3333-4333-8333-333333333334';
+
+  describe('CC-023: los lectores del comercio no leen notes ni cash_change_amount por tabla', () => {
+    const requestId = '33333333-3333-4333-8333-333333333333';
+    const requestRow = (id: string, status = 'published') => ({
+      id,
+      approx_distance_m: 1500,
+      package_type: 'chico',
+      recipient_payment_method: 'cash',
+      needs_change: true,
+      status,
+      expires_at: null,
+      created_at: new Date().toISOString(),
+      accepted_offer_id: null,
+      pickup_zone: { name: 'Centro' },
+      dropoff_zone: { name: 'Sur' },
+    });
+
+    // Builder encadenable y awaitable en cualquier punto, como el de PostgREST.
+    function chain(rows: readonly unknown[], selects: string[]) {
+      const result = { data: rows, error: null };
+      const builder: Record<string, unknown> = {
+        then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
+      };
+      builder.select = vi.fn((columns: string) => {
+        selects.push(columns);
+        return builder;
+      });
+      for (const method of ['eq', 'in', 'lt', 'or', 'order', 'limit']) {
+        builder[method] = vi.fn(() => builder);
+      }
+      builder.maybeSingle = vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null });
+      return builder;
+    }
+
+    function mockClient(
+      requestRows: readonly unknown[],
+      rpc: ReturnType<typeof vi.fn> = vi.fn()
+    ): string[] {
+      const requestSelects: string[] = [];
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) =>
+          table === 'delivery_requests' ? chain(requestRows, requestSelects) : chain([], [])
+        ),
+        rpc,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+      return requestSelects;
+    }
+
+    it('getMerchantHistoryRequests no selecciona cash_change_amount y no expone cashChangeAmount', async () => {
+      const selects = mockClient([
+        requestRow(requestId, 'delivered'),
+        requestRow(validUuidB, 'delivered'),
+      ]);
+
+      const result = await getMerchantHistoryRequests('merchant-1', { limit: 50 });
+      expect(result.requests).toHaveLength(2);
+
+      expect(selects.length).toBeGreaterThan(0);
+      for (const columns of selects) {
+        expect(columns).not.toContain('cash_change_amount');
+        expect(columns).not.toMatch(/\bnotes\b/);
+      }
+      expect(result.requests[0]).not.toHaveProperty('cashChangeAmount');
+    });
+
+    it('getMerchantRequests no selecciona cash_change_amount en ninguna de sus consultas', async () => {
+      const selects = mockClient([requestRow(requestId), requestRow(validUuidB)]);
+
+      const result = await getMerchantRequests('merchant-1', { limit: 50 });
+      expect(result.requests).toHaveLength(2);
+
+      expect(selects.length).toBeGreaterThan(0);
+      for (const columns of selects) {
+        expect(columns).not.toContain('cash_change_amount');
+        expect(columns).not.toMatch(/\bnotes\b/);
+      }
+      expect(result.requests[0]).not.toHaveProperty('cashChangeAmount');
+    });
+
+    it('getMerchantRequestWithOffers obtiene notes y cashChangeAmount por get_merchant_request_private_fields', async () => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: { requestId, notes: 'Tocar timbre 2B', cashChangeAmount: 5000 },
+        error: null,
+      });
+      const selects = mockClient([requestRow(requestId)], rpc);
+
+      const result = await getMerchantRequestWithOffers(requestId, 'merchant-1');
+
+      expect(selects).toHaveLength(1);
+      expect(selects[0]).not.toContain('cash_change_amount');
+      expect(selects[0]).not.toMatch(/\bnotes\b/);
+      expect(rpc).toHaveBeenCalledExactlyOnceWith('get_merchant_request_private_fields', {
+        p_request_id: requestId,
+      });
+      expect(result?.request).toMatchObject({
+        id: requestId,
+        needsChange: true,
+        cashChangeAmount: 5000,
+        notes: 'Tocar timbre 2B',
+      });
+    });
+
+    it('getMerchantRequestWithOffers lanza si la RPC de campos privados falla, sin inventar valores', async () => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'UNAUTHORIZED_ACTOR' },
+      });
+      mockClient([requestRow(requestId)], rpc);
+
+      await expect(getMerchantRequestWithOffers(requestId, 'merchant-1')).rejects.toThrow(
+        'Error al cargar los datos privados de la solicitud: UNAUTHORIZED_ACTOR'
+      );
+    });
+
+    it('getMerchantRequestWithOffers no llama a la RPC si la solicitud no es del comercio', async () => {
+      const rpc = vi.fn();
+      mockClient([], rpc);
+
+      expect(await getMerchantRequestWithOffers(requestId, 'merchant-1')).toBeNull();
+      expect(rpc).not.toHaveBeenCalled();
     });
   });
 });

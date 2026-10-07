@@ -26,7 +26,6 @@ export interface MerchantRequestSummary {
   readonly packageType: PackageType;
   readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;
-  readonly cashChangeAmount: number | null;
   readonly status: DeliveryRequestStatus;
   readonly expiresAt: string | null;
   readonly createdAt: string;

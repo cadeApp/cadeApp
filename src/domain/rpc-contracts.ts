@@ -291,6 +291,21 @@ export const getRequestOfferCouriersOutputSchema = z
   })
   .strict();
 
+// get_merchant_request_private_fields (CC-023)
+// Indicaciones y monto exacto de cambio de una solicitud propia, solo para el comercio dueño: con CC-023 esas
+// columnas dejan de leerse por tabla. `.strict()`: un campo de más invalida la salida.
+export const getMerchantRequestPrivateFieldsInputSchema = z.object({
+  requestId: uuidSchema,
+});
+
+export const getMerchantRequestPrivateFieldsOutputSchema = z
+  .object({
+    requestId: uuidSchema,
+    notes: z.string().nullable(),
+    cashChangeAmount: z.number().int().positive().nullable(),
+  })
+  .strict();
+
 export const adminDecideCourierInputSchema = z.object({
   courierId: uuidSchema,
   decision: z.enum(['approved', 'rejected']),
@@ -693,6 +708,21 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * CC-023: solo el comercio dueño, en cualquier estado de su solicitud. Solicitud inexistente o ajena
+   * responden igual (`NOT_FOUND`). Repartidor y admin con sesión → `UNAUTHORIZED_ACTOR`.
+   */
+  get_merchant_request_private_fields: {
+    inputSchema: getMerchantRequestPrivateFieldsInputSchema,
+    outputSchema: getMerchantRequestPrivateFieldsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_decide_courier: {
     inputSchema: adminDecideCourierInputSchema,
     outputSchema: adminDecideCourierOutputSchema,
@@ -801,6 +831,7 @@ export const ALL_RPC_NAMES = [
   'calculate_route_distance',
   'get_trip_details',
   'get_request_offer_couriers',
+  'get_merchant_request_private_fields',
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_verify_document',
