@@ -55,7 +55,7 @@ function createSWInstance(customCode?: string): SWContext {
   const mockCaches = {
     open: vi.fn().mockResolvedValue(mockCache),
     match: vi.fn().mockResolvedValue(undefined),
-    keys: vi.fn().mockResolvedValue(['cadeapp-shell-v0', 'cadeapp-shell-v1', 'other-cache']),
+    keys: vi.fn().mockResolvedValue(['cadeapp-shell-v0', 'cadeapp-shell-v1', 'cadeapp-shell-v2', 'other-cache']),
     delete: vi.fn().mockResolvedValue(true),
   };
 
@@ -283,26 +283,21 @@ describe('PR117-H02 / D03: Service Worker Runtime Execution (public/sw.js via no
     expect(sw.mockCache.put).toHaveBeenCalledTimes(0);
   });
 
-  it('5. navegación /courier/feed con red caída → fallback al shell /', async () => {
+  it('5. navegación /courier/feed con red caída → respuesta propia «Sin conexión» (HTML 503) y no la landing', async () => {
     const request = new Request('https://cadeapp.ar/courier/feed', {
       headers: { accept: 'text/html' },
     });
 
     sw.mockFetch.mockRejectedValue(new Error('Network error / offline'));
-    sw.mockCache.match.mockImplementation(async (target: string | Request) => {
-      if (target === '/' || (typeof target === 'object' && 'url' in target && target.url === 'https://cadeapp.ar/')) {
-        return new Response('<html><head><title>cadeApp Shell</title></head></html>', {
-          status: 200,
-          headers: { 'content-type': 'text/html' },
-        });
-      }
-      return undefined;
-    });
 
     const response = await sw.dispatchFetch(request);
 
     expect(response).not.toBeNull();
-    expect(await response?.text()).toContain('cadeApp Shell');
+    expect(response?.status).toBe(503);
+    const bodyText = await response?.text();
+    expect(bodyText).toContain('Sin conexión');
+    expect(bodyText).not.toContain('cadeApp Shell');
+    expect(sw.mockCache.match).not.toHaveBeenCalledWith('/');
     expect(sw.mockCache.put).toHaveBeenCalledTimes(0);
   });
 
@@ -334,15 +329,19 @@ describe('PR117-H02 / D03: Service Worker Runtime Execution (public/sw.js via no
     }
   });
 
-  it('8. install cachea los assets del shell y activate limpia cachés anteriores', async () => {
+  it('8. install cachea los assets del shell (sin /) y activate limpia cachés anteriores incluyendo v1', async () => {
     await sw.dispatchInstall();
     expect(sw.mockCache.addAll).toHaveBeenCalledWith(
-      expect.arrayContaining(['/', '/manifest.webmanifest', '/brand/logo.svg'])
+      expect.not.arrayContaining(['/'])
+    );
+    expect(sw.mockCache.addAll).toHaveBeenCalledWith(
+      expect.arrayContaining(['/manifest.webmanifest', '/brand/logo.svg'])
     );
 
     await sw.dispatchActivate();
     expect(sw.mockCaches.delete).toHaveBeenCalledWith('cadeapp-shell-v0');
-    expect(sw.mockCaches.delete).not.toHaveBeenCalledWith('cadeapp-shell-v1');
+    expect(sw.mockCaches.delete).toHaveBeenCalledWith('cadeapp-shell-v1');
+    expect(sw.mockCaches.delete).not.toHaveBeenCalledWith('cadeapp-shell-v2');
   });
 
   it('9. Mutación adversarial: un SW que persistiera todo GET violaría la política y fallaría', async () => {
@@ -434,7 +433,7 @@ describe('T-202: Service Worker Push & NotificationClick Handlers (DoD Fase RED)
 describe('PR120-H06 / H11: public/sw.js valida el contrato T-203 (pushPayloadSchema)', () => {
   const REQUEST_ID = '10000000-0000-4000-8000-000000000001';
   const OFFER_ID = '20000000-0000-4000-8000-000000000002';
-  const FALLBACK_URL = 'https://cadeapp.ar/';
+  const FALLBACK_URL = 'https://cadeapp.ar/login';
   let sw: SWContext;
 
   beforeEach(() => {
@@ -500,6 +499,18 @@ describe('PR120-H06 / H11: public/sw.js valida el contrato T-203 (pushPayloadSch
     expect(await pushAndGetUrl([{ event: 'request_published', requestId: REQUEST_ID }])).toBe(
       FALLBACK_URL
     );
+  });
+
+  it('T-338 DoD: notificationclick sin data.url abre /login', async () => {
+    const clickResult = await sw.dispatchNotificationClick(null);
+    expect(clickResult.closed).toBe(true);
+    expect(sw.mockOpenWindow).toHaveBeenCalledWith('https://cadeapp.ar/login');
+  });
+
+  it('T-338 DoD: notificationclick con data sin url abre /login', async () => {
+    const clickResult = await sw.dispatchNotificationClick({});
+    expect(clickResult.closed).toBe(true);
+    expect(sw.mockOpenWindow).toHaveBeenCalledWith('https://cadeapp.ar/login');
   });
 
   it('sigue habiendo exactamente 1 listener push y 1 notificationclick', () => {
