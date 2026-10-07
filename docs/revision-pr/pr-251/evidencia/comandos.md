@@ -266,3 +266,39 @@ El body ya usa los runs recientes, pero todavía contiene:
 ### P3
 
 No hay visto bueno explícito P3. Como el spec se modificará para cubrir notas, P3 debe revisar la versión final.
+
+## Ronda 10 — validación de migración en feature branch
+
+### migrate.yml
+
+La workflow de migraciones solo corre en push a `develop`, `staging` o `main`.
+Para Develop, el comentario contractual dice que nunca se migra desde una feature branch porque la base es compartida por todos los Preview.
+
+### ci.yml / db-tests
+
+El job `db-tests` de PR:
+- levanta Supabase local;
+- aplica las migraciones de la rama;
+- ejecuta `pnpm supabase test db`;
+- compara tipos locales.
+
+### e2e-preview.yml
+
+El trusted Preview:
+- hace checkout del SHA de la PR;
+- verifica que las credenciales apunten a Supabase Develop;
+- **no aplica migraciones**;
+- ejecuta Playwright contra el Vercel Preview y la base Develop ya existente.
+
+### Regla para H11
+
+La evidencia pre-merge se divide así:
+
+```text
+unit                -> action usa UPDATE y falla si 0 filas
+db-tests / pgTAP    -> notes permitido; subscription_status/paid_until siguen protegidos
+e2e-preview         -> onboarding normal llega al dashboard con la action corregida
+```
+
+No se aplica la migración de la feature manualmente a Develop.
+
