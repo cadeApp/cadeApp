@@ -275,14 +275,11 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
     expect(audit.passes.length).toBeGreaterThan(0);
   });
 
-  test('DoD: axe AA en feed, viaje y onboarding (repartidor)', async ({
+  test('DoD: axe AA en lista del repartidor', async ({
     page,
-    stagingContext,
     loginAsCourier,
   }) => {
     const { courierPage } = await loginAsCourier(0, page);
-
-    // 1. Lista del repartidor (/courier/feed)
     await courierPage.gotoFeed();
     await waitForNoSkeletons(page);
     await expect(page).toHaveURL(/\/courier\/feed$/);
@@ -292,8 +289,14 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
       `Violaciones WCAG en Lista del Repartidor:\n${JSON.stringify(feedAudit.violations, null, 2)}`
     ).toEqual([]);
     expect(feedAudit.passes.length).toBeGreaterThan(0);
+  });
 
-    // 2. Pantalla operativa: viaje (/trips/:id)
+  test('DoD: axe AA en viaje', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    await loginAsCourier(0, page);
     const courier = stagingContext.courierUsers?.[0];
     if (!courier) {
       throw new Error('[E2E Error] No se encontró courier en stagingContext');
@@ -312,8 +315,13 @@ test.describe('T-309 — E2E de carga de documentos con red lenta y accesibilida
       `Violaciones WCAG en Viaje:\n${JSON.stringify(tripAudit.violations, null, 2)}`
     ).toEqual([]);
     expect(tripAudit.passes.length).toBeGreaterThan(0);
+  });
 
-    // 3. Pantalla de incorporación: onboarding (/courier/onboarding/identity)
+  test('DoD: axe AA en onboarding', async ({
+    page,
+    loginAsCourier,
+  }) => {
+    await loginAsCourier(0, page);
     await page.goto('/courier/onboarding/identity');
     await waitForNoSkeletons(page);
     await expect(page).toHaveURL(/\/courier\/onboarding\/identity$/);
