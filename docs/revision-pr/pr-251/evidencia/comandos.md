@@ -302,3 +302,103 @@ e2e-preview         -> onboarding normal llega al dashboard con la action correg
 
 No se aplica la migración de la feature manualmente a Develop.
 
+
+## Ronda 11 — H11 GREEN + Preview bloqueado por migration + D04-A
+
+### HEAD
+
+```text
+9d0556ab56f581f95850fbbd319d0908f88d97e1
+```
+
+Sincronización:
+
+```text
+develop 284683b65e25e10b94e9286a03b4fc85a2cfada3
+ahead 42
+behind 0
+mergeable true
+```
+
+### CI 37668929864
+
+Jobs:
+
+```text
+unit           PASS
+db-tests       PASS
+typecheck      PASS
+lint           PASS
+build          PASS
+audit          PASS
+bundle-budget  PASS
+```
+
+Unit:
+
+```text
+src/features/merchants/actions.test.ts (13 tests) PASS
+Test Files 123 passed (123)
+Tests 1942 passed (1942)
+```
+
+DB:
+- `supabase/tests/rls_matrix.sql` declara `select plan(65)`;
+- el job aplica `20261007081131_t313_merchant_onboarding_update_policy.sql`;
+- `Result: PASS`.
+
+### H11
+
+Action inspeccionada:
+- UPDATE de `merchants`;
+- filtro por `profile_id = user.id`;
+- `select('profile_id').maybeSingle()`;
+- error o cero filas => `INTERNAL_ERROR`;
+- payload sin `profile_id`, `subscription_status` ni `paid_until`.
+
+Migration inspeccionada:
+- no INSERT policy;
+- ownership + actor activo;
+- `subscription_status` y `paid_until` congelados;
+- `notes` editable.
+
+H11 queda arreglado-verificado.
+
+### Preview actual
+
+Status `e2e-preview` apunta al run `37669080365`.
+
+`resolve-preview`:
+
+```text
+BLOCKED / REQUIRES DEVELOP MIGRATION
+```
+
+Jobs:
+
+```text
+resolve-preview        success
+e2e-preview            skipped
+report-preview-status  skipped
+```
+
+No hubo ejecución de Playwright sobre el HEAD actual.
+
+### D04-A
+
+Lautaro073 decidió separar a una PR previa únicamente:
+- `supabase/migrations/20261007081131_t313_merchant_onboarding_update_policy.sql`;
+- cambio T-313/H11 de `supabase/tests/rls_matrix.sql`;
+- ficha/bitácora mínima necesaria para declarar el subalcance.
+
+Después del merge de esa PR:
+1. esperar migrate-develop GREEN;
+2. mergear origin/develop en #251;
+3. comprobar que migration + pgTAP ya no forman parte del diff de #251;
+4. ejecutar trusted Preview normal;
+5. exigir baseline T-313 GREEN antes de cualquier mutación de H04.
+
+### P3
+
+Comment de solicitud: `5999858656`.
+No hay visto bueno explícito P3.

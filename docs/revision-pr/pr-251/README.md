@@ -1,49 +1,57 @@
 # PR #251 — T-313 · E2E de registro de comercio y consentimientos
 
-> ❌ Ronda 10 · CON BLOQUEANTES (3) · H04 + H10 + H11
+> ❌ Ronda 11 · CON BLOQUEANTES (2) · H04 + H10 · P3 pendiente
 
 | Campo | Valor |
 |---|---|
 | PR | #251 · `feat/T-313-merchant-registration-e2e` → `develop` |
 | Tarea | T-313 |
 | Autor | KiraK72 |
-| SHA funcional base | `4f3dacd01dc350c36f937a629ddfd6bf1f2a9f78` |
-| Commit de revisión ronda 9 | `8746eba32d4519ed828c5190bad03ede3d84f7db` |
-| `develop` actual | `a773c05cc488a1fc60bfb36512cdca35d12d1271` |
-| Sincronización antes de esta revisión | 31 ahead / 1 behind |
-| CI | `37576126221` · GREEN |
-| approval-policy | `37576188205` · GREEN |
-| e2e-preview funcional | `37575010421` sobre `9cd4bdb` · 45 passed / 1 failed |
-| P3 | visto bueno pendiente |
+| SHA revisado | `9d0556ab56f581f95850fbbd319d0908f88d97e1` |
+| `develop` | `284683b65e25e10b94e9286a03b4fc85a2cfada3` |
+| Sincronización | 42 ahead / 0 behind |
+| CI | `37668929864` · GREEN |
+| approval-policy | `37669016744` · GREEN |
+| Vercel | GREEN |
+| e2e-preview | `37669080365` · BLOCKED / REQUIRES DEVELOP MIGRATION |
+| P3 | visto bueno explícito pendiente |
 
 ## Estado
 
 - ✅ H01–H03.
-- ❌ H04 — falta baseline GREEN + D02-A RED + revert + GREEN final.
+- ❌ H04 — falta baseline T-313 GREEN + RED discriminante de courier + restauración + GREEN final.
 - ✅ H05–H09.
-- ❌ H10 — body aún tiene contradicción `pnpm test`/informe y rollback desactualizado.
-- ❌ H11 — incompatibilidad productiva action/RLS en merchant onboarding.
+- ❌ H10 — el body sigue sin evidencia E2E final y debe reflejar el split de migración decidido en esta ronda.
+- ✅ H11 — corregido y revalidado en `9d0556a`: action usa UPDATE fail-closed, unit GREEN y pgTAP GREEN con la policy nueva.
 
-## Decisión vigente
+## Decisiones
 
-**D03-A — corregir H11 dentro de PR #251.**
+### D03-A — vigente en su parte de código productivo
 
-Corrección autorizada:
-- action pasa de UPSERT a UPDATE autenticado sobre la fila `merchants` precreada;
-- no se agrega INSERT self;
-- no se usa admin/service role para saltar RLS;
-- `notes` se habilita para el dueño;
-- `subscription_status` y `paid_until` siguen protegidos;
-- unit + pgTAP prueban la regresión.
+La corrección productiva de H11 sigue autorizada:
+- `merchantOnboardingAction` actualiza la fila `merchants` precreada;
+- no existe INSERT self;
+- no usa admin/service role para persistir merchant;
+- `subscription_status` y `paid_until` continúan protegidos.
 
-## Aclaración operativa de ronda 10
+### D04-A — Lautaro073 · ronda 11
 
-`migrate.yml` aplica migraciones a Supabase Develop **solo después del merge a `develop`**. Una feature branch no puede ni debe aplicar su migración al proyecto Develop compartido.
+Para poder ejecutar el trusted Preview antes de mergear #251:
 
-Por lo tanto:
-- la migración RLS se valida pre-merge con `db-tests` contra la base local de CI;
-- el trusted Preview pre-merge valida el flujo normal con la action corregida;
-- no se exige que el E2E pre-merge escriba `notes` no vacías, porque esa parte de la policy nueva todavía no existe en Develop hasta el merge;
-- está prohibido aplicar manualmente la migración de la feature a Supabase Develop para “hacer pasar” el Preview.
+**se separan únicamente la migración RLS de H11 y su cambio pgTAP a una PR previa.**
+
+La PR previa parte de `develop` e incluye:
+- `supabase/migrations/20261007081131_t313_merchant_onboarding_update_policy.sql`;
+- el cambio T-313/H11 de `supabase/tests/rls_matrix.sql`;
+- la ficha/bitácora estrictamente necesarias para declarar y documentar ese alcance.
+
+Después de mergear esa PR y de que `migrate-develop` aplique la policy:
+1. #251 mergea `origin/develop`;
+2. migration + pgTAP desaparecen del diff de #251;
+3. `e2e-preview` deja de estar bloqueado por migration;
+4. se obtiene baseline T-313 GREEN;
+5. recién entonces se continúa H04.
+
+No se aplica ninguna migration manualmente a Supabase Develop.
 
 No apruebo ni mergeo.
