@@ -807,6 +807,167 @@ test('board-sync preserves Lautaro073 task assignments and assigns unassigned ta
   assert.equal(t303?.targetAssignees, undefined);
 });
 
+// CC-023 / PR282-H05: tareas con «Rollout multi-PR: sí» en su ficha. Un PR intermedio mergeado no termina la tarea
+// mientras el issue siga abierto; solo el cierre real del issue la marca hecha y desbloquea dependencias.
+function multiPrIssues(t345State = 'OPEN') {
+  return [
+    {
+      number: 281,
+      title: '[T-345] Cerrar por API la lectura de indicaciones y monto exacto de cambio (implementa CC-023)',
+      body: '**Dependencias (mergeadas en develop):** T-342, CC-023',
+      state: t345State,
+      labels: ['en-curso'],
+    },
+    {
+      number: 900,
+      title: '[T-900] Tarea que depende de T-345',
+      body: '**Dependencias (mergeadas en develop):** T-345',
+      state: 'OPEN',
+      labels: ['bloqueada'],
+    },
+  ];
+}
+
+test('board-sync keeps the historical behavior for a normal task: merged PR + open issue -> hecha and auto-close', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const transitions = computeBoardTransitions({
+    issues: multiPrIssues(),
+    pullRequests: [],
+    mergedTaskIds: ['T-345'],
+    multiPrTaskIds: [],
+  });
+  const t345 = transitions.find((t) => t.taskId === 'T-345');
+  const t900 = transitions.find((t) => t.taskId === 'T-900');
+  assert.equal(t345?.targetState, 'hecha');
+  assert.equal(t345?.shouldCloseIssue, true);
+  assert.equal(t900?.targetState, 'lista');
+});
+
+test('board-sync multi-PR: first PR merged + open issue + no active PR -> en-curso, never auto-closed', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const transitions = computeBoardTransitions({
+    issues: multiPrIssues(),
+    pullRequests: [],
+    mergedTaskIds: ['T-345'],
+    multiPrTaskIds: ['T-345'],
+  });
+  const t345 = transitions.find((t) => t.taskId === 'T-345');
+  assert.equal(t345?.targetState, 'en-curso');
+  assert.equal(t345?.targetColumn, 'En curso');
+  assert.equal(t345?.shouldCloseIssue, false);
+});
+
+test('board-sync multi-PR: open issue + next PR in Draft -> en-curso; Ready -> en-review', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  /** @type {Array<[boolean, string]>} */
+  const cases = [
+    [true, 'en-curso'],
+    [false, 'en-review'],
+  ];
+  for (const [isDraft, expected] of cases) {
+    const transitions = computeBoardTransitions({
+      issues: multiPrIssues(),
+      pullRequests: [
+        {
+          number: 301,
+          title: '[T-345] Lectores del comercio',
+          headRefName: 'feat/T-345-merchant-readers',
+          isDraft,
+        },
+      ],
+      mergedTaskIds: ['T-345'],
+      multiPrTaskIds: ['T-345'],
+    });
+    const t345 = transitions.find((t) => t.taskId === 'T-345');
+    assert.equal(t345?.targetState, expected);
+    assert.equal(t345?.shouldCloseIssue, false);
+  }
+});
+
+test('board-sync multi-PR: a dependent task stays blocked while the multi-PR issue is open despite merged steps', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const transitions = computeBoardTransitions({
+    issues: multiPrIssues(),
+    pullRequests: [],
+    mergedTaskIds: ['T-345', 'T-345', 'T-345'],
+    multiPrTaskIds: ['T-345'],
+  });
+  const t900 = transitions.find((t) => t.taskId === 'T-900');
+  assert.equal(t900?.targetState, 'bloqueada');
+});
+
+test('board-sync multi-PR: closing the issue marks the task hecha and unblocks its dependents', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const transitions = computeBoardTransitions({
+    issues: multiPrIssues('CLOSED'),
+    pullRequests: [],
+    mergedTaskIds: ['T-345'],
+    multiPrTaskIds: ['T-345'],
+  });
+  const t345 = transitions.find((t) => t.taskId === 'T-345');
+  const t900 = transitions.find((t) => t.taskId === 'T-900');
+  assert.equal(t345?.targetState, 'hecha');
+  assert.equal(t345?.shouldCloseIssue, false);
+  assert.equal(t900?.targetState, 'lista');
+});
+
+test('board-sync multi-PR: a closed multi-PR issue with a new active PR is still reopened', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const transitions = computeBoardTransitions({
+    issues: multiPrIssues('CLOSED'),
+    pullRequests: [
+      {
+        number: 302,
+        title: '[T-345] Arreglo posterior',
+        headRefName: 'feat/T-345-fix',
+        isDraft: true,
+      },
+    ],
+    mergedTaskIds: ['T-345'],
+    multiPrTaskIds: ['T-345'],
+  });
+  const t345 = transitions.find((t) => t.taskId === 'T-345');
+  assert.equal(t345?.targetState, 'en-curso');
+  assert.equal(t345?.shouldReopenIssue, true);
+});
+
+test('board-sync detects the multi-PR marker from the local task card, without hardcoding the task', async () => {
+  const { computeBoardTransitions } = await import('./board-sync.mjs');
+  const transitions = computeBoardTransitions({
+    issues: multiPrIssues(),
+    pullRequests: [],
+    mergedTaskIds: ['T-345'],
+    useLocalTaskCards: true,
+  });
+  const t345 = transitions.find((t) => t.taskId === 'T-345');
+  assert.equal(t345?.targetState, 'en-curso');
+  assert.equal(t345?.shouldCloseIssue, false);
+});
+
+test('the multi-PR marker parser accepts exactly the real T-345 card and rejects free text', async () => {
+  const { parseMultiPrRollout } = await import('./board-sync.mjs');
+  const realCard = readFileSync(new URL('../../docs/tasks/T-345.md', import.meta.url), 'utf8');
+  assert.equal(parseMultiPrRollout(realCard), true);
+  assert.equal(parseMultiPrRollout('- **Rollout multi-PR:** sí\n'), true);
+  assert.equal(parseMultiPrRollout('- **Rollout multi-PR:** sí\r\n'), true);
+
+  for (const text of [
+    '',
+    'Esta tarea usa un rollout multi PR.',
+    'La excepción multi-PR de AGENTS.md §5 permite varios PR.',
+    '- **Rollout multi-PR:** no',
+    '- **Rollout multi-PR:** sí, pero no aplica',
+    '**Rollout multi-PR:** sí',
+    '- Rollout multi-PR: sí',
+    '> - **Rollout multi-PR:** sí',
+  ]) {
+    assert.equal(parseMultiPrRollout(text), false, `no debería aceptar: ${JSON.stringify(text)}`);
+  }
+
+  const normalCard = readFileSync(new URL('../../docs/tasks/T-343.md', import.meta.url), 'utf8');
+  assert.equal(parseMultiPrRollout(normalCard), false);
+});
+
 test('staging E2E gate runs every chromium spec of the target SHA, discovered by project', () => {
   const e2eJob = job(workflow('e2e-staging.yml').replace(/\r\n/g, '\n'), 'e2e');
 

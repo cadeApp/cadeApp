@@ -51,6 +51,9 @@ Prohibido: `any`, `@ts-ignore`, `!` non-null, `.only`, `.skip` sin issue, desact
 
 ## 5. Coordinación (resumen; detalle en `.agents/rules/50-git-y-coordinacion.md`)
 - Una tarea = un issue = una rama `feat/T-xxx-slug` = un PR (Draft desde el primer push).
+  Excepción acotada: un CC puede exigir varios PR sucesivos para una misma tarea cuando un único merge no es seguro
+  por el orden de rollout entre esquema y aplicación. Requiere decisión explícita de Lautaro073 en el CC y en la
+  ficha; detalle en la regla 50.
 - Al terminar CADA sesión: skill `cerrar-sesion` (bitácora `docs/tasks/log/T-xxx.md`, commit, push). Nunca dejes
   trabajo solo en tu máquina: otra persona puede necesitar retomarlo.
 - Rebase sobre develop al empezar cada sesión. Conflictos: solo en tus archivos; lockfile → ver regla 50.
