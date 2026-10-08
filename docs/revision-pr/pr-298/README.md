@@ -3,38 +3,32 @@
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/298 |
-| Tarea | T-314 (P3; Issue #46; Fase 3) |
+| Tarea | T-314 / P3 / Issue #46 |
 | Rama | `feat/T-314-map-privacy` → `develop` |
-| SHA revisado en R4 | `0b5479059927d1f3ebdf56a85a0182ad31c1b6b1` |
-| Estado | **CON BLOQUEANTES (2: H07 y H05)** |
-| Decisión previa | PR298-D01=A: privacidad DOM + red/RSC |
+| HEAD revisado en R5 | `8b063d80d796449e13ac4fe71edc10feb27b671c` |
+| Código E2E validado en CI trusted | `10f0e4fe9c6614346408de1e4502844f796f92a6` |
+| Estado de revisión | **SIN BLOQUEANTES** |
+| Estado de merge | **Aguardar checks requeridos del HEAD actual** |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA revisado | Estado | Informe |
 |---|---|---|---|
 | 1 | `d60a047` | 5 bloqueantes | [R1](revisiones/ronda-1.md) |
 | 2 | `e72a457` | 3 bloqueantes | [R2](revisiones/ronda-2.md) |
 | 3 | `67de7f9` | 5 bloqueantes | [R3](revisiones/ronda-3.md) |
-| 4 | `0b54790` | **2 bloqueantes: H07 y H05** | [R4](revisiones/ronda-4.md) |
+| 4 | `0b54790` | 2 bloqueantes | [R4](revisiones/ronda-4.md) |
+| 5 | `8b063d8` | **SIN BLOQUEANTES** | [R5](revisiones/ronda-5.md) |
 
-## Hallazgos al cerrar R4
+Todos los hallazgos **H01–H07** cerrados por inspección y evidencia CI. Consultar [hallazgos.jsonl](hallazgos.jsonl).
 
-| ID | Estado | Evidencia |
-|---|---|---|
-| H01 | arreglado-sin-verificar | E2E privacidad DOM+red/RSC verde; falta mutación independiente |
-| H02 | arreglado-sin-verificar | selector único por inspección; flujo no llega al pin porque MapPicker crashea |
-| H03 | arreglado-sin-verificar | E2E matched verde; no mutation proof independiente |
-| H04 | arreglado-sin-verificar | E2E Google mock verde; **no prueba UI sana**: requiere aserción MapPicker |
-| H05 | **abierto (bloqueante de cierre)** | CI E2E rojo; bitácora aún debe registrar último resultado real |
-| H06 | arreglado-sin-verificar | autenticación/aislamiento de roles en spec; tests correspondientes verdes |
-| H07 | **abierto (bloqueante funcional)** | mock `google.maps.Marker` no tiene `setDraggable`; ambas pantallas caen en error boundary |
+## Evidencia final
 
-## Checks del SHA revisado
+- CI run [37741240738](https://github.com/cadeApp/cadeApp/actions/runs/37741240738) sobre `10f0e4fe`: **success**.
+- Trusted [e2e-preview 37741363122](https://github.com/cadeApp/cadeApp/actions/runs/37741363122), job `113192659524`: checkout exacto **`10f0e4fe`**, **49 Chromium + 3 global-settings = 52 passed / 0 failed**.
+- Las 6 pruebas de `e2e/specs/map-privacy.spec.ts` pasaron.
+- `10f0e4fe..8b063d80`: diff restringido a `docs/tasks/log/T-314.md`; **el código E2E no cambió** después del run verde.
+- El HEAD `8b063d80` inició nuevo CI [37744645426](https://github.com/cadeApp/cadeApp/actions/runs/37744645426) y nuevo E2E [37744833708](https://github.com/cadeApp/cadeApp/actions/runs/37744833708): pendientes al elaborar R5, no declarados como GREEN.
+- GitHub reportó mergeable=true, rama 7 commits detrás de `develop`; no se intentó merge.
 
-- CI **37725958413**: success (unit, typecheck, lint, build, db-tests, audit, bundle-budget).
-- Trusted E2E **37726083350**: **47 passed / 2 failed**, las dos fallas son de MapPicker (onboarding y request).
-- PR sigue draft y sin merge; mergeability informada como true.
-- Comparación vs develop: 10 commits ahead / 6 behind, 9 archivos de la PR dentro del alcance de ficha; correcciones de agy tras R3 solo `e2e/specs/map-privacy.spec.ts` y `docs/tasks/log/T-314.md`.
-
-Informe íntegro en `revisiones/ronda-4.md`. Datos en `hallazgos.jsonl`; pruebas en `evidencia/comandos.md`.
+La revisión **no equivale a aprobación GitHub**. Lautaro073 conserva decisión de merge y debe observar los checks obligatorios del HEAD final (incluido el commit documental del revisor). No se propone cambiar configuración.

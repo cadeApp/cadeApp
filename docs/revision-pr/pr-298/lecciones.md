@@ -44,3 +44,17 @@ El caso de cero llamadas a Google quedó verde porque solo midió intercepciones
 El E2E postmatch usa `AdvancedMarkerElement`; el E2E del selector de pin puede usar `Marker` clásico sin mapId. Un stub compatible con el primer camino puede seguir incompleto para el segundo. La traza reveló `setDraggable` ausente. La API de listeners debe soportar cleanup idempotente.
 
 No se crea regla AG nueva: P08 ya captura la causa general. No se afirma que el test aislado pruebe el runtime integrado.
+
+## Ronda 5
+
+### Validar el SHA efectivamente ejecutado, no el head del workflow dispatcher
+
+El workflow `e2e-preview` usa `repository_dispatch` y su GitHub `head_sha` es `develop`. El SHA del PR debe comprobarse dentro del job de checkout y cotejarse con el código revisado. En R5 se encontró `git checkout --force 10f0e4fe`, luego la bitácora movió el HEAD sin cambiar el spec.
+
+### Una prueba de mock debe exigir que el componente se haya montado
+
+El smoke de intercepciones podía quedar verde con el mapa crasheado. H07 se cerró al agregar comprobación de MapPicker/MapContainer montados y completar `Marker.setDraggable`. No se propone AG nuevo porque es P08, ya cubierto.
+
+### Mantener separada evidencia ejecutada de evidencia declarada
+
+La ejecución CI 52/52 se validó leyendo logs. El autor informa mutación de Marker GREEN/RED y unit local 2004/0, pero esas últimas no fueron reproducidas en esta sesión de revisor y quedan señaladas como evidencia del autor, no propia.

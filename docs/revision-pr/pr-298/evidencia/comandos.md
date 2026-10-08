@@ -218,3 +218,43 @@ git ls-remote origin feat/T-314-map-privacy
 ```
 
 En entorno local sin Supabase Develop correctamente identificado, respetar fail-closed y registrar `NO EJECUTADO`; no fabricar pruebas positivas.
+
+## Ronda 5 — SHA HEAD `8b063d80d796449e13ac4fe71edc10feb27b671c`, código `10f0e4fe9c6614346408de1e4502844f796f92a6`
+
+### Inspección de workflows (GitHub)
+
+- CI `37741240738` `head_sha=10f0e4fe9c6614346408de1e4502844f796f92a6`, conclusion `success`.
+- Approval-policy `37741296715` `head_sha=10f0e4fe9c6614346408de1e4502844f796f92a6`, conclusion `success`.
+- Trusted `37741363122` workflow `head_sha=8750d3f86e9abf0b9f4ebba7a3ba11917e11baa3` en `develop`; eso es normal: se disparó con `repository_dispatch`.
+- Se leyó su job `113192659524` y se confirmó el checkout del PR exacto:
+
+```text
+[command]/usr/bin/git checkout --progress --force 10f0e4fe9c6614346408de1e4502844f796f92a6
+✓ 27 ... map-privacy ... feed DOM y red/RSC
+✓ 28 ... map-privacy ... selección pin alta comercio
+✓ 29 ... map-privacy ... pin solicitud
+✓ 30 ... map-privacy ... mapa postmatched
+✓ 31 ... map-privacy ... degradación Google
+✓ 32 ... map-privacy ... mock sin llamadas externas
+49 passed (9.8m)
+3 passed (1.0m)
+```
+
+- El diff `10f0e4fe..8b063d80` SOLO incluye `docs/tasks/log/T-314.md` (31 adiciones, 3 borrados); ninguna modificación de `e2e/specs/map-privacy.spec.ts` ni `src/**`.
+- HEAD actual observado `8b063d80`: nuevo CI `37744645426` en progreso y nuevo trusted `37744833708` pendiente; Vercel success. No se marcó el run pending como success.
+- No se clonó ni ejecutó Node local por acceso Git no disponible en este entorno. No se inventan salidas de tests propios ni mutaciones RED.
+
+### Alcance
+
+Contra `develop`, 10 archivos de la PR: `docs/revision-pr/pr-298/README.md`, `evidencia/comandos.md`, `hallazgos.jsonl`, `lecciones.md`, `revisiones/ronda-1..4.md`, `docs/tasks/log/T-314.md`, `e2e/specs/map-privacy.spec.ts`; todos permitidos por ficha T-314.
+
+### Comprobaciones premerge pendientes para P1
+
+```bash
+git fetch origin
+git log -1 --oneline origin/feat/T-314-map-privacy
+gh pr checks 298
+gh pr view 298 --json mergeable,isDraft,statusCheckRollup
+```
+
+No se ejecutó un merge ni se hicieron cambios en environments, secretos o Supabase remoto.
