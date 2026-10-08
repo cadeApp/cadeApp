@@ -362,5 +362,29 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     });
   });
 
+  // =========================================================================
+  // T-350: Contraste AA del texto de acento (axe color-contrast)
+  // =========================================================================
+  describe('T-350: texto de acento con contraste AA (primary-dark)', () => {
+    function expectPrimaryDarkText(element: HTMLElement) {
+      expect(element.classList.contains('text-primary-dark')).toBe(true);
+      expect(element.classList.contains('text-primary')).toBe(false);
+    }
+
+    it('R07: «Cobrás al entregar» usa text-primary-dark y nunca text-primary', () => {
+      render(<TripCourierView trip={baseTrip} />);
+
+      expectPrimaryDarkText(screen.getByText(/Cobrás al entregar/i));
+    });
+
+    it('C06: el paso pendiente «Retirado» usa text-primary-dark y nunca text-primary', () => {
+      render(<TripMerchantView trip={baseTrip} />);
+
+      const pendingStep = screen.getByText('Retirado').parentElement;
+      expect(pendingStep).not.toBeNull();
+      if (pendingStep) expectPrimaryDarkText(pendingStep);
+    });
+  });
+
 });
 

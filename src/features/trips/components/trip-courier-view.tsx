@@ -109,7 +109,7 @@ export function TripCourierView({
       <Card className="border-primary/30 bg-primary/5 shadow-card">
         <CardContent className="space-y-1 p-4">
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1 text-sm font-bold uppercase tracking-wider text-primary">
+            <span className="flex items-center gap-1 text-sm font-bold uppercase tracking-wider text-primary-dark">
               <DollarSign className="h-3.5 w-3.5" />
               Cobrás al entregar
             </span>
