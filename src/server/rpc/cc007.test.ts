@@ -105,11 +105,23 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
     // Las mutaciones se aplican en un git worktree temporal y nunca sobre el checkout principal: la suite completa
     // corre archivos en paralelo y otros tests (p. ej. guards.test.ts) leerían el código mutado (PR275-H04).
     const repoRoot = process.cwd();
+    // Archivos que mutan A-D. El control de aislamiento (T-349) compara su contenido en el checkout principal.
+    const mutatedFiles = [
+      'src/features/auth/guards.ts',
+      'src/features/auth/queries.ts',
+      'src/features/auth/actions.ts',
+      'supabase/migrations/20260925170000_cc007_consent_enforcement.sql',
+    ];
+    const mainCheckoutSnapshot = new Map<string, Buffer>();
     let mutationRoot = '';
     let mutationWorktree = '';
     let nodeModulesLink = '';
 
     beforeAll(() => {
+      for (const relativeFilePath of mutatedFiles) {
+        mainCheckoutSnapshot.set(relativeFilePath, fs.readFileSync(path.join(repoRoot, relativeFilePath)));
+      }
+
       mutationRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cadeapp-cc007-'));
       mutationWorktree = path.join(mutationRoot, 'repo');
 
@@ -145,12 +157,32 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
       }
     });
 
+    function isInside(parent: string, candidate: string) {
+      const relative = path.relative(parent, candidate);
+      return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+    }
+
+    // Control de aislamiento (T-349): con la mutación aplicada, la ruta mutada vive en el worktree temporal y el
+    // archivo del checkout principal sigue byte a byte igual. Si no, el caso falla nombrando el archivo.
+    function assertMutationIsolated(relativeFilePath: string, filePath: string, mainBefore: Buffer) {
+      if (!isInside(mutationWorktree, filePath) || isInside(repoRoot, filePath)) {
+        throw new Error(
+          `Isolation broken: mutation of ${relativeFilePath} resolved to ${filePath}, outside the temporary worktree`
+        );
+      }
+      const mainAfter = fs.readFileSync(path.join(repoRoot, relativeFilePath));
+      if (!mainAfter.equals(mainBefore)) {
+        throw new Error(`Isolation broken: ${relativeFilePath} changed in the main checkout while mutated`);
+      }
+    }
+
     function executeMutation(
       relativeFilePath: string,
       mutator: (content: string) => string,
       testArgs: string[]
     ) {
       const filePath = path.join(mutationWorktree, relativeFilePath);
+      const mainBefore = fs.readFileSync(path.join(repoRoot, relativeFilePath));
       const original = fs.readFileSync(filePath, 'utf8');
       const mutated = mutator(original);
       if (mutated === original) {
@@ -159,6 +191,7 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
 
       try {
         fs.writeFileSync(filePath, mutated, 'utf8');
+        assertMutationIsolated(relativeFilePath, filePath, mainBefore);
         const res = spawnSync('pnpm', testArgs, {
           cwd: mutationWorktree,
           shell: true,
@@ -245,5 +278,13 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
         expect(res.stdout + res.stderr).toMatch(/FAIL|failed/i);
       }
     );
+
+    it('control de aislamiento: después de A-D los cuatro archivos del checkout principal siguen idénticos', () => {
+      for (const relativeFilePath of mutatedFiles) {
+        const before = mainCheckoutSnapshot.get(relativeFilePath);
+        const after = fs.readFileSync(path.join(repoRoot, relativeFilePath));
+        expect(before?.equals(after), `${relativeFilePath} cambió en el checkout principal`).toBe(true);
+      }
+    });
   });
 });
