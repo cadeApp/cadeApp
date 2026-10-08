@@ -12,6 +12,12 @@ export interface StandaloneRedirectProps {
   children?: React.ReactNode;
 }
 
+export const loadIosInstallGuideSheet = () =>
+  import('./ios-install-guide-sheet').then((module) => ({
+    default: module.IosInstallGuideSheet,
+  }));
+
+
 export function StandaloneRedirect({ to = '/login', children }: StandaloneRedirectProps) {
   const router = useRouter();
   const [standalone, setStandalone] = useState(false);

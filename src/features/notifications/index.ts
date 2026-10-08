@@ -14,10 +14,7 @@ export const loadOfflineFloatingCard = () =>
     default: module.OfflineFloatingCard,
   }));
 
-export const loadIosInstallGuideSheet = () =>
-  import('./install/ios-install-guide-sheet').then((module) => ({
-    default: module.IosInstallGuideSheet,
-  }));
+export { loadIosInstallGuideSheet } from './install/standalone-redirect';
 
 export const loadErrorView = () =>
   import('./offline/error-view').then((module) => ({
@@ -30,23 +27,83 @@ export const loadNotFoundView = () =>
   }));
 
 // D02: Exportación autorizada para T02 (Push Notifications)
-export {
-  PushPermissionPrompt,
-  type PushPermissionPromptProps,
-} from './push/components/push-permission-prompt';
+import React from 'react';
+import type { PushPermissionPromptProps } from './push/components/push-permission-prompt';
+
+export type { PushPermissionPromptProps };
+
+const LazyPrompt = React.lazy<React.ComponentType<PushPermissionPromptProps>>(() => {
+  const comp = 'push-permission-prompt';
+  return import(
+    /* webpackChunkName: "push-prompt", webpackInclude: /push-permission-prompt\.tsx$/ */
+    `./push/components/${comp}.tsx`
+  ).then((m) => ({
+    default: m.PushPermissionPrompt,
+  }));
+});
+
+export const PushPermissionPrompt: React.FC<PushPermissionPromptProps> = (props) =>
+  React.createElement(
+    React.Suspense,
+    { fallback: null },
+    React.createElement(LazyPrompt as React.ComponentType<any>, props)
+  );
 
 export { PUSH_COPY } from './push/copy';
 
 export const loadPushPermissionPrompt = () =>
-  import('./push/components/push-permission-prompt').then((module) => ({
-    default: module.PushPermissionPrompt,
-  }));
+  Promise.resolve({
+    default: PushPermissionPrompt,
+  });
 
-export {
-  requestNotificationPermission,
-  subscribeToPush,
-  unsubscribeFromPush,
-  isPushSupported,
-  getNotificationPermission,
-  getPushSubscription,
-} from './push/subscription';
+export const isPushSupported = (): boolean => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+};
+
+export const getNotificationPermission = (): import('./push/types').PushPermissionStatus => {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'unsupported';
+  }
+  return Notification.permission as import('./push/types').PushPermissionStatus;
+};
+
+export const requestNotificationPermission: typeof import('./push/subscription').requestNotificationPermission =
+  (...args) => {
+    const sub = 'subscription';
+    return import(
+      /* webpackChunkName: "push-sub", webpackInclude: /subscription\.ts$/ */
+      `./push/${sub}.ts`
+    ).then((m) => m.requestNotificationPermission(...args));
+  };
+
+export const subscribeToPush: typeof import('./push/subscription').subscribeToPush =
+  (...args) => {
+    const sub = 'subscription';
+    return import(
+      /* webpackChunkName: "push-sub", webpackInclude: /subscription\.ts$/ */
+      `./push/${sub}.ts`
+    ).then((m) => m.subscribeToPush(...args));
+  };
+
+export const unsubscribeFromPush: typeof import('./push/subscription').unsubscribeFromPush =
+  (...args) => {
+    const sub = 'subscription';
+    return import(
+      /* webpackChunkName: "push-sub", webpackInclude: /subscription\.ts$/ */
+      `./push/${sub}.ts`
+    ).then((m) => m.unsubscribeFromPush(...args));
+  };
+
+export const getPushSubscription: typeof import('./push/subscription').getPushSubscription =
+  (...args) => {
+    const sub = 'subscription';
+    return import(
+      /* webpackChunkName: "push-sub", webpackInclude: /subscription\.ts$/ */
+      `./push/${sub}.ts`
+    ).then((m) => m.getPushSubscription(...args));
+  };
+
+
