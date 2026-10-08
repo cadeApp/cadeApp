@@ -403,6 +403,14 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       expect(screen.queryByRole('link', { name: /abrir en google maps/i })).toBeNull();
     });
 
+    it('T-350: C06 muestra «Ruta directa sin desvíos» con text-primary-dark y nunca text-primary (axe AA)', () => {
+      render(<TripMerchantView trip={baseTrip} />);
+
+      const routeNote = screen.getByText('Ruta directa sin desvíos');
+      expect(routeNote.classList.contains('text-primary-dark')).toBe(true);
+      expect(routeNote.classList.contains('text-primary')).toBe(false);
+    });
+
     it('la sección de mapa muestra la distancia calculada en servidor con formato aproximado', () => {
       render(<TripCourierView trip={baseTrip} />);
       expect(screen.getByText(/≈ 2,5 km/i)).toBeDefined();
