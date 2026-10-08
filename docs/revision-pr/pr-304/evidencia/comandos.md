@@ -117,3 +117,70 @@ git ls-remote origin refs/heads/feat/T-349-cc007-isolation-control
 - Vercel + e2e-preview: success.
 - approval-policy: failure por informe independiente faltante. No debe ser reemplazado con un informe ficticio de aprobación.
 - Ejecutable para validar informe tras la ronda: `node docs/revision-pr/analizar.mjs verificacion`.
+
+## Ronda 2 — batería independiente con hijos reales
+
+**SHA leído:** `12c7e9a5fa004e6715a84751b6f9e847b0d9487c`. **Herramienta:** Node v22.16.0 / filesystem temporal real; solo reproducción del helper y orden de llamadas, no Vitest de cadeApp.
+
+La mutación independiente del revisor es distinta de la de agy: **un proceso hijo real** es el que escribe al checkout principal *mientras* se ejecuta `spawnSync`. Se inyecta por cada una de las 4 rutas bajo `os.tmpdir()`, sin modificar `cadeApp`. El control original solo pre-hijo no detecta el cambio; el nuevo control post-hijo sí. Se comprueban buffers originales tras cada intento y se elimina el temporal.
+
+Script íntegro autocontenido, copiable y ejecutable en `/tmp`:
+
+```bash
+cat > /tmp/pr304-r2-harness.cjs <<'JS'
+'use strict';
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const assert = require('node:assert/strict');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pr304-r2-'));
+const repoRoot = path.join(root, 'checkout');
+const mutationWorktree = path.join(root, 'worktree');
+const targets = ['src/features/auth/guards.ts', 'src/features/auth/queries.ts', 'src/features/auth/actions.ts', 'supabase/migrations/20260925170000_cc007_consent_enforcement.sql'];
+for (const rel of targets) for(const dir of [repoRoot,mutationWorktree]) {const p = path.join(dir,rel);fs.mkdirSync(path.dirname(p),{recursive:true});fs.writeFileSync(p,'ORIGINAL:'+rel);}
+function isInside(parent, candidate) { const relative = path.relative(parent, candidate); return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative); }
+function assertMutationIsolated(relativeFilePath, filePath, mainBefore) {
+  if (!isInside(mutationWorktree, filePath) || isInside(repoRoot, filePath)) throw new Error(`Isolation broken: mutation of ${relativeFilePath} resolved to ${filePath}, outside the temporary worktree`);
+  const mainAfter = fs.readFileSync(path.join(repoRoot, relativeFilePath));
+  if (!mainAfter.equals(mainBefore)) throw new Error(`Isolation broken: ${relativeFilePath} changed in the main checkout while mutated`);
+}
+// Procesos hijos reales: no se emula el momento de la escritura.
+function runMutant(rel, checkAfterChild, childWritesCheckout) {
+ const filePath = path.join(mutationWorktree, rel), main = path.join(repoRoot, rel);
+ const mainBefore = fs.readFileSync(main), original = fs.readFileSync(filePath), mutant = 'MUTATED:'+rel;
+ try {
+   fs.writeFileSync(filePath, mutant);
+   assertMutationIsolated(rel,filePath,mainBefore);
+   const program = childWritesCheckout ? `require('node:fs').writeFileSync(process.argv[1],process.argv[2]); process.exit(1)` : `process.exit(1)`;
+   const res = spawnSync(process.execPath,['-e',program,main,mutant],{encoding:'utf8'});
+   if(checkAfterChild) assertMutationIsolated(rel,filePath,mainBefore);
+   return res;
+ } finally {fs.writeFileSync(filePath,original);fs.writeFileSync(main,mainBefore);}
+}
+try {
+ for(const rel of targets) {
+   const before=fs.readFileSync(path.join(repoRoot,rel));
+   assert.equal(runMutant(rel,false,true).status,1);
+   assert.throws(()=>runMutant(rel,true,true),/Isolation broken: .*changed in the main checkout while mutated/);
+   assert.equal(runMutant(rel,true,false).status,1);
+   assert.ok(fs.readFileSync(path.join(repoRoot,rel)).equals(before));
+   console.log(`PASS ${rel}: old control misses child checkout write; post-child control detects; normal GREEN; originals restored`);
+ }
+ console.log('ALL FOUR INDEPENDENT CHILD-WRITE MUTATIONS DETECTED; 4/4; CHECKOUT UNCHANGED');
+} finally {fs.rmSync(root,{recursive:true,force:true});}
+JS
+node /tmp/pr304-r2-harness.cjs
+```
+
+Salida real (reproducida dos veces):
+
+```text
+PASS src/features/auth/guards.ts: old control misses child checkout write; post-child control detects; normal GREEN; originals restored
+PASS src/features/auth/queries.ts: old control misses child checkout write; post-child control detects; normal GREEN; originals restored
+PASS src/features/auth/actions.ts: old control misses child checkout write; post-child control detects; normal GREEN; originals restored
+PASS supabase/migrations/20260925170000_cc007_consent_enforcement.sql: old control misses child checkout write; post-child control detects; normal GREEN; originals restored
+ALL FOUR INDEPENDENT CHILD-WRITE MUTATIONS DETECTED; 4/4; CHECKOUT UNCHANGED
+```
+
+**CI inspeccionado:** unit 123/123, 1942/1942 (suite cc007 13). db-tests: Files=19, Tests=1854, Result: PASS (log CI); `e2e-preview` pendiente al realizar la observación. No se ejecutó `node docs/revision-pr/analizar.mjs verificacion` en un clon porque no se pudo clonar; el JSONL de la ronda fue parseado y conservó los campos del esquema. Sin tests falsos, mocks de lógica de producción, branches `if (test)` o cambios al código principal.

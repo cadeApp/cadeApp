@@ -13,3 +13,9 @@ No se asigna número AG sin examinar el máximo global de todas las ramas remota
 ## Qué conservar
 
 El autor documentó el fallo focal intermitente, evitó aumentar los timeouts y mantuvo las mutaciones A-D con sus expectations originales. El cierre del issue #243 permanece manual tras verificar su DoD.
+
+## Contraste ronda 2
+
+PR304-H01 quedó corregido por inspección y con una segunda prueba independiente en un arnés Node real: el hijo, y no el propio helper, realizó la escritura al checkout principal. El control previo pasa sin detectarla, y el control post-hijo detecta la regresión en las cuatro rutas. Mantener la distinción entre **mecanismo demostrado** y **RED del Vitest del repositorio reproducido independientemente**; el último no se ejecutó debido al bloqueo DNS para clonar.
+
+No crear nuevas lecciones AG sin una enumeración global de números en remotos.
