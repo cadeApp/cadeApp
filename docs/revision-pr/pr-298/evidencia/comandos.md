@@ -141,3 +141,80 @@ H06 mock: interceptedUrls.length esperaba >0, recibió 0 (spec:502).
 ```
 
 La base de la próxima mutación RED **no quedó verde**. No se permite atribuir a ninguna mutación un rojo obtenido por estas fallas preexistentes; primero reparar la suite y obtener GREEN.
+
+## Ronda 4 — SHA `0b5479059927d1f3ebdf56a85a0182ad31c1b6b1`
+
+### Evidencia real
+
+- CI: `37725958413`, success.
+- Trusted E2E: `37726083350`, job `113144546299`, **47 passed / 2 failed**.
+- Errores: `[data-testid="map-picker"]` no encontrado en alta y solicitud tras 3 intentos.
+- Artifact de Playwright: `11528328239` (no se publica aquí porque las trazas pueden contener URLs/valores sensibles).
+- Se inspeccionaron ambas trazas comprimidas y snapshots. Ambas capturan `TypeError: t.setDraggable is not a function` al renderizar MapPicker. El stub de `Marker` carece de ese método. En cleanup se registra también `this._listeners[name].filter` cuando el array ya no existe.
+- Los snapshots de error de Next.js muestran `No pudimos cargar el alta del comercio` / `No pudimos preparar el formulario de envío`.
+- El caso postmatch y el mock test pasaron, lo que permite aislar la diferencia entre `AdvancedMarkerElement` y `Marker` clásico.
+
+### Harness independiente de contrato (script completo)
+
+```javascript
+// Copiar íntegro a /tmp/check-marker-contract.cjs. Node sin dependencias.
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const path = process.argv[2] || 'e2e/specs/map-privacy.spec.ts';
+const source = fs.readFileSync(path, 'utf8');
+const start = source.indexOf('function Marker(opts) {');
+const end = source.indexOf('function PinElement()', start);
+assert.ok(start >= 0 && end > start, 'No se encontró Marker en el mock');
+const declaration = source.slice(start, end);
+const Marker = vm.runInNewContext(
+  `(function(){ ${declaration}; return Marker; })()`, {}, { timeout: 1000 }
+);
+function probe(mutant) {
+  const marker = new Marker({
+    position: { lat: -27.43, lng: -65.61 }, draggable: true
+  });
+  if (mutant) marker.setDraggable = undefined; // Mutación solo en memoria
+  try {
+    assert.equal(typeof marker.setDraggable, 'function');
+    marker.setDraggable(false);
+    return true;
+  } catch {
+    return false;
+  }
+}
+const baseline = probe(false);
+const mutant = probe(true);
+console.log('BASELINE Marker.setDraggable:', baseline ? 'GREEN' : 'RED');
+console.log('MUTACIÓN sin Marker.setDraggable:', mutant ? 'GREEN INDEBIDO' : 'RED');
+if (!baseline || mutant) process.exitCode = 1;
+```
+
+Ejecutar:
+```bash
+node /tmp/check-marker-contract.cjs e2e/specs/map-privacy.spec.ts
+```
+
+R4: se corrió con el archivo real extraído del archivo de trazas de Playwright `37726083350`, resultado:
+```text
+BASELINE Marker.setDraggable: RED
+MUTACIÓN sin Marker.setDraggable: RED
+exit=1
+```
+El control ya está rojo: no se interpretó el mutante rojo como proof de cobertura. Es un test de contrato de stub, **no** sustituto del E2E.
+
+
+### Comandos integrados requeridos al autor
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm exec playwright test e2e/specs/map-privacy.spec.ts --list
+pnpm exec playwright test e2e/specs/map-privacy.spec.ts --project=chromium --workers=1 --retries=0
+git status --short
+git diff --name-only origin/develop...HEAD
+git ls-remote origin feat/T-314-map-privacy
+```
+
+En entorno local sin Supabase Develop correctamente identificado, respetar fail-closed y registrar `NO EJECUTADO`; no fabricar pruebas positivas.

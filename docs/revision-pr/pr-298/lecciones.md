@@ -32,3 +32,15 @@ La regla de `e2e/AGENTS.md` (GREEN del caso base y mutaciones trusted después d
 ### No leer cuerpos de responses CDP después de un momento arbitrario
 
 El nuevo control de privacidad observa el response vivo pero falla al hacer `response.text()` por `Network.getResponseBody` sin recurso. Para pruebas críticas, conservar el body en el momento de interceptarlo mediante `route.fetch` y fallar explícitamente ante imposibilidad de lectura.
+
+## Ronda 4
+
+### P08 — una suite verde puede coexistir con un crash en otro caso del mismo mock
+
+El caso de cero llamadas a Google quedó verde porque solo midió intercepciones, aunque el `Marker` clásico rompió dos páginas. La prueba de mocking debe exigir un test positivo de funcionamiento, no solo contar tráfico.
+
+### P08 — mocks de SDK: cubrir interfaces de ambos caminos
+
+El E2E postmatch usa `AdvancedMarkerElement`; el E2E del selector de pin puede usar `Marker` clásico sin mapId. Un stub compatible con el primer camino puede seguir incompleto para el segundo. La traza reveló `setDraggable` ausente. La API de listeners debe soportar cleanup idempotente.
+
+No se crea regla AG nueva: P08 ya captura la causa general. No se afirma que el test aislado pruebe el runtime integrado.
