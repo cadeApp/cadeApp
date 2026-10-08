@@ -268,7 +268,7 @@ export function TripRouteMap({
       {!showExternalNavigation && (
         <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2 text-xs text-muted-foreground">
           <span>{pickupZoneName} → {dropoffZoneName}</span>
-          <span className="font-medium text-primary">Ruta directa sin desvíos</span>
+          <span className="font-medium text-primary-dark">Ruta directa sin desvíos</span>
         </div>
       )}
 
