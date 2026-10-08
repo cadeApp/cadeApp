@@ -97,11 +97,21 @@ async function setupGoogleMapsMock(
             this.getCenter = function() { return new LatLng(-27.4333, -65.6167); };
           }
 
+          function MVCArray() {
+            this._items = [];
+            this.push = function(elem) { this._items.push(elem); return this._items.length; };
+            this.getArray = function() { return this._items; };
+            this.removeAt = function(i) { return this._items.splice(i, 1)[0]; };
+            this.clear = function() { this._items.length = 0; };
+            this.getLength = function() { return this._items.length; };
+          }
+
           function Map(element, opts) {
             this._element = element;
             this._center = opts?.center || opts?.defaultCenter || new LatLng(-27.4333, -65.6167);
             this._zoom = opts?.zoom || opts?.defaultZoom || 14;
             this._listeners = {};
+            this.controls = Array.from({ length: 20 }, () => new MVCArray());
 
             this.getDiv = function() { return this._element; };
             this.setCenter = function(c) {
@@ -139,7 +149,7 @@ async function setupGoogleMapsMock(
             };
 
             this._trigger = function(name, event) {
-              const handlers = this._listeners[name] || [];
+              const handlers = (this._listeners[name] || []).slice();
               for (const h of handlers) h(event);
             };
           }
@@ -149,6 +159,10 @@ async function setupGoogleMapsMock(
             this._content = null;
             this._position = opts?.position || null;
             this._title = opts?.title || '';
+            this._zIndex = null;
+            this._collisionBehavior = null;
+            this.gmpDraggable = false;
+            this.gmpClickable = true;
             this._listeners = {};
 
             this.addListener = function(name, handler) {
@@ -201,6 +215,16 @@ async function setupGoogleMapsMock(
               set: (t) => { this._title = t; }
             });
 
+            Object.defineProperty(this, 'zIndex', {
+              get: () => this._zIndex,
+              set: (z) => { this._zIndex = z; }
+            });
+
+            Object.defineProperty(this, 'collisionBehavior', {
+              get: () => this._collisionBehavior,
+              set: (cb) => { this._collisionBehavior = cb; }
+            });
+
             if (opts?.map) this.map = opts.map;
             if (opts?.content) this.content = opts.content;
           }
@@ -219,11 +243,31 @@ async function setupGoogleMapsMock(
           }
 
           function Polyline(opts) {
-            this.setPath = function() {};
+            this._path = new MVCArray();
+            if (Array.isArray(opts?.path)) {
+              opts.path.forEach((pt) => this._path.push(pt));
+            }
+            this.setPath = function(p) {
+              this._path.clear();
+              if (Array.isArray(p)) {
+                p.forEach((pt) => this._path.push(pt));
+              }
+            };
+            this.getPath = function() { return this._path; };
             this.setMap = function() {};
             this.setOptions = function() {};
             this.addListener = function() { return { remove: function() {} }; };
           }
+
+          const settingsInstance = {
+            fetchAppCheckToken: null
+          };
+
+          const settingsLib = {
+            getInstance: function() {
+              return settingsInstance;
+            }
+          };
 
           const markerLib = {
             AdvancedMarkerElement: AdvancedMarkerElement,
@@ -233,12 +277,29 @@ async function setupGoogleMapsMock(
 
           const mapsLib = {
             Map: Map,
-            Polyline: Polyline
+            Polyline: Polyline,
+            Settings: settingsLib,
+            ControlPosition: {
+              TOP_LEFT: 1,
+              TOP_CENTER: 2,
+              TOP_RIGHT: 3,
+              LEFT_TOP: 4,
+              LEFT_CENTER: 5,
+              LEFT_BOTTOM: 6,
+              RIGHT_TOP: 7,
+              RIGHT_CENTER: 8,
+              RIGHT_BOTTOM: 9,
+              BOTTOM_LEFT: 10,
+              BOTTOM_CENTER: 11,
+              BOTTOM_RIGHT: 12
+            }
           };
 
           const coreLib = {
             LatLng: LatLng,
             LatLngBounds: LatLngBounds,
+            MVCArray: MVCArray,
+            Settings: settingsLib,
             event: {
               addListener: function(instance, name, handler) {
                 if (instance && typeof instance.addListener === 'function') {
@@ -252,10 +313,29 @@ async function setupGoogleMapsMock(
               trigger: function(instance, name, event) {
                 if (instance && typeof instance._trigger === 'function') instance._trigger(name, event);
               },
-              clearInstanceListeners: function() {}
+              clearInstanceListeners: function(instance) {
+                if (instance && instance._listeners) {
+                  instance._listeners = {};
+                }
+              }
             }
           };
 
+          const geometryLib = {
+            encoding: {
+              decodePath: function() { return []; }
+            }
+          };
+
+          window.google.maps.Settings = settingsLib;
+          window.google.maps.version = '3.62.9';
+          window.google.maps.CollisionBehavior = {
+            REQUIRED: 'REQUIRED',
+            REQUIRED_AND_HIDES_OPTIONAL: 'REQUIRED_AND_HIDES_OPTIONAL',
+            OPTIONAL_AND_HIDES_LOWER_PRIORITY: 'OPTIONAL_AND_HIDES_LOWER_PRIORITY'
+          };
+          window.google.maps.ControlPosition = mapsLib.ControlPosition;
+          window.google.maps.MVCArray = MVCArray;
           window.google.maps.Map = Map;
           window.google.maps.Marker = Marker;
           window.google.maps.Polyline = Polyline;
@@ -268,6 +348,7 @@ async function setupGoogleMapsMock(
             if (name === 'marker') return Promise.resolve(markerLib);
             if (name === 'maps') return Promise.resolve(mapsLib);
             if (name === 'core') return Promise.resolve(coreLib);
+            if (name === 'geometry') return Promise.resolve(geometryLib);
             return Promise.resolve(window.google.maps);
           };
 
