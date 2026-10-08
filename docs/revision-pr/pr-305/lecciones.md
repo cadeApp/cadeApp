@@ -14,3 +14,7 @@ Un DoD documental puede prometer accesibilidad en una ruta compartida por roles 
 4. La batería de mutaciones de quien revisa debe probar rol equivocado, ausencia de dependencia y SDK en fallback; los tests no se maquillan para verde.
 
 No tocar `AGENTS.md` por un único caso documental. Validar la cobertura propuesta en la PR posterior de implementación.
+
+## Ronda 2 — corrección de una falla del revisor
+
+La primera versión del harness de la ronda 1 tenía un selector que buscaba requisitos en un segmento equivocado y dependía de un archivo de otra rama. Su salida esperada era incorrecta para T-350. Al depurarlo, un chequeo `includes('Repartidor asignado')` ignoraba que la frase podía seguir en una explicación sin existir la aserción positiva. Es un caso de **AG-60** sobre los scripts propios: una prueba de documentación debe apuntar al **locator concreto**, no a un texto mencionado en comentarios. El nuevo verificador de ronda 2 validó las tres propiedades escritas y mató 11/11 mutaciones en memoria. No atribuimos este error al autor.
