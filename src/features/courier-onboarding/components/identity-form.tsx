@@ -207,7 +207,7 @@ export function IdentityForm({ courierId, initialDni = '', onNext }: IdentityFor
             </span>
           </div>
 
-          {REQUIRED_DOCS.map((doc) => (
+          {REQUIRED_DOCS.filter((doc) => doc.kind !== 'dni_front').map((doc) => (
             <DocumentUploadCard
               key={doc.kind}
               kind={doc.kind}
