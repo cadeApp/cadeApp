@@ -20,6 +20,8 @@ test('DoD temporal T-350: axe AA en viaje R07', async ({ page, stagingContext, l
     assignedCourierId: courier.id,
     withContacts: true,
   });
+  // MUTACIÓN RED temporal (T-350): el SDK de Google Maps no carga.
+  await page.route(/maps\.googleapis\.com|maps\.gstatic\.com/, (route) => route.abort());
   await page.goto(`/trips/${seededTrip.requestId}`);
   await waitForNoSkeletons(page);
   await expect(page).toHaveURL(new RegExp(`/trips/${seededTrip.requestId}$`));
