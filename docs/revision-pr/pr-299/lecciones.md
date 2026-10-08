@@ -37,3 +37,11 @@ No proponer número AG nuevo sin verificar el máximo de todas las ramas.
 - **pr-63/AG-68 / H16:** E2E cuyo nombre dice «consentimiento denegado» sin llamar RPC sería verde incluso sin gate; eliminar o crear actor con estado real y ejecutar operación + oráculo.
 - **H05:** Vercel verde no significa Playwright ejecutado: el gate e2e-preview bloquea por migración y requiere coordinación del dueño, no relajar políticas por el agente.
 
+## Ronda 4 — 2026-10-08
+
+- **pr-63/AG-68, refuerzo:** el arreglo de H14 dejó de contar como usuario oculto por RLS y pasó pgTAP REAL; no bastaba el detector del agente, el job de DB completo es la evidencia definitiva.
+- **pr-64/AG-62, refuerzo:** H15 fue solucionado creando la segunda oferta con la RPC pública ANTES de aceptar y comprobando ambos estados. Ya no hay fixture artificial ni bypass RLS.
+- **pr-63/AG-68, refuerzo:** H16 correctamente se eliminó, en vez de conservar test «CC-007» que no hacía RPC. La validación autorizada se concentra en pgTAP + futura integración real.
+- **CI ambiental compartido:** una vulnerabilidad crítica publicada después del último green puede convertir el mismo lockfile en `audit` rojo sin cambios del autor. Antes de generar un hallazgo culpando al PR, comparar HEAD develop y buscar corrección upstream: issue #311 / PR #312 resueltos; problema actual es **rama 11 commits atrás**, no que T-339 introduzca dependencia.
+- **Excepción E2E:** registrar dónde corre REALMENTE la prueba tras migración. `migrate-develop` se ejecuta en push develop, pero `e2e-preview` requiere PR abierta sin migración; no prometer ejecución automática por haber mergeado.
+

@@ -254,3 +254,70 @@ if(checks.some(([,ok])=>!ok))process.exitCode=1;
 - H16: sin gate CC-007, una prueba verdadera que intenta `take_request` con actor pending/reconsent debería fallar por respuesta o mutación de estado. Borrar prueba placebo si no existe actor de test autorizado.
 - H05: `e2e-preview` debe ejecutar Playwright real con esquema compatible; no declarar verde con Vercel success o `resolve-preview success`.
 
+---
+
+## Ronda 4 — independencia de verificación en SHA `e3df20f5640af5d09c2ba3d9892214c87332cf28`
+
+### Evidencia remota de GitHub
+
+- Run 37848782303, `db-tests` 113556229038: `t339_fixed_price.sql ... ok`, `rpc_requests.sql ... ok`, `rpc_offers.sql ... ok`, `Files=20, Tests=1903, Result: PASS`. `db:types --local` generó tipos y no falló comparación posterior.
+- Unit 113556229393: 125 files y 2004 tests Vitest PASS, `src/domain/testing/rpc-fake.ts` ramas 90.04% PASS; jobs typecheck/lint/build/bundle-budget success.
+- Audit 113556229496: `pnpm audit --audit-level=high` exit 1; `handlebars <=4.7.9`, dos critical, dep path `eslint-plugin-boundaries > @boundaries/elements > handlebars`. GHSA-8r5x-fm3f-whwj y GHSA-p8wg-vrv2-v86f.
+- Reconciliación de seguridad: issue #311 CLOSED, PR #312 MERGED; commit `8fd2b67b9536` en develop cambia overrides a `handlebars 4.7.10`, check `audit` success en 37851911101 / 113566616105.
+- Branches: develop tip `f33d688ff2517ae8e37ed53ba1404a3f4968ec45`, HEAD PR `e3df20f`. Compare develop...HEAD `behind_by=11`, sin `pnpm-lock` en los 3 cambios de la ronda. No se ejecutó merge-tree real.
+- Vercel success, e2e-preview status `BLOCKED / REQUIRES DEVELOP MIGRATION`, no se ejecutó Playwright.
+
+### Harness independiente de estructura + mutaciones EN MEMORIA
+
+Este script se copia a `/tmp/pr299-r4.mjs` en checkout limpio del SHA exacto, y se ejecuta con `PR299_ROOT="$PWD" node /tmp/pr299-r4.mjs`. Un GREEN estructural **no** sustituye pgTAP ni E2E; la evidencia runtime para SQL viene del job real, no del contador.
+
+```js pr299-r4.mjs
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+
+const root=process.env.PR299_ROOT || process.cwd();
+const read=(p)=>readFileSync(join(root,p),'utf8');
+const pg=read('supabase/tests/t339_fixed_price.sql');
+const e2e=read('e2e/specs/fixed-price.spec.ts');
+
+function audit(sql,ts) {
+  const denials=sql.slice(sql.indexOf('-- 17, 18, 19'),sql.indexOf('-- 24, 25, 26'));
+  const reset=denials.indexOf('select pg_temp.reset_actor();');
+  const oracle=denials.indexOf('(select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()');
+  const accepted=sql.slice(sql.indexOf('-- 38, 39, 40'),sql.indexOf('-- 42, 43:'));
+  const second=accepted.indexOf('select pg_temp.act_as(pg_temp.courier_2_id());');
+  const take=accepted.indexOf('public.take_request(pg_temp.req_fixed_manual(), 15, null)');
+  const match=accepted.indexOf('(public.accept_offer(');
+  const count=Number(sql.match(/select plan\((\d+)\)/)?.[1]);
+  const statements=[...sql.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length;
+  return [
+    ['H14 inspector before RLS-free postconditions',reset>=0 && reset<oracle],
+    ['H15 second legitimate offer before accept',second>=0 && take>second && match>take],
+    ['H15 no raw offers INSERT in matched stage',!/\binsert\s+into\s+public\.offers\b/i.test(accepted)],
+    ['H15 final states checked',accepted.includes("'accepted'::public.offer_status")&&accepted.includes("'rejected'::public.offer_status")],
+    ['H16 previous placebo removed',!/test\(['"]H05\.5/.test(ts)],
+    ['H05 real client calls specified for later E2E',ts.includes('H05.1')&&ts.includes('H05.2')&&ts.includes('H05.3')&&[...ts.matchAll(/const\s+\[\s*res\w*,\s*res\w*\s*\]\s*=\s*await\s+Promise\.all\(/g)].length>=3],
+    ['plan matches number of SQL assertions',count===statements]
+  ];
+}
+const before=audit(pg,e2e);
+const removeReset=pg.replace('select pg_temp.reset_actor();\n\nselect is(\n  (select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()', 'select is(\n  (select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()');
+const removeTake=pg.replace(/select lives_ok\(\s*\$\$ select public\.take_request\(pg_temp\.req_fixed_manual\(\), 15, null\) \$\$,[\s\S]*?\);\s*/, '');
+const addPlacebo=e2e.replace(/\n  \}\);\s*\}\);\s*$/, "\n  test('H05.5: falso',async()=>{expect(true).toBe(true)});\n  });\n});\n");
+const mut=[['H14',!audit(removeReset,e2e)[0][1]],['H15',!audit(removeTake,e2e)[1][1]],['H16',!audit(pg,addPlacebo)[4][1]]];
+console.log(before.map(([name,ok])=>(ok?'GREEN ':'RED   ')+name).join('\n'));
+console.log('Mutation sensitivity (in-memory only):',JSON.stringify(mut));
+console.log('pgTAP plan:',pg.match(/select plan\((\d+)\)/)?.[1],
+ 'statements:',[...pg.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length);
+if(before.some(([,ok])=>!ok)||mut.some(([,ok])=>!ok))process.exitCode=1;
+```
+
+**Control independiente del blob en memoria (sin checkout local):** H14=GREEN, H15=GREEN×3, H16=GREEN, H05 especificación=GREEN, plan igual=GREEN. Mutaciones en memoria: quitar `reset_actor` → H14 rojo, quitar `lives_ok(take_request)` de courier2 → H15 rojo, reintroducir H05.5 placebo → H16 rojo. No se editó la PR ni se ejecutó SQL mutado o código Playwright.
+
+### Próximos tests independientes (tras merge de develop)
+
+- Comprobar con CI del nuevo SHA `pnpm audit --audit-level=high` real y versión `handlebars 4.7.10`; no usar bypass de auditoría.
+- Verificar que las 48 aserciones pgTAP corren y pass y que `db:types --local` no detecta drift con los nuevos cambios de develop.
+- Verificar `unit`, `typecheck`, `lint`, `build`, `bundle-budget`, `approval-policy` y detectar conflictos de merge.
+- H05: E2E diferido por decisión A; registro post-migración con URL de corrida real, coincidencia de SHA/ambiente y oráculo de 3 carreras.
+
