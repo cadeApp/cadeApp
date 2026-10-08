@@ -139,11 +139,10 @@ async function setupGoogleMapsMock(
             this.fitBounds = function() {};
 
             this.addListener = function(name, handler) {
-              if (!this._listeners[name]) this._listeners[name] = [];
-              this._listeners[name].push(handler);
+              (this._listeners[name] ||= []).push(handler);
               return {
                 remove: () => {
-                  this._listeners[name] = this._listeners[name].filter((h) => h !== handler);
+                  this._listeners[name] = (this._listeners[name] ?? []).filter((h) => h !== handler);
                 }
               };
             };
@@ -166,11 +165,10 @@ async function setupGoogleMapsMock(
             this._listeners = {};
 
             this.addListener = function(name, handler) {
-              if (!this._listeners[name]) this._listeners[name] = [];
-              this._listeners[name].push(handler);
+              (this._listeners[name] ||= []).push(handler);
               return {
                 remove: () => {
-                  this._listeners[name] = this._listeners[name].filter((h) => h !== handler);
+                  this._listeners[name] = (this._listeners[name] ?? []).filter((h) => h !== handler);
                 }
               };
             };
@@ -230,11 +228,42 @@ async function setupGoogleMapsMock(
           }
 
           function Marker(opts) {
-            this._pos = opts?.position;
+            opts = opts || {};
+            this._map = opts.map ?? null;
+            this._pos = opts.position ?? null;
+            this._draggable = Boolean(opts.draggable);
+            this._title = opts.title ?? '';
+            this._visible = opts.visible !== false;
+            this._listeners = {};
+
+            this.setMap = function(m) { this._map = m; };
+            this.getMap = function() { return this._map; };
             this.setPosition = function(p) { this._pos = p; };
             this.getPosition = function() { return this._pos; };
-            this.setMap = function() {};
-            this.addListener = function() { return { remove: function() {} }; };
+            this.setDraggable = function(v) { this._draggable = Boolean(v); };
+            this.getDraggable = function() { return this._draggable; };
+            this.setTitle = function(v) { this._title = v; };
+            this.getTitle = function() { return this._title; };
+            this.setVisible = function(v) { this._visible = Boolean(v); };
+            this.getVisible = function() { return this._visible; };
+
+            this.setOptions = function(o) {
+              if (!o) return;
+              if ('position' in o) this.setPosition(o.position);
+              if ('map' in o) this.setMap(o.map);
+              if ('draggable' in o) this.setDraggable(o.draggable);
+              if ('title' in o) this.setTitle(o.title);
+              if ('visible' in o) this.setVisible(o.visible);
+            };
+
+            this.addListener = function(name, handler) {
+              (this._listeners[name] ||= []).push(handler);
+              return {
+                remove: () => {
+                  this._listeners[name] = (this._listeners[name] ?? []).filter((h) => h !== handler);
+                }
+              };
+            };
           }
 
           function PinElement() {
@@ -774,6 +803,11 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     await page.goto('/merchant/onboarding');
     await expect(page).toHaveURL(/\/merchant\/onboarding(?:\/|$)/);
     await waitForNoSkeletons(page);
+
+    // Smoke positivo: verificar que el mapa se montó y no colapsó en error boundary (H07)
+    await expect(page.locator('[data-testid="map-picker"]')).toBeVisible();
+    await expect(page.locator('[data-testid="map-container"]')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /no pudimos cargar el alta del comercio/i })).toHaveCount(0);
 
     // Exigir que el mock haya interceptado peticiones (> 0) y cero peticiones inesperadas (H04)
     expect(mock.interceptedUrls.length).toBeGreaterThan(0);
