@@ -106,18 +106,18 @@ const mutations = [
   ['M01 merchant login', 'H01', d => d.replace('loginAsMerchant(page)', 'loginAsAdmin(page)')],
   ['M02 C06 assertion', 'H01', d => d.replace("getByRole('heading', { name: 'Repartidor asignado' })", "getByText('Carga')")],
   ['M03 WCAG22AA', 'H01', d => d.replace("'wcag22aa'", "'wcag21aa'")],
-  ['M04 wrong base', 'H02', d => d.replace('desde el HEAD de \`feat/T-309-uploads-a11y\`', 'desde el HEAD de \`develop\`')],
-  ['M05 missing axe dependency', 'H02', d => d.replace('incluido \`@axe-core/playwright@4.13.0\`', 'sin paquete de axe')],
-  ['M06 missing lockfile', 'H02', d => d.replace('\`package.json\` y \`pnpm-lock.yaml\`', '\`package.json\`')],
-  ['M07 fallback accepted', 'H03', d => d.replace("- \`getByTestId('route-map-fallback')\` con count 0;", '- se permite fallback;')],
-  ['M08 missing pickup pin', 'H03', d => d.replace("\`getByTestId('map-pin-pickup')\` y \`getByTestId('map-pin-dropoff')\`", "\`getByTestId('map-pin-dropoff')\`")],
+  ['M04 wrong base', 'H02', d => d.replace('desde el HEAD de `feat/T-309-uploads-a11y`', 'desde el HEAD de `develop`')],
+  ['M05 missing axe dependency', 'H02', d => d.replace('incluido `@axe-core/playwright@4.13.0`', 'sin paquete de axe')],
+  ['M06 missing lockfile', 'H02', d => d.replace('`package.json` y `pnpm-lock.yaml`', '`package.json`')],
+  ['M07 fallback accepted', 'H03', d => d.replace("- `getByTestId('route-map-fallback')` con count 0;", '- se permite fallback;')],
+  ['M08 missing pickup pin', 'H03', d => d.replace("`getByTestId('map-pin-pickup')` y `getByTestId('map-pin-dropoff')`", "`getByTestId('map-pin-dropoff')`")],
   ['M09 canvas absent', 'H03', d => d.replace('canvas real de Google Maps', 'ícono de mapa')],
   ['M10 no SDK negative', 'H03', d => d.replace('SDK de Maps no cargue', 'SDK de Maps siempre cargue')],
   ['M11 keyboard lost', 'H03', d => d.replace('la navegación por teclado del mapa', 'el tema visual del mapa')],
 ];
 const controlOk = Object.entries(checks).every(([id, fn]) => {
   const ok = fn(doc);
-  console.log(\`CONTROL \${id}: \${ok ? 'GREEN' : 'RED'}\`);
+  console.log(`CONTROL ${id}: ${ok ? 'GREEN' : 'RED'}`);
   return ok;
 });
 let reds = 0;
@@ -125,9 +125,9 @@ for (const [name, id, mutate] of mutations) {
   const mutant = mutate(doc);
   const isRed = mutant !== doc && !checks[id](mutant);
   if (isRed) reds++;
-  console.log(\`\${name}: \${isRed ? 'RED' : 'NO-RED'}\`);
+  console.log(`${name}: ${isRed ? 'RED' : 'NO-RED'}`);
 }
-console.log(\`Mutaciones RED: \${reds}/\${mutations.length}\`);
+console.log(`Mutaciones RED: ${reds}/${mutations.length}`);
 if (!controlOk || reds !== mutations.length) process.exitCode = 1;
 ```
 
@@ -140,3 +140,6 @@ Este archivo es autónomo, se ejecuta con Node 22 desde la raíz del checkout de
 - `typecheck`, `lint`, `build`, `audit`, `bundle-budget`: `success` en GitHub. El `bundle-budget` tiene warning en rutas admin de 235 kB (fuera de alcance).
 - `approval-policy`: rojo inicial por faltar informe completo **en el cuerpo**. El workflow se dispara al editar PR; el comentario solo no basta.
 - `e2e-preview`: pendiente al inspeccionar el estado de commit, no se declara éxito inexistente ni se lo usa para validar la ficha.
+
+
+**Corrección de transcripción (revisión independiente):** se eliminaron escapes de Markdown que habían quedado en el bloque de código del harness. La versión JS resultante pasó `node --check` en Node v22.16.0 (`Syntax: PASS`). El análisis de contratos y las 11 mutaciones se realizaron sobre el contenido del HEAD inspeccionado por el conector GitHub; no se afirma un checkout local completo.
