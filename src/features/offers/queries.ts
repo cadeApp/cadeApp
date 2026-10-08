@@ -29,6 +29,8 @@ interface RawAvailableRequest {
   needs_change: boolean;
   published_at: string | null;
   expires_at: string | null;
+  fixed_price_ars?: number | null;
+  auto_assign?: boolean;
   pickup_zone: { name: string } | { name: string }[] | null;
   dropoff_zone: { name: string } | { name: string }[] | null;
 }
@@ -90,6 +92,8 @@ export async function getAvailableRequests(): Promise<{
       needs_change,
       published_at,
       expires_at,
+      fixed_price_ars,
+      auto_assign,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
     `)
@@ -161,6 +165,8 @@ export async function getAvailableRequests(): Promise<{
       needsChange: Boolean(req.needs_change),
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
+      fixedPriceArs: req.fixed_price_ars ?? null,
+      autoAssign: req.auto_assign ?? false,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
     });

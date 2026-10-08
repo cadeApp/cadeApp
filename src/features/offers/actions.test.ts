@@ -6,7 +6,9 @@ import {
   submitOfferAction,
   withdrawOfferAction,
   acceptOfferAction,
+  takeRequestAction,
   type AcceptOfferResult,
+  type TakeRequestResult,
 } from './actions';
 
 
@@ -23,6 +25,7 @@ vi.mock('@/server/rpc/offers', () => ({
   submitOfferRpc: vi.fn(),
   withdrawOfferRpc: vi.fn(),
   acceptOfferRpc: vi.fn(),
+  takeRequestRpc: vi.fn(),
 }));
 
 describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction)', () => {
@@ -617,6 +620,291 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
         expect(result.data.idempotent).toBe(false);
       }
       expect(revalidatePath).toHaveBeenCalledWith('/merchant/requests');
+    });
+  });
+
+  describe('T-339 DoD: takeRequestAction', () => {
+    const validCourierUser = { id: 'courier-uuid-1', email: 'courier@test.com' };
+    const validTakeInput = {
+      requestId: '22222222-2222-2222-2222-222222222222',
+      etaMinutes: 15,
+      message: 'Voy en camino',
+    };
+
+    it('rechaza si no hay sesión autenticada con UNAUTHENTICATED', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await takeRequestAction(validTakeInput);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('UNAUTHENTICATED');
+      }
+    });
+
+    it('rechaza si el rol no es courier con UNAUTHORIZED_ACTOR', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'merchant' },
+              error: null,
+            }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: validCourierUser },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await takeRequestAction(validTakeInput);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('UNAUTHORIZED_ACTOR');
+      }
+    });
+
+    it('rechaza datos inválidos con VALIDATION_ERROR', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'courier' },
+              error: null,
+            }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: validCourierUser },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await takeRequestAction({
+        ...validTakeInput,
+        etaMinutes: 0, // inválido (< 1)
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+    });
+
+    it.each([
+      ['NO_FIXED_PRICE', 'la solicitud no tiene precio fijo'],
+      ['ALREADY_MATCHED', 'la solicitud ya fue asignada'],
+      ['COURIER_UNAVAILABLE', 'el repartidor no está disponible'],
+      ['OFFER_BELOW_MINIMUM', 'el piso subió por encima del precio'],
+      ['RATE_LIMITED', 'límite de ofertas alcanzado'],
+    ] as const)(
+      'propaga error canónico de la RPC: %s (%s)',
+      async (errorCode, _description) => {
+        const mockFrom = vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { role: 'courier' },
+                error: null,
+              }),
+            };
+          }
+          return {};
+        });
+
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({
+              data: { user: validCourierUser },
+              error: null,
+            }),
+          },
+          from: mockFrom,
+        } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+        vi.mocked(offersRpc.takeRequestRpc).mockResolvedValue({
+          ok: false,
+          code: errorCode,
+        });
+
+        const result = await takeRequestAction(validTakeInput);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe(errorCode);
+        }
+      }
+    );
+
+    it('toma solicitud con auto_assign=false exitosamente y revalida rutas de repartidor', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'courier' },
+              error: null,
+            }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: validCourierUser },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const mockPendingOutput: TakeRequestResult = {
+        offerId: '44444444-4444-4444-4444-444444444444',
+        requestId: validTakeInput.requestId,
+        amountArs: 2000,
+        offerStatus: 'pending',
+        requestStatus: 'published',
+        matchedAt: null,
+        idempotent: false,
+      };
+
+      vi.mocked(offersRpc.takeRequestRpc).mockResolvedValue({
+        ok: true,
+        data: mockPendingOutput,
+      });
+
+      const result = await takeRequestAction(validTakeInput);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.offerStatus).toBe('pending');
+        expect(result.data.requestStatus).toBe('published');
+        expect(result.data.amountArs).toBe(2000);
+      }
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/offers');
+    });
+
+    it('toma solicitud con auto_assign=true (match atómico) exitosamente y revalida rutas', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'courier' },
+              error: null,
+            }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: validCourierUser },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const mockMatchedOutput: TakeRequestResult = {
+        offerId: '44444444-4444-4444-4444-444444444444',
+        requestId: validTakeInput.requestId,
+        amountArs: 2000,
+        offerStatus: 'accepted',
+        requestStatus: 'matched',
+        matchedAt: '2026-10-07T10:00:01.000Z',
+        idempotent: false,
+      };
+
+      vi.mocked(offersRpc.takeRequestRpc).mockResolvedValue({
+        ok: true,
+        data: mockMatchedOutput,
+      });
+
+      const result = await takeRequestAction(validTakeInput);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.offerStatus).toBe('accepted');
+        expect(result.data.requestStatus).toBe('matched');
+        expect(result.data.matchedAt).toBe('2026-10-07T10:00:01.000Z');
+      }
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/offers');
+    });
+
+    it('reintento idempotente devuelve idempotent true', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'courier' },
+              error: null,
+            }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: validCourierUser },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const mockIdempotentOutput: TakeRequestResult = {
+        offerId: '44444444-4444-4444-4444-444444444444',
+        requestId: validTakeInput.requestId,
+        amountArs: 2000,
+        offerStatus: 'accepted',
+        requestStatus: 'matched',
+        matchedAt: '2026-10-07T10:00:01.000Z',
+        idempotent: true,
+      };
+
+      vi.mocked(offersRpc.takeRequestRpc).mockResolvedValue({
+        ok: true,
+        data: mockIdempotentOutput,
+      });
+
+      const result = await takeRequestAction(validTakeInput);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.idempotent).toBe(true);
+      }
     });
   });
 });

@@ -54,6 +54,13 @@ export const createDeliveryRequestSchema = z
       .max(500, 'Las indicaciones no pueden superar los 500 caracteres')
       .nullable()
       .optional(),
+    fixedPriceArs: z
+      .number()
+      .int('El precio del envío debe ser un número entero')
+      .positive('El precio del envío debe ser mayor a 0')
+      .nullable()
+      .optional(),
+    autoAssign: z.boolean().optional().default(false),
   })
   .refine((data) => (data.pickupLat == null) === (data.pickupLng == null), {
     message: 'Las coordenadas de retiro deben enviarse juntas o ambas nulas.',
@@ -75,12 +82,26 @@ export const createDeliveryRequestSchema = z
       path: ['cashChangeAmount'],
     }
   )
+  .refine(
+    (data) => {
+      if (data.autoAssign && !data.fixedPriceArs) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'La asignación automática requiere ingresar un precio de envío.',
+      path: ['autoAssign'],
+    }
+  )
   .transform((data) => ({
     ...data,
     cashChangeAmount:
       data.recipientPaymentMethod === 'cash' && data.needsChange
         ? (data.cashChangeAmount ?? null)
         : null,
+    fixedPriceArs: data.fixedPriceArs ?? null,
+    autoAssign: data.fixedPriceArs != null ? Boolean(data.autoAssign) : false,
   }));
 
 export type CreateDeliveryRequestInput = z.input<typeof createDeliveryRequestSchema>;

@@ -932,8 +932,8 @@ describe('T-008 · DoD Sistema de Diseño Stitch (D16) y Componentes Base en src
   });
 
   describe('9. Ronda 2: Cierre conductual de D05..D07, R01, R02 y H21..H29', () => {
-    it('D05 y R01: DOMAIN_ERROR_MESSAGES cubre los 27 códigos de ALL_DOMAIN_ERROR_CODES, notify.error traduce DomainErrorCode y notify.promise delega a Sonner', () => {
-      expect(ALL_DOMAIN_ERROR_CODES.length).toBe(27);
+    it('D05 y R01: DOMAIN_ERROR_MESSAGES cubre todos los códigos de ALL_DOMAIN_ERROR_CODES (29 con CC-021), notify.error traduce DomainErrorCode y notify.promise delega a Sonner', () => {
+      expect(ALL_DOMAIN_ERROR_CODES.length).toBe(29);
       for (const code of ALL_DOMAIN_ERROR_CODES) {
         const msg = DOMAIN_ERROR_MESSAGES[code];
         expect(typeof msg).toBe('string');

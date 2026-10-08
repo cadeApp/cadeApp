@@ -231,6 +231,7 @@ export type Database = {
         Row: {
           accepted_offer_id: string | null
           approx_distance_m: number | null
+          auto_assign: boolean
           cancel_reason: string | null
           cancelled_at: string | null
           cash_change_amount: number | null
@@ -238,6 +239,7 @@ export type Database = {
           delivered_at: string | null
           dropoff_zone_id: string
           expires_at: string | null
+          fixed_price_ars: number | null
           id: string
           matched_at: string | null
           merchant_id: string
@@ -255,6 +257,7 @@ export type Database = {
         Insert: {
           accepted_offer_id?: string | null
           approx_distance_m?: number | null
+          auto_assign?: boolean
           cancel_reason?: string | null
           cancelled_at?: string | null
           cash_change_amount?: number | null
@@ -262,6 +265,7 @@ export type Database = {
           delivered_at?: string | null
           dropoff_zone_id: string
           expires_at?: string | null
+          fixed_price_ars?: number | null
           id?: string
           matched_at?: string | null
           merchant_id: string
@@ -279,6 +283,7 @@ export type Database = {
         Update: {
           accepted_offer_id?: string | null
           approx_distance_m?: number | null
+          auto_assign?: boolean
           cancel_reason?: string | null
           cancelled_at?: string | null
           cash_change_amount?: number | null
@@ -286,6 +291,7 @@ export type Database = {
           delivered_at?: string | null
           dropoff_zone_id?: string
           expires_at?: string | null
+          fixed_price_ars?: number | null
           id?: string
           matched_at?: string | null
           merchant_id?: string
@@ -810,6 +816,14 @@ export type Database = {
       submit_offer: {
         Args: {
           p_amount_ars: number
+          p_eta_minutes: number
+          p_message?: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      take_request: {
+        Args: {
           p_eta_minutes: number
           p_message?: string
           p_request_id: string

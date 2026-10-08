@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { RPC_CONTRACTS } from '@/domain';
 import { callRequestRpc, createRequestsRpcServerClient } from './requests';
 
@@ -17,6 +17,8 @@ const cases = [
       publishedAt: time,
       expiresAt: time,
       routeDistanceM: 2000,
+      fixedPriceArs: null,
+      autoAssign: false,
     },
   },
   {
@@ -185,8 +187,14 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     );
 
     // AG-58: coincidencia bidireccional entre los códigos lanzados en la migración y la unión de RPC_CONTRACTS
+    const t339MigrationSql = existsSync(
+      'supabase/migrations/20261007090000_t339_fixed_price.sql'
+    )
+      ? readFileSync('supabase/migrations/20261007090000_t339_fixed_price.sql', 'utf8')
+      : '';
+    const combinedSql = migrationSql + '\n' + t339MigrationSql;
     const raisedInMigration = new Set(
-      Array.from(migrationSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
+      Array.from(combinedSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
     );
     const declaredInContracts = new Set(cases.flatMap((c) => RPC_CONTRACTS[c.name].errorCodes));
     expect([...raisedInMigration].sort()).toEqual([...declaredInContracts].sort());
@@ -376,6 +384,8 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
             publishedAt: time,
             expiresAt: time,
             routeDistanceM: 1500,
+            fixedPriceArs: null,
+            autoAssign: false,
           },
           error: null,
         };
@@ -444,6 +454,8 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           publishedAt: time,
           expiresAt: time,
           routeDistanceM: 1500,
+          fixedPriceArs: null,
+          autoAssign: false,
         },
         error: null,
       });
@@ -485,6 +497,8 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           publishedAt: time,
           expiresAt: time,
           routeDistanceM: 1500,
+          fixedPriceArs: null,
+          autoAssign: false,
         },
         error: null,
       });

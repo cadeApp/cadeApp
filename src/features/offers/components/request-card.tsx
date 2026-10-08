@@ -80,7 +80,7 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
           )}
         </div>
 
-        {/* Botón Ofertar (48px target) o indicador de ya ofertaste */}
+        {/* Botón Ofertar / Tomar (48px target) o indicador de ya ofertaste */}
         <div className="pt-2">
           {request.hasMyOffer && request.myOfferAmountArs ? (
             <div className="flex min-h-12 w-full items-center justify-center rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-bold text-primary-dark">
@@ -89,12 +89,14 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
           ) : (
             <Button
               type="button"
-              variant="secondary"
+              variant={request.fixedPriceArs ? 'default' : 'secondary'}
               onClick={() => onOfferClick(request)}
               disabled={isOffline}
               className="w-full min-h-12 text-sm font-bold"
             >
-              {OFFERS_COPY.offerButton}
+              {request.fixedPriceArs
+                ? OFFERS_COPY.takeRequestButton(formatArs(request.fixedPriceArs))
+                : OFFERS_COPY.offerButton}
             </Button>
           )}
         </div>

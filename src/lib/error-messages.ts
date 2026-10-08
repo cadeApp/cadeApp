@@ -21,6 +21,8 @@ export const DOMAIN_ERROR_MESSAGES = {
   COURIER_SUSPENDED: 'Tu cuenta está suspendida temporalmente. Contactá al soporte.',
   COURIER_UNAVAILABLE: 'Activá tu disponibilidad antes de enviar ofertas.',
   RATE_LIMITED: 'Enviaste demasiadas solicitudes seguidas. Esperá unos segundos.',
+  FIXED_PRICE_REQUEST: 'Este envío tiene precio fijo: tomalo desde el botón',
+  NO_FIXED_PRICE: 'Este envío no tiene precio fijo: hacé tu oferta',
 
   // Ciclo de vida de solicitudes, suscripción y geolocalización (T-103, T-106)
   REQUEST_EXPIRED: 'La solicitud venció por falta de ofertas a tiempo.',
