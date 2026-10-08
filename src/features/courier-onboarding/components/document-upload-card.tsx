@@ -65,7 +65,7 @@ export function DocumentUploadCard({
       }`}
     >
       <label
-        htmlFor={inputId}
+        htmlFor={`file-input-inexistente-${kind}`}
         className="flex min-h-[56px] cursor-pointer items-center justify-between gap-3"
       >
         <div className="flex min-w-0 items-center gap-3">
