@@ -38,3 +38,13 @@ H03 es un caso directo: la bitácora nombra páginas que el test no importa. El 
 - Esta es una PR Draft en fase RED inicial; H01 no implica que el agente haya declarado falsamente la tarea terminada. La bitácora reconoce que falta implementación.
 - Los hallazgos H02–H06 son útiles precisamente ahora: corregirlos antes de GREEN evita aceptar una implementación que satisfaga proxies.
 - No se inspeccionó CI en Ronda 1 porque ya había bloqueantes estáticos.
+
+## Ronda 2 — regresión por cambios de client boundary y gate asíncrono
+
+- **AG-37 / clase completa:** cuatro rutas públicas se evalúan juntas. La optimización de una no cierra R01 si las otras tres siguen sobre presupuesto.
+- **AG-63 / control discriminante:** un check que termina verde aunque su log diga "Supera el límite" no sirve para certificar el DoD de rendimiento; se requiere comprobar el valor numérico y fallar cerrado cuando falta la ruta.
+- **AG-68 / evidencia real:** `e2e-preview=error` por `cancelled` no significa que falló la PWA, pero tampoco autoriza escribir GREEN. Separar fallo funcional, cancelación operativa y ejecución exitosa.
+- **AG-70 / autoría:** la bitácora de Kira cita mutaciones RED; hasta reproducirlas independientemente no se completa `verificado_en_sha`.
+- **Autorización consciente:** se puede aceptar una excepción de alcance que evita un import profundo (0-A) y aun así rechazar una regresión de rendimiento ligada al nuevo entrypoint (1-A). Una decisión no invalida la otra.
+
+No se asigna un número AG nuevo en esta ronda: los patrones ya aparecen en las lecciones citadas.

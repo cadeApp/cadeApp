@@ -128,3 +128,117 @@ Antes del cierre final, una persona debe probar en Android real:
 2. PWA instalada/actualizada con manifest nuevo → abrir icono y confirmar /login/gateway.
 3. Navegación común en Chrome → / sigue mostrando la landing.
 4. Registrar resultado en una nueva entrada de `docs/tasks/log/T-338.md`.
+
+## Ronda 2 — 2026-10-07
+
+### Identidad, autoría, alcance
+
+```text
+PR funcional revisado      43e5945f1d2519db37e260c114df51071bb3fe94
+R1 commit revisión         ca5421a50bb3f43867116efd4e2d623135fddf22
+Ficha actualizada P1       f5d1393f0391a9f5ff03741a9bec1728b2cb2fd7
+develop consultado         cd023e3453ead76983d54982df1548cb97aa57eb
+base original PR           a773c05cc488a1fc60bfb36512cdca35d12d1271
+GitHub mergeable           true
+PR draft                   true
+Cambio autor desde R1      43e5945: 17 archivos sin tocar docs/revision-pr/**
+Decisiones P1              0-A y 1-A
+```
+
+`docs/tasks/T-338.md` se actualizó en la rama con la ampliación **estricta** de `src/features/notifications/index.ts` y el DoD de 180 kB. No es una modificación de código funcional.
+
+### Evidencia de builds (no estimaciones)
+
+```text
+Baseline develop a773c05, CI run 37582604006, build job 112665469344
+/          107 kB
+/legal     107 kB
+/login     162 kB
+/register  162 kB
+
+PR functional 43e5945, CI run 37699020056, build job 113057721190
+/          194 kB
+/legal     194 kB
+/login     224 kB
+/register  224 kB
+
+bundle-budget job 113058233763:
+las cuatro = "Supera el límite"; job success (warning advisory).
+```
+
+### CI general y E2E
+
+```text
+CI run 37699020056: success (SHA funcional 43e5945)
+unit job 113057721008: Test Files 125 passed (125); Tests 1961 passed (1961)
+typecheck/lint/build/db-tests: success
+Vercel status: success
+e2e-preview status: error, TARGET_SHA=43e5945
+Preview run 37699126807: resolve-preview success; e2e-preview job 113058120541 cancelled
+report-preview-status job 113058483691: RESULT=cancelled -> state=error
+```
+
+No inferir causa de `cancelled` sin logs adicionales. La ejecución de E2E no sucedió en este run, así que H06 no se da por verificado.
+
+### Revisión de los anteriores H01–H06
+
+- Se inspeccionó manifest, SW v2, helper, is-ios, wrappers, las cuatro páginas y tests de consumidores reales.
+- La bitácora sesión 2026-10-07 19:55 relata mutaciones RED y GREEN. Son afirmaciones del autor; **no se reprodujeron por el revisor**.
+- H01–H05 se dejan `arreglado-sin-verificar`, H06 `parcial`; no se atribuyen ejecuciones independientes inexistentes.
+- No hubo shell/worktree local, Supabase local ni Docker para esta Ronda 2. `git merge-tree` local queda pendiente aunque GitHub dice mergeable=true.
+
+### Control reproducible y que falla cerrado para R01 (NO EJECUTADO por revisor)
+
+El siguiente harness debe guardarse solo en `/tmp/t338-budget-check.mjs` por el agy, no en el repositorio. Verifica **todas** las rutas y aborta si falta una o supera 180:
+
+```js
+import { readFileSync } from 'node:fs';
+
+const input = process.argv[2];
+if (!input) throw new Error('Uso: node /tmp/t338-budget-check.mjs /tmp/t338-build.log');
+const build = readFileSync(input, 'utf8');
+const sizes = new Map();
+for (const line of build.split(/\r?\n/)) {
+  const match = line.match(/[○ƒ]\s+(\/(?:legal|login|register)?)\s+[\d.]+\s+(?:B|kB)\s+([\d.]+)\s+kB/);
+  if (match) sizes.set(match[1], Number(match[2]));
+}
+const routes = ['/', '/legal', '/login', '/register'];
+let bad = false;
+for (const route of routes) {
+  const value = sizes.get(route);
+  const ok = value !== undefined && Number.isFinite(value) && value <= 180;
+  process.stdout.write(`${route}: ${value ?? 'MISSING'} kB -> ${ok ? 'OK' : 'RED'}\n`);
+  if (!ok) bad = true;
+}
+if (bad) process.exitCode = 1;
+```
+
+Para reproducir RED con el HEAD de R2 se debe hacer en un **worktree limpio** del commit funcional:
+
+```bash
+git worktree add /tmp/wt-t338-r2 43e5945f1d2519db37e260c114df51071bb3fe94
+(
+  cd /tmp/wt-t338-r2
+  pnpm install --frozen-lockfile
+  set -o pipefail
+  pnpm build 2>&1 | tee /tmp/t338-r2-build.log
+  node /tmp/t338-budget-check.mjs /tmp/t338-r2-build.log
+)
+# Debe salir exit 1 por rutas >180: demostrar RED real con los números.
+```
+
+Para GREEN en la rama posterior al arreglo:
+
+```bash
+set -o pipefail
+pnpm build 2>&1 | tee /tmp/t338-fixed-build.log
+node /tmp/t338-budget-check.mjs /tmp/t338-fixed-build.log
+pnpm exec vitest run src/app/manifest.test.ts src/app/sw.test.ts src/features/notifications/install/is-standalone.test.ts src/features/notifications/install/ios-install-guide.test.tsx src/features/notifications/install/standalone-navigation.test.tsx
+pnpm typecheck && pnpm lint && pnpm test
+```
+
+**IMPORTANTE:** Este harness se entrega para ejecutar en la siguiente iteración; no se presentó salida fabricada. Para H06 se exige un E2E en Preview real GREEN y una mutación que muestre la landing antes de redirigir, en aislamiento temporal, con prueba RED. Si el E2E se cancela, informarlo sin cambiar el resultado del test.
+
+### Gate Android
+
+PWA en Android real: **no ejecutado y no acreditado**. Ver pasos humanos en `revisiones/ronda-2.md`.
