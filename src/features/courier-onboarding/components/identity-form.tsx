@@ -166,7 +166,7 @@ export function IdentityForm({ courierId, initialDni = '', onNext }: IdentityFor
         {/* Input de DNI numérico */}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="dni-input" className="text-sm font-semibold text-foreground">
-            {COURIER_ONBOARDING_COPY.dniLabel} <span className="text-primary">*</span>
+            {COURIER_ONBOARDING_COPY.dniLabel} <span className="text-primary-dark">*</span>
           </label>
           <Input
             id="dni-input"
