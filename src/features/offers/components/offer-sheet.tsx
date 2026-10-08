@@ -17,8 +17,12 @@ import { Badge } from '@/ui/badge';
 import { formatArs } from '@/lib/format';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import { OFFERS_COPY } from '../copy';
-import type { AvailableRequestItem, SubmitOfferFormInput } from '../schemas';
-import { submitOfferAction } from '../actions';
+import type {
+  AvailableRequestItem,
+  SubmitOfferFormInput,
+  TakeRequestFormInput,
+} from '../schemas';
+import { submitOfferAction, takeRequestAction } from '../actions';
 
 export interface OfferSheetProps {
   isOpen: boolean;
@@ -27,6 +31,9 @@ export interface OfferSheetProps {
   minOfferArs: number;
   onSubmitOffer?: (
     input: SubmitOfferFormInput
+  ) => Promise<{ ok: boolean; code?: string; message?: string }>;
+  onTakeRequest?: (
+    input: TakeRequestFormInput
   ) => Promise<{ ok: boolean; code?: string; message?: string }>;
   isOffline?: boolean;
 }
@@ -37,6 +44,7 @@ export function OfferSheet({
   request,
   minOfferArs,
   onSubmitOffer,
+  onTakeRequest,
   isOffline = false,
 }: OfferSheetProps) {
   const [amountStr, setAmountStr] = useState<string>('1500');
@@ -66,6 +74,8 @@ export function OfferSheet({
     setServerError(null);
   };
 
+  const isFixedPrice = request.fixedPriceArs != null;
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) {
       e.preventDefault();
@@ -75,6 +85,45 @@ export function OfferSheet({
     }
     setServerError(null);
     setIsSubmitting(true);
+
+    if (isFixedPrice) {
+      const takePayload: TakeRequestFormInput = {
+        requestId: request.id,
+        etaMinutes,
+        message: message.trim() ? message.trim() : null,
+      };
+
+      try {
+        if (onTakeRequest) {
+          const res = await onTakeRequest(takePayload);
+          if (!res.ok) {
+            const msg =
+              res.message ?? (res.code ? getDomainErrorMessage(res.code) : 'Error al tomar solicitud');
+            setServerError(msg);
+            setIsSubmitting(false);
+            return;
+          }
+        } else {
+          const result = await takeRequestAction(takePayload);
+          if (!result.ok) {
+            setServerError(getDomainErrorMessage(result.code));
+            setIsSubmitting(false);
+            return;
+          }
+        }
+      } catch {
+        setServerError('Ocurrió un inconveniente inesperado. Intentá nuevamente.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      setIsSubmitting(false);
+      onClose();
+      void import('@/ui/notify')
+        .then(({ notify }) => notify.success(OFFERS_COPY.takeSuccess))
+        .catch(() => {});
+      return;
+    }
 
     const numericAmount = parseInt(amountStr, 10);
 
@@ -123,7 +172,9 @@ export function OfferSheet({
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto">
         <SheetHeader className="border-b border-border/50 pb-3">
-          <SheetTitle className="text-xl font-bold">{OFFERS_COPY.offerSheetTitle}</SheetTitle>
+          <SheetTitle className="text-xl font-bold">
+            {isFixedPrice ? OFFERS_COPY.takeSheetTitle : OFFERS_COPY.offerSheetTitle}
+          </SheetTitle>
           <SheetDescription className="text-sm font-semibold text-foreground">
             {request.pickupZoneName} → {request.dropoffZoneName}
           </SheetDescription>
@@ -144,62 +195,87 @@ export function OfferSheet({
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
-          {/* Monto de la oferta */}
-          <div>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label htmlFor="amount-input" className="text-sm font-bold text-foreground">
-                {OFFERS_COPY.amountLabel}
-              </label>
-              <span className="text-sm font-medium text-muted-foreground">
-                {OFFERS_COPY.floorPrefix} {formatArs(minOfferArs)}
-              </span>
-            </div>
-            <div className="relative flex items-center">
-              <span
-                className="pointer-events-none absolute left-3 font-display text-lg font-bold text-muted-foreground"
-                aria-hidden="true"
-              >
-                $
-              </span>
-              <Input
-                id="amount-input"
-                aria-label={OFFERS_COPY.amountLabel}
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={amountStr}
-                onChange={(e) => {
-                  setAmountStr(e.target.value.replace(/\D/g, ''));
-                  setServerError(null);
-                }}
-                className={`min-h-12 pl-8 font-display text-lg font-bold ${
-                  serverError ? 'border-danger focus-visible:ring-danger' : ''
-                }`}
-                placeholder={OFFERS_COPY.amountPlaceholder}
-              />
-            </div>
+          {/* Monto fijo o monto de la oferta */}
+          {isFixedPrice ? (
+            <div>
+              <div className="rounded-lg border border-primary/30 bg-primary/10 p-4 text-center">
+                <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                  {OFFERS_COPY.fixedPriceNotice}
+                </p>
+                <div className="mt-1 font-display text-2xl font-black text-primary-dark">
+                  {formatArs(request.fixedPriceArs!)}
+                </div>
+                <p className="mt-1.5 text-sm font-medium text-muted-foreground">
+                  {request.autoAssign
+                    ? OFFERS_COPY.autoAssignNotice
+                    : OFFERS_COPY.manualAssignNotice}
+                </p>
+              </div>
 
-            {/* Error del servidor al ofertar bajo el piso */}
-            {serverError && (
-              <p role="alert" className="text-danger mt-1.5 text-sm font-semibold transition-all">
-                {serverError}
-              </p>
-            )}
-
-            {/* Chips rápidos */}
-            <div className="mt-2.5 flex items-center gap-2">
-              {chips.map((chipAmount) => (
-                <button
-                  key={chipAmount}
-                  type="button"
-                  onClick={() => handleChipClick(chipAmount)}
-                  className="inline-flex min-h-12 items-center justify-center rounded-lg border border-border bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              {/* Error del servidor */}
+              {serverError && (
+                <p role="alert" className="text-danger mt-1.5 text-sm font-semibold transition-all">
+                  {serverError}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label htmlFor="amount-input" className="text-sm font-bold text-foreground">
+                  {OFFERS_COPY.amountLabel}
+                </label>
+                <span className="text-sm font-medium text-muted-foreground">
+                  {OFFERS_COPY.floorPrefix} {formatArs(minOfferArs)}
+                </span>
+              </div>
+              <div className="relative flex items-center">
+                <span
+                  className="pointer-events-none absolute left-3 font-display text-lg font-bold text-muted-foreground"
+                  aria-hidden="true"
                 >
-                  {formatArs(chipAmount)}
-                </button>
-              ))}
+                  $
+                </span>
+                <Input
+                  id="amount-input"
+                  aria-label={OFFERS_COPY.amountLabel}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={amountStr}
+                  onChange={(e) => {
+                    setAmountStr(e.target.value.replace(/\D/g, ''));
+                    setServerError(null);
+                  }}
+                  className={`min-h-12 pl-8 font-display text-lg font-bold ${
+                    serverError ? 'border-danger focus-visible:ring-danger' : ''
+                  }`}
+                  placeholder={OFFERS_COPY.amountPlaceholder}
+                />
+              </div>
+
+              {/* Error del servidor al ofertar bajo el piso */}
+              {serverError && (
+                <p role="alert" className="text-danger mt-1.5 text-sm font-semibold transition-all">
+                  {serverError}
+                </p>
+              )}
+
+              {/* Chips rápidos */}
+              <div className="mt-2.5 flex items-center gap-2">
+                {chips.map((chipAmount) => (
+                  <button
+                    key={chipAmount}
+                    type="button"
+                    onClick={() => handleChipClick(chipAmount)}
+                    className="inline-flex min-h-12 items-center justify-center rounded-lg border border-border bg-card px-3.5 text-sm font-semibold text-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {formatArs(chipAmount)}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Tiempo estimado de llegada */}
           <div>
@@ -253,7 +329,13 @@ export function OfferSheet({
               disabled={isSubmitting || isOffline}
               className="min-h-12 w-full text-sm font-bold"
             >
-              {isSubmitting ? OFFERS_COPY.submittingOffer : OFFERS_COPY.submitOfferButton}
+              {isSubmitting
+                ? isFixedPrice
+                  ? OFFERS_COPY.takingRequest
+                  : OFFERS_COPY.submittingOffer
+                : isFixedPrice
+                  ? OFFERS_COPY.takeRequestButton(formatArs(request.fixedPriceArs!))
+                  : OFFERS_COPY.submitOfferButton}
             </Button>
             <Button
               type="button"

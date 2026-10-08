@@ -653,5 +653,100 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       expect(amountInput.getAttribute('inputmode')).toBe('numeric');
     });
   });
+
+  describe('T-339 DoD: Solicitud con precio fijo y toma directa', () => {
+    const fixedPriceRequest: AvailableRequestItem = {
+      ...sampleRequest,
+      id: '99999999-9999-9999-9999-999999999999',
+      fixedPriceArs: 2500,
+      autoAssign: true,
+    };
+
+    it('RequestCard muestra botón «Tomar a $X» en lugar de «Ofertar»', () => {
+      render(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[fixedPriceRequest]}
+          minOfferArs={1000}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: /tomar a \$ 2\.500/i })).toBeDefined();
+      expect(screen.queryByRole('button', { name: /^ofertar$/i })).toBeNull();
+    });
+
+    it('OfferSheet con precio fijo oculta campo de monto y presets de chips, y muestra aviso de asignación inmediata', () => {
+      const { container } = render(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={fixedPriceRequest}
+          minOfferArs={1000}
+          onTakeRequest={vi.fn()}
+        />
+      );
+
+      // No muestra campo de monto ni chips
+      expect(screen.queryByRole('textbox', { name: OFFERS_COPY.amountLabel })).toBeNull();
+      expect(screen.queryByText(/mínimo/i)).toBeNull();
+
+      // Muestra título de tomar solicitud y monto fijo
+      expect(screen.getByText(OFFERS_COPY.takeSheetTitle)).toBeDefined();
+      expect(screen.getByText(OFFERS_COPY.fixedPriceNotice)).toBeDefined();
+      expect(screen.getAllByText(/\$ 2\.500/).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(OFFERS_COPY.autoAssignNotice)).toBeDefined();
+
+      // Botón de submit dice Tomar a $ 2.500
+      expect(screen.getByRole('button', { name: /tomar a \$ 2\.500/i })).toBeDefined();
+
+      // Cláusula Anti-12px (sin text-xs)
+      const textXsElements = container.querySelectorAll('.text-xs');
+      expect(textXsElements.length).toBe(0);
+    });
+
+    it('OfferSheet con precio fijo invoca onTakeRequest al confirmar', async () => {
+      const takeMock = vi.fn().mockResolvedValue({ ok: true });
+      const closeMock = vi.fn();
+
+      render(
+        <OfferSheet
+          isOpen={true}
+          onClose={closeMock}
+          request={fixedPriceRequest}
+          minOfferArs={1000}
+          onTakeRequest={takeMock}
+        />
+      );
+
+      const submitBtn = screen.getByRole('button', { name: /tomar a \$ 2\.500/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(takeMock).toHaveBeenCalledWith({
+          requestId: fixedPriceRequest.id,
+          etaMinutes: 15,
+          message: null,
+        });
+        expect(closeMock).toHaveBeenCalled();
+      });
+    });
+
+    it('OfferSheet sin precio fijo conserva el flujo habitual de oferta y chips', () => {
+      render(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={sampleRequest}
+          minOfferArs={1000}
+          onSubmitOffer={vi.fn()}
+        />
+      );
+
+      expect(screen.getByRole('textbox', { name: OFFERS_COPY.amountLabel })).toBeDefined();
+      expect(screen.getByText(OFFERS_COPY.offerSheetTitle)).toBeDefined();
+      expect(screen.getByRole('button', { name: OFFERS_COPY.submitOfferButton })).toBeDefined();
+    });
+  });
 });
 

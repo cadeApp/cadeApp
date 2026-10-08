@@ -109,6 +109,8 @@ export async function createDeliveryRequestAction(
     status: 'draft',
     route_distance_m: routeDistanceM,
     approx_distance_m: routeDistanceM,
+    fixed_price_ars: data.fixedPriceArs ?? null,
+    auto_assign: data.autoAssign ?? false,
   };
 
   const { data: createdRequest, error: requestInsertError } = await supabase

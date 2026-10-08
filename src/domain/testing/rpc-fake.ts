@@ -84,6 +84,8 @@ export interface FakeSeedRequest {
   readonly notes?: string | null;
   readonly createdAt?: string;
   readonly pickedUpAt?: string | null;
+  readonly fixedPriceArs?: number | null;
+  readonly autoAssign?: boolean;
 }
 
 export interface FakeRequestRecord {
@@ -111,6 +113,8 @@ export interface FakeRequestRecord {
   notes: string | null;
   createdAt: string;
   pickedUpAt: string | null;
+  fixedPriceArs: number | null;
+  autoAssign: boolean;
 }
 
 export interface FakeSeedOffer {
@@ -256,6 +260,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   publish_request: ['merchant'],
   cancel_request: ['merchant', 'admin'],
   submit_offer: ['courier'],
+  take_request: ['courier'],
   withdraw_offer: ['courier'],
   accept_offer: ['merchant'],
   mark_picked_up: ['courier'],
@@ -441,6 +446,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       notes: r.notes ?? null,
       createdAt: r.createdAt ?? '2026-09-22T14:00:00.000Z',
       pickedUpAt: r.pickedUpAt ?? null,
+      fixedPriceArs: r.fixedPriceArs ?? null,
+      autoAssign: r.autoAssign ?? false,
     });
   }
 
@@ -544,12 +551,15 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
     }
     // CC-007: RPC operativas de comercio/repartidor que exigen consentimiento activo antes de validar
-    // parámetros. CC-012 conserva el gate en la función standalone `report_incident`.
+    // parámetros. CC-012 conserva el gate en la función standalone `report_incident`. CC-021 lo extiende
+    // a submit_offer y take_request.
     if (
       (rpcName === 'get_trip_details' ||
         rpcName === 'get_request_offer_couriers' ||
         rpcName === 'get_merchant_request_private_fields' ||
-        rpcName === 'report_incident') &&
+        rpcName === 'report_incident' ||
+        rpcName === 'submit_offer' ||
+        rpcName === 'take_request') &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
@@ -571,7 +581,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         return err('INVALID_SETTING_VALUE' as RpcErrorCode<K>);
       }
     }
-    if (rpcName === 'submit_offer') {
+    if (rpcName === 'submit_offer' || rpcName === 'take_request') {
       const courier = couriers.get(actor.userId);
       if (!courier) {
         return err('NOT_FOUND' as RpcErrorCode<K>);
@@ -684,6 +694,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           );
         }
 
+        if (
+          req.fixedPriceArs !== null &&
+          req.fixedPriceArs !== undefined &&
+          req.fixedPriceArs < settings.minOfferArs
+        ) {
+          return err('OFFER_BELOW_MINIMUM');
+        }
+
         const rate = consumeRequestRate(
           'publish_request',
           settings.maxRequestPublicationsPerMin,
@@ -703,6 +721,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           publishedAt,
           expiresAt,
           routeDistanceM,
+          fixedPriceArs: req.fixedPriceArs ?? null,
+          autoAssign: req.autoAssign ?? false,
         });
       }),
 
@@ -772,12 +792,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
 
         const currentNow = nowFn();
-        if (
-          getWindowRateCount(actor.userId, 'submit_offer', currentNow) + 1 >
-          settings.maxOffersPerMin
-        ) {
-          return err('RATE_LIMITED');
-        }
 
         const req = requests.get(input.requestId);
         if (!req) return err('NOT_FOUND');
@@ -789,6 +803,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('INVALID_STATE_TRANSITION');
         }
 
+        if (req.fixedPriceArs !== null && req.fixedPriceArs !== undefined) {
+          return err('FIXED_PRICE_REQUEST');
+        }
+
         for (const existing of offers.values()) {
           if (
             existing.requestId === input.requestId &&
@@ -797,6 +815,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           ) {
             return err('DUPLICATE_ACTIVE_OFFER');
           }
+        }
+
+        const courier = couriers.get(actor.userId);
+        if (!courier || courier.status === 'suspended') return err('COURIER_SUSPENDED');
+        if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
+        if (!courier.available) return err('COURIER_UNAVAILABLE');
+
+        if (
+          getWindowRateCount(actor.userId, 'submit_offer', currentNow) + 1 >
+          settings.maxOffersPerMin
+        ) {
+          return err('RATE_LIMITED');
         }
 
         incrementWindowRateCount(actor.userId, 'submit_offer', currentNow);
@@ -816,6 +846,152 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           status: 'pending',
           amountArs: input.amountArs,
           createdAt: currentNow.toISOString(),
+        });
+      }),
+
+    take_request: (rawInput) =>
+      executeRpc('take_request', rawInput, false, (input) => {
+        const req = requests.get(input.requestId);
+        if (!req) return err('NOT_FOUND');
+
+        const currentNow = nowFn();
+
+        // 5. Idempotencia (§5)
+        if (req.status === 'matched') {
+          const acceptedOffer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : null;
+          if (acceptedOffer && acceptedOffer.courierId === actor.userId) {
+            return ok({
+              offerId: acceptedOffer.offerId,
+              requestId: req.requestId,
+              amountArs: req.fixedPriceArs ?? acceptedOffer.amountArs,
+              offerStatus: 'accepted' as const,
+              requestStatus: 'matched' as const,
+              matchedAt: req.matchedAt,
+              idempotent: true,
+            });
+          }
+        } else if (req.status === 'published') {
+          for (const existing of offers.values()) {
+            if (
+              existing.requestId === req.requestId &&
+              existing.courierId === actor.userId &&
+              existing.status === 'pending'
+            ) {
+              return ok({
+                offerId: existing.offerId,
+                requestId: req.requestId,
+                amountArs: req.fixedPriceArs ?? existing.amountArs,
+                offerStatus: 'pending' as const,
+                requestStatus: 'published' as const,
+                matchedAt: null,
+                idempotent: true,
+              });
+            }
+          }
+        }
+
+        // 6. Estado de la solicitud
+        if (req.status === 'matched') {
+          return err('ALREADY_MATCHED');
+        }
+        if (isRequestExpired(req.status, req.expiresAt, currentNow)) {
+          return err('REQUEST_EXPIRED');
+        }
+        if (req.status !== 'published') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        // 7. Sin precio fijo
+        if (req.fixedPriceArs === null || req.fixedPriceArs === undefined) {
+          return err('NO_FIXED_PRICE');
+        }
+
+        // 8. Piso vigente
+        if (req.fixedPriceArs < settings.minOfferArs) {
+          return err('OFFER_BELOW_MINIMUM');
+        }
+
+        // 9. Oferta activa duplicada
+        for (const existing of offers.values()) {
+          if (
+            existing.requestId === input.requestId &&
+            existing.courierId === actor.userId &&
+            (existing.status === 'pending' || existing.status === 'accepted')
+          ) {
+            return err('DUPLICATE_ACTIVE_OFFER');
+          }
+        }
+
+        // 10. Lock del repartidor y nueva validación
+        const courier = couriers.get(actor.userId);
+        if (!courier || courier.status === 'suspended') return err('COURIER_SUSPENDED');
+        if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
+        if (!courier.available) return err('COURIER_UNAVAILABLE');
+
+        // 11. Rate limit (comparte ventana con submit_offer)
+        if (
+          getWindowRateCount(actor.userId, 'submit_offer', currentNow) + 1 >
+          settings.maxOffersPerMin
+        ) {
+          return err('RATE_LIMITED');
+        }
+
+        incrementWindowRateCount(actor.userId, 'submit_offer', currentNow);
+
+        // 12. Mutación
+        const offerId = nextUniqueOfferId();
+        const amountArs = req.fixedPriceArs;
+
+        if (req.autoAssign) {
+          offers.set(offerId, {
+            offerId,
+            requestId: input.requestId,
+            courierId: actor.userId,
+            amountArs,
+            status: 'accepted',
+          });
+          for (const sibling of offers.values()) {
+            if (
+              sibling.requestId === req.requestId &&
+              sibling.offerId !== offerId &&
+              sibling.status === 'pending'
+            ) {
+              sibling.status = 'rejected';
+            }
+          }
+          const matchedAt = currentNow.toISOString();
+          req.status = 'matched';
+          req.acceptedOfferId = offerId;
+          req.assignedCourierId = actor.userId;
+          req.matchedAt = matchedAt;
+
+          return ok({
+            offerId,
+            requestId: input.requestId,
+            amountArs,
+            offerStatus: 'accepted' as const,
+            requestStatus: 'matched' as const,
+            matchedAt,
+            idempotent: false,
+          });
+        }
+
+        offers.set(offerId, {
+          offerId,
+          requestId: input.requestId,
+          courierId: actor.userId,
+          amountArs,
+          status: 'pending',
+        });
+
+        return ok({
+          offerId,
+          requestId: input.requestId,
+          amountArs,
+          offerStatus: 'pending' as const,
+          requestStatus: 'published' as const,
+          matchedAt: null,
+          idempotent: false,
         });
       }),
 
