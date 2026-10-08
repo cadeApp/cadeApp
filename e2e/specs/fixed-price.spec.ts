@@ -1,63 +1,105 @@
 import {
   test,
   expect,
-  seedDeliveryRequestInState,
   getRequestInspectionData,
+  findRequestIdByNotesMarker,
   createAuthenticatedClient,
   getPlatformSettingNumber,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
-import { LoginPage, MerchantPage, CourierPage } from '../pages';
+import { CourierPage, type MerchantPage } from '../pages';
 import { formatArs } from '@/lib/format';
+import type { Page } from '@playwright/test';
 
 /**
  * T-339: E2E de precio de envío opcional en la solicitud y toma directa.
  *
- * Flujos cubiertos:
- * 1. Publicación con precio y switch «asignar al primero» activo:
+ * Flujos cubiertos a través de la UI real del comercio y repartidor:
+ * 1. Formulario real de alta con precio fijado y switch «asignar al primero» activo:
+ *    - El comercio ingresa precio acordado y activa el switch.
+ *    - Se crea y publica la solicitud vía publish_request.
+ *    - La DB refleja status=published, fixed_price_ars y auto_assign=true.
  *    - El repartidor ve «Tomar a $X» en lugar de «Ofertar».
  *    - Al confirmar, queda asignado (matched) de forma atómica e instantánea.
  *    - Oráculo en PostgreSQL valida estado matched, accepted_offer_id y monto exacto.
  *    - Vista de viaje refleja el monto acordado.
  *
- * 2. Publicación con precio y switch «asignar al primero» inactivo:
+ * 2. Formulario real de alta con precio y switch inactivo:
+ *    - El comercio ingresa precio acordado dejando el switch inactivo.
+ *    - La DB refleja status=published, fixed_price_ars y auto_assign=false.
  *    - El repartidor toma a $X; la solicitud sigue published y crea oferta pending.
  *    - El comercio visualiza la oferta de $X y la acepta con accept_offer.
  *    - La solicitud pasa a matched.
  *
- * 3. Solicitud sin precio fijo conserva el flujo habitual de oferta abierta y subasta:
+ * 3. Formulario real sin precio fijo:
+ *    - El comercio publica sin ingresar precio.
+ *    - Conserva el flujo habitual de oferta abierta y subasta:
  *    - El repartidor ve «Ofertar», campo de monto numérico, piso dinámico y chips.
  */
 
+async function fillBaseMerchantForm(
+  merchantPage: MerchantPage,
+  notesMarker: string
+): Promise<void> {
+  const pickupVal = await merchantPage.pickupAddressInput.inputValue();
+  if (!pickupVal.trim()) {
+    await merchantPage.pickupAddressInput.fill('San Martín 150');
+  }
+  await merchantPage.dropoffAddressInput.fill('Av. Mitre 450');
+  await merchantPage.recipientNameInput.fill('María Destinataria');
+  await merchantPage.recipientPhoneInput.fill('3865123456');
+  await merchantPage.consentCheckbox.check();
+  await merchantPage.packageChicoButton.click();
+  await merchantPage.paymentCashButton.click();
+  await merchantPage.notesInput.fill(notesMarker);
+}
+
 test.describe('T-339 — Precio de envío opcional y toma directa', () => {
   // ---------------------------------------------------------------------------
-  // 1. Con precio y switch activo: asignación atómica al primer repartidor
+  // 1. Con precio y switch activo: publicación real por UI y asignación atómica
   // ---------------------------------------------------------------------------
-  test('DoD: solicitud con precio y switch activo asigna al primer repartidor atómicamente', async ({
+  test('DoD: solicitud creada por UI con precio y switch activo asigna al primer repartidor atómicamente', async ({
     page,
+    merchantPage,
     stagingContext,
+    loginAsMerchant,
     loginAsCourier,
   }) => {
-    const merchant = stagingContext.merchantUser;
     const courier = stagingContext.courierUsers?.[0];
-    if (!merchant || !courier) {
-      throw new Error('[E2E Error] Se requieren merchant y courier en stagingContext');
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere courier en stagingContext');
     }
 
     const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
     const fixedPrice = Math.max(minOfferArs, 1500) + 500;
 
-    // 1. Sembrar solicitud en estado published con precio fijo y auto_assign = true
-    const seedResult = await seedDeliveryRequestInState(stagingContext, {
-      status: 'published',
-      merchantId: merchant.id,
-      withContacts: true,
-      fixedPriceArs: fixedPrice,
-      autoAssign: true,
-    });
-    const requestId = seedResult.requestId;
+    // 1. Comercio inicia sesión y navega al formulario real de alta
+    await loginAsMerchant(page);
+    await merchantPage.gotoNewRequest();
+    await waitForNoSkeletons(page);
 
-    // 2. Courier 0 inicia sesión y navega al feed
+    const notesMarker = `E2E fixed auto ${stagingContext.testRunId}`;
+    await fillBaseMerchantForm(merchantPage, notesMarker);
+
+    // 2. Ingresa precio del envío acordado y activa switch de auto-asignación
+    await page.getByLabel(/precio del envío acordado/i).fill(fixedPrice.toString());
+    await page.getByLabel(/asignar al primer repartidor que tome/i).click();
+
+    // 3. Envía el formulario real
+    await merchantPage.submitRequestButton.click();
+    await page.waitForURL((url) => !url.pathname.endsWith('/requests/new'), {
+      timeout: 10000,
+    });
+    await waitForNoSkeletons(page);
+
+    // 4. Oráculo server-side en PostgreSQL: la solicitud fue publicada con los campos correctos
+    const requestId = await findRequestIdByNotesMarker(stagingContext, notesMarker);
+    const createdInspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(createdInspection.requestStatus).toBe('published');
+    expect(createdInspection.fixedPriceArs).toBe(fixedPrice);
+    expect(createdInspection.autoAssign).toBe(true);
+
+    // 5. Courier 0 inicia sesión y navega al feed
     await loginAsCourier(0, page);
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
@@ -66,42 +108,42 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     const card = courierPage.requestCardById(requestId);
     await expect(card).toBeVisible();
 
-    // 3. Verifica que la tarjeta muestre «Tomar a $X» y no el botón genérico «Ofertar»
+    // 6. Verifica que la tarjeta muestre «Tomar a $X» y no el botón genérico «Ofertar»
     const takeButton = card.getByRole('button', {
       name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
     });
     await expect(takeButton).toBeVisible();
     await expect(card.getByRole('button', { name: /^ofertar$/i })).toHaveCount(0);
 
-    // 4. Repartidor abre la hoja para tomar la solicitud
+    // 7. Repartidor abre la hoja para tomar la solicitud
     await takeButton.click();
 
-    // 5. La hoja muestra título de toma, banner de precio y sin input de monto ni chips
+    // 8. La hoja muestra título de toma, banner de precio y sin input de monto ni chips
     await expect(page.getByText(/tomar solicitud/i)).toBeVisible();
     await expect(page.getByText(/precio fijado por el comercio/i)).toBeVisible();
     await expect(page.getByText(/asignación inmediata/i)).toBeVisible();
     await expect(page.getByLabel(/monto de la oferta/i)).toHaveCount(0);
 
-    // 6. Confirma la toma de la solicitud
+    // 9. Confirma la toma de la solicitud
     const confirmButton = page.getByRole('button', {
       name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
     });
     await confirmButton.click();
 
-    // 7. Oráculo server-side en PostgreSQL: la solicitud quedó matched de inmediato
-    const inspection = await getRequestInspectionData(stagingContext, requestId);
-    expect(inspection.requestStatus).toBe('matched');
-    expect(inspection.acceptedOfferId).not.toBeNull();
-    expect(inspection.fixedPriceArs).toBe(fixedPrice);
-    expect(inspection.autoAssign).toBe(true);
+    // 10. Oráculo server-side en PostgreSQL: la solicitud quedó matched de inmediato
+    const matchedInspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(matchedInspection.requestStatus).toBe('matched');
+    expect(matchedInspection.acceptedOfferId).not.toBeNull();
+    expect(matchedInspection.fixedPriceArs).toBe(fixedPrice);
+    expect(matchedInspection.autoAssign).toBe(true);
 
-    const acceptedOffer = inspection.offers.find((o) => o.id === inspection.acceptedOfferId);
+    const acceptedOffer = matchedInspection.offers.find((o) => o.id === matchedInspection.acceptedOfferId);
     expect(acceptedOffer).toBeDefined();
     expect(acceptedOffer?.courierId).toBe(courier.id);
     expect(acceptedOffer?.amountArs).toBe(fixedPrice);
     expect(acceptedOffer?.status).toBe('accepted');
 
-    // 8. El repartidor accede a la vista de viaje y verifica el monto acordado
+    // 11. El repartidor accede a la vista de viaje y verifica el monto acordado
     await page.goto(`/trips/${requestId}`);
     await waitForNoSkeletons(page);
     await expect(page.getByText(/cobrás al entregar/i)).toBeVisible();
@@ -111,9 +153,11 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
   // ---------------------------------------------------------------------------
   // 2. Con precio y switch inactivo: genera oferta pendiente y el comercio elige
   // ---------------------------------------------------------------------------
-  test('DoD: solicitud con precio y switch inactivo crea oferta pendiente y el comercio elige', async ({
+  test('DoD: solicitud creada por UI con precio y switch inactivo crea oferta pendiente y el comercio elige', async ({
     page,
+    merchantPage,
     stagingContext,
+    loginAsMerchant,
     loginAsCourier,
   }) => {
     const merchant = stagingContext.merchantUser;
@@ -125,17 +169,30 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
     const fixedPrice = Math.max(minOfferArs, 1500) + 300;
 
-    // 1. Sembrar solicitud en estado published con precio fijo y auto_assign = false
-    const seedResult = await seedDeliveryRequestInState(stagingContext, {
-      status: 'published',
-      merchantId: merchant.id,
-      withContacts: true,
-      fixedPriceArs: fixedPrice,
-      autoAssign: false,
-    });
-    const requestId = seedResult.requestId;
+    // 1. Comercio crea solicitud con precio pero dejando el switch apagado
+    await loginAsMerchant(page);
+    await merchantPage.gotoNewRequest();
+    await waitForNoSkeletons(page);
 
-    // 2. Courier 0 inicia sesión y navega al feed
+    const notesMarker = `E2E fixed manual ${stagingContext.testRunId}`;
+    await fillBaseMerchantForm(merchantPage, notesMarker);
+    await page.getByLabel(/precio del envío acordado/i).fill(fixedPrice.toString());
+
+    // Switch se deja inactivo (no se hace click)
+    await merchantPage.submitRequestButton.click();
+    await page.waitForURL((url) => !url.pathname.endsWith('/requests/new'), {
+      timeout: 10000,
+    });
+    await waitForNoSkeletons(page);
+
+    // Oráculo DB: auto_assign es false
+    const requestId = await findRequestIdByNotesMarker(stagingContext, notesMarker);
+    const createdInspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(createdInspection.requestStatus).toBe('published');
+    expect(createdInspection.fixedPriceArs).toBe(fixedPrice);
+    expect(createdInspection.autoAssign).toBe(false);
+
+    // 2. Courier 0 toma la solicitud a $X
     await loginAsCourier(0, page);
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
@@ -144,7 +201,6 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     const card = courierPage.requestCardById(requestId);
     await expect(card).toBeVisible();
 
-    // 3. Repartidor toma la solicitud a $X
     const takeButton = card.getByRole('button', {
       name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
     });
@@ -158,7 +214,7 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     });
     await confirmButton.click();
 
-    // 4. Oráculo intermedio: la solicitud sigue en estado published con una oferta pending por el precio fijo
+    // 3. Oráculo intermedio: la solicitud sigue en estado published con una oferta pending por el precio fijo
     const midwayInspection = await getRequestInspectionData(stagingContext, requestId);
     expect(midwayInspection.requestStatus).toBe('published');
     expect(midwayInspection.acceptedOfferId).toBeNull();
@@ -171,14 +227,14 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
       throw new Error('[E2E Error] No se encontró oferta pendiente creada');
     }
 
-    // 5. El comercio acepta la oferta creada
+    // 4. El comercio acepta la oferta creada
     const merchantClient = await createAuthenticatedClient(merchant);
     const { error: acceptErr } = await merchantClient.rpc('accept_offer', {
       p_offer_id: offerId,
     });
     expect(acceptErr).toBeNull();
 
-    // 6. Oráculo final: la solicitud quedó matched con la oferta aceptada
+    // 5. Oráculo final: la solicitud quedó matched con la oferta aceptada
     const finalInspection = await getRequestInspectionData(stagingContext, requestId);
     expect(finalInspection.requestStatus).toBe('matched');
     expect(finalInspection.acceptedOfferId).toBe(offerId);
@@ -187,27 +243,35 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
   // ---------------------------------------------------------------------------
   // 3. Sin precio fijo: conserva el flujo de ofertas y subasta
   // ---------------------------------------------------------------------------
-  test('DoD: solicitud sin precio fijo conserva el botón de ofertar y flujo abierto', async ({
+  test('DoD: solicitud creada por UI sin precio fijo conserva el botón de ofertar y flujo abierto', async ({
     page,
+    merchantPage,
     stagingContext,
+    loginAsMerchant,
     loginAsCourier,
   }) => {
-    const merchant = stagingContext.merchantUser;
-    if (!merchant) {
-      throw new Error('[E2E Error] Se requiere merchant en stagingContext');
-    }
+    // 1. Comercio crea solicitud sin precio fijo
+    await loginAsMerchant(page);
+    await merchantPage.gotoNewRequest();
+    await waitForNoSkeletons(page);
 
-    // 1. Sembrar solicitud sin precio fijo (fixedPriceArs: null)
-    const seedResult = await seedDeliveryRequestInState(stagingContext, {
-      status: 'published',
-      merchantId: merchant.id,
-      withContacts: true,
-      fixedPriceArs: null,
-      autoAssign: false,
+    const notesMarker = `E2E open auction ${stagingContext.testRunId}`;
+    await fillBaseMerchantForm(merchantPage, notesMarker);
+
+    await merchantPage.submitRequestButton.click();
+    await page.waitForURL((url) => !url.pathname.endsWith('/requests/new'), {
+      timeout: 10000,
     });
-    const requestId = seedResult.requestId;
+    await waitForNoSkeletons(page);
 
-    // 2. Courier 0 inicia sesión y navega al feed
+    // Oráculo DB: fixed_price_ars es null y auto_assign es false
+    const requestId = await findRequestIdByNotesMarker(stagingContext, notesMarker);
+    const createdInspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(createdInspection.requestStatus).toBe('published');
+    expect(createdInspection.fixedPriceArs).toBeNull();
+    expect(createdInspection.autoAssign).toBe(false);
+
+    // 2. Courier 0 navega al feed
     await loginAsCourier(0, page);
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);

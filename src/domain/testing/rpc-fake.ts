@@ -857,35 +857,54 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const currentNow = nowFn();
 
         // 5. Idempotencia (§5)
-        if (req.status === 'matched') {
-          const acceptedOffer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : null;
-          if (acceptedOffer && acceptedOffer.courierId === actor.userId) {
-            return ok({
-              offerId: acceptedOffer.offerId,
-              requestId: req.requestId,
-              amountArs: req.fixedPriceArs ?? acceptedOffer.amountArs,
-              offerStatus: 'accepted' as const,
-              requestStatus: 'matched' as const,
-              matchedAt: req.matchedAt,
-              idempotent: true,
-            });
-          }
-        } else if (req.status === 'published') {
-          for (const existing of offers.values()) {
-            if (
-              existing.requestId === req.requestId &&
-              existing.courierId === actor.userId &&
-              existing.status === 'pending'
-            ) {
+        if (req.fixedPriceArs !== null && req.fixedPriceArs !== undefined) {
+          if (req.status === 'matched') {
+            const acceptedOffer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : null;
+            if (acceptedOffer && acceptedOffer.courierId === actor.userId) {
               return ok({
-                offerId: existing.offerId,
+                offerId: acceptedOffer.offerId,
                 requestId: req.requestId,
-                amountArs: req.fixedPriceArs ?? existing.amountArs,
-                offerStatus: 'pending' as const,
-                requestStatus: 'published' as const,
-                matchedAt: null,
+                amountArs: req.fixedPriceArs,
+                offerStatus: 'accepted' as const,
+                requestStatus: 'matched' as const,
+                matchedAt: req.matchedAt,
                 idempotent: true,
               });
+            }
+          } else if (req.status === 'published') {
+            for (const existing of offers.values()) {
+              if (
+                existing.requestId === req.requestId &&
+                existing.courierId === actor.userId &&
+                existing.status === 'pending'
+              ) {
+                return ok({
+                  offerId: existing.offerId,
+                  requestId: req.requestId,
+                  amountArs: req.fixedPriceArs,
+                  offerStatus: 'pending' as const,
+                  requestStatus: 'published' as const,
+                  matchedAt: null,
+                  idempotent: true,
+                });
+              }
+            }
+          }
+        } else {
+          if (req.status === 'matched') {
+            const acceptedOffer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : null;
+            if (acceptedOffer && acceptedOffer.courierId === actor.userId) {
+              return err('NO_FIXED_PRICE');
+            }
+          } else if (req.status === 'published') {
+            for (const existing of offers.values()) {
+              if (
+                existing.requestId === req.requestId &&
+                existing.courierId === actor.userId &&
+                existing.status === 'pending'
+              ) {
+                return err('NO_FIXED_PRICE');
+              }
             }
           }
         }

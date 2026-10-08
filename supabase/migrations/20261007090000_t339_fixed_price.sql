@@ -140,7 +140,7 @@ declare
   v_result jsonb;
   v_incident uuid;
   v_rate_action text;
-  v_consent public.consent_status;
+  v_consent_status public.consent_status;
 begin
   if v_uid is null then raise exception 'UNAUTHENTICATED' using errcode = 'P0001'; end if;
   select role, consent_status into v_role, v_consent_status from public.profiles where id = v_uid;
@@ -151,7 +151,7 @@ begin
     or (p_action = 'cancel_request' and v_role not in ('merchant','admin'))) then
     raise exception 'UNAUTHORIZED_ACTOR' using errcode = 'P0001';
   end if;
-  if v_role <> 'admin' and (v_consent is distinct from 'active') then
+  if v_role <> 'admin' and (v_consent_status is distinct from 'active') then
     raise exception 'UNAUTHORIZED_ACTOR' using errcode = 'P0001';
   end if;
 
@@ -354,6 +354,7 @@ declare
   v_consent_status public.consent_status;
   v_offer public.offers%rowtype;
   v_req public.delivery_requests%rowtype;
+  v_req_id uuid;
   v_courier_status public.courier_status;
   v_now timestamptz := now();
   v_matched_at timestamptz;
@@ -375,10 +376,9 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  select * into v_offer
+  select request_id into v_req_id
   from public.offers
-  where id = p_offer_id
-  for share;
+  where id = p_offer_id;
 
   if not found then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
@@ -386,10 +386,19 @@ begin
 
   select * into v_req
   from public.delivery_requests
-  where id = v_offer.request_id
+  where id = v_req_id
   for update;
 
   if not found then
+    raise exception using errcode = 'P0001', message = 'NOT_FOUND';
+  end if;
+
+  select * into v_offer
+  from public.offers
+  where id = p_offer_id
+  for update;
+
+  if not found or v_offer.request_id <> v_req.id then
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
@@ -747,39 +756,51 @@ begin
   end if;
 
   -- 5. Idempotencia (§5)
-  if v_req.status = 'matched' and v_req.accepted_offer_id is not null then
-    select * into v_accepted_offer
-    from public.offers
-    where id = v_req.accepted_offer_id;
+  if v_req.fixed_price_ars is not null then
+    if v_req.status = 'matched' and v_req.accepted_offer_id is not null then
+      select * into v_accepted_offer
+      from public.offers
+      where id = v_req.accepted_offer_id;
 
-    if found and v_accepted_offer.courier_id = v_actor_id then
-      return jsonb_build_object(
-        'offerId', v_accepted_offer.id,
-        'requestId', v_req.id,
-        'amountArs', coalesce(v_req.fixed_price_ars, v_accepted_offer.amount_ars),
-        'offerStatus', 'accepted',
-        'requestStatus', 'matched',
-        'matchedAt', to_char(v_req.matched_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-        'idempotent', true
-      );
+      if found and v_accepted_offer.courier_id = v_actor_id then
+        return jsonb_build_object(
+          'offerId', v_accepted_offer.id,
+          'requestId', v_req.id,
+          'amountArs', v_req.fixed_price_ars,
+          'offerStatus', 'accepted',
+          'requestStatus', 'matched',
+          'matchedAt', to_char(v_req.matched_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+          'idempotent', true
+        );
+      end if;
+    elsif v_req.status = 'published' then
+      select * into v_pending_offer
+      from public.offers
+      where request_id = p_request_id
+        and courier_id = v_actor_id
+        and status = 'pending';
+
+      if found then
+        return jsonb_build_object(
+          'offerId', v_pending_offer.id,
+          'requestId', v_req.id,
+          'amountArs', v_req.fixed_price_ars,
+          'offerStatus', 'pending',
+          'requestStatus', 'published',
+          'matchedAt', null,
+          'idempotent', true
+        );
+      end if;
     end if;
-  elsif v_req.status = 'published' then
-    select * into v_pending_offer
-    from public.offers
-    where request_id = p_request_id
-      and courier_id = v_actor_id
-      and status = 'pending';
-
-    if found then
-      return jsonb_build_object(
-        'offerId', v_pending_offer.id,
-        'requestId', v_req.id,
-        'amountArs', coalesce(v_req.fixed_price_ars, v_pending_offer.amount_ars),
-        'offerStatus', 'pending',
-        'requestStatus', 'published',
-        'matchedAt', null,
-        'idempotent', true
-      );
+  else
+    if (v_req.status = 'matched' and exists (
+          select 1 from public.offers where id = v_req.accepted_offer_id and courier_id = v_actor_id
+        ))
+       or (v_req.status = 'published' and exists (
+          select 1 from public.offers where request_id = p_request_id and courier_id = v_actor_id and status = 'pending'
+        ))
+    then
+      raise exception using errcode = 'P0001', message = 'NO_FIXED_PRICE';
     end if;
   end if;
 
