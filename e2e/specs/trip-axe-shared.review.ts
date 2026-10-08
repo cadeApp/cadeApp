@@ -15,6 +15,9 @@ export async function expectRealGoogleMap(page: Page) {
 }
 
 export async function logAriaHiddenFocusOrigin(page: Page, label: string) {
+  // Da tiempo a que el SDK termine de montar su DOM (incluido un eventual diálogo de error).
+  await page.locator('[data-testid="trip-route-map"] .gm-style').waitFor({ timeout: 20_000 }).catch(() => undefined);
+  await page.waitForTimeout(3_000);
   const report = await page.evaluate(() =>
     Array.from(document.querySelectorAll('[aria-hidden="true"][tabindex]')).map((node) => {
       const ancestors: string[] = [];

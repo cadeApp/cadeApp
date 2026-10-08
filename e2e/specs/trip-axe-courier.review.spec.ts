@@ -4,6 +4,9 @@ import { auditTrip, expectRealGoogleMap, logAriaHiddenFocusOrigin } from './trip
 
 // REVIEW ONLY / NEVER MERGE (T-350): auditoría axe AA real de R07 con mapa de Google cargado.
 test('DoD temporal T-350: axe AA en viaje R07', async ({ page, stagingContext, loginAsCourier }) => {
+  page.on('console', (msg) => {
+    if (/google maps|MapError|maps\.googleapis/i.test(msg.text())) console.log(`[T-350 maps console] ${msg.type()}: ${msg.text()}`);
+  });
   await loginAsCourier(0, page);
   const courier = stagingContext.courierUsers?.[0];
   if (!courier) {
@@ -17,7 +20,7 @@ test('DoD temporal T-350: axe AA en viaje R07', async ({ page, stagingContext, l
   await page.goto(`/trips/${seededTrip.requestId}`);
   await waitForNoSkeletons(page);
   await expect(page).toHaveURL(new RegExp(`/trips/${seededTrip.requestId}$`));
-  await expectRealGoogleMap(page);
   await logAriaHiddenFocusOrigin(page, 'R07');
+  await expectRealGoogleMap(page);
   await auditTrip(page);
 });
