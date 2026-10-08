@@ -21,3 +21,12 @@ La PR afirma «implementación completa» y «concurrencia cubierta», pero el C
 
 No modificar `AGENTS.md` por una sola PR. Priorizar nuevo control objetivo y revalidación independiente en la próxima ronda.
 
+## Ronda 2 (2026-10-08)
+
+- **AG-37, refuerzo (H11/H12):** revisar contra la función canónica completa al sobrescribir `CREATE OR REPLACE FUNCTION`; un cambio de `now()` a `clock_timestamp()` y un movimiento de una guarda provocaron 7 fallos del contrato antiguo y fueron omitidos en R1.
+- **AG-68 / AG-70, refuerzo (H13):** `plan(45)` puede coincidir con 45 aserciones y seguir sin correr ninguna: una zona inválida en INSERT abortó la transacción del fixture. El control correcto es el log pgTAP que termina con PASS, además del conteo.
+- **AG-62, refuerzo (H05):** rotular una prueba como «carrera» no crea concurrencia: el autor declara mutación RED de lock, pero el SQL usa un único cliente y llamada secuencial, incapaz de detectar el interleaving. Esto confirma la ausencia de prueba, sin especular sobre intención.
+- **Disciplina de revisión:** H11–H13 no aparecieron por las correcciones recientes; ya estaban en R1. Reconocer el agujero propio y registrar el hallazgo nuevo ahora, sin culpar erróneamente al arreglo.
+
+No proponer número AG nuevo sin verificar el máximo de todas las ramas.
+

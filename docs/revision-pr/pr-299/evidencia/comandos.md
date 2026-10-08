@@ -136,3 +136,67 @@ git ls-remote origin feat/T-339-precio-fijo
 
 Abrir logs del nuevo SHA: verificar aplicación de migración, archivos/número/resultados pgTAP, `pnpm db:types --local` y `git diff --exit-code`; después comprobar E2E preview del nuevo SHA. No alterar thresholds, no marcar «verificado» en bitácora y no escribir `docs/revision-pr/**` desde el agente autor.
 
+---
+
+# Ronda 2 — nueva evidencia independiente, SHA `5250d51922bf67a2f2555fe824c791ffe94ab1a3`
+
+## Logs de CI del SHA
+
+- Run `37750956332`. Unit job `113223757529`: 125 archivos / 1999 tests en verde, pero falla `coverage for branches 89.74% < 90%` sobre `src/domain/testing/rpc-fake.ts`.
+- DB job `113223757743`: migración T-339 aplicada; `rpc_offers.sql` PASS, `rpc_requests.sql` 7/1241 FAIL: tests 1098, 1103, 1104, 1148, 1154, 1161 y 1198; `t339_fixed_price.sql:68` CHECK `zones_centroid_lng_bounds`, 0 de 45 aserciones ejecutadas.
+- Fuente anterior del reloj y precedencia: `supabase/migrations/20261002010000_cc015_admin_cancel_requires_incident.sql` leída desde develop. Usa `v_now timestamptz := now();` y chequea `REASON_REQUIRED` antes de validar incidentes. Nuevo `request_cycle` de T-339 usa `clock_timestamp()` y orden opuesto.
+- Vercel bot en PR informa falla `api-deployments-free-per-day` (>100); no declarar `e2e-preview` verde.
+
+## Harness de invariantes estructurales R2 (completo, lectura solamente)
+
+Copia el código desde este archivo a `/tmp/audit-pr299-r2.mjs` en un checkout limpio del SHA; ejecutalo con `PR299_ROOT="$PWD" node /tmp/audit-pr299-r2.mjs`. Es **control auxiliar**, nunca una demostración de concurrencia SQL.
+
+```js audit-pr299-r2.mjs
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const root=process.env.PR299_ROOT || process.cwd();
+const read=(p)=>readFileSync(join(root,p),'utf8');
+const migration=read('supabase/migrations/20261007090000_t339_fixed_price.sql');
+const pg=read('supabase/tests/t339_fixed_price.sql');
+const tests=read('src/domain/t339-fixed-price.test.ts');
+const e2e=read('e2e/specs/fixed-price.spec.ts');
+const fn=(name)=>{
+  const start=migration.indexOf('create or replace function '+name+'(');
+  if(start<0)throw new Error('No encontrado '+name);
+  return migration.slice(start,migration.indexOf('\n$$;',start));
+};
+const cycle=fn('app_private.request_cycle');
+const take=fn('public.take_request');
+const acc=fn('public.accept_offer');
+const checks=[
+['H01 fixed consent declaration',/v_consent_status public\.consent_status;/.test(cycle)&&/into v_role, v_consent_status/.test(cycle)],
+['H02 request precedes offer FOR UPDATE',acc.indexOf('for update;',acc.indexOf('where id = v_offer.request_id'))>=0],
+['H03 fixed-price retry gate',/if v_req\.fixed_price_ars is not null then/.test(take.slice(take.indexOf('-- 5. Idempotencia'),take.indexOf('-- 6. Estado')))],
+['H04 plan equals count',Number(pg.match(/select plan\((\d+)\)/)?.[1])===[...pg.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length],
+['H05 test has genuine 2-session concurrency',/dblink|pg_background/i.test(pg)||/Promise\.all\(/.test(e2e)],
+['H07 valid distinct attempts',/11th offer on a new valid request/.test(tests)],
+['H08 merchant publishes from UI',/gotoNewRequest\(/.test(e2e)&&/submitRequestButton\.click\(\)/.test(e2e)],
+['H09 no any',!/Record<string,\s*any>/.test(tests)],
+['H11 request_cycle preserves transaction clock',/v_now timestamptz := now\(\)/.test(cycle)],
+['H12 reason required before incident check',cycle.indexOf("raise exception 'REASON_REQUIRED'")<cycle.indexOf('and not exists (select 1 from public.incidents')],
+['H13 valid zone seeded directly',!/values\s*\(pg_temp\.zone_id\(\),\s*'Centro Aguilares',\s*true,\s*-27\.4333,\s*-27\.4333\)/i.test(pg)]
+];
+let failures=0;
+for(const [label,ok] of checks){console.log((ok?'GREEN ':'RED   ')+label);if(!ok)failures++}
+console.log('TOTAL RED='+failures);
+if(failures)process.exitCode=1;
+```
+
+**Resultados de inspección sobre los blobs exactos del SHA:** H01/H02/H03/H04/H07/H08/H09 = GREEN; H05/H11/H12/H13 = RED, y la cobertura H06 además es ROJA en CI. El control H05 es deliberadamente un proxy estático: incluso que muestre GREEN tras agregar `Promise.all` **NO valida dos transacciones reales**; verificar clientes Supabase distintos y el resultado en DB. El script tampoco comprueba mutaciones RED de SQL: esas requieren CI/DB. No se ejecutó una copia física en /tmp, porque en esta sesión no hay clone ni acceso DNS a GitHub; no se afirma lo contrario.
+
+## Mutaciones RED que la revisión exigirá en R3
+
+- H11: cambiar `v_now := now()` de `app_private.request_cycle` a `clock_timestamp()` en copia temporal → los seis timestamps dejan de coincidir.
+- H12: mover nuevamente validación de incidente sobre `REASON_REQUIRED` → `rpc_requests.sql` caso 1161 debe devolver INVALID_STATE_TRANSITION y ponerse rojo.
+- H13: en `INSERT zones` cambiar longitud `-65.6133` a `-27.4333` → error 23514, no disfrazarlo como aserción de éxito.
+- H05: remover `FOR UPDATE` de request o alterar el orden de lock en el código en memoria → un test realmente paralelo debe fallar en su invariante (no en fixture).
+- H06: mutar rama de error específica del fake → nueva aserción de comportamiento entra RED, restaurar y `pnpm test:coverage` GREEN con >=90% en CI.
+- H02/H03/H04/H08: conservar los arreglos e incluir pruebas independientes verificables, no aceptar solo el «6/6 GREEN» del auditor del autor.
+
+**No adulterar tests, snapshots, mocks o cobertura.** Todos los RED deben fallar por la propiedad prometida. Sin Docker ni Supabase remoto/local desde el agente; integración en `db-tests` y `e2e-preview` de CI. No disparar workflows manualmente, no editar `docs/revision-pr/**` desde la sesión autora.
+

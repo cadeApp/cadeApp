@@ -10,13 +10,14 @@
 | HEAD inspeccionado | `6fbde29f48cc502ff497d18c4488fcd442246bf6` |
 | Tamaño antes de revisión | 35 archivos, +3472/-111 líneas |
 | Decisión de alcance | Lautaro073 aprobó opción A: `src/ui/ui-system.test.tsx` permitido para ajustar 27→29 códigos |
-| Estado | CON BLOQUEANTES; NO APROBAR / NO MERGEAR |
+| Estado | Ronda 2: CON BLOQUEANTES (5); NO APROBAR / NO MERGEAR |
 
 ## Rondas
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `6fbde29f48cc502ff497d18c4488fcd442246bf6` | 9 bloqueantes, 1 mejora | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `5250d51922bf67a2f2555fe824c791ffe94ab1a3` | 5 bloqueantes efectivos (H05, H06, H11–H13); corregidos sin verificar H02–H04, H07–H08 | [ronda-2.md](revisiones/ronda-2.md) |
 
 ## Hallazgos
 
@@ -33,6 +34,10 @@
 | PR299-H09 | medio | `any` prohibido en test de contrato | abierto |
 | PR299-H10 | bajo | sugerir piso dinámico en formulario | mejora |
 
+| H11 | alto | reloj transaccional alterado | abierto |
+| H12 | alto | motivo de cancelación perdió precedencia | abierto |
+| H13 | alto | fixture zones impide ejecutar pgTAP | abierto |
+
 ## Evidencia
 
 - [Informe detallado](revisiones/ronda-1.md).
@@ -44,3 +49,7 @@
 
 Se inspeccionaron diffs, SQL, contratos, fake, formulario, E2E, bitácora, comentarios y logs de CI del SHA original. Solo `db-tests` y `unit` tuvieron fallo confirmado por CI; los peligros de deadlock y semántica se registran **por inspección**, NO como reproducción PostgreSQL. No se levantó Docker/Supabase ni se ejecutaron pruebas de integración locales. Los contadores y los checks estructurales se calcularon independientemente sobre contenido exacto del commit indicado. Este commit de documentación moverá el HEAD: el SHA verificado por revisión sigue siendo el anterior, no el commit del informe.
 
+
+## Ronda 2 — delimitación
+
+SHA inspeccionado: `5250d51922bf67a2f2555fe824c791ffe94ab1a3`. CI run 37750956332, db-tests y unit fallan; Vercel cuota bloquea E2E. Estado H01: migración aplicada en CI (no implica todas las pruebas verdes). H05 aún no demuestra concurrencia genuina. H11–H13 ya estaban en la versión inicial y fueron omitidos en R1; registrar esa omisión explícitamente.
