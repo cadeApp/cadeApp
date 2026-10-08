@@ -71,54 +71,239 @@ async function setupGoogleMapsMock(
     }
 
     if (url.includes('/maps/api/js')) {
+      let callbackParam = '';
+      try {
+        callbackParam = new URL(url).searchParams.get('callback') ?? '';
+      } catch {
+        // Ignorar
+      }
+
       const mockScript = `
         window.google = window.google || {};
-        window.google.maps = window.google.maps || {
-          Map: function(element, opts) {
-            this._center = opts?.center || opts?.defaultCenter || { lat: -27.4333, lng: -65.6167 };
-            this.setCenter = function(c) { this._center = c; };
+        window.google.maps = window.google.maps || {};
+
+        (function() {
+          function LatLng(lat, lng) {
+            this._lat = typeof lat === 'function' ? lat() : Number(lat);
+            this._lng = typeof lng === 'function' ? lng() : Number(lng);
+            this.lat = function() { return this._lat; };
+            this.lng = function() { return this._lng; };
+            this.toJSON = function() { return { lat: this._lat, lng: this._lng }; };
+          }
+
+          function LatLngBounds() {
+            this.contains = function() { return true; };
+            this.extend = function() { return this; };
+            this.getCenter = function() { return new LatLng(-27.4333, -65.6167); };
+          }
+
+          function Map(element, opts) {
+            this._element = element;
+            this._center = opts?.center || opts?.defaultCenter || new LatLng(-27.4333, -65.6167);
+            this._zoom = opts?.zoom || opts?.defaultZoom || 14;
+            this._listeners = {};
+
+            this.getDiv = function() { return this._element; };
+            this.setCenter = function(c) {
+              this._center = c;
+              this._trigger('center_changed');
+            };
             this.getCenter = function() {
-              const center = this._center;
+              const c = this._center;
               return {
-                lat: function() { return typeof center.lat === 'function' ? center.lat() : center.lat; },
-                lng: function() { return typeof center.lng === 'function' ? center.lng() : center.lng; }
+                lat: function() { return typeof c.lat === 'function' ? c.lat() : c.lat; },
+                lng: function() { return typeof c.lng === 'function' ? c.lng() : c.lng; }
               };
             };
-            this.panTo = function(c) { this._center = c; };
-            this.setZoom = function() {};
-            this.addListener = function() { return { remove: function() {} }; };
-          },
-          Marker: function(opts) {
+            this.panTo = function(c) { this.setCenter(c); };
+            this.setZoom = function(z) { this._zoom = z; this._trigger('zoom_changed'); };
+            this.getZoom = function() { return this._zoom; };
+            this.getHeading = function() { return 0; };
+            this.getTilt = function() { return 0; };
+            this.getBounds = function() { return new LatLngBounds(); };
+            this.setOptions = function(o) { Object.assign(this, o); };
+            this.moveCamera = function(c) {
+              if (c.center) this.setCenter(c.center);
+              if (c.zoom != null) this.setZoom(c.zoom);
+            };
+            this.fitBounds = function() {};
+
+            this.addListener = function(name, handler) {
+              if (!this._listeners[name]) this._listeners[name] = [];
+              this._listeners[name].push(handler);
+              return {
+                remove: () => {
+                  this._listeners[name] = this._listeners[name].filter((h) => h !== handler);
+                }
+              };
+            };
+
+            this._trigger = function(name, event) {
+              const handlers = this._listeners[name] || [];
+              for (const h of handlers) h(event);
+            };
+          }
+
+          function AdvancedMarkerElement(opts) {
+            this._map = null;
+            this._content = null;
+            this._position = opts?.position || null;
+            this._title = opts?.title || '';
+            this._listeners = {};
+
+            this.addListener = function(name, handler) {
+              if (!this._listeners[name]) this._listeners[name] = [];
+              this._listeners[name].push(handler);
+              return {
+                remove: () => {
+                  this._listeners[name] = this._listeners[name].filter((h) => h !== handler);
+                }
+              };
+            };
+
+            this._attachContent = () => {
+              if (this._map && this._content) {
+                const container =
+                  (typeof this._map.getDiv === 'function' ? this._map.getDiv() : this._map._element) ||
+                  (this._map instanceof HTMLElement ? this._map : null);
+                if (container && !container.contains(this._content)) {
+                  container.appendChild(this._content);
+                }
+              }
+            };
+
+            Object.defineProperty(this, 'map', {
+              get: () => this._map,
+              set: (m) => {
+                this._map = m;
+                this._attachContent();
+              }
+            });
+
+            Object.defineProperty(this, 'content', {
+              get: () => this._content,
+              set: (c) => {
+                if (this._content && this._content.parentNode) {
+                  this._content.parentNode.removeChild(this._content);
+                }
+                this._content = c;
+                this._attachContent();
+              }
+            });
+
+            Object.defineProperty(this, 'position', {
+              get: () => this._position,
+              set: (p) => { this._position = p; }
+            });
+
+            Object.defineProperty(this, 'title', {
+              get: () => this._title,
+              set: (t) => { this._title = t; }
+            });
+
+            if (opts?.map) this.map = opts.map;
+            if (opts?.content) this.content = opts.content;
+          }
+
+          function Marker(opts) {
             this._pos = opts?.position;
             this.setPosition = function(p) { this._pos = p; };
             this.getPosition = function() { return this._pos; };
             this.setMap = function() {};
             this.addListener = function() { return { remove: function() {} }; };
-          },
-          Polyline: function() {
+          }
+
+          function PinElement() {
+            this.element = document.createElement('div');
+            this.element.className = 'gm-pin-element';
+          }
+
+          function Polyline(opts) {
             this.setPath = function() {};
             this.setMap = function() {};
-          },
-          LatLng: function(lat, lng) {
-            return {
-              lat: function() { return lat; },
-              lng: function() { return lng; }
-            };
-          },
-          event: {
-            addListener: function() { return { remove: function() {} }; },
-            removeListener: function() {},
-            trigger: function() {},
-          },
-          importLibrary: function() {
-            return Promise.resolve(window.google.maps);
+            this.setOptions = function() {};
+            this.addListener = function() { return { remove: function() {} }; };
           }
-        };
+
+          const markerLib = {
+            AdvancedMarkerElement: AdvancedMarkerElement,
+            PinElement: PinElement,
+            Marker: Marker
+          };
+
+          const mapsLib = {
+            Map: Map,
+            Polyline: Polyline
+          };
+
+          const coreLib = {
+            LatLng: LatLng,
+            LatLngBounds: LatLngBounds,
+            event: {
+              addListener: function(instance, name, handler) {
+                if (instance && typeof instance.addListener === 'function') {
+                  return instance.addListener(name, handler);
+                }
+                return { remove: function() {} };
+              },
+              removeListener: function(handle) {
+                if (handle && typeof handle.remove === 'function') handle.remove();
+              },
+              trigger: function(instance, name, event) {
+                if (instance && typeof instance._trigger === 'function') instance._trigger(name, event);
+              },
+              clearInstanceListeners: function() {}
+            }
+          };
+
+          window.google.maps.Map = Map;
+          window.google.maps.Marker = Marker;
+          window.google.maps.Polyline = Polyline;
+          window.google.maps.LatLng = LatLng;
+          window.google.maps.LatLngBounds = LatLngBounds;
+          window.google.maps.event = coreLib.event;
+          window.google.maps.marker = markerLib;
+
+          window.google.maps.importLibrary = function(name) {
+            if (name === 'marker') return Promise.resolve(markerLib);
+            if (name === 'maps') return Promise.resolve(mapsLib);
+            if (name === 'core') return Promise.resolve(coreLib);
+            return Promise.resolve(window.google.maps);
+          };
+
+          ${callbackParam ? `
+          try {
+            const cb = '${callbackParam}';
+            const fn = cb.split('.').reduce((acc, part) => (acc ? acc[part] : undefined), window);
+            if (typeof fn === 'function') {
+              fn();
+            }
+          } catch {}
+          ` : ''}
+        })();
       `;
       await route.fulfill({
         status: 200,
         contentType: 'application/javascript',
         body: mockScript,
+      });
+      return;
+    }
+
+    if (url.endsWith('.css') || url.includes('/style')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/css',
+        body: '',
+      });
+      return;
+    }
+
+    if (url.endsWith('.js') || url.includes('/js/')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: '',
       });
       return;
     }
@@ -196,38 +381,29 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
       );
     });
 
-    await loginAsCourier(0, page);
-
-    // Espera explícita y obligatoria del fetch vivo que refresca el feed (H01)
-    const liveFeedResponsePromise = page.waitForResponse((response) => {
-      let pathname = '';
-      try {
-        pathname = new URL(response.url()).pathname;
-      } catch {
-        return false;
-      }
-      return (
-        pathname === '/api/live/available-requests' &&
-        ['fetch', 'xhr'].includes(response.request().resourceType())
-      );
+    // Captura explícita del endpoint vivo interceptándolo antes de navegar (H01)
+    const liveBodies: string[] = [];
+    await page.route('**/api/live/available-requests*', async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      const body = await response.text();
+      liveBodies.push(body);
+      await route.fulfill({ response });
     });
 
+    await loginAsCourier(0, page);
     await page.goto('/courier/feed');
     await waitForNoSkeletons(page);
 
     const card = courierPage.requestCardById(requestId);
     await expect(card).toBeVisible();
 
-    // Exigir positivamente que el endpoint vivo fue observado y responder con 200 (H01)
-    const liveFeedResponse = await liveFeedResponsePromise;
-    expect(liveFeedResponse.status()).toBe(200);
-
-    const liveFeedBody = await liveFeedResponse.text();
-    for (const sentinel of SENTINEL_COORDINATES) {
-      expect(
-        liveFeedBody,
-        `fuga en endpoint vivo ${liveFeedResponse.url()}: centinela ${sentinel}`
-      ).not.toContain(sentinel);
+    // Exigir positivamente que el endpoint vivo fue observado y su body no contiene centinelas (H01)
+    await expect.poll(() => liveBodies.length).toBeGreaterThan(0);
+    for (const body of liveBodies) {
+      for (const sentinel of SENTINEL_COORDINATES) {
+        expect(body, `fuga en endpoint vivo: centinela ${sentinel}`).not.toContain(sentinel);
+      }
     }
 
     // Comprobar ausencia total de centinelas en las cargas de red y RSC (H01)
@@ -262,10 +438,13 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
   test('DoD: selección de pin en alta de comercio valida límites y muestra error inline fuera de Aguilares', async ({
     page,
     stagingContext,
+    loginAsMerchant,
   }) => {
     await setupGoogleMapsMock(page);
 
+    await loginAsMerchant(page);
     await page.goto('/merchant/onboarding');
+    await expect(page).toHaveURL(/\/merchant\/onboarding(?:\/|$)/);
     await waitForNoSkeletons(page);
 
     const mapPicker = page.locator('[data-testid="map-picker"]');
@@ -358,20 +537,20 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     });
     await page.context().grantPermissions(['geolocation']);
 
-    // Verificar que existen exactamente 2 botones "Usar mi ubicación" (retiro y entrega) en el formulario
-    const allLocationButtons = page.getByRole('button', { name: /^usar mi ubicación$/i });
-    await expect(allLocationButtons).toHaveCount(2);
+    // Verificar que existen exactamente 2 botones "Usar mi ubicación" (retiro y entrega) en el formulario (H02)
+    await expect(page.getByRole('button', { name: /^usar mi ubicación$/i })).toHaveCount(2);
 
-    // Acotar de forma estable y semántica al bloque de destino y entrega (H02)
-    const dropoffSection = page
-      .locator('div')
-      .filter({ has: page.getByRole('heading', { name: /destino y entrega/i }) })
-      .first();
-    const useDropoffGpsBtn = dropoffSection.getByRole('button', { name: /^usar mi ubicación$/i });
-    await expect(useDropoffGpsBtn).toBeVisible();
-    await useDropoffGpsBtn.click();
+    // Acotar de forma precisa a la Card de destino y entrega mediante su encabezado (H02)
+    const heading = page.getByRole('heading', { name: /^destino y entrega$/i });
+    const dropoffCard = heading.locator('xpath=../..');
+    const deliveryGps = dropoffCard.getByRole('button', { name: /^usar mi ubicación$/i });
+    await expect(deliveryGps).toHaveCount(1);
+    await expect(deliveryGps).toBeVisible();
+    await deliveryGps.click();
+
+    // Comprobar error de coordenadas fuera de radio acotado a la entrega (H02)
     await expect(
-      page.getByText(/la ubicación está fuera del radio urbano de aguilares|fuera de aguilares/i)
+      dropoffCard.getByText(/la ubicación está fuera del radio urbano de aguilares|fuera de aguilares/i)
     ).toBeVisible();
   });
 
@@ -443,8 +622,10 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
   // ---------------------------------------------------------------------------
   test('DoD: valida degradación graceful cuando Google Maps API falla', async ({
     page,
+    browser,
     stagingContext,
     loginAsCourier,
+    loginAsMerchant,
   }) => {
     // Configurar intercepción simulando falla total de red de Maps
     await setupGoogleMapsMock(page, { failApi: true });
@@ -477,13 +658,24 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     await expect(fallbackMessage).toBeVisible();
     await expect(fallbackMessage).toContainText(/no pudimos conectar con google maps/i);
 
-    // En onboarding / picker de comercio, valida degradación visual
-    await page.goto('/merchant/onboarding');
-    await waitForNoSkeletons(page);
+    // En onboarding / picker de comercio, valida degradación visual en un contexto aislado de comercio (H06)
+    const merchantContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+    });
+    try {
+      const merchantPage = await merchantContext.newPage();
+      await setupGoogleMapsMock(merchantPage, { failApi: true });
+      await loginAsMerchant(merchantPage);
+      await merchantPage.goto('/merchant/onboarding');
+      await expect(merchantPage).toHaveURL(/\/merchant\/onboarding(?:\/|$)/);
+      await waitForNoSkeletons(merchantPage);
 
-    const mapErrorBanner = page.locator('[data-testid="map-load-error-banner"]');
-    const mapFallback = page.locator('[data-testid="map-fallback"]');
-    await expect(mapErrorBanner.or(mapFallback).first()).toBeVisible();
+      const mapErrorBanner = merchantPage.locator('[data-testid="map-load-error-banner"]');
+      const mapFallback = merchantPage.locator('[data-testid="map-fallback"]');
+      await expect(mapErrorBanner.or(mapFallback).first()).toBeVisible();
+    } finally {
+      await merchantContext.close();
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -491,11 +683,15 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
   // ---------------------------------------------------------------------------
   test('DoD: Playwright mockea Maps API y garantiza 0 llamadas externas reales a Google', async ({
     page,
+    stagingContext,
+    loginAsMerchant,
   }) => {
     const mock = await setupGoogleMapsMock(page);
 
-    // Navegar y activar carga de Maps interactivo
+    // Autenticar como merchant antes de acceder a la ruta protegida (H06)
+    await loginAsMerchant(page);
     await page.goto('/merchant/onboarding');
+    await expect(page).toHaveURL(/\/merchant\/onboarding(?:\/|$)/);
     await waitForNoSkeletons(page);
 
     // Exigir que el mock haya interceptado peticiones (> 0) y cero peticiones inesperadas (H04)
