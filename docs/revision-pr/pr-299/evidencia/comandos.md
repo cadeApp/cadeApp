@@ -200,3 +200,57 @@ if(failures)process.exitCode=1;
 
 **No adulterar tests, snapshots, mocks o cobertura.** Todos los RED deben fallar por la propiedad prometida. Sin Docker ni Supabase remoto/local desde el agente; integración en `db-tests` y `e2e-preview` de CI. No disparar workflows manualmente, no editar `docs/revision-pr/**` desde la sesión autora.
 
+---
+
+## Ronda 3 — SHA `4836122bbbea3266e3832a2f8d670b52b411dc70`
+
+### Logs y hechos reproducibles
+
+- CI `37759343648`, `db-tests` job `113251668412`: migraciones aplicadas; `rpc_requests.sql ... ok` y `rpc_offers.sql ... ok`; `t339_fixed_price.sql:449 ERROR new row violates row-level security policy for table "offers"`; test 23 `have NULL / want published`; 42/45 aserciones, archivo FAIL.
+- CI mismo SHA, `unit` job `113251668686`: 2004 Vitest pasan; `rpc-fake.ts` **90.04%** ramas; job success.
+- Commit status: Vercel success; `e2e-preview error: BLOCKED / REQUIRES DEVELOP MIGRATION [dpl_EcxxBqNC7FqbpPW6B6qvdGiHErkm]`. Run `37759512274`: `resolve-preview success`, `e2e-preview skipped`. El gate está en `.github/workflows/e2e-preview-target.mjs`.
+- La suite `t339_fixed_price.sql` tiene `plan(45)` y 45 aserciones estáticas; plan igual NO implica ejecución completa.
+
+### Harness independiente completo — sin escribir en el árbol
+
+Extraer este bloque como `/tmp/pr299-r3.mjs` desde este archivo, en un checkout del SHA revisado, y correr `PR299_ROOT="$PWD" node /tmp/pr299-r3.mjs`. En el SHA rojo produce tres `RED`. Un verde posterior es **solo estructura**, no sustituye pgTAP/E2E.
+
+```js pr299-r3.mjs
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+const root=process.env.PR299_ROOT||process.cwd();
+const read=p=>readFileSync(join(root,p),'utf8');
+const sql=read('supabase/tests/t339_fixed_price.sql');
+const e2e=read('e2e/specs/fixed-price.spec.ts');
+const sect=(a,b)=>sql.slice(sql.indexOf(a),sql.indexOf(b,sql.indexOf(a)));
+const denials=sect('-- 17, 18, 19','-- 24, 25, 26');
+const accepted=sect('-- 38, 39, 40','-- 42, 43:');
+const fakeIdx=e2e.indexOf("test('H05.5:");
+const fake=fakeIdx<0?'':e2e.slice(fakeIdx,e2e.indexOf('\n    });',fakeIdx));
+function adminOracles(s){
+  const k=s.indexOf("(select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()");
+  return k>=0&&s.lastIndexOf('select pg_temp.reset_actor();',k)>s.lastIndexOf('select pg_temp.act_as',k);
+}
+const syntheticInsert=s=>/insert into public\.offers\s*\(id, request_id, courier_id, amount_ars, status, eta_minutes\)[\s\S]*?values\s*\(pg_temp\.other_offer_id\(\)/i.test(s);
+const testsConsent=s=>/rpc\(['"]take_request['"]/.test(s)&&(/UNAUTHORIZED_ACTOR/.test(s)||/expect\([^)]*error/.test(s));
+const checks=[
+ ['H14 privileged post-denial read',adminOracles(denials)],
+ ['H15 no artificial pending after match',!syntheticInsert(accepted)],
+ ['H16 no fake consent E2E',!fake||testsConsent(fake)],
+];
+for(const [label,ok] of checks)console.log((ok?'GREEN ':'RED   ')+label);
+const n=Number(sql.match(/select plan\((\d+)\)/)?.[1]);
+const m=[...sql.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length;
+console.log('pgTAP plan='+n+' statements='+m+' (does NOT mean actual PASS)');
+if(checks.some(([,ok])=>!ok))process.exitCode=1;
+```
+
+**Mutación auxiliar efectuada IN-MEMORY con blobs del HEAD (sin Docker, sin ejecutor SQL):** añadir `reset_actor` antes de los oráculos hace verde el detector H14; quitar el INSERT artificial hace verde H15. H16 no alcanza un RED de negocio porque el caso ni siquiera ejecuta RPC: esa es la falla del instrumento. No se hizo checkout/ejecución del script en /tmp en esta sesión; tampoco se afirman RED de PostgreSQL que no ocurrieron.
+
+### Mutaciones RED requeridas para la próxima ronda
+
+- H14: inspección privilegiada detecta una fila inyectada/estado cambiado, mientras el actor no consentido no la ve por RLS.
+- H15: sustituir ID de oferta perdedora por ganadora rompe aserción `ALREADY_MATCHED`; recuperar ganadora y confirmar otra rechazada.
+- H16: sin gate CC-007, una prueba verdadera que intenta `take_request` con actor pending/reconsent debería fallar por respuesta o mutación de estado. Borrar prueba placebo si no existe actor de test autorizado.
+- H05: `e2e-preview` debe ejecutar Playwright real con esquema compatible; no declarar verde con Vercel success o `resolve-preview success`.
+

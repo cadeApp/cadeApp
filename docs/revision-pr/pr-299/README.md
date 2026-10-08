@@ -1,55 +1,50 @@
-# PR #299 — T-339 · Precio de envío opcional y toma directa
+# PR #299 — T-339 · Precio opcional y toma directa
 
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/299 |
-| Tarea | T-339, fase 3, CC-021 |
 | Autor | @asako669 |
 | Rama | `feat/T-339-precio-fijo` → `develop` |
-| Base observada | `a773c05cc488a1fc60bfb36512cdca35d12d1271` |
-| HEAD inspeccionado | `6fbde29f48cc502ff497d18c4488fcd442246bf6` |
-| Tamaño antes de revisión | 35 archivos, +3472/-111 líneas |
-| Decisión de alcance | Lautaro073 aprobó opción A: `src/ui/ui-system.test.tsx` permitido para ajustar 27→29 códigos |
-| Estado | Ronda 2: CON BLOQUEANTES (5); NO APROBAR / NO MERGEAR |
+| Base | `a773c05cc488a1fc60bfb36512cdca35d12d1271` |
+| HEAD de código de R3 | `4836122bbbea3266e3832a2f8d670b52b411dc70` |
+| Decisión previa de alcance | Opción A: `src/ui/ui-system.test.tsx` permitido |
+| Estado | **R3: 4 bloqueantes — NO MERGEAR** |
 
 ## Rondas
 
-| Ronda | SHA revisado | Resultado | Informe |
+| Ronda | SHA inspeccionado | Estado | Informe |
 |---|---|---|---|
-| 1 | `6fbde29f48cc502ff497d18c4488fcd442246bf6` | 9 bloqueantes, 1 mejora | [ronda-1.md](revisiones/ronda-1.md) |
-| 2 | `5250d51922bf67a2f2555fe824c791ffe94ab1a3` | 5 bloqueantes efectivos (H05, H06, H11–H13); corregidos sin verificar H02–H04, H07–H08 | [ronda-2.md](revisiones/ronda-2.md) |
+| 1 | `6fbde29f48cc502ff497d18c4488fcd442246bf6` | 9 bloqueantes | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `5250d51922bf67a2f2555fe824c791ffe94ab1a3` | 5 bloqueantes | [ronda-2.md](revisiones/ronda-2.md) |
+| 3 | `4836122bbbea3266e3832a2f8d670b52b411dc70` | 4 bloqueantes: H05, H14, H15, H16 | [ronda-3.md](revisiones/ronda-3.md) |
 
-## Hallazgos
+## Estado de hallazgos
 
-| ID | Gravedad | Resumen | Estado |
-|---|---|---|---|
-| PR299-H01 | crítico | variable SQL de consentimiento inexistente: migración falla | abierto |
-| PR299-H02 | alto | orden de locks de accept_offer expone deadlock | abierto |
-| PR299-H03 | alto | take_request da idempotencia a ofertas sin precio fijo | abierto |
-| PR299-H04 | alto | pgTAP plan 28 contra 26 aserciones y bordes faltantes | abierto |
-| PR299-H05 | alto | DoD de concurrencia y consentimiento no ejercido | abierto |
-| PR299-H06 | alto | cobertura de ramas del fake bajo umbral: CI unit rojo | abierto |
-| PR299-H07 | medio | prueba de rate limit del fake no agota el cupo | abierto |
-| PR299-H08 | alto | E2E siembra publicados; no ejercita alta real desde formulario | abierto |
-| PR299-H09 | medio | `any` prohibido en test de contrato | abierto |
-| PR299-H10 | bajo | sugerir piso dinámico en formulario | mejora |
+| ID | Sev. | Estado más reciente |
+|---|---|---|
+| H01 | critico | cerrado R2 |
+| H02 | alto | código corregido; E2E pendiente |
+| H03 | alto | código corregido; pgTAP pendiente |
+| H04 | alto | 45 aserciones; 42 ejecutadas, CI rojo |
+| H05 | alto | ABIERTO: E2E no ejecutado |
+| H06 | alto | CERRADO: CI unit 90.04% branches |
+| H07 | medio | test corregido; unit verde |
+| H08 | alto | E2E de formulario no ejecutado |
+| H09 | medio | cerrado R2 |
+| H10 | bajo | mejora no bloqueante |
+| H11 | alto | CERRADO: rpc_requests PASS |
+| H12 | alto | CERRADO: rpc_requests PASS |
+| H13 | alto | fixture zona válido; suite incompleta |
+| H14 | alto | ABIERTO: oráculo en RLS |
+| H15 | alto | ABIERTO: INSERT oferta artificial |
+| H16 | alto | ABIERTO: E2E falso consentimiento |
 
-| H11 | alto | reloj transaccional alterado | abierto |
-| H12 | alto | motivo de cancelación perdió precedencia | abierto |
-| H13 | alto | fixture zones impide ejecutar pgTAP | abierto |
+Datos: [hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).
 
-## Evidencia
+## CI relevante
 
-- [Informe detallado](revisiones/ronda-1.md).
-- [Datos estructurados](hallazgos.jsonl).
-- [Comandos y batería independiente](evidencia/comandos.md).
-- [Lecciones](lecciones.md).
+Run `37759343648` sobre `4836122bbbea3266e3832a2f8d670b52b411dc70`: unit ✅ 2004 tests y 90.04% branches; typecheck/lint/build/audit/bundle-budget ✅; db-tests ❌ (RLS en `t339_fixed_price.sql:449`, #23 NULL, 42/45); Vercel ✅; e2e-preview **sin ejecución** (`BLOCKED / REQUIRES DEVELOP MIGRATION`, por inclusión de migración).
 
-## Alcance de lo verificado
+## Decisión de Lautaro073 pendiente
 
-Se inspeccionaron diffs, SQL, contratos, fake, formulario, E2E, bitácora, comentarios y logs de CI del SHA original. Solo `db-tests` y `unit` tuvieron fallo confirmado por CI; los peligros de deadlock y semántica se registran **por inspección**, NO como reproducción PostgreSQL. No se levantó Docker/Supabase ni se ejecutaron pruebas de integración locales. Los contadores y los checks estructurales se calcularon independientemente sobre contenido exacto del commit indicado. Este commit de documentación moverá el HEAD: el SHA verificado por revisión sigue siendo el anterior, no el commit del informe.
-
-
-## Ronda 2 — delimitación
-
-SHA inspeccionado: `5250d51922bf67a2f2555fe824c791ffe94ab1a3`. CI run 37750956332, db-tests y unit fallan; Vercel cuota bloquea E2E. Estado H01: migración aplicada en CI (no implica todas las pruebas verdes). H05 aún no demuestra concurrencia genuina. H11–H13 ya estaban en la versión inicial y fueron omitidos en R1; registrar esa omisión explícitamente.
+A (recomendada): mantener protección y coordinar validación real tras aplicar migración a develop, con aceptación explícita si supone una excepción al E2E premerge. B: separar migración de la PR funcional para correr E2E con esquema ya actualizado. **No se eligió ninguna opción**, ver ronda-3.md.

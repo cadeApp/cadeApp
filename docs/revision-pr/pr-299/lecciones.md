@@ -30,3 +30,10 @@ No modificar `AGENTS.md` por una sola PR. Priorizar nuevo control objetivo y rev
 
 No proponer número AG nuevo sin verificar el máximo de todas las ramas.
 
+## Ronda 3 — 2026-10-08
+
+- **pr-63/AG-68 / H14:** test de «cero efectos» que lee bajo rol sin consentimiento puede pasar por enmascaramiento de RLS. Leer postcondiciones como inspector autorizado y comprobar que una mutación de datos se detecta.
+- **pr-64/AG-62 / H15:** fixture de segunda oferta no debe sembrar estados artificiales imposibles después de matched. Construir con RPC pública antes del match y comprobar rechazo posterior.
+- **pr-63/AG-68 / H16:** E2E cuyo nombre dice «consentimiento denegado» sin llamar RPC sería verde incluso sin gate; eliminar o crear actor con estado real y ejecutar operación + oráculo.
+- **H05:** Vercel verde no significa Playwright ejecutado: el gate e2e-preview bloquea por migración y requiere coordinación del dueño, no relajar políticas por el agente.
+
