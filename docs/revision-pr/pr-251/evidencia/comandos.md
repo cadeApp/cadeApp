@@ -469,3 +469,61 @@ No sustituir el flujo del botón por un `page.goto` para forzar GREEN.
 ### P3
 
 Sin visto bueno explícito en comments/reviews. H04 y H10 siguen abiertos.
+
+## Ronda 14 — D05-A: RED navegación previo, GREEN completo real
+
+```text
+HEAD       56b3c70d66740210de29d1183aa16fed1487eae1
+develop    d2ad3315ae9403194a35726b25f84996110a9216
+ahead      50
+behind     0
+```
+
+### Delta funcional respecto de ronda 13
+
+```text
+docs/tasks/T-313.md
+docs/tasks/log/T-313.md
+src/features/merchants/components/onboarding-form.tsx
+```
+
+- La ficha permite explícitamente D05-A.
+- Solo después de éxito real de action: `window.location.assign(result.data.redirectTo)`.
+- Sin modificación de guardas, migrations, pgTAP, ni assertions E2E.
+
+### RED funcional previo
+
+Run `37747382851` sobre `5c5adfb`: **51 passed / 1 failed**, solo onboarding. Sonda: merchantUpdated=true, RSC /merchant/dashboard -> 307 /merchant/onboarding, GET directo 200.
+
+### GREEN real posterior
+
+Run `37803965180`, job `113403336124`: explicit checkout `56b3c70d66740210de29d1183aa16fed1487eae1`.
+
+```text
+✓ DoD: Alta completa y panel visible con la versión de consentimiento registrada
+✓ DoD: Un courier no entra a (merchant)
+✓ DoD: Sin consentimiento guardado el comercio no llega al panel
+52 passed (12.2m)
+3 passed (1.1m)
+```
+
+Los 52 corresponden a Chromium; los 3, a global-settings.
+
+### CI y statuses del HEAD
+
+```text
+CI                 37752334333   success
+approval-policy    37753362975   success
+Vercel                            success
+e2e-preview        37803965180   success
+```
+
+Unit, db-tests, lint, typecheck, build, audit y bundle-budget GREEN.
+
+### Restricción residual H04
+
+El RED del run 37747382851 fue **de navegación**. No se debe presentarlo como RED de la guarda que rechaza courier: no hubo una mutación discriminante de esa guarda. T-347 solo permite mutaciones catalogadas sobre develop; falta decisión de secuencia segura.
+
+### H10
+
+Body sigue describiendo Vercel rate-limited y Preview viejo RED, con caracteres con tildes degradados a `?`; debe actualizarse a run 37803965180 y status SUCCESS, sin falsificar el RED courier.

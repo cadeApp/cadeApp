@@ -1,13 +1,21 @@
-# PR #251 — T-313 · ronda 13
+# PR #251 — T-313 · ronda 14
 
-**CON BLOQUEANTES (2): H04 y H10.**
+**CON BLOQUEANTES (2 heredados): H04 parcial y H10. No hay hallazgos nuevos.**
 
-D05-A — Lautaro073 autoriza exclusivamente modificar `src/features/merchants/components/onboarding-form.tsx` para navegar al dashboard por documento completo luego de una action exitosa.
+**HEAD evaluado:** `56b3c70d66740210de29d1183aa16fed1487eae1`.
 
-**HEAD evaluado:** `5c5adfb2245b088515f3e1620a186ca64993203e`.
+**D05-A implementada:** navegación completa en `onboarding-form.tsx` tras action exitosa, sin tocar guards ni SQL.
 
-**CI:** `37747262112` GREEN; **E2E:** `37747382851`, 51 PASS y 1 FAIL. El courier bloqueado y merchant sin consentimiento pasan; el alta completa falla.
+**CI `37752334333`:** GREEN completo. **approval-policy `37753362975`:** GREEN. **Vercel:** success.
 
-**P3:** confirmado por Lautaro073.
+**Trusted E2E `37803965180`:** checkout exacto `56b3c70`; **52/52 Chromium y 3/3 global-settings GREEN**. Los 3 DoD de T-313 pasan.
 
-Ver historial previo de rondas 1–12. No aprobar ni mergear.
+- ✅ H01–H03, H05–H09, H11.
+- 🟠 H04: baseline GREEN ya verificado; falta RED discriminante courier seguro con T-347 y GREEN final.
+- ❌ H10: body todavía dice rate limit/failure Vercel y omite Preview GREEN nuevo.
+- P3 confirmado por Lautaro073.
+- Rama 0 behind develop; sin migraciones ni pgTAP propios.
+
+**Rondas:** [13](revisiones/ronda-13.md) · [14](revisiones/ronda-14.md).
+
+No aprobar ni mergear hasta resolver H04/H10. Informe independiente reside en `docs/revisiones` por ser PR de P2.
