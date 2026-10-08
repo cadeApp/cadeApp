@@ -85,7 +85,7 @@ export function TripMerchantView({
           <span>Asignada</span>
         </div>
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-        <div className={`flex items-center gap-1.5 font-medium ${isInTransit || isDelivered ? 'text-foreground' : 'text-primary'}`}>
+        <div className={`flex items-center gap-1.5 font-medium ${isInTransit || isDelivered ? 'text-foreground' : 'text-primary-dark'}`}>
           {isDelivered ? (
             <CheckCircle2 className="h-4 w-4 text-primary" />
           ) : (

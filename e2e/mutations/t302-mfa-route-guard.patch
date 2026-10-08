@@ -1,0 +1,18 @@
+diff --git a/src/features/auth/guards.ts b/src/features/auth/guards.ts
+index b5c2de5..08d28b8 100644
+--- a/src/features/auth/guards.ts
++++ b/src/features/auth/guards.ts
+@@ -432,13 +432,6 @@ export function evaluateRouteGuard(
+         redirectTo: ADMIN_HOME,
+       };
+     }
+-    // Resto de admin exige MFA (AAL2)
+-    if (session.aal !== 'aal2') {
+-      return {
+-        action: 'redirect',
+-        redirectTo: `/login/mfa?redirectTo=${encodeURIComponent(pathname)}`,
+-      };
+-    }
+     return { action: 'allow' };
+   }
+ 
