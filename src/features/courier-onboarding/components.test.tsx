@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as React from 'react';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { StepIndicator } from './components/step-indicator';
 import { IdentityForm } from './components/identity-form';
 import { VehicleForm } from './components/vehicle-form';
+import { DocumentUploadCard } from './components/document-upload-card';
 import { StatusView } from './components/status-view';
 import {
   CourierProfileView,
@@ -971,5 +974,146 @@ describe('T-325: licencia y seguro usan el mismo sistema de carga que el paso 2'
     expect(screen.getByText('4 de 4 cargados')).toBeDefined();
     const continueBtn = screen.getByRole('button', { name: /Continuar/i });
     expect((continueBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe('T-351: contraste WCAG AA de la tarjeta de carga en sus cuatro estados', () => {
+  afterEach(cleanup);
+
+  // Los colores salen de src/ui/tokens.css (HSL), no de valores copiados en el test.
+  const tokensCss = fs.readFileSync(path.resolve('src/ui/tokens.css'), 'utf8');
+
+  type Rgb = [number, number, number];
+
+  function tokenRgb(name: string): Rgb {
+    const match = tokensCss.match(new RegExp(`--${name}:\\s*([\\d.]+)\\s+([\\d.]+)%\\s+([\\d.]+)%`));
+    if (!match?.[1] || !match[2] || !match[3]) throw new Error(`Token --${name} no encontrado`);
+    const h = Number(match[1]);
+    const s = Number(match[2]) / 100;
+    const l = Number(match[3]) / 100;
+    const a = s * Math.min(l, 1 - l);
+    const channel = (n: number) => {
+      const k = (n + h / 30) % 12;
+      return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+    };
+    return [channel(0), channel(8), channel(4)];
+  }
+
+  function over(top: Rgb, alpha: number, base: Rgb): Rgb {
+    return [
+      Math.round(alpha * top[0] + (1 - alpha) * base[0]),
+      Math.round(alpha * top[1] + (1 - alpha) * base[1]),
+      Math.round(alpha * top[2] + (1 - alpha) * base[2]),
+    ];
+  }
+
+  function luminance([r, g, b]: Rgb) {
+    const lin = (c: number) => {
+      const v = c / 255;
+      return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  }
+
+  function contrast(a: Rgb, b: Rgb) {
+    const la = luminance(a);
+    const lb = luminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  }
+
+  // Clase de color de texto → token. Se lee la clase exacta del elemento que contiene el texto.
+  const TEXT_TOKENS: Record<string, string> = {
+    'text-primary-dark': 'primary-dark',
+    'text-primary': 'primary',
+    'text-success': 'success',
+    'text-destructive': 'destructive',
+    'text-muted-foreground': 'muted-foreground',
+    'text-foreground': 'foreground',
+  };
+
+  function textTokenClass(element: HTMLElement) {
+    const classes = element.className.split(/\s+/).filter((c) => c in TEXT_TOKENS);
+    expect(classes, `clases de color de «${element.textContent}»`).toHaveLength(1);
+    return classes[0] ?? '';
+  }
+
+  // La tarjeta es translúcida en hover (bg-primary/5) y en error (bg-destructive/5): se compone sobre la tarjeta
+  // blanca y sobre el fondo de página, y se exige AA en los dos.
+  const white = tokenRgb('card');
+  const page = tokenRgb('background');
+  const idleBackgrounds = [white, over(tokenRgb('primary'), 0.05, white), over(tokenRgb('primary'), 0.05, page)];
+  const successBackgrounds = [white];
+  const errorBackgrounds = [over(tokenRgb('destructive'), 0.05, white), over(tokenRgb('destructive'), 0.05, page)];
+
+  function expectAa(element: HTMLElement, expectedClass: string, backgrounds: Rgb[]) {
+    const tokenClass = textTokenClass(element);
+    expect(tokenClass, `token de «${element.textContent}»`).toBe(expectedClass);
+    const color = tokenRgb(TEXT_TOKENS[tokenClass] ?? '');
+    for (const background of backgrounds) {
+      expect(
+        contrast(color, background),
+        `«${element.textContent}» ${tokenClass} sobre rgb(${background.join(',')})`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+
+  function renderCard(props: Partial<React.ComponentProps<typeof DocumentUploadCard>>) {
+    return render(
+      <DocumentUploadCard
+        kind="dni_front"
+        title="DNI frente"
+        subtitle="Sacá una foto clara del frente"
+        status="idle"
+        onFileSelected={() => undefined}
+        {...props}
+      />
+    );
+  }
+
+  it('idle: «Subir» usa primary-dark y título, estado y acción cumplen AA', () => {
+    renderCard({ status: 'idle' });
+    expect(screen.getByRole('status').textContent).toBe('Sacá una foto clara del frente');
+    expectAa(screen.getByText('DNI frente'), 'text-foreground', idleBackgrounds);
+    expectAa(screen.getByRole('status'), 'text-muted-foreground', idleBackgrounds);
+    expectAa(screen.getByText('Subir', { exact: true }), 'text-primary-dark', idleBackgrounds);
+  });
+
+  it('uploading comprimiendo: estado de optimización con AA y sin texto de acción', () => {
+    renderCard({ status: 'uploading', compressing: true });
+    expect(screen.getByRole('status').textContent).toBe('Optimizando...');
+    expect(screen.queryByText('Subir', { exact: true })).toBeNull();
+    expectAa(screen.getByText('DNI frente'), 'text-foreground', idleBackgrounds);
+    expectAa(screen.getByRole('status'), 'text-muted-foreground', idleBackgrounds);
+  });
+
+  it('uploading subiendo: estado de subida con AA y sin texto de acción', () => {
+    renderCard({ status: 'uploading', compressing: false });
+    expect(screen.getByRole('status').textContent).toBe('Subiendo...');
+    expect(screen.queryByText('Subir', { exact: true })).toBeNull();
+    expectAa(screen.getByText('DNI frente'), 'text-foreground', idleBackgrounds);
+    expectAa(screen.getByRole('status'), 'text-muted-foreground', idleBackgrounds);
+  });
+
+  it('success: nombre del archivo y «Cargado» cumplen AA', () => {
+    renderCard({ status: 'success', fileName: 'dni_front.png' });
+    expect(screen.getByRole('status').textContent).toBe('dni_front.png');
+    expectAa(screen.getByText('DNI frente'), 'text-foreground', successBackgrounds);
+    expectAa(screen.getByRole('status'), 'text-muted-foreground', successBackgrounds);
+    expectAa(screen.getByText('Cargado', { exact: true }), 'text-success', successBackgrounds);
+  });
+
+  it('error: mensaje de error y «Reintentar» cumplen AA sobre el fondo de error', () => {
+    renderCard({ status: 'error' });
+    expect(screen.getByRole('alert').textContent).toBe('Error al subir. Tocá para reintentar.');
+    expectAa(screen.getByText('DNI frente'), 'text-foreground', errorBackgrounds);
+    expectAa(screen.getByRole('alert'), 'text-muted-foreground', errorBackgrounds);
+    expectAa(screen.getByText('Reintentar', { exact: true }), 'text-destructive', errorBackgrounds);
+  });
+
+  it('el asterisco de DNI obligatorio usa primary-dark con AA sobre la página', () => {
+    const { container } = render(<IdentityForm courierId="c-1" />);
+    const label = container.querySelector('label[for="dni-input"]');
+    if (!(label instanceof HTMLElement)) throw new Error('No se encontró el label del DNI');
+    expectAa(within(label).getByText('*'), 'text-primary-dark', [white, page]);
   });
 });
