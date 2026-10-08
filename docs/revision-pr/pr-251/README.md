@@ -1,34 +1,13 @@
-# PR #251 — T-313 · E2E de registro de comercio y consentimientos
+# PR #251 — T-313 · ronda 13
 
-> ❌ Ronda 2 · CON BLOQUEANTES (1) · 3 de 4 hallazgos cerrados
+**CON BLOQUEANTES (2): H04 y H10.**
 
-| Campo | Valor |
-|---|---|
-| PR | #251 · `feat/T-313-merchant-registration-e2e` → `develop` |
-| Tarea | T-313 · Issue #45 |
-| Autor | KiraK72 |
-| SHA ronda 1 | `afdb326128cef1972b42bb3822a43cbd468fbd61` |
-| SHA ronda 2 | `79c6985e8c9717cf00f28c1baa6e7e4fbd38e726` |
-| `develop` al revisar | `1cd3da01b3af9619e4a19107ba5e8354a18c2159` |
-| Sincronización | 6 ahead / 3 behind |
+D05-A — Lautaro073 autoriza exclusivamente modificar `src/features/merchants/components/onboarding-form.tsx` para navegar al dashboard por documento completo luego de una action exitosa.
 
-## Rondas
-| Ronda | SHA | Resultado |
-|---|---|---|
-| 1 | `afdb326` | ❌ 4 bloqueantes |
-| 2 | `79c6985` | ❌ 1 bloqueante · H01/H02/H03 cerrados |
+**HEAD evaluado:** `5c5adfb2245b088515f3e1620a186ca64993203e`.
 
-## Estado
-- ✅ H01 — cobertura completa de `(merchant)`.
-- ✅ H02 — lifecycle error conserva error principal + cleanup.
-- ✅ H03 — body/bitácora alineados; CI integrado verde.
-- ❌ H04 — falta RED comportamental; el `e2e-preview` del SHA revisado aún no terminó.
+**CI:** `37747262112` GREEN; **E2E:** `37747382851`, 51 PASS y 1 FAIL. El courier bloqueado y merchant sin consentimiento pasan; el alta completa falla.
 
-Condiciones adicionales de cierre:
-- rama 3 commits detrás de `develop`;
-- visto bueno explícito P3 pendiente;
-- GREEN de `e2e-preview` requerido sobre el HEAD final sincronizado.
+**P3:** confirmado por Lautaro073.
 
-D01 se mantiene: Develop/Preview no depende de SMTP real; Staging conserva SMTP/sender.
-
-No apruebo ni mergeo.
+Ver historial previo de rondas 1–12. No aprobar ni mergear.

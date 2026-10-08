@@ -1,7 +1,15 @@
 # Lecciones — PR #251 / T-313
 
-- AG-37 aplica a H01: una clase se enumera completa.
-- P08 reaparece en H02/H04: un control puede omitir el fallo que dice vigilar.
-- H03: un checkbox no es evidencia; además, no atribuir un fallo local sobre rama atrasada a una tarea de develop
-  sin reproducirlo en el árbol integrado.
-- Un Preview GREEN no sustituye la mutación RED exigida por `e2e/AGENTS.md`.
+- H09: en Next.js, `getByRole('alert')` a nivel de `page` puede capturar `#__next-route-announcer__`; para verificar errores de un formulario, acotar el locator al componente/landmark dueño del error.
+- El cambio de entorno debe revalidarse con artifact/trace, no solo con cantidad de fallos: pasar de 2 alerts a 1 parecía parcial, pero el snapshot mostró que el flujo funcional ya había terminado con éxito.
+- No se agrega una regla global nueva todavía; H09 se registra como P07 y se observará reincidencia.
+- H10 repite un patrón ya catalogado: después de cada nuevo HEAD funcional, el body debe sustituir evidencia/diagnóstico obsoletos en vez de conservar runs que ya no describen el estado actual. Se reutiliza P15; no se agrega AG nueva.
+- Un `INTERNAL_ERROR` deliberadamente agregado como frontera de dominio no permite inferir cuál operación interna falló. Si no hay logs seguros ni acceso al entorno, la revisión debe enumerar todas las ramas posibles y pedir una sonda discriminante; no convertir una de ellas en causa raíz por intuición.
+- H11: cuando un trigger ya provisiona una fila, una action de onboarding no debe reconstruirla con UPSERT bajo RLS. La semántica del write debe corresponder al lifecycle real de la fila; de lo contrario, un INSERT policy ausente puede romper un camino que conceptualmente era UPDATE.
+- Las policies deben enumerarse contra **todos** los campos editables de la UI. Probar solo `business_name` como update legítimo dejó escapar que `notes` estaba congelado aunque el formulario lo expone. Se reutiliza P08; no se agrega AG nueva.
+- Una migración incluida en una PR no está disponible en Supabase Develop hasta mergear a `develop`; el Preview de feature debe validar solo lo que pueda ejercerse contra la base compartida vigente, mientras `db-tests` valida la migración de la rama en aislamiento.
+- No se debe “arreglar” esa diferencia aplicando manualmente una migración de feature sobre Develop: rompería la regla de entorno compartido y haría que otros Preview dependan de código aún no mergeado.
+- Si el trusted Preview bloquea toda PR con `supabase/migrations/**`, una corrección que necesita migration y E2E pre-merge debe separarse estructuralmente: primero mergear/aplicar la migration, luego rebaselinar la PR funcional contra Develop ya migrado. No se debe saltar el gate ni aplicar schema manualmente al entorno compartido.
+- Un fix productivo puede quedar revalidado por unit + pgTAP aunque el E2E remoto esté bloqueado por arquitectura; esa evidencia cierra el defecto de código, mientras el DoD E2E permanece abierto como hallazgo separado hasta poder ejercerse en el entorno real.
+- Ronda 12: un E2E que demuestra la persistencia exitosa pero falla en navegación no confirma por sí mismo un problema de caché. Separar el origen de redirect entre middleware, página servidora y navegación cliente con pruebas observables antes de agregar invalidaciones a ciegas. Se reutilizan H04/P08 y H10/P15, sin proponer regla global nueva.
+- Que `approval-policy` esté verde por una aprobación previa no demuestra cumplimiento del DoD ni visto bueno explícito de la dueña del spec en su última versión.
