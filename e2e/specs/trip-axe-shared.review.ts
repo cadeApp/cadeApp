@@ -5,6 +5,28 @@ import { expect } from '../fixtures';
 // REVIEW ONLY / NEVER MERGE (T-350): helpers de las auditorías provisionales por rol.
 // No es un *.spec.ts, así que importarlo no registra tests.
 
+// Nunca imprime la clave: se tapa el parámetro `key` de cualquier URL.
+function redactKey(text: string) {
+  return text.replace(/([?&]key=)[^&\s"']+/gi, '$1REDACTED');
+}
+
+export function attachMapsDiagnostics(page: Page) {
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' || msg.type() === 'warning') {
+      console.log(`[T-350 console ${msg.type()}] ${redactKey(msg.text()).slice(0, 400)}`);
+    }
+  });
+  page.on('pageerror', (error) => {
+    console.log(`[T-350 pageerror] ${redactKey(error.message).slice(0, 400)}`);
+  });
+  page.on('response', (response) => {
+    const url = response.url();
+    if (/maps\.googleapis\.com|maps\.gstatic\.com/.test(url) && (response.status() >= 300 || /Authenticat|Quota/i.test(url))) {
+      console.log(`[T-350 maps response] ${response.status()} ${redactKey(url).slice(0, 200)}`);
+    }
+  });
+}
+
 export async function expectRealGoogleMap(page: Page) {
   await expect(page.getByTestId('trip-route-map')).toBeVisible();
   await expect(page.getByTestId('route-map-fallback')).toHaveCount(0);

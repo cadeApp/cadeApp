@@ -1,12 +1,15 @@
 import { test, expect, seedDeliveryRequestInState } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
-import { auditTrip, expectRealGoogleMap, logAriaHiddenFocusOrigin } from './trip-axe-shared.review';
+import {
+  attachMapsDiagnostics,
+  auditTrip,
+  expectRealGoogleMap,
+  logAriaHiddenFocusOrigin,
+} from './trip-axe-shared.review';
 
 // REVIEW ONLY / NEVER MERGE (T-350): auditoría axe AA real de R07 con mapa de Google cargado.
 test('DoD temporal T-350: axe AA en viaje R07', async ({ page, stagingContext, loginAsCourier }) => {
-  page.on('console', (msg) => {
-    if (/google maps|MapError|maps\.googleapis/i.test(msg.text())) console.log(`[T-350 maps console] ${msg.type()}: ${msg.text()}`);
-  });
+  attachMapsDiagnostics(page);
   await loginAsCourier(0, page);
   const courier = stagingContext.courierUsers?.[0];
   if (!courier) {
