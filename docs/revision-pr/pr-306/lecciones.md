@@ -21,3 +21,10 @@ H04: el texto visible de éxito es «Cargado». Los tests y tablas deben derivar
 ## Advertencia
 
 Esta es una PR **documental** que define trabajo posterior; los hallazgos acreditan insuficiencias de contrato, no un fallo de ejecución de un arreglo aún inexistente.
+
+
+## Ronda 2 — Ramas concurrentes de fichas
+
+**PR306-H05 — P15 / AG-71.** Una ficha perfectamente corregida puede no ser mergeable porque otra PR inserta una fila justo en el mismo hunk del plan. La PR #305 se mergeó entre las dos rondas de #306. Se requiere revalidar la cabeza de `develop` en cada ronda, comparar con el HEAD y preservar ambos entregables al integrar. No se trata de un contrato de producto a decidir, sino un conflicto de Git que debe arreglarse con un merge normal, no con rebase/force.
+
+Los cuatro hallazgos iniciales están cerrados **en la ficha** por inspección y script independiente; el nuevo H05 permanece abierto hasta verificar el nuevo SHA sobre `develop`.

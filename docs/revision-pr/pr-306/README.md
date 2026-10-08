@@ -1,35 +1,35 @@
-# PR #306 — T-351 · Ficha de accesibilidad del onboarding de documentos
+# PR #306 — T-351 · Ficha de contraste del onboarding del repartidor
 
 | Campo | Valor |
 |---|---|
 | PR | https://github.com/cadeApp/cadeApp/pull/306 |
-| Issue | [#297](https://github.com/cadeApp/cadeApp/issues/297) |
+| Issue | #297 |
 | Autor | @Lautaro073 |
 | Rama | `docs/T-351-ficha` → `develop` |
-| SHA revisado (ronda 1) | `ef906b2ce719934f8b4082877c2355bef498d902` |
-| Base | `0293fe381762f60bd47a7ba3b6f3152ee0f08bd8` |
-| Diff original | 3 archivos documentales; +170/-0 |
-| Resultado | **CON BLOQUEANTES (3), MEJORA (1)** |
+| Base al hacer ronda 1 | `0293fe381762f60bd47a7ba3b6f3152ee0f08bd8` |
+| Base al hacer ronda 2 | `fe1271fdf2f54cbb17df92d42a9956dd8c4bce2f` |
+| HEAD corregido revisado | `742bcf1936228432038b436876e53825926323b8` |
+| Estado de revisión | **CON BLOQUEANTES (1 nuevo de integración)** |
 
 ## Rondas
 
-| Ronda | SHA revisado | Dictamen | Informe |
-|---|---|---|---|
-| 1 | `ef906b2ce719934f8b4082877c2355bef498d902` | CON BLOQUEANTES (3) | [ronda-1](revisiones/ronda-1.md) |
+| Ronda | SHA revisado | Informe |
+|---|---|---|
+| 1 | `ef906b2ce719934f8b4082877c2355bef498d902` | [CON BLOQUEANTES (3)](revisiones/ronda-1.md) |
+| 2 | `742bcf1936228432038b436876e53825926323b8` | [CON BLOQUEANTES (1 nuevo, 4 anteriores corregidos)](revisiones/ronda-2.md) |
 
-## Hallazgos
+## Estado por hallazgo
 
-| ID | Severidad | Estado | Tema |
-|---|---|---|---|
-| PR306-H01 | alto | abierto | E2E solo idle frente al contrato de todos los estados |
-| PR306-H02 | medio | abierto | Precondición interna, no accesible, repetición de T-309/H02 |
-| PR306-H03 | medio | abierto | RED fabricado al cambiar expectativa |
-| PR306-H04 | bajo | abierto | Texto real success es «Cargado», no «Subido» |
+| ID | Severidad | Estado |
+|---|---|---|
+| PR306-H01 · todos los estados | alto | arreglado-verificado **en ficha** |
+| PR306-H02 · precondición semántica | medio | arreglado-verificado **en ficha** |
+| PR306-H03 · RED sin adulterar expectativa | medio | arreglado-verificado **en ficha** |
+| PR306-H04 · copy «Cargado» | bajo | arreglado-verificado **en ficha** |
+| PR306-H05 · conflicto con T-350 | alto | **abierto** |
 
-Datos estructurados en [hallazgos.jsonl](hallazgos.jsonl); evidencia de la ronda en [comandos.md](evidencia/comandos.md); aprendizaje en [lecciones.md](lecciones.md).
+Datos: [hallazgos.jsonl](hallazgos.jsonl) · Evidencia: [comandos.md](evidencia/comandos.md) · [Lecciones](lecciones.md)
 
-## Por hacer
+## Próximo paso
 
-- Corregir únicamente `docs/tasks/T-351.md` y `docs/tasks/log/T-351.md` conforme al comentario de ronda 1.
-- No implementar T-351 ni crear ramas E2E temporales durante la PR documental.
-- El informe de revisión es independiente; no aprobar ni mergear hasta la ronda 2 y los checks requeridos.
+La PR sigue siendo solo documental. Integrar `origin/develop` mediante merge normal (no rebase ni force-push), preservar las filas T-350 y T-351 en `docs/implementation-plan.md`, resolver los conflictos y verificar que GitHub cambie de `mergeable_state: dirty` a mergeable. Pegar salidas reales de validación, solicitar **ronda 3** sobre el nuevo HEAD. No implementar la accesibilidad ni mergear automáticamente.

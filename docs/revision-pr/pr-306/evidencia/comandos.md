@@ -70,3 +70,35 @@ await expect(page.getByText('Subir', { exact: true })).toHaveCount(4);
 ## Control de salud de instrumentos
 
 No se proporcionan cifras de mutación ficticias ni un harness que compare solamente frases en una ficha con ellas mismas. La batería adversarial de arriba es independiente del autor y está lista para implementar/reproducir cuando exista el código de la PR posterior. El RED original de `DoD: axe AA en onboarding` se referencia al run `37554952589`, no se afirma reproducción propia.
+
+
+---
+
+## Ronda 2 — 2026-10-08, HEAD `742bcf1936228432038b436876e53825926323b8`
+
+**Verificación independiente sin workspace Git local:** a través del conector GitHub se comprobaron `docs/tasks/T-351.md`, `docs/tasks/log/T-351.md`, `src/features/courier-onboarding/copy.ts`, la comparación de commits y el estado REST del PR. Un verificador JavaScript de presencia de contratos segmentado por secciones en las respuestas de GitHub devolvió:
+
+```text
+H01: 13/13 contracts PASS (4 estados, 5 casos, axe por estado y tokens/contraste)
+H02: 8/8 contracts PASS (4 labels reales, toBeAttached y count exacto)
+H03: 4/4 contracts PASS (mutación de UI; expectations intactas)
+H04: 3/3 contracts PASS («Cargado» coincide con copy.ts)
+TOTAL: 28/28 condiciones escritas PASS
+```
+
+**Importante:** son comprobaciones de la *ficha*, no tests de producto, y no prueban un contraste real en Chromium. No se presenta ningún GREEN/RED E2E ficticio.
+
+**Nuevo bloqueante del merge** (observado en GitHub después del merge PR #305):
+
+```text
+GET /repos/cadeApp/cadeApp/pulls/306
+mergeable=false
+mergeable_state=dirty
+head=742bcf1936228432038b436876e53825926323b8
+base actual develop=fe1271fdf2f54cbb17df92d42a9956dd8c4bce2f
+compare develop...docs/T-351-ficha: behind_by=1
+develop docs/implementation-plan.md: T-350 sí; T-351 no
+branch docs/implementation-plan.md: T-351 sí; T-350 no
+```
+
+**Para reproducir/corregir desde el clon del autor:** `git fetch origin && git switch docs/T-351-ficha && git merge origin/develop`, resolver el único hunk de plan preservando ambas filas, `git add docs/implementation-plan.md`, completar el merge, `git merge-base --is-ancestor origin/develop HEAD`, `git diff origin/develop...HEAD -- docs/implementation-plan.md`, correr `pnpm vitest run tools/verify-fichas.test.ts`, `pnpm typecheck && pnpm lint && pnpm test` y `git diff --check`. Si aparecen otros conflictos reales, registrarlos antes de resolverlos, sin borrar revisión ni trabajo ajeno. No se ejecutaron comandos locales en esta ronda.
