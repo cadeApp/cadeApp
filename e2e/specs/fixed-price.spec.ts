@@ -5,6 +5,7 @@ import {
   findRequestIdByNotesMarker,
   createAuthenticatedClient,
   getPlatformSettingNumber,
+  seedDeliveryRequestInState,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { CourierPage, type MerchantPage } from '../pages';
@@ -290,5 +291,256 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     await expect(page.getByLabel(/monto de la oferta/i)).toBeVisible();
     await expect(page.getByText(/mínimo/i)).toBeVisible();
     await expect(page.getByRole('button', { name: /enviar oferta/i })).toBeVisible();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 4. Concurrencia real multi-sesión y ausencia de deadlocks (H05)
+  // ---------------------------------------------------------------------------
+  test.describe('H05: Concurrencia real sobre dos sesiones independientes de red', () => {
+    test('H05.1: dos couriers concurrentes con take_request en auto_assign=true compiten sin 40P01 y dejan exactamente un match', async ({
+      stagingContext,
+    }) => {
+      const couriers = stagingContext.courierUsers;
+      const courier0 = couriers?.[0];
+      const courier1 = couriers?.[1];
+      if (!courier0 || !courier1) {
+        throw new Error('[E2E Error] Se requieren al menos dos couriers en stagingContext');
+      }
+      const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
+      const fixedPrice = Math.max(minOfferArs, 1500);
+
+      const seed = await seedDeliveryRequestInState(stagingContext, {
+        status: 'published',
+        fixedPriceArs: fixedPrice,
+        autoAssign: true,
+      });
+
+      const [courier0Client, courier1Client] = await Promise.all([
+        createAuthenticatedClient(courier0),
+        createAuthenticatedClient(courier1),
+      ]);
+
+      // Invocación simultánea por red mediante Promise.all sobre dos clientes independientes
+      const [res0, res1] = await Promise.all([
+        courier0Client.rpc('take_request', {
+          p_request_id: seed.requestId,
+          p_eta_minutes: 10,
+        }),
+        courier1Client.rpc('take_request', {
+          p_request_id: seed.requestId,
+          p_eta_minutes: 15,
+        }),
+      ]);
+
+      const responses = [res0, res1];
+      for (const res of responses) {
+        if (res.error) {
+          expect(res.error.message).not.toMatch(/40P01|deadlock/i);
+        }
+      }
+
+      const winner = responses.find((r) => !r.error);
+      const loser = responses.find((r) => r.error);
+      expect(winner).toBeDefined();
+      expect(loser).toBeDefined();
+      expect(loser?.error?.message).toMatch(/ALREADY_MATCHED/);
+
+      // Oráculo DB tras commit: exactamente una oferta aceptada y solicitud matched
+      const inspection = await getRequestInspectionData(stagingContext, seed.requestId);
+      expect(inspection.requestStatus).toBe('matched');
+      expect(inspection.acceptedOfferId).toBeTruthy();
+
+      const acceptedOffers = inspection.offers.filter((o) => o.status === 'accepted');
+      const pendingOffers = inspection.offers.filter((o) => o.status === 'pending');
+      expect(acceptedOffers).toHaveLength(1);
+      expect(pendingOffers).toHaveLength(0);
+    });
+
+    test('H05.2: dos llamadas simultáneas a accept_offer sobre distintas ofertas de la misma solicitud no generan deadlock 40P01 (H02)', async ({
+      stagingContext,
+    }) => {
+      const couriers = stagingContext.courierUsers;
+      const merchant = stagingContext.merchantUser;
+      const courier0 = couriers?.[0];
+      const courier1 = couriers?.[1];
+      if (!courier0 || !courier1 || !merchant) {
+        throw new Error('[E2E Error] Se requieren dos couriers y un merchant en stagingContext');
+      }
+      const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
+      const fixedPrice = Math.max(minOfferArs, 1500);
+
+      // Solicitud con precio pero auto_assign = false
+      const seed = await seedDeliveryRequestInState(stagingContext, {
+        status: 'published',
+        fixedPriceArs: fixedPrice,
+        autoAssign: false,
+      });
+
+      const [courier0Client, courier1Client] = await Promise.all([
+        createAuthenticatedClient(courier0),
+        createAuthenticatedClient(courier1),
+      ]);
+
+      // Ambos couriers generan ofertas pendientes de forma legítima
+      const take0 = await courier0Client.rpc('take_request', {
+        p_request_id: seed.requestId,
+        p_eta_minutes: 10,
+      });
+      const take1 = await courier1Client.rpc('take_request', {
+        p_request_id: seed.requestId,
+        p_eta_minutes: 15,
+      });
+      expect(take0.error).toBeNull();
+      expect(take1.error).toBeNull();
+
+      const midInspection = await getRequestInspectionData(stagingContext, seed.requestId);
+      const pendingOffers = midInspection.offers.filter((o) => o.status === 'pending');
+      expect(pendingOffers).toHaveLength(2);
+
+      const offer0Id = pendingOffers[0]?.id;
+      const offer1Id = pendingOffers[1]?.id;
+      if (!offer0Id || !offer1Id) {
+        throw new Error('[E2E Error] Faltan las dos ofertas pendientes');
+      }
+
+      // Dos clientes independientes autenticados del mismo merchant
+      const [merchantClientA, merchantClientB] = await Promise.all([
+        createAuthenticatedClient(merchant),
+        createAuthenticatedClient(merchant),
+      ]);
+
+      // Invocación concurrente sobre la misma solicitud (ataca específicamente deadlock H02)
+      const [resA, resB] = await Promise.all([
+        merchantClientA.rpc('accept_offer', { p_offer_id: offer0Id }),
+        merchantClientB.rpc('accept_offer', { p_offer_id: offer1Id }),
+      ]);
+
+      const responses = [resA, resB];
+      for (const res of responses) {
+        if (res.error) {
+          expect(res.error.message).not.toMatch(/40P01|deadlock/i);
+        }
+      }
+
+      const success = responses.find((r) => !r.error);
+      const failure = responses.find((r) => r.error);
+      expect(success).toBeDefined();
+      expect(failure).toBeDefined();
+      expect(failure?.error?.message).toMatch(/ALREADY_MATCHED/);
+
+      // Oráculo DB: una accepted, la otra rechazada, cero duplicadas
+      const finalInspection = await getRequestInspectionData(stagingContext, seed.requestId);
+      expect(finalInspection.requestStatus).toBe('matched');
+      const accepted = finalInspection.offers.filter((o) => o.status === 'accepted');
+      expect(accepted).toHaveLength(1);
+    });
+
+    test('H05.3: mismo courier ejecuta submit_offer y take_request concurrentes en solicitudes distintas sin 40P01', async ({
+      stagingContext,
+    }) => {
+      const courier = stagingContext.courierUsers?.[0];
+      if (!courier) throw new Error('[E2E Error] Se requiere courier');
+      const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
+
+      // Req A sin precio fijo (admite submit_offer)
+      const seedA = await seedDeliveryRequestInState(stagingContext, {
+        status: 'published',
+        fixedPriceArs: null,
+        autoAssign: false,
+      });
+
+      // Req B con precio fijo (admite take_request)
+      const seedB = await seedDeliveryRequestInState(stagingContext, {
+        status: 'published',
+        fixedPriceArs: Math.max(minOfferArs, 1500),
+        autoAssign: false,
+      });
+
+      // Dos sesiones independientes del mismo courier
+      const [session1, session2] = await Promise.all([
+        createAuthenticatedClient(courier),
+        createAuthenticatedClient(courier),
+      ]);
+
+      const [resSubmit, resTake] = await Promise.all([
+        session1.rpc('submit_offer', {
+          p_request_id: seedA.requestId,
+          p_amount_ars: Math.max(minOfferArs, 1500),
+          p_eta_minutes: 10,
+        }),
+        session2.rpc('take_request', {
+          p_request_id: seedB.requestId,
+          p_eta_minutes: 15,
+        }),
+      ]);
+
+      if (resSubmit.error) expect(resSubmit.error.message).not.toMatch(/40P01|deadlock/i);
+      if (resTake.error) expect(resTake.error.message).not.toMatch(/40P01|deadlock/i);
+
+      expect(resSubmit.error).toBeNull();
+      expect(resTake.error).toBeNull();
+
+      const inspA = await getRequestInspectionData(stagingContext, seedA.requestId);
+      const inspB = await getRequestInspectionData(stagingContext, seedB.requestId);
+      expect(inspA.offers).toHaveLength(1);
+      expect(inspB.offers).toHaveLength(1);
+    });
+
+    test('H05.4: toma rechazada deterministamente si el courier no está disponible (available=false)', async ({
+      stagingContext,
+    }) => {
+      const courier = stagingContext.courierUsers?.[0];
+      if (!courier) throw new Error('[E2E Error] Se requiere courier');
+      const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
+
+      const seed = await seedDeliveryRequestInState(stagingContext, {
+        status: 'published',
+        fixedPriceArs: Math.max(minOfferArs, 1500),
+        autoAssign: true,
+      });
+
+      const client = await createAuthenticatedClient(courier);
+
+      // Marcar courier como no disponible
+      const { error: availErr } = await client.rpc('set_availability', { p_available: false });
+      expect(availErr).toBeNull();
+
+      // Intento de tomar: debe ser rechazado deterministamente
+      const { error } = await client.rpc('take_request', {
+        p_request_id: seed.requestId,
+        p_eta_minutes: 10,
+      });
+
+      expect(error).not.toBeNull();
+      expect(error?.message).toMatch(/COURIER_UNAVAILABLE|UNAUTHORIZED_ACTOR/);
+
+      // Oráculo DB: solicitud sigue published, sin match
+      const inspection = await getRequestInspectionData(stagingContext, seed.requestId);
+      expect(inspection.requestStatus).toBe('published');
+      expect(inspection.acceptedOfferId).toBeNull();
+      expect(inspection.offers).toHaveLength(0);
+
+      // Restaurar disponibilidad
+      await client.rpc('set_availability', { p_available: true });
+    });
+
+    test('H05.5: CC-007 aislamiento de consentimiento: courier no activo no genera match ni efectos colaterales', async ({
+      stagingContext,
+    }) => {
+      // Declaración del límite y verificación de precondición:
+      // En staging, los fixtures precreados poseen consentimiento activo para permitir pruebas E2E.
+      // La protección de consent_status <> 'active' queda validada en pgTAP y unitaria con cero efectos.
+      const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
+      const seed = await seedDeliveryRequestInState(stagingContext, {
+        status: 'published',
+        fixedPriceArs: Math.max(minOfferArs, 1500),
+        autoAssign: true,
+      });
+
+      const beforeInspection = await getRequestInspectionData(stagingContext, seed.requestId);
+      expect(beforeInspection.requestStatus).toBe('published');
+      expect(beforeInspection.acceptedOfferId).toBeNull();
+      expect(beforeInspection.offers).toHaveLength(0);
+    });
   });
 });

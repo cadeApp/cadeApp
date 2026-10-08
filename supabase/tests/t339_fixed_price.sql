@@ -65,8 +65,7 @@ update public.couriers set status = 'suspended', available = true where profile_
 
 -- Zona activa en Aguilares
 insert into public.zones (id, name, active, centroid_lat, centroid_lng)
-values (pg_temp.zone_id(), 'Centro Aguilares', true, -27.4333, -27.4333);
-update public.zones set centroid_lng = -65.6133 where id = pg_temp.zone_id();
+values (pg_temp.zone_id(), 'Centro Aguilares', true, -27.4333, -65.6133);
 
 -- 1. Constraint: auto_assign sin fixed_price_ars es rechazado
 select throws_ok(
@@ -456,7 +455,7 @@ select throws_ok(
   'accept_offer sobre solicitud ya matched con otra oferta responde ALREADY_MATCHED'
 );
 
--- 42, 43: Carrera / Concurrencia de toma y cero residuales (H05)
+-- 42, 43: Secuencial: toma de solicitud auto_assign=true y cero residuales (DoD T-339)
 create function pg_temp.req_race() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000033f2'::uuid $$;
 insert into public.delivery_requests (id, merchant_id, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method, fixed_price_ars, auto_assign)
 values (pg_temp.req_race(), pg_temp.merchant_id(), pg_temp.zone_id(), pg_temp.zone_id(), 'chico', 'cash', 1500, true);
@@ -475,13 +474,13 @@ do $$ begin perform public.take_request(pg_temp.req_race(), 15, null); end; $$;
 select is(
   (select count(*)::integer from public.offers where request_id = pg_temp.req_race() and status = 'accepted'),
   1,
-  'Carrera: exactamente una oferta aceptada en la solicitud'
+  'Secuencial: exactamente una oferta aceptada en la solicitud'
 );
 
 select is(
   (select count(*)::integer from public.offers where request_id = pg_temp.req_race() and status = 'pending'),
   0,
-  'Carrera: cero ofertas pending residuales tras match atómico'
+  'Secuencial: cero ofertas pending residuales tras match atómico'
 );
 
 select * from finish();

@@ -659,6 +659,304 @@ describe('T-339 / CC-021: rpc-fake behavior for fixed price requests and take_re
         const competingOffer = fake.getOffer('40000000-0000-4000-8000-000000000099');
         expect(competingOffer?.status).toBe('rejected');
       });
+
+      it('rejects take_request and submit_offer with NOT_FOUND when courier profile does not exist', async () => {
+        const fake = setupFake();
+        fake.deleteCourier(COURIER_1_ID);
+
+        const takeRes = await fake.take_request({
+          requestId: REQ_FIXED_AUTO_ID,
+          etaMinutes: 10,
+        });
+        expect(takeRes).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+        const submitRes = await fake.submit_offer({
+          requestId: REQ_OPEN_ID,
+          amountArs: 1500,
+          etaMinutes: 10,
+        });
+        expect(submitRes).toEqual({ ok: false, code: 'NOT_FOUND' });
+      });
+
+      it('submit_offer covers eligibility, amount floor, and request status branches', async () => {
+        const fake = setupFake();
+
+        // 1. Amount below floor
+        const belowFloor = await fake.submit_offer({
+          requestId: REQ_OPEN_ID,
+          amountArs: 500,
+          etaMinutes: 10,
+        });
+        expect(belowFloor).toEqual({ ok: false, code: 'OFFER_BELOW_MINIMUM' });
+
+        // 2. Request in draft status
+        const draftReqId = '30000000-0000-4000-8000-0000000000d1';
+        fake.seedRequest({
+          requestId: draftReqId,
+          merchantId: MERCHANT_ID,
+          status: 'draft',
+        });
+        const onDraft = await fake.submit_offer({
+          requestId: draftReqId,
+          amountArs: 1500,
+          etaMinutes: 10,
+        });
+        expect(onDraft).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+        // 3. Request expired
+        const expReqId = '30000000-0000-4000-8000-0000000000d2';
+        fake.seedRequest({
+          requestId: expReqId,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-22T14:00:00.000Z',
+        });
+        const onExpired = await fake.submit_offer({
+          requestId: expReqId,
+          amountArs: 1500,
+          etaMinutes: 10,
+        });
+        expect(onExpired).toEqual({ ok: false, code: 'REQUEST_EXPIRED' });
+
+        // 4. Courier suspended
+        fake.setActor({ courierStatus: 'suspended' });
+        const onSuspended = await fake.submit_offer({
+          requestId: REQ_OPEN_ID,
+          amountArs: 1500,
+          etaMinutes: 10,
+        });
+        expect(onSuspended).toEqual({ ok: false, code: 'COURIER_SUSPENDED' });
+
+        // 5. Courier pending approval
+        fake.setActor({ courierStatus: 'pending' });
+        const onPending = await fake.submit_offer({
+          requestId: REQ_OPEN_ID,
+          amountArs: 1500,
+          etaMinutes: 10,
+        });
+        expect(onPending).toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
+
+        // 6. Courier unavailable
+        fake.setActor({ courierStatus: 'approved', courierAvailable: false });
+        const onUnavailable = await fake.submit_offer({
+          requestId: REQ_OPEN_ID,
+          amountArs: 1500,
+          etaMinutes: 10,
+        });
+        expect(onUnavailable).toEqual({ ok: false, code: 'COURIER_UNAVAILABLE' });
+      });
+
+      it('withdraw_offer executes validation, ownership, state, and rate limit branches', async () => {
+        const fake = setupFake();
+
+        // 1. Offer not found
+        const notFound = await fake.withdraw_offer({
+          offerId: '40000000-0000-4000-8000-999999999999',
+        });
+        expect(notFound).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+        // 2. Offer of another courier
+        const otherOfferId = '40000000-0000-4000-8000-0000000000d3';
+        fake.seedOffer({
+          offerId: otherOfferId,
+          requestId: REQ_OPEN_ID,
+          courierId: COURIER_2_ID,
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const unauth = await fake.withdraw_offer({ offerId: otherOfferId });
+        expect(unauth).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+        // 3. Offer not in pending state (already accepted)
+        const acceptedOfferId = '40000000-0000-4000-8000-0000000000d4';
+        fake.seedOffer({
+          offerId: acceptedOfferId,
+          requestId: REQ_OPEN_ID,
+          courierId: COURIER_1_ID,
+          amountArs: 1500,
+          status: 'accepted',
+        });
+        const notPending = await fake.withdraw_offer({ offerId: acceptedOfferId });
+        expect(notPending).toEqual({ ok: false, code: 'OFFER_NOT_PENDING' });
+
+        // 4. Successful withdrawal
+        const ownOfferId = '40000000-0000-4000-8000-0000000000d5';
+        fake.seedOffer({
+          offerId: ownOfferId,
+          requestId: REQ_OPEN_ID,
+          courierId: COURIER_1_ID,
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const success = await fake.withdraw_offer({ offerId: ownOfferId });
+        expect(success.ok).toBe(true);
+        expect(fake.getOffer(ownOfferId)?.status).toBe('withdrawn');
+      });
+
+      it('accept_offer covers not found, unauth, idempotency, and invalid request states', async () => {
+        const fake = setupFake();
+        fake.setActor({ userId: MERCHANT_ID, role: 'merchant' });
+
+        // 1. Offer not found
+        const notFound = await fake.accept_offer({
+          offerId: '40000000-0000-4000-8000-999999999999',
+        });
+        expect(notFound).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+        // 2. Offer with missing courier profile
+        const orphanOfferId = '40000000-0000-4000-8000-0000000000e1';
+        fake.seedOffer({
+          offerId: orphanOfferId,
+          requestId: REQ_OPEN_ID,
+          courierId: 'courier-ghost',
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const missingCourier = await fake.accept_offer({ offerId: orphanOfferId });
+        expect(missingCourier).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+        // 3. Different merchant trying to accept
+        fake.setActor({ userId: 'another-merchant-id', role: 'merchant' });
+        const offerValidId = '40000000-0000-4000-8000-0000000000e2';
+        fake.seedOffer({
+          offerId: offerValidId,
+          requestId: REQ_OPEN_ID,
+          courierId: COURIER_1_ID,
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const unauth = await fake.accept_offer({ offerId: offerValidId });
+        expect(unauth).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+        // 4. Request already matched with that same offer (idempotent accept)
+        fake.setActor({ userId: MERCHANT_ID, role: 'merchant' });
+        const matchedReqId = '30000000-0000-4000-8000-0000000000e3';
+        const acceptedOffId = '40000000-0000-4000-8000-0000000000e4';
+        fake.seedRequest({
+          requestId: matchedReqId,
+          merchantId: MERCHANT_ID,
+          status: 'matched',
+          acceptedOfferId: acceptedOffId,
+          assignedCourierId: COURIER_1_ID,
+        });
+        fake.seedOffer({
+          offerId: acceptedOffId,
+          requestId: matchedReqId,
+          courierId: COURIER_1_ID,
+          amountArs: 1500,
+          status: 'accepted',
+        });
+        const idempotentAccept = await fake.accept_offer({ offerId: acceptedOffId });
+        expect(idempotentAccept.ok).toBe(true);
+        if (idempotentAccept.ok) {
+          expect(idempotentAccept.data.idempotent).toBe(true);
+        }
+
+        // 5. Request already matched with a different offer (ALREADY_MATCHED)
+        const competingOffId = '40000000-0000-4000-8000-0000000000e5';
+        fake.seedOffer({
+          offerId: competingOffId,
+          requestId: matchedReqId,
+          courierId: COURIER_2_ID,
+          amountArs: 1600,
+          status: 'pending',
+        });
+        const alreadyMatched = await fake.accept_offer({ offerId: competingOffId });
+        expect(alreadyMatched).toEqual({ ok: false, code: 'ALREADY_MATCHED' });
+
+        // 6. Request cancelled
+        const cancelledReqId = '30000000-0000-4000-8000-0000000000e6';
+        const offOnCancelled = '40000000-0000-4000-8000-0000000000e7';
+        fake.seedRequest({
+          requestId: cancelledReqId,
+          merchantId: MERCHANT_ID,
+          status: 'cancelled',
+        });
+        fake.seedOffer({
+          offerId: offOnCancelled,
+          requestId: cancelledReqId,
+          courierId: COURIER_1_ID,
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const acceptCancelled = await fake.accept_offer({ offerId: offOnCancelled });
+        expect(acceptCancelled).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+
+        // 7. Offer not pending (e.g. expired)
+        const expiredOfferId = '40000000-0000-4000-8000-0000000000e8';
+        fake.seedOffer({
+          offerId: expiredOfferId,
+          requestId: REQ_OPEN_ID,
+          courierId: COURIER_1_ID,
+          amountArs: 1500,
+          status: 'expired',
+        });
+        const acceptNotPending = await fake.accept_offer({ offerId: expiredOfferId });
+        expect(acceptNotPending).toEqual({ ok: false, code: 'OFFER_NOT_PENDING' });
+
+        // 8. Courier suspended
+        const suspendedOffId = '40000000-0000-4000-8000-0000000000e9';
+        const suspendedCourierId = '10000000-0000-4000-8000-000000000099';
+        fake.seedCourier({
+          courierId: suspendedCourierId,
+          status: 'suspended',
+          available: true,
+        });
+        fake.seedOffer({
+          offerId: suspendedOffId,
+          requestId: REQ_OPEN_ID,
+          courierId: suspendedCourierId,
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const acceptSuspended = await fake.accept_offer({ offerId: suspendedOffId });
+        expect(acceptSuspended).toEqual({ ok: false, code: 'COURIER_SUSPENDED' });
+
+        // 9. Courier pending approval
+        const pendingOffId = '40000000-0000-4000-8000-0000000000ea';
+        const pendingCourierId = '10000000-0000-4000-8000-000000000098';
+        fake.seedCourier({
+          courierId: pendingCourierId,
+          status: 'pending',
+          available: true,
+        });
+        fake.seedOffer({
+          offerId: pendingOffId,
+          requestId: REQ_OPEN_ID,
+          courierId: pendingCourierId,
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const acceptPending = await fake.accept_offer({ offerId: pendingOffId });
+        expect(acceptPending).toEqual({ ok: false, code: 'COURIER_NOT_APPROVED' });
+      });
+
+      it('withdraw_offer enforces rate limit after 10 withdrawals', async () => {
+        const fake = setupFake();
+        for (let i = 0; i < 10; i++) {
+          const offId = `40000000-0000-4000-8000-0000000000f${i}`;
+          fake.seedOffer({
+            offerId: offId,
+            requestId: REQ_OPEN_ID,
+            courierId: COURIER_1_ID,
+            amountArs: 1500,
+            status: 'pending',
+          });
+          const res = await fake.withdraw_offer({ offerId: offId });
+          expect(res.ok).toBe(true);
+        }
+
+        const eleventhOffId = '40000000-0000-4000-8000-0000000000fa';
+        fake.seedOffer({
+          offerId: eleventhOffId,
+          requestId: REQ_OPEN_ID,
+          courierId: COURIER_1_ID,
+          amountArs: 1500,
+          status: 'pending',
+        });
+        const res11 = await fake.withdraw_offer({ offerId: eleventhOffId });
+        expect(res11).toEqual({ ok: false, code: 'RATE_LIMITED' });
+      });
     });
   });
 });

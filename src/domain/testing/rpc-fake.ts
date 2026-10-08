@@ -232,6 +232,7 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedRequest: (request: FakeSeedRequest) => void;
   readonly seedOffer: (offer: FakeSeedOffer) => void;
   readonly seedCourier: (courier: FakeSeedCourier) => void;
+  readonly deleteCourier: (courierId: string) => void;
   readonly seedMerchant: (merchant: FakeSeedMerchant) => void;
   readonly seedDocument: (doc: FakeSeedDocument) => void;
   readonly seedIncident: (incident: FakeSeedIncident) => void;
@@ -640,6 +641,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     seedRequest: putRequest,
     seedOffer: (o) => offers.set(o.offerId, { ...o }),
     seedCourier: putCourier,
+    deleteCourier: (courierId) => {
+      couriers.delete(courierId);
+    },
     seedMerchant: putMerchant,
     seedDocument: (d) => documents.set(d.documentId, { ...d }),
     seedIncident: putIncident,
@@ -818,7 +822,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
 
         const courier = couriers.get(actor.userId);
-        if (!courier || courier.status === 'suspended') return err('COURIER_SUSPENDED');
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
         if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
         if (!courier.available) return err('COURIER_UNAVAILABLE');
 
@@ -943,7 +948,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
 
         // 10. Lock del repartidor y nueva validación
         const courier = couriers.get(actor.userId);
-        if (!courier || courier.status === 'suspended') return err('COURIER_SUSPENDED');
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
         if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
         if (!courier.available) return err('COURIER_UNAVAILABLE');
 
