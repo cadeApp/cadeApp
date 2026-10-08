@@ -1,57 +1,44 @@
 # PR #251 — T-313 · E2E de registro de comercio y consentimientos
 
-> ❌ Ronda 11 · CON BLOQUEANTES (2) · H04 + H10 · P3 pendiente
+> ❌ Ronda 12 · CON BLOQUEANTES (2): H04 + H10 · P3 pendiente
 
 | Campo | Valor |
 |---|---|
 | PR | #251 · `feat/T-313-merchant-registration-e2e` → `develop` |
 | Tarea | T-313 |
 | Autor | KiraK72 |
-| SHA revisado | `9d0556ab56f581f95850fbbd319d0908f88d97e1` |
-| `develop` | `284683b65e25e10b94e9286a03b4fc85a2cfada3` |
-| Sincronización | 42 ahead / 0 behind |
-| CI | `37668929864` · GREEN |
-| approval-policy | `37669016744` · GREEN |
+| SHA revisado | `39ceff9890da8906d5d19457587ec33718d73814` |
+| develop | `cd023e3453ead76983d54982df1548cb97aa57eb` |
+| Sincronización | 46 ahead / 0 behind |
+| CI | `37703591192` · GREEN |
+| approval-policy | `37703586790` · GREEN (formato/aprobación histórica, no certifica E2E) |
 | Vercel | GREEN |
-| e2e-preview | `37669080365` · BLOCKED / REQUIRES DEVELOP MIGRATION |
-| P3 | visto bueno explícito pendiente |
+| trusted e2e-preview | `37703693643` · **45 passed / 1 failed** |
+| P3 | Visto bueno explícito pendiente |
 
-## Estado
+## Rondas recientes
+
+- [Ronda 11](revisiones/ronda-11.md): H11 corregido y D04-A aprobado.
+- [Ronda 12](revisiones/ronda-12.md): T-348 incorporada y migrada a Develop; nuevo Preview real; H04/H10 aún abiertos.
+
+## Estado por hallazgo
 
 - ✅ H01–H03.
-- ❌ H04 — falta baseline T-313 GREEN + RED discriminante de courier + restauración + GREEN final.
+- ❌ H04: el alta UI registra consents y merchant correctamente pero no alcanza /merchant/dashboard. `revalidatePath` agregado en el HEAD no resuelve el E2E. Falta baseline GREEN, después un RED seguro y GREEN final.
 - ✅ H05–H09.
-- ❌ H10 — el body sigue sin evidencia E2E final y debe reflejar el split de migración decidido en esta ronda.
-- ✅ H11 — corregido y revalidado en `9d0556a`: action usa UPDATE fail-closed, unit GREEN y pgTAP GREEN con la policy nueva.
+- ❌ H10: body anterior a T-348, cita Preview histórico fallido por UPSERT y una migration como si siguiera en #251; debe citar el nuevo Preview real. La bitácora atribuye el 307 a caché sin prueba de causa raíz.
+- ✅ H11: UPDATE de merchant + tests revalidado, y policy + pgTAP entregados por PR #302/T-348, aplicada en Develop.
 
-## Decisiones
+## D03-A / D04-A
 
-### D03-A — vigente en su parte de código productivo
+La action y unit tests de H11 permanecen en #251. T-348/#302 ya mergeó migración y pgTAP; `migrate-develop` `37693700041` pasó. **No hay diff propio de `supabase/migrations/**` ni `supabase/tests/**` en #251.**
 
-La corrección productiva de H11 sigue autorizada:
-- `merchantOnboardingAction` actualiza la fila `merchants` precreada;
-- no existe INSERT self;
-- no usa admin/service role para persistir merchant;
-- `subscription_status` y `paid_until` continúan protegidos.
+## H04 — próximo paso
 
-### D04-A — Lautaro073 · ronda 11
+No mutar `guards.ts` ni desplegar una barrera de seguridad desactivada. T-347 `e2e-mutation` admite solo `target=develop`, no PR abierta.
 
-Para poder ejecutar el trusted Preview antes de mergear #251:
+Diagnosticar la redirección posterior al onboarding con evidencia controlada/sin secretos: distinguir 307 del middleware vs dashboard vs conflicto de navegación cliente `router.push()/router.refresh()`; conservar todas las aserciones del E2E. No declarar causa de caché probada sin señal discriminante.
 
-**se separan únicamente la migración RLS de H11 y su cambio pgTAP a una PR previa.**
+## Cierre
 
-La PR previa parte de `develop` e incluye:
-- `supabase/migrations/20261007081131_t313_merchant_onboarding_update_policy.sql`;
-- el cambio T-313/H11 de `supabase/tests/rls_matrix.sql`;
-- la ficha/bitácora estrictamente necesarias para declarar y documentar ese alcance.
-
-Después de mergear esa PR y de que `migrate-develop` aplique la policy:
-1. #251 mergea `origin/develop`;
-2. migration + pgTAP desaparecen del diff de #251;
-3. `e2e-preview` deja de estar bloqueado por migration;
-4. se obtiene baseline T-313 GREEN;
-5. recién entonces se continúa H04.
-
-No se aplica ninguna migration manualmente a Supabase Develop.
-
-No apruebo ni mergeo.
+**CON BLOQUEANTES (2) + P3 pendiente.** No apruebo ni mergeo.

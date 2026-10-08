@@ -402,3 +402,70 @@ Después del merge de esa PR:
 
 Comment de solicitud: `5999858656`.
 No hay visto bueno explícito P3.
+
+## Ronda 12 — T-348 mergeada, baseline navega mal aunque merchant persiste
+
+### Comparación y sincronización
+
+```text
+develop cd023e3453ead76983d54982df1548cb97aa57eb
+HEAD    39ceff9890da8906d5d19457587ec33718d73814
+ahead 46
+behind 0
+```
+
+`develop...HEAD` no incluye `supabase/migrations/**` ni `supabase/tests/**` propios.
+
+T-348 / PR #302: `migrate-develop` run `37693700041`, job `113039919723`, GREEN; log `Applying migration 20261007081131_t313_merchant_onboarding_update_policy.sql...`, `Finished supabase db push.`.
+
+### CI / Vercel
+
+CI `37703591192`, checkout HEAD `39ceff9`:
+```text
+typecheck PASS
+lint PASS
+unit PASS
+db-tests PASS
+build PASS
+audit PASS
+bundle-budget PASS
+Vercel success
+approval-policy 37703586790 success (no equivale a P3)
+```
+
+### Trusted e2e-preview
+
+```text
+Run:      37703693643
+Job:      113072983040
+Checkout: 39ceff9890da8906d5d19457587ec33718d73814
+Resultado: 45 passed / 1 failed
+```
+
+```text
+DoD: Un courier no entra a (merchant)                              PASS
+DoD: Sin consentimiento guardado el comercio no llega al panel      PASS
+DoD: Alta completa y panel visible con versión de consentimiento    FAIL
+```
+
+El último caso falla en `merchant-registration.spec.ts:285`, luego de dos retries:
+
+```text
+[T-313 Onboarding Diagnostic] setting=v1; pilotConsent=1.0;
+profileUpdated=true; merchantUpdated=true
+
+Expected: /merchant/dashboard
+Received: /merchant/onboarding
+```
+
+Se confirma persistencia del merchant; el redirect no está aislado entre middleware, dashboard y router cliente. La hipótesis de caché de la bitácora no tiene prueba de causalidad. `revalidatePath` introducido en este SHA no resolvió el test.
+
+### Próxima verificación discriminante
+
+Sin publicar datos personales: registrar solo status y pathname de redirects de `/merchant/dashboard`, y comparar respuesta autenticada sin seguir redirects con la navegación real `router.push`/ `router.refresh`.
+
+No sustituir el flujo del botón por un `page.goto` para forzar GREEN.
+
+### P3
+
+Sin visto bueno explícito en comments/reviews. H04 y H10 siguen abiertos.
