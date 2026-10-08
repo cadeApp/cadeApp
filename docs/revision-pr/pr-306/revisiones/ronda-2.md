@@ -1,8 +1,8 @@
 # PR #306 — Ronda 2 · Revisión independiente T-351
 
-**Fecha:** 2026-10-08.  
-**SHA revisado de arreglos:** `742bcf1936228432038b436876e53825926323b8`.  
-**Comparación con ronda 1:** solo `docs/tasks/T-351.md` (+104/-25) y `docs/tasks/log/T-351.md` (+37/-1), 1 commit desde `9b59dd16fb0cc3de97d40b4021725107a295a122`.  
+**Fecha:** 2026-10-08.
+**SHA revisado de arreglos:** `742bcf1936228432038b436876e53825926323b8`.
+**Comparación con ronda 1:** solo `docs/tasks/T-351.md` (+104/-25) y `docs/tasks/log/T-351.md` (+37/-1), 1 commit desde `9b59dd16fb0cc3de97d40b4021725107a295a122`.
 **Resultado: CON BLOQUEANTES (1 nuevo).** Los 3 originales y la mejora se corrigieron en la ficha; el bloqueo es ahora la integración con `develop`.
 
 ## Contratos y alcance
@@ -22,7 +22,7 @@ Esos 28 controles de texto son **verificación de contenido documental**, no RED
 
 ### PR306-H05 — ALTO · No se puede mergear contra develop actualizado
 
-**Ubicación:** `docs/implementation-plan.md` fila a continuación de T-349.  
+**Ubicación:** `docs/implementation-plan.md` fila a continuación de T-349.
 **Origen:** modificación concurrente de `develop`, no defecto de los arreglos H01–H04.
 
 La PR #305 (T-350) se fusionó después de la ronda 1, llevando `develop` al commit `fe1271fdf2f54cbb17df92d42a9956dd8c4bce2f`. El informe REST de PR #306 devuelve `mergeable=false`, `mergeable_state="dirty"`. La comparación GitHub informa **behind_by=1**; las ramas divergen en el mismo hunk del plan:

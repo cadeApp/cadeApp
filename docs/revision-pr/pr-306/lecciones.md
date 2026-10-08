@@ -28,3 +28,10 @@ Esta es una PR **documental** que define trabajo posterior; los hallazgos acredi
 **PR306-H05 — P15 / AG-71.** Una ficha perfectamente corregida puede no ser mergeable porque otra PR inserta una fila justo en el mismo hunk del plan. La PR #305 se mergeó entre las dos rondas de #306. Se requiere revalidar la cabeza de `develop` en cada ronda, comparar con el HEAD y preservar ambos entregables al integrar. No se trata de un contrato de producto a decidir, sino un conflicto de Git que debe arreglarse con un merge normal, no con rebase/force.
 
 Los cuatro hallazgos iniciales están cerrados **en la ficha** por inspección y script independiente; el nuevo H05 permanece abierto hasta verificar el nuevo SHA sobre `develop`.
+
+
+## Ronda 3 — H05 cerrado y una mejora del proceso de revisión
+
+**H05 (P15 / AG-71) cerrado:** el merge tradicional `8c4bb040` conservó simultáneamente las filas T-350/T-351 y el historial de ambas revisiones. Se verificó la identidad de cada fila contra su rama de origen y `behind_by=0`, no solo el check `mergeable=true`. Esto refuerza el valor de comparar el contenido real tras resolver conflictos.
+
+**Higiene del informe del propio revisor:** los archivos `revisiones/ronda-{1,2}.md` llevaban espacios Markdown finales que daban ruido a `git diff --check`; no era un defecto del autor. Se corrigieron desde el revisor y quedaron separados los warnings preexistentes del `develop`. No amerita numeración AG nueva.

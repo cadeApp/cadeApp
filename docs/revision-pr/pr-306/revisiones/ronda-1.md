@@ -1,6 +1,6 @@
 # Revisión independiente — PR #306 / T-351 — Ronda 1
 
-**Fecha:** 2026-10-08. **SHA inspeccionado:** `ef906b2ce719934f8b4082877c2355bef498d902`. **Base develop:** `0293fe381762f60bd47a7ba3b6f3152ee0f08bd8`.  
+**Fecha:** 2026-10-08. **SHA inspeccionado:** `ef906b2ce719934f8b4082877c2355bef498d902`. **Base develop:** `0293fe381762f60bd47a7ba3b6f3152ee0f08bd8`.
 **Resultado: CON BLOQUEANTES (3), MEJORA (1).** No se aprueba ni mergea.
 
 ## Contrato, procedencia y alcance
@@ -57,7 +57,7 @@ La tabla llama al texto de éxito «Subido». El JSX actual muestra `COURIER_ONB
 
 ## Alcance de la verificación
 
-**Inspección independiente:** fuente de T-351, issue #297, código exacto de DocumentUploadCard/IdentityForm, `copy.ts`, log y la PR T-309. La rama es 1 commit ahead/0 behind respecto de develop.  
+**Inspección independiente:** fuente de T-351, issue #297, código exacto de DocumentUploadCard/IdentityForm, `copy.ts`, log y la PR T-309. La rama es 1 commit ahead/0 behind respecto de develop.
 **Ejecución no hecha:** tests locales, E2E, CI db-tests y git merge-tree (no hubo resolución DNS hacia github.com desde el contenedor). No se atribuyen GREEN/RED E2E nuevos a esta PR documental. El job CI mostraba unit/build/lint/typecheck/audit en success y `approval-policy` failure, pero **no se usaron sus verdes como aprobación** al existir bloqueantes.
 **Prueba de anti-mutación:** los hallazgos identifican tests temporales inexistentes aún; sus mutaciones conductuales deberán ejecutarse al implementar T-351, no simularse como si ya hubieran corrido.
 
