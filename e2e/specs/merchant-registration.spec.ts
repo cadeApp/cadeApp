@@ -270,6 +270,34 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     await expect(page).toHaveURL(/\/merchant\/onboarding/);
 
     // 6. Onboarding completo aceptando los Términos del piloto
+    const trackedResponses: Array<{ urlPath: string; status: number; locationPath?: string; isRsc: boolean; isDocument: boolean }> = [];
+    const responseHandler = (res: { url: () => string; status: () => number; headers: () => Record<string, string>; request: () => { resourceType: () => string; headers: () => Record<string, string> } }) => {
+      try {
+        const u = new URL(res.url());
+        if (u.pathname.includes('/merchant/')) {
+          const loc = res.headers()['location'];
+          let locationPath: string | undefined;
+          if (loc) {
+            try {
+              locationPath = new URL(loc, u.origin).pathname;
+            } catch {
+              locationPath = loc.split('?')[0];
+            }
+          }
+          const isRsc = Boolean(u.searchParams.get('_rsc') || res.request().headers()['rsc']);
+          const isDocument = res.request().resourceType() === 'document';
+          trackedResponses.push({
+            urlPath: u.pathname,
+            status: res.status(),
+            locationPath,
+            isRsc,
+            isDocument,
+          });
+        }
+      } catch {}
+    };
+    page.on('response', responseHandler);
+
     const submitOnboardingBtn = page.getByRole('button', { name: /^empezar$/i });
     await waitForFormHydration(submitOnboardingBtn);
     await page.getByLabel(/^nombre del negocio$/i).fill(businessName);
@@ -284,16 +312,46 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     try {
       await expect(page).toHaveURL(/\/merchant\/dashboard/);
     } catch (navigationError) {
+      page.off('response', responseHandler);
       const diagnostic = await readMerchantOnboardingDiagnostic(profileId, businessName);
+
+      // Probe no sensible con el mismo browser context autenticado: GET directo sin seguir redirects
+      let directGetDiagnostic = 'directGet=error';
+      try {
+        const directRes = await page.request.get('/merchant/dashboard', { maxRedirects: 0 });
+        const loc = directRes.headers()['location'];
+        let locPath = 'none';
+        if (loc) {
+          try {
+            locPath = new URL(loc, page.url()).pathname;
+          } catch {
+            locPath = loc.split('?')[0] ?? loc;
+          }
+        }
+        directGetDiagnostic = `directGetStatus=${directRes.status()}; directGetLocation=${locPath}`;
+      } catch (err) {
+        directGetDiagnostic = `directGetError=${err instanceof Error ? err.message : String(err)}`;
+      }
+
+      const trafficSummary = trackedResponses
+        .map(
+          (t) =>
+            `[${t.isDocument ? 'DOC' : t.isRsc ? 'RSC' : 'FETCH'} ${t.urlPath} -> ${t.status}${t.locationPath ? ' to ' + t.locationPath : ''}]`
+        )
+        .join(', ');
+
       throw new Error(
         '[T-313 Onboarding Diagnostic] ' +
           `setting=${diagnostic.settingVersion}; ` +
           `pilotConsent=${diagnostic.pilotConsentVersion}; ` +
           `profileUpdated=${diagnostic.profileUpdated}; ` +
-          `merchantUpdated=${diagnostic.merchantUpdated}\n` +
+          `merchantUpdated=${diagnostic.merchantUpdated}; ` +
+          `${directGetDiagnostic}; ` +
+          `traffic=[${trafficSummary}]\n` +
           `Navigation: ${navigationError instanceof Error ? navigationError.message : String(navigationError)}`
       );
     }
+    page.off('response', responseHandler);
     await waitForNoSkeletons(page);
     await expect(page.getByRole('heading', { name: MERCHANT_PANEL_HEADING })).toBeVisible();
 
