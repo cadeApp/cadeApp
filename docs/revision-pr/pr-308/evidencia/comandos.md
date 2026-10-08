@@ -85,3 +85,46 @@ Original 60 líneas, PR 120 líneas.
 ```
 
 No se ejecutaron tests locales, Supabase ni deploys desde esta revisión. No se leyeron secretos ni se inspeccionó la configuración privada de Vercel. El MAP ID de Production requiere confirmación manual de Lautaro073.
+
+
+---
+
+## Ronda 2 — 2026-10-08 — verificación independiente en HEAD `6728cadcf84a526a20f9e486fcb0c25e7775165f`
+
+```text
+BASE develop: d2ad3315ae9403194a35726b25f84996110a9216
+HEAD autor:   6728cadcf84a526a20f9e486fcb0c25e7775165f
+Merge normal: 1a3352b783ffd73c53871886ce39eeaf871f71dc
+compare develop...head: behind_by=0, mergeable=true
+```
+
+**Control JS en memoria, sobre strings reales de GitHub:**
+
+```text
+baseline develop: PASS
+bitácora previa de PR #308 (445e44e): RED
+bitácora corregida HEAD: GREEN
+mutante sin heading «alta de tarea»: RED
+mutante sin heading «ronda 1 de revisión de la ficha»: RED
+prefijo histórico original byte-a-byte: PASS
+cinco sesiones de implementación antiguas byte-a-byte: PASS
+entradas históricas exactamente una vez y en orden: PASS
+```
+
+**Integridad del código:** los 5 archivos de componentes/tests de `src/features/trips/` y la ficha T-350 tienen exactamente los mismos blobs que el HEAD de autor original `823d5cc`.
+
+**CI GitHub, HEAD `6728cadcf84a526a20f9e486fcb0c25e7775165f`:**
+
+```text
+unit: 123/123 files PASS; 1945/1945 tests PASS; workflows 75/75; ADR 6/6
+db-tests: Files=1 Tests=10 PASS; Files=19 Tests=1854 PASS
+typecheck, lint, build, audit, bundle-budget: success
+Vercel: success (Deployment has completed)
+e2e-preview: success (trusted run 37805675854, 49/49 chromium PASS)
+global-settings: 2 PASS, 1 flaky (DoD2 T-306; fallo timeout waitForURL recuperado en retry)
+approval-policy: failure inicial por ausencia de informe SIN BLOQUEANTES en PR body
+```
+
+Los tres axe GREEN/RED específicos de T-350 son los runs #307, preservados en la sección anterior. **El job actual no ejecuta el spec de T-309 ni los specs temporales**, que pertenecen a la PR aislada.
+
+Bitácora del agente: `pnpm test` local exit 1 por timeout de hook en `cc007.test.ts` en Windows. CI unit sobre HEAD confirma 1945/1945 PASS. El revisor no ejecutó suite local ni se conectó a Production.

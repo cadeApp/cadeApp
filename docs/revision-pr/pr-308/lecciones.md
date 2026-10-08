@@ -5,3 +5,10 @@
 **E2E por test vs por job:** la PR temporal #307 demuestra GREEN de R07, C06 y `DoD: axe AA en viaje` en dos corridas, y RED de las precondiciones. Pero el workflow de Playwright da failure por ocho tests fuera de T-350. Documentar los tres PASS exactos sin presentar el job como GREEN completo.
 
 **Infraestructura vs código:** Vercel rate-limited en el HEAD de #308, aunque build/test locales de CI de GitHub están verdes. No maquillar el check ni emitir commits vacíos en masa para forzar nuevos despliegues. La configuración Production del Map ID requiere confirmación humana; Preview GREEN no basta para afirmar Production GREEN.
+
+
+## Ronda 2 — control de preservación completo
+
+H01 se resolvió no solo por recuperar los dos headings, sino por comparar byte a byte **toda la entrada original** y **todas las sesiones nuevas**. El control detectó las dos mutaciones negativas. Es un patrón reutilizable en bitácoras anexadas sin borrar decisiones históricas.
+
+Un `e2e-preview=success` puede contener un test `flaky` recuperado tras retry: registrar `global-settings` con un primer timeout, en lugar de hablar de cero incidencias. La auditoría axe de T-350 sigue fundamentada en la PR temporal #307, no en los 49 E2E de la PR definitiva. Evita mezclar GREEN por ruta de ejecución.
