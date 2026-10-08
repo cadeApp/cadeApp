@@ -162,8 +162,9 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
       return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
     }
 
-    // Control de aislamiento (T-349): con la mutación aplicada, la ruta mutada vive en el worktree temporal y el
-    // archivo del checkout principal sigue byte a byte igual. Si no, el caso falla nombrando el archivo.
+    // Control de aislamiento (T-349): con la mutación aplicada, antes y después del Vitest hijo (PR304-H01), la ruta
+    // mutada vive en el worktree temporal y el archivo del checkout principal sigue byte a byte igual. Si no, el caso
+    // falla nombrando el archivo y el finally de executeMutation restaura la mutación.
     function assertMutationIsolated(relativeFilePath: string, filePath: string, mainBefore: Buffer) {
       if (!isInside(mutationWorktree, filePath) || isInside(repoRoot, filePath)) {
         throw new Error(
@@ -197,6 +198,7 @@ describe('CC-007 · Invariante de consentimiento legal obligatorio: análisis es
           shell: true,
           encoding: 'utf8',
         });
+        assertMutationIsolated(relativeFilePath, filePath, mainBefore);
         return res;
       } finally {
         fs.writeFileSync(filePath, original, 'utf8');
