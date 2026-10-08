@@ -523,24 +523,5 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
       // Restaurar disponibilidad
       await client.rpc('set_availability', { p_available: true });
     });
-
-    test('H05.5: CC-007 aislamiento de consentimiento: courier no activo no genera match ni efectos colaterales', async ({
-      stagingContext,
-    }) => {
-      // Declaración del límite y verificación de precondición:
-      // En staging, los fixtures precreados poseen consentimiento activo para permitir pruebas E2E.
-      // La protección de consent_status <> 'active' queda validada en pgTAP y unitaria con cero efectos.
-      const minOfferArs = await getPlatformSettingNumber('min_offer_ars');
-      const seed = await seedDeliveryRequestInState(stagingContext, {
-        status: 'published',
-        fixedPriceArs: Math.max(minOfferArs, 1500),
-        autoAssign: true,
-      });
-
-      const beforeInspection = await getRequestInspectionData(stagingContext, seed.requestId);
-      expect(beforeInspection.requestStatus).toBe('published');
-      expect(beforeInspection.acceptedOfferId).toBeNull();
-      expect(beforeInspection.offers).toHaveLength(0);
-    });
   });
 });

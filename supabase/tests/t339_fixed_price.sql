@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(45);
+select plan(48);
 
 -- Actores para pruebas T-339
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000033a1'::uuid $$;
@@ -283,6 +283,8 @@ select throws_ok(
   'take_request con consentimiento reconsent_required rechaza con UNAUTHORIZED_ACTOR'
 );
 
+select pg_temp.reset_actor();
+
 select is(
   (select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()),
   0,
@@ -424,6 +426,13 @@ select throws_ok(
 );
 
 -- 38, 39, 40, 41: accept_offer público con nuevo orden de locks (H02)
+-- Courier 2 también toma la solicitud mientras aún está published (auto_assign=false)
+select pg_temp.act_as(pg_temp.courier_2_id());
+select lives_ok(
+  $$ select public.take_request(pg_temp.req_fixed_manual(), 15, null) $$,
+  'Courier 2 toma la misma solicitud con auto_assign=false generando segunda oferta pending legítima'
+);
+
 select pg_temp.act_as(pg_temp.merchant_id());
 select is(
   (public.accept_offer((select id from public.offers where request_id = pg_temp.req_fixed_manual() and courier_id = pg_temp.courier_1_id())) ->> 'status'),
@@ -443,16 +452,23 @@ select is(
   'Reintento de accept_offer devuelve idempotent true'
 );
 
--- Crear otra oferta en solicitud ya matched para verificar rechazo sin deadlock
-create function pg_temp.other_offer_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000033f1'::uuid $$;
-insert into public.offers (id, request_id, courier_id, amount_ars, status, eta_minutes)
-values (pg_temp.other_offer_id(), pg_temp.req_fixed_manual(), pg_temp.courier_2_id(), 1500, 'pending', 15);
-
 select throws_ok(
-  $$ select public.accept_offer(pg_temp.other_offer_id()) $$,
+  $$ select public.accept_offer((select id from public.offers where request_id = pg_temp.req_fixed_manual() and courier_id = pg_temp.courier_2_id())) $$,
   'P0001',
   'ALREADY_MATCHED',
-  'accept_offer sobre solicitud ya matched con otra oferta responde ALREADY_MATCHED'
+  'accept_offer sobre oferta rechazada de solicitud ya matched responde ALREADY_MATCHED'
+);
+
+select is(
+  (select status from public.offers where request_id = pg_temp.req_fixed_manual() and courier_id = pg_temp.courier_1_id()),
+  'accepted'::public.offer_status,
+  'Oferta ganadora queda accepted'
+);
+
+select is(
+  (select status from public.offers where request_id = pg_temp.req_fixed_manual() and courier_id = pg_temp.courier_2_id()),
+  'rejected'::public.offer_status,
+  'Segunda oferta queda rejected tras match'
 );
 
 -- 42, 43: Secuencial: toma de solicitud auto_assign=true y cero residuales (DoD T-339)
