@@ -94,3 +94,67 @@ git status --short
 Tras los cambios del autor, correr una batería **distinta** a la de agy: por ejemplo sustituir en el helper `toHaveURL` por `not.toHaveURL`, comentar la iteración de rutas sin cambiar el título del caso y alterar el destino de una ruta merchant distinta de dashboard. Si alguna sobrevive, revisar el detector antes de declarar verificado.
 
 **CI tras el commit de revisión:** el commit mueve el HEAD y requiere revalidación; los checks previos no se trasladan de SHA.
+
+## Ronda 2 — harness adicional independiente (Node, sin escribir archivos del repo)
+
+El revisor ejecutó una reproducción **aislada** con el texto de las funciones de `cc1f5fd` y un fixture fiel a los símbolos reales de #251, obteniendo:
+```text
+CONTROL: GREEN | []
+X1_no_courier_login: GREEN | []
+X2_assertion_only_a_string: GREEN | []
+X3_assertion_unreachable: GREEN | []
+X4_loop_unreachable: GREEN | []
+X5_routing_commented: GREEN | []
+```
+Estos GREEN mutados representan falsos negativos del **control estructural**, no un run E2E de Playwright. Para reproducir usando *exactamente el código revisado* y el *spec real* en cualquier clon, copiar todo el siguiente bloque a `/tmp/pr315-ronda2.mjs`, ejecutar desde la raíz de la rama:
+```bash
+git fetch origin refs/pull/251/head
+node /tmp/pr315-ronda2.mjs
+```
+
+```javascript
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import vm from 'node:vm';
+
+const source = readFileSync('.github/workflows/verify-workflows.test.mjs', 'utf8');
+const start = source.indexOf('function stripComments(source)');
+const end = source.indexOf("\ntest('e2e-mutation catalog is valid", start);
+assert.ok(start >= 0 && end > start, 'localizar versión real del control');
+const code = source.slice(start, end);
+const spec = execFileSync('git', ['show', 'FETCH_HEAD:e2e/specs/merchant-registration.spec.ts'], { encoding: 'utf8' });
+const mutation = {
+  id: 't313-courier-merchant-guard',
+  grep: 'DoD: Un courier no entra a (merchant)',
+  expectedFailure: ['toHaveURL', 'Expected pattern: /\\/courier\\/feed/'],
+};
+function check(src) {
+  const ctx = vm.createContext({ spec: src, mutation });
+  return [...vm.runInContext(code + '\ncaseOracleProblems(spec,mutation)', ctx, { timeout: 1500 })];
+}
+const control = check(spec);
+assert.deepEqual(control, [], 'control original debe dar GREEN');
+console.log('CONTROL: GREEN');
+const changes = [
+  ['X1-sin-login-courier', 'await loginAsCourier(0, page);', '/* courier login removed */'],
+  ['X2-oraculo-de-string', 'await expect(page).toHaveURL(expectedUrl);', "const decoy = 'await expect(page).toHaveURL(expectedUrl);';"],
+  ['X3-oraculo-inaccesible', 'await expect(page).toHaveURL(expectedUrl);', 'if (false) { await expect(page).toHaveURL(expectedUrl); }'],
+  ['X4-loop-inaccesible', 'for (const { path, expectedUrl } of routes) {', 'if (false) { for (const { path, expectedUrl } of routes) {'],
+  ['X5-ruta-history-quitada', "{ path: '/merchant/history', expectedUrl: /\\/courier\\/feed/ },", '/* removed */'],
+];
+for (const [id, from, to] of changes) {
+  assert.ok(spec.includes(from), id + ': objetivo ausente (MUTATION_DID_NOT_APPLY)');
+  let changed = spec.replace(from, to);
+  // X4: cerrar el if(false) adicional para mantener el spec sintácticamente válido.
+  if (id === 'X4-loop-inaccesible') {
+    const closing = '      await expectMerchantPanelBlocked(page, path, expectedUrl);\n    }';
+    assert.ok(changed.includes(closing), 'X4: falta cierre exacto de la iteración');
+    changed = changed.replace(closing, closing + '\n    }');
+  }
+  const problems = check(changed);
+  console.log(id + ': ' + (problems.length ? 'RED' : 'SURVIVED / FALSO GREEN') + ' ' + JSON.stringify(problems));
+}
+```
+
+> Controles: no `eval` de código de aplicación, `vm` solo ejecuta las funciones puras extraídas del test revisado en un sandbox Node efímero; no escribe en el repo, no requiere Supabase ni secretos. El spec se obtiene de PR #251 por git, nunca se edita. En futuros refactors del test, si no se encuentra el cuerpo, el harness falla en vez de afirmar falsos GREEN.

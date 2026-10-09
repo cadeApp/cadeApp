@@ -17,3 +17,9 @@ La prueba `DoD: Un courier no entra a (merchant)` llama a `expectMerchantPanelBl
 ## Numeración
 
 No se reserva un `AG-xx` nuevo: para asignarlo hay que calcular el máximo **en todas las ramas remotas**, no solo `develop`. Reutilizar el patrón existente P08 para análisis transversal. Referencias históricas: `pr-68/AG-75`, `pr-63/AG-68`. Esta PR aporta un caso adicional, no por sí sola un cambio automático a `AGENTS.md`.
+
+## Ronda 2 — la evidencia exige flujo ejecutable e identidad, no apariciones textuales
+
+El arreglo de H01 superó las tres mutaciones originales pero aún acepta como oráculo una **cadena literal**, una aserción dentro de `if (false)` y un bucle inalcanzable. Una prueba de autorización no puede clasificarse como courier si el caso ya no ejecuta `loginAsCourier` (H02). El caso y su helper requieren comprobación de **instrucciones ejecutables** y autenticación, no solo coincidencias de texto.
+
+Los detectores basados en texto tienen límites; no prometer análisis semántico completo. Para este caso estrecho se puede exigir la secuencia de sentencias top-level conocida (decisión 1-A) y demostrar mutaciones independientes. Evitar AST genérico salvo justificación de escala. No crear una nueva regla `AG-xx` sin enumerar el máximo de todas las ramas.
