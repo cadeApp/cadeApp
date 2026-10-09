@@ -47,3 +47,9 @@ Si el resultado postmerge es `MUTANT_SURVIVED`, `CONTROL_NOT_GREEN`, `UNEXPECTED
 ## Veredicto
 
 H10 cerrado; funcionalmente T-313 sigue GREEN en su HEAD revisado. H04 queda diferido de manera explícita y controlada; #251 no debe mergearse hasta que se complete la fase de catálogo y el propietario lo autorice. No aprobé ni mergeé ninguna PR.
+
+## Addendum — preparación de PR #315
+
+En CI inicial del catálogo `56feab2`, el test de validación de manifest rechazó `expectedFailure` porque ninguna cadena tenía longitud mínima de 20 caracteres. Se corrigió el catálogo **sin alterar el spec, la policy ni el patch**: `expectedFailure` ahora incluye el fragmento de aserción `Expected pattern: /\\/courier\\/feed/`. HEAD nuevo de #315: `cb92457b3d460ff5abbc08cfdce374c1a5a2e291`.
+
+La comprobación automática del nuevo HEAD se inició en `37879300186`. No afirmar GREEN ni RED de mutación hasta leer el resultado correspondiente. `approval-policy` de #315 necesita informe independiente; la PR permanece en borrador.
