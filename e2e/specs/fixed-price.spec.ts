@@ -10,7 +10,7 @@ import {
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { CourierPage, type MerchantPage } from '../pages';
 import { formatArs } from '@/lib/format';
-import type { Page } from '@playwright/test';
+import type { Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
 
 /**
  * T-339: E2E de precio de envío opcional en la solicitud y toma directa.
@@ -55,17 +55,28 @@ async function fillBaseMerchantForm(
   await merchantPage.notesInput.fill(notesMarker);
 }
 
+// El comercio y el repartidor usan sesiones distintas: con la cookie del comercio activa, /login redirige a
+// /merchant/dashboard (307) y el login del repartidor no encuentra el formulario. Igual que main-flow.spec.ts.
+async function newCourierContext(browser: Browser, testInfo: TestInfo): Promise<BrowserContext> {
+  const baseURL = testInfo.project.use.baseURL;
+  if (typeof baseURL !== 'string' || baseURL.length === 0) {
+    throw new Error('[E2E Error] Falta baseURL para crear el contexto aislado del courier');
+  }
+  return browser.newContext({ baseURL });
+}
+
 test.describe('T-339 — Precio de envío opcional y toma directa', () => {
   // ---------------------------------------------------------------------------
   // 1. Con precio y switch activo: publicación real por UI y asignación atómica
   // ---------------------------------------------------------------------------
   test('DoD: solicitud creada por UI con precio y switch activo asigna al primer repartidor atómicamente', async ({
+    browser,
     page,
     merchantPage,
     stagingContext,
     loginAsMerchant,
     loginAsCourier,
-  }) => {
+  }, testInfo) => {
     const courier = stagingContext.courierUsers?.[0];
     if (!courier) {
       throw new Error('[E2E Error] Se requiere courier en stagingContext');
@@ -100,67 +111,74 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     expect(createdInspection.fixedPriceArs).toBe(fixedPrice);
     expect(createdInspection.autoAssign).toBe(true);
 
-    // 5. Courier 0 inicia sesión y navega al feed
-    await loginAsCourier(0, page);
-    await page.goto('/courier/feed');
-    await waitForNoSkeletons(page);
+    // 5. Courier 0 inicia sesión en un contexto aislado y navega al feed
+    const courierContext = await newCourierContext(browser, testInfo);
+    try {
+      const courierBrowserPage = await courierContext.newPage();
+      await loginAsCourier(0, courierBrowserPage);
+      await courierBrowserPage.goto('/courier/feed');
+      await waitForNoSkeletons(courierBrowserPage);
 
-    const courierPage = new CourierPage(page);
-    const card = courierPage.requestCardById(requestId);
-    await expect(card).toBeVisible();
+      const courierPage = new CourierPage(courierBrowserPage);
+      const card = courierPage.requestCardById(requestId);
+      await expect(card).toBeVisible();
 
-    // 6. Verifica que la tarjeta muestre «Tomar a $X» y no el botón genérico «Ofertar»
-    const takeButton = card.getByRole('button', {
-      name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
-    });
-    await expect(takeButton).toBeVisible();
-    await expect(card.getByRole('button', { name: /^ofertar$/i })).toHaveCount(0);
+      // 6. Verifica que la tarjeta muestre «Tomar a $X» y no el botón genérico «Ofertar»
+      const takeButton = card.getByRole('button', {
+        name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
+      });
+      await expect(takeButton).toBeVisible();
+      await expect(card.getByRole('button', { name: /^ofertar$/i })).toHaveCount(0);
 
-    // 7. Repartidor abre la hoja para tomar la solicitud
-    await takeButton.click();
+      // 7. Repartidor abre la hoja para tomar la solicitud
+      await takeButton.click();
 
-    // 8. La hoja muestra título de toma, banner de precio y sin input de monto ni chips
-    await expect(page.getByText(/tomar solicitud/i)).toBeVisible();
-    await expect(page.getByText(/precio fijado por el comercio/i)).toBeVisible();
-    await expect(page.getByText(/asignación inmediata/i)).toBeVisible();
-    await expect(page.getByLabel(/monto de la oferta/i)).toHaveCount(0);
+      // 8. La hoja muestra título de toma, banner de precio y sin input de monto ni chips
+      await expect(courierBrowserPage.getByText(/tomar solicitud/i)).toBeVisible();
+      await expect(courierBrowserPage.getByText(/precio fijado por el comercio/i)).toBeVisible();
+      await expect(courierBrowserPage.getByText(/asignación inmediata/i)).toBeVisible();
+      await expect(courierBrowserPage.getByLabel(/monto de la oferta/i)).toHaveCount(0);
 
-    // 9. Confirma la toma de la solicitud
-    const confirmButton = page.getByRole('button', {
-      name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
-    });
-    await confirmButton.click();
+      // 9. Confirma la toma de la solicitud
+      const confirmButton = courierBrowserPage.getByRole('button', {
+        name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
+      });
+      await confirmButton.click();
 
-    // 10. Oráculo server-side en PostgreSQL: la solicitud quedó matched de inmediato
-    const matchedInspection = await getRequestInspectionData(stagingContext, requestId);
-    expect(matchedInspection.requestStatus).toBe('matched');
-    expect(matchedInspection.acceptedOfferId).not.toBeNull();
-    expect(matchedInspection.fixedPriceArs).toBe(fixedPrice);
-    expect(matchedInspection.autoAssign).toBe(true);
+      // 10. Oráculo server-side en PostgreSQL: la solicitud quedó matched de inmediato
+      const matchedInspection = await getRequestInspectionData(stagingContext, requestId);
+      expect(matchedInspection.requestStatus).toBe('matched');
+      expect(matchedInspection.acceptedOfferId).not.toBeNull();
+      expect(matchedInspection.fixedPriceArs).toBe(fixedPrice);
+      expect(matchedInspection.autoAssign).toBe(true);
 
-    const acceptedOffer = matchedInspection.offers.find((o) => o.id === matchedInspection.acceptedOfferId);
-    expect(acceptedOffer).toBeDefined();
-    expect(acceptedOffer?.courierId).toBe(courier.id);
-    expect(acceptedOffer?.amountArs).toBe(fixedPrice);
-    expect(acceptedOffer?.status).toBe('accepted');
+      const acceptedOffer = matchedInspection.offers.find((o) => o.id === matchedInspection.acceptedOfferId);
+      expect(acceptedOffer).toBeDefined();
+      expect(acceptedOffer?.courierId).toBe(courier.id);
+      expect(acceptedOffer?.amountArs).toBe(fixedPrice);
+      expect(acceptedOffer?.status).toBe('accepted');
 
-    // 11. El repartidor accede a la vista de viaje y verifica el monto acordado
-    await page.goto(`/trips/${requestId}`);
-    await waitForNoSkeletons(page);
-    await expect(page.getByText(/cobrás al entregar/i)).toBeVisible();
-    await expect(page.getByText(formatArs(fixedPrice))).toBeVisible();
+      // 11. El repartidor accede a la vista de viaje y verifica el monto acordado
+      await courierBrowserPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(courierBrowserPage);
+      await expect(courierBrowserPage.getByText(/cobrás al entregar/i)).toBeVisible();
+      await expect(courierBrowserPage.getByText(formatArs(fixedPrice))).toBeVisible();
+    } finally {
+      await courierContext.close();
+    }
   });
 
   // ---------------------------------------------------------------------------
   // 2. Con precio y switch inactivo: genera oferta pendiente y el comercio elige
   // ---------------------------------------------------------------------------
   test('DoD: solicitud creada por UI con precio y switch inactivo crea oferta pendiente y el comercio elige', async ({
+    browser,
     page,
     merchantPage,
     stagingContext,
     loginAsMerchant,
     loginAsCourier,
-  }) => {
+  }, testInfo) => {
     const merchant = stagingContext.merchantUser;
     const courier = stagingContext.courierUsers?.[0];
     if (!merchant || !courier) {
@@ -193,27 +211,33 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     expect(createdInspection.fixedPriceArs).toBe(fixedPrice);
     expect(createdInspection.autoAssign).toBe(false);
 
-    // 2. Courier 0 toma la solicitud a $X
-    await loginAsCourier(0, page);
-    await page.goto('/courier/feed');
-    await waitForNoSkeletons(page);
+    // 2. Courier 0 toma la solicitud a $X desde un contexto aislado
+    const courierContext = await newCourierContext(browser, testInfo);
+    try {
+      const courierBrowserPage = await courierContext.newPage();
+      await loginAsCourier(0, courierBrowserPage);
+      await courierBrowserPage.goto('/courier/feed');
+      await waitForNoSkeletons(courierBrowserPage);
 
-    const courierPage = new CourierPage(page);
-    const card = courierPage.requestCardById(requestId);
-    await expect(card).toBeVisible();
+      const courierPage = new CourierPage(courierBrowserPage);
+      const card = courierPage.requestCardById(requestId);
+      await expect(card).toBeVisible();
 
-    const takeButton = card.getByRole('button', {
-      name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
-    });
-    await takeButton.click();
+      const takeButton = card.getByRole('button', {
+        name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
+      });
+      await takeButton.click();
 
-    // La hoja aclara que el comercio confirmará
-    await expect(page.getByText(/el comercio confirmará/i)).toBeVisible();
+      // La hoja aclara que el comercio confirmará
+      await expect(courierBrowserPage.getByText(/el comercio confirmará/i)).toBeVisible();
 
-    const confirmButton = page.getByRole('button', {
-      name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
-    });
-    await confirmButton.click();
+      const confirmButton = courierBrowserPage.getByRole('button', {
+        name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
+      });
+      await confirmButton.click();
+    } finally {
+      await courierContext.close();
+    }
 
     // 3. Oráculo intermedio: la solicitud sigue en estado published con una oferta pending por el precio fijo
     const midwayInspection = await getRequestInspectionData(stagingContext, requestId);
@@ -245,12 +269,13 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
   // 3. Sin precio fijo: conserva el flujo de ofertas y subasta
   // ---------------------------------------------------------------------------
   test('DoD: solicitud creada por UI sin precio fijo conserva el botón de ofertar y flujo abierto', async ({
+    browser,
     page,
     merchantPage,
     stagingContext,
     loginAsMerchant,
     loginAsCourier,
-  }) => {
+  }, testInfo) => {
     // 1. Comercio crea solicitud sin precio fijo
     await loginAsMerchant(page);
     await merchantPage.gotoNewRequest();
@@ -272,25 +297,31 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
     expect(createdInspection.fixedPriceArs).toBeNull();
     expect(createdInspection.autoAssign).toBe(false);
 
-    // 2. Courier 0 navega al feed
-    await loginAsCourier(0, page);
-    await page.goto('/courier/feed');
-    await waitForNoSkeletons(page);
+    // 2. Courier 0 navega al feed desde un contexto aislado
+    const courierContext = await newCourierContext(browser, testInfo);
+    try {
+      const courierBrowserPage = await courierContext.newPage();
+      await loginAsCourier(0, courierBrowserPage);
+      await courierBrowserPage.goto('/courier/feed');
+      await waitForNoSkeletons(courierBrowserPage);
 
-    const courierPage = new CourierPage(page);
-    const card = courierPage.requestCardById(requestId);
-    await expect(card).toBeVisible();
+      const courierPage = new CourierPage(courierBrowserPage);
+      const card = courierPage.requestCardById(requestId);
+      await expect(card).toBeVisible();
 
-    // 3. Muestra botón «Ofertar» habitual
-    const offerBtn = card.getByRole('button', { name: /^ofertar$/i });
-    await expect(offerBtn).toBeVisible();
-    await offerBtn.click();
+      // 3. Muestra botón «Ofertar» habitual
+      const offerBtn = card.getByRole('button', { name: /^ofertar$/i });
+      await expect(offerBtn).toBeVisible();
+      await offerBtn.click();
 
-    // 4. La hoja muestra el campo para ingresar monto y los chips
-    await expect(page.getByText(/tu oferta/i)).toBeVisible();
-    await expect(page.getByLabel(/monto de la oferta/i)).toBeVisible();
-    await expect(page.getByText(/mínimo/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /enviar oferta/i })).toBeVisible();
+      // 4. La hoja muestra el campo para ingresar monto y los chips
+      await expect(courierBrowserPage.getByText(/tu oferta/i)).toBeVisible();
+      await expect(courierBrowserPage.getByLabel(/monto de la oferta/i)).toBeVisible();
+      await expect(courierBrowserPage.getByText(/mínimo/i)).toBeVisible();
+      await expect(courierBrowserPage.getByRole('button', { name: /enviar oferta/i })).toBeVisible();
+    } finally {
+      await courierContext.close();
+    }
   });
 
   // ---------------------------------------------------------------------------
