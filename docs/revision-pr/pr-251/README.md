@@ -1,21 +1,16 @@
-# PR #251 — T-313 · ronda 14
+# PR #251 — T-313 · revisión independiente, ronda 15
 
-**CON BLOQUEANTES (2 heredados): H04 parcial y H10. No hay hallazgos nuevos.**
+**HEAD verificado:** `77d430b2d252e1fc814c924647ad9848206078a6`.  
+**CI:** `37870792954` GREEN. **Preview:** `37870885019` GREEN (52 Chromium + 3 global-settings). **Vercel/approval-policy:** GREEN.  
+**Sincronización:** 4 commits behind develop al revisar; actualización obligatoria antes de merge.
 
-**HEAD evaluado:** `56b3c70d66740210de29d1183aa16fed1487eae1`.
+## Estado de hallazgos
 
-**D05-A implementada:** navegación completa en `onboarding-form.tsx` tras action exitosa, sin tocar guards ni SQL.
+- ✅ H01–H03, H05–H11, incluido **H10 arreglado-verificado**: body y bitácora actualizados con runs verdaderos, P3 confirmado por Lautaro073.
+- 🟠 **H04 parcial:** baseline E2E GREEN, RED courier discriminante aún no demostrado.
+- **D06-C autorizada:** catálogo primero en PR [#315](https://github.com/cadeApp/cadeApp/pull/315) (draft), ejecución de mutación **solo después** de mergear #251 a develop con autorización expresa. No se pushea ni despliega guarda insegura.
 
-**CI `37752334333`:** GREEN completo. **approval-policy `37753362975`:** GREEN. **Vercel:** success.
+Rondas: [14](revisiones/ronda-14.md) · [15](revisiones/ronda-15.md).  
+Datos estructurados: [hallazgos.jsonl](hallazgos.jsonl); evidencia: [comandos.md](evidencia/comandos.md).
 
-**Trusted E2E `37803965180`:** checkout exacto `56b3c70`; **52/52 Chromium y 3/3 global-settings GREEN**. Los 3 DoD de T-313 pasan.
-
-- ✅ H01–H03, H05–H09, H11.
-- 🟠 H04: baseline GREEN ya verificado; falta RED discriminante courier seguro con T-347 y GREEN final.
-- ❌ H10: body todavía dice rate limit/failure Vercel y omite Preview GREEN nuevo.
-- P3 confirmado por Lautaro073.
-- Rama 0 behind develop; sin migraciones ni pgTAP propios.
-
-**Rondas:** [13](revisiones/ronda-13.md) · [14](revisiones/ronda-14.md).
-
-No aprobar ni mergear hasta resolver H04/H10. Informe independiente reside en `docs/revisiones` por ser PR de P2.
+**No se aprobó ni mergeó #251.** El próximo paso es revisar #315, resolver su merge por Lautaro073, sincronizar #251 y volver a verificar CI/E2E.

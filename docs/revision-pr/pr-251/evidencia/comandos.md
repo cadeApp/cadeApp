@@ -527,3 +527,22 @@ El RED del run 37747382851 fue **de navegación**. No se debe presentarlo como R
 ### H10
 
 Body sigue describiendo Vercel rate-limited y Preview viejo RED, con caracteres con tildes degradados a `?`; debe actualizarse a run 37803965180 y status SUCCESS, sin falsificar el RED courier.
+
+## Ronda 15 — D06-C y H10 verificado
+
+```text
+HEAD        77d430b2d252e1fc814c924647ad9848206078a6
+develop     24aad21f800f0d13fdeb082f9807b8eaf1f10fba
+ahead       51
+behind      4
+CI          37870792954 success
+Vercel      success
+approval    success
+e2e-preview 37870885019 success
+```
+
+El run E2E `37870885019` hizo checkout exacto de `77d430b2`, pasó los tres casos T-313 y registró 52 Chromium + 3 global-settings GREEN. El body actual de #251 contiene tildes correctas, evidencia terminal y mantiene la casilla RED courier abierta; H10 cerrado en el SHA documental.
+
+**Decisión Lautaro073 D06-C:** preparar PR de catálogo antes de #251, ejecutar mutación solo postmerge. Catálogo abierto en [PR #315](https://github.com/cadeApp/cadeApp/pull/315), head `56feab2afa1db30e56d5e2e01e3a691d7c1e2034`, draft, sin merge.
+
+**Aún no hubo RED courier**: el catálogo solo contiene un patch a aplicar sobre un checkout efímero con build en 127.0.0.1. El spec de T-313 no está en develop hasta mergear #251; prohibido despachar la mutación antes.

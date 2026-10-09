@@ -15,3 +15,5 @@
 - Que `approval-policy` esté verde por una aprobación previa no demuestra cumplimiento del DoD ni visto bueno explícito de la dueña del spec en su última versión.
 - Ronda 14: un RED real de navegación seguido de GREEN del mismo E2E confirma un fix de transición, **no** demuestra automáticamente sensibilidad del oráculo de seguridad de courier; conservar separado el RED de autorización requerido por H04 y T-347. Se reutiliza P08, sin regla global nueva.
 - La evidencia final puede quedar obsoleta aun sin nuevo commit: después de un bloqueo temporal (rate limit), verificar el estado terminal de Vercel y del trusted E2E antes de declarar que no hubo Preview; H10/P15.
+
+- Ronda 15/D06-C: cuando un E2E normal está GREEN pero la mutación de seguridad no puede probarse sin merge, versionar primero un patch de catálogo con revisión independiente y ejecutar control GREEN→mutante RED en el runner confiable contra develop ya mergeado. No equiparar preparación del catálogo con RED ejecutado ni cerrar H04 anticipadamente; mantener trazabilidad a la PR #315.
