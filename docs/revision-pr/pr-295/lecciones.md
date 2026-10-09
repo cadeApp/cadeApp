@@ -11,3 +11,5 @@
 - **R6 / R03:** un comando de emulación CDP aceptado no asegura media query display-mode real. Probar la precondición nativa y, si falla, investigar contexto realmente instalado antes de cambiar DoD/CI.
 - **R6 / H12:** E2E debe cotejar copy de código fuente; fallar por string no existente no demuestra falla funcional.
 - **R6 / H13:** test data: con sleep es un control del navegador pero no mutación de código productivo; no registrarlo como RED de la tarea. Eliminar sleeps y probar mutaciones reales temporales.
+- **R7 / R03 (sin nueva AG global):** no inferir que Linux exige Xvfb para Chromium COMPLETO: Playwright documenta `channel:'chromium'` con `headless:true` (nuevo headless) distinto de `headless:false`. Probar variantes en el runner real antes de pedir nuevos permisos de CI o rebajar garantías.
+- **R7 / H11/H12:** el E2E de clic push pasó de RED por copy inventado a GREEN en Preview manteniendo `navigator.userActivation` nativo. La interceptación de permiso en denied no prueba aceptación OS; comunicar alcance exacto.

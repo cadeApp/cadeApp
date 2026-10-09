@@ -42,3 +42,9 @@ Android físico con PWA anterior/actualizada y navegador normal: **pendiente**. 
 **CON BLOQUEANTES (4)**: R03 (CDP display-mode=false en Chromium), H12 (copy E2E erróneo), H13 (supuesto RED desconectado y sleep prohibido), H07 (gate E2E Preview real rojo: 45 pass / 2 fail). R02 ya sin CSS inyectado, pendiente de validar en standalone nativo; H06/H10/H11 parciales. R01 verificado, CI general verde. A03=A autorizada y asentada.
 
 Android físico a cargo de P1 **tras** resolver todos los bloqueantes técnicos.
+
+## Ronda 7 — HEAD funcional `a157fe48599600ccd65a5e52aa8a06ca1d692f8e`
+
+[Informe R7](revisiones/ronda-7.md) · [Evidencia R7](evidencia/ronda-7.md).
+
+**CON BLOQUEANTE:** R03 (Chromium shell no emula standalone), H07 (E2E Preview 45 passed / 1 failed). H11 y H12 ahora **arreglado-verificado** por E2E real; H13 eliminó prueba artificial, pendiente mutación RED propia; R01 y H08 conservan CI verde. Antes de pedir autorización para editar workflow o DoD, investigar `channel:'chromium'`, `headless:true` en el propio spec permitido. Android físico P1 solo al cerrar revisión técnica.
