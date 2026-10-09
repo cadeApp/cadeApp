@@ -110,7 +110,7 @@ export function DocumentUploadCard({
               {COURIER_ONBOARDING_COPY.btnRetry}
             </span>
           ) : (
-            <span className="text-sm font-semibold text-primary">
+            <span className="text-sm font-semibold text-primary-dark">
               {COURIER_ONBOARDING_COPY.btnUpload}
             </span>
           )}

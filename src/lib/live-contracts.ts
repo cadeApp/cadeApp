@@ -13,6 +13,8 @@ export const liveAvailableRequestItemSchema = z.object({
   expiresAt: z.string().nullable(),
   hasMyOffer: z.boolean(),
   myOfferAmountArs: z.number().int().nullable(),
+  fixedPriceArs: z.number().int().positive().nullable().optional(),
+  autoAssign: z.boolean().optional(),
 });
 
 export type LiveAvailableRequestItem = z.infer<typeof liveAvailableRequestItemSchema>;
