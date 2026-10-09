@@ -1,0 +1,96 @@
+# Evidencia y comandos — PR #315 / ronda 1
+
+**Revisor:** independiente; **HEAD funcional leído:** `c6220ba587ffaab7c27fe83f2746600d60e0cbb7`.
+**Importante:** las tres mutaciones se comprobaron evaluando en memoria el predicado textual real contra el spec de #251. No se ejecutó el harness de `node --test` en esta sesión: no hubo clon local autenticado. Los logs de CI sí se inspeccionaron en GitHub. No declarar `Tests 76 ...` del autor como una prueba local del revisor.
+
+## Evidencia observada (sin mutar código en GitHub)
+
+- `verify-workflows.test.mjs:1866-1868`: `spec.includes(test('<grep>')` y `spec.includes('.toHaveURL(')` global.
+- `e2e/specs/merchant-registration.spec.ts` de #251, blob `33dfeb5bd2ef9e6794692c846227cf48f6ab14d6`, helper en 201-205, caso en 380-399.
+- M1: quitar la llamada `await expect(page).toHaveURL(expectedUrl);` del helper deja la condición global `.toHaveURL(` verdadera por otras expectativas.
+- M2: quitar `await expectMerchantPanelBlocked(page, path, expectedUrl);` del bucle courier deja `test('DoD...')` y `.toHaveURL(` presentes.
+- M3: cambiar el patrón de URL del primer `/merchant/dashboard` por `/merchant/dashboard` deja ambas condiciones textuales verdaderas.
+- El blob `src/features/auth/guards.ts` en develop postmerge de #314 sigue siendo `b5c2de551e4bf435966a9bbc3739dddee32d38d9`, coincidente con índice del patch nuevo `b5c2de5`.
+- CI `37880568621`: unit, db-tests, build, typecheck, lint, audit y bundle-budget verdes; workflow tests `# tests 76 / # pass 76 / # fail 0`; pgTAP `Files=20, Tests=1903, Result: PASS`.
+- Trusted E2E `37880647344` (SHA base develop `24aad21`): 53 passed, 3 failed de `fixed-price.spec.ts`, `hydration.ts:38`. Reproducción paralela `37879412368`. El E2E GREEN de #314 sobre el SHA documental `dc582d2` está en `37868847377`.
+
+## Harness completo para reproducir M1 / M2 / M3 en un worktree temporal
+
+Requiere un clon limpio de la PR #315 con dependencias instaladas y acceso de solo lectura a origin. **No muta ni stagea la rama del PR**. El script conserva un string `original` en memoria y lo restaura con `writeFileSync`; no usa `git checkout` para restaurar mutaciones. No ejecutar Docker/Supabase remoto ni `repository_dispatch`.
+
+Copiar todo el bloque a `/tmp/pr315-h01.sh`, luego `bash /tmp/pr315-h01.sh` desde la raíz del clon:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(git rev-parse --show-toplevel)"
+TMP="$(mktemp -d)"
+cleanup() {
+  git -C "$ROOT" worktree remove --force "$TMP/wt" >/dev/null 2>&1 || true
+  rm -rf "$TMP"
+}
+trap cleanup EXIT
+git -C "$ROOT" fetch origin
+git -C "$ROOT" fetch origin refs/pull/251/head
+git -C "$ROOT" worktree add --detach "$TMP/wt" HEAD
+mkdir -p "$TMP/wt/e2e/specs"
+git -C "$ROOT" show FETCH_HEAD:e2e/specs/merchant-registration.spec.ts > "$TMP/wt/e2e/specs/merchant-registration.spec.ts"
+if [ -d "$ROOT/node_modules" ]; then
+  ln -s "$ROOT/node_modules" "$TMP/wt/node_modules"
+fi
+cd "$TMP/wt"
+node <<'NODE'
+const fs = require('node:fs');
+const {spawnSync} = require('node:child_process');
+const path = 'e2e/specs/merchant-registration.spec.ts';
+const original = fs.readFileSync(path,'utf8');
+const expectedRoute = String.raw`{ path: '/merchant/dashboard', expectedUrl: /\/courier\/feed/ }`;
+const alternateRoute = String.raw`{ path: '/merchant/dashboard', expectedUrl: /\/merchant\/dashboard/ }`;
+const mutations = [
+  ['M1-eliminar-url-helper', source => source.replace(
+    'await expect(page).toHaveURL(expectedUrl);',
+    '/* M1: URL oracle omitted */'
+  )],
+  ['M2-omitir-helper-caso', source => source.replace(
+    'await expectMerchantPanelBlocked(page, path, expectedUrl);',
+    '/* M2: check omitted */'
+  )],
+  ['M3-cambiar-primera-ruta', source => source.replace(
+    expectedRoute, alternateRoute
+  )],
+];
+const run = (source) => {
+  fs.writeFileSync(path, source);
+  const r = spawnSync('node',[
+    '--test',
+    '--test-name-pattern=e2e-mutation catalog is valid',
+    '.github/workflows/verify-workflows.test.mjs'
+  ],{encoding:'utf8'});
+  const tail = (r.stdout+'\n'+r.stderr).split('\n')
+    .filter(x => /# tests |# pass |# fail |not ok|ok [0-9]/.test(x)).slice(-8);
+  return {status:r.status, tail};
+};
+try {
+  const control = run(original);
+  console.log('CONTROL', JSON.stringify(control));
+  if(control.status!==0) throw Error('CONTROL_NOT_GREEN; no interpretar mutantes');
+  for(const [name,mutate] of mutations) {
+    const changed=mutate(original);
+    if(changed===original) throw Error(name+': MUTATION_DID_NOT_APPLY');
+    const result=run(changed);
+    console.log(name, result.status===0?'SURVIVED (defecto)': 'RED (control detectó)', JSON.stringify(result));
+  }
+} finally {
+  fs.writeFileSync(path,original);
+}
+NODE
+git status --short
+```
+
+**Expectativa sobre `c6220ba587ffaab7c27fe83f2746600d60e0cbb7`:** CONTROL GREEN, M1/M2/M3 SURVIVED. Es hipótesis contrastada con el predicado en memoria; el script es el método para corroborarlo con `node --test` completo. **Expectativa tras arreglo 1-A:** CONTROL GREEN, M1/M2/M3 RED con aserciones informativas. No inventar logs antes de ejecutar.
+
+## Siguiente ronda
+
+Tras los cambios del autor, correr una batería **distinta** a la de agy: por ejemplo sustituir en el helper `toHaveURL` por `not.toHaveURL`, comentar la iteración de rutas sin cambiar el título del caso y alterar el destino de una ruta merchant distinta de dashboard. Si alguna sobrevive, revisar el detector antes de declarar verificado.
+
+**CI tras el commit de revisión:** el commit mueve el HEAD y requiere revalidación; los checks previos no se trasladan de SHA.
