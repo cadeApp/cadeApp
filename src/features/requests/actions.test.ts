@@ -40,6 +40,8 @@ function publishedRpcResponse(requestId: string) {
       publishedAt: PUBLISHED_AT,
       expiresAt: EXPIRES_AT,
       routeDistanceM: 1000,
+      fixedPriceArs: null,
+      autoAssign: false,
     },
     error: null,
   };

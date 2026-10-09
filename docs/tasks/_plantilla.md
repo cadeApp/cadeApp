@@ -67,6 +67,12 @@ Una **mutación** que rompe a propósito la regla para demostrar que el test la 
   - después de capturar la evidencia, la PR de mutación se cierra sin mergear;
   - la rama real queda con el código correcto.
 
+- **Si la mutación quita un control de seguridad y la evidencia es E2E** (por ejemplo MFA, autorización o
+  deduplicación en `src/**`): **no** se usa una PR `review/...` con el código mutado, porque Vercel lo desplegaría en
+  un Preview público. Se usa el workflow `e2e-mutation` (T-347): la mutación entra como patch revisado en
+  `e2e/mutations/`, corre en el runner trusted contra un build en `127.0.0.1` y solo cuenta `RED_CONFIRMED`. Detalle
+  en `e2e/AGENTS.md`.
+
 Sigue prohibido:
 - adulterar tests o debilitar expectations;
 - mocks que eviten el camino de producción;

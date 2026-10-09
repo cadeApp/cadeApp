@@ -19,6 +19,7 @@ export const OFFERS_COPY = {
 
   // Tarjeta de solicitud
   offerButton: 'Ofertar',
+  takeRequestButton: (amount: string) => `Tomar a ${amount}`,
   alreadyOfferedPrefix: 'Ya ofertaste',
   changeNeededBadge: 'Necesita cambio',
   changeAmountPrefix: 'Cambio para',
@@ -41,6 +42,10 @@ export const OFFERS_COPY = {
 
   // Bottom Sheet Ofertar (R05)
   offerSheetTitle: 'Tu oferta',
+  takeSheetTitle: 'Tomar solicitud',
+  fixedPriceNotice: 'Precio fijado por el comercio',
+  autoAssignNotice: 'Asignación inmediata: al confirmar, el pedido queda asignado.',
+  manualAssignNotice: 'El comercio confirmará entre quienes tomen la solicitud.',
   amountLabel: 'Monto de la oferta',
   amountPlaceholder: '1.500',
   floorPrefix: 'Mínimo',
@@ -52,8 +57,10 @@ export const OFFERS_COPY = {
     'Si te eligen, vas a ver las direcciones exactas, el mapa del recorrido y el contacto del cliente. El envío se lo cobrás a quien recibe.',
   submitOfferButton: 'Enviar oferta',
   submittingOffer: 'Enviando oferta...',
+  takingRequest: 'Tomando pedido...',
   cancelButton: 'Cancelar',
   offerSuccess: '¡Oferta enviada con éxito!',
+  takeSuccess: '¡Pedido tomado con éxito!',
 
   // Mis ofertas (R06)
   myOffersTitle: 'Mis ofertas',

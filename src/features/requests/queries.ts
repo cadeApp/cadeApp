@@ -3,6 +3,7 @@ import 'server-only';
 import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
+import { getMerchantRequestPrivateFieldsRpc } from '@/server/rpc/request-private-fields';
 import type {
   MerchantRequestSummary,
   MerchantRequestDetail,
@@ -183,7 +184,6 @@ interface RawMerchantRequest {
   package_type: string;
   recipient_payment_method: string;
   needs_change: boolean;
-  cash_change_amount: number | null;
   status: string;
   expires_at: string | null;
   created_at: string;
@@ -227,7 +227,6 @@ function mapRawMerchantRequests(
       packageType: req.package_type as PackageType,
       recipientPaymentMethod: req.recipient_payment_method as RecipientPaymentMethod,
       needsChange: Boolean(req.needs_change),
-      cashChangeAmount: req.cash_change_amount,
       status: req.status as DeliveryRequestStatus,
       expiresAt: req.expires_at,
       createdAt: req.created_at,
@@ -267,7 +266,6 @@ export async function getMerchantHistoryRequests(
       package_type,
       recipient_payment_method,
       needs_change,
-      cash_change_amount,
       status,
       expires_at,
       created_at,
@@ -439,7 +437,6 @@ export async function getMerchantRequests(
       package_type,
       recipient_payment_method,
       needs_change,
-      cash_change_amount,
       status,
       expires_at,
       created_at,
@@ -657,8 +654,6 @@ export async function getMerchantRequestWithOffers(
       package_type,
       recipient_payment_method,
       needs_change,
-      cash_change_amount,
-      notes,
       status,
       expires_at,
       created_at,
@@ -669,7 +664,7 @@ export async function getMerchantRequestWithOffers(
     )
     .eq('id', requestId)
     .eq('merchant_id', merchantId)
-    .maybeSingle<RawMerchantRequest & { notes: string | null }>();
+    .maybeSingle<RawMerchantRequest>();
 
   if (requestError) {
     throw new Error(`Error al cargar detalle de solicitud: ${requestError.message}`);
@@ -677,6 +672,34 @@ export async function getMerchantRequestWithOffers(
 
   if (!requestData) {
     return null;
+  }
+
+  // CC-023: `notes` y `cash_change_amount` no se leen por tabla; llegan por la RPC del comercio dueño, en
+  // paralelo con las ofertas. Si falla se lanza, igual que cuando falla la lectura de la solicitud: nunca se
+  // muestran vacíos.
+  const [privateFields, { data: offersData, error: offersError }] = await Promise.all([
+    getMerchantRequestPrivateFieldsRpc(supabase, { requestId }),
+    supabase
+      .from('offers')
+      .select(
+        `
+      id,
+      courier_id,
+      amount_ars,
+      eta_minutes,
+      message,
+      status,
+      created_at
+    `
+      )
+      .eq('request_id', requestId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(51),
+  ]);
+
+  if (!privateFields.ok) {
+    throw new Error(`Error al cargar los datos privados de la solicitud: ${privateFields.code}`);
   }
 
   const pickupZone = Array.isArray(requestData.pickup_zone)
@@ -694,31 +717,13 @@ export async function getMerchantRequestWithOffers(
     packageType: requestData.package_type as PackageType,
     recipientPaymentMethod: requestData.recipient_payment_method as RecipientPaymentMethod,
     needsChange: Boolean(requestData.needs_change),
-    cashChangeAmount: requestData.cash_change_amount,
-    notes: requestData.notes,
+    cashChangeAmount: privateFields.data.cashChangeAmount,
+    notes: privateFields.data.notes,
     status: requestData.status as DeliveryRequestStatus,
     expiresAt: requestData.expires_at,
     createdAt: requestData.created_at,
     acceptedOfferId: requestData.accepted_offer_id,
   };
-
-  const { data: offersData, error: offersError } = await supabase
-    .from('offers')
-    .select(
-      `
-      id,
-      courier_id,
-      amount_ars,
-      eta_minutes,
-      message,
-      status,
-      created_at
-    `
-    )
-    .eq('request_id', requestId)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(51);
 
   if (offersError) {
     throw new Error(`Error al cargar ofertas de la solicitud: ${offersError.message}`);

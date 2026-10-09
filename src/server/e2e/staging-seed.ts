@@ -623,6 +623,8 @@ export interface RequestFinalInspectionData {
   deliveredAt?: string | null;
   cancelledAt?: string | null;
   cancelReason?: string | null;
+  fixedPriceArs?: number | null;
+  autoAssign?: boolean;
   offers: Array<{
     id: string;
     status: string;
@@ -670,7 +672,7 @@ export async function getRequestInspectionData(
   const { data: requestData, error: reqErr } = await admin
     .from('delivery_requests')
     .select(
-      'id, status, accepted_offer_id, published_at, expires_at, matched_at, picked_up_at, delivered_at, cancelled_at, cancel_reason'
+      'id, status, accepted_offer_id, published_at, expires_at, matched_at, picked_up_at, delivered_at, cancelled_at, cancel_reason, fixed_price_ars, auto_assign'
     )
     .eq('id', requestId)
     .single();
@@ -779,6 +781,8 @@ export async function getRequestInspectionData(
     deliveredAt: (rawReq.delivered_at as string | null) ?? null,
     cancelledAt: (rawReq.cancelled_at as string | null) ?? null,
     cancelReason: (rawReq.cancel_reason as string | null) ?? null,
+    fixedPriceArs: (rawReq.fixed_price_ars as number | null) ?? null,
+    autoAssign: Boolean(rawReq.auto_assign),
     offers,
     incidents,
     cancellationReasons,
@@ -1551,6 +1555,8 @@ export interface SeedRequestInStateOptions {
   pickedUpAt?: string;
   deliveredAt?: string;
   withContacts?: boolean;
+  fixedPriceArs?: number | null;
+  autoAssign?: boolean;
   withPendingOffersCount?: number;
   withIncident?: {
     kind: 'no_show' | 'payment_issue' | 'damaged_goods' | 'safety' | 'other';
@@ -1659,6 +1665,8 @@ export async function seedDeliveryRequestInState(
     picked_up_at: pickedUpAt,
     delivered_at: deliveredAt,
     accepted_offer_id: null,
+    fixed_price_ars: options.fixedPriceArs ?? null,
+    auto_assign: options.autoAssign ?? false,
     notes: `E2E state seed ${context.testRunId}`,
   });
 

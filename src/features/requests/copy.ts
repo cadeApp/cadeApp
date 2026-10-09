@@ -53,6 +53,14 @@ export const requestsCopy = {
     changeCustomPlaceholder: 'Otro monto en efectivo',
     notesLabel: 'Indicaciones o referencias (opcional)',
     notesPlaceholder: 'Ej. Portón negro al lado del kiosco. Tocar timbre 2B.',
+    fixedPriceSection: 'Precio de envío acordado (opcional)',
+    fixedPriceLabel: 'Precio del envío acordado',
+    fixedPricePlaceholder: 'Ej. 1500 (vacío para recibir ofertas)',
+    fixedPriceHint:
+      'Si ya acordaste el costo del envío con tu cliente, podés fijarlo acá. Los repartidores solo podrán tomarlo por este monto.',
+    autoAssignLabel: 'Asignar al primer repartidor que tome',
+    autoAssignHint:
+      'El primer repartidor aprobado y disponible que acepte quedará asignado al instante.',
     submitButton: 'Publicar solicitud',
     submittingButton: 'Publicando solicitud...',
     mapOutOfAguilares:

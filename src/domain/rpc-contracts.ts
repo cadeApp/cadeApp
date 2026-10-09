@@ -57,6 +57,24 @@ export const publishRequestOutputSchema = z.object({
   publishedAt: isoTimestampSchema,
   expiresAt: isoTimestampSchema,
   routeDistanceM: z.number().int().nonnegative().nullable(),
+  fixedPriceArs: z.number().int().min(1).nullable(),
+  autoAssign: z.boolean(),
+});
+
+// take_request (CC-021)
+export const takeRequestInputSchema = z.object({
+  requestId: uuidSchema,
+  etaMinutes: z.number().int().min(1).max(240),
+  message: z.string().trim().max(280).nullable().optional(),
+});
+export const takeRequestOutputSchema = z.object({
+  offerId: uuidSchema,
+  requestId: uuidSchema,
+  amountArs: z.number().int().min(1),
+  offerStatus: z.enum(['pending', 'accepted']),
+  requestStatus: z.enum(['published', 'matched']),
+  matchedAt: isoTimestampSchema.nullable(),
+  idempotent: z.boolean(),
 });
 
 // 2. cancel_request
@@ -291,6 +309,21 @@ export const getRequestOfferCouriersOutputSchema = z
   })
   .strict();
 
+// get_merchant_request_private_fields (CC-023)
+// Indicaciones y monto exacto de cambio de una solicitud propia, solo para el comercio dueño: con CC-023 esas
+// columnas dejan de leerse por tabla. `.strict()`: un campo de más invalida la salida.
+export const getMerchantRequestPrivateFieldsInputSchema = z.object({
+  requestId: uuidSchema,
+});
+
+export const getMerchantRequestPrivateFieldsOutputSchema = z
+  .object({
+    requestId: uuidSchema,
+    notes: z.string().nullable(),
+    cashChangeAmount: z.number().int().positive().nullable(),
+  })
+  .strict();
+
 export const adminDecideCourierInputSchema = z.object({
   courierId: uuidSchema,
   decision: z.enum(['approved', 'rejected']),
@@ -447,6 +480,7 @@ export const RPC_CONTRACTS = {
       'OUT_OF_BOUNDS_AGUILARES',
       'INVALID_ZONE',
       'INVALID_STATE_TRANSITION',
+      'OFFER_BELOW_MINIMUM',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
       'INTERNAL_ERROR',
@@ -468,15 +502,18 @@ export const RPC_CONTRACTS = {
     ] as const satisfies readonly DomainErrorCode[],
   },
   /**
-   * Precedencia canónica de errores de `submit_offer` (D05 / CC-001 — compartida entre
-   * `supabase/migrations/20260923050000_rpc_offers_v1.sql` y `src/domain/testing/rpc-fake.ts`):
-   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
-   *   2. Repartidor (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED` → `COURIER_UNAVAILABLE`)
-   *   3. Parámetros de entrada (`VALIDATION_ERROR`: `requestId`, `amountArs`, `etaMinutes`, `message`)
-   *   4. Piso dinámico `min_offer_ars` (`OFFER_BELOW_MINIMUM`)
-   *   5. Tope por ventana `max_offers_per_min` (`RATE_LIMITED`)
-   *   6. Solicitud (`NOT_FOUND` → `REQUEST_EXPIRED` → `INVALID_STATE_TRANSITION`)
-   *   7. Oferta activa duplicada (`DUPLICATE_ACTIVE_OFFER`)
+   * Precedencia canónica de errores de `submit_offer` (D05 / CC-001 / CC-021 §3 — compartida entre
+   * migraciones y `src/domain/testing/rpc-fake.ts`):
+   *   1. Actor, rol y consentimiento (CC-007): UNAUTHENTICATED → UNAUTHORIZED_ACTOR
+   *   2. Repartidor (sin lock): NOT_FOUND → COURIER_SUSPENDED → COURIER_NOT_APPROVED → COURIER_UNAVAILABLE
+   *   3. Parámetros de entrada: VALIDATION_ERROR
+   *   4. Piso dinámico min_offer_ars: OFFER_BELOW_MINIMUM
+   *   5. Solicitud (for update): NOT_FOUND → REQUEST_EXPIRED → INVALID_STATE_TRANSITION
+   *   6. Precio fijo: FIXED_PRICE_REQUEST
+   *   7. Oferta activa duplicada: DUPLICATE_ACTIVE_OFFER
+   *   8. Repartidor (for share y nueva validación)
+   *   9. Tope por ventana max_offers_per_min: RATE_LIMITED
+   *  10. Mutación: crea oferta pending
    */
   submit_offer: {
     inputSchema: submitOfferInputSchema,
@@ -490,10 +527,47 @@ export const RPC_CONTRACTS = {
       'COURIER_UNAVAILABLE',
       'REQUEST_EXPIRED',
       'INVALID_STATE_TRANSITION',
+      'FIXED_PRICE_REQUEST',
       'OFFER_BELOW_MINIMUM',
       'DUPLICATE_ACTIVE_OFFER',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  /**
+   * Precedencia canónica de errores de `take_request` (CC-021 §4):
+   *   1. Actor, rol y consentimiento (CC-007): UNAUTHENTICATED → UNAUTHORIZED_ACTOR
+   *   2. Repartidor (sin lock): NOT_FOUND → COURIER_SUSPENDED → COURIER_NOT_APPROVED → COURIER_UNAVAILABLE
+   *   3. Parámetros de entrada: VALIDATION_ERROR
+   *   4. Lock de la solicitud: NOT_FOUND
+   *   5. Idempotencia: reintento propio devuelve éxito previo (idempotent: true)
+   *   6. Estado de la solicitud: ALREADY_MATCHED (otro) → REQUEST_EXPIRED → INVALID_STATE_TRANSITION
+   *   7. Sin precio fijo: NO_FIXED_PRICE
+   *   8. Piso vigente: OFFER_BELOW_MINIMUM
+   *   9. Oferta activa duplicada: DUPLICATE_ACTIVE_OFFER
+   *  10. Lock del repartidor (for share y revalidación de elegibilidad)
+   *  11. Tope por ventana max_offers_per_min: RATE_LIMITED
+   *  12. Mutación (si auto_assign=true llama a app_private.match_offer; si auto_assign=false crea oferta pending)
+   */
+  take_request: {
+    inputSchema: takeRequestInputSchema,
+    outputSchema: takeRequestOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'COURIER_SUSPENDED',
+      'COURIER_NOT_APPROVED',
+      'COURIER_UNAVAILABLE',
+      'VALIDATION_ERROR',
+      'ALREADY_MATCHED',
+      'REQUEST_EXPIRED',
+      'INVALID_STATE_TRANSITION',
+      'NO_FIXED_PRICE',
+      'OFFER_BELOW_MINIMUM',
+      'DUPLICATE_ACTIVE_OFFER',
+      'RATE_LIMITED',
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
@@ -693,6 +767,21 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * CC-023: solo el comercio dueño, en cualquier estado de su solicitud. Solicitud inexistente o ajena
+   * responden igual (`NOT_FOUND`). Repartidor y admin con sesión → `UNAUTHORIZED_ACTOR`.
+   */
+  get_merchant_request_private_fields: {
+    inputSchema: getMerchantRequestPrivateFieldsInputSchema,
+    outputSchema: getMerchantRequestPrivateFieldsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_decide_courier: {
     inputSchema: adminDecideCourierInputSchema,
     outputSchema: adminDecideCourierOutputSchema,
@@ -789,6 +878,7 @@ export const ALL_RPC_NAMES = [
   'publish_request',
   'cancel_request',
   'submit_offer',
+  'take_request',
   'withdraw_offer',
   'accept_offer',
   'mark_picked_up',
@@ -801,6 +891,7 @@ export const ALL_RPC_NAMES = [
   'calculate_route_distance',
   'get_trip_details',
   'get_request_offer_couriers',
+  'get_merchant_request_private_fields',
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_verify_document',

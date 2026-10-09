@@ -42,6 +42,25 @@ export const acceptOfferFormSchema = z.object({
 
 export type AcceptOfferFormInput = z.infer<typeof acceptOfferFormSchema>;
 
+export const takeRequestFormSchema = z.object({
+  requestId: uuidSchema,
+  etaMinutes: z
+    .number({
+      required_error: 'Seleccioná el tiempo estimado de llegada.',
+      invalid_type_error: 'El tiempo estimado debe ser un número.',
+    })
+    .int()
+    .min(1, 'El tiempo mínimo es 1 minuto.')
+    .max(240, 'El tiempo máximo es 240 minutos (4 horas).'),
+  message: z
+    .string()
+    .trim()
+    .max(280, 'El mensaje no puede superar los 280 caracteres.')
+    .nullable()
+    .optional(),
+});
+
+export type TakeRequestFormInput = z.infer<typeof takeRequestFormSchema>;
 
 export interface AvailableRequestItem {
   readonly id: string;
@@ -55,6 +74,8 @@ export interface AvailableRequestItem {
   readonly expiresAt: string | null;
   readonly hasMyOffer: boolean;
   readonly myOfferAmountArs: number | null;
+  readonly fixedPriceArs?: number | null;
+  readonly autoAssign?: boolean;
 }
 
 export type CourierStatus = z.infer<typeof courierStatusSchema>;

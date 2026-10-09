@@ -312,4 +312,34 @@ describe('T-112: CreateRequestForm', () => {
     const customChangeInput = screen.getByPlaceholderText('Otro monto en efectivo');
     expect(customChangeInput.getAttribute('inputmode')).toBe('numeric');
   });
+
+  it('no muestra el switch de asignación automática cuando no hay precio fijo cargado (DoD T-339)', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    expect(screen.queryByRole('switch', { name: /asignar al primer repartidor que tome/i })).toBeNull();
+    expect(screen.getByLabelText(/precio del envío acordado/i)).toBeDefined();
+  });
+
+  it('muestra el switch de asignación automática cuando se ingresa un precio y permite cambiar su estado (DoD T-339)', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    const priceInput = screen.getByLabelText(/precio del envío acordado/i);
+    expect(screen.queryByRole('switch', { name: /asignar al primer repartidor que tome/i })).toBeNull();
+
+    // Ingresar precio fijo
+    fireEvent.change(priceInput, { target: { value: '1500' } });
+
+    // El switch aparece
+    const switchBtn = screen.getByRole('switch', { name: /asignar al primer repartidor que tome/i });
+    expect(switchBtn).toBeDefined();
+    expect(switchBtn.getAttribute('aria-checked')).toBe('false');
+
+    // Click activa el switch
+    fireEvent.click(switchBtn);
+    expect(switchBtn.getAttribute('aria-checked')).toBe('true');
+
+    // Borrar el precio oculta el switch
+    fireEvent.change(priceInput, { target: { value: '' } });
+    expect(screen.queryByRole('switch', { name: /asignar al primer repartidor que tome/i })).toBeNull();
+  });
 });

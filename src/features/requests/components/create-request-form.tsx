@@ -64,6 +64,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
   const [showDropoffMap, setShowDropoffMap] = React.useState(false);
 
   const [customChangeInput, setCustomChangeInput] = React.useState('');
+  const [fixedPriceInput, setFixedPriceInput] = React.useState('');
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   // Formulario gobernado por react-hook-form + zodResolver
@@ -91,6 +92,8 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
       recipientPaymentMethod: 'cash',
       needsChange: false,
       cashChangeAmount: null,
+      fixedPriceArs: null,
+      autoAssign: false,
       notes: defaultPickup?.notes ?? '',
     },
   });
@@ -109,6 +112,20 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
   const paymentMethod = watch('recipientPaymentMethod');
   const needsChange = watch('needsChange');
   const cashChangeAmount = watch('cashChangeAmount');
+  const fixedPriceArs = watch('fixedPriceArs');
+  const autoAssign = watch('autoAssign');
+
+  const handleFixedPriceChange = (val: string) => {
+    setFixedPriceInput(val);
+    const cleaned = val.replace(/\D/g, '');
+    if (!cleaned) {
+      setValue('fixedPriceArs', null, { shouldValidate: true });
+      setValue('autoAssign', false, { shouldValidate: true });
+    } else {
+      const num = parseInt(cleaned, 10);
+      setValue('fixedPriceArs', num, { shouldValidate: true });
+    }
+  };
 
   // Geolocalización para retiro
   const handleUseMyLocationPickup = () => {
@@ -695,7 +712,94 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         </div>
       </Card>
 
-      {/* 5. Indicaciones adicionales */}
+      {/* 5. Precio de envío acordado (opcional) */}
+      <Card className="space-y-4 p-5 sm:p-6">
+        <div className="flex items-center gap-2 border-b border-border pb-3">
+          <Banknote className="h-4 w-4 text-primary-dark" aria-hidden="true" />
+          <h2 className="font-display text-base font-bold text-foreground">
+            {copy.fixedPriceSection}
+          </h2>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">{copy.fixedPriceHint}</p>
+
+          <div className="space-y-2">
+            <label htmlFor="fixedPriceArs" className="block text-sm font-medium text-foreground">
+              {copy.fixedPriceLabel}
+            </label>
+            <Input
+              id="fixedPriceArs"
+              type="text"
+              inputMode="numeric"
+              value={fixedPriceInput}
+              onChange={(e) => handleFixedPriceChange(e.target.value)}
+              placeholder={copy.fixedPricePlaceholder}
+              aria-invalid={Boolean(errors.fixedPriceArs)}
+            />
+            {fixedPriceArs != null && fixedPriceArs > 0 && (
+              <p className="text-sm text-muted-foreground">
+                Precio fijo establecido:{' '}
+                <span className="font-semibold text-foreground">
+                  {formatArs(fixedPriceArs)}
+                </span>
+              </p>
+            )}
+            {errors.fixedPriceArs && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {errors.fixedPriceArs.message}
+              </p>
+            )}
+          </div>
+
+          {/* Switch de asignación automática: se muestra SOLO si hay precio cargado */}
+          {fixedPriceArs != null && fixedPriceArs > 0 && (
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/20 p-4">
+              <div className="flex-1">
+                <label
+                  htmlFor="autoAssignSwitch"
+                  className="cursor-pointer text-sm font-semibold text-foreground"
+                >
+                  {copy.autoAssignLabel}
+                </label>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {copy.autoAssignHint}
+                </p>
+              </div>
+              <button
+                id="autoAssignSwitch"
+                type="button"
+                role="switch"
+                aria-checked={Boolean(autoAssign)}
+                aria-label={copy.autoAssignLabel}
+                onClick={() => setValue('autoAssign', !autoAssign, { shouldValidate: true })}
+                className="relative inline-flex min-h-12 min-w-12 items-center justify-center rounded-full p-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <span
+                  className={cn(
+                    'inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out',
+                    autoAssign ? 'bg-primary' : 'bg-muted'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out',
+                      autoAssign ? 'translate-x-5' : 'translate-x-0.5'
+                    )}
+                  />
+                </span>
+              </button>
+            </div>
+          )}
+          {errors.autoAssign && (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {errors.autoAssign.message}
+            </p>
+          )}
+        </div>
+      </Card>
+
+      {/* 6. Indicaciones adicionales */}
       <Card className="space-y-3 p-5 sm:p-6">
         <label htmlFor="notes" className="block text-base font-semibold text-foreground">
           {copy.notesLabel}

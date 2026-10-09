@@ -4,7 +4,8 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import React from 'react';
 import { RequestOffersList } from './request-offers-list';
 import { requestsCopy } from '../copy';
-import type { MerchantOfferItem } from '../types';
+import type { MerchantOfferItem, MerchantRequestDetail } from '../types';
+import type { RpcOutput } from '@/domain';
 
 // Mock server actions
 const mockAcceptOfferAction = vi.fn();
@@ -407,5 +408,55 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
     const offerHeadings = screen.getAllByRole('heading', { level: 4 });
     expect(offerHeadings[0]?.textContent).toBe('Esteban Q.');
+  });
+
+  describe('CC-023: el monto exacto de cambio del detalle sale de get_merchant_request_private_fields', () => {
+    // Con CC-023 `queries.ts` arma `cashChangeAmount` y `notes` con la salida de la RPC (lo prueba
+    // `queries.test.ts`); acá se fija que la vista los sigue mostrando igual que antes.
+    const privateFields: RpcOutput<'get_merchant_request_private_fields'> = {
+      requestId: '77777777-7777-4777-8777-777777777777',
+      notes: 'Tocar timbre 2B',
+      cashChangeAmount: 7300,
+    };
+    const detail = (fields: RpcOutput<'get_merchant_request_private_fields'>): MerchantRequestDetail => ({
+      id: fields.requestId,
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Norte',
+      approxDistanceKm: '2,5',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: true,
+      cashChangeAmount: fields.cashChangeAmount,
+      notes: fields.notes,
+      status: 'published',
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      createdAt: '2026-10-06T12:00:00.000Z',
+      acceptedOfferId: null,
+    });
+
+    it('muestra «Paga con $ …» en el encabezado y en la confirmación de aceptación', () => {
+      const { container } = render(
+        <RequestOffersList request={detail(privateFields)} initialOffers={initialOffers} />
+      );
+
+      expect(container.textContent).toMatch(/\(Paga con \$\s?7\.300\)/);
+
+      const firstAcceptButton = screen.getAllByRole('button', { name: /aceptar/i })[0];
+      if (!firstAcceptButton) throw new Error('sin botón Aceptar');
+      fireEvent.click(firstAcceptButton);
+
+      expect(screen.getByRole('dialog').textContent).toMatch(/paga con \$\s?7\.300/);
+    });
+
+    it('sin monto de la RPC no inventa «Paga con»', () => {
+      const { container } = render(
+        <RequestOffersList
+          request={detail({ ...privateFields, cashChangeAmount: null })}
+          initialOffers={initialOffers}
+        />
+      );
+
+      expect(container.textContent).not.toMatch(/paga con/i);
+    });
   });
 });

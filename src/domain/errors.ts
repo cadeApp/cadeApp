@@ -6,7 +6,7 @@ export const DOMAIN_ERROR_CODES = [
   'INVALID_SIGNUP_ROLE',
   'DNI_ALREADY_REGISTERED',
 
-  // Ofertas y elegibilidad de repartidor (T-101, T-102)
+  // Ofertas y elegibilidad de repartidor (T-101, T-102, CC-021)
   'OFFER_BELOW_MINIMUM',
   'ALREADY_MATCHED',
   'DUPLICATE_ACTIVE_OFFER',
@@ -15,6 +15,8 @@ export const DOMAIN_ERROR_CODES = [
   'COURIER_SUSPENDED',
   'COURIER_UNAVAILABLE',
   'RATE_LIMITED',
+  'FIXED_PRICE_REQUEST',
+  'NO_FIXED_PRICE',
 
   // Ciclo de vida de solicitudes, suscripción y geolocalización (T-103, T-106)
   'REQUEST_EXPIRED',

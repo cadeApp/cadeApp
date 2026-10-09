@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -1500,6 +1508,1005 @@ test('preview target helper declares no any in its types', () => {
   for (const comment of typed) {
     assert.doesNotMatch(comment, /@(type|typedef|param|returns)\b[^\n]*\bany\b/, comment);
     assert.doesNotMatch(comment, /[<,[(|]\s*any\s*[>,\])|]|\bany\[\]/, comment);
+  }
+  assert.doesNotMatch(script, /@ts-(ignore|expect-error|nocheck)|eslint-disable/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// T-347: e2e-mutation — mutaciones RED de E2E contra un build efímero en el runner trusted
+// ---------------------------------------------------------------------------------------------------------------
+
+function mutationWorkflow() {
+  return workflow('e2e-mutation.yml').replace(/\r\n/g, '\n');
+}
+
+/** @param {string} yaml */
+function assertNoRunnerContextInMutationJobEnv(yaml) {
+  // Solo env al nivel del job (4 espacios); env de steps y with pueden usar runner.temp.
+  const blocks = [...yaml.matchAll(/^ {4}env:\n((?: {6}[^\n]*\n)*)/gm)];
+  assert.ok(blocks.length > 0, 'e2e-mutation debe conservar la configuración env del job');
+  for (const [, variables] of blocks) {
+    assert.doesNotMatch(
+      variables ?? '',
+      /\$\{\{\s*runner\./,
+      'runner context is unavailable in job env; use RUNNER_TEMP in a step and GITHUB_ENV'
+    );
+  }
+}
+
+test('e2e-mutation rejects runner context at job env level (GitHub Actions validation)', () => {
+  const yaml = mutationWorkflow();
+  assertNoRunnerContextInMutationJobEnv(yaml);
+  // Test del test: la configuración inválida original debe producir RED.
+  const broken = yaml.replace(
+    /^ {4}env:\n/m,
+    '    env:\n      MUTATION_RAW_DIR: ${{ runner.temp }}/e2e-mutation-raw\n'
+  );
+  assert.throws(
+    () => assertNoRunnerContextInMutationJobEnv(broken),
+    /runner context is unavailable in job env/
+  );
+});
+
+test('e2e-mutation payload: target is only the literal develop (PR294-A01)', async () => {
+  const { parsePayload } = await import('./e2e-mutation.mjs');
+  assert.deepEqual(parsePayload({ target: 'develop', mutation: 't302-mfa-route-guard' }), {
+    ok: true,
+    target: { kind: 'develop' },
+    mutation: 't302-mfa-route-guard',
+  });
+  for (const target of [
+    291,
+    '291',
+    'c'.repeat(40),
+    'main',
+    'staging',
+    'refs/heads/develop',
+    'origin/develop',
+    'Develop',
+    ' develop',
+    0,
+    null,
+    undefined,
+    ['develop'],
+    { kind: 'develop' },
+  ]) {
+    assert.equal(parsePayload({ target, mutation: 'abc-def' }).ok, false, `target ${JSON.stringify(target)}`);
+  }
+  for (const mutation of ['', 'A', '../x', 'x y', 'a'.repeat(80), 42, null]) {
+    assert.equal(parsePayload({ target: 'develop', mutation }).ok, false, `mutation ${JSON.stringify(mutation)}`);
+  }
+  assert.equal(parsePayload(null).ok, false);
+  assert.equal(parsePayload('develop').ok, false);
+});
+
+test('e2e-mutation has no pull request target path left (PR294-H01)', async () => {
+  const mutationModule = await import('./e2e-mutation.mjs');
+  assert.equal('parsePull' in mutationModule, false, 'parsePull ya no existe');
+  assert.equal('validatePull' in mutationModule, false, 'validatePull ya no existe');
+  const script = workflow('e2e-mutation.mjs');
+  assert.doesNotMatch(script, /\/pulls\//, 'el helper no consulta PRs');
+  assert.match(script, /'\/branches\/develop'/, 'resolve consulta solo la punta de develop');
+  const yaml = mutationWorkflow();
+  assert.doesNotMatch(yaml, /pull-requests: read/);
+  assert.doesNotMatch(yaml, /pull-requests/);
+});
+
+test('e2e-mutation catalog: unknown ids, generic expectedFailure and non-chromium specs are rejected', async () => {
+  const { parseManifest, findMutation } = await import('./e2e-mutation.mjs');
+  const entry = {
+    id: 'demo-mutation',
+    invariant: 'regla',
+    patch: 'demo-mutation.patch',
+    spec: 'e2e/specs/demo.spec.ts',
+    grep: 'DoD: caso',
+    expectedFailure: ['toEqual', '/login/mfa?redirectTo=%2Fadmin'],
+  };
+  const parsed = parseManifest({ version: 1, mutations: [entry] });
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) return;
+  assert.equal(findMutation(parsed.mutations, 'demo-mutation').ok, true);
+  assert.equal(findMutation(parsed.mutations, 'otra-mutacion').ok, false, 'id inexistente');
+
+  /** @param {Record<string, unknown>} change */
+  const invalid = (change) => parseManifest({ version: 1, mutations: [{ ...entry, ...change }] }).ok;
+  assert.equal(invalid({ expectedFailure: ['Error'] }), false, 'generic expectedFailure');
+  assert.equal(invalid({ expectedFailure: ['expect(', 'failed'] }), false, 'generic expectedFailure');
+  assert.equal(invalid({ expectedFailure: [] }), false);
+  assert.equal(invalid({ expectedFailure: 'toEqual' }), false);
+  assert.equal(invalid({ spec: 'e2e/specs/demo.global-settings.spec.ts' }), false, 'global-settings');
+  assert.equal(invalid({ spec: 'src/demo.spec.ts' }), false);
+  assert.equal(invalid({ patch: 'otro.patch' }), false, 'patch must be <id>.patch');
+  assert.equal(invalid({ patch: '../demo-mutation.patch' }), false);
+  assert.equal(invalid({ grep: '' }), false);
+  assert.equal(parseManifest({ version: 1, mutations: [entry, entry] }).ok, false, 'duplicated id');
+  assert.equal(parseManifest({ version: 2, mutations: [entry] }).ok, false);
+});
+
+test('e2e-mutation patches can only touch production code under src/**', async () => {
+  const { validatePatch } = await import('./e2e-mutation.mjs');
+  /** @param {string} path */
+  const diffFor = (path) =>
+    [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, '@@ -1 +1 @@', '-a', '+b', ''].join('\n');
+
+  assert.deepEqual(validatePatch(diffFor('src/features/auth/guards.ts')), {
+    ok: true,
+    paths: ['src/features/auth/guards.ts'],
+  });
+  for (const path of [
+    'e2e/specs/courier-onboarding.spec.ts',
+    'e2e/mutations/manifest.json',
+    '.github/workflows/e2e-mutation.mjs',
+    'supabase/migrations/20261007000000_x.sql',
+    'playwright.config.ts',
+    'package.json',
+    'pnpm-lock.yaml',
+    'src/features/auth/guards.test.ts',
+    'src/features/auth/guards.test.tsx',
+    'src/server/e2e/staging-seed.ts',
+    'src/../e2e/specs/x.spec.ts',
+  ]) {
+    assert.equal(validatePatch(diffFor(path)).ok, false, path);
+  }
+  const rename = [
+    'diff --git a/src/a.ts b/e2e/a.ts',
+    'similarity index 100%',
+    'rename from src/a.ts',
+    'rename to e2e/a.ts',
+    '',
+  ].join('\n');
+  assert.equal(validatePatch(rename).ok, false, 'rename outside src');
+  assert.equal(
+    validatePatch(`${diffFor('src/a.png')}GIT binary patch\nliteral 1\n`).ok,
+    false,
+    'binary patch'
+  );
+  assert.equal(validatePatch('').ok, false, 'empty patch');
+});
+
+test('e2e-mutation refuses production and any target other than Supabase Develop', async () => {
+  const { checkEnvironmentRefs } = await import('./e2e-mutation.mjs');
+  const ok = {
+    supabaseUrl: 'https://developref1234.supabase.co',
+    developRef: 'developref1234',
+    stagingRef: 'stagingref1234',
+    productionRef: 'productionref1234',
+  };
+  assert.deepEqual(checkEnvironmentRefs(ok), { ok: true });
+  assert.equal(checkEnvironmentRefs({ ...ok, productionRef: '' }).ok, false, 'missing production ref');
+  assert.equal(
+    checkEnvironmentRefs({ ...ok, productionRef: 'developref1234' }).ok,
+    false,
+    'develop ref equals production'
+  );
+  assert.equal(checkEnvironmentRefs({ ...ok, stagingRef: 'developref1234' }).ok, false);
+  assert.equal(
+    checkEnvironmentRefs({ ...ok, supabaseUrl: 'https://productionref1234.supabase.co' }).ok,
+    false,
+    'URL of another project'
+  );
+  assert.equal(checkEnvironmentRefs({ ...ok, developRef: '' }).ok, false);
+});
+
+test('e2e-mutation only targets a local build on http://localhost:<port>', async () => {
+  const { checkBaseUrl } = await import('./e2e-mutation.mjs');
+  assert.deepEqual(checkBaseUrl('http://localhost:3100'), { ok: true, port: 3100 });
+  for (const url of [
+    'http://127.0.0.1:3100',
+    'https://localhost:3100',
+    'http://0.0.0.0:3100',
+    'http://localhost:3100/',
+    'http://localhost',
+    'http://localhost:80',
+    'http://localhost.evil.example:3100',
+    'https://cadeapp-develop.vercel.app',
+    'http://localhost:3100@evil.example',
+    '',
+  ]) {
+    assert.equal(checkBaseUrl(url).ok, false, url);
+  }
+});
+
+// Run 37900097487 (CONTROL_NOT_GREEN): con la base URL en 127.0.0.1, `updateSession` arma la redirección con
+// `request.nextUrl.clone()`, y NextURL canoniza todo host loopback a `localhost`. El browser saltaba a otro origen,
+// sin las cookies de sesión (host-only de 127.0.0.1), y el control terminaba en /login.
+test('e2e-mutation browser origin survives the middleware redirect without losing the session', async () => {
+  const { checkBaseUrl } = await import('./e2e-mutation.mjs');
+  const { NextURL } = await import('next/dist/server/web/next-url.js');
+  const yaml = mutationWorkflow();
+  const base = /\n {6}PLAYWRIGHT_TEST_BASE_URL: (\S+)\n/.exec(yaml)?.[1] ?? '';
+  assert.equal(checkBaseUrl(base).ok, true, base);
+  const appUrls = [...yaml.matchAll(/\n {10}NEXT_PUBLIC_APP_URL: (\S+)\n/g)].map((match) => match[1]);
+  assert.deepEqual(appUrls, [base, base]);
+
+  // Lo mismo que hace updateSession con un repartidor en /merchant/dashboard.
+  const redirectUrl = new NextURL(`${base}/merchant/dashboard`).clone();
+  redirectUrl.pathname = '/courier/feed';
+  redirectUrl.search = '';
+  assert.equal(redirectUrl.origin, base, 'la redirección del middleware no cambia de origen');
+
+  // El servidor sigue escuchando solo en 127.0.0.1: cambia el origen del browser, no la interfaz.
+  const { phaseCommands } = await import('./e2e-mutation.mjs');
+  const { port } = /** @type {{ port: number }} */ (checkBaseUrl(base));
+  assert.deepEqual(phaseCommands({ spec: 'e2e/specs/x.spec.ts', grep: 'x', port }).start.slice(2, 4), [
+    '-H',
+    '127.0.0.1',
+  ]);
+  assert.match(workflow('e2e-mutation.mjs'), /waitForHealth\(`http:\/\/127\.0\.0\.1:\$\{base\.port\}`/);
+});
+
+test('e2e-mutation runs control and mutant with the same commands, no retries nor repetitions', async () => {
+  const { phaseCommands } = await import('./e2e-mutation.mjs');
+  const commands = phaseCommands({
+    spec: 'e2e/specs/courier-onboarding.spec.ts',
+    grep: 'DoD: Falla si se quita (MFA)',
+    port: 3100,
+  });
+  assert.deepEqual(commands.build, ['pnpm', 'build']);
+  assert.deepEqual(commands.start, ['pnpm', 'start', '-H', '127.0.0.1', '-p', '3100']);
+  assert.deepEqual(commands.test, [
+    'pnpm',
+    'exec',
+    'playwright',
+    'test',
+    'e2e/specs/courier-onboarding.spec.ts',
+    '--project=chromium',
+    '--workers=1',
+    '--retries=0',
+    '--grep=DoD: Falla si se quita \\(MFA\\)',
+    '--reporter=list,json',
+  ]);
+  const script = workflow('e2e-mutation.mjs');
+  assert.doesNotMatch(script, /--repeat-each|--timeout|setTimeout\(\s*\w+,\s*[1-9]\d{5,}/);
+  assert.equal(
+    (script.match(/phaseCommands\(/g) ?? []).length,
+    3,
+    'una definición, el run de cada fase y el resumen: control y mutante comparten comandos'
+  );
+});
+
+test('e2e-mutation classifies RED only when the expected assertion fails after a GREEN control', async () => {
+  const { classify, caseResults } = await import('./e2e-mutation.mjs');
+  const expectedFailure = ['toEqual', '/login/mfa?redirectTo=%2Fadmin%2Fapplicants'];
+  const passed = [{ status: 'passed', errors: [] }];
+  const expectedRed = [
+    {
+      status: 'failed',
+      errors: ['expect(received).toEqual(expected)\n-   "redirectTo": "/login/mfa?redirectTo=%2Fadmin%2Fapplicants",'],
+    },
+  ];
+
+  assert.equal(
+    classify({ control: passed, patchApplied: true, mutant: expectedRed, expectedFailure }).outcome,
+    'RED_CONFIRMED'
+  );
+  assert.equal(
+    classify({ control: [{ status: 'failed', errors: ['x'] }], patchApplied: true, mutant: expectedRed, expectedFailure })
+      .outcome,
+    'CONTROL_NOT_GREEN'
+  );
+  assert.equal(
+    classify({ control: [], patchApplied: true, mutant: expectedRed, expectedFailure }).outcome,
+    'CONTROL_NOT_GREEN',
+    'el caso no existe'
+  );
+  assert.equal(
+    classify({ control: null, patchApplied: true, mutant: expectedRed, expectedFailure }).outcome,
+    'CONTROL_NOT_GREEN',
+    'sin reporte de control'
+  );
+  assert.equal(
+    classify({ control: passed, patchApplied: false, mutant: null, expectedFailure }).outcome,
+    'PATCH_DID_NOT_APPLY'
+  );
+  assert.equal(
+    classify({ control: passed, patchApplied: true, mutant: passed, expectedFailure }).outcome,
+    'MUTANT_SURVIVED'
+  );
+  assert.equal(
+    classify({
+      control: passed,
+      patchApplied: true,
+      mutant: [{ status: 'failed', errors: ['Timed out waiting for page.goto'] }],
+      expectedFailure,
+    }).outcome,
+    'UNEXPECTED_FAILURE',
+    'falla por otra razón'
+  );
+  assert.equal(
+    classify({
+      control: passed,
+      patchApplied: true,
+      mutant: [{ status: 'timedOut', errors: expectedRed[0]?.errors ?? [] }],
+      expectedFailure,
+    }).outcome,
+    'UNEXPECTED_FAILURE',
+    'un timeout del test no es el RED esperado'
+  );
+  assert.equal(
+    classify({ control: passed, patchApplied: true, mutant: null, expectedFailure }).outcome,
+    'UNEXPECTED_FAILURE',
+    'el build o el servidor del mutante fallaron'
+  );
+
+  const esc = String.fromCharCode(27);
+  const report = {
+    suites: [
+      {
+        title: 'courier-onboarding.spec.ts',
+        specs: [],
+        suites: [
+          {
+            title: 'T-302',
+            specs: [
+              {
+                title: 'DoD: caso',
+                tests: [
+                  {
+                    results: [
+                      { status: 'failed', errors: [{ message: `${esc}[31mexpect(received).toEqual${esc}[39m` }] },
+                    ],
+                  },
+                ],
+              },
+              { title: 'Otro caso', tests: [{ results: [{ status: 'passed', errors: [] }] }] },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  assert.deepEqual(caseResults(report, 'DoD: caso'), [
+    { status: 'failed', errors: ['expect(received).toEqual'] },
+  ]);
+  assert.deepEqual(caseResults(report, 'No existe'), []);
+});
+
+// Mutaciones que el catálogo tiene que conservar siempre (PR254-H05). El catálogo puede crecer, nunca perderlas.
+const REQUIRED_MUTATION_IDS = ['t302-mfa-route-guard', 't302-dni-dedup-other-courier'];
+
+// D06-C: la mutación entra al catálogo antes del merge del spec que la ejercita. Cada entrada fija id, spec y caso
+// exactos; solo difiere la lectura del spec mientras el archivo no exista en el árbol. Cuando el spec llega, la
+// validación completa vuelve sola, sin tocar esta lista. Nada más se difiere: patch, `git apply --check`, rutas y
+// `expectedFailure` se validan siempre.
+const SPEC_PENDING_MERGE = [
+  {
+    id: 't313-courier-merchant-guard',
+    spec: 'e2e/specs/merchant-registration.spec.ts',
+    grep: 'DoD: Un courier no entra a (merchant)',
+    pullRequest: 251,
+  },
+];
+
+/**
+ * Quita comentarios de bloque y de línea (`//` al inicio o tras un espacio; no toca `://` ni regex literales), para
+ * que una aserción comentada no cuente como código.
+ * @param {string} source
+ */
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+}
+
+/**
+ * Recorre `source` respetando strings (`'`, `"` y `` ` ``): `onChar` recibe cada carácter y si está fuera de un string.
+ * @param {string} source @param {(ch: string, index: number, code: boolean) => boolean | void} onChar
+ */
+function scanCode(source, onChar) {
+  let quote = '';
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i] ?? '';
+    if (quote) {
+      if (ch === '\\') {
+        if (onChar(ch, i, false) || onChar(source[i + 1] ?? '', i + 1, false)) return;
+        i += 1;
+        continue;
+      }
+      if (ch === quote) quote = '';
+      if (onChar(ch, i, false)) return;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      if (onChar(ch, i, false)) return;
+      continue;
+    }
+    if (onChar(ch, i, true)) return;
+  }
+}
+
+/** Vacía el contenido de los strings: una aserción escrita dentro de un literal no es código. @param {string} source */
+function blankStrings(source) {
+  let out = '';
+  scanCode(source, (ch, _index, code) => {
+    out += code || ch === "'" || ch === '"' || ch === '`' ? ch : '';
+  });
+  return out;
+}
+
+/**
+ * Cuerpo balanceado `{ … }` que abre en la primera aparición de `opener` desde `from`, sin contar llaves dentro de
+ * strings. Devuelve null si no cierra: ante una extracción dudosa el control falla, nunca queda verde.
+ * @param {string} source @param {number} from @param {string} opener
+ */
+function balancedBody(source, from, opener) {
+  const open = source.indexOf(opener, from);
+  if (from < 0 || open < 0) return null;
+  const start = open + opener.length - 1;
+  let depth = 0;
+  /** @type {string | null} */
+  let body = null;
+  scanCode(source.slice(start), (ch, index, code) => {
+    if (!code) return false;
+    if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+    if (depth > 0) return false;
+    body = source.slice(start, start + index + 1);
+    return true;
+  });
+  return body;
+}
+
+/** @param {string} source @param {string} title */
+function testBody(source, title) {
+  return balancedBody(source, source.indexOf(`test('${title}'`), '=> {');
+}
+
+/** @param {string} source @param {string} name */
+function helperBody(source, name) {
+  return balancedBody(source, source.indexOf(`async function ${name}(`), ') {');
+}
+
+/**
+ * Sentencias de primer nivel de un bloque `{ … }`, con los espacios normalizados. Un `if`, un bucle o un string se
+ * quedan enteros dentro de su sentencia: una aserción envuelta en `if (false) { … }` o escrita en un literal nunca
+ * aparece como sentencia propia.
+ * @param {string} block
+ * @returns {string[]}
+ */
+function topLevelStatements(block) {
+  const inner = block.slice(1, -1);
+  /** @type {string[]} */
+  const statements = [];
+  let current = '';
+  let depth = 0;
+  const flush = () => {
+    const statement = current.trim().replace(/\s+/g, ' ');
+    if (statement) statements.push(statement);
+    current = '';
+  };
+  scanCode(inner, (ch, index, code) => {
+    current += ch;
+    if (!code) return;
+    if (ch === '{' || ch === '(' || ch === '[') depth += 1;
+    else if (ch === '}' || ch === ')' || ch === ']') {
+      depth -= 1;
+      if (depth === 0 && ch === '}' && !/^\s*[).,;\]>=:?&|]/.test(inner.slice(index + 1))) flush();
+    } else if (ch === ';' && depth === 0) flush();
+  });
+  flush();
+  return statements;
+}
+
+// PR315-H01/H02: oráculo del caso que cada mutación tiene que romper. Se compara contra sentencias de primer nivel
+// del caso y del helper, no contra texto suelto del archivo.
+const CASE_ORACLES = {
+  't313-courier-merchant-guard': {
+    login: 'await loginAsCourier(0, page);',
+    routes: /^const routes\b[^=]*= \[(.*)\];$/,
+    loop: 'for (const { path, expectedUrl } of routes) { await expectMerchantPanelBlocked(page, path, expectedUrl); }',
+    helper: 'expectMerchantPanelBlocked',
+    helperSteps: ['await page.goto(path);', 'await expect(page).toHaveURL(expectedUrl);'],
+    firstPath: '/merchant/dashboard',
+  },
+};
+
+/**
+ * Problemas del vínculo entre el caso del spec y `expectedFailure`. Vacío = el caso sigue ejercitando la aserción.
+ * @param {string} spec @param {{ id: string, grep: string, expectedFailure: string[] }} mutation
+ * @returns {string[]}
+ */
+function caseOracleProblems(spec, mutation) {
+  const code = stripComments(spec);
+  const body = testBody(code, mutation.grep);
+  if (!body) return [`no se pudo aislar el cuerpo de test('${mutation.grep}')`];
+  const statements = topLevelStatements(body);
+  const [matcher] = mutation.expectedFailure;
+  const helpers = [...blankStrings(statements.join('\n')).matchAll(/await (\w+)\(/g)]
+    .map((match) => helperBody(code, match[1] ?? ''))
+    .filter((helper) => helper !== null);
+  /** @type {string[]} */
+  const problems = [];
+  if (![body, ...helpers].some((source) => blankStrings(source).includes(`.${matcher}(`))) {
+    problems.push(`el caso ni sus helpers llaman .${matcher}(`);
+  }
+  const oracle = CASE_ORACLES[/** @type {keyof typeof CASE_ORACLES} */ (mutation.id)];
+  if (!oracle) return problems;
+
+  if (statements[0] !== oracle.login) {
+    problems.push(`el caso no empieza con ${oracle.login}`);
+  }
+  const routesAt = statements.findIndex((statement) => oracle.routes.test(statement));
+  const loopAt = statements.indexOf(oracle.loop);
+  if (routesAt < 0) problems.push('el caso no declara routes en su primer nivel');
+  if (routesAt < 0 || loopAt !== routesAt + 1 || (statements[0] === oracle.login && routesAt !== 1)) {
+    problems.push(`el caso no recorre routes justo después de declararlas llamando a ${oracle.helper}(page, path, expectedUrl)`);
+  }
+  const helper = helperBody(code, oracle.helper);
+  const steps = helper ? topLevelStatements(helper) : [];
+  const [goto, assertion] = oracle.helperSteps;
+  if (steps[0] !== goto || steps[1] !== assertion) {
+    problems.push(`${oracle.helper} no empieza con ${goto} seguido de ${assertion}`);
+  }
+  const pattern = mutation.expectedFailure
+    .map((detail) => /^Expected pattern: (\/.+\/)$/.exec(detail)?.[1])
+    .find(Boolean);
+  if (!pattern) {
+    problems.push('expectedFailure no declara el patrón de URL esperado');
+    return problems;
+  }
+  const declared = routesAt < 0 ? '' : (oracle.routes.exec(statements[routesAt] ?? '')?.[1] ?? '');
+  const routes = [...declared.matchAll(/\{ path: '([^']+)', expectedUrl: (\/.+?\/) \}/g)].map((match) => ({
+    path: match[1] ?? '',
+    expectedUrl: match[2] ?? '',
+  }));
+  const [first] = routes;
+  if (first?.path !== oracle.firstPath || first.expectedUrl !== pattern) {
+    problems.push(`la primera ruta del caso no es ${oracle.firstPath} → ${pattern}`);
+  }
+  for (const route of routes.filter((r) => r.path.startsWith('/merchant/') && r.expectedUrl !== pattern)) {
+    problems.push(`${route.path} no espera ${pattern}`);
+  }
+  return problems;
+}
+
+test('e2e-mutation catalog is valid and each patch applies cleanly to the current code', async () => {
+  const { parseManifest, validatePatch } = await import('./e2e-mutation.mjs');
+  const catalog = new URL('../../e2e/mutations/', import.meta.url);
+  const manifest = parseManifest(JSON.parse(readFileSync(new URL('manifest.json', catalog), 'utf8')));
+  assert.equal(manifest.ok, true, manifest.ok ? '' : manifest.reason);
+  if (!manifest.ok) return;
+  const ids = manifest.mutations.map((mutation) => mutation.id);
+  assert.equal(new Set(ids).size, ids.length, 'ids únicos');
+  for (const id of REQUIRED_MUTATION_IDS) {
+    assert.ok(ids.includes(id), `el catálogo conserva ${id} (PR254-H05)`);
+  }
+  const patchFiles = readdirSync(catalog).filter((name) => name.endsWith('.patch'));
+  assert.deepEqual(
+    patchFiles.sort(),
+    manifest.mutations.map((mutation) => mutation.patch).sort(),
+    'cada patch del catálogo tiene su entrada en el manifest y viceversa'
+  );
+
+  const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
+  for (const mutation of manifest.mutations) {
+    const patchPath = fileURLToPath(new URL(mutation.patch, catalog));
+    const validated = validatePatch(readFileSync(patchPath, 'utf8'));
+    assert.equal(validated.ok, true, `${mutation.id}: ${validated.ok ? '' : validated.reason}`);
+    const check = spawnSync('git', ['apply', '--check', patchPath], { cwd: repoRoot, encoding: 'utf8' });
+    assert.equal(check.status, 0, `${mutation.id}: ${check.stderr}`);
+
+    // La primera expectativa es el matcher de Playwright que tiene que fallar; el resto, su texto concreto.
+    const [matcher, ...details] = mutation.expectedFailure;
+    assert.match(matcher ?? '', /^to[A-Z][A-Za-z]+$/, `${mutation.id}: expectedFailure empieza por el matcher`);
+    assert.ok(details.length > 0, `${mutation.id}: expectedFailure detalla la aserción además del matcher`);
+
+    const specUrl = new URL(`../../${mutation.spec}`, import.meta.url);
+    if (!existsSync(specUrl)) {
+      const pending = SPEC_PENDING_MERGE.find((entry) => entry.id === mutation.id);
+      assert.ok(pending, `${mutation.id}: ${mutation.spec} no existe y la mutación no tiene spec pendiente de merge`);
+      assert.deepEqual(
+        { spec: mutation.spec, grep: mutation.grep },
+        { spec: pending?.spec, grep: pending?.grep },
+        `${mutation.id}: el spec pendiente (PR #${pending?.pullRequest}) es exactamente el declarado`
+      );
+      continue;
+    }
+    const spec = readFileSync(specUrl, 'utf8');
+    assert.ok(spec.includes(`test('${mutation.grep}'`), `${mutation.id}: el caso existe en ${mutation.spec}`);
+    assert.deepEqual(caseOracleProblems(spec, mutation), [], `${mutation.id}: el caso ejercita expectedFailure`);
+  }
+});
+
+test('e2e-mutation case oracle is bound to the courier login, its loop and its helper (PR315-H01/H02)', () => {
+  // Copia literal del helper y del caso de e2e/specs/merchant-registration.spec.ts (PR #251, 77d430b).
+  const spec = [
+    'async function expectMerchantPanelBlocked(page: Page, path: string, expectedUrl: RegExp) {',
+    '  await page.goto(path);',
+    '  await expect(page).toHaveURL(expectedUrl);',
+    '  await waitForNoSkeletons(page);',
+    "  await expect(page.getByRole('heading', { name: MERCHANT_PANEL_HEADING })).toHaveCount(0);",
+    '}',
+    '',
+    "test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {",
+    "  test('DoD: Alta completa y panel visible', async ({ page }) => {",
+    '    await expect(page).toHaveURL(/\\/merchant\\/dashboard/);',
+    '  });',
+    '',
+    "  test('DoD: Un courier no entra a (merchant)', async ({ page, loginAsCourier }) => {",
+    '    await loginAsCourier(0, page);',
+    '',
+    '    const routes: Array<{ path: string; expectedUrl: RegExp }> = [',
+    "      { path: '/merchant/dashboard', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/history', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/onboarding', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/plan', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/requests', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/requests/new', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/requests/e2e-denied', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/onboarding', expectedUrl: /\\/courier\\/onboarding\\/identity/ },",
+    "      { path: '/requests', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/requests/new', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/requests/e2e-denied', expectedUrl: /\\/courier\\/feed/ },",
+    '    ];',
+    '',
+    '    for (const { path, expectedUrl } of routes) {',
+    '      await expectMerchantPanelBlocked(page, path, expectedUrl);',
+    '    }',
+    '  });',
+    '});',
+    '',
+  ].join('\n');
+  const mutation = {
+    id: 't313-courier-merchant-guard',
+    grep: 'DoD: Un courier no entra a (merchant)',
+    expectedFailure: ['toHaveURL', 'Expected pattern: /\\/courier\\/feed/'],
+  };
+  assert.deepEqual(caseOracleProblems(spec, mutation), [], 'control: el spec de #251 tal cual');
+
+  /** @param {string} from @param {string} to */
+  const mutate = (from, to) => {
+    assert.ok(spec.includes(from), `la mutación aplica: ${from}`);
+    return caseOracleProblems(spec.replace(from, to), mutation);
+  };
+  const helperAssertion = '  await expect(page).toHaveURL(expectedUrl);';
+  const loopCall = '      await expectMerchantPanelBlocked(page, path, expectedUrl);';
+  const dashboard = "{ path: '/merchant/dashboard', expectedUrl: /\\/courier\\/feed/ }";
+  const history = "{ path: '/merchant/history', expectedUrl: /\\/courier\\/feed/ }";
+  const login = '    await loginAsCourier(0, page);';
+  const loopOpen = '    for (const { path, expectedUrl } of routes) {';
+  const loopClose = `${loopCall}\n    }`;
+  const noMatcher = 'el caso ni sus helpers llaman .toHaveURL(';
+  const helperMissing =
+    'expectMerchantPanelBlocked no empieza con await page.goto(path); seguido de await expect(page).toHaveURL(expectedUrl);';
+  const loopMissing =
+    'el caso no recorre routes justo después de declararlas llamando a expectMerchantPanelBlocked(page, path, expectedUrl)';
+  const loginMissing = 'el caso no empieza con await loginAsCourier(0, page);';
+  const wrongFirst = 'la primera ruta del caso no es /merchant/dashboard → /\\/courier\\/feed/';
+
+  // Batería del revisor, ronda 1: M1, M2 y M3.
+  assert.deepEqual(mutate(helperAssertion, '  /* M1: URL oracle omitted */'), [noMatcher, helperMissing]);
+  assert.deepEqual(mutate(loopCall, '      /* M2: check omitted */'), [noMatcher, loopMissing]);
+  assert.deepEqual(mutate(dashboard, dashboard.replace('/\\/courier\\/feed/', '/\\/merchant\\/dashboard/')), [
+    wrongFirst,
+    '/merchant/dashboard no espera /\\/courier\\/feed/',
+  ]);
+  // Batería del revisor, ronda 2 (PR315-H01 parcial y H02): X1 a X4.
+  assert.deepEqual(mutate(login, '    /* courier login removed */'), [loginMissing], 'X1');
+  assert.deepEqual(
+    mutate(helperAssertion, "  const decoy = 'await expect(page).toHaveURL(expectedUrl);';"),
+    [noMatcher, helperMissing],
+    'X2: la aserción solo dentro de un string'
+  );
+  assert.deepEqual(
+    mutate(helperAssertion, '  if (false) { await expect(page).toHaveURL(expectedUrl); }'),
+    [helperMissing],
+    'X3: la aserción inalcanzable'
+  );
+  assert.deepEqual(
+    caseOracleProblems(
+      spec.replace(loopOpen, `    if (false) {\n${loopOpen}`).replace(loopClose, `${loopClose}\n    }`),
+      mutation
+    ),
+    [loopMissing],
+    'X4: el bucle inalcanzable'
+  );
+  // Variantes del login pedidas para H02: otro rol, comentado, string, inalcanzable y después de otra sentencia.
+  assert.deepEqual(mutate(login, '    await loginAsMerchant(0, page);'), [loginMissing]);
+  assert.deepEqual(mutate(login, `    // ${login.trim()}`), [loginMissing]);
+  assert.deepEqual(mutate(login, `    const decoy = '${login.trim()}';`), [loginMissing]);
+  assert.deepEqual(mutate(login, `    if (false) { ${login.trim()} }`), [loginMissing]);
+  assert.deepEqual(mutate(login, `    await page.goto('/');\n${login}`), [loginMissing]);
+  // Mutaciones adicionales del revisor en ronda 3: terminación anticipada tras login.
+  assert.deepEqual(mutate(login, `${login}\n    return;`), [loopMissing], 'return antes de las rutas');
+  assert.deepEqual(mutate(login, `${login}\n    throw new Error('early exit');`), [loopMissing], 'throw antes de las rutas');
+  // Adyacencias exigidas: nada entre la tabla de rutas y el bucle, ni antes de goto + toHaveURL en el helper.
+  assert.deepEqual(mutate(loopOpen, `    if (false) {}\n${loopOpen}`), [loopMissing]);
+  assert.deepEqual(mutate('  await page.goto(path);', "  await page.goto('/');\n  await page.goto(path);"), [
+    helperMissing,
+  ]);
+  // Variantes del autor: negación, comentarios, otra ruta merchant y orden de las rutas.
+  assert.deepEqual(mutate(helperAssertion, '  await expect(page).not.toHaveURL(expectedUrl);'), [helperMissing]);
+  assert.deepEqual(mutate(helperAssertion, `  // ${helperAssertion.trim()}`), [noMatcher, helperMissing]);
+  assert.deepEqual(mutate(loopCall, `      // ${loopCall.trim()}`), [noMatcher, loopMissing]);
+  assert.deepEqual(mutate(history, history.replace('/\\/courier\\/feed/', '/\\/login/')), [
+    '/merchant/history no espera /\\/courier\\/feed/',
+  ]);
+  assert.deepEqual(mutate(`      ${dashboard},\n      ${history},`, `      ${history},\n      ${dashboard},`), [
+    wrongFirst,
+  ]);
+  assert.deepEqual(
+    caseOracleProblems(spec, { ...mutation, grep: 'DoD: Un courier no entra a merchant' }),
+    ["no se pudo aislar el cuerpo de test('DoD: Un courier no entra a merchant')"]
+  );
+});
+
+test('e2e-mutation catalog defers a spec only for the exact pending entry (D06-C)', () => {
+  assert.ok(SPEC_PENDING_MERGE.length <= 1, 'una sola mutación con spec pendiente de merge a la vez');
+  for (const entry of SPEC_PENDING_MERGE) {
+    assert.ok(!REQUIRED_MUTATION_IDS.includes(entry.id), `${entry.id}: las mutaciones de T-302 nunca se difieren`);
+    assert.match(entry.spec, /^e2e\/specs\/[a-z0-9][a-z0-9-]*\.spec\.ts$/, `${entry.id}: spec del proyecto chromium`);
+    assert.ok(entry.grep.startsWith('DoD: '), `${entry.id}: título exacto del caso del spec`);
+    assert.ok(Number.isInteger(entry.pullRequest) && entry.pullRequest > 0, `${entry.id}: PR que trae el spec`);
+  }
+});
+
+test('e2e-mutation workflow is triggered only by repository_dispatch e2e.mutation.requested', () => {
+  const yaml = mutationWorkflow();
+  const trigger = yaml.slice(yaml.indexOf('\non:\n'), yaml.indexOf('\npermissions:'));
+  assert.equal(
+    trigger.trim(),
+    ['on:', '  repository_dispatch:', '    types:', '      - e2e.mutation.requested'].join('\n'),
+    'un único disparador trusted: repository_dispatch con su type dedicado'
+  );
+  assert.doesNotMatch(yaml, /workflow_dispatch|pull_request|workflow_call|\bpush:/);
+  const preview = workflow('e2e-preview.yml');
+  assert.doesNotMatch(preview, /e2e\.mutation\.requested/, 'e2e-preview no reacciona a pedidos de mutación');
+});
+
+test('e2e-mutation workflow keeps minimal permissions, the develop environment and the shared E2E lock', () => {
+  const yaml = mutationWorkflow();
+  assert.match(yaml, /^permissions: \{\}$/m);
+  const mutationJob = job(yaml, 'mutation');
+  assert.match(mutationJob, /\n {4}permissions:\n {6}contents: read\n {4}\S/);
+  assert.doesNotMatch(yaml, /statuses|: write\b|id-token/);
+  assert.match(mutationJob, /\n {4}environment: develop\n/);
+  assert.match(mutationJob, /\n {6}group: cadeapp-develop-e2e\n {6}cancel-in-progress: false\n/);
+  assert.match(mutationJob, /timeout-minutes: 30\n/);
+});
+
+test('e2e-mutation control plane comes from the default branch, never from the target SHA', () => {
+  const yaml = mutationWorkflow();
+  const checkouts = [...yaml.matchAll(/uses: actions\/checkout@[a-f0-9]{40} # v4\n {8}with:\n((?: {10}.+\n)+)/g)].map(
+    (match) => match[1] ?? ''
+  );
+  assert.equal(checkouts.length, 2, 'un checkout trusted y uno del SHA objetivo');
+  const [trusted, target] = checkouts;
+  assert.equal(trusted, '          path: trusted\n          persist-credentials: false\n', 'sin ref: la rama por defecto');
+  assert.equal(
+    target,
+    '          ref: ${{ steps.target.outputs.sha }}\n          path: target\n          persist-credentials: false\n'
+  );
+  for (const line of yaml.split('\n').filter((l) => l.includes('e2e-mutation.mjs') && l.includes('run:'))) {
+    assert.match(line, /run: node trusted\/\.github\/workflows\/e2e-mutation\.mjs /, line);
+  }
+  assert.match(yaml, /MUTATION_CATALOG_DIR: \$\{\{ github\.workspace \}\}\/trusted\/e2e\/mutations\n/);
+  assert.match(yaml, /PATCH_FILE: \$\{\{ github\.workspace \}\}\/trusted\/e2e\/mutations\//);
+  // El payload solo lo lee e2e-mutation.mjs desde GITHUB_EVENT_PATH: nunca se interpola en el workflow.
+  const payloadUses = yaml
+    .split('\n')
+    .filter((line) => line.includes('client_payload') && !line.trimStart().startsWith('#'));
+  assert.deepEqual(payloadUses, []);
+});
+
+test('e2e-mutation never deploys, publishes statuses or keeps the mutation', () => {
+  const yaml = mutationWorkflow();
+  const script = workflow('e2e-mutation.mjs');
+  for (const source of [yaml, script]) {
+    assert.doesNotMatch(source, /VERCEL_TOKEN|VERCEL_ORG_ID|vercel (deploy|build|pull)|--prebuilt|--prod\b/);
+    assert.doesNotMatch(source, /\/statuses|git push|git commit|git tag/);
+  }
+  assert.doesNotMatch(yaml, /continue-on-error|\bsleep\b|--repeat-each|retries/);
+  assert.match(yaml, /git apply --check "\$PATCH_FILE" && git apply "\$PATCH_FILE"/);
+  assert.match(yaml, /git apply -R "\$PATCH_FILE"\n {10}git diff --exit-code\n/);
+  assert.match(yaml, /PLAYWRIGHT_TEST_BASE_URL: http:\/\/localhost:3100\n/);
+  assert.equal((yaml.match(/NEXT_PUBLIC_APP_URL: http:\/\/localhost:3100\n/g) ?? []).length, 2);
+});
+
+test('e2e-mutation guards production before any build and keeps secrets out of job env and artifacts', () => {
+  const yaml = mutationWorkflow();
+  const guard = yaml.indexOf('mjs check-env');
+  const firstBuild = yaml.indexOf('run-phase control');
+  assert.ok(guard > 0 && guard < firstBuild, 'check-env corre antes del primer build');
+  assert.equal(
+    (yaml.match(/SUPABASE_PRODUCTION_PROJECT_REF: \$\{\{ vars\.SUPABASE_PRODUCTION_PROJECT_REF \}\}/g) ?? []).length,
+    3,
+    'check-env y las dos fases conocen el ref de producción, así isAllowedE2EEnvironment lo bloquea'
+  );
+  const jobEnv = yaml.slice(yaml.indexOf('\n    env:\n'), yaml.indexOf('\n    steps:\n'));
+  assert.doesNotMatch(jobEnv, /secrets\./, 'ningún secreto a nivel job');
+  assert.doesNotMatch(yaml, /set -x|printenv|env \|/);
+  const script = workflow('e2e-mutation.mjs');
+  assert.doesNotMatch(script, /process\.env\)|JSON\.stringify\(process\.env|console\.log\(process\.env/);
+});
+
+test('e2e-mutation persistable evidence never carries raw Playwright output (PR294-H02 canary)', async () => {
+  const { buildEvidence } = await import('./e2e-mutation.mjs');
+  const CANARY = 'TOP_SECRET_CANARY_294_DO_NOT_PERSIST';
+  const mutation = {
+    id: 't302-mfa-route-guard',
+    invariant: 'regla trusted',
+    patch: 't302-mfa-route-guard.patch',
+    spec: 'e2e/specs/courier-onboarding.spec.ts',
+    grep: 'DoD: caso',
+    expectedFailure: ['toEqual', '/login/mfa?redirectTo=%2Fadmin%2Fapplicants'],
+  };
+  /** @param {string} status @param {string} message */
+  const report = (status, message) => ({
+    config: { metadata: { env: CANARY } },
+    errors: [{ message: CANARY }],
+    suites: [
+      {
+        title: `courier-onboarding.spec.ts ${CANARY}`,
+        specs: [],
+        suites: [
+          {
+            title: 'T-302',
+            specs: [
+              {
+                title: 'DoD: caso',
+                tests: [
+                  {
+                    annotations: [{ type: 'note', description: CANARY }],
+                    results: [
+                      {
+                        status,
+                        errors: message ? [{ message, stack: `${message}\n    at ${CANARY}` }] : [],
+                        stdout: [{ text: `SUPABASE_SERVICE_ROLE_KEY=${CANARY}` }],
+                        stderr: [{ text: CANARY }],
+                        attachments: [{ name: 'trace', path: `/tmp/${CANARY}.zip`, body: CANARY }],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  const evidence = buildEvidence({
+    mutation,
+    patchText: 'diff --git a/src/a.ts b/src/a.ts\n',
+    baseSha: 'c'.repeat(40),
+    port: 3100,
+    patchApplied: true,
+    controlReport: report('passed', ''),
+    mutantReport: report(
+      'failed',
+      `expect(received).toEqual(expected)\n"redirectTo": "/login/mfa?redirectTo=%2Fadmin%2Fapplicants" ${CANARY}`
+    ),
+  });
+
+  const serialized = JSON.stringify(evidence.files);
+  assert.equal(serialized.includes(CANARY), false, 'el canario no llega a ningún archivo del artifact');
+  assert.deepEqual(Object.keys(evidence.files).sort(), [
+    'control.json',
+    'mutant.json',
+    'summary.json',
+    't302-mfa-route-guard.patch',
+  ]);
+  assert.equal(evidence.outcome, 'RED_CONFIRMED', 'el canario no impide clasificar con el reporte crudo');
+  const summary = JSON.parse(evidence.files['summary.json'] ?? '{}');
+  assert.equal(summary.outcome, 'RED_CONFIRMED');
+  assert.equal(summary.baseSha, 'c'.repeat(40));
+  assert.deepEqual(Object.keys(summary).sort(), [
+    'baseSha',
+    'commands',
+    'expectedFailure',
+    'grep',
+    'invariant',
+    'mutation',
+    'outcome',
+    'patch',
+    'patchSha256',
+    'reason',
+    'spec',
+  ]);
+  assert.deepEqual(JSON.parse(evidence.files['control.json'] ?? '{}'), {
+    title: 'DoD: caso',
+    status: 'passed',
+    results: 1,
+    expectedFailureMatched: false,
+  });
+  assert.deepEqual(JSON.parse(evidence.files['mutant.json'] ?? '{}'), {
+    title: 'DoD: caso',
+    status: 'failed',
+    results: 1,
+    expectedFailureMatched: true,
+  });
+
+  // Un estado fuera de la allowlist tampoco se copia tal cual.
+  const odd = buildEvidence({
+    mutation,
+    patchText: '',
+    baseSha: 'c'.repeat(40),
+    port: 3100,
+    patchApplied: true,
+    controlReport: report('passed', ''),
+    mutantReport: report(CANARY, CANARY),
+  });
+  assert.equal(JSON.stringify(odd.files).includes(CANARY), false, 'status arbitrario no persiste');
+  assert.equal(JSON.parse(odd.files['mutant.json'] ?? '{}').status, 'unknown');
+  assert.equal(odd.outcome, 'UNEXPECTED_FAILURE');
+
+  // Sin reporte del mutante (build o servidor caídos) la evidencia sigue existiendo, minimizada.
+  const missing = buildEvidence({
+    mutation,
+    patchText: '',
+    baseSha: 'c'.repeat(40),
+    port: 3100,
+    patchApplied: true,
+    controlReport: report('passed', ''),
+    mutantReport: null,
+  });
+  assert.deepEqual(JSON.parse(missing.files['mutant.json'] ?? '{}'), {
+    title: 'DoD: caso',
+    status: 'missing',
+    results: 0,
+    expectedFailureMatched: false,
+  });
+});
+
+test('e2e-mutation keeps raw reports out of the artifact and uploads an explicit allowlist (PR294-H02)', () => {
+  const yaml = mutationWorkflow();
+  const script = workflow('e2e-mutation.mjs');
+  const initialize = step(job(yaml, 'mutation'), 'Initialize mutation directories');
+  assert.ok(
+    initialize.includes(String.raw`printf 'MUTATION_RAW_DIR=%s/e2e-mutation-raw\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"`),
+    'la ruta raw debe usar RUNNER_TEMP y exportarse a GITHUB_ENV'
+  );
+  assert.ok(
+    initialize.includes(String.raw`printf 'MUTATION_EVIDENCE_DIR=%s/e2e-mutation\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"`),
+    'la ruta minimizada debe usar RUNNER_TEMP y exportarse a GITHUB_ENV'
+  );
+  assert.ok(
+    yaml.indexOf('- name: Initialize mutation directories') < yaml.indexOf('- name: Resolve mutation target'),
+    'las rutas se inicializan antes de usarse'
+  );
+  // Los reportes crudos de Playwright y la salida de los procesos nunca se escriben en el directorio del artifact.
+  assert.match(script, /join\(rawDir, `\$\{phase\}\.json`\)/);
+  assert.doesNotMatch(script, /createWriteStream|\.log`/, 'stdout/stderr van solo a la consola, no a archivos');
+  const upload = yaml.slice(yaml.indexOf('actions/upload-artifact@'));
+  const path = upload.slice(upload.indexOf('path: |\n'), upload.indexOf('\n          if-no-files-found:'));
+  assert.equal(
+    path,
+    [
+      'path: |',
+      '            ${{ runner.temp }}/e2e-mutation/summary.json',
+      '            ${{ runner.temp }}/e2e-mutation/control.json',
+      '            ${{ runner.temp }}/e2e-mutation/mutant.json',
+      '            ${{ runner.temp }}/e2e-mutation/${{ steps.target.outputs.patch }}',
+    ].join('\n'),
+    'allowlist explícita, sin directorios ni comodines'
+  );
+  assert.doesNotMatch(upload, /e2e-mutation-raw|\*/);
+  assert.match(upload, /\n {10}if-no-files-found: error\n {10}retention-days: 14\n/);
+  assert.match(
+    yaml,
+    /- name: Remove raw reports\n {8}if: always\(\)\n {8}run: rm -rf "\$MUTATION_RAW_DIR"\n/,
+    'el directorio raw se borra siempre'
+  );
+  assert.ok(yaml.indexOf('Remove raw reports') > yaml.indexOf('actions/upload-artifact@'));
+});
+
+test('e2e-mutation artifact name uses the short SHA (PR294-M01)', () => {
+  const yaml = mutationWorkflow();
+  assert.match(
+    yaml,
+    /name: e2e-mutation-\$\{\{ steps\.target\.outputs\.mutation \}\}-\$\{\{ steps\.target\.outputs\.sha7 \}\}\n/
+  );
+  const upload = yaml.slice(yaml.indexOf('actions/upload-artifact@'));
+  assert.doesNotMatch(upload, /outputs\.sha \}\}/, 'el SHA de 40 caracteres no va en el nombre');
+  const script = workflow('e2e-mutation.mjs');
+  assert.match(script, /`sha7=\$\{sha\.slice\(0, 7\)\}`/);
+});
+
+test('e2e-mutation helper declares no any and disables no checks', () => {
+  const script = workflow('e2e-mutation.mjs');
+  for (const comment of script.match(/\/\*\*[\s\S]*?\*\//g) ?? []) {
+    assert.doesNotMatch(comment, /@(type|typedef|param|returns)\b[^\n]*\bany\b/, comment);
   }
   assert.doesNotMatch(script, /@ts-(ignore|expect-error|nocheck)|eslint-disable/);
 });
