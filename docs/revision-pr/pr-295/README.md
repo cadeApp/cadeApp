@@ -24,3 +24,13 @@
 ## Gate humano
 
 Android físico con PWA anterior/actualizada y navegador normal: **pendiente**. No suplantarlo con mocks ni E2E.
+
+## Ronda 5 — HEAD funcional `64c0dfb012eeabd7b98686b37bd571433cd04817` (2026-10-09)
+
+[Informe R5](revisiones/ronda-5.md) · [Evidencia R5](evidencia/ronda-5.md).
+
+**Resultado:** CON BLOQUEANTES (3): R02 (test E2E inyecta CSS), H11 (E2E de gesto nativo aún no existe), H07 (gate E2E pendiente al corte). R01 y H08 verificados por CI remoto en SHA exacto, H09 corregido por inspección pero sin prueba end-to-end del reload; H10 parcial.
+
+**Decisión P1 R5 A:** aceptada; autoriza `e2e/specs/push-user-activation.spec.ts` y actualización documental de ficha por Kira. Sin autorización de otras rutas o workflows. Decisión B R3 continúa vigente.
+
+**Prueba Android humano:** P1 la hará después de revisión técnica cerrada sin bloqueantes; pendiente deliberadamente.

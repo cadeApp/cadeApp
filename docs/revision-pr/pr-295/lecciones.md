@@ -5,3 +5,6 @@
 - **AG-68 / AG-70:** no declarar que un test prueba el CSS standalone cuando se ignora una excepción CDP o se admite aserción condicional que omite el wrapper; bitácora local != CI remoto.
 - **Decisión P1 B:** permitir un cambio arquitectónico más amplio exige demostrar beneficios vs complejidad; el reexport directo de push elimina el await interpuesto, pero el presupuesto debe revalidarse en build real. No imponer opción más conservadora sin comparar.
 - **Pruebas del gesto:** bandera booleana + queueMicrotask es un unit test útil de orden, pero no reemplaza pruebas de click real y restricciones del navegador.
+- **R5 / PR295-R02 — falsos verdes por test que repara código de producción:** un E2E que inyecta `display:none !important` no verifica que el CSS real del producto oculte landing. Reto RED: mutar solo CSS productivo y exigir que el test falle. Priorizar observación nativa del navegador.
+- **R5 / P1 A03:** un test JSDOM con `navigator.userActivation` falso prueba orden, no activación real. E2E aislado en Playwright es más mantenible que mezclar Push con standalone, pero debe visitar consumidor auténtico y explicar límites del permiso headless.
+- **R5 / separación de calidad y gate manual:** pruebas Android físicas por P1 ocurren tras CI/E2E y revisión sin bloqueantes; no bloquean la emisión de informe técnico ni se deben invocar en cada ronda.
