@@ -1831,8 +1831,44 @@ function stripComments(source) {
 }
 
 /**
- * Cuerpo balanceado `{ … }` que abre en la primera aparición de `opener` desde `from`. Devuelve null si no cierra:
- * ante una extracción dudosa el control falla, nunca queda verde.
+ * Recorre `source` respetando strings (`'`, `"` y `` ` ``): `onChar` recibe cada carácter y si está fuera de un string.
+ * @param {string} source @param {(ch: string, index: number, code: boolean) => boolean | void} onChar
+ */
+function scanCode(source, onChar) {
+  let quote = '';
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i] ?? '';
+    if (quote) {
+      if (ch === '\\') {
+        if (onChar(ch, i, false) || onChar(source[i + 1] ?? '', i + 1, false)) return;
+        i += 1;
+        continue;
+      }
+      if (ch === quote) quote = '';
+      if (onChar(ch, i, false)) return;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      if (onChar(ch, i, false)) return;
+      continue;
+    }
+    if (onChar(ch, i, true)) return;
+  }
+}
+
+/** Vacía el contenido de los strings: una aserción escrita dentro de un literal no es código. @param {string} source */
+function blankStrings(source) {
+  let out = '';
+  scanCode(source, (ch, _index, code) => {
+    out += code || ch === "'" || ch === '"' || ch === '`' ? ch : '';
+  });
+  return out;
+}
+
+/**
+ * Cuerpo balanceado `{ … }` que abre en la primera aparición de `opener` desde `from`, sin contar llaves dentro de
+ * strings. Devuelve null si no cierra: ante una extracción dudosa el control falla, nunca queda verde.
  * @param {string} source @param {number} from @param {string} opener
  */
 function balancedBody(source, from, opener) {
@@ -1840,14 +1876,17 @@ function balancedBody(source, from, opener) {
   if (from < 0 || open < 0) return null;
   const start = open + opener.length - 1;
   let depth = 0;
-  for (let i = start; i < source.length; i += 1) {
-    if (source[i] === '{') depth += 1;
-    else if (source[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, i + 1);
-    }
-  }
-  return null;
+  /** @type {string | null} */
+  let body = null;
+  scanCode(source.slice(start), (ch, index, code) => {
+    if (!code) return false;
+    if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+    if (depth > 0) return false;
+    body = source.slice(start, start + index + 1);
+    return true;
+  });
+  return body;
 }
 
 /** @param {string} source @param {string} title */
@@ -1860,12 +1899,46 @@ function helperBody(source, name) {
   return balancedBody(source, source.indexOf(`async function ${name}(`), ') {');
 }
 
-// PR315-H01: oráculo del caso que cada mutación tiene que romper, ligado al caso y no a todo el archivo.
+/**
+ * Sentencias de primer nivel de un bloque `{ … }`, con los espacios normalizados. Un `if`, un bucle o un string se
+ * quedan enteros dentro de su sentencia: una aserción envuelta en `if (false) { … }` o escrita en un literal nunca
+ * aparece como sentencia propia.
+ * @param {string} block
+ * @returns {string[]}
+ */
+function topLevelStatements(block) {
+  const inner = block.slice(1, -1);
+  /** @type {string[]} */
+  const statements = [];
+  let current = '';
+  let depth = 0;
+  const flush = () => {
+    const statement = current.trim().replace(/\s+/g, ' ');
+    if (statement) statements.push(statement);
+    current = '';
+  };
+  scanCode(inner, (ch, index, code) => {
+    current += ch;
+    if (!code) return;
+    if (ch === '{' || ch === '(' || ch === '[') depth += 1;
+    else if (ch === '}' || ch === ')' || ch === ']') {
+      depth -= 1;
+      if (depth === 0 && ch === '}' && !/^\s*[).,;\]>=:?&|]/.test(inner.slice(index + 1))) flush();
+    } else if (ch === ';' && depth === 0) flush();
+  });
+  flush();
+  return statements;
+}
+
+// PR315-H01/H02: oráculo del caso que cada mutación tiene que romper. Se compara contra sentencias de primer nivel
+// del caso y del helper, no contra texto suelto del archivo.
 const CASE_ORACLES = {
   't313-courier-merchant-guard': {
+    login: 'await loginAsCourier(0, page);',
+    routes: /^const routes\b[^=]*= \[(.*)\];$/,
+    loop: 'for (const { path, expectedUrl } of routes) { await expectMerchantPanelBlocked(page, path, expectedUrl); }',
     helper: 'expectMerchantPanelBlocked',
-    helperAssertion: 'await expect(page).toHaveURL(expectedUrl);',
-    loop: /for \(const \{ path, expectedUrl \} of routes\) \{\s*await expectMerchantPanelBlocked\(page, path, expectedUrl\);\s*\}/,
+    helperSteps: ['await page.goto(path);', 'await expect(page).toHaveURL(expectedUrl);'],
     firstPath: '/merchant/dashboard',
   },
 };
@@ -1879,24 +1952,33 @@ function caseOracleProblems(spec, mutation) {
   const code = stripComments(spec);
   const body = testBody(code, mutation.grep);
   if (!body) return [`no se pudo aislar el cuerpo de test('${mutation.grep}')`];
+  const statements = topLevelStatements(body);
   const [matcher] = mutation.expectedFailure;
-  const helpers = [...body.matchAll(/await (\w+)\(/g)]
+  const helpers = [...blankStrings(statements.join('\n')).matchAll(/await (\w+)\(/g)]
     .map((match) => helperBody(code, match[1] ?? ''))
     .filter((helper) => helper !== null);
   /** @type {string[]} */
   const problems = [];
-  if (![body, ...helpers].some((source) => source.includes(`.${matcher}(`))) {
+  if (![body, ...helpers].some((source) => blankStrings(source).includes(`.${matcher}(`))) {
     problems.push(`el caso ni sus helpers llaman .${matcher}(`);
   }
   const oracle = CASE_ORACLES[/** @type {keyof typeof CASE_ORACLES} */ (mutation.id)];
   if (!oracle) return problems;
 
-  const helper = helperBody(code, oracle.helper);
-  if (!helper || !helper.includes(oracle.helperAssertion)) {
-    problems.push(`${oracle.helper} no ejecuta ${oracle.helperAssertion}`);
+  if (statements[0] !== oracle.login) {
+    problems.push(`el caso no empieza con ${oracle.login}`);
   }
-  if (!oracle.loop.test(body)) {
-    problems.push(`el caso no recorre las rutas llamando a ${oracle.helper}(page, path, expectedUrl)`);
+  const routesAt = statements.findIndex((statement) => oracle.routes.test(statement));
+  const loopAt = statements.indexOf(oracle.loop);
+  if (routesAt < 0) problems.push('el caso no declara routes en su primer nivel');
+  if (loopAt < 0 || loopAt < routesAt) {
+    problems.push(`el caso no recorre routes en su primer nivel llamando a ${oracle.helper}(page, path, expectedUrl)`);
+  }
+  const helper = helperBody(code, oracle.helper);
+  const steps = helper ? topLevelStatements(helper) : [];
+  const [goto, assertion] = oracle.helperSteps;
+  if (!steps.some((step, index) => step === goto && steps[index + 1] === assertion)) {
+    problems.push(`${oracle.helper} no ejecuta ${goto} seguido de ${assertion}`);
   }
   const pattern = mutation.expectedFailure
     .map((detail) => /^Expected pattern: (\/.+\/)$/.exec(detail)?.[1])
@@ -1905,7 +1987,8 @@ function caseOracleProblems(spec, mutation) {
     problems.push('expectedFailure no declara el patrón de URL esperado');
     return problems;
   }
-  const routes = [...body.matchAll(/\{ path: '([^']+)', expectedUrl: (\/.+?\/) \}/g)].map((match) => ({
+  const declared = routesAt < 0 ? '' : (oracle.routes.exec(statements[routesAt] ?? '')?.[1] ?? '');
+  const routes = [...declared.matchAll(/\{ path: '([^']+)', expectedUrl: (\/.+?\/) \}/g)].map((match) => ({
     path: match[1] ?? '',
     expectedUrl: match[2] ?? '',
   }));
@@ -1967,7 +2050,7 @@ test('e2e-mutation catalog is valid and each patch applies cleanly to the curren
   }
 });
 
-test('e2e-mutation case oracle is bound to the courier case, its loop and its helper (PR315-H01)', () => {
+test('e2e-mutation case oracle is bound to the courier login, its loop and its helper (PR315-H01/H02)', () => {
   // Copia literal del helper y del caso de e2e/specs/merchant-registration.spec.ts (PR #251, 77d430b).
   const spec = [
     'async function expectMerchantPanelBlocked(page: Page, path: string, expectedUrl: RegExp) {',
@@ -2022,37 +2105,57 @@ test('e2e-mutation case oracle is bound to the courier case, its loop and its he
   const loopCall = '      await expectMerchantPanelBlocked(page, path, expectedUrl);';
   const dashboard = "{ path: '/merchant/dashboard', expectedUrl: /\\/courier\\/feed/ }";
   const history = "{ path: '/merchant/history', expectedUrl: /\\/courier\\/feed/ }";
-  const helperMissing = 'expectMerchantPanelBlocked no ejecuta await expect(page).toHaveURL(expectedUrl);';
-  const loopMissing = 'el caso no recorre las rutas llamando a expectMerchantPanelBlocked(page, path, expectedUrl)';
+  const login = '    await loginAsCourier(0, page);';
+  const loopOpen = '    for (const { path, expectedUrl } of routes) {';
+  const loopClose = `${loopCall}\n    }`;
+  const noMatcher = 'el caso ni sus helpers llaman .toHaveURL(';
+  const helperMissing =
+    'expectMerchantPanelBlocked no ejecuta await page.goto(path); seguido de await expect(page).toHaveURL(expectedUrl);';
+  const loopMissing =
+    'el caso no recorre routes en su primer nivel llamando a expectMerchantPanelBlocked(page, path, expectedUrl)';
+  const loginMissing = 'el caso no empieza con await loginAsCourier(0, page);';
+  const wrongFirst = 'la primera ruta del caso no es /merchant/dashboard → /\\/courier\\/feed/';
 
-  // Batería del revisor (ronda 1): M1, M2 y M3.
-  assert.deepEqual(mutate(helperAssertion, '  /* M1: URL oracle omitted */'), [
-    'el caso ni sus helpers llaman .toHaveURL(',
-    helperMissing,
-  ]);
-  assert.deepEqual(mutate(loopCall, '      /* M2: check omitted */'), [
-    'el caso ni sus helpers llaman .toHaveURL(',
-    loopMissing,
-  ]);
+  // Batería del revisor, ronda 1: M1, M2 y M3.
+  assert.deepEqual(mutate(helperAssertion, '  /* M1: URL oracle omitted */'), [noMatcher, helperMissing]);
+  assert.deepEqual(mutate(loopCall, '      /* M2: check omitted */'), [noMatcher, loopMissing]);
   assert.deepEqual(mutate(dashboard, dashboard.replace('/\\/courier\\/feed/', '/\\/merchant\\/dashboard/')), [
-    'la primera ruta del caso no es /merchant/dashboard → /\\/courier\\/feed/',
+    wrongFirst,
     '/merchant/dashboard no espera /\\/courier\\/feed/',
   ]);
-  // Variantes propuestas para la ronda siguiente: negación, bucle comentado, otra ruta merchant y orden.
+  // Batería del revisor, ronda 2 (PR315-H01 parcial y H02): X1 a X4.
+  assert.deepEqual(mutate(login, '    /* courier login removed */'), [loginMissing], 'X1');
+  assert.deepEqual(
+    mutate(helperAssertion, "  const decoy = 'await expect(page).toHaveURL(expectedUrl);';"),
+    [noMatcher, helperMissing],
+    'X2: la aserción solo dentro de un string'
+  );
+  assert.deepEqual(
+    mutate(helperAssertion, '  if (false) { await expect(page).toHaveURL(expectedUrl); }'),
+    [helperMissing],
+    'X3: la aserción inalcanzable'
+  );
+  assert.deepEqual(
+    caseOracleProblems(
+      spec.replace(loopOpen, `    if (false) {\n${loopOpen}`).replace(loopClose, `${loopClose}\n    }`),
+      mutation
+    ),
+    [loopMissing],
+    'X4: el bucle inalcanzable'
+  );
+  // Variantes del login pedidas para H02: otro rol, comentado e inalcanzable.
+  assert.deepEqual(mutate(login, '    await loginAsMerchant(0, page);'), [loginMissing]);
+  assert.deepEqual(mutate(login, `    // ${login.trim()}`), [loginMissing]);
+  assert.deepEqual(mutate(login, `    if (false) { ${login.trim()} }`), [loginMissing]);
+  // Variantes del autor: negación, comentarios, otra ruta merchant y orden de las rutas.
   assert.deepEqual(mutate(helperAssertion, '  await expect(page).not.toHaveURL(expectedUrl);'), [helperMissing]);
-  assert.deepEqual(mutate(helperAssertion, `  // ${helperAssertion.trim()}`), [
-    'el caso ni sus helpers llaman .toHaveURL(',
-    helperMissing,
-  ]);
-  assert.deepEqual(mutate(loopCall, `      // ${loopCall.trim()}`), [
-    'el caso ni sus helpers llaman .toHaveURL(',
-    loopMissing,
-  ]);
+  assert.deepEqual(mutate(helperAssertion, `  // ${helperAssertion.trim()}`), [noMatcher, helperMissing]);
+  assert.deepEqual(mutate(loopCall, `      // ${loopCall.trim()}`), [noMatcher, loopMissing]);
   assert.deepEqual(mutate(history, history.replace('/\\/courier\\/feed/', '/\\/login/')), [
     '/merchant/history no espera /\\/courier\\/feed/',
   ]);
   assert.deepEqual(mutate(`      ${dashboard},\n      ${history},`, `      ${history},\n      ${dashboard},`), [
-    'la primera ruta del caso no es /merchant/dashboard → /\\/courier\\/feed/',
+    wrongFirst,
   ]);
   assert.deepEqual(
     caseOracleProblems(spec, { ...mutation, grep: 'DoD: Un courier no entra a merchant' }),
