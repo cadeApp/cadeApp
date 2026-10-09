@@ -3,7 +3,7 @@ name: e2e-mutation
 # T-347: mutaciones RED de E2E sin pushear ni desplegar código roto. Un `repository_dispatch` con el type
 # `e2e.mutation.requested` y `client_payload` `{ target: "develop", mutation }` pide aplicar una mutación del
 # catálogo revisado (`e2e/mutations/`) a un checkout efímero de la punta mergeada de develop y demostrar control
-# GREEN y mutante RED contra un build en 127.0.0.1 dentro de este runner. Ninguna PR es target (PR294-A01).
+# GREEN y mutante RED contra un build que escucha en 127.0.0.1 dentro de este runner. Ninguna PR es target (PR294-A01).
 #
 # `repository_dispatch` corre siempre con el workflow de la rama por defecto: el control plane (este archivo,
 # e2e-mutation.mjs, el manifest y los patches) sale de ese checkout. El `client_payload` es dato: solo lo lee
@@ -34,7 +34,9 @@ jobs:
     env:
       MUTATION_CATALOG_DIR: ${{ github.workspace }}/trusted/e2e/mutations
       MUTATION_TARGET_DIR: ${{ github.workspace }}/target
-      PLAYWRIGHT_TEST_BASE_URL: http://127.0.0.1:3100
+      # El servidor escucha solo en 127.0.0.1; el browser entra por localhost porque NextURL canoniza los hosts
+      # loopback a localhost y la redirección del middleware no puede cambiar de origen (perdería la sesión).
+      PLAYWRIGHT_TEST_BASE_URL: http://localhost:3100
     steps:
       - name: Initialize mutation directories
         run: |
@@ -85,7 +87,7 @@ jobs:
       - name: Control run (unmutated)
         env:
           MUTATION_ID: ${{ steps.target.outputs.mutation }}
-          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+          NEXT_PUBLIC_APP_URL: http://localhost:3100
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}
           SUPABASE_PRODUCTION_PROJECT_REF: ${{ vars.SUPABASE_PRODUCTION_PROJECT_REF }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
@@ -110,7 +112,7 @@ jobs:
         if: steps.apply.outputs.applied == 'true'
         env:
           MUTATION_ID: ${{ steps.target.outputs.mutation }}
-          NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+          NEXT_PUBLIC_APP_URL: http://localhost:3100
           SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_DEVELOP_PROJECT_REF }}
           SUPABASE_PRODUCTION_PROJECT_REF: ${{ vars.SUPABASE_PRODUCTION_PROJECT_REF }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}

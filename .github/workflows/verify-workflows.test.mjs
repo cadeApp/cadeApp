@@ -1688,22 +1688,51 @@ test('e2e-mutation refuses production and any target other than Supabase Develop
   assert.equal(checkEnvironmentRefs({ ...ok, developRef: '' }).ok, false);
 });
 
-test('e2e-mutation only targets a local build on http://127.0.0.1:<port>', async () => {
+test('e2e-mutation only targets a local build on http://localhost:<port>', async () => {
   const { checkBaseUrl } = await import('./e2e-mutation.mjs');
-  assert.deepEqual(checkBaseUrl('http://127.0.0.1:3100'), { ok: true, port: 3100 });
+  assert.deepEqual(checkBaseUrl('http://localhost:3100'), { ok: true, port: 3100 });
   for (const url of [
-    'http://localhost:3100',
-    'https://127.0.0.1:3100',
+    'http://127.0.0.1:3100',
+    'https://localhost:3100',
     'http://0.0.0.0:3100',
-    'http://127.0.0.1:3100/',
-    'http://127.0.0.1',
-    'http://127.0.0.1:80',
+    'http://localhost:3100/',
+    'http://localhost',
+    'http://localhost:80',
+    'http://localhost.evil.example:3100',
     'https://cadeapp-develop.vercel.app',
-    'http://127.0.0.1:3100@evil.example',
+    'http://localhost:3100@evil.example',
     '',
   ]) {
     assert.equal(checkBaseUrl(url).ok, false, url);
   }
+});
+
+// Run 37900097487 (CONTROL_NOT_GREEN): con la base URL en 127.0.0.1, `updateSession` arma la redirección con
+// `request.nextUrl.clone()`, y NextURL canoniza todo host loopback a `localhost`. El browser saltaba a otro origen,
+// sin las cookies de sesión (host-only de 127.0.0.1), y el control terminaba en /login.
+test('e2e-mutation browser origin survives the middleware redirect without losing the session', async () => {
+  const { checkBaseUrl } = await import('./e2e-mutation.mjs');
+  const { NextURL } = await import('next/dist/server/web/next-url.js');
+  const yaml = mutationWorkflow();
+  const base = /\n {6}PLAYWRIGHT_TEST_BASE_URL: (\S+)\n/.exec(yaml)?.[1] ?? '';
+  assert.equal(checkBaseUrl(base).ok, true, base);
+  const appUrls = [...yaml.matchAll(/\n {10}NEXT_PUBLIC_APP_URL: (\S+)\n/g)].map((match) => match[1]);
+  assert.deepEqual(appUrls, [base, base]);
+
+  // Lo mismo que hace updateSession con un repartidor en /merchant/dashboard.
+  const redirectUrl = new NextURL(`${base}/merchant/dashboard`).clone();
+  redirectUrl.pathname = '/courier/feed';
+  redirectUrl.search = '';
+  assert.equal(redirectUrl.origin, base, 'la redirección del middleware no cambia de origen');
+
+  // El servidor sigue escuchando solo en 127.0.0.1: cambia el origen del browser, no la interfaz.
+  const { phaseCommands } = await import('./e2e-mutation.mjs');
+  const { port } = /** @type {{ port: number }} */ (checkBaseUrl(base));
+  assert.deepEqual(phaseCommands({ spec: 'e2e/specs/x.spec.ts', grep: 'x', port }).start.slice(2, 4), [
+    '-H',
+    '127.0.0.1',
+  ]);
+  assert.match(workflow('e2e-mutation.mjs'), /waitForHealth\(`http:\/\/127\.0\.0\.1:\$\{base\.port\}`/);
 });
 
 test('e2e-mutation runs control and mutant with the same commands, no retries nor repetitions', async () => {
@@ -2269,8 +2298,8 @@ test('e2e-mutation never deploys, publishes statuses or keeps the mutation', () 
   assert.doesNotMatch(yaml, /continue-on-error|\bsleep\b|--repeat-each|retries/);
   assert.match(yaml, /git apply --check "\$PATCH_FILE" && git apply "\$PATCH_FILE"/);
   assert.match(yaml, /git apply -R "\$PATCH_FILE"\n {10}git diff --exit-code\n/);
-  assert.match(yaml, /PLAYWRIGHT_TEST_BASE_URL: http:\/\/127\.0\.0\.1:3100\n/);
-  assert.equal((yaml.match(/NEXT_PUBLIC_APP_URL: http:\/\/127\.0\.0\.1:3100\n/g) ?? []).length, 2);
+  assert.match(yaml, /PLAYWRIGHT_TEST_BASE_URL: http:\/\/localhost:3100\n/);
+  assert.equal((yaml.match(/NEXT_PUBLIC_APP_URL: http:\/\/localhost:3100\n/g) ?? []).length, 2);
 });
 
 test('e2e-mutation guards production before any build and keeps secrets out of job env and artifacts', () => {
