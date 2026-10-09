@@ -34,3 +34,11 @@ Android físico con PWA anterior/actualizada y navegador normal: **pendiente**. 
 **Decisión P1 R5 A:** aceptada; autoriza `e2e/specs/push-user-activation.spec.ts` y actualización documental de ficha por Kira. Sin autorización de otras rutas o workflows. Decisión B R3 continúa vigente.
 
 **Prueba Android humano:** P1 la hará después de revisión técnica cerrada sin bloqueantes; pendiente deliberadamente.
+
+## Ronda 6 — HEAD `8c27939578d4e57eb8678382ba9828d389393cde`
+
+[Informe R6](revisiones/ronda-6.md) · [Evidencia R6](evidencia/ronda-6.md).
+
+**CON BLOQUEANTES (4)**: R03 (CDP display-mode=false en Chromium), H12 (copy E2E erróneo), H13 (supuesto RED desconectado y sleep prohibido), H07 (gate E2E Preview real rojo: 45 pass / 2 fail). R02 ya sin CSS inyectado, pendiente de validar en standalone nativo; H06/H10/H11 parciales. R01 verificado, CI general verde. A03=A autorizada y asentada.
+
+Android físico a cargo de P1 **tras** resolver todos los bloqueantes técnicos.
