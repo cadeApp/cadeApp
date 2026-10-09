@@ -37,3 +37,10 @@ No se agrega numeración AG nueva.
 - Un defecto preexistente sigue bloqueando un DoD que explícitamente exige “axe AA sin violaciones”; no se convierte automáticamente en waiver por ser anterior.
 - Los fixes externos pertenecen naturalmente a la pasada de accesibilidad T-205 / #32, pero T-309 debe conservarse acotada y revalidarse después de que esos cambios lleguen a develop.
 - Las mutaciones RED remotas pueden vivir como commits temporales **solo si quedan identificadas, su CI demuestra la sensibilidad y luego se revierten sin reescribir historia**.
+
+
+## Ronda 5 — Evidencia positiva sobre el Preview correcto
+
+La salida de un workflow `repository_dispatch` referencia el SHA del checkout de `develop`; para acreditar la prueba al código del PR, la revisión verificó el **deployment ID de Vercel** contra `meta.githubCommitSha=66630c1a548639be0e553e28685739f132050f4c`, además de leer los ocho nombres de casos T-309 en el log (no solo el indicador global `success`). La prueba de contraste/aria-hidden-focus se mantuvo íntegra, sin exenciones; las correcciones externas T-350/T-351 se integraron mediante merge normal de develop.
+
+Al diseñar mutaciones independientes, corregir primero falsos RED del propio detector: un guard que falla su baseline no puede demostrar nada. La primera versión contó referencias de tags en el propio test y no distinguió el arreglo usado por `AxeBuilder`; la revisión la descartó y reemplazó por un detector sobre la declaración efectiva de tags y las cinco auditorías. Mantener el método trazable y no confundir estos checks estructurales con ejecuciones de navegador.

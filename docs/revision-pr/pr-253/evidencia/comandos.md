@@ -270,3 +270,60 @@ Issues abiertos por la revisión:
 - #297
 
 T-205 / #32 ya tiene alcance para `src/features/trips/**` y `src/features/courier-onboarding/**` y exige axe AA sin violaciones.
+
+
+## Ronda 5 — Actualización pos-T-350 / T-351, SHA 66630c1a54
+
+**Base** `develop` `8ebd5e2164cb895f320cec0562469f1382eedaa8`; HEAD de feature `66630c1a548639be0e553e28685739f132050f4c` antes de los archivos de revisión. `behind=0`, `mergeable=true`, 13 archivos de diff en alcance D01.
+
+**E2E no saltado:** run `37995617834`, job `114040832810`, con `67 passed (12.9m)`, `3 passed (58.2s)`, sin retries. Los 8 casos del spec se ven en el log en líneas 645–652. El workflow de dispatch referencia el SHA `develop` porque ese es el que ejecuta su YAML, no el contenido del Preview; **Vercel deployment** `dpl_83DXhHGWqxYYp74cTDo2D5mweQHZ` se verificó en conector Vercel con `meta.githubCommitSha=66630c1a548639be0e553e28685739f132050f4c` y `meta.githubCommitRef=feat/T-309-uploads-a11y`. Los hashes corresponden al mismo Preview URL que usó Playwright.
+
+**CI exact-HEAD:** run `37995517926`: unit 2014 Vitest + 79 workflow + 6 ADR PASS, db-tests 1903/20 pgTAP PASS y db types local sin drift, resto de siete jobs verde, `approval-policy` success.
+
+**Mutación independiente de esta ronda:** ver código completo abajo. Se diseñó después de leer el código sin reutilizar mutaciones del autor. Primer instrumento descartado: regresó un falso RED en baseline para axe por buscar `expect(audit.violations,` como línea única y no detectaba mutar un tag si seguía escrito en el test. Detector corregido: **baseline 9/9 GREEN y 8 mutantes 8/8 RED estructurales**; las mutaciones son copias de un string en memoria. No se ejecutó Playwright contra mutaciones. Las pruebas runtime de mutación R4 siguen en los runs `37548183777`, `37550262717` y sus reverts.
+
+```js
+// pr253-r5-guards.mjs — ejecución independiente estructural + ocho mutaciones EN MEMORIA.
+// Copiar en /tmp/pr253-r5-guards.mjs; ejecutar con Node en un worktree de SHA exacto:
+// node /tmp/pr253-r5-guards.mjs <ruta-absoluta-al-spec>
+import {readFileSync} from 'node:fs';
+const src=readFileSync(process.argv[2], 'utf8');
+const expected=['wcag2a','wcag2aa','wcag21a','wcag21aa','wcag22a','wcag22aa'].sort();
+function guard(s){
+ const declared=s.match(/export const REQUIRED_WCAG_TAGS\s*=\s*\[([\s\S]*?)\]\s*as const\s*;/)?.[1]||'';
+ const tags=[...declared.matchAll(/'([^']+)'/g)].map(x=>x[1]).sort();
+ const names=[...s.matchAll(/(?:^|\n)\s*test\('([^']+)'/g)].map(x=>x[1]);
+ const calls=(s.match(/const\s+(?:audit|feedAudit|tripAudit|onboardingAudit)\s*=\s*await\s+runAxeAudit\(page,/g)||[]).length;
+ const checks=(s.match(/expect\(\s*(?:audit|feedAudit|tripAudit|onboardingAudit)\.violations,/g)||[]).length;
+ const zero=(s.match(/\)\.toEqual\(\[\]\)/g)||[]).length;
+ const pass=(s.match(/\.passes\.length\)\.toBeGreaterThan\(0\)/g)||[]).length;
+ return {
+  '8 tests separados':names.length===8,
+  'tags WCAG 2.0/2.1/2.2 AA':JSON.stringify(tags)===JSON.stringify(expected)&&s.includes('.withTags([...REQUIRED_WCAG_TAGS])'),
+  'corte POST real':s.includes("await route.abort('failed')")&&s.includes('if (simulatedCutActive)')&&s.includes('expect(cutIntercepted).toBe(true)'),
+  'retry mismo input':(s.match(/await dniFrontInput\.setInputFiles\(\{/g)||[]).length===2,
+  '3G/CDP':s.includes('Network.emulateNetworkConditions')&&s.includes('latency: 400'),
+  'path y cleanup':s.includes('uploadTracker.capturedStoragePath = decodeURIComponent(match[1])')&&s.includes('.remove([pathToClean])')&&s.includes('expect(listData?.find((item) => item.name === filename)).toBeUndefined()'),
+  'rechazo por MIME':s.includes("contentType: 'text/plain'")&&s.includes('expect(data).toBeNull()')&&s.includes('expect(error).not.toBeNull()')&&/error\?\.message\)\.toMatch\(\/mime type/.test(s),
+  '5 auditorías y 5 oráculos':calls===5&&checks===5&&zero>=5&&pass===5,
+  'sin skips/silenciar':!/disableRules|\.exclude\(|test\.(?:skip|only|fixme)\(|waitForTimeout\(/.test(s)
+ };
+}
+const base=guard(src);
+const mutants=[
+ ['M01 sin tag WCAG22',s=>s.replace("  'wcag22aa',","  'wcag22aaa',"),'tags WCAG 2.0/2.1/2.2 AA'],
+ ['M02 sin corte',s=>s.replace("await route.abort('failed')","await route.continue()"),'corte POST real'],
+ ['M03 sin retry',s=>s.replace(/\/\/ 8\. Reintentar la subida del documento usando el MISMO selector accesible[\s\S]*?\/\/ 9\. H02 \/ H10/,'// 9. H02 / H10'),'retry mismo input'],
+ ['M04 sin cleanup',s=>s.replace('.remove([pathToClean])',".list('bogus')"),'path y cleanup'],
+ ['M05 MIME permitido',s=>s.replace("contentType: 'text/plain'","contentType: 'image/png'"),'rechazo por MIME'],
+ ['M06 sin axe viaje',s=>s.replace('const tripAudit = await runAxeAudit(page,','const tripAudit = await runAxeAuditDisabled(page,'),'5 auditorías y 5 oráculos'],
+ ['M07 disableRules',s=>s.replace('.analyze();',".disableRules(['color-contrast']).analyze();"),'sin skips/silenciar'],
+ ['M08 tags recortados',s=>s.replace('.withTags([...REQUIRED_WCAG_TAGS])',".withTags(['wcag2a'])"),'tags WCAG 2.0/2.1/2.2 AA']
+];
+console.log('BASE',JSON.stringify(base));
+const outcomes=mutants.map(([name,fn,key])=>({name,RED:fn(src)!==src&&!guard(fn(src))[key]}));
+console.log('MUTACIONES',JSON.stringify(outcomes));
+if(Object.values(base).some(x=>!x)||outcomes.some(x=>!x.RED))process.exitCode=1;
+```
+
+Para reproducir sin archivos añadidos al repositorio: guardar lo anterior en `/tmp/pr253-r5-guards.mjs`; checkout limpio de SHA `66630c1a548639be0e553e28685739f132050f4c`; ejecutar `node /tmp/pr253-r5-guards.mjs "$PWD/e2e/specs/uploads-a11y.spec.ts"`. **No se ejecutaron Docker ni Supabase localmente ni Playwright mutado.**

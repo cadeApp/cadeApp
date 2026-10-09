@@ -11,7 +11,16 @@
 | **SHA R3** | `d7b7f40a80d8619ad126df6369ddaa8e45f9ad10` |
 | **SHA R4 funcional revisado** | `f3d783ba44c5cbe15f8b5c2485a18d91a93d202d` |
 | **develop al revisar R4** | `a773c05cc488a1fc60bfb36512cdca35d12d1271` |
-| **Estado** | **BLOQUEADA POR DEFECTOS EXTERNOS (2)** |
+| **Estado** | **SIN BLOQUEANTES — RONDA 5; PR Draft hasta decisión P1** |
+
+## Estado de Ronda 5 — 2026-10-09
+
+- Revisión de `66630c1a548639be0e553e28685739f132050f4c` contra develop `8ebd5e2`; sin cambios nuevos en spec desde la ronda 4.
+- Integrados T-350 y T-351. `e2e-preview` `37995617834` contra Preview de SHA exacto: **8/8 T-309 PASS**, 67 Chromium + 3 global-settings PASS.
+- CI `37995517926`: todos los siete jobs PASS. 
+- 12 hallazgos R1–R4 conservan trazabilidad; no se encontraron nuevos bloqueantes.
+- Issues externos #296 y #297 siguen abiertos administrativamente pese a los fixes mergeados; seguimiento separado.
+- [Informe de Ronda 5](revisiones/ronda-5.md). PR en Draft; Lautaro073 decide pasar a Ready y mergear una vez finalicen los checks que disparan los archivos de revisión.
 
 ## Rondas
 
