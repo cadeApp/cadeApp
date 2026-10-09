@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
 import { Store, Phone, MapPin, AlertTriangle, AlertCircle, Info, Crosshair } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
 import { Badge } from '@/ui/badge';
@@ -30,8 +29,6 @@ interface MerchantOnboardingFormProps {
 }
 
 export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
-  const router = useRouter();
-
   const [coordsError, setCoordsError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -128,8 +125,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         return;
       }
 
-      router.push(result.data.redirectTo);
-      router.refresh();
+      window.location.assign(result.data.redirectTo);
     } catch {
       setErrorMessage(merchantCopy.onboarding.errorGeneric);
     }
