@@ -1821,6 +1821,104 @@ const SPEC_PENDING_MERGE = [
   },
 ];
 
+/**
+ * Quita comentarios de bloque y de línea (`//` al inicio o tras un espacio; no toca `://` ni regex literales), para
+ * que una aserción comentada no cuente como código.
+ * @param {string} source
+ */
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/.*$/gm, '$1');
+}
+
+/**
+ * Cuerpo balanceado `{ … }` que abre en la primera aparición de `opener` desde `from`. Devuelve null si no cierra:
+ * ante una extracción dudosa el control falla, nunca queda verde.
+ * @param {string} source @param {number} from @param {string} opener
+ */
+function balancedBody(source, from, opener) {
+  const open = source.indexOf(opener, from);
+  if (from < 0 || open < 0) return null;
+  const start = open + opener.length - 1;
+  let depth = 0;
+  for (let i = start; i < source.length; i += 1) {
+    if (source[i] === '{') depth += 1;
+    else if (source[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/** @param {string} source @param {string} title */
+function testBody(source, title) {
+  return balancedBody(source, source.indexOf(`test('${title}'`), '=> {');
+}
+
+/** @param {string} source @param {string} name */
+function helperBody(source, name) {
+  return balancedBody(source, source.indexOf(`async function ${name}(`), ') {');
+}
+
+// PR315-H01: oráculo del caso que cada mutación tiene que romper, ligado al caso y no a todo el archivo.
+const CASE_ORACLES = {
+  't313-courier-merchant-guard': {
+    helper: 'expectMerchantPanelBlocked',
+    helperAssertion: 'await expect(page).toHaveURL(expectedUrl);',
+    loop: /for \(const \{ path, expectedUrl \} of routes\) \{\s*await expectMerchantPanelBlocked\(page, path, expectedUrl\);\s*\}/,
+    firstPath: '/merchant/dashboard',
+  },
+};
+
+/**
+ * Problemas del vínculo entre el caso del spec y `expectedFailure`. Vacío = el caso sigue ejercitando la aserción.
+ * @param {string} spec @param {{ id: string, grep: string, expectedFailure: string[] }} mutation
+ * @returns {string[]}
+ */
+function caseOracleProblems(spec, mutation) {
+  const code = stripComments(spec);
+  const body = testBody(code, mutation.grep);
+  if (!body) return [`no se pudo aislar el cuerpo de test('${mutation.grep}')`];
+  const [matcher] = mutation.expectedFailure;
+  const helpers = [...body.matchAll(/await (\w+)\(/g)]
+    .map((match) => helperBody(code, match[1] ?? ''))
+    .filter((helper) => helper !== null);
+  /** @type {string[]} */
+  const problems = [];
+  if (![body, ...helpers].some((source) => source.includes(`.${matcher}(`))) {
+    problems.push(`el caso ni sus helpers llaman .${matcher}(`);
+  }
+  const oracle = CASE_ORACLES[/** @type {keyof typeof CASE_ORACLES} */ (mutation.id)];
+  if (!oracle) return problems;
+
+  const helper = helperBody(code, oracle.helper);
+  if (!helper || !helper.includes(oracle.helperAssertion)) {
+    problems.push(`${oracle.helper} no ejecuta ${oracle.helperAssertion}`);
+  }
+  if (!oracle.loop.test(body)) {
+    problems.push(`el caso no recorre las rutas llamando a ${oracle.helper}(page, path, expectedUrl)`);
+  }
+  const pattern = mutation.expectedFailure
+    .map((detail) => /^Expected pattern: (\/.+\/)$/.exec(detail)?.[1])
+    .find(Boolean);
+  if (!pattern) {
+    problems.push('expectedFailure no declara el patrón de URL esperado');
+    return problems;
+  }
+  const routes = [...body.matchAll(/\{ path: '([^']+)', expectedUrl: (\/.+?\/) \}/g)].map((match) => ({
+    path: match[1] ?? '',
+    expectedUrl: match[2] ?? '',
+  }));
+  const [first] = routes;
+  if (first?.path !== oracle.firstPath || first.expectedUrl !== pattern) {
+    problems.push(`la primera ruta del caso no es ${oracle.firstPath} → ${pattern}`);
+  }
+  for (const route of routes.filter((r) => r.path.startsWith('/merchant/') && r.expectedUrl !== pattern)) {
+    problems.push(`${route.path} no espera ${pattern}`);
+  }
+  return problems;
+}
+
 test('e2e-mutation catalog is valid and each patch applies cleanly to the current code', async () => {
   const { parseManifest, validatePatch } = await import('./e2e-mutation.mjs');
   const catalog = new URL('../../e2e/mutations/', import.meta.url);
@@ -1865,8 +1963,101 @@ test('e2e-mutation catalog is valid and each patch applies cleanly to the curren
     }
     const spec = readFileSync(specUrl, 'utf8');
     assert.ok(spec.includes(`test('${mutation.grep}'`), `${mutation.id}: el caso existe en ${mutation.spec}`);
-    assert.ok(spec.includes(`.${matcher}(`), `${mutation.id}: ${mutation.spec} usa ${matcher}`);
+    assert.deepEqual(caseOracleProblems(spec, mutation), [], `${mutation.id}: el caso ejercita expectedFailure`);
   }
+});
+
+test('e2e-mutation case oracle is bound to the courier case, its loop and its helper (PR315-H01)', () => {
+  // Copia literal del helper y del caso de e2e/specs/merchant-registration.spec.ts (PR #251, 77d430b).
+  const spec = [
+    'async function expectMerchantPanelBlocked(page: Page, path: string, expectedUrl: RegExp) {',
+    '  await page.goto(path);',
+    '  await expect(page).toHaveURL(expectedUrl);',
+    '  await waitForNoSkeletons(page);',
+    "  await expect(page.getByRole('heading', { name: MERCHANT_PANEL_HEADING })).toHaveCount(0);",
+    '}',
+    '',
+    "test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {",
+    "  test('DoD: Alta completa y panel visible', async ({ page }) => {",
+    '    await expect(page).toHaveURL(/\\/merchant\\/dashboard/);',
+    '  });',
+    '',
+    "  test('DoD: Un courier no entra a (merchant)', async ({ page, loginAsCourier }) => {",
+    '    await loginAsCourier(0, page);',
+    '',
+    '    const routes: Array<{ path: string; expectedUrl: RegExp }> = [',
+    "      { path: '/merchant/dashboard', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/history', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/onboarding', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/plan', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/requests', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/requests/new', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/merchant/requests/e2e-denied', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/onboarding', expectedUrl: /\\/courier\\/onboarding\\/identity/ },",
+    "      { path: '/requests', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/requests/new', expectedUrl: /\\/courier\\/feed/ },",
+    "      { path: '/requests/e2e-denied', expectedUrl: /\\/courier\\/feed/ },",
+    '    ];',
+    '',
+    '    for (const { path, expectedUrl } of routes) {',
+    '      await expectMerchantPanelBlocked(page, path, expectedUrl);',
+    '    }',
+    '  });',
+    '});',
+    '',
+  ].join('\n');
+  const mutation = {
+    id: 't313-courier-merchant-guard',
+    grep: 'DoD: Un courier no entra a (merchant)',
+    expectedFailure: ['toHaveURL', 'Expected pattern: /\\/courier\\/feed/'],
+  };
+  assert.deepEqual(caseOracleProblems(spec, mutation), [], 'control: el spec de #251 tal cual');
+
+  /** @param {string} from @param {string} to */
+  const mutate = (from, to) => {
+    assert.ok(spec.includes(from), `la mutación aplica: ${from}`);
+    return caseOracleProblems(spec.replace(from, to), mutation);
+  };
+  const helperAssertion = '  await expect(page).toHaveURL(expectedUrl);';
+  const loopCall = '      await expectMerchantPanelBlocked(page, path, expectedUrl);';
+  const dashboard = "{ path: '/merchant/dashboard', expectedUrl: /\\/courier\\/feed/ }";
+  const history = "{ path: '/merchant/history', expectedUrl: /\\/courier\\/feed/ }";
+  const helperMissing = 'expectMerchantPanelBlocked no ejecuta await expect(page).toHaveURL(expectedUrl);';
+  const loopMissing = 'el caso no recorre las rutas llamando a expectMerchantPanelBlocked(page, path, expectedUrl)';
+
+  // Batería del revisor (ronda 1): M1, M2 y M3.
+  assert.deepEqual(mutate(helperAssertion, '  /* M1: URL oracle omitted */'), [
+    'el caso ni sus helpers llaman .toHaveURL(',
+    helperMissing,
+  ]);
+  assert.deepEqual(mutate(loopCall, '      /* M2: check omitted */'), [
+    'el caso ni sus helpers llaman .toHaveURL(',
+    loopMissing,
+  ]);
+  assert.deepEqual(mutate(dashboard, dashboard.replace('/\\/courier\\/feed/', '/\\/merchant\\/dashboard/')), [
+    'la primera ruta del caso no es /merchant/dashboard → /\\/courier\\/feed/',
+    '/merchant/dashboard no espera /\\/courier\\/feed/',
+  ]);
+  // Variantes propuestas para la ronda siguiente: negación, bucle comentado, otra ruta merchant y orden.
+  assert.deepEqual(mutate(helperAssertion, '  await expect(page).not.toHaveURL(expectedUrl);'), [helperMissing]);
+  assert.deepEqual(mutate(helperAssertion, `  // ${helperAssertion.trim()}`), [
+    'el caso ni sus helpers llaman .toHaveURL(',
+    helperMissing,
+  ]);
+  assert.deepEqual(mutate(loopCall, `      // ${loopCall.trim()}`), [
+    'el caso ni sus helpers llaman .toHaveURL(',
+    loopMissing,
+  ]);
+  assert.deepEqual(mutate(history, history.replace('/\\/courier\\/feed/', '/\\/login/')), [
+    '/merchant/history no espera /\\/courier\\/feed/',
+  ]);
+  assert.deepEqual(mutate(`      ${dashboard},\n      ${history},`, `      ${history},\n      ${dashboard},`), [
+    'la primera ruta del caso no es /merchant/dashboard → /\\/courier\\/feed/',
+  ]);
+  assert.deepEqual(
+    caseOracleProblems(spec, { ...mutation, grep: 'DoD: Un courier no entra a merchant' }),
+    ["no se pudo aislar el cuerpo de test('DoD: Un courier no entra a merchant')"]
+  );
 });
 
 test('e2e-mutation catalog defers a spec only for the exact pending entry (D06-C)', () => {
