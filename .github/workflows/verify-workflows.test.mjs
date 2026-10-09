@@ -1971,14 +1971,14 @@ function caseOracleProblems(spec, mutation) {
   const routesAt = statements.findIndex((statement) => oracle.routes.test(statement));
   const loopAt = statements.indexOf(oracle.loop);
   if (routesAt < 0) problems.push('el caso no declara routes en su primer nivel');
-  if (loopAt < 0 || loopAt < routesAt) {
-    problems.push(`el caso no recorre routes en su primer nivel llamando a ${oracle.helper}(page, path, expectedUrl)`);
+  if (routesAt < 0 || loopAt !== routesAt + 1) {
+    problems.push(`el caso no recorre routes justo después de declararlas llamando a ${oracle.helper}(page, path, expectedUrl)`);
   }
   const helper = helperBody(code, oracle.helper);
   const steps = helper ? topLevelStatements(helper) : [];
   const [goto, assertion] = oracle.helperSteps;
-  if (!steps.some((step, index) => step === goto && steps[index + 1] === assertion)) {
-    problems.push(`${oracle.helper} no ejecuta ${goto} seguido de ${assertion}`);
+  if (steps[0] !== goto || steps[1] !== assertion) {
+    problems.push(`${oracle.helper} no empieza con ${goto} seguido de ${assertion}`);
   }
   const pattern = mutation.expectedFailure
     .map((detail) => /^Expected pattern: (\/.+\/)$/.exec(detail)?.[1])
@@ -2110,9 +2110,9 @@ test('e2e-mutation case oracle is bound to the courier login, its loop and its h
   const loopClose = `${loopCall}\n    }`;
   const noMatcher = 'el caso ni sus helpers llaman .toHaveURL(';
   const helperMissing =
-    'expectMerchantPanelBlocked no ejecuta await page.goto(path); seguido de await expect(page).toHaveURL(expectedUrl);';
+    'expectMerchantPanelBlocked no empieza con await page.goto(path); seguido de await expect(page).toHaveURL(expectedUrl);';
   const loopMissing =
-    'el caso no recorre routes en su primer nivel llamando a expectMerchantPanelBlocked(page, path, expectedUrl)';
+    'el caso no recorre routes justo después de declararlas llamando a expectMerchantPanelBlocked(page, path, expectedUrl)';
   const loginMissing = 'el caso no empieza con await loginAsCourier(0, page);';
   const wrongFirst = 'la primera ruta del caso no es /merchant/dashboard → /\\/courier\\/feed/';
 
@@ -2143,10 +2143,17 @@ test('e2e-mutation case oracle is bound to the courier login, its loop and its h
     [loopMissing],
     'X4: el bucle inalcanzable'
   );
-  // Variantes del login pedidas para H02: otro rol, comentado e inalcanzable.
+  // Variantes del login pedidas para H02: otro rol, comentado, string, inalcanzable y después de otra sentencia.
   assert.deepEqual(mutate(login, '    await loginAsMerchant(0, page);'), [loginMissing]);
   assert.deepEqual(mutate(login, `    // ${login.trim()}`), [loginMissing]);
+  assert.deepEqual(mutate(login, `    const decoy = '${login.trim()}';`), [loginMissing]);
   assert.deepEqual(mutate(login, `    if (false) { ${login.trim()} }`), [loginMissing]);
+  assert.deepEqual(mutate(login, `    await page.goto('/');\n${login}`), [loginMissing]);
+  // Adyacencias exigidas: nada entre la tabla de rutas y el bucle, ni antes de goto + toHaveURL en el helper.
+  assert.deepEqual(mutate(loopOpen, `    if (false) {}\n${loopOpen}`), [loopMissing]);
+  assert.deepEqual(mutate('  await page.goto(path);', "  await page.goto('/');\n  await page.goto(path);"), [
+    helperMissing,
+  ]);
   // Variantes del autor: negación, comentarios, otra ruta merchant y orden de las rutas.
   assert.deepEqual(mutate(helperAssertion, '  await expect(page).not.toHaveURL(expectedUrl);'), [helperMissing]);
   assert.deepEqual(mutate(helperAssertion, `  // ${helperAssertion.trim()}`), [noMatcher, helperMissing]);
