@@ -48,3 +48,11 @@ Android físico a cargo de P1 **tras** resolver todos los bloqueantes técnicos.
 [Informe R7](revisiones/ronda-7.md) · [Evidencia R7](evidencia/ronda-7.md).
 
 **CON BLOQUEANTE:** R03 (Chromium shell no emula standalone), H07 (E2E Preview 45 passed / 1 failed). H11 y H12 ahora **arreglado-verificado** por E2E real; H13 eliminó prueba artificial, pendiente mutación RED propia; R01 y H08 conservan CI verde. Antes de pedir autorización para editar workflow o DoD, investigar `channel:'chromium'`, `headless:true` en el propio spec permitido. Android físico P1 solo al cerrar revisión técnica.
+
+## Ronda 8 — HEAD funcional `74fd2150c629b396ff9843cd285e70b93cbd42cb`
+
+[Informe R8](revisiones/ronda-8.md) · [Evidencia R8](evidencia/ronda-8.md).
+
+**SIN BLOQUEANTES TÉCNICOS en HEAD inspeccionado.** CI general success; trusted E2E Preview 46 Chromium + 3 global-settings passed; R03/H07 resueltos mediante Chromium completo `channel:'chromium'` con `--app`, native display-mode true, CSS anti-flash real, redirección `/login`. First Load JS 138/138/169/169 kB <=180. **Siguiente gate: Android físico P1**, sobre mismo origen en actualización; no merge todavía.
+
+Matiz: el test automatizado instrumenta una segunda navegación a `/`, no el primer auto-launch de `--app`. El arranque frío/actualización se comprueba humanamente. Mutación RED local del autor no reproducida independientemente. Sin modificaciones de código por revisor.
