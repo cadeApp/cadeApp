@@ -31,7 +31,7 @@
       "grep": "DoD: Un courier no entra a (merchant)",
       "expectedFailure": [
         "toHaveURL",
-        "courier\\/feed"
+        "Expected pattern: /\\/courier\\/feed/"
       ]
     }
   ]
