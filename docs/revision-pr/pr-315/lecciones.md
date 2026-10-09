@@ -23,3 +23,11 @@ No se reserva un `AG-xx` nuevo: para asignarlo hay que calcular el máximo **en 
 El arreglo de H01 superó las tres mutaciones originales pero aún acepta como oráculo una **cadena literal**, una aserción dentro de `if (false)` y un bucle inalcanzable. Una prueba de autorización no puede clasificarse como courier si el caso ya no ejecuta `loginAsCourier` (H02). El caso y su helper requieren comprobación de **instrucciones ejecutables** y autenticación, no solo coincidencias de texto.
 
 Los detectores basados en texto tienen límites; no prometer análisis semántico completo. Para este caso estrecho se puede exigir la secuencia de sentencias top-level conocida (decisión 1-A) y demostrar mutaciones independientes. Evitar AST genérico salvo justificación de escala. No crear una nueva regla `AG-xx` sin enumerar el máximo de todas las ramas.
+
+## Ronda 3 — salidas anticipadas y límite de analizadores estáticos
+
+H01 y H02 se corrigieron sin modificar el spec productivo: el detector liga login, rutas y helper a instrucciones de primer nivel. El revisor comprobó que una sentencia `return` o `throw` inmediatamente después del login invalidaba el test, pero escapaba al detector mientras solo exigía adyacencia entre la declaración `routes` y el bucle. Microfix de 1 condición: si existe login válido, la declaración `routes` debe ser la **segunda** sentencia de primer nivel. Se añadieron dos casos de regresión; se mantienen válidas sentencias inocuas posteriores al bucle.
+
+**Límite documentado:** esto no constituye una prueba semántica general del código TypeScript; no hay análisis AST, y la lista de rutas se valida parcialmente. La garantía final de `RED_CONFIRMED` sigue siendo la mutación E2E real posmerge en T-347. No recomendar un parser grande solo por hipótesis futuras sin casos concretos.
+
+**Disciplina de evidencia:** 13 comprobaciones ejecutadas directamente contra el verificador puro extraído del HEAD, no la suite completa `node --test` ni un Playwright mutado local. Los checks del HEAD de la PR sí provienen de GitHub CI. No confundir los métodos.

@@ -158,3 +158,34 @@ for (const [id, from, to] of changes) {
 ```
 
 > Controles: no `eval` de código de aplicación, `vm` solo ejecuta las funciones puras extraídas del test revisado en un sandbox Node efímero; no escribe en el repo, no requiere Supabase ni secretos. El spec se obtiene de PR #251 por git, nunca se edita. En futuros refactors del test, si no se encuentra el cuerpo, el harness falla en vez de afirmar falsos GREEN.
+
+## Ronda 3 — verificaciones independientes y microfix de salida anticipada
+
+**Código evaluado:** `caseOracleProblems` y funciones auxiliares extraídas sin modificar del archivo `.github/workflows/verify-workflows.test.mjs`, primero en `88e490b` (autor), luego en `849d235` (microfix). **Entrada:** texto real de `e2e/specs/merchant-registration.spec.ts` del HEAD de PR #251 `77d430b`. Las mutaciones son sustituciones de cadenas solo en memoria: no se editó el spec real.
+
+| Test | Sobre 88e490b | Sobre 849d235 |
+|---|---|---|
+| CONTROL | GREEN | GREEN |
+| Y1: `return;` inmediatamente tras `await loginAsCourier(0, page);` | GREEN indebido | RED |
+| Y2: `throw new Error('early exit');` tras login | GREEN indebido | RED |
+| M1, M2, M3, X1, X2, X3, X4, L1, A1 | no regresión detectada | RED correctos |
+| Z1: `console.log('finished');` después del bucle | GREEN | GREEN |
+
+Resultado independiente de la batería final: **13/13 esperado** (2 controles GREEN, 11 mutaciones RED; contado por caso). El criterio `routesAt !== 1` se comprueba solo si `statements[0] === oracle.login`, para no duplicar errores sobre mutaciones donde el login ya falta. Se añadieron **2 asserts de regresión** en la suite fuente, además de los 77 tests existentes; el número de tests de Node sigue siendo 77 porque los asserts viven dentro de un mismo `test(...)`.
+
+**No se afirma:** ejecución local del repositorio completo por el revisor, `git apply --check` por el revisor ni RED de seguridad Playwright real. La verificación auténtica del runtime CI/E2E corre desde GitHub sobre SHA fijado y el dispatch de mutación queda posmerge.
+
+Para repetir una mutación aislada del checker real sin manipular el árbol de GitHub, usar el harness del bloque de Ronda 2 de este archivo con `git fetch origin refs/pull/251/head`, y agregar:
+
+```javascript
+const login = '    await loginAsCourier(0, page);';
+for (const [id, postfix] of [
+  ['Y1-early-return', '    return;'],
+  ['Y2-early-throw', "    throw new Error('early exit');"],
+]) {
+  const changed = spec.replace(login, login + '\n' + postfix);
+  assert.notEqual(changed, spec, id + ': mutación no aplicada');
+  const failures = check(changed);
+  console.log(id, failures.length ? 'RED' : 'SURVIVED', failures);
+}
+```

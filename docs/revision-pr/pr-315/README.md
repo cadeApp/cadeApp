@@ -10,7 +10,7 @@
 | Base al inicio | `24aad21f800f0d13fdeb082f9807b8eaf1f10fba` |
 | Develop después de #314 | `92cd258545f25e162ada062c0c22c02ff17840b8` |
 | Alcance | 4 archivos, +185/-8 (antes de la revisión) |
-| Estado | **Ronda 2: CON BLOQUEANTES (2)**; PR abierta; no aprobada ni mergeada |
+| Estado | **Ronda 3: SIN BLOQUEANTES DE CÓDIGO**; PR abierta; no aprobada ni mergeada, CI del nuevo HEAD pendiente de revalidación |
 
 ## Rondas
 
@@ -18,29 +18,29 @@
 |---|---|---|---|
 | 1 | `c6220ba587ffaab7c27fe83f2746600d60e0cbb7` | 1 bloqueante | [ronda-1](revisiones/ronda-1.md) |
 | 2 | `cc1f5fde8b4330db6ae1485e8297072785103cbe` | 2 bloqueantes (H01 parcial, H02 nuevo) | [ronda-2](revisiones/ronda-2.md) |
+| 3 | `88e490b5f0912276c0b3b62779c5f9cfde0be275` + microfix `849d2357a9e1f7313b7d37eff4f98e47bf7141ba` | 0 bloqueantes abiertos | [ronda-3](revisiones/ronda-3.md) |
 
 ## Hallazgos
 
 | ID | Título | Severidad | Estado |
 |---|---|---|---|
-| PR315-H01 | El oráculo `toHaveURL` puede estar inactivo o ser un string | alto | parcial |
-| PR315-H02 | Falta validar que el caso inicia sesión como courier | alto | abierto |
+| PR315-H01 | El oráculo `toHaveURL` puede estar inactivo o ser un string | alto | arreglado-verificado en `849d235` |
+| PR315-H02 | Falta validar que el caso inicia sesión como courier | alto | arreglado-verificado en `849d235` |
 
 [Datos estructurados](hallazgos.jsonl) · [Evidencia y harness](evidencia/comandos.md) · [Lecciones](lecciones.md)
 
-## Estado de ronda 2
+## Estado de ronda 3
 
-La rama incorporó el merge de PR #314; sobre `cc1f5fd` están verdes unit, db-tests, build, lint, typecheck, audit, bundle-budget y E2E Preview (Chromium 56 + global-settings 3). Approval-policy sigue rojo mientras persistan bloqueantes. Se comprobó el controlador reparado en aislamiento con batería **independiente**; cinco mutaciones sobrevivieron. La validación END-TO-END real de la mutación T-313 sigue siendo posterior al merge de PR #251.
+El autor corrigió H01 y H02 sobre `88e490b`. Revisión independiente ejecutó las funciones **exactas** del HEAD sobre el spec real de PR #251: CONTROL GREEN y mutaciones de login, helper, bucle y patrones RED. Descubrió la ausencia de detección de terminación anticipada `return/throw`, y agregó un **microfix de una condición + dos tests de regresión** en `849d235`; 13/13 verificaciones aisladas terminaron conforme a las expectativas, incluido un cambio benigno posterior al bucle.
 
-## Qué falta
+**Estado de CI:** `88e490b` tiene CI completo y trusted E2E verde (56 chromium + 3 global-settings). `849d235` dispara checks nuevos: ver resultado del SHA nuevo antes de mergear. `approval-policy` solo pasa con informe sin bloqueantes en el cuerpo de la PR. No se ejecutó `repository_dispatch`: PR #251 aún está abierta.
 
-1. Cerrar residuales PR315-H01 y PR315-H02 sin tests falsos: helper con await ejecutable y login como courier comprobado en el cuerpo específico. Nuevos tests RED→GREEN independientes en [ronda-2](revisiones/ronda-2.md).
-2. Actualizar únicamente la bitácora `docs/tasks/log/T-347.md`, commit y push de agy. Prohibido que agy escriba en `docs/revision-pr/**`.
-3. **Ya realizado:** merge de `origin/develop` (incluye PR #314) y E2E Preview verde sobre `cc1f5fd`; repetir checks sobre el HEAD del próximo arreglo, sin atribuirle el verde de un SHA anterior.
-4. Nueva revisión independiente del nuevo SHA; cada corrección requiere mutaciones adicionales del revisor. No ejecutar `repository_dispatch` hasta que #251 esté mergeada en develop.
-5. Posteriormente: merge de #315 solo por Lautaro073, integración de develop en #251, merge de #251 decidido por Lautaro073 y recién entonces mutación `t313-courier-merchant-guard` con `RED_CONFIRMED` y artifact minimizado.
+## Qué falta antes del merge
 
-**Decisiones de Lautaro073 (2026-10-09):** 1-A validación del helper/caso concreto; 2-A mergear #314 primero. #314 se mergeó como `92cd258545f25e162ada062c0c22c02ff17840b8`.
+1. Verificar en GitHub CI y trusted E2E los **checks del HEAD final** (no heredar los del código `88e490b`).
+2. Lautaro073 decide si mergea PR #315; el revisor **no aprueba ni mergea**.
+3. Luego Kira integra `develop` en PR #251, valida CI + trusted Preview y solicita revisión independiente. Solo después del merge autorizado de #251 podrá despacharse `t313-courier-merchant-guard` contra `develop` con control GREEN, mutante RED y `RED_CONFIRMED`. Si falla, registrar resultado real sin adulterar test/expectedFailure.
+4. X5 (eliminar una ruta merchant secundaria) no queda cubierto por la validación estructural; es una limitación conocida no bloqueante del catálogo para una mutación que apunta a la guarda general. Revisar cobertura completa de rutas en T-313, no en T-347.
 
 ## Nota de alcance
 
