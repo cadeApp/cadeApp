@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -1797,26 +1805,77 @@ test('e2e-mutation classifies RED only when the expected assertion fails after a
   assert.deepEqual(caseResults(report, 'No existe'), []);
 });
 
+// Mutaciones que el catálogo tiene que conservar siempre (PR254-H05). El catálogo puede crecer, nunca perderlas.
+const REQUIRED_MUTATION_IDS = ['t302-mfa-route-guard', 't302-dni-dedup-other-courier'];
+
+// D06-C: la mutación entra al catálogo antes del merge del spec que la ejercita. Cada entrada fija id, spec y caso
+// exactos; solo difiere la lectura del spec mientras el archivo no exista en el árbol. Cuando el spec llega, la
+// validación completa vuelve sola, sin tocar esta lista. Nada más se difiere: patch, `git apply --check`, rutas y
+// `expectedFailure` se validan siempre.
+const SPEC_PENDING_MERGE = [
+  {
+    id: 't313-courier-merchant-guard',
+    spec: 'e2e/specs/merchant-registration.spec.ts',
+    grep: 'DoD: Un courier no entra a (merchant)',
+    pullRequest: 251,
+  },
+];
+
 test('e2e-mutation catalog is valid and each patch applies cleanly to the current code', async () => {
   const { parseManifest, validatePatch } = await import('./e2e-mutation.mjs');
   const catalog = new URL('../../e2e/mutations/', import.meta.url);
   const manifest = parseManifest(JSON.parse(readFileSync(new URL('manifest.json', catalog), 'utf8')));
   assert.equal(manifest.ok, true, manifest.ok ? '' : manifest.reason);
   if (!manifest.ok) return;
+  const ids = manifest.mutations.map((mutation) => mutation.id);
+  assert.equal(new Set(ids).size, ids.length, 'ids únicos');
+  for (const id of REQUIRED_MUTATION_IDS) {
+    assert.ok(ids.includes(id), `el catálogo conserva ${id} (PR254-H05)`);
+  }
+  const patchFiles = readdirSync(catalog).filter((name) => name.endsWith('.patch'));
   assert.deepEqual(
-    manifest.mutations.map((mutation) => mutation.id),
-    ['t302-mfa-route-guard', 't302-dni-dedup-other-courier'],
-    'catálogo inicial de PR254-H05'
+    patchFiles.sort(),
+    manifest.mutations.map((mutation) => mutation.patch).sort(),
+    'cada patch del catálogo tiene su entrada en el manifest y viceversa'
   );
+
   const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
   for (const mutation of manifest.mutations) {
     const patchPath = fileURLToPath(new URL(mutation.patch, catalog));
     const validated = validatePatch(readFileSync(patchPath, 'utf8'));
     assert.equal(validated.ok, true, `${mutation.id}: ${validated.ok ? '' : validated.reason}`);
-    const spec = readFileSync(new URL(`../../${mutation.spec}`, import.meta.url), 'utf8');
-    assert.ok(spec.includes(`test('${mutation.grep}'`), `${mutation.id}: el caso existe en ${mutation.spec}`);
     const check = spawnSync('git', ['apply', '--check', patchPath], { cwd: repoRoot, encoding: 'utf8' });
     assert.equal(check.status, 0, `${mutation.id}: ${check.stderr}`);
+
+    // La primera expectativa es el matcher de Playwright que tiene que fallar; el resto, su texto concreto.
+    const [matcher, ...details] = mutation.expectedFailure;
+    assert.match(matcher ?? '', /^to[A-Z][A-Za-z]+$/, `${mutation.id}: expectedFailure empieza por el matcher`);
+    assert.ok(details.length > 0, `${mutation.id}: expectedFailure detalla la aserción además del matcher`);
+
+    const specUrl = new URL(`../../${mutation.spec}`, import.meta.url);
+    if (!existsSync(specUrl)) {
+      const pending = SPEC_PENDING_MERGE.find((entry) => entry.id === mutation.id);
+      assert.ok(pending, `${mutation.id}: ${mutation.spec} no existe y la mutación no tiene spec pendiente de merge`);
+      assert.deepEqual(
+        { spec: mutation.spec, grep: mutation.grep },
+        { spec: pending?.spec, grep: pending?.grep },
+        `${mutation.id}: el spec pendiente (PR #${pending?.pullRequest}) es exactamente el declarado`
+      );
+      continue;
+    }
+    const spec = readFileSync(specUrl, 'utf8');
+    assert.ok(spec.includes(`test('${mutation.grep}'`), `${mutation.id}: el caso existe en ${mutation.spec}`);
+    assert.ok(spec.includes(`.${matcher}(`), `${mutation.id}: ${mutation.spec} usa ${matcher}`);
+  }
+});
+
+test('e2e-mutation catalog defers a spec only for the exact pending entry (D06-C)', () => {
+  assert.ok(SPEC_PENDING_MERGE.length <= 1, 'una sola mutación con spec pendiente de merge a la vez');
+  for (const entry of SPEC_PENDING_MERGE) {
+    assert.ok(!REQUIRED_MUTATION_IDS.includes(entry.id), `${entry.id}: las mutaciones de T-302 nunca se difieren`);
+    assert.match(entry.spec, /^e2e\/specs\/[a-z0-9][a-z0-9-]*\.spec\.ts$/, `${entry.id}: spec del proyecto chromium`);
+    assert.ok(entry.grep.startsWith('DoD: '), `${entry.id}: título exacto del caso del spec`);
+    assert.ok(Number.isInteger(entry.pullRequest) && entry.pullRequest > 0, `${entry.id}: PR que trae el spec`);
   }
 });
 
