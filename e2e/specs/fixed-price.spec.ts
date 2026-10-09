@@ -144,6 +144,9 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
         name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
       });
       await confirmButton.click();
+      // La toma terminó en el servidor: la hoja se cierra y avisa el éxito. Sin esto, el oráculo leía la base
+      // mientras el botón todavía decía «Tomando pedido...».
+      await expect(courierBrowserPage.getByText('¡Pedido tomado con éxito!')).toBeVisible();
 
       // 10. Oráculo server-side en PostgreSQL: la solicitud quedó matched de inmediato
       const matchedInspection = await getRequestInspectionData(stagingContext, requestId);
@@ -235,6 +238,9 @@ test.describe('T-339 — Precio de envío opcional y toma directa', () => {
         name: new RegExp(`tomar a \\${formatArs(fixedPrice)}`, 'i'),
       });
       await confirmButton.click();
+      // La toma terminó en el servidor: la hoja se cierra y avisa el éxito. Sin esto, el oráculo leía la base
+      // mientras el botón todavía decía «Tomando pedido...».
+      await expect(courierBrowserPage.getByText('¡Pedido tomado con éxito!')).toBeVisible();
     } finally {
       await courierContext.close();
     }
