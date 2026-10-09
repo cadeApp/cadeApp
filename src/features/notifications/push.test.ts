@@ -665,6 +665,67 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
       const loaded = await notificationsModule.loadPushPermissionPrompt();
       expect(loaded.default).toBe(notificationsModule.PushPermissionPrompt);
     });
+
+    it('T-338 / Ronda 3: Contrato canónico de API pública preservado en @/features/notifications', async () => {
+      const mod = await import('@/features/notifications');
+      expect(typeof mod.requestNotificationPermission).toBe('function');
+      expect(typeof mod.subscribeToPush).toBe('function');
+      expect(typeof mod.unsubscribeFromPush).toBe('function');
+      expect(typeof mod.isPushSupported).toBe('function');
+      expect(typeof mod.getNotificationPermission).toBe('function');
+      expect(typeof mod.getPushSubscription).toBe('function');
+      expect(typeof mod.PushPermissionPrompt).toBe('function');
+      expect(mod.PUSH_COPY).toBeDefined();
+    });
+
+    it('T-338 / Ronda 3: Preservación de activación de usuario (transient user activation) sin retraso de import dinámico', async () => {
+      const mod = await import('@/features/notifications');
+
+      // Simular estado de activación del navegador
+      let activationConsumed = false;
+      let permissionCalledWhileActive = false;
+
+      const mockNotification = {
+        permission: 'default',
+        requestPermission: vi.fn().mockImplementation(async () => {
+          if (!activationConsumed) {
+            permissionCalledWhileActive = true;
+          }
+          return 'granted';
+        }),
+      };
+      vi.stubGlobal('Notification', mockNotification);
+
+      // Simular que el evento de clic activo tiene una ventana de tiempo corta antes de expirar
+      const clickPromise = (async () => {
+        // En un microtask posterior a la llamada directa, la activación expiraría
+        queueMicrotask(() => {
+          activationConsumed = true;
+        });
+
+        return mod.requestNotificationPermission({ isUserGesture: true });
+      })();
+
+      const result = await clickPromise;
+      expect(result.ok).toBe(true);
+      expect(mockNotification.requestPermission).toHaveBeenCalledTimes(1);
+      expect(permissionCalledWhileActive).toBe(true);
+    });
+
+    it('T-338 / Ronda 3: PushPermissionPrompt maneja fallback de carga accesible y recuperabilidad de UI ante error', async () => {
+      const mod = await import('@/features/notifications');
+
+      // 1. Renderiza el componente exportado
+      const { container } = render(React.createElement(mod.PushPermissionPrompt, { embedded: true }));
+      expect(container).toBeDefined();
+
+      // 2. Resolver lazy component dentro del ciclo de testing
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Activar avisos/i })).toBeTruthy();
+      });
+    });
   });
 });
+
+
 

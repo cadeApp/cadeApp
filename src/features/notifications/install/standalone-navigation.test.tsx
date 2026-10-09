@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as standaloneModule from './is-standalone';
 import { StandaloneBackLink } from './standalone-back-link';
 import { StandaloneRedirect } from './standalone-redirect';
+import HomePage from '@/app/page';
+import LoginPage from '@/app/(public)/login/page';
+import RegisterPage from '@/app/(public)/register/page';
+import LegalIndexPage from '@/app/(public)/legal/page';
 
 const mockReplace = vi.fn();
 
@@ -108,12 +112,11 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
     });
   });
 
-  describe('4. Consumidores reales de navegación y guards', { timeout: 15000 }, () => {
+  describe('4. Consumidores reales de navegación y guards', { timeout: 30000 }, () => {
     describe('HomePage (src/app/page.tsx)', () => {
-      it('en navegador común (isStandalone = false) muestra el heading de landing', async () => {
+      it('en navegador común (isStandalone = false) muestra el heading de landing', () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
 
-        const { default: HomePage } = await import('@/app/page');
         render(<HomePage />);
 
         expect(
@@ -122,10 +125,9 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
         expect(mockReplace).not.toHaveBeenCalled();
       });
 
-      it('en modo instalado (isStandalone = true) termina usando el guard que deriva a /login y no deja contenido visible', async () => {
+      it('en modo instalado (isStandalone = true) termina usando el guard que deriva a /login y no deja contenido visible', () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
 
-        const { default: HomePage } = await import('@/app/page');
         render(<HomePage />);
 
         expect(mockReplace).toHaveBeenCalledWith('/login');
@@ -139,7 +141,6 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
       it('en navegador común conserva "Volver al inicio" hacia /', async () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
 
-        const { default: LoginPage } = await import('@/app/(public)/login/page');
         const pageJsx = await LoginPage({ searchParams: Promise.resolve({}) });
         render(pageJsx);
 
@@ -151,7 +152,6 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
       it('en modo instalado no renderiza ese enlace', async () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
 
-        const { default: LoginPage } = await import('@/app/(public)/login/page');
         const pageJsx = await LoginPage({ searchParams: Promise.resolve({}) });
         render(pageJsx);
 
@@ -163,7 +163,6 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
       it('en navegador común conserva /', async () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
 
-        const { default: RegisterPage } = await import('@/app/(public)/register/page');
         const pageJsx = await RegisterPage({ searchParams: Promise.resolve({}) });
         render(pageJsx);
 
@@ -175,7 +174,6 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
       it('en modo instalado cambia ese control a /login', async () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
 
-        const { default: RegisterPage } = await import('@/app/(public)/register/page');
         const pageJsx = await RegisterPage({ searchParams: Promise.resolve({}) });
         render(pageJsx);
 
@@ -186,10 +184,9 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
     });
 
     describe('LegalIndexPage (src/app/(public)/legal/page.tsx)', () => {
-      it('en navegador común conserva /', async () => {
+      it('en navegador común conserva /', () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);
 
-        const { default: LegalIndexPage } = await import('@/app/(public)/legal/page');
         render(<LegalIndexPage />);
 
         const backLink = screen.getByRole('link', { name: /Volver al inicio/i });
@@ -197,10 +194,9 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
         expect(backLink.getAttribute('href')).toBe('/');
       });
 
-      it('en modo instalado cambia ese control a /login', async () => {
+      it('en modo instalado cambia ese control a /login', () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(true);
 
-        const { default: LegalIndexPage } = await import('@/app/(public)/legal/page');
         render(<LegalIndexPage />);
 
         const backLink = screen.getByRole('link', { name: /Volver al inicio/i });

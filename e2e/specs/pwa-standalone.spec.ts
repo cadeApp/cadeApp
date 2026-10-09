@@ -7,13 +7,31 @@ test.describe('T-338 DoD: PWA Standalone Mode Navigation', () => {
     await expect(page.getByRole('heading', { name: /Tu envío, al precio que elijas/i })).toBeVisible();
     await expect(page.getByRole('link', { name: /Tengo un comercio/i })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe('/');
+
+    const wrapper = page.getByTestId('standalone-redirect-wrapper');
+    if (await wrapper.count() > 0) {
+      const display = await wrapper.evaluate((el) => window.getComputedStyle(el).display);
+      expect(display).toBe('contents');
+    }
   });
 
   test('emulando standalone (matchMedia display-mode: standalone), / termina en /login sin mostrar el contenido de la landing ni emitir destello', async ({
     page,
   }) => {
+    // 1. Emulación fiel del motor del navegador vía Chrome DevTools Protocol (CDP)
+    // Permite que el motor CSS nativo evalúe @media (display-mode: standalone) como true antes del primer paint.
+    try {
+      const client = await page.context().newCDPSession(page);
+      await client.send('Emulation.setEmulatedMedia', {
+        media: 'screen',
+        features: [{ name: 'display-mode', value: 'standalone' }],
+      });
+    } catch {
+      // Fallback transparente si el browser runner no expone CDP
+    }
+
     await page.addInitScript(() => {
-      // 1. Emular standalone en matchMedia y navigator
+      // Emular standalone en matchMedia y navigator para compatibilidad cross-platform / iOS
       const originalMatchMedia = window.matchMedia;
       window.matchMedia = (query: string) => {
         if (query === '(display-mode: standalone)') {
@@ -47,11 +65,21 @@ test.describe('T-338 DoD: PWA Standalone Mode Navigation', () => {
         configurable: true,
       });
 
-      // 2. Sonda pre-navigation que observa visibilidad real en frames (no mera existencia en DOM)
+      // Registrar estado computado del wrapper antes de la redirección
       if (window.sessionStorage.getItem('landing_was_visible') === null) {
         window.sessionStorage.setItem('landing_was_visible', 'false');
       }
 
+      const observer = new MutationObserver(() => {
+        const wrapper = document.querySelector('[data-testid="standalone-redirect-wrapper"]');
+        if (wrapper) {
+          const style = window.getComputedStyle(wrapper);
+          window.sessionStorage.setItem('wrapper_display_before_redirect', style.display);
+        }
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+
+      // Sonda pre-navigation que observa visibilidad real en frames (no mera existencia en DOM)
       function checkLandingVisibility() {
         const headings = document.querySelectorAll('h1');
         for (const heading of headings) {
@@ -103,6 +131,13 @@ test.describe('T-338 DoD: PWA Standalone Mode Navigation', () => {
       window.sessionStorage.getItem('landing_was_visible')
     );
     expect(landingWasVisible).toBe('false');
+
+    const wrapperDisplay = await page.evaluate(() =>
+      window.sessionStorage.getItem('wrapper_display_before_redirect')
+    );
+    if (wrapperDisplay !== null) {
+      expect(wrapperDisplay).toBe('none');
+    }
   });
 });
 

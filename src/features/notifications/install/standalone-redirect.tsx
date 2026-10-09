@@ -34,7 +34,10 @@ export function StandaloneRedirect({ to = '/login', children }: StandaloneRedire
   }
 
   return (
-    <div className="[@media(display-mode:standalone)]:hidden contents">
+    <div
+      data-testid="standalone-redirect-wrapper"
+      className="contents [@media(display-mode:standalone)]:!hidden"
+    >
       {children}
     </div>
   );
