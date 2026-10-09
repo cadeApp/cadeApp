@@ -7,7 +7,10 @@
       "patch": "t302-mfa-route-guard.patch",
       "spec": "e2e/specs/courier-onboarding.spec.ts",
       "grep": "DoD: Falla si se quita el chequeo de MFA en aprobación de repartidor",
-      "expectedFailure": ["toEqual", "/login/mfa?redirectTo=%2Fadmin%2Fapplicants"]
+      "expectedFailure": [
+        "toEqual",
+        "/login/mfa?redirectTo=%2Fadmin%2Fapplicants"
+      ]
     },
     {
       "id": "t302-dni-dedup-other-courier",
@@ -15,7 +18,21 @@
       "patch": "t302-dni-dedup-other-courier.patch",
       "spec": "e2e/specs/courier-onboarding.spec.ts",
       "grep": "DoD: Falla si se quita la deduplicación de DNI en onboarding",
-      "expectedFailure": ["toBeVisible", "ya está registrado|rechazado anteriormente"]
+      "expectedFailure": [
+        "toBeVisible",
+        "ya está registrado|rechazado anteriormente"
+      ]
+    },
+    {
+      "id": "t313-courier-merchant-guard",
+      "invariant": "T-313: un usuario courier no accede a rutas merchant.",
+      "patch": "t313-courier-merchant-guard.patch",
+      "spec": "e2e/specs/merchant-registration.spec.ts",
+      "grep": "DoD: Un courier no entra a (merchant)",
+      "expectedFailure": [
+        "toHaveURL",
+        "Expected pattern: /\\/courier\\/feed/"
+      ]
     }
   ]
 }
