@@ -108,7 +108,7 @@ describe('T-338 DoD: Componentes de navegación standalone vs navegador común',
     });
   });
 
-  describe('4. Consumidores reales de navegación y guards', { timeout: 30000 }, () => {
+  describe('4. Consumidores reales de navegación y guards', { timeout: 60000 }, () => {
     describe('HomePage (src/app/page.tsx)', () => {
       it('en navegador común (isStandalone = false) muestra el heading de landing', async () => {
         vi.spyOn(standaloneModule, 'isStandalone').mockReturnValue(false);

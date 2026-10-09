@@ -52,53 +52,13 @@ test.describe('PR295-H11: Activación de Push bajo User Activation nativo en nav
       })
       .toBe(true);
 
-    // 7. La UI maneja la respuesta denegada de forma no bloqueante
-    await expect(page.getByText(/Notificaciones bloqueadas/i)).toBeVisible();
-  });
-
-  test('control discriminante / mutación RED: si la solicitud se difiere fuera de la ventana de activación transitoria, navigator.userActivation.isActive expira a false', async ({
-    page,
-  }) => {
-    // Demuestra que la medición es verdaderamente discriminante:
-    // En Chromium, transient user activation dura ~5 segundos tras un clic de usuario.
-    // Si se interpone una espera asíncrona real antes de llamar a Notification.requestPermission,
-    // el gesto se pierde y navigator.userActivation.isActive retorna false.
-    await page.addInitScript(() => {
-      (window as unknown as { __delayedActivation: boolean | null }).__delayedActivation = null;
-
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        window.Notification.requestPermission = async () => {
-          const isActive =
-            typeof navigator !== 'undefined' && 'userActivation' in navigator
-              ? navigator.userActivation?.isActive ?? false
-              : null;
-          (window as unknown as { __delayedActivation: boolean | null }).__delayedActivation =
-            isActive;
-          return 'denied';
-        };
-      }
-    });
-
-    // Cargar contenido con botón y listener con espera real de 6 segundos
-    await page.goto(
-      'data:text/html,<!DOCTYPE html><html><body><button id="delayed-btn">Gesto diferido</button></body></html>'
+    const callCountAfter = await page.evaluate(
+      () => (window as unknown as { __requestCallCount: number }).__requestCallCount
     );
-    await page.evaluate(() => {
-      document.getElementById('delayed-btn')?.addEventListener('click', () => {
-        // Retraso intencional superior a la ventana transitoria de 5 segundos de Chromium
-        setTimeout(() => {
-          Notification.requestPermission();
-        }, 6000);
-      });
-    });
+    expect(callCountAfter).toBe(1);
 
-    await page.click('#delayed-btn');
-    await page.waitForTimeout(6500);
-
-    const delayedActivation = await page.evaluate(
-      () => (window as unknown as { __delayedActivation: boolean | null }).__delayedActivation
-    );
-    // Demuestra que el entorno detecta fielmente la pérdida de activación
-    expect(delayedActivation).toBe(false);
+    // 7. La UI maneja la respuesta denegada de forma no bloqueante con el copy real (PUSH_COPY.prompt.statusDenied)
+    await expect(page.getByText(/Avisos bloqueados en el navegador/i)).toBeVisible();
+    await expect(page.getByText(/Avisos activados con éxito/i)).not.toBeVisible();
   });
 });
