@@ -1520,6 +1520,34 @@ function mutationWorkflow() {
   return workflow('e2e-mutation.yml').replace(/\r\n/g, '\n');
 }
 
+/** @param {string} yaml */
+function assertNoRunnerContextInMutationJobEnv(yaml) {
+  // Solo env al nivel del job (4 espacios); env de steps y with pueden usar runner.temp.
+  const blocks = [...yaml.matchAll(/^ {4}env:\n((?: {6}[^\n]*\n)*)/gm)];
+  assert.ok(blocks.length > 0, 'e2e-mutation debe conservar la configuración env del job');
+  for (const [, variables] of blocks) {
+    assert.doesNotMatch(
+      variables,
+      /\$\{\{\s*runner\./,
+      'runner context is unavailable in job env; use RUNNER_TEMP in a step and GITHUB_ENV'
+    );
+  }
+}
+
+test('e2e-mutation rejects runner context at job env level (GitHub Actions validation)', () => {
+  const yaml = mutationWorkflow();
+  assertNoRunnerContextInMutationJobEnv(yaml);
+  // Test del test: la configuración inválida original debe producir RED.
+  const broken = yaml.replace(
+    /^ {4}env:\n/m,
+    '    env:\n      MUTATION_RAW_DIR: ${{ runner.temp }}/e2e-mutation-raw\n'
+  );
+  assert.throws(
+    () => assertNoRunnerContextInMutationJobEnv(broken),
+    /runner context is unavailable in job env/
+  );
+});
+
 test('e2e-mutation payload: target is only the literal develop (PR294-A01)', async () => {
   const { parsePayload } = await import('./e2e-mutation.mjs');
   assert.deepEqual(parsePayload({ target: 'develop', mutation: 't302-mfa-route-guard' }), {
@@ -2395,8 +2423,19 @@ test('e2e-mutation persistable evidence never carries raw Playwright output (PR2
 test('e2e-mutation keeps raw reports out of the artifact and uploads an explicit allowlist (PR294-H02)', () => {
   const yaml = mutationWorkflow();
   const script = workflow('e2e-mutation.mjs');
-  assert.match(yaml, /MUTATION_RAW_DIR: \$\{\{ runner\.temp \}\}\/e2e-mutation-raw\n/);
-  assert.match(yaml, /MUTATION_EVIDENCE_DIR: \$\{\{ runner\.temp \}\}\/e2e-mutation\n/);
+  const initialize = step(job(yaml, 'mutation'), 'Initialize mutation directories');
+  assert.ok(
+    initialize.includes(String.raw`printf 'MUTATION_RAW_DIR=%s/e2e-mutation-raw\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"`),
+    'la ruta raw debe usar RUNNER_TEMP y exportarse a GITHUB_ENV'
+  );
+  assert.ok(
+    initialize.includes(String.raw`printf 'MUTATION_EVIDENCE_DIR=%s/e2e-mutation\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"`),
+    'la ruta minimizada debe usar RUNNER_TEMP y exportarse a GITHUB_ENV'
+  );
+  assert.ok(
+    yaml.indexOf('- name: Initialize mutation directories') < yaml.indexOf('- name: Resolve mutation target'),
+    'las rutas se inicializan antes de usarse'
+  );
   // Los reportes crudos de Playwright y la salida de los procesos nunca se escriben en el directorio del artifact.
   assert.match(script, /join\(rawDir, `\$\{phase\}\.json`\)/);
   assert.doesNotMatch(script, /createWriteStream|\.log`/, 'stdout/stderr van solo a la consola, no a archivos');

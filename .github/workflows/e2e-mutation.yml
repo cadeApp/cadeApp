@@ -34,10 +34,12 @@ jobs:
     env:
       MUTATION_CATALOG_DIR: ${{ github.workspace }}/trusted/e2e/mutations
       MUTATION_TARGET_DIR: ${{ github.workspace }}/target
-      MUTATION_RAW_DIR: ${{ runner.temp }}/e2e-mutation-raw
-      MUTATION_EVIDENCE_DIR: ${{ runner.temp }}/e2e-mutation
       PLAYWRIGHT_TEST_BASE_URL: http://127.0.0.1:3100
     steps:
+      - name: Initialize mutation directories
+        run: |
+          printf 'MUTATION_RAW_DIR=%s/e2e-mutation-raw\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+          printf 'MUTATION_EVIDENCE_DIR=%s/e2e-mutation\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Checkout trusted default branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
