@@ -32,16 +32,17 @@ import type { PushPermissionPromptProps } from './push/components/push-permissio
 
 export type { PushPermissionPromptProps };
 
-interface PushPromptErrorBoundaryProps {
-  children: React.ReactNode;
+export interface PushPromptErrorBoundaryProps {
+  children?: React.ReactNode;
   fallback?: React.ReactNode;
+  onReload?: () => void;
 }
 
-interface PushPromptErrorBoundaryState {
+export interface PushPromptErrorBoundaryState {
   hasError: boolean;
 }
 
-class PushPromptErrorBoundary extends React.Component<
+export class PushPromptErrorBoundary extends React.Component<
   PushPromptErrorBoundaryProps,
   PushPromptErrorBoundaryState
 > {
@@ -53,6 +54,14 @@ class PushPromptErrorBoundary extends React.Component<
   static getDerivedStateFromError(): PushPromptErrorBoundaryState {
     return { hasError: true };
   }
+
+  private handleReload = () => {
+    if (this.props.onReload) {
+      this.props.onReload();
+    } else if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
+      window.location.reload();
+    }
+  };
 
   override render() {
     if (this.state.hasError) {
@@ -74,11 +83,11 @@ class PushPromptErrorBoundary extends React.Component<
             'button',
             {
               type: 'button',
-              onClick: () => this.setState({ hasError: false }),
+              onClick: this.handleReload,
               className:
                 'mt-2 inline-flex items-center justify-center rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90',
             },
-            'Reintentar'
+            'Recargar la página'
           )
         )
       );

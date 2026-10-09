@@ -724,8 +724,97 @@ describe('T-202: Cliente de push y Soft Prompt T02 (DoD Fase RED)', () => {
         expect(screen.getByRole('button', { name: /Activar avisos/i })).toBeTruthy();
       });
     });
+
+    it('T-338 / H11: Flujo real de activación desde clic en consumidor interactivo', async () => {
+      // Nota de runner: JSDOM no implementa navigator.userActivation nativo por defecto.
+      // Emulamos la propiedad para verificar que el clic del usuario solicita el permiso inmediatamente.
+      let userActivationActive = false;
+      let permissionRequestedDuringActivation = false;
+
+      Object.defineProperty(navigator, 'userActivation', {
+        value: {
+          get isActive() {
+            return userActivationActive;
+          },
+          hasBeenActive: true,
+        },
+        configurable: true,
+      });
+
+      const mockNotification = {
+        permission: 'default',
+        requestPermission: vi.fn().mockImplementation(async () => {
+          if (navigator.userActivation?.isActive) {
+            permissionRequestedDuringActivation = true;
+          }
+          return 'granted';
+        }),
+      };
+      vi.stubGlobal('Notification', mockNotification);
+
+      const mod = await import('@/features/notifications');
+      render(React.createElement(mod.PushPermissionPrompt, { embedded: false }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Activar avisos/i })).toBeTruthy();
+      });
+
+      const activateBtn = screen.getByRole('button', { name: /Activar avisos/i });
+
+      // Simular que el evento de clic activa transient user activation en el navegador
+      userActivationActive = true;
+      try {
+        fireEvent.click(activateBtn);
+      } finally {
+        userActivationActive = false;
+      }
+
+      await waitFor(() => {
+        expect(mockNotification.requestPermission).toHaveBeenCalledTimes(1);
+        expect(permissionRequestedDuringActivation).toBe(true);
+      });
+    });
+
+    it('T-338 / H09: Manejo de error de chunk y recuperación honesta con CTA «Recargar la página»', async () => {
+      const mod = await import('@/features/notifications');
+      const reloadSpy = vi.fn();
+
+      // Componente que simula fallo de descarga de chunk (ChunkLoadError / dynamic import rejected)
+      const FailingChunkComponent: React.FC = () => {
+        throw new Error('Failed to fetch dynamically imported module: push-prompt.js');
+      };
+
+      // Silenciar temporalmente error en consola esperado del ErrorBoundary en tests
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      try {
+        render(
+          React.createElement(
+            mod.PushPromptErrorBoundary,
+            { onReload: reloadSpy },
+            React.createElement(FailingChunkComponent)
+          )
+        );
+
+        // 1. Error Boundary captura el fallo de red/chunk
+        const alert = screen.getByRole('alert');
+        expect(alert).toBeTruthy();
+        expect(screen.getByText(/No se pudo cargar el control de notificaciones/i)).toBeTruthy();
+
+        // 2. CTA honesto de recarga de página (no placebo)
+        const reloadBtn = screen.getByRole('button', { name: /Recargar la página/i });
+        expect(reloadBtn).toBeTruthy();
+
+        // 3. Al hacer clic, se ejecuta la recarga de página para descartar el estado React.lazy
+        fireEvent.click(reloadBtn);
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+      } finally {
+        consoleErrorSpy.mockRestore();
+      }
+    });
   });
 });
+
 
 
 
