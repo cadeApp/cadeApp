@@ -37,7 +37,10 @@ const PATCH_FILE = /^[a-z0-9][a-z0-9-]{2,63}\.patch$/;
 // Solo specs del proyecto chromium: el workflow corre `--project=chromium`.
 const SPEC_PATH = /^e2e\/specs\/[a-z0-9][a-z0-9-]*\.spec\.ts$/;
 const PROJECT_REF = /^[a-z0-9]{8,40}$/;
-const LOCAL_BASE_URL = /^http:\/\/127\.0\.0\.1:([0-9]{2,5})$/;
+// El servidor escucha solo en 127.0.0.1, pero el browser entra por `localhost`: NextURL canoniza todo host loopback a
+// `localhost` y las redirecciones del middleware (`request.nextUrl.clone()`) saldrían a otro origen, sin las cookies
+// de sesión (run 37900097487, CONTROL_NOT_GREEN).
+const LOCAL_BASE_URL = /^http:\/\/localhost:([0-9]{2,5})$/;
 const TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
 // Una expectativa genérica («Error», «expect(») haría pasar cualquier falla por RED_CONFIRMED.
 const MIN_EXPECTED_FAILURE_LENGTH = 20;
@@ -239,7 +242,8 @@ export function checkEnvironmentRefs({ supabaseUrl, developRef, stagingRef, prod
 }
 
 /**
- * El mutante solo existe en el runner: la base URL es exactamente `http://127.0.0.1:<puerto>`.
+ * El mutante solo existe en el runner: la base URL es exactamente `http://localhost:<puerto>` y el servidor escucha
+ * solo en 127.0.0.1.
  * @param {string} url
  * @returns {{ ok: true, port: number } | { ok: false, reason: string }}
  */
@@ -249,7 +253,7 @@ export function checkBaseUrl(url) {
   if (!match || port < 1024 || port > 65535) {
     return {
       ok: false,
-      reason: 'La base URL tiene que ser exactamente http://127.0.0.1:<puerto>.',
+      reason: 'La base URL tiene que ser exactamente http://localhost:<puerto>.',
     };
   }
   return { ok: true, port };
