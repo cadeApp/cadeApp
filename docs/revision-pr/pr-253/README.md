@@ -29,18 +29,19 @@
 | 1 | `0dc814c` | 8 bloqueantes |
 | 2 | `64f5b91` | 8 bloqueantes |
 | 3 | `d7b7f40` | 2 bloqueantes internos |
-| 4 | `f3d783b` | **0 hallazgos internos abiertos · 2 bloqueos externos** |
+| 4 | `f3d783b` | **0 hallazgos internos; 2 defectos externos aún sin corregir en aquel momento** |
+| 5 | `66630c1` | **SIN BLOQUEANTES; E2E T-309 8/8 PASS, CI verde** |
 
 ## Estado de hallazgos
 
 Los **12 hallazgos internos PR253-H01…H12 están arreglados-verificados**.  
-No se agregan H13/H14 porque los dos fallos restantes son defectos preexistentes del producto y no son atribuibles ni a la implementación de T-309 ni a su ficha.
+No se agregan H13/H14: los dos defectos externos observados en R4 eran preexistentes del producto y no eran atribuibles a T-309. **En R5 ya quedaron corregidos en develop y las auditorías E2E pasan.**
 
-Bloqueos externos:
-- **#296** — viaje: `aria-hidden-focus` + contraste WCAG AA.
-- **#297** — onboarding: contraste WCAG AA en tarjetas de documentos.
+Bloqueos externos **históricos de R4, resueltos funcionalmente en R5**:
+- **#296** — viaje: `aria-hidden-focus` + contraste WCAG AA; fix T-350 / PR #308 mergeado y test viaje GREEN.
+- **#297** — onboarding: contraste WCAG AA; fix T-351 / PR #310 mergeado y test onboarding GREEN.
 
-Ambos defectos existen con los mismos blobs en `develop` y en la rama de T-309. Encajan además en el alcance de la pasada de accesibilidad **T-205 / #32**.
+Ambos issues aún estaban abiertos administrativamente al cerrar R5, pero **no bloquean el diff de T-309**. Se preserva el estado anterior en `revisiones/ronda-4.md`.
 
 ## CI R4
 
@@ -50,4 +51,4 @@ Sobre el SHA funcional `f3d783b`:
 - `e2e-preview` `37554952589`: **43 passed / 2 failed**.
 - Los únicos fallos son `axe AA en viaje` y `axe AA en onboarding`, por #296 y #297.
 
-La PR permanece **Draft**. No se aprueba ni mergea hasta que #296 y #297 estén corregidos/mergeados en `develop`, la rama se sincronice y el `e2e-preview` exact-head quede GREEN.
+**Este bloque de CI corresponde históricamente a R4, no es el estado actual.** Los defectos se corrigieron por PR #308 y #310; R5 verifica 8/8 E2E PASS y CI verde. La PR continúa **Draft** hasta que Lautaro073 decida pasarla a Ready y autorice el merge.
