@@ -26,66 +26,13 @@ test.describe('T-338 DoD: PWA Standalone Mode Navigation', () => {
       features: [{ name: 'display-mode', value: 'standalone' }],
     });
 
+    // Registrar sonda de observación en el navegador sin mocks de window.matchMedia ni navigator.standalone
     await page.addInitScript(() => {
-      // Emular standalone en matchMedia y navigator para compatibilidad cross-platform / iOS
-      const originalMatchMedia = window.matchMedia;
-      window.matchMedia = (query: string) => {
-        if (query === '(display-mode: standalone)') {
-          return {
-            matches: true,
-            media: query,
-            onchange: null,
-            addListener: () => {},
-            removeListener: () => {},
-            addEventListener: () => {},
-            removeEventListener: () => {},
-            dispatchEvent: () => false,
-          } as unknown as MediaQueryList;
-        }
-        return originalMatchMedia
-          ? originalMatchMedia.call(window, query)
-          : ({
-              matches: false,
-              media: query,
-              onchange: null,
-              addListener: () => {},
-              removeListener: () => {},
-              addEventListener: () => {},
-              removeEventListener: () => {},
-              dispatchEvent: () => false,
-            } as unknown as MediaQueryList);
-      };
-
-      Object.defineProperty(window.navigator, 'standalone', {
-        value: true,
-        configurable: true,
-      });
-
-      // Registrar estado computado del wrapper antes de la redirección
       if (window.sessionStorage.getItem('landing_was_visible') === null) {
         window.sessionStorage.setItem('landing_was_visible', 'false');
       }
 
-      // Emulación fiel del motor CSS para @media (display-mode: standalone) en Chromium headless
-      let styleInjected = false;
-      const injectStandaloneCss = () => {
-        if (styleInjected) return;
-        const target = document.head || document.documentElement;
-        if (target) {
-          styleInjected = true;
-          const style = document.createElement('style');
-          style.setAttribute('data-test-emulation', 'display-mode-standalone');
-          style.textContent = `
-            .\\[\\@media\\(display-mode\\:standalone\\)\\]\\:\\!hidden {
-              display: none !important;
-            }
-          `;
-          target.appendChild(style);
-        }
-      };
-
       const recordWrapperDisplay = () => {
-        injectStandaloneCss();
         const wrapper = document.querySelector('[data-testid="standalone-redirect-wrapper"]');
         if (wrapper) {
           const style = window.getComputedStyle(wrapper);
@@ -141,6 +88,16 @@ test.describe('T-338 DoD: PWA Standalone Mode Navigation', () => {
 
       requestAnimationFrame(checkLandingVisibility);
     });
+
+    // Verificación fail-closed sin mock: evalúa si el motor del navegador admitió la emulación
+    // de la media query real (display-mode: standalone) tras la sesión CDP.
+    const emulatedMatches = await page.evaluate(
+      () => window.matchMedia('(display-mode: standalone)').matches
+    );
+    expect(
+      emulatedMatches,
+      'El motor CSS del navegador debe admitir la emulación de (display-mode: standalone)'
+    ).toBe(true);
 
     await page.goto('/');
 
