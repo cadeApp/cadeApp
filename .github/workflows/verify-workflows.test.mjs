@@ -1971,7 +1971,7 @@ function caseOracleProblems(spec, mutation) {
   const routesAt = statements.findIndex((statement) => oracle.routes.test(statement));
   const loopAt = statements.indexOf(oracle.loop);
   if (routesAt < 0) problems.push('el caso no declara routes en su primer nivel');
-  if (routesAt < 0 || loopAt !== routesAt + 1) {
+  if (routesAt < 0 || loopAt !== routesAt + 1 || (statements[0] === oracle.login && routesAt !== 1)) {
     problems.push(`el caso no recorre routes justo después de declararlas llamando a ${oracle.helper}(page, path, expectedUrl)`);
   }
   const helper = helperBody(code, oracle.helper);
@@ -2149,6 +2149,9 @@ test('e2e-mutation case oracle is bound to the courier login, its loop and its h
   assert.deepEqual(mutate(login, `    const decoy = '${login.trim()}';`), [loginMissing]);
   assert.deepEqual(mutate(login, `    if (false) { ${login.trim()} }`), [loginMissing]);
   assert.deepEqual(mutate(login, `    await page.goto('/');\n${login}`), [loginMissing]);
+  // Mutaciones adicionales del revisor en ronda 3: terminación anticipada tras login.
+  assert.deepEqual(mutate(login, `${login}\n    return;`), [loopMissing], 'return antes de las rutas');
+  assert.deepEqual(mutate(login, `${login}\n    throw new Error('early exit');`), [loopMissing], 'throw antes de las rutas');
   // Adyacencias exigidas: nada entre la tabla de rutas y el bucle, ni antes de goto + toHaveURL en el helper.
   assert.deepEqual(mutate(loopOpen, `    if (false) {}\n${loopOpen}`), [loopMissing]);
   assert.deepEqual(mutate('  await page.goto(path);', "  await page.goto('/');\n  await page.goto(path);"), [
