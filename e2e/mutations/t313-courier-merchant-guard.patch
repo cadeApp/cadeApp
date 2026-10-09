@@ -1,0 +1,8 @@
+diff --git a/src/features/auth/guards.ts b/src/features/auth/guards.ts
+--- a/src/features/auth/guards.ts
++++ b/src/features/auth/guards.ts
+@@ -445,3 +445,3 @@ export function evaluateRouteGuard(
+   // 4. Rutas protegidas de comercio (merchant) - Lista blanca estricta
+   if (isMerchantRoute(pathname)) {
+-    if (session.role !== 'merchant') {
++    if (session.role !== 'merchant' && session.role !== 'courier') {
