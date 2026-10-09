@@ -1527,7 +1527,7 @@ function assertNoRunnerContextInMutationJobEnv(yaml) {
   assert.ok(blocks.length > 0, 'e2e-mutation debe conservar la configuración env del job');
   for (const [, variables] of blocks) {
     assert.doesNotMatch(
-      variables,
+      variables ?? '',
       /\$\{\{\s*runner\./,
       'runner context is unavailable in job env; use RUNNER_TEMP in a step and GITHUB_ENV'
     );
