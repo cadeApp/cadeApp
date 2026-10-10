@@ -1569,7 +1569,7 @@ select
   r.merchant_id,
   'legacy_migration_inconsistent',
   'delivery_request',
-  r.id,
+  r.id::text,
   jsonb_build_object(
     'status', r.status,
     'dropoff_zone_id', r.dropoff_zone_id,
@@ -1588,7 +1588,7 @@ where r.status <> 'draft'
   and not exists (
     select 1
     from public.audit_log a
-    where a.action = 'legacy_migration_inconsistent' and a.target_id = r.id
+    where a.action = 'legacy_migration_inconsistent' and a.target_id = r.id::text
   )
   and (
     r.dropoff_zone_id is null

@@ -546,12 +546,12 @@ begin
 
   insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
   select
-    r.merchant_id, 'legacy_migration_inconsistent', 'delivery_request', r.id,
+    r.merchant_id, 'legacy_migration_inconsistent', 'delivery_request', r.id::text,
     jsonb_build_object('status', r.status), jsonb_build_object('preserved', true)
   from public.delivery_requests r
   where r.id = v_req_id;
 
-  return (select count(*)::int from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = v_req_id);
+  return (select count(*)::int from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = v_req_id::text);
 end;
 $$;
 select is(pg_temp.test_backfill_inconsistent_nondraft(), 1, 'solicitud no-draft inconsistente queda senalada en audit_log');
