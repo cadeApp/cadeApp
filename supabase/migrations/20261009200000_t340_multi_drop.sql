@@ -71,7 +71,7 @@ grant select (drops_count) on public.delivery_requests to authenticated;
 create or replace function app_private.lock_draft_request_for_child_write()
 returns trigger
 language plpgsql
-security invoker
+security definer
 set search_path = public, pg_temp
 as $$
 declare

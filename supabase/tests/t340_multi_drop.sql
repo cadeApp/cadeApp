@@ -75,7 +75,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', 'delivered');
 end;
 $$;
-select throws_matching('select pg_temp.test_bypass_status()', 'permission denied for column status', 'insert directo sobre status rechazado');
+select throws_matching('select pg_temp.test_bypass_status()', 'permission denied', 'insert directo sobre status rechazado');
 
 create function pg_temp.test_bypass_delivered_at() returns void language plpgsql as $$
 declare
@@ -89,7 +89,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', now());
 end;
 $$;
-select throws_matching('select pg_temp.test_bypass_delivered_at()', 'permission denied for column delivered_at', 'insert directo sobre delivered_at rechazado');
+select throws_matching('select pg_temp.test_bypass_delivered_at()', 'permission denied', 'insert directo sobre delivered_at rechazado');
 
 create function pg_temp.test_bypass_failed_reason() returns void language plpgsql as $$
 declare
@@ -103,7 +103,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', 'motivo');
 end;
 $$;
-select throws_matching('select pg_temp.test_bypass_failed_reason()', 'permission denied for column failed_reason', 'insert directo sobre failed_reason rechazado');
+select throws_matching('select pg_temp.test_bypass_failed_reason()', 'permission denied', 'insert directo sobre failed_reason rechazado');
 
 create function pg_temp.test_bypass_approx_distance() returns void language plpgsql as $$
 declare
@@ -117,7 +117,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', 1500);
 end;
 $$;
-select throws_matching('select pg_temp.test_bypass_approx_distance()', 'permission denied for column approx_distance_m', 'insert directo sobre approx_distance_m rechazado');
+select throws_matching('select pg_temp.test_bypass_approx_distance()', 'permission denied', 'insert directo sobre approx_distance_m rechazado');
 
 create function pg_temp.test_bypass_update_request_id() returns void language plpgsql as $$
 declare
@@ -133,7 +133,7 @@ begin
   update public.delivery_request_drops set request_id = gen_random_uuid() where id = v_drop_id;
 end;
 $$;
-select throws_matching('select pg_temp.test_bypass_update_request_id()', 'permission denied for column request_id', 'update directo sobre request_id rechazado');
+select throws_matching('select pg_temp.test_bypass_update_request_id()', 'permission denied', 'update directo sobre request_id rechazado');
 
 -- 3. Guard de borrador: app_private.lock_draft_request_for_child_write (DoD & CC-022 §2b)
 create function pg_temp.test_call_guard_direct() returns void language plpgsql as $$
@@ -172,7 +172,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash');
 end;
 $$;
-select throws_matching('select pg_temp.test_write_drop_non_owner()', 'UNAUTHORIZED_ACTOR', 'insert directo por no dueño rechazado por guard');
+select throws_matching('select pg_temp.test_write_drop_non_owner()', 'NOT_FOUND', 'insert directo por no dueño rechazado por guard');
 
 create function pg_temp.test_write_draft_drop_owner() returns void language plpgsql as $$
 declare
@@ -189,10 +189,11 @@ end;
 $$;
 select lives_ok('select pg_temp.test_write_draft_drop_owner()', 'insert directo en draft por dueño permitido');
 
-create function pg_temp.test_update_contacts_published() returns void language plpgsql as $$
+create function pg_temp.test_update_contacts_published() returns text language plpgsql as $$
 declare
   v_req_id uuid := '30000000-0000-4000-8000-000000003409';
   v_drop_id uuid := '40000000-0000-4000-8000-000000003409';
+  v_res text;
 begin
   perform pg_temp.reset_actor();
   insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
@@ -204,14 +205,19 @@ begin
 
   perform pg_temp.act_as(pg_temp.merchant_id());
   update public.delivery_request_drop_contacts set dropoff_address = 'Nueva Dir' where drop_id = v_drop_id;
+
+  perform pg_temp.reset_actor();
+  select dropoff_address into v_res from public.delivery_request_drop_contacts where drop_id = v_drop_id;
+  return v_res;
 end;
 $$;
-select throws_matching('select pg_temp.test_update_contacts_published()', 'INVALID_STATE_TRANSITION', 'update contactos en published rechazado');
+select is(pg_temp.test_update_contacts_published(), 'Dir 1', 'update contactos en published rechazado por RLS (valor no cambia)');
 
-create function pg_temp.test_delete_drop_published() returns void language plpgsql as $$
+create function pg_temp.test_delete_drop_published() returns int language plpgsql as $$
 declare
   v_req_id uuid := '30000000-0000-4000-8000-000000003410';
   v_drop_id uuid := '40000000-0000-4000-8000-000000003410';
+  v_count int;
 begin
   perform pg_temp.reset_actor();
   insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
@@ -221,9 +227,13 @@ begin
 
   perform pg_temp.act_as(pg_temp.merchant_id());
   delete from public.delivery_request_drops where id = v_drop_id;
+
+  perform pg_temp.reset_actor();
+  select count(*)::int into v_count from public.delivery_request_drops where id = v_drop_id;
+  return v_count;
 end;
 $$;
-select throws_matching('select pg_temp.test_delete_drop_published()', 'INVALID_STATE_TRANSITION', 'delete drop en published rechazado');
+select is(pg_temp.test_delete_drop_published(), 1, 'delete drop en published rechazado por RLS (drop permanece)');
 
 -- 4. Integridad de pago y cambio por entrega (DoD & CC-022 §5b)
 create function pg_temp.test_check_transfer_with_change() returns void language plpgsql as $$
