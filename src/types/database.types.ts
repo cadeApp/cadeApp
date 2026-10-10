@@ -227,6 +227,107 @@ export type Database = {
           },
         ]
       }
+      delivery_request_drop_contacts: {
+        Row: {
+          cash_change_amount: number | null
+          drop_id: string
+          dropoff_address: string
+          dropoff_lat: number | null
+          dropoff_lng: number | null
+          notes: string | null
+          recipient_consent_declared: boolean
+          recipient_name: string
+          recipient_phone: string
+        }
+        Insert: {
+          cash_change_amount?: number | null
+          drop_id: string
+          dropoff_address: string
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
+          notes?: string | null
+          recipient_consent_declared: boolean
+          recipient_name: string
+          recipient_phone: string
+        }
+        Update: {
+          cash_change_amount?: number | null
+          drop_id?: string
+          dropoff_address?: string
+          dropoff_lat?: number | null
+          dropoff_lng?: number | null
+          notes?: string | null
+          recipient_consent_declared?: boolean
+          recipient_name?: string
+          recipient_phone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_request_drop_contacts_drop_id_fkey"
+            columns: ["drop_id"]
+            isOneToOne: true
+            referencedRelation: "delivery_request_drops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_request_drops: {
+        Row: {
+          approx_distance_m: number | null
+          delivered_at: string | null
+          dropoff_zone_id: string
+          failed_reason: string | null
+          id: string
+          needs_change: boolean
+          package_type: Database["public"]["Enums"]["package_type"]
+          position: number
+          recipient_payment_method: Database["public"]["Enums"]["recipient_payment_method"]
+          request_id: string
+          status: string
+        }
+        Insert: {
+          approx_distance_m?: number | null
+          delivered_at?: string | null
+          dropoff_zone_id: string
+          failed_reason?: string | null
+          id?: string
+          needs_change?: boolean
+          package_type: Database["public"]["Enums"]["package_type"]
+          position: number
+          recipient_payment_method: Database["public"]["Enums"]["recipient_payment_method"]
+          request_id: string
+          status?: string
+        }
+        Update: {
+          approx_distance_m?: number | null
+          delivered_at?: string | null
+          dropoff_zone_id?: string
+          failed_reason?: string | null
+          id?: string
+          needs_change?: boolean
+          package_type?: Database["public"]["Enums"]["package_type"]
+          position?: number
+          recipient_payment_method?: Database["public"]["Enums"]["recipient_payment_method"]
+          request_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_request_drops_dropoff_zone_id_fkey"
+            columns: ["dropoff_zone_id"]
+            isOneToOne: false
+            referencedRelation: "zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_request_drops_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_requests: {
         Row: {
           accepted_offer_id: string | null
@@ -237,7 +338,8 @@ export type Database = {
           cash_change_amount: number | null
           created_at: string
           delivered_at: string | null
-          dropoff_zone_id: string
+          dropoff_zone_id: string | null
+          drops_count: number
           expires_at: string | null
           fixed_price_ars: number | null
           id: string
@@ -245,11 +347,11 @@ export type Database = {
           merchant_id: string
           needs_change: boolean
           notes: string | null
-          package_type: Database["public"]["Enums"]["package_type"]
+          package_type: Database["public"]["Enums"]["package_type"] | null
           picked_up_at: string | null
           pickup_zone_id: string
           published_at: string | null
-          recipient_payment_method: Database["public"]["Enums"]["recipient_payment_method"]
+          recipient_payment_method: Database["public"]["Enums"]["recipient_payment_method"] | null
           route_distance_m: number | null
           status: Database["public"]["Enums"]["delivery_request_status"]
           updated_at: string
@@ -263,7 +365,8 @@ export type Database = {
           cash_change_amount?: number | null
           created_at?: string
           delivered_at?: string | null
-          dropoff_zone_id: string
+          dropoff_zone_id?: string | null
+          drops_count?: number
           expires_at?: string | null
           fixed_price_ars?: number | null
           id?: string
@@ -271,11 +374,11 @@ export type Database = {
           merchant_id: string
           needs_change?: boolean
           notes?: string | null
-          package_type: Database["public"]["Enums"]["package_type"]
+          package_type?: Database["public"]["Enums"]["package_type"] | null
           picked_up_at?: string | null
           pickup_zone_id: string
           published_at?: string | null
-          recipient_payment_method: Database["public"]["Enums"]["recipient_payment_method"]
+          recipient_payment_method?: Database["public"]["Enums"]["recipient_payment_method"] | null
           route_distance_m?: number | null
           status?: Database["public"]["Enums"]["delivery_request_status"]
           updated_at?: string
@@ -289,7 +392,8 @@ export type Database = {
           cash_change_amount?: number | null
           created_at?: string
           delivered_at?: string | null
-          dropoff_zone_id?: string
+          dropoff_zone_id?: string | null
+          drops_count?: number
           expires_at?: string | null
           fixed_price_ars?: number | null
           id?: string
@@ -798,6 +902,8 @@ export type Database = {
       }
       get_trip_details: { Args: { p_request_id: string }; Returns: Json }
       mark_delivered: { Args: { p_request_id: string }; Returns: Json }
+      mark_drop_delivered: { Args: { p_drop_id: string }; Returns: Json }
+      mark_drop_failed: { Args: { p_drop_id: string; p_reason: string }; Returns: Json }
       mark_picked_up: { Args: { p_request_id: string }; Returns: Json }
       publish_request: { Args: { p_request_id: string }; Returns: Json }
       report_incident: {
