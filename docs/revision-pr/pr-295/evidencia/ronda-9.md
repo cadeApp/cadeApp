@@ -13,3 +13,7 @@
 **Archivos a autorizar explícitamente en T-338:** `src/middleware.ts` y `src/middleware.test.ts`. Autorizar solo exclusiones exactas de `/manifest.webmanifest` y `/sw.js`, sin relajar guard de otras rutas.
 
 **CI anterior GREEN no equivale a instalar PWA**. QA física debe repetirse tras el fix.
+
+## Autorización posterior P1 (sin ejecución de código)
+
+2026-10-09: P1 resolvió **R9 opción A** y ordenó publicar prompt con diagnóstico HTTP, RED→GREEN, control de seguridad y Android QA. En `docs/revisiones` se añadió `PR295-A04` estado `aceptado`. **No se ejecutó un nuevo GET HTTP, no hubo corrección de middleware, ni CI/QA Android nuevo** en el momento de esta anotación. La excepción debe implementarse y registrarse en `docs/tasks/T-338.md` en la rama de Kira, con tests antes y después. La evidencia Android existente sigue identificada como QA INCOMPLETA.

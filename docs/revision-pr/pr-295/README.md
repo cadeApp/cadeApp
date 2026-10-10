@@ -62,3 +62,7 @@ Matiz: el test automatizado instrumenta una segunda navegación a `/`, no el pri
 [Informe R9](revisiones/ronda-9.md) · [Evidencia R9](evidencia/ronda-9.md).
 
 **CON BLOQUEANTES para merge y QA:** prueba Android A/B/D/E bloqueada; Chrome recibe HTML en /manifest.webmanifest (QA reportada). Inspección independiente: middleware no excluye /manifest.webmanifest **ni /sw.js**, ambos pasan a guarda anónima que redirige a login. HTTP sin redirects y /sw.js aún pendientes de confirmación. CI/E2E R8 GREEN es verdadero pero insuficiente para instalar/actualizar WebAPK real. **P1 debe autorizar alcance** a middleware.ts y middleware.test.ts antes de cambios de Kira. No mergear.
+ 
+### Decisión P1 R9-A aceptada (2026-10-09)
+
+P1 **autoriza exclusivamente** que Kira modifique `src/middleware.ts` y `src/middleware.test.ts` (además de ficha y bitácora) para corregir el acceso anónimo **exacto** a `/manifest.webmanifest` y `/sw.js`, **después** de diagnosticar HTTP sin redirecciones. Excepción identificada como **PR295-A04** y documentada en [R9](revisiones/ronda-9.md). No autoriza auth, guards, workflows, ni bypass amplio de assets o rutas privadas. **PR bloqueada para merge** hasta nuevo SHA, CI/E2E, HTTP real, nueva QA Android A-E y ronda independiente.

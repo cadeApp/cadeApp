@@ -59,3 +59,11 @@ P1 proporcionó el informe textual **«QA Android físico — PR #295 / T-338»*
 **CI de R8 sigue siendo evidencia válida para el viejo SHA:** [CI 38002801584](https://github.com/cadeApp/cadeApp/actions/runs/38002801584) success y [E2E Preview 38002879664](https://github.com/cadeApp/cadeApp/actions/runs/38002879664) success (46 Chromium+3 global-settings), pero esos tests no ejercían instalación anónima Android. No compensan H14/H15.
 
 No se cambiaron feature branch, develop, seguridad ni dependencias. Sin merge.
+
+## Decisión P1 posterior al informe — Ronda 9 A (2026-10-09)
+
+**ESTADO DE DECISIÓN: ACEPTADA.** P1 seleccionó **A** expresamente tras recibir el informe de Android: autoriza la corrección acotada de **`src/middleware.ts` y `src/middleware.test.ts`**, más **`docs/tasks/T-338.md`** para documentar la excepción y **`docs/tasks/log/T-338.md`** para evidencia append-only. El permiso está limitado a excluir **exactamente `/manifest.webmanifest` y `/sw.js`** del matcher, conservando toda protección de rutas de sesión/roles y cualquier otro asset. No autoriza cambios de `src/features/auth/**`, `.github/**`, config de Playwright, manifest o SW productivos, dependencies, Vercel settings, ni otras rutas. Si el diagnóstico HTTP muestra una causa diferente (protección Vercel/404/rewrite), Kira debe registrar evidencia y detener la modificación equivocada.
+
+**Secuencia exigida:** GET anónimo sin seguir redirects (status + Location + Content-Type) de manifest y SW contra Preview exacta; tests matcher RED y controles negativos privados; fix mínimo; tests GREEN y build; nueva Preview HEAD, GET `200` sin redirects de JSON de manifest y JS de SW; registro/precaché real del SW; CI y `e2e-preview` GREEN; repetición de QA física A-E por P1/Codex en Android sobre la nueva Preview y reporte. F/G mantienen sus condiciones, no se inventa resultado. No mergear hasta la siguiente revisión independiente y QA aprobada.
+
+**Trazabilidad:** `PR295-A04` en `hallazgos.jsonl`. El presente anexo documenta la decisión y **no reescribe el hallazgo previo** ni afirma que el fix ya esté realizado. Kira es responsable de actualizar la ficha en su rama; el revisor no la toca.
