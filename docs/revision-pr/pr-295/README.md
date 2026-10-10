@@ -66,3 +66,9 @@ Matiz: el test automatizado instrumenta una segunda navegación a `/`, no el pri
 ### Decisión P1 R9-A aceptada (2026-10-09)
 
 P1 **autoriza exclusivamente** que Kira modifique `src/middleware.ts` y `src/middleware.test.ts` (además de ficha y bitácora) para corregir el acceso anónimo **exacto** a `/manifest.webmanifest` y `/sw.js`, **después** de diagnosticar HTTP sin redirecciones. Excepción identificada como **PR295-A04** y documentada en [R9](revisiones/ronda-9.md). No autoriza auth, guards, workflows, ni bypass amplio de assets o rutas privadas. **PR bloqueada para merge** hasta nuevo SHA, CI/E2E, HTTP real, nueva QA Android A-E y ronda independiente.
+
+## Ronda 10 — commit funcional `3b7484e4b310f41d78eb6de06d21a6cedee10686`
+
+[Informe R10](revisiones/ronda-10.md) · [Evidencia R10](evidencia/ronda-10.md) · [Mutaciones independientes](evidencia/comandos-ronda-10.md).
+
+**Sin nuevos bloqueantes de código**: P1 R9-A implementada únicamente en `src/middleware.ts`, `src/middleware.test.ts` y ficha/bitácora. CI GREEN (127 Vitest files, 10+1903 db tests, presupuestos <=180), Preview E2E GREEN (46 Chromium + 3 global-settings), Vercel READY para el HEAD. Matcher protege sufijos y privados en tests; 14 casos y cuatro mutaciones RED independientes de regexp. **H14/H15 corregidos por código, estado conservador `arreglado-sin-verificar`** hasta GET anónimo 200 real de manifest+SW en *Preview nuevo* y repetición QA Android A–E. **No merge todavía, no modificar código sin nueva incidencia**.
