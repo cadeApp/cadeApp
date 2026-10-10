@@ -78,3 +78,9 @@ P1 **autoriza exclusivamente** que Kira modifique `src/middleware.ts` y `src/mid
 [Informe R11](revisiones/ronda-11.md) · [Evidencia R11](evidencia/ronda-11.md).
 
 **CON BLOQUEANTE nuevo H16:** las páginas de términos y privacidad no están en `isPublicRoute`, por lo que el guard anónimo redirige los enlaces correctos de login/registro a /login. P1 lo reprodujo manualmente en el WebAPK. **R9 H14/H15 verificados** por reportes QA P1/Codex: manifest/SW 200 sin redirect, WebAPK instalado, primer arranque final /login, offline PASS. Pendiente elegir ampliación acotada de alcance a `src/features/auth/guards.ts` + tests o tarea separada. **No mergear**. B navegación a / dentro de WebAPK y evidencia de no-flash inicial aún pendientes.
+
+## Ronda 12 — QA final H16 sobre `4e26d24feba002b8247ba7feb2c20b052418f9fa`
+
+[Informe R12](revisiones/ronda-12.md) · [Evidencia R12](evidencia/ronda-12.md) · [Mutación estática R12](evidencia/comandos-ronda-12.md).
+
+**H16 arreglado-verificado:** auth guard allowlist exacta 5 legales, 103 tests guards green, HTTP y navegación real CDP en WebAPK Android PASS aportada por P1/Codex. H14/H15 permanecen cerrados. CI 38017790121 success (127 Vitest files; db 10+1903; bundle <=180 kB) y Vercel READY. **PENDIENTE: status `e2e-preview` del SHA final aún pending** al revisar run 38017862788. **NO MERGEAR hasta E2E success en el HEAD vigente y autorización P1**. Sin video pre-launch, no afirmar destello absolutamente imposible; offline reutilizado sobre host anterior, SW nuevo registrado. La corrección mínima H16 la aplicó el propio revisor a petición P1; QA física es de P1/Codex, no prueba independiente propia.
