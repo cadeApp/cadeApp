@@ -30,9 +30,7 @@ create table if not exists public.delivery_request_drop_contacts (
   recipient_phone text not null,
   recipient_consent_declared boolean not null,
   cash_change_amount integer null check (cash_change_amount > 0),
-  notes text null,
-  check (dropoff_lat is null or dropoff_lat between -27.4800 and -27.3800),
-  check (dropoff_lng is null or dropoff_lng between -65.6450 and -65.5800)
+  notes text null
 );
 
 -- 2. Alter a tablas existentes
@@ -292,6 +290,7 @@ create policy delivery_requests_update_merchant on public.delivery_requests
   using (merchant_id = auth.uid())
   with check (
     merchant_id = auth.uid()
+    and app_private.is_active_operational_actor()
     and status = (select dr.status from public.delivery_requests dr where dr.id = delivery_requests.id)
     and accepted_offer_id is not distinct from (select dr.accepted_offer_id from public.delivery_requests dr where dr.id = delivery_requests.id)
     and created_at = (select dr.created_at from public.delivery_requests dr where dr.id = delivery_requests.id)
@@ -301,6 +300,13 @@ create policy delivery_requests_update_merchant on public.delivery_requests
     and delivered_at is not distinct from (select dr.delivered_at from public.delivery_requests dr where dr.id = delivery_requests.id)
     and cancelled_at is not distinct from (select dr.cancelled_at from public.delivery_requests dr where dr.id = delivery_requests.id)
     and drops_count = (select dr.drops_count from public.delivery_requests dr where dr.id = delivery_requests.id)
+    and (
+      (select dr.status from public.delivery_requests dr where dr.id = delivery_requests.id) = 'draft'
+      or (
+        fixed_price_ars is not distinct from (select dr.fixed_price_ars from public.delivery_requests dr where dr.id = delivery_requests.id)
+        and auto_assign = (select dr.auto_assign from public.delivery_requests dr where dr.id = delivery_requests.id)
+      )
+    )
   );
 
 -- 6. Helper privado para distancia por segmento (CC-022 §7)
@@ -476,7 +482,7 @@ begin
   if v_pickup_zone_name is not null and v_dropoff_zone_name is not null then
     v_result := v_result || jsonb_build_object(
       'displayLabel',
-      app_private.format_zone_to_zone_display_label(v_pickup_zone_name, v_dropoff_zone_name)
+      'De barrio ' || trim(v_pickup_zone_name) || ' a barrio ' || trim(v_dropoff_zone_name)
     );
   end if;
 
