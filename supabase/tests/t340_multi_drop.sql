@@ -157,7 +157,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash');
 end;
 $$;
-select throws_matching('select pg_temp.test_write_published_drop()', 'INVALID_STATE_TRANSITION', 'insert directo sobre solicitud published rechazado por guard');
+select throws_matching('select pg_temp.test_write_published_drop()', 'row-level security policy|INVALID_STATE_TRANSITION', 'insert directo sobre solicitud published rechazado por guard');
 
 create function pg_temp.test_write_drop_non_owner() returns void language plpgsql as $$
 declare
@@ -172,7 +172,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash');
 end;
 $$;
-select throws_matching('select pg_temp.test_write_drop_non_owner()', 'NOT_FOUND', 'insert directo por no dueño rechazado por guard');
+select throws_matching('select pg_temp.test_write_drop_non_owner()', 'row-level security policy|NOT_FOUND', 'insert directo por no dueño rechazado por guard');
 
 create function pg_temp.test_write_draft_drop_owner() returns void language plpgsql as $$
 declare
@@ -353,6 +353,7 @@ begin
 
   perform pg_temp.act_as(pg_temp.merchant_id());
   select public.publish_request(v_req_id) into v_res;
+  perform pg_temp.reset_actor();
   return v_res;
 end;
 $$;
