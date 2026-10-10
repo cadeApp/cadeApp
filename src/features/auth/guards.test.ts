@@ -33,6 +33,38 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(isPublicRoute('/merchant/dashboard')).toBe(false);
   });
 
+  describe('PR295-H16: documentos legales públicos antes de aceptar el consentimiento', () => {
+    it.each([
+      '/legal',
+      '/legal/terms',
+      '/legal/privacy',
+      '/legal/courier',
+      '/legal/pilot',
+    ])('%s permite lectura sin sesión', (pathname) => {
+      expect(isPublicRoute(pathname)).toBe(true);
+      expect(evaluateRouteGuard(pathname, null)).toEqual({ action: 'allow' });
+    });
+
+    it.each([
+      '/legal/admin',
+      '/legal/terms/private',
+      '/legal/terms-bypass',
+      '/legal/terms.json',
+      '/legal/terms/',
+      '/legal2',
+      '/courier/feed',
+      '/merchant/dashboard',
+      '/admin/applicants',
+      '/login/mfa',
+    ])('%s continúa protegido para usuarios anónimos', (pathname) => {
+      expect(isPublicRoute(pathname)).toBe(false);
+      expect(evaluateRouteGuard(pathname, null)).toEqual({
+        action: 'redirect',
+        redirectTo: `/login?redirectTo=${encodeURIComponent(pathname)}`,
+      });
+    });
+  });
+
   it('redirecciona a /login si un usuario no autenticado intenta entrar a rutas protegidas', () => {
     const unauthenticatedSession: AuthSession | null = null;
 
@@ -324,7 +356,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(resolvePostLoginRedirect('/', 'merchant', 'active')).toBe('/');
     expect(resolvePostLoginRedirect('/design-system', 'courier', 'active')).toBe('/design-system');
 
-    // PR87-H01: ningún redirect post-login puede terminar en 404 (rutas inexistentes o legales pendientes de T-311)
+    // PR87-H01: aliases inexistentes no pueden ser destino post-login; /legal es público, pero no destino post-login por rol
     expect(resolvePostLoginRedirect('/ruta-inexistente', 'merchant', 'active')).toBe('/merchant/dashboard');
     expect(resolvePostLoginRedirect('/ghost', 'courier', 'active')).toBe('/courier/feed');
     expect(resolvePostLoginRedirect('/terms', 'merchant', 'active')).toBe('/merchant/dashboard');
@@ -335,7 +367,8 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(isPublicRoute('/terms')).toBe(false);
     expect(isPublicRoute('/privacy')).toBe(false);
     expect(isPublicRoute('/pilot-terms')).toBe(false);
-    expect(isPublicRoute('/legal')).toBe(false);
+    // PR295-H16: el índice legal ahora existe y es público; los aliases heredados siguen privados.
+    expect(isPublicRoute('/legal')).toBe(true);
   });
 
   describe('CC-007: Invariante de consentimiento legal obligatorio en guards', () => {

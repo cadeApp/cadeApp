@@ -18,6 +18,11 @@ describe('T-336 / PR248-H05: Configuración y matcher de middleware canónico en
       ['/admin/applicants', true],
       ['/requests', true],
       ['/feed', true],
+      // PR295-A04: extensiones o sufijos no autorizados deben seguir ejecutando el middleware
+      ['/manifest.webmanifest.bak', true],
+      ['/manifest.webmanifest-extra', true],
+      ['/sw.js.map', true],
+      ['/sw.js.backup', true],
     ])('ruta %s -> match: %s', (url, expected) => {
       const matched = unstable_doesMiddlewareMatch({
         config,
@@ -26,7 +31,7 @@ describe('T-336 / PR248-H05: Configuración y matcher de middleware canónico en
       expect(matched).toBe(expected);
     });
 
-    // Rutas de API, assets estáticos e imágenes que DEBEN quedar excluidas
+    // Rutas de API, assets estáticos, PWA manifest y Service Worker que DEBEN quedar excluidas
     it.each([
       ['/api/health', false],
       ['/api/auth/callback', false],
@@ -38,6 +43,9 @@ describe('T-336 / PR248-H05: Configuración y matcher de middleware canónico en
       ['/banner.jpg', false],
       ['/image.webp', false],
       ['/brand/logo.svg', false],
+      // PR295-A04: entrega anónima de manifest y service worker para instalación PWA en Chrome
+      ['/manifest.webmanifest', false],
+      ['/sw.js', false],
     ])('asset o api %s -> match: %s', (url, expected) => {
       const matched = unstable_doesMiddlewareMatch({
         config,

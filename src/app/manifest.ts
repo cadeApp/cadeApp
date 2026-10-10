@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'cadeApp — Envíos directos en Aguilares',
     short_name: 'cadeApp',
     description: 'Conectamos comercios con repartidores locales en tiempo real.',
-    start_url: '/',
+    start_url: '/login',
     id: '/',
     display: 'standalone',
     background_color: '#12182C',
