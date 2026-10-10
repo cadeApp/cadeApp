@@ -1554,187 +1554,55 @@ $$;
 revoke all on function public.accept_offer(uuid) from public, anon, authenticated;
 grant execute on function public.accept_offer(uuid) to authenticated;
 
--- 12b. get_trip_details actualizado: lee indicaciones y monto de cambio desde drop_contacts con fallback (CC-022 §10 paso 2)
-create or replace function public.get_trip_details(
-  p_request_id uuid
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
-declare
-  v_uid uuid := auth.uid();
-  v_role public.profile_role;
-  v_request public.delivery_requests%rowtype;
-  v_offer public.offers%rowtype;
-  v_contacts public.delivery_request_contacts%rowtype;
-  v_merchant_name text;
-  v_merchant_phone text;
-  v_courier_name text;
-  v_courier_phone text;
-  v_vehicle_type public.vehicle_type;
-  v_vehicle_plate text;
-  v_pickup_zone_name text;
-  v_dropoff_zone_name text;
-  v_drop_notes text;
-  v_drop_cash_change integer;
-  v_drop_address text;
-  v_recipient_name text;
-  v_recipient_phone text;
-  v_package_type public.package_type;
-  v_payment_method public.recipient_payment_method;
-  v_needs_change boolean;
-  v_dropoff_zone_id uuid;
-begin
-  if v_uid is null then
-    raise exception 'UNAUTHENTICATED' using errcode = 'P0001';
-  end if;
-
-  if p_request_id is null then
-    raise exception 'VALIDATION_ERROR' using errcode = 'P0001';
-  end if;
-
-  select p.role
-    into v_role
-  from public.profiles p
-  where p.id = v_uid;
-
-  if v_role is null
-     or v_role not in ('merchant'::public.profile_role, 'courier'::public.profile_role)
-     or not app_private.is_active_operational_actor() then
-    raise exception 'UNAUTHORIZED_ACTOR' using errcode = 'P0001';
-  end if;
-
-  select *
-    into v_request
-  from public.delivery_requests dr
-  where dr.id = p_request_id;
-
-  if not found then
-    raise exception 'NOT_FOUND' using errcode = 'P0001';
-  end if;
-
-  if v_request.status not in (
-    'matched'::public.delivery_request_status,
-    'in_transit'::public.delivery_request_status,
-    'delivered'::public.delivery_request_status
-  ) then
-    raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
-  end if;
-
-  if v_request.accepted_offer_id is null then
-    raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
-  end if;
-
-  select *
-    into v_offer
-  from public.offers o
-  where o.id = v_request.accepted_offer_id
-    and o.request_id = v_request.id
-    and o.status = 'accepted'::public.offer_status;
-
-  if not found or v_offer.amount_ars < 1 then
-    raise exception 'INVALID_STATE_TRANSITION' using errcode = 'P0001';
-  end if;
-
-  if v_role = 'merchant'::public.profile_role and v_request.merchant_id <> v_uid then
-    raise exception 'UNAUTHORIZED_ACTOR' using errcode = 'P0001';
-  end if;
-
-  if v_role = 'courier'::public.profile_role and v_offer.courier_id <> v_uid then
-    raise exception 'UNAUTHORIZED_ACTOR' using errcode = 'P0001';
-  end if;
-
-  select *
-    into v_contacts
-  from public.delivery_request_contacts c
-  where c.request_id = v_request.id;
-
-  -- Lectura del primer drop y sus contactos privados (multi-drop / nuevo modelo)
-  select d.dropoff_zone_id, d.package_type, d.recipient_payment_method, d.needs_change,
-         dc.dropoff_address, dc.recipient_name, dc.recipient_phone, dc.notes, dc.cash_change_amount
-    into v_dropoff_zone_id, v_package_type, v_payment_method, v_needs_change,
-         v_drop_address, v_recipient_name, v_recipient_phone, v_drop_notes, v_drop_cash_change
-  from public.delivery_request_drops d
-  left join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
-  where d.request_id = v_request.id and d.position = 1;
-
-  if v_contacts.request_id is null and v_drop_address is null then
-    raise exception 'NOT_FOUND' using errcode = 'P0001';
-  end if;
-
-  select z.name into v_pickup_zone_name
-  from public.zones z
-  where z.id = v_request.pickup_zone_id;
-
-  if not found then
-    raise exception 'NOT_FOUND' using errcode = 'P0001';
-  end if;
-
-  select z.name into v_dropoff_zone_name
-  from public.zones z
-  where z.id = coalesce(v_dropoff_zone_id, v_request.dropoff_zone_id);
-
-  if not found then
-    raise exception 'NOT_FOUND' using errcode = 'P0001';
-  end if;
-
-  select m.business_name, p.phone
-    into v_merchant_name, v_merchant_phone
-  from public.merchants m
-  join public.profiles p on p.id = m.profile_id
-  where m.profile_id = v_request.merchant_id;
-
-  if not found then
-    raise exception 'NOT_FOUND' using errcode = 'P0001';
-  end if;
-
-  select p.display_name, p.phone, c.vehicle_type, c.vehicle_plate
-    into v_courier_name, v_courier_phone, v_vehicle_type, v_vehicle_plate
-  from public.couriers c
-  join public.profiles p on p.id = c.profile_id
-  where c.profile_id = v_offer.courier_id;
-
-  if not found then
-    raise exception 'NOT_FOUND' using errcode = 'P0001';
-  end if;
-
-  return jsonb_build_object(
-    'requestId', v_request.id,
-    'code', 'REQ-' || upper(substr(v_request.id::text, 1, 8)),
-    'status', v_request.status,
-    'merchantId', v_request.merchant_id,
-    'merchantName', v_merchant_name,
-    'merchantPhone', v_merchant_phone,
-    'courierId', v_offer.courier_id,
-    'courierName', v_courier_name,
-    'courierPhone', v_courier_phone,
-    'vehicleType', v_vehicle_type,
-    'vehiclePlate', v_vehicle_plate,
-    'amountArs', v_offer.amount_ars,
-    'pickupAddress', coalesce(v_contacts.pickup_address, 'Sin dirección'),
-    'pickupZoneName', v_pickup_zone_name,
-    'dropoffAddress', coalesce(v_drop_address, v_contacts.dropoff_address),
-    'dropoffZoneName', v_dropoff_zone_name,
-    'deliveryNotes', coalesce(v_drop_notes, v_request.notes),
-    'recipientName', coalesce(v_recipient_name, v_contacts.recipient_name),
-    'recipientPhone', coalesce(v_recipient_phone, v_contacts.recipient_phone),
-    'recipientPaymentMethod', coalesce(v_payment_method, v_request.recipient_payment_method),
-    'needsChange', coalesce(v_needs_change, v_request.needs_change),
-    'cashChangeAmount', coalesce(v_drop_cash_change, v_request.cash_change_amount),
-    'createdAt', to_char(v_request.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-    'matchedAt', case when v_request.matched_at is null then null else to_char(v_request.matched_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end,
-    'pickedUpAt', case when v_request.picked_up_at is null then null else to_char(v_request.picked_up_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end,
-    'deliveredAt', case when v_request.delivered_at is null then null else to_char(v_request.delivered_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end
-  );
-end;
-$$;
-
-revoke all on function public.get_trip_details(uuid) from public, anon, authenticated;
-grant execute on function public.get_trip_details(uuid) to authenticated;
-
 -- 13. Backfill idempotente (CC-022 §9)
+-- Registramos en audit_log las solicitudes históricas no-draft con datos incompletos
+-- para preservarlas de forma comprobable sin fabricar datos personales ni consentimientos falsos.
+insert into public.audit_log (
+  actor_id,
+  action,
+  target_type,
+  target_id,
+  before,
+  after
+)
+select
+  r.merchant_id,
+  'legacy_migration_inconsistent',
+  'delivery_request',
+  r.id,
+  jsonb_build_object(
+    'status', r.status,
+    'dropoff_zone_id', r.dropoff_zone_id,
+    'package_type', r.package_type,
+    'recipient_payment_method', r.recipient_payment_method,
+    'has_contact', (c.request_id is not null),
+    'consent', c.recipient_consent_declared
+  ),
+  jsonb_build_object('preserved', true, 'drops_created', 0)
+from public.delivery_requests r
+left join public.delivery_request_contacts c on c.request_id = r.id
+where r.status <> 'draft'
+  and not exists (
+    select 1 from public.delivery_request_drops d where d.request_id = r.id
+  )
+  and not exists (
+    select 1
+    from public.audit_log a
+    where a.action = 'legacy_migration_inconsistent' and a.target_id = r.id
+  )
+  and (
+    r.dropoff_zone_id is null
+    or r.package_type is null
+    or r.recipient_payment_method is null
+    or c.request_id is null
+    or c.dropoff_address is null or btrim(c.dropoff_address) = ''
+    or c.recipient_name is null or btrim(c.recipient_name) = ''
+    or c.recipient_phone is null or btrim(c.recipient_phone) = ''
+    or c.recipient_consent_declared is not true
+  );
+
+-- Materializamos drops SOLO para solicitudes con datos legacy reales y consistentes.
+-- Los borradores incompletos permanecen sin drops y son validados por publish_request.
 insert into public.delivery_request_drops (
   id,
   request_id,
@@ -1752,19 +1620,35 @@ select
   gen_random_uuid(),
   r.id,
   1,
-  coalesce(r.dropoff_zone_id, (select id from public.zones where is_active limit 1)),
-  coalesce(r.package_type, 'chico'::public.package_type),
-  coalesce(r.recipient_payment_method, 'cash'::public.recipient_payment_method),
-  case when coalesce(r.recipient_payment_method, 'cash') = 'cash' then coalesce(r.needs_change, false) else false end,
+  r.dropoff_zone_id,
+  r.package_type,
+  r.recipient_payment_method,
+  case when r.recipient_payment_method = 'cash' then r.needs_change else false end,
   r.approx_distance_m,
   case when r.status = 'delivered' then 'delivered' else 'pending' end,
-  case when r.status = 'delivered' then r.delivered_at else null end,
+  case when r.status = 'delivered' then coalesce(r.delivered_at, r.updated_at, r.created_at) else null end,
   null
 from public.delivery_requests r
+join public.delivery_request_contacts c on c.request_id = r.id
+join public.zones z on z.id = r.dropoff_zone_id
 where not exists (
   select 1 from public.delivery_request_drops d where d.request_id = r.id
-);
+)
+  and r.dropoff_zone_id is not null
+  and r.package_type is not null
+  and r.recipient_payment_method is not null
+  and c.dropoff_address is not null and btrim(c.dropoff_address) <> ''
+  and c.recipient_name is not null and btrim(c.recipient_name) <> ''
+  and c.recipient_phone is not null and btrim(c.recipient_phone) <> ''
+  and c.recipient_consent_declared is true
+  and (r.recipient_payment_method = 'cash' or r.needs_change = false)
+  and (
+    r.recipient_payment_method <> 'cash'
+    or not r.needs_change
+    or (r.cash_change_amount is not null and r.cash_change_amount > 0)
+  );
 
+-- Contactos privados por entrega correspondientes al drop creado, preservando notes y cash_change_amount
 insert into public.delivery_request_drop_contacts (
   drop_id,
   dropoff_address,
@@ -1778,24 +1662,30 @@ insert into public.delivery_request_drop_contacts (
 )
 select
   d.id,
-  coalesce(c.dropoff_address, 'Sin dirección'),
+  c.dropoff_address,
   c.dropoff_lat,
   c.dropoff_lng,
-  coalesce(c.recipient_name, 'Sin nombre'),
-  coalesce(c.recipient_phone, '+543865000000'),
-  coalesce(c.recipient_consent_declared, true),
+  c.recipient_name,
+  c.recipient_phone,
+  c.recipient_consent_declared,
   case when d.recipient_payment_method = 'cash' and d.needs_change then r.cash_change_amount else null end,
   r.notes
 from public.delivery_request_drops d
 join public.delivery_requests r on r.id = d.request_id
-left join public.delivery_request_contacts c on c.request_id = r.id
+join public.delivery_request_contacts c on c.request_id = r.id
 where d.position = 1
   and not exists (
     select 1 from public.delivery_request_drop_contacts dc where dc.drop_id = d.id
   );
 
+-- drops_count se actualiza en base a las entregas materializadas
 update public.delivery_requests r
-set drops_count = coalesce((
-  select count(*)::smallint from public.delivery_request_drops d where d.request_id = r.id
-), 1)
-where drops_count is null or drops_count = 0;
+set drops_count = (
+  select count(*)::smallint
+  from public.delivery_request_drops d
+  where d.request_id = r.id
+)
+where exists (
+  select 1 from public.delivery_request_drops d where d.request_id = r.id
+);
+
