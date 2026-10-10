@@ -159,8 +159,18 @@ export function isAuthRoute(pathname: string): boolean {
   );
 }
 
+// PR295-H16: allowlist exacta. Los documentos legales deben poder leerse antes del registro.
+// No habilitar por prefijo '/legal', que también dejaría públicas rutas futuras/desconocidas.
+const PUBLIC_LEGAL_ROUTES = new Set([
+  '/legal',
+  '/legal/terms',
+  '/legal/privacy',
+  '/legal/courier',
+  '/legal/pilot',
+]);
+
 export function isPublicRoute(pathname: string): boolean {
-  if (pathname === '/' || isAuthRoute(pathname)) {
+  if (pathname === '/' || isAuthRoute(pathname) || PUBLIC_LEGAL_ROUTES.has(pathname)) {
     return true;
   }
   const publicPrefixes = ['/forgot-password', '/design-system', '/auth/confirm', '/reset-password'];

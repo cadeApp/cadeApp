@@ -33,6 +33,38 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(isPublicRoute('/merchant/dashboard')).toBe(false);
   });
 
+  describe('PR295-H16: documentos legales públicos antes de aceptar el consentimiento', () => {
+    it.each([
+      '/legal',
+      '/legal/terms',
+      '/legal/privacy',
+      '/legal/courier',
+      '/legal/pilot',
+    ])('%s permite lectura sin sesión', (pathname) => {
+      expect(isPublicRoute(pathname)).toBe(true);
+      expect(evaluateRouteGuard(pathname, null)).toEqual({ action: 'allow' });
+    });
+
+    it.each([
+      '/legal/admin',
+      '/legal/terms/private',
+      '/legal/terms-bypass',
+      '/legal/terms.json',
+      '/legal/terms/',
+      '/legal2',
+      '/courier/feed',
+      '/merchant/dashboard',
+      '/admin/applicants',
+      '/login/mfa',
+    ])('%s continúa protegido para usuarios anónimos', (pathname) => {
+      expect(isPublicRoute(pathname)).toBe(false);
+      expect(evaluateRouteGuard(pathname, null)).toEqual({
+        action: 'redirect',
+        redirectTo: `/login?redirectTo=${encodeURIComponent(pathname)}`,
+      });
+    });
+  });
+
   it('redirecciona a /login si un usuario no autenticado intenta entrar a rutas protegidas', () => {
     const unauthenticatedSession: AuthSession | null = null;
 
