@@ -21,7 +21,7 @@ begin
   set local role authenticated;
   perform set_config(
     'request.jwt.claims',
-    jsonb_build_object('sub', actor_id::text, 'role', 'authenticated')::text,
+    jsonb_build_object('sub', actor_id::text, 'role', 'authenticated', 'aal', 'aal2')::text,
     true
   );
 end;
