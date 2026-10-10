@@ -56,3 +56,9 @@ Android físico a cargo de P1 **tras** resolver todos los bloqueantes técnicos.
 **SIN BLOQUEANTES TÉCNICOS en HEAD inspeccionado.** CI general success; trusted E2E Preview 46 Chromium + 3 global-settings passed; R03/H07 resueltos mediante Chromium completo `channel:'chromium'` con `--app`, native display-mode true, CSS anti-flash real, redirección `/login`. First Load JS 138/138/169/169 kB <=180. **Siguiente gate: Android físico P1**, sobre mismo origen en actualización; no merge todavía.
 
 Matiz: el test automatizado instrumenta una segunda navegación a `/`, no el primer auto-launch de `--app`. El arranque frío/actualización se comprueba humanamente. Mutación RED local del autor no reproducida independientemente. Sin modificaciones de código por revisor.
+
+## Ronda 9 — Informe Android físico (2026-10-09), mismo SHA R8
+
+[Informe R9](revisiones/ronda-9.md) · [Evidencia R9](evidencia/ronda-9.md).
+
+**CON BLOQUEANTES para merge y QA:** prueba Android A/B/D/E bloqueada; Chrome recibe HTML en /manifest.webmanifest (QA reportada). Inspección independiente: middleware no excluye /manifest.webmanifest **ni /sw.js**, ambos pasan a guarda anónima que redirige a login. HTTP sin redirects y /sw.js aún pendientes de confirmación. CI/E2E R8 GREEN es verdadero pero insuficiente para instalar/actualizar WebAPK real. **P1 debe autorizar alcance** a middleware.ts y middleware.test.ts antes de cambios de Kira. No mergear.
