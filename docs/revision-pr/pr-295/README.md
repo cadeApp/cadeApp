@@ -72,3 +72,9 @@ P1 **autoriza exclusivamente** que Kira modifique `src/middleware.ts` y `src/mid
 [Informe R10](revisiones/ronda-10.md) · [Evidencia R10](evidencia/ronda-10.md) · [Mutaciones independientes](evidencia/comandos-ronda-10.md).
 
 **Sin nuevos bloqueantes de código**: P1 R9-A implementada únicamente en `src/middleware.ts`, `src/middleware.test.ts` y ficha/bitácora. CI GREEN (127 Vitest files, 10+1903 db tests, presupuestos <=180), Preview E2E GREEN (46 Chromium + 3 global-settings), Vercel READY para el HEAD. Matcher protege sufijos y privados en tests; 14 casos y cuatro mutaciones RED independientes de regexp. **H14/H15 corregidos por código, estado conservador `arreglado-sin-verificar`** hasta GET anónimo 200 real de manifest+SW en *Preview nuevo* y repetición QA Android A–E. **No merge todavía, no modificar código sin nueva incidencia**.
+
+## Ronda 11 — QA Android y nuevo H16 legal (SHA `3b7484e4b310f41d78eb6de06d21a6cedee10686`)
+
+[Informe R11](revisiones/ronda-11.md) · [Evidencia R11](evidencia/ronda-11.md).
+
+**CON BLOQUEANTE nuevo H16:** las páginas de términos y privacidad no están en `isPublicRoute`, por lo que el guard anónimo redirige los enlaces correctos de login/registro a /login. P1 lo reprodujo manualmente en el WebAPK. **R9 H14/H15 verificados** por reportes QA P1/Codex: manifest/SW 200 sin redirect, WebAPK instalado, primer arranque final /login, offline PASS. Pendiente elegir ampliación acotada de alcance a `src/features/auth/guards.ts` + tests o tarea separada. **No mergear**. B navegación a / dentro de WebAPK y evidencia de no-flash inicial aún pendientes.
