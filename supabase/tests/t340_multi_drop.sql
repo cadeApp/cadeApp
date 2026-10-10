@@ -445,6 +445,7 @@ declare
 begin
   perform pg_temp.act_as(pg_temp.merchant_id());
   select count(*) into v_count from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003419';
+  perform pg_temp.reset_actor();
   return v_count;
 end;
 $$;
@@ -458,10 +459,11 @@ declare
   v_offer_id uuid := '50000000-0000-4000-8000-000000003420';
 begin
   perform pg_temp.reset_actor();
-  insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status, accepted_offer_id)
-  values (v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'matched', v_offer_id);
+  insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
+  values (v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published');
   insert into public.offers (id, request_id, courier_id, amount_ars, eta_minutes, status)
   values (v_offer_id, v_req_id, pg_temp.courier_1_id(), 1500, 15, 'accepted');
+  update public.delivery_requests set status = 'matched', accepted_offer_id = v_offer_id where id = v_req_id;
   insert into public.delivery_request_drops (id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method)
   values (v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash');
   insert into public.delivery_request_drop_contacts (drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
@@ -469,6 +471,7 @@ begin
 
   perform pg_temp.act_as(pg_temp.courier_1_id());
   select count(*) into v_count from public.delivery_request_drop_contacts where drop_id = v_drop_id;
+  perform pg_temp.reset_actor();
   return v_count;
 end;
 $$;
@@ -480,6 +483,7 @@ declare
 begin
   perform pg_temp.act_as(pg_temp.admin_id());
   select count(*) into v_count from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003419';
+  perform pg_temp.reset_actor();
   return v_count;
 end;
 $$;
@@ -496,8 +500,10 @@ create function pg_temp.test_update_setting_zero() returns text language plpgsql
 begin
   perform pg_temp.act_as(pg_temp.admin_id());
   perform public.admin_update_setting('max_drops_per_request', '0'::jsonb);
+  perform pg_temp.reset_actor();
   return 'OK';
 exception when others then
+  perform pg_temp.reset_actor();
   return SQLERRM;
 end;
 $$;
@@ -507,18 +513,24 @@ create function pg_temp.test_update_setting_non_admin() returns text language pl
 begin
   perform pg_temp.act_as(pg_temp.merchant_id());
   perform public.admin_update_setting('max_drops_per_request', '3'::jsonb);
+  perform pg_temp.reset_actor();
   return 'OK';
 exception when others then
+  perform pg_temp.reset_actor();
   return SQLERRM;
 end;
 $$;
 select is(pg_temp.test_update_setting_non_admin(), 'UNAUTHORIZED_ACTOR', 'update de setting por no admin da UNAUTHORIZED_ACTOR');
 
 create function pg_temp.test_update_setting_admin_success() returns int language plpgsql as $$
+declare
+  v_cnt int;
 begin
   perform pg_temp.act_as(pg_temp.admin_id());
   perform public.admin_update_setting('max_drops_per_request', '3'::jsonb);
-  return (select count(*)::int from public.audit_log where action = 'update_setting' and target_id = 'max_drops_per_request');
+  perform pg_temp.reset_actor();
+  select count(*)::int into v_cnt from public.audit_log where action = 'update_setting' and target_id = 'max_drops_per_request';
+  return v_cnt;
 end;
 $$;
 select is(pg_temp.test_update_setting_admin_success(), 1, 'admin_update_setting actualiza y genera registro en audit_log');
