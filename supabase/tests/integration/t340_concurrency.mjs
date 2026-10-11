@@ -223,10 +223,14 @@ async function run() {
           begin;
           set role authenticated;
           select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
-          select status from public.delivery_requests where id = '${reqId}' for update;
-          \\echo S1_LOCKED
+          select public.publish_request('${reqId}');
+          \\echo S1_PUBLISHED
         `);
-        await s1.waitFor('S1_LOCKED');
+        await s1.waitFor('S1_PUBLISHED');
+        assert.ok(
+          s1.output.includes('"status": "published"') || s1.output.includes('"status":"published"'),
+          'publish_request debe responder status published'
+        );
 
         s2.send(`
           begin;
@@ -240,7 +244,6 @@ async function run() {
         await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
@@ -253,7 +256,7 @@ async function run() {
         const countDrops = runSql(`select count(*)::int from public.delivery_request_drops where request_id = '${reqId}';`);
         assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(countDrops, '1', 'El drop 2 no debe haber sido insertado');
-        console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
+        console.log('       -> OK (S2 esperó lock de publicación real y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
         await s1.close();
         await s2.close();
@@ -325,10 +328,14 @@ async function run() {
           begin;
           set role authenticated;
           select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
-          select status from public.delivery_requests where id = '${reqId}' for update;
-          \\echo S1_LOCKED
+          select public.publish_request('${reqId}');
+          \\echo S1_PUBLISHED
         `);
-        await s1.waitFor('S1_LOCKED');
+        await s1.waitFor('S1_PUBLISHED');
+        assert.ok(
+          s1.output.includes('"status": "published"') || s1.output.includes('"status":"published"'),
+          'publish_request debe responder status published'
+        );
 
         s2.send(`
           begin;
@@ -341,7 +348,6 @@ async function run() {
         await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
@@ -354,7 +360,7 @@ async function run() {
         const pkg = runSql(`select package_type from public.delivery_request_drops where id = '${dropIds[0]}';`);
         assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(pkg, 'chico', 'package_type debe permanecer intacto');
-        console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
+        console.log('       -> OK (S2 esperó lock de publicación real y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
         await s1.close();
         await s2.close();
@@ -426,10 +432,14 @@ async function run() {
           begin;
           set role authenticated;
           select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
-          select status from public.delivery_requests where id = '${reqId}' for update;
-          \\echo S1_LOCKED
+          select public.publish_request('${reqId}');
+          \\echo S1_PUBLISHED
         `);
-        await s1.waitFor('S1_LOCKED');
+        await s1.waitFor('S1_PUBLISHED');
+        assert.ok(
+          s1.output.includes('"status": "published"') || s1.output.includes('"status":"published"'),
+          'publish_request debe responder status published'
+        );
 
         s2.send(`
           begin;
@@ -442,7 +452,6 @@ async function run() {
         await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
@@ -455,7 +464,7 @@ async function run() {
         const countDrops = runSql(`select count(*)::int from public.delivery_request_drops where id = '${dropIds[1]}';`);
         assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(countDrops, '1', 'El drop 2 no debe haber sido eliminado');
-        console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
+        console.log('       -> OK (S2 esperó lock de publicación real y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
         await s1.close();
         await s2.close();
@@ -527,10 +536,14 @@ async function run() {
           begin;
           set role authenticated;
           select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
-          select status from public.delivery_requests where id = '${reqId}' for update;
-          \\echo S1_LOCKED
+          select public.publish_request('${reqId}');
+          \\echo S1_PUBLISHED
         `);
-        await s1.waitFor('S1_LOCKED');
+        await s1.waitFor('S1_PUBLISHED');
+        assert.ok(
+          s1.output.includes('"status": "published"') || s1.output.includes('"status":"published"'),
+          'publish_request debe responder status published'
+        );
 
         s2.send(`
           begin;
@@ -543,7 +556,6 @@ async function run() {
         await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
@@ -556,7 +568,7 @@ async function run() {
         const addr = runSql(`select dropoff_address from public.delivery_request_drop_contacts where drop_id = '${dropIds[0]}';`);
         assert.equal(status, 'published', 'Estado final debe ser published');
         assert.notEqual(addr, 'Dirección Ilegal', 'La dirección no debe haber sido modificada');
-        console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
+        console.log('       -> OK (S2 esperó lock de publicación real y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
         await s1.close();
         await s2.close();
