@@ -189,7 +189,7 @@ test.describe('T-340 Gate 0 — Checkpoint funcional de compatibilidad legacy po
     } | null;
     expect(trip?.requestId).toBe(createdRequestId);
     expect(trip?.deliveryNotes).toBe(notesMarker);
-    expect(trip?.cashChangeAmount).toBe(CHANGE_AMOUNT + 1000);
+    expect(trip?.cashChangeAmount).toBe(CHANGE_AMOUNT);
     expect(trip?.status).toBe('matched');
 
     // -------------------------------------------------------------------------
