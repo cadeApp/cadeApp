@@ -509,3 +509,95 @@ console.log({plan,count,pass:0});
 2. **H14:** fixture multi-drop `in_transit` con dos últimas entregas; dos sesiones PostgreSQL efectivamente simultáneas sobre `mark_drop_delivered` + `mark_drop_failed`; lock verificable por PIDs; estado padre entre commits y luego `delivered`, sin pending, idempotencia estable, escenario all-failed. Mutación productiva: quitar lock `delivery_requests FOR UPDATE` de ambos métodos; detector de contención debe fallar; restaurar y GREEN.
 
 **Scope:** los dos bloqueantes son reparables en tests existentes autorizados por Lautaro073. No hace falta nueva decisión ni modificar ficha, CC, frontend, workflows fuera de `db-tests` o migración (salvo defecto funcional demostrado). La prueba runtime de la mutación queda a cargo de CI efímero, nunca staging/producción.
+
+## Ronda 7 — SHA de código `8b38d1a13a61dca47bfada86807a8cb5f0eb93e8`
+
+**Fuentes verificadas por el revisor, exactas del SHA:** `supabase/tests/t340_multi_drop.sql` (77 aserciones), `supabase/tests/integration/t340_concurrency.mjs` (865 líneas), `supabase/migrations/20261009200000_t340_multi_drop.sql`, `docs/tasks/T-340.md` desde `develop`, bitácora y comentarios PR #317.
+
+**Logs leídos realmente dentro de GitHub Actions:** https://github.com/cadeApp/cadeApp/actions/runs/38165347809/job/114546652154
+- `Files=1, Tests=10, Result: PASS` bootstrap.
+- `supabase/tests/t340_multi_drop.sql ... ok`, `Files=21, Tests=1980, Result: PASS` suite DB.
+- Ocho escenarios H08 (1A–4B) reportan OK, mensaje `8/8`.
+- Tres escenarios H14 (5–7) reportan OK, mensaje `3/3`.
+- `pnpm db:types --local` y `git diff --exit-code -- src/types/database.types.ts` finalizan con éxito (job completo success).
+- `lint/typecheck/unit/build/audit/bundle-budget` pass; `approval-policy` fail; Supabase Preview skipped.
+
+### Sonda independiente reproducible de H13/H14 — mutaciones EN MEMORIA
+
+Guardar el siguiente archivo en `/tmp/pr317-r7-check.cjs` dentro de **un checkout limpio de este mismo SHA** y ejecutar `node /tmp/pr317-r7-check.cjs`. Solo lee archivos y **no** ejecuta mutaciones SQL ni edita el repositorio. En esta revisión los controles equivalentes se ejecutaron directamente sobre blobs devueltos por el conector de GitHub y se obtuvieron los resultados listados después del script.
+
+```js
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const t=fs.readFileSync('supabase/tests/t340_multi_drop.sql','utf8');
+const h=fs.readFileSync('supabase/tests/integration/t340_concurrency.mjs','utf8');
+const task=fs.readFileSync('docs/tasks/T-340.md','utf8');
+const names=[
+  'test_rpc_drop_delivered_suspended',
+  'test_rpc_drop_delivered_unapproved',
+  'test_rpc_drop_failed_unauthenticated',
+  'test_rpc_drop_failed_merchant_caller',
+  'test_rpc_drop_failed_other_courier',
+  'test_rpc_drop_failed_suspended',
+  'test_rpc_drop_failed_unapproved'
+];
+function h13(src){
+ return names.every(n=>src.includes('create function pg_temp.'+n+'()')
+  && src.includes("select throws_matching('select pg_temp."+n+"()'"));
+}
+function pieces(src){
+  const out={};
+  for(let n=5;n<=7;n++){
+    const p=src.indexOf("console.log('[H14] Escenario "+n+":");
+    assert(p>=0,'Sin objetivo H14: faltó escenario '+n);
+    const end=n<7?src.indexOf("console.log('[H14] Escenario "+(n+1)+":",p)
+                 :src.indexOf("console.log('[H14] TODOS",p);
+    assert(end>p,'Sin límite H14 para '+n);
+    out[n]=src.slice(p,end);
+  }
+  return out;
+}
+function h14(src){
+ const s=pieces(src);
+ return [5,6,7].every(n=>s[n].includes('await waitForBlockedLock(s1.pid, s2.pid);')
+   && s[n].includes("assert.equal(finalStatus, 'delivered'")
+   && s[n].includes("assert.equal(pendingCount, '0'"))
+   && (s[n].match(/new PsqlSession/g)||[]).length===2)
+ && s[5].includes('select public.mark_drop_delivered(')
+ && s[5].includes('select public.mark_drop_failed(')
+ && s[6].includes('select public.mark_drop_failed(')
+ && s[6].includes('select public.mark_drop_delivered(')
+ && (s[7].match(/select public.mark_drop_failed\(/g)||[]).length>=2;
+}
+assert(h13(t),'H13 BASE tiene errores');
+const m13=t.replace('create function pg_temp.test_rpc_drop_failed_unauthenticated()',
+ 'create function pg_temp.test_rpc_drop_failed_unauthenticated_MUTATED()');
+assert(m13!==t && !h13(m13),'H13: mutación de TEST no cambió el detector');
+
+assert(h14(h),'H14 BASE tiene errores');
+const m14a=h.replaceAll('await waitForBlockedLock(s1.pid, s2.pid);','await Promise.resolve();');
+assert(m14a!==h && !h14(m14a),'H14: mutación de TEST sobre lock no detectada');
+const m14b=h.replace(
+ "select public.mark_drop_failed('${dropIds[1]}', 'Rechazado por destinatario 2');",
+ 'select 1;'
+);
+assert(m14b!==h && !h14(m14b),'H14: mutación de TEST sobre RPC no detectada');
+
+assert(/RED de cada prueba nueva demostrado/.test(task),'DoD RED faltante');
+console.log('H13 BASE GREEN, detector adversarial mutado RED [solo texto]');
+console.log('H14 BASE GREEN, dos mutaciones adversariales detectadas [solo texto]');
+console.log('DoD exige RED de pruebas nuevas');
+console.log('NO prueba mutaciones de funciones reales en PostgreSQL');
+```
+
+**Resultado observado directamente mediante la herramienta:** el detector H13 da `BASE=true`, `mutado=false`; detector H14 da `BASE=true`, `sin tres esperas=false`, `sin RPC del escenario 7=false`; DoD RED presente en ficha de `develop`. No se ejecutó el script aquí desde un checkout (no existe clon local del repositorio). Estos son **detectores estructurales en memoria**, no la prueba RED→GREEN funcional que exige H15.
+
+### Reproducción que falta — H15 (RED funcional de funciones reales)
+
+La bitácora última sesión 2026-10-11 15:45 solo registra pruebas GREEN (77/77 pgTAP y 11/11 carreras). La descripción de la PR marca `[x]` «Pruebas pgTAP con demostración RED→GREEN real», pero no presenta para H13/H14 ningún comando de modificación temporal de función productiva, salida de TAP `not ok`, ni ejecución GREEN después de restaurar SQL.
+
+**Mutantes funcionales necesarios en la base efímera exclusiva del job `db-tests`**:
+- `public.mark_drop_failed(uuid,text)`: quitar temporalmente el guard `v_offer.courier_id is distinct from v_actor_id` **solo de esta función**; volver a ejecutar la misma prueba pgTAP de repartidor ajeno, esperar RED específico; restaurar y esperar GREEN.
+- `public.mark_drop_delivered(uuid)` + `public.mark_drop_failed(uuid,text)`: quitar temporalmente `FOR UPDATE` de la lectura de `delivery_requests` en ambas RPC; volver a ejecutar los mismos escenarios H14 5–7 y esperar fallo por ausencia de contención identificada mediante `pg_blocking_pids`, luego restaurar y esperar 3/3 GREEN. Si no falla, el oráculo es insuficiente y debe reforzarse; no declarar RED por errores de setup no relacionados.
+
+**Limitaciones/safety:** DDL de funciones únicamente en Docker Postgres de CI, nunca conexiones remotas ni migraciones del repo. Hacer rollback/reset antes de reutilizar tests; abortar CI si no se produjo el RED esperado. No confundir simular una mutación textual en test con modificar de verdad funciones SQL y reejecutar casos de prueba. No correr Docker/Supabase local.
