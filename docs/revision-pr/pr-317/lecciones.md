@@ -35,3 +35,13 @@ No se modifica `AGENTS.md` ni se asigna numeración AG nueva: las reglas existen
 **R3/H08 (pendiente):** la suite impide `SECURITY DEFINER` y la eliminación textual del lock, pero no ha ejercitado dos transacciones concurrentes. Un control estructural es útil y necesario, pero no sustituye una prueba runtime de carreras requerida por contrato.
 
 No se propone numeración AG nueva: la lección más importante es **revalidar contra la fuente**, incluidas las sugerencias del propio revisor.
+
+## Ronda 4 — Estado anterior mejoró, pero falta probar los RPC abiertos
+
+**H10–H12 cerrados:** el autor implementó correctamente la semántica de normalización del CC-022 y dejó de duplicar el monto sensible y de inventar fechas. Los nuevos casos sí llaman al helper de backfill real; CI valida 52 aserciones de T-340. La revisión anterior aportó una rectificación necesaria (R2/H09): **la fuente contractual prevalece sobre el comentario del revisor**.
+
+**H08 sigue abierto:** validar `SECURITY INVOKER` + `FOR UPDATE` en `pg_proc` no sustituye un ensayo de concurrencia con dos sesiones y estado final. Es un caso de `pr-64/AG-62`; un harness autónomo de DB en CI merece autorización de alcance y debe vivir junto a la suite SQL, no trasladarse al E2E del formulario de la etapa 4.
+
+**H13 nuevo:** probar `has_function` de una RPC no detecta que su lógica de autorización, idempotencia o cierre esté vacía o cambiada. Cuando una migración habilita `GRANT EXECUTE` a clientes, ese mismo PR debe probar las transiciones de negocio que habilita antes de su despliegue. Refuerza P08, `pr-63/AG-68` y el requisito de enumerar la clase entera (pr-56/AG-37).
+
+**Proceso:** el autor marcó en el cuerpo de la PR «tests ... concurrentes» como hecho mientras su bitácora reconoce que H08 está pendiente. Antes de mergear, el cuerpo debe alinearse con la evidencia CI, sin falsear DoD. `approval-policy` no verifica exhaustivamente cobertura semántica.
