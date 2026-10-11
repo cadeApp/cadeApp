@@ -601,3 +601,97 @@ La bitácora última sesión 2026-10-11 15:45 solo registra pruebas GREEN (77/77
 - `public.mark_drop_delivered(uuid)` + `public.mark_drop_failed(uuid,text)`: quitar temporalmente `FOR UPDATE` de la lectura de `delivery_requests` en ambas RPC; volver a ejecutar los mismos escenarios H14 5–7 y esperar fallo por ausencia de contención identificada mediante `pg_blocking_pids`, luego restaurar y esperar 3/3 GREEN. Si no falla, el oráculo es insuficiente y debe reforzarse; no declarar RED por errores de setup no relacionados.
 
 **Limitaciones/safety:** DDL de funciones únicamente en Docker Postgres de CI, nunca conexiones remotas ni migraciones del repo. Hacer rollback/reset antes de reutilizar tests; abortar CI si no se produjo el RED esperado. No confundir simular una mutación textual en test con modificar de verdad funciones SQL y reejecutar casos de prueba. No correr Docker/Supabase local.
+
+## Ronda 8 — H15 cerrado: mutaciones PRODUCTIVAS ejecutadas en Actions
+
+**SHA exacto de implementación:** `d5d002b56b2d4bd968d120cd0f8481f09539103e`.  
+**CI real:** https://github.com/cadeApp/cadeApp/actions/runs/38169704109  
+**DB job:** https://github.com/cadeApp/cadeApp/actions/runs/38169704109/job/114559541340  
+**Approval job:** https://github.com/cadeApp/cadeApp/actions/runs/38169704109/job/114559536674
+
+### Extracto literal del log REAL de db-tests
+
+```text
+Files=1, Tests=10
+Result: PASS
+Files=21, Tests=1980
+Result: PASS
+[H08] TODOS LOS ESCENARIOS CONCURRENTES COMPLETADOS EXITOSAMENTE (8/8).
+[H14] TODOS LOS ESCENARIOS DE MARCAS CONCURRENTES COMPLETADOS EXITOSAMENTE (3/3).
+[H15] INICIANDO CONTROLES NEGATIVOS RED->GREEN (T-340 / H15)
+[H15] Aplicando mutación efímera H13 (omitiendo verificación de pertenencia del actor)...
+# Failed test 50: "mark_drop_failed rechaza repartidor no asignado a la oferta aceptada"
+# Failed test 51: "mark_drop_failed rechaza repartidor suspendido"
+# Failed test 53: "drop permanece pending tras rechazos de autorizacion y elegibilidad"
+  Failed tests:  50-51, 53
+[H15] -> RED OBTENIDO EXITOSAMENTE PARA H13 (exit code 1, fallo específico en rechazo de repartidor ajeno).
+[H15] Restaurando definición original de public.mark_drop_failed(uuid,text)...
+[H15] -> GREEN OBTENIDO EXITOSAMENTE PARA H13 TRAS RESTAURACIÓN (77/77 PASS).
+[H15] Aplicando mutación efímera H14 (eliminando FOR UPDATE de delivery_requests en ambas RPC)...
+[H14] Escenario 5: mark_drop_delivered + mark_drop_failed concurrentes...
+[H08/H14] ERROR EN EJECUCIÓN CONCURRENTE: Error: [H08/H14] Timeout esperando que waiter PID 1631 quede bloqueado por blocker PID 1632 con wait_event_type = 'Lock'.
+[H15] -> RED OBTENIDO EXITOSAMENTE PARA H14 (exit code 1, fallo específico por ausencia de contención en delivery_requests).
+[H15] Restaurando definiciones originales de mark_drop_delivered y mark_drop_failed...
+[H15] -> GREEN OBTENIDO EXITOSAMENTE PARA H14 TRAS RESTAURACIÓN (11/11 OK: 8/8 H08 + 3/3 H14).
+[H15] DEMOSTRACIÓN RED->GREEN COMPLETADA EXITOSAMENTE (H13 y H14)
+Files=21, Tests=1980
+Result: PASS
+[H08] TODOS LOS ESCENARIOS CONCURRENTES COMPLETADOS EXITOSAMENTE (8/8).
+[H14] TODOS LOS ESCENARIOS DE MARCAS CONCURRENTES COMPLETADOS EXITOSAMENTE (3/3).
+[db:types] Tipos generados exitosamente en .../src/types/database.types.ts
+```
+
+**Approval-policy, job `114559536674`:** `El PR requiere aprobación vigente de Lautaro073.` — exit code 1. `list_pull_request_reviews` respondió `[]`. La aprobación debe ocurrir **después** de los commits documentales de la ronda 8, para no invalidar el voto. No se pidió ni ejecutó aprobación/merge.
+
+### Verificación independiente sobre el SHA original y mutaciones adversariales EN MEMORIA
+
+Guardar como `/tmp/pr317-r8-check.cjs` en un **checkout del SHA exacto**, ejecutar con `node /tmp/pr317-r8-check.cjs`. No lee claves ni toca DB o repositorio. Comprueba que el flujo no puede declararse completo cuando le falta la aplicación real de un mutante, el chequeo del RED o la restauración posterior.
+
+```js
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const h=fs.readFileSync('supabase/tests/integration/t340_concurrency.mjs','utf8');
+const ci=fs.readFileSync('.github/workflows/ci.yml','utf8');
+function check(s) {
+  return [
+    "if (process.argv.includes('--mutation-check'))",
+    'runSqlStdin(mutatedDefH13)',
+    'runSqlStdin(origDefFailed)',
+    'runSqlStdin(mutatedDefDelivered)',
+    'runSqlStdin(mutatedDefFailedH14)',
+    'runSqlStdin(origDefDelivered)',
+    'runSqlStdin(origDefFailedForH14)',
+    'assert.notEqual(testRes.status, 0',
+    'assert.notEqual(runnerRes.status, 0',
+    "out.includes('mark_drop_failed rechaza repartidor no asignado a la oferta aceptada')",
+    "runnerOut.includes('Timeout esperando que waiter PID')",
+    'assert.equal(restoreRes.status, 0',
+    'assert.equal(restoreRunnerRes.status, 0',
+    'lockPattern'
+  ].every(fragment=>s.includes(fragment));
+}
+assert(check(h),'H15 base debe ser verde');
+const mutant=[
+  ['No H13 product mutation', h.replace('runSqlStdin(mutatedDefH13)','runSqlStdin(origDefFailed)')],
+  ['No H14 product mutation', h.replace('runSqlStdin(mutatedDefFailedH14)','runSqlStdin(origDefFailedForH14)')],
+  ['No H13 RED assert', h.replace('assert.notEqual(testRes.status, 0','assert.equal(testRes.status, 0')],
+  ['No H14 RED assert', h.replace('assert.notEqual(runnerRes.status, 0','assert.equal(runnerRes.status, 0')],
+  ['No H14 restore', h.replace('runSqlStdin(origDefFailedForH14)','runSqlStdin(mutatedDefFailedH14)')]
+];
+for(const [label,changed] of mutant){
+ assert.notEqual(changed,h,'Mutación de control sin objetivo: '+label);
+ assert(!check(changed),'Detector no acusa la mutación: '+label);
+ console.log('RED de control estructural:',label);
+}
+assert(ci.includes('node supabase/tests/integration/t340_concurrency.mjs --mutation-check'));
+assert(ci.includes('pnpm supabase test db\n            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs'));
+console.log('GREEN basal: H15 product mutation wiring, RED-specific asserts, restoration and final CI present');
+```
+
+**Sonda equivalente ejecutada en V8 sobre blobs exactos del conector GitHub:** basal 14/14 condiciones `true`, cinco mutaciones detectadas `true`; workflow incluye invocación `--mutation-check` y ejecución GREEN final. Esta sonda **no se presenta como mutación SQL real**: eso está demostrado por el log de Actions anterior.
+
+### Conclusión y límites
+
+**El requisito H15 ahora sí está sustentado** por código del harness y prueba ejecutada contra funciones redefinidas en Postgres de Actions, con RED objetivo y GREEN tras restauración. La propia verificación del revisor no usó Docker/Supabase local, no disparó workflows y no tocó ramas fuera de la carpeta `docs/revision-pr/pr-317/**`.
+
+Resto de checks: `unit, typecheck, lint, build, audit, bundle-budget` success; Supabase Preview skipped; **approval-policy** solo espera revisión aprobatoria vigente de Lautaro073. La política de aprobación no debe alterarse para obtener verde. Los commits documentales volverán a mover HEAD y podrán disparar CI: validar el **HEAD nuevo** antes de aprobar y mergear.
