@@ -1,28 +1,37 @@
-# PR #317 — T-340 · Paso 1/4 — esquema y puente legacy
+# PR #317 — T-340 · Paso 1/4 — Esquema, puente legacy y backfill
 
-**Autor:** @asako669 · **Base:** `develop` · **Estado:** CON BLOQUEANTES, NO MERGEAR.
+**PR:** https://github.com/cadeApp/cadeApp/pull/317 · **Autor:** @asako669 (P2) · **Rama:** `feat/T-340-varias-entregas` → `develop`  
+**Estado:** 🔴 CON BLOQUEANTES — NO MERGEAR
 
-## Rondas
+## Rondas independientes
 
 | Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
 | 1 | `cf69ffd6` | 5 bloqueantes | [Ronda 1](revisiones/ronda-1.md) |
-| 2 | `5bba8319` | 4 nuevos bloqueantes; H03 parcial | [Ronda 2](revisiones/ronda-2.md) |
+| 2 | `5bba8319` | 4 nuevos bloqueantes | [Ronda 2](revisiones/ronda-2.md) |
+| 3 | `5e2a62c6` | 4 bloqueantes vigentes (H08 + H10–H12) | [Ronda 3](revisiones/ronda-3.md) |
 
-## Estado de los hallazgos
+## Estado por hallazgo (ronda 3)
 
-| ID | Estado |
-|---|---|
-| H01 | Arreglado/verificado: migración sin `zones.is_active`. |
-| H02 | Arreglado/verificado: sin datos del destinatario ficticios; ver H09. |
-| H03 | Parcial: 22 `pass()` retirados; persisten pruebas que no ejercitan backfill (H07). |
-| H04 | Arreglado/verificado: fixture corregido y 40 pgTAP en CI. |
-| H05 | Arreglado/verificado: `get_trip_details` preservado para paso 2. |
-| H06 | **CRÍTICO abierto:** guard declarado `SECURITY DEFINER`. |
-| H07 | **ALTO abierto:** backfill no probado contra código productivo. |
-| H08 | **ALTO abierto:** no hay prueba concurrente de dos sesiones. |
-| H09 | **ALTO abierto:** auditoría no detecta inconsistencias de pago. |
+| ID | Estado | Tema |
+|---|---|---|
+| H01 | arreglado-verificado | Columna inexistente en backfill. |
+| H02 | arreglado-verificado | Identidad y consentimiento ficticios. |
+| H03 | arreglado-verificado | Aserciones `pass()` reemplazadas. |
+| H04 | arreglado-verificado | PgTAP fixtures/plan reales. |
+| H05 | arreglado-verificado | Lector reservado para paso 2. |
+| H06 | arreglado-verificado | Guard `SECURITY INVOKER` + test estructural. |
+| H07 | arreglado-verificado | Tests usan helper productivo. |
+| **H08** | **abierto (ALTO)** | Faltan carreras de dos sesiones, no diferibles automáticamente al paso 4. |
+| H09 | arreglado-verificado con residual H10 | Auditoría de no-draft sin drop; sin embargo la exclusión incumple CC-022. |
+| **H10** | **abierto (ALTO)** | Backfill debía normalizar históricos inválidos, no omitirlos. |
+| **H11** | **abierto (ALTO)** | `cash_change_amount` sensible copiado a `audit_log`. |
+| **H12** | **abierto (MEDIO)** | `delivered_at` histórico fabricado con timestamps no equivalentes. |
 
-[Hallazgos estructurados](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
+**Rectificación del revisor:** la sugerencia de R2/H09 de excluir y auditar pagos históricos incompatibles resultó contraria a CC-022 §5b, que prescribe normalización y materialización. La ronda 3 identifica y corrige esa dirección técnica.
 
-**No comenzar paso 2 ni mergear PR #317** hasta completar correcciones, revisión independiente y checkpoint posterior a integración en Develop.
+[Hallazgos estructurados](hallazgos.jsonl) · [Evidencia/Comandos](evidencia/comandos.md) · [Lecciones](lecciones.md).
+
+## Qué sigue
+
+Corregir H08, H10, H11 y H12 sólo en el paso 1, aportar pruebas que fallen ante mutaciones del código productivo y CI del nuevo SHA. No mergear ni empezar las otras PR del rollout hasta superar revisión + merge/despliegue/checkpoint de la primera.
