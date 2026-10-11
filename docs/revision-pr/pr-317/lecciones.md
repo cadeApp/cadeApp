@@ -23,3 +23,15 @@ No se tocaron `AGENTS.md` ni reglas de CI. Estas lecciones deberán contrastarse
 - **H09, P06:** auditar un backfill requiere enumerar las mismas exclusiones que aplica el materializador, incluidas las relaciones entre medio de pago y monto de cambio.
 
 No se modifica `AGENTS.md` ni se asigna numeración AG nueva: las reglas existentes ya contemplan estos patrones y aún falta ejecución de pruebas concurrentes en CI.
+
+## Ronda 3 — Un error de nuestra propia recomendación, y privacidad en auditoría
+
+**R3/H10 (revisión equivocada):** en la ronda 2 el revisor exigió que un histórico `transfer+needs_change=true` o `cash+needs_change=true+NULL` se omitiera y auditara. Tras releer el contrato **CC-022 §5b**, esa indicación resultó incorrecta: el backfill debe **normalizar y materializar** ambos, y reportar anomalías sin inventar montos. La existencia de auditoría no sustituye la obligación contractual de conservar la entrega. **Lección:** al pedir un cambio de semántica, citar literalmente la cláusula fuente y comprobar con tablas de decisión de casos válidos, históricos normalizables e inválidos de nueva publicación. No trasladar al backfill la validación de `publish_request`.
+
+**R3/H11 (datos sensibles):** audit_log es un log, aunque tenga RLS admin. No copiar `cash_change_amount`, notas ni contactos a `before/after`; usar flags como `has_cash_change_amount` para observabilidad sin duplicar secretos. Refuerza `AGENTS.md §2` y P08.
+
+**R3/H12 (historia falsificada):** `updated_at` y `created_at` no significan `delivered_at`; un `coalesce` que evita el error SQL puede convertir ausencia de evidencia en un hecho falso. Probar la fila histórica incompleta antes de añadir fallbacks.
+
+**R3/H08 (pendiente):** la suite impide `SECURITY DEFINER` y la eliminación textual del lock, pero no ha ejercitado dos transacciones concurrentes. Un control estructural es útil y necesario, pero no sustituye una prueba runtime de carreras requerida por contrato.
+
+No se propone numeración AG nueva: la lección más importante es **revalidar contra la fuente**, incluidas las sugerencias del propio revisor.
