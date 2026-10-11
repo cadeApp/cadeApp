@@ -56,3 +56,90 @@ console.log('Esto NO ejecuta las cuatro invariantes contra Supabase Develop');
 **Prueba RED mínima real del nuevo test:** en la aplicación/DB **no** hacer modificaciones destructivas de la instancia Develop compartida; mutar temporalmente **una aserción del E2E** para exigir `drops_count=2` o un importe distinto; la misma prueba real contra Develop debe fallar específicamente por ese oráculo, **restaurar** la aserción y repetir GREEN. Esto demuestra que la aserción funciona pero **no sustituye** mutación del comportamiento productivo: para una demostración más fuerte usar mutation SQL solo en instancia efímera, nunca Develop. No cambiar hooks a `.skip`, `test.only` ni fingir RED.
 
 **Criterio de CI:** leer el log interno del job E2E **del SHA que contiene el nuevo archivo**, localizar `t340-legacy-checkpoint.spec.ts`, 4 invariantes, resultado y enlaces; registrar junto al commit en `docs/tasks/log/T-340.md`. Un run verde de la rama anterior no cierra Gate 0.
+
+## Ronda 2 — E2E funcional real y control independiente de cobertura
+
+**SHA auditado:** `9c5e797cec93a8e621c0faf3f7b3feef869d7c85`, archivo nuevo `e2e/specs/t340-legacy-checkpoint.spec.ts` (217 líneas). Diff desde R1: **solo** archivo E2E y nueva bitácora de agy; no tocó los archivos de revisión ni implementación de lectores.
+
+**Ejecuciones reales consultadas en GitHub (no son hipótesis):**
+
+- GitHub Actions CI, run https://github.com/cadeApp/cadeApp/actions/runs/38178270092 (SHA exacto): checks unit, typecheck, lint, build, audit, bundle-budget, db-tests PASS. Job `db-tests` 114585177535: `Files=21, Tests=1980, Result: PASS`; H08 8/8 y H14 3/3; mutantes H15 del **paso 1** RED→GREEN; `db:types --local` sin drift.
+- GitHub Actions **e2e-preview** https://github.com/cadeApp/cadeApp/actions/runs/38178339003, job https://github.com/cadeApp/cadeApp/actions/runs/38178339003/job/114585413997. El checkout muestra `HEAD is now at 9c5e797 test(e2e): add legacy client checkpoint spec for Gate 0 [T-340]`. Log literal:
+```text
+✓  63 [chromium] › e2e/specs/t340-legacy-checkpoint.spec.ts:29:7 › T-340 Gate 0 — Checkpoint funcional de compatibilidad legacy posmerge › T-340 Gate 0: cliente legacy publica 1 drop, reintento sin duplicación, get_trip_details post-match y persistencia legacy (21.9s)
+71 passed (14.9m)
+3 passed (1.0m)
+```
+- El job `report-preview-status` 114591314176 concluyó PASS y `GET /commits/9c5e797.../status` respondió `context='e2e-preview', state='success'` para ese SHA. No se confundió con el `73/73` del SHA anterior.
+- **NO hay línea RED ni segunda corrida del E2E nuevo**: no inventarla. El job verde prueba los cuatro oráculos *con las funciones intactas*, no un mutante de producto.
+- Última bitácora del autor `2026-10-11 19:10` termina en «Falta: push / ejecución GREEN / documentación de Gate 0». La rama sí fue pusheada y Actions pasó, por lo que el registro ya no refleja el estado real.
+
+### Sonda reproducible de integridad del nuevo E2E (solo texto y mutaciones EN MEMORIA)
+
+Guardá este código como `/tmp/pr318-r2-check.cjs` desde checkout del SHA exacto; ejecutá `node /tmp/pr318-r2-check.cjs`. No requiere red, no edita la prueba ni consulta datos de usuario. Las condiciones equivalentes fueron **evaluadas en V8** sobre los bytes exactos devueltos por el conector en esta revisión; la sonda no ejecuta Playwright y no debe presentarse como RED runtime.
+
+```js
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const src=fs.readFileSync('e2e/specs/t340-legacy-checkpoint.spec.ts','utf8');
+const expected=[
+ ['submit UI','await merchantPage.submitRequestButton.click()'],
+ ['marker ID','await findRequestIdByNotesMarker(stagingContext, notesMarker)'],
+ ['published','expect(reqRow?.status).toBe(\'published\')'],
+ ['drops_count','expect(reqRow?.drops_count).toBe(1)'],
+ ['one drop','expect(dropsRows).toHaveLength(1)'],
+ ['canonical position','expect(drop.position).toBe(1)'],
+ ['private notes','expect(dropContacts?.notes).toBe(notesMarker)'],
+ ['private cash','expect(dropContacts?.cash_change_amount).toBe(CHANGE_AMOUNT)'],
+ ['real retry RPC',"merchantClient.rpc('publish_request'"],
+ ['exact retry error',"expect(retryError?.message).toContain('INVALID_STATE_TRANSITION')"],
+ ['same UUID','expect(retryDrop.id).toBe(drop.id)'],
+ ['real acceptance RPC',"merchantClient.rpc('accept_offer'"],
+ ['courier RPC',"courierClient.rpc('get_trip_details'"],
+ ['trip notes','expect(trip?.deliveryNotes).toBe(notesMarker)'],
+ ['trip cash','expect(trip?.cashChangeAmount).toBe(CHANGE_AMOUNT)'],
+ ['legacy notes','expect(finalReq?.notes).toBe(notesMarker)'],
+ ['legacy cash','expect(finalReq?.cash_change_amount).toBe(CHANGE_AMOUNT)'],
+ ['track offer','trackEntityForCleanup(stagingContext, \'offer\', offerId)']
+];
+for(const [name,needle] of expected){
+ assert(src.includes(needle),'Falta control fuente: '+name);
+}
+const mutants=[
+ ['wrong private notes',src.replace(
+   'expect(dropContacts?.notes).toBe(notesMarker)',
+   "expect(dropContacts?.notes).toBe('incorrect')"),
+   'expect(dropContacts?.notes).toBe(notesMarker)'],
+ ['replace same UUID check',src.replace(
+   'expect(retryDrop.id).toBe(drop.id)',
+   'expect(retryDrop.id).toBeDefined()'),
+   'expect(retryDrop.id).toBe(drop.id)'],
+ ['remove UI publish',src.replace(
+   'await merchantPage.submitRequestButton.click()',
+   'await Promise.resolve()'),
+   'await merchantPage.submitRequestButton.click()'],
+ ['switch actor courier→merchant',src.replace(
+   "courierClient.rpc('get_trip_details'",
+   "merchantClient.rpc('get_trip_details'"),
+   "courierClient.rpc('get_trip_details'"],
+ ['omit legacy cash check',src.replace(
+   'expect(finalReq?.cash_change_amount).toBe(CHANGE_AMOUNT)',
+   'expect(finalReq).toBeDefined()'),
+   'expect(finalReq?.cash_change_amount).toBe(CHANGE_AMOUNT)']
+];
+for(const [name,mutant,needle] of mutants){
+ assert.notEqual(mutant,src,'Mutación sin objetivo: '+name);
+ assert(!mutant.includes(needle),'Mutación no detectada por control: '+name);
+}
+console.log('BASELINE 18/18 marcadores de contrato presentes');
+console.log('5/5 mutaciones adversariales del código E2E detectadas en memoria');
+console.log('NO se ejecutó PostgreSQL mutado ni Playwright RED en esta sonda');
+```
+
+**Resultados de inspección independiente efectivamente obtenidos:** baseline `18/18 present=true`; mutantes `5/5 changed=true && detected=true`. La sonda solo verifica presencia estructural y sensibilidad textual; la **ejecución real GREEN** se sostiene por el log del job anterior, no por la sonda. No se afirma haber copiado el script a un worktree o ejecutado localmente.
+
+### Red funcional de este NUEVO spec: aún sin prueba
+
+Para cerrar H02 hace falta una corrida de este mismo spec con una perturbación adversarial que lo haga fallar con el **error de aserción específico del valor cambiado** (p. ej., `cashChangeAmount` o `drops_count`), y luego restauración + corrida GREEN, con SHA/runs fechados. No alterar SQL o RLS del Supabase Develop compartido para obtener RED. Documentar expresamente que una mutación de EXPECTATIVA de test es un RED de aserción, no un mutante de comportamiento productivo. Si no se pudo ejecutar, decir «no ejecutado».
+
+El revisor NO disparó Actions ni modificó datos/secretos; dejó todos los cambios en `docs/revision-pr/pr-318/**`. El autor debe actualizar su propia `docs/tasks/log/T-340.md`.
