@@ -38,6 +38,18 @@ function runSql(sql) {
   return res.stdout.trim();
 }
 
+function runSqlStdin(sql) {
+  const res = spawnSync(
+    'docker',
+    ['exec', '-i', dbContainer, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres'],
+    { input: sql, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+  );
+  if (res.status !== 0) {
+    throw new Error(`[H15] SQL error: ${res.stderr || res.stdout}\nSQL: ${sql.slice(0, 300)}...`);
+  }
+  return res.stdout.trim();
+}
+
 class PsqlSession {
   constructor(label) {
     this.label = label;
@@ -89,7 +101,9 @@ class PsqlSession {
   }
 }
 
-async function waitForBlockedLock(blockerPid, waiterPid, timeoutMs = 8000) {
+const defaultLockTimeoutMs = Number(process.env.LOCK_TIMEOUT_MS) || 8000;
+
+async function waitForBlockedLock(blockerPid, waiterPid, timeoutMs = defaultLockTimeoutMs) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const countStr = runSql(`
@@ -858,7 +872,169 @@ async function run() {
   }
 }
 
-run().catch((err) => {
-  console.error('[H08/H14] ERROR EN EJECUCIÓN CONCURRENTE:', err);
-  process.exit(1);
-});
+async function runMutationChecks() {
+  console.log('[H15] ========================================================');
+  console.log('[H15] INICIANDO CONTROLES NEGATIVOS RED->GREEN (T-340 / H15)');
+  console.log('[H15] ========================================================');
+
+  const pnpmCmd = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+
+  // -------------------------------------------------------------------------
+  // 1. Control H13: Pertenencia de actor a la oferta aceptada en mark_drop_failed
+  // -------------------------------------------------------------------------
+  console.log('\n[H15] --- Control H13: Validación de actor en public.mark_drop_failed(uuid,text) ---');
+
+  const origDefFailed = runSql("select pg_get_functiondef('public.mark_drop_failed(uuid,text)'::regprocedure);");
+  assert.ok(origDefFailed && origDefFailed.length > 0, 'No se pudo recuperar la definición original de mark_drop_failed');
+
+  const targetPredicateH13 = 'v_offer.courier_id is distinct from v_actor_id';
+  const countH13 = origDefFailed.split(targetPredicateH13).length - 1;
+  if (countH13 !== 1) {
+    throw new Error(`[H15] ERROR: El predicado objetivo "${targetPredicateH13}" debe aparecer exactamente 1 vez (encontrado: ${countH13}). Abortando.`);
+  }
+
+  const mutatedDefH13 = origDefFailed.replace(targetPredicateH13, 'false');
+  assert.ok(!mutatedDefH13.includes(targetPredicateH13), 'La sustitución de la mutación H13 no fue efectiva');
+
+  try {
+    console.log('[H15] Aplicando mutación efímera H13 (omitiendo verificación de pertenencia del actor)...');
+    runSqlStdin(mutatedDefH13);
+
+    console.log('[H15] Ejecutando suite pgTAP t340_multi_drop.sql contra el esquema mutado...');
+    const testRes = spawnSync(
+      pnpmCmd,
+      ['supabase', 'test', 'db', 'supabase/tests/t340_multi_drop.sql'],
+      { encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 }
+    );
+
+    const out = (testRes.stdout || '') + '\n' + (testRes.stderr || '');
+    console.log('[H15] Salida resumida de pgTAP mutado:');
+    const tapFailLines = out.split('\n').filter((l) => l.includes('not ok') || l.includes('Failed test'));
+    console.log(tapFailLines.join('\n'));
+
+    // Validar RED esperado
+    assert.notEqual(testRes.status, 0, '[H15] ERROR: La suite pgTAP debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante sobrevivió.');
+    assert.ok(
+      out.includes('mark_drop_failed rechaza repartidor no asignado a la oferta aceptada'),
+      '[H15] ERROR: La suite no falló en la aserción esperada "mark_drop_failed rechaza repartidor no asignado a la oferta aceptada". Salida:\n' + out
+    );
+    assert.ok(!out.includes('syntax error'), '[H15] ERROR: Fallo inesperado por error de sintaxis SQL en mutante H13.');
+
+    console.log('[H15] -> RED OBTENIDO EXITOSAMENTE PARA H13 (exit code ' + testRes.status + ', fallo específico en rechazo de repartidor ajeno).');
+  } finally {
+    console.log('[H15] Restaurando definición original de public.mark_drop_failed(uuid,text)...');
+    runSqlStdin(origDefFailed);
+  }
+
+  // Verificar restauración GREEN
+  console.log('[H15] Verificando restauración a GREEN para suite pgTAP t340_multi_drop.sql...');
+  const restoreRes = spawnSync(
+    pnpmCmd,
+    ['supabase', 'test', 'db', 'supabase/tests/t340_multi_drop.sql'],
+    { encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 }
+  );
+  assert.equal(restoreRes.status, 0, '[H15] ERROR: La suite pgTAP no volvió a GREEN tras restaurar la función:\n' + restoreRes.stdout);
+  assert.ok(restoreRes.stdout.includes('Result: PASS') || restoreRes.stdout.includes('.. ok'), '[H15] ERROR: No se obtuvo Result: PASS tras restaurar H13');
+  console.log('[H15] -> GREEN OBTENIDO EXITOSAMENTE PARA H13 TRAS RESTAURACIÓN (77/77 PASS).');
+
+  // -------------------------------------------------------------------------
+  // 2. Control H14: Serialización y lock en delivery_requests FOR UPDATE
+  // -------------------------------------------------------------------------
+  console.log('\n[H15] --- Control H14: Lock de delivery_requests en mark_drop_delivered y mark_drop_failed ---');
+
+  const origDefDelivered = runSql("select pg_get_functiondef('public.mark_drop_delivered(uuid)'::regprocedure);");
+  const origDefFailedForH14 = runSql("select pg_get_functiondef('public.mark_drop_failed(uuid,text)'::regprocedure);");
+
+  const lockPattern = /(from\s+public\.delivery_requests\s+where\s+id\s*=\s*v_req_id\s+)for\s+update\s*;/i;
+
+  const countLockDelivered = (origDefDelivered.match(/from\s+public\.delivery_requests\s+where\s+id\s*=\s*v_req_id\s+for\s+update\s*;/gi) || []).length;
+  const countLockFailed = (origDefFailedForH14.match(/from\s+public\.delivery_requests\s+where\s+id\s*=\s*v_req_id\s+for\s+update\s*;/gi) || []).length;
+
+  if (countLockDelivered !== 1) {
+    throw new Error(`[H15] ERROR: El lock de delivery_requests en mark_drop_delivered debe aparecer exactamente 1 vez (encontrado: ${countLockDelivered}). Abortando.`);
+  }
+  if (countLockFailed !== 1) {
+    throw new Error(`[H15] ERROR: El lock de delivery_requests en mark_drop_failed debe aparecer exactamente 1 vez (encontrado: ${countLockFailed}). Abortando.`);
+  }
+
+  const mutatedDefDelivered = origDefDelivered.replace(lockPattern, '$1;');
+  const mutatedDefFailedH14 = origDefFailedForH14.replace(lockPattern, '$1;');
+
+  // Validar que se removió solo el lock de delivery_requests y se mantuvo el de drops
+  assert.equal((mutatedDefDelivered.match(/from\s+public\.delivery_requests\s+where\s+id\s*=\s*v_req_id\s+for\s+update\s*;/gi) || []).length, 0);
+  assert.equal((mutatedDefDelivered.match(/from\s+public\.delivery_request_drops\s+where\s+id\s*=\s*p_drop_id\s+for\s+update\s*;/gi) || []).length, 1);
+  assert.equal((mutatedDefFailedH14.match(/from\s+public\.delivery_requests\s+where\s+id\s*=\s*v_req_id\s+for\s+update\s*;/gi) || []).length, 0);
+  assert.equal((mutatedDefFailedH14.match(/from\s+public\.delivery_request_drops\s+where\s+id\s*=\s*p_drop_id\s+for\s+update\s*;/gi) || []).length, 1);
+
+  try {
+    console.log('[H15] Aplicando mutación efímera H14 (eliminando FOR UPDATE de delivery_requests en ambas RPC)...');
+    runSqlStdin(mutatedDefDelivered);
+    runSqlStdin(mutatedDefFailedH14);
+
+    console.log('[H15] Ejecutando runner concurrente contra funciones sin cerrojo en delivery_requests...');
+    const runnerRes = spawnSync(
+      'node',
+      ['supabase/tests/integration/t340_concurrency.mjs'],
+      {
+        env: { ...process.env, DB_CONTAINER: dbContainer, LOCK_TIMEOUT_MS: '2500' },
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024
+      }
+    );
+
+    const runnerOut = (runnerRes.stdout || '') + '\n' + (runnerRes.stderr || '');
+    console.log('[H15] Salida resumida del runner bajo mutación:');
+    const runnerErrLines = runnerOut.split('\n').filter((l) => l.includes('[H14]') || l.includes('Timeout') || l.includes('Error') || l.includes('AssertionError'));
+    console.log(runnerErrLines.join('\n'));
+
+    // Validar RED esperado
+    assert.notEqual(runnerRes.status, 0, '[H15] ERROR: El runner concurrente debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante sobrevivió.');
+    const expectedLockTimeout = runnerOut.includes('Timeout esperando que waiter PID') && runnerOut.includes("wait_event_type = 'Lock'");
+    const expectedStatusAssertion = runnerOut.includes('Estado final de solicitud debe ser delivered');
+    assert.ok(
+      expectedLockTimeout || expectedStatusAssertion,
+      '[H15] ERROR: El runner no falló por la causa esperada (falta de contención o inconsistencia de estado):\n' + runnerOut
+    );
+    assert.ok(!runnerOut.includes('syntax error'), '[H15] ERROR: Fallo inesperado por error de sintaxis en mutante H14.');
+
+    console.log('[H15] -> RED OBTENIDO EXITOSAMENTE PARA H14 (exit code ' + runnerRes.status + ', fallo específico por ausencia de contención en delivery_requests).');
+  } finally {
+    console.log('[H15] Restaurando definiciones originales de mark_drop_delivered y mark_drop_failed...');
+    runSqlStdin(origDefDelivered);
+    runSqlStdin(origDefFailedForH14);
+  }
+
+  // Verificar restauración GREEN
+  console.log('[H15] Verificando restauración a GREEN para runner concurrente...');
+  const restoreRunnerRes = spawnSync(
+    'node',
+    ['supabase/tests/integration/t340_concurrency.mjs'],
+    {
+      env: { ...process.env, DB_CONTAINER: dbContainer },
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024
+    }
+  );
+  assert.equal(restoreRunnerRes.status, 0, '[H15] ERROR: El runner no volvió a GREEN tras restaurar las funciones:\n' + restoreRunnerRes.stderr + '\n' + restoreRunnerRes.stdout);
+  assert.ok(
+    restoreRunnerRes.stdout.includes('[H14] TODOS LOS ESCENARIOS DE MARCAS CONCURRENTES COMPLETADOS EXITOSAMENTE (3/3).'),
+    '[H15] ERROR: No se obtuvo el mensaje 3/3 tras restaurar H14'
+  );
+  console.log('[H15] -> GREEN OBTENIDO EXITOSAMENTE PARA H14 TRAS RESTAURACIÓN (11/11 OK: 8/8 H08 + 3/3 H14).');
+
+  console.log('\n[H15] ========================================================');
+  console.log('[H15] DEMOSTRACIÓN RED->GREEN COMPLETADA EXITOSAMENTE (H13 y H14)');
+  console.log('[H15] ========================================================');
+}
+
+if (process.argv.includes('--mutation-check')) {
+  runMutationChecks().catch((err) => {
+    console.error('[H15] ERROR EN CONTROL NEGATIVO RED->GREEN:', err);
+    process.exit(1);
+  });
+} else {
+  run().catch((err) => {
+    console.error('[H08/H14] ERROR EN EJECUCIÓN CONCURRENTE:', err);
+    process.exit(1);
+  });
+}
