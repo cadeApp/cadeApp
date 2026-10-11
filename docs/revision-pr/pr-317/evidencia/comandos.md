@@ -312,3 +312,104 @@ No hay llamadas a las RPC con identidades reales ni asserts sobre estados/fallos
 - No levanté Docker/Supabase local, no usé secretos, y no disparé workflows.
 - Esas pruebas sólo prueban propiedades estáticas por inferencia y CI verifica el comportamiento de los casos existentes.
 - Tras el commit documental de esta ronda, el HEAD de la PR cambia; volver a identificar SHA y checks antes de merge.
+
+## Ronda 5 — SHA de código `09d2a9206591cb8202e99daee0dafd1fc12dbde0`
+
+### Log CI, leído directamente en GitHub
+
+Run: https://github.com/cadeApp/cadeApp/actions/runs/38156727884  
+`db-tests`: https://github.com/cadeApp/cadeApp/actions/runs/38156727884/job/114521129594
+
+**Resumen exacto del log:**
+- `Files=1, Tests=10, Result: PASS` (bootstrap).
+- `Files=21, Tests=1972, Result: PASS`, T-340 `t340_multi_drop.sql ... ok`, `plan(69)`.
+- Runner: `[H08] Escenario 1A...` ... `[H08] Escenario 4B...` con `-> OK`; `[H08] TODOS LOS ESCENARIOS CONCURRENTES COMPLETADOS EXITOSAMENTE (8/8).`
+- `pnpm db:types --local` ejecutado, job PASS sin drift.
+- Los jobs `unit, typecheck, lint, build, audit, bundle-budget` PASS; `approval-policy` FAIL y `Supabase Preview` SKIPPED.
+
+**Nota de interpretación:** los ocho «OK» provienen de aserciones dentro del runner; **no certifican que la acción de publicación haya sido una RPC en B**. No hay evidencia de mutación productiva SQL RED→GREEN en la bitácora de esta ronda.
+
+### Harness independiente de R5 — completo, sin efectos secundarios
+
+Guárdalo en `/tmp/pr317-r5-check.cjs` y ejecútalo con `node /tmp/pr317-r5-check.cjs` desde un worktree limpio del SHA revisado. No se importa código del autor que efectúe asserts ni se modifica ningún archivo del repositorio. Revisa el código fuente y prueba sus propios detectores con **mutaciones exclusivamente EN MEMORIA**:
+
+```js
+const { readFileSync } = require('node:fs');
+const assert = require('node:assert/strict');
+
+const harness = readFileSync('supabase/tests/integration/t340_concurrency.mjs', 'utf8');
+const tests = readFileSync('supabase/tests/t340_multi_drop.sql', 'utf8');
+const migration = readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql', 'utf8');
+
+function orderBBlocks(text) {
+  const markers = [...text.matchAll(/console\.log\('\[H08\] Escenario ([1-4])B:/g)];
+  assert.equal(markers.length, 4, 'Sin los cuatro escenarios B: detector inválido');
+  return markers.map(m => {
+    const next = text.indexOf("\n    console.log('[H08] Escenario ", m.index + 2);
+    const finish = text.indexOf("    console.log('[H08] TODOS", m.index + 2);
+    const end = next >= 0 ? next : finish >= 0 ? finish : text.length;
+    const body = text.slice(m.index, end);
+    return {
+      scenario: m[1] + 'B',
+      realRPC: body.includes("select public.publish_request('${reqId}');"),
+      manualStatusUpdate: /reset role;\s*update public\.delivery_requests set status = 'published'/.test(body)
+    };
+  });
+}
+
+const baselineB = orderBBlocks(harness);
+assert(baselineB.every(x => !x.realRPC && x.manualStatusUpdate),
+  'R5-H08 no reproducido: revisar el código actual antes de usar el informe');
+
+// Mutación IN MEMORIA: reponer la llamada RPC en vez del update manual.
+// Este detector no evalúa si la nueva ejecución SQL corre de verdad.
+const improved = harness.replaceAll(
+  "reset role;\n          update public.delivery_requests set status = 'published' where id = '${reqId}';",
+  "select public.publish_request('${reqId}');"
+);
+const mutatedB = orderBBlocks(improved);
+assert(mutatedB.every(x => x.realRPC && !x.manualStatusUpdate),
+  'Detector H08 no reconoce corrección en memoria');
+
+assert(/where l\.granted = false and a\.pid != pg_backend_pid\(\)/.test(harness),
+  'R5-H08: observer cambió, revisar de nuevo');
+assert(!harness.includes("'ON_ERROR_STOP=1'"),
+  'R5-H08: psql fue endurecido, revisar de nuevo');
+
+const posParentClosure = tests.indexOf("select is(pg_temp.test_mark_last_drop_closes_parent()");
+const posLegacyAssertion = tests.indexOf("select throws_matching('select pg_temp.test_legacy_mark_delivered_multi_rejected()");
+assert(posParentClosure >= 0 && posLegacyAssertion > posParentClosure,
+  'R5-H13: orden de fixtures/test cambió');
+
+const cycleStart = migration.indexOf('create or replace function app_private.request_cycle(');
+const cycleEnd = migration.indexOf('revoke all on function app_private.request_cycle(', cycleStart);
+assert(cycleStart >= 0 && cycleEnd > cycleStart, 'R5-H13: no se encontró código productivo');
+const cycle = migration.slice(cycleStart, cycleEnd);
+const generalStatusGuard = cycle.indexOf("p_action = 'mark_delivered' and v_eff_status <> 'in_transit'");
+const multidropGuard = cycle.indexOf("if p_action = 'mark_delivered' and v_request.drops_count > 1 then");
+assert(generalStatusGuard >= 0 && multidropGuard > generalStatusGuard,
+  'R5-H13: precondiciones cambiaron');
+
+// Fixture del test de «estado no in_transit» se creó sin oferta aceptada.
+assert(tests.includes("'30000000-0000-4000-8000-000000003530', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', 1"));
+const invalidStateStart = tests.indexOf('create function pg_temp.test_rpc_drop_not_in_transit()');
+const invalidStateEnd = tests.indexOf('-- Tests de mark_drop_delivered', invalidStateStart);
+assert(invalidStateStart >= 0 && tests.slice(invalidStateStart,invalidStateEnd).includes('UNAUTHORIZED_ACTOR|INVALID_STATE_TRANSITION'),
+  'R5-H13: el oráculo laxo ya fue corregido');
+
+const plan = Number(tests.match(/select plan\((\d+)\)/)?.[1]);
+const counted = tests.split(/\r?\n/).filter(l => /^\s*select\s+(has_table|has_column|throws_matching|is\(|ok\(|has_function|lives_ok)/.test(l)).length;
+assert.equal(plan, 69);
+assert.equal(counted, 69);
+assert.equal((tests.match(/select\s+pass\(/g) || []).length, 0);
+
+console.log('R5-H08: 4/4 B usan UPDATE de estado manual, 0/4 publican mediante RPC real');
+console.log('R5-H08: mutación EN MEMORIA del runner corrige detector 4/4, sin ejecutar SQL');
+console.log('R5-H13: guard N>1 inaccesible como causa del test legacy por estado ya delivered');
+console.log('R5-H13: test de estado no in_transit admite UNAUTHORIZED_ACTOR por falta de offer accepted');
+console.log({plan, counted, dummy:0});
+```
+
+**Resultado de ejecución en la revisión:** se aplicaron estas condiciones sobre los blobs exactos del SHA desde GitHub usando un JS separado de las pruebas del autor: baseline **4/4 B con update manual y 0/4 con llamada RPC**, versión mutada **4/4 RPC**, `pg_locks` global sin PID atribuido, `psql` sin `ON_ERROR_STOP=1`; caso legacy de multi-drop se ejecuta tras el cierre del padre y la guarda genérica corre antes de la especial. La inspección es **estática**: no alegar que se ejecutó este mismo comando dentro de un checkout real ni mutación real de Postgres; no se dispone de un clon local en esta sesión.
+
+**Siguiente verificación obligatoria de H08/H13:** el autor tiene que añadir tests con oráculos correctos y presentar evidencia RED→GREEN de la propiedad productiva (en CI efímero). No basta con reponer en el texto una llamada RPC o un contador `plan` actualizado.
