@@ -413,3 +413,99 @@ console.log({plan, counted, dummy:0});
 **Resultado de ejecución en la revisión:** se aplicaron estas condiciones sobre los blobs exactos del SHA desde GitHub usando un JS separado de las pruebas del autor: baseline **4/4 B con update manual y 0/4 con llamada RPC**, versión mutada **4/4 RPC**, `pg_locks` global sin PID atribuido, `psql` sin `ON_ERROR_STOP=1`; caso legacy de multi-drop se ejecuta tras el cierre del padre y la guarda genérica corre antes de la especial. La inspección es **estática**: no alegar que se ejecutó este mismo comando dentro de un checkout real ni mutación real de Postgres; no se dispone de un clon local en esta sesión.
 
 **Siguiente verificación obligatoria de H08/H13:** el autor tiene que añadir tests con oráculos correctos y presentar evidencia RED→GREEN de la propiedad productiva (en CI efímero). No basta con reponer en el texto una llamada RPC o un contador `plan` actualizado.
+
+## Ronda 6 — SHA `00ec6a77a445ae6db677e80b27c111079200a5fa`
+
+**Run:** https://github.com/cadeApp/cadeApp/actions/runs/38162310109 · **db-tests:** https://github.com/cadeApp/cadeApp/actions/runs/38162310109/job/114537608013
+
+Log CI **consultado dentro del job real**:
+- Migración T340 aplicada; `Files=1, Tests=10, Result: PASS` (bootstrap).
+- `supabase/tests/t340_multi_drop.sql ............... ok`; `Files=21, Tests=1972, Result: PASS` (`plan(69)`, 0 `pass()`).
+- Ocho líneas de escenarios `[H08] Escenario 1A … 4B` y `[H08] TODOS LOS ESCENARIOS CONCURRENTES COMPLETADOS EXITOSAMENTE (8/8)`, al concluir 18:09:14 UTC 2026-10-11.
+- `pnpm db:types --local` ejecutado, `git diff --exit-code -- src/types/database.types.ts` sin diferencias y job completo PASS.
+- `unit/typecheck/lint/build/audit/bundle-budget` success, `approval-policy` fail, `Supabase Preview` skipped.
+
+### Detector independiente y mutaciones adversariales EN MEMORIA (NO PostgreSQL)
+
+Guardar el bloque como `/tmp/pr317-r6-check.cjs` y ejecutar `node /tmp/pr317-r6-check.cjs` desde checkout limpio del SHA indicado. Sólo lee tres archivos del repositorio. Si cambió SHA, no usar los asserts basales como resultado actual: reauditar.
+
+```js
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+
+const harness = fs.readFileSync('supabase/tests/integration/t340_concurrency.mjs','utf8');
+const tests = fs.readFileSync('supabase/tests/t340_multi_drop.sql','utf8');
+const migration = fs.readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql','utf8');
+
+function blocksB(src) {
+  const starts = [...src.matchAll(/console\.log\('\[H08\] Escenario ([1-4])B:/g)];
+  assert.equal(starts.length, 4, 'Objetivo H08 incorrecto: faltan 4 casos B');
+  return starts.map((m,i) => {
+    const next = src.indexOf("\n    console.log('[H08] Escenario ",m.index+2);
+    const last = src.indexOf("    console.log('[H08] TODOS",m.index+2);
+    return {id:m[1]+'B', text:src.slice(m.index,next>=0?next:last>=0?last:src.length)};
+  });
+}
+
+for (const {id,text} of blocksB(harness)) {
+  assert(text.includes("select public.publish_request('${reqId}');"),'H08: no RPC real '+id);
+  assert(!/update public\.delivery_requests set status = 'published'/.test(text),'H08: falso UPDATE '+id);
+  assert(text.includes('waitForBlockedLock(s1.pid, s2.pid)'), 'H08: no correlaciona PID '+id);
+}
+assert(harness.includes("'ON_ERROR_STOP=1'"),'H08: no psql fail-fast');
+assert(harness.includes("pg_blocking_pids(${waiterPid})"),'H08: no usa blocking_pids');
+assert(harness.includes("wait_event_type = 'Lock'"),'H08: no verifica wait_event');
+const m8 = harness.replaceAll("select public.publish_request('${reqId}');",
+  "update public.delivery_requests set status = 'published' where id = '${reqId}';");
+assert(blocksB(m8).every(x => !x.text.includes("select public.publish_request('${reqId}');")),
+  'Mutación H08 no elimina las RPC; detector inválido');
+
+// H13: anteriores dos oráculos ahora preparan requisitos de actor/estado.
+assert(tests.includes("'30000000-0000-4000-8000-000000003530', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'matched', 1"));
+assert(tests.includes("'30000000-0000-4000-8000-000000003535', '30000000-0000-4000-8000-000000003530', pg_temp.courier_1_id(), 'accepted', 1500, 20"));
+assert(tests.includes("select throws_matching('select pg_temp.test_rpc_drop_not_in_transit()', 'INVALID_STATE_TRANSITION'"));
+assert(tests.includes("'30000000-0000-4000-8000-000000003540', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'in_transit', 2"));
+assert(tests.includes("perform public.mark_delivered('30000000-0000-4000-8000-000000003540'::uuid)"));
+
+const wrappers = [...tests.matchAll(/create function pg_temp\.(\w+)\(\) returns [^$]+?as \$\$([\s\S]*?)\n\$\$;/g)];
+assert(wrappers.length > 0,'Sin wrappers pg_temp; detector no tiene objetivo');
+const failedTests = wrappers.filter(x => x[2].includes('public.mark_drop_failed('));
+assert(failedTests.length >= 6,'No se encontró clase de tests mark_drop_failed');
+for (const fn of failedTests) {
+  const before = fn[2].slice(0,fn[2].indexOf('public.mark_drop_failed('));
+  assert(before.includes('pg_temp.courier_1_id()'),'H13: cambió actor en '+fn[1]);
+  assert(!before.includes('pg_temp.courier_2_id()') && !before.includes('pg_temp.merchant_id()'),
+    'H13: nueva prueba de outsider, reauditar');
+}
+const failed = migration.slice(migration.indexOf('create or replace function public.mark_drop_failed('),
+  migration.indexOf('revoke all on function public.mark_drop_failed('));
+assert(failed.includes('v_offer.courier_id is distinct from v_actor_id'), 'No hay guard productivo de pertenencia');
+const m13 = failed.replace('v_offer.courier_id is distinct from v_actor_id','false');
+assert(!m13.includes('v_offer.courier_id is distinct from v_actor_id'), 'Mutación H13 falló');
+console.log('H13: suite failed() usa sólo courier aceptado; mutación de guard NO ensayada en Postgres');
+
+// H14: CC-022 §6 exige dos marcas concurrentes reales; sólo hay RPC de publicación en runner.
+assert(!harness.includes('public.mark_drop_delivered(') && !harness.includes('public.mark_drop_failed('),
+ 'H14: nueva concurrencia de estados detectada; reauditar');
+const m14 = harness.replace('console.log(\'[H08] TODOS LOS ESCENARIOS',
+  'select public.mark_drop_delivered(drop1); select public.mark_drop_failed(drop2,reason); console.log(\'[H08] TODOS LOS ESCENARIOS');
+assert(m14.includes('public.mark_drop_delivered(') && m14.includes('public.mark_drop_failed('),
+  'Control H14 no detecta siquiera llamada inyectada');
+const plan = Number(tests.match(/select plan\((\d+)\)/)?.[1]);
+const count = tests.split(/\r?\n/).filter(l=>/^\s*select\s+(has_table|has_column|throws_matching|is\(|ok\(|has_function|lives_ok)/.test(l)).length;
+assert.equal(plan,69);assert.equal(count,69);
+assert.equal((tests.match(/select\s+pass\(/g)||[]).length,0);
+console.log('H08: baseline 4/4 B con RPC real; M8 en memoria elimina 4/4');
+console.log('H13: 2 oráculos R5 corregidos, falta caso failed() outsider/suspendido');
+console.log('H14: 0 casos de dos RPC de marcado simultáneas en runner; M14 sintético NO es mutación SQL productiva');
+console.log({plan,count,pass:0});
+```
+
+**Resultados independientes observados en el turno:** sobre archivos exactos descargados del conector Github, los cuatro B tienen `realPublish=true`, `manualStatus=false`, `waitForBlockedLock(s1.pid,s2.pid)`, `ON_ERROR_STOP=1`; fixture `matched` lleva oferta aceptada y test de legacy usa `in_transit` N=2 con oferta aceptada; seis funciones de pg_temp que invocan `mark_drop_failed` usan `courier_1_id` antes de la RPC (0 actores ilegítimos); runner no contiene `public.mark_drop_delivered(` ni `public.mark_drop_failed(`. El script es **reproducible** desde checkout; el revisor corrió condiciones equivalentes usando los resultados exactos del conector, no este archivo escrito en un worktree. Ninguna mutación SQL real fue ejecutada y ninguna salida RED de Postgres fue inventada.
+
+### Matriz RED→GREEN exigida para la siguiente ronda
+
+1. **H13:** test `mark_drop_failed` actor sin JWT, actor merchant, courier ajeno aprobado, courier suspendido/no aprobado; `mark_drop_delivered` courier suspendido/no aprobado. Asegurar otras precondiciones válidas y códigos exactos de CC-022. Mutación productiva: quitar `v_offer.courier_id is distinct from v_actor_id` o filtro `couriers.status` **de la RPC correspondiente**. Debe fallar caso de autorización relevante.
+2. **H14:** fixture multi-drop `in_transit` con dos últimas entregas; dos sesiones PostgreSQL efectivamente simultáneas sobre `mark_drop_delivered` + `mark_drop_failed`; lock verificable por PIDs; estado padre entre commits y luego `delivered`, sin pending, idempotencia estable, escenario all-failed. Mutación productiva: quitar lock `delivery_requests FOR UPDATE` de ambos métodos; detector de contención debe fallar; restaurar y GREEN.
+
+**Scope:** los dos bloqueantes son reparables en tests existentes autorizados por Lautaro073. No hace falta nueva decisión ni modificar ficha, CC, frontend, workflows fuera de `db-tests` o migración (salvo defecto funcional demostrado). La prueba runtime de la mutación queda a cargo de CI efímero, nunca staging/producción.
