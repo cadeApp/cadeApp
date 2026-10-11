@@ -226,6 +226,7 @@ async function run() {
         await waitForBlockedLock([s1]);
 
         s1.send(`
+          reset role;
           update public.delivery_requests set status = 'published' where id = '${reqId}';
           commit;
           \\echo S1_COMMITTED
@@ -320,6 +321,7 @@ async function run() {
         await waitForBlockedLock([s1]);
 
         s1.send(`
+          reset role;
           update public.delivery_requests set status = 'published' where id = '${reqId}';
           commit;
           \\echo S1_COMMITTED
@@ -414,6 +416,7 @@ async function run() {
         await waitForBlockedLock([s1]);
 
         s1.send(`
+          reset role;
           update public.delivery_requests set status = 'published' where id = '${reqId}';
           commit;
           \\echo S1_COMMITTED
@@ -508,6 +511,7 @@ async function run() {
         await waitForBlockedLock([s1]);
 
         s1.send(`
+          reset role;
           update public.delivery_requests set status = 'published' where id = '${reqId}';
           commit;
           \\echo S1_COMMITTED
