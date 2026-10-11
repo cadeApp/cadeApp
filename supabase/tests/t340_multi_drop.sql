@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(48);
+select plan(52);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -621,17 +621,17 @@ select ok(
 select has_function('public', 'mark_drop_delivered', ARRAY['uuid'], 'mark_drop_delivered existe');
 select has_function('public', 'mark_drop_failed', ARRAY['uuid', 'text'], 'mark_drop_failed existe');
 
--- 10. Backfill productivo: app_private.t340_backfill_legacy (DoD, CC-022 §5b, H07 y H09)
+-- 10. Backfill productivo: app_private.t340_backfill_legacy (DoD, CC-022 §5b, H07, H10, H11 y H12)
 
 -- A. Fixture para borrador incompleto: no debe generar drop ni audit_log
 insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
 values ('30000000-0000-4000-8000-000000003421', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft');
 
--- B. Fixture para solicitud historica completa: debe materializar 1 drop y 1 drop_contacts
+-- B. Fixture para solicitud historica completa: debe materializar 1 drop y 1 drop_contacts con delivered_at original
 insert into public.delivery_requests (
-  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+  id, merchant_id, pickup_zone_id, status, delivered_at, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
 ) values (
-  '30000000-0000-4000-8000-000000003422', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'delivered', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Notas legacy completas', 1500
+  '30000000-0000-4000-8000-000000003422', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'delivered', '2026-10-01 12:00:00+00'::timestamptz, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Notas legacy completas', 1500
 );
 insert into public.delivery_request_contacts (
   request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
@@ -639,7 +639,7 @@ insert into public.delivery_request_contacts (
   '30000000-0000-4000-8000-000000003422', 'Av Mitre 10', 'San Martin 20', 'Destinatario Real', '+543865123456', true
 );
 
--- C. Fixture para historica inconsistente (H09 escenario 1: transfer con needs_change=true): 0 drops, 1 audit_log
+-- C. Fixture para historica transfer con needs_change=true (CC-022 §5b / H10): normaliza a 1 drop con needs_change=false y monto null
 insert into public.delivery_requests (
   id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change
 ) values (
@@ -651,7 +651,7 @@ insert into public.delivery_request_contacts (
   '30000000-0000-4000-8000-000000003423', 'Av Mitre 30', 'San Martin 40', 'Dest Transfer', '+543865222222', true
 );
 
--- D. Fixture para historica inconsistente (H09 escenario 2: cash con cambio pero monto null): 0 drops, 1 audit_log
+-- D. Fixture para historica cash con cambio pero monto null (CC-022 §5b / H10): 1 drop needs_change=true sin monto, y 1 auditoria
 insert into public.delivery_requests (
   id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, cash_change_amount
 ) values (
@@ -661,6 +661,30 @@ insert into public.delivery_request_contacts (
   request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
 ) values (
   '30000000-0000-4000-8000-000000003424', 'Av Mitre 50', 'San Martin 60', 'Dest Cash Sin Monto', '+543865333333', true
+);
+
+-- E. Fixture para historica incompleta (H11): published con monto 1500 pero sin consentimiento -> 0 drops, 1 auditoria sin filtrar monto
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, cash_change_amount
+) values (
+  '30000000-0000-4000-8000-000000003425', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 1500
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003425', 'Av Mitre 70', 'San Martin 80', 'Dest Sin Consentimiento', '+543865444444', false
+);
+
+-- F. Fixture para historica delivered sin delivered_at (H12): no debe crearse drop con fecha inventada -> 0 drops, 1 auditoria
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, delivered_at, dropoff_zone_id, package_type, recipient_payment_method, needs_change
+) values (
+  '30000000-0000-4000-8000-000000003426', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'delivered', null, pg_temp.dropoff_zone_id(), 'chico', 'cash', false
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003426', 'Av Mitre 90', 'San Martin 100', 'Dest Delivered Sin Fecha', '+543865555555', true
 );
 
 -- Ejecución real del helper de backfill productivo sobre los fixtures
@@ -674,41 +698,74 @@ select is(pg_temp.test_backfill_incomplete_draft(), 0, 'borrador incompleto no g
 
 create function pg_temp.test_backfill_inconsistent_nondraft() returns int language plpgsql as $$
 declare
-  v_cnt_transfer int;
-  v_cnt_cash int;
   v_drops_transfer int;
+  v_pos_transfer int;
+  v_nc_transfer boolean;
+  v_amt_transfer int;
+  v_legacy_nc_transfer boolean;
+  v_audit_transfer int;
+
   v_drops_cash int;
+  v_pos_cash int;
+  v_nc_cash boolean;
+  v_amt_cash int;
+  v_legacy_amt_cash int;
+  v_audit_cash int;
+
+  v_drops_incomplete int;
+  v_audit_incomplete int;
 begin
   perform app_private.t340_backfill_legacy();
 
+  -- Escenario 1 (transfer + needs_change=true): materializa 1 drop con needs_change normalizado a false y sin monto
   select count(*)::int into v_drops_transfer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003423';
-  select count(*)::int into v_drops_cash from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003424';
-  select count(*)::int into v_cnt_transfer from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003423';
-  select count(*)::int into v_cnt_cash from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003424';
+  select position, needs_change into v_pos_transfer, v_nc_transfer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003423';
+  select cash_change_amount into v_amt_transfer from public.delivery_request_drop_contacts where drop_id = (select id from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003423');
+  select needs_change into v_legacy_nc_transfer from public.delivery_requests where id = '30000000-0000-4000-8000-000000003423';
+  select count(*)::int into v_audit_transfer from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003423';
 
-  if v_drops_transfer = 0 and v_drops_cash = 0 and v_cnt_transfer = 1 and v_cnt_cash = 1 then
+  -- Escenario 2 (cash + needs_change=true + cash_change_amount=null): materializa 1 drop needs_change=true sin monto, y audita anomalia
+  select count(*)::int into v_drops_cash from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003424';
+  select position, needs_change into v_pos_cash, v_nc_cash from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003424';
+  select cash_change_amount into v_amt_cash from public.delivery_request_drop_contacts where drop_id = (select id from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003424');
+  select cash_change_amount into v_legacy_amt_cash from public.delivery_requests where id = '30000000-0000-4000-8000-000000003424';
+  select count(*)::int into v_audit_cash from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003424';
+
+  -- Escenario 3 (incompleto sin consentimiento): 0 drops y 1 auditoria
+  select count(*)::int into v_drops_incomplete from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003425';
+  select count(*)::int into v_audit_incomplete from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003425';
+
+  if v_drops_transfer = 1 and v_pos_transfer = 1 and v_nc_transfer is false and v_amt_transfer is null and v_legacy_nc_transfer is true and v_audit_transfer = 0
+     and v_drops_cash = 1 and v_pos_cash = 1 and v_nc_cash is true and v_amt_cash is null and v_legacy_amt_cash is null and v_audit_cash = 1
+     and v_drops_incomplete = 0 and v_audit_incomplete = 1 then
     return 1;
   else
     return 0;
   end if;
 end;
 $$;
-select is(pg_temp.test_backfill_inconsistent_nondraft(), 1, 'solicitudes historicas inconsistentes quedan senaladas en audit_log por backfill productivo (H09)');
+select is(pg_temp.test_backfill_inconsistent_nondraft(), 1, 'solicitudes historicas de pago normalizan drops y audit log senala anomalia/incompletos (H10)');
 
 create function pg_temp.test_backfill_repeated_no_duplicates() returns int language plpgsql as $$
 declare
   v_drops_complete int;
-  v_audit_transfer int;
+  v_drops_transfer int;
+  v_drops_cash int;
   v_audit_cash int;
+  v_audit_incomplete int;
+  v_audit_delivered_null int;
 begin
   -- Segunda llamada consecutiva al helper de backfill para verificar idempotencia
   perform app_private.t340_backfill_legacy();
 
   select count(*)::int into v_drops_complete from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003422';
-  select count(*)::int into v_audit_transfer from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003423';
+  select count(*)::int into v_drops_transfer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003423';
+  select count(*)::int into v_drops_cash from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003424';
   select count(*)::int into v_audit_cash from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003424';
+  select count(*)::int into v_audit_incomplete from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003425';
+  select count(*)::int into v_audit_delivered_null from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003426';
 
-  if v_drops_complete = 1 and v_audit_transfer = 1 and v_audit_cash = 1 then
+  if v_drops_complete = 1 and v_drops_transfer = 1 and v_drops_cash = 1 and v_audit_cash = 1 and v_audit_incomplete = 1 and v_audit_delivered_null = 1 then
     return 1;
   else
     return 0;
@@ -733,6 +790,32 @@ select is(
   (select cash_change_amount from public.delivery_request_drop_contacts where drop_id = (select id from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003422')),
   1500,
   'monto de cambio migrado a drop_contacts por backfill productivo'
+);
+
+-- H11: audit_log no expone monto privado exacto
+select is(
+  (select (before ? 'cash_change_amount') from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003425'),
+  false,
+  'audit_log no almacena clave cash_change_amount con monto privado exacto (H11)'
+);
+
+select is(
+  (select (before->>'has_cash_change_amount')::boolean from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003425'),
+  true,
+  'audit_log preserva indicador booleano has_cash_change_amount (H11)'
+);
+
+-- H12: delivered_at original preservado, no inventado
+select is(
+  (select delivered_at from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003422'),
+  (select delivered_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003422'),
+  'historico delivered copia exactamente delivered_at original (H12)'
+);
+
+select is(
+  (select count(*)::int from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003426'),
+  0,
+  'historico delivered sin delivered_at no materializa drop con fecha inventada (H12)'
 );
 
 rollback;

@@ -1593,7 +1593,7 @@ begin
     case when r.recipient_payment_method = 'cash' then r.needs_change else false end,
     r.approx_distance_m,
     case when r.status = 'delivered' then 'delivered' else 'pending' end,
-    case when r.status = 'delivered' then coalesce(r.delivered_at, r.updated_at, r.created_at) else null end,
+    case when r.status = 'delivered' then r.delivered_at else null end,
     null
   from public.delivery_requests r
   join public.delivery_request_contacts c on c.request_id = r.id
@@ -1608,12 +1608,7 @@ begin
     and c.recipient_name is not null and btrim(c.recipient_name) <> ''
     and c.recipient_phone is not null and btrim(c.recipient_phone) <> ''
     and c.recipient_consent_declared is true
-    and (r.recipient_payment_method = 'cash' or r.needs_change = false)
-    and (
-      r.recipient_payment_method <> 'cash'
-      or not r.needs_change
-      or (r.cash_change_amount is not null and r.cash_change_amount > 0)
-    );
+    and (r.status <> 'delivered' or r.delivered_at is not null);
 
   -- 2. Contactos privados por entrega correspondientes al drop creado, preservando notes y cash_change_amount
   insert into public.delivery_request_drop_contacts (
@@ -1656,9 +1651,9 @@ begin
     select 1 from public.delivery_request_drops d where d.request_id = r.id
   );
 
-  -- 4. Auditar solicitudes históricas no-draft que continúan sin drops (H09)
+  -- 4. Auditar solicitudes históricas no-draft que continúan sin drops (H09, H11, H12)
   -- Detecta todas las condiciones que impidieron crear drop (campos incompletos, consentimiento false/null,
-  -- medio transfer/to_agree con needs_change=true, o cash con needs_change=true y monto null) sin duplicar auditorias.
+  -- o status=delivered con delivered_at null) sin duplicar auditorias ni filtrar montos privados exactos.
   insert into public.audit_log (
     actor_id,
     action,
@@ -1678,7 +1673,7 @@ begin
       'package_type', r.package_type,
       'recipient_payment_method', r.recipient_payment_method,
       'needs_change', r.needs_change,
-      'cash_change_amount', r.cash_change_amount,
+      'has_cash_change_amount', (r.cash_change_amount is not null),
       'has_contact', (c.request_id is not null),
       'consent', c.recipient_consent_declared
     ),
@@ -1689,6 +1684,44 @@ begin
     and not exists (
       select 1 from public.delivery_request_drops d where d.request_id = r.id
     )
+    and not exists (
+      select 1
+      from public.audit_log a
+      where a.action = 'legacy_migration_inconsistent' and a.target_id = r.id::text
+    );
+
+  -- 5. Auditar anomalía de histórico cash con cambio pero sin monto informado (CC-022 §5b, H10, H11)
+  -- El drop se materializa con needs_change=true y monto null; la anomalía se reporta en auditoría sin filtrar monto.
+  insert into public.audit_log (
+    actor_id,
+    action,
+    target_type,
+    target_id,
+    before,
+    after
+  )
+  select
+    r.merchant_id,
+    'legacy_migration_inconsistent',
+    'delivery_request',
+    r.id::text,
+    jsonb_build_object(
+      'status', r.status,
+      'dropoff_zone_id', r.dropoff_zone_id,
+      'package_type', r.package_type,
+      'recipient_payment_method', r.recipient_payment_method,
+      'needs_change', r.needs_change,
+      'has_cash_change_amount', false,
+      'has_contact', (c.request_id is not null),
+      'consent', c.recipient_consent_declared
+    ),
+    jsonb_build_object('preserved', true, 'drops_created', 1, 'anomaly', 'cash_needs_change_without_amount')
+  from public.delivery_requests r
+  left join public.delivery_request_contacts c on c.request_id = r.id
+  where r.status <> 'draft'
+    and r.recipient_payment_method = 'cash'
+    and r.needs_change is true
+    and r.cash_change_amount is null
     and not exists (
       select 1
       from public.audit_log a
