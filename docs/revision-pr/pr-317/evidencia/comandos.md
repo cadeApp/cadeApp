@@ -72,3 +72,61 @@ pnpm typecheck && pnpm lint && pnpm test
 ```
 
 La rama estaba **detrás de develop por 2 commits** según la comparación de GitHub (merge-base `8ebd5e21`) al consultar la ronda; pedir integración no destructiva de `origin/develop` únicamente después de completar correcciones y sin rebase/force/amend.
+
+## Ronda 2 — inspección independiente, SHA 5bba8319
+
+**CI de base comprobado:** https://github.com/cadeApp/cadeApp/actions/runs/38098236439/job/114348546731. La migración T340 aplica sin error; bootstrap `Files=1, Tests=10, Result: PASS`; pgTAP `Files=21, Tests=1943, Result: PASS`, incluye `t340_multi_drop.sql ... ok`. La suite tiene 40 aserciones y no hay `select pass()`. `approval-policy` permanece rojo.
+
+### H06 — detector de regresión SECURITY DEFINER
+
+Este harness es independiente del autor. Corrélo desde la raíz del checkout del SHA revisado; trabaja solo en memoria, no modifica archivos:
+
+```bash
+node <<'NODE'
+const fs=require('node:fs');
+const m=fs.readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql','utf8');
+const fn=m.match(/create or replace function app_private\.lock_draft_request_for_child_write\(\)[\s\S]*?\n\$\$;/)?.[0] || '';
+function accepts(s){ return /security invoker/i.test(s) && /if current_user in \('authenticated', 'anon'\)/i.test(s) && /for update;/i.test(s); }
+const mutated=fn.replace(/security definer/i,'security invoker');
+console.log('BASE guard protegido:', accepts(fn));
+console.log('CONTROL mutado en memoria:', accepts(mutated));
+if(accepts(fn) || !accepts(mutated))process.exitCode=1;
+NODE
+```
+
+**Salida de la revisión:** BASE `false` (RED); mutación que restituye `SECURITY INVOKER` `true` (GREEN). Es verificación estática, NO una carrera ejecutada. El hecho subyacente es semántica estándar de PostgreSQL: dentro de SECURITY DEFINER `current_user` es el dueño de la función, no el cliente authenticated.
+
+### H07 — detectores de pruebas autofabricadas
+
+```bash
+node <<'NODE'
+const fs=require('node:fs');
+const s=fs.readFileSync('supabase/tests/t340_multi_drop.sql','utf8');
+const names=['test_backfill_incomplete_draft','test_backfill_inconsistent_nondraft','test_backfill_repeated_no_duplicates'];
+for (const name of names){
+ const start=s.indexOf('create function pg_temp.'+name+'()');
+ const end=s.indexOf('\n$$;',start);
+ const body=s.slice(start,end);
+ const manuallyInserts=/insert into public\.(delivery_requests|audit_log|delivery_request_drops)/.test(body);
+ const callsBackfill=/app_private\.t340_backfill_legacy|pg_temp\.run_productive_backfill/.test(body);
+ console.log(name, {manuallyInserts,callsBackfill});
+}
+const plan=Number(s.match(/select plan\((\d+)\)/)?.[1]);
+const count=s.split(/\r?\n/).filter(x=>/^\s*select\s+(has_table|has_column|throws_matching|is\(|ok\(|has_function|lives_ok)/.test(x)).length;
+console.log({plan,count,pass:(s.match(/select\s+pass\(/g)||[]).length});
+NODE
+```
+
+**Observado:** tres casos siembran explícitamente resultados o datos y ninguno invoca el código de backfill; `plan=40`, `count=40`, `pass=0`. Esto comprueba estructura, no demuestra que una mutación productiva corrió contra Postgres. **Mutación RED pendiente para el autor:** deshabilitar el backfill en una copia aislada, correr su prueba real por CI y ver que falla específicamente la aserción.
+
+### H08 — concurrencia ausente
+
+El test inspeccionado tiene actores y consultas secuenciales (`supabase/tests/t340_multi_drop.sql:138-236`). No abre dos conexiones para ejecutar `publish_request` contra `insert/update/delete` de drops y `update` de contactos. **Prueba necesaria:** dos sesiones/locks, verificación de la versión efectivamente publicada; mutar a SECURITY DEFINER o quitar bloqueo y comprobar RED.
+
+### H09 — casos lógicos que la auditoría no cubre
+
+El filtro de `legacy_migration_inconsistent` solo verifica los campos obligatorios/consentimiento. El filtro del `insert` además requiere una combinación válida de medio de pago y `needs_change` con `cash_change_amount`. Para valores completos: `transfer + needs_change=true` y `cash + needs_change=true + cash_change_amount=NULL`, ninguno queda materializado y ninguno queda auditado. El CI existente carece de fixture que verifique ambos filtros en la misma ejecución de backfill.
+
+### Alcance
+
+Solo se usaron la lectura del SHA exacto, los resultados reales de CI y comprobaciones estructurales en memoria. No se levantó Supabase/Docker local, no se modificaron tests/implementación y no se simuló un run de concurrencia. Las mutaciones funcionales de DB quedan explícitamente **pendientes**.
