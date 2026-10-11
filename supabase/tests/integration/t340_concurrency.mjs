@@ -57,7 +57,7 @@ class PsqlSession {
       }
       await new Promise((r) => setTimeout(r, 50));
     }
-    throw new Error(`[H08][${this.label}] Timeout esperando marcador "${marker}". Salida:\n${this.output}`);
+    throw new Error(`[H08][${this.label}] Timeout esperando marcador "${marker}". Salida acumulada:\n${this.output}`);
   }
 
   async close() {
@@ -68,9 +68,14 @@ class PsqlSession {
   }
 }
 
-async function waitForBlockedLock(timeoutMs = 6000) {
+async function waitForBlockedLock(sessions = [], timeoutMs = 6000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
+    for (const s of sessions) {
+      if (s.output.includes('ERROR:')) {
+        throw new Error(`[H08][${s.label}] Error SQL prematuro antes de adquirir lock:\n${s.output}`);
+      }
+    }
     const countStr = runSql(`
       select count(*)::int
       from pg_locks l
@@ -83,7 +88,8 @@ async function waitForBlockedLock(timeoutMs = 6000) {
     }
     await new Promise((r) => setTimeout(r, 50));
   }
-  throw new Error(`[H08] Timeout esperando contención de lock en PostgreSQL (pg_locks.granted = false no detectado)`);
+  const outputs = sessions.map((s) => `[${s.label}]:\n${s.output}`).join('\n');
+  throw new Error(`[H08] Timeout esperando contención de lock en PostgreSQL.\nSalidas acumuladas:\n${outputs}`);
 }
 
 async function run() {
@@ -116,6 +122,9 @@ async function run() {
     runSql(`
       insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status, drops_count)
       values ('${reqId}', '${merchantId}', '${zoneId}', 'draft', ${initialDrops});
+
+      insert into public.delivery_request_contacts (request_id, pickup_address, pickup_lat, pickup_lng)
+      values ('${reqId}', 'Calle San Martín 123, Aguilares', -27.4330, -65.6150);
     `);
 
     const dropIds = [];
@@ -126,8 +135,8 @@ async function run() {
         insert into public.delivery_request_drops (id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status)
         values ('${dropId}', '${reqId}', ${pos}, '${zoneId}', 'chico', 'cash', false, 'pending');
 
-        insert into public.delivery_request_drop_contacts (drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
-        values ('${dropId}', 'Dirección inicial ${pos}', 'Destinatario ${pos}', '+54386500000${pos}', true);
+        insert into public.delivery_request_drop_contacts (drop_id, dropoff_address, dropoff_lat, dropoff_lng, recipient_name, recipient_phone, recipient_consent_declared)
+        values ('${dropId}', 'Dirección inicial ${pos}', -27.4250, -65.6080, 'Destinatario ${pos}', '+54386500000${pos}', true);
       `);
     }
     return { reqId, dropIds };
@@ -140,7 +149,6 @@ async function run() {
     console.log('[H08] Escenario 1A: INSERT drop adquiere lock primero...');
     {
       const { reqId } = createDraftFixture(1);
-      const newDropId = crypto.randomUUID();
 
       const s1 = new PsqlSession('S1_INSERT_A');
       const s2 = new PsqlSession('S2_PUBLISH_A');
@@ -149,23 +157,29 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
-          insert into public.delivery_request_drops (id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change)
-          values ('${newDropId}', '${reqId}', 2, '${zoneId}', 'chico', 'cash', false);
-          insert into public.delivery_request_drop_contacts (drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
-          values ('${newDropId}', 'Dirección Drop 2', 'Destinatario 2', '+543865000002', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
+          with new_drop as (
+            insert into public.delivery_request_drops (request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change)
+            values ('${reqId}', 2, '${zoneId}', 'chico', 'cash', false)
+            returning id
+          )
+          insert into public.delivery_request_drop_contacts (drop_id, dropoff_address, dropoff_lat, dropoff_lng, recipient_name, recipient_phone, recipient_consent_declared)
+          select id, 'Dirección Drop 2', -27.4250, -65.6080, 'Destinatario 2', '+543865000002', true
+          from new_drop;
           \\echo S1_LOCKED
         `);
         await s1.waitFor('S1_LOCKED');
 
         s2.send(`
+          begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select public.publish_request('${reqId}');
+          commit;
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1, s2]);
 
         s1.send(`
           commit;
@@ -175,7 +189,7 @@ async function run() {
         await s2.waitFor('S2_DONE');
 
         const status = runSql(`select status from public.delivery_requests where id = '${reqId}';`);
-        const dropsCount = runSql(`select drops_count from public.delivery_requests where id = '${reqId}';`);
+        const dropsCount = runSql(`select count(*)::int from public.delivery_request_drops where request_id = '${reqId}';`);
         assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(dropsCount, '2', 'drops_count debe reflejar la versión confirmada con 2 drops');
         console.log('       -> OK (S2 esperó lock, publicó versión confirmada con 2 drops)');
@@ -188,7 +202,6 @@ async function run() {
     console.log('[H08] Escenario 1B: publish_request adquiere lock primero...');
     {
       const { reqId } = createDraftFixture(1);
-      const newDropId = crypto.randomUUID();
 
       const s1 = new PsqlSession('S1_PUBLISH_B');
       const s2 = new PsqlSession('S2_INSERT_B');
@@ -197,7 +210,7 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select status from public.delivery_requests where id = '${reqId}' for update;
           \\echo S1_LOCKED
         `);
@@ -206,13 +219,13 @@ async function run() {
         s2.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
-          insert into public.delivery_request_drops (id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change)
-          values ('${newDropId}', '${reqId}', 2, '${zoneId}', 'chico', 'cash', false);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
+          insert into public.delivery_request_drops (request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change)
+          values ('${reqId}', 2, '${zoneId}', 'chico', 'cash', false);
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1]);
 
         s1.send(`
           update public.delivery_requests set status = 'published' where id = '${reqId}';
@@ -223,8 +236,8 @@ async function run() {
 
         await s2.waitFor('INVALID_STATE_TRANSITION');
 
-        const existsDrop2 = runSql(`select count(*)::int from public.delivery_request_drops where id = '${newDropId}';`);
-        assert.equal(existsDrop2, '0', 'El drop 2 no debe haber sido insertado');
+        const countDrops = runSql(`select count(*)::int from public.delivery_request_drops where request_id = '${reqId}';`);
+        assert.equal(countDrops, '1', 'El drop 2 no debe haber sido insertado');
         console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
         await s1.close();
@@ -246,20 +259,22 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           update public.delivery_request_drops set package_type = 'grande' where id = '${dropIds[0]}';
           \\echo S1_LOCKED
         `);
         await s1.waitFor('S1_LOCKED');
 
         s2.send(`
+          begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select public.publish_request('${reqId}');
+          commit;
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1, s2]);
 
         s1.send(`
           commit;
@@ -290,7 +305,7 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select status from public.delivery_requests where id = '${reqId}' for update;
           \\echo S1_LOCKED
         `);
@@ -299,12 +314,12 @@ async function run() {
         s2.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           update public.delivery_request_drops set package_type = 'grande' where id = '${dropIds[0]}';
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1]);
 
         s1.send(`
           update public.delivery_requests set status = 'published' where id = '${reqId}';
@@ -338,20 +353,22 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           delete from public.delivery_request_drops where id = '${dropIds[1]}';
           \\echo S1_LOCKED
         `);
         await s1.waitFor('S1_LOCKED');
 
         s2.send(`
+          begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select public.publish_request('${reqId}');
+          commit;
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1, s2]);
 
         s1.send(`
           commit;
@@ -361,7 +378,7 @@ async function run() {
         await s2.waitFor('S2_DONE');
 
         const status = runSql(`select status from public.delivery_requests where id = '${reqId}';`);
-        const dropsCount = runSql(`select drops_count from public.delivery_requests where id = '${reqId}';`);
+        const dropsCount = runSql(`select count(*)::int from public.delivery_request_drops where request_id = '${reqId}';`);
         assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(dropsCount, '1', 'drops_count debe reflejar 1 solo drop tras delete');
         console.log('       -> OK (S2 esperó lock, publicó versión confirmada con 1 drop restante)');
@@ -382,7 +399,7 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select status from public.delivery_requests where id = '${reqId}' for update;
           \\echo S1_LOCKED
         `);
@@ -391,12 +408,12 @@ async function run() {
         s2.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           delete from public.delivery_request_drops where id = '${dropIds[1]}';
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1]);
 
         s1.send(`
           update public.delivery_requests set status = 'published' where id = '${reqId}';
@@ -430,20 +447,22 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           update public.delivery_request_drop_contacts set dropoff_address = 'Calle Confirmada Modificada' where drop_id = '${dropIds[0]}';
           \\echo S1_LOCKED
         `);
         await s1.waitFor('S1_LOCKED');
 
         s2.send(`
+          begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select public.publish_request('${reqId}');
+          commit;
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1, s2]);
 
         s1.send(`
           commit;
@@ -474,7 +493,7 @@ async function run() {
         s1.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           select status from public.delivery_requests where id = '${reqId}' for update;
           \\echo S1_LOCKED
         `);
@@ -483,12 +502,12 @@ async function run() {
         s2.send(`
           begin;
           set role authenticated;
-          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', true);
+          select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
           update public.delivery_request_drop_contacts set dropoff_address = 'Dirección Ilegal' where drop_id = '${dropIds[0]}';
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock();
+        await waitForBlockedLock([s1]);
 
         s1.send(`
           update public.delivery_requests set status = 'published' where id = '${reqId}';
