@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(40);
+select plan(48);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -135,7 +135,19 @@ end;
 $$;
 select throws_matching('select pg_temp.test_bypass_update_request_id()', 'permission denied', 'update directo sobre request_id rechazado');
 
--- 3. Guard de borrador: app_private.lock_draft_request_for_child_write (DoD & CC-022 §2b)
+-- 3. Guard de borrador: app_private.lock_draft_request_for_child_write (DoD, CC-022 §2b y H06/H08)
+select is(
+  (select prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'app_private' and p.proname = 'lock_draft_request_for_child_write'),
+  false,
+  'lock_draft_request_for_child_write es SECURITY INVOKER (prosecdef = false)'
+);
+
+select is(
+  (select position('for update' in lower(prosrc)) > 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'app_private' and p.proname = 'lock_draft_request_for_child_write'),
+  true,
+  'lock_draft_request_for_child_write adquiere delivery_requests FOR UPDATE'
+);
+
 create function pg_temp.test_call_guard_direct() returns void language plpgsql as $$
 begin
   perform pg_temp.act_as(pg_temp.merchant_id());
@@ -157,7 +169,7 @@ begin
   values (v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash');
 end;
 $$;
-select throws_matching('select pg_temp.test_write_published_drop()', 'row-level security policy|INVALID_STATE_TRANSITION', 'insert directo sobre solicitud published rechazado por guard');
+select throws_matching('select pg_temp.test_write_published_drop()', 'INVALID_STATE_TRANSITION', 'insert directo sobre solicitud published rechazado por guard con INVALID_STATE_TRANSITION');
 
 create function pg_temp.test_write_drop_non_owner() returns void language plpgsql as $$
 declare
@@ -188,6 +200,24 @@ begin
 end;
 $$;
 select lives_ok('select pg_temp.test_write_draft_drop_owner()', 'insert directo en draft por dueño permitido');
+
+create function pg_temp.test_update_draft_drop_owner() returns text language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003408';
+  v_drop_id uuid;
+  v_pkg text;
+begin
+  select id into v_drop_id from public.delivery_request_drops where request_id = v_req_id limit 1;
+
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  update public.delivery_request_drops set package_type = 'mediano' where id = v_drop_id;
+
+  perform pg_temp.reset_actor();
+  select package_type::text into v_pkg from public.delivery_request_drops where id = v_drop_id;
+  return v_pkg;
+end;
+$$;
+select is(pg_temp.test_update_draft_drop_owner(), 'mediano', 'update directo de drop en draft por dueño permitido');
 
 create function pg_temp.test_update_contacts_published() returns text language plpgsql as $$
 declare
@@ -234,6 +264,52 @@ begin
 end;
 $$;
 select is(pg_temp.test_delete_drop_published(), 1, 'delete drop en published rechazado por RLS (drop permanece)');
+
+create function pg_temp.test_update_contacts_draft() returns text language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003429';
+  v_drop_id uuid := '40000000-0000-4000-8000-000000003429';
+  v_addr text;
+begin
+  perform pg_temp.reset_actor();
+  insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
+  values (v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft');
+  insert into public.delivery_request_drops (id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method)
+  values (v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash');
+  insert into public.delivery_request_drop_contacts (drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared)
+  values (v_drop_id, 'Direccion Original', 'Destinatario', '+543865123456', true);
+
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  update public.delivery_request_drop_contacts set dropoff_address = 'Direccion Modificada' where drop_id = v_drop_id;
+
+  perform pg_temp.reset_actor();
+  select dropoff_address into v_addr from public.delivery_request_drop_contacts where drop_id = v_drop_id;
+  return v_addr;
+end;
+$$;
+select is(pg_temp.test_update_contacts_draft(), 'Direccion Modificada', 'update contactos en draft por dueño permitido');
+
+create function pg_temp.test_delete_draft_drop_owner() returns int language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003430';
+  v_drop_id uuid := '40000000-0000-4000-8000-000000003430';
+  v_cnt int;
+begin
+  perform pg_temp.reset_actor();
+  insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
+  values (v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft');
+  insert into public.delivery_request_drops (id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method)
+  values (v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash');
+
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  delete from public.delivery_request_drops where id = v_drop_id;
+
+  perform pg_temp.reset_actor();
+  select count(*)::int into v_cnt from public.delivery_request_drops where id = v_drop_id;
+  return v_cnt;
+end;
+$$;
+select is(pg_temp.test_delete_draft_drop_owner(), 0, 'delete drop en draft por dueño permitido');
 
 -- 4. Integridad de pago y cambio por entrega (DoD & CC-022 §5b)
 create function pg_temp.test_check_transfer_with_change() returns void language plpgsql as $$
@@ -545,78 +621,118 @@ select ok(
 select has_function('public', 'mark_drop_delivered', ARRAY['uuid'], 'mark_drop_delivered existe');
 select has_function('public', 'mark_drop_failed', ARRAY['uuid', 'text'], 'mark_drop_failed existe');
 
--- 10. Backfill idempotencia y casos extremos (H01/H02)
-create function pg_temp.test_backfill_incomplete_draft() returns int language plpgsql as $$
-declare
-  v_req_id uuid := '30000000-0000-4000-8000-000000003421';
-begin
-  perform pg_temp.reset_actor();
-  insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
-  values (v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft');
+-- 10. Backfill productivo: app_private.t340_backfill_legacy (DoD, CC-022 §5b, H07 y H09)
 
-  return (select count(*)::int from public.delivery_request_drops where request_id = v_req_id);
+-- A. Fixture para borrador incompleto: no debe generar drop ni audit_log
+insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status)
+values ('30000000-0000-4000-8000-000000003421', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft');
+
+-- B. Fixture para solicitud historica completa: debe materializar 1 drop y 1 drop_contacts
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+) values (
+  '30000000-0000-4000-8000-000000003422', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'delivered', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Notas legacy completas', 1500
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003422', 'Av Mitre 10', 'San Martin 20', 'Destinatario Real', '+543865123456', true
+);
+
+-- C. Fixture para historica inconsistente (H09 escenario 1: transfer con needs_change=true): 0 drops, 1 audit_log
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change
+) values (
+  '30000000-0000-4000-8000-000000003423', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'transfer', true
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003423', 'Av Mitre 30', 'San Martin 40', 'Dest Transfer', '+543865222222', true
+);
+
+-- D. Fixture para historica inconsistente (H09 escenario 2: cash con cambio pero monto null): 0 drops, 1 audit_log
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, cash_change_amount
+) values (
+  '30000000-0000-4000-8000-000000003424', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, null
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003424', 'Av Mitre 50', 'San Martin 60', 'Dest Cash Sin Monto', '+543865333333', true
+);
+
+-- Ejecución real del helper de backfill productivo sobre los fixtures
+create function pg_temp.test_backfill_incomplete_draft() returns int language plpgsql as $$
+begin
+  perform app_private.t340_backfill_legacy();
+  return (select count(*)::int from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003421');
 end;
 $$;
-select is(pg_temp.test_backfill_incomplete_draft(), 0, 'borrador incompleto no genera drop en backfill');
+select is(pg_temp.test_backfill_incomplete_draft(), 0, 'borrador incompleto no genera drop en backfill productivo');
 
 create function pg_temp.test_backfill_inconsistent_nondraft() returns int language plpgsql as $$
 declare
-  v_req_id uuid := '30000000-0000-4000-8000-000000003422';
+  v_cnt_transfer int;
+  v_cnt_cash int;
+  v_drops_transfer int;
+  v_drops_cash int;
 begin
-  perform pg_temp.reset_actor();
-  insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status, dropoff_zone_id)
-  values (v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', null);
+  perform app_private.t340_backfill_legacy();
 
-  insert into public.audit_log (actor_id, action, target_type, target_id, before, after)
-  select
-    r.merchant_id, 'legacy_migration_inconsistent', 'delivery_request', r.id::text,
-    jsonb_build_object('status', r.status), jsonb_build_object('preserved', true)
-  from public.delivery_requests r
-  where r.id = v_req_id;
+  select count(*)::int into v_drops_transfer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003423';
+  select count(*)::int into v_drops_cash from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003424';
+  select count(*)::int into v_cnt_transfer from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003423';
+  select count(*)::int into v_cnt_cash from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003424';
 
-  return (select count(*)::int from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = v_req_id::text);
+  if v_drops_transfer = 0 and v_drops_cash = 0 and v_cnt_transfer = 1 and v_cnt_cash = 1 then
+    return 1;
+  else
+    return 0;
+  end if;
 end;
 $$;
-select is(pg_temp.test_backfill_inconsistent_nondraft(), 1, 'solicitud no-draft inconsistente queda senalada en audit_log');
+select is(pg_temp.test_backfill_inconsistent_nondraft(), 1, 'solicitudes historicas inconsistentes quedan senaladas en audit_log por backfill productivo (H09)');
 
 create function pg_temp.test_backfill_repeated_no_duplicates() returns int language plpgsql as $$
 declare
-  v_req_id uuid := '30000000-0000-4000-8000-000000003423';
-  v_drop_id uuid := '40000000-0000-4000-8000-000000003423';
+  v_drops_complete int;
+  v_audit_transfer int;
+  v_audit_cash int;
 begin
-  perform pg_temp.reset_actor();
-  insert into public.delivery_requests (
-    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change
-  ) values (
-    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'delivered', pg_temp.dropoff_zone_id(), 'chico', 'cash', false
-  );
-  insert into public.delivery_request_contacts (
-    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
-  ) values (
-    v_req_id, 'Retiro Real', 'Entrega Real', 'Destinatario Real', '+543865123456', true
-  );
+  -- Segunda llamada consecutiva al helper de backfill para verificar idempotencia
+  perform app_private.t340_backfill_legacy();
 
-  insert into public.delivery_request_drops (
-    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status, delivered_at
-  )
-  select
-    v_drop_id, r.id, 1, r.dropoff_zone_id, r.package_type, r.recipient_payment_method, false, 'delivered', coalesce(r.delivered_at, now())
-  from public.delivery_requests r
-  where r.id = v_req_id
-    and not exists (select 1 from public.delivery_request_drops d where d.request_id = r.id);
+  select count(*)::int into v_drops_complete from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003422';
+  select count(*)::int into v_audit_transfer from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003423';
+  select count(*)::int into v_audit_cash from public.audit_log where action = 'legacy_migration_inconsistent' and target_id = '30000000-0000-4000-8000-000000003424';
 
-  insert into public.delivery_request_drops (
-    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status, delivered_at
-  )
-  select
-    gen_random_uuid(), r.id, 1, r.dropoff_zone_id, r.package_type, r.recipient_payment_method, false, 'delivered', coalesce(r.delivered_at, now())
-  from public.delivery_requests r
-  where r.id = v_req_id
-    and not exists (select 1 from public.delivery_request_drops d where d.request_id = r.id);
-
-  return (select count(*)::int from public.delivery_request_drops where request_id = v_req_id);
+  if v_drops_complete = 1 and v_audit_transfer = 1 and v_audit_cash = 1 then
+    return 1;
+  else
+    return 0;
+  end if;
 end;
 $$;
-select is(pg_temp.test_backfill_repeated_no_duplicates(), 1, 'backfill repetido no genera duplicados');
+select is(pg_temp.test_backfill_repeated_no_duplicates(), 1, 'ejecucion repetida de app_private.t340_backfill_legacy no genera duplicados');
+
+select is(
+  (select count(*)::int from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003422'),
+  1,
+  'solicitud historica completa materializa exactamente 1 drop'
+);
+
+select is(
+  (select notes from public.delivery_request_drop_contacts where drop_id = (select id from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003422')),
+  'Notas legacy completas',
+  'notas legacy migradas a drop_contacts por backfill productivo'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_request_drop_contacts where drop_id = (select id from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003422')),
+  1500,
+  'monto de cambio migrado a drop_contacts por backfill productivo'
+);
 
 rollback;

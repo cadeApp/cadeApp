@@ -71,7 +71,7 @@ grant select (drops_count) on public.delivery_requests to authenticated;
 create or replace function app_private.lock_draft_request_for_child_write()
 returns trigger
 language plpgsql
-security definer
+security invoker
 set search_path = public, pg_temp
 as $$
 declare
@@ -1560,138 +1560,145 @@ $$;
 revoke all on function public.accept_offer(uuid) from public, anon, authenticated;
 grant execute on function public.accept_offer(uuid) to authenticated;
 
--- 13. Backfill idempotente (CC-022 §9)
--- Registramos en audit_log las solicitudes históricas no-draft con datos incompletos
--- para preservarlas de forma comprobable sin fabricar datos personales ni consentimientos falsos.
-insert into public.audit_log (
-  actor_id,
-  action,
-  target_type,
-  target_id,
-  before,
-  after
-)
-select
-  r.merchant_id,
-  'legacy_migration_inconsistent',
-  'delivery_request',
-  r.id::text,
-  jsonb_build_object(
-    'status', r.status,
-    'dropoff_zone_id', r.dropoff_zone_id,
-    'package_type', r.package_type,
-    'recipient_payment_method', r.recipient_payment_method,
-    'has_contact', (c.request_id is not null),
-    'consent', c.recipient_consent_declared
-  ),
-  jsonb_build_object('preserved', true, 'drops_created', 0)
-from public.delivery_requests r
-left join public.delivery_request_contacts c on c.request_id = r.id
-where r.status <> 'draft'
-  and not exists (
+-- 13. Backfill idempotente (CC-022 §5b, §10, H07 y H09)
+create or replace function app_private.t340_backfill_legacy()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  -- 1. Materializamos drops SOLO para solicitudes con datos legacy reales y consistentes.
+  -- Los borradores incompletos permanecen sin drops y son validados por publish_request.
+  insert into public.delivery_request_drops (
+    id,
+    request_id,
+    position,
+    dropoff_zone_id,
+    package_type,
+    recipient_payment_method,
+    needs_change,
+    approx_distance_m,
+    status,
+    delivered_at,
+    failed_reason
+  )
+  select
+    gen_random_uuid(),
+    r.id,
+    1,
+    r.dropoff_zone_id,
+    r.package_type,
+    r.recipient_payment_method,
+    case when r.recipient_payment_method = 'cash' then r.needs_change else false end,
+    r.approx_distance_m,
+    case when r.status = 'delivered' then 'delivered' else 'pending' end,
+    case when r.status = 'delivered' then coalesce(r.delivered_at, r.updated_at, r.created_at) else null end,
+    null
+  from public.delivery_requests r
+  join public.delivery_request_contacts c on c.request_id = r.id
+  join public.zones z on z.id = r.dropoff_zone_id
+  where not exists (
     select 1 from public.delivery_request_drops d where d.request_id = r.id
   )
-  and not exists (
-    select 1
-    from public.audit_log a
-    where a.action = 'legacy_migration_inconsistent' and a.target_id = r.id::text
+    and r.dropoff_zone_id is not null
+    and r.package_type is not null
+    and r.recipient_payment_method is not null
+    and c.dropoff_address is not null and btrim(c.dropoff_address) <> ''
+    and c.recipient_name is not null and btrim(c.recipient_name) <> ''
+    and c.recipient_phone is not null and btrim(c.recipient_phone) <> ''
+    and c.recipient_consent_declared is true
+    and (r.recipient_payment_method = 'cash' or r.needs_change = false)
+    and (
+      r.recipient_payment_method <> 'cash'
+      or not r.needs_change
+      or (r.cash_change_amount is not null and r.cash_change_amount > 0)
+    );
+
+  -- 2. Contactos privados por entrega correspondientes al drop creado, preservando notes y cash_change_amount
+  insert into public.delivery_request_drop_contacts (
+    drop_id,
+    dropoff_address,
+    dropoff_lat,
+    dropoff_lng,
+    recipient_name,
+    recipient_phone,
+    recipient_consent_declared,
+    cash_change_amount,
+    notes
   )
-  and (
-    r.dropoff_zone_id is null
-    or r.package_type is null
-    or r.recipient_payment_method is null
-    or c.request_id is null
-    or c.dropoff_address is null or btrim(c.dropoff_address) = ''
-    or c.recipient_name is null or btrim(c.recipient_name) = ''
-    or c.recipient_phone is null or btrim(c.recipient_phone) = ''
-    or c.recipient_consent_declared is not true
-  );
-
--- Materializamos drops SOLO para solicitudes con datos legacy reales y consistentes.
--- Los borradores incompletos permanecen sin drops y son validados por publish_request.
-insert into public.delivery_request_drops (
-  id,
-  request_id,
-  position,
-  dropoff_zone_id,
-  package_type,
-  recipient_payment_method,
-  needs_change,
-  approx_distance_m,
-  status,
-  delivered_at,
-  failed_reason
-)
-select
-  gen_random_uuid(),
-  r.id,
-  1,
-  r.dropoff_zone_id,
-  r.package_type,
-  r.recipient_payment_method,
-  case when r.recipient_payment_method = 'cash' then r.needs_change else false end,
-  r.approx_distance_m,
-  case when r.status = 'delivered' then 'delivered' else 'pending' end,
-  case when r.status = 'delivered' then coalesce(r.delivered_at, r.updated_at, r.created_at) else null end,
-  null
-from public.delivery_requests r
-join public.delivery_request_contacts c on c.request_id = r.id
-join public.zones z on z.id = r.dropoff_zone_id
-where not exists (
-  select 1 from public.delivery_request_drops d where d.request_id = r.id
-)
-  and r.dropoff_zone_id is not null
-  and r.package_type is not null
-  and r.recipient_payment_method is not null
-  and c.dropoff_address is not null and btrim(c.dropoff_address) <> ''
-  and c.recipient_name is not null and btrim(c.recipient_name) <> ''
-  and c.recipient_phone is not null and btrim(c.recipient_phone) <> ''
-  and c.recipient_consent_declared is true
-  and (r.recipient_payment_method = 'cash' or r.needs_change = false)
-  and (
-    r.recipient_payment_method <> 'cash'
-    or not r.needs_change
-    or (r.cash_change_amount is not null and r.cash_change_amount > 0)
-  );
-
--- Contactos privados por entrega correspondientes al drop creado, preservando notes y cash_change_amount
-insert into public.delivery_request_drop_contacts (
-  drop_id,
-  dropoff_address,
-  dropoff_lat,
-  dropoff_lng,
-  recipient_name,
-  recipient_phone,
-  recipient_consent_declared,
-  cash_change_amount,
-  notes
-)
-select
-  d.id,
-  c.dropoff_address,
-  c.dropoff_lat,
-  c.dropoff_lng,
-  c.recipient_name,
-  c.recipient_phone,
-  c.recipient_consent_declared,
-  case when d.recipient_payment_method = 'cash' and d.needs_change then r.cash_change_amount else null end,
-  r.notes
-from public.delivery_request_drops d
-join public.delivery_requests r on r.id = d.request_id
-join public.delivery_request_contacts c on c.request_id = r.id
-where d.position = 1
-  and not exists (
-    select 1 from public.delivery_request_drop_contacts dc where dc.drop_id = d.id
-  );
-
--- drops_count se actualiza en base a las entregas materializadas
-update public.delivery_requests r
-set drops_count = (
-  select count(*)::smallint
+  select
+    d.id,
+    c.dropoff_address,
+    c.dropoff_lat,
+    c.dropoff_lng,
+    c.recipient_name,
+    c.recipient_phone,
+    c.recipient_consent_declared,
+    case when d.recipient_payment_method = 'cash' and d.needs_change then r.cash_change_amount else null end,
+    r.notes
   from public.delivery_request_drops d
-  where d.request_id = r.id
-)
-where exists (
-  select 1 from public.delivery_request_drops d where d.request_id = r.id
-);
+  join public.delivery_requests r on r.id = d.request_id
+  join public.delivery_request_contacts c on c.request_id = r.id
+  where d.position = 1
+    and not exists (
+      select 1 from public.delivery_request_drop_contacts dc where dc.drop_id = d.id
+    );
+
+  -- 3. drops_count se actualiza en base a las entregas materializadas
+  update public.delivery_requests r
+  set drops_count = (
+    select count(*)::smallint
+    from public.delivery_request_drops d
+    where d.request_id = r.id
+  )
+  where exists (
+    select 1 from public.delivery_request_drops d where d.request_id = r.id
+  );
+
+  -- 4. Auditar solicitudes históricas no-draft que continúan sin drops (H09)
+  -- Detecta todas las condiciones que impidieron crear drop (campos incompletos, consentimiento false/null,
+  -- medio transfer/to_agree con needs_change=true, o cash con needs_change=true y monto null) sin duplicar auditorias.
+  insert into public.audit_log (
+    actor_id,
+    action,
+    target_type,
+    target_id,
+    before,
+    after
+  )
+  select
+    r.merchant_id,
+    'legacy_migration_inconsistent',
+    'delivery_request',
+    r.id::text,
+    jsonb_build_object(
+      'status', r.status,
+      'dropoff_zone_id', r.dropoff_zone_id,
+      'package_type', r.package_type,
+      'recipient_payment_method', r.recipient_payment_method,
+      'needs_change', r.needs_change,
+      'cash_change_amount', r.cash_change_amount,
+      'has_contact', (c.request_id is not null),
+      'consent', c.recipient_consent_declared
+    ),
+    jsonb_build_object('preserved', true, 'drops_created', 0)
+  from public.delivery_requests r
+  left join public.delivery_request_contacts c on c.request_id = r.id
+  where r.status <> 'draft'
+    and not exists (
+      select 1 from public.delivery_request_drops d where d.request_id = r.id
+    )
+    and not exists (
+      select 1
+      from public.audit_log a
+      where a.action = 'legacy_migration_inconsistent' and a.target_id = r.id::text
+    );
+end;
+$$;
+
+revoke all on function app_private.t340_backfill_legacy() from public, anon, authenticated;
+
+-- Ejecución productiva del backfill durante la migración
+select app_private.t340_backfill_legacy();
 
