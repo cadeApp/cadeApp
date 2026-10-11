@@ -33,10 +33,13 @@ function runSql(sql) {
 class PsqlSession {
   constructor(label) {
     this.label = label;
-    this.proc = spawn('docker', ['exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    this.proc = spawn(
+      'docker',
+      ['exec', '-i', dbContainer, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres'],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
+    );
     this.output = '';
+    this.pid = null;
     this.proc.stdout.on('data', (d) => {
       this.output += d.toString('utf8');
     });
@@ -52,12 +55,22 @@ class PsqlSession {
   async waitFor(marker, timeoutMs = 8000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      if (this.output.includes(marker)) {
+      const found = typeof marker === 'string' ? this.output.includes(marker) : marker.test(this.output);
+      if (found) {
         return this.output;
       }
       await new Promise((r) => setTimeout(r, 50));
     }
     throw new Error(`[H08][${this.label}] Timeout esperando marcador "${marker}". Salida acumulada:\n${this.output}`);
+  }
+
+  async initPid() {
+    this.send(`select 'PID:' || pg_backend_pid() || ':ENDPID';`);
+    await this.waitFor(/PID:\d+:ENDPID/);
+    const m = this.output.match(/PID:(\d+):ENDPID/);
+    if (!m) throw new Error(`[H08][${this.label}] No se pudo determinar pg_backend_pid`);
+    this.pid = Number(m[1]);
+    return this.pid;
   }
 
   async close() {
@@ -68,19 +81,15 @@ class PsqlSession {
   }
 }
 
-async function waitForBlockedLock(sessions = [], timeoutMs = 6000) {
+async function waitForBlockedLock(blockerPid, waiterPid, timeoutMs = 8000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    for (const s of sessions) {
-      if (s.output.includes('ERROR:')) {
-        throw new Error(`[H08][${s.label}] Error SQL prematuro antes de adquirir lock:\n${s.output}`);
-      }
-    }
     const countStr = runSql(`
       select count(*)::int
-      from pg_locks l
-      join pg_stat_activity a on a.pid = l.pid
-      where l.granted = false and a.pid != pg_backend_pid();
+      from pg_stat_activity
+      where pid = ${waiterPid}
+        and wait_event_type = 'Lock'
+        and ${blockerPid} = any(pg_blocking_pids(${waiterPid}));
     `);
     const count = Number(countStr);
     if (count > 0) {
@@ -88,8 +97,9 @@ async function waitForBlockedLock(sessions = [], timeoutMs = 6000) {
     }
     await new Promise((r) => setTimeout(r, 50));
   }
-  const outputs = sessions.map((s) => `[${s.label}]:\n${s.output}`).join('\n');
-  throw new Error(`[H08] Timeout esperando contención de lock en PostgreSQL.\nSalidas acumuladas:\n${outputs}`);
+  throw new Error(
+    `[H08] Timeout esperando que waiter PID ${waiterPid} quede bloqueado por blocker PID ${blockerPid} con wait_event_type = 'Lock'.`
+  );
 }
 
 async function run() {
@@ -152,6 +162,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_INSERT_A');
       const s2 = new PsqlSession('S2_PUBLISH_A');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -177,7 +189,7 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1, s2]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
           commit;
@@ -203,6 +215,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_PUBLISH_B');
       const s2 = new PsqlSession('S2_INSERT_B');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -223,19 +237,21 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          reset role;
-          update public.delivery_requests set status = 'published' where id = '${reqId}';
+          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
         await s1.waitFor('S1_COMMITTED');
 
         await s2.waitFor('INVALID_STATE_TRANSITION');
+        assert.ok(!s2.output.includes('S2_DONE'), 'S2 no debe haber emitido S2_DONE por error de serialización');
 
+        const status = runSql(`select status from public.delivery_requests where id = '${reqId}';`);
         const countDrops = runSql(`select count(*)::int from public.delivery_request_drops where request_id = '${reqId}';`);
+        assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(countDrops, '1', 'El drop 2 no debe haber sido insertado');
         console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
@@ -253,6 +269,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_UPDATE_A');
       const s2 = new PsqlSession('S2_PUBLISH_A');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -273,7 +291,7 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1, s2]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
           commit;
@@ -299,6 +317,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_PUBLISH_B');
       const s2 = new PsqlSession('S2_UPDATE_B');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -318,19 +338,21 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          reset role;
-          update public.delivery_requests set status = 'published' where id = '${reqId}';
+          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
         await s1.waitFor('S1_COMMITTED');
 
         await s2.waitFor('INVALID_STATE_TRANSITION');
+        assert.ok(!s2.output.includes('S2_DONE'), 'S2 no debe haber emitido S2_DONE por error de serialización');
 
+        const status = runSql(`select status from public.delivery_requests where id = '${reqId}';`);
         const pkg = runSql(`select package_type from public.delivery_request_drops where id = '${dropIds[0]}';`);
+        assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(pkg, 'chico', 'package_type debe permanecer intacto');
         console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
@@ -348,6 +370,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_DELETE_A');
       const s2 = new PsqlSession('S2_PUBLISH_A');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -368,7 +392,7 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1, s2]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
           commit;
@@ -394,6 +418,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_PUBLISH_B');
       const s2 = new PsqlSession('S2_DELETE_B');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -413,19 +439,21 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          reset role;
-          update public.delivery_requests set status = 'published' where id = '${reqId}';
+          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
         await s1.waitFor('S1_COMMITTED');
 
         await s2.waitFor('INVALID_STATE_TRANSITION');
+        assert.ok(!s2.output.includes('S2_DONE'), 'S2 no debe haber emitido S2_DONE por error de serialización');
 
+        const status = runSql(`select status from public.delivery_requests where id = '${reqId}';`);
         const countDrops = runSql(`select count(*)::int from public.delivery_request_drops where id = '${dropIds[1]}';`);
+        assert.equal(status, 'published', 'Estado final debe ser published');
         assert.equal(countDrops, '1', 'El drop 2 no debe haber sido eliminado');
         console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {
@@ -443,6 +471,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_UPDATE_CONTACTS_A');
       const s2 = new PsqlSession('S2_PUBLISH_A');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -463,7 +493,7 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1, s2]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
           commit;
@@ -489,6 +519,8 @@ async function run() {
 
       const s1 = new PsqlSession('S1_PUBLISH_B');
       const s2 = new PsqlSession('S2_UPDATE_CONTACTS_B');
+      await s1.initPid();
+      await s2.initPid();
 
       try {
         s1.send(`
@@ -508,19 +540,21 @@ async function run() {
           \\echo S2_DONE
         `);
 
-        await waitForBlockedLock([s1]);
+        await waitForBlockedLock(s1.pid, s2.pid);
 
         s1.send(`
-          reset role;
-          update public.delivery_requests set status = 'published' where id = '${reqId}';
+          select public.publish_request('${reqId}');
           commit;
           \\echo S1_COMMITTED
         `);
         await s1.waitFor('S1_COMMITTED');
 
         await s2.waitFor('INVALID_STATE_TRANSITION');
+        assert.ok(!s2.output.includes('S2_DONE'), 'S2 no debe haber emitido S2_DONE por error de serialización');
 
+        const status = runSql(`select status from public.delivery_requests where id = '${reqId}';`);
         const addr = runSql(`select dropoff_address from public.delivery_request_drop_contacts where drop_id = '${dropIds[0]}';`);
+        assert.equal(status, 'published', 'Estado final debe ser published');
         assert.notEqual(addr, 'Dirección Ilegal', 'La dirección no debe haber sido modificada');
         console.log('       -> OK (S2 esperó lock y abortó con INVALID_STATE_TRANSITION sin mutar)');
       } finally {

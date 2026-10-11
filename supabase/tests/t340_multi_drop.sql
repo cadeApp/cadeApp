@@ -682,12 +682,22 @@ insert into public.delivery_request_drop_contacts (
   ('30000000-0000-4000-8000-000000003521', 'Calle X', 'Destinatario X', '+543865000010', true),
   ('30000000-0000-4000-8000-000000003522', 'Calle Y', 'Destinatario Y', '+543865000020', true);
 
--- Solicitud 3: published (no in_transit)
+-- Solicitud 3: matched (no in_transit) con oferta accepted
 insert into public.delivery_requests (
   id, merchant_id, pickup_zone_id, status, drops_count
 ) values (
-  '30000000-0000-4000-8000-000000003530', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', 1
+  '30000000-0000-4000-8000-000000003530', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'matched', 1
 );
+
+insert into public.offers (
+  id, request_id, courier_id, status, amount_ars, eta_minutes
+) values (
+  '30000000-0000-4000-8000-000000003535', '30000000-0000-4000-8000-000000003530', pg_temp.courier_1_id(), 'accepted', 1500, 20
+);
+
+update public.delivery_requests
+set accepted_offer_id = '30000000-0000-4000-8000-000000003535'
+where id = '30000000-0000-4000-8000-000000003530';
 
 insert into public.delivery_request_drops (
   id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
@@ -698,6 +708,35 @@ insert into public.delivery_request_drop_contacts (
   drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
 ) values
   ('30000000-0000-4000-8000-000000003531', 'Calle Z', 'Destinatario Z', '+543865000030', true);
+
+-- Solicitud 4: in_transit con 2 drops y oferta aceptada para verificar rechazo legacy exclusivo (CC-022 §6, H13)
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, drops_count
+) values (
+  '30000000-0000-4000-8000-000000003540', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'in_transit', 2
+);
+
+insert into public.offers (
+  id, request_id, courier_id, status, amount_ars, eta_minutes
+) values (
+  '30000000-0000-4000-8000-000000003545', '30000000-0000-4000-8000-000000003540', pg_temp.courier_1_id(), 'accepted', 1500, 20
+);
+
+update public.delivery_requests
+set accepted_offer_id = '30000000-0000-4000-8000-000000003545'
+where id = '30000000-0000-4000-8000-000000003540';
+
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values
+  ('30000000-0000-4000-8000-000000003541', '30000000-0000-4000-8000-000000003540', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'),
+  ('30000000-0000-4000-8000-000000003542', '30000000-0000-4000-8000-000000003540', 2, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending');
+
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values
+  ('30000000-0000-4000-8000-000000003541', 'Calle M1', 'Destinatario M1', '+543865000041', true),
+  ('30000000-0000-4000-8000-000000003542', 'Calle M2', 'Destinatario M2', '+543865000042', true);
 
 -- Tests de validación y control de acceso
 create function pg_temp.test_rpc_drop_unauthenticated() returns void language plpgsql as $$
@@ -746,7 +785,7 @@ begin
   perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003531');
 end;
 $$;
-select throws_matching('select pg_temp.test_rpc_drop_not_in_transit()', 'UNAUTHORIZED_ACTOR|INVALID_STATE_TRANSITION', 'mark_drop_delivered rechaza solicitud que no esta in_transit o sin oferta aceptada');
+select throws_matching('select pg_temp.test_rpc_drop_not_in_transit()', 'INVALID_STATE_TRANSITION', 'mark_drop_delivered rechaza solicitud que no esta in_transit');
 
 -- Tests de mark_drop_delivered
 create function pg_temp.test_mark_drop_delivered_first() returns int language plpgsql as $$
@@ -927,14 +966,14 @@ end;
 $$;
 select is(pg_temp.test_all_drops_failed_closes_parent(), 1, 'solicitud cierra en delivered cuando todas las entregas quedan failed (CC-022 §6)');
 
--- mark_delivered legacy con drops_count > 1 es rechazado
+-- mark_delivered legacy con drops_count > 1 es rechazado sobre solicitud activa in_transit (CC-022 §6, H13)
 create function pg_temp.test_legacy_mark_delivered_multi_rejected() returns void language plpgsql as $$
 begin
   perform pg_temp.act_as(pg_temp.courier_1_id());
-  perform public.mark_delivered('30000000-0000-4000-8000-000000003500'::uuid);
+  perform public.mark_delivered('30000000-0000-4000-8000-000000003540'::uuid);
 end;
 $$;
-select throws_matching('select pg_temp.test_legacy_mark_delivered_multi_rejected()', 'INVALID_STATE_TRANSITION', 'mark_delivered legacy es rechazado con drops_count mayor a 1 (CC-022 §6)');
+select throws_matching('select pg_temp.test_legacy_mark_delivered_multi_rejected()', 'INVALID_STATE_TRANSITION', 'mark_delivered legacy es rechazado con drops_count mayor a 1 en solicitud in_transit (CC-022 §6)');
 
 -- 10. Backfill productivo: app_private.t340_backfill_legacy (DoD, CC-022 §5b, H07, H10, H11 y H12)
 
