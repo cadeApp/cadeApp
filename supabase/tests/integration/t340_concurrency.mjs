@@ -158,14 +158,12 @@ async function run() {
           begin;
           set role authenticated;
           select set_config('request.jwt.claims', '{"sub":"${merchantId}","role":"authenticated","aal":"aal2"}', false);
-          with new_drop as (
-            insert into public.delivery_request_drops (request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change)
-            values ('${reqId}', 2, '${zoneId}', 'chico', 'cash', false)
-            returning id
-          )
+          insert into public.delivery_request_drops (request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change)
+          values ('${reqId}', 2, '${zoneId}', 'chico', 'cash', false);
           insert into public.delivery_request_drop_contacts (drop_id, dropoff_address, dropoff_lat, dropoff_lng, recipient_name, recipient_phone, recipient_consent_declared)
           select id, 'Dirección Drop 2', -27.4250, -65.6080, 'Destinatario 2', '+543865000002', true
-          from new_drop;
+          from public.delivery_request_drops
+          where request_id = '${reqId}' and position = 2;
           \\echo S1_LOCKED
         `);
         await s1.waitFor('S1_LOCKED');
