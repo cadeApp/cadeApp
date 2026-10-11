@@ -14,3 +14,12 @@ Hallazgos: 5 bloqueantes (H01–H05). No se asignan AG nuevos sin revisar el má
 - **Rollout por checkpoints:** gate automatizado o revisión explícita del conjunto de lectores, puente y escritor por PR; que la compilación no permita saltarse el paso del contrato.
 
 No se tocaron `AGENTS.md` ni reglas de CI. Estas lecciones deberán contrastarse con otras PR antes de convertirlas en normas transversales.
+
+## Ronda 2 — Hallazgos H06 a H09
+
+- **H06 (crítico), P05/P08:** un `db-tests` verde no garantiza serialización cuando el trigger pasó a `SECURITY DEFINER` y condiciona su ejecución a `current_user`. El propio contrato de CC-022 §2b lo prohibía. Refuerza `pr-64/AG-62`: donde no pueda ejercerse una carrera real, un control estructural específico debe detectar esta configuración peligrosa y probar su propia mutación.
+- **H07, P04:** reemplazar `select pass()` por pruebas que insertan ellas mismas la fila esperada sigue siendo una prueba independiente del comportamiento productivo. Refuerza `pr-63/AG-68`.
+- **H08, P08:** secuencial no significa concurrente. La prueba de RLS no puede certificar que un lock previene un TOCTOU. Refuerza `pr-68/AG-74` y la exigencia de dos sesiones.
+- **H09, P06:** auditar un backfill requiere enumerar las mismas exclusiones que aplica el materializador, incluidas las relaciones entre medio de pago y monto de cambio.
+
+No se modifica `AGENTS.md` ni se asigna numeración AG nueva: las reglas existentes ya contemplan estos patrones y aún falta ejecución de pruebas concurrentes en CI.
