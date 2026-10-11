@@ -1,33 +1,28 @@
-# PR #317 — T-340 · Etapa 1: esquema, puente y backfill
+# PR #317 — T-340 · Paso 1/4 — esquema y puente legacy
 
-| Campo | Valor |
-|---|---|
-| PR | https://github.com/cadeApp/cadeApp/pull/317 |
-| Autor | @asako669 (P2) |
-| Rama | `feat/T-340-varias-entregas` → `develop` |
-| Revisión | `cf69ffd6a99d65418894c57868db86d8e28822fe` |
-| Base al revisar | `7cf1a653dfa193f254d41611b47ae65930435b84` |
-| Tamaño | 6 archivos, +2235/-9 reportados en PR |
-| Estado | **CON BLOQUEANTES (5) — no mergear** |
+**Autor:** @asako669 · **Base:** `develop` · **Estado:** CON BLOQUEANTES, NO MERGEAR.
 
 ## Rondas
 
-| Ronda | SHA revisado | Bloqueantes | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `cf69ffd6` | 5 | [ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `cf69ffd6` | 5 bloqueantes | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | `5bba8319` | 4 nuevos bloqueantes; H03 parcial | [Ronda 2](revisiones/ronda-2.md) |
 
-## Hallazgos
+## Estado de los hallazgos
 
-| ID | Motivo | Severidad | Estado |
-|---|---|---|---|
-| PR317-H01 | Migración falla por columna inexistente | alto | abierto |
-| PR317-H02 | Backfill inventa información y consentimiento | alto | abierto |
-| PR317-H03 | 22 tests `pass()` falsos | alto | abierto |
-| PR317-H04 | Fixture/plan pgTAP incompatibles | alto | abierto |
-| PR317-H05 | `get_trip_details` adelantado al paso 1 | medio | abierto |
+| ID | Estado |
+|---|---|
+| H01 | Arreglado/verificado: migración sin `zones.is_active`. |
+| H02 | Arreglado/verificado: sin datos del destinatario ficticios; ver H09. |
+| H03 | Parcial: 22 `pass()` retirados; persisten pruebas que no ejercitan backfill (H07). |
+| H04 | Arreglado/verificado: fixture corregido y 40 pgTAP en CI. |
+| H05 | Arreglado/verificado: `get_trip_details` preservado para paso 2. |
+| H06 | **CRÍTICO abierto:** guard declarado `SECURITY DEFINER`. |
+| H07 | **ALTO abierto:** backfill no probado contra código productivo. |
+| H08 | **ALTO abierto:** no hay prueba concurrente de dos sesiones. |
+| H09 | **ALTO abierto:** auditoría no detecta inconsistencias de pago. |
 
-[Datos estructurados](hallazgos.jsonl) · [Evidencia y comandos](evidencia/comandos.md) · [Lecciones](lecciones.md)
+[Hallazgos estructurados](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
-## Próximo paso
-
-Agy corrige únicamente H01–H05 sin tocar `docs/revision-pr/**`, aporta CI DB y pruebas RED→GREEN verdaderas; nueva ronda independiente sobre nuevo HEAD. No mergear ni comenzar T-340 paso 2 hasta el gate de Develop.
+**No comenzar paso 2 ni mergear PR #317** hasta completar correcciones, revisión independiente y checkpoint posterior a integración en Develop.
