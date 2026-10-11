@@ -869,6 +869,12 @@ async function run() {
         delete from public.delivery_requests where id in (${inList});
       `);
     }
+    runSql(`
+      delete from public.couriers where profile_id = '${courierId}';
+      delete from public.merchants where profile_id = '${merchantId}';
+      delete from public.profiles where id in ('${merchantId}', '${courierId}');
+      delete from auth.users where id in ('${merchantId}', '${courierId}');
+    `);
   }
 }
 

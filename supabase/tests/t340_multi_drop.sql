@@ -42,7 +42,8 @@ values
   (pg_temp.merchant_other_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 't340.other@example.test', 'pwd', '{"role":"merchant"}'::jsonb),
   (pg_temp.courier_1_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 't340.courier1@example.test', 'pwd', '{"role":"courier"}'::jsonb),
   (pg_temp.courier_2_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 't340.courier2@example.test', 'pwd', '{"role":"courier"}'::jsonb),
-  (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 't340.admin@example.test', 'pwd', '{"role":"merchant"}'::jsonb);
+  (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 't340.admin@example.test', 'pwd', '{"role":"merchant"}'::jsonb)
+on conflict (id) do nothing;
 
 update public.profiles set consent_status = 'active' where id in (pg_temp.merchant_id(), pg_temp.merchant_other_id(), pg_temp.courier_1_id(), pg_temp.courier_2_id());
 update public.profiles set role = 'admin' where id = pg_temp.admin_id();
