@@ -850,6 +850,7 @@ async function run() {
     if (createdRequests.length > 0) {
       const inList = createdRequests.map((id) => `'${id}'`).join(',');
       runSql(`
+        update public.delivery_requests set accepted_offer_id = null where id in (${inList});
         delete from public.offers where request_id in (${inList});
         delete from public.delivery_requests where id in (${inList});
       `);
