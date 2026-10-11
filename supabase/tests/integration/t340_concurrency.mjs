@@ -162,6 +162,8 @@ async function run() {
     const reqId = crypto.randomUUID();
     createdRequests.push(reqId);
     runSql(`
+      delete from public.rate_limits where subject = '${merchantId}';
+
       insert into public.delivery_requests (id, merchant_id, pickup_zone_id, status, drops_count)
       values ('${reqId}', '${merchantId}', '${zoneId}', 'draft', ${initialDrops});
 
@@ -870,6 +872,7 @@ async function run() {
       `);
     }
     runSql(`
+      delete from public.rate_limits where subject = '${merchantId}';
       delete from public.couriers where profile_id = '${courierId}';
       delete from public.merchants where profile_id = '${merchantId}';
       delete from public.profiles where id in ('${merchantId}', '${courierId}');
