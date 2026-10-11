@@ -143,3 +143,83 @@ console.log('NO se ejecutó PostgreSQL mutado ni Playwright RED en esta sonda');
 Para cerrar H02 hace falta una corrida de este mismo spec con una perturbación adversarial que lo haga fallar con el **error de aserción específico del valor cambiado** (p. ej., `cashChangeAmount` o `drops_count`), y luego restauración + corrida GREEN, con SHA/runs fechados. No alterar SQL o RLS del Supabase Develop compartido para obtener RED. Documentar expresamente que una mutación de EXPECTATIVA de test es un RED de aserción, no un mutante de comportamiento productivo. Si no se pudo ejecutar, decir «no ejecutado».
 
 El revisor NO disparó Actions ni modificó datos/secretos; dejó todos los cambios en `docs/revision-pr/pr-318/**`. El autor debe actualizar su propia `docs/tasks/log/T-340.md`.
+
+## Ronda 3 — Ciclo RED→GREEN AUTÉNTICO del E2E Gate 0
+
+**SHA auditado de autor (antes de los commits documentales del revisor):** `e61fab677bb581272ee6ab541e3ce1f0c14d1ab2` · PR #318.  
+**RED real (expectativa adversarial):** `4c4f26d6c2f1817f1cb51da280b163276ef2a8eb`  
+**GREEN restaurado:** `c83c5e887611159526c8ee2c3df9517428e5b5d7`
+
+**No confundir:** en esta ronda **NO se mutó SQL productivo**; se alteró transitoriamente una expectativa de Playwright para observar que el mismo spec detectaba una devolución distinta a la esperada. Los valores productivos siguieron siendo 5000.
+
+### Acceso directo a los logs de Actions efectivamente leídos
+
+- RED: https://github.com/cadeApp/cadeApp/actions/runs/38181178771/job/114593911361
+- GREEN: https://github.com/cadeApp/cadeApp/actions/runs/38183724823/job/114601542342
+- CI restaurado: https://github.com/cadeApp/cadeApp/actions/runs/38183659433
+- CI posterior de docs (no sustituye RED/GREEN): https://github.com/cadeApp/cadeApp/actions/runs/38184897947
+
+```text
+# RED — HEAD is now at 4c4f26d
+✘ [chromium] › e2e/specs/t340-legacy-checkpoint.spec.ts:29:7 ...
+Error: expect(received).toBe(expected)
+Expected: 6000
+Received: 5000
+> 192 | expect(trip?.cashChangeAmount).toBe(CHANGE_AMOUNT + 1000)
+(retry #1) mismo error
+(retry #2) mismo error
+1 failed
+70 passed (15.4m)
+
+# GREEN — HEAD is now at c83c5e8
+✓ [chromium] › e2e/specs/t340-legacy-checkpoint.spec.ts:29:7 ... (23.7s)
+71 passed (14.7m)
+3 passed (58.5s)
+```
+
+### Detector independiente reproducible: comparar código RED, GREEN y SHA revisado
+
+Crear `/tmp/pr318-r3-check.cjs` con este bloque y ejecutarlo **desde un clon local con los tres commits accesibles**, usando `node /tmp/pr318-r3-check.cjs`. El script NO llama Supabase, NO cambia el repositorio y solo usa la stdlib de Node. Si el clon no contiene los commits de la PR, `git fetch` normal primero (sin reset/force/rebase).
+
+```js
+const {execFileSync}=require('node:child_process');
+const assert=require('node:assert/strict');
+const path='e2e/specs/t340-legacy-checkpoint.spec.ts';
+const red='4c4f26d6c2f1817f1cb51da280b163276ef2a8eb';
+const green='c83c5e887611159526c8ee2c3df9517428e5b5d7';
+const reviewed='e61fab677bb581272ee6ab541e3ce1f0c14d1ab2';
+function get(ref){return execFileSync('git',['show',ref+':'+path],{encoding:'utf8'});}
+const [mutant,restored,head]=[red,green,reviewed].map(get);
+const bad="expect(trip?.cashChangeAmount).toBe(CHANGE_AMOUNT + 1000);";
+const good="expect(trip?.cashChangeAmount).toBe(CHANGE_AMOUNT);";
+assert(mutant.includes(bad),'RED no muta la expectativa exacta');
+assert(!mutant.includes(good),'RED todavía contiene expectativa original');
+assert(restored.includes(good),'Restauración no recupera 5000');
+assert(!restored.includes(bad),'La expectativa adversarial persiste en GREEN');
+assert.equal(restored,head,'El SHA revisado no mantiene el spec GREEN exacto');
+
+const r=mutant.split('\n'),g=restored.split('\n');
+assert.equal(r.length,g.length,'Mutación cambió estructura/longitud del spec');
+const changed=r.map((x,i)=>({line:i+1,red:x,green:g[i]})).filter(x=>x.red!==x.green);
+assert.equal(changed.length,1,'Mutación cambió más de una línea');
+assert.equal(changed[0].line,192,'Cambió una línea distinta de la aserción objetivo');
+assert.equal(changed[0].red.trim(),bad);
+assert.equal(changed[0].green.trim(),good);
+
+function isRestored(s){return s.includes(good)&&!s.includes(bad);}
+assert(isRestored(restored),'GREEN de fuente no validó');
+assert(!isRestored(mutant),'RED de fuente engañosamente pasó');
+console.log('SHA exactos: source RED→GREEN cambió 1 línea (192) y fue restaurada');
+console.log('5 controles independientes sobre el oráculo y SHA de código: PASS');
+console.log('El RED real Playwright está en run 38181178771, NO lo ejecutó este script');
+```
+
+**Verificación propia efectivamente realizada:** mediante conector de GitHub se descargaron por SHA las tres versiones del archivo. Resultado: solo cambió la **línea 192**, restauración byte-idéntica al spec del HEAD auditado y `Expected 6000 / Received 5000` literal en **el log real** de la corrida RED, repetido en los dos retries. La ejecución GREEN posterior recuperó 5000 sin cambios adicionales. No se ejecutó el script /tmp en un checkout local; se ejecutó comprobación equivalente directamente sobre blobs fuentes recuperados.
+
+### Bitácora de autor, correcciones mínimas del revisor y estado
+
+- Bitácora ahora contiene sesiones `19:40` (GREEN Gate 0 del primer SHA), `20:15` (RED adversarial del nuevo E2E) y `20:35` (GREEN restaurado) con links a los jobs y errores exactos.
+- La bitácora original contenía los SHA completos **incorrectos** `4c4f26d63a863ecfd188176882252a1290fa8b6d` y `c83c5e888470a7bb3ae2ec2bb371cb1cb9eb5d8c`, aunque los prefijos cortos y los run IDs eran verdaderos. El revisor corrigió ambas cadenas directamente a los SHA **reales** de GitHub en el commit `4caad04a4850b02395d4283656928c1faab076d5`. No se alteró código de E2E ni los resultados de CI.
+- La PR fue encontrada con `draft=false` aun sin implementación de lectores y pese a su body; el revisor la convirtió nuevamente en **Draft**. También se actualizó el body para indicar que **Gate 0 está verificado**, pero faltan lectores completos del paso 2.
+
+**Pendiente no-Gate:** implementar lectores de paso 2; completar sus propios tests, revisión, merge y checkpoint. **No se deben mezclar estos pasos con el cierre de Gate 0.**  
