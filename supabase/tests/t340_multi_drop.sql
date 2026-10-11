@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(69);
+select plan(77);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -738,7 +738,7 @@ insert into public.delivery_request_drop_contacts (
   ('30000000-0000-4000-8000-000000003541', 'Calle M1', 'Destinatario M1', '+543865000041', true),
   ('30000000-0000-4000-8000-000000003542', 'Calle M2', 'Destinatario M2', '+543865000042', true);
 
--- Tests de validación y control de acceso
+-- Tests de validación y control de acceso (DoD, CC-022 §6, H13)
 create function pg_temp.test_rpc_drop_unauthenticated() returns void language plpgsql as $$
 begin
   perform pg_temp.reset_actor();
@@ -762,6 +762,104 @@ begin
 end;
 $$;
 select throws_matching('select pg_temp.test_rpc_drop_other_courier()', 'UNAUTHORIZED_ACTOR', 'mark_drop_delivered rechaza repartidor no asignado a la oferta aceptada');
+
+create function pg_temp.test_rpc_drop_delivered_suspended() returns void language plpgsql as $$
+begin
+  update public.couriers set status = 'suspended' where profile_id = pg_temp.courier_1_id();
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  begin
+    perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003501');
+  exception when others then
+    perform pg_temp.reset_actor();
+    update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+    raise;
+  end;
+  perform pg_temp.reset_actor();
+  update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_delivered_suspended()', 'COURIER_SUSPENDED', 'mark_drop_delivered rechaza repartidor suspendido');
+
+create function pg_temp.test_rpc_drop_delivered_unapproved() returns void language plpgsql as $$
+begin
+  update public.couriers set status = 'pending' where profile_id = pg_temp.courier_1_id();
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  begin
+    perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003501');
+  exception when others then
+    perform pg_temp.reset_actor();
+    update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+    raise;
+  end;
+  perform pg_temp.reset_actor();
+  update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_delivered_unapproved()', 'COURIER_NOT_APPROVED', 'mark_drop_delivered rechaza repartidor no aprobado');
+
+create function pg_temp.test_rpc_drop_failed_unauthenticated() returns void language plpgsql as $$
+begin
+  perform pg_temp.reset_actor();
+  perform public.mark_drop_failed('30000000-0000-4000-8000-000000003501', 'Motivo prueba');
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_failed_unauthenticated()', 'UNAUTHENTICATED', 'mark_drop_failed requiere autenticacion');
+
+create function pg_temp.test_rpc_drop_failed_merchant_caller() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.mark_drop_failed('30000000-0000-4000-8000-000000003501', 'Motivo prueba');
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_failed_merchant_caller()', 'UNAUTHORIZED_ACTOR', 'mark_drop_failed rechaza actor comercio');
+
+create function pg_temp.test_rpc_drop_failed_other_courier() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_2_id());
+  perform public.mark_drop_failed('30000000-0000-4000-8000-000000003501', 'Motivo prueba');
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_failed_other_courier()', 'UNAUTHORIZED_ACTOR', 'mark_drop_failed rechaza repartidor no asignado a la oferta aceptada');
+
+create function pg_temp.test_rpc_drop_failed_suspended() returns void language plpgsql as $$
+begin
+  update public.couriers set status = 'suspended' where profile_id = pg_temp.courier_1_id();
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  begin
+    perform public.mark_drop_failed('30000000-0000-4000-8000-000000003501', 'Motivo prueba');
+  exception when others then
+    perform pg_temp.reset_actor();
+    update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+    raise;
+  end;
+  perform pg_temp.reset_actor();
+  update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_failed_suspended()', 'COURIER_SUSPENDED', 'mark_drop_failed rechaza repartidor suspendido');
+
+create function pg_temp.test_rpc_drop_failed_unapproved() returns void language plpgsql as $$
+begin
+  update public.couriers set status = 'pending' where profile_id = pg_temp.courier_1_id();
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  begin
+    perform public.mark_drop_failed('30000000-0000-4000-8000-000000003501', 'Motivo prueba');
+  exception when others then
+    perform pg_temp.reset_actor();
+    update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+    raise;
+  end;
+  perform pg_temp.reset_actor();
+  update public.couriers set status = 'approved' where profile_id = pg_temp.courier_1_id();
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_failed_unapproved()', 'COURIER_NOT_APPROVED', 'mark_drop_failed rechaza repartidor no aprobado');
+
+select is(
+  (select status from public.delivery_request_drops where id = '30000000-0000-4000-8000-000000003501'),
+  'pending',
+  'drop permanece pending tras rechazos de autorizacion y elegibilidad'
+);
 
 create function pg_temp.test_rpc_drop_null_param() returns void language plpgsql as $$
 begin
