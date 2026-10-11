@@ -235,3 +235,80 @@ console.log({plan,assertions,pass:0});
 4. **H12:** histórico `delivered` con `delivered_at=NULL`; nunca asignar `created_at` ni `updated_at` como si fueran `delivered_at`. Probar que se preserva y reporta su inconsistencia (sin inventar fecha). Mutación: restituir `coalesce`; RED.
 
 El verificador `node docs/revision-pr/analizar.mjs verificacion` deberá ejecutarse en un clon del repositorio; no se declara ejecutado desde el conector de GitHub.
+
+## Ronda 4 — SHA exacto `d2b3285ab837c8a18a3ad2171a08a3668aafdc5c`
+
+**CI run:** https://github.com/cadeApp/cadeApp/actions/runs/38149501869  
+**DB job:** https://github.com/cadeApp/cadeApp/actions/runs/38149501869/job/114499806753
+
+Se leyó el log interno del job: `t340_multi_drop.sql ............... ok`; bootstrap `Files=1, Tests=10, Result: PASS`; suite DB `Files=21, Tests=1955, Result: PASS`; `pnpm db:types --local` se ejecutó, sin drift. `unit, lint, typecheck, build, audit, bundle-budget` PASS; `approval-policy` FAIL y Supabase Preview SKIPPED. Hubo respuestas de Docker Hub `toomanyrequests` durante el arranque, pero el job terminó en PASS.
+
+### Harness del revisor — comprobaciones y mutaciones EN MEMORIA
+
+Ejecución reproducible en un checkout limpio del SHA revisado. Guardar este código entero en `/tmp/pr317_r4_verify.cjs`; ejecutar `node /tmp/pr317_r4_verify.cjs` desde la raíz del repo. Lee solo dos fuentes, no las modifica:
+
+```js
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const migration=fs.readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql','utf8');
+const tests=fs.readFileSync('supabase/tests/t340_multi_drop.sql','utf8');
+const idx=migration.indexOf('create or replace function app_private.t340_backfill_legacy()');
+assert(idx>=0,'Sin objetivo: falta helper backfill');
+const b=migration.slice(idx);
+const guardStart=migration.indexOf('create or replace function app_private.lock_draft_request_for_child_write()');
+assert(guardStart>=0,'Sin objetivo: falta trigger guard');
+const guard=migration.slice(guardStart,migration.indexOf('drop trigger if exists trg_lock_draft_drops',guardStart));
+function h10(s){
+ return /case when r\.recipient_payment_method = 'cash' then r\.needs_change else false end/.test(s)
+   && !/and \(r\.recipient_payment_method = 'cash' or r\.needs_change = false\)/.test(s);
+}
+function h11(s){return /has_cash_change_amount/.test(s) && !/'cash_change_amount'\s*,\s*r\.cash_change_amount/.test(s);}
+function h12(s){return /case when r\.status = 'delivered' then r\.delivered_at else null end/.test(s)
+ && /r\.status <> 'delivered' or r\.delivered_at is not null/.test(s);}
+function h06(s){return /security invoker/i.test(s) && /for update;/.test(s);}
+assert(h10(b),'H10 baseline falló');assert(h11(b),'H11 baseline falló');assert(h12(b),'H12 baseline falló');
+assert(h06(guard),'H06 baseline falló');
+const m10=b.replace("case when r.recipient_payment_method = 'cash' then r.needs_change else false end","r.needs_change");
+const m11=b.replace("'has_cash_change_amount', (r.cash_change_amount is not null)","'cash_change_amount', r.cash_change_amount");
+const m12=b.replace("case when r.status = 'delivered' then r.delivered_at else null end","case when r.status = 'delivered' then coalesce(r.delivered_at,r.updated_at,r.created_at) else null end");
+assert(!h10(m10),'Mutación H10 sobrevivió');assert(!h11(m11),'Mutación H11 sobrevivió');
+assert(!h12(m12),'Mutación H12 sobrevivió');
+assert(!h06(guard.replace('security invoker','security definer')),'Mutación H06 sobrevivió');
+const funcs=['mark_drop_delivered','mark_drop_failed'];
+for(const name of funcs){
+ assert(migration.includes('create or replace function public.'+name+'('),'Sin definición de '+name);
+ const refs=tests.split(/\r?\n/).filter(l=>l.includes(name));
+ assert.equal(refs.length,2,'Revisar nuevas referencias a '+name);
+ assert(refs.some(l=>l.includes('has_function')),'Sin test de firma '+name);
+ assert(!tests.includes('perform public.'+name+'(') && !tests.includes('select public.'+name+'('),
+    'Hay nueva cobertura funcional; reauditar H13');
+}
+const plan=Number(tests.match(/select plan\((\d+)\)/)?.[1]);
+const counted=tests.split(/\r?\n/).filter(l=>/^\s*select\s+(has_table|has_column|throws_matching|is\(|ok\(|has_function|lives_ok)/.test(l)).length;
+assert.equal(plan,52);assert.equal(counted,52);
+assert.equal((tests.match(/select\s+pass\(/g)||[]).length,0);
+console.log('H06/H10/H11/H12 baseline estructural GREEN; mutaciones M06/M10/M11/M12 RED');
+console.log('H13: RPC presentes; ninguna llamada funcional en suite T340');
+console.log({plan,counted,dummies:0});
+```
+
+**Observado por la revisión independiente mediante lectura exacta de GitHub y evaluación de las mismas condiciones de control:** H06/H10/H11/H12 condición productiva actual presente y regresiones introducidas en memoria detectables. **No se ejecutó Postgres mutado**; esas mutaciones no constituyen una demostración RED→GREEN de pgTAP. El CI real ejecutó los tests sin mutar y estuvo verde.
+
+### H08 — ausencia de concurrencia real
+
+Toda `supabase/tests/t340_multi_drop.sql` se ejecuta bajo `BEGIN ... ROLLBACK` y usa un rol por vez con `set local role`. No existe orquestación de 2 conexiones para `publish_request` vs acciones de hijos; `pg_proc.prosecdef` y búsqueda de `FOR UPDATE` son comprobaciones útiles pero insuficientes para demostrar serialización. La bitácora del autor indica expresamente que queda pendiente H08. La sección `db-tests` en `.github/workflows/ci.yml:90–194` arranca Postgres local en CI y dispone de `docker exec ... psql` para usar DOS sesiones con un runner de pruebas sin tocar base remota.
+
+### H13 — oráculos de RPC faltantes
+
+Fuente nueva `supabase/migrations/20261009200000_t340_multi_drop.sql:949–1230`: dos RPC públicas `SECURITY DEFINER` `mark_drop_delivered(uuid)` y `mark_drop_failed(uuid,text)`, ambas con `GRANT EXECUTE ... TO authenticated`. Test actual `supabase/tests/t340_multi_drop.sql:620–622`:
+```sql
+select has_function('public','mark_drop_delivered',ARRAY['uuid'], ...);
+select has_function('public','mark_drop_failed',ARRAY['uuid','text'], ...);
+```
+No hay llamadas a las RPC con identidades reales ni asserts sobre estados/fallos/idempotencia. **Mutaciones productivas propuestas:** quitar chequeo `v_offer.courier_id`, omitir `status='pending'` o la actualización global `status='delivered'`; tras añadir los tests funcionales, cada mutación debe producir RED real en CI y GREEN al revertirla. No hay evidencia de una ejecución de estas mutaciones aún.
+
+### Notas sobre instrucciones y alcance
+
+- No levanté Docker/Supabase local, no usé secretos, y no disparé workflows.
+- Esas pruebas sólo prueban propiedades estáticas por inferencia y CI verifica el comportamiento de los casos existentes.
+- Tras el commit documental de esta ronda, el HEAD de la PR cambia; volver a identificar SHA y checks antes de merge.
