@@ -1,0 +1,10 @@
+# Lecciones — PR #318 / T-340 (Paso 2/4)
+
+## Ronda 1 — El gate de despliegue requiere un test de integración desplegada específico
+
+- **Acertó el autor al frenar.** Asako669 encontró credenciales locales ausentes, mantuvo la PR en Draft y no empezó los lectores ni afirmó un checkpoint imaginario. Eso es lo correcto ante una dependencia de despliegue sin evidencia.
+- **Problema de proceso, no implementación de lectores.** CC-022 §10 exige que, una vez aplicada la migración, la **UI legacy real en Develop** publique y conserve datos. Ni el CI `db-tests` efímero, ni `migrate-develop` exitoso, ni un E2E general con 73 pruebas equivalen automáticamente a los cuatro oráculos ejecutados y correlacionados sobre la misma solicitud.
+- **Alternativa ya disponible, mejor que copiar secretos.** El workflow `e2e-preview` corre en `environment: develop`, con service role en secretos del job y fixture con guard fail-closed; tiene `concurrency` serializada. La opción A aprobada por Lautaro073 reutiliza esa infraestructura sin crear una ruta alternativa insegura ni pedir credenciales por chat.
+- **Reducción real de costo de mantenimiento.** Aislar el checkpoint en `e2e/specs/t340-legacy-checkpoint.spec.ts` crea una regresión reutilizable que podrá alertar sobre roturas de compatibilidad posteriores. La excepción de alcance se registró en la ficha de la rama como archivo explícito; no autoriza refactors, manipulación de secretos, alterar esquema o migraciones aplicadas.
+- **No confundir RED de un assert con bug productivo.** Poner una aserción en rojo al esperar un dato equivocado prueba que se está ejecutando realmente; un RED provocado por mutación de código productivo sería más fuerte pero nunca debe ejecutarse sobre Supabase Develop compartido. Las dos clases de pruebas se reportan por separado y sin simular.
+- **Checkpoint por etapas:** no basta con que una suite pase: debe pasar la prueba de la UI legacy sobre el **SHA de la PR que contiene el spec**, incluir inspección de `delivery_request_drops`, RPC de post-match ejecutada como actor autorizado y persistencia legacy tras reintento. Solo entonces arranca el paso 2, en la misma PR #318.
