@@ -931,7 +931,7 @@ select is(pg_temp.test_all_drops_failed_closes_parent(), 1, 'solicitud cierra en
 create function pg_temp.test_legacy_mark_delivered_multi_rejected() returns void language plpgsql as $$
 begin
   perform pg_temp.act_as(pg_temp.courier_1_id());
-  perform public.manage_request_lifecycle('30000000-0000-4000-8000-000000003500', 'mark_delivered');
+  perform public.mark_delivered('30000000-0000-4000-8000-000000003500'::uuid);
 end;
 $$;
 select throws_matching('select pg_temp.test_legacy_mark_delivered_multi_rejected()', 'INVALID_STATE_TRANSITION', 'mark_delivered legacy es rechazado con drops_count mayor a 1 (CC-022 §6)');
