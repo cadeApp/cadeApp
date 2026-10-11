@@ -1,29 +1,25 @@
 # PR #318 — T-340 · Paso 2/4 — Lectores multi-drop
 
-**PR:** https://github.com/cadeApp/cadeApp/pull/318 · **Dueño PR:** Lautaro073, ejecución por asako669 (agy).  
-**Rama:** `feat/T-340-lectores` → `develop`. **Estado:** DRAFT · **Gate 0 BLOQUEADO** hasta E2E real en Develop.
+**PR:** https://github.com/cadeApp/cadeApp/pull/318 · **PR dueño:** Lautaro073; ejecución agy asako669.  
+**Rama:** `feat/T-340-lectores` → `develop`. **Estado: DRAFT, 1 bloqueo de evidencia/documentación (H02). NO MERGEAR.**
 
 ## Rondas independientes
 
-| Ronda | SHA de implementación inspeccionado | Resultado | Documento |
+| Ronda | SHA de implementación verificado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `4e70e93486463f261722108bedc3e8d622708617` | 1 bloqueo operativo de entrada (H01); 0 defectos de lectores observados porque no hay código del paso 2 | [Ronda 1](revisiones/ronda-1.md) |
+| 1 | `4e70e934` | H01: Gate 0 sin E2E funcional | [Ronda 1](revisiones/ronda-1.md) |
+| **2** | **`9c5e797`** | ✅ H01 cierre técnico de Gate 0; 🔴 H02 falta RED y bitácora de cierre | **[Ronda 2](revisiones/ronda-2.md)** |
 
-**Autorización resuelta de Lautaro073 (2026-10-11): Opción A.** La ficha `docs/tasks/T-340.md` en esta rama permite **exactamente** el nuevo `e2e/specs/t340-legacy-checkpoint.spec.ts` para comprobar Gate 0 usando el workflow `e2e-preview` existente en `environment: develop`. Sin secrets/credenciales nuevas; no se crean workflows; sin cambiar SQL de producto, ni tocar staging o producción.
+## Verificación en Ronda 2
 
-### Situación constatada
+**H01 ARREGLADO-VERIFICADO:** opción A implementada en `e2e/specs/t340-legacy-checkpoint.spec.ts` (217 líneas). El test usa **UI legacy real contra Preview + Supabase Develop**, reintenta `publish_request`, realiza match por actor autorizado, valida `get_trip_details` y columnas legacy intactas **sobre el mismo requestId**. GitHub Actions run `38178339003`, job `114585413997`, en SHA `9c5e797`: prueba exacta ejecutada **PASS en 21.9 s**; suite completa **71 chromium + 3 global-settings PASS**. Status `e2e-preview` publicado GREEN para SHA exacto.
 
-- La **PR #317** (Paso 1) está mergeada en `develop` como `267e9810f99343f2511473d76dddd4e5da740847`; revisión independiente R8 sin bloqueantes.
-- La migración del Paso 1 `20261009200000_t340_multi_drop.sql` se aplicó a **Supabase Develop** (run `38171033590` ✅).
-- El CI de `develop` del SHA del merge `38171033600` ✅ y el E2E de Preview `38171291606` ✅; **no acreditan por sí solos** los cuatro chequeos de compatibilidad del Gate 0.
-- En el SHA de implementación R1 el diff solo toca `docs/tasks/log/T-340.md`; asako documentó no tener acceso seguro desde su entorno local y no implementó lectores. Esta detención es correcta.
+**CI general SHA exacto:** run `38178270092`, `db-tests` 21 archivos/1.980 tests PASS, H08 8/8, H14 3/3 y mutaciones H15 del paso 1; demás técnicos PASS. `approval-policy` FAIL en PR Draft.
 
-### Gate 0 pendiente: H01
+**H02 — ABIERTO (bloqueo documental y de cobertura negativa):** última sesión `docs/tasks/log/T-340.md` 19:10 todavía dice que falta el push/corrida E2E, cuando ya se ejecutó, y no registra **RED→GREEN adversarial específico del nuevo spec** exigido por `docs/tasks/T-340.md` DoD. El RED SQL de la PR #317 no sustituye el del Gate 0. Autor: actualizar bitácora con links, SHA, 4 invariantes y resultado, obtener/documentar RED adversarial seguro o declarar el límite real sin inventar ejecución.
 
-El nuevo spec debe usar el **cliente/UI legacy** para crear y publicar 1 drop, reintentar sin duplicados, realizar match autorizado y verificar `deliveryNotes` y `cashChangeAmount` de `get_trip_details`, e inspeccionar que `notes` y `cash_change_amount` legacy permanezcan intactos. Debe dar **GREEN en Develop con job/commit exacto**, registrar RED→GREEN auténtico (sin fingir ni modificar el remoto de forma destructiva), y limpiar todo fixture temporal. **Sin esto, NO empezar cambios de lectores.**
-
-Después de resolver el Gate 0: asako continuará **en esta misma PR**, pero exclusivamente con lectores del Paso 2 según CC-022 §10; sin limpieza de Paso 3 ni escritor Paso 4.
+**No hay defectos de los lectores del paso 2 demostrados:** todavía NO se implementaron. Mantener PR Draft hasta registrar el checkpoint y empezar el paso 2 autorizado. No tocar cleanup legacy del paso 3 ni UI escritora del paso 4. La opción A ya está autorizada; **sin nuevas decisiones de negocio**.
 
 [Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
-**CI local del revisor:** n.e. (sin checkout ni Docker/Supabase). **No aprobar/mergear ni marcar Ready for review.** La revisión comitea docs/ficha en la rama; asako debe `git pull` primero, sin rebase.
+**Limitaciones del revisor:** comprobación directa de CI + inspección de fuente + mutaciones adversariales **en memoria** (no Playwright RED ejecutado por el revisor). Sin Docker/Supabase local. No aprobación ni merge.
