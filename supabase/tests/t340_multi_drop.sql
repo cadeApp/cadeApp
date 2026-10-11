@@ -507,7 +507,7 @@ exception when others then
   return SQLERRM;
 end;
 $$;
-select is(pg_temp.test_update_setting_zero(), 'VALIDATION_ERROR', 'max_drops_per_request con 0 rechazado con VALIDATION_ERROR');
+select is(pg_temp.test_update_setting_zero(), 'INVALID_SETTING_VALUE', 'max_drops_per_request con 0 rechazado con INVALID_SETTING_VALUE');
 
 create function pg_temp.test_update_setting_non_admin() returns text language plpgsql as $$
 begin
@@ -529,7 +529,7 @@ begin
   perform pg_temp.act_as(pg_temp.admin_id());
   perform public.admin_update_setting('max_drops_per_request', '3'::jsonb);
   perform pg_temp.reset_actor();
-  select count(*)::int into v_cnt from public.audit_log where action = 'update_setting' and target_id = 'max_drops_per_request';
+  select count(*)::int into v_cnt from public.audit_log where action = 'admin_update_setting' and target_id = 'max_drops_per_request';
   return v_cnt;
 end;
 $$;
