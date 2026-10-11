@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(52);
+select plan(69);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -617,9 +617,324 @@ select ok(
   'authenticated tiene grant select sobre drops_count (CC-023)'
 );
 
--- 9. RPC mark_drop_delivered y mark_drop_failed existen y son callable
+-- 9. RPC mark_drop_delivered y mark_drop_failed funcionales (DoD, CC-022 §6, H13)
 select has_function('public', 'mark_drop_delivered', ARRAY['uuid'], 'mark_drop_delivered existe');
 select has_function('public', 'mark_drop_failed', ARRAY['uuid', 'text'], 'mark_drop_failed existe');
+
+-- Fixtures para pruebas de transiciones y estados por entrega
+-- Solicitud 1: in_transit con 3 drops y oferta aceptada por courier_1_id
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, drops_count
+) values (
+  '30000000-0000-4000-8000-000000003500', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'in_transit', 3
+);
+
+insert into public.offers (
+  id, request_id, courier_id, status, amount_ars, eta_minutes
+) values (
+  '30000000-0000-4000-8000-000000003510', '30000000-0000-4000-8000-000000003500', pg_temp.courier_1_id(), 'accepted', 1500, 20
+);
+
+update public.delivery_requests
+set accepted_offer_id = '30000000-0000-4000-8000-000000003510'
+where id = '30000000-0000-4000-8000-000000003500';
+
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values
+  ('30000000-0000-4000-8000-000000003501', '30000000-0000-4000-8000-000000003500', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'),
+  ('30000000-0000-4000-8000-000000003502', '30000000-0000-4000-8000-000000003500', 2, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'),
+  ('30000000-0000-4000-8000-000000003503', '30000000-0000-4000-8000-000000003500', 3, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending');
+
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values
+  ('30000000-0000-4000-8000-000000003501', 'Calle 1', 'Destinatario 1', '+543865000001', true),
+  ('30000000-0000-4000-8000-000000003502', 'Calle 2', 'Destinatario 2', '+543865000002', true),
+  ('30000000-0000-4000-8000-000000003503', 'Calle 3', 'Destinatario 3', '+543865000003', true);
+
+-- Solicitud 2: in_transit con 2 drops para probar "todas failed" (CC-022 §6)
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, drops_count
+) values (
+  '30000000-0000-4000-8000-000000003520', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'in_transit', 2
+);
+
+insert into public.offers (
+  id, request_id, courier_id, status, amount_ars, eta_minutes
+) values (
+  '30000000-0000-4000-8000-000000003525', '30000000-0000-4000-8000-000000003520', pg_temp.courier_1_id(), 'accepted', 1500, 20
+);
+
+update public.delivery_requests
+set accepted_offer_id = '30000000-0000-4000-8000-000000003525'
+where id = '30000000-0000-4000-8000-000000003520';
+
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values
+  ('30000000-0000-4000-8000-000000003521', '30000000-0000-4000-8000-000000003520', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'),
+  ('30000000-0000-4000-8000-000000003522', '30000000-0000-4000-8000-000000003520', 2, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending');
+
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values
+  ('30000000-0000-4000-8000-000000003521', 'Calle X', 'Destinatario X', '+543865000010', true),
+  ('30000000-0000-4000-8000-000000003522', 'Calle Y', 'Destinatario Y', '+543865000020', true);
+
+-- Solicitud 3: published (no in_transit)
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, drops_count
+) values (
+  '30000000-0000-4000-8000-000000003530', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', 1
+);
+
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values
+  ('30000000-0000-4000-8000-000000003531', '30000000-0000-4000-8000-000000003530', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending');
+
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values
+  ('30000000-0000-4000-8000-000000003531', 'Calle Z', 'Destinatario Z', '+543865000030', true);
+
+-- Tests de validación y control de acceso
+create function pg_temp.test_rpc_drop_unauthenticated() returns void language plpgsql as $$
+begin
+  perform pg_temp.reset_actor();
+  perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003501');
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_unauthenticated()', 'UNAUTHENTICATED', 'mark_drop_delivered requiere autenticacion');
+
+create function pg_temp.test_rpc_drop_merchant_caller() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003501');
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_merchant_caller()', 'UNAUTHORIZED_ACTOR', 'mark_drop_delivered rechaza actor comercio');
+
+create function pg_temp.test_rpc_drop_other_courier() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_2_id());
+  perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003501');
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_other_courier()', 'UNAUTHORIZED_ACTOR', 'mark_drop_delivered rechaza repartidor no asignado a la oferta aceptada');
+
+create function pg_temp.test_rpc_drop_null_param() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_delivered(null);
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_null_param()', 'VALIDATION_ERROR', 'mark_drop_delivered valida parametro drop_id no nulo');
+
+create function pg_temp.test_rpc_drop_not_found() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_delivered('00000000-0000-0000-0000-000000000000'::uuid);
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_not_found()', 'NOT_FOUND', 'mark_drop_delivered rechaza drop inexistente');
+
+create function pg_temp.test_rpc_drop_not_in_transit() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003531');
+end;
+$$;
+select throws_matching('select pg_temp.test_rpc_drop_not_in_transit()', 'UNAUTHORIZED_ACTOR|INVALID_STATE_TRANSITION', 'mark_drop_delivered rechaza solicitud que no esta in_transit o sin oferta aceptada');
+
+-- Tests de mark_drop_delivered
+create function pg_temp.test_mark_drop_delivered_first() returns int language plpgsql as $$
+declare
+  v_res jsonb;
+  v_drop_st text;
+  v_req_st text;
+  v_del_at timestamptz;
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  v_res := public.mark_drop_delivered('30000000-0000-4000-8000-000000003501');
+  perform pg_temp.reset_actor();
+
+  select status, delivered_at into v_drop_st, v_del_at from public.delivery_request_drops where id = '30000000-0000-4000-8000-000000003501';
+  select status into v_req_st from public.delivery_requests where id = '30000000-0000-4000-8000-000000003500';
+
+  if v_res->>'status' = 'delivered' and (v_res->>'idempotent')::boolean = false
+     and v_res->>'requestStatus' = 'in_transit' and v_drop_st = 'delivered'
+     and v_del_at is not null and v_req_st = 'in_transit' then
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$;
+select is(pg_temp.test_mark_drop_delivered_first(), 1, 'mark_drop_delivered marca drop delivered y mantiene solicitud in_transit mientras queden pendientes');
+
+create function pg_temp.test_mark_drop_delivered_idempotent() returns int language plpgsql as $$
+declare
+  v_res jsonb;
+  v_del_at1 timestamptz;
+  v_del_at2 timestamptz;
+begin
+  select delivered_at into v_del_at1 from public.delivery_request_drops where id = '30000000-0000-4000-8000-000000003501';
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  v_res := public.mark_drop_delivered('30000000-0000-4000-8000-000000003501');
+  perform pg_temp.reset_actor();
+
+  select delivered_at into v_del_at2 from public.delivery_request_drops where id = '30000000-0000-4000-8000-000000003501';
+
+  if v_res->>'status' = 'delivered' and (v_res->>'idempotent')::boolean = true and v_del_at1 = v_del_at2 then
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$;
+select is(pg_temp.test_mark_drop_delivered_idempotent(), 1, 'mark_drop_delivered es idempotente en segunda llamada con misma fecha');
+
+-- Tests de mark_drop_failed
+create function pg_temp.test_mark_drop_failed_validation_empty() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_failed('30000000-0000-4000-8000-000000003502', '   ');
+end;
+$$;
+select throws_matching('select pg_temp.test_mark_drop_failed_validation_empty()', 'REASON_REQUIRED', 'mark_drop_failed exige motivo no vacio');
+
+create function pg_temp.test_mark_drop_failed_validation_toolong() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_failed('30000000-0000-4000-8000-000000003502', repeat('x', 501));
+end;
+$$;
+select throws_matching('select pg_temp.test_mark_drop_failed_validation_toolong()', 'VALIDATION_ERROR', 'mark_drop_failed rechaza motivo mayor a 500 caracteres');
+
+create function pg_temp.test_mark_drop_failed_first() returns int language plpgsql as $$
+declare
+  v_res jsonb;
+  v_drop_st text;
+  v_reason text;
+  v_req_st text;
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  v_res := public.mark_drop_failed('30000000-0000-4000-8000-000000003502', 'Cliente ausente');
+  perform pg_temp.reset_actor();
+
+  select status, failed_reason into v_drop_st, v_reason from public.delivery_request_drops where id = '30000000-0000-4000-8000-000000003502';
+  select status into v_req_st from public.delivery_requests where id = '30000000-0000-4000-8000-000000003500';
+
+  if v_res->>'status' = 'failed' and (v_res->>'idempotent')::boolean = false
+     and v_res->>'failedReason' = 'Cliente ausente' and v_res->>'requestStatus' = 'in_transit'
+     and v_drop_st = 'failed' and v_reason = 'Cliente ausente' and v_req_st = 'in_transit' then
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$;
+select is(pg_temp.test_mark_drop_failed_first(), 1, 'mark_drop_failed marca drop failed con motivo y mantiene solicitud in_transit');
+
+create function pg_temp.test_mark_drop_failed_idempotent() returns int language plpgsql as $$
+declare
+  v_res jsonb;
+  v_reason text;
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  v_res := public.mark_drop_failed('30000000-0000-4000-8000-000000003502', 'Cliente ausente');
+  perform pg_temp.reset_actor();
+
+  select failed_reason into v_reason from public.delivery_request_drops where id = '30000000-0000-4000-8000-000000003502';
+
+  if v_res->>'status' = 'failed' and (v_res->>'idempotent')::boolean = true
+     and v_res->>'failedReason' = 'Cliente ausente' and v_reason = 'Cliente ausente' then
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$;
+select is(pg_temp.test_mark_drop_failed_idempotent(), 1, 'mark_drop_failed es idempotente en segunda llamada con mismo motivo');
+
+-- Reversiones no permitidas
+create function pg_temp.test_reverse_delivered_to_failed() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_failed('30000000-0000-4000-8000-000000003501', 'Fallo posterior');
+end;
+$$;
+select throws_matching('select pg_temp.test_reverse_delivered_to_failed()', 'INVALID_STATE_TRANSITION', 'no permite cambiar drop delivered a failed');
+
+create function pg_temp.test_reverse_failed_to_delivered() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_delivered('30000000-0000-4000-8000-000000003502');
+end;
+$$;
+select throws_matching('select pg_temp.test_reverse_failed_to_delivered()', 'INVALID_STATE_TRANSITION', 'no permite cambiar drop failed a delivered');
+
+-- Cierre automático de solicitud al completar última entrega pendiente (combinación mixta)
+create function pg_temp.test_mark_last_drop_closes_parent() returns int language plpgsql as $$
+declare
+  v_res jsonb;
+  v_req_st text;
+  v_del_at timestamptz;
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  v_res := public.mark_drop_delivered('30000000-0000-4000-8000-000000003503');
+  perform pg_temp.reset_actor();
+
+  select status, delivered_at into v_req_st, v_del_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003500';
+
+  if v_res->>'status' = 'delivered' and v_res->>'requestStatus' = 'delivered'
+     and v_req_st = 'delivered' and v_del_at is not null then
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$;
+select is(pg_temp.test_mark_last_drop_closes_parent(), 1, 'al completar ultima entrega pendiente la solicitud pasa automaticamente a delivered');
+
+-- Escenario: todas las entregas failed -> solicitud pasa a delivered (CC-022 §6)
+create function pg_temp.test_all_drops_failed_closes_parent() returns int language plpgsql as $$
+declare
+  v_st1 text;
+  v_st2 text;
+  v_res jsonb;
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.mark_drop_failed('30000000-0000-4000-8000-000000003521', 'Fallo X');
+  perform pg_temp.reset_actor();
+
+  select status into v_st1 from public.delivery_requests where id = '30000000-0000-4000-8000-000000003520';
+
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  v_res := public.mark_drop_failed('30000000-0000-4000-8000-000000003522', 'Fallo Y');
+  perform pg_temp.reset_actor();
+
+  select status into v_st2 from public.delivery_requests where id = '30000000-0000-4000-8000-000000003520';
+
+  if v_st1 = 'in_transit' and v_st2 = 'delivered' and v_res->>'requestStatus' = 'delivered' then
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$;
+select is(pg_temp.test_all_drops_failed_closes_parent(), 1, 'solicitud cierra en delivered cuando todas las entregas quedan failed (CC-022 §6)');
+
+-- mark_delivered legacy con drops_count > 1 es rechazado
+create function pg_temp.test_legacy_mark_delivered_multi_rejected() returns void language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.manage_request_lifecycle('30000000-0000-4000-8000-000000003500', 'mark_delivered');
+end;
+$$;
+select throws_matching('select pg_temp.test_legacy_mark_delivered_multi_rejected()', 'INVALID_STATE_TRANSITION', 'mark_delivered legacy es rechazado con drops_count mayor a 1 (CC-022 §6)');
 
 -- 10. Backfill productivo: app_private.t340_backfill_legacy (DoD, CC-022 §5b, H07, H10, H11 y H12)
 

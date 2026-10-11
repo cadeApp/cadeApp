@@ -181,6 +181,11 @@ jobs:
             # C. Restaurar el flujo normal y correr toda la suite.
             pnpm supabase db reset
             pnpm supabase test db
+
+            # Concurrencia de dos sesiones (H08 / T-340 / CC-022 §2b)
+            DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n 1)"
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs
+
             pnpm db:types --local
             git diff --exit-code -- src/types/database.types.ts
           else
