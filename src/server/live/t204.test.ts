@@ -242,9 +242,11 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     it('retorna 500 si falla la consulta de offers', async () => {
       const reqBuilder = createMockQueryBuilder([makeRequestRow(1)]);
       const offersBuilder = createMockQueryBuilder(null, new Error('Offers query error'));
+      const dropsBuilder = createMockQueryBuilder([]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -267,9 +269,11 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const row = makeRequestRow(1);
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([{ request_id: row.id, amount_ars: 1800 }]);
+      const dropsBuilder = createMockQueryBuilder([]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -300,9 +304,11 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       };
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -335,6 +341,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     function mockFeedClient(rows: readonly unknown[]) {
       const reqBuilder = createMockQueryBuilder(rows);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
@@ -342,6 +349,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         from: vi.fn().mockImplementation((table: string) => {
           if (table === 'delivery_requests') return reqBuilder;
           if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -382,10 +390,12 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const rows51 = Array.from({ length: 51 }, (_, i) => makeRequestRow(i + 1));
       const reqBuilder = createMockQueryBuilder(rows51);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -421,10 +431,12 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     it('B: Feed segunda página -> spy demuestra order(created_at), order(id), limit(51) y .or(...) exacto', async () => {
       const reqBuilder = createMockQueryBuilder([makeRequestRow(1)]);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 

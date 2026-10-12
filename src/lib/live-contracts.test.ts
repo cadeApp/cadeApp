@@ -8,6 +8,7 @@ import {
   liveTripStateSchema,
   liveErrorResponseSchema,
   livePageCursorSchema,
+  publicDropSummarySchema,
 } from './live-contracts';
 
 describe('T-204: live-contracts client-safe schemas', () => {
@@ -196,5 +197,42 @@ describe('T-204: live-contracts client-safe schemas', () => {
     const parsed = liveErrorResponseSchema.safeParse({ error: 'UNAUTHORIZED' });
     expect(parsed.success).toBe(true);
     expect(liveErrorResponseSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('T-340 / CC-022 §3: valida solicitudes multi-drop con drops array y sin PII', () => {
+    const multiDrop = {
+      ...validRequest,
+      dropsCount: 2,
+      drops: [
+        {
+          position: 1,
+          dropoffZoneName: 'Barrio Norte',
+          packageType: 'chico',
+          recipientPaymentMethod: 'cash',
+          needsChange: true,
+          approxDistanceM: 1200,
+        },
+        {
+          position: 2,
+          dropoffZoneName: 'Centro',
+          packageType: 'mediano',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+          approxDistanceM: 800,
+        },
+      ],
+    };
+
+    const parsed = liveAvailableRequestItemSchema.safeParse(multiDrop);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.drops).toHaveLength(2);
+
+    // publicDropSummarySchema rejects unknown sensitive fields
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('notes');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('cashChangeAmount');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('recipientName');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('recipientPhone');
+    expect(Object.keys(publicDropSummarySchema.shape)).not.toContain('dropoffAddress');
   });
 });

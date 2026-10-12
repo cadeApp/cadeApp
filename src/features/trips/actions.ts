@@ -190,7 +190,9 @@ export async function markDropDeliveredAction(
   const parsed = markDropDeliveredSchema.safeParse(input);
   if (!parsed.success) return err('VALIDATION_ERROR');
 
-  const rpcResult = await callRequestRpc(auth.supabase, 'mark_drop_delivered', parsed.data);
+  const rpcResult = await callRequestRpc(auth.supabase, 'mark_drop_delivered', {
+    dropId: parsed.data.dropId,
+  });
   if (!rpcResult.ok) return err(rpcResult.code);
 
   revalidatePath(`/trips/${parsed.data.requestId}`);
@@ -210,7 +212,10 @@ export async function markDropFailedAction(
   const parsed = markDropFailedSchema.safeParse(input);
   if (!parsed.success) return err('VALIDATION_ERROR');
 
-  const rpcResult = await callRequestRpc(auth.supabase, 'mark_drop_failed', parsed.data);
+  const rpcResult = await callRequestRpc(auth.supabase, 'mark_drop_failed', {
+    dropId: parsed.data.dropId,
+    reason: parsed.data.reason,
+  });
   if (!rpcResult.ok) return err(rpcResult.code);
 
   revalidatePath(`/trips/${parsed.data.requestId}`);

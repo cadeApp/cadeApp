@@ -6,6 +6,7 @@ import type {
   AvailableRequestItem,
   CourierOfferItem,
   CourierStatusInfo,
+  PublicDropSummary,
 } from './schemas';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
@@ -112,22 +113,71 @@ export async function getAvailableRequests(): Promise<{
   const hasMore = rawRequests.length > 50;
   const pageRows = rawRequests.slice(0, 50);
 
-  // Verificar si el repartidor autenticado ya tiene ofertas activas en estas solicitudes
   const requestIds = pageRows.map((r) => r.id);
   const myOffersMap = new Map<string, number>();
+  const dropsMap = new Map<string, PublicDropSummary[]>();
 
-  if (user && requestIds.length > 0) {
-    const { data: userOffers } = await supabase
-      .from('offers')
-      .select('request_id, amount_ars')
-      .eq('courier_id', user.id)
-      .in('request_id', requestIds)
-      .eq('status', 'pending');
+  if (requestIds.length > 0) {
+    const [offersResult, dropsResult] = await Promise.all([
+      user
+        ? supabase
+            .from('offers')
+            .select('request_id, amount_ars')
+            .eq('courier_id', user.id)
+            .in('request_id', requestIds)
+            .eq('status', 'pending')
+        : Promise.resolve({ data: null }),
+      supabase
+        .from('delivery_request_drops')
+        .select(`
+          request_id,
+          position,
+          package_type,
+          recipient_payment_method,
+          needs_change,
+          approx_distance_m,
+          dropoff_zone:zones!dropoff_zone_id(name)
+        `)
+        .in('request_id', requestIds)
+        .order('position', { ascending: true }),
+    ]);
 
-    const rawUserOffers = userOffers as unknown as RawUserOffer[] | null;
+    const rawUserOffers = offersResult.data as unknown as RawUserOffer[] | null;
     if (rawUserOffers) {
       for (const off of rawUserOffers) {
         myOffersMap.set(off.request_id, off.amount_ars);
+      }
+    }
+
+    if (dropsResult.data) {
+      interface RawDropRow {
+        request_id: string;
+        position: number;
+        package_type: string;
+        recipient_payment_method: string;
+        needs_change: boolean;
+        approx_distance_m: number | null;
+        dropoff_zone: { name: string } | { name: string }[] | null;
+      }
+      for (const d of dropsResult.data as unknown as RawDropRow[]) {
+        const pType = packageTypeSchema.safeParse(d.package_type);
+        const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+        if (!pType.success || !pMethod.success) continue;
+        const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+        const summary: PublicDropSummary = {
+          position: d.position,
+          dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+          packageType: pType.data,
+          recipientPaymentMethod: pMethod.data,
+          needsChange: Boolean(d.needs_change),
+          approxDistanceM: d.approx_distance_m != null ? Number(d.approx_distance_m) : null,
+        };
+        const current = dropsMap.get(d.request_id);
+        if (current) {
+          current.push(summary);
+        } else {
+          dropsMap.set(d.request_id, [summary]);
+        }
       }
     }
   }
@@ -156,6 +206,20 @@ export async function getAvailableRequests(): Promise<{
       : req.dropoff_zone;
 
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const reqDrops = dropsMap.get(req.id) ?? [];
+    const effectiveDrops: PublicDropSummary[] =
+      reqDrops.length > 0
+        ? reqDrops
+        : [
+            {
+              position: 1,
+              dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+              packageType: packageType.data,
+              recipientPaymentMethod: recipientPaymentMethod.data,
+              needsChange: Boolean(req.needs_change),
+              approxDistanceM: req.approx_distance_m != null ? Number(req.approx_distance_m) : null,
+            },
+          ];
 
     mapped.push({
       id: req.id,
@@ -169,7 +233,8 @@ export async function getAvailableRequests(): Promise<{
       expiresAt: req.expires_at,
       fixedPriceArs: req.fixed_price_ars ?? null,
       autoAssign: req.auto_assign ?? false,
-      dropsCount: req.drops_count != null ? Number(req.drops_count) : 1,
+      dropsCount: effectiveDrops.length,
+      drops: effectiveDrops,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
     });

@@ -21,6 +21,15 @@ import { publicEnv } from '@/lib/env.public';
 import { cn } from '@/ui/cn';
 import { buildGoogleMapsDirectionsUrl } from '../maps';
 
+export interface TripRouteMapDrop {
+  readonly position: number;
+  readonly dropoffAddress: string;
+  readonly dropoffZoneName: string;
+  readonly dropoffLat?: number | null;
+  readonly dropoffLng?: number | null;
+  readonly status?: string;
+}
+
 export interface TripRouteMapProps {
   pickupAddress: string;
   pickupZoneName: string;
@@ -34,6 +43,7 @@ export interface TripRouteMapProps {
   showExternalNavigation?: boolean;
   title?: string;
   className?: string;
+  drops?: readonly TripRouteMapDrop[];
 }
 
 function MapStatusWatcher({ onFailed }: { onFailed: () => void }) {
@@ -59,6 +69,7 @@ export function TripRouteMap({
   showExternalNavigation = false,
   title = 'Recorrido en mapa',
   className,
+  drops,
 }: TripRouteMapProps) {
   let apiKey = '';
   let mapId: string | undefined;
@@ -93,36 +104,78 @@ export function TripRouteMap({
     };
   }, []);
 
+  const dropsWithCoords = React.useMemo(() => {
+    if (!drops || drops.length === 0) return null;
+    const valid = drops.filter((d) => d.dropoffLat != null && d.dropoffLng != null);
+    return valid.length > 0 ? valid : null;
+  }, [drops]);
+
   const hasCoords =
     pickupLat != null &&
     pickupLng != null &&
-    dropoffLat != null &&
-    dropoffLng != null;
+    (dropsWithCoords != null || (dropoffLat != null && dropoffLng != null));
 
   const isMapAvailable = Boolean(apiKey) && isOnline && !apiLoadFailed && hasCoords;
 
   const mapCenter = React.useMemo(() => {
-    if (hasCoords) {
-      return {
-        lat: Number(((pickupLat + dropoffLat) / 2).toFixed(6)),
-        lng: Number(((pickupLng + dropoffLng) / 2).toFixed(6)),
-      };
+    if (pickupLat != null && pickupLng != null) {
+      if (dropsWithCoords && dropsWithCoords.length > 0) {
+        const allLats = [pickupLat, ...dropsWithCoords.map((d) => d.dropoffLat!)];
+        const allLngs = [pickupLng, ...dropsWithCoords.map((d) => d.dropoffLng!)];
+        const avgLat = allLats.reduce((a, b) => a + b, 0) / allLats.length;
+        const avgLng = allLngs.reduce((a, b) => a + b, 0) / allLngs.length;
+        return {
+          lat: Number(avgLat.toFixed(6)),
+          lng: Number(avgLng.toFixed(6)),
+        };
+      }
+      if (dropoffLat != null && dropoffLng != null) {
+        return {
+          lat: Number(((pickupLat + dropoffLat) / 2).toFixed(6)),
+          lng: Number(((pickupLng + dropoffLng) / 2).toFixed(6)),
+        };
+      }
     }
     return { lat: -27.4333, lng: -65.6167 }; // Aguilares Centro
-  }, [hasCoords, pickupLat, dropoffLat, pickupLng, dropoffLng]);
+  }, [pickupLat, pickupLng, dropsWithCoords, dropoffLat, dropoffLng]);
+
+  const polylinePath = React.useMemo(() => {
+    if (pickupLat == null || pickupLng == null) return [];
+    if (dropsWithCoords && dropsWithCoords.length > 0) {
+      return [
+        { lat: pickupLat, lng: pickupLng },
+        ...dropsWithCoords.map((d) => ({ lat: d.dropoffLat!, lng: d.dropoffLng! })),
+      ];
+    }
+    if (dropoffLat != null && dropoffLng != null) {
+      return [
+        { lat: pickupLat, lng: pickupLng },
+        { lat: dropoffLat, lng: dropoffLng },
+      ];
+    }
+    return [];
+  }, [pickupLat, pickupLng, dropsWithCoords, dropoffLat, dropoffLng]);
 
   const externalMapUrl = React.useMemo(() => {
-    if (hasCoords) {
-      return buildGoogleMapsDirectionsUrl({
-        origin: { lat: pickupLat, lng: pickupLng },
-        destination: { lat: dropoffLat, lng: dropoffLng },
-      });
+    if (pickupLat != null && pickupLng != null) {
+      const destLat = dropsWithCoords
+        ? dropsWithCoords[dropsWithCoords.length - 1]?.dropoffLat
+        : dropoffLat;
+      const destLng = dropsWithCoords
+        ? dropsWithCoords[dropsWithCoords.length - 1]?.dropoffLng
+        : dropoffLng;
+      if (destLat != null && destLng != null) {
+        return buildGoogleMapsDirectionsUrl({
+          origin: { lat: pickupLat, lng: pickupLng },
+          destination: { lat: destLat, lng: destLng },
+        });
+      }
     }
     return buildGoogleMapsDirectionsUrl({
       origin: pickupAddress,
       destination: dropoffAddress,
     });
-  }, [hasCoords, pickupLat, pickupLng, dropoffLat, dropoffLng, pickupAddress, dropoffAddress]);
+  }, [pickupLat, pickupLng, dropsWithCoords, dropoffLat, dropoffLng, pickupAddress, dropoffAddress]);
 
   const formattedDistance = React.useMemo(() => {
     if (routeDistanceM == null || routeDistanceM < 1) return null;
@@ -204,36 +257,59 @@ export function TripRouteMap({
                 </div>
               </AdvancedMarker>
 
-              {/* Pin 2: Entrega */}
-              <AdvancedMarker
-                position={{ lat: dropoffLat, lng: dropoffLng }}
-                title={`Entrega: ${dropoffAddress}`}
-              >
-                <div
-                  data-testid="map-pin-dropoff"
-                  className="relative flex items-center justify-center"
+              {/* Pines de Entrega */}
+              {dropsWithCoords && dropsWithCoords.length > 0 ? (
+                dropsWithCoords.map((d) => (
+                  <AdvancedMarker
+                    key={d.position}
+                    position={{ lat: d.dropoffLat!, lng: d.dropoffLng! }}
+                    title={`Entrega ${d.position}: ${d.dropoffAddress}`}
+                  >
+                    <div
+                      data-testid={d.position === 1 ? 'map-pin-dropoff' : `map-pin-dropoff-${d.position}`}
+                      className="relative flex items-center justify-center"
+                    >
+                      <div className="flex flex-col items-center">
+                        <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background shadow">
+                          Entrega {d.position}
+                        </span>
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background shadow-md ring-2 ring-background">
+                          <MapPin className="h-4 w-4 text-primary" />
+                        </div>
+                      </div>
+                    </div>
+                  </AdvancedMarker>
+                ))
+              ) : (
+                <AdvancedMarker
+                  position={{ lat: dropoffLat!, lng: dropoffLng! }}
+                  title={`Entrega: ${dropoffAddress}`}
                 >
-                  <div className="flex flex-col items-center">
-                    <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background shadow">
-                      Entrega
-                    </span>
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background shadow-md ring-2 ring-background">
-                      <MapPin className="h-4 w-4 text-primary" />
+                  <div
+                    data-testid="map-pin-dropoff"
+                    className="relative flex items-center justify-center"
+                  >
+                    <div className="flex flex-col items-center">
+                      <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background shadow">
+                        Entrega
+                      </span>
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background shadow-md ring-2 ring-background">
+                        <MapPin className="h-4 w-4 text-primary" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </AdvancedMarker>
+                </AdvancedMarker>
+              )}
 
-              {/* Traza orientativa directa entre los dos pines */}
-              <Polyline
-                path={[
-                  { lat: pickupLat, lng: pickupLng },
-                  { lat: dropoffLat, lng: dropoffLng },
-                ]}
-                strokeColor="#0B7A7D"
-                strokeOpacity={0.8}
-                strokeWeight={4}
-              />
+              {/* Traza orientativa directa entre pines */}
+              {polylinePath.length >= 2 && (
+                <Polyline
+                  path={polylinePath}
+                  strokeColor="#0B7A7D"
+                  strokeOpacity={0.8}
+                  strokeWeight={4}
+                />
+              )}
             </GoogleMap>
           </APIProvider>
         ) : (

@@ -40,26 +40,30 @@ export async function callRequestRpc<K extends RequestRpcName>(
 
   const input = parsed.data as Record<string, unknown>;
   const args: Record<string, unknown> = {};
-  if ('requestId' in input) {
-    args.p_request_id = input.requestId;
-  }
-  if ('dropId' in input) {
+
+  if (rpcName === 'mark_drop_delivered') {
     args.p_drop_id = input.dropId;
-  }
-  if (
-    rpcName === 'cancel_request' ||
-    rpcName === 'republish_request' ||
-    rpcName === 'courier_cancel_match' ||
-    rpcName === 'mark_drop_failed'
-  ) {
-    args.p_reason = 'reason' in input ? (input.reason ?? null) : null;
-  }
-  if (rpcName === 'report_no_show') {
-    args.p_republish = 'republish' in input ? (input.republish ?? true) : true;
-  }
-  if ('kind' in input && 'description' in input) {
-    args.p_kind = input.kind;
-    args.p_description = input.description;
+  } else if (rpcName === 'mark_drop_failed') {
+    args.p_drop_id = input.dropId;
+    args.p_reason = typeof input.reason === 'string' ? input.reason.trim() : null;
+  } else {
+    if ('requestId' in input) {
+      args.p_request_id = input.requestId;
+    }
+    if (
+      rpcName === 'cancel_request' ||
+      rpcName === 'republish_request' ||
+      rpcName === 'courier_cancel_match'
+    ) {
+      args.p_reason = 'reason' in input ? (input.reason ?? null) : null;
+    }
+    if (rpcName === 'report_no_show') {
+      args.p_republish = 'republish' in input ? (input.republish ?? true) : true;
+    }
+    if ('kind' in input && 'description' in input) {
+      args.p_kind = input.kind;
+      args.p_description = input.description;
+    }
   }
   try {
     const { data, error } = await client.rpc(rpcName, args);

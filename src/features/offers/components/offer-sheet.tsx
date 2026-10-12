@@ -200,6 +200,29 @@ export function OfferSheet({
               </Badge>
             )}
           </div>
+          {request.drops && request.drops.length > 1 ? (
+            <div className="mt-2.5 space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5 text-sm">
+              <span className="font-semibold text-foreground">
+                Entregas ({request.drops.length}):
+              </span>
+              <ul className="space-y-1">
+                {request.drops.map((drop) => (
+                  <li
+                    key={drop.position}
+                    className="flex items-center justify-between text-muted-foreground"
+                  >
+                    <span>
+                      {drop.position}. {drop.dropoffZoneName} · {OFFERS_COPY.packageLabels[drop.packageType]}
+                    </span>
+                    <span className="font-medium text-foreground">
+                      {OFFERS_COPY.paymentLabels[drop.recipientPaymentMethod]}
+                      {drop.needsChange ? ' (con cambio)' : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">

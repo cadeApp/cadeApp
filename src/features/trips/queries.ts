@@ -18,7 +18,7 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
   const trip = result.data;
   const supabase = await createClient();
 
-  const [contactsResult, dropResult, requestResult] = await Promise.all([
+  const [contactsResult, requestResult] = await Promise.all([
     supabase
       .from('delivery_request_contacts')
       .select('pickup_lat, pickup_lng, dropoff_lat, dropoff_lng')
@@ -30,23 +30,6 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
         dropoff_lng: number | null;
       }>(),
     supabase
-      .from('delivery_request_drops')
-      .select('delivery_request_drop_contacts(dropoff_lat, dropoff_lng)')
-      .eq('request_id', requestId)
-      .eq('position', 1)
-      .maybeSingle<{
-        delivery_request_drop_contacts:
-          | {
-              dropoff_lat: number | null;
-              dropoff_lng: number | null;
-            }
-          | Array<{
-              dropoff_lat: number | null;
-              dropoff_lng: number | null;
-            }>
-          | null;
-      }>(),
-    supabase
       .from('delivery_requests')
       .select('route_distance_m')
       .eq('id', requestId)
@@ -56,23 +39,31 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
   ]);
 
   const contacts = contactsResult.data;
-  const rawDropContacts = dropResult?.data?.delivery_request_drop_contacts;
-  const dropContacts = Array.isArray(rawDropContacts) ? rawDropContacts[0] : rawDropContacts;
   const request = requestResult.data;
 
+  const drops = trip.drops ?? [];
+  const firstDrop = drops[0];
   const dropoffLat =
-    dropContacts?.dropoff_lat != null
-      ? Number(dropContacts.dropoff_lat)
-      : contacts?.dropoff_lat != null
-      ? Number(contacts.dropoff_lat)
+    contacts != null
+      ? (firstDrop?.dropoffLat != null
+        ? Number(firstDrop.dropoffLat)
+        : contacts.dropoff_lat != null
+        ? Number(contacts.dropoff_lat)
+        : null)
+      : null;
+  const dropoffLng =
+    contacts != null
+      ? (firstDrop?.dropoffLng != null
+        ? Number(firstDrop.dropoffLng)
+        : contacts.dropoff_lng != null
+        ? Number(contacts.dropoff_lng)
+        : null)
       : null;
 
-  const dropoffLng =
-    dropContacts?.dropoff_lng != null
-      ? Number(dropContacts.dropoff_lng)
-      : contacts?.dropoff_lng != null
-      ? Number(contacts.dropoff_lng)
-      : null;
+  const totalAmountArs = trip.amountArs * (drops.length || 1);
+  const collectibleAmountArs =
+    trip.amountArs * drops.filter((d) => d.status === 'delivered').length;
+  const allDropsFailed = drops.length > 0 && drops.every((d) => d.status === 'failed');
 
   return {
     id: trip.requestId,
@@ -88,6 +79,9 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
     licensePlate: trip.vehiclePlate,
     avatarUrl: trip.avatarUrl,
     amountArs: trip.amountArs,
+    totalAmountArs,
+    collectibleAmountArs,
+    allDropsFailed,
     pickupAddress: trip.pickupAddress,
     pickupZoneName: trip.pickupZoneName,
     pickupLat: contacts?.pickup_lat != null ? Number(contacts.pickup_lat) : null,
@@ -107,5 +101,7 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
     matchedAt: trip.matchedAt,
     pickedUpAt: trip.pickedUpAt,
     deliveredAt: trip.deliveredAt,
+    dropsCount: trip.dropsCount ?? drops.length,
+    drops,
   };
 }

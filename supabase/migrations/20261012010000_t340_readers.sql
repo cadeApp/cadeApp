@@ -1,9 +1,10 @@
 -- ============================================================================
 -- T-340 (Paso 2/4): Lectores post-match desacoplados de columnas legacy
 -- ============================================================================
--- Redefine get_trip_details y get_merchant_request_private_fields para leer
--- `notes` y `cash_change_amount` desde delivery_request_drop_contacts (drop 1),
--- manteniendo fallback a las columnas legacy de delivery_requests.
+-- Redefine get_trip_details para devolver drops[] completo por position
+-- con contactos privados y proyección escalar compatible derivada de drops[0].
+-- Redefine get_merchant_request_private_fields para leer exclusivamente de drop_contacts.
+-- Ningún lector consulta como fallback delivery_requests.notes ni cash_change_amount.
 
 create or replace function public.get_trip_details(
   p_request_id uuid
@@ -26,24 +27,8 @@ declare
   v_vehicle_type public.vehicle_type;
   v_vehicle_plate text;
   v_pickup_zone_name text;
-  v_dropoff_zone_name text;
-  v_drop_zone_id uuid;
-  v_drop_package_type public.package_type;
-  v_drop_payment_method public.recipient_payment_method;
-  v_drop_needs_change boolean;
-  v_drop_address text;
-  v_drop_recipient_name text;
-  v_drop_recipient_phone text;
-  v_drop_cash_change_amount integer;
-  v_drop_notes text;
-  v_effective_dropoff_zone_id uuid;
-  v_effective_dropoff_address text;
-  v_effective_recipient_name text;
-  v_effective_recipient_phone text;
-  v_effective_payment_method public.recipient_payment_method;
-  v_effective_needs_change boolean;
-  v_effective_cash_change_amount integer;
-  v_effective_notes text;
+  v_drops_json jsonb;
+  v_first_drop jsonb;
 begin
   if v_uid is null then
     raise exception 'UNAUTHENTICATED' using errcode = 'P0001';
@@ -121,48 +106,41 @@ begin
     raise exception 'NOT_FOUND' using errcode = 'P0001';
   end if;
 
-  -- Lectura de drop 1 desde delivery_request_drops + delivery_request_drop_contacts
-  select
-    d.dropoff_zone_id,
-    d.package_type,
-    d.recipient_payment_method,
-    d.needs_change,
-    dc.dropoff_address,
-    dc.recipient_name,
-    dc.recipient_phone,
-    dc.cash_change_amount,
-    dc.notes
-  into
-    v_drop_zone_id,
-    v_drop_package_type,
-    v_drop_payment_method,
-    v_drop_needs_change,
-    v_drop_address,
-    v_drop_recipient_name,
-    v_drop_recipient_phone,
-    v_drop_cash_change_amount,
-    v_drop_notes
+  -- Lectura de TODOS los drops con contactos privados y zonas, ordenados por position
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', d.id,
+        'position', d.position,
+        'dropoffZoneName', z.name,
+        'dropoffAddress', dc.dropoff_address,
+        'recipientName', dc.recipient_name,
+        'recipientPhone', dc.recipient_phone,
+        'deliveryNotes', dc.notes,
+        'cashChangeAmount', dc.cash_change_amount,
+        'packageType', d.package_type,
+        'recipientPaymentMethod', d.recipient_payment_method,
+        'needsChange', d.needs_change,
+        'approxDistanceM', d.approx_distance_m,
+        'status', d.status,
+        'deliveredAt', case when d.delivered_at is null then null else to_char(d.delivered_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end,
+        'failedReason', d.failed_reason,
+        'dropoffLat', dc.dropoff_lat,
+        'dropoffLng', dc.dropoff_lng
+      ) order by d.position
+    ) filter (where d.id is not null),
+    '[]'::jsonb
+  ) into v_drops_json
   from public.delivery_request_drops d
+  join public.zones z on z.id = d.dropoff_zone_id
   left join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
-  where d.request_id = v_request.id
-    and d.position = 1;
+  where d.request_id = v_request.id;
 
-  v_effective_dropoff_zone_id := coalesce(v_drop_zone_id, v_request.dropoff_zone_id);
-  v_effective_dropoff_address := coalesce(v_drop_address, v_contacts.dropoff_address);
-  v_effective_recipient_name := coalesce(v_drop_recipient_name, v_contacts.recipient_name);
-  v_effective_recipient_phone := coalesce(v_drop_recipient_phone, v_contacts.recipient_phone);
-  v_effective_payment_method := coalesce(v_drop_payment_method, v_request.recipient_payment_method);
-  v_effective_needs_change := coalesce(v_drop_needs_change, v_request.needs_change);
-  v_effective_cash_change_amount := coalesce(v_drop_cash_change_amount, v_request.cash_change_amount);
-  v_effective_notes := coalesce(v_drop_notes, v_request.notes);
-
-  select z.name into v_dropoff_zone_name
-  from public.zones z
-  where z.id = v_effective_dropoff_zone_id;
-
-  if not found then
+  if jsonb_array_length(v_drops_json) = 0 then
     raise exception 'NOT_FOUND' using errcode = 'P0001';
   end if;
+
+  v_first_drop := v_drops_json->0;
 
   select m.business_name, p.phone
     into v_merchant_name, v_merchant_phone
@@ -199,18 +177,20 @@ begin
     'amountArs', v_offer.amount_ars,
     'pickupAddress', v_contacts.pickup_address,
     'pickupZoneName', v_pickup_zone_name,
-    'dropoffAddress', v_effective_dropoff_address,
-    'dropoffZoneName', v_dropoff_zone_name,
-    'deliveryNotes', v_effective_notes,
-    'recipientName', v_effective_recipient_name,
-    'recipientPhone', v_effective_recipient_phone,
-    'recipientPaymentMethod', v_effective_payment_method,
-    'needsChange', v_effective_needs_change,
-    'cashChangeAmount', v_effective_cash_change_amount,
+    'dropoffAddress', v_first_drop->>'dropoffAddress',
+    'dropoffZoneName', v_first_drop->>'dropoffZoneName',
+    'deliveryNotes', v_first_drop->>'deliveryNotes',
+    'recipientName', v_first_drop->>'recipientName',
+    'recipientPhone', v_first_drop->>'recipientPhone',
+    'recipientPaymentMethod', v_first_drop->>'recipientPaymentMethod',
+    'needsChange', (v_first_drop->>'needsChange')::boolean,
+    'cashChangeAmount', (v_first_drop->>'cashChangeAmount')::integer,
     'createdAt', to_char(v_request.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
     'matchedAt', case when v_request.matched_at is null then null else to_char(v_request.matched_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end,
     'pickedUpAt', case when v_request.picked_up_at is null then null else to_char(v_request.picked_up_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end,
-    'deliveredAt', case when v_request.delivered_at is null then null else to_char(v_request.delivered_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end
+    'deliveredAt', case when v_request.delivered_at is null then null else to_char(v_request.delivered_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') end,
+    'dropsCount', jsonb_array_length(v_drops_json),
+    'drops', v_drops_json
   );
 end;
 $$;
@@ -253,8 +233,8 @@ begin
   end if;
 
   select
-    coalesce(dc.notes, dr.notes),
-    coalesce(dc.cash_change_amount, dr.cash_change_amount),
+    dc.notes,
+    dc.cash_change_amount,
     true
   into
     v_notes,

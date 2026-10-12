@@ -11,6 +11,7 @@ import type {
   LiveOffersResponse,
   LivePageCursor,
   LiveTripState,
+  PublicDropSummary,
 } from '@/lib/live-contracts';
 
 const LIVE_PAGE_SIZE = 50;
@@ -118,25 +119,75 @@ export async function getAvailableRequestsLiveServer(
 
   const requestIds = pageRows.map((r) => r.id);
   const myOffersMap = new Map<string, number>();
+  const dropsMap = new Map<string, PublicDropSummary[]>();
 
-  const { data: userOffers, error: offersError } = await supabase
-    .from('offers')
-    .select('request_id, amount_ars')
-    .eq('courier_id', user.id)
-    .in('request_id', requestIds)
-    .eq('status', 'pending');
+  const [userOffersResult, dropsResult] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id, amount_ars')
+      .eq('courier_id', user.id)
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(`
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `)
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
 
-  if (offersError) {
+  if (userOffersResult.error || dropsResult.error) {
     return { ok: false, error: 'DATABASE_ERROR', status: 500 };
   }
 
-  if (userOffers) {
-    const rawUserOffers = userOffers as unknown as Array<{
+  if (userOffersResult.data) {
+    const rawUserOffers = userOffersResult.data as unknown as Array<{
       readonly request_id: string;
       readonly amount_ars: number;
     }>;
     for (const off of rawUserOffers) {
       myOffersMap.set(off.request_id, off.amount_ars);
+    }
+  }
+
+  if (dropsResult.data) {
+    interface RawLiveDropRow {
+      readonly request_id: string;
+      readonly position: number;
+      readonly package_type: string;
+      readonly recipient_payment_method: string;
+      readonly needs_change: boolean;
+      readonly approx_distance_m: number | null;
+      readonly dropoff_zone: { readonly name: string } | readonly { readonly name: string }[] | null;
+    }
+    for (const d of dropsResult.data as unknown as readonly RawLiveDropRow[]) {
+      const pType = packageTypeSchema.safeParse(d.package_type);
+      const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+      if (!pType.success || !pMethod.success) {
+        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+      }
+      const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+      const summary: PublicDropSummary = {
+        position: d.position,
+        dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+        packageType: pType.data,
+        recipientPaymentMethod: pMethod.data,
+        needsChange: Boolean(d.needs_change),
+        approxDistanceM: d.approx_distance_m != null ? Number(d.approx_distance_m) : null,
+      };
+      const list = dropsMap.get(d.request_id);
+      if (list) {
+        list.push(summary);
+      } else {
+        dropsMap.set(d.request_id, [summary]);
+      }
     }
   }
 
@@ -152,6 +203,20 @@ export async function getAvailableRequestsLiveServer(
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const reqDrops = dropsMap.get(req.id) ?? [];
+    const effectiveDrops: PublicDropSummary[] =
+      reqDrops.length > 0
+        ? reqDrops
+        : [
+            {
+              position: 1,
+              dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+              packageType: packageType.data,
+              recipientPaymentMethod: recipientPaymentMethod.data,
+              needsChange: Boolean(req.needs_change),
+              approxDistanceM: req.approx_distance_m != null ? Number(req.approx_distance_m) : null,
+            },
+          ];
 
     mapped.push({
       id: req.id,
@@ -167,7 +232,8 @@ export async function getAvailableRequestsLiveServer(
       myOfferAmountArs: myOfferAmount,
       fixedPriceArs: req.fixed_price_ars ?? null,
       autoAssign: req.auto_assign ?? false,
-      dropsCount: req.drops_count != null ? Number(req.drops_count) : 1,
+      dropsCount: effectiveDrops.length,
+      drops: effectiveDrops,
     });
   }
 

@@ -1782,7 +1782,61 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
         const merchant = merchants.get(req.merchantId);
         const courier = couriers.get(offer.courierId);
-        if (!merchant || !courier || offer.amountArs < 1) return err('NOT_FOUND');
+        if (!merchant || !courier) {
+          return err('NOT_FOUND');
+        }
+        const drops = req.drops.length > 0
+          ? [...req.drops].sort((a, b) => a.position - b.position)
+          : [
+              {
+                id: `40000000-0000-4000-8000-${req.requestId.slice(-12)}`,
+                requestId: req.requestId,
+                position: 1,
+                dropoffZoneId: '00000000-0000-4000-8000-000000000099',
+                dropoffZoneName: req.dropoffZoneName,
+                dropoffAddress: req.dropoffAddress,
+                dropoffLat: req.dropoffLat,
+                dropoffLng: req.dropoffLng,
+                packageType: 'chico' as const,
+                recipientName: req.recipientName,
+                recipientPhone: req.recipientPhone,
+                recipientConsentDeclared: true,
+                recipientPaymentMethod: req.recipientPaymentMethod,
+                needsChange: req.needsChange,
+                cashChangeAmount: req.cashChangeAmount,
+                notes: req.notes,
+                approxDistanceM: null,
+                status: 'pending' as const,
+                deliveredAt: null,
+                failedReason: null,
+              },
+            ];
+
+        const mappedDrops = drops.map((d) => ({
+          id: d.id,
+          position: d.position,
+          dropoffZoneName: d.dropoffZoneName,
+          dropoffAddress: d.dropoffAddress,
+          recipientName: d.recipientName,
+          recipientPhone: d.recipientPhone,
+          deliveryNotes: d.notes ?? null,
+          cashChangeAmount: d.cashChangeAmount ?? null,
+          packageType: d.packageType ?? 'chico',
+          recipientPaymentMethod: d.recipientPaymentMethod,
+          needsChange: d.needsChange,
+          approxDistanceM: d.approxDistanceM ?? null,
+          status: d.status,
+          deliveredAt: d.deliveredAt ?? null,
+          failedReason: d.failedReason ?? null,
+          dropoffLat: d.dropoffLat ?? null,
+          dropoffLng: d.dropoffLng ?? null,
+        }));
+
+        const firstDrop = mappedDrops[0];
+        if (!firstDrop) {
+          return err('NOT_FOUND');
+        }
+
         return ok({
           requestId: req.requestId,
           code: `REQ-${req.requestId.slice(0, 8).toUpperCase()}`,
@@ -1798,18 +1852,20 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           amountArs: offer.amountArs,
           pickupAddress: req.pickupAddress,
           pickupZoneName: req.pickupZoneName,
-          dropoffAddress: req.dropoffAddress,
-          dropoffZoneName: req.dropoffZoneName,
-          deliveryNotes: req.notes,
-          recipientName: req.recipientName,
-          recipientPhone: req.recipientPhone,
-          recipientPaymentMethod: req.recipientPaymentMethod,
-          needsChange: req.needsChange,
-          cashChangeAmount: req.cashChangeAmount,
+          dropoffAddress: firstDrop.dropoffAddress,
+          dropoffZoneName: firstDrop.dropoffZoneName,
+          deliveryNotes: firstDrop.deliveryNotes,
+          recipientName: firstDrop.recipientName,
+          recipientPhone: firstDrop.recipientPhone,
+          recipientPaymentMethod: firstDrop.recipientPaymentMethod,
+          needsChange: firstDrop.needsChange,
+          cashChangeAmount: firstDrop.cashChangeAmount,
           createdAt: req.createdAt,
           matchedAt: req.matchedAt,
           pickedUpAt: req.pickedUpAt,
           deliveredAt: req.deliveredAt,
+          dropsCount: mappedDrops.length,
+          drops: mappedDrops,
         });
       }),
 

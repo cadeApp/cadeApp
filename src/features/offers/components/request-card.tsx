@@ -78,6 +78,31 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
           )}
         </div>
 
+        {/* Desglose de entregas si tiene múltiples destinos */}
+        {request.drops && request.drops.length > 1 ? (
+          <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5 text-sm">
+            <span className="font-semibold text-foreground">
+              Entregas ({request.drops.length}):
+            </span>
+            <ul className="space-y-1">
+              {request.drops.map((drop) => (
+                <li
+                  key={drop.position}
+                  className="flex items-center justify-between text-muted-foreground"
+                >
+                  <span>
+                    {drop.position}. {drop.dropoffZoneName} · {OFFERS_COPY.packageLabels[drop.packageType]}
+                  </span>
+                  <span className="font-medium text-foreground">
+                    {OFFERS_COPY.paymentLabels[drop.recipientPaymentMethod]}
+                    {drop.needsChange ? ' (con cambio)' : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         {/* Tiempos de publicación y vencimiento (piso 14px -> text-sm) */}
         <div className="flex items-center gap-1 text-sm text-muted-foreground pt-1">
           <Clock className="h-4 w-4 shrink-0" aria-hidden="true" />

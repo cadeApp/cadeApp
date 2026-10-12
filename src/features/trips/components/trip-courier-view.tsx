@@ -38,6 +38,13 @@ export function TripCourierView({
   const isMatched = trip.status === 'matched';
   const isInTransit = trip.status === 'in_transit';
   const isDelivered = trip.status === 'delivered';
+  const totalAmountArs = trip.totalAmountArs ?? trip.amountArs;
+  const dropsCount = trip.dropsCount ?? (trip.drops ? trip.drops.length : 1);
+  const collectibleAmountArs =
+    trip.collectibleAmountArs ??
+    (dropsCount > 1
+      ? (trip.drops?.filter((d) => d.status === 'delivered').length ?? 0) * trip.amountArs
+      : totalAmountArs);
 
   const coordinationMessage = buildTripCoordinationWhatsAppMessage({
     requestCode: trip.code,
@@ -111,18 +118,25 @@ export function TripCourierView({
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1 text-sm font-bold uppercase tracking-wider text-primary-dark">
               <DollarSign className="h-3.5 w-3.5" />
-              Cobrás al entregar
+              {isDelivered || trip.status === 'in_transit' ? 'Monto del viaje' : 'Cobrás al entregar'}
             </span>
             <span className="font-display text-2xl font-bold text-foreground">
-              {formatArs(trip.amountArs)}
+              {formatArs(totalAmountArs)}
             </span>
           </div>
-          <p className="pt-1 text-sm text-muted-foreground">
-            {formatRecipientPaymentMethod(trip.recipientPaymentMethod)}
-            {trip.needsChange && trip.cashChangeAmount
-              ? ` · necesita cambio de ${formatArs(trip.cashChangeAmount)}`
-              : ''}
-          </p>
+          {dropsCount > 1 ? (
+            <p className="pt-0.5 text-sm font-medium text-foreground">
+              {formatArs(trip.amountArs)} por entrega ({dropsCount} entregas)
+              {trip.status !== 'matched' ? ` · A cobrar: ${formatArs(collectibleAmountArs)}` : ''}
+            </p>
+          ) : (
+            <p className="pt-1 text-sm text-muted-foreground">
+              {formatRecipientPaymentMethod(trip.recipientPaymentMethod)}
+              {trip.needsChange && trip.cashChangeAmount
+                ? ` · necesita cambio de ${formatArs(trip.cashChangeAmount)}`
+                : ''}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -138,6 +152,7 @@ export function TripCourierView({
         routeDistanceM={trip.routeDistanceM}
         showExternalNavigation={true}
         title="Recorrido en mapa"
+        drops={trip.drops}
       />
 
       <Card className="border-border bg-card shadow-card">
@@ -151,18 +166,91 @@ export function TripCourierView({
             <p className="text-sm text-muted-foreground">{trip.pickupZoneName}</p>
           </div>
 
-          <div className="space-y-1 border-t border-border/60 pt-3">
-            <span className="flex items-center gap-1 text-sm font-bold uppercase tracking-wider text-muted-foreground">
-              <Navigation className="h-3.5 w-3.5 text-primary" />
-              Entrega en destino
-            </span>
-            <p className="text-sm font-semibold text-foreground">{trip.dropoffAddress}</p>
-            <p className="text-sm text-muted-foreground">{trip.dropoffZoneName}</p>
-            {trip.deliveryNotes && (
-              <p className="pt-0.5 text-sm italic text-muted-foreground">&quot;{trip.deliveryNotes}&quot;</p>
-            )}
-            <p className="pt-1 text-sm font-medium text-foreground">Cliente: {trip.recipientName}</p>
-          </div>
+          {(trip.drops && trip.drops.length > 0
+            ? trip.drops
+            : [
+                {
+                  id: (trip as any).requestId ?? trip.id,
+                  position: 1,
+                  dropoffZoneName: trip.dropoffZoneName,
+                  dropoffAddress: trip.dropoffAddress,
+                  recipientName: trip.recipientName,
+                  recipientPhone: trip.recipientPhone,
+                  deliveryNotes: trip.deliveryNotes,
+                  cashChangeAmount: trip.cashChangeAmount,
+                  packageType: 'chico' as const,
+                  recipientPaymentMethod: trip.recipientPaymentMethod,
+                  needsChange: trip.needsChange,
+                  approxDistanceM: null,
+                  status: (trip.status === 'delivered' ? 'delivered' : 'pending') as 'pending' | 'delivered' | 'failed',
+                  deliveredAt: trip.deliveredAt,
+                  failedReason: null,
+                  dropoffLat: trip.dropoffLat,
+                  dropoffLng: trip.dropoffLng,
+                },
+              ]
+          ).map((drop, idx, arr) => {
+            const statusLabel =
+              drop.status === 'delivered'
+                ? 'Entregado'
+                : drop.status === 'failed'
+                  ? 'No entregado'
+                  : 'Pendiente';
+            const statusVariant =
+              drop.status === 'delivered'
+                ? 'secondary'
+                : drop.status === 'failed'
+                  ? 'destructive'
+                  : 'outline';
+
+            return (
+              <div key={drop.id} className="space-y-1 border-t border-border/60 pt-3">
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1 text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                    <Navigation className="h-3.5 w-3.5 text-primary" />
+                    Entrega {arr.length > 1 ? drop.position : 'en destino'}
+                  </span>
+                  <Badge variant={statusVariant} className="text-sm font-semibold">
+                    {statusLabel}
+                  </Badge>
+                </div>
+                <p className="text-sm font-semibold text-foreground">{drop.dropoffAddress}</p>
+                <p className="text-sm text-muted-foreground">{drop.dropoffZoneName}</p>
+                {drop.deliveryNotes && (
+                  <p className="pt-0.5 text-sm italic text-muted-foreground">
+                    &quot;{drop.deliveryNotes}&quot;
+                  </p>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <p className="text-sm font-medium text-foreground">
+                    Cliente: {drop.recipientName}
+                  </p>
+                  {arr.length > 1 && drop.recipientPhone && (
+                    <a
+                      href={`tel:${drop.recipientPhone}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm font-medium text-foreground hover:bg-muted"
+                    >
+                      <Phone className="h-3.5 w-3.5 text-primary" />
+                      Llamar
+                    </a>
+                  )}
+                </div>
+                {arr.length > 1 && (
+                  <p className="text-sm text-muted-foreground">
+                    Pago: {formatRecipientPaymentMethod(drop.recipientPaymentMethod)}
+                    {drop.needsChange && drop.cashChangeAmount
+                      ? ` · cambio de ${formatArs(drop.cashChangeAmount)}`
+                      : ''}
+                  </p>
+                )}
+                {drop.failedReason && (
+                  <p className="text-sm font-semibold text-destructive">
+                    Motivo: {drop.failedReason}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -192,7 +280,7 @@ export function TripCourierView({
           >
             {isMatched
               ? 'Marcar como retirado'
-              : `Confirmar entrega (${formatArs(trip.amountArs)})`}
+              : `Confirmar entrega (${formatArs(totalAmountArs)})`}
           </Button>
         </div>
       )}

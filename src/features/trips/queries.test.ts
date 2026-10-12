@@ -42,6 +42,28 @@ describe('T-115 / T-117 — query adapter sobre CC-008 y proyección de coordena
     matchedAt: '2026-09-24T10:05:00.000Z',
     pickedUpAt: null,
     deliveredAt: null,
+    dropsCount: 1,
+    drops: [
+      {
+        id: '2a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+        position: 1,
+        dropoffZoneName: 'Barrio Sur',
+        dropoffAddress: 'Belgrano 1220',
+        recipientName: 'Laura Gómez',
+        recipientPhone: '3865123456',
+        deliveryNotes: 'Frente a la plaza',
+        cashChangeAmount: 5000,
+        packageType: 'chico' as const,
+        recipientPaymentMethod: 'cash' as const,
+        needsChange: true,
+        approxDistanceM: 2500,
+        status: 'pending' as const,
+        deliveredAt: null,
+        failedReason: null,
+        dropoffLat: -27.4250,
+        dropoffLng: -65.6100,
+      },
+    ],
   };
 
   const mockDbContacts = {
@@ -90,6 +112,9 @@ describe('T-115 / T-117 — query adapter sobre CC-008 y proyección de coordena
       licensePlate: 'AB 123 CD',
       avatarUrl: 'https://signed.test/avatar.webp',
       amountArs: 1800,
+      totalAmountArs: 1800,
+      collectibleAmountArs: 0,
+      allDropsFailed: false,
       pickupAddress: 'San Martín 450, Aguilares',
       pickupZoneName: 'Centro',
       pickupLat: -27.4333,
@@ -109,6 +134,8 @@ describe('T-115 / T-117 — query adapter sobre CC-008 y proyección de coordena
       matchedAt: rpcTrip.matchedAt,
       pickedUpAt: null,
       deliveredAt: null,
+      dropsCount: 1,
+      drops: rpcTrip.drops,
     });
 
     expect(tripsRpc.getTripDetailsServer).toHaveBeenCalledExactlyOnceWith({ requestId });

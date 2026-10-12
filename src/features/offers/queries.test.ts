@@ -69,11 +69,12 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
         };
         return builder;
       }
-      if (table === 'offers') {
+      if (table === 'offers' || table === 'delivery_request_drops') {
         const builder = {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
           in: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
           then: (resolve: (val: unknown) => void) =>
             resolve({
               data: [],
@@ -153,6 +154,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
       then: (resolve: (val: unknown) => void) => resolve({ data: [], error: null }),
     };
 
@@ -165,7 +167,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
       },
       from: vi.fn((table: string) => {
         if (table === 'delivery_requests') return requestsBuilder;
-        if (table === 'offers') return offersBuilder;
+        if (table === 'offers' || table === 'delivery_request_drops') return offersBuilder;
         return {};
       }),
     } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -199,6 +201,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
       then: (resolve: (val: unknown) => void) => resolve({ data: [], error: null }),
     };
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
@@ -207,7 +210,7 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
       },
       from: vi.fn((table: string) => {
         if (table === 'delivery_requests') return requestsBuilder;
-        if (table === 'offers') return offersBuilder;
+        if (table === 'offers' || table === 'delivery_request_drops') return offersBuilder;
         return {};
       }),
     } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -337,11 +340,12 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
         };
         return builder;
       }
-      if (table === 'offers') {
+      if (table === 'offers' || table === 'delivery_request_drops') {
         const builder = {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
           in: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
           then: (resolve: (val: unknown) => void) =>
             resolve({
               data: [],
@@ -439,5 +443,136 @@ describe('T-114 DoD: queries de ofertas y feed (D3/D15 Privacidad sin coordenada
       status: 'pending',
       available: false,
     });
+  });
+
+  it('T-340 / CC-022 §3: getAvailableRequests proyecta múltiples drops con resumen público y sin PII', async () => {
+    const reqRow = {
+      id: 'req-multi-1',
+      created_at: '2026-10-12T10:00:00.000Z',
+      approx_distance_m: 3500,
+      package_type: 'chico',
+      recipient_payment_method: 'cash',
+      needs_change: true,
+      published_at: '2026-10-12T10:00:00.000Z',
+      expires_at: null,
+      fixed_price_ars: null,
+      auto_assign: false,
+      drops_count: 3,
+      pickup_zone: { name: 'Centro' },
+      dropoff_zone: { name: 'Barrio Norte' },
+    };
+
+    const dropRows = [
+      {
+        request_id: 'req-multi-1',
+        position: 1,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: true,
+        approx_distance_m: 1200,
+        dropoff_zone: { name: 'Barrio Norte' },
+      },
+      {
+        request_id: 'req-multi-1',
+        position: 2,
+        package_type: 'mediano',
+        recipient_payment_method: 'transfer',
+        needs_change: false,
+        approx_distance_m: 1100,
+        dropoff_zone: { name: 'Barrio San Martín' },
+      },
+      {
+        request_id: 'req-multi-1',
+        position: 3,
+        package_type: 'sobre',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        approx_distance_m: 1200,
+        dropoff_zone: { name: 'Centro' },
+      },
+    ];
+
+    const mockFrom = vi.fn((table: string) => {
+      if (table === 'delivery_requests') {
+        const builder = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          limit: vi.fn().mockReturnThis(),
+          then: (resolve: (val: unknown) => void) => resolve({ data: [reqRow], error: null }),
+        };
+        return builder;
+      }
+      if (table === 'offers') {
+        const builder = {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+          then: (resolve: (val: unknown) => void) => resolve({ data: [], error: null }),
+        };
+        return builder;
+      }
+      if (table === 'delivery_request_drops') {
+        const builder = {
+          select: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+          order: vi.fn().mockReturnThis(),
+          then: (resolve: (val: unknown) => void) => resolve({ data: dropRows, error: null }),
+        };
+        return builder;
+      }
+      return {};
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: validCourierUser },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+    const result = await getAvailableRequests();
+    expect(result.requests).toHaveLength(1);
+    const item = result.requests[0];
+    if (!item) throw new Error('Expected item in requests');
+    expect(item.dropsCount).toBe(3);
+    expect(item.drops).toHaveLength(3);
+    expect(item.drops?.[0]).toEqual({
+      position: 1,
+      dropoffZoneName: 'Barrio Norte',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: true,
+      approxDistanceM: 1200,
+    });
+    expect(item.drops?.[1]).toEqual({
+      position: 2,
+      dropoffZoneName: 'Barrio San Martín',
+      packageType: 'mediano',
+      recipientPaymentMethod: 'transfer',
+      needsChange: false,
+      approxDistanceM: 1100,
+    });
+    expect(item.drops?.[2]).toEqual({
+      position: 3,
+      dropoffZoneName: 'Centro',
+      packageType: 'sobre',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      approxDistanceM: 1200,
+    });
+
+    // Zero PII in serialized result
+    const serialized = JSON.stringify(item);
+    expect(serialized).not.toContain('recipientName');
+    expect(serialized).not.toContain('recipientPhone');
+    expect(serialized).not.toContain('dropoffAddress');
+    expect(serialized).not.toContain('deliveryNotes');
+    expect(serialized).not.toContain('cashChangeAmount');
+    expect(serialized).not.toContain('dropoffLat');
+    expect(serialized).not.toContain('dropoffLng');
   });
 });
