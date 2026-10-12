@@ -31,6 +31,7 @@ describe('T-339 / CC-021: Fixed price and take_request contracts', () => {
       routeDistanceM: 1500,
       fixedPriceArs: 1500,
       autoAssign: true,
+      dropsCount: 1,
     };
     expect(contract.outputSchema.safeParse(validOutput).success).toBe(true);
 

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(77);
+select plan(83);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -1270,5 +1270,97 @@ select is(
   0,
   'historico delivered sin delivered_at no materializa drop con fecha inventada (H12)'
 );
+
+-- ============================================================================
+-- Paso 2: Lectores post-match desacoplados de columnas legacy
+-- ============================================================================
+create function pg_temp.test_readers_post_match() returns void language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003430';
+  v_offer_id uuid := '30000000-0000-4000-8000-000000003431';
+  v_drop_id uuid := '30000000-0000-4000-8000-000000003432';
+begin
+  -- Inserta request matched con columnas legacy en NULL
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, dropoff_zone_id,
+    package_type, recipient_payment_method, needs_change,
+    cash_change_amount, notes, status, matched_at, accepted_offer_id, drops_count
+  ) values (
+    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), pg_temp.dropoff_zone_id(),
+    'chico', 'cash', true,
+    null, null, 'matched', now(), v_offer_id, 1
+  );
+
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    v_req_id, 'Retiro 123', 'Entrega 456', 'Cliente Uno', '+5493865111111', true
+  );
+
+  insert into public.offers (
+    id, request_id, courier_id, amount_ars, eta_minutes, status
+  ) values (
+    v_offer_id, v_req_id, pg_temp.courier_1_id(), 1500, 15, 'accepted'
+  );
+
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type,
+    recipient_payment_method, needs_change, status
+  ) values (
+    v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico',
+    'cash', true, 'pending'
+  );
+
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone,
+    recipient_consent_declared, cash_change_amount, notes
+  ) values (
+    v_drop_id, 'Entrega 456', 'Cliente Uno', '+5493865111111',
+    true, 3500, 'Tocar timbre verde en drop_contacts'
+  );
+end;
+$$;
+select pg_temp.test_readers_post_match();
+
+-- 1. Repartidor aceptado llama a get_trip_details y recibe notas y monto desde drop_contacts
+select pg_temp.act_as(pg_temp.courier_1_id());
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003430'::uuid)->>'deliveryNotes'),
+  'Tocar timbre verde en drop_contacts',
+  'get_trip_details lee deliveryNotes desde drop_contacts cuando legacy es NULL'
+);
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003430'::uuid)->>'cashChangeAmount')::int,
+  3500,
+  'get_trip_details lee cashChangeAmount desde drop_contacts cuando legacy es NULL'
+);
+
+-- 2. Comercio dueño llama a get_merchant_request_private_fields y recibe notas y monto desde drop_contacts
+select pg_temp.act_as(pg_temp.merchant_id());
+select is(
+  (public.get_merchant_request_private_fields('30000000-0000-4000-8000-000000003430'::uuid)->>'notes'),
+  'Tocar timbre verde en drop_contacts',
+  'get_merchant_request_private_fields lee notes desde drop_contacts cuando legacy es NULL'
+);
+select is(
+  (public.get_merchant_request_private_fields('30000000-0000-4000-8000-000000003430'::uuid)->>'cashChangeAmount')::int,
+  3500,
+  'get_merchant_request_private_fields lee cashChangeAmount desde drop_contacts cuando legacy es NULL'
+);
+
+-- 3. Repartidor NO aceptado es rechazado por ambas RPCs
+select pg_temp.act_as(pg_temp.courier_2_id());
+select throws_matching(
+  $$ select public.get_trip_details('30000000-0000-4000-8000-000000003430'::uuid) $$,
+  'UNAUTHORIZED_ACTOR',
+  'repartidor no aceptado es rechazado por get_trip_details'
+);
+select throws_matching(
+  $$ select public.get_merchant_request_private_fields('30000000-0000-4000-8000-000000003430'::uuid) $$,
+  'UNAUTHORIZED_ACTOR',
+  'repartidor no aceptado es rechazado por get_merchant_request_private_fields'
+);
+
+select pg_temp.reset_actor();
 
 rollback;

@@ -15,6 +15,7 @@ export const liveAvailableRequestItemSchema = z.object({
   myOfferAmountArs: z.number().int().nullable(),
   fixedPriceArs: z.number().int().positive().nullable().optional(),
   autoAssign: z.boolean().optional(),
+  dropsCount: z.number().int().positive().optional(),
 });
 
 export type LiveAvailableRequestItem = z.infer<typeof liveAvailableRequestItemSchema>;

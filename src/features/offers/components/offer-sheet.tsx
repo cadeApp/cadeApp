@@ -179,6 +179,14 @@ export function OfferSheet({
             {request.pickupZoneName} → {request.dropoffZoneName}
           </SheetDescription>
           <div className="flex flex-wrap items-center gap-2 pt-1 text-sm text-muted-foreground">
+            {request.dropsCount && request.dropsCount > 1 ? (
+              <>
+                <Badge variant="outline" className="text-sm font-semibold">
+                  {OFFERS_COPY.dropsCountBadge(request.dropsCount)}
+                </Badge>
+                <span>·</span>
+              </>
+            ) : null}
             <span>
               {OFFERS_COPY.approxDistancePrefix} {request.approxDistanceKm} {OFFERS_COPY.kmUnit}
             </span>
@@ -205,6 +213,15 @@ export function OfferSheet({
                 <div className="mt-1 font-display text-2xl font-black text-primary-dark">
                   {formatArs(request.fixedPriceArs!)}
                 </div>
+                {request.dropsCount && request.dropsCount > 1 ? (
+                  <p className="mt-1 text-sm font-semibold text-primary-dark">
+                    {OFFERS_COPY.totalQuoteSummary(
+                      formatArs(request.fixedPriceArs!),
+                      formatArs(request.fixedPriceArs! * request.dropsCount),
+                      request.dropsCount
+                    )}
+                  </p>
+                ) : null}
                 <p className="mt-1.5 text-sm font-medium text-muted-foreground">
                   {request.autoAssign
                     ? OFFERS_COPY.autoAssignNotice
@@ -253,6 +270,15 @@ export function OfferSheet({
                   placeholder={OFFERS_COPY.amountPlaceholder}
                 />
               </div>
+
+              {request.dropsCount && request.dropsCount > 1 && Number(amountStr) > 0 ? (
+                <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                  {OFFERS_COPY.totalOfferQuote(
+                    formatArs(Number(amountStr) * request.dropsCount),
+                    request.dropsCount
+                  )}
+                </p>
+              ) : null}
 
               {/* Error del servidor al ofertar bajo el piso */}
               {serverError && (

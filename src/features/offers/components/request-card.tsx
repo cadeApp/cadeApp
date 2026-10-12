@@ -38,11 +38,18 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
     >
       <CardContent className="p-0 space-y-3">
         {/* Recorrido entre barrios (piso 14px -> text-base/text-sm) */}
-        <div className="flex items-center gap-2">
-          <MapPin className="h-5 w-5 text-primary shrink-0" aria-hidden="true" />
-          <h4 className="font-display text-base font-bold text-foreground">
-            {request.pickupZoneName} → {request.dropoffZoneName}
-          </h4>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-primary shrink-0" aria-hidden="true" />
+            <h4 className="font-display text-base font-bold text-foreground">
+              {request.pickupZoneName} → {request.dropoffZoneName}
+            </h4>
+          </div>
+          {request.dropsCount && request.dropsCount > 1 ? (
+            <Badge variant="outline" className="text-sm font-semibold shrink-0">
+              {OFFERS_COPY.dropsCountBadge(request.dropsCount)}
+            </Badge>
+          ) : null}
         </div>
 
         {/* Detalle de distancia y paquete (piso 14px -> text-sm) */}
@@ -95,7 +102,9 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
               className="w-full min-h-12 text-sm font-bold"
             >
               {request.fixedPriceArs
-                ? OFFERS_COPY.takeRequestButton(formatArs(request.fixedPriceArs))
+                ? request.dropsCount && request.dropsCount > 1
+                  ? OFFERS_COPY.takeMultiDropButton(formatArs(request.fixedPriceArs), request.dropsCount)
+                  : OFFERS_COPY.takeRequestButton(formatArs(request.fixedPriceArs))
                 : OFFERS_COPY.offerButton}
             </Button>
           )}

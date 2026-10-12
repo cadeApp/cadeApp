@@ -33,6 +33,7 @@ export const DOMAIN_ERROR_MESSAGES = {
   OUT_OF_BOUNDS_AGUILARES: 'La dirección está fuera de la zona de cobertura en Aguilares.',
   INVALID_ZONE: 'Seleccioná un barrio válido de Aguilares.',
   MISSING_REQUIRED_FIELDS: 'Completá todos los datos obligatorios del formulario.',
+  DROP_LIMIT_EXCEEDED: 'Superaste la cantidad máxima de entregas por envío.',
 
   // Administración y plataforma (T-105)
   INVALID_SETTING_KEY: 'El parámetro de configuración indicado no existe.',

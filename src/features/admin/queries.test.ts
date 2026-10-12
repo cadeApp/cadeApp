@@ -595,6 +595,7 @@ describe('T-123: getPlatformSettings (A04)', () => {
     { key: 'pilot_active', value: false },
     { key: 'pilot_terms_version', value: '1.1' },
     { key: 'subscription_grace_days', value: 3 },
+    { key: 'max_drops_per_request', value: 5 },
   ];
 
   it('devuelve los valores vigentes de platform_settings, no constantes', async () => {
@@ -605,6 +606,7 @@ describe('T-123: getPlatformSettings (A04)', () => {
       pilotActive: false,
       pilotTermsVersion: '1.1',
       subscriptionGraceDays: 3,
+      maxDropsPerRequest: 5,
     });
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
   });

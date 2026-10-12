@@ -76,6 +76,7 @@ export interface AvailableRequestItem {
   readonly myOfferAmountArs: number | null;
   readonly fixedPriceArs?: number | null;
   readonly autoAssign?: boolean;
+  readonly dropsCount?: number;
 }
 
 export type CourierStatus = z.infer<typeof courierStatusSchema>;

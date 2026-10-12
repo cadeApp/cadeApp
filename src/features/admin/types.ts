@@ -97,6 +97,7 @@ export interface PlatformSettingsSnapshot {
   readonly pilotActive: boolean;
   readonly pilotTermsVersion: string;
   readonly subscriptionGraceDays: number;
+  readonly maxDropsPerRequest: number;
 }
 
 export type AuditChangeValue = string | number | boolean | null;

@@ -27,6 +27,7 @@ export const DOMAIN_ERROR_CODES = [
   'OUT_OF_BOUNDS_AGUILARES',
   'INVALID_ZONE',
   'MISSING_REQUIRED_FIELDS',
+  'DROP_LIMIT_EXCEEDED',
 
   // Administración y plataforma (T-105)
   'INVALID_SETTING_KEY',

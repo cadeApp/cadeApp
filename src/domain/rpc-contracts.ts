@@ -4,6 +4,7 @@ import {
   aguilaresLatSchema,
   aguilaresLngSchema,
   courierDocumentKindSchema,
+  deliveryRequestStatusSchema,
   documentReviewStatusSchema,
   incidentDecisionSchema,
   incidentDescriptionHasContact,
@@ -59,6 +60,7 @@ export const publishRequestOutputSchema = z.object({
   routeDistanceM: z.number().int().nonnegative().nullable(),
   fixedPriceArs: z.number().int().min(1).nullable(),
   autoAssign: z.boolean(),
+  dropsCount: z.number().int().min(1),
 });
 
 // take_request (CC-021)
@@ -71,6 +73,7 @@ export const takeRequestOutputSchema = z.object({
   offerId: uuidSchema,
   requestId: uuidSchema,
   amountArs: z.number().int().min(1),
+  totalAmountArs: z.number().int().min(1),
   offerStatus: z.enum(['pending', 'accepted']),
   requestStatus: z.enum(['published', 'matched']),
   matchedAt: isoTimestampSchema.nullable(),
@@ -100,6 +103,7 @@ export const submitOfferOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('pending'),
   amountArs: z.number().int().min(1),
+  totalAmountArs: z.number().int().min(1),
   createdAt: isoTimestampSchema,
 });
 
@@ -122,6 +126,34 @@ export const acceptOfferOutputSchema = z.object({
   acceptedOfferId: uuidSchema,
   status: z.literal('matched'),
   matchedAt: isoTimestampSchema,
+  idempotent: z.boolean(),
+  totalAmountArs: z.number().int().min(1),
+});
+
+// mark_drop_delivered (CC-022)
+export const markDropDeliveredInputSchema = z.object({
+  dropId: uuidSchema,
+});
+export const markDropDeliveredOutputSchema = z.object({
+  dropId: uuidSchema,
+  requestId: uuidSchema,
+  status: z.literal('delivered'),
+  deliveredAt: isoTimestampSchema,
+  requestStatus: deliveryRequestStatusSchema,
+  idempotent: z.boolean(),
+});
+
+// mark_drop_failed (CC-022)
+export const markDropFailedInputSchema = z.object({
+  dropId: uuidSchema,
+  reason: z.string().trim().min(1).max(500),
+});
+export const markDropFailedOutputSchema = z.object({
+  dropId: uuidSchema,
+  requestId: uuidSchema,
+  status: z.literal('failed'),
+  failedReason: z.string().trim().min(1).max(500),
+  requestStatus: deliveryRequestStatusSchema,
   idempotent: z.boolean(),
 });
 
@@ -396,6 +428,10 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
     key: z.literal('subscription_grace_days'),
     value: z.number().int().min(0),
   }),
+  z.object({
+    key: z.literal('max_drops_per_request'),
+    value: z.number().int().min(1),
+  }),
 ]);
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
@@ -482,6 +518,7 @@ export const RPC_CONTRACTS = {
       'INVALID_STATE_TRANSITION',
       'OFFER_BELOW_MINIMUM',
       'RATE_LIMITED',
+      'DROP_LIMIT_EXCEEDED',
       'VALIDATION_ERROR',
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
@@ -647,6 +684,35 @@ export const RPC_CONTRACTS = {
       'COURIER_SUSPENDED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  mark_drop_delivered: {
+    inputSchema: markDropDeliveredInputSchema,
+    outputSchema: markDropDeliveredOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'COURIER_SUSPENDED',
+      'COURIER_NOT_APPROVED',
+      'VALIDATION_ERROR',
+      'INVALID_STATE_TRANSITION',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  mark_drop_failed: {
+    inputSchema: markDropFailedInputSchema,
+    outputSchema: markDropFailedOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'COURIER_SUSPENDED',
+      'COURIER_NOT_APPROVED',
+      'VALIDATION_ERROR',
+      'REASON_REQUIRED',
+      'INVALID_STATE_TRANSITION',
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
@@ -883,6 +949,8 @@ export const ALL_RPC_NAMES = [
   'accept_offer',
   'mark_picked_up',
   'mark_delivered',
+  'mark_drop_delivered',
+  'mark_drop_failed',
   'report_no_show',
   'courier_cancel_match',
   'republish_request',

@@ -39,6 +39,7 @@ interface RawAvailableRequestRow {
   readonly expires_at: string | null;
   readonly fixed_price_ars?: number | null;
   readonly auto_assign?: boolean;
+  readonly drops_count?: number | null;
   readonly pickup_zone?: { name: string } | Array<{ name: string }> | null;
   readonly dropoff_zone?: { name: string } | Array<{ name: string }> | null;
 }
@@ -78,6 +79,7 @@ export async function getAvailableRequestsLiveServer(
     .select(`
       id,
       created_at,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -165,6 +167,7 @@ export async function getAvailableRequestsLiveServer(
       myOfferAmountArs: myOfferAmount,
       fixedPriceArs: req.fixed_price_ars ?? null,
       autoAssign: req.auto_assign ?? false,
+      dropsCount: req.drops_count != null ? Number(req.drops_count) : 1,
     });
   }
 

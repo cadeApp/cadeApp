@@ -267,6 +267,12 @@ export const ADMIN_COPY = {
         unit: 'días',
         unitLabel: 'en días',
       },
+      max_drops_per_request: {
+        label: 'Máximo de entregas por solicitud',
+        help: 'Tope global de entregas que un comercio puede incluir en una misma solicitud.',
+        unit: 'entregas',
+        unitLabel: 'en entregas',
+      },
     },
     pilotOn: 'Encendido',
     pilotOff: 'Apagado',

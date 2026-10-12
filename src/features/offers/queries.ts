@@ -31,6 +31,7 @@ interface RawAvailableRequest {
   expires_at: string | null;
   fixed_price_ars?: number | null;
   auto_assign?: boolean;
+  drops_count?: number | null;
   pickup_zone: { name: string } | { name: string }[] | null;
   dropoff_zone: { name: string } | { name: string }[] | null;
 }
@@ -86,6 +87,7 @@ export async function getAvailableRequests(): Promise<{
     .select(`
       id,
       created_at,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -167,6 +169,7 @@ export async function getAvailableRequests(): Promise<{
       expiresAt: req.expires_at,
       fixedPriceArs: req.fixed_price_ars ?? null,
       autoAssign: req.auto_assign ?? false,
+      dropsCount: req.drops_count != null ? Number(req.drops_count) : 1,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
     });

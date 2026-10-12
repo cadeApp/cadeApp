@@ -26,6 +26,15 @@ describe('error-messages dictionary and resolver', () => {
     );
   });
 
+  it('includes CC-022 message for DROP_LIMIT_EXCEEDED', () => {
+    expect(DOMAIN_ERROR_MESSAGES.DROP_LIMIT_EXCEEDED).toBe(
+      'Superaste la cantidad máxima de entregas por envío.'
+    );
+    expect(getDomainErrorMessage('DROP_LIMIT_EXCEEDED')).toBe(
+      'Superaste la cantidad máxima de entregas por envío.'
+    );
+  });
+
   it('passes through unknown custom messages unmodified', () => {
     expect(getDomainErrorMessage('Mensaje customizado')).toBe('Mensaje customizado');
   });

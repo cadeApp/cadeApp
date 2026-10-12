@@ -18,7 +18,7 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
   const trip = result.data;
   const supabase = await createClient();
 
-  const [contactsResult, requestResult] = await Promise.all([
+  const [contactsResult, dropResult, requestResult] = await Promise.all([
     supabase
       .from('delivery_request_contacts')
       .select('pickup_lat, pickup_lng, dropoff_lat, dropoff_lng')
@@ -30,6 +30,23 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
         dropoff_lng: number | null;
       }>(),
     supabase
+      .from('delivery_request_drops')
+      .select('delivery_request_drop_contacts(dropoff_lat, dropoff_lng)')
+      .eq('request_id', requestId)
+      .eq('position', 1)
+      .maybeSingle<{
+        delivery_request_drop_contacts:
+          | {
+              dropoff_lat: number | null;
+              dropoff_lng: number | null;
+            }
+          | Array<{
+              dropoff_lat: number | null;
+              dropoff_lng: number | null;
+            }>
+          | null;
+      }>(),
+    supabase
       .from('delivery_requests')
       .select('route_distance_m')
       .eq('id', requestId)
@@ -39,7 +56,23 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
   ]);
 
   const contacts = contactsResult.data;
+  const rawDropContacts = dropResult?.data?.delivery_request_drop_contacts;
+  const dropContacts = Array.isArray(rawDropContacts) ? rawDropContacts[0] : rawDropContacts;
   const request = requestResult.data;
+
+  const dropoffLat =
+    dropContacts?.dropoff_lat != null
+      ? Number(dropContacts.dropoff_lat)
+      : contacts?.dropoff_lat != null
+      ? Number(contacts.dropoff_lat)
+      : null;
+
+  const dropoffLng =
+    dropContacts?.dropoff_lng != null
+      ? Number(dropContacts.dropoff_lng)
+      : contacts?.dropoff_lng != null
+      ? Number(contacts.dropoff_lng)
+      : null;
 
   return {
     id: trip.requestId,
@@ -61,8 +94,8 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
     pickupLng: contacts?.pickup_lng != null ? Number(contacts.pickup_lng) : null,
     dropoffAddress: trip.dropoffAddress,
     dropoffZoneName: trip.dropoffZoneName,
-    dropoffLat: contacts?.dropoff_lat != null ? Number(contacts.dropoff_lat) : null,
-    dropoffLng: contacts?.dropoff_lng != null ? Number(contacts.dropoff_lng) : null,
+    dropoffLat,
+    dropoffLng,
     routeDistanceM: request?.route_distance_m != null ? Number(request.route_distance_m) : null,
     deliveryNotes: trip.deliveryNotes,
     recipientName: trip.recipientName,

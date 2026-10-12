@@ -19,6 +19,7 @@ const cases = [
       routeDistanceM: 2000,
       fixedPriceArs: null,
       autoAssign: false,
+      dropsCount: 1,
     },
   },
   {
@@ -192,7 +193,12 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     )
       ? readFileSync('supabase/migrations/20261007090000_t339_fixed_price.sql', 'utf8')
       : '';
-    const combinedSql = migrationSql + '\n' + t339MigrationSql;
+    const t340MigrationSql = existsSync(
+      'supabase/migrations/20261009200000_t340_multi_drop.sql'
+    )
+      ? readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql', 'utf8')
+      : '';
+    const combinedSql = migrationSql + '\n' + t339MigrationSql + '\n' + t340MigrationSql;
     const raisedInMigration = new Set(
       Array.from(combinedSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
     );
@@ -386,6 +392,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
             routeDistanceM: 1500,
             fixedPriceArs: null,
             autoAssign: false,
+            dropsCount: 1,
           },
           error: null,
         };
@@ -456,6 +463,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           routeDistanceM: 1500,
           fixedPriceArs: null,
           autoAssign: false,
+          dropsCount: 1,
         },
         error: null,
       });
@@ -499,6 +507,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           routeDistanceM: 1500,
           fixedPriceArs: null,
           autoAssign: false,
+          dropsCount: 1,
         },
         error: null,
       });
