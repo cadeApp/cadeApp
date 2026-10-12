@@ -532,6 +532,41 @@ export async function seedStagingData(
         }
 
         trackEntityForCleanup(context, 'contact', data.id);
+
+        // T-340 Paso 2: los lectores de solicitudes publicadas requieren al
+        // menos un drop materializado. El seed service-role no ejecuta
+        // publish_request (el puente legacy), por eso debe crear las mismas
+        // filas reales que el puente para su solicitud publicada de 1 entrega.
+        // No se desactiva el guard fail-closed de los lectores.
+        const dropId = crypto.randomUUID();
+        const { error: dropErr } = await admin.from('delivery_request_drops').insert({
+          id: dropId,
+          request_id: data.id,
+          position: 1,
+          dropoff_zone_id: dropoffZoneId,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          status: 'pending',
+        });
+        if (dropErr) {
+          throw new Error(`[E2E Seed Error] Falló la materialización del drop: ${dropErr.message}`);
+        }
+
+        const { error: dropContactErr } = await admin.from('delivery_request_drop_contacts').insert({
+          drop_id: dropId,
+          dropoff_address: options?.dropoffAddress ?? 'San Martín 400, Aguilares',
+          dropoff_lat: -27.435,
+          dropoff_lng: -65.615,
+          recipient_name: recipientName,
+          recipient_phone: recipientPhone,
+          recipient_consent_declared: true,
+          cash_change_amount: null,
+          notes: `E2E automated test run ${context.testRunId}`,
+        });
+        if (dropContactErr) {
+          throw new Error(`[E2E Seed Error] Falló la materialización de contactos privados del drop: ${dropContactErr.message}`);
+        }
       }
     }
 
