@@ -12,6 +12,10 @@ import { waitForNoSkeletons } from '../helpers/skeletons';
 import { createAdminClient } from '@/server/supabase/admin';
 import { formatArs } from '@/lib/format';
 import { liveFeedResponseSchema } from '@/lib/live-contracts';
+import {
+  assertNoPrivateFieldsInRawPayload,
+  FORBIDDEN_PRIVATE_KEYS,
+} from '@/server/live/privacy-checker';
 
 /**
  * T-340 Paso 2/4: Lectores multi-drop, privacidad pre-match y revelación post-match (CC-022 §3, §8, §10).
@@ -191,7 +195,42 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     // Verificación de payload HTTP pre-match fail-closed: respuesta 200, schema válido y sin fugas de datos privados
     const liveRes = await page.request.get('/api/live/available-requests');
     expect(liveRes.status()).toBe(200);
-    const rawLiveFeed = await liveRes.json();
+    const rawLiveFeed = (await liveRes.json()) as { data?: unknown[] };
+
+    // 1. Encontrar el ítem crudo antes de cualquier transformación por Zod (H12)
+    const rawItem = (rawLiveFeed?.data as Array<Record<string, unknown>> | undefined)?.find(
+      (item) => item?.id === requestId
+    );
+    expect(rawItem).toBeDefined();
+
+    // 2. Inspección recursiva de claves y valores PII directamente sobre el JSON crudo de red
+    const forbiddenValues = [
+      'Destinatario Uno MD',
+      'Destinatario Dos MD',
+      'Destinatario Tres MD',
+      'Timbre blanco drop 1',
+      'Piso 3 drop 2',
+      'Dejar en guardia drop 3',
+      '3865111111',
+      '3865222222',
+      '3865333333',
+      'Av. Sarmiento 100',
+      'San Martín 200',
+      'Mitre 300',
+      String(DROP_1_CHANGE),
+    ];
+    assertNoPrivateFieldsInRawPayload(rawItem, forbiddenValues);
+
+    // Comprobación textual recursiva sobre el JSON serializado crudo de red
+    const rawItemString = JSON.stringify(rawItem);
+    for (const val of forbiddenValues) {
+      expect(rawItemString).not.toContain(val);
+    }
+    for (const key of FORBIDDEN_PRIVATE_KEYS) {
+      expect(rawItemString).not.toContain(`"${key}"`);
+    }
+
+    // 3. Validación de contrato público con esquema Zod
     const parsedFeed = liveFeedResponseSchema.parse(rawLiveFeed);
     const ownRequestFeed = parsedFeed.data.find((item) => item.id === requestId);
     expect(ownRequestFeed).toBeDefined();
@@ -206,22 +245,6 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       expect(drop.packageType).toMatch(/^(chico|mediano|grande)$/);
       expect(drop.recipientPaymentMethod).toMatch(/^(cash|transfer)$/);
     });
-
-    // Ausencia estricta de PII en el JSON de ESE request
-    const serializedRequest = JSON.stringify(ownRequestFeed);
-    expect(serializedRequest).not.toContain('Destinatario Uno MD');
-    expect(serializedRequest).not.toContain('Destinatario Dos MD');
-    expect(serializedRequest).not.toContain('Destinatario Tres MD');
-    expect(serializedRequest).not.toContain('Timbre blanco drop 1');
-    expect(serializedRequest).not.toContain('Piso 3 drop 2');
-    expect(serializedRequest).not.toContain('Dejar en guardia drop 3');
-    expect(serializedRequest).not.toContain('3865111111');
-    expect(serializedRequest).not.toContain('3865222222');
-    expect(serializedRequest).not.toContain('3865333333');
-    expect(serializedRequest).not.toContain('Av. Sarmiento 100');
-    expect(serializedRequest).not.toContain('San Martín 200');
-    expect(serializedRequest).not.toContain('Mitre 300');
-    expect(serializedRequest).not.toContain(String(DROP_1_CHANGE));
 
     // -------------------------------------------------------------------------
     // Paso 3: Hoja de oferta (Sheet) pre-match

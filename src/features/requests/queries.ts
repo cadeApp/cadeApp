@@ -239,6 +239,65 @@ function mapRawDropToSummary(d: RawDropRow): MerchantDropSummary {
   };
 }
 
+export function assertAndMapMerchantDrops(
+  requestId: string,
+  status: string,
+  declaredDropsCount: number | null | undefined,
+  children: MerchantDropSummary[]
+): {
+  drops: MerchantDropSummary[] | undefined;
+  firstDrop: MerchantDropSummary | undefined;
+  dropsCount: number;
+} {
+  const isDraft = status === 'draft';
+  const expectedCount = declaredDropsCount != null ? Number(declaredDropsCount) : undefined;
+
+  if (!isDraft) {
+    if (children.length === 0) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: estado '${status}' requiere al menos 1 entrega materializada, pero se encontraron 0.`
+      );
+    }
+    if (expectedCount !== undefined && children.length !== expectedCount) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: se declararon ${expectedCount} entregas pero se encontraron ${children.length}.`
+      );
+    }
+    const hasConsecutivePositions = children.every((d, idx) => d.position === idx + 1);
+    if (!hasConsecutivePositions) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: las posiciones de las entregas no son consecutivas iniciando en 1.`
+      );
+    }
+    return {
+      drops: children,
+      firstDrop: children[0],
+      dropsCount: children.length,
+    };
+  }
+
+  // Comportamiento para estado 'draft'
+  if (children.length > 0) {
+    const hasConsecutivePositions = children.every((d, idx) => d.position === idx + 1);
+    if (!hasConsecutivePositions) {
+      throw new Error(
+        `Inconsistencia en solicitud borrador ${requestId}: las posiciones de las entregas no son consecutivas iniciando en 1.`
+      );
+    }
+    return {
+      drops: children,
+      firstDrop: children[0],
+      dropsCount: children.length,
+    };
+  }
+
+  return {
+    drops: undefined,
+    firstDrop: undefined,
+    dropsCount: expectedCount ?? 1,
+  };
+}
+
 function mapRawMerchantRequests(
   rawRequests: RawMerchantRequest[],
   offersCountMap: Map<string, number>,
@@ -253,20 +312,34 @@ function mapRawMerchantRequests(
       : undefined;
 
     const reqDrops = dropsMap?.get(req.id) ?? [];
-    const firstDrop = reqDrops[0];
+    const { drops, firstDrop, dropsCount } = assertAndMapMerchantDrops(
+      req.id,
+      req.status,
+      req.drops_count,
+      reqDrops
+    );
 
+    const isDraft = req.status === 'draft';
     const dropoffZoneName = firstDrop
       ? firstDrop.dropoffZoneName
-      : (dropoffZone?.name ?? 'Zona no disponible');
+      : isDraft
+        ? (dropoffZone?.name ?? 'Zona no disponible')
+        : 'Zona no disponible';
     const packageType = firstDrop
       ? firstDrop.packageType
-      : ((req.package_type as PackageType) ?? 'chico');
+      : isDraft
+        ? ((req.package_type as PackageType) ?? 'chico')
+        : ('chico' as PackageType);
     const recipientPaymentMethod = firstDrop
       ? firstDrop.recipientPaymentMethod
-      : ((req.recipient_payment_method as RecipientPaymentMethod) ?? 'cash');
+      : isDraft
+        ? ((req.recipient_payment_method as RecipientPaymentMethod) ?? 'cash')
+        : ('cash' as RecipientPaymentMethod);
     const needsChange = firstDrop
       ? firstDrop.needsChange
-      : Boolean(req.needs_change);
+      : isDraft
+        ? Boolean(req.needs_change)
+        : false;
 
     return {
       id: req.id,
@@ -283,8 +356,8 @@ function mapRawMerchantRequests(
       acceptedOfferId: req.accepted_offer_id,
       acceptedAmountArs: hydratedOffer ? hydratedOffer.amountArs : null,
       acceptedCourierName: hydratedOffer ? hydratedOffer.courierName : null,
-      dropsCount: req.drops_count ?? (reqDrops.length > 0 ? reqDrops.length : 1),
-      drops: reqDrops.length > 0 ? reqDrops : undefined,
+      dropsCount,
+      drops,
     };
   });
 }
@@ -851,8 +924,14 @@ export async function getMerchantRequestWithOffers(
 
   const rawDrops = (dropsData as unknown as RawDropRow[] | null) ?? [];
   const mappedDrops = rawDrops.map(mapRawDropToSummary);
-  const firstDrop = mappedDrops[0];
+  const { drops, firstDrop, dropsCount } = assertAndMapMerchantDrops(
+    requestData.id,
+    requestData.status,
+    requestData.drops_count,
+    mappedDrops
+  );
 
+  const isDraft = requestData.status === 'draft';
   const pickupZone = Array.isArray(requestData.pickup_zone)
     ? requestData.pickup_zone[0]
     : requestData.pickup_zone;
@@ -862,16 +941,24 @@ export async function getMerchantRequestWithOffers(
 
   const dropoffZoneName = firstDrop
     ? firstDrop.dropoffZoneName
-    : (dropoffZone?.name ?? 'Zona no disponible');
+    : isDraft
+      ? (dropoffZone?.name ?? 'Zona no disponible')
+      : 'Zona no disponible';
   const packageType = firstDrop
     ? firstDrop.packageType
-    : ((requestData.package_type as PackageType) ?? 'chico');
+    : isDraft
+      ? ((requestData.package_type as PackageType) ?? 'chico')
+      : ('chico' as PackageType);
   const recipientPaymentMethod = firstDrop
     ? firstDrop.recipientPaymentMethod
-    : ((requestData.recipient_payment_method as RecipientPaymentMethod) ?? 'cash');
+    : isDraft
+      ? ((requestData.recipient_payment_method as RecipientPaymentMethod) ?? 'cash')
+      : ('cash' as RecipientPaymentMethod);
   const needsChange = firstDrop
     ? firstDrop.needsChange
-    : Boolean(requestData.needs_change);
+    : isDraft
+      ? Boolean(requestData.needs_change)
+      : false;
 
   const request: MerchantRequestDetail = {
     id: requestData.id,
@@ -887,8 +974,8 @@ export async function getMerchantRequestWithOffers(
     expiresAt: requestData.expires_at,
     createdAt: requestData.created_at,
     acceptedOfferId: requestData.accepted_offer_id,
-    dropsCount: requestData.drops_count ?? (mappedDrops.length > 0 ? mappedDrops.length : 1),
-    drops: mappedDrops.length > 0 ? mappedDrops : undefined,
+    dropsCount,
+    drops,
   };
 
   if (offersError) {
