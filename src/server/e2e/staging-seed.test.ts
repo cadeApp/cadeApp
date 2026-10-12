@@ -257,6 +257,11 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(row.merchant_id).not.toContain('e2e_');
       expect(row.pickup_zone_id).not.toBe('caba_norte');
 
+      // Con zonas activas reutilizadas, el seed NO crea zonas nuevas ni las
+      // registra para cleanup. No debe confundirse con ausencia de zonas.
+      expect(row.pickup_zone_id).toBe(mockZoneId);
+      expect(row.dropoff_zone_id).toBe(mockZoneId);
+      expect(ctx.createdZoneIds).toHaveLength(0);
       expect(ctx.createdRequestIds).toContain(row.id);
     });
 
