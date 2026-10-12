@@ -501,3 +501,67 @@ console.log('NO PLAYWRIGHT/DB RED: source analysis only');
 `.github/workflows/migrate.yml:3–7,17–56` instala la migración en Supabase Develop solo tras push a `develop`. `.github/workflows/e2e-preview.yml:9–12` recibe deployment Vercel; `e2e-preview-target.mjs:110–118` acepta solo PR **abierta**, y `gatePreview:150–153` bloquea cambios de migraciones del PR. Por eso **un merge no dispara por sí mismo el E2E**. Tras autorización expresa y merge del Paso 2, esperar migrate-develop ✅; abrir **PR temporal docs-only** de Develop migrado (sin migraciones), Vercel Preview dispara el E2E normal; conservar SHA, URL, run, job y casos legacy/N, cerrar PR temporal sin mergear. Si falla, congelar rollout y corregir antes de Kira Paso 3. No modificar workflows ni forzar `db push` manual.
 
 **Límites revisor:** se leyeron SHA exacto y logs GitHub, pero checkout por git en el contenedor no fue posible; no se ejecutaron Docker, Supabase, Playwright, CI manual ni `node docs/revision-pr/analizar.mjs verificacion`. No se inventan esas verificaciones.
+
+## Ronda 9 — PR #318 / T-340 (2026-10-12)
+
+**SHA único posterior a R8:** `838c7686e234bbd18b2aa6c58fb939931c6eb3f1`. `compare f8f8bfc0...838c7686`: 1 commit, exclusivamente `docs/tasks/log/T-340.md` (+38/-0); implementación y carpeta `docs/revision-pr/pr-318/**` no tocadas por Asako. PR abierta Draft mergeable, base `267e9810`. No hay nueva decisión de producto.
+
+### Sonda adversarial independiente (reproducible con checkout del SHA)
+Sobre el SHA de autor \`838c7686\`, se leyeron blobs GitHub de \`src/features/requests/queries.ts\` y \`src/server/live/privacy-checker.ts\`. La siguiente sonda Node solo extrae los CUERPOS existentes de las funciones, elimina la firma/anotación de TypeScript (no altera la lógica) y ejecuta los cuerpos original y mutado en memoria. No usa mocks, no escribe en el repo y no ejecuta Vitest/Playwright. Fue ejecutada por el revisor en entorno JS aislado sobre los mismos blobs; las salidas documentadas abajo son las del revisor.
+
+\`\`\`bash
+node <<'NODE'
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const qs = fs.readFileSync('src/features/requests/queries.ts','utf8');
+const st = qs.indexOf("  const isDraft = status === 'draft';",qs.indexOf('export function assertAndMapMerchantDrops'));
+const en = qs.indexOf('\n}\n\nfunction mapRawMerchantRequests',st);
+assert(st>=0 && en>st,'H06: target no encontrado');
+const h06body=qs.slice(st,en);
+const h06target='expectedCount !== undefined && children.length !== expectedCount';
+assert(h06body.includes(h06target),'H06: guard no encontrado');
+const f=new Function('requestId','status','declaredDropsCount','children',h06body);
+const fm=new Function('requestId','status','declaredDropsCount','children',h06body.replace(h06target,'false'));
+assert.throws(()=>f('fixture','published',3,[{position:1}]),/se declararon 3 entregas/);
+assert.equal(fm('fixture','published',3,[{position:1}]).dropsCount,1);
+assert.equal(f('fixture','published',3,[{position:1},{position:2},{position:3}]).dropsCount,3);
+assert.throws(()=>f('fixture','delivered',3,[{position:1}]),/se declararon 3 entregas/);
+assert.equal(f('fixture','draft',1,[]).dropsCount,1);
+console.log('H06: original rechaza 3/1, mutante admite 3/1; 3/3 y draft intactos');
+const ps=fs.readFileSync('src/server/live/privacy-checker.ts','utf8');
+const km=ps.match(/export const FORBIDDEN_PRIVATE_KEYS = \[([\s\S]*?)\] as const;/);
+assert(km,'H12: array privado no encontrado');
+const keys=[...km[1].matchAll(/'([^']+)'/g)].map(x=>x[1]);
+const p0=ps.indexOf('  const violations: PrivacyViolation[] = [];',ps.indexOf('export function findRawPayloadPrivacyViolations'));
+const p1=ps.indexOf('\n}\n\n/**',p0);
+assert(p0>=0 && p1>p0,'H12: cuerpo no encontrado');
+const pb=ps.slice(p0,p1).replace('const violations: PrivacyViolation[] = [];','const violations = [];').replace('payload as Record<string, unknown>','payload');
+const target='FORBIDDEN_KEYS_SET.has(lowerKey)';
+assert(pb.includes(target),'H12: guard no encontrado');
+const compile=b=>new Function('FORBIDDEN_KEYS_SET',"return function findRawPayloadPrivacyViolations(payload, forbiddenValues=[],currentPath='$') {"+b+"}")(new Set(keys.map(k=>k.toLowerCase())));
+const detector=compile(pb), broken=compile(pb.replace(target,'false'));
+const injected={drops:[{recipientPhone:'3865111111',notes:'PII_SYNTH'}]};
+assert(detector(injected).some(v=>v.type==='forbidden_key'));
+assert.equal(broken(injected).length,0);
+assert.equal(detector({data:[{id:'x',packageType:'chico'}]}).length,0);
+assert(broken({label:'token-SYNTH'},['SYNTH']).some(v=>v.type==='forbidden_value'));
+console.log('H12: original detecta claves PII, mutante las omite; valores aún se detectan');
+console.log('PROBE PASS — helper bodies reales; NO equivale a ejecutar las suites completas');
+NODE
+\`\`\`
+
+**Resultados observados en ejecución JS independiente:**
+- H06 \`published 3/1\`: original lanza «se declararon 3 entregas pero se encontraron 1», mutante devuelve \`dropsCount:1\`. \`delivered 3/1\` igual. \`published 3/3\` original/mutante devuelven 3; \`draft 0\` devuelve 1; posiciones 1/3 siguen rechazadas incluso con mutante.
+- H12 claves \`recipientPhone\` dentro de \`drops[]\` y \`notes\` raíz: original produce \`forbidden_key\`, mutante no reporta nada. Valor centinela sin clave privada sigue produciendo \`forbidden_value\` en ambos.
+- El autor, por su parte, reportó en la bitácora el RED Vitest H06 (3 fallos por \`promise resolved instead of rejecting\`) y GREEN 37/37; H12 (3 fallos, entre ellos «expected 0 to be greater than or equal to 5») y GREEN 4/4. No se pudieron reproducir sus invocaciones completas de Vitest por imposibilidad de clonar el repo en el contenedor del revisor; NO marcar como corrida propia esos logs.
+
+### CI exacta del SHA de autor
+
+- [CI run 38314977048](https://github.com/cadeApp/cadeApp/actions/runs/38314977048): `unit` job [115029340023](https://github.com/cadeApp/cadeApp/actions/jobs/115029340023): **129 files / 2116 tests PASS**, coverage `rpc-fake.ts` statements 95.32 %, branches 91.35 %, más 79 workflow y 6 ADR PASS.
+- `db-tests` job [115029339964](https://github.com/cadeApp/cadeApp/actions/jobs/115029339964): **21 files, 1995 tests, Result PASS**; runner concurrente original H08 8/8 + H14 3/3 OK; H15 mutación del lock produce fallo esperado y restauración H14 11/11 OK; tipos regenerados y diff sin drift.
+- Typecheck/lint/build/audit/bundle-budget y Vercel PASS sobre este SHA.
+- `approval-policy` job [115029333963](https://github.com/cadeApp/cadeApp/actions/jobs/115029333963) FAIL: mensaje literal «Falta el informe completo de revisar-pr sin bloqueantes». No debilitar policy.
+- [e2e-preview run 38315102812](https://github.com/cadeApp/cadeApp/actions/runs/38315102812): `BLOCKED / REQUIRES DEVELOP MIGRATION`; **no se ejecutó E2E de 3 drops**.
+- En los logs de mutación intencional H15, `ERROR EN EJECUCIÓN CONCURRENTE` es el RED esperado contra SQL mutado; el runner original ANTES y DESPUÉS termina 11/11 OK. No confundir el texto RED en el log con defecto del job GREEN.
+
+**Dictamen:** H06/H12 `arreglado-verificado` acotado a helper en ejecución JS aislada, evidencia autor y unit CI verde. Sin defectos nuevos probados. H09 sigue parcial como gate posmerge por opción A R8: merge solo con autorización de Lautaro073, `migrate-develop` automático y PR temporal docs-only para ejecutar Playwright real antes de Kira Paso3. Sin Docker/Supabase remoto, sin CI disparada manualmente. Analizador `analizar.mjs verificacion` no se ejecutó porque el clon no estuvo disponible; JSONL sí se validó sintácticamente.

@@ -13,9 +13,10 @@
 | 5 | `58811a30` | [R5](revisiones/ronda-5.md) |
 | 6 | `5a6daeed` | [R6](revisiones/ronda-6.md) |
 | 7 | `a71b338b` | [R7](revisiones/ronda-7.md) |
-| **8** | **`c50f5dfa`** | **[R8](revisiones/ronda-8.md): código corregido; pendientes pruebas RED auténticas y E2E posmigración** |
+| **8** | **`c50f5dfa`** | **[R8](revisiones/ronda-8.md): código corregido; RED y E2E pendientes** |
+| **9** | **`838c7686`** | **[R9](revisiones/ronda-9.md): H06/H12 verificados por sondas independientes; sin bloqueantes nuevos de código** |
 
-**R8:** H01/H02/H03/H04/H05/H07/H08/H10/H11 verificados; H06 y H12 corregidos en fuente, falta verificación RED runtime; H09 E2E real pendiente. CI de SHA `c50f5dfa`: `unit` **2116 PASS**, `db-tests` **1995 PASS**, typecheck/lint/build/audit/bundle-budget ✅; e2e-preview bloqueado por migración, approval-policy rojo.
+**R9:** H01–H08 y H10–H12 cerrados/verificados con métodos registrados; H09 sigue **parcial** exclusivamente por checkpoint E2E postmigración acordado en R8. Sobre SHA `838c7686`, GitHub `unit` 129 suites/2116 tests PASS, `db-tests` 21 suites/1995 tests PASS y typecheck/lint/build/audit/bundle-budget/Vercel PASS; `e2e-preview` BLOCKED por migración y `approval-policy` esperaba comentario de revisión sin bloqueantes. Mutaciones propias sobre cuerpos reales de helpers JS aislados; no se ejecutó Vitest mutado ni Playwright. PR Draft, sin merge.
 
 **Decisión Lautaro073 R8, opción A:** merge **controlado** únicamente tras cierre de revisión sin defectos, RED documentado, CI técnico verde y autorización expresa del usuario. Después del merge, `migrate-develop` automático y E2E real obligatorio en Develop antes de Paso 3 de Kira. El workflow solo sirve a **PR abierta**, por lo que será necesaria una PR temporal de checkpoint solo documental desde Develop ya migrado, con Preview propio y sin archivos de migraciones. No tocar workflows ni migrar remoto manualmente. Registrado en `docs/tasks/T-340.md` commit `d55e71df`.
 

@@ -69,3 +69,10 @@
 - **No confundir un test negativo verde con RED por mutación.** `expect(() => detectPrivacyLeak(malicious)).toThrow()` demuestra que el checker actual rechaza el caso, pero la prueba RED auténtica requiere mutar guard/fixture del control y observar una suite FALLAR, seguido del GREEN restaurado. El reporte de CI de 2116 tests es válido, pero no afirma esa mutación de H06/H12.
 - **Cerrar código no equivale a cerrar deployment.** En R8 los lectores merchant tienen validaciones y tests 3/3/3/1 reales, y el E2E inspecciona el JSON crudo antes de Zod. Ningún nuevo fallo de código confirmado; el rollout continúa restringido por la migración y el checkpoint Playwright posmerge. Kira comienza Paso3 solo con evidencia final.
 - **Separación de responsabilidades:** un revisor puede registrar opción A del usuario y preparar el checkpoint, sin mergear por delegación implícita. La autorización concreta del merge llega por petición separada.
+
+## Ronda 9 (2026-10-12) — Reproducir la propiedad sin exagerar el alcance
+
+- **Diferenciar niveles de ejecución:** una mutación del cuerpo exacto de un helper TypeScript ejecutado como JavaScript aislado (firma y tipos quitados, sin dependencias) sí comprueba una propiedad específica y que el mutante cambia el resultado, pero **NO** sustituye Vitest con los entrypoints completos ni E2E. Reportar ambos límites.
+- **H06/H12:** los controles responden como se espera bajo mutantes independientes del revisor: sin comparación de cardinalidad, 3/1 deja de fallar; sin detección de claves privadas, `recipientPhone`/`notes` pasan, mientras la detección de valores permanece. La bitácora del autor declara además RED de suites completas, sin logs brutos adjuntos; no confundir sus declaraciones con ejecución propia.
+- **Gates separados:** 2116 unit y 1995 DB verdes en HEAD no hacen verde el E2E; `approval-policy` depende del comentario final. R8 opción A pospone el E2E para postmigración, **no** lo cancela ni habilita Paso 3 antes del checkpoint.
+- **Bitácora:** al publicar un nuevo commit, el «último commit» dentro del texto puede referir al parent anterior; no usar ese campo como HEAD sin consultar GitHub.
