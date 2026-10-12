@@ -222,4 +222,67 @@ console.log('El RED real Playwright está en run 38181178771, NO lo ejecutó est
 - La bitácora original contenía los SHA completos **incorrectos** `4c4f26d63a863ecfd188176882252a1290fa8b6d` y `c83c5e888470a7bb3ae2ec2bb371cb1cb9eb5d8c`, aunque los prefijos cortos y los run IDs eran verdaderos. El revisor corrigió ambas cadenas directamente a los SHA **reales** de GitHub en el commit `4caad04a4850b02395d4283656928c1faab076d5`. No se alteró código de E2E ni los resultados de CI.
 - La PR fue encontrada con `draft=false` aun sin implementación de lectores y pese a su body; el revisor la convirtió nuevamente en **Draft**. También se actualizó el body para indicar que **Gate 0 está verificado**, pero faltan lectores completos del paso 2.
 
-**Pendiente no-Gate:** implementar lectores de paso 2; completar sus propios tests, revisión, merge y checkpoint. **No se deben mezclar estos pasos con el cierre de Gate 0.**  
+**Pendiente no-Gate:** implementar lectores de paso 2; completar sus propios tests, revisión, merge y checkpoint. **No se deben mezclar estos pasos con el cierre de Gate 0.**
+
+## Ronda 4 — Lectores multi-drop — 2026-10-12
+
+**SHA de código auditado:** `c7cab17491d49791dbb49d4b2e5696ff64a9495d`, base `develop` `267e9810f99343f2511473d76dddd4e5da740847`.
+
+**Fuentes GitHub inspeccionadas:** `src/server/rpc/requests.ts`, `src/features/trips/schemas.ts`, ambas migraciones T-340, `src/features/trips/{queries,types}.ts`, vistas de viajes merchant/courier, `src/features/offers/queries.ts`, `src/server/live/t204.ts`, `src/features/requests/queries.ts`, los nuevos unit/pgTAP y bitácora. Se comprobaron 12 condiciones estáticas sobre estos archivos (sin clonar repo ni DB local).
+
+### Evidencia de fallos CI reales
+
+- CI run `38194520264` sobre HEAD `c7cab174`: `db-tests` job `114634153789` falla *después* de aplicar la nueva migración `20261012010000_t340_readers.sql` en Postgres efímero de CI. Mensaje literal: `duplicate key value violates unique constraint "delivery_requests_pkey"`, ID `30000000-0000-4000-8000-000000003430` (dos fixtures del mismo SQL, líneas 295 y 1279). Planificados 83, ejecutados 77; `Result: FAIL`.
+- `unit` job `114634153773`: `src/domain/testing/rpc-fake.ts` cobertura statements `88.78%`, branches `84.88%`, ambas bajo umbral obligatorio `90%`: exit 1. Se verificó desde el log interno, no por color de badge.
+- Checks técnicos en ese HEAD: typecheck/lint/build/audit/bundle-budget PASS; db-tests/unit FAIL; `e2e-preview=error` (no GREEN de este SHA); `approval-policy=fail`. No afirmar el estado del HEAD tras commits de revisión sin revalidarlo.
+
+### Matriz de hallazgos estructurales del SHA
+
+| ID | Prueba por inspección | Oráculo que falta |
+|---|---|---|
+| H03 | `callRequestRpc` añade `p_request_id` por tener `requestId`; SQL `mark_drop_delivered(uuid)` / `mark_drop_failed(uuid,text)` no lo acepta | spy real de client.rpc con args EXACTOS por operación |
+| H04 | nueva SQL usa `d.position = 1` y `coalesce(..., v_request.notes/cash_change_amount)`; sin `drops[]` | 3 drops en posiciones mezcladas y columnas legacy NULL |
+| H05 | feed/live aún seleccionan destino del request padre; solo añaden `dropsCount` | 1/3 drops con zonas, tipos, tramos y sin PII pre-match |
+| H06 | vista comercio usa `trip.recipientPhone` único; courier muestra solo `trip.dropoffAddress`; historial padre | UI 3 destinatarios + WhatsApp individual y total/cobrable |
+| H07 | mismo `v_req_id` en dos fixtures transaccionales | `db-tests` PASS con `plan(83)` íntegro |
+| H08 | fake incorpora muchas ramas nuevas y coverage del CI falla | tests de cada branch sin manipular umbrales |
+| H09 | nuevos pgTAP solo insertan 1 drop y unit prueba fake; no hay E2E N lectora | SQL N real + Playwright 3 drops por fixtures + RED propio |
+
+### Sonda reproducible de lectura de fuentes (no es un test runtime)
+
+En un checkout limpio del SHA auditado, copiar el siguiente bloque a `/tmp/pr318-r4-probe.cjs` y ejecutarlo con `node /tmp/pr318-r4-probe.cjs`. Las sustituciones son **en memoria**. Ni el script ni el revisor modifican SQL remoto ni el worktree. Este harness NO sustituye las pruebas RED→GREEN de la implementación:
+
+```js
+const fs=require('node:fs'), assert=require('node:assert/strict');
+const paths={rpc:'src/server/rpc/requests.ts',sql:'supabase/migrations/20261012010000_t340_readers.sql',feed:'src/features/offers/queries.ts',view:'src/features/trips/components/trip-merchant-view.tsx',tap:'supabase/tests/t340_multi_drop.sql'};
+const f=Object.fromEntries(Object.entries(paths).map(([k,p])=>[k,fs.readFileSync(p,'utf8')]));
+const duplicate="v_req_id uuid := '30000000-0000-4000-8000-000000003430'";
+const checks={
+ H03:x=>x.rpc.includes("if ('requestId' in input)"),
+ H04:x=>x.sql.includes('and d.position = 1;'),
+ H05:x=>!x.feed.includes('delivery_request_drops'),
+ H06:x=>x.view.includes('buildWhatsAppUrl(trip.recipientPhone, customerMsg)'),
+ H07:x=>x.tap.split(duplicate).length-1===2
+};
+Object.entries(checks).forEach(([id,fn])=>assert(fn(f),'Baseline ausente: '+id));
+const fixes={
+ H03:["rpc","if ('requestId' in input)","if ('requestId' in input && !rpcName.startsWith('mark_drop_'))"],
+ H04:['sql','and d.position = 1;','and d.position >= 1;'],
+ H06:['view','buildWhatsAppUrl(trip.recipientPhone, customerMsg)','buildWhatsAppUrl(trip.drops[0].recipientPhone, customerMsg)']
+};
+for(const [id,[k,a,b]] of Object.entries(fixes)){
+ const mutant={...f,[k]:f[k].replace(a,b)};
+ assert.notEqual(mutant[k],f[k]); assert(!checks[id](mutant),'Detector inmune: '+id);
+}
+const mFeed={...f,feed:f.feed+'\ndelivery_request_drops'};
+assert(!checks.H05(mFeed),'Detector inmune: H05');
+const at=f.tap.lastIndexOf(duplicate); assert(at>=0);
+const mTap={...f,tap:f.tap.slice(0,at)+duplicate.replace('003430','003440')+f.tap.slice(at+duplicate.length)};
+assert(!checks.H07(mTap),'Detector inmune: H07');
+console.log('5/5 deficiencias fuente encontradas; 5/5 mutantes in-memory detectados');
+console.log('NO se ejecutó Playwright, pgTAP ni Supabase por esta sonda');
+```
+
+**Resultado de la revisión efectivamente ejecutada:** 12/12 condiciones estáticas sobre fuentes GitHub son positivas (deficiencia presente). Los jobs de CI citados aportan los fallos runtime; la sonda no se ejecutó en un checkout local por el revisor y se propone como herramienta reproducible, NO como GREEN/RED runtime acreditado.
+
+**Decisión A tomada por Lautaro073:** `get_trip_details` devuelve array `drops[]` tipado por posición, con contactos privados solo post-match; mantiene campos escalares de salida derivados de primer drop, pero **nunca lee** columnas legacy de DB. Autorización en ficha de la rama. No tocar limpieza del paso 3 ni escritor del paso 4.

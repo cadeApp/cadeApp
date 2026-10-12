@@ -1,33 +1,29 @@
-# PR #318 — T-340 · Paso 2/4 — Lectores multi-drop
+# PR #318 — T-340, lectores Paso 2/4
 
-**PR:** https://github.com/cadeApp/cadeApp/pull/318 · **Rama:** `feat/T-340-lectores` → `develop`  
-**Estado:** 🟢 **Gate 0 verificado (H01+H02 cerrados en ronda 3)**. 🟡 **La PR completa sigue Draft: lectores del paso 2 todavía no implementados; NO MERGEAR.**
+**Estado:** Draft. Ronda 4: **CON BLOQUEANTES** (H03–H09). Sin merge.
+**Decisión de Lautaro073 (2026-10-12): Opción A.** `get_trip_details` incorpora `drops[]` en orden `position` y mantiene campos escalares de respuesta para solicitudes de un destino; ningún lector depende de `delivery_requests.notes` o `cash_change_amount` legacy. Registrada también en la ficha T-340 de la rama.
 
-## Rondas independientes
+## Revisiones
 
-| Ronda | SHA de autor revisado | Resultado | Informe |
+| Ronda | SHA auditado | Resultado | Documento |
 |---|---|---|---|
-| 1 | `4e70e934` | Gate 0 no ejecutado, H01 | [Ronda 1](revisiones/ronda-1.md) |
-| 2 | `9c5e797` | E2E funcional GREEN real; falta RED y documentación, H02 | [Ronda 2](revisiones/ronda-2.md) |
-| **3** | **`e61fab67`** | **✅ H01+H02 ARREGLADOS-VERIFICADOS. Gate 0 cerrado.** | **[Ronda 3](revisiones/ronda-3.md)** |
+| 1 | `4e70e934` | Gate 0 sin E2E | [R1](revisiones/ronda-1.md) |
+| 2 | `9c5e797` | Gate 0 E2E GREEN, RED pendiente | [R2](revisiones/ronda-2.md) |
+| 3 | `e61fab67` | H01 y H02 cerrados, Gate 0 verificado | [R3](revisiones/ronda-3.md) |
+| **4** | **`c7cab174`** | **7 bloqueantes H03–H09 de lectores y CI** | **[R4](revisiones/ronda-4.md)** |
 
-## Gate 0 — Evidencia final
+## Hallazgos de ronda 4
 
-1. **Publicación UI legacy de 1 drop, reintento y conservación de campos**: E2E específico `e2e/specs/t340-legacy-checkpoint.spec.ts` pasó realmente en Supabase Develop.
-2. **RED adversarial real, no SQL:** SHA auténtico `4c4f26d6c2f1817f1cb51da280b163276ef2a8eb`, run `38181178771`, job `114593911361`: Playwright falló en línea 192 con `Expected 6000, Received 5000` (1 failed, 70 passed).
-3. **Restauración GREEN:** SHA auténtico `c83c5e887611159526c8ee2c3df9517428e5b5d7`, run `38183724823`, job `114601542342`: spec PASS 23.7 s, **71 Chromium + 3 global-settings PASS**.
-4. **R3 auditado:** SHA `e61fab67` tiene exactamente los mismos bytes del spec restaurado; la diferencia desde el SHA GREEN son solo sesiones de bitácora. Los dos SHA completos incorrectos del registro fueron corregidos directamente por el revisor en `4caad04a` (sin alterar los E2E).
-5. **Proceso:** se encontró PR Ready sin lectores; el revisor **la devolvió a Draft**. Se actualizó el estado inicial del body de la PR para reflejar Gate 0 ya demostrado.
+- **H03:** `mark_drop_*` recibe `p_request_id` que sus firmas SQL no aceptan.
+- **H04:** `get_trip_details` solo devuelve drop 1 y depende de columnas legacy.
+- **H05:** feed/live solo publican contador, faltan resúmenes públicos por drop.
+- **H06:** viaje, historial, admin y WhatsApp siguen modelados con un destinatario.
+- **H07:** `db-tests` FAIL (UUID de fixture duplicado, plan 83, ejecutadas 77).
+- **H08:** `unit` FAIL (cobertura `rpc-fake.ts`: sentencias 88,78 % y ramas 84,88 %; umbral 90 %).
+- **H09:** falta prueba N real/privacidad/RED del Paso 2; nuevo test con usos de `any`.
 
-### Estado acumulado
+**Comprobaciones positivas parciales:** typecheck, lint, build, audit y bundle-budget PASS; proyección actual de feed/live no selecciona PII y scrubber protege monto privado. `e2e-preview` = error en SHA examinado, `approval-policy` = fail. Sin ejecución Docker/Supabase local.
 
-| Hallazgo | Estado |
-|---|---|
-| PR318-H01 — E2E de cliente legacy en Develop | ✅ Arreglado-verificado R2 |
-| PR318-H02 — RED real propio + cierre documental | ✅ Arreglado-verificado R3 |
+**Siguiente etapa:** Asako corrige y completa lectores en PR #318 (Draft); revisión independiente posterior, merge y checkpoint en Develop antes de comenzar Paso 3 y Paso 4 con Kira.
 
-**No hay nuevos defectos de Gate 0. No hay aún lectores implementados.** Próxima acción técnica: asako669 debe **seguir el body original de esta misma PR** e implementar exclusivamente los lectores de paso 2 (feed/ofertas/live, trip, historial, admin, WhatsApp), tests de privacidad progresiva para 1 y N drops, E2E y RED→GREEN. No modificar pasos 3–4, esquema/migración ya aplicada ni carpeta de revisión.
-
-[Hallazgos](hallazgos.jsonl) · [Evidencia y probes](evidencia/comandos.md) · [Lecciones](lecciones.md).
-
-**CI / límite del revisor:** RED/GREEN respaldados por **dos runs reales** y comparación exacta de código; sin SQL productivo mutado ni DB/Docker local. Check status del HEAD documental cambia después de cada commit; revalidar cuando la etapa 2 esté lista. Sin aprobar ni mergear.
+[Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
