@@ -46,11 +46,12 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     const merchant = stagingContext.merchantUser;
     const courier = stagingContext.courierUsers?.[0];
     const requestId = stagingContext.createdRequestIds[0];
-    const zoneId = stagingContext.createdZoneIds[0];
-
-    if (!merchant || !courier || !requestId || !zoneId) {
+    // createdZoneIds solo registra zonas TRANSITORIAS para cleanup. Si el seed
+    // reutiliza zonas activas existentes, el array queda vacío (caso válido).
+    // Las 3 zonas para las entregas se consultan y validan contra la DB más abajo.
+    if (!merchant || !courier || !requestId) {
       throw new Error(
-        '[E2E Error] Se requieren merchant, courier, requestId y zoneId en stagingContext'
+        '[E2E Error] Se requieren merchant, courier y requestId en stagingContext'
       );
     }
 
