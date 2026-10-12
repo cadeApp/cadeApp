@@ -1,23 +1,22 @@
-# PR #318 — T-340 / Paso 2 de 4 — Lectores
+# PR #318 — T-340 Paso 2/4 — Lectores multi-drop
 
-**PR:** https://github.com/cadeApp/cadeApp/pull/318. **Rama:** `feat/T-340-lectores` → `develop`. **Estado Draft / CON BLOQUEANTES / NO MERGEAR**.
+**Rama:** `feat/T-340-lectores` → `develop`. **Draft; sin merge.** [PR #318](https://github.com/cadeApp/cadeApp/pull/318).
 
 ## Revisiones
 
-| Ronda | SHA de implementación | Veredicto |
+| Ronda | SHA del autor | Informe |
 |---|---|---|
-| [1](revisiones/ronda-1.md) | `4e70e934` | Gate0 pendiente |
-| [2](revisiones/ronda-2.md) | `9c5e797` | Gate0 probado; RED pendiente |
-| [3](revisiones/ronda-3.md) | `e61fab67` | Gate0 cerrado H01/H02 |
-| [4](revisiones/ronda-4.md) | `c7cab174` | 7 bloqueantes en Paso 2 |
-| [5](revisiones/ronda-5.md) | `58811a30` | H03/H08 verificados; H10 nuevo |
-| [6](revisiones/ronda-6.md) | `5a6daeed` | H04/H07 verificados; resto parcial |
-| **[7](revisiones/ronda-7.md)** | **`a71b338b`** | **CI técnico verde; H05/H10 verificados; H06/H09 parciales, H11/H12 nuevos. CON BLOQUEANTES** |
+| 1 | `4e70e934` | [R1](revisiones/ronda-1.md) |
+| 2 | `9c5e797` | [R2](revisiones/ronda-2.md) |
+| 3 | `e61fab67` | [R3](revisiones/ronda-3.md) |
+| 4 | `c7cab174` | [R4](revisiones/ronda-4.md) |
+| 5 | `58811a30` | [R5](revisiones/ronda-5.md) |
+| 6 | `5a6daeed` | [R6](revisiones/ronda-6.md) |
+| 7 | `a71b338b` | [R7](revisiones/ronda-7.md) |
+| **8** | **`c50f5dfa`** | **[R8](revisiones/ronda-8.md): código corregido; pendientes pruebas RED auténticas y E2E posmigración** |
 
-**Cerrados/verificados:** H01, H02, H03, H04, H05, H07, H08, H10. **Parciales:** H06 (cardinalidad publicada 3/1 o 1/0 no falla cerrado), H09 (E2E no ejecutado y oráculo de privacidad insuficiente). **Nuevos:** H11 (el test que dice tres drops crea uno y espera uno, y no llama al historial), H12 (prueba de PII inspecciona payload transformado por Zod, no JSON HTTP crudo).
+**R8:** H01/H02/H03/H04/H05/H07/H08/H10/H11 verificados; H06 y H12 corregidos en fuente, falta verificación RED runtime; H09 E2E real pendiente. CI de SHA `c50f5dfa`: `unit` **2116 PASS**, `db-tests` **1995 PASS**, typecheck/lint/build/audit/bundle-budget ✅; e2e-preview bloqueado por migración, approval-policy rojo.
 
-**CI `a71b338b`:** Run `38306695743` ✅; db-tests job `115002373648`, 21 suites/1995 tests PASS; unit job `115002373677`, 128 archivos/2103 tests PASS; lint/typecheck/build/audit/bundle-budget PASS. **e2e-preview ERROR/BLOCKED**: requiere migración de lectores posterior al merge a Develop, no se ha validado N en Playwright; `approval-policy` FAIL.
-
-**Decisiones del usuario:** opciones A R4 y R5 vigentes; ninguna decisión nueva. Asako termina Paso 2; Kira no inicia Paso 3 hasta merge, migración y checkpoint E2E en Develop, verificados.
+**Decisión Lautaro073 R8, opción A:** merge **controlado** únicamente tras cierre de revisión sin defectos, RED documentado, CI técnico verde y autorización expresa del usuario. Después del merge, `migrate-develop` automático y E2E real obligatorio en Develop antes de Paso 3 de Kira. El workflow solo sirve a **PR abierta**, por lo que será necesaria una PR temporal de checkpoint solo documental desde Develop ya migrado, con Preview propio y sin archivos de migraciones. No tocar workflows ni migrar remoto manualmente. Registrado en `docs/tasks/T-340.md` commit `d55e71df`.
 
 [Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).

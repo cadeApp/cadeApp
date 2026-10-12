@@ -472,3 +472,32 @@ console.log('NO PLAYWRIGHT/DB RED: source analysis only');
 2. **H12:** un raw JSON HTTP válido públicamente excepto que contiene `recipientPhone:'3865111111'` y `notes:'PII_TEST'` debe poner **RED** al oráculo de privacidad que inspecciona JSON CRUDO. La validación Zod puede pasar y eliminar esos extras; **eso NO equivale a RED ni a ausencia de fuga de red**. Restaurar raw JSON sin claves privadas y obtener GREEN con status200, request presente y tres resúmenes.
 
 **Límite de evidencia:** hallazgos H11/H12 descubiertos por inspección y control propio de fuente, **NO** prueba de filtración real de PII ni mutación runtime del producto. Logs de CI son auténticos y del SHA citado. No Docker/Supabase local ni migraciones remotas manuales del revisor. El Paso 2 E2E real queda pendiente de backend Develop migrado; no se debe pasar a Paso 3 de Kira antes de ese checkpoint.
+
+## Ronda 8 — PR #318 / T-340 (2026-10-12)
+
+**SHA código auditado:** `c50f5dfa1c723378bbe1a657a460a025b0cf6bd6` (commit de Asako). **Desde R7:** dos commits / seis archivos. PR Draft, mergeable; el autor no alteró `docs/revision-pr/**`. R8 opción A de Lautaro073 incorporada después en la ficha `docs/tasks/T-340.md`, commit `d55e71df`.
+
+### CI real del SHA auditado (no compilación local del revisor)
+
+- [CI run 38311146700](https://github.com/cadeApp/cadeApp/actions/runs/38311146700) SUCCESS.
+- [Unit job 115016906924](https://github.com/cadeApp/cadeApp/actions/jobs/115016906924): **129 files / 2116 tests PASS**, `rpc-fake.ts` statements 95.32 %, branches 91.35 %.
+- [DB job 115016907262](https://github.com/cadeApp/cadeApp/actions/jobs/115016907262): **21 files / 1995 tests / Result PASS**. Mutaciones H13/H14 *anteriores* de SQL sí registraron RED→GREEN, no son mutaciones nuevas de H06/H12.
+- typecheck/lint/build/audit/bundle-budget/Vercel PASS; approval-policy FAIL.
+- [E2E run 38311311091](https://github.com/cadeApp/cadeApp/actions/runs/38311311091): **BLOCKED / REQUIRES DEVELOP MIGRATION**. No hay Playwright RED/GREEN de N en ese entorno.
+
+### Fuentes y oráculos cruzados
+
+- `src/features/requests/queries.ts:242–299`: nuevo `assertAndMapMerchantDrops`: child no vacío en estado post-draft, cardinalidad coherente, posiciones 1..N, caso draft explícito. Usado por `mapRawMerchantRequests` y detalle.
+- `src/features/requests/queries.test.ts`: positivo listado prepara 3 hijos y afirma 3, otro positivo llama realmente a historial delivered con tres, negativos comprueban 3/1, 3/0, posiciones 1/3 y detalle. H11 deja de ser tautológico.
+- `src/server/live/privacy-checker.ts` y test: analiza claves y valores recursivamente sobre objeto RAW, detecta PII de fixtures top-level y dentro de `drops[]`, y observa `toThrow` sobre contaminados.
+- `e2e/specs/multi-drop.spec.ts:195–245`: `assertNoPrivateFieldsInRawPayload(rawItem,...)` antes de `liveFeedResponseSchema.parse(rawLiveFeed)`; mantiene HTTP 200, 3 drops y tercero `P0001 UNAUTHORIZED_ACTOR`.
+
+**Sonda propia que SÍ se ejecutó (solo fuente):** 5 patrones independientes extraídos de blobs del SHA, con mutaciones textuales efímeras que alteraron condición/cardinalidad, expectativa positiva, orden del detector antes de Zod, chequeo de claves y expectativa negativa de test. Los patrones de fuente reaccionaron a la mutación en memoria. **No equivale a ejecución RED de Vitest ni Playwright.** No se editó el repositorio con esas mutaciones.
+
+**Falta evidencia real:** bitácora del autor enumera tests nuevos y 2110 locales (el job del SHA da 2116), pero no especifica comando, output y comparación RED→GREEN de una regresión deliberada del guard H06 ni del detector H12; por eso H06/H12 figuran `arreglado-sin-verificar`, pese a tener CI verde. Pedir evidencia del autor con mutación efímera no pusheada; de existir tests que no detecten el mutante, corregirlos antes de re-revisión.
+
+### Workflow y checkpoint después del merge — Decisión A
+
+`.github/workflows/migrate.yml:3–7,17–56` instala la migración en Supabase Develop solo tras push a `develop`. `.github/workflows/e2e-preview.yml:9–12` recibe deployment Vercel; `e2e-preview-target.mjs:110–118` acepta solo PR **abierta**, y `gatePreview:150–153` bloquea cambios de migraciones del PR. Por eso **un merge no dispara por sí mismo el E2E**. Tras autorización expresa y merge del Paso 2, esperar migrate-develop ✅; abrir **PR temporal docs-only** de Develop migrado (sin migraciones), Vercel Preview dispara el E2E normal; conservar SHA, URL, run, job y casos legacy/N, cerrar PR temporal sin mergear. Si falla, congelar rollout y corregir antes de Kira Paso 3. No modificar workflows ni forzar `db push` manual.
+
+**Límites revisor:** se leyeron SHA exacto y logs GitHub, pero checkout por git en el contenedor no fue posible; no se ejecutaron Docker, Supabase, Playwright, CI manual ni `node docs/revision-pr/analizar.mjs verificacion`. No se inventan esas verificaciones.
