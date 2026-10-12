@@ -60,7 +60,7 @@ export function TripMerchantView({
       ? trip.drops
       : [
           {
-            id: (trip as any).requestId ?? trip.id,
+            id: trip.id,
             position: 1,
             dropoffZoneName: trip.dropoffZoneName,
             dropoffAddress: trip.dropoffAddress,
@@ -89,7 +89,10 @@ export function TripMerchantView({
           </span>
           <h1 className="font-display text-xl font-bold text-foreground">Viaje en curso</h1>
         </div>
-        <Badge variant={isDelivered ? 'secondary' : 'default'} className="rounded-full text-sm font-medium">
+        <Badge
+          variant={isDelivered ? 'secondary' : 'default'}
+          className="rounded-full text-sm font-medium"
+        >
           {isDelivered ? 'Entregado' : isInTransit ? 'En camino' : 'Asignado'}
         </Badge>
       </div>
@@ -100,7 +103,9 @@ export function TripMerchantView({
           <span>Asignada</span>
         </div>
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-        <div className={`flex items-center gap-1.5 font-medium ${isInTransit || isDelivered ? 'text-foreground' : 'text-primary-dark'}`}>
+        <div
+          className={`flex items-center gap-1.5 font-medium ${isInTransit || isDelivered ? 'text-foreground' : 'text-primary-dark'}`}
+        >
           {isDelivered ? (
             <CheckCircle2 className="h-4 w-4 text-primary" />
           ) : (
@@ -109,7 +114,9 @@ export function TripMerchantView({
           <span>Retirado</span>
         </div>
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-        <div className={`flex items-center gap-1.5 font-medium ${isDelivered ? 'text-foreground' : 'text-muted-foreground'}`}>
+        <div
+          className={`flex items-center gap-1.5 font-medium ${isDelivered ? 'text-foreground' : 'text-muted-foreground'}`}
+        >
           <CheckCircle2 className={`h-4 w-4 ${isDelivered ? 'text-primary' : 'text-muted'}`} />
           <span>Entregado</span>
         </div>

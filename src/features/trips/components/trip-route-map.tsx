@@ -9,14 +9,7 @@ import {
   useApiLoadingStatus,
   APILoadingStatus,
 } from '@vis.gl/react-google-maps';
-import {
-  AlertTriangle,
-  ExternalLink,
-  Map as MapIcon,
-  MapPin,
-  Store,
-  WifiOff,
-} from 'lucide-react';
+import { AlertTriangle, ExternalLink, Map as MapIcon, MapPin, Store, WifiOff } from 'lucide-react';
 import { publicEnv } from '@/lib/env.public';
 import { cn } from '@/ui/cn';
 import { buildGoogleMapsDirectionsUrl } from '../maps';
@@ -29,6 +22,11 @@ export interface TripRouteMapDrop {
   readonly dropoffLng?: number | null;
   readonly status?: string;
 }
+
+export type TripRouteMapDropWithCoords = TripRouteMapDrop & {
+  readonly dropoffLat: number;
+  readonly dropoffLng: number;
+};
 
 export interface TripRouteMapProps {
   pickupAddress: string;
@@ -106,7 +104,10 @@ export function TripRouteMap({
 
   const dropsWithCoords = React.useMemo(() => {
     if (!drops || drops.length === 0) return null;
-    const valid = drops.filter((d) => d.dropoffLat != null && d.dropoffLng != null);
+    const valid = drops.filter(
+      (d): d is TripRouteMapDropWithCoords =>
+        typeof d.dropoffLat === 'number' && typeof d.dropoffLng === 'number'
+    );
     return valid.length > 0 ? valid : null;
   }, [drops]);
 
@@ -158,16 +159,24 @@ export function TripRouteMap({
 
   const externalMapUrl = React.useMemo(() => {
     if (pickupLat != null && pickupLng != null) {
-      const destLat = dropsWithCoords
-        ? dropsWithCoords[dropsWithCoords.length - 1]?.dropoffLat
-        : dropoffLat;
-      const destLng = dropsWithCoords
-        ? dropsWithCoords[dropsWithCoords.length - 1]?.dropoffLng
-        : dropoffLng;
-      if (destLat != null && destLng != null) {
+      if (dropsWithCoords && dropsWithCoords.length > 0) {
+        const lastDrop = dropsWithCoords[dropsWithCoords.length - 1];
+        if (lastDrop) {
+          const intermediateWaypoints = dropsWithCoords.slice(0, -1).map((d) => ({
+            lat: d.dropoffLat,
+            lng: d.dropoffLng,
+          }));
+          return buildGoogleMapsDirectionsUrl({
+            origin: { lat: pickupLat, lng: pickupLng },
+            destination: { lat: lastDrop.dropoffLat, lng: lastDrop.dropoffLng },
+            waypoints: intermediateWaypoints.length > 0 ? intermediateWaypoints : undefined,
+          });
+        }
+      }
+      if (dropoffLat != null && dropoffLng != null) {
         return buildGoogleMapsDirectionsUrl({
           origin: { lat: pickupLat, lng: pickupLng },
-          destination: { lat: destLat, lng: destLng },
+          destination: { lat: dropoffLat, lng: dropoffLng },
         });
       }
     }
@@ -175,7 +184,15 @@ export function TripRouteMap({
       origin: pickupAddress,
       destination: dropoffAddress,
     });
-  }, [pickupLat, pickupLng, dropsWithCoords, dropoffLat, dropoffLng, pickupAddress, dropoffAddress]);
+  }, [
+    pickupLat,
+    pickupLng,
+    dropsWithCoords,
+    dropoffLat,
+    dropoffLng,
+    pickupAddress,
+    dropoffAddress,
+  ]);
 
   const formattedDistance = React.useMemo(() => {
     if (routeDistanceM == null || routeDistanceM < 1) return null;
@@ -216,7 +233,9 @@ export function TripRouteMap({
           className="mx-3.5 mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/60 p-2.5 text-xs text-muted-foreground"
         >
           <WifiOff className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span>Modo sin conexión. Podés continuar con las direcciones escritas o abrir en Google Maps.</span>
+          <span>
+            Modo sin conexión. Podés continuar con las direcciones escritas o abrir en Google Maps.
+          </span>
         </div>
       )}
 
@@ -266,7 +285,9 @@ export function TripRouteMap({
                     title={`Entrega ${d.position}: ${d.dropoffAddress}`}
                   >
                     <div
-                      data-testid={d.position === 1 ? 'map-pin-dropoff' : `map-pin-dropoff-${d.position}`}
+                      data-testid={
+                        d.position === 1 ? 'map-pin-dropoff' : `map-pin-dropoff-${d.position}`
+                      }
                       className="relative flex items-center justify-center"
                     >
                       <div className="flex flex-col items-center">
@@ -343,7 +364,9 @@ export function TripRouteMap({
       {/* Pie informativo para C06 (cuando no hay botón externo) */}
       {!showExternalNavigation && (
         <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-3.5 py-2 text-xs text-muted-foreground">
-          <span>{pickupZoneName} → {dropoffZoneName}</span>
+          <span>
+            {pickupZoneName} → {dropoffZoneName}
+          </span>
           <span className="font-medium text-primary-dark">Ruta directa sin desvíos</span>
         </div>
       )}
@@ -356,7 +379,7 @@ export function TripRouteMap({
             target="_blank"
             rel="noopener noreferrer"
             data-testid="open-google-maps-btn"
-            className="flex h-12 min-h-12 min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-12 min-h-12 min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]"
           >
             <ExternalLink className="h-4 w-4 text-primary" />
             <span>Abrir en Google Maps</span>

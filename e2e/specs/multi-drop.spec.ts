@@ -43,7 +43,9 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     const zoneId = stagingContext.createdZoneIds[0];
 
     if (!merchant || !courier || !requestId || !zoneId) {
-      throw new Error('[E2E Error] Se requieren merchant, courier, requestId y zoneId en stagingContext');
+      throw new Error(
+        '[E2E Error] Se requieren merchant, courier, requestId y zoneId en stagingContext'
+      );
     }
 
     const admin = createAdminClient();
@@ -54,13 +56,26 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     // -------------------------------------------------------------------------
     // Paso 1: Configurar la solicitud sembrada con 3 entregas en base de datos
     // -------------------------------------------------------------------------
-    await admin
+    const { error: updateReqErr } = await admin
       .from('delivery_requests')
       .update({ drops_count: 3 })
       .eq('id', requestId);
+    expect(updateReqErr).toBeNull();
 
     // Limpiar posibles drops previos del fixture legacy
     await admin.from('delivery_request_drops').delete().eq('request_id', requestId);
+
+    // Obtener zonas activas distintas si están disponibles en la base
+    const { data: dbZones, error: zonesErr } = await admin
+      .from('zones')
+      .select('id, name')
+      .eq('active', true)
+      .limit(3);
+    expect(zonesErr).toBeNull();
+
+    const zone1 = dbZones?.[0]?.id ?? zoneId;
+    const zone2 = dbZones?.[1]?.id ?? zone1;
+    const zone3 = dbZones?.[2]?.id ?? zone1;
 
     // Insertar 3 drops
     const { error: dropsInsertErr } = await admin.from('delivery_request_drops').insert([
@@ -68,7 +83,7 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
         id: drop1Id,
         request_id: requestId,
         position: 1,
-        dropoff_zone_id: zoneId,
+        dropoff_zone_id: zone1,
         package_type: 'chico',
         recipient_payment_method: 'cash',
         needs_change: true,
@@ -78,7 +93,7 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
         id: drop2Id,
         request_id: requestId,
         position: 2,
-        dropoff_zone_id: zoneId,
+        dropoff_zone_id: zone2,
         package_type: 'mediano',
         recipient_payment_method: 'transfer',
         needs_change: false,
@@ -88,7 +103,7 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
         id: drop3Id,
         request_id: requestId,
         position: 3,
-        dropoff_zone_id: zoneId,
+        dropoff_zone_id: zone3,
         package_type: 'grande',
         recipient_payment_method: 'cash',
         needs_change: false,
@@ -151,6 +166,16 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     await expect(requestCard.getByText('Dejar en guardia drop 3')).toHaveCount(0);
     await expect(requestCard.getByText(formatArs(DROP_1_CHANGE))).toHaveCount(0);
 
+    // Verificación de payload HTTP pre-match: sin fugas de datos privados en la API
+    const liveRes = await page.request.get('/api/live/available-requests');
+    if (liveRes.ok()) {
+      const liveJson = await liveRes.text();
+      expect(liveJson).not.toContain('Destinatario Uno MD');
+      expect(liveJson).not.toContain('Timbre blanco drop 1');
+      expect(liveJson).not.toContain('3865111111');
+      expect(liveJson).not.toContain('Av. Sarmiento 100');
+    }
+
     // -------------------------------------------------------------------------
     // Paso 3: Hoja de oferta (Sheet) pre-match
     // -------------------------------------------------------------------------
@@ -186,6 +211,18 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     expect(acceptErr).toBeNull();
 
     // -------------------------------------------------------------------------
+    // Paso 4b: Repartidor no asignado (ajeno) no puede acceder a los detalles
+    // -------------------------------------------------------------------------
+    const foreignCourier = stagingContext.courierUsers?.[1];
+    if (foreignCourier) {
+      const foreignClient = await createAuthenticatedClient(foreignCourier);
+      const { data: foreignTrip } = await foreignClient.rpc('get_trip_details', {
+        p_request_id: requestId,
+      });
+      expect(foreignTrip).toBeNull();
+    }
+
+    // -------------------------------------------------------------------------
     // Paso 5: Vista de Viaje del Repartidor post-match (Revelación autorizada)
     // -------------------------------------------------------------------------
     await page.goto(`/trips/${requestId}`);
@@ -198,7 +235,9 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     await expect(page.getByText(/Timbre blanco drop 1/i)).toBeVisible();
     await expect(page.getByText(/Piso 3 drop 2/i)).toBeVisible();
     await expect(page.getByText(/Dejar en guardia drop 3/i)).toBeVisible();
-    await expect(page.getByText(new RegExp(`cambio de ${formatArs(DROP_1_CHANGE)}`, 'i'))).toBeVisible();
+    await expect(
+      page.getByText(new RegExp(`cambio de ${formatArs(DROP_1_CHANGE)}`, 'i'))
+    ).toBeVisible();
 
     // -------------------------------------------------------------------------
     // Paso 6: Vista de Viaje del Comercio post-match (Avisale a tu cliente)

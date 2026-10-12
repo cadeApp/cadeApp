@@ -33,6 +33,7 @@ export interface MerchantRequestSummary {
   readonly acceptedOfferId: string | null;
   readonly acceptedAmountArs?: number | null;
   readonly acceptedCourierName?: string | null;
+  readonly dropsCount?: number;
 }
 
 export interface MerchantRequestDetail {
@@ -49,6 +50,7 @@ export interface MerchantRequestDetail {
   readonly expiresAt: string | null;
   readonly createdAt: string;
   readonly acceptedOfferId: string | null;
+  readonly dropsCount?: number;
   readonly pickupAddress?: string;
   readonly dropoffAddress?: string;
   readonly recipientName?: string;

@@ -181,13 +181,14 @@ export async function getMerchantDefaultPickup(
 interface RawMerchantRequest {
   id: string;
   approx_distance_m: number | null;
-  package_type: string;
-  recipient_payment_method: string;
-  needs_change: boolean;
+  package_type: string | null;
+  recipient_payment_method: string | null;
+  needs_change: boolean | null;
   status: string;
   expires_at: string | null;
   created_at: string;
   accepted_offer_id: string | null;
+  drops_count?: number | null;
   pickup_zone: { name: string } | { name: string }[] | null;
   dropoff_zone: { name: string } | { name: string }[] | null;
 }
@@ -224,8 +225,8 @@ function mapRawMerchantRequests(
       pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
       dropoffZoneName: dropoffZone?.name ?? 'Zona no disponible',
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: req.package_type as PackageType,
-      recipientPaymentMethod: req.recipient_payment_method as RecipientPaymentMethod,
+      packageType: (req.package_type as PackageType) ?? 'chico',
+      recipientPaymentMethod: (req.recipient_payment_method as RecipientPaymentMethod) ?? 'cash',
       needsChange: Boolean(req.needs_change),
       status: req.status as DeliveryRequestStatus,
       expiresAt: req.expires_at,
@@ -234,6 +235,7 @@ function mapRawMerchantRequests(
       acceptedOfferId: req.accepted_offer_id,
       acceptedAmountArs: hydratedOffer ? hydratedOffer.amountArs : null,
       acceptedCourierName: hydratedOffer ? hydratedOffer.courierName : null,
+      dropsCount: req.drops_count ?? 1,
     };
   });
 }
@@ -262,6 +264,7 @@ export async function getMerchantHistoryRequests(
     .select(
       `
       id,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -433,6 +436,7 @@ export async function getMerchantRequests(
     .select(
       `
       id,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -650,6 +654,7 @@ export async function getMerchantRequestWithOffers(
     .select(
       `
       id,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -714,8 +719,9 @@ export async function getMerchantRequestWithOffers(
     pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
     dropoffZoneName: dropoffZone?.name ?? 'Zona no disponible',
     approxDistanceKm: formatApproxDistanceKm(requestData.approx_distance_m),
-    packageType: requestData.package_type as PackageType,
-    recipientPaymentMethod: requestData.recipient_payment_method as RecipientPaymentMethod,
+    packageType: (requestData.package_type as PackageType) ?? 'chico',
+    recipientPaymentMethod:
+      (requestData.recipient_payment_method as RecipientPaymentMethod) ?? 'cash',
     needsChange: Boolean(requestData.needs_change),
     cashChangeAmount: privateFields.data.cashChangeAmount,
     notes: privateFields.data.notes,
@@ -723,6 +729,7 @@ export async function getMerchantRequestWithOffers(
     expiresAt: requestData.expires_at,
     createdAt: requestData.created_at,
     acceptedOfferId: requestData.accepted_offer_id,
+    dropsCount: requestData.drops_count ?? 1,
   };
 
   if (offersError) {

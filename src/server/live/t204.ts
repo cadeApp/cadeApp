@@ -1,6 +1,11 @@
 import 'server-only';
 import { z } from 'zod';
-import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
+import {
+  packageTypeSchema,
+  recipientPaymentMethodSchema,
+  type PackageType,
+  type RecipientPaymentMethod,
+} from '@/domain/schemas';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsRpc } from '@/server/rpc/trips';
 import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
@@ -77,7 +82,8 @@ export async function getAvailableRequestsLiveServer(
 
   let query = supabase
     .from('delivery_requests')
-    .select(`
+    .select(
+      `
       id,
       created_at,
       drops_count,
@@ -91,7 +97,8 @@ export async function getAvailableRequestsLiveServer(
       auto_assign,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
-    `)
+    `
+    )
     .eq('status', 'published')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -130,7 +137,8 @@ export async function getAvailableRequestsLiveServer(
       .eq('status', 'pending'),
     supabase
       .from('delivery_request_drops')
-      .select(`
+      .select(
+        `
         request_id,
         position,
         package_type,
@@ -138,7 +146,8 @@ export async function getAvailableRequestsLiveServer(
         needs_change,
         approx_distance_m,
         dropoff_zone:zones!dropoff_zone_id(name)
-      `)
+      `
+      )
       .in('request_id', requestIds)
       .order('position', { ascending: true }),
   ]);
@@ -165,7 +174,8 @@ export async function getAvailableRequestsLiveServer(
       readonly recipient_payment_method: string;
       readonly needs_change: boolean;
       readonly approx_distance_m: number | null;
-      readonly dropoff_zone: { readonly name: string } | readonly { readonly name: string }[] | null;
+      readonly dropoff_zone:
+        { readonly name: string } | readonly { readonly name: string }[] | null;
     }
     for (const d of dropsResult.data as unknown as readonly RawLiveDropRow[]) {
       const pType = packageTypeSchema.safeParse(d.package_type);
@@ -193,39 +203,67 @@ export async function getAvailableRequestsLiveServer(
 
   const mapped: LiveAvailableRequestItem[] = [];
   for (const req of pageRows) {
-    // Vocabulario canónico (src/domain/schemas): un valor fuera del dominio no se fuerza ni se traduce.
-    const packageType = packageTypeSchema.safeParse(req.package_type);
-    const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
-    if (!packageType.success || !recipientPaymentMethod.success) {
-      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
-    }
-
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const declaredDropsCount = req.drops_count ?? 1;
     const reqDrops = dropsMap.get(req.id) ?? [];
-    const effectiveDrops: PublicDropSummary[] =
-      reqDrops.length > 0
-        ? reqDrops
-        : [
-            {
-              position: 1,
-              dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
-              packageType: packageType.data,
-              recipientPaymentMethod: recipientPaymentMethod.data,
-              needsChange: Boolean(req.needs_change),
-              approxDistanceM: req.approx_distance_m != null ? Number(req.approx_distance_m) : null,
-            },
-          ];
+
+    if (declaredDropsCount > 1 && reqDrops.length === 0) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    let effectiveDrops: PublicDropSummary[];
+    let effectivePackageType: PackageType;
+    let effectivePaymentMethod: RecipientPaymentMethod;
+    let effectiveNeedsChange: boolean;
+    let effectiveDropoffZoneName: string;
+
+    if (reqDrops.length > 0) {
+      if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+      }
+      effectiveDrops = reqDrops;
+      const firstDrop = reqDrops[0];
+      if (!firstDrop) {
+        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+      }
+      effectivePackageType = firstDrop.packageType;
+      effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+      effectiveNeedsChange = firstDrop.needsChange;
+      effectiveDropoffZoneName = firstDrop.dropoffZoneName;
+    } else {
+      const packageType = packageTypeSchema.safeParse(req.package_type);
+      const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(
+        req.recipient_payment_method
+      );
+      if (!packageType.success || !recipientPaymentMethod.success) {
+        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+      }
+      effectivePackageType = packageType.data;
+      effectivePaymentMethod = recipientPaymentMethod.data;
+      effectiveNeedsChange = Boolean(req.needs_change);
+      effectiveDropoffZoneName = dropoffZone?.name ?? 'Aguilares';
+      effectiveDrops = [
+        {
+          position: 1,
+          dropoffZoneName: effectiveDropoffZoneName,
+          packageType: effectivePackageType,
+          recipientPaymentMethod: effectivePaymentMethod,
+          needsChange: effectiveNeedsChange,
+          approxDistanceM: req.approx_distance_m != null ? Number(req.approx_distance_m) : null,
+        },
+      ];
+    }
 
     mapped.push({
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
-      dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+      dropoffZoneName: effectiveDropoffZoneName,
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: packageType.data,
-      recipientPaymentMethod: recipientPaymentMethod.data,
-      needsChange: Boolean(req.needs_change),
+      packageType: effectivePackageType,
+      recipientPaymentMethod: effectivePaymentMethod,
+      needsChange: effectiveNeedsChange,
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,
@@ -288,7 +326,8 @@ export async function getRequestOffersLiveServer(
 
   let offersQuery = supabase
     .from('offers')
-    .select(`
+    .select(
+      `
       id,
       courier_id,
       amount_ars,
@@ -296,7 +335,8 @@ export async function getRequestOffersLiveServer(
       message,
       status,
       created_at
-    `)
+    `
+    )
     .eq('request_id', parsedId.data)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })

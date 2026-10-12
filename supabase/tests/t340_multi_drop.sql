@@ -1282,15 +1282,15 @@ declare
   v_drop_2_id uuid := '30000000-0000-4000-8000-000000003604';
   v_drop_3_id uuid := '30000000-0000-4000-8000-000000003605';
 begin
-  -- Inserta request matched con columnas legacy en NULL y drops_count = 3
+  -- Inserta request inicialmente como published sin accepted_offer_id
   insert into public.delivery_requests (
     id, merchant_id, pickup_zone_id, dropoff_zone_id,
     package_type, recipient_payment_method, needs_change,
-    cash_change_amount, notes, status, matched_at, accepted_offer_id, drops_count
+    cash_change_amount, notes, status, drops_count
   ) values (
     v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), pg_temp.dropoff_zone_id(),
     'chico', 'cash', true,
-    null, null, 'matched', now(), v_offer_id, 3
+    null, null, 'published', 3
   );
 
   insert into public.delivery_request_contacts (
@@ -1304,6 +1304,13 @@ begin
   ) values (
     v_offer_id, v_req_id, pg_temp.courier_1_id(), 1500, 15, 'accepted'
   );
+
+  -- Actualiza request a matched vinculando la oferta aceptada
+  update public.delivery_requests
+  set status = 'matched',
+      accepted_offer_id = v_offer_id,
+      matched_at = now()
+  where id = v_req_id;
 
   -- Insertar en orden DESORDENADO: position 3, luego position 1, luego position 2
   -- Drop 3 (failed)
