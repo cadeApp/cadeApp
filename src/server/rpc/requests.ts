@@ -14,7 +14,7 @@ import { createAdminClient } from '@/server/supabase/admin';
 import { safeNotifyPostTransition } from '@/server/push';
 import type { SupabaseRpcCaller } from './offers';
 
-type RequestRpcName =
+export type RequestLifecycleRpcName =
   | 'publish_request'
   | 'cancel_request'
   | 'mark_picked_up'
@@ -23,6 +23,11 @@ type RequestRpcName =
   | 'courier_cancel_match'
   | 'republish_request'
   | 'report_incident';
+
+export type RequestRpcName =
+  | RequestLifecycleRpcName
+  | 'mark_drop_delivered'
+  | 'mark_drop_failed';
 
 export async function callRequestRpc<K extends RequestRpcName>(
   client: SupabaseRpcCaller,
@@ -33,21 +38,32 @@ export async function callRequestRpc<K extends RequestRpcName>(
   const parsed = contract.inputSchema.safeParse(rawInput);
   if (!parsed.success) return err('VALIDATION_ERROR');
 
-  const input = parsed.data;
-  const args: Record<string, unknown> = { p_request_id: input.requestId };
-  if (
-    rpcName === 'cancel_request' ||
-    rpcName === 'republish_request' ||
-    rpcName === 'courier_cancel_match'
-  ) {
-    args.p_reason = 'reason' in input ? (input.reason ?? null) : null;
-  }
-  if (rpcName === 'report_no_show') {
-    args.p_republish = 'republish' in input ? (input.republish ?? true) : true;
-  }
-  if ('kind' in input && 'description' in input) {
-    args.p_kind = input.kind;
-    args.p_description = input.description;
+  const input = parsed.data as Record<string, unknown>;
+  const args: Record<string, unknown> = {};
+
+  if (rpcName === 'mark_drop_delivered') {
+    args.p_drop_id = input.dropId;
+  } else if (rpcName === 'mark_drop_failed') {
+    args.p_drop_id = input.dropId;
+    args.p_reason = typeof input.reason === 'string' ? input.reason.trim() : null;
+  } else {
+    if ('requestId' in input) {
+      args.p_request_id = input.requestId;
+    }
+    if (
+      rpcName === 'cancel_request' ||
+      rpcName === 'republish_request' ||
+      rpcName === 'courier_cancel_match'
+    ) {
+      args.p_reason = 'reason' in input ? (input.reason ?? null) : null;
+    }
+    if (rpcName === 'report_no_show') {
+      args.p_republish = 'republish' in input ? (input.republish ?? true) : true;
+    }
+    if ('kind' in input && 'description' in input) {
+      args.p_kind = input.kind;
+      args.p_description = input.description;
+    }
   }
   try {
     const { data, error } = await client.rpc(rpcName, args);
@@ -196,7 +212,7 @@ export async function callRequestRpc<K extends RequestRpcName>(
 
 export function createRequestsRpcServerClient(
   client: SupabaseRpcCaller
-): Pick<RpcClientContract, RequestRpcName> {
+): Pick<RpcClientContract, RequestLifecycleRpcName> {
   return {
     publish_request: (input) => callRequestRpc(client, 'publish_request', input),
     cancel_request: (input) => callRequestRpc(client, 'cancel_request', input),

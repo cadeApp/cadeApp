@@ -42,6 +42,7 @@ function publishedRpcResponse(requestId: string) {
       routeDistanceM: 1000,
       fixedPriceArs: null,
       autoAssign: false,
+      dropsCount: 1,
     },
     error: null,
   };

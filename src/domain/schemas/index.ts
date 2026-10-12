@@ -116,6 +116,7 @@ export const PLATFORM_SETTING_KEYS = [
   'pilot_active',
   'pilot_terms_version',
   'subscription_grace_days',
+  'max_drops_per_request',
 ] as const;
 export type PlatformSettingKey = (typeof PLATFORM_SETTING_KEYS)[number];
 export const platformSettingKeySchema = z.enum(PLATFORM_SETTING_KEYS);

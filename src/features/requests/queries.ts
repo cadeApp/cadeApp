@@ -9,6 +9,7 @@ import type {
   MerchantRequestDetail,
   MerchantOfferItem,
   MerchantMetrics,
+  MerchantDropSummary,
 } from './types';
 import type { PackageType, RecipientPaymentMethod, DeliveryRequestStatus } from '@/domain/schemas';
 import type { LivePageCursor } from '@/lib/live-contracts';
@@ -181,13 +182,14 @@ export async function getMerchantDefaultPickup(
 interface RawMerchantRequest {
   id: string;
   approx_distance_m: number | null;
-  package_type: string;
-  recipient_payment_method: string;
-  needs_change: boolean;
+  package_type: string | null;
+  recipient_payment_method: string | null;
+  needs_change: boolean | null;
   status: string;
   expires_at: string | null;
   created_at: string;
   accepted_offer_id: string | null;
+  drops_count?: number | null;
   pickup_zone: { name: string } | { name: string }[] | null;
   dropoff_zone: { name: string } | { name: string }[] | null;
 }
@@ -207,10 +209,100 @@ interface AcceptedOfferHydration {
   readonly courierName: string;
 }
 
+interface RawDropRow {
+  id: string;
+  request_id: string;
+  position: number;
+  package_type: string;
+  recipient_payment_method: string;
+  needs_change: boolean;
+  approx_distance_m: number | null;
+  status: string;
+  delivered_at: string | null;
+  failed_reason: string | null;
+  dropoff_zone: { name: string } | { name: string }[] | null;
+}
+
+function mapRawDropToSummary(d: RawDropRow): MerchantDropSummary {
+  const zoneObj = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+  return {
+    id: d.id,
+    position: d.position,
+    dropoffZoneName: zoneObj?.name ?? 'Zona no disponible',
+    packageType: d.package_type as PackageType,
+    recipientPaymentMethod: d.recipient_payment_method as RecipientPaymentMethod,
+    needsChange: Boolean(d.needs_change),
+    approxDistanceKm: formatApproxDistanceKm(d.approx_distance_m),
+    status: d.status,
+    deliveredAt: d.delivered_at,
+    failedReason: d.failed_reason,
+  };
+}
+
+export function assertAndMapMerchantDrops(
+  requestId: string,
+  status: string,
+  declaredDropsCount: number | null | undefined,
+  children: MerchantDropSummary[]
+): {
+  drops: MerchantDropSummary[] | undefined;
+  firstDrop: MerchantDropSummary | undefined;
+  dropsCount: number;
+} {
+  const isDraft = status === 'draft';
+  const expectedCount = declaredDropsCount != null ? Number(declaredDropsCount) : undefined;
+
+  if (!isDraft) {
+    if (children.length === 0) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: estado '${status}' requiere al menos 1 entrega materializada, pero se encontraron 0.`
+      );
+    }
+    if (expectedCount !== undefined && children.length !== expectedCount) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: se declararon ${expectedCount} entregas pero se encontraron ${children.length}.`
+      );
+    }
+    const hasConsecutivePositions = children.every((d, idx) => d.position === idx + 1);
+    if (!hasConsecutivePositions) {
+      throw new Error(
+        `Inconsistencia en solicitud ${requestId}: las posiciones de las entregas no son consecutivas iniciando en 1.`
+      );
+    }
+    return {
+      drops: children,
+      firstDrop: children[0],
+      dropsCount: children.length,
+    };
+  }
+
+  // Comportamiento para estado 'draft'
+  if (children.length > 0) {
+    const hasConsecutivePositions = children.every((d, idx) => d.position === idx + 1);
+    if (!hasConsecutivePositions) {
+      throw new Error(
+        `Inconsistencia en solicitud borrador ${requestId}: las posiciones de las entregas no son consecutivas iniciando en 1.`
+      );
+    }
+    return {
+      drops: children,
+      firstDrop: children[0],
+      dropsCount: children.length,
+    };
+  }
+
+  return {
+    drops: undefined,
+    firstDrop: undefined,
+    dropsCount: expectedCount ?? 1,
+  };
+}
+
 function mapRawMerchantRequests(
   rawRequests: RawMerchantRequest[],
   offersCountMap: Map<string, number>,
-  acceptedOffersMap?: Map<string, AcceptedOfferHydration>
+  acceptedOffersMap?: Map<string, AcceptedOfferHydration>,
+  dropsMap?: Map<string, MerchantDropSummary[]>
 ): MerchantRequestSummary[] {
   return rawRequests.map((req) => {
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
@@ -219,14 +311,44 @@ function mapRawMerchantRequests(
       ? acceptedOffersMap?.get(req.accepted_offer_id)
       : undefined;
 
+    const reqDrops = dropsMap?.get(req.id) ?? [];
+    const { drops, firstDrop, dropsCount } = assertAndMapMerchantDrops(
+      req.id,
+      req.status,
+      req.drops_count,
+      reqDrops
+    );
+
+    const isDraft = req.status === 'draft';
+    const dropoffZoneName = firstDrop
+      ? firstDrop.dropoffZoneName
+      : isDraft
+        ? (dropoffZone?.name ?? 'Zona no disponible')
+        : 'Zona no disponible';
+    const packageType = firstDrop
+      ? firstDrop.packageType
+      : isDraft
+        ? ((req.package_type as PackageType) ?? 'chico')
+        : ('chico' as PackageType);
+    const recipientPaymentMethod = firstDrop
+      ? firstDrop.recipientPaymentMethod
+      : isDraft
+        ? ((req.recipient_payment_method as RecipientPaymentMethod) ?? 'cash')
+        : ('cash' as RecipientPaymentMethod);
+    const needsChange = firstDrop
+      ? firstDrop.needsChange
+      : isDraft
+        ? Boolean(req.needs_change)
+        : false;
+
     return {
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
-      dropoffZoneName: dropoffZone?.name ?? 'Zona no disponible',
+      dropoffZoneName,
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: req.package_type as PackageType,
-      recipientPaymentMethod: req.recipient_payment_method as RecipientPaymentMethod,
-      needsChange: Boolean(req.needs_change),
+      packageType,
+      recipientPaymentMethod,
+      needsChange,
       status: req.status as DeliveryRequestStatus,
       expiresAt: req.expires_at,
       createdAt: req.created_at,
@@ -234,6 +356,8 @@ function mapRawMerchantRequests(
       acceptedOfferId: req.accepted_offer_id,
       acceptedAmountArs: hydratedOffer ? hydratedOffer.amountArs : null,
       acceptedCourierName: hydratedOffer ? hydratedOffer.courierName : null,
+      dropsCount,
+      drops,
     };
   });
 }
@@ -262,6 +386,7 @@ export async function getMerchantHistoryRequests(
     .select(
       `
       id,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -321,19 +446,52 @@ export async function getMerchantHistoryRequests(
   const requestIds = rawRequests.map((r) => r.id);
   const offersCountMap = new Map<string, number>();
 
-  const { data: offersData, error: offersError } = await supabase
-    .from('offers')
-    .select('request_id')
-    .in('request_id', requestIds)
-    .eq('status', 'pending');
+  const [offersRes, dropsRes] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id')
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        id,
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        status,
+        delivered_at,
+        failed_reason,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
 
-  if (offersError) {
-    throw new Error(`Error al cargar conteo de ofertas: ${offersError.message}`);
+  if (offersRes.error) {
+    throw new Error(`Error al cargar conteo de ofertas: ${offersRes.error.message}`);
+  }
+  if (dropsRes.error) {
+    throw new Error(`Error al cargar entregas de solicitudes: ${dropsRes.error.message}`);
   }
 
-  if (offersData) {
-    for (const off of offersData as Array<{ request_id: string }>) {
+  if (offersRes.data) {
+    for (const off of offersRes.data as Array<{ request_id: string }>) {
       offersCountMap.set(off.request_id, (offersCountMap.get(off.request_id) ?? 0) + 1);
+    }
+  }
+
+  const dropsMap = new Map<string, MerchantDropSummary[]>();
+  if (dropsRes.data) {
+    for (const d of dropsRes.data as unknown as RawDropRow[]) {
+      const list = dropsMap.get(d.request_id) ?? [];
+      list.push(mapRawDropToSummary(d));
+      dropsMap.set(d.request_id, list);
     }
   }
 
@@ -403,7 +561,7 @@ export async function getMerchantHistoryRequests(
   }
 
   return {
-    requests: mapRawMerchantRequests(rawRequests, offersCountMap, acceptedOffersMap),
+    requests: mapRawMerchantRequests(rawRequests, offersCountMap, acceptedOffersMap, dropsMap),
     nextCursor,
     status,
   };
@@ -433,6 +591,7 @@ export async function getMerchantRequests(
     .select(
       `
       id,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -608,24 +767,57 @@ export async function getMerchantRequests(
   const requestIds = rawRequests.map((r) => r.id);
   const offersCountMap = new Map<string, number>();
 
-  const { data: offersData, error: offersError } = await supabase
-    .from('offers')
-    .select('request_id')
-    .in('request_id', requestIds)
-    .eq('status', 'pending');
+  const [offersRes, dropsRes] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id')
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        id,
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        status,
+        delivered_at,
+        failed_reason,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
 
-  if (offersError) {
-    throw new Error(`Error al cargar ofertas pendientes: ${offersError.message}`);
+  if (offersRes.error) {
+    throw new Error(`Error al cargar ofertas pendientes: ${offersRes.error.message}`);
+  }
+  if (dropsRes.error) {
+    throw new Error(`Error al cargar entregas de solicitudes activas: ${dropsRes.error.message}`);
   }
 
-  if (offersData) {
-    for (const off of offersData as Array<{ request_id: string }>) {
+  if (offersRes.data) {
+    for (const off of offersRes.data as Array<{ request_id: string }>) {
       offersCountMap.set(off.request_id, (offersCountMap.get(off.request_id) ?? 0) + 1);
     }
   }
 
+  const dropsMap = new Map<string, MerchantDropSummary[]>();
+  if (dropsRes.data) {
+    for (const d of dropsRes.data as unknown as RawDropRow[]) {
+      const list = dropsMap.get(d.request_id) ?? [];
+      list.push(mapRawDropToSummary(d));
+      dropsMap.set(d.request_id, list);
+    }
+  }
+
   return {
-    requests: mapRawMerchantRequests(rawRequests, offersCountMap),
+    requests: mapRawMerchantRequests(rawRequests, offersCountMap, undefined, dropsMap),
     metrics: {
       dispatchedToday,
       avgRateArs,
@@ -650,6 +842,7 @@ export async function getMerchantRequestWithOffers(
     .select(
       `
       id,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -675,9 +868,13 @@ export async function getMerchantRequestWithOffers(
   }
 
   // CC-023: `notes` y `cash_change_amount` no se leen por tabla; llegan por la RPC del comercio dueño, en
-  // paralelo con las ofertas. Si falla se lanza, igual que cuando falla la lectura de la solicitud: nunca se
-  // muestran vacíos.
-  const [privateFields, { data: offersData, error: offersError }] = await Promise.all([
+  // paralelo con las ofertas y las entregas (drops). Si falla se lanza, igual que cuando falla la lectura de
+  // la solicitud: nunca se muestran vacíos.
+  const [
+    privateFields,
+    { data: offersData, error: offersError },
+    { data: dropsData, error: dropsError },
+  ] = await Promise.all([
     getMerchantRequestPrivateFieldsRpc(supabase, { requestId }),
     supabase
       .from('offers')
@@ -696,12 +893,45 @@ export async function getMerchantRequestWithOffers(
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(51),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        id,
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        status,
+        delivered_at,
+        failed_reason,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .eq('request_id', requestId)
+      .order('position', { ascending: true }),
   ]);
 
   if (!privateFields.ok) {
     throw new Error(`Error al cargar los datos privados de la solicitud: ${privateFields.code}`);
   }
 
+  if (dropsError) {
+    throw new Error(`Error al cargar entregas de la solicitud: ${dropsError.message}`);
+  }
+
+  const rawDrops = (dropsData as unknown as RawDropRow[] | null) ?? [];
+  const mappedDrops = rawDrops.map(mapRawDropToSummary);
+  const { drops, firstDrop, dropsCount } = assertAndMapMerchantDrops(
+    requestData.id,
+    requestData.status,
+    requestData.drops_count,
+    mappedDrops
+  );
+
+  const isDraft = requestData.status === 'draft';
   const pickupZone = Array.isArray(requestData.pickup_zone)
     ? requestData.pickup_zone[0]
     : requestData.pickup_zone;
@@ -709,20 +939,43 @@ export async function getMerchantRequestWithOffers(
     ? requestData.dropoff_zone[0]
     : requestData.dropoff_zone;
 
+  const dropoffZoneName = firstDrop
+    ? firstDrop.dropoffZoneName
+    : isDraft
+      ? (dropoffZone?.name ?? 'Zona no disponible')
+      : 'Zona no disponible';
+  const packageType = firstDrop
+    ? firstDrop.packageType
+    : isDraft
+      ? ((requestData.package_type as PackageType) ?? 'chico')
+      : ('chico' as PackageType);
+  const recipientPaymentMethod = firstDrop
+    ? firstDrop.recipientPaymentMethod
+    : isDraft
+      ? ((requestData.recipient_payment_method as RecipientPaymentMethod) ?? 'cash')
+      : ('cash' as RecipientPaymentMethod);
+  const needsChange = firstDrop
+    ? firstDrop.needsChange
+    : isDraft
+      ? Boolean(requestData.needs_change)
+      : false;
+
   const request: MerchantRequestDetail = {
     id: requestData.id,
     pickupZoneName: pickupZone?.name ?? 'Zona no disponible',
-    dropoffZoneName: dropoffZone?.name ?? 'Zona no disponible',
+    dropoffZoneName,
     approxDistanceKm: formatApproxDistanceKm(requestData.approx_distance_m),
-    packageType: requestData.package_type as PackageType,
-    recipientPaymentMethod: requestData.recipient_payment_method as RecipientPaymentMethod,
-    needsChange: Boolean(requestData.needs_change),
+    packageType,
+    recipientPaymentMethod,
+    needsChange,
     cashChangeAmount: privateFields.data.cashChangeAmount,
     notes: privateFields.data.notes,
     status: requestData.status as DeliveryRequestStatus,
     expiresAt: requestData.expires_at,
     createdAt: requestData.created_at,
     acceptedOfferId: requestData.accepted_offer_id,
+    dropsCount,
+    drops,
   };
 
   if (offersError) {

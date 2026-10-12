@@ -1,11 +1,17 @@
 import 'server-only';
 
 import { createClient } from '@/server/supabase/server';
-import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
+import {
+  packageTypeSchema,
+  recipientPaymentMethodSchema,
+  type PackageType,
+  type RecipientPaymentMethod,
+} from '@/domain/schemas';
 import type {
   AvailableRequestItem,
   CourierOfferItem,
   CourierStatusInfo,
+  PublicDropSummary,
 } from './schemas';
 
 import type { LivePageCursor } from '@/lib/live-contracts';
@@ -31,6 +37,7 @@ interface RawAvailableRequest {
   expires_at: string | null;
   fixed_price_ars?: number | null;
   auto_assign?: boolean;
+  drops_count?: number | null;
   pickup_zone: { name: string } | { name: string }[] | null;
   dropoff_zone: { name: string } | { name: string }[] | null;
 }
@@ -83,9 +90,11 @@ export async function getAvailableRequests(): Promise<{
 
   const { data: requests, error } = await supabase
     .from('delivery_requests')
-    .select(`
+    .select(
+      `
       id,
       created_at,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -96,7 +105,8 @@ export async function getAvailableRequests(): Promise<{
       auto_assign,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
-    `)
+    `
+    )
     .eq('status', 'published')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -110,63 +120,136 @@ export async function getAvailableRequests(): Promise<{
   const hasMore = rawRequests.length > 50;
   const pageRows = rawRequests.slice(0, 50);
 
-  // Verificar si el repartidor autenticado ya tiene ofertas activas en estas solicitudes
   const requestIds = pageRows.map((r) => r.id);
   const myOffersMap = new Map<string, number>();
+  const dropsMap = new Map<string, PublicDropSummary[]>();
 
-  if (user && requestIds.length > 0) {
-    const { data: userOffers } = await supabase
-      .from('offers')
-      .select('request_id, amount_ars')
-      .eq('courier_id', user.id)
-      .in('request_id', requestIds)
-      .eq('status', 'pending');
+  if (requestIds.length > 0) {
+    const [offersResult, dropsResult] = await Promise.all([
+      user
+        ? supabase
+            .from('offers')
+            .select('request_id, amount_ars')
+            .eq('courier_id', user.id)
+            .in('request_id', requestIds)
+            .eq('status', 'pending')
+        : Promise.resolve({ data: null }),
+      supabase
+        .from('delivery_request_drops')
+        .select(
+          `
+          request_id,
+          position,
+          package_type,
+          recipient_payment_method,
+          needs_change,
+          approx_distance_m,
+          dropoff_zone:zones!dropoff_zone_id(name)
+        `
+        )
+        .in('request_id', requestIds)
+        .order('position', { ascending: true }),
+    ]);
 
-    const rawUserOffers = userOffers as unknown as RawUserOffer[] | null;
+    if (dropsResult.error) {
+      throw new Error(`Error al consultar entregas del feed: ${dropsResult.error.message}`);
+    }
+
+    const rawUserOffers = offersResult.data as unknown as RawUserOffer[] | null;
     if (rawUserOffers) {
       for (const off of rawUserOffers) {
         myOffersMap.set(off.request_id, off.amount_ars);
+      }
+    }
+
+    if (dropsResult.data) {
+      interface RawDropRow {
+        request_id: string;
+        position: number;
+        package_type: string;
+        recipient_payment_method: string;
+        needs_change: boolean;
+        approx_distance_m: number | null;
+        dropoff_zone: { name: string } | { name: string }[] | null;
+      }
+      for (const d of dropsResult.data as unknown as RawDropRow[]) {
+        const pType = packageTypeSchema.safeParse(d.package_type);
+        if (!pType.success) {
+          throw new Error(
+            `Error al leer el feed: package_type fuera del dominio en la solicitud ${d.request_id}`
+          );
+        }
+        const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+        if (!pMethod.success) {
+          throw new Error(
+            `Error al leer el feed: recipient_payment_method fuera del dominio en la solicitud ${d.request_id}`
+          );
+        }
+        const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+        const summary: PublicDropSummary = {
+          position: d.position,
+          dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+          packageType: pType.data,
+          recipientPaymentMethod: pMethod.data,
+          needsChange: Boolean(d.needs_change),
+          approxDistanceM: d.approx_distance_m != null ? Number(d.approx_distance_m) : null,
+        };
+        const current = dropsMap.get(d.request_id);
+        if (current) {
+          current.push(summary);
+        } else {
+          dropsMap.set(d.request_id, [summary]);
+        }
       }
     }
   }
 
   const mapped: AvailableRequestItem[] = [];
   for (const req of pageRows) {
-    // Mismo contrato que el feed en vivo (src/server/live/t204.ts): vocabulario canónico de src/domain/schemas.
-    // Un valor fuera del dominio no se fuerza, no se traduce ni se descarta: es un error de lectura real que llega
-    // al error boundary de la ruta (courier/feed/error.tsx), en lugar de esconder los pedidos válidos.
-    const packageType = packageTypeSchema.safeParse(req.package_type);
-    if (!packageType.success) {
-      throw new Error(`Error al leer el feed: package_type fuera del dominio en la solicitud ${req.id}`);
-    }
-    const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
-    if (!recipientPaymentMethod.success) {
+    const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
+    const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+
+    const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const declaredDropsCount = req.drops_count ?? 1;
+    const reqDrops = dropsMap.get(req.id) ?? [];
+
+    if (reqDrops.length === 0) {
       throw new Error(
-        `Error al leer el feed: recipient_payment_method fuera del dominio en la solicitud ${req.id}`
+        `Inconsistencia en solicitud ${req.id}: drops_count=${declaredDropsCount} pero no se encontraron entregas`
       );
     }
 
-    const pickupZone = Array.isArray(req.pickup_zone)
-      ? req.pickup_zone[0]
-      : req.pickup_zone;
-    const dropoffZone = Array.isArray(req.dropoff_zone)
-      ? req.dropoff_zone[0]
-      : req.dropoff_zone;
+    if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+      throw new Error(
+        `Inconsistencia en solicitud ${req.id}: drops_count=${declaredDropsCount} pero se encontraron ${reqDrops.length} entregas`
+      );
+    }
 
-    const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const firstDrop = reqDrops[0];
+    if (!firstDrop) {
+      throw new Error(`Error en solicitud ${req.id}: entrega inicial no encontrada`);
+    }
+
+    const effectiveDrops = reqDrops;
+    const effectivePackageType = firstDrop.packageType;
+    const effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+    const effectiveNeedsChange = firstDrop.needsChange;
+    const effectiveDropoffZoneName = firstDrop.dropoffZoneName;
 
     mapped.push({
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
-      dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+      dropoffZoneName: effectiveDropoffZoneName,
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: packageType.data,
-      recipientPaymentMethod: recipientPaymentMethod.data,
-      needsChange: Boolean(req.needs_change),
+      packageType: effectivePackageType,
+      recipientPaymentMethod: effectivePaymentMethod,
+      needsChange: effectiveNeedsChange,
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       fixedPriceArs: req.fixed_price_ars ?? null,
       autoAssign: req.auto_assign ?? false,
+      dropsCount: effectiveDrops.length,
+      drops: effectiveDrops,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
     });
@@ -256,7 +339,8 @@ export async function getMyOffers(): Promise<CourierOfferItem[]> {
 
   const { data: offers, error } = await supabase
     .from('offers')
-    .select(`
+    .select(
+      `
       id,
       request_id,
       amount_ars,
@@ -271,7 +355,8 @@ export async function getMyOffers(): Promise<CourierOfferItem[]> {
         pickup_zone:zones!pickup_zone_id(name),
         dropoff_zone:zones!dropoff_zone_id(name)
       )
-    `)
+    `
+    )
     .eq('courier_id', user.id)
     .order('created_at', { ascending: false });
 

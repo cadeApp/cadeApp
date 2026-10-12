@@ -1,7 +1,9 @@
 import { z } from 'zod';
-import { uuidSchema } from '@/domain/rpc-contracts';
+import { uuidSchema, type PublicDropSummary } from '@/domain/rpc-contracts';
 import { courierStatusSchema } from '@/domain/schemas';
 import type { PackageType, RecipientPaymentMethod } from '@/domain/schemas';
+
+export type { PublicDropSummary };
 
 export const submitOfferFormSchema = z.object({
   requestId: uuidSchema,
@@ -76,6 +78,8 @@ export interface AvailableRequestItem {
   readonly myOfferAmountArs: number | null;
   readonly fixedPriceArs?: number | null;
   readonly autoAssign?: boolean;
+  readonly dropsCount?: number;
+  readonly drops?: PublicDropSummary[];
 }
 
 export type CourierStatus = z.infer<typeof courierStatusSchema>;

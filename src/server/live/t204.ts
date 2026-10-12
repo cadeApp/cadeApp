@@ -1,6 +1,11 @@
 import 'server-only';
 import { z } from 'zod';
-import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
+import {
+  packageTypeSchema,
+  recipientPaymentMethodSchema,
+  type PackageType,
+  type RecipientPaymentMethod,
+} from '@/domain/schemas';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsRpc } from '@/server/rpc/trips';
 import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
@@ -11,6 +16,7 @@ import type {
   LiveOffersResponse,
   LivePageCursor,
   LiveTripState,
+  PublicDropSummary,
 } from '@/lib/live-contracts';
 
 const LIVE_PAGE_SIZE = 50;
@@ -39,6 +45,7 @@ interface RawAvailableRequestRow {
   readonly expires_at: string | null;
   readonly fixed_price_ars?: number | null;
   readonly auto_assign?: boolean;
+  readonly drops_count?: number | null;
   readonly pickup_zone?: { name: string } | Array<{ name: string }> | null;
   readonly dropoff_zone?: { name: string } | Array<{ name: string }> | null;
 }
@@ -75,9 +82,11 @@ export async function getAvailableRequestsLiveServer(
 
   let query = supabase
     .from('delivery_requests')
-    .select(`
+    .select(
+      `
       id,
       created_at,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
@@ -88,7 +97,8 @@ export async function getAvailableRequestsLiveServer(
       auto_assign,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
-    `)
+    `
+    )
     .eq('status', 'published')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -116,20 +126,38 @@ export async function getAvailableRequestsLiveServer(
 
   const requestIds = pageRows.map((r) => r.id);
   const myOffersMap = new Map<string, number>();
+  const dropsMap = new Map<string, PublicDropSummary[]>();
 
-  const { data: userOffers, error: offersError } = await supabase
-    .from('offers')
-    .select('request_id, amount_ars')
-    .eq('courier_id', user.id)
-    .in('request_id', requestIds)
-    .eq('status', 'pending');
+  const [userOffersResult, dropsResult] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id, amount_ars')
+      .eq('courier_id', user.id)
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
 
-  if (offersError) {
+  if (userOffersResult.error || dropsResult.error) {
     return { ok: false, error: 'DATABASE_ERROR', status: 500 };
   }
 
-  if (userOffers) {
-    const rawUserOffers = userOffers as unknown as Array<{
+  if (userOffersResult.data) {
+    const rawUserOffers = userOffersResult.data as unknown as Array<{
       readonly request_id: string;
       readonly amount_ars: number;
     }>;
@@ -138,33 +166,84 @@ export async function getAvailableRequestsLiveServer(
     }
   }
 
+  if (dropsResult.data) {
+    interface RawLiveDropRow {
+      readonly request_id: string;
+      readonly position: number;
+      readonly package_type: string;
+      readonly recipient_payment_method: string;
+      readonly needs_change: boolean;
+      readonly approx_distance_m: number | null;
+      readonly dropoff_zone:
+        { readonly name: string } | readonly { readonly name: string }[] | null;
+    }
+    for (const d of dropsResult.data as unknown as readonly RawLiveDropRow[]) {
+      const pType = packageTypeSchema.safeParse(d.package_type);
+      const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+      if (!pType.success || !pMethod.success) {
+        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+      }
+      const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+      const summary: PublicDropSummary = {
+        position: d.position,
+        dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+        packageType: pType.data,
+        recipientPaymentMethod: pMethod.data,
+        needsChange: Boolean(d.needs_change),
+        approxDistanceM: d.approx_distance_m != null ? Number(d.approx_distance_m) : null,
+      };
+      const list = dropsMap.get(d.request_id);
+      if (list) {
+        list.push(summary);
+      } else {
+        dropsMap.set(d.request_id, [summary]);
+      }
+    }
+  }
+
   const mapped: LiveAvailableRequestItem[] = [];
   for (const req of pageRows) {
-    // Vocabulario canónico (src/domain/schemas): un valor fuera del dominio no se fuerza ni se traduce.
-    const packageType = packageTypeSchema.safeParse(req.package_type);
-    const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(req.recipient_payment_method);
-    if (!packageType.success || !recipientPaymentMethod.success) {
-      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
-    }
-
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const declaredDropsCount = req.drops_count ?? 1;
+    const reqDrops = dropsMap.get(req.id) ?? [];
+
+    if (reqDrops.length === 0) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    const firstDrop = reqDrops[0];
+    if (!firstDrop) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    const effectiveDrops = reqDrops;
+    const effectivePackageType = firstDrop.packageType;
+    const effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+    const effectiveNeedsChange = firstDrop.needsChange;
+    const effectiveDropoffZoneName = firstDrop.dropoffZoneName;
 
     mapped.push({
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
-      dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+      dropoffZoneName: effectiveDropoffZoneName,
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: packageType.data,
-      recipientPaymentMethod: recipientPaymentMethod.data,
-      needsChange: Boolean(req.needs_change),
+      packageType: effectivePackageType,
+      recipientPaymentMethod: effectivePaymentMethod,
+      needsChange: effectiveNeedsChange,
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
       fixedPriceArs: req.fixed_price_ars ?? null,
       autoAssign: req.auto_assign ?? false,
+      dropsCount: effectiveDrops.length,
+      drops: effectiveDrops,
     });
   }
 
@@ -219,7 +298,8 @@ export async function getRequestOffersLiveServer(
 
   let offersQuery = supabase
     .from('offers')
-    .select(`
+    .select(
+      `
       id,
       courier_id,
       amount_ars,
@@ -227,7 +307,8 @@ export async function getRequestOffersLiveServer(
       message,
       status,
       created_at
-    `)
+    `
+    )
     .eq('request_id', parsedId.data)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })

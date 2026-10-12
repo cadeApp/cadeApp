@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(77);
+select plan(92);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -1270,5 +1270,184 @@ select is(
   0,
   'historico delivered sin delivered_at no materializa drop con fecha inventada (H12)'
 );
+
+-- ============================================================================
+-- Paso 2: Lectores post-match desacoplados de columnas legacy
+-- ============================================================================
+create function pg_temp.test_readers_post_match() returns void language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003600';
+  v_offer_id uuid := '30000000-0000-4000-8000-000000003601';
+  v_drop_1_id uuid := '30000000-0000-4000-8000-000000003603';
+  v_drop_2_id uuid := '30000000-0000-4000-8000-000000003604';
+  v_drop_3_id uuid := '30000000-0000-4000-8000-000000003605';
+begin
+  -- Inserta request inicialmente como published sin accepted_offer_id
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, dropoff_zone_id,
+    package_type, recipient_payment_method, needs_change,
+    cash_change_amount, notes, status, drops_count
+  ) values (
+    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), pg_temp.dropoff_zone_id(),
+    'chico', 'cash', true,
+    null, null, 'published', 3
+  );
+
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    v_req_id, 'Retiro 123', 'Entrega 456', 'Cliente Uno', '+5493865111111', true
+  );
+
+  insert into public.offers (
+    id, request_id, courier_id, amount_ars, eta_minutes, status
+  ) values (
+    v_offer_id, v_req_id, pg_temp.courier_1_id(), 1500, 15, 'accepted'
+  );
+
+  -- Actualiza request a matched vinculando la oferta aceptada
+  update public.delivery_requests
+  set status = 'matched',
+      accepted_offer_id = v_offer_id,
+      matched_at = now()
+  where id = v_req_id;
+
+  -- Insertar en orden DESORDENADO: position 3, luego position 1, luego position 2
+  -- Drop 3 (failed)
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type,
+    recipient_payment_method, needs_change, status, failed_reason
+  ) values (
+    v_drop_3_id, v_req_id, 3, pg_temp.dropoff_zone_id(), 'mediano',
+    'transfer', false, 'failed', 'No atendió'
+  );
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone,
+    recipient_consent_declared, cash_change_amount, notes
+  ) values (
+    v_drop_3_id, 'Calle Tres 300', 'Cliente Tres', '+5493865333333',
+    true, null, 'Nota drop 3'
+  );
+
+  -- Drop 1 (delivered)
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type,
+    recipient_payment_method, needs_change, status, delivered_at
+  ) values (
+    v_drop_1_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico',
+    'cash', true, 'delivered', now()
+  );
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone,
+    recipient_consent_declared, cash_change_amount, notes
+  ) values (
+    v_drop_1_id, 'Entrega 456', 'Cliente Uno', '+5493865111111',
+    true, 3500, 'Tocar timbre verde en drop_contacts'
+  );
+
+  -- Drop 2 (pending)
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type,
+    recipient_payment_method, needs_change, status
+  ) values (
+    v_drop_2_id, v_req_id, 2, pg_temp.dropoff_zone_id(), 'chico',
+    'cash', false, 'pending'
+  );
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone,
+    recipient_consent_declared, cash_change_amount, notes
+  ) values (
+    v_drop_2_id, 'Calle Dos 200', 'Cliente Dos', '+5493865222222',
+    true, null, 'Nota drop 2'
+  );
+end;
+$$;
+select pg_temp.test_readers_post_match();
+
+-- 1. Repartidor aceptado llama a get_trip_details y recibe notas y monto desde drop_contacts
+select pg_temp.act_as(pg_temp.courier_1_id());
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->>'deliveryNotes'),
+  'Tocar timbre verde en drop_contacts',
+  'get_trip_details lee deliveryNotes desde drop_contacts cuando legacy es NULL'
+);
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->>'cashChangeAmount')::int,
+  3500,
+  'get_trip_details lee cashChangeAmount desde drop_contacts cuando legacy es NULL'
+);
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->>'dropsCount')::int,
+  3,
+  'get_trip_details devuelve dropsCount = 3'
+);
+select is(
+  jsonb_array_length(public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'),
+  3,
+  'get_trip_details devuelve exactamente 3 drops en el array drops'
+);
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'->0->>'position')::int,
+  1,
+  'drops ordenado deterministicamente por position: primero position 1'
+);
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'->1->>'position')::int,
+  2,
+  'drops ordenado deterministicamente por position: segundo position 2'
+);
+select is(
+  (public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'->2->>'position')::int,
+  3,
+  'drops ordenado deterministicamente por position: tercero position 3'
+);
+select is(
+  public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'->0->>'status',
+  'delivered',
+  'drop 1 refleja status delivered'
+);
+select is(
+  public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'->1->>'status',
+  'pending',
+  'drop 2 refleja status pending'
+);
+select is(
+  public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'->2->>'status',
+  'failed',
+  'drop 3 refleja status failed'
+);
+select is(
+  public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid)->'drops'->2->>'failedReason',
+  'No atendió',
+  'drop 3 refleja failedReason no atendió'
+);
+
+-- 2. Comercio dueño llama a get_merchant_request_private_fields y recibe notas y monto desde drop_contacts
+select pg_temp.act_as(pg_temp.merchant_id());
+select is(
+  (public.get_merchant_request_private_fields('30000000-0000-4000-8000-000000003600'::uuid)->>'notes'),
+  'Tocar timbre verde en drop_contacts',
+  'get_merchant_request_private_fields lee notes desde drop_contacts cuando legacy es NULL'
+);
+select is(
+  (public.get_merchant_request_private_fields('30000000-0000-4000-8000-000000003600'::uuid)->>'cashChangeAmount')::int,
+  3500,
+  'get_merchant_request_private_fields lee cashChangeAmount desde drop_contacts cuando legacy es NULL'
+);
+
+-- 3. Repartidor NO aceptado es rechazado por ambas RPCs
+select pg_temp.act_as(pg_temp.courier_2_id());
+select throws_matching(
+  $$ select public.get_trip_details('30000000-0000-4000-8000-000000003600'::uuid) $$,
+  'UNAUTHORIZED_ACTOR',
+  'repartidor no aceptado es rechazado por get_trip_details'
+);
+select throws_matching(
+  $$ select public.get_merchant_request_private_fields('30000000-0000-4000-8000-000000003600'::uuid) $$,
+  'UNAUTHORIZED_ACTOR',
+  'repartidor no aceptado es rechazado por get_merchant_request_private_fields'
+);
+
+select pg_temp.reset_actor();
 
 rollback;

@@ -19,6 +19,7 @@ const cases = [
       routeDistanceM: 2000,
       fixedPriceArs: null,
       autoAssign: false,
+      dropsCount: 1,
     },
   },
   {
@@ -192,7 +193,12 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     )
       ? readFileSync('supabase/migrations/20261007090000_t339_fixed_price.sql', 'utf8')
       : '';
-    const combinedSql = migrationSql + '\n' + t339MigrationSql;
+    const t340MigrationSql = existsSync(
+      'supabase/migrations/20261009200000_t340_multi_drop.sql'
+    )
+      ? readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql', 'utf8')
+      : '';
+    const combinedSql = migrationSql + '\n' + t339MigrationSql + '\n' + t340MigrationSql;
     const raisedInMigration = new Set(
       Array.from(combinedSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
     );
@@ -247,6 +253,80 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
       });
     });
   }
+
+  describe('CC-022 / T-340 / H03: mark_drop_delivered y mark_drop_failed envían argumentos SQL exactos sin p_request_id', () => {
+    const dropId = '40000000-0000-4000-8000-000000000001';
+
+    it('mark_drop_delivered: envía exactamente { p_drop_id } a SQL sin ningún p_request_id', async () => {
+      const output = {
+        dropId,
+        requestId,
+        status: 'delivered' as const,
+        deliveredAt: time,
+        requestStatus: 'in_transit' as const,
+        idempotent: false,
+      };
+      const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
+      const result = await callRequestRpc({ rpc }, 'mark_drop_delivered', {
+        dropId,
+        requestId,
+      });
+
+      expect(result).toEqual({ ok: true, data: output });
+      expect(rpc).toHaveBeenCalledExactlyOnceWith('mark_drop_delivered', { p_drop_id: dropId });
+      const firstCallDelivered = rpc.mock.calls[0];
+      const calledArgsDelivered = (firstCallDelivered ? firstCallDelivered[1] : {}) as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(calledArgsDelivered).sort()).toEqual(['p_drop_id']);
+    });
+
+    it('mark_drop_failed: envía exactamente { p_drop_id, p_reason } a SQL sin ningún p_request_id', async () => {
+      const output = {
+        dropId,
+        requestId,
+        status: 'failed' as const,
+        failedReason: 'Destinatario ausente',
+        requestStatus: 'delivered' as const,
+        idempotent: false,
+      };
+      const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
+      const result = await callRequestRpc({ rpc }, 'mark_drop_failed', {
+        dropId,
+        requestId,
+        reason: '  Destinatario ausente  ',
+      });
+
+      expect(result).toEqual({ ok: true, data: output });
+      expect(rpc).toHaveBeenCalledExactlyOnceWith('mark_drop_failed', {
+        p_drop_id: dropId,
+        p_reason: 'Destinatario ausente',
+      });
+      const firstCallFailed = rpc.mock.calls[0];
+      const calledArgsFailed = (firstCallFailed ? firstCallFailed[1] : {}) as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(calledArgsFailed).sort()).toEqual(['p_drop_id', 'p_reason']);
+    });
+
+    it('mark_drop_delivered y mark_drop_failed mapean errores de Postgres P0001 a DomainErrorCode', async () => {
+      for (const rpcName of ['mark_drop_delivered', 'mark_drop_failed'] as const) {
+        for (const code of RPC_CONTRACTS[rpcName].errorCodes) {
+          const rpc = vi
+            .fn()
+            .mockResolvedValue({ data: null, error: { code: 'P0001', message: code } });
+          const input =
+            rpcName === 'mark_drop_delivered'
+              ? { dropId }
+              : { dropId, reason: 'Motivo' };
+          const result = await callRequestRpc({ rpc }, rpcName, input);
+          expect(result).toEqual({ ok: false, code });
+        }
+      }
+    });
+  });
 
   it('report_no_show conserva false y el cliente implementa las ocho RPC del contrato', async () => {
     const output = { requestId, status: 'cancelled', cancelledOfferId: offerId, expiresAt: null };
@@ -386,6 +466,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
             routeDistanceM: 1500,
             fixedPriceArs: null,
             autoAssign: false,
+            dropsCount: 1,
           },
           error: null,
         };
@@ -456,6 +537,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           routeDistanceM: 1500,
           fixedPriceArs: null,
           autoAssign: false,
+          dropsCount: 1,
         },
         error: null,
       });
@@ -499,6 +581,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           routeDistanceM: 1500,
           fixedPriceArs: null,
           autoAssign: false,
+          dropsCount: 1,
         },
         error: null,
       });

@@ -97,6 +97,24 @@ insert into public.delivery_requests (
   (pg_temp.request_other(), pg_temp.merchant_b(), 'published', pg_temp.zone_a(), pg_temp.zone_b(), 'chico', 'cash',
    true, 2000, 'Indicaciones ajenas');
 
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type,
+  recipient_payment_method, needs_change, status
+) values
+  ('00000000-0000-4000-8000-000000002391', pg_temp.request_cash(), 1, pg_temp.zone_b(), 'chico',
+   'cash', true, 'pending'),
+  ('00000000-0000-4000-8000-000000002393', pg_temp.request_other(), 1, pg_temp.zone_b(), 'chico',
+   'cash', true, 'pending');
+
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone,
+  recipient_consent_declared, cash_change_amount, notes
+) values
+  ('00000000-0000-4000-8000-000000002391', 'Belgrano 100', 'Cliente Cash', '3865100001',
+   true, 5000, 'Tocar timbre 2B'),
+  ('00000000-0000-4000-8000-000000002393', 'Belgrano 200', 'Cliente Other', '3865100002',
+   true, 2000, 'Indicaciones ajenas');
+
 -- Solicitud con match: el repartidor A es el aceptado; el B no.
 insert into public.delivery_requests (
   id, merchant_id, status, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method,
@@ -117,6 +135,22 @@ values (pg_temp.offer_matched(), pg_temp.request_matched(), pg_temp.courier_a(),
 update public.delivery_requests
 set status = 'matched', accepted_offer_id = pg_temp.offer_matched(), matched_at = now()
 where id = pg_temp.request_matched();
+
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type,
+  recipient_payment_method, needs_change, status
+) values (
+  '00000000-0000-4000-8000-000000002394', pg_temp.request_matched(), 1, pg_temp.zone_b(), 'chico',
+  'cash', true, 'pending'
+);
+
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone,
+  recipient_consent_declared, cash_change_amount, notes
+) values (
+  '00000000-0000-4000-8000-000000002394', 'Belgrano 1220', 'Laura Gómez', '3865123456',
+  true, 8000, 'Portón verde'
+);
 
 -- 1. RPC get_merchant_request_private_fields: grants y endurecimiento
 select ok(

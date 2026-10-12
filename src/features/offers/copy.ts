@@ -20,9 +20,15 @@ export const OFFERS_COPY = {
   // Tarjeta de solicitud
   offerButton: 'Ofertar',
   takeRequestButton: (amount: string) => `Tomar a ${amount}`,
+  takeMultiDropButton: (amount: string, count: number) => `Tomar a ${amount} c/u (${count} entregas)`,
   alreadyOfferedPrefix: 'Ya ofertaste',
   changeNeededBadge: 'Necesita cambio',
   changeAmountPrefix: 'Cambio para',
+  dropsCountBadge: (count: number) => `${count} entregas`,
+  totalQuoteSummary: (perDrop: string, total: string, count: number) =>
+    `${perDrop} por entrega · Total: ${total} (${count} entregas)`,
+  totalOfferQuote: (total: string, count: number) =>
+    `Total cotizado: ${total} (${count} entregas)`,
   // Medio de pago del destinatario: una etiqueta por valor canónico (RECIPIENT_PAYMENT_METHODS)
   paymentLabels: {
     cash: 'Paga en efectivo',

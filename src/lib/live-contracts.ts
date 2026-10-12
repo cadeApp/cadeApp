@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { packageTypeSchema, recipientPaymentMethodSchema } from '@/domain/schemas';
+import { publicDropSummarySchema, type PublicDropSummary } from '@/domain/rpc-contracts';
+
+export { publicDropSummarySchema, type PublicDropSummary };
 
 export const liveAvailableRequestItemSchema = z.object({
   id: z.string().uuid(),
@@ -15,6 +18,8 @@ export const liveAvailableRequestItemSchema = z.object({
   myOfferAmountArs: z.number().int().nullable(),
   fixedPriceArs: z.number().int().positive().nullable().optional(),
   autoAssign: z.boolean().optional(),
+  dropsCount: z.number().int().positive().optional(),
+  drops: z.array(publicDropSummarySchema).optional(),
 });
 
 export type LiveAvailableRequestItem = z.infer<typeof liveAvailableRequestItemSchema>;

@@ -389,6 +389,7 @@ export async function getPlatformSettings(): Promise<PlatformSettingsSnapshot> {
     pilotActive: read('pilot_active', isBoolean),
     pilotTermsVersion: read('pilot_terms_version', isString),
     subscriptionGraceDays: read('subscription_grace_days', isNumber),
+    maxDropsPerRequest: read('max_drops_per_request', isNumber),
   };
 }
 

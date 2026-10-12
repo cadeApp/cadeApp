@@ -244,6 +244,7 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
         requestId: validSubmitInput.requestId,
         status: 'pending' as const,
         amountArs: 1500,
+        totalAmountArs: 1500,
         createdAt: '2026-09-23T18:00:00.000Z',
       };
 
@@ -601,6 +602,7 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
         requestId: '22222222-2222-2222-2222-222222222222',
         acceptedOfferId: validAcceptInput.offerId,
         status: 'matched',
+        totalAmountArs: 2000,
         matchedAt: '2026-09-24T01:30:00.000Z',
         idempotent: false,
       };
@@ -787,6 +789,7 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
         offerId: '44444444-4444-4444-4444-444444444444',
         requestId: validTakeInput.requestId,
         amountArs: 2000,
+        totalAmountArs: 2000,
         offerStatus: 'pending',
         requestStatus: 'published',
         matchedAt: null,
@@ -838,6 +841,7 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
         offerId: '44444444-4444-4444-4444-444444444444',
         requestId: validTakeInput.requestId,
         amountArs: 2000,
+        totalAmountArs: 2000,
         offerStatus: 'accepted',
         requestStatus: 'matched',
         matchedAt: '2026-10-07T10:00:01.000Z',
@@ -889,6 +893,7 @@ describe('T-114 DoD: actions de ofertas (submitOfferAction y withdrawOfferAction
         offerId: '44444444-4444-4444-4444-444444444444',
         requestId: validTakeInput.requestId,
         amountArs: 2000,
+        totalAmountArs: 2000,
         offerStatus: 'accepted',
         requestStatus: 'matched',
         matchedAt: '2026-10-07T10:00:01.000Z',

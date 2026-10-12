@@ -52,7 +52,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     ) => Promise<unknown>;
   }
 
-  function createMockQueryBuilder<T>(resolvedData: T, resolvedError: unknown = null): MockBuilder<T> {
+  function createMockQueryBuilder<T>(
+    resolvedData: T,
+    resolvedError: unknown = null
+  ): MockBuilder<T> {
     const calls: MockCallLog = {
       select: [],
       eq: [],
@@ -242,9 +245,11 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     it('retorna 500 si falla la consulta de offers', async () => {
       const reqBuilder = createMockQueryBuilder([makeRequestRow(1)]);
       const offersBuilder = createMockQueryBuilder(null, new Error('Offers query error'));
+      const dropsBuilder = createMockQueryBuilder([]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -267,9 +272,22 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const row = makeRequestRow(1);
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([{ request_id: row.id, amount_ars: 1800 }]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -300,9 +318,22 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       };
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -335,6 +366,25 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     function mockFeedClient(rows: readonly unknown[]) {
       const reqBuilder = createMockQueryBuilder(rows);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsRows = (
+        rows as Array<{
+          id?: string;
+          package_type?: string;
+          recipient_payment_method?: string;
+          needs_change?: boolean;
+          approx_distance_m?: number;
+        }>
+      ).map((r, i) => ({
+        id: `drop-${r.id ?? i}`,
+        request_id: r.id ?? `req-${i}`,
+        position: 1,
+        package_type: r.package_type ?? 'chico',
+        recipient_payment_method: r.recipient_payment_method ?? 'cash',
+        needs_change: Boolean(r.needs_change),
+        approx_distance_m: r.approx_distance_m ?? 1000,
+        dropoff_zone: { name: 'Aguilares' },
+      }));
+      const dropsBuilder = createMockQueryBuilder(dropsRows);
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
@@ -342,6 +392,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         from: vi.fn().mockImplementation((table: string) => {
           if (table === 'delivery_requests') return reqBuilder;
           if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -382,10 +433,23 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const rows51 = Array.from({ length: 51 }, (_, i) => makeRequestRow(i + 1));
       const reqBuilder = createMockQueryBuilder(rows51);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder(
+        rows51.map((r) => ({
+          id: `drop-${r.id}`,
+          request_id: r.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: Boolean(r.needs_change),
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        }))
+      );
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -419,12 +483,26 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     });
 
     it('B: Feed segunda página -> spy demuestra order(created_at), order(id), limit(51) y .or(...) exacto', async () => {
-      const reqBuilder = createMockQueryBuilder([makeRequestRow(1)]);
+      const row = makeRequestRow(1);
+      const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -452,6 +530,126 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
         ],
       ]);
+    });
+
+    it('PR318-H05: responde 500 si drops_count = 1 pero delivery_request_drops devuelve vacío', async () => {
+      const row = {
+        ...makeRequestRow(1),
+        drops_count: 1,
+      };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(500);
+        expect(result.error).toBe('DATABASE_ERROR');
+      }
+    });
+
+    it('PR318-H05: responde 500 si drops_count > 1 pero delivery_request_drops devuelve vacío', async () => {
+      const row = {
+        ...makeRequestRow(1),
+        drops_count: 3,
+      };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(500);
+        expect(result.error).toBe('DATABASE_ERROR');
+      }
+    });
+
+    it('PR318-H05: responde con éxito cuando parent tiene columnas legacy nulas y deriva de drops', async () => {
+      const reqId = '22222222-2222-2222-2222-222222222222';
+      const row = {
+        ...makeRequestRow(1),
+        id: reqId,
+        drops_count: 2,
+        package_type: null,
+        recipient_payment_method: null,
+        needs_change: null,
+        dropoff_zone: null,
+      };
+      const dropRows = [
+        {
+          id: 'drop-live-1',
+          request_id: reqId,
+          position: 1,
+          approx_distance_m: 1200,
+          package_type: 'mediano',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+        {
+          id: 'drop-live-2',
+          request_id: reqId,
+          position: 2,
+          approx_distance_m: 1800,
+          package_type: 'grande',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ];
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder(dropRows);
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const item = result.data.data[0];
+        expect(item?.packageType).toBe('mediano');
+        expect(item?.recipientPaymentMethod).toBe('transfer');
+        expect(item?.needsChange).toBe(false);
+        expect(item?.dropoffZoneName).toBe('Barrio Norte');
+        expect(item?.dropsCount).toBe(2);
+        expect(item?.drops).toHaveLength(2);
+      }
     });
   });
 
@@ -864,13 +1062,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         'supabase/migrations/20260926173000_t204_live_pagination_indexes.sql'
       );
       const sqlContent = readFileSync(migrationPath, 'utf8');
-      const normalizedSql = sqlContent
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .trim();
+      const normalizedSql = sqlContent.toLowerCase().replace(/\s+/g, ' ').trim();
 
       expect(normalizedSql).toContain(
-        'create index delivery_requests_published_cursor_idx on public.delivery_requests (created_at desc, id desc) where status = \'published\';'
+        "create index delivery_requests_published_cursor_idx on public.delivery_requests (created_at desc, id desc) where status = 'published';"
       );
       expect(normalizedSql).toContain(
         'create index offers_request_created_cursor_idx on public.offers (request_id, created_at desc, id desc);'
