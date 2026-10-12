@@ -22,7 +22,7 @@ La revisión independiente ejecutó **sondas adversariales en JavaScript aislado
 | `unit` / coverage — [job 115029340023](https://github.com/cadeApp/cadeApp/actions/jobs/115029340023) | **129 suites, 2116 tests PASS**, `rpc-fake.ts` 95.32 % statements / 91.35 % branches; workflow 79 y ADR 6 PASS |
 | `db-tests` — [job 115029339964](https://github.com/cadeApp/cadeApp/actions/jobs/115029339964) | **21 suites, 1995 tests PASS**, original H08/H14 11/11 concurrencia OK y H15 RED→GREEN restaurado |
 | typecheck, lint, build, audit, bundle-budget, Vercel | PASS |
-| `approval-policy` — [job 115029333963](https://github.com/cadeApp/cadeApp/actions/jobs/115029333963) | FAIL por falta de informe `revisar-pr` sin bloqueantes en comentario de PR antes de esta ronda |
+| `approval-policy` — [job 115029333963](https://github.com/cadeApp/cadeApp/actions/jobs/115029333963) | FAIL por falta de informe `revisar-pr` sin bloqueantes en el cuerpo de la PR antes de esta ronda |
 | `e2e-preview` — [run 38315102812](https://github.com/cadeApp/cadeApp/actions/runs/38315102812) | BLOCKED / REQUIRES DEVELOP MIGRATION (**no ejecutado**) |
 
 **Límite del revisor:** GitHub `git clone` no accesible por DNS desde el contenedor; no se corrió Vitest mutado, Playwright, Docker, Supabase local o remoto ni `analizar.mjs verificacion`. Sí se comparó SHA, archivos, código y logs de CI, se ejecutaron sondas independientes aisladas, y se validó sintaxis de los 12 hallazgos JSONL. No atribuir al revisor la ejecución local que figura en la bitácora del autor.
@@ -39,7 +39,7 @@ Informe revisar-pr — T-340 — 2026-10-12 — revisión independiente, R9.
 
 **Resultado: SIN BLOQUEANTES DE CÓDIGO PREMERGE; H09 CHECKPOINT E2E POSTMIGRACIÓN PENDIENTE BAJO OPCIÓN A.**
 
-Checks: unit ✅ (2116) · db-tests ✅ (1995) · typecheck ✅ · lint ✅ · build ✅ · audit ✅ · bundle-budget ✅ · Vercel ✅ · approval-policy ❌ (informe sin publicar aún) · E2E 3 drops NO EJECUTADO (migration gate).
+Checks: unit ✅ (2116) · db-tests ✅ (1995) · typecheck ✅ · lint ✅ · build ✅ · audit ✅ · bundle-budget ✅ · Vercel ✅ · approval-policy ❌ inicialmente (sección obligatoria del cuerpo añadida después) · E2E 3 drops NO EJECUTADO (migration gate).
 
 **Bloqueantes premerge nuevos:** ninguno confirmado. **Mejoras:** bitácora nueva dice último commit `c50f5dfa` aunque HEAD real es `838c7686`; metadato desactualizado no bloqueante, no demanda otra ronda de Asako.
 
