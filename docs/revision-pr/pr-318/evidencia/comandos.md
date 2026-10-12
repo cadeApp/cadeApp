@@ -336,3 +336,11 @@ Files=21, Tests=1963, Result: FAIL
 **Limitaciones expresas:** el revisor leyó resultados reales de CI y código remoto, no ejecutó un Docker, Postgres local, SQL mutante, E2E ni red/green nuevos. No afirmar «hallazgo verificado runtime» para H05/H06/H09/H10; clasificados por inspección, por confirmar con pruebas del autor. No utilizar un check verde viejo de Gate 0 como PASS del Step 2.
 
 **Sin decisión abierta:** Lautaro073 aprobó A, dos tests legacy tienen autorización puntual en ficha, no se modifican aserciones ni CC-022. No avanzar al Paso 3 de Kira hasta merge/gate del Paso 2.
+
+
+### Nota de entorno sobre H09 — límite real para E2E de Paso 2 ANTES del merge
+
+Inspección independiente de `.github/workflows/e2e-preview.yml:3–4,22,53,60` y `.github/workflows/migrate.yml:3–7,17–18`: el Vercel Preview de las PRs se prueba contra **Supabase Develop COMPARTIDO**, pero las migraciones de feature se aplican a Supabase Develop **exclusivamente después del merge/push a la rama `develop`**. Por ello, aunque `e2e/specs/multi-drop.spec.ts` tuviera oráculos correctos, la RPC remota `get_trip_details` todavía carece de `drops[]` de Paso 2 hasta desplegar `20261012010000_t340_readers.sql`. **No exigir GREEN E2E nuevo premerge sobre ese backend viejo ni declarar falla de implementación por esa incompatibilidad de entorno**. **No autorizar a Asako a ejecutar `db push` manual sobre Supabase Develop**, y no inventar un nuevo workflow ni conexiones remotas.
+
+Orden técnicamente seguro de validación: (1) obtener `db-tests` del SHA (migraciones nuevas probadas en DB efímero) + unit/typecheck/lint/build en verde, (2) auditar a nivel código/fixture los asserts del E2E nuevo con pruebas negativas unitarias/in-memory y dejar anotado **E2E POST-MIGRACIÓN PENDIENTE**, (3) resolver explícitamente el gate de release/premerge con Lautaro073 antes del eventual merge, (4) tras el merge y migración automática Develop, ejecutar el checkpoint E2E real contra ese backend y **NO** empezar Paso 3 con Kira hasta que esté verde. **Este informe NO autoriza el merge saltándose el gate ni convierte un spec no ejecutado en «verificado»**.
+
