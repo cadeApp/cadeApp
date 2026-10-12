@@ -286,3 +286,53 @@ console.log('NO se ejecutó Playwright, pgTAP ni Supabase por esta sonda');
 **Resultado de la revisión efectivamente ejecutada:** 12/12 condiciones estáticas sobre fuentes GitHub son positivas (deficiencia presente). Los jobs de CI citados aportan los fallos runtime; la sonda no se ejecutó en un checkout local por el revisor y se propone como herramienta reproducible, NO como GREEN/RED runtime acreditado.
 
 **Decisión A tomada por Lautaro073:** `get_trip_details` devuelve array `drops[]` tipado por posición, con contactos privados solo post-match; mantiene campos escalares de salida derivados de primer drop, pero **nunca lee** columnas legacy de DB. Autorización en ficha de la rama. No tocar limpieza del paso 3 ni escritor del paso 4.
+
+## Ronda 5 — Código SHA `58811a3038dc819c5e0e6e3136f450bf5fb47b7c` (2026-10-12)
+
+**Comparado contra ronda 4 `9ad7c333`:** 2 commits, 27 archivos. Rama `behind=0`, Draft. La ficha de `develop` se leyó **antes** del código. Opción A adicional para fixtures históricos se registró en ficha de la rama por el revisor en `ea4ab8ce` y NO modifica el SHA productivo auditado.
+
+### CI realmente ejecutado en Actions
+
+- [CI run 38271482164](https://github.com/cadeApp/cadeApp/actions/runs/38271482164) — SHA exacto `58811a30`.  
+- [db-tests job 114886529374](https://github.com/cadeApp/cadeApp/actions/jobs/114886529374) — **FAIL**. Migración `20261012010000_t340_readers.sql` instalada en Postgres EFÍMERO de job antes de ejecutar suites; no en Develop remoto por el revisor.
+- [unit job 114886529521](https://github.com/cadeApp/cadeApp/actions/jobs/114886529521) — **PASS**. `rpc-fake.ts` columns: statements `95.32`, branches `91.35`, functions `100`.
+- typecheck/lint/build/audit/bundle-budget PASS, approval-policy FAIL, Supabase Preview SKIPPED. **No E2E Preview GREEN observado** en el commit; una carpeta/spec no acredita ejecución.
+
+**Errores exactos en db-tests (tres suites):**
+```text
+supabase/tests/cc008_trip_details.sql:117: ERROR: NOT_FOUND
+Bad plan. You planned 13 tests but ran 2.
+
+supabase/tests/cc023_private_columns.sql:403: ERROR: NOT_FOUND
+# Failed test 7: "owner merchant receives requestId, notes and cashChangeAmount"
+Bad plan. You planned 42 tests but ran 36.
+
+supabase/tests/t340_multi_drop.sql:1358:
+ERROR: insert or update on table "delivery_requests" violates foreign key constraint
+"delivery_requests_accepted_offer_fk"
+Bad plan. You planned 90 tests but ran 77.
+Files=21, Tests=1963, Result: FAIL
+```
+
+### Evidencia cruzada propia en código de GitHub
+
+| Hallazgo | Fuente exacta comprobada y conclusión |
+|---|---|
+| H03 | `src/server/rpc/requests.ts:44–49` manda payloads por firma; `requests.test.ts:257–334` usa `toHaveBeenCalledExactlyOnceWith` y key set. Unit job PASS. Arreglado-verificado. |
+| H04 | `20261012010000_t340_readers.sql:109–143,165–193` usa jsonb_agg ordenado y scalar desde primer drop sin legacy fallback. Tests `cc008_trip_details.sql:75–94`, `cc023_private_columns.sql:89–119` no siembran children requeridos; CI falla en ruta runtime. |
+| H05 | `src/features/offers/queries.ts:120–180,190–237`, `src/server/live/t204.ts:124–190,195–236`: consulta batch públicas sí; validación obligatoria de parents nullable y fallback ficticio de 1 drop N no. |
+| H06 | `src/features/requests/queries.ts:261–280,432–445,648–720` no consume `delivery_request_drops`; tipos de listas siguen scalar. Las vistas de viaje tienen `(trip as any).requestId` y `packageType:'chico'` fake. |
+| H07 | `supabase/tests/t340_multi_drop.sql:1286–1306`: el INSERT request asigna `accepted_offer_id=v_offer_id` ANTES del INSERT offers. FK falla genuinamente en job. UUID repetido anterior ya no está. |
+| H08 | Log unit job `114886529521`: `rpc-fake.ts 95.32 / 91.35 / 100`; PASS sin tocar thresholds. |
+| H09 | `e2e/specs/multi-drop.spec.ts`: 218 líneas pero no run verde de Preview, solo aserciones DOM de privacidad, todos los drops misma zona, no chequea error de `update({drops_count:3})`, ni courier extraño, ni RED documentado. |
+| H10 | `trip-courier-container.tsx:30–49` llama `markTripDeliveredAction({requestId})` para in_transit y `trip-courier-view.tsx:271–285` expone el mismo único botón, aunque existen acciones `markDropDeliveredAction`/`markDropFailedAction` en `actions.ts:184–222`. No existe UI para completar drop 2. |
+
+**Comprobación adversarial propuesta a Asako (NO ejecutada por el revisor):**
+- H04: antes del fixture, `get_trip_details` de request sin children debe fallar NOT_FOUND; tras crear child debe devolver datos sin tocar columnas DB legacy. **No cambiar assertions**.
+- H05: cambiar parent nullable con 3 child drops válidos hace FALLAR código actual. Después no debe fallar. Borrar todos los child de N en fixture controlado nunca debe producir `dropsCount=1` ficticio.
+- H07: POSTGRES FK falla antes del INSERT oferta. Cambiar orden de operaciones resuelve la FK preservando registros.
+- H10: test unit de TripCourierContainer en `in_transit` con 3 child pendientes inicialmente invocará `markTripDeliveredAction`, lo que debe dar RED contra expect de `markDropDeliveredAction({dropId:...})`, GREEN tras corregir. No se ejecutó porque no existe checkout local, registrado como pendiente.
+
+**Limitaciones expresas:** el revisor leyó resultados reales de CI y código remoto, no ejecutó un Docker, Postgres local, SQL mutante, E2E ni red/green nuevos. No afirmar «hallazgo verificado runtime» para H05/H06/H09/H10; clasificados por inspección, por confirmar con pruebas del autor. No utilizar un check verde viejo de Gate 0 como PASS del Step 2.
+
+**Sin decisión abierta:** Lautaro073 aprobó A, dos tests legacy tienen autorización puntual en ficha, no se modifican aserciones ni CC-022. No avanzar al Paso 3 de Kira hasta merge/gate del Paso 2.

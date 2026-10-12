@@ -36,3 +36,12 @@
 - **Decisión A expresamente elegida por Lautaro073:** ampliar `get_trip_details` con array `drops[]` ordenado, manteniendo campos escalares de respuesta derivados del primer elemento. Centralizar la autorización post-match; no expandir tareas a Paso 3/4, que luego realizará Kira tras gates independientes.
 
 **Limitación de evidencia R4:** se inspeccionaron 12 marcadores por lectura fuente, y se leyeron fallos CI reproducibles de pgTAP y coverage en el SHA exacto. No se ejecutaron mutations SQL/E2E reales desde el revisor ni se afirma que los demás hallazgos se hayan reproducido en runtime.
+
+## Ronda 5 — Lecciones (2026-10-12)
+
+- **Un JSON `drops[]` completo no es «lectores completos»:** actualizar backend y dos vistas deja atrás historial del merchant, admin y las acciones concretas del courier. Hay que auditar el trayecto **source→DTO→listado→detalle→botón→RPC**. `trip-courier-container.tsx` siguió usando la RPC legacy mientras la UI ya dibujaba N; surgió H10 sin que fallara `unit`.
+- **Compatibilidad probada con fixtures del esquema anterior puede exigir actualizar los DATOS, no el contrato productivo:** el nuevo lector correctamente exige una child row materializada para matched; suites cc008/cc023 la omiten porque preexistían a T-340. Lautaro073 autorizó en R5 opción A modificar **solo fixtures** en dos archivos; las aserciones se mantienen idénticas. No reintroducir dependencia de columnas DB legacy.
+- **No fabricar datos al faltar hijos N:** `drops_count=3` con 0 children no autoriza crear un item fake de position 1 basado en un parent nullable. Validar los campos nuevos y propagar errores de query; no degradar casos parciales a un resultado aparentemente correcto.
+- **Test Postgres de FK falla antes del oráculo:** crear request con accepted_offer_id a oferta inexistente viola FK inmediato; insertar primero request, luego oferta, después UPDATE matched. No debilitar integridad para facilitar fixtures. Este fue fallo independiente después de quitar la PK repetida H07.
+- **Unit coverage verde no implica E2E:** H08 está cerrado de verdad con 95.32/91.35 CI, pero H09 no se puede cerrar sin el run E2E real del nuevo SHA y un RED sobre propiedades nuevas. No reciclar el Gate 0, que cubría legacy 1 drop.
+- **El prompt técnico debe ahorrar rondas, no solo enumerar defectos:** H10 tiene que incluir wiring exacto de Container→Action por drop, tests con click de drop2 y motivo, cierre de todos los pending y cuenta cobrable, además de historial, privacy payload y progreso de CI. No dejar decisiones triviales para el agente.
