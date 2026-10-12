@@ -344,3 +344,63 @@ Inspección independiente de `.github/workflows/e2e-preview.yml:3–4,22,53,60` 
 
 Orden técnicamente seguro de validación: (1) obtener `db-tests` del SHA (migraciones nuevas probadas en DB efímero) + unit/typecheck/lint/build en verde, (2) auditar a nivel código/fixture los asserts del E2E nuevo con pruebas negativas unitarias/in-memory y dejar anotado **E2E POST-MIGRACIÓN PENDIENTE**, (3) resolver explícitamente el gate de release/premerge con Lautaro073 antes del eventual merge, (4) tras el merge y migración automática Develop, ejecutar el checkpoint E2E real contra ese backend y **NO** empezar Paso 3 con Kira hasta que esté verde. **Este informe NO autoriza el merge saltándose el gate ni convierte un spec no ejecutado en «verificado»**.
 
+## Ronda 6 — auditoría independiente (2026-10-12)
+
+**SHA código Asako inspeccionado:** `5a6daeed09f82804b4bb0a3ad57ef003ec027aeb`; comparado vs commit revisor R5 `dd92d354`, 18 archivos modificados por Asako (sin tocar `docs/revision-pr/pr-318/**`). `behind=0`, Draft, GitHub `mergeable=true`. **Fix minúsculo del revisor:** `c1ac1cfa6486813ba948c4b4d122e9dae8d7fdce` solo ajustó `select plan(90)`→`select plan(92)` en `supabase/tests/t340_multi_drop.sql`. Sin más cambios productivos ni de seguridad.
+
+### CI real del SHA de código original y del arreglo documental de pgTAP
+
+- Autor `5a6daeed`: [CI](https://github.com/cadeApp/cadeApp/actions/runs/38290138657) `unit`, `typecheck`, `lint`, `build`, `audit`, `bundle-budget` PASS; `db-tests` [job 114947979154](https://github.com/cadeApp/cadeApp/actions/jobs/114947979154) muestra `All 90 subtests passed` pero archivo T-340 ejecutó 92 con `plan(90)`: `Failed tests: 91-92`, `Files=21 Tests=1995 Result: FAIL`. Las suites `cc008_trip_details.sql` y `cc023_private_columns.sql` fueron PASS, sin antigua regresión NOT_FOUND.
+- Revisor `c1ac1cfa`: [CI](https://github.com/cadeApp/cadeApp/actions/runs/38296144089) `db-tests` [job 114967582555](https://github.com/cadeApp/cadeApp/actions/jobs/114967582555): **21 suites, 1995 tests, Result PASS**. Ambas suites legacy, `t340_multi_drop.sql`, y mutación negativa H15 seguida por restauración GREEN completaron. SQL probado en Postgres efímero de Actions, **no** Develop remoto. `unit` [job 114967582574](https://github.com/cadeApp/cadeApp/actions/jobs/114967582574): 128 test files, 2092 tests PASS; `rpc-fake.ts` 95,32 % statements/91,35 % branches; demás técnicos PASS; `approval-policy` FAIL. El nuevo SHA de docs de revisión posterior volverá a disparar CI: no confundir.
+- Autor `5a6daeed`: status GitHub `e2e-preview=error BLOCKED / REQUIRES DEVELOP MIGRATION`, [run 38295234609](https://github.com/cadeApp/cadeApp/actions/runs/38295234609). Workflow `.github/workflows/e2e-preview.yml` apunta a Supabase Develop compartido y `migrate.yml` instala migraciones solo luego de push a `develop`. No es RED de comportamiento productivo del lector.
+- **No se ejecutó Docker, Postgres local, Playwright ni conexión remota manual por el revisor.** Sí se leyeron y contrastaron los dos logs CI exactos.
+
+### Sonda propia ejecutada contra 6 propiedades fuente y 6 mutaciones en memoria
+
+Se descargaron por SHA exacto los blobs de:
+`src/features/requests/queries.ts`, `merchant-history-view.tsx`, `merchant-requests-list.tsx`, `e2e/specs/multi-drop.spec.ts`, `src/features/trips/components.test.tsx` y `trip-courier-container.tsx`.
+
+**Resultado real de la ejecución V8 sobre esos blobs:** `baselineDeficiency=true` en **6/6** y `mutationFlipsDeficiency=true` en **6/6**, con todas las cadenas alteradas en memoria; no se escribió código a la rama. Condiciones: (H06) lector no consulta `delivery_request_drops`, vista historial/lista no usa `req.drops`; (H09) `if(liveRes.ok())` omite assertions ante HTTP 500, actor foráneo sólo comprueba `data=null` sin verificar error exacto; (H10) test de componentes no monta `TripCourierContainer`.
+
+**Harness completo, reproducible desde cualquier checkout del SHA auditado, para guardar fuera del repo en `/tmp/pr318-r6-probe.cjs`:**
+
+```js
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const paths={
+  'H06-reader-child':'src/features/requests/queries.ts',
+  'H06-history-UI':'src/features/requests/components/merchant-history-view.tsx',
+  'H06-list-UI':'src/features/requests/components/merchant-requests-list.tsx',
+  'H09-HTTP-conditional':'e2e/specs/multi-drop.spec.ts',
+  'H09-foreign-no-error':'e2e/specs/multi-drop.spec.ts',
+  'H10-wiring-not-tested':'src/features/trips/components.test.tsx',
+};
+const src=Object.fromEntries(Object.entries(paths).map(([id,p])=>[id,fs.readFileSync(p,'utf8')]));
+const cases=[
+ ['H06-reader-child',s=>!s.includes(".from('delivery_request_drops')"),s=>s+"\n.from('delivery_request_drops')"],
+ ['H06-history-UI',s=>!s.includes('req.drops'),s=>s+'\nreq.drops.map()'],
+ ['H06-list-UI',s=>!s.includes('req.drops'),s=>s+'\nreq.drops.map()'],
+ ['H09-HTTP-conditional',s=>s.includes('if (liveRes.ok()) {'),s=>s.replace('if (liveRes.ok()) {','expect(liveRes.ok()).toBe(true); {')],
+ ['H09-foreign-no-error',s=>s.includes('expect(foreignTrip).toBeNull();')&&!s.includes("expect(foreignErr?.message).toBe('UNAUTHORIZED_ACTOR')"),s=>s.replace('expect(foreignTrip).toBeNull();',"expect(foreignTrip).toBeNull(); expect(foreignErr?.message).toBe('UNAUTHORIZED_ACTOR')")],
+ ['H10-wiring-not-tested',s=>!s.includes('TripCourierContainer'),s=>s+'\nTripCourierContainer']
+];
+for (const [id,isBad,mutate] of cases){
+  const base=src[id],altered=mutate(base);
+  assert(isBad(base),id+': no reproduce déficit de fuente');
+  assert.notEqual(base,altered,id+': mutación inválida');
+  assert(!isBad(altered),id+': detector no respondió');
+}
+console.log('SOURCE CONTROL: 6/6 baseline deficiencies present, 6/6 text mutations invert');
+console.log('NOT RUNTIME RED: no se ejecutó Playwright, SQL, React ni el código del servidor');
+```
+
+**Limitaciones importantes:** esta sonda detecta **solo patrones textuales** y sus mutaciones, no prueba que escribir `req.drops.map()` cure el comportamiento. La corrección real requiere tests de datos + RTL y RED/GREEN con comportamiento, que se pide a Asako. Afirmaciones funcionales sobre H06/H09/H10 están fundamentadas por **inspección cruzada** y ausencias precisas de aserción, no por una nueva ejecución real del revisor.
+
+### Guía para revalidación del autor
+
+- H05: inyectar request `published,drops_count=1` sin child; antes hoy sale 1 drop sintético; después debe señalizar inconsistencia. Como baseline comparativo, request 1 drop con child real sigue válido y Gate0 intacto.
+- H06: parent `package_type=NULL` + 3 child tipos dispares; antes mapper devuelve `chico`/cash; después `drops[].length=3`, tipo/pago de primera entrega y UI muestra las 3.
+- H09: mock HTTP `500` de `/api/live/available-requests` no puede quedar GREEN; error foráneo `PGRST202` no debe contarse como `UNAUTHORIZED_ACTOR`.
+- H10: mock `TripCourierContainer`, click drop2, verificar dispatch exacto de server action; si se reemplaza el handler por `markTripDeliveredAction` el test debe volverse RED.
+
+**Sin nuevas decisiones del usuario.** No editar `docs/revision-pr/**` desde agy. No saltar gate de post-migración para iniciar a Kira.
