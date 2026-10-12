@@ -93,3 +93,11 @@ Informe revisar-pr — T-340 Paso 2/4 — PR #318 — 2026-10-12 — revisión i
 **Decisiones pendientes:** NINGUNA; Lautaro073 eligió la opción A de R5 y de R4, ambas registradas en ficha.  
 **Checks propios locales:** typecheck n.e., lint n.e., unit n.e., db-tests n.e., E2E n.e.; se verificó **GitHub Actions exact SHA**, fuente cruzada y condiciones de rama/contrato; el revisor no corrió DB local.  
 **No revisado:** próximo SHA de correcciones/entorno Develop tras merge. **No Ready, no aprobar, no mergear ni comenzar paso 3 de Kira**.
+
+
+### Nota de entorno sobre H09 — límite real para E2E de Paso 2 ANTES del merge
+
+Inspección independiente de `.github/workflows/e2e-preview.yml:3–4,22,53,60` y `.github/workflows/migrate.yml:3–7,17–18`: el Vercel Preview de las PRs se prueba contra **Supabase Develop COMPARTIDO**, pero las migraciones de feature se aplican a Supabase Develop **exclusivamente después del merge/push a la rama `develop`**. Por ello, aunque `e2e/specs/multi-drop.spec.ts` tuviera oráculos correctos, la RPC remota `get_trip_details` todavía carece de `drops[]` de Paso 2 hasta desplegar `20261012010000_t340_readers.sql`. **No exigir GREEN E2E nuevo premerge sobre ese backend viejo ni declarar falla de implementación por esa incompatibilidad de entorno**. **No autorizar a Asako a ejecutar `db push` manual sobre Supabase Develop**, y no inventar un nuevo workflow ni conexiones remotas.
+
+Orden técnicamente seguro de validación: (1) obtener `db-tests` del SHA (migraciones nuevas probadas en DB efímero) + unit/typecheck/lint/build en verde, (2) auditar a nivel código/fixture los asserts del E2E nuevo con pruebas negativas unitarias/in-memory y dejar anotado **E2E POST-MIGRACIÓN PENDIENTE**, (3) resolver explícitamente el gate de release/premerge con Lautaro073 antes del eventual merge, (4) tras el merge y migración automática Develop, ejecutar el checkpoint E2E real contra ese backend y **NO** empezar Paso 3 con Kira hasta que esté verde. **Este informe NO autoriza el merge saltándose el gate ni convierte un spec no ejecutado en «verificado»**.
+
