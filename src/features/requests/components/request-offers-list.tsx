@@ -20,7 +20,7 @@ import { notify } from '@/ui/notify';
 import { acceptOfferAction } from '@/features/offers';
 import { requestsCopy } from '../copy';
 import { useRequestOffers } from '../hooks/use-request-offers';
-import type { MerchantOfferItem } from '../types';
+import type { MerchantOfferItem, MerchantDropSummary } from '../types';
 import type { LivePageCursor } from '@/lib/live-contracts';
 
 export interface RequestOffersListProps {
@@ -35,6 +35,8 @@ export interface RequestOffersListProps {
     cashChangeAmount: number | null;
     status: string;
     expiresAt: string | null;
+    dropsCount?: number;
+    drops?: readonly MerchantDropSummary[];
   };
   initialOffers: readonly MerchantOfferItem[];
   initialNextCursor?: LivePageCursor | null;
@@ -169,24 +171,50 @@ export function RequestOffersList({
       <Card className="border border-border bg-card p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-muted-foreground">
               <span>{request.pickupZoneName}</span>
               <ArrowRight className="h-4 w-4" />
-              <span>{request.dropoffZoneName}</span>
-              <span>· {request.approxDistanceKm} km</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 pt-1 text-sm text-foreground">
-              <span className="font-semibold">Paquete {getPackageLabel(request.packageType)}</span>
-              <span>·</span>
               <span>
-                {request.recipientPaymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
+                {request.drops && request.drops.length > 1
+                  ? request.drops.map((d) => d.dropoffZoneName).join(' · ')
+                  : request.dropoffZoneName}
               </span>
-              {request.needsChange && request.cashChangeAmount && (
-                <span className="text-muted-foreground">
-                  (Paga con {formatArs(request.cashChangeAmount)})
-                </span>
+              <span>· {request.approxDistanceKm} km</span>
+              {(request.dropsCount ?? request.drops?.length ?? 1) > 1 && (
+                <Badge variant="outline">
+                  {request.dropsCount ?? request.drops?.length} entregas
+                </Badge>
               )}
             </div>
+            {request.drops && request.drops.length > 1 ? (
+              <div className="mt-2 space-y-1 border-t border-border pt-2 text-sm text-muted-foreground">
+                {request.drops.map((drop) => (
+                  <div key={drop.id} className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-foreground">Entrega {drop.position}:</span>
+                    <span>{drop.dropoffZoneName}</span>
+                    <span>·</span>
+                    <span>Paquete {getPackageLabel(drop.packageType)}</span>
+                    <span>·</span>
+                    <span>
+                      {drop.recipientPaymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-sm text-foreground">
+                <span className="font-semibold">Paquete {getPackageLabel(request.packageType)}</span>
+                <span>·</span>
+                <span>
+                  {request.recipientPaymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
+                </span>
+                {request.needsChange && request.cashChangeAmount && (
+                  <span className="text-muted-foreground">
+                    (Paga con {formatArs(request.cashChangeAmount)})
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Vencimiento / Cronómetro */}

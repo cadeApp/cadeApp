@@ -458,5 +458,54 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
       expect(container.textContent).not.toMatch(/paga con/i);
     });
+
+    it('H06: solicitud multi-drop muestra ruta compuesta, badge de entregas y desglose por drop', () => {
+      const multiDropDetail: MerchantRequestDetail = {
+        id: '11111111-1111-1111-1111-111111111111',
+        pickupZoneName: 'Centro Aguilares',
+        dropoffZoneName: 'Barrio Norte',
+        approxDistanceKm: '3,8',
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        cashChangeAmount: null,
+        notes: null,
+        status: 'published',
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        createdAt: '2026-10-06T12:00:00.000Z',
+        acceptedOfferId: null,
+        dropsCount: 2,
+        drops: [
+          {
+            id: 'drop-1',
+            position: 1,
+            dropoffZoneName: 'Barrio Norte',
+            packageType: 'chico',
+            recipientPaymentMethod: 'cash',
+            needsChange: false,
+          },
+          {
+            id: 'drop-2',
+            position: 2,
+            dropoffZoneName: 'Barrio Sur',
+            packageType: 'mediano',
+            recipientPaymentMethod: 'transfer',
+            needsChange: false,
+          },
+        ],
+      };
+
+      const { container } = render(
+        <RequestOffersList request={multiDropDetail} initialOffers={initialOffers} />
+      );
+
+      expect(container.textContent).toContain('Centro Aguilares');
+      expect(container.textContent).toContain('Barrio Norte · Barrio Sur');
+      expect(container.textContent).toContain('2 entregas');
+      expect(screen.getByText('Entrega 1:')).toBeDefined();
+      expect(screen.getByText('Entrega 2:')).toBeDefined();
+      expect(container.textContent).toContain('Paquete Mediano');
+      expect(container.textContent).toContain('Transferencia');
+    });
   });
 });

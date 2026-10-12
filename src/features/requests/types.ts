@@ -18,6 +18,19 @@ export interface MerchantOfferItem {
   readonly status?: 'pending' | 'accepted' | 'rejected' | 'withdrawn';
 }
 
+export interface MerchantDropSummary {
+  readonly id: string;
+  readonly position: number;
+  readonly dropoffZoneName: string;
+  readonly packageType: PackageType;
+  readonly recipientPaymentMethod: RecipientPaymentMethod;
+  readonly needsChange: boolean;
+  readonly approxDistanceKm?: string | null;
+  readonly status?: string;
+  readonly deliveredAt?: string | null;
+  readonly failedReason?: string | null;
+}
+
 export interface MerchantRequestSummary {
   readonly id: string;
   readonly pickupZoneName: string;
@@ -34,6 +47,7 @@ export interface MerchantRequestSummary {
   readonly acceptedAmountArs?: number | null;
   readonly acceptedCourierName?: string | null;
   readonly dropsCount?: number;
+  readonly drops?: readonly MerchantDropSummary[];
 }
 
 export interface MerchantRequestDetail {
@@ -51,6 +65,7 @@ export interface MerchantRequestDetail {
   readonly createdAt: string;
   readonly acceptedOfferId: string | null;
   readonly dropsCount?: number;
+  readonly drops?: readonly MerchantDropSummary[];
   readonly pickupAddress?: string;
   readonly dropoffAddress?: string;
   readonly recipientName?: string;

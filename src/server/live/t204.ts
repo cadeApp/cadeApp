@@ -209,52 +209,24 @@ export async function getAvailableRequestsLiveServer(
     const declaredDropsCount = req.drops_count ?? 1;
     const reqDrops = dropsMap.get(req.id) ?? [];
 
-    if (declaredDropsCount > 1 && reqDrops.length === 0) {
+    if (reqDrops.length === 0) {
       return { ok: false, error: 'DATABASE_ERROR', status: 500 };
     }
 
-    let effectiveDrops: PublicDropSummary[];
-    let effectivePackageType: PackageType;
-    let effectivePaymentMethod: RecipientPaymentMethod;
-    let effectiveNeedsChange: boolean;
-    let effectiveDropoffZoneName: string;
-
-    if (reqDrops.length > 0) {
-      if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
-        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
-      }
-      effectiveDrops = reqDrops;
-      const firstDrop = reqDrops[0];
-      if (!firstDrop) {
-        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
-      }
-      effectivePackageType = firstDrop.packageType;
-      effectivePaymentMethod = firstDrop.recipientPaymentMethod;
-      effectiveNeedsChange = firstDrop.needsChange;
-      effectiveDropoffZoneName = firstDrop.dropoffZoneName;
-    } else {
-      const packageType = packageTypeSchema.safeParse(req.package_type);
-      const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(
-        req.recipient_payment_method
-      );
-      if (!packageType.success || !recipientPaymentMethod.success) {
-        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
-      }
-      effectivePackageType = packageType.data;
-      effectivePaymentMethod = recipientPaymentMethod.data;
-      effectiveNeedsChange = Boolean(req.needs_change);
-      effectiveDropoffZoneName = dropoffZone?.name ?? 'Aguilares';
-      effectiveDrops = [
-        {
-          position: 1,
-          dropoffZoneName: effectiveDropoffZoneName,
-          packageType: effectivePackageType,
-          recipientPaymentMethod: effectivePaymentMethod,
-          needsChange: effectiveNeedsChange,
-          approxDistanceM: req.approx_distance_m != null ? Number(req.approx_distance_m) : null,
-        },
-      ];
+    if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
     }
+
+    const firstDrop = reqDrops[0];
+    if (!firstDrop) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    const effectiveDrops = reqDrops;
+    const effectivePackageType = firstDrop.packageType;
+    const effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+    const effectiveNeedsChange = firstDrop.needsChange;
+    const effectiveDropoffZoneName = firstDrop.dropoffZoneName;
 
     mapped.push({
       id: req.id,

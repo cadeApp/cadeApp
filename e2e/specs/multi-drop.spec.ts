@@ -6,10 +6,12 @@ import {
   seedOffersForFirstRequest,
   getRequestInspectionData,
   createAuthenticatedClient,
+  trackEntityForCleanup,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { createAdminClient } from '@/server/supabase/admin';
 import { formatArs } from '@/lib/format';
+import { liveFeedResponseSchema } from '@/lib/live-contracts';
 
 /**
  * T-340 Paso 2/4: Lectores multi-drop, privacidad pre-match y revelación post-match (CC-022 §3, §8, §10).
@@ -63,9 +65,13 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     expect(updateReqErr).toBeNull();
 
     // Limpiar posibles drops previos del fixture legacy
-    await admin.from('delivery_request_drops').delete().eq('request_id', requestId);
+    const { error: deleteDropsErr } = await admin
+      .from('delivery_request_drops')
+      .delete()
+      .eq('request_id', requestId);
+    expect(deleteDropsErr).toBeNull();
 
-    // Obtener zonas activas distintas si están disponibles en la base
+    // Obtener al menos 3 zonas activas distintas. Si la base no dispone de 3, creamos zonas de prueba rastreadas
     const { data: dbZones, error: zonesErr } = await admin
       .from('zones')
       .select('id, name')
@@ -73,9 +79,25 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       .limit(3);
     expect(zonesErr).toBeNull();
 
-    const zone1 = dbZones?.[0]?.id ?? zoneId;
-    const zone2 = dbZones?.[1]?.id ?? zone1;
-    const zone3 = dbZones?.[2]?.id ?? zone1;
+    const distinctZoneIds: string[] = (dbZones ?? []).map((z) => z.id);
+    while (distinctZoneIds.length < 3) {
+      const extraZoneId = randomUUID();
+      const { error: extraZoneErr } = await admin.from('zones').insert({
+        id: extraZoneId,
+        name: `Zona Test MD ${distinctZoneIds.length + 1}`,
+        active: true,
+        centroid_lat: -27.405,
+        centroid_lng: -65.605,
+      });
+      expect(extraZoneErr).toBeNull();
+      trackEntityForCleanup(stagingContext, 'zone', extraZoneId);
+      distinctZoneIds.push(extraZoneId);
+    }
+
+    const [zone1, zone2, zone3] = distinctZoneIds as [string, string, string];
+    expect(zone1).not.toBe(zone2);
+    expect(zone2).not.toBe(zone3);
+    expect(zone1).not.toBe(zone3);
 
     // Insertar 3 drops
     const { error: dropsInsertErr } = await admin.from('delivery_request_drops').insert([
@@ -166,15 +188,40 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     await expect(requestCard.getByText('Dejar en guardia drop 3')).toHaveCount(0);
     await expect(requestCard.getByText(formatArs(DROP_1_CHANGE))).toHaveCount(0);
 
-    // Verificación de payload HTTP pre-match: sin fugas de datos privados en la API
+    // Verificación de payload HTTP pre-match fail-closed: respuesta 200, schema válido y sin fugas de datos privados
     const liveRes = await page.request.get('/api/live/available-requests');
-    if (liveRes.ok()) {
-      const liveJson = await liveRes.text();
-      expect(liveJson).not.toContain('Destinatario Uno MD');
-      expect(liveJson).not.toContain('Timbre blanco drop 1');
-      expect(liveJson).not.toContain('3865111111');
-      expect(liveJson).not.toContain('Av. Sarmiento 100');
-    }
+    expect(liveRes.status()).toBe(200);
+    const rawLiveFeed = await liveRes.json();
+    const parsedFeed = liveFeedResponseSchema.parse(rawLiveFeed);
+    const ownRequestFeed = parsedFeed.data.find((item) => item.id === requestId);
+    expect(ownRequestFeed).toBeDefined();
+    expect(ownRequestFeed?.dropsCount).toBe(3);
+    expect(ownRequestFeed?.drops).toBeDefined();
+    expect(ownRequestFeed?.drops).toHaveLength(3);
+
+    // Validación estructural de cada entrega pública
+    ownRequestFeed?.drops?.forEach((drop, idx) => {
+      expect(drop.position).toBe(idx + 1);
+      expect(drop.dropoffZoneName).toBeTruthy();
+      expect(drop.packageType).toMatch(/^(chico|mediano|grande)$/);
+      expect(drop.recipientPaymentMethod).toMatch(/^(cash|transfer)$/);
+    });
+
+    // Ausencia estricta de PII en el JSON de ESE request
+    const serializedRequest = JSON.stringify(ownRequestFeed);
+    expect(serializedRequest).not.toContain('Destinatario Uno MD');
+    expect(serializedRequest).not.toContain('Destinatario Dos MD');
+    expect(serializedRequest).not.toContain('Destinatario Tres MD');
+    expect(serializedRequest).not.toContain('Timbre blanco drop 1');
+    expect(serializedRequest).not.toContain('Piso 3 drop 2');
+    expect(serializedRequest).not.toContain('Dejar en guardia drop 3');
+    expect(serializedRequest).not.toContain('3865111111');
+    expect(serializedRequest).not.toContain('3865222222');
+    expect(serializedRequest).not.toContain('3865333333');
+    expect(serializedRequest).not.toContain('Av. Sarmiento 100');
+    expect(serializedRequest).not.toContain('San Martín 200');
+    expect(serializedRequest).not.toContain('Mitre 300');
+    expect(serializedRequest).not.toContain(String(DROP_1_CHANGE));
 
     // -------------------------------------------------------------------------
     // Paso 3: Hoja de oferta (Sheet) pre-match
@@ -214,12 +261,16 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     // Paso 4b: Repartidor no asignado (ajeno) no puede acceder a los detalles
     // -------------------------------------------------------------------------
     const foreignCourier = stagingContext.courierUsers?.[1];
+    expect(foreignCourier).toBeDefined();
     if (foreignCourier) {
       const foreignClient = await createAuthenticatedClient(foreignCourier);
-      const { data: foreignTrip } = await foreignClient.rpc('get_trip_details', {
+      const { data: foreignTrip, error: foreignErr } = await foreignClient.rpc('get_trip_details', {
         p_request_id: requestId,
       });
       expect(foreignTrip).toBeNull();
+      expect(foreignErr).not.toBeNull();
+      expect(foreignErr?.code).toBe('P0001');
+      expect(foreignErr?.message).toMatch(/UNAUTHORIZED_ACTOR/i);
     }
 
     // -------------------------------------------------------------------------

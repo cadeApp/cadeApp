@@ -174,10 +174,15 @@ export async function getAvailableRequests(): Promise<{
       }
       for (const d of dropsResult.data as unknown as RawDropRow[]) {
         const pType = packageTypeSchema.safeParse(d.package_type);
-        const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
-        if (!pType.success || !pMethod.success) {
+        if (!pType.success) {
           throw new Error(
-            `Error al leer el feed: entrega fuera del dominio en la solicitud ${d.request_id}`
+            `Error al leer el feed: package_type fuera del dominio en la solicitud ${d.request_id}`
+          );
+        }
+        const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+        if (!pMethod.success) {
+          throw new Error(
+            `Error al leer el feed: recipient_payment_method fuera del dominio en la solicitud ${d.request_id}`
           );
         }
         const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
@@ -208,63 +213,28 @@ export async function getAvailableRequests(): Promise<{
     const declaredDropsCount = req.drops_count ?? 1;
     const reqDrops = dropsMap.get(req.id) ?? [];
 
-    if (declaredDropsCount > 1 && reqDrops.length === 0) {
+    if (reqDrops.length === 0) {
       throw new Error(
         `Inconsistencia en solicitud ${req.id}: drops_count=${declaredDropsCount} pero no se encontraron entregas`
       );
     }
 
-    let effectiveDrops: PublicDropSummary[];
-    let effectivePackageType: PackageType;
-    let effectivePaymentMethod: RecipientPaymentMethod;
-    let effectiveNeedsChange: boolean;
-    let effectiveDropoffZoneName: string;
-
-    if (reqDrops.length > 0) {
-      if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
-        throw new Error(
-          `Inconsistencia en solicitud ${req.id}: drops_count=${declaredDropsCount} pero se encontraron ${reqDrops.length} entregas`
-        );
-      }
-      effectiveDrops = reqDrops;
-      const firstDrop = reqDrops[0];
-      if (!firstDrop) {
-        throw new Error(`Error en solicitud ${req.id}: entrega inicial no encontrada`);
-      }
-      effectivePackageType = firstDrop.packageType;
-      effectivePaymentMethod = firstDrop.recipientPaymentMethod;
-      effectiveNeedsChange = firstDrop.needsChange;
-      effectiveDropoffZoneName = firstDrop.dropoffZoneName;
-    } else {
-      const packageType = packageTypeSchema.safeParse(req.package_type);
-      if (!packageType.success) {
-        throw new Error(
-          `Error al leer el feed: package_type fuera del dominio en la solicitud ${req.id}`
-        );
-      }
-      const recipientPaymentMethod = recipientPaymentMethodSchema.safeParse(
-        req.recipient_payment_method
+    if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+      throw new Error(
+        `Inconsistencia en solicitud ${req.id}: drops_count=${declaredDropsCount} pero se encontraron ${reqDrops.length} entregas`
       );
-      if (!recipientPaymentMethod.success) {
-        throw new Error(
-          `Error al leer el feed: recipient_payment_method fuera del dominio en la solicitud ${req.id}`
-        );
-      }
-      effectivePackageType = packageType.data;
-      effectivePaymentMethod = recipientPaymentMethod.data;
-      effectiveNeedsChange = Boolean(req.needs_change);
-      effectiveDropoffZoneName = dropoffZone?.name ?? 'Aguilares';
-      effectiveDrops = [
-        {
-          position: 1,
-          dropoffZoneName: effectiveDropoffZoneName,
-          packageType: effectivePackageType,
-          recipientPaymentMethod: effectivePaymentMethod,
-          needsChange: effectiveNeedsChange,
-          approxDistanceM: req.approx_distance_m != null ? Number(req.approx_distance_m) : null,
-        },
-      ];
     }
+
+    const firstDrop = reqDrops[0];
+    if (!firstDrop) {
+      throw new Error(`Error en solicitud ${req.id}: entrega inicial no encontrada`);
+    }
+
+    const effectiveDrops = reqDrops;
+    const effectivePackageType = firstDrop.packageType;
+    const effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+    const effectiveNeedsChange = firstDrop.needsChange;
+    const effectiveDropoffZoneName = firstDrop.dropoffZoneName;
 
     mapped.push({
       id: req.id,

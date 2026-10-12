@@ -272,7 +272,18 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const row = makeRequestRow(1);
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([{ request_id: row.id, amount_ars: 1800 }]);
-      const dropsBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
@@ -307,7 +318,18 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       };
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
-      const dropsBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
@@ -344,7 +366,25 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     function mockFeedClient(rows: readonly unknown[]) {
       const reqBuilder = createMockQueryBuilder(rows);
       const offersBuilder = createMockQueryBuilder([]);
-      const dropsBuilder = createMockQueryBuilder([]);
+      const dropsRows = (
+        rows as Array<{
+          id?: string;
+          package_type?: string;
+          recipient_payment_method?: string;
+          needs_change?: boolean;
+          approx_distance_m?: number;
+        }>
+      ).map((r, i) => ({
+        id: `drop-${r.id ?? i}`,
+        request_id: r.id ?? `req-${i}`,
+        position: 1,
+        package_type: r.package_type ?? 'chico',
+        recipient_payment_method: r.recipient_payment_method ?? 'cash',
+        needs_change: Boolean(r.needs_change),
+        approx_distance_m: r.approx_distance_m ?? 1000,
+        dropoff_zone: { name: 'Aguilares' },
+      }));
+      const dropsBuilder = createMockQueryBuilder(dropsRows);
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
@@ -393,7 +433,18 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const rows51 = Array.from({ length: 51 }, (_, i) => makeRequestRow(i + 1));
       const reqBuilder = createMockQueryBuilder(rows51);
       const offersBuilder = createMockQueryBuilder([]);
-      const dropsBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder(
+        rows51.map((r) => ({
+          id: `drop-${r.id}`,
+          request_id: r.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: Boolean(r.needs_change),
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        }))
+      );
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
@@ -432,9 +483,21 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     });
 
     it('B: Feed segunda página -> spy demuestra order(created_at), order(id), limit(51) y .or(...) exacto', async () => {
-      const reqBuilder = createMockQueryBuilder([makeRequestRow(1)]);
+      const row = makeRequestRow(1);
+      const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
-      const dropsBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
@@ -467,6 +530,35 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
         ],
       ]);
+    });
+
+    it('PR318-H05: responde 500 si drops_count = 1 pero delivery_request_drops devuelve vacío', async () => {
+      const row = {
+        ...makeRequestRow(1),
+        drops_count: 1,
+      };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(500);
+        expect(result.error).toBe('DATABASE_ERROR');
+      }
     });
 
     it('PR318-H05: responde 500 si drops_count > 1 pero delivery_request_drops devuelve vacío', async () => {

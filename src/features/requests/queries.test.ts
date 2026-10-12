@@ -15,6 +15,19 @@ vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
 }));
 
+function mockDropsTable(data: unknown[] = []) {
+  return {
+    select: vi.fn().mockReturnValue({
+      in: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({ data, error: null }),
+      }),
+      eq: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({ data, error: null }),
+      }),
+    }),
+  };
+}
+
 describe('T-112 / T-118: queries de requests e historial', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -172,6 +185,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           };
         }
+        if (table === 'delivery_request_drops') return mockDropsTable();
         return {};
       });
 
@@ -244,6 +258,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           };
         }
+        if (table === 'delivery_request_drops') return mockDropsTable();
         return {};
       });
 
@@ -350,6 +365,9 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           };
         }
+        if (table === 'delivery_request_drops') {
+          return mockDropsTable();
+        }
         return {};
       });
 
@@ -427,6 +445,9 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             }),
           };
         }
+        if (table === 'delivery_request_drops') {
+          return mockDropsTable();
+        }
         return {};
       });
 
@@ -485,6 +506,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn().mockImplementation((table: string) => {
           if (table === 'delivery_requests') return queryBuilder;
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {
             select: vi.fn().mockReturnThis(),
             in: vi.fn().mockReturnThis(),
@@ -571,6 +593,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -752,6 +775,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -859,6 +883,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: [], error: null }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -950,6 +975,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: mockOffers, error: null }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
         rpc: withPrivateFields(couriersRpc),
@@ -1014,6 +1040,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: fiftyOneOffers, error: null }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
         rpc: withPrivateFields(couriersRpc),
@@ -1046,6 +1073,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: offers, error: null }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
         rpc: withPrivateFields(rpc),
@@ -1267,6 +1295,196 @@ describe('T-112 / T-118: queries de requests e historial', () => {
 
       expect(await getMerchantRequestWithOffers(requestId, 'merchant-1')).toBeNull();
       expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it('H06: getMerchantRequestWithOffers con parent null y 3 drops dispares proyecta drops[] y deriva escalares del primer drop', async () => {
+      const testReqId = '33333333-3333-3333-3333-333333333333';
+      const parentRowNulls = {
+        id: testReqId,
+        approx_distance_m: 2500,
+        package_type: null, // parent null
+        recipient_payment_method: null, // parent null
+        needs_change: null, // parent null
+        status: 'published',
+        expires_at: null,
+        created_at: '2026-10-12T10:00:00.000Z',
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Barrio Centro' },
+        dropoff_zone: null, // parent null
+      };
+
+      const threeDrops = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'mediano',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+        {
+          id: 'drop-2',
+          request_id: testReqId,
+          position: 2,
+          package_type: 'grande',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1500,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Este' },
+        },
+        {
+          id: 'drop-3',
+          request_id: testReqId,
+          position: 3,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 800,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: parentRowNulls, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(threeDrops);
+          }
+          return {};
+        }),
+        rpc: vi.fn().mockResolvedValue({
+          data: { requestId: testReqId, notes: null, cashChangeAmount: null },
+          error: null,
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequestWithOffers(testReqId, 'merchant-1');
+      expect(result).not.toBeNull();
+      // Verificación de compatibilidad escalar derivada del primer hijo (NO inventada de fallback)
+      expect(result?.request.packageType).toBe('mediano');
+      expect(result?.request.recipientPaymentMethod).toBe('transfer');
+      expect(result?.request.needsChange).toBe(false);
+      expect(result?.request.dropoffZoneName).toBe('Barrio Norte');
+      expect(result?.request.dropsCount).toBe(3);
+
+      // Verificación de la colección completa drops[]
+      expect(result?.request.drops).toHaveLength(3);
+      expect(result?.request.drops?.[0]).toMatchObject({
+        id: 'drop-1',
+        position: 1,
+        packageType: 'mediano',
+        recipientPaymentMethod: 'transfer',
+        dropoffZoneName: 'Barrio Norte',
+      });
+      expect(result?.request.drops?.[1]).toMatchObject({
+        id: 'drop-2',
+        position: 2,
+        packageType: 'grande',
+        recipientPaymentMethod: 'cash',
+        dropoffZoneName: 'Barrio Este',
+      });
+      expect(result?.request.drops?.[2]).toMatchObject({
+        id: 'drop-3',
+        position: 3,
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        dropoffZoneName: 'Barrio Sur',
+      });
+    });
+
+    it('H06: getMerchantRequests y getMerchantHistoryRequests con parent null y 3 drops dispares derivan primer hijo', async () => {
+      const testReqId = '44444444-4444-4444-4444-444444444444';
+      const parentRow = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: null,
+        recipient_payment_method: null,
+        needs_change: null,
+        status: 'published',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      const threeDrops = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'grande',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Zona Industrial' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            const builder = {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [parentRow], error: null }),
+            };
+            return builder;
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(threeDrops);
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequests('merchant-1', { limit: 10 });
+      expect(result.requests).toHaveLength(1);
+      const req = result.requests[0]!;
+      expect(req.packageType).toBe('grande');
+      expect(req.recipientPaymentMethod).toBe('transfer');
+      expect(req.dropoffZoneName).toBe('Zona Industrial');
+      expect(req.dropsCount).toBe(3);
+      expect(req.drops).toHaveLength(1);
     });
   });
 });
