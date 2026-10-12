@@ -944,6 +944,8 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       const mockReqId = '123e4567-e89b-12d3-a456-426614175015';
 
       const contactInserts: Array<Record<string, unknown>> = [];
+      const dropInserts: Array<Record<string, unknown>> = [];
+      const dropContactInserts: Array<Record<string, unknown>> = [];
       const offerInserts: Array<Record<string, unknown>> = [];
 
       let userCounter = 0;
@@ -976,6 +978,22 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             return {
               insert: vi.fn(async (payload: Record<string, unknown>) => {
                 contactInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return {
+              insert: vi.fn(async (payload: Record<string, unknown>) => {
+                dropInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'delivery_request_drop_contacts') {
+            return {
+              insert: vi.fn(async (payload: Record<string, unknown>) => {
+                dropContactInserts.push(payload);
                 return { error: null };
               }),
             };
@@ -1024,6 +1042,23 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(contact0?.recipient_name).toBe('Juan Pérez Test');
       expect(contact0?.recipient_consent_declared).toBe(true);
       expect(ctx.createdContactRequestIds).toContain(mockReqId);
+
+      // CC-022: una solicitud publicada del seed debe tener exactamente
+      // un drop real y contactos privados con FK consistente.
+      expect(dropInserts).toHaveLength(1);
+      const [drop] = dropInserts;
+      expect(drop?.request_id).toBe(mockReqId);
+      expect(drop?.position).toBe(1);
+      expect(drop?.dropoff_zone_id).toBe(mockZoneId);
+      expect(drop?.status).toBe('pending');
+      expect(dropContactInserts).toHaveLength(1);
+      const [dropContact] = dropContactInserts;
+      expect(dropContact?.drop_id).toBe(drop?.id);
+      expect(isValidUuid(dropContact?.drop_id as string)).toBe(true);
+      expect(dropContact?.recipient_name).toBe('Juan Pérez Test');
+      expect(dropContact?.recipient_phone).toBe('+5493865123456');
+      expect(dropContact?.recipient_consent_declared).toBe(true);
+      expect(dropContact?.notes).toBe(`E2E automated test run ${ctx.testRunId}`);
 
       // Verificación de inserción y tracking de 2 ofertas reales
       expect(offerInserts).toHaveLength(2);
