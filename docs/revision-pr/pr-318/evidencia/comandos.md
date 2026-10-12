@@ -404,3 +404,71 @@ console.log('NOT RUNTIME RED: no se ejecutó Playwright, SQL, React ni el códig
 - H10: mock `TripCourierContainer`, click drop2, verificar dispatch exacto de server action; si se reemplaza el handler por `markTripDeliveredAction` el test debe volverse RED.
 
 **Sin nuevas decisiones del usuario.** No editar `docs/revision-pr/**` desde agy. No saltar gate de post-migración para iniciar a Kira.
+
+## Ronda 7 — PR #318 T-340 (2026-10-12)
+
+**SHA de implementación de Asako:** `a71b338b2ef6b60b4594928582b9edcb175f9d63`. **Comparación:** 2 commits nuevos desde revisión R6 `9b7fe0f0`, 15 archivos, sin cambios del autor en carpeta de revisión. Rama Draft, sin conflictos y sin atraso contra develop.
+
+**CI REAL:** [CI 38306695743](https://github.com/cadeApp/cadeApp/actions/runs/38306695743) PASS. `db-tests` [115002373648](https://github.com/cadeApp/cadeApp/actions/jobs/115002373648): `Files=21, Tests=1995, Result: PASS`, Postgres efímero y ensayo H15 previo. `unit` [115002373677](https://github.com/cadeApp/cadeApp/actions/jobs/115002373677): `Test Files 128 passed`, `Tests 2103 passed`, cobertura fake statements `95.32%`, branches `91.35%`; 79 workflow y 6 ADR PASS. typecheck/lint/build/audit/bundle-budget PASS. `approval-policy` fail. [E2E 38306894225](https://github.com/cadeApp/cadeApp/actions/runs/38306894225) status `BLOCKED / REQUIRES DEVELOP MIGRATION`, **sin ejecución Playwright del Paso 2**.
+
+### Control adversarial independiente REAL sobre fuente exacta (no runtime de producto)
+
+Leí los blobs exactos de `src/features/requests/queries.test.ts`, `queries.ts`, `src/lib/live-contracts.ts`, `e2e/specs/multi-drop.spec.ts`, `src/features/trips/components.test.tsx`, feed SSR y live. Corrí un análisis JavaScript en memoria de los fragmentos. Resultado:
+
+```json
+{
+  "H06": {"declaredDrops":3,"fixtureDrops":1,"assertedDrops":1,"called":["getMerchantRequests"],"testTitleSaysBoth":true,"inconsistencyAccepted":true,"historyNotCalled":true},
+  "H06reader": {"parentFallback":true,"optionalDrops":true,"noCountValidation":true},
+  "H09": {"privacyAfterParse":true,"assertsRawJSON":false,"nonStrictZod":true,"noConditionalHTTP":true},
+  "H10": {"containerImported":true,"spyExact":true},
+  "H05": {"countGuardOffer":true,"countGuardLive":true}
+}
+```
+
+**Harness independiente reproducible desde un checkout limpio del SHA auditado**, sin archivos de proyecto modificados. Guardar el siguiente contenido en `/tmp/pr318-r7-probe.cjs` y ejecutar `node /tmp/pr318-r7-probe.cjs` desde raíz del repo:
+
+```js
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const read = p => fs.readFileSync(p, 'utf8');
+const test = read('src/features/requests/queries.test.ts');
+const reader = read('src/features/requests/queries.ts');
+const e2e = read('e2e/specs/multi-drop.spec.ts');
+const schema = read('src/lib/live-contracts.ts');
+const trips = read('src/features/trips/components.test.tsx');
+const offers = read('src/features/offers/queries.ts');
+const live = read('src/server/live/t204.ts');
+const i = test.indexOf("it('H06: getMerchantRequests y getMerchantHistoryRequests");
+assert(i > 0, 'Missing target test');
+const end = test.indexOf('\n    });', i);
+assert(end > i, 'End of test not found');
+const block = test.slice(i, end);
+const declared = Number(block.match(/drops_count: (\d+)/)?.[1]);
+const actual = (block.match(/id: 'drop-\d+'/g) ?? []).length;
+const expected = Number(block.match(/expect\(req\.drops\)\.toHaveLength\((\d+)\)/)?.[1]);
+const calls = [...block.matchAll(/await (getMerchantRequests|getMerchantHistoryRequests)\(/g)].map(m=>m[1]);
+assert.deepEqual([declared, actual, expected], [3,1,1]);
+assert.deepEqual(calls, ['getMerchantRequests']);
+assert(reader.includes("((req.package_type as PackageType) ?? 'chico')"));
+assert(reader.includes("drops: reqDrops.length > 0 ? reqDrops : undefined"));
+assert(!reader.includes('reqDrops.length !== req.drops_count'));
+assert(e2e.indexOf('liveFeedResponseSchema.parse(rawLiveFeed)') <
+       e2e.indexOf('JSON.stringify(ownRequestFeed)'));
+assert(!e2e.includes('JSON.stringify(rawLiveFeed)'));
+assert(schema.includes('liveAvailableRequestItemSchema = z.object('));
+assert(trips.includes('import { TripCourierContainer }'));
+assert(trips.includes('expect(mockMarkDropDeliveredAction).toHaveBeenCalledExactlyOnceWith({'));
+assert(offers.includes('reqDrops.length !== declaredDropsCount'));
+assert(live.includes('reqDrops.length !== declaredDropsCount'));
+console.log('H11 SOURCE: declared=3, children=1, expected=1; history not called');
+console.log('H12 SOURCE: privacy asserts only on normalized Zod result');
+console.log('H05/H10 SOURCE: checks now exist, and unit CI 2103 PASS');
+console.log('NO PLAYWRIGHT/DB RED: source analysis only');
+```
+
+**Dos pruebas negativas funcionales para Asako, NO ejecutadas aquí:**
+
+1. **H06/H11:** preparar mock de `delivery_requests.status='published'`, `drops_count=3` y `delivery_request_drops` solo position 1. El nuevo test debe exigir **error de cardinalidad**; el código del SHA R7 devuelve `dropsCount:3,drops.length:1`, así que el nuevo test quedará **RED** por defecto real. Restaurar 3 hijos 1/2/3 distintos y obtener GREEN. Repetir para history con `status='delivered'` y para detail. No «arreglar» ajustando contador a 1 ni ignorando filas faltantes.
+2. **H12:** un raw JSON HTTP válido públicamente excepto que contiene `recipientPhone:'3865111111'` y `notes:'PII_TEST'` debe poner **RED** al oráculo de privacidad que inspecciona JSON CRUDO. La validación Zod puede pasar y eliminar esos extras; **eso NO equivale a RED ni a ausencia de fuga de red**. Restaurar raw JSON sin claves privadas y obtener GREEN con status200, request presente y tres resúmenes.
+
+**Límite de evidencia:** hallazgos H11/H12 descubiertos por inspección y control propio de fuente, **NO** prueba de filtración real de PII ni mutación runtime del producto. Logs de CI son auténticos y del SHA citado. No Docker/Supabase local ni migraciones remotas manuales del revisor. El Paso 2 E2E real queda pendiente de backend Develop migrado; no se debe pasar a Paso 3 de Kira antes de ese checkpoint.
