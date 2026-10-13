@@ -325,7 +325,11 @@ async function finalizeSeededRequestState(
 ): Promise<void> {
   const { data, error } = await admin
     .from('delivery_requests')
-    .update(finalState)
+    .update({
+      ...finalState,
+      notes: null,
+      cash_change_amount: null,
+    })
     .eq('id', requestId)
     .eq('status', 'draft')
     .select('id')
@@ -944,30 +948,66 @@ export async function findRequestIdByNotesMarker(
     throw new Error(`[E2E Error] Error al consultar delivery_requests por notas: ${error.message}`);
   }
 
-  if (!data || data.length === 0) {
-    throw new Error(
-      `[E2E Error] No se encontró ninguna solicitud para el marcador de notas: "${marker}"`
-    );
+  if (data && data.length === 1 && data[0]?.id) {
+    const foundId = data[0].id;
+    assertValidUuid(foundId, 'findRequestIdByNotesMarker');
+    if (!context.createdRequestIds.includes(foundId)) {
+      context.createdRequestIds.push(foundId);
+    }
+    return foundId;
   }
 
-  if (data.length > 1) {
+  if (data && data.length > 1) {
     throw new Error(
       `[E2E Error] Se encontraron múltiples solicitudes (${data.length}) para el marcador de notas: "${marker}"`
     );
   }
 
-  const foundId = data[0]?.id;
-  if (!foundId) {
-    throw new Error('[E2E Error] La fila devuelta no posee un campo id válido');
+  // T-340 Paso 3: tras la limpieza de delivery_requests.notes a NULL, las notas viven en delivery_request_drop_contacts
+  const { data: contactsData, error: contactsError } = await admin
+    .from('delivery_request_drop_contacts')
+    .select('drop_id')
+    .eq('notes', marker);
+
+  if (contactsError) {
+    throw new Error(
+      `[E2E Error] Error al consultar delivery_request_drop_contacts por notas: ${contactsError.message}`
+    );
   }
 
-  assertValidUuid(foundId, 'findRequestIdByNotesMarker');
+  if (contactsData && contactsData.length > 0) {
+    const dropIds = contactsData.map((c) => c.drop_id);
+    const { data: dropsData, error: dropsError } = await admin
+      .from('delivery_request_drops')
+      .select('request_id, delivery_requests!inner(merchant_id)')
+      .in('id', dropIds)
+      .eq('delivery_requests.merchant_id', context.merchantUser.id);
 
-  if (!context.createdRequestIds.includes(foundId)) {
-    context.createdRequestIds.push(foundId);
+    if (dropsError) {
+      throw new Error(`[E2E Error] Error al consultar drops por notas: ${dropsError.message}`);
+    }
+
+    const candidateRequestIds = Array.from(new Set((dropsData ?? []).map((d) => d.request_id)));
+
+    if (candidateRequestIds.length === 1 && candidateRequestIds[0]) {
+      const foundId = candidateRequestIds[0];
+      assertValidUuid(foundId, 'findRequestIdByNotesMarker');
+      if (!context.createdRequestIds.includes(foundId)) {
+        context.createdRequestIds.push(foundId);
+      }
+      return foundId;
+    }
+
+    if (candidateRequestIds.length > 1) {
+      throw new Error(
+        `[E2E Error] Se encontraron múltiples solicitudes (${candidateRequestIds.length}) para el marcador de notas: "${marker}"`
+      );
+    }
   }
 
-  return foundId;
+  throw new Error(
+    `[E2E Error] No se encontró ninguna solicitud para el marcador de notas: "${marker}"`
+  );
 }
 
 /**

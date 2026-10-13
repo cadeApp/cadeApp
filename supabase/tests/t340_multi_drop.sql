@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(92);
+select plan(100);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -61,6 +61,8 @@ on conflict (id) do nothing;
 select has_table('delivery_request_drops', 'tabla delivery_request_drops existe');
 select has_table('delivery_request_drop_contacts', 'tabla delivery_request_drop_contacts existe');
 select has_column('delivery_requests', 'drops_count', 'delivery_requests tiene drops_count');
+select has_column('delivery_requests', 'notes', 'delivery_requests conserva columna notes (sin retiro físico)');
+select has_column('delivery_requests', 'cash_change_amount', 'delivery_requests conserva columna cash_change_amount (sin retiro físico)');
 
 -- 2. Privilegios por columna y campos RPC-only (DoD & CC-022 §2)
 -- status, delivered_at, failed_reason y approx_distance_m denegados en insert para authenticated
@@ -450,8 +452,62 @@ select is(
 
 select is(
   (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003417'),
-  'Notas legacy puente',
-  'notas legacy no se borran de delivery_requests en paso 1'
+  null::text,
+  'notas legacy se limpian a NULL en delivery_requests al publicar en paso 3'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003417'),
+  null::int,
+  'cash_change_amount legacy se limpia a NULL en delivery_requests al publicar en paso 3'
+);
+
+create function pg_temp.test_legacy_publish_bridge_with_change() returns jsonb language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003427';
+  v_res jsonb;
+begin
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+  ) values (
+    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Notas con cambio puente', 4000
+  );
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    v_req_id, 'Retiro Cambio', -27.4330, -65.6150, 'Entrega Cambio', 'Destinatario Cambio', '+543865123457', true
+  );
+
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  select public.publish_request(v_req_id) into v_res;
+  perform pg_temp.reset_actor();
+  return v_res;
+end;
+$$;
+select is((pg_temp.test_legacy_publish_bridge_with_change()->>'dropsCount')::int, 1, 'puente legacy con cambio materializa drop 1 y responde dropsCount 1');
+
+select is(
+  (select notes from public.delivery_request_drop_contacts where drop_id = (select id from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003427')),
+  'Notas con cambio puente',
+  'notas legacy con cambio migradas a drop_contacts'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_request_drop_contacts where drop_id = (select id from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003427')),
+  4000,
+  'cash_change_amount legacy migrado a drop_contacts'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003427'),
+  null::text,
+  'notes en delivery_requests queda en NULL tras publicacion con cambio en paso 3'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003427'),
+  null::int,
+  'cash_change_amount en delivery_requests queda en NULL tras publicacion con cambio en paso 3'
 );
 
 create function pg_temp.test_legacy_publish_retry() returns int language plpgsql as $$
