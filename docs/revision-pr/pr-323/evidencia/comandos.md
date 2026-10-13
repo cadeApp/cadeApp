@@ -52,3 +52,31 @@ Las PR originales permanecieron en Draft y no se mergearon. Ningún workflow se 
 **Revalidación obligatoria de PR #324:** usar el `resolve-preview` del runner para confirmar SHA `13658242`; registrar `chromium` + `global-settings` en verde sin skips, retries ni cambios de timeout. En caso de error/cancelación, no inventar GREEN. Para medición posterior, no inferir clic→URL a partir de duración total ni forzar falla Playwright para obtener trace. Si requiere instrumentación, pedir autorización de alcance específica.
 
 No se corrieron tests locales/Docker ni se consultó Supabase remoto en esta revisión. Integración validada por SHA de blobs GitHub, no por tests de aplicación.
+
+
+## Ronda 4 — E2E combinado RED, con evidencia del reporter
+
+- PR temporal: https://github.com/cadeApp/cadeApp/pull/324 ; HEAD `13658242a4074ec491d417a3c90f152189f6e463`.
+- Run: https://github.com/cadeApp/cadeApp/actions/runs/38354080733 ; job `115152873446`. Verificado `e2e-preview=failure`, Chromium **63 PASS / 8 FAIL / 1 flaky**, **global-settings no corrió**. Artifact Playwright `11792439365` descargado para la revisión. CI unitaria/build/db y checks técnicos PASS.
+- 8 failures (x3 attempts) terminan `expect(request-card).toBeVisible()` con elemento no encontrado: courier-feed-privacy:27, courier-feed-vocabulary:19, fixed-price:72/177/277, main-flow:300, map-privacy:438, multi-drop:37. `courier-private-columns:32` falla un poll Realtime y pasa retry, por eso flaky.
+- Snapshot de error del artifact `data/88c9467820d3bdcf6d36b261b9a574f245c25ded.md`: error boundary «No pudimos actualizar las solicitudes abiertas». La causa exacta **no** se concluye solo con el snapshot. `src/features/offers/queries.ts::getAvailableRequests` arroja excepción si una `published` de la página de 50 carece de drop o cuenta incorrecta.
+- PASS primera corrida: legacy checkpoint `e2e/specs/t340-legacy-checkpoint.spec.ts:29` (incluye waitForURL 10s), y publicación UI `main-flow.spec.ts:187/:249`.
+- Tres traces `1-trace.network` de retries fixed-price confirmados con zip sin leer cuerpos, cookies, headers ni query: POST /merchant/requests/new 1740/1823/1943ms; GET alias /merchant/requests **0** después del POST; GET /merchant/dashboard 717/919/486ms. Coinciden con bitácora del autor SHA ce2bf85, sin atribuir diferencial completo a T-352.
+
+**Reproducción segura de las métricas del artifact local** (guardar zip descargado en /tmp/pr324-playwright-report.zip):
+
+```bash
+python - <<'PY'
+import json, zipfile, urllib.parse
+with zipfile.ZipFile('/tmp/pr324-playwright-report.zip') as outer:
+    for name in outer.namelist():
+        if not name.endswith('.zip'): continue
+        with zipfile.ZipFile(outer.open(name)) as trace:
+            for file in (x for x in trace.namelist() if x.endswith('.network')):
+                rows=[json.loads(line)['snapshot'] for line in trace.read(file).decode().splitlines() if line]
+                result=[(x['request']['method'], urllib.parse.urlsplit(x['request']['url']).path, x['response']['status'], round(x['time'])) for x in rows if urllib.parse.urlsplit(x['request']['url']).path in {'/merchant/requests/new','/merchant/requests','/merchant/dashboard'}]
+                if any(method=='POST' for method,path,status,ms in result):print(file, result)
+PY
+```
+
+**Pendiente:** verificación read-only de causa concreta de falla del feed, y gate completo Chromium + global-settings. No se ejecutó SQL remoto, Supabase, Docker ni mutación de código. No se usó una prueba skip/cancelled como verde.
