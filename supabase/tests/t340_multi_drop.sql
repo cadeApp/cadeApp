@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(128);
+select plan(136);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -1927,6 +1927,54 @@ select is(
   (select count(*)::int from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003474'),
   1,
   'segunda ejecucion de limpieza no duplica drops existentes (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003474'),
+  null::text,
+  'segunda ejecucion mantiene notes en NULL en solicitud padre respaldada (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003474'),
+  null::int,
+  'segunda ejecucion mantiene cash_change_amount en NULL en solicitud padre respaldada (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select notes from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003474'),
+  'Historico Integro',
+  'segunda ejecucion preserva notes inalterado en drop_contacts respaldado (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003474'),
+  1200,
+  'segunda ejecucion preserva cash_change_amount inalterado en drop_contacts respaldado (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select recipient_name from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003474'),
+  'Dest Historico Integro',
+  'segunda ejecucion preserva datos privados de destinatario en drop_contacts (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select count(*)::int from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003471'),
+  0,
+  'segunda ejecucion mantiene borrador incompleto sin drops generados (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003471'),
+  'M-TEST',
+  'segunda ejecucion mantiene notes intacto en borrador incompleto (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003471'),
+  2500,
+  'segunda ejecucion mantiene cash_change_amount intacto en borrador incompleto (H01/H03 Escenario 5C)'
 );
 
 select pg_temp.reset_actor();
