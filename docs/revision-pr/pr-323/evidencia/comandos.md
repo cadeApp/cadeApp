@@ -80,3 +80,26 @@ PY
 ```
 
 **Pendiente:** verificación read-only de causa concreta de falla del feed, y gate completo Chromium + global-settings. No se ejecutó SQL remoto, Supabase, Docker ni mutación de código. No se usó una prueba skip/cancelled como verde.
+
+## Ronda 5 — cierre real E2E T-352 (2026-10-13)
+
+**Merge previo #320:** `develop=eab51d30fff277f9cbce06e645fb95006b327cf8`; merge `develop` → rama #323 `f11cfd881588469f3b9b315a2f0d7dac9559faa9`, sin rebase. No se incorporaron otros cambios productivos de T-352.
+
+**Workflow autoritativo [38365704738](https://github.com/cadeApp/cadeApp/actions/runs/38365704738)**:
+- `resolve-preview` job **115190198651**: PR interna #323 (target), no PR #324 ni develop.
+- `e2e-preview` job **115190265018**: en log línea ~106 checkout real `f11cfd881588469f3b9b315a2f0d7dac9559faa9`; Chromium **72 passed (13.6m)**, sin flaky/failed/retry en resumen; `global-settings` **3 passed (49.0s)**, `subscription.global-settings.spec.ts:159` DoD 2 PASS 16.9s, `t340-legacy-checkpoint.spec.ts:29` PASS 17.7s.
+- `report-preview-status` success; status `e2e-preview=success` sobre commit `f11cfd8`; deploy Vercel `dpl_TDXkRKgwsY4syMdHgKqUMuZm4uYC`.
+- `repository_dispatch.head_sha=eab51d3` es el SHA de la rama que hospedó el workflow, **no** el SHA del Preview testado. Este fue contrastado expresamente.
+- Checks del SHA `f11cfd8`: unit, db-tests, lint, typecheck, build, audit, bundle-budget PASS. E2E completo pasó.
+- Compare `f11cfd8...1d6113cc` arroja exclusivamente `docs/tasks/log/T-352.md`, 35 líneas de registro. Ningún cambio a `src/`, `e2e/`, middleware, `supabase/` ni workflows tras el GREEN.
+- El HEAD actual con nuevas rondas documentales necesita checks propios al finalizar esta revisión; si estuvieran pending, no afirmarlos como green. `approval-policy` anterior FAIL porque el informe aún decía «CON BLOQUEANTES» y se actualiza cuando R5 publica «SIN BLOQUEANTES».
+
+**Contraste de código inspeccionado (SHA f11cfd8):**
+- `src/features/requests/actions.ts:162` devuelve `redirectTo:'/merchant/dashboard'` tras `publish_request` con éxito.
+- `actions.test.ts:283` y `:520` verifican **las dos salidas de éxito**; no se debilitaron errores ni RPC.
+- `create-request-form.tsx:217` sigue `router.push(result.data.redirectTo)`.
+- `src/app/(merchant)/merchant/requests/page.tsx:4` conserva alias a dashboard.
+- `src/server/e2e/staging-seed.ts:646/656` y `:1855/1865` usa `materializeFixtureDrop` y `finalizeSeededRequestState` en ese orden: herencia de PR #320 mergeada, no cambio propio de T-352.
+- La comparación de latencias del artifact previo #324 registra **0 requests al alias** en tres traces después del action. El run #323 PASS no generó nueva traza `trace: on-first-retry` al no haber retries. No inventar métricas nuevas ni atribuir todo el tiempo ahorrado a T-352; #320 también pasó DoD 2 sin esta corrección.
+
+**Límites:** el revisor contrastó código y logs de CI remota; no ejecutó localmente Vitest/Playwright ni alteró Supabase/Docker. No accedió a headers, cookies, bodies, query ni secretos. El RED unitario anterior que afirma el autor consta en su bitácora pero no fue reproducido localmente en R5.
