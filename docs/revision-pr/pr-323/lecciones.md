@@ -11,3 +11,7 @@ No se agregan reglas a AGENTS.md a partir de una sola PR sin comprobar recurrenc
 ## Ronda 3: dependencia circular en checkpoints
 
 Separar el gate de las dos PR originales del experimento de compatibilidad: una PR temporal de integración con blobs exactos prueba el acoplamiento entre fixtures de #320 y redirect de #323 **sin aceptar que la evidencia de una reemplace la revisión independiente de la otra**. La evidencia de un Preview no se reduce al estado del workflow: validar SHA objetivo, cobertura, flakiness, global-settings y efectos en Develop. Un E2E cancelado en la suite general no valida un DoD, aunque los tests específicos hayan pasado.
+
+## Ronda 4
+
+Un fixture nuevo coherente no prueba que un entorno Develop compartido esté libre de filas publicadas antiguas sin drops. Como `getAvailableRequests()` falla cerrado al leer una fila inconsistente, una sola fila puede romper muchas pruebas no relacionadas con su creador. Diagnosticar por error SSR y consistencia de datos antes de suponer el origen, no degradar fail-closed ni subir timeouts. Medir el cambio de `redirectTo` separadamente del gate E2E general.
