@@ -12,7 +12,8 @@
 | Estado | **CON BLOQUEANTE DE EVIDENCIA, sin defectos funcionales demostrados** |
 
 ## Ronda
-- [Ronda 1](revisiones/ronda-1.md): H01 gate E2E y medición posterior sin cerrar; H02 mejora de atribución.
+- [Ronda 1](revisiones/ronda-1.md): SHA 6dd4bc25; H01 gate, H02 atribución.
+- [Ronda 2](revisiones/ronda-2.md): SHA 087d5c66, autor aclaró que ahorro era predicción; H02 corregido por inspección; H01 aún abierto hasta E2E + medición cuantitativa.
 
 [Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
