@@ -40,17 +40,19 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     stagingContext,
     loginAsCourier,
     loginAsMerchant,
-  }) => {
+    browser,
+  }, testInfo) => {
     assertAllowedE2EEnvironment();
 
     const merchant = stagingContext.merchantUser;
     const courier = stagingContext.courierUsers?.[0];
     const requestId = stagingContext.createdRequestIds[0];
-    const zoneId = stagingContext.createdZoneIds[0];
-
-    if (!merchant || !courier || !requestId || !zoneId) {
+    // createdZoneIds solo registra zonas TRANSITORIAS para cleanup. Si el seed
+    // reutiliza zonas activas existentes, el array queda vacío (caso válido).
+    // Las 3 zonas para las entregas se consultan y validan contra la DB más abajo.
+    if (!merchant || !courier || !requestId) {
       throw new Error(
-        '[E2E Error] Se requieren merchant, courier, requestId y zoneId en stagingContext'
+        '[E2E Error] Se requieren merchant, courier y requestId en stagingContext'
       );
     }
 
@@ -253,8 +255,9 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     const sheet = page.getByRole('dialog');
     await expect(sheet).toBeVisible();
 
-    // Verifica que se lista el desglose de entregas
-    await expect(sheet.getByText(/3 entregas/i)).toBeVisible();
+    // Verifica que se lista el desglose de entregas: el badge exacto, no el
+    // «Total cotizado: … (3 entregas)» que también aparece en la hoja.
+    await expect(sheet.getByText(/^3 entregas$/i)).toBeVisible();
     await expect(sheet.getByText('Destinatario Uno MD')).toHaveCount(0);
     await expect(sheet.getByText('Timbre blanco drop 1')).toHaveCount(0);
     await expect(sheet.getByText(formatArs(DROP_1_CHANGE))).toHaveCount(0);
@@ -309,23 +312,48 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     await expect(page.getByText(/Timbre blanco drop 1/i)).toBeVisible();
     await expect(page.getByText(/Piso 3 drop 2/i)).toBeVisible();
     await expect(page.getByText(/Dejar en guardia drop 3/i)).toBeVisible();
-    await expect(
-      page.getByText(new RegExp(`cambio de ${formatArs(DROP_1_CHANGE)}`, 'i'))
-    ).toBeVisible();
+    // formatArs devuelve «$ 3.000»: `$` y `.` se escapan para que el regex
+    // exija literalmente el monto del drop 1.
+    const drop1ChangeLabel = formatArs(DROP_1_CHANGE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await expect(page.getByText(new RegExp(`· cambio de ${drop1ChangeLabel}`, 'i'))).toBeVisible();
 
     // -------------------------------------------------------------------------
     // Paso 6: Vista de Viaje del Comercio post-match (Avisale a tu cliente)
     // -------------------------------------------------------------------------
-    await loginAsMerchant(page);
-    await page.goto(`/trips/${requestId}`);
-    await waitForNoSkeletons(page);
+    // El repartidor sigue autenticado en `page`: /login lo redirigiría a su home.
+    // El comercio usa un contexto de navegador aislado, como en fixed-price (T-339).
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('[E2E Error] Falta baseURL para crear el contexto aislado del comercio');
+    }
+    const merchantContext = await browser.newContext({ baseURL });
+    try {
+      const merchantBrowserPage = await merchantContext.newPage();
+      await loginAsMerchant(merchantBrowserPage);
+      await merchantBrowserPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(merchantBrowserPage);
 
-    // Tarjetas individuales de aviso por cliente
-    await expect(page.getByText(/Avisale a tu cliente \(Entrega 1\)/i)).toBeVisible();
-    await expect(page.getByText(/Avisale a tu cliente \(Entrega 2\)/i)).toBeVisible();
-    await expect(page.getByText(/Avisale a tu cliente \(Entrega 3\)/i)).toBeVisible();
-    await expect(page.getByRole('link', { name: /Avisar a Destinatario Uno MD/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Avisar a Destinatario Dos MD/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Avisar a Destinatario Tres MD/i })).toBeVisible();
+      // Tarjetas individuales de aviso por cliente
+      await expect(
+        merchantBrowserPage.getByText(/Avisale a tu cliente \(Entrega 1\)/i)
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByText(/Avisale a tu cliente \(Entrega 2\)/i)
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByText(/Avisale a tu cliente \(Entrega 3\)/i)
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByRole('link', { name: /Avisar a Destinatario Uno MD/i })
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByRole('link', { name: /Avisar a Destinatario Dos MD/i })
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByRole('link', { name: /Avisar a Destinatario Tres MD/i })
+      ).toBeVisible();
+    } finally {
+      await merchantContext.close();
+    }
   });
 });

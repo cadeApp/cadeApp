@@ -26,8 +26,19 @@ export class TripPage extends BasePage {
     return this.page.getByRole('button', { name: /confirmar entrega/i });
   }
 
+  /**
+   * Cabecera del viaje: código, título «Viaje en curso» y el badge con el estado
+   * global del viaje. Las entregas (drops) tienen su propio badge de estado fuera
+   * de esta cabecera, así que un drop entregado no cuenta como viaje entregado.
+   */
+  get tripHeader(): Locator {
+    return this.page
+      .getByRole('heading', { level: 1, name: /^viaje en curso$/i })
+      .locator('xpath=../..');
+  }
+
   get deliveredStatus(): Locator {
-    return this.page.getByText(/^entregado$/i);
+    return this.tripHeader.getByText(/^entregado$/i);
   }
 
   get inTransitStatus(): Locator {

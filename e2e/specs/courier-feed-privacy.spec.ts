@@ -49,6 +49,31 @@ test.describe('T-342 — privacidad del feed del repartidor antes del match', ()
       throw new Error(`[E2E Seed Error] Falló la preparación de la solicitud: ${seedErr?.message ?? 'sin notes'}`);
     }
     const notes = seeded.notes;
+
+    // El lector del Paso 2 obtiene el monto y las indicaciones del contacto
+    // PRIVADO del drop, no de las columnas legacy. Mantener el fixture
+    // coherente en ambos modelos sin relajar las aserciones de privacidad.
+    const { data: seededDrop, error: seededDropErr } = await admin
+      .from('delivery_request_drops')
+      .select('id')
+      .eq('request_id', requestId)
+      .eq('position', 1)
+      .single();
+    expect(seededDropErr).toBeNull();
+    expect(seededDrop?.id).toBeDefined();
+    if (!seededDrop?.id) {
+      throw new Error('[E2E Seed Error] Falta el drop 1 materializado para la solicitud publicada');
+    }
+    const { error: dropUpdateErr } = await admin
+      .from('delivery_request_drops')
+      .update({ recipient_payment_method: 'cash', needs_change: true })
+      .eq('id', seededDrop.id);
+    expect(dropUpdateErr).toBeNull();
+    const { error: privateUpdateErr } = await admin
+      .from('delivery_request_drop_contacts')
+      .update({ cash_change_amount: CHANGE_AMOUNT, notes })
+      .eq('drop_id', seededDrop.id);
+    expect(privateUpdateErr).toBeNull();
     const amountLabel = formatArs(CHANGE_AMOUNT);
 
     // 2. Feed del repartidor no aceptado
