@@ -1789,34 +1789,34 @@ select is(
   'historico integro preserva cash_change_amount identico en drop_contacts (H01/H03 Escenario 3)'
 );
 
+-- Fixture Escenario 5A: Puente de publicación con drop 1 existente y datos legacy faltantes
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+) values (
+  '30000000-0000-4000-8000-000000003477', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Notas Sync Puente', 3500
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003477', 'Av Mitre 600', -27.4330, -65.6150, 'San Martin 600', 'Dest Sync', '+543865666777', true
+);
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values (
+  '40000000-0000-4000-8000-000000003477', '30000000-0000-4000-8000-000000003477', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'pending'
+);
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes, cash_change_amount
+) values (
+  '40000000-0000-4000-8000-000000003477', 'San Martin 600', 'Dest Sync', '+543865666777', true, null, null
+);
+
 -- Test Escenario 5A: Puente de publicación con drop 1 existente y datos legacy faltantes
 create function pg_temp.test_publish_with_existing_drop_sync() returns jsonb language plpgsql as $$
 declare
   v_req_id uuid := '30000000-0000-4000-8000-000000003477';
-  v_drop_id uuid := '40000000-0000-4000-8000-000000003477';
   v_res jsonb;
 begin
-  insert into public.delivery_requests (
-    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
-  ) values (
-    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Notas Sync Puente', 3500
-  );
-  insert into public.delivery_request_contacts (
-    request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
-  ) values (
-    v_req_id, 'Av Mitre 600', -27.4330, -65.6150, 'San Martin 600', 'Dest Sync', '+543865666777', true
-  );
-  insert into public.delivery_request_drops (
-    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
-  ) values (
-    v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'pending'
-  );
-  insert into public.delivery_request_drop_contacts (
-    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes, cash_change_amount
-  ) values (
-    v_drop_id, 'San Martin 600', 'Dest Sync', '+543865666777', true, null, null
-  );
-
   perform pg_temp.act_as(pg_temp.merchant_id());
   select public.publish_request(v_req_id) into v_res;
   perform pg_temp.reset_actor();
@@ -1854,33 +1854,33 @@ select is(
   'drop_contacts recibe cash_change_amount legacy faltante en sincronizacion de puente (H02/H03 Escenario 5A)'
 );
 
+-- Fixture Escenario 5B: Puente de publicación con drop 1 existente y contacto discrepante/incorrecto
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes
+) values (
+  '30000000-0000-4000-8000-000000003478', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'Nota Conflicto Borrador'
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003478', 'Av Mitre 700', -27.4330, -65.6150, 'San Martin 700', 'Dest Conflicto', '+543865777888', true
+);
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values (
+  '40000000-0000-4000-8000-000000003478', '30000000-0000-4000-8000-000000003478', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'
+);
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes
+) values (
+  '40000000-0000-4000-8000-000000003478', 'San Martin 700', 'Dest Conflicto', '+543865777888', true, 'Otra Nota Distinta'
+);
+
 -- Test Escenario 5B: Puente de publicación con drop 1 existente y contacto discrepante/incorrecto
 create function pg_temp.test_publish_with_divergent_drop_fails() returns text language plpgsql as $$
 declare
   v_req_id uuid := '30000000-0000-4000-8000-000000003478';
-  v_drop_id uuid := '40000000-0000-4000-8000-000000003478';
 begin
-  insert into public.delivery_requests (
-    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes
-  ) values (
-    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'Nota Conflicto Borrador'
-  );
-  insert into public.delivery_request_contacts (
-    request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
-  ) values (
-    v_req_id, 'Av Mitre 700', -27.4330, -65.6150, 'San Martin 700', 'Dest Conflicto', '+543865777888', true
-  );
-  insert into public.delivery_request_drops (
-    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
-  ) values (
-    v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'
-  );
-  insert into public.delivery_request_drop_contacts (
-    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes
-  ) values (
-    v_drop_id, 'San Martin 700', 'Dest Conflicto', '+543865777888', true, 'Otra Nota Distinta'
-  );
-
   perform pg_temp.act_as(pg_temp.merchant_id());
   perform public.publish_request(v_req_id);
   perform pg_temp.reset_actor();
