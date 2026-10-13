@@ -254,8 +254,9 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     const sheet = page.getByRole('dialog');
     await expect(sheet).toBeVisible();
 
-    // Verifica que se lista el desglose de entregas
-    await expect(sheet.getByText(/3 entregas/i)).toBeVisible();
+    // Verifica que se lista el desglose de entregas: el badge exacto, no el
+    // «Total cotizado: … (3 entregas)» que también aparece en la hoja.
+    await expect(sheet.getByText(/^3 entregas$/i)).toBeVisible();
     await expect(sheet.getByText('Destinatario Uno MD')).toHaveCount(0);
     await expect(sheet.getByText('Timbre blanco drop 1')).toHaveCount(0);
     await expect(sheet.getByText(formatArs(DROP_1_CHANGE))).toHaveCount(0);
