@@ -97,6 +97,7 @@ export async function createDeliveryRequestAction(
   }
 
   // 5. Inserción en delivery_requests (status 'draft')
+  // CC-022 §10 (Paso 3): el escritor deja de escribir en las columnas legacy notes y cash_change_amount
   const requestPayload: TablesInsert<'delivery_requests'> = {
     merchant_id: user.id,
     pickup_zone_id: data.pickupZoneId,
@@ -104,8 +105,8 @@ export async function createDeliveryRequestAction(
     package_type: data.packageType,
     recipient_payment_method: data.recipientPaymentMethod,
     needs_change: data.needsChange,
-    cash_change_amount: data.cashChangeAmount,
-    notes: data.notes ?? null,
+    cash_change_amount: null,
+    notes: null,
     status: 'draft',
     route_distance_m: routeDistanceM,
     approx_distance_m: routeDistanceM,
@@ -123,7 +124,7 @@ export async function createDeliveryRequestAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 6. Inserción en delivery_request_contacts
+  // 6. Inserción en delivery_request_contacts (retiro y destino legacy)
   const contactsPayload: TablesInsert<'delivery_request_contacts'> = {
     request_id: createdRequest.id,
     pickup_address: data.pickupAddress,
@@ -145,7 +146,51 @@ export async function createDeliveryRequestAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 7. Publicación: la transición draft -> published y su autorización (suscripción/piloto,
+  // 7. Inserción en delivery_request_drops (position 1) - CC-022 §10 Paso 3
+  const dropPayload: TablesInsert<'delivery_request_drops'> = {
+    request_id: createdRequest.id,
+    position: 1,
+    dropoff_zone_id: data.dropoffZoneId,
+    package_type: data.packageType,
+    recipient_payment_method: data.recipientPaymentMethod,
+    needs_change: data.recipientPaymentMethod === 'cash' ? data.needsChange : false,
+  };
+
+  const { data: createdDrop, error: dropInsertError } = await supabase
+    .from('delivery_request_drops')
+    .insert(dropPayload as never)
+    .select('id')
+    .single<{ id: string }>();
+
+  if (dropInsertError || !createdDrop) {
+    return err('INTERNAL_ERROR');
+  }
+
+  // 8. Inserción en delivery_request_drop_contacts (datos privados por entrega) - CC-022 §10 Paso 3
+  const dropContactsPayload: TablesInsert<'delivery_request_drop_contacts'> = {
+    drop_id: createdDrop.id,
+    dropoff_address: data.dropoffAddress,
+    dropoff_lat: data.dropoffLat ?? null,
+    dropoff_lng: data.dropoffLng ?? null,
+    recipient_name: data.recipientName,
+    recipient_phone: data.recipientPhone,
+    recipient_consent_declared: data.recipientConsentDeclared,
+    cash_change_amount:
+      data.recipientPaymentMethod === 'cash' && data.needsChange
+        ? data.cashChangeAmount
+        : null,
+    notes: data.notes ?? null,
+  };
+
+  const { error: dropContactsInsertError } = await supabase
+    .from('delivery_request_drop_contacts')
+    .insert(dropContactsPayload as never);
+
+  if (dropContactsInsertError) {
+    return err('INTERNAL_ERROR');
+  }
+
+  // 9. Publicación: la transición draft -> published y su autorización (suscripción/piloto,
   // zonas, bordes, rate limit) las valida la RPC. Si rechaza, la solicitud queda en draft.
   const published = await callRequestRpc(supabase, 'publish_request', {
     requestId: createdRequest.id,

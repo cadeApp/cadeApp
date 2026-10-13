@@ -1805,6 +1805,61 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         expect(ctx.createdRequestIds).toContain(mockRequestId);
       });
 
+      it('encuentra solicitud por marcador en delivery_request_drop_contacts cuando delivery_requests.notes es null (Paso 3)', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.merchantUser = {
+          id: mockMerchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockDropId = '11111111-1111-4111-8111-111111111111';
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockResolvedValue({
+                      data: [], // notes es null en delivery_requests tras la limpieza de Paso 3
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_request_drop_contacts') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [{ drop_id: mockDropId }],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_request_drops') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  in: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockResolvedValue({
+                      data: [{ request_id: mockRequestId }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            return {};
+          }),
+        } as unknown as AdminClientType;
+
+        const foundId = await findRequestIdByNotesMarker(ctx, 'marker-drop-contact-789', mockClient);
+        expect(foundId).toBe(mockRequestId);
+        expect(ctx.createdRequestIds).toContain(mockRequestId);
+      });
+
       it('0 resultados → falla cerrado con error explícito', async () => {
         const ctx = createStagingSeedContext();
         ctx.merchantUser = {

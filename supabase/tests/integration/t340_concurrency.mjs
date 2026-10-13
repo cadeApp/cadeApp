@@ -923,9 +923,10 @@ async function runMutationChecks() {
 
     // Validar RED esperado
     assert.notEqual(testRes.status, 0, '[H15] ERROR: La suite pgTAP debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante sobrevivió.');
+    const hasExpectedFailH13 = tapFailLines.some((l) => l.includes('mark_drop_failed rechaza repartidor no asignado a la oferta aceptada'));
     assert.ok(
-      out.includes('mark_drop_failed rechaza repartidor no asignado a la oferta aceptada'),
-      '[H15] ERROR: La suite no falló en la aserción esperada "mark_drop_failed rechaza repartidor no asignado a la oferta aceptada". Salida:\n' + out
+      hasExpectedFailH13,
+      '[H15] ERROR: La suite no falló en la aserción esperada "mark_drop_failed rechaza repartidor no asignado a la oferta aceptada" en línea not ok / Failed test. Salida de fallos:\n' + tapFailLines.join('\n')
     );
     assert.ok(!out.includes('syntax error'), '[H15] ERROR: Fallo inesperado por error de sintaxis SQL en mutante H13.');
 
@@ -1031,8 +1032,132 @@ async function runMutationChecks() {
   );
   console.log('[H15] -> GREEN OBTENIDO EXITOSAMENTE PARA H14 TRAS RESTAURACIÓN (11/11 OK: 8/8 H08 + 3/3 H14).');
 
+  // -------------------------------------------------------------------------
+  // 3. Control H01: Preservación de borradores en app_private.t340_clean_legacy
+  // -------------------------------------------------------------------------
+  console.log('\n[H01] --- Control H01: Preservación de borradores en app_private.t340_clean_legacy() ---');
+
+  const origDefClean = runSql("select pg_get_functiondef('app_private.t340_clean_legacy()'::regprocedure);");
+  assert.ok(origDefClean && origDefClean.length > 0, 'No se pudo recuperar la definición original de app_private.t340_clean_legacy');
+
+  const draftGuardCount = origDefClean.split("and r.status <> 'draft'").length - 1;
+  if (draftGuardCount !== 1) {
+    throw new Error(`[H01] ERROR: "and r.status <> 'draft'" debe aparecer exactamente 1 vez (encontrado: ${draftGuardCount}). Abortando.`);
+  }
+
+  const updateRegex = /update\s+public\.delivery_requests\s+r\s+set\s+notes\s*=\s*null,\s*cash_change_amount\s*=\s*null\s+from\s+public\.delivery_request_drops\s+d[\s\S]+?where\s+d\.request_id\s*=\s*r\.id[\s\S]+?;/i;
+  assert.ok(updateRegex.test(origDefClean), '[H01] ERROR: No se encontró el UPDATE selectivo final en app_private.t340_clean_legacy');
+
+  const mutatedDefH01 = origDefClean.replace(
+    updateRegex,
+    'update public.delivery_requests set notes = null, cash_change_amount = null where notes is not null or cash_change_amount is not null;'
+  );
+  assert.ok(!mutatedDefH01.includes("and r.status <> 'draft'"), '[H01] ERROR: El guard no fue removido del mutante H01');
+
+  try {
+    console.log('[H01] Aplicando mutación efímera H01 (reintroduciendo UPDATE global de R1 sin guarda de draft)...');
+    runSqlStdin(mutatedDefH01);
+
+    console.log('[H01] Ejecutando suite pgTAP t340_multi_drop.sql contra esquema mutado H01...');
+    const testResH01 = spawnSync(
+      pnpmCmd,
+      ['supabase', 'test', 'db', 'supabase/tests/t340_multi_drop.sql'],
+      { encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 }
+    );
+
+    const outH01 = (testResH01.stdout || '') + '\n' + (testResH01.stderr || '');
+    console.log('[H01] Salida resumida de pgTAP mutado:');
+    const tapFailLinesH01 = outH01.split('\n').filter((l) => l.includes('not ok') || l.includes('Failed test'));
+    console.log(tapFailLinesH01.join('\n'));
+
+    // Validar RED esperado
+    assert.notEqual(testResH01.status, 0, '[H01] ERROR: La suite pgTAP debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante H01 sobrevivió.');
+    const hasExpectedFailH01 = tapFailLinesH01.some((l) => l.includes('borrador incompleto conserva notes intacto sin borrado prematuro'));
+    assert.ok(
+      hasExpectedFailH01,
+      '[H01] ERROR: La suite no falló en la aserción esperada "borrador incompleto conserva notes intacto sin borrado prematuro" en línea not ok / Failed test. Salida de fallos:\n' + tapFailLinesH01.join('\n')
+    );
+    assert.ok(!outH01.includes('syntax error'), '[H01] ERROR: Fallo inesperado por error de sintaxis en mutante H01.');
+
+    console.log('[H01] -> RED OBTENIDO EXITOSAMENTE PARA H01 (exit code ' + testResH01.status + ', borrador incompleto perdió notas indebidamente).');
+  } finally {
+    console.log('[H01] Restaurando definición original de app_private.t340_clean_legacy()...');
+    runSqlStdin(origDefClean);
+  }
+
+  // Verificar restauración GREEN
+  console.log('[H01] Verificando restauración a GREEN para suite pgTAP t340_multi_drop.sql...');
+  const restoreResH01 = spawnSync(
+    pnpmCmd,
+    ['supabase', 'test', 'db', 'supabase/tests/t340_multi_drop.sql'],
+    { encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 }
+  );
+  assert.equal(restoreResH01.status, 0, '[H01] ERROR: La suite pgTAP no volvió a GREEN tras restaurar la función:\n' + restoreResH01.stdout);
+  assert.ok(restoreResH01.stdout.includes('Result: PASS') || restoreResH01.stdout.includes('.. ok'), '[H01] ERROR: No se obtuvo Result: PASS tras restaurar H01');
+  console.log('[H01] -> GREEN OBTENIDO EXITOSAMENTE PARA H01 TRAS RESTAURACIÓN.');
+
+  // -------------------------------------------------------------------------
+  // 4. Control H02: Validación de divergencia en puente con drop existente
+  // -------------------------------------------------------------------------
+  console.log('\n[H02] --- Control H02: Validación de divergencia de notas en app_private.request_cycle() ---');
+
+  const origDefCycle = runSql("select pg_get_functiondef('app_private.request_cycle(text,uuid,text,boolean,text,text)'::regprocedure);");
+  assert.ok(origDefCycle && origDefCycle.length > 0, 'No se pudo recuperar la definición original de app_private.request_cycle');
+
+  const targetPredicateH02 = 'v_drop1_notes is distinct from v_request.notes';
+  const countH02 = origDefCycle.split(targetPredicateH02).length - 1;
+  if (countH02 !== 2) {
+    throw new Error(`[H02] ERROR: El predicado objetivo "${targetPredicateH02}" debe aparecer exactamente 2 veces (encontrado: ${countH02}). Abortando.`);
+  }
+
+  // Mutación: anular ambas comparaciones de discrepancia de notes reemplazándolas por 'false'
+  const mutatedDefH02 = origDefCycle.replaceAll(targetPredicateH02, 'false');
+  assert.ok(!mutatedDefH02.includes(targetPredicateH02), 'La sustitución de la mutación H02 no fue efectiva');
+
+  try {
+    console.log('[H02] Aplicando mutación efímera H02 (anulando ambas comprobaciones de discrepancia de notas en puente)...');
+    runSqlStdin(mutatedDefH02);
+
+    console.log('[H02] Ejecutando suite pgTAP t340_multi_drop.sql contra esquema mutado H02...');
+    const testResH02 = spawnSync(
+      pnpmCmd,
+      ['supabase', 'test', 'db', 'supabase/tests/t340_multi_drop.sql'],
+      { encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 }
+    );
+
+    const outH02 = (testResH02.stdout || '') + '\n' + (testResH02.stderr || '');
+    console.log('[H02] Salida resumida de pgTAP mutado:');
+    const tapFailLinesH02 = outH02.split('\n').filter((l) => l.includes('not ok') || l.includes('Failed test'));
+    console.log(tapFailLinesH02.join('\n'));
+
+    // Validar RED esperado
+    assert.notEqual(testResH02.status, 0, '[H02] ERROR: La suite pgTAP debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante H02 sobrevivió.');
+    const hasExpectedFailH02 = tapFailLinesH02.some((l) => l.includes('publicacion con drop 1 existente y contacto divergente es rechazada con VALIDATION_ERROR'));
+    assert.ok(
+      hasExpectedFailH02,
+      '[H02] ERROR: La suite no falló en la aserción esperada Escenario 5B en línea not ok / Failed test. Salida de fallos:\n' + tapFailLinesH02.join('\n')
+    );
+    assert.ok(!outH02.includes('syntax error'), '[H02] ERROR: Fallo inesperado por error de sintaxis en mutante H02.');
+
+    console.log('[H02] -> RED OBTENIDO EXITOSAMENTE PARA H02 (exit code ' + testResH02.status + ', contacto discrepante no fue rechazado).');
+  } finally {
+    console.log('[H02] Restaurando definición original de app_private.request_cycle()...');
+    runSqlStdin(origDefCycle);
+  }
+
+  // Verificar restauración GREEN
+  console.log('[H02] Verificando restauración a GREEN para suite pgTAP t340_multi_drop.sql...');
+  const restoreResH02 = spawnSync(
+    pnpmCmd,
+    ['supabase', 'test', 'db', 'supabase/tests/t340_multi_drop.sql'],
+    { encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 }
+  );
+  assert.equal(restoreResH02.status, 0, '[H02] ERROR: La suite pgTAP no volvió a GREEN tras restaurar la función:\n' + restoreResH02.stdout);
+  assert.ok(restoreResH02.stdout.includes('Result: PASS') || restoreResH02.stdout.includes('.. ok'), '[H02] ERROR: No se obtuvo Result: PASS tras restaurar H02');
+  console.log('[H02] -> GREEN OBTENIDO EXITOSAMENTE PARA H02 TRAS RESTAURACIÓN.');
+
   console.log('\n[H15] ========================================================');
-  console.log('[H15] DEMOSTRACIÓN RED->GREEN COMPLETADA EXITOSAMENTE (H13 y H14)');
+  console.log('[H15] DEMOSTRACIÓN RED->GREEN COMPLETADA EXITOSAMENTE (H13, H14, H01, H02)');
   console.log('[H15] ========================================================');
 }
 

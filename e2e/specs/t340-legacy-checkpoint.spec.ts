@@ -19,8 +19,8 @@ import { createAdminClient } from '@/server/supabase/admin';
  * 2. Reintento de publicación sobre la solicitud no duplica drops (`drops_count = 1`).
  * 3. Match autorizado y llamada real a RPC `get_trip_details` conserva `deliveryNotes`
  *    y `cashChangeAmount` sin pérdida de datos.
- * 4. Columnas legacy `notes` y `cash_change_amount` en `delivery_requests` permanecen intactas
- *    (la limpieza está reservada exclusivamente para el Paso 3).
+ * 4. Limpieza segura de columnas legacy `notes` y `cash_change_amount` en `delivery_requests`
+ *    (quedan en NULL en Paso 3) mientras se preservan intactas en `delivery_request_drop_contacts`.
  */
 
 const CHANGE_AMOUNT = 5000;
@@ -88,6 +88,8 @@ test.describe('T-340 Gate 0 — Checkpoint funcional de compatibilidad legacy po
     expect(reqErr).toBeNull();
     expect(reqRow?.status).toBe('published');
     expect(reqRow?.drops_count).toBe(1);
+    expect(reqRow?.notes).toBeNull();
+    expect(reqRow?.cash_change_amount).toBeNull();
 
     const { data: dropsRows, error: dropsErr } = await admin
       .from('delivery_request_drops')
@@ -193,7 +195,7 @@ test.describe('T-340 Gate 0 — Checkpoint funcional de compatibilidad legacy po
     expect(trip?.status).toBe('matched');
 
     // -------------------------------------------------------------------------
-    // Oráculo 4: Persistencia y no limpieza prematura de columnas legacy
+    // Oráculo 4: Limpieza segura en Paso 3 de columnas legacy y preservación en drop_contacts
     // -------------------------------------------------------------------------
     const { data: finalReq, error: finalReqErr } = await admin
       .from('delivery_requests')
@@ -201,8 +203,8 @@ test.describe('T-340 Gate 0 — Checkpoint funcional de compatibilidad legacy po
       .eq('id', createdRequestId)
       .single();
     expect(finalReqErr).toBeNull();
-    expect(finalReq?.notes).toBe(notesMarker);
-    expect(finalReq?.cash_change_amount).toBe(CHANGE_AMOUNT);
+    expect(finalReq?.notes).toBeNull();
+    expect(finalReq?.cash_change_amount).toBeNull();
     expect(finalReq?.drops_count).toBe(1);
 
     const { data: finalDropContacts, error: finalDropContactsErr } = await admin

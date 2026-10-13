@@ -199,6 +199,9 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
   it('crea solicitud exitosa con coordenadas exactas, cálculo Haversine y guarda cash_change_amount', async () => {
     let insertedRequest: Record<string, unknown> | null = null;
     let insertedContacts: Record<string, unknown> | null = null;
+    let insertedDrop: Record<string, unknown> | null = null;
+    let insertedDropContacts: Record<string, unknown> | null = null;
+    const createdDropId = '99999999-9999-4999-8999-999999999999';
     const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(createdRequestId));
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
@@ -259,6 +262,28 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
           }),
         };
       }
+      if (table === 'delivery_request_drops') {
+        return {
+          insert: vi.fn().mockImplementation((payload) => {
+            insertedDrop = payload;
+            return {
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({
+                data: { id: createdDropId },
+                error: null,
+              }),
+            };
+          }),
+        };
+      }
+      if (table === 'delivery_request_drop_contacts') {
+        return {
+          insert: vi.fn().mockImplementation((payload) => {
+            insertedDropContacts = payload;
+            return Promise.resolve({ error: null });
+          }),
+        };
+      }
       return {};
     });
 
@@ -286,6 +311,7 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
     expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
 
     // Verificación 1: delivery_requests contiene status draft, package_type, cambio y distancia calculada
+    // T-340 Paso 3: notes y cash_change_amount ya no se escriben en delivery_requests (deben ser null)
     expect(insertedRequest).toMatchObject({
       merchant_id: 'usr-merchant-1',
       pickup_zone_id: validPickupZoneId,
@@ -293,8 +319,8 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       package_type: 'mediano',
       recipient_payment_method: 'cash',
       needs_change: true,
-      cash_change_amount: 5000,
-      notes: 'Tocar timbre blanco',
+      cash_change_amount: null,
+      notes: null,
       status: 'draft',
     });
     expect(
@@ -316,6 +342,27 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       recipient_name: 'Juan Pérez',
       recipient_phone: '3815551234',
       recipient_consent_declared: true,
+    });
+
+    // Verificación 3: delivery_request_drops contiene drop 1
+    expect(insertedDrop).toMatchObject({
+      request_id: createdRequestId,
+      position: 1,
+      dropoff_zone_id: validDropoffZoneId,
+      package_type: 'mediano',
+      recipient_payment_method: 'cash',
+      needs_change: true,
+    });
+
+    // Verificación 4: delivery_request_drop_contacts contiene datos privados y notas/cambio
+    expect(insertedDropContacts).toMatchObject({
+      drop_id: createdDropId,
+      dropoff_address: 'San Martín 450',
+      recipient_name: 'Juan Pérez',
+      recipient_phone: '3815551234',
+      recipient_consent_declared: true,
+      cash_change_amount: 5000,
+      notes: 'Tocar timbre blanco',
     });
   });
 
@@ -385,6 +432,22 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
         };
       }
       if (table === 'delivery_request_contacts') {
+        return {
+          insert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      if (table === 'delivery_request_drops') {
+        return {
+          insert: vi.fn().mockReturnValue({
+            select: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({
+              data: { id: 'fallback-drop-id' },
+              error: null,
+            }),
+          }),
+        };
+      }
+      if (table === 'delivery_request_drop_contacts') {
         return {
           insert: vi.fn().mockResolvedValue({ error: null }),
         };
@@ -486,6 +549,25 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
             }),
           };
         }
+        if (table === 'delivery_request_drops') {
+          return {
+            insert: vi.fn().mockImplementation(() => {
+              calls.push('insert:delivery_request_drops');
+              return {
+                select: vi.fn().mockReturnThis(),
+                single: vi.fn().mockResolvedValue({ data: { id: 'drop-1' }, error: null }),
+              };
+            }),
+          };
+        }
+        if (table === 'delivery_request_drop_contacts') {
+          return {
+            insert: vi.fn().mockImplementation(() => {
+              calls.push('insert:delivery_request_drop_contacts');
+              return Promise.resolve({ error: null });
+            }),
+          };
+        }
         return {};
       });
 
@@ -525,6 +607,8 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       expect(calls).toEqual([
         'insert:delivery_requests',
         'insert:delivery_request_contacts',
+        'insert:delivery_request_drops',
+        'insert:delivery_request_drop_contacts',
         'rpc:publish_request',
       ]);
     });
@@ -584,6 +668,105 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
 
       expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
     });
+
+    it('devuelve INTERNAL_ERROR si falla la inserción en delivery_request_drops', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({ data: { id: createdRequestId }, error: null }),
+            }),
+          };
+        }
+        if (table === 'delivery_request_contacts') {
+          return {
+            insert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        if (table === 'delivery_request_drops') {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({ data: null, error: { message: 'db error' } }),
+            }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as MockedServerClient);
+
+      const result = await createDeliveryRequestAction(validFormInput);
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    });
+
+    it('devuelve INTERNAL_ERROR si falla la inserción en delivery_request_drop_contacts', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({ data: { id: createdRequestId }, error: null }),
+            }),
+          };
+        }
+        if (table === 'delivery_request_contacts') {
+          return {
+            insert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        if (table === 'delivery_request_drops') {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({ data: { id: 'drop-1' }, error: null }),
+            }),
+          };
+        }
+        if (table === 'delivery_request_drop_contacts') {
+          return {
+            insert: vi.fn().mockResolvedValue({ error: { message: 'db error' } }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as MockedServerClient);
+
+      const result = await createDeliveryRequestAction(validFormInput);
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    });
   });
 
   // =========================================================================
@@ -632,6 +815,22 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
               inserted.contacts = payload;
               return Promise.resolve({ error: null });
             }),
+          };
+        }
+        if (table === 'delivery_request_drops') {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({
+                data: { id: 'no-centroid-drop-id' },
+                error: null,
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_request_drop_contacts') {
+          return {
+            insert: vi.fn().mockResolvedValue({ error: null }),
           };
         }
         return {};
