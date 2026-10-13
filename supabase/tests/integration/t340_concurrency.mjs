@@ -923,9 +923,10 @@ async function runMutationChecks() {
 
     // Validar RED esperado
     assert.notEqual(testRes.status, 0, '[H15] ERROR: La suite pgTAP debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante sobrevivió.');
+    const hasExpectedFailH13 = tapFailLines.some((l) => l.includes('mark_drop_failed rechaza repartidor no asignado a la oferta aceptada'));
     assert.ok(
-      out.includes('mark_drop_failed rechaza repartidor no asignado a la oferta aceptada'),
-      '[H15] ERROR: La suite no falló en la aserción esperada "mark_drop_failed rechaza repartidor no asignado a la oferta aceptada". Salida:\n' + out
+      hasExpectedFailH13,
+      '[H15] ERROR: La suite no falló en la aserción esperada "mark_drop_failed rechaza repartidor no asignado a la oferta aceptada" en línea not ok / Failed test. Salida de fallos:\n' + tapFailLines.join('\n')
     );
     assert.ok(!out.includes('syntax error'), '[H15] ERROR: Fallo inesperado por error de sintaxis SQL en mutante H13.');
 
@@ -1071,9 +1072,10 @@ async function runMutationChecks() {
 
     // Validar RED esperado
     assert.notEqual(testResH01.status, 0, '[H01] ERROR: La suite pgTAP debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante H01 sobrevivió.');
+    const hasExpectedFailH01 = tapFailLinesH01.some((l) => l.includes('borrador incompleto conserva notes intacto sin borrado prematuro'));
     assert.ok(
-      outH01.includes('borrador incompleto conserva notes intacto sin borrado prematuro'),
-      '[H01] ERROR: La suite no falló en la aserción esperada "borrador incompleto conserva notes intacto sin borrado prematuro". Salida:\n' + outH01
+      hasExpectedFailH01,
+      '[H01] ERROR: La suite no falló en la aserción esperada "borrador incompleto conserva notes intacto sin borrado prematuro" en línea not ok / Failed test. Salida de fallos:\n' + tapFailLinesH01.join('\n')
     );
     assert.ok(!outH01.includes('syntax error'), '[H01] ERROR: Fallo inesperado por error de sintaxis en mutante H01.');
 
@@ -1130,9 +1132,10 @@ async function runMutationChecks() {
 
     // Validar RED esperado
     assert.notEqual(testResH02.status, 0, '[H02] ERROR: La suite pgTAP debió fallar con exit code != 0 pero dio 0 (GREEN). Mutante H02 sobrevivió.');
+    const hasExpectedFailH02 = tapFailLinesH02.some((l) => l.includes('publicacion con drop 1 existente y contacto divergente es rechazada con VALIDATION_ERROR'));
     assert.ok(
-      outH02.includes('publicacion con drop 1 existente y contacto divergente es rechazada con VALIDATION_ERROR'),
-      '[H02] ERROR: La suite no falló en la aserción esperada Escenario 5B. Salida:\n' + outH02
+      hasExpectedFailH02,
+      '[H02] ERROR: La suite no falló en la aserción esperada Escenario 5B en línea not ok / Failed test. Salida de fallos:\n' + tapFailLinesH02.join('\n')
     );
     assert.ok(!outH02.includes('syntax error'), '[H02] ERROR: Fallo inesperado por error de sintaxis en mutante H02.');
 

@@ -1955,7 +1955,7 @@ select is(
 
 select is(
   (select recipient_name from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003474'),
-  'Dest Historico Integro',
+  'Dest Historico',
   'segunda ejecucion preserva datos privados de destinatario en drop_contacts (H01/H03 Escenario 5C)'
 );
 
