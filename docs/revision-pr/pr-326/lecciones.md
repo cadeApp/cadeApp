@@ -25,3 +25,9 @@ El test de idempotencia debe comparar el estado completo antes/después; un help
 Una mutación RED instrumentada en un script no equivale a RED ejecutado: si una aserción previa de pgTAP falla por un literal que no coincide con su fixture, CI se corta antes del runner mutador. Contrastar **have/want del test exacto**, corregir el test usando el fixture real o una captura previa, exigir GREEN general y recién después pedir salidas RED→GREEN de cada mutante.
 
 El runner `t340_concurrency.mjs` está autorizado en la ficha solo Paso 1, aunque su ruta figure entre archivos permitidos. Ampliarlo para mutaciones H01/H02 puede tener mérito técnico (pipeline existente), pero **requiere aprobación específica**; cambiar tests de otra fase sin permiso no se convierte en válido solo por ser útil.
+
+## Ronda 4 — Una corrección mínima del oráculo puede ser legítima
+
+Cuando una aserción falla exclusivamente por un literal imposible dado el fixture conocido (`recipient_name='Dest Historico'` frente a `want='Dest Historico Integro'`), corregir la expectativa a la fuente puede ser válido siempre que **se mantenga la aserción, la entrada y la propiedad** y después se exija CI real GREEN. No cambiar fixtures para coincidir con una prueba defectuosa ni eliminar verificaciones.
+
+**Señal fuerte de mutación:** exit no cero + `# Failed test N` del invariante exacto + restauración de la función en `finally` + rerun misma suite con exit 0. El simple texto del nombre de test en cualquier lugar de la salida no era suficiente (corregido en R4). La revisión debe verificar la salida completa de Actions, no fiarse de la narración del autor. Para ser transparente: acá se inspeccionó la batería redactada por Kira y realmente ejecutada por CI; no se ejecutó un segundo mutador propio con Docker.
