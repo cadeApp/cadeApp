@@ -77,3 +77,7 @@ Comparación GitHub: `793c8ce6...57b50977` cambió **solo** `supabase/migrations
 - No hubo cambios a CI/workflows, dependencias, auth, RLS, contratos o Paso 4. `e2e-preview=BLOCKED / REQUIRES DEVELOP MIGRATION` sigue siendo condición esperada por migración pendiente, no evidencia de E2E pasado.
 
 **Otros checks del HEAD:** unit/typecheck/lint/build/audit/bundle-budget SUCCESS; `db-tests` FAIL; `approval-policy` FAIL mientras la revisión conserva bloqueantes. Ver URL run para resultados del SHA exacto. No realizar merge, no escribir SQL remoto.
+
+## Decisión de alcance posterior a R3 — 2026-10-13
+
+Lautaro073 respondió **«A»** a la decisión de R3, por lo que el hallazgo `PR326-A01` pasa de `decision-pendiente` a `aceptado`. Se documenta la excepción en `docs/tasks/T-340.md` directamente en esta PR: `supabase/tests/integration/t340_concurrency.mjs` queda autorizado **solo para H01/H02 en Paso 3**, reutilizando el runner existente, sin modificar workflows/dependencias. **Esta decisión NO significa que los mutantes hayan ejecutado RED real**; el job previo `db-tests` sigue FALLADO en la aserción #133 y H03 permanece bloqueante. No tocar ni reabrir R3 histórico; el cambio de decisión queda trazado aquí y en `hallazgos.jsonl`.
