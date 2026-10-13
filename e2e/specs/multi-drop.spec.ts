@@ -311,9 +311,10 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     await expect(page.getByText(/Timbre blanco drop 1/i)).toBeVisible();
     await expect(page.getByText(/Piso 3 drop 2/i)).toBeVisible();
     await expect(page.getByText(/Dejar en guardia drop 3/i)).toBeVisible();
-    await expect(
-      page.getByText(new RegExp(`cambio de ${formatArs(DROP_1_CHANGE)}`, 'i'))
-    ).toBeVisible();
+    // formatArs devuelve «$ 3.000»: `$` y `.` se escapan para que el regex
+    // exija literalmente el monto del drop 1.
+    const drop1ChangeLabel = formatArs(DROP_1_CHANGE).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await expect(page.getByText(new RegExp(`· cambio de ${drop1ChangeLabel}`, 'i'))).toBeVisible();
 
     // -------------------------------------------------------------------------
     // Paso 6: Vista de Viaje del Comercio post-match (Avisale a tu cliente)
