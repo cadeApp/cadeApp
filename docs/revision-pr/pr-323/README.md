@@ -13,8 +13,9 @@
 
 ## Ronda
 - [Ronda 1](revisiones/ronda-1.md): SHA 6dd4bc25; H01 gate, H02 atribución.
-- [Ronda 2](revisiones/ronda-2.md): SHA 087d5c66, autor aclaró que ahorro era predicción; H02 corregido por inspección; H01 aún abierto hasta E2E + medición cuantitativa.
+- [Ronda 2](revisiones/ronda-2.md): SHA 087d5c66, autor aclaró la predicción; H02 atendido documentalmente.
+- [Ronda 3](revisiones/ronda-3.md): SHA ab66689, decisión de Lautaro073 B, PR temporal #324 creada sin merge; H01 sigue abierto hasta evidencia GREEN y medición real.
 
 [Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
-No mergear hasta E2E real GREEN y medición posterior auténtica. Esta tarea no desbloquea por sí sola el Paso 3/4 de T-340.
+La [PR temporal #324](https://github.com/cadeApp/cadeApp/pull/324) está señalizada REVIEW ONLY / NEVER MERGE; no se aprueba ni mergea. T-352 y el Paso 3/4 de T-340 mantienen su gate de revisión, E2E y medición antes de cualquier merge de PR original.
