@@ -45,3 +45,29 @@ pnpm exec playwright test e2e/specs/main-flow.spec.ts e2e/specs/courier-private-
 pnpm typecheck && pnpm lint && pnpm test
 ```
 Playwright **solo en Develop autorizado**, secretos del runner protegidos. Si no hay entorno seguro para lanzarlo, documentarlo; no inventar GREEN ni imprimir `.env`. No Docker local ni escritura SQL remota desde la revisión.
+
+
+## Ronda 2 independiente — 2026-10-13
+
+**Código verificado:** `d755e6fb5b9391b81872d9fd7d93359aaf97f5c3`.
+**E2E verdadero:** [run 38361113528](https://github.com/cadeApp/cadeApp/actions/runs/38361113528), `resolve-preview` job 115175275790 y `e2e-preview` job 115175339942. El resolver identificó `PR interna #320 contra develop` y el checkout real en el job E2E fue `git checkout --force d755e6fb5b9391b81872d9fd7d93359aaf97f5c3`. No confundir `run.head_sha=875f8621` (workflow control plane de `develop`) con el commit de aplicación realmente ejecutado.
+
+**Resumen exacto del log real:**
+```text
+Running 72 tests using 1 worker
+72 passed (15.5m)
+Running 3 tests using 1 worker
+[global-settings] subscription.global-settings.spec.ts:107 DoD 1 PASS
+[global-settings] subscription.global-settings.spec.ts:159 DoD 2 PASS (21.4s)
+[global-settings] subscription.global-settings.spec.ts:209 DoD 3 PASS
+3 passed (1.0m)
+```
+No `failed` ni `flaky` en el resumen final. Se comprobaron `t340-legacy-checkpoint` y los ocho casos que previamente fallaban en el feed.
+
+**Commit status exacto:** `e2e-preview = success` («trusted E2E gate GREEN») sobre SHA `d755e6f`; deployment `dpl_4gCaqqbjBF2MuhGUss9h2UV5kUX8`. Job `report-preview-status` completó `success`.
+
+**CI técnica sobre SHA `d755e6f`:** [run 38361008865](https://github.com/cadeApp/cadeApp/actions/runs/38361008865), unit PASS 129 suites/2133 Vitest, 79 workflows y 6 ADR; db-tests PASS, typecheck/lint/build/audit/bundle-budget PASS; Vercel SUCCESS. `approval-policy` aún FAIL por documentación/revisión pendiente.
+
+**Código verificado por lectura en HEAD:** `src/server/e2e/staging-seed.ts` materializa el drop 1 y `delivery_request_drop_contacts` antes del update `draft→published|matched|in_transit|delivered` en los dos helpers. `e2e/specs/courier-feed-vocabulary.spec.ts` prepara drop 1, `e2e/pages/trip.page.ts` limita el selector al header. Diff sin nuevos `.skip`, `.only`, incrementos de timeouts/retries ni cambios a lectores/RLS. En `docs/tasks/log/T-340.md` la última entrada 07:15 documenta limpieza anterior de Develop, pero no registra este run nuevo y todavía exige checkpoint con T-352: **H07 documental pendiente**.
+
+**Limitaciones de esta revisión:** no se ejecutaron `pnpm` ni `psql` local ni SQL remoto, y no se inspeccionaron datos personales. El usuario documentó una limpieza autorizada de Develop antes del run: el E2E GREEN valida que el feed no se rompió en ese momento, no certifica ausencia futura de residuos ante jobs cancelados. Las mutaciones RED previas constan en la bitácora del autor y no fueron recreadas localmente por el revisor.
