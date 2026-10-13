@@ -1544,23 +1544,23 @@ insert into public.delivery_request_drop_contacts (
   '40000000-0000-4000-8000-000000003474', 'San Martin 200', 'Dest Historico', '+543865111222', true, 'Historico Integro', 1200
 );
 
+-- Fixture publicado sin drops ni respaldo (H01 & H03 Escenario 2)
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+) values (
+  '30000000-0000-4000-8000-000000003472', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'NOTA_SIN_RESPALDO', null
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003472', 'Av Mitre 300', 'San Martin 300', 'Dest Unbacked', '+543865333444', false
+);
+
 -- Test Escenario 2 (H01 & H03): Published/matched sin respaldo privado -> preflight aborta con rollback y diagnóstico seguro
 create function pg_temp.test_migration_unbacked_rollback() returns text language plpgsql as $$
 declare
   v_err text := 'NO_ERROR';
 begin
-  -- Fixture publicado sin drops ni respaldo
-  insert into public.delivery_requests (
-    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
-  ) values (
-    '30000000-0000-4000-8000-000000003472', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'NOTA_SIN_RESPALDO', null
-  );
-  insert into public.delivery_request_contacts (
-    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
-  ) values (
-    '30000000-0000-4000-8000-000000003472', 'Av Mitre 300', 'San Martin 300', 'Dest Unbacked', '+543865333444', false
-  );
-
   begin
     perform app_private.t340_clean_legacy();
   exception when others then
@@ -1601,32 +1601,33 @@ delete from public.delivery_requests where id = '30000000-0000-4000-8000-0000000
 delete from public.delivery_request_contacts where request_id in ('30000000-0000-4000-8000-000000003425', '30000000-0000-4000-8000-000000003426');
 delete from public.delivery_requests where id in ('30000000-0000-4000-8000-000000003425', '30000000-0000-4000-8000-000000003426');
 
+-- Fixture Escenario 4A (H01 & H03): Contacto divergente por notas
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes
+) values (
+  '30000000-0000-4000-8000-000000003475', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'Nota Legacy Original'
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003475', 'Av Mitre 400', 'San Martin 400', 'Dest Divergente', '+543865444555', true
+);
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values (
+  '40000000-0000-4000-8000-000000003475', '30000000-0000-4000-8000-000000003475', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'
+);
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes
+) values (
+  '40000000-0000-4000-8000-000000003475', 'San Martin 400', 'Dest Divergente', '+543865444555', true, 'Nota Privada Modificada'
+);
+
 -- Test Escenario 4A (H01 & H03): Contacto divergente por notas -> aborta sin descartar ninguna variante
 create function pg_temp.test_migration_divergent_notes() returns text language plpgsql as $$
 declare
   v_err text := 'NO_ERROR';
 begin
-  insert into public.delivery_requests (
-    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes
-  ) values (
-    '30000000-0000-4000-8000-000000003475', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'Nota Legacy Original'
-  );
-  insert into public.delivery_request_contacts (
-    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
-  ) values (
-    '30000000-0000-4000-8000-000000003475', 'Av Mitre 400', 'San Martin 400', 'Dest Divergente', '+543865444555', true
-  );
-  insert into public.delivery_request_drops (
-    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
-  ) values (
-    '40000000-0000-4000-8000-000000003475', '30000000-0000-4000-8000-000000003475', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'
-  );
-  insert into public.delivery_request_drop_contacts (
-    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes
-  ) values (
-    '40000000-0000-4000-8000-000000003475', 'San Martin 400', 'Dest Divergente', '+543865444555', true, 'Nota Privada Modificada'
-  );
-
   begin
     perform app_private.t340_clean_legacy();
   exception when others then
@@ -1660,32 +1661,33 @@ delete from public.delivery_request_drops where id = '40000000-0000-4000-8000-00
 delete from public.delivery_request_contacts where request_id = '30000000-0000-4000-8000-000000003475';
 delete from public.delivery_requests where id = '30000000-0000-4000-8000-000000003475';
 
+-- Fixture Escenario 4B (H01 & H03): Contacto divergente por monto de cambio
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, cash_change_amount
+) values (
+  '30000000-0000-4000-8000-000000003476', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 3000
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003476', 'Av Mitre 500', 'San Martin 500', 'Dest Divergente Monto', '+543865555666', true
+);
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+) values (
+  '40000000-0000-4000-8000-000000003476', '30000000-0000-4000-8000-000000003476', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'pending'
+);
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, cash_change_amount
+) values (
+  '40000000-0000-4000-8000-000000003476', 'San Martin 500', 'Dest Divergente Monto', '+543865555666', true, 4500
+);
+
 -- Test Escenario 4B (H01 & H03): Contacto divergente por monto de cambio -> aborta sin descartar
 create function pg_temp.test_migration_divergent_cash_amount() returns text language plpgsql as $$
 declare
   v_err text := 'NO_ERROR';
 begin
-  insert into public.delivery_requests (
-    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, cash_change_amount
-  ) values (
-    '30000000-0000-4000-8000-000000003476', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 3000
-  );
-  insert into public.delivery_request_contacts (
-    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
-  ) values (
-    '30000000-0000-4000-8000-000000003476', 'Av Mitre 500', 'San Martin 500', 'Dest Divergente Monto', '+543865555666', true
-  );
-  insert into public.delivery_request_drops (
-    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
-  ) values (
-    '40000000-0000-4000-8000-000000003476', '30000000-0000-4000-8000-000000003476', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'pending'
-  );
-  insert into public.delivery_request_drop_contacts (
-    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, cash_change_amount
-  ) values (
-    '40000000-0000-4000-8000-000000003476', 'San Martin 500', 'Dest Divergente Monto', '+543865555666', true, 4500
-  );
-
   begin
     perform app_private.t340_clean_legacy();
   exception when others then
