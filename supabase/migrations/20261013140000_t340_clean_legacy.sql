@@ -325,7 +325,7 @@ begin
         from public.delivery_request_drops d
         left join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
         where d.request_id = p_request_id and d.position = 1
-        for update;
+        for update of d;
 
         if v_drop1_id is null then
           raise exception 'VALIDATION_ERROR' using errcode = 'P0001';
