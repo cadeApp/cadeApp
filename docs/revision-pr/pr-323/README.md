@@ -9,12 +9,13 @@
 | Base | 875f8621fa727c115326cc2f83036e44859ad52e |
 | SHA auditado | 6dd4bc251de1ecf6fffe040069d6f73086a7e419 |
 | Diff | 3 archivos: action, sus tests y bitácora |
-| Estado | **CON BLOQUEANTE DE EVIDENCIA, sin defectos funcionales demostrados** |
+| Estado | **CON BLOQUEANTE H01: E2E del feed falla, global-settings sin ejecutar** |
 
 ## Ronda
 - [Ronda 1](revisiones/ronda-1.md): SHA 6dd4bc25; H01 gate, H02 atribución.
 - [Ronda 2](revisiones/ronda-2.md): SHA 087d5c66, autor aclaró la predicción; H02 atendido documentalmente.
-- [Ronda 3](revisiones/ronda-3.md): SHA ab66689, decisión de Lautaro073 B, PR temporal #324 creada sin merge; H01 sigue abierto hasta evidencia GREEN y medición real.
+- [Ronda 3](revisiones/ronda-3.md): decisión B y PR temporal #324 creada.
+- [Ronda 4](revisiones/ronda-4.md): SHA ce2bf85; E2E #324: 63 PASS, 8 FAIL, 1 flaky; global-settings sin correr. H01 continúa abierto.
 
 [Hallazgos](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
 
