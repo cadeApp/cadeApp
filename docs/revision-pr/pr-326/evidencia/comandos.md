@@ -37,3 +37,20 @@ No se ejecutaron aquí los casos A–F, porque el revisor no utilizó Docker/Pos
 ## Validación documental
 
 Se leyeron `docs/revision-pr/COMO-ENTREGAR.md`, `docs/revision-pr/README.md`, `.agents/skills/revisar-pr/SKILL.md`, `docs/tasks/T-340.md` y `docs/contracts/CC-022.md` desde Develop. Decisión expresa de Lautaro073 por esta conversación: C y excepción de archivo de test.
+
+## Ronda 2 — SHA funcional `57b50977feb1c1365fb1515bbf434d41c2755a93`, 2026-10-13
+
+Comparación GitHub: `793c8ce6...57b50977` cambió **solo** `supabase/migrations/20261013140000_t340_clean_legacy.sql`, `supabase/tests/t340_multi_drop.sql` y `docs/tasks/log/T-340.md`. No hubo cambios por el agy en `docs/revision-pr/pr-326/**`; la carpeta de R1 se preservó.
+
+**Código y rutas contrastadas:**
+
+- `supabase/migrations/20261013140000_t340_clean_legacy.sql:16–105`: función privada SECURITY DEFINER `app_private.t340_clean_legacy`, `set search_path = public, pg_temp`, REVOKE a clientes; backfill, sync del drop 1, `not exists` por fila con comparación `IS NOT DISTINCT FROM`, aborta ante no-draft no respaldado, UPDATE selectivo `r.status <> 'draft'`. Limpieza global R1 retirada. Diagnóstico contiene solo count.
+- `:315–381`: `request_cycle` para drafts con drops existentes obtiene drop1 bajo lock de parent y `for update of d`, rechaza diferencias por valor, sincroniza faltantes, reconsulta y limpia solo tras verificar. Ruta sin drops crea drop/contactos antes de limpiar. No cambios de permisos, roles o validación de suscripción.
+- `supabase/tests/t340_multi_drop.sql:1450–1935`: sección 11, 28 asserts nuevas → `plan(128)`. Se inspeccionaron oráculos de borrador incompleto, published sin respaldo y rollback, datos íntegros, divergencia notes/cash, bridge con drop previo y repetición.
+- **Laguna detectada:** `pg_temp.test_clean_legacy_repeated_idempotent()` hace `perform app_private.t340_clean_legacy(); return 1;`; `select is(...,1)` pasa por el valor constante si la llamada no lanza error, no prueba invariancia de notas/monto/contacts. La aserción siguiente solo cuenta drops, y no compara el contacto privado completo. Complementar sin borrar controles actuales.
+
+**CI verificado:** [run 38466089472](https://github.com/cadeApp/cadeApp/actions/runs/38466089472) sobre SHA funcional `5e185e5010b1503df4e5c50352a2e09532510ab9` (el HEAD `57b50977` agrega solo entrada de bitácora). `db-tests` job `115533143973`: log real `Applying migration 20261013140000_t340_clean_legacy.sql`, `t340_multi_drop.sql ... ok`, **Files=21, Tests=2031, Result: PASS**. `unit` job `115533144058`: 129 archivos / 2136 tests; lint/typecheck/build/audit/bundle-budget PASS. Mutaciones CI reales **H13 y H14** (del mecanismo de delivery), restauradas GREEN; **NO hubo mutaciones RED de PR326-H01/H02/H03 en el log**. Los RED del agy en bitácora son **analíticos**, no ejecutados.
+
+**Estado Preview:** Vercel SUCCESS. `e2e-preview = BLOCKED / REQUIRES DEVELOP MIGRATION`, expected por SQL nuevo; NO equivale a PASS/fallo de comportamiento. `approval-policy` falla con el informe R1 con bloqueantes; también depende de formato.
+
+**Límite de la revisión:** consulta de GitHub + inspección de código e informes, sin `pnpm` local, Docker, DB ni scripts de mutación. No inventar outputs. Revisor deja H01/H02 como `arreglado-sin-verificar`; H03 `parcial` hasta RED ejecutado y verificación de idempotencia.

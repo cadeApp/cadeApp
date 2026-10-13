@@ -13,3 +13,9 @@ Un test ejecutado **después** de aplicar la migración sobre fixtures limpios p
 Kira recibió permiso puntual del responsable P1 para SQL/RPC del Paso 3 y para `staging-seed.test.ts`; no es permiso general para otras tareas, Paso 4, trabajar sobre remoto manualmente o debilitar políticas. Registrar la decisión en la revisión y en el body evita rondas por un supuesto desvío ya resuelto.
 
 *Identificadores locales PR326-Lxx usados para no colisionar con secuencias AG globales cuya última numeración remota no se verificó en esta sesión.*
+
+## Ronda 2 — Los negativos ejecutados deben ser de la propiedad revisada
+
+Un CI puede mostrar RED→GREEN auténtico, pero si corresponde a H13/H14 (controles de roles y locks de otra tarea), no prueba la calidad de H01–H03 (pérdida de datos en limpieza). La «evidencia RED→GREEN analítica» es una predicción, no una ejecución. Al validar un arreglo de corrupción irreversible, exigir mutación negativa del UPDATE global **realmente ejecutada** sobre datos artificiales, no un rojo lógico por lectura del SQL.
+
+El test de idempotencia debe comparar el estado completo antes/después; un helper que devuelve `1` tras una llamada y prueba `1 = 1` solo mide ausencia de excepción, no inmutabilidad de datos.
