@@ -155,8 +155,10 @@ export async function createDeliveryRequestAction(
     return err(published.code);
   }
 
+  // T-352: destino final. `/merchant/requests` es un alias que redirige al dashboard y sumaba una navegación
+  // y otra pasada completa por el middleware después de publicar.
   return ok({
     requestId: createdRequest.id,
-    redirectTo: '/merchant/requests',
+    redirectTo: '/merchant/dashboard',
   });
 }

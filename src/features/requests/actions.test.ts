@@ -279,7 +279,8 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.requestId).toBe(createdRequestId);
-      expect(result.data.redirectTo).toBe('/merchant/requests');
+      // T-352: destino final directo; `/merchant/requests` es un alias que vuelve a redirigir al dashboard.
+      expect(result.data.redirectTo).toBe('/merchant/dashboard');
     }
     expect(mockRpc).toHaveBeenCalledTimes(1);
     expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
@@ -516,7 +517,7 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
 
       expect(result).toEqual({
         ok: true,
-        data: { requestId: createdRequestId, redirectTo: '/merchant/requests' },
+        data: { requestId: createdRequestId, redirectTo: '/merchant/dashboard' },
       });
       expect(mockRpc).toHaveBeenCalledTimes(1);
       expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
