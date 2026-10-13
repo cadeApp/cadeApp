@@ -1507,6 +1507,7 @@ select throws_matching(
 -- ============================================================================
 -- 11. Paso 3: Limpieza segura de legacy, preflight, rollback y puente con drops existentes (CC-022 §10, H01–H03)
 -- ============================================================================
+select pg_temp.reset_actor();
 
 -- Fixture 1: Draft incompleto previo a migración (H01 & H03 Escenario 1)
 -- notes='M-TEST' y cash_change_amount no nulo, sin drop/contacto válido
