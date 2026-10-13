@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(100);
+select plan(128);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -1502,6 +1502,428 @@ select throws_matching(
   $$ select public.get_merchant_request_private_fields('30000000-0000-4000-8000-000000003600'::uuid) $$,
   'UNAUTHORIZED_ACTOR',
   'repartidor no aceptado es rechazado por get_merchant_request_private_fields'
+);
+
+-- ============================================================================
+-- 11. Paso 3: Limpieza segura de legacy, preflight, rollback y puente con drops existentes (CC-022 §10, H01–H03)
+-- ============================================================================
+
+-- Fixture 1: Draft incompleto previo a migración (H01 & H03 Escenario 1)
+-- notes='M-TEST' y cash_change_amount no nulo, sin drop/contacto válido
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+) values (
+  '30000000-0000-4000-8000-000000003471', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'M-TEST', 2500
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003471', 'Av Mitre 100', '', 'Dest Incompleto', '', false
+);
+
+-- Fixture 2: Solicitud histórica íntegra con drop 1 y contacto coincidente (H01 & H03 Escenario 3)
+insert into public.delivery_requests (
+  id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount, delivered_at
+) values (
+  '30000000-0000-4000-8000-000000003474', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'delivered', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Historico Integro', 1200, now()
+);
+insert into public.delivery_request_contacts (
+  request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+) values (
+  '30000000-0000-4000-8000-000000003474', 'Av Mitre 200', 'San Martin 200', 'Dest Historico', '+543865111222', true
+);
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status, delivered_at
+) values (
+  '40000000-0000-4000-8000-000000003474', '30000000-0000-4000-8000-000000003474', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'delivered', now()
+);
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes, cash_change_amount
+) values (
+  '40000000-0000-4000-8000-000000003474', 'San Martin 200', 'Dest Historico', '+543865111222', true, 'Historico Integro', 1200
+);
+
+-- Test Escenario 2 (H01 & H03): Published/matched sin respaldo privado -> preflight aborta con rollback y diagnóstico seguro
+create function pg_temp.test_migration_unbacked_rollback() returns text language plpgsql as $$
+declare
+  v_err text := 'NO_ERROR';
+begin
+  -- Fixture publicado sin drops ni respaldo
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+  ) values (
+    '30000000-0000-4000-8000-000000003472', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'NOTA_SIN_RESPALDO', null
+  );
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    '30000000-0000-4000-8000-000000003472', 'Av Mitre 300', 'San Martin 300', 'Dest Unbacked', '+543865333444', false
+  );
+
+  begin
+    perform app_private.t340_clean_legacy();
+  exception when others then
+    v_err := SQLERRM;
+  end;
+
+  return v_err;
+end;
+$$;
+
+select matches(
+  pg_temp.test_migration_unbacked_rollback(),
+  '^T340_PREFLIGHT_UNBACKED_OR_DIVERGENT:',
+  'preflight rechaza no-drafts sin respaldo con codigo controlado (H01/H03 Escenario 2)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003472'),
+  'NOTA_SIN_RESPALDO',
+  'rollback preserva intacta la solicitud no respaldada sin borrado parcial (H01/H03 Escenario 2)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003471'),
+  'M-TEST',
+  'rollback de preflight preserva datos de otras filas sin borrado colateral (H01/H03 Escenario 2)'
+);
+
+select isnt(
+  pg_temp.test_migration_unbacked_rollback() ~ 'NOTA_SIN_RESPALDO|\+543865|30000000',
+  true,
+  'diagnostico de error no expone notas, telefonos, montos ni datos sensibles (H01 Privacidad)'
+);
+
+-- Limpieza del fixture unbacked y fixtures huerfanos de seccion 10 para evaluar camino exitoso
+delete from public.delivery_request_contacts where request_id = '30000000-0000-4000-8000-000000003472';
+delete from public.delivery_requests where id = '30000000-0000-4000-8000-000000003472';
+delete from public.delivery_request_contacts where request_id in ('30000000-0000-4000-8000-000000003425', '30000000-0000-4000-8000-000000003426');
+delete from public.delivery_requests where id in ('30000000-0000-4000-8000-000000003425', '30000000-0000-4000-8000-000000003426');
+
+-- Test Escenario 4A (H01 & H03): Contacto divergente por notas -> aborta sin descartar ninguna variante
+create function pg_temp.test_migration_divergent_notes() returns text language plpgsql as $$
+declare
+  v_err text := 'NO_ERROR';
+begin
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes
+  ) values (
+    '30000000-0000-4000-8000-000000003475', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'Nota Legacy Original'
+  );
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    '30000000-0000-4000-8000-000000003475', 'Av Mitre 400', 'San Martin 400', 'Dest Divergente', '+543865444555', true
+  );
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+  ) values (
+    '40000000-0000-4000-8000-000000003475', '30000000-0000-4000-8000-000000003475', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'
+  );
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes
+  ) values (
+    '40000000-0000-4000-8000-000000003475', 'San Martin 400', 'Dest Divergente', '+543865444555', true, 'Nota Privada Modificada'
+  );
+
+  begin
+    perform app_private.t340_clean_legacy();
+  exception when others then
+    v_err := SQLERRM;
+  end;
+
+  return v_err;
+end;
+$$;
+
+select matches(
+  pg_temp.test_migration_divergent_notes(),
+  '^T340_PREFLIGHT_UNBACKED_OR_DIVERGENT:',
+  'contacto con notas divergentes aborta preflight (H01/H03 Escenario 4A)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003475'),
+  'Nota Legacy Original',
+  'conflicto de notas preserva variante legacy sin descarte silencioso (H01/H03 Escenario 4A)'
+);
+
+select is(
+  (select notes from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003475'),
+  'Nota Privada Modificada',
+  'conflicto de notas preserva variante privada sin sobreescritura (H01/H03 Escenario 4A)'
+);
+
+delete from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003475';
+delete from public.delivery_request_drops where id = '40000000-0000-4000-8000-000000003475';
+delete from public.delivery_request_contacts where request_id = '30000000-0000-4000-8000-000000003475';
+delete from public.delivery_requests where id = '30000000-0000-4000-8000-000000003475';
+
+-- Test Escenario 4B (H01 & H03): Contacto divergente por monto de cambio -> aborta sin descartar
+create function pg_temp.test_migration_divergent_cash_amount() returns text language plpgsql as $$
+declare
+  v_err text := 'NO_ERROR';
+begin
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, cash_change_amount
+  ) values (
+    '30000000-0000-4000-8000-000000003476', pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'published', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 3000
+  );
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    '30000000-0000-4000-8000-000000003476', 'Av Mitre 500', 'San Martin 500', 'Dest Divergente Monto', '+543865555666', true
+  );
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+  ) values (
+    '40000000-0000-4000-8000-000000003476', '30000000-0000-4000-8000-000000003476', 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'pending'
+  );
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, cash_change_amount
+  ) values (
+    '40000000-0000-4000-8000-000000003476', 'San Martin 500', 'Dest Divergente Monto', '+543865555666', true, 4500
+  );
+
+  begin
+    perform app_private.t340_clean_legacy();
+  exception when others then
+    v_err := SQLERRM;
+  end;
+
+  return v_err;
+end;
+$$;
+
+select matches(
+  pg_temp.test_migration_divergent_cash_amount(),
+  '^T340_PREFLIGHT_UNBACKED_OR_DIVERGENT:',
+  'contacto con monto divergente aborta preflight (H01/H03 Escenario 4B)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003476'),
+  3000,
+  'conflicto de monto preserva variante legacy intacta (H01/H03 Escenario 4B)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003476'),
+  4500,
+  'conflicto de monto preserva variante privada intacta (H01/H03 Escenario 4B)'
+);
+
+delete from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003476';
+delete from public.delivery_request_drops where id = '40000000-0000-4000-8000-000000003476';
+delete from public.delivery_request_contacts where request_id = '30000000-0000-4000-8000-000000003476';
+delete from public.delivery_requests where id = '30000000-0000-4000-8000-000000003476';
+
+-- Ejecución real y exitosa de app_private.t340_clean_legacy() sobre fixtures válidos
+create function pg_temp.test_migration_clean_legacy_success() returns void language plpgsql as $$
+begin
+  perform app_private.t340_clean_legacy();
+end;
+$$;
+select pg_temp.test_migration_clean_legacy_success();
+
+-- Validaciones de Escenario 1 (Draft incompleto) y Escenario 3 (Dato histórico íntegro) post-limpieza
+select is(
+  (select count(*)::int from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003471'),
+  0,
+  'borrador incompleto no genera drops en limpieza (H01/H03 Escenario 1)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003471'),
+  'M-TEST',
+  'borrador incompleto conserva notes intacto sin borrado prematuro (H01/H03 Escenario 1)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003471'),
+  2500,
+  'borrador incompleto conserva cash_change_amount intacto (H01/H03 Escenario 1)'
+);
+
+create function pg_temp.test_publish_incomplete_draft_rejected() returns text language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.publish_request('30000000-0000-4000-8000-000000003471');
+  perform pg_temp.reset_actor();
+  return 'OK';
+exception when others then
+  perform pg_temp.reset_actor();
+  return SQLERRM;
+end;
+$$;
+select is(
+  pg_temp.test_publish_incomplete_draft_rejected(),
+  'MISSING_REQUIRED_FIELDS',
+  'publicar borrador incompleto retenido se rechaza con MISSING_REQUIRED_FIELDS (H01/H03 Escenario 1)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003474'),
+  null::text,
+  'historico integro con respaldo probado limpia notes a NULL en padre (H01/H03 Escenario 3)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003474'),
+  null::int,
+  'historico integro con respaldo probado limpia cash_change_amount a NULL en padre (H01/H03 Escenario 3)'
+);
+
+select is(
+  (select notes from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003474'),
+  'Historico Integro',
+  'historico integro preserva notes identico en drop_contacts (H01/H03 Escenario 3)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003474'),
+  1200,
+  'historico integro preserva cash_change_amount identico en drop_contacts (H01/H03 Escenario 3)'
+);
+
+-- Test Escenario 5A: Puente de publicación con drop 1 existente y datos legacy faltantes
+create function pg_temp.test_publish_with_existing_drop_sync() returns jsonb language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003477';
+  v_drop_id uuid := '40000000-0000-4000-8000-000000003477';
+  v_res jsonb;
+begin
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes, cash_change_amount
+  ) values (
+    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'Notas Sync Puente', 3500
+  );
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    v_req_id, 'Av Mitre 600', -27.4330, -65.6150, 'San Martin 600', 'Dest Sync', '+543865666777', true
+  );
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+  ) values (
+    v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', true, 'pending'
+  );
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes, cash_change_amount
+  ) values (
+    v_drop_id, 'San Martin 600', 'Dest Sync', '+543865666777', true, null, null
+  );
+
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  select public.publish_request(v_req_id) into v_res;
+  perform pg_temp.reset_actor();
+  return v_res;
+end;
+$$;
+
+select is(
+  (pg_temp.test_publish_with_existing_drop_sync()->>'status'),
+  'published',
+  'publicacion con drop 1 existente y sincronizacion de datos faltantes es exitosa (H02/H03 Escenario 5A)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003477'),
+  null::text,
+  'padre limpia notes a NULL tras sincronizar y publicar con drop 1 existente (H02/H03 Escenario 5A)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003477'),
+  null::int,
+  'padre limpia cash_change_amount a NULL tras sincronizar y publicar con drop 1 existente (H02/H03 Escenario 5A)'
+);
+
+select is(
+  (select notes from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003477'),
+  'Notas Sync Puente',
+  'drop_contacts recibe notes legacy faltantes en sincronizacion de puente (H02/H03 Escenario 5A)'
+);
+
+select is(
+  (select cash_change_amount from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003477'),
+  3500,
+  'drop_contacts recibe cash_change_amount legacy faltante en sincronizacion de puente (H02/H03 Escenario 5A)'
+);
+
+-- Test Escenario 5B: Puente de publicación con drop 1 existente y contacto discrepante/incorrecto
+create function pg_temp.test_publish_with_divergent_drop_fails() returns text language plpgsql as $$
+declare
+  v_req_id uuid := '30000000-0000-4000-8000-000000003478';
+  v_drop_id uuid := '40000000-0000-4000-8000-000000003478';
+begin
+  insert into public.delivery_requests (
+    id, merchant_id, pickup_zone_id, status, dropoff_zone_id, package_type, recipient_payment_method, needs_change, notes
+  ) values (
+    v_req_id, pg_temp.merchant_id(), pg_temp.pickup_zone_id(), 'draft', pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'Nota Conflicto Borrador'
+  );
+  insert into public.delivery_request_contacts (
+    request_id, pickup_address, pickup_lat, pickup_lng, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared
+  ) values (
+    v_req_id, 'Av Mitre 700', -27.4330, -65.6150, 'San Martin 700', 'Dest Conflicto', '+543865777888', true
+  );
+  insert into public.delivery_request_drops (
+    id, request_id, position, dropoff_zone_id, package_type, recipient_payment_method, needs_change, status
+  ) values (
+    v_drop_id, v_req_id, 1, pg_temp.dropoff_zone_id(), 'chico', 'cash', false, 'pending'
+  );
+  insert into public.delivery_request_drop_contacts (
+    drop_id, dropoff_address, recipient_name, recipient_phone, recipient_consent_declared, notes
+  ) values (
+    v_drop_id, 'San Martin 700', 'Dest Conflicto', '+543865777888', true, 'Otra Nota Distinta'
+  );
+
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.publish_request(v_req_id);
+  perform pg_temp.reset_actor();
+  return 'OK';
+exception when others then
+  perform pg_temp.reset_actor();
+  return SQLERRM;
+end;
+$$;
+
+select is(
+  pg_temp.test_publish_with_divergent_drop_fails(),
+  'VALIDATION_ERROR',
+  'publicacion con drop 1 existente y contacto divergente es rechazada con VALIDATION_ERROR (H02/H03 Escenario 5B)'
+);
+
+select is(
+  (select notes from public.delivery_requests where id = '30000000-0000-4000-8000-000000003478'),
+  'Nota Conflicto Borrador',
+  'rechazo por discrepancia preserva notes en borrador sin borrado (H02/H03 Escenario 5B)'
+);
+
+select is(
+  (select notes from public.delivery_request_drop_contacts where drop_id = '40000000-0000-4000-8000-000000003478'),
+  'Otra Nota Distinta',
+  'rechazo por discrepancia no sobreescribe drop_contacts (H02/H03 Escenario 5B)'
+);
+
+-- Test Escenario 5C: Idempotencia de segunda ejecución de app_private.t340_clean_legacy()
+create function pg_temp.test_clean_legacy_repeated_idempotent() returns int language plpgsql as $$
+begin
+  perform app_private.t340_clean_legacy();
+  return 1;
+end;
+$$;
+
+select is(
+  pg_temp.test_clean_legacy_repeated_idempotent(),
+  1,
+  'segunda ejecucion consecutiva de app_private.t340_clean_legacy es estrictamente idempotente (H01/H03 Escenario 5C)'
+);
+
+select is(
+  (select count(*)::int from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003474'),
+  1,
+  'segunda ejecucion de limpieza no duplica drops existentes (H01/H03 Escenario 5C)'
 );
 
 select pg_temp.reset_actor();

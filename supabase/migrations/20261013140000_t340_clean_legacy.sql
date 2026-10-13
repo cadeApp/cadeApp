@@ -12,27 +12,100 @@
 -- Las columnas delivery_requests.notes y cash_change_amount permanecen en el esquema;
 -- su retiro físico queda reservado para un CC posterior (CC-022 §10 paso 5).
 
--- 1. Sincronizar datos legacy pendientes a drop_contacts antes de limpiar
-select app_private.t340_backfill_legacy();
+-- 1. Helper privado de limpieza segura de valores legacy con preflight y preservación (CC-022 §10, PR326-H01)
+create or replace function app_private.t340_clean_legacy()
+returns void
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_unbacked_count integer;
+begin
+  -- Sincronizar solicitudes legacy elegibles mediante el backfill existente
+  perform app_private.t340_backfill_legacy();
 
-update public.delivery_request_drop_contacts dc
-set notes = coalesce(dc.notes, r.notes),
-    cash_change_amount = coalesce(
-      dc.cash_change_amount,
-      case when d.recipient_payment_method = 'cash' and d.needs_change then r.cash_change_amount else null end
-    )
-from public.delivery_request_drops d
-join public.delivery_requests r on r.id = d.request_id
-where d.id = dc.drop_id
-  and d.position = 1
-  and (r.notes is not null or r.cash_change_amount is not null);
+  -- Sincronizar únicamente datos faltantes a drop_contacts (position 1) cuando no hay conflicto
+  update public.delivery_request_drop_contacts dc
+  set notes = case
+        when dc.notes is null and r.notes is not null then r.notes
+        else dc.notes
+      end,
+      cash_change_amount = case
+        when dc.cash_change_amount is null
+             and d.recipient_payment_method = 'cash'
+             and d.needs_change
+             and r.cash_change_amount is not null
+          then r.cash_change_amount
+        else dc.cash_change_amount
+      end
+  from public.delivery_request_drops d
+  join public.delivery_requests r on r.id = d.request_id
+  where d.id = dc.drop_id
+    and d.position = 1
+    and (
+      (dc.notes is null and r.notes is not null)
+      or (dc.cash_change_amount is null and d.recipient_payment_method = 'cash' and d.needs_change and r.cash_change_amount is not null)
+    );
 
--- 2. Limpieza de columnas legacy en delivery_requests
-update public.delivery_requests
-set notes = null,
-    cash_change_amount = null
-where notes is not null
-   or cash_change_amount is not null;
+  -- Preflight check: comprobar que toda solicitud histórica no-draft con datos legacy no nulos
+  -- tenga un drop (position = 1) y contacto enlazado con copia íntegra y equivalente.
+  -- Si falta respaldo o diverge, abortar la transacción completa antes de cualquier limpieza.
+  -- Diagnóstico seguro: conteo numérico y código, sin valores de notas, contactos ni montos sensibles.
+  select count(*)
+  into v_unbacked_count
+  from public.delivery_requests r
+  where r.status <> 'draft'
+    and (r.notes is not null or r.cash_change_amount is not null)
+    and not exists (
+      select 1
+      from public.delivery_request_drops d
+      join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
+      where d.request_id = r.id
+        and d.position = 1
+        and (r.notes is null or dc.notes is not distinct from r.notes)
+        and (
+          r.cash_change_amount is null
+          or (
+            d.recipient_payment_method = 'cash'
+            and d.needs_change
+            and dc.cash_change_amount is not distinct from r.cash_change_amount
+          )
+        )
+    );
+
+  if v_unbacked_count > 0 then
+    raise exception 'T340_PREFLIGHT_UNBACKED_OR_DIVERGENT: % non-draft requests with unbacked legacy data', v_unbacked_count
+      using errcode = 'P0001';
+  end if;
+
+  -- Limpieza selectiva: poner NULL únicamente en solicitudes verificadas (no-drafts con respaldo íntegro).
+  -- Los borradores (drafts) conservan sus datos intactos hasta la publicación.
+  update public.delivery_requests r
+  set notes = null,
+      cash_change_amount = null
+  from public.delivery_request_drops d
+  join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
+  where d.request_id = r.id
+    and d.position = 1
+    and r.status <> 'draft'
+    and (r.notes is not null or r.cash_change_amount is not null)
+    and (r.notes is null or dc.notes is not distinct from r.notes)
+    and (
+      r.cash_change_amount is null
+      or (
+        d.recipient_payment_method = 'cash'
+        and d.needs_change
+        and dc.cash_change_amount is not distinct from r.cash_change_amount
+      )
+    );
+end;
+$$;
+
+revoke all on function app_private.t340_clean_legacy() from public, anon, authenticated;
+
+-- Ejecución atómica de la limpieza en la migración
+select app_private.t340_clean_legacy();
 
 -- 3. Actualización de app_private.request_cycle con limpieza en la misma transacción (CC-022 §10)
 create or replace function app_private.request_cycle(
@@ -79,6 +152,11 @@ declare
   v_can_calc_total boolean;
   v_total_distance integer;
   v_seg_distance integer;
+  v_drop1_id uuid;
+  v_drop1_payment text;
+  v_drop1_needs_change boolean;
+  v_drop1_notes text;
+  v_drop1_cash_change integer;
 begin
   if v_uid is null then raise exception 'UNAUTHENTICATED' using errcode = 'P0001'; end if;
   select role, consent_status into v_role, v_consent_status from public.profiles where id = v_uid;
@@ -234,6 +312,72 @@ begin
       where id = p_request_id;
 
       v_drops_count := 1;
+    else
+      -- PR326-H02: Puente con drops preexistentes
+      -- Bajo el lock existente (v_request ya está bloqueado FOR UPDATE):
+      -- si hay datos legacy, comprobar drop 1, sincronizar dato faltante sin conflicto,
+      -- verificar igualdad por valor y limpiar solo después. Ante discrepancia, abortar.
+      if v_request.notes is not null or v_request.cash_change_amount is not null then
+        select d.id, d.recipient_payment_method, d.needs_change,
+               dc.notes, dc.cash_change_amount
+        into v_drop1_id, v_drop1_payment, v_drop1_needs_change,
+             v_drop1_notes, v_drop1_cash_change
+        from public.delivery_request_drops d
+        left join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
+        where d.request_id = p_request_id and d.position = 1
+        for update;
+
+        if v_drop1_id is null then
+          raise exception 'VALIDATION_ERROR' using errcode = 'P0001';
+        end if;
+
+        -- Comprobar discrepancia antes de mutar
+        if v_request.notes is not null and v_drop1_notes is not null and v_drop1_notes is distinct from v_request.notes then
+          raise exception 'VALIDATION_ERROR' using errcode = 'P0001';
+        end if;
+
+        if v_request.cash_change_amount is not null then
+          if v_drop1_payment <> 'cash' or not coalesce(v_drop1_needs_change, false) then
+            raise exception 'VALIDATION_ERROR' using errcode = 'P0001';
+          end if;
+          if v_drop1_cash_change is not null and v_drop1_cash_change is distinct from v_request.cash_change_amount then
+            raise exception 'VALIDATION_ERROR' using errcode = 'P0001';
+          end if;
+        end if;
+
+        -- Sincronizar únicamente el dato faltante de position=1 cuando no hay conflicto
+        if (v_request.notes is not null and v_drop1_notes is null)
+           or (v_request.cash_change_amount is not null and v_drop1_payment = 'cash' and v_drop1_needs_change and v_drop1_cash_change is null) then
+          update public.delivery_request_drop_contacts
+          set notes = coalesce(notes, v_request.notes),
+              cash_change_amount = coalesce(
+                cash_change_amount,
+                case when v_drop1_payment = 'cash' and v_drop1_needs_change then v_request.cash_change_amount else null end
+              )
+          where drop_id = v_drop1_id;
+        end if;
+
+        -- Comprobar igualdad por valor
+        select dc.notes, dc.cash_change_amount
+        into v_drop1_notes, v_drop1_cash_change
+        from public.delivery_request_drop_contacts dc
+        where dc.drop_id = v_drop1_id;
+
+        if (v_request.notes is not null and v_drop1_notes is distinct from v_request.notes)
+           or (v_request.cash_change_amount is not null and (
+                v_drop1_payment <> 'cash'
+                or not coalesce(v_drop1_needs_change, false)
+                or v_drop1_cash_change is distinct from v_request.cash_change_amount
+              )) then
+          raise exception 'VALIDATION_ERROR' using errcode = 'P0001';
+        end if;
+
+        -- Limpiar solo tras verificar igualdad
+        update public.delivery_requests
+        set notes = null,
+            cash_change_amount = null
+        where id = p_request_id;
+      end if;
     end if;
 
     select count(*) into v_drops_count from public.delivery_request_drops where request_id = p_request_id;
@@ -333,9 +477,7 @@ begin
 
     v_distance := case when v_can_calc_total then v_total_distance else null end;
     update public.delivery_requests
-    set drops_count = v_drops_count,
-        notes = null,
-        cash_change_amount = null
+    set drops_count = v_drops_count
     where id = p_request_id;
 
     if v_request.fixed_price_ars is not null and v_request.fixed_price_ars < app_private.request_setting_int('min_offer_ars') then
