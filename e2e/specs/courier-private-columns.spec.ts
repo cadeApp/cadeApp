@@ -60,6 +60,31 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
     }
     const notes = seeded.notes;
 
+    // El lector del Paso 2 obtiene el monto y las indicaciones del contacto
+    // PRIVADO del drop, no de las columnas legacy. Mantener el fixture
+    // coherente en ambos modelos sin relajar las aserciones de privacidad.
+    const { data: seededDrop, error: seededDropErr } = await admin
+      .from('delivery_request_drops')
+      .select('id')
+      .eq('request_id', requestId)
+      .eq('position', 1)
+      .single();
+    expect(seededDropErr).toBeNull();
+    expect(seededDrop?.id).toBeDefined();
+    if (!seededDrop?.id) {
+      throw new Error('[E2E Seed Error] Falta el drop 1 materializado para la solicitud publicada');
+    }
+    const { error: dropUpdateErr } = await admin
+      .from('delivery_request_drops')
+      .update({ recipient_payment_method: 'cash', needs_change: true })
+      .eq('id', seededDrop.id);
+    expect(dropUpdateErr).toBeNull();
+    const { error: privateUpdateErr } = await admin
+      .from('delivery_request_drop_contacts')
+      .update({ cash_change_amount: CHANGE_AMOUNT, notes })
+      .eq('drop_id', seededDrop.id);
+    expect(privateUpdateErr).toBeNull();
+
     // 2. PostgREST con el token del repartidor aprobado: columnas privadas → 42501, públicas → la fila
     const courierClient = await createAuthenticatedClient(courier);
 
@@ -120,6 +145,15 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
         .update({ cash_change_amount: UPDATED_CHANGE_AMOUNT })
         .eq('id', requestId);
       expect(updateErr).toBeNull();
+
+      // La edición del campo legacy anterior prueba el filtrado de Realtime;
+      // para la proyección privada del lector Paso 2 actualizamos el mismo
+      // importe en el único drop autorizado.
+      const { error: privateAmountErr } = await admin
+        .from('delivery_request_drop_contacts')
+        .update({ cash_change_amount: UPDATED_CHANGE_AMOUNT })
+        .eq('drop_id', seededDrop.id);
+      expect(privateAmountErr).toBeNull();
 
       await expect.poll(() => received.length, { timeout: 25_000 }).toBeGreaterThan(0);
       const record = received[0] ?? {};

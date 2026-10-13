@@ -28,6 +28,35 @@ import {
   type AdminClientType,
 } from './staging-seed';
 
+/**
+ * Fake de `delivery_requests.update(...).eq('id', x).eq('status', 'draft').select('id').single()`,
+ * la única forma en que los seeds publican una solicitud de fixture (T-340, PR320-H01/H02).
+ */
+function draftFinalizeUpdate(
+  onUpdate?: (payload: Record<string, unknown>, filters: Record<string, unknown>) => void
+) {
+  return vi.fn((payload: Record<string, unknown>) => {
+    const filters: Record<string, unknown> = {};
+    const chain = {
+      eq: (column: string, value: unknown) => {
+        filters[column] = value;
+        return chain;
+      },
+      // cleanupStagingData desvincula accepted_offer_id con update().in('id', ids).
+      in: async () => ({ error: null }),
+      select: () => ({
+        single: async () => {
+          onUpdate?.(payload, filters);
+          return { data: { id: filters.id }, error: null };
+        },
+      }),
+    };
+    return chain;
+  });
+}
+
+const childInsertOk = () => ({ insert: vi.fn().mockResolvedValue({ error: null }) });
+
 describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-Closed', () => {
   describe('Protección fail-closed de entorno (assertAllowedE2EEnvironment)', () => {
     it('debe bloquear terminantemente cuando VERCEL_ENV es production', () => {
@@ -222,7 +251,11 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                   }),
                 };
               }),
+              update: draftFinalizeUpdate(),
             };
+          }
+          if (table === 'delivery_request_drops' || table === 'delivery_request_drop_contacts') {
+            return childInsertOk();
           }
           if (table === 'profiles' || table === 'merchants') {
             return {
@@ -257,6 +290,11 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(row.merchant_id).not.toContain('e2e_');
       expect(row.pickup_zone_id).not.toBe('caba_norte');
 
+      // Con zonas activas reutilizadas, el seed NO crea zonas nuevas ni las
+      // registra para cleanup. No debe confundirse con ausencia de zonas.
+      expect(row.pickup_zone_id).toBe(mockZoneId);
+      expect(row.dropoff_zone_id).toBe(mockZoneId);
+      expect(ctx.createdZoneIds).toHaveLength(0);
       expect(ctx.createdRequestIds).toContain(row.id);
     });
 
@@ -294,7 +332,10 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             };
           }
           if (table === 'delivery_requests') {
-            return { insert: requestInsert };
+            return { insert: requestInsert, update: draftFinalizeUpdate() };
+          }
+          if (table === 'delivery_request_drops' || table === 'delivery_request_drop_contacts') {
+            return childInsertOk();
           }
           throw new Error(`Unexpected table: ${table}`);
         }),
@@ -634,6 +675,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                   }),
                 }),
               }),
+              update: draftFinalizeUpdate(),
               delete: vi.fn().mockReturnValue({ in: deleteReqMock }),
             };
           }
@@ -644,6 +686,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             };
           }
           return {
+            insert: vi.fn().mockResolvedValue({ error: null }),
             delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
           };
         }),
@@ -939,6 +982,8 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       const mockReqId = '123e4567-e89b-12d3-a456-426614175015';
 
       const contactInserts: Array<Record<string, unknown>> = [];
+      const dropInserts: Array<Record<string, unknown>> = [];
+      const dropContactInserts: Array<Record<string, unknown>> = [];
       const offerInserts: Array<Record<string, unknown>> = [];
 
       let userCounter = 0;
@@ -965,12 +1010,29 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                   single: vi.fn().mockResolvedValue({ data: { id: mockReqId }, error: null }),
                 })),
               })),
+              update: draftFinalizeUpdate(),
             };
           }
           if (table === 'delivery_request_contacts') {
             return {
               insert: vi.fn(async (payload: Record<string, unknown>) => {
                 contactInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return {
+              insert: vi.fn(async (payload: Record<string, unknown>) => {
+                dropInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'delivery_request_drop_contacts') {
+            return {
+              insert: vi.fn(async (payload: Record<string, unknown>) => {
+                dropContactInserts.push(payload);
                 return { error: null };
               }),
             };
@@ -1019,6 +1081,23 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(contact0?.recipient_name).toBe('Juan Pérez Test');
       expect(contact0?.recipient_consent_declared).toBe(true);
       expect(ctx.createdContactRequestIds).toContain(mockReqId);
+
+      // CC-022: una solicitud publicada del seed debe tener exactamente
+      // un drop real y contactos privados con FK consistente.
+      expect(dropInserts).toHaveLength(1);
+      const [drop] = dropInserts;
+      expect(drop?.request_id).toBe(mockReqId);
+      expect(drop?.position).toBe(1);
+      expect(drop?.dropoff_zone_id).toBe(mockZoneId);
+      expect(drop?.status).toBe('pending');
+      expect(dropContactInserts).toHaveLength(1);
+      const [dropContact] = dropContactInserts;
+      expect(dropContact?.drop_id).toBe(drop?.id);
+      expect(isValidUuid(dropContact?.drop_id as string)).toBe(true);
+      expect(dropContact?.recipient_name).toBe('Juan Pérez Test');
+      expect(dropContact?.recipient_phone).toBe('+5493865123456');
+      expect(dropContact?.recipient_consent_declared).toBe(true);
+      expect(dropContact?.notes).toBe(`E2E automated test run ${ctx.testRunId}`);
 
       // Verificación de inserción y tracking de 2 ofertas reales
       expect(offerInserts).toHaveLength(2);
@@ -2553,10 +2632,11 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             if (table === 'delivery_requests') {
               return {
                 insert: vi.fn().mockResolvedValue({ error: null }),
-                update: vi.fn().mockReturnValue({
-                  eq: vi.fn().mockResolvedValue({ error: null }),
-                }),
+                update: draftFinalizeUpdate(),
               };
+            }
+            if (table === 'delivery_request_drops' || table === 'delivery_request_drop_contacts') {
+              return childInsertOk();
             }
             if (table === 'incidents') {
               return {
@@ -2590,7 +2670,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         expect(ctx.createdIncidentIds).toContain(result.incidentId);
       });
 
-      it('cumple con el orden relacional de FK (H06): delivery_requests con accepted_offer_id null, luego offers, luego update de accepted_offer_id', async () => {
+      it('cumple con el orden relacional de FK (H06): draft con accepted_offer_id null, luego offers, drop, contacto privado y recién al final el update de estado con accepted_offer_id', async () => {
         const ctx = createStagingSeedContext();
         const merchantId = '11111111-1111-4111-8111-111111111111';
         const courierId = '44444444-4444-4444-8444-444444444444';
@@ -2626,18 +2706,19 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                   calls.push({ op: 'delivery_requests.insert', payload });
                   return Promise.resolve({ error: null });
                 }),
-                update: vi.fn((payload) => {
+                update: draftFinalizeUpdate((payload) => {
                   calls.push({ op: 'delivery_requests.update', payload });
-                  return {
-                    eq: vi.fn().mockResolvedValue({ error: null }),
-                  };
                 }),
               };
             }
-            if (table === 'offers') {
+            if (
+              table === 'offers' ||
+              table === 'delivery_request_drops' ||
+              table === 'delivery_request_drop_contacts'
+            ) {
               return {
                 insert: vi.fn((payload) => {
-                  calls.push({ op: 'offers.insert', payload });
+                  calls.push({ op: `${table}.insert`, payload });
                   return Promise.resolve({ error: null });
                 }),
               };
@@ -2657,17 +2738,22 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         expect(result.acceptedOfferId).toBeDefined();
 
         // Verificar el orden exacto de llamadas:
-        // 1. delivery_requests.insert (con accepted_offer_id: null para respetar FK)
+        // 1. delivery_requests.insert (draft, con accepted_offer_id: null para respetar FK)
         // 2. offers.insert (con request_id: requestId)
-        // 3. delivery_requests.update (con accepted_offer_id: acceptedOfferId)
+        // 3. delivery_request_drops.insert (drop 1)
+        // 4. delivery_request_drop_contacts.insert (contacto privado del drop 1)
+        // 5. delivery_requests.update (estado matched con accepted_offer_id: acceptedOfferId)
         expect(calls.map((c) => c.op)).toEqual([
           'delivery_requests.insert',
           'offers.insert',
+          'delivery_request_drops.insert',
+          'delivery_request_drop_contacts.insert',
           'delivery_requests.update',
         ]);
 
         const reqInsert = calls[0]?.payload as Record<string, unknown>;
         expect(reqInsert.id).toBe(result.requestId);
+        expect(reqInsert.status).toBe('draft');
         expect(reqInsert.accepted_offer_id).toBeNull();
 
         const offInsert = calls[1]?.payload as Record<string, unknown>;
@@ -2675,7 +2761,8 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         expect(offInsert.request_id).toBe(result.requestId);
         expect(offInsert.status).toBe('accepted');
 
-        const reqUpdate = calls[2]?.payload as Record<string, unknown>;
+        const reqUpdate = calls[4]?.payload as Record<string, unknown>;
+        expect(reqUpdate.status).toBe('matched');
         expect(reqUpdate.accepted_offer_id).toBe(result.acceptedOfferId);
       });
     });
@@ -3150,6 +3237,458 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
           /\[E2E Inspection Error\] Error inesperado al consultar request_cancellation_reasons: Connection reset by peer/i
         );
       });
+    });
+  });
+});
+
+describe('T-340 PR320-H01/H02: los fixtures no-draft nacen con drop 1 y contacto privado', () => {
+  const seedEnv = {
+    NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+    E2E_TEST: 'true',
+  };
+  const MERCHANT_ID = '5a1e0000-0000-4000-8000-000000000001';
+  const COURIER_ID = '5a1e0000-0000-4000-8000-000000000002';
+  const PICKUP_ZONE_ID = '5a1e0000-0000-4000-8000-000000000003';
+  const DROPOFF_ZONE_ID = '5a1e0000-0000-4000-8000-000000000004';
+
+  interface SeedCall {
+    op: string;
+    payload: Record<string, unknown>;
+    filters?: Record<string, unknown>;
+  }
+
+  /**
+   * Cliente service-role falso que registra cada escritura en orden y puede
+   * devolver el error de Supabase de una operación concreta (`tabla.op`).
+   */
+  function createRecordingSeedClient(failOn?: string) {
+    const calls: SeedCall[] = [];
+    const errorFor = (op: string) => (failOn === op ? { message: `${op} rejected by DB` } : null);
+
+    const client = {
+      from: vi.fn((table: string) => ({
+        select: () => ({
+          eq: () => ({
+            limit: async () => ({
+              data: [
+                { id: PICKUP_ZONE_ID, name: 'Centro' },
+                { id: DROPOFF_ZONE_ID, name: 'Norte' },
+              ],
+              error: null,
+            }),
+          }),
+        }),
+        upsert: async (payload: Record<string, unknown>) => {
+          calls.push({ op: `${table}.upsert`, payload });
+          return { error: errorFor(`${table}.upsert`) };
+        },
+        insert: (payload: Record<string, unknown>) => {
+          calls.push({ op: `${table}.insert`, payload });
+          const error = errorFor(`${table}.insert`);
+          return Object.assign(Promise.resolve({ error }), {
+            select: () => ({
+              single: async () =>
+                error ? { data: null, error } : { data: { id: payload.id }, error: null },
+            }),
+          });
+        },
+        update: (payload: Record<string, unknown>) => {
+          const filters: Record<string, unknown> = {};
+          const chain = {
+            eq: (column: string, value: unknown) => {
+              filters[column] = value;
+              return chain;
+            },
+            select: () => ({
+              single: async () => {
+                calls.push({ op: `${table}.update`, payload, filters });
+                const error = errorFor(`${table}.update`);
+                return error ? { data: null, error } : { data: { id: filters.id }, error: null };
+              },
+            }),
+          };
+          return chain;
+        },
+      })),
+      auth: {
+        admin: {
+          createUser: async () => ({ data: { user: { id: MERCHANT_ID } }, error: null }),
+        },
+      },
+    } as unknown as AdminClientType;
+
+    return { client, calls };
+  }
+
+  const opsOf = (calls: SeedCall[]) => calls.map((c) => c.op);
+  const only = (calls: SeedCall[], op: string) => calls.filter((c) => c.op === op);
+
+  /**
+   * Invariante común: por cada solicitud, el padre se inserta en draft, tiene
+   * exactamente un drop de posición 1 con FK real, un contacto privado con FK al
+   * drop, y el estado definitivo se escribe una sola vez y después de los hijos.
+   */
+  function expectMaterializedBeforeFinalState(calls: SeedCall[], requestId: string) {
+    const insertIdx = calls.findIndex(
+      (c) => c.op === 'delivery_requests.insert' && c.payload.id === requestId
+    );
+    expect(insertIdx).toBeGreaterThanOrEqual(0);
+    expect(calls[insertIdx]?.payload.status).toBe('draft');
+    expect(calls[insertIdx]?.payload.published_at ?? null).toBeNull();
+
+    const drops = calls.filter(
+      (c) => c.op === 'delivery_request_drops.insert' && c.payload.request_id === requestId
+    );
+    expect(drops).toHaveLength(1);
+    const drop = drops[0]!;
+    expect(isValidUuid(drop.payload.id as string)).toBe(true);
+    expect(drop.payload.position).toBe(1);
+    expect(drop.payload.dropoff_zone_id).toBe(DROPOFF_ZONE_ID);
+    expect(drop.payload.package_type).toBe('chico');
+    expect(drop.payload.recipient_payment_method).toBe('cash');
+    expect(drop.payload.needs_change).toBe(false);
+
+    const dropContacts = calls.filter(
+      (c) =>
+        c.op === 'delivery_request_drop_contacts.insert' && c.payload.drop_id === drop.payload.id
+    );
+    expect(dropContacts).toHaveLength(1);
+    const dropContact = dropContacts[0]!;
+    expect(dropContact.payload.recipient_consent_declared).toBe(true);
+    expect(dropContact.payload.cash_change_amount).toBeNull();
+
+    const updates = calls.filter(
+      (c) => c.op === 'delivery_requests.update' && c.filters?.id === requestId
+    );
+    expect(updates).toHaveLength(1);
+    const update = updates[0]!;
+    // Solo se publica una fila que sigue en draft.
+    expect(update.filters?.status).toBe('draft');
+
+    const dropIdx = calls.indexOf(drop);
+    const dropContactIdx = calls.indexOf(dropContact);
+    const updateIdx = calls.indexOf(update);
+    expect(insertIdx).toBeLessThan(dropIdx);
+    expect(dropIdx).toBeLessThan(dropContactIdx);
+    expect(dropContactIdx).toBeLessThan(updateIdx);
+
+    return { drop, dropContact, update };
+  }
+
+  describe('seedStagingData', () => {
+    it('published SIN contactos opcionales: igual materializa drop 1 y contacto privado antes de publicar', async () => {
+      const ctx = createStagingSeedContext();
+      const { client, calls } = createRecordingSeedClient();
+
+      await seedStagingData(ctx, { requestsCount: 1, merchantId: MERCHANT_ID }, client, seedEnv);
+
+      const [requestId] = ctx.createdRequestIds;
+      expect(requestId).toBeDefined();
+      expect(opsOf(calls)).toEqual([
+        'delivery_requests.insert',
+        'delivery_request_drops.insert',
+        'delivery_request_drop_contacts.insert',
+        'delivery_requests.update',
+      ]);
+
+      const { dropContact, update } = expectMaterializedBeforeFinalState(calls, requestId!);
+      expect(dropContact.payload.recipient_name).toBe('Destinatario E2E');
+      expect(dropContact.payload.recipient_phone).toBe('+5493865123456');
+      expect(dropContact.payload.dropoff_address).toBe('San Martín 400, Aguilares');
+      expect(dropContact.payload.notes).toBe(`E2E automated test run ${ctx.testRunId}`);
+      expect(update.payload.status).toBe('published');
+      expect(typeof update.payload.published_at).toBe('string');
+
+      // Sin contactos legacy opcionales: ni fila legacy ni tracking de contacto.
+      expect(only(calls, 'delivery_request_contacts.insert')).toHaveLength(0);
+      expect(ctx.createdContactRequestIds).toHaveLength(0);
+      expect(ctx.sentinelPhone).toBeUndefined();
+    });
+
+    it('published CON contactos opcionales: contacto legacy y contacto privado comparten los datos pedidos', async () => {
+      const ctx = createStagingSeedContext();
+      const { client, calls } = createRecordingSeedClient();
+
+      await seedStagingData(
+        ctx,
+        {
+          requestsCount: 1,
+          merchantId: MERCHANT_ID,
+          withContacts: true,
+          recipientName: 'Ana Fixture',
+          recipientPhone: '+5493865000999',
+          dropoffAddress: 'Mitre 55, Aguilares',
+        },
+        client,
+        seedEnv
+      );
+
+      const [requestId] = ctx.createdRequestIds;
+      expect(opsOf(calls)).toEqual([
+        'delivery_requests.insert',
+        'delivery_request_contacts.insert',
+        'delivery_request_drops.insert',
+        'delivery_request_drop_contacts.insert',
+        'delivery_requests.update',
+      ]);
+      const { dropContact, update } = expectMaterializedBeforeFinalState(calls, requestId!);
+      expect(dropContact.payload).toMatchObject({
+        recipient_name: 'Ana Fixture',
+        recipient_phone: '+5493865000999',
+        dropoff_address: 'Mitre 55, Aguilares',
+      });
+      expect(only(calls, 'delivery_request_contacts.insert')[0]?.payload).toMatchObject({
+        request_id: requestId,
+        recipient_name: 'Ana Fixture',
+        recipient_phone: '+5493865000999',
+      });
+      expect(update.payload.status).toBe('published');
+      expect(ctx.createdContactRequestIds).toEqual([requestId]);
+      expect(ctx.sentinelPhone).toBe('+5493865000999');
+    });
+
+    it('varias solicitudes: cada una tiene su propio drop y se publica después de sus hijos', async () => {
+      const ctx = createStagingSeedContext();
+      const { client, calls } = createRecordingSeedClient();
+
+      await seedStagingData(ctx, { requestsCount: 2, merchantId: MERCHANT_ID }, client, seedEnv);
+
+      expect(ctx.createdRequestIds).toHaveLength(2);
+      const [first, second] = ctx.createdRequestIds;
+      expect(first).not.toBe(second);
+      const a = expectMaterializedBeforeFinalState(calls, first!);
+      const b = expectMaterializedBeforeFinalState(calls, second!);
+      expect(a.drop.payload.id).not.toBe(b.drop.payload.id);
+      expect(only(calls, 'delivery_request_drops.insert')).toHaveLength(2);
+      expect(only(calls, 'delivery_request_drop_contacts.insert')).toHaveLength(2);
+    });
+
+    it.each([
+      [
+        'delivery_request_drops.insert',
+        /Falló la materialización del drop: delivery_request_drops.insert rejected by DB/,
+      ],
+      [
+        'delivery_request_drop_contacts.insert',
+        /Falló la materialización de contactos privados del drop: delivery_request_drop_contacts.insert rejected by DB/,
+      ],
+      [
+        'delivery_requests.update',
+        /Falló la publicación de la solicitud .* en estado published: delivery_requests.update rejected by DB/,
+      ],
+    ])(
+      'falla cerrado si Supabase rechaza %s y nunca deja una publicada incompleta',
+      async (failOn, message) => {
+        const ctx = createStagingSeedContext();
+        const { client, calls } = createRecordingSeedClient(failOn);
+
+        await expect(
+          seedStagingData(ctx, { requestsCount: 1, merchantId: MERCHANT_ID }, client, seedEnv)
+        ).rejects.toThrow(message);
+
+        // El draft queda trackeado para que el cleanup por IDs de la corrida lo borre.
+        expect(ctx.createdRequestIds).toHaveLength(1);
+        expect(only(calls, 'delivery_requests.update')).toHaveLength(
+          failOn === 'delivery_requests.update' ? 1 : 0
+        );
+      }
+    );
+  });
+
+  describe('seedDeliveryRequestInState', () => {
+    const merchantCtx = () => {
+      const ctx = createStagingSeedContext();
+      ctx.merchantUser = { id: MERCHANT_ID, email: 'm@test.local', password: 'x', role: 'merchant' };
+      ctx.courierUsers = [{ id: COURIER_ID, email: 'c@test.local', password: 'x', role: 'courier' }];
+      return ctx;
+    };
+
+    it('draft: borrador incompleto sin drops, sin contacto privado y sin update de estado', async () => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient();
+
+      const result = await seedDeliveryRequestInState(
+        ctx,
+        { status: 'draft', withContacts: true },
+        client,
+        seedEnv
+      );
+
+      expect(opsOf(calls)).toEqual(['delivery_requests.insert', 'delivery_request_contacts.insert']);
+      const insert = calls[0]!.payload;
+      expect(insert.id).toBe(result.requestId);
+      expect(insert.status).toBe('draft');
+      expect(insert.published_at ?? null).toBeNull();
+      expect(insert.expires_at ?? null).toBeNull();
+      expect(ctx.createdRequestIds).toEqual([result.requestId]);
+      expect(ctx.createdContactRequestIds).toEqual([result.requestId]);
+    });
+
+    it('draft: rechaza marcas temporales que lo harían incoherente', async () => {
+      const ctx = merchantCtx();
+      const { client } = createRecordingSeedClient();
+
+      await expect(
+        seedDeliveryRequestInState(
+          ctx,
+          { status: 'draft', publishedAt: new Date().toISOString() },
+          client,
+          seedEnv
+        )
+      ).rejects.toThrow(/Un draft no admite marcas temporales/);
+    });
+
+    it('published: drop pendiente y contacto privado antes de publicar con expires_at', async () => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient();
+
+      const result = await seedDeliveryRequestInState(
+        ctx,
+        { status: 'published', withPendingOffersCount: 1 },
+        client,
+        seedEnv
+      );
+
+      const { drop, dropContact, update } = expectMaterializedBeforeFinalState(
+        calls,
+        result.requestId
+      );
+      expect(drop.payload.status).toBe('pending');
+      expect(drop.payload.delivered_at).toBeNull();
+      expect(dropContact.payload.notes).toBe(`E2E state seed ${ctx.testRunId}`);
+      expect(update.payload).toMatchObject({
+        status: 'published',
+        matched_at: null,
+        picked_up_at: null,
+        delivered_at: null,
+        accepted_offer_id: null,
+      });
+      expect(typeof update.payload.published_at).toBe('string');
+      expect(typeof update.payload.expires_at).toBe('string');
+      expect(result.acceptedOfferId).toBeNull();
+
+      // Las ofertas pendientes de un published se crean sobre la solicitud ya completa.
+      const pending = only(calls, 'offers.insert');
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.payload.status).toBe('pending');
+      expect(calls.indexOf(pending[0]!)).toBeGreaterThan(calls.indexOf(update));
+    });
+
+    it.each([
+      ['matched', { picked: false, delivered: false }],
+      ['in_transit', { picked: true, delivered: false }],
+      ['delivered', { picked: true, delivered: true }],
+    ] as const)(
+      '%s: oferta aceptada, drop y contacto antes del estado definitivo con marcas coherentes',
+      async (status, expected) => {
+        const ctx = merchantCtx();
+        const { client, calls } = createRecordingSeedClient();
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          { status, assignedCourierId: COURIER_ID },
+          client,
+          seedEnv
+        );
+
+        expect(opsOf(calls)).toEqual([
+          'delivery_requests.insert',
+          'offers.insert',
+          'delivery_request_drops.insert',
+          'delivery_request_drop_contacts.insert',
+          'delivery_requests.update',
+        ]);
+        expect(calls[0]?.payload.accepted_offer_id).toBeNull();
+
+        const offer = only(calls, 'offers.insert')[0]!;
+        expect(offer.payload).toMatchObject({
+          id: result.acceptedOfferId,
+          request_id: result.requestId,
+          courier_id: COURIER_ID,
+          status: 'accepted',
+        });
+        expect(ctx.createdOfferIds).toEqual([result.acceptedOfferId]);
+
+        const { drop, update } = expectMaterializedBeforeFinalState(calls, result.requestId);
+        expect(update.payload.status).toBe(status);
+        expect(update.payload.accepted_offer_id).toBe(result.acceptedOfferId);
+        expect(typeof update.payload.published_at).toBe('string');
+        expect(typeof update.payload.matched_at).toBe('string');
+        expect(update.payload.expires_at).toBeNull();
+        expect(update.payload.picked_up_at !== null).toBe(expected.picked);
+        expect(update.payload.delivered_at !== null).toBe(expected.delivered);
+
+        // CHECK ((status = 'delivered') = (delivered_at is not null)) del drop.
+        if (expected.delivered) {
+          expect(drop.payload.status).toBe('delivered');
+          expect(drop.payload.delivered_at).toBe(update.payload.delivered_at);
+        } else {
+          expect(drop.payload.status).toBe('pending');
+          expect(drop.payload.delivered_at).toBeNull();
+        }
+      }
+    );
+
+    it('delivered respeta la marca deliveredAt pedida en padre y drop', async () => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient();
+      const deliveredAt = '2026-10-01T12:00:00.000Z';
+
+      const result = await seedDeliveryRequestInState(
+        ctx,
+        { status: 'delivered', assignedCourierId: COURIER_ID, deliveredAt },
+        client,
+        seedEnv
+      );
+
+      const { drop, update } = expectMaterializedBeforeFinalState(calls, result.requestId);
+      expect(update.payload.delivered_at).toBe(deliveredAt);
+      expect(drop.payload.delivered_at).toBe(deliveredAt);
+    });
+
+    it.each([
+      ['delivery_request_drops.insert', /Falló la materialización del drop/],
+      [
+        'delivery_request_drop_contacts.insert',
+        /Falló la materialización de contactos privados del drop/,
+      ],
+      ['delivery_requests.update', /Falló la publicación de la solicitud .* en estado matched/],
+    ])('matched falla cerrado si Supabase rechaza %s', async (failOn, message) => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient(failOn);
+
+      await expect(
+        seedDeliveryRequestInState(
+          ctx,
+          { status: 'matched', assignedCourierId: COURIER_ID },
+          client,
+          seedEnv
+        )
+      ).rejects.toThrow(message);
+
+      expect(ctx.createdRequestIds).toHaveLength(1);
+      expect(ctx.createdOfferIds).toHaveLength(1);
+      expect(only(calls, 'delivery_requests.update')).toHaveLength(
+        failOn === 'delivery_requests.update' ? 1 : 0
+      );
+    });
+
+    it('falla cerrado si Supabase rechaza la consulta de zonas', async () => {
+      const ctx = merchantCtx();
+      const client = {
+        from: vi.fn(() => ({
+          select: () => ({
+            eq: () => ({
+              limit: async () => ({ data: null, error: { message: 'zones offline' } }),
+            }),
+          }),
+        })),
+      } as unknown as AdminClientType;
+
+      await expect(
+        seedDeliveryRequestInState(ctx, { status: 'published' }, client, seedEnv)
+      ).rejects.toThrow(/Error al consultar zonas: zones offline/);
+      expect(ctx.createdRequestIds).toHaveLength(0);
     });
   });
 });
