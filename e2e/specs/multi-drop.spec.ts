@@ -40,7 +40,8 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     stagingContext,
     loginAsCourier,
     loginAsMerchant,
-  }) => {
+    browser,
+  }, testInfo) => {
     assertAllowedE2EEnvironment();
 
     const merchant = stagingContext.merchantUser;
@@ -319,16 +320,40 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     // -------------------------------------------------------------------------
     // Paso 6: Vista de Viaje del Comercio post-match (Avisale a tu cliente)
     // -------------------------------------------------------------------------
-    await loginAsMerchant(page);
-    await page.goto(`/trips/${requestId}`);
-    await waitForNoSkeletons(page);
+    // El repartidor sigue autenticado en `page`: /login lo redirigiría a su home.
+    // El comercio usa un contexto de navegador aislado, como en fixed-price (T-339).
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('[E2E Error] Falta baseURL para crear el contexto aislado del comercio');
+    }
+    const merchantContext = await browser.newContext({ baseURL });
+    try {
+      const merchantBrowserPage = await merchantContext.newPage();
+      await loginAsMerchant(merchantBrowserPage);
+      await merchantBrowserPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(merchantBrowserPage);
 
-    // Tarjetas individuales de aviso por cliente
-    await expect(page.getByText(/Avisale a tu cliente \(Entrega 1\)/i)).toBeVisible();
-    await expect(page.getByText(/Avisale a tu cliente \(Entrega 2\)/i)).toBeVisible();
-    await expect(page.getByText(/Avisale a tu cliente \(Entrega 3\)/i)).toBeVisible();
-    await expect(page.getByRole('link', { name: /Avisar a Destinatario Uno MD/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Avisar a Destinatario Dos MD/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /Avisar a Destinatario Tres MD/i })).toBeVisible();
+      // Tarjetas individuales de aviso por cliente
+      await expect(
+        merchantBrowserPage.getByText(/Avisale a tu cliente \(Entrega 1\)/i)
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByText(/Avisale a tu cliente \(Entrega 2\)/i)
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByText(/Avisale a tu cliente \(Entrega 3\)/i)
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByRole('link', { name: /Avisar a Destinatario Uno MD/i })
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByRole('link', { name: /Avisar a Destinatario Dos MD/i })
+      ).toBeVisible();
+      await expect(
+        merchantBrowserPage.getByRole('link', { name: /Avisar a Destinatario Tres MD/i })
+      ).toBeVisible();
+    } finally {
+      await merchantContext.close();
+    }
   });
 });
