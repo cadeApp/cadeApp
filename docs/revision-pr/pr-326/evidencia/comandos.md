@@ -54,3 +54,26 @@ Comparación GitHub: `793c8ce6...57b50977` cambió **solo** `supabase/migrations
 **Estado Preview:** Vercel SUCCESS. `e2e-preview = BLOCKED / REQUIRES DEVELOP MIGRATION`, expected por SQL nuevo; NO equivale a PASS/fallo de comportamiento. `approval-policy` falla con el informe R1 con bloqueantes; también depende de formato.
 
 **Límite de la revisión:** consulta de GitHub + inspección de código e informes, sin `pnpm` local, Docker, DB ni scripts de mutación. No inventar outputs. Revisor deja H01/H02 como `arreglado-sin-verificar`; H03 `parcial` hasta RED ejecutado y verificación de idempotencia.
+
+## Ronda 3 independiente — 2026-10-13 — SHA `23360fafc6c096c39bdb32bfa25ca095e07134c0`
+
+**Fuentes inspeccionadas:** `get_pr_info`, `compare_commits` base `2761256456`→HEAD, `fetch_file` de `supabase/tests/t340_multi_drop.sql` y `supabase/tests/integration/t340_concurrency.mjs`, `fetch_workflow_job_logs` job `115562136832`, `docs/tasks/T-340.md` desde `develop`, bitácora autor. No se corrieron scripts locales, DB, Docker ni SQL remoto.
+
+**Delta desde R2:** `supabase/tests/t340_multi_drop.sql` +49/-1, runner `supabase/tests/integration/t340_concurrency.mjs` +123/-1, `docs/tasks/log/T-340.md` +31. El SQL de la migración y `request_cycle` NO cambiaron respecto de la ronda 2. La carpeta `docs/revision-pr/pr-326/**` no fue tocada por Kira.
+
+**Error auténtico, no especulación:**
+- [CI run 38474615215](https://github.com/cadeApp/cadeApp/actions/runs/38474615215) del HEAD `23360fafc6c096c39bdb32bfa25ca095e07134c0`, job `db-tests` `115562136832`, resultado **FAIL / exit 1**.
+- Log: `t340_multi_drop.sql` Failed test **#133**, `segunda ejecucion preserva datos privados de destinatario en drop_contacts (H01/H03 Escenario 5C)`; `have: Dest Historico`, `want: Dest Historico Integro`; **Files=21, Tests=2039, Result: FAIL**.
+- Archivo `supabase/tests/t340_multi_drop.sql:1534` y `:1544` inserta `recipient_name='Dest Historico'` tanto en contacts legacy como en `drop_contacts`. La aserción en `:1956–1960` espera otro literal, sin fundamento en ese fixture. Corregir con comparación exacta del dato fuente o un snapshot previo a la segunda invocación, **no eliminar ni convertir en test trivial**.
+- Solo después del primer pgTAP GREEN debe ejecutarse la etapa mutation-check en `.github/workflows/ci.yml`. En este run **NO se alcanzó `--mutation-check`**; no hay ningún RED/restore GREEN de H01/H02 en su log. El autor describió mutaciones programadas a futuro, correctamente, pero no comprobadas.
+
+**Instrumento de mutación de Kira (inspección, NO ejecutado):**
+- Runner `t340_concurrency.mjs:1035–1095`: recupera `pg_get_functiondef('app_private.t340_clean_legacy()')`, identifica el `UPDATE` selectivo por regex, lo cambia temporalmente a global, ejecuta la suite pgTAP, espera exit !=0 y nombre de aserción del borrador, restaura con `finally`, repite suite GREEN.
+- `:1098–1154`: recupera `pg_get_functiondef('app_private.request_cycle(...)')`, exige 2 ocurrencias del predicado de divergencia, las sustituye por `false`, ejecuta pgTAP esperando fallo de escenario 5B, restaura con `finally` y exige GREEN. **Sin ejecución no asumir robustez del regex/fixture, ni dar H01/H02 como verificados**.
+- `:1912–1978` de pgTAP añade controles de notes, cash y recipient, pero el literal del destinatario es incorrecto. Un GREEN definitivo debe cubrir no-drafts y drafts, IDs/recuentos y equivalencia de valores privados entre dos ejecuciones.
+
+**Alcance y autorización:**
+- `docs/tasks/T-340.md:77` concede `supabase/tests/integration/t340_concurrency.mjs` **exclusivamente al Paso 1** (H08); `:103` repite `solo paso 1 / H08`. La autorización C de Lautaro073 para SQL/puente y test `staging-seed.test.ts` no menciona ese runner. R2 dijo scripts auxiliares solo `/tmp`, no commit ni CI nuevas. **A01: decisión pendiente**; incorporar tests a runner preexistente es técnicamente razonable y aprovecha el CI sin tocar workflow, pero debe aprobarlo expresamente P1.
+- No hubo cambios a CI/workflows, dependencias, auth, RLS, contratos o Paso 4. `e2e-preview=BLOCKED / REQUIRES DEVELOP MIGRATION` sigue siendo condición esperada por migración pendiente, no evidencia de E2E pasado.
+
+**Otros checks del HEAD:** unit/typecheck/lint/build/audit/bundle-budget SUCCESS; `db-tests` FAIL; `approval-policy` FAIL mientras la revisión conserva bloqueantes. Ver URL run para resultados del SHA exacto. No realizar merge, no escribir SQL remoto.

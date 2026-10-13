@@ -19,3 +19,9 @@ Kira recibió permiso puntual del responsable P1 para SQL/RPC del Paso 3 y para 
 Un CI puede mostrar RED→GREEN auténtico, pero si corresponde a H13/H14 (controles de roles y locks de otra tarea), no prueba la calidad de H01–H03 (pérdida de datos en limpieza). La «evidencia RED→GREEN analítica» es una predicción, no una ejecución. Al validar un arreglo de corrupción irreversible, exigir mutación negativa del UPDATE global **realmente ejecutada** sobre datos artificiales, no un rojo lógico por lectura del SQL.
 
 El test de idempotencia debe comparar el estado completo antes/después; un helper que devuelve `1` tras una llamada y prueba `1 = 1` solo mide ausencia de excepción, no inmutabilidad de datos.
+
+## Ronda 3 — La cobertura solo cuenta cuando el pipeline alcanza la prueba
+
+Una mutación RED instrumentada en un script no equivale a RED ejecutado: si una aserción previa de pgTAP falla por un literal que no coincide con su fixture, CI se corta antes del runner mutador. Contrastar **have/want del test exacto**, corregir el test usando el fixture real o una captura previa, exigir GREEN general y recién después pedir salidas RED→GREEN de cada mutante.
+
+El runner `t340_concurrency.mjs` está autorizado en la ficha solo Paso 1, aunque su ruta figure entre archivos permitidos. Ampliarlo para mutaciones H01/H02 puede tener mérito técnico (pipeline existente), pero **requiere aprobación específica**; cambiar tests de otra fase sin permiso no se convierte en válido solo por ser útil.
