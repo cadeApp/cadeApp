@@ -240,6 +240,104 @@ export function trackEntityForCleanup(
 
 export type AdminClientType = ReturnType<typeof createAdminClient>;
 
+const DEFAULT_FIXTURE_RECIPIENT_NAME = 'Destinatario E2E';
+const DEFAULT_FIXTURE_RECIPIENT_PHONE = '+5493865123456';
+const DEFAULT_FIXTURE_DROPOFF_ADDRESS = 'San Martín 400, Aguilares';
+
+interface FixtureDropInput {
+  requestId: string;
+  dropoffZoneId: string;
+  dropoffAddress: string;
+  recipientName: string;
+  recipientPhone: string;
+  notes: string;
+  /** Solo para fixtures `delivered`: el drop queda entregado con la misma marca temporal. */
+  deliveredAt: string | null;
+}
+
+/**
+ * Materializa el drop de posición 1 y su contacto privado para una solicitud
+ * de fixture que todavía es draft, con los mismos valores que produce el
+ * puente legacy (`t340_backfill_legacy`): chico, efectivo sin cambio y notas
+ * del padre. Falla cerrado ante cualquier error de Supabase.
+ */
+async function materializeFixtureDrop(
+  admin: AdminClientType,
+  input: FixtureDropInput
+): Promise<string> {
+  const dropId = randomUUID();
+  assertValidUuid(dropId, 'dropId');
+
+  const { error: dropErr } = await admin.from('delivery_request_drops').insert({
+    id: dropId,
+    request_id: input.requestId,
+    position: 1,
+    dropoff_zone_id: input.dropoffZoneId,
+    package_type: 'chico',
+    recipient_payment_method: 'cash',
+    needs_change: false,
+    status: input.deliveredAt ? 'delivered' : 'pending',
+    delivered_at: input.deliveredAt,
+  });
+  if (dropErr) {
+    throw new Error(`[E2E Seed Error] Falló la materialización del drop: ${dropErr.message}`);
+  }
+
+  const { error: dropContactErr } = await admin.from('delivery_request_drop_contacts').insert({
+    drop_id: dropId,
+    dropoff_address: input.dropoffAddress,
+    dropoff_lat: -27.435,
+    dropoff_lng: -65.615,
+    recipient_name: input.recipientName,
+    recipient_phone: input.recipientPhone,
+    recipient_consent_declared: true,
+    cash_change_amount: null,
+    notes: input.notes,
+  });
+  if (dropContactErr) {
+    throw new Error(
+      `[E2E Seed Error] Falló la materialización de contactos privados del drop: ${dropContactErr.message}`
+    );
+  }
+
+  return dropId;
+}
+
+interface SeededRequestFinalState {
+  status: 'published' | 'matched' | 'in_transit' | 'delivered';
+  published_at: string | null;
+  expires_at?: string | null;
+  matched_at?: string | null;
+  picked_up_at?: string | null;
+  delivered_at?: string | null;
+  accepted_offer_id?: string | null;
+}
+
+/**
+ * Pasa una solicitud de fixture de draft a su estado definitivo, una vez que
+ * todos sus hijos existen. Exige que la fila siga en draft y que el update
+ * afecte exactamente esa solicitud.
+ */
+async function finalizeSeededRequestState(
+  admin: AdminClientType,
+  requestId: string,
+  finalState: SeededRequestFinalState
+): Promise<void> {
+  const { data, error } = await admin
+    .from('delivery_requests')
+    .update(finalState)
+    .eq('id', requestId)
+    .eq('status', 'draft')
+    .select('id')
+    .single();
+
+  if (error || data?.id !== requestId) {
+    throw new Error(
+      `[E2E Seed Error] Falló la publicación de la solicitud ${requestId} en estado ${finalState.status}: ${error?.message || 'Sin fila actualizada'}`
+    );
+  }
+}
+
 /**
  * Crea datos transitorios mínimos reales en Supabase staging vinculados al testRunId.
  * Garantías:
@@ -480,7 +578,11 @@ export async function seedStagingData(
     for (let i = 0; i < count; i++) {
       const requestId = crypto.randomUUID();
       assertValidUuid(requestId, 'requestId');
+      const requestNotes = `E2E automated test run ${context.testRunId}`;
 
+      // T-340 (PR320-H02): el padre nace como draft. Solo se publica después de
+      // materializar su drop y su contacto privado, para que ningún lector vea
+      // nunca una solicitud publicada sin entregas.
       const { data, error } = await admin
         .from('delivery_requests')
         .insert({
@@ -490,9 +592,8 @@ export async function seedStagingData(
           dropoff_zone_id: dropoffZoneId,
           package_type: 'chico',
           recipient_payment_method: 'cash',
-          status: 'published',
-          published_at: new Date().toISOString(),
-          notes: `E2E automated test run ${context.testRunId}`,
+          status: 'draft',
+          notes: requestNotes,
         })
         .select('id')
         .single();
@@ -506,18 +607,21 @@ export async function seedStagingData(
       assertValidUuid(data.id, 'insertedRequestId');
       trackEntityForCleanup(context, 'request', data.id);
 
-      // Contactos del destinatario reales cuando el caso lo necesita
+      const recipientPhone = options?.recipientPhone ?? DEFAULT_FIXTURE_RECIPIENT_PHONE;
+      const recipientName = options?.recipientName ?? DEFAULT_FIXTURE_RECIPIENT_NAME;
+      const dropoffAddress = options?.dropoffAddress ?? DEFAULT_FIXTURE_DROPOFF_ADDRESS;
+
+      // Contactos legacy del destinatario solo cuando el caso los pide
+      // (lectores y proyecciones legacy de T-342/T-345).
       if (options?.withContacts || options?.recipientPhone) {
-        const recipientPhone = options?.recipientPhone ?? '+5493865123456';
         context.sentinelPhone = recipientPhone;
-        const recipientName = options?.recipientName ?? 'Destinatario E2E';
 
         const { error: contactErr } = await admin.from('delivery_request_contacts').insert({
           request_id: data.id,
           pickup_address: options?.pickupAddress ?? 'Alberdi 150, Aguilares',
           pickup_lat: -27.432,
           pickup_lng: -65.612,
-          dropoff_address: options?.dropoffAddress ?? 'San Martín 400, Aguilares',
+          dropoff_address: dropoffAddress,
           dropoff_lat: -27.435,
           dropoff_lng: -65.615,
           recipient_name: recipientName,
@@ -533,6 +637,26 @@ export async function seedStagingData(
 
         trackEntityForCleanup(context, 'contact', data.id);
       }
+
+      // T-340 Paso 2: toda solicitud no-draft necesita su drop 1 y su contacto
+      // privado, con o sin contactos legacy opcionales. El seed service-role no
+      // ejecuta publish_request (el puente legacy), por eso crea las mismas
+      // filas que el puente antes de publicar. No se debilita el guard
+      // fail-closed de los lectores.
+      await materializeFixtureDrop(admin, {
+        requestId: data.id,
+        dropoffZoneId,
+        dropoffAddress,
+        recipientName,
+        recipientPhone,
+        notes: requestNotes,
+        deliveredAt: null,
+      });
+
+      await finalizeSeededRequestState(admin, data.id, {
+        status: 'published',
+        published_at: new Date().toISOString(),
+      });
     }
 
     // 5. Crear ofertas reales de prueba para sorting / concurrencia si se solicitó explícitamente
@@ -1595,22 +1719,35 @@ export async function seedDeliveryRequestInState(
   let dropoffZoneId = options.dropoffZoneId;
 
   if (!pickupZoneId || !dropoffZoneId) {
-    const { data: existingZones } = await admin
+    const { data: existingZones, error: zonesQueryError } = await admin
       .from('zones')
-      .select('id')
+      .select('id, name')
       .eq('active', true)
-      .limit(2);
-    pickupZoneId = existingZones?.[0]?.id ?? options.pickupZoneId;
-    dropoffZoneId = existingZones?.[1]?.id ?? pickupZoneId;
+      .limit(10);
+    if (zonesQueryError) {
+      throw new Error(`[E2E Seed Error] Error al consultar zonas: ${zonesQueryError.message}`);
+    }
+    // Igual que seedStagingData: nunca reutilizar zonas transitorias de otra
+    // corrida E2E, que su cleanup puede borrar en paralelo.
+    const stableZones = (existingZones ?? []).filter(
+      (zone) => typeof zone.name !== 'string' || !zone.name.startsWith('E2E Zona ')
+    );
+    pickupZoneId = stableZones[0]?.id ?? options.pickupZoneId;
+    dropoffZoneId = stableZones[1]?.id ?? pickupZoneId;
     if (!pickupZoneId || !dropoffZoneId) {
       const newZoneId = randomUUID();
-      await admin.from('zones').insert({
+      const { error: createZoneErr } = await admin.from('zones').insert({
         id: newZoneId,
         name: `E2E Zona ${context.testRunId}`,
         centroid_lat: -27.43,
         centroid_lng: -65.61,
         active: true,
       });
+      if (createZoneErr) {
+        throw new Error(
+          `[E2E Seed Error] No se pudo crear zona de prueba: ${createZoneErr.message}`
+        );
+      }
       trackEntityForCleanup(context, 'zone', newZoneId);
       pickupZoneId = newZoneId;
       dropoffZoneId = newZoneId;
@@ -1649,8 +1786,11 @@ export async function seedDeliveryRequestInState(
   const pickedUpAt =
     options.pickedUpAt ?? (['in_transit', 'delivered'].includes(options.status) ? nowIso : null);
   const deliveredAt = options.deliveredAt ?? (options.status === 'delivered' ? nowIso : null);
+  const requestNotes = `E2E state seed ${context.testRunId}`;
 
-  // 1. Insertar delivery_request primero con accepted_offer_id = null para satisfacer FK offers.request_id -> delivery_requests.id
+  // 1. Insertar delivery_request como draft, sin marcas de estado y con
+  //    accepted_offer_id = null para satisfacer FK offers.request_id -> delivery_requests.id.
+  //    El estado definitivo se escribe recién cuando existen todos los hijos (PR320-H01).
   const { error: reqErr } = await admin.from('delivery_requests').insert({
     id: requestId,
     merchant_id: merchantId,
@@ -1658,16 +1798,11 @@ export async function seedDeliveryRequestInState(
     dropoff_zone_id: dropoffZoneId,
     package_type: 'chico',
     recipient_payment_method: 'cash',
-    status: options.status,
-    published_at: publishedAt,
-    expires_at: expiresAt,
-    matched_at: matchedAt,
-    picked_up_at: pickedUpAt,
-    delivered_at: deliveredAt,
+    status: 'draft',
     accepted_offer_id: null,
     fixed_price_ars: options.fixedPriceArs ?? null,
     auto_assign: options.autoAssign ?? false,
-    notes: `E2E state seed ${context.testRunId}`,
+    notes: requestNotes,
   });
 
   if (reqErr) {
@@ -1690,15 +1825,6 @@ export async function seedDeliveryRequestInState(
       throw new Error(`[E2E Seed Error] Falló la creación de oferta aceptada: ${offErr.message}`);
     }
     trackEntityForCleanup(context, 'offer', acceptedOfferId);
-
-    // 3. Vincular accepted_offer_id en delivery_requests
-    const { error: linkErr } = await admin
-      .from('delivery_requests')
-      .update({ accepted_offer_id: acceptedOfferId })
-      .eq('id', requestId);
-    if (linkErr) {
-      throw new Error(`[E2E Seed Error] Falló la vinculación de oferta aceptada: ${linkErr.message}`);
-    }
   }
 
   if (options.withContacts) {
@@ -1707,17 +1833,46 @@ export async function seedDeliveryRequestInState(
       pickup_address: 'Alberdi 150, Aguilares',
       pickup_lat: -27.432,
       pickup_lng: -65.612,
-      dropoff_address: 'San Martín 400, Aguilares',
+      dropoff_address: DEFAULT_FIXTURE_DROPOFF_ADDRESS,
       dropoff_lat: -27.435,
       dropoff_lng: -65.615,
-      recipient_name: 'Destinatario E2E',
-      recipient_phone: '+5493865123456',
+      recipient_name: DEFAULT_FIXTURE_RECIPIENT_NAME,
+      recipient_phone: DEFAULT_FIXTURE_RECIPIENT_PHONE,
       recipient_consent_declared: true,
     });
     if (contErr) {
       throw new Error(`[E2E Seed Error] Falló la inserción de contactos: ${contErr.message}`);
     }
     trackEntityForCleanup(context, 'contact', requestId);
+  }
+
+  // 3. Un draft queda como borrador sin hijos materializados: así se pueden
+  //    probar los rechazos y la materialización del puente legacy. Cualquier
+  //    otro estado recibe su drop 1 y su contacto privado ANTES de hacerse
+  //    visible, y recién entonces se escribe el estado definitivo junto con
+  //    la oferta aceptada y las marcas temporales.
+  if (options.status !== 'draft') {
+    await materializeFixtureDrop(admin, {
+      requestId,
+      dropoffZoneId,
+      dropoffAddress: DEFAULT_FIXTURE_DROPOFF_ADDRESS,
+      recipientName: DEFAULT_FIXTURE_RECIPIENT_NAME,
+      recipientPhone: DEFAULT_FIXTURE_RECIPIENT_PHONE,
+      notes: requestNotes,
+      deliveredAt: options.status === 'delivered' ? deliveredAt : null,
+    });
+
+    await finalizeSeededRequestState(admin, requestId, {
+      status: options.status,
+      published_at: publishedAt,
+      expires_at: expiresAt,
+      matched_at: matchedAt,
+      picked_up_at: pickedUpAt,
+      delivered_at: deliveredAt,
+      accepted_offer_id: acceptedOfferId,
+    });
+  } else if (publishedAt || expiresAt || matchedAt || pickedUpAt || deliveredAt) {
+    throw new Error('[E2E Seed Error] Un draft no admite marcas temporales de publicación ni de viaje');
   }
 
   const pendingOfferIds: string[] = [];

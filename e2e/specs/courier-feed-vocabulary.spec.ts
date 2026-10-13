@@ -27,8 +27,29 @@ test.describe('T-343 — vocabulario canónico en el feed del repartidor', () =>
       throw new Error('[E2E Precondition Error] Se requiere una solicitud sembrada');
     }
 
-    // 1. Precondición: valores reales de la base (paquete grande, pago a coordinar, sin cambio)
+    // 1. Precondición: valores reales de la base (paquete grande, pago a coordinar, sin cambio).
+    //    Desde T-340 el feed y el refresco en vivo leen tipo de paquete y medio de pago
+    //    del drop de posición 1; el padre se mantiene coherente con el mismo valor.
     const admin = createAdminClient();
+    const { data: preparedDrops, error: dropErr } = await admin
+      .from('delivery_request_drops')
+      .update({
+        package_type: 'grande',
+        recipient_payment_method: 'to_agree',
+        needs_change: false,
+      })
+      .eq('request_id', requestId)
+      .eq('position', 1)
+      .select('id');
+    if (dropErr) {
+      throw new Error(`[E2E Seed Error] Falló la preparación del drop 1: ${dropErr.message}`);
+    }
+    if (preparedDrops?.length !== 1) {
+      throw new Error(
+        `[E2E Precondition Error] Se esperaba exactamente un drop de posición 1; se actualizaron ${preparedDrops?.length ?? 0}`
+      );
+    }
+
     const { error: seedErr } = await admin
       .from('delivery_requests')
       .update({
