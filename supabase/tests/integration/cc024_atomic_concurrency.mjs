@@ -362,7 +362,8 @@ function consentProbe(actorId, payload) {
     select pg_temp.cc024_consent_probe('${actorId}', ${payload});
     rollback;
   `);
-  return output.split(/\r?\n/).filter(Boolean).pop() ?? '';
+  const lines = output.split(/\r?\n/).filter(Boolean);
+  return lines.at(-2) ?? '';
 }
 
 function installLegacyConsentGuard(definition) {
