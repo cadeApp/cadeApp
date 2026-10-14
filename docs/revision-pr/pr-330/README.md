@@ -9,3 +9,8 @@ No hubo ejecución local de tests/SQL ni verificación independiente de mutantes
 - HEAD revisado: b29d8e8f6638a5d56d9652e33c045ff04c49adac. **CON BLOQUEANTE H03** (RPC inexistente). H05 corregido/verificado, H04/H06 corregidos por inspección sin Preview terminado, H01/H02 requieren revalidar SHA.
 - db-tests FALLÓ por bloqueo Docker/puerto; e2e-preview en curso; no hay revisión aprobatoria.
 - Ver `revisiones/ronda-2.md`, hallazgos actualizados y evidencia.
+
+## Ronda 3 · 2026-10-14
+- SHA inspeccionado: `014029270f431280fa831ea910d052da9b12fd1d`; **CON BLOQUEANTES H03 + H07**; mejora de bitácora H08.
+- H01/H02/H04/H05/H06 resueltos y verificados con **E2E real del mismo SHA** (74/74 Chromium; 3/3 global-settings) y CI unit 2143/2143; db-tests 2039/2039. La nueva RPC todavía no existe en esta PR.
+- Ver `revisiones/ronda-3.md`, `hallazgos.jsonl` y `evidencia/comandos.md`. Sin ejecuciones/mutaciones locales independientes. No aprobada ni mergeada.

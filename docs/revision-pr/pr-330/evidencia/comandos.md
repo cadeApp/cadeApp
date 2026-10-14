@@ -31,3 +31,14 @@ Verificación de la documentación: docs/revision-pr/analizar.mjs verificacion s
 - No ejecutado en esta sesión: pnpm local, Docker, pgTAP, mutantes RED/GREEN independientes, Preview Playwright nuevo.
 
 Verificaciones futuras exigidas: E2E chromium del SHA actual con map-privacy y multi-drop, global-settings; nuevo db-tests con arranque Docker real, Result: PASS y Files/Tests; E2E + SQL de la RPC futura Gate 2/3.
+## Ronda 3 · 2026-10-14 · HEAD 014029270f431280fa831ea910d052da9b12fd1d
+
+- `get_pr_info(330)` y `compare_commits(1294ed42,01402927)`: 1 commit nuevo de autor, SOLO docs/tasks/log/T-340.md; implementación sin cambio.
+- `get_commit_combined_status(01402927)`: e2e-preview SUCCESS; Vercel SUCCESS.
+- **Independiente E2E**: `fetch_workflow_job_logs(115856918592)`, checkout 01402927, líneas `74 passed (19.5m)` y `3 passed (1.4m)`; tests map-privacy #36 y multi-drop writer #44/todas failed #45 PASS.
+- **Independiente unit**: `fetch_workflow_job_logs(115856413631)` en merge ref del HEAD, `Test Files 129 passed`, `Tests 2143 passed`.
+- **Independiente db-tests**: `fetch_workflow_job_logs(115856413342)`, `Files=21, Tests=2039, Result: PASS`; `fetch_workflow_job_logs(115846119404)` para autor cita run 38562296772, también `Files=21, Tests=2039 Result PASS` (no 1980).
+- **H07 lectura exacta**: `src/features/requests/components/create-request-form.tsx:643-644` crea requestIdRef; `:710-734` toma `data` reciente + mismo requestIdRef en cada submit fallido; el guard/snapshot contra payload modificado no existe; `docs/contracts/CC-024.md:78-91` lo exige. Prueba de mutación H07 propuesta, NO EJECUTADA en esta revisión (no hay checkout local).
+- **H03 lectura exacta**: `src/features/requests/actions.ts:54–179` inserciones HTTP de tablas separadas y luego `publish_request`; no se revisó implementación RPC que aún no está en #330.
+- Las pruebas RED/GREEN de `src/features/requests/components/create-request-form.test.tsx` ante fallo de red seguido de edición NO existen todavía. Proponer nuevo test que se ponga en rojo con código actual y quede verde tras aviso/guard.
+- Sin SQL/Docker local, sin secretos, sin tests falsos, sin mutantes commiteados.
