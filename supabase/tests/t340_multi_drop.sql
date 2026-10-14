@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(248);
+select plan(274);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -2431,6 +2431,122 @@ select is(
   pg_temp.test_cc024_call(
     pg_temp.merchant_id(),
     jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034ae', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', '"true"'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento JSON string "true"'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034ae'),
+  0,
+  'CC-024 no deja padre con consentimiento JSON string "true"'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034ae'),
+  0,
+  'CC-024 no deja drop con consentimiento JSON string "true"'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034ae'),
+  0,
+  'CC-024 no deja contacto con consentimiento JSON string "true"'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034af', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', 'false'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento booleano false'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034af'),
+  0,
+  'CC-024 no deja padre con consentimiento booleano false'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034af'),
+  0,
+  'CC-024 no deja drop con consentimiento booleano false'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034af'),
+  0,
+  'CC-024 no deja contacto con consentimiento booleano false'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034b0', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', 'null'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento JSON null'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034b0'),
+  0,
+  'CC-024 no deja padre con consentimiento JSON null'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034b0'),
+  0,
+  'CC-024 no deja drop con consentimiento JSON null'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034b0'),
+  0,
+  'CC-024 no deja contacto con consentimiento JSON null'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034b8', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', '1'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento JSON numérico'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034b8'),
+  0,
+  'CC-024 no deja padre con consentimiento JSON numérico'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034b8'),
+  0,
+  'CC-024 no deja drop con consentimiento JSON numérico'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034b8'),
+  0,
+  'CC-024 no deja contacto con consentimiento JSON numérico'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
       jsonb_set(
         pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034a8', pg_temp.pickup_zone_id(), 1),
         '{pickupLat}', '-34.6037'::jsonb
@@ -2703,42 +2819,99 @@ select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'd
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'pickup', '0', 'CC-024 rollback del padre deja cero pickups');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'drops', '0', 'CC-024 rollback del padre deja cero drops');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'contacts', '0', 'CC-024 rollback del padre deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'audit', '0', 'CC-024 rollback del padre deja cero eventos de auditoría');
 
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del pickup devuelve error controlado');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'requests', '0', 'CC-024 rollback del pickup deja cero requests');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'pickup', '0', 'CC-024 rollback del pickup deja cero pickups');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'drops', '0', 'CC-024 rollback del pickup deja cero drops');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'contacts', '0', 'CC-024 rollback del pickup deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'audit', '0', 'CC-024 rollback del pickup deja cero eventos de auditoría');
 
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del primer drop devuelve error controlado');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'requests', '0', 'CC-024 rollback del primer drop deja cero requests');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'pickup', '0', 'CC-024 rollback del primer drop deja cero pickups');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'drops', '0', 'CC-024 rollback del primer drop deja cero drops');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'contacts', '0', 'CC-024 rollback del primer drop deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'audit', '0', 'CC-024 rollback del primer drop deja cero eventos de auditoría');
 
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del segundo drop devuelve error controlado');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'requests', '0', 'CC-024 rollback del segundo drop deja cero requests');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'pickup', '0', 'CC-024 rollback del segundo drop deja cero pickups');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'drops', '0', 'CC-024 rollback del segundo drop deja cero drops');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'contacts', '0', 'CC-024 rollback del segundo drop deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'audit', '0', 'CC-024 rollback del segundo drop deja cero eventos de auditoría');
 
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del contacto privado devuelve error controlado');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'requests', '0', 'CC-024 rollback del contacto privado deja cero requests');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'pickup', '0', 'CC-024 rollback del contacto privado deja cero pickups');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'drops', '0', 'CC-024 rollback del contacto privado deja cero drops');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'contacts', '0', 'CC-024 rollback del contacto privado deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'audit', '0', 'CC-024 rollback del contacto privado deja cero eventos de auditoría');
 
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del segundo contacto devuelve error controlado');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'requests', '0', 'CC-024 rollback del segundo contacto deja cero requests');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'pickup', '0', 'CC-024 rollback del segundo contacto deja cero pickups');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'drops', '0', 'CC-024 rollback del segundo contacto deja cero drops');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'contacts', '0', 'CC-024 rollback del segundo contacto deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'audit', '0', 'CC-024 rollback del segundo contacto deja cero eventos de auditoría');
 
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback dentro de request_cycle devuelve error controlado');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'requests', '0', 'CC-024 rollback de publicación deja cero requests');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'pickup', '0', 'CC-024 rollback de publicación deja cero pickups');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'drops', '0', 'CC-024 rollback de publicación deja cero drops');
 select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'contacts', '0', 'CC-024 rollback de publicación deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'audit', '0', 'CC-024 rollback de publicación deja cero eventos de auditoría');
+
+create temporary table cc024_fail_trigger_source(definition text) on commit drop;
+insert into cc024_fail_trigger_source(definition)
+select pg_get_functiondef('pg_temp.cc024_fail_after_insert()'::regprocedure);
+
+create or replace function pg_temp.cc024_fail_after_insert() returns trigger language plpgsql as $$
+begin
+  return new;
+end;
+$$;
+
+create function pg_temp.cc024_assert_rollback_failure() returns void language plpgsql as $$
+declare
+  v_result jsonb;
+begin
+  v_result := pg_temp.test_cc024_rollback(
+    '30000000-0000-0000-0000-0000000034b9',
+    'audit_log:INSERT'
+  );
+  if v_result->>'error' <> 'CC024_TEST_FAILURE' then
+    raise exception using errcode = 'P0001', message = 'CC024_MUTANT_ASSERTION_FAILED';
+  end if;
+end;
+$$;
+
+select throws_matching(
+  'select pg_temp.cc024_assert_rollback_failure()',
+  'CC024_MUTANT_ASSERTION_FAILED',
+  'CC-024 H04 RED: sin el trigger de auditoría falla la aserción de CC024_TEST_FAILURE'
+);
+
+do $$
+declare
+  v_definition text;
+begin
+  select definition into v_definition from cc024_fail_trigger_source;
+  execute v_definition;
+end;
+$$;
+
+select is(
+  pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b9', 'audit_log:INSERT')->>'error',
+  'CC024_TEST_FAILURE',
+  'CC-024 H04 GREEN: restaurar el trigger vuelve a inyectar el error controlado'
+);
+select is(
+  pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b9', 'audit_log:INSERT')->>'audit',
+  '0',
+  'CC-024 H04 GREEN: el rollback restaurado deja cero eventos de auditoría'
+);
 
 select pg_temp.reset_actor();
 

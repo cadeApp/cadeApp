@@ -138,7 +138,7 @@ begin
        or jsonb_typeof(v_drop->'dropoffLng') not in ('number', 'null')
        or jsonb_typeof(v_drop->'recipientName') <> 'string'
        or jsonb_typeof(v_drop->'recipientPhone') <> 'string'
-       or v_drop->>'recipientConsentDeclared' <> 'true'
+       or v_drop->'recipientConsentDeclared' is distinct from 'true'::jsonb
        or jsonb_typeof(v_drop->'packageType') <> 'string'
        or jsonb_typeof(v_drop->'recipientPaymentMethod') <> 'string'
        or jsonb_typeof(v_drop->'needsChange') <> 'boolean'

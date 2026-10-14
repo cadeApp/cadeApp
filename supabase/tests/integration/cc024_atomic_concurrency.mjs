@@ -8,6 +8,10 @@ if (!dbContainer) {
   process.exit(1);
 }
 
+function sqlLiteral(value) {
+  return value === null ? 'null' : `'${value.replaceAll("'", "''")}'`;
+}
+
 function runSql(sql) {
   const result = spawnSync(
     'docker',
@@ -24,11 +28,22 @@ class PsqlSession {
   constructor(label) {
     this.label = label;
     this.output = '';
+    this.processFailure = null;
     this.proc = spawn(
       'docker',
       ['exec', '-i', dbContainer, 'psql', '-X', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres'],
       { stdio: ['pipe', 'pipe', 'pipe'] }
     );
+    this.proc.on('error', (error) => {
+      this.processFailure = `proceso psql falló: ${error.message}`;
+    });
+    this.proc.on('exit', (code, signal) => {
+      if (code !== null && code !== 0) {
+        this.processFailure = `proceso psql terminó con código ${code}`;
+      } else if (signal) {
+        this.processFailure = `proceso psql terminó por señal ${signal}`;
+      }
+    });
     this.proc.stdout.on('data', (chunk) => {
       this.output += chunk.toString('utf8');
     });
@@ -38,6 +53,9 @@ class PsqlSession {
   }
 
   send(sql) {
+    if (this.proc.exitCode !== null) {
+      throw new Error(`[CC-024][${this.label}] no se puede enviar SQL: el proceso ya terminó`);
+    }
     this.proc.stdin.write(`${sql.trim()}\n`);
   }
 
@@ -45,6 +63,12 @@ class PsqlSession {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       if (this.output.includes(marker)) return;
+      if (this.processFailure) {
+        throw new Error(`[CC-024][${this.label}] ${this.processFailure} mientras esperaba ${marker}`);
+      }
+      if (this.proc.exitCode !== null) {
+        throw new Error(`[CC-024][${this.label}] proceso terminó antes de emitir ${marker}`);
+      }
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     throw new Error(`[CC-024][${this.label}] timeout esperando ${marker}`);
@@ -69,7 +93,7 @@ class PsqlSession {
 }
 
 function payloadSql(requestId, zoneId, notes = null) {
-  const notesSql = notes === null ? 'null' : `'${notes}'`;
+  const notesSql = sqlLiteral(notes);
   return `jsonb_build_object(
     'requestId', '${requestId}',
     'pickupZoneId', '${zoneId}',
@@ -175,40 +199,102 @@ async function waitForBlockedLock(blockerPid, waiterPid) {
   throw new Error(`[CC-024] no se observó bloqueo de ${waiterPid} por ${blockerPid}`);
 }
 
-function assertFinalState(requestId) {
-  const values = runSql(`
-    select
-      (select count(*) from public.delivery_requests where id = '${requestId}'),
-      (select count(*) from public.delivery_request_contacts where request_id = '${requestId}'),
-      (select count(*) from public.delivery_request_drops where request_id = '${requestId}'),
-      (select count(*) from public.delivery_request_drop_contacts dc
-       join public.delivery_request_drops d on d.id = dc.drop_id
-       where d.request_id = '${requestId}'),
-      (select count(*) from public.audit_log where target_id = '${requestId}' and action = 'publish_request');
-  `).split('|');
-  assert.deepEqual(values, ['1', '1', '2', '2', '1'], 'el estado concurrente debe tener una sola publicación y N hijos');
+function assertFinalState(requestId, { name, expectedWinner }) {
+  const state = JSON.parse(runSql(`
+    select jsonb_build_object(
+      'requestCount', (select count(*) from public.delivery_requests where id = '${requestId}'),
+      'pickupCount', (select count(*) from public.delivery_request_contacts where request_id = '${requestId}'),
+      'dropCount', (select count(*) from public.delivery_request_drops where request_id = '${requestId}'),
+      'contactCount', (select count(*) from public.delivery_request_drop_contacts dc
+                       join public.delivery_request_drops d on d.id = dc.drop_id
+                       where d.request_id = '${requestId}'),
+      'auditCount', (select count(*) from public.audit_log where target_id = '${requestId}' and action = 'publish_request'),
+      'merchantId', (select merchant_id::text from public.delivery_requests where id = '${requestId}'),
+      'drop1', (select jsonb_build_object(
+        'address', dc.dropoff_address,
+        'name', dc.recipient_name,
+        'phone', dc.recipient_phone,
+        'consent', dc.recipient_consent_declared,
+        'notes', dc.notes
+      ) from public.delivery_request_drops d
+      join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
+      where d.request_id = '${requestId}' and d.position = 1),
+      'drop2', (select jsonb_build_object(
+        'address', dc.dropoff_address,
+        'name', dc.recipient_name,
+        'phone', dc.recipient_phone,
+        'consent', dc.recipient_consent_declared,
+        'notes', dc.notes
+      ) from public.delivery_request_drops d
+      join public.delivery_request_drop_contacts dc on dc.drop_id = d.id
+      where d.request_id = '${requestId}' and d.position = 2)
+    )::text;
+  `));
+  assert.equal(
+    state.requestCount === 1
+      && state.pickupCount === 1
+      && state.dropCount === 2
+      && state.contactCount === 2
+      && state.auditCount === 1,
+    true,
+    `${name}: el estado final debe conservar una publicación y dos drops/contactos`
+  );
+  assert.equal(state.merchantId === expectedWinner.actorId, true, `${name}: merchant_id persistido coincide con el ganador`);
+  assert.equal(
+    Boolean(
+      state.drop1
+      && state.drop1.address === 'Alberdi 900'
+      && state.drop1.name === 'Destinatario Uno'
+      && state.drop1.phone === '3865123456'
+      && state.drop1.consent === true
+      && state.drop1.notes === expectedWinner.notes
+    ),
+    true,
+    `${name}: los datos privados del drop 1 coinciden con el ganador`
+  );
+  assert.equal(
+    Boolean(
+      state.drop2
+      && state.drop2.address === 'Belgrano 900'
+      && state.drop2.name === 'Destinatario Dos'
+      && state.drop2.phone === '3865123457'
+      && state.drop2.consent === true
+      && state.drop2.notes === null
+    ),
+    true,
+    `${name}: los datos privados del drop 2 coinciden con el ganador`
+  );
 }
 
-async function runScenario({ name, holderActor, waiterActor, holderFirst, waiterPayload, expected }) {
+function participant(actorId, notes = null) {
+  return {
+    actorId,
+    notes,
+    payload: (requestId, zoneId) => payloadSql(requestId, zoneId, notes),
+  };
+}
+
+async function runScenario({ name, participants, winningIndex, expected, expectedWinnerIndex = winningIndex }) {
   const requestId = crypto.randomUUID();
   const zoneId = runSql('select id from public.zones where active order by id limit 1;');
-  const holder = new PsqlSession(`${name}-holder`);
-  const waiter = new PsqlSession(`${name}-waiter`);
-  const first = holderFirst ? holder : waiter;
-  const second = holderFirst ? waiter : holder;
-  const firstActor = holderActor;
-  const secondActor = waiterActor;
-  const holderPayload = payloadSql(requestId, zoneId);
+  assert.equal(participants.length, 2, `${name}: el escenario debe tener dos participantes`);
+  assert.ok(winningIndex === 0 || winningIndex === 1, `${name}: winningIndex inválido`);
+  assert.ok(expectedWinnerIndex === 0 || expectedWinnerIndex === 1, `${name}: expectedWinnerIndex inválido`);
+  const firstParticipant = participants[winningIndex];
+  const secondParticipant = participants[1 - winningIndex];
+  const expectedWinner = participants[expectedWinnerIndex];
+  const first = new PsqlSession(`${name}-first`);
+  const second = new PsqlSession(`${name}-second`);
 
   try {
-    await configureSession(first, firstActor);
+    await configureSession(first, firstParticipant.actorId);
     const firstMarker = `CC024_FIRST_${crypto.randomUUID()}`;
-    first.send(resultMarkerSql(firstMarker, holderPayload, false));
+    first.send(resultMarkerSql(firstMarker, firstParticipant.payload(requestId, zoneId), false));
     await first.waitFor(firstMarker);
     const firstResult = readResult(first, firstMarker);
     assert.equal(firstResult.idempotent, false, `${name}: la primera sesión debe crear la solicitud`);
 
-    await configureSession(second, secondActor);
+    await configureSession(second, secondParticipant.actorId);
     const waiterPidMarker = `CC024_WAITER_PID_${crypto.randomUUID()}`;
     second.send(`select 'PID:${waiterPidMarker}:' || pg_backend_pid() || ':END_${waiterPidMarker}';`);
     await second.waitFor(waiterPidMarker);
@@ -223,7 +309,7 @@ async function runScenario({ name, holderActor, waiterActor, holderFirst, waiter
     const blockerPid = Number(blockerPidMatch[1]);
 
     const secondMarker = `CC024_SECOND_${crypto.randomUUID()}`;
-    second.send(resultMarkerSql(secondMarker, waiterPayload(requestId, zoneId), expected !== 'idempotent'));
+    second.send(resultMarkerSql(secondMarker, secondParticipant.payload(requestId, zoneId), expected !== 'idempotent'));
     await waitForBlockedLock(blockerPid, waiterPid);
 
     const releaseMarker = `CC024_RELEASED_${crypto.randomUUID()}`;
@@ -236,18 +322,161 @@ async function runScenario({ name, holderActor, waiterActor, holderFirst, waiter
     } else {
       assert.equal(secondResult.error, expected, `${name}: el rechazo debe conservar el código de contrato`);
     }
-    second.send('commit;');
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    assertFinalState(requestId);
+    const commitMarker = `CC024_SECOND_COMMITTED_${crypto.randomUUID()}`;
+    second.send(`commit; select '${commitMarker}';`);
+    await second.waitFor(commitMarker);
+    assertFinalState(requestId, { name, expectedWinner });
   } finally {
-    await holder.close();
-    await waiter.close();
+    await first.close();
+    await second.close();
     runSql(`
       delete from public.audit_log where target_id = '${requestId}';
-      delete from public.rate_limits where subject in ('${holderActor}', '${waiterActor}');
+      delete from public.rate_limits where subject in ('${firstParticipant.actorId}', '${secondParticipant.actorId}');
       delete from public.delivery_requests where id = '${requestId}';
     `);
   }
+}
+
+function createAndPublishDefinition() {
+  return runSql("select pg_get_functiondef('public.create_and_publish_multi_drop(jsonb)'::regprocedure);");
+}
+
+function consentProbe(actorId, payload) {
+  return runSql(`
+    begin;
+    create or replace function pg_temp.cc024_consent_probe(p_actor uuid, p_payload jsonb)
+    returns text language plpgsql as $probe$
+    begin
+      perform set_config(
+        'request.jwt.claims',
+        jsonb_build_object('sub', p_actor::text, 'role', 'authenticated', 'aal', 'aal2')::text,
+        true
+      );
+      perform public.create_and_publish_multi_drop(p_payload);
+      return 'NO_ERROR';
+    exception when others then
+      return SQLERRM;
+    end;
+    $probe$;
+    set local role authenticated;
+    select pg_temp.cc024_consent_probe('${actorId}', ${payload});
+    rollback;
+  `);
+}
+
+function installLegacyConsentGuard(definition) {
+  const legacy = definition.replace(
+    /v_drop\s*->\s*'recipientConsentDeclared'\s+is\s+distinct\s+from\s+'true'::jsonb/i,
+    "v_drop->>'recipientConsentDeclared' <> 'true'"
+  );
+  assert.notEqual(legacy, definition, '[CC-024][H07] no se encontró la guarda tipada para mutar');
+  runSql(legacy);
+}
+
+async function runConsentMutationCheck(actorId) {
+  const definition = createAndPublishDefinition();
+  const requestId = () => crypto.randomUUID();
+  const zoneId = runSql('select id from public.zones where active order by id limit 1;');
+  const stringTruePayload = (id) => `jsonb_set(${payloadSql(id, zoneId)}, '{drops,0,recipientConsentDeclared}', '"true"'::jsonb)`;
+
+  try {
+    installLegacyConsentGuard(definition);
+    assert.equal(
+      consentProbe(actorId, stringTruePayload(requestId())),
+      'NO_ERROR',
+      '[CC-024][H07] la guarda textual debe dejar pasar el string true para demostrar RED'
+    );
+    console.log('[CC-024][H07] RED obtenido: la guarda textual acepta JSON string true.');
+
+    runSql(definition);
+    assert.equal(
+      consentProbe(actorId, stringTruePayload(requestId())),
+      'VALIDATION_ERROR',
+      '[CC-024][H07] la guarda tipada debe rechazar JSON string true'
+    );
+    console.log('[CC-024][H07] GREEN obtenido: la guarda JSONB tipada rechaza JSON string true.');
+
+    installLegacyConsentGuard(definition);
+    assert.equal(
+      consentProbe(actorId, stringTruePayload(requestId())),
+      'NO_ERROR',
+      '[CC-024][H07] la segunda mutación textual debe volver a demostrar RED'
+    );
+    console.log('[CC-024][H07] RED repetido obtenido tras restaurar temporalmente la expresión vieja.');
+  } finally {
+    runSql(definition);
+  }
+
+  assert.equal(
+    consentProbe(actorId, stringTruePayload(requestId())),
+    'VALIDATION_ERROR',
+    '[CC-024][H07] la restauración final debe dejar GREEN'
+  );
+  console.log('[CC-024][H07] GREEN final confirmado tras restaurar la guarda tipada.');
+}
+
+async function runRetryMutationCheck(actorId) {
+  const definition = createAndPublishDefinition();
+  const mutated = definition.replace(/('idempotent',\s*)true\b/, "$1false");
+  assert.notEqual(mutated, definition, '[CC-024][H06] no se encontró idempotent=true para mutar');
+  const retryParticipants = [participant(actorId), participant(actorId)];
+  let redObserved = false;
+
+  try {
+    runSql(mutated);
+    try {
+      await runScenario({
+        name: 'retry-idempotente-mutante',
+        participants: retryParticipants,
+        winningIndex: 0,
+        expected: 'idempotent',
+      });
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('el retry debe ser idempotente')) throw error;
+      redObserved = true;
+      console.log('[CC-024][H06] RED obtenido: el runner detectó idempotent=false en el retry mutado.');
+    }
+  } finally {
+    runSql(definition);
+  }
+  assert.equal(redObserved, true, '[CC-024][H06] el mutante de idempotencia debe fallar en su aserción específica');
+
+  await runScenario({
+    name: 'retry-idempotente-restaurado',
+    participants: retryParticipants,
+    winningIndex: 0,
+    expected: 'idempotent',
+  });
+  console.log('[CC-024][H06] GREEN obtenido tras restaurar idempotent=true.');
+}
+
+async function runWinnerOrderMutationCheck(actorId) {
+  const divergent = participant(actorId, 'Nota diferente');
+  const original = participant(actorId, 'Nota original');
+  let redObserved = false;
+
+  try {
+    await runScenario({
+      name: 'ganador-invertido-mutante',
+      participants: [divergent, original],
+      winningIndex: 0,
+      expected: 'VALIDATION_ERROR',
+      expectedWinnerIndex: 1,
+    });
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes('los datos privados del drop 1')) throw error;
+    redObserved = true;
+    console.log('[CC-024][H06] RED obtenido: el escenario mutado fijó el payload original y falló la aserción de notas del ganador.');
+  }
+  assert.equal(redObserved, true, '[CC-024][H06] el mutante de inversión debe fallar en la aserción de datos persistidos');
+
+    await runScenario({
+      name: 'ganador-invertido-restaurado',
+      participants: [divergent, original],
+      winningIndex: 0,
+      expected: 'VALIDATION_ERROR',
+  });
+  console.log('[CC-024][H06] GREEN obtenido tras restaurar el ganador explícito del escenario divergente.');
 }
 
 async function run() {
@@ -269,38 +498,39 @@ async function run() {
 
   try {
     await runScenario({
-      name: 'orden-A-mismo-payload',
-      holderActor: merchantA,
-      waiterActor: merchantA,
-      holderFirst: true,
-      waiterPayload: (requestId, zoneId) => payloadSql(requestId, zoneId),
+      name: 'retry-idempotente',
+      participants: [participant(merchantA), participant(merchantA)],
+      winningIndex: 0,
       expected: 'idempotent',
     });
     await runScenario({
-      name: 'orden-B-mismo-payload',
-      holderActor: merchantA,
-      waiterActor: merchantA,
-      holderFirst: false,
-      waiterPayload: (requestId, zoneId) => payloadSql(requestId, zoneId),
-      expected: 'idempotent',
-    });
-    await runScenario({
-      name: 'payload-divergente',
-      holderActor: merchantA,
-      waiterActor: merchantA,
-      holderFirst: true,
-      waiterPayload: (requestId, zoneId) => payloadSql(requestId, zoneId, 'Nota divergente'),
+      name: 'A-original-gana',
+      participants: [participant(merchantA, 'Nota original'), participant(merchantA, 'Nota diferente')],
+      winningIndex: 0,
       expected: 'VALIDATION_ERROR',
     });
     await runScenario({
-      name: 'comerciante-ajeno',
-      holderActor: merchantA,
-      waiterActor: merchantB,
-      holderFirst: false,
-      waiterPayload: (requestId, zoneId) => payloadSql(requestId, zoneId),
+      name: 'A-diferente-gana',
+      participants: [participant(merchantA, 'Nota diferente'), participant(merchantA, 'Nota original')],
+      winningIndex: 0,
+      expected: 'VALIDATION_ERROR',
+    });
+    await runScenario({
+      name: 'A-crea-B-pierde',
+      participants: [participant(merchantA), participant(merchantB)],
+      winningIndex: 0,
       expected: 'NOT_FOUND',
     });
-    console.log('[CC-024] 4 escenarios concurrentes GREEN: dos órdenes, payload divergente y comerciante ajeno.');
+    await runScenario({
+      name: 'B-crea-A-pierde',
+      participants: [participant(merchantB), participant(merchantA)],
+      winningIndex: 0,
+      expected: 'NOT_FOUND',
+    });
+    await runRetryMutationCheck(merchantA);
+    await runWinnerOrderMutationCheck(merchantA);
+    await runConsentMutationCheck(merchantA);
+    console.log('[CC-024] 5 escenarios concurrentes GREEN: retry, dos ganadores invertidos y dos colisiones de actor.');
   } finally {
     runSql(`
       delete from public.audit_log where target_id in (
