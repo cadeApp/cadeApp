@@ -107,7 +107,10 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
     notes: 'Dejar en recepción',
   };
 
+  const validRequestId = 'a0000000-0000-4000-8000-000000000101';
+
   const validFormInput = {
+    requestId: validRequestId,
     pickupZoneId: validPickupZoneId,
     pickupAddress: 'Av. Sarmiento 120',
     pickupLat: -27.43,
@@ -217,7 +220,8 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
   });
 
   it('crea solicitud exitosa con 1 drop mediante la RPC atómica create_and_publish_multi_drop', async () => {
-    const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(createdRequestId, 1));
+    const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(validRequestId, 1));
+    const mockInsert = vi.fn().mockResolvedValue({ data: { id: validRequestId }, error: null });
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
         return {
@@ -229,7 +233,8 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
           }),
         };
       }
-      return {};
+      if (table === 'delivery_requests') return { insert: mockInsert };
+      throw new Error(`Tabla inesperada en el test: ${table}`);
     });
 
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
@@ -246,7 +251,7 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
     const result = await createDeliveryRequestAction(validFormInput);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.data.requestId).toBe(createdRequestId);
+      expect(result.data.requestId).toBe(validRequestId);
       expect(result.data.redirectTo).toBe('/merchant/dashboard');
     }
 
@@ -254,7 +259,7 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
     expect(mockRpc).toHaveBeenCalledTimes(1);
     expect(mockRpc).toHaveBeenCalledWith('create_and_publish_multi_drop', {
       p_payload: expect.objectContaining({
-        requestId: expect.any(String),
+        requestId: validRequestId,
         pickupZoneId: validPickupZoneId,
         pickupAddress: 'Av. Sarmiento 120',
         pickupLat: -27.43,
@@ -280,13 +285,15 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
       }),
     });
 
-    // Se verifica que 'from' solo se usó para chequear el perfil merchant, nunca para inserts directos
+    // Se verifica que 'from' solo se usó para chequear el perfil merchant, y el spy de insert nunca fue llamado
     expect(mockFrom).toHaveBeenCalledTimes(1);
     expect(mockFrom).toHaveBeenCalledWith('profiles');
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 
   it('crea solicitud exitosa con 3 drops llamando a create_and_publish_multi_drop con array completo', async () => {
-    const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(createdRequestId, 3));
+    const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(validRequestId, 3));
+    const mockInsert = vi.fn().mockResolvedValue({ data: { id: validRequestId }, error: null });
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
         return {
@@ -298,7 +305,8 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
           }),
         };
       }
-      return {};
+      if (table === 'delivery_requests') return { insert: mockInsert };
+      throw new Error(`Tabla inesperada en el test: ${table}`);
     });
 
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
@@ -321,9 +329,13 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
 
     const result = await createDeliveryRequestAction(inputWith3Drops);
     expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.requestId).toBe(validRequestId);
+    }
     expect(mockRpc).toHaveBeenCalledTimes(1);
     expect(mockRpc).toHaveBeenCalledWith('create_and_publish_multi_drop', {
       p_payload: expect.objectContaining({
+        requestId: validRequestId,
         fixedPriceArs: 2000,
         autoAssign: true,
         drops: expect.arrayContaining([
@@ -333,6 +345,9 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
         ]),
       }),
     });
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+    expect(mockFrom).toHaveBeenCalledWith('profiles');
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 
   describe('propagación de errores y casos de fallo', () => {
@@ -346,6 +361,9 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
             eq: vi.fn().mockReturnThis(),
             maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
           };
+        }
+        if (table === 'delivery_requests') {
+          return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
         }
         return {};
       });
@@ -379,6 +397,9 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
             maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
           };
         }
+        if (table === 'delivery_requests') {
+          return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
+        }
         return {};
       });
 
@@ -408,6 +429,9 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
             eq: vi.fn().mockReturnThis(),
             maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
           };
+        }
+        if (table === 'delivery_requests') {
+          return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
         }
         return {};
       });
@@ -477,6 +501,44 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
       expect(mockFrom).toHaveBeenCalledWith('profiles');
     });
 
+    it('CC-024 rechaza Server Action sin requestId con VALIDATION_ERROR y cero llamadas RPC/INSERT', async () => {
+      const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(validRequestId, 1));
+      const mockInsert = vi.fn().mockResolvedValue({ data: { id: validRequestId }, error: null });
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+          };
+        }
+        if (table === 'delivery_requests') return { insert: mockInsert };
+        throw new Error(`Tabla inesperada en el test: ${table}`);
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+        rpc: mockRpc,
+      } as unknown as MockedServerClient);
+
+      const inputWithoutId = { ...validFormInput };
+      delete (inputWithoutId as { requestId?: string }).requestId;
+
+      const result = await createDeliveryRequestAction(inputWithoutId);
+
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockInsert).not.toHaveBeenCalled();
+      expect(mockFrom).toHaveBeenCalledTimes(1);
+      expect(mockFrom).toHaveBeenCalledWith('profiles');
+    });
+
     it('maneja respuesta idempotente exitosamente', async () => {
       const stableRequestId = 'a0000000-0000-4000-8000-000000000002';
       // Simula reintento idempotente (idempotent: true)
@@ -489,6 +551,9 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
             eq: vi.fn().mockReturnThis(),
             maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
           };
+        }
+        if (table === 'delivery_requests') {
+          return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
         }
         return {};
       });

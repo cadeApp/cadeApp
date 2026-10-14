@@ -51,10 +51,13 @@ export async function createDeliveryRequestAction(
   const data = parsed.data;
 
   // 4. Alta y publicación atómica mediante RPC (CC-024 / Gate 4)
-  const requestId = data.requestId ?? crypto.randomUUID();
+  // PR330-H09: el UUID proviene exclusivamente de la UI; la Server Action nunca genera ID por invocación.
+  if (!data.requestId) {
+    return err('VALIDATION_ERROR');
+  }
 
   const rpcResult = await callRequestRpc(supabase, 'create_and_publish_multi_drop', {
-    requestId,
+    requestId: data.requestId,
     pickupZoneId: data.pickupZoneId,
     pickupAddress: data.pickupAddress,
     pickupLat: data.pickupLat ?? null,
