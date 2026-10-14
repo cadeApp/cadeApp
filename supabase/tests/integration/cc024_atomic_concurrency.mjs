@@ -274,15 +274,15 @@ function participant(actorId, notes = null) {
   };
 }
 
-async function runScenario({ name, participants, winningIndex, expected, expectedWinnerIndex = winningIndex }) {
+async function runScenario({ name, participants, winningIndex, expected, assertedWinnerIndex = winningIndex }) {
   const requestId = crypto.randomUUID();
   const zoneId = runSql('select id from public.zones where active order by id limit 1;');
   assert.equal(participants.length, 2, `${name}: el escenario debe tener dos participantes`);
   assert.ok(winningIndex === 0 || winningIndex === 1, `${name}: winningIndex inválido`);
-  assert.ok(expectedWinnerIndex === 0 || expectedWinnerIndex === 1, `${name}: expectedWinnerIndex inválido`);
+  assert.ok(assertedWinnerIndex === 0 || assertedWinnerIndex === 1, `${name}: assertedWinnerIndex inválido`);
   const firstParticipant = participants[winningIndex];
   const secondParticipant = participants[1 - winningIndex];
-  const expectedWinner = participants[expectedWinnerIndex];
+  const expectedWinner = participants[assertedWinnerIndex];
   const first = new PsqlSession(`${name}-first`);
   const second = new PsqlSession(`${name}-second`);
 
@@ -341,31 +341,6 @@ function createAndPublishDefinition() {
   return runSql("select pg_get_functiondef('public.create_and_publish_multi_drop(jsonb)'::regprocedure);");
 }
 
-function consentProbe(actorId, payload) {
-  const output = runSql(`
-    begin;
-    create or replace function pg_temp.cc024_consent_probe(p_actor uuid, p_payload jsonb)
-    returns text language plpgsql as $probe$
-    begin
-      perform set_config(
-        'request.jwt.claims',
-        jsonb_build_object('sub', p_actor::text, 'role', 'authenticated', 'aal', 'aal2')::text,
-        true
-      );
-      perform public.create_and_publish_multi_drop(p_payload);
-      return 'NO_ERROR';
-    exception when others then
-      return SQLERRM;
-    end;
-    $probe$;
-    set local role authenticated;
-    select pg_temp.cc024_consent_probe('${actorId}', ${payload});
-    rollback;
-  `);
-  const lines = output.split(/\r?\n/).filter(Boolean);
-  return lines.at(-2) ?? '';
-}
-
 function installLegacyConsentGuard(definition) {
   const legacy = definition.replace(
     /v_drop\s*->\s*'recipientConsentDeclared'\s+is\s+distinct\s+from\s+'true'::jsonb/i,
@@ -375,46 +350,64 @@ function installLegacyConsentGuard(definition) {
   runSql(legacy);
 }
 
-async function runConsentMutationCheck(actorId) {
+function runConsentPgTap() {
+  const result = spawnSync(
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+    ['supabase', 'test', 'db', 'supabase/tests/t340_multi_drop.sql'],
+    { encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 }
+  );
+  if (result.error) {
+    throw new Error(`[CC-024][H07] no se pudo iniciar pgTAP: ${result.error.message}`);
+  }
+  return {
+    exit: result.status,
+    signal: result.signal,
+    output: `${result.stdout ?? ''}\n${result.stderr ?? ''}`,
+  };
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertConsentPgTapFailure(result, description) {
+  assert.equal(result.signal, null, '[CC-024][H07] el pgTAP mutado no debe terminar por señal');
+  assert.notEqual(result.exit, null, '[CC-024][H07] el pgTAP mutado debe informar código de salida');
+  assert.notEqual(result.exit, 0, '[CC-024][H07] la suite inalterada debe fallar con la guarda textual');
+  assert.match(
+    result.output,
+    new RegExp(`# Failed test \\d+: "${escapeRegExp(description)}"`),
+    '[CC-024][H07] el fallo debe pertenecer exactamente a la aserción de consentimiento JSON string true'
+  );
+}
+
+function assertConsentPgTapGreen(result, description) {
+  assert.equal(result.signal, null, '[CC-024][H07] el pgTAP restaurado no debe terminar por señal');
+  assert.equal(result.exit, 0, '[CC-024][H07] la misma suite debe pasar con la guarda JSONB restaurada');
+  assert.match(result.output, /Result: PASS/, '[CC-024][H07] pgTAP restaurado debe informar Result: PASS');
+  assert.doesNotMatch(
+    result.output,
+    new RegExp(`# Failed test \\d+: "${escapeRegExp(description)}"`),
+    '[CC-024][H07] la aserción de consentimiento JSON string true debe volver a pasar'
+  );
+}
+
+async function runConsentMutationCheck() {
   const definition = createAndPublishDefinition();
-  const requestId = () => crypto.randomUUID();
-  const zoneId = runSql('select id from public.zones where active order by id limit 1;');
-  const stringTruePayload = (id) => `jsonb_set(${payloadSql(id, zoneId)}, '{drops,0,recipientConsentDeclared}', '"true"'::jsonb)`;
+  const description = 'CC-024 rechaza consentimiento JSON string "true"';
 
   try {
     installLegacyConsentGuard(definition);
-    assert.equal(
-      consentProbe(actorId, stringTruePayload(requestId())),
-      'NO_ERROR',
-      '[CC-024][H07] la guarda textual debe dejar pasar el string true para demostrar RED'
-    );
-    console.log('[CC-024][H07] RED obtenido: la guarda textual acepta JSON string true.');
-
-    runSql(definition);
-    assert.equal(
-      consentProbe(actorId, stringTruePayload(requestId())),
-      'VALIDATION_ERROR',
-      '[CC-024][H07] la guarda tipada debe rechazar JSON string true'
-    );
-    console.log('[CC-024][H07] GREEN obtenido: la guarda JSONB tipada rechaza JSON string true.');
-
-    installLegacyConsentGuard(definition);
-    assert.equal(
-      consentProbe(actorId, stringTruePayload(requestId())),
-      'NO_ERROR',
-      '[CC-024][H07] la segunda mutación textual debe volver a demostrar RED'
-    );
-    console.log('[CC-024][H07] RED repetido obtenido tras restaurar temporalmente la expresión vieja.');
+    const red = runConsentPgTap();
+    assertConsentPgTapFailure(red, description);
+    console.log(`[CC-024][H07] RED auténtico: pgTAP inalterado falló en ${description} (exit ${red.exit}).`);
   } finally {
     runSql(definition);
   }
 
-  assert.equal(
-    consentProbe(actorId, stringTruePayload(requestId())),
-    'VALIDATION_ERROR',
-    '[CC-024][H07] la restauración final debe dejar GREEN'
-  );
-  console.log('[CC-024][H07] GREEN final confirmado tras restaurar la guarda tipada.');
+  const green = runConsentPgTap();
+  assertConsentPgTapGreen(green, description);
+  console.log(`[CC-024][H07] GREEN auténtico: la misma suite pgTAP pasó tras restaurar la guarda JSONB (exit ${green.exit}).`);
 }
 
 async function runRetryMutationCheck(actorId) {
@@ -452,33 +445,33 @@ async function runRetryMutationCheck(actorId) {
   console.log('[CC-024][H06] GREEN obtenido tras restaurar idempotent=true.');
 }
 
-async function runWinnerOrderMutationCheck(actorId) {
+async function runWinnerOracleNegativeControl(actorId) {
   const divergent = participant(actorId, 'Nota diferente');
   const original = participant(actorId, 'Nota original');
   let redObserved = false;
 
   try {
     await runScenario({
-      name: 'ganador-invertido-mutante',
+      name: 'control-negativo-oraculo-ganador',
       participants: [divergent, original],
       winningIndex: 0,
       expected: 'VALIDATION_ERROR',
-      expectedWinnerIndex: 1,
+      assertedWinnerIndex: 1,
     });
   } catch (error) {
     if (!(error instanceof Error) || !error.message.includes('los datos privados del drop 1')) throw error;
     redObserved = true;
-    console.log('[CC-024][H06] RED obtenido: el escenario mutado fijó el payload original y falló la aserción de notas del ganador.');
+    console.log('[CC-024][H06] Control negativo de oráculo: una expectativa deliberadamente errónea fue detectada por la aserción de notas; no es una mutación funcional de backend.');
   }
-  assert.equal(redObserved, true, '[CC-024][H06] el mutante de inversión debe fallar en la aserción de datos persistidos');
+  assert.equal(redObserved, true, '[CC-024][H06] el control negativo debe ser detectado por la aserción de datos persistidos');
 
-    await runScenario({
-      name: 'ganador-invertido-restaurado',
-      participants: [divergent, original],
-      winningIndex: 0,
-      expected: 'VALIDATION_ERROR',
+  await runScenario({
+    name: 'control-negativo-oraculo-restaurado',
+    participants: [divergent, original],
+    winningIndex: 0,
+    expected: 'VALIDATION_ERROR',
   });
-  console.log('[CC-024][H06] GREEN obtenido tras restaurar el ganador explícito del escenario divergente.');
+  console.log('[CC-024][H06] Control negativo de oráculo restaurado: el escenario normal conserva el ganador real.');
 }
 
 async function run() {
@@ -530,8 +523,8 @@ async function run() {
       expected: 'NOT_FOUND',
     });
     await runRetryMutationCheck(merchantA);
-    await runWinnerOrderMutationCheck(merchantA);
-    await runConsentMutationCheck(merchantA);
+    await runWinnerOracleNegativeControl(merchantA);
+    await runConsentMutationCheck();
     console.log('[CC-024] 5 escenarios concurrentes GREEN: retry, dos ganadores invertidos y dos colisiones de actor.');
   } finally {
     runSql(`

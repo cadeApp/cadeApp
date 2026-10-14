@@ -2873,7 +2873,7 @@ begin
 end;
 $$;
 
-create function pg_temp.cc024_assert_rollback_failure() returns void language plpgsql as $$
+create function pg_temp.cc024_assert_rollback_instrumentation_control() returns void language plpgsql as $$
 declare
   v_result jsonb;
 begin
@@ -2882,15 +2882,15 @@ begin
     'audit_log:INSERT'
   );
   if v_result->>'error' <> 'CC024_TEST_FAILURE' then
-    raise exception using errcode = 'P0001', message = 'CC024_MUTANT_ASSERTION_FAILED';
+    raise exception using errcode = 'P0001', message = 'CC024_INSTRUMENTATION_ASSERTION_FAILED';
   end if;
 end;
 $$;
 
 select throws_matching(
-  'select pg_temp.cc024_assert_rollback_failure()',
-  'CC024_MUTANT_ASSERTION_FAILED',
-  'CC-024 H04 RED: sin el trigger de auditoría falla la aserción de CC024_TEST_FAILURE'
+  'select pg_temp.cc024_assert_rollback_instrumentation_control()',
+  'CC024_INSTRUMENTATION_ASSERTION_FAILED',
+  'CC-024 control negativo de instrumentación: sin trigger detecta ausencia de CC024_TEST_FAILURE'
 );
 
 do $$
@@ -2905,12 +2905,12 @@ $$;
 select is(
   pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b9', 'audit_log:INSERT')->>'error',
   'CC024_TEST_FAILURE',
-  'CC-024 H04 GREEN: restaurar el trigger vuelve a inyectar el error controlado'
+  'CC-024 control de instrumentación: restaurar el trigger repone el error controlado'
 );
 select is(
   pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b9', 'audit_log:INSERT')->>'audit',
   '0',
-  'CC-024 H04 GREEN: el rollback restaurado deja cero eventos de auditoría'
+  'CC-024 control de instrumentación: el rollback restaurado deja cero eventos de auditoría'
 );
 
 select pg_temp.reset_actor();
