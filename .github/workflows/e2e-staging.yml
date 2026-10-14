@@ -53,12 +53,11 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
       - name: Run staging E2E gate
-        run: >-
-          pnpm exec playwright test
-          e2e/specs/smoke.spec.ts
-          e2e/specs/main-flow.spec.ts
-          --project=chromium
-          --workers=1
+        shell: bash
+        # T-331: chromium corre todos los specs del SHA desplegado, descubiertos por playwright.config.ts.
+        # global-settings queda fuera de staging: cambia platform_settings de la base compartida.
+        run: |
+          pnpm exec playwright test --project=chromium --workers=1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

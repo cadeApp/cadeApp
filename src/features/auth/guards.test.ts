@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateRouteGuard,
+  getOnboardingPath,
   getRoleDefaultPath,
   isMerchantRoute,
   isCourierRoute,
@@ -30,6 +31,38 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(isPublicRoute('/register')).toBe(true);
     expect(isPublicRoute('/')).toBe(true);
     expect(isPublicRoute('/merchant/dashboard')).toBe(false);
+  });
+
+  describe('PR295-H16: documentos legales públicos antes de aceptar el consentimiento', () => {
+    it.each([
+      '/legal',
+      '/legal/terms',
+      '/legal/privacy',
+      '/legal/courier',
+      '/legal/pilot',
+    ])('%s permite lectura sin sesión', (pathname) => {
+      expect(isPublicRoute(pathname)).toBe(true);
+      expect(evaluateRouteGuard(pathname, null)).toEqual({ action: 'allow' });
+    });
+
+    it.each([
+      '/legal/admin',
+      '/legal/terms/private',
+      '/legal/terms-bypass',
+      '/legal/terms.json',
+      '/legal/terms/',
+      '/legal2',
+      '/courier/feed',
+      '/merchant/dashboard',
+      '/admin/applicants',
+      '/login/mfa',
+    ])('%s continúa protegido para usuarios anónimos', (pathname) => {
+      expect(isPublicRoute(pathname)).toBe(false);
+      expect(evaluateRouteGuard(pathname, null)).toEqual({
+        action: 'redirect',
+        redirectTo: `/login?redirectTo=${encodeURIComponent(pathname)}`,
+      });
+    });
   });
 
   it('redirecciona a /login si un usuario no autenticado intenta entrar a rutas protegidas', () => {
@@ -217,7 +250,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(incidentsAttempt.action).toBe('redirect');
   });
 
-  it('PR60-H02: admin con aal1 no entra a merchant ni courier y no cicla en /login/mfa', () => {
+  it('PR60-H02: admin con aal1 no entra a merchant ni courier, no cicla en /login/mfa y vuelve a su home real', () => {
     const adminAal1: AuthSession = {
       userId: 'usr-admin',
       email: 'admin@test.com',
@@ -229,11 +262,75 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     const merchantAttempt = evaluateRouteGuard('/merchant/dashboard', adminAal1);
     expect(merchantAttempt.action).toBe('redirect');
     if (merchantAttempt.action === 'redirect') {
-      expect(merchantAttempt.redirectTo).toBe(getRoleDefaultPath('admin'));
+      expect(merchantAttempt.redirectTo).toBe('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+      expect(merchantAttempt.redirectTo).not.toBe('/');
+    }
+
+    const courierAttempt = evaluateRouteGuard('/courier/feed', adminAal1);
+    expect(courierAttempt.action).toBe('redirect');
+    if (courierAttempt.action === 'redirect') {
+      expect(courierAttempt.redirectTo).toBe('/login/mfa?redirectTo=%2Fadmin%2Fapplicants');
+      expect(courierAttempt.redirectTo).not.toBe('/');
     }
 
     const mfaAttempt = evaluateRouteGuard('/login/mfa', adminAal1);
     expect(mfaAttempt.action).toBe('allow');
+  });
+
+  describe('PR248-H01: ningún admin autenticado cae en / al acceder a rutas de otro rol o aliases legacy', () => {
+    const adminAal1: AuthSession = {
+      userId: 'usr-admin-aal1',
+      email: 'admin@test.com',
+      role: 'admin',
+      aal: 'aal1',
+      consentStatus: 'active',
+    };
+    const adminAal2: AuthSession = {
+      ...adminAal1,
+      userId: 'usr-admin-aal2',
+      aal: 'aal2',
+    };
+
+    const testCases: Array<{
+      path: string;
+      session: AuthSession;
+      expectedRedirect: string;
+    }> = [
+      { path: '/merchant/dashboard', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/merchant/dashboard', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/courier/feed', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/courier/feed', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/requests', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/requests', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/requests/new', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/requests/new', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/feed', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/feed', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/offers', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/offers', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/profile', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/profile', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding/identity', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding/identity', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding/vehicle', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding/vehicle', session: adminAal2, expectedRedirect: '/admin/applicants' },
+      { path: '/onboarding/status', session: adminAal1, expectedRedirect: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants' },
+      { path: '/onboarding/status', session: adminAal2, expectedRedirect: '/admin/applicants' },
+    ];
+
+    it.each(testCases)(
+      'admin ($session.aal) accediendo a $path redirige a $expectedRedirect y nunca a /',
+      ({ path, session, expectedRedirect }) => {
+        const result = evaluateRouteGuard(path, session);
+        expect(result.action).toBe('redirect');
+        if (result.action === 'redirect') {
+          expect(result.redirectTo).toBe(expectedRedirect);
+          expect(result.redirectTo).not.toBe('/');
+        }
+      }
+    );
   });
 
   it('PR60-H04: resolvePostLoginRedirect previene Open Redirect y respeta rol', () => {
@@ -259,7 +356,7 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(resolvePostLoginRedirect('/', 'merchant', 'active')).toBe('/');
     expect(resolvePostLoginRedirect('/design-system', 'courier', 'active')).toBe('/design-system');
 
-    // PR87-H01: ningún redirect post-login puede terminar en 404 (rutas inexistentes o legales pendientes de T-311)
+    // PR87-H01: aliases inexistentes no pueden ser destino post-login; /legal es público, pero no destino post-login por rol
     expect(resolvePostLoginRedirect('/ruta-inexistente', 'merchant', 'active')).toBe('/merchant/dashboard');
     expect(resolvePostLoginRedirect('/ghost', 'courier', 'active')).toBe('/courier/feed');
     expect(resolvePostLoginRedirect('/terms', 'merchant', 'active')).toBe('/merchant/dashboard');
@@ -270,7 +367,8 @@ describe('T-009: Guardas por rol y protección de rutas', () => {
     expect(isPublicRoute('/terms')).toBe(false);
     expect(isPublicRoute('/privacy')).toBe(false);
     expect(isPublicRoute('/pilot-terms')).toBe(false);
-    expect(isPublicRoute('/legal')).toBe(false);
+    // PR295-H16: el índice legal ahora existe y es público; los aliases heredados siguen privados.
+    expect(isPublicRoute('/legal')).toBe(true);
   });
 
   describe('CC-007: Invariante de consentimiento legal obligatorio en guards', () => {
@@ -461,5 +559,304 @@ describe('T-320: Guardas para /auth/confirm y /reset-password', () => {
       consentStatus: 'active',
     };
     expect(evaluateRouteGuard('/reset-password', sessionActive)).toEqual({ action: 'allow' });
+  });
+});
+
+describe('T-334: onboarding incompleto redirige al onboarding sin loops', () => {
+  const baseSession = (
+    role: 'merchant' | 'courier' | 'admin',
+    onboardingComplete: boolean | undefined,
+    consentStatus: AuthSession['consentStatus'] = 'active'
+  ): AuthSession => ({
+    userId: `user-${role}`,
+    email: `${role}@cadeapp.test`,
+    role,
+    aal: role === 'admin' ? 'aal2' : 'aal1',
+    consentStatus,
+    onboardingComplete,
+  });
+
+  /** Sigue los redirects del guard como lo haría el navegador y falla ante un loop. */
+  function followGuard(start: string, session: AuthSession): string {
+    const visited: string[] = [];
+    let current = start;
+    for (let hop = 0; hop < 6; hop += 1) {
+      const [pathname = '/'] = current.split('?');
+      if (visited.includes(pathname)) {
+        throw new Error(`Loop de redirección: ${[...visited, pathname].join(' → ')}`);
+      }
+      visited.push(pathname);
+      const result = evaluateRouteGuard(pathname, session);
+      if (result.action === 'allow') return pathname;
+      current = result.redirectTo;
+    }
+    throw new Error(`Demasiados redirects desde ${start}: ${visited.join(' → ')}`);
+  }
+
+  const MERCHANT_OPERATIONAL = [
+    '/merchant/dashboard',
+    '/merchant/history',
+    '/merchant/plan',
+    '/merchant/requests',
+    '/merchant/requests/new',
+    '/merchant/requests/req-1',
+    '/requests',
+    '/requests/new',
+    '/requests/req-1',
+    '/dashboard',
+    '/history',
+    '/plan',
+  ];
+  const COURIER_OPERATIONAL = ['/courier', '/courier/feed', '/courier/offers', '/feed', '/offers'];
+  const PUBLIC_ROUTES = ['/', '/design-system', '/forgot-password', '/reset-password', '/auth/confirm'];
+
+  it('expone la ruta de onboarding de cada rol', () => {
+    expect(getOnboardingPath('merchant')).toBe('/merchant/onboarding');
+    expect(getOnboardingPath('courier')).toBe('/courier/onboarding/identity');
+  });
+
+  it.each(MERCHANT_OPERATIONAL)('comercio incompleto en %s termina en /merchant/onboarding', (path) => {
+    expect(followGuard(path, baseSession('merchant', false))).toBe('/merchant/onboarding');
+  });
+
+  it.each(COURIER_OPERATIONAL)(
+    'repartidor incompleto en %s termina en /courier/onboarding/identity',
+    (path) => {
+      expect(followGuard(path, baseSession('courier', false))).toBe('/courier/onboarding/identity');
+    }
+  );
+
+  it('rutas de onboarding, públicas, de auth y alias quedan accesibles sin loops (comercio)', () => {
+    const session = baseSession('merchant', false);
+    expect(followGuard('/merchant/onboarding', session)).toBe('/merchant/onboarding');
+    expect(followGuard('/onboarding', session)).toBe('/merchant/onboarding');
+    for (const path of PUBLIC_ROUTES) {
+      expect(followGuard(path, session)).toBe(path);
+    }
+    expect(followGuard('/login', session)).toBe('/merchant/onboarding');
+    expect(followGuard('/register', session)).toBe('/merchant/onboarding');
+    // Rutas del otro rol: terminan en el onboarding propio, sin ciclar.
+    expect(followGuard('/courier/feed', session)).toBe('/merchant/onboarding');
+  });
+
+  it('solo identity/vehicle y perfil quedan accesibles con onboarding incompleto; status vuelve a identity', () => {
+    const session = baseSession('courier', false);
+    for (const path of ['/courier/onboarding/identity', '/courier/onboarding/vehicle']) {
+      expect(followGuard(path, session)).toBe(path);
+    }
+    expect(followGuard('/courier/onboarding/status', session)).toBe(
+      '/courier/onboarding/identity'
+    );
+    expect(followGuard('/onboarding', session)).toBe('/courier/onboarding/identity');
+    expect(followGuard('/onboarding/identity', session)).toBe('/courier/onboarding/identity');
+    expect(followGuard('/onboarding/vehicle', session)).toBe('/courier/onboarding/vehicle');
+    expect(followGuard('/onboarding/status', session)).toBe('/courier/onboarding/identity');
+    // El perfil muestra «Completá tu registro» (y tiene el cierre de sesión): no se redirige.
+    expect(followGuard('/courier/profile', session)).toBe('/courier/profile');
+    expect(followGuard('/profile', session)).toBe('/courier/profile');
+    for (const path of PUBLIC_ROUTES) {
+      expect(followGuard(path, session)).toBe(path);
+    }
+    expect(followGuard('/login', session)).toBe('/courier/onboarding/identity');
+    expect(followGuard('/merchant/dashboard', session)).toBe('/courier/onboarding/identity');
+  });
+
+  it('PR240-H01: la excepción del perfil es exacta; sus subrutas siguen yendo al onboarding', () => {
+    // /courier/profile exacto sigue accesible (muestra «Completá tu registro»).
+    expect(followGuard('/courier/profile', baseSession('courier', false))).toBe('/courier/profile');
+    expect(
+      followGuard('/courier/profile/notifications', baseSession('courier', false))
+    ).toBe('/courier/onboarding/identity');
+  });
+
+  it('con onboarding completo no cambia nada', () => {
+    for (const path of ['/merchant/dashboard', '/merchant/requests/new', '/merchant/onboarding']) {
+      expect(evaluateRouteGuard(path, baseSession('merchant', true))).toEqual({ action: 'allow' });
+    }
+    for (const path of [
+      '/courier/feed',
+      '/courier/offers',
+      '/courier/profile',
+      '/courier/onboarding/status',
+    ]) {
+      expect(evaluateRouteGuard(path, baseSession('courier', true))).toEqual({ action: 'allow' });
+    }
+    expect(followGuard('/login', baseSession('merchant', true))).toBe('/merchant/dashboard');
+    expect(followGuard('/login', baseSession('courier', true))).toBe('/courier/feed');
+  });
+
+  it('CC-007 sigue primero: consentimiento no activo bloquea antes que el onboarding', () => {
+    const result = evaluateRouteGuard(
+      '/merchant/dashboard',
+      baseSession('merchant', false, 'pending')
+    );
+    expect(result).toEqual({
+      action: 'redirect',
+      redirectTo: '/login?consentRequired=1&redirectTo=%2Fmerchant%2Fdashboard',
+    });
+  });
+
+  it('admin no cambia aunque llegue un dato de onboarding', () => {
+    expect(evaluateRouteGuard('/admin/applicants', baseSession('admin', false))).toEqual({
+      action: 'allow',
+    });
+  });
+
+  it('resolvePostLoginRedirect manda al onboarding cuando está incompleto', () => {
+    expect(resolvePostLoginRedirect(null, 'merchant', 'active', false)).toBe('/merchant/onboarding');
+    expect(resolvePostLoginRedirect(null, 'courier', 'active', false)).toBe(
+      '/courier/onboarding/identity'
+    );
+    expect(resolvePostLoginRedirect('/merchant/requests/new', 'merchant', 'active', false)).toBe(
+      '/merchant/onboarding'
+    );
+    expect(resolvePostLoginRedirect('/courier/onboarding/vehicle', 'courier', 'active', false)).toBe(
+      '/courier/onboarding/vehicle'
+    );
+    // Completo: mismos destinos que antes.
+    expect(resolvePostLoginRedirect(null, 'merchant', 'active', true)).toBe('/merchant/dashboard');
+    expect(resolvePostLoginRedirect(null, 'courier', 'active', true)).toBe('/courier/feed');
+    // CC-007 sigue primero.
+    expect(resolvePostLoginRedirect(null, 'courier', 'pending', false)).toBe(
+      '/login?consentRequired=1'
+    );
+  });
+
+  describe('T-336: Navegación de retorno y 404 al home real de la sesión (/login como gateway)', () => {
+    it('usuario anónimo permanece en /login sin redirigir', () => {
+      expect(evaluateRouteGuard('/login', null)).toEqual({ action: 'allow' });
+    });
+
+    it('merchant completo en /login es redirigido a /merchant/dashboard', () => {
+      const session: AuthSession = {
+        userId: 'usr-m-complete',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: true,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/merchant/dashboard',
+      });
+      expect(followGuard('/login', session)).toBe('/merchant/dashboard');
+    });
+
+    it('merchant incompleto en /login es redirigido a /merchant/onboarding', () => {
+      const session: AuthSession = {
+        userId: 'usr-m-incomplete',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: false,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/merchant/onboarding',
+      });
+      expect(followGuard('/login', session)).toBe('/merchant/onboarding');
+    });
+
+    it('courier completo en /login es redirigido a /courier/feed', () => {
+      const session: AuthSession = {
+        userId: 'usr-c-complete',
+        email: 'c@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: true,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/courier/feed',
+      });
+      expect(followGuard('/login', session)).toBe('/courier/feed');
+    });
+
+    it('courier incompleto en /login es redirigido a /courier/onboarding/identity', () => {
+      const session: AuthSession = {
+        userId: 'usr-c-incomplete',
+        email: 'c@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'active',
+        onboardingComplete: false,
+      };
+      expect(evaluateRouteGuard('/login', session)).toEqual({
+        action: 'redirect',
+        redirectTo: '/courier/onboarding/identity',
+      });
+      expect(followGuard('/login', session)).toBe('/courier/onboarding/identity');
+    });
+
+    it('admin AAL1 en /login no cae en la landing y es redirigido al flujo MFA hacia /admin/applicants', () => {
+      const session: AuthSession = {
+        userId: 'usr-admin-aal1',
+        email: 'admin@test.com',
+        role: 'admin',
+        aal: 'aal1',
+        consentStatus: 'active',
+      };
+      const result = evaluateRouteGuard('/login', session);
+      expect(result).toEqual({
+        action: 'redirect',
+        redirectTo: '/login/mfa?redirectTo=%2Fadmin%2Fapplicants',
+      });
+      expect(followGuard('/login', session)).toBe('/login/mfa');
+    });
+
+    it('admin AAL2 en /login no cae en la landing y es redirigido a /admin/applicants', () => {
+      const session: AuthSession = {
+        userId: 'usr-admin-aal2',
+        email: 'admin@test.com',
+        role: 'admin',
+        aal: 'aal2',
+        consentStatus: 'active',
+      };
+      const result = evaluateRouteGuard('/login', session);
+      expect(result).toEqual({
+        action: 'redirect',
+        redirectTo: '/admin/applicants',
+      });
+      expect(followGuard('/login', session)).toBe('/admin/applicants');
+    });
+
+    it('admin AAL2 en /login/mfa es redirigido a /admin/applicants en vez de a /', () => {
+      const session: AuthSession = {
+        userId: 'usr-admin-aal2',
+        email: 'admin@test.com',
+        role: 'admin',
+        aal: 'aal2',
+        consentStatus: 'active',
+      };
+      const result = evaluateRouteGuard('/login/mfa', session);
+      expect(result).toEqual({
+        action: 'redirect',
+        redirectTo: '/admin/applicants',
+      });
+      expect(followGuard('/login/mfa', session)).toBe('/admin/applicants');
+    });
+
+    it('CC-007 conserva prioridad: merchant o courier con consentimiento no activo permanecen en /login', () => {
+      const pendingMerchant: AuthSession = {
+        userId: 'usr-m-pending',
+        email: 'm@test.com',
+        role: 'merchant',
+        aal: 'aal1',
+        consentStatus: 'pending',
+      };
+      expect(evaluateRouteGuard('/login', pendingMerchant)).toEqual({ action: 'allow' });
+
+      const reconsentCourier: AuthSession = {
+        userId: 'usr-c-reconsent',
+        email: 'c@test.com',
+        role: 'courier',
+        aal: 'aal1',
+        consentStatus: 'reconsent_required',
+      };
+      expect(evaluateRouteGuard('/login', reconsentCourier)).toEqual({ action: 'allow' });
+    });
   });
 });

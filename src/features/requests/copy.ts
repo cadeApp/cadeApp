@@ -53,6 +53,14 @@ export const requestsCopy = {
     changeCustomPlaceholder: 'Otro monto en efectivo',
     notesLabel: 'Indicaciones o referencias (opcional)',
     notesPlaceholder: 'Ej. Portón negro al lado del kiosco. Tocar timbre 2B.',
+    fixedPriceSection: 'Precio de envío acordado (opcional)',
+    fixedPriceLabel: 'Precio del envío acordado',
+    fixedPricePlaceholder: 'Ej. 1500 (vacío para recibir ofertas)',
+    fixedPriceHint:
+      'Si ya acordaste el costo del envío con tu cliente, podés fijarlo acá. Los repartidores solo podrán tomarlo por este monto.',
+    autoAssignLabel: 'Asignar al primer repartidor que tome',
+    autoAssignHint:
+      'El primer repartidor aprobado y disponible que acepte quedará asignado al instante.',
     submitButton: 'Publicar solicitud',
     submittingButton: 'Publicando solicitud...',
     mapOutOfAguilares:
@@ -62,6 +70,21 @@ export const requestsCopy = {
     errorGeneric: 'Ocurrió un error al crear la solicitud. Por favor, intentá nuevamente.',
     errorSubscription:
       'Tu cuenta no cuenta con una suscripción activa ni período piloto para publicar envíos. Contactate con soporte.',
+    addDropButton: 'Agregar otra entrega',
+    removeDropButton: 'Quitar entrega',
+    dropCardTitle: (index: number) => `Entrega ${index}`,
+    dropCounterAria: (index: number, total: number) => `Entrega ${index} de ${total}`,
+    dropsLimitReached: (max: number) => `Alcanzaste el límite de ${max} entregas por solicitud.`,
+    fixedPricePerDropHint:
+      'El precio del envío es por entrega. Si tenés varias entregas, se multiplica automáticamente.',
+    retryOriginalButton: 'Reintentar solicitud original',
+    startNewRequestButton: 'Comenzar otra solicitud',
+    confirmNewRequestButton: 'Confirmar nueva solicitud',
+    cancelNewRequestButton: 'Cancelar',
+    payloadConflictAlert:
+      'El intento anterior de publicación no pudo confirmarse y los datos del formulario cambiaron. El envío anterior podría haberse creado en el servidor.',
+    payloadConflictWarning:
+      'Atención: El intento anterior podría haberse creado en el servidor. Al confirmar, se generará una solicitud adicional independiente.',
   },
   offers: {
     waitingOffers: 'Esperando ofertas',

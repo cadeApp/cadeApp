@@ -1,11 +1,36 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { RPC_CONTRACTS } from '@/domain';
 import { callRequestRpc, createRequestsRpcServerClient } from './requests';
 
 const requestId = '10300000-0000-4000-8000-000000000020';
 const offerId = '10300000-0000-4000-8000-000000000030';
 const time = '2026-09-23T18:00:00.000Z';
+const multiDropInput = {
+  requestId,
+  pickupZoneId: '10300000-0000-4000-8000-000000000040',
+  pickupAddress: 'San Martín 100',
+  pickupLat: null,
+  pickupLng: null,
+  fixedPriceArs: null,
+  autoAssign: false,
+  drops: [
+    {
+      dropoffZoneId: '10300000-0000-4000-8000-000000000041',
+      dropoffAddress: 'Alberdi 200',
+      dropoffLat: null,
+      dropoffLng: null,
+      recipientName: 'Juan',
+      recipientPhone: '3865123456',
+      recipientConsentDeclared: true,
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      cashChangeAmount: null,
+      notes: null,
+    },
+  ],
+} as const;
 const cases = [
   {
     name: 'publish_request',
@@ -17,6 +42,9 @@ const cases = [
       publishedAt: time,
       expiresAt: time,
       routeDistanceM: 2000,
+      fixedPriceArs: null,
+      autoAssign: false,
+      dropsCount: 1,
     },
   },
   {
@@ -65,6 +93,28 @@ const cases = [
 ] as const;
 
 describe('T-103 — Wrapper de RPC de solicitudes', () => {
+  it('create_and_publish_multi_drop envía el payload completo en p_payload', async () => {
+    const output = {
+      requestId,
+      status: 'published' as const,
+      publishedAt: time,
+      expiresAt: time,
+      routeDistanceM: null,
+      fixedPriceArs: null,
+      autoAssign: false,
+      dropsCount: 1,
+      idempotent: false,
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
+
+    const result = await callRequestRpc({ rpc }, 'create_and_publish_multi_drop', multiDropInput);
+
+    expect(result).toEqual({ ok: true, data: output });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('create_and_publish_multi_drop', {
+      p_payload: multiDropInput,
+    });
+  });
+
   it('la matriz pgTAP contrasta los errores reales con los contratos vigentes', () => {
     const sql = readFileSync('supabase/tests/rpc_requests.sql', 'utf8');
     for (const c of cases) {
@@ -185,8 +235,19 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     );
 
     // AG-58: coincidencia bidireccional entre los códigos lanzados en la migración y la unión de RPC_CONTRACTS
+    const t339MigrationSql = existsSync(
+      'supabase/migrations/20261007090000_t339_fixed_price.sql'
+    )
+      ? readFileSync('supabase/migrations/20261007090000_t339_fixed_price.sql', 'utf8')
+      : '';
+    const t340MigrationSql = existsSync(
+      'supabase/migrations/20261009200000_t340_multi_drop.sql'
+    )
+      ? readFileSync('supabase/migrations/20261009200000_t340_multi_drop.sql', 'utf8')
+      : '';
+    const combinedSql = migrationSql + '\n' + t339MigrationSql + '\n' + t340MigrationSql;
     const raisedInMigration = new Set(
-      Array.from(migrationSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
+      Array.from(combinedSql.matchAll(/raise\s+exception\s+'([A-Z0-9_]+)'/gi)).map((m) => m[1])
     );
     const declaredInContracts = new Set(cases.flatMap((c) => RPC_CONTRACTS[c.name].errorCodes));
     expect([...raisedInMigration].sort()).toEqual([...declaredInContracts].sort());
@@ -240,11 +301,87 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     });
   }
 
-  it('report_no_show conserva false y el cliente implementa las ocho RPC del contrato', async () => {
+  describe('CC-022 / T-340 / H03: mark_drop_delivered y mark_drop_failed envían argumentos SQL exactos sin p_request_id', () => {
+    const dropId = '40000000-0000-4000-8000-000000000001';
+
+    it('mark_drop_delivered: envía exactamente { p_drop_id } a SQL sin ningún p_request_id', async () => {
+      const output = {
+        dropId,
+        requestId,
+        status: 'delivered' as const,
+        deliveredAt: time,
+        requestStatus: 'in_transit' as const,
+        idempotent: false,
+      };
+      const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
+      const result = await callRequestRpc({ rpc }, 'mark_drop_delivered', {
+        dropId,
+        requestId,
+      });
+
+      expect(result).toEqual({ ok: true, data: output });
+      expect(rpc).toHaveBeenCalledExactlyOnceWith('mark_drop_delivered', { p_drop_id: dropId });
+      const firstCallDelivered = rpc.mock.calls[0];
+      const calledArgsDelivered = (firstCallDelivered ? firstCallDelivered[1] : {}) as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(calledArgsDelivered).sort()).toEqual(['p_drop_id']);
+    });
+
+    it('mark_drop_failed: envía exactamente { p_drop_id, p_reason } a SQL sin ningún p_request_id', async () => {
+      const output = {
+        dropId,
+        requestId,
+        status: 'failed' as const,
+        failedReason: 'Destinatario ausente',
+        requestStatus: 'delivered' as const,
+        idempotent: false,
+      };
+      const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
+      const result = await callRequestRpc({ rpc }, 'mark_drop_failed', {
+        dropId,
+        requestId,
+        reason: '  Destinatario ausente  ',
+      });
+
+      expect(result).toEqual({ ok: true, data: output });
+      expect(rpc).toHaveBeenCalledExactlyOnceWith('mark_drop_failed', {
+        p_drop_id: dropId,
+        p_reason: 'Destinatario ausente',
+      });
+      const firstCallFailed = rpc.mock.calls[0];
+      const calledArgsFailed = (firstCallFailed ? firstCallFailed[1] : {}) as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(calledArgsFailed).sort()).toEqual(['p_drop_id', 'p_reason']);
+    });
+
+    it('mark_drop_delivered y mark_drop_failed mapean errores de Postgres P0001 a DomainErrorCode', async () => {
+      for (const rpcName of ['mark_drop_delivered', 'mark_drop_failed'] as const) {
+        for (const code of RPC_CONTRACTS[rpcName].errorCodes) {
+          const rpc = vi
+            .fn()
+            .mockResolvedValue({ data: null, error: { code: 'P0001', message: code } });
+          const input =
+            rpcName === 'mark_drop_delivered'
+              ? { dropId }
+              : { dropId, reason: 'Motivo' };
+          const result = await callRequestRpc({ rpc }, rpcName, input);
+          expect(result).toEqual({ ok: false, code });
+        }
+      }
+    });
+  });
+
+  it('report_no_show conserva false y el cliente implementa las RPC de solicitudes del contrato', async () => {
     const output = { requestId, status: 'cancelled', cancelledOfferId: offerId, expiresAt: null };
     const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
     const client = createRequestsRpcServerClient({ rpc });
-    expect(Object.keys(client).sort()).toEqual(cases.map((c) => c.name).sort());
+    expect(Object.keys(client).sort()).toEqual(
+      [...cases.map((c) => c.name), 'create_and_publish_multi_drop'].sort()
+    );
     expect(await client.report_no_show({ requestId, republish: false })).toEqual({
       ok: true,
       data: output,
@@ -317,6 +454,45 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
   }, 1000);
 
   describe('T-206: Cableado de push en transiciones de negocio (requests)', () => {
+    it('create_and_publish_multi_drop no despacha push en un retry idempotente', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 0,
+        sentCount: 0,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'published',
+          publishedAt: time,
+          expiresAt: time,
+          routeDistanceM: null,
+          fixedPriceArs: null,
+          autoAssign: false,
+          dropsCount: 1,
+          idempotent: true,
+        },
+        error: null,
+      });
+
+      try {
+        const result = await callRequestRpc(
+          { rpc },
+          'create_and_publish_multi_drop',
+          multiDropInput
+        );
+        expect(result.ok).toBe(true);
+        expect(safeNotifySpy).not.toHaveBeenCalled();
+      } finally {
+        safeNotifySpy.mockRestore();
+      }
+    });
+
     it('publish_request despacha push a repartidores habilitados y disponibles después del éxito', async () => {
       const push = await import('@/server/push');
       const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
@@ -376,6 +552,9 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
             publishedAt: time,
             expiresAt: time,
             routeDistanceM: 1500,
+            fixedPriceArs: null,
+            autoAssign: false,
+            dropsCount: 1,
           },
           error: null,
         };
@@ -444,6 +623,9 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           publishedAt: time,
           expiresAt: time,
           routeDistanceM: 1500,
+          fixedPriceArs: null,
+          autoAssign: false,
+          dropsCount: 1,
         },
         error: null,
       });
@@ -485,6 +667,9 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
           publishedAt: time,
           expiresAt: time,
           routeDistanceM: 1500,
+          fixedPriceArs: null,
+          autoAssign: false,
+          dropsCount: 1,
         },
         error: null,
       });

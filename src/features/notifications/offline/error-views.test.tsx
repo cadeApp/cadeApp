@@ -29,7 +29,7 @@ describe('T-201: Error and NotFound Views (T04)', () => {
     expect(mockReset).toHaveBeenCalledTimes(1);
 
     const homeLink = screen.getByRole('link', { name: /Ir al inicio/i });
-    expect(homeLink.getAttribute('href')).toBe('/');
+    expect(homeLink.getAttribute('href')).toBe('/login');
   });
 
   it('DoD: NotFound debe tener diseño consistente, copy es-AR y enlace para volver al inicio', () => {
@@ -39,6 +39,20 @@ describe('T-201: Error and NotFound Views (T04)', () => {
     expect(screen.getByText(/No encontramos lo que buscabas/i)).toBeTruthy();
 
     const homeLink = screen.getByRole('link', { name: /Ir al inicio/i });
-    expect(homeLink.getAttribute('href')).toBe('/');
+    expect(homeLink.tagName).toBe('A');
+    expect(homeLink.getAttribute('href')).toBe('/login');
+  });
+
+  it('T-336 / PR248-H04: ErrorView y NotFoundView deben emitir enlaces de documento nativos <a> hacia /login para forzar la ejecución de middleware y evitar router cache', () => {
+    const { unmount } = render(<NotFoundView />);
+    const notFoundLink = screen.getByRole('link', { name: /Ir al inicio/i });
+    expect(notFoundLink.tagName).toBe('A');
+    expect(notFoundLink.getAttribute('href')).toBe('/login');
+    unmount();
+
+    render(<ErrorView error={new Error('test')} reset={() => {}} />);
+    const errorLink = screen.getByRole('link', { name: /Ir al inicio/i });
+    expect(errorLink.tagName).toBe('A');
+    expect(errorLink.getAttribute('href')).toBe('/login');
   });
 });

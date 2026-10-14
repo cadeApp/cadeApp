@@ -4,6 +4,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: true,
+    // T-344 (decisión 2-A): limita el paralelismo para que los hooks pesados (cc007, verify-scaffold) no superen
+    // el hookTimeout por carga local; no se suben timeouts.
+    maxWorkers: 4,
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}', 'tools/**/*.test.{ts,tsx}'],
     exclude: ['node_modules', 'tools/lint-fixtures/**'],

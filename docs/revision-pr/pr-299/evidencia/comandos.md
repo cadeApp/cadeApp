@@ -1,0 +1,323 @@
+# Evidencia reproducible — PR #299, revisión independiente
+
+**HEAD de producto revisado:** `6fbde29f48cc502ff497d18c4488fcd442246bf6`. **Fecha:** 2026-10-08. No hay checkout local montado para esta sesión: el origen son blobs exactos obtenidos mediante GitHub y logs del CI. No se ha ejecutado pgTAP ni un E2E de integración desde este entorno. No ejecutar Docker/Supabase local o remoto.
+
+## RED confirmados por CI del SHA
+
+GitHub Actions, run `37743943883`:
+
+- Job `db-tests`, ID `113200879815`: al aplicar `20261007090000_t339_fixed_price.sql` → `ERROR: "v_consent_status" is not a known variable (SQLSTATE 42601)`; exit 1. La migración nunca llega a probar SQL pgTAP nuevo.
+- Job `unit`, ID `113200879836`: 125 test files / 1987 tests PASS; seguido de `ERROR: Coverage for branches (88.14%) does not meet "src/domain/**/*.ts" threshold (90%) for src/domain/testing/rpc-fake.ts`; exit 1.
+- `lint`, `typecheck`, `build`, `audit` y `bundle-budget`: success, no sustituyen DB ni cobertura. `e2e-preview` no verificado de forma independiente sobre el SHA.
+
+## Batería independiente de comprobación estática: código COMPLETO
+
+Copiar el harness al directorio temporal sin tocar ningún archivo del repo:
+
+```bash
+awk '/^```js audit-pr299.mjs$/{inside=1;next} /^```$/{if(inside)exit} inside{print}' \
+  docs/revision-pr/pr-299/evidencia/comandos.md > /tmp/audit-pr299.mjs
+PR299_ROOT="$PWD" node /tmp/audit-pr299.mjs
+```
+
+En el HEAD original la ejecución **debe terminar roja** porque las propiedades de H01/H02/H03/H04/H08/H09 no están satisfechas. Después de corregir las seis, se espera verde. Es un oráculo **estructural auxiliar**, no prueba lógica de SQL ni sustituto de pgTAP/CI.
+
+```js audit-pr299.mjs
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const root = process.env.PR299_ROOT || process.cwd();
+const get = (path) => readFileSync(join(root, path), 'utf8');
+const sql = get('supabase/migrations/20261007090000_t339_fixed_price.sql');
+const pgtap = get('supabase/tests/t339_fixed_price.sql');
+const domain = get('src/domain/t339-fixed-price.test.ts');
+const e2e = get('e2e/specs/fixed-price.spec.ts');
+
+function block(source, name) {
+  const start = source.toLowerCase().indexOf('create or replace function ' + name.toLowerCase() + '(');
+  assert(start >= 0, 'No existe la función ' + name);
+  const end = source.indexOf('\n$$;', start);
+  assert(end > start, 'Falta cierre de función ' + name);
+  return source.slice(start, end);
+}
+function consentIsConsistent(s) {
+  const b = block(s, 'app_private.request_cycle');
+  return /\bv_consent_status\s+public\.consent_status\s*;/i.test(b) &&
+    /into\s+v_role\s*,\s*v_consent_status/i.test(b) &&
+    /\bv_consent_status\s+is\s+distinct\s+from\s+'active'/i.test(b);
+}
+function offerLockedBeforeRequest(s) {
+  const b = block(s, 'public.accept_offer');
+  const offer = b.indexOf('where id = p_offer_id');
+  const req = b.indexOf('where id = v_offer.request_id');
+  return offer !== -1 && req > offer && /for share/i.test(b.slice(offer, req));
+}
+function fixedPriceGuardOnRetry(s) {
+  const b = block(s, 'public.take_request');
+  const start = b.indexOf('-- 5. Idempotencia');
+  const end = b.indexOf('-- 6. Estado', start);
+  assert(start >= 0 && end > start, 'Bloque de idempotencia no localizable');
+  return /v_req\.fixed_price_ars\s+is\s+not\s+null/i.test(b.slice(start, end));
+}
+function pgtapBalanced(s) {
+  const planned = Number(s.match(/select\s+plan\((\d+)\)/i)?.[1]);
+  const assertions = [...s.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|set_eq|bag_eq)\s*\(/gmi)].length;
+  return { planned, assertions, ok: planned === assertions };
+}
+
+const props = [
+  ['H01 actor consent', consentIsConsistent(sql)],
+  ['H02 lock order', !offerLockedBeforeRequest(sql)],
+  ['H03 fixed price for idempotence', fixedPriceGuardOnRetry(sql)],
+  ['H04 pgTAP assertion count', pgtapBalanced(pgtap).ok],
+  ['H08 E2E UI publication', !e2e.includes('seedDeliveryRequestInState') || /goto\([^)]*merchant[^)]*\)[\s\S]*?getByLabel/i.test(e2e)],
+  ['H09 no any', !/\bRecord<string,\s*any\s*>/.test(domain)],
+];
+
+let failures = 0;
+for (const [name, valid] of props) {
+  console.log((valid ? 'GREEN ' : 'RED   ') + name);
+  if (!valid) failures++;
+}
+console.log('pgTAP ' + JSON.stringify(pgtapBalanced(pgtap)));
+
+// Prueba de sensibilidad de detectores sobre transformaciones en memoria.
+// Las variantes NO se escriben en el repo y NO simulan una ejecución PostgreSQL.
+const consentRepaired = sql
+  .replace('v_consent public.consent_status;', 'v_consent_status public.consent_status;')
+  .replace("(v_consent is distinct from 'active')", "(v_consent_status is distinct from 'active')");
+assert.equal(consentIsConsistent(consentRepaired), true, 'control consentimiento no reconoce fixture corregida');
+assert.equal(consentIsConsistent(sql), false, 'control consentimiento no detecta bug');
+assert.equal(pgtapBalanced(pgtap).planned, 28);
+assert.equal(pgtapBalanced(pgtap).assertions, 26);
+assert.equal(pgtapBalanced(pgtap.replace('select plan(28)', 'select plan(26)')).ok, true);
+
+if (failures) {
+  console.error('FAIL: ' + failures + ' invariantes de PR299 incumplidas');
+  process.exitCode = 1;
+} else {
+  console.log('PASS: invariantes estructurales');
+}
+```
+
+**Verificación de ejecución:** la lógica equivalente se calculó sobre los blobs de `6fbde29` con un runner JS independiente de GitHub (resultado: seis checks RED; contador plan=28, aserciones=26). No se pudo ejecutar físicamente el archivo extraído en /tmp por falta de checkout del repositorio en el contenedor. No escribir «harness ejecutado en /tmp» hasta verificarlo al retomar.
+
+## Mutaciones RED de comportamiento que debe hacer el autor y revalidar luego la revisión
+
+| ID | Mutación en memoria / worktree efímero | Qué aserción debe quedar roja |
+|---|---|---|
+| H01 | revertir nombre `v_consent_status` a `v_consent` solo en declaración | falla aplicación de migración; luego restaurar |
+| H02 | volver a mover el lock de oferta antes del lock de solicitud | test real dos sesiones `accept_offer` queda rojo por `40P01` o timeout, sin quedarse colgado |
+| H03 | retirar condición `fixed_price_ars IS NOT NULL` en idempotencia SQL y fake | toma de solicitud sin precio con oferta propia pending/accepted debe devolver `NO_FIXED_PRICE` |
+| H04 | quitar comparación de piso al publicar | prueba de precio 999 vs piso 1000 debe ser roja por respuesta incorrecta |
+| H05 | quitar `FOR UPDATE` de solicitud o `FOR SHARE` de courier (de una sola ruta) | prueba real de carrera detecta doble match o match de courier no elegible |
+| H06 | convertir rama de rechazo de `take_request` a éxito | test de error específico debe caer, además de cumplir cobertura 90% |
+| H07 | mover comprobación de `RATE_LIMITED` por delante de `REQUEST_EXPIRED` en fake | test precondicionado con límite verdaderamente agotado debe caer |
+| H08 | omitir `auto_assign` o `fixed_price_ars` del payload UI | E2E publicando desde formulario falla su comprobación DB |
+| H09 | reintroducir `any` | grep/guard de tipos deja de pasar |
+
+Toda mutación se revierte **en memoria**, nunca con `git checkout` destructivo de cambios ajenos. Guardar salida RED y GREEN de cada prueba concreta, no solo afirmar «mutado».
+
+## Comandos finales cuando el autor arregle
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:coverage
+pnpm build
+node tools/verify-fichas.test.ts
+# pnpm db:types y pnpm test:db delegados al job db-tests del CI (sin Docker local)
+git diff --check
+git status --short
+git ls-remote origin feat/T-339-precio-fijo
+```
+
+Abrir logs del nuevo SHA: verificar aplicación de migración, archivos/número/resultados pgTAP, `pnpm db:types --local` y `git diff --exit-code`; después comprobar E2E preview del nuevo SHA. No alterar thresholds, no marcar «verificado» en bitácora y no escribir `docs/revision-pr/**` desde el agente autor.
+
+---
+
+# Ronda 2 — nueva evidencia independiente, SHA `5250d51922bf67a2f2555fe824c791ffe94ab1a3`
+
+## Logs de CI del SHA
+
+- Run `37750956332`. Unit job `113223757529`: 125 archivos / 1999 tests en verde, pero falla `coverage for branches 89.74% < 90%` sobre `src/domain/testing/rpc-fake.ts`.
+- DB job `113223757743`: migración T-339 aplicada; `rpc_offers.sql` PASS, `rpc_requests.sql` 7/1241 FAIL: tests 1098, 1103, 1104, 1148, 1154, 1161 y 1198; `t339_fixed_price.sql:68` CHECK `zones_centroid_lng_bounds`, 0 de 45 aserciones ejecutadas.
+- Fuente anterior del reloj y precedencia: `supabase/migrations/20261002010000_cc015_admin_cancel_requires_incident.sql` leída desde develop. Usa `v_now timestamptz := now();` y chequea `REASON_REQUIRED` antes de validar incidentes. Nuevo `request_cycle` de T-339 usa `clock_timestamp()` y orden opuesto.
+- Vercel bot en PR informa falla `api-deployments-free-per-day` (>100); no declarar `e2e-preview` verde.
+
+## Harness de invariantes estructurales R2 (completo, lectura solamente)
+
+Copia el código desde este archivo a `/tmp/audit-pr299-r2.mjs` en un checkout limpio del SHA; ejecutalo con `PR299_ROOT="$PWD" node /tmp/audit-pr299-r2.mjs`. Es **control auxiliar**, nunca una demostración de concurrencia SQL.
+
+```js audit-pr299-r2.mjs
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+const root=process.env.PR299_ROOT || process.cwd();
+const read=(p)=>readFileSync(join(root,p),'utf8');
+const migration=read('supabase/migrations/20261007090000_t339_fixed_price.sql');
+const pg=read('supabase/tests/t339_fixed_price.sql');
+const tests=read('src/domain/t339-fixed-price.test.ts');
+const e2e=read('e2e/specs/fixed-price.spec.ts');
+const fn=(name)=>{
+  const start=migration.indexOf('create or replace function '+name+'(');
+  if(start<0)throw new Error('No encontrado '+name);
+  return migration.slice(start,migration.indexOf('\n$$;',start));
+};
+const cycle=fn('app_private.request_cycle');
+const take=fn('public.take_request');
+const acc=fn('public.accept_offer');
+const checks=[
+['H01 fixed consent declaration',/v_consent_status public\.consent_status;/.test(cycle)&&/into v_role, v_consent_status/.test(cycle)],
+['H02 request precedes offer FOR UPDATE',acc.indexOf('for update;',acc.indexOf('where id = v_offer.request_id'))>=0],
+['H03 fixed-price retry gate',/if v_req\.fixed_price_ars is not null then/.test(take.slice(take.indexOf('-- 5. Idempotencia'),take.indexOf('-- 6. Estado')))],
+['H04 plan equals count',Number(pg.match(/select plan\((\d+)\)/)?.[1])===[...pg.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length],
+['H05 test has genuine 2-session concurrency',/dblink|pg_background/i.test(pg)||/Promise\.all\(/.test(e2e)],
+['H07 valid distinct attempts',/11th offer on a new valid request/.test(tests)],
+['H08 merchant publishes from UI',/gotoNewRequest\(/.test(e2e)&&/submitRequestButton\.click\(\)/.test(e2e)],
+['H09 no any',!/Record<string,\s*any>/.test(tests)],
+['H11 request_cycle preserves transaction clock',/v_now timestamptz := now\(\)/.test(cycle)],
+['H12 reason required before incident check',cycle.indexOf("raise exception 'REASON_REQUIRED'")<cycle.indexOf('and not exists (select 1 from public.incidents')],
+['H13 valid zone seeded directly',!/values\s*\(pg_temp\.zone_id\(\),\s*'Centro Aguilares',\s*true,\s*-27\.4333,\s*-27\.4333\)/i.test(pg)]
+];
+let failures=0;
+for(const [label,ok] of checks){console.log((ok?'GREEN ':'RED   ')+label);if(!ok)failures++}
+console.log('TOTAL RED='+failures);
+if(failures)process.exitCode=1;
+```
+
+**Resultados de inspección sobre los blobs exactos del SHA:** H01/H02/H03/H04/H07/H08/H09 = GREEN; H05/H11/H12/H13 = RED, y la cobertura H06 además es ROJA en CI. El control H05 es deliberadamente un proxy estático: incluso que muestre GREEN tras agregar `Promise.all` **NO valida dos transacciones reales**; verificar clientes Supabase distintos y el resultado en DB. El script tampoco comprueba mutaciones RED de SQL: esas requieren CI/DB. No se ejecutó una copia física en /tmp, porque en esta sesión no hay clone ni acceso DNS a GitHub; no se afirma lo contrario.
+
+## Mutaciones RED que la revisión exigirá en R3
+
+- H11: cambiar `v_now := now()` de `app_private.request_cycle` a `clock_timestamp()` en copia temporal → los seis timestamps dejan de coincidir.
+- H12: mover nuevamente validación de incidente sobre `REASON_REQUIRED` → `rpc_requests.sql` caso 1161 debe devolver INVALID_STATE_TRANSITION y ponerse rojo.
+- H13: en `INSERT zones` cambiar longitud `-65.6133` a `-27.4333` → error 23514, no disfrazarlo como aserción de éxito.
+- H05: remover `FOR UPDATE` de request o alterar el orden de lock en el código en memoria → un test realmente paralelo debe fallar en su invariante (no en fixture).
+- H06: mutar rama de error específica del fake → nueva aserción de comportamiento entra RED, restaurar y `pnpm test:coverage` GREEN con >=90% en CI.
+- H02/H03/H04/H08: conservar los arreglos e incluir pruebas independientes verificables, no aceptar solo el «6/6 GREEN» del auditor del autor.
+
+**No adulterar tests, snapshots, mocks o cobertura.** Todos los RED deben fallar por la propiedad prometida. Sin Docker ni Supabase remoto/local desde el agente; integración en `db-tests` y `e2e-preview` de CI. No disparar workflows manualmente, no editar `docs/revision-pr/**` desde la sesión autora.
+
+---
+
+## Ronda 3 — SHA `4836122bbbea3266e3832a2f8d670b52b411dc70`
+
+### Logs y hechos reproducibles
+
+- CI `37759343648`, `db-tests` job `113251668412`: migraciones aplicadas; `rpc_requests.sql ... ok` y `rpc_offers.sql ... ok`; `t339_fixed_price.sql:449 ERROR new row violates row-level security policy for table "offers"`; test 23 `have NULL / want published`; 42/45 aserciones, archivo FAIL.
+- CI mismo SHA, `unit` job `113251668686`: 2004 Vitest pasan; `rpc-fake.ts` **90.04%** ramas; job success.
+- Commit status: Vercel success; `e2e-preview error: BLOCKED / REQUIRES DEVELOP MIGRATION [dpl_EcxxBqNC7FqbpPW6B6qvdGiHErkm]`. Run `37759512274`: `resolve-preview success`, `e2e-preview skipped`. El gate está en `.github/workflows/e2e-preview-target.mjs`.
+- La suite `t339_fixed_price.sql` tiene `plan(45)` y 45 aserciones estáticas; plan igual NO implica ejecución completa.
+
+### Harness independiente completo — sin escribir en el árbol
+
+Extraer este bloque como `/tmp/pr299-r3.mjs` desde este archivo, en un checkout del SHA revisado, y correr `PR299_ROOT="$PWD" node /tmp/pr299-r3.mjs`. En el SHA rojo produce tres `RED`. Un verde posterior es **solo estructura**, no sustituye pgTAP/E2E.
+
+```js pr299-r3.mjs
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+const root=process.env.PR299_ROOT||process.cwd();
+const read=p=>readFileSync(join(root,p),'utf8');
+const sql=read('supabase/tests/t339_fixed_price.sql');
+const e2e=read('e2e/specs/fixed-price.spec.ts');
+const sect=(a,b)=>sql.slice(sql.indexOf(a),sql.indexOf(b,sql.indexOf(a)));
+const denials=sect('-- 17, 18, 19','-- 24, 25, 26');
+const accepted=sect('-- 38, 39, 40','-- 42, 43:');
+const fakeIdx=e2e.indexOf("test('H05.5:");
+const fake=fakeIdx<0?'':e2e.slice(fakeIdx,e2e.indexOf('\n    });',fakeIdx));
+function adminOracles(s){
+  const k=s.indexOf("(select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()");
+  return k>=0&&s.lastIndexOf('select pg_temp.reset_actor();',k)>s.lastIndexOf('select pg_temp.act_as',k);
+}
+const syntheticInsert=s=>/insert into public\.offers\s*\(id, request_id, courier_id, amount_ars, status, eta_minutes\)[\s\S]*?values\s*\(pg_temp\.other_offer_id\(\)/i.test(s);
+const testsConsent=s=>/rpc\(['"]take_request['"]/.test(s)&&(/UNAUTHORIZED_ACTOR/.test(s)||/expect\([^)]*error/.test(s));
+const checks=[
+ ['H14 privileged post-denial read',adminOracles(denials)],
+ ['H15 no artificial pending after match',!syntheticInsert(accepted)],
+ ['H16 no fake consent E2E',!fake||testsConsent(fake)],
+];
+for(const [label,ok] of checks)console.log((ok?'GREEN ':'RED   ')+label);
+const n=Number(sql.match(/select plan\((\d+)\)/)?.[1]);
+const m=[...sql.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length;
+console.log('pgTAP plan='+n+' statements='+m+' (does NOT mean actual PASS)');
+if(checks.some(([,ok])=>!ok))process.exitCode=1;
+```
+
+**Mutación auxiliar efectuada IN-MEMORY con blobs del HEAD (sin Docker, sin ejecutor SQL):** añadir `reset_actor` antes de los oráculos hace verde el detector H14; quitar el INSERT artificial hace verde H15. H16 no alcanza un RED de negocio porque el caso ni siquiera ejecuta RPC: esa es la falla del instrumento. No se hizo checkout/ejecución del script en /tmp en esta sesión; tampoco se afirman RED de PostgreSQL que no ocurrieron.
+
+### Mutaciones RED requeridas para la próxima ronda
+
+- H14: inspección privilegiada detecta una fila inyectada/estado cambiado, mientras el actor no consentido no la ve por RLS.
+- H15: sustituir ID de oferta perdedora por ganadora rompe aserción `ALREADY_MATCHED`; recuperar ganadora y confirmar otra rechazada.
+- H16: sin gate CC-007, una prueba verdadera que intenta `take_request` con actor pending/reconsent debería fallar por respuesta o mutación de estado. Borrar prueba placebo si no existe actor de test autorizado.
+- H05: `e2e-preview` debe ejecutar Playwright real con esquema compatible; no declarar verde con Vercel success o `resolve-preview success`.
+
+---
+
+## Ronda 4 — independencia de verificación en SHA `e3df20f5640af5d09c2ba3d9892214c87332cf28`
+
+### Evidencia remota de GitHub
+
+- Run 37848782303, `db-tests` 113556229038: `t339_fixed_price.sql ... ok`, `rpc_requests.sql ... ok`, `rpc_offers.sql ... ok`, `Files=20, Tests=1903, Result: PASS`. `db:types --local` generó tipos y no falló comparación posterior.
+- Unit 113556229393: 125 files y 2004 tests Vitest PASS, `src/domain/testing/rpc-fake.ts` ramas 90.04% PASS; jobs typecheck/lint/build/bundle-budget success.
+- Audit 113556229496: `pnpm audit --audit-level=high` exit 1; `handlebars <=4.7.9`, dos critical, dep path `eslint-plugin-boundaries > @boundaries/elements > handlebars`. GHSA-8r5x-fm3f-whwj y GHSA-p8wg-vrv2-v86f.
+- Reconciliación de seguridad: issue #311 CLOSED, PR #312 MERGED; commit `8fd2b67b9536` en develop cambia overrides a `handlebars 4.7.10`, check `audit` success en 37851911101 / 113566616105.
+- Branches: develop tip `f33d688ff2517ae8e37ed53ba1404a3f4968ec45`, HEAD PR `e3df20f`. Compare develop...HEAD `behind_by=11`, sin `pnpm-lock` en los 3 cambios de la ronda. No se ejecutó merge-tree real.
+- Vercel success, e2e-preview status `BLOCKED / REQUIRES DEVELOP MIGRATION`, no se ejecutó Playwright.
+
+### Harness independiente de estructura + mutaciones EN MEMORIA
+
+Este script se copia a `/tmp/pr299-r4.mjs` en checkout limpio del SHA exacto, y se ejecuta con `PR299_ROOT="$PWD" node /tmp/pr299-r4.mjs`. Un GREEN estructural **no** sustituye pgTAP ni E2E; la evidencia runtime para SQL viene del job real, no del contador.
+
+```js pr299-r4.mjs
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+
+const root=process.env.PR299_ROOT || process.cwd();
+const read=(p)=>readFileSync(join(root,p),'utf8');
+const pg=read('supabase/tests/t339_fixed_price.sql');
+const e2e=read('e2e/specs/fixed-price.spec.ts');
+
+function audit(sql,ts) {
+  const denials=sql.slice(sql.indexOf('-- 17, 18, 19'),sql.indexOf('-- 24, 25, 26'));
+  const reset=denials.indexOf('select pg_temp.reset_actor();');
+  const oracle=denials.indexOf('(select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()');
+  const accepted=sql.slice(sql.indexOf('-- 38, 39, 40'),sql.indexOf('-- 42, 43:'));
+  const second=accepted.indexOf('select pg_temp.act_as(pg_temp.courier_2_id());');
+  const take=accepted.indexOf('public.take_request(pg_temp.req_fixed_manual(), 15, null)');
+  const match=accepted.indexOf('(public.accept_offer(');
+  const count=Number(sql.match(/select plan\((\d+)\)/)?.[1]);
+  const statements=[...sql.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length;
+  return [
+    ['H14 inspector before RLS-free postconditions',reset>=0 && reset<oracle],
+    ['H15 second legitimate offer before accept',second>=0 && take>second && match>take],
+    ['H15 no raw offers INSERT in matched stage',!/\binsert\s+into\s+public\.offers\b/i.test(accepted)],
+    ['H15 final states checked',accepted.includes("'accepted'::public.offer_status")&&accepted.includes("'rejected'::public.offer_status")],
+    ['H16 previous placebo removed',!/test\(['"]H05\.5/.test(ts)],
+    ['H05 real client calls specified for later E2E',ts.includes('H05.1')&&ts.includes('H05.2')&&ts.includes('H05.3')&&[...ts.matchAll(/const\s+\[\s*res\w*,\s*res\w*\s*\]\s*=\s*await\s+Promise\.all\(/g)].length>=3],
+    ['plan matches number of SQL assertions',count===statements]
+  ];
+}
+const before=audit(pg,e2e);
+const removeReset=pg.replace('select pg_temp.reset_actor();\n\nselect is(\n  (select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()', 'select is(\n  (select count(*)::integer from public.offers where courier_id = pg_temp.courier_consent_pending_id()');
+const removeTake=pg.replace(/select lives_ok\(\s*\$\$ select public\.take_request\(pg_temp\.req_fixed_manual\(\), 15, null\) \$\$,[\s\S]*?\);\s*/, '');
+const addPlacebo=e2e.replace(/\n  \}\);\s*\}\);\s*$/, "\n  test('H05.5: falso',async()=>{expect(true).toBe(true)});\n  });\n});\n");
+const mut=[['H14',!audit(removeReset,e2e)[0][1]],['H15',!audit(removeTake,e2e)[1][1]],['H16',!audit(pg,addPlacebo)[4][1]]];
+console.log(before.map(([name,ok])=>(ok?'GREEN ':'RED   ')+name).join('\n'));
+console.log('Mutation sensitivity (in-memory only):',JSON.stringify(mut));
+console.log('pgTAP plan:',pg.match(/select plan\((\d+)\)/)?.[1],
+ 'statements:',[...pg.matchAll(/^\s*select\s+(?:is|ok|throws_ok|lives_ok|results_eq|bag_eq|set_eq)\s*\(/gmi)].length);
+if(before.some(([,ok])=>!ok)||mut.some(([,ok])=>!ok))process.exitCode=1;
+```
+
+**Control independiente del blob en memoria (sin checkout local):** H14=GREEN, H15=GREEN×3, H16=GREEN, H05 especificación=GREEN, plan igual=GREEN. Mutaciones en memoria: quitar `reset_actor` → H14 rojo, quitar `lives_ok(take_request)` de courier2 → H15 rojo, reintroducir H05.5 placebo → H16 rojo. No se editó la PR ni se ejecutó SQL mutado o código Playwright.
+
+### Próximos tests independientes (tras merge de develop)
+
+- Comprobar con CI del nuevo SHA `pnpm audit --audit-level=high` real y versión `handlebars 4.7.10`; no usar bypass de auditoría.
+- Verificar que las 48 aserciones pgTAP corren y pass y que `db:types --local` no detecta drift con los nuevos cambios de develop.
+- Verificar `unit`, `typecheck`, `lint`, `build`, `bundle-budget`, `approval-policy` y detectar conflictos de merge.
+- H05: E2E diferido por decisión A; registro post-migración con URL de corrida real, coincidencia de SHA/ambiente y oráculo de 3 carreras.
+

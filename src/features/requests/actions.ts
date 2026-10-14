@@ -1,17 +1,10 @@
 'use server';
 
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
-import { calculateHaversineRouteDistanceM, profileRoleSchema } from '@/domain/schemas';
-import { canMerchantPublishRequest } from '@/domain/states';
+import { profileRoleSchema } from '@/domain/schemas';
+import { callRequestRpc } from '@/server/rpc/requests';
 import { createClient } from '@/server/supabase/server';
-import type { Database, TablesInsert } from '@/types/database.types';
 import { createDeliveryRequestSchema } from './schemas';
-
-interface ZoneCentroidRow {
-  id: string;
-  centroid_lat: number | null;
-  centroid_lng: number | null;
-}
 
 export interface CreateDeliveryRequestResult {
   readonly requestId: string;
@@ -49,52 +42,7 @@ export async function createDeliveryRequestAction(
     return err('UNAUTHORIZED_ACTOR');
   }
 
-  // 3. Verificación de suscripción o piloto activo (canMerchantPublishRequest)
-  const { data: merchant, error: merchantError } = await supabase
-    .from('merchants')
-    .select('subscription_status, paid_until')
-    .eq('profile_id', user.id)
-    .maybeSingle<{
-      subscription_status: Database['public']['Enums']['merchant_subscription_status'];
-      paid_until: string | null;
-    }>();
-
-  if (merchantError || !merchant) {
-    return err('SUBSCRIPTION_INACTIVE');
-  }
-
-  const { data: settingsData } = await supabase
-    .from('platform_settings')
-    .select('key, value')
-    .in('key', ['pilot_active', 'subscription_grace_days']);
-
-  let pilotActive = true;
-  let subscriptionGraceDays = 0;
-
-  if (Array.isArray(settingsData)) {
-    for (const s of settingsData as Array<{ key: string; value: unknown }>) {
-      if (s.key === 'pilot_active' && typeof s.value === 'boolean') {
-        pilotActive = s.value;
-      }
-      if (s.key === 'subscription_grace_days' && typeof s.value === 'number') {
-        subscriptionGraceDays = s.value;
-      }
-    }
-  }
-
-  const eligibility = canMerchantPublishRequest({
-    subscriptionStatus: merchant.subscription_status,
-    pilotActive,
-    paidUntil: merchant.paid_until,
-    graceDays: subscriptionGraceDays,
-    now: new Date(),
-  });
-
-  if (!eligibility.ok) {
-    return err(eligibility.code);
-  }
-
-  // 4. Validación de datos de entrada con Zod
+  // 3. Validación de datos de entrada con Zod
   const parsed = createDeliveryRequestSchema.safeParse(input);
   if (!parsed.success) {
     return err('VALIDATION_ERROR');
@@ -102,93 +50,45 @@ export async function createDeliveryRequestAction(
 
   const data = parsed.data;
 
-  // 5. Cálculo de distancia server-side (Haversine con factor 1.30 o centroides de zones)
-  let routeDistanceM: number | null = null;
-
-  if (
-    data.pickupLat != null &&
-    data.pickupLng != null &&
-    data.dropoffLat != null &&
-    data.dropoffLng != null
-  ) {
-    routeDistanceM = calculateHaversineRouteDistanceM(
-      { lat: data.pickupLat, lng: data.pickupLng },
-      { lat: data.dropoffLat, lng: data.dropoffLng }
-    );
-  } else {
-    // Fallback: consulta centroides de los barrios seleccionados
-    const { data: zones } = await supabase
-      .from('zones')
-      .select<string, ZoneCentroidRow>('id, centroid_lat, centroid_lng')
-      .in('id', [data.pickupZoneId, data.dropoffZoneId]);
-
-    if (Array.isArray(zones) && zones.length > 0) {
-      const pickupZone = zones.find((z) => z.id === data.pickupZoneId);
-      const dropoffZone = zones.find((z) => z.id === data.dropoffZoneId);
-
-      if (
-        pickupZone?.centroid_lat != null &&
-        pickupZone?.centroid_lng != null &&
-        dropoffZone?.centroid_lat != null &&
-        dropoffZone?.centroid_lng != null
-      ) {
-        routeDistanceM = calculateHaversineRouteDistanceM(
-          { lat: pickupZone.centroid_lat, lng: pickupZone.centroid_lng },
-          { lat: dropoffZone.centroid_lat, lng: dropoffZone.centroid_lng }
-        );
-      }
-    }
+  // 4. Alta y publicación atómica mediante RPC (CC-024 / Gate 4)
+  // PR330-H09: el UUID proviene exclusivamente de la UI; la Server Action nunca genera ID por invocación.
+  if (!data.requestId) {
+    return err('VALIDATION_ERROR');
   }
 
-  // 6. Inserción en delivery_requests (status 'draft')
-  const requestPayload: TablesInsert<'delivery_requests'> = {
-    merchant_id: user.id,
-    pickup_zone_id: data.pickupZoneId,
-    dropoff_zone_id: data.dropoffZoneId,
-    package_type: data.packageType,
-    recipient_payment_method: data.recipientPaymentMethod,
-    needs_change: data.needsChange,
-    cash_change_amount: data.cashChangeAmount,
-    notes: data.notes ?? null,
-    status: 'draft',
-    route_distance_m: routeDistanceM,
-    approx_distance_m: routeDistanceM,
-  };
+  const rpcResult = await callRequestRpc(supabase, 'create_and_publish_multi_drop', {
+    requestId: data.requestId,
+    pickupZoneId: data.pickupZoneId,
+    pickupAddress: data.pickupAddress,
+    pickupLat: data.pickupLat ?? null,
+    pickupLng: data.pickupLng ?? null,
+    fixedPriceArs: data.fixedPriceArs ?? null,
+    autoAssign: data.autoAssign,
+    drops: data.drops.map((drop) => ({
+      dropoffZoneId: drop.dropoffZoneId,
+      dropoffAddress: drop.dropoffAddress,
+      dropoffLat: drop.dropoffLat ?? null,
+      dropoffLng: drop.dropoffLng ?? null,
+      recipientName: drop.recipientName,
+      recipientPhone: drop.recipientPhone,
+      recipientConsentDeclared: drop.recipientConsentDeclared,
+      packageType: drop.packageType,
+      recipientPaymentMethod: drop.recipientPaymentMethod,
+      needsChange: drop.needsChange,
+      cashChangeAmount:
+        drop.recipientPaymentMethod === 'cash' && drop.needsChange
+          ? (drop.cashChangeAmount ?? null)
+          : null,
+      notes: drop.notes ?? null,
+    })),
+  });
 
-  const { data: createdRequest, error: requestInsertError } = await supabase
-    .from('delivery_requests')
-    .insert(requestPayload as never)
-    .select('id')
-    .single<{ id: string }>();
-
-  if (requestInsertError || !createdRequest) {
-    return err('INTERNAL_ERROR');
-  }
-
-  // 7. Inserción en delivery_request_contacts
-  const contactsPayload: TablesInsert<'delivery_request_contacts'> = {
-    request_id: createdRequest.id,
-    pickup_address: data.pickupAddress,
-    pickup_lat: data.pickupLat ?? null,
-    pickup_lng: data.pickupLng ?? null,
-    dropoff_address: data.dropoffAddress,
-    dropoff_lat: data.dropoffLat ?? null,
-    dropoff_lng: data.dropoffLng ?? null,
-    recipient_name: data.recipientName,
-    recipient_phone: data.recipientPhone,
-    recipient_consent_declared: data.recipientConsentDeclared,
-  };
-
-  const { error: contactsInsertError } = await supabase
-    .from('delivery_request_contacts')
-    .insert(contactsPayload as never);
-
-  if (contactsInsertError) {
-    return err('INTERNAL_ERROR');
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
   }
 
   return ok({
-    requestId: createdRequest.id,
-    redirectTo: '/merchant/requests',
+    requestId: rpcResult.data.requestId,
+    redirectTo: '/merchant/dashboard',
   });
 }

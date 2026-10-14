@@ -41,6 +41,30 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
   const contacts = contactsResult.data;
   const request = requestResult.data;
 
+  const drops = trip.drops ?? [];
+  const firstDrop = drops[0];
+  const dropoffLat =
+    contacts != null
+      ? (firstDrop?.dropoffLat != null
+        ? Number(firstDrop.dropoffLat)
+        : contacts.dropoff_lat != null
+        ? Number(contacts.dropoff_lat)
+        : null)
+      : null;
+  const dropoffLng =
+    contacts != null
+      ? (firstDrop?.dropoffLng != null
+        ? Number(firstDrop.dropoffLng)
+        : contacts.dropoff_lng != null
+        ? Number(contacts.dropoff_lng)
+        : null)
+      : null;
+
+  const totalAmountArs = trip.amountArs * (drops.length || 1);
+  const collectibleAmountArs =
+    trip.amountArs * drops.filter((d) => d.status === 'delivered').length;
+  const allDropsFailed = drops.length > 0 && drops.every((d) => d.status === 'failed');
+
   return {
     id: trip.requestId,
     code: trip.code,
@@ -55,14 +79,17 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
     licensePlate: trip.vehiclePlate,
     avatarUrl: trip.avatarUrl,
     amountArs: trip.amountArs,
+    totalAmountArs,
+    collectibleAmountArs,
+    allDropsFailed,
     pickupAddress: trip.pickupAddress,
     pickupZoneName: trip.pickupZoneName,
     pickupLat: contacts?.pickup_lat != null ? Number(contacts.pickup_lat) : null,
     pickupLng: contacts?.pickup_lng != null ? Number(contacts.pickup_lng) : null,
     dropoffAddress: trip.dropoffAddress,
     dropoffZoneName: trip.dropoffZoneName,
-    dropoffLat: contacts?.dropoff_lat != null ? Number(contacts.dropoff_lat) : null,
-    dropoffLng: contacts?.dropoff_lng != null ? Number(contacts.dropoff_lng) : null,
+    dropoffLat,
+    dropoffLng,
     routeDistanceM: request?.route_distance_m != null ? Number(request.route_distance_m) : null,
     deliveryNotes: trip.deliveryNotes,
     recipientName: trip.recipientName,
@@ -74,5 +101,7 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
     matchedAt: trip.matchedAt,
     pickedUpAt: trip.pickedUpAt,
     deliveredAt: trip.deliveredAt,
+    dropsCount: trip.dropsCount ?? drops.length,
+    drops,
   };
 }

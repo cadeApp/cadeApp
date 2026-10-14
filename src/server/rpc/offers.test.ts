@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RPC_CONTRACTS, type RpcErrorCode } from '@/domain/rpc-contracts';
 import { createFakeRpcClient } from '@/domain/testing/rpc-fake';
 import {
@@ -9,6 +9,7 @@ import {
   mapOfferRpcError,
   setAvailabilityRpc,
   submitOfferRpc,
+  takeRequestRpc,
   withdrawOfferRpc,
   type SupabaseRpcCaller,
 } from '@/server/rpc/offers';
@@ -206,6 +207,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         requestId: REQ_1_ID,
         status: 'pending',
         amountArs: 1500,
+        totalAmountArs: 1500,
         createdAt: FIXED_NOW_ISO,
       },
       error: null,
@@ -224,6 +226,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         requestId: REQ_1_ID,
         status: 'pending',
         amountArs: 1500,
+        totalAmountArs: 1500,
         createdAt: FIXED_NOW_ISO,
       },
     });
@@ -325,6 +328,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         requestId: REQ_1_ID,
         status: 'pending',
         amountArs: 1500,
+        totalAmountArs: 1500,
         createdAt: FIXED_NOW_ISO,
       },
       error: null,
@@ -342,6 +346,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         requestId: REQ_1_ID,
         status: 'pending',
         amountArs: 1500,
+        totalAmountArs: 1500,
         createdAt: FIXED_NOW_ISO,
       },
     });
@@ -453,6 +458,18 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       }
     }
 
+    const t339File = fs.readdirSync(migrationsDir).find((f) => f.includes('t339'));
+    if (t339File) {
+      const t339Sql = fs.readFileSync(path.join(migrationsDir, t339File), 'utf8');
+      const t339Blocks = t339Sql.split(/create\s+or\s+replace\s+function\s+public\./i).slice(1);
+      for (const block of t339Blocks) {
+        const fnName = block.match(/^([a-z0-9_]+)\s*\(/i)?.[1];
+        if (fnName && blockByRpc.has(fnName)) {
+          blockByRpc.set(fnName, block);
+        }
+      }
+    }
+
     const expectedRpcs = ['submit_offer', 'withdraw_offer', 'set_availability'] as const;
     expect([...blockByRpc.keys()].sort()).toEqual([...expectedRpcs].sort());
 
@@ -511,6 +528,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
     let currentNow = new Date('2026-09-23T05:00:00.000Z');
     const REQ_EXPIRED_ID = '30000000-0000-4000-8000-000000000009';
     const REQ_DRAFT_ID = '30000000-0000-4000-8000-000000000010';
+    const REQ_3_ID = '30000000-0000-4000-8000-000000000011';
     const REQ_MISSING_ID = '30000000-0000-4000-8000-999999999999';
     const COURIER_SUSPENDED = '20000000-0000-4000-8000-000000000099';
 
@@ -546,6 +564,12 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
         },
         {
           requestId: REQ_2_ID,
+          merchantId: MERCHANT_ID,
+          status: 'published',
+          expiresAt: '2026-09-23T05:30:00.000Z',
+        },
+        {
+          requestId: REQ_3_ID,
           merchantId: MERCHANT_ID,
           status: 'published',
           expiresAt: '2026-09-23T05:30:00.000Z',
@@ -625,8 +649,7 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       expect(res, tc.label).toEqual({ ok: false, code: tc.expectedCode });
     }
 
-    // D06 / H11 + 6.ª fila de H10: alcanzar el tope de ventana (maxOffersPerMin = 2) con 2 ofertas exitosas
-    // y comprobar que la 3.ª llamada ante una solicitud vencida devuelve RATE_LIMITED (antes de REQUEST_EXPIRED)
+    // D06 / H11: alcanzar el tope de ventana (maxOffersPerMin = 2) con 2 ofertas exitosas
     fake.setActor({
       userId: COURIER_1_ID,
       role: 'courier',
@@ -640,16 +663,21 @@ describe('T-101 · RPC de Ofertas (submit_offer, withdraw_offer, set_availabilit
       await fake.submit_offer({ requestId: REQ_2_ID, amountArs: 1500, etaMinutes: 15 })
     ).toEqual({ ok: true, data: expect.objectContaining({ status: 'pending' }) });
 
-    // 6.ª fila de H10: en el tope (2/2 en la ventana) + solicitud vencida -> RATE_LIMITED
+    // CC-021 §3: con nueva precedencia, en el tope (2/2 en la ventana) + solicitud vencida -> REQUEST_EXPIRED (antes que RATE_LIMITED)
     expect(
       await fake.submit_offer({ requestId: REQ_EXPIRED_ID, amountArs: 1600, etaMinutes: 15 })
+    ).toEqual({ ok: false, code: 'REQUEST_EXPIRED' });
+
+    // En el tope (2/2 en la ventana) + solicitud válida no vencida -> RATE_LIMITED
+    expect(
+      await fake.submit_offer({ requestId: REQ_3_ID, amountArs: 1600, etaMinutes: 15 })
     ).toEqual({ ok: false, code: 'RATE_LIMITED' });
 
     // Al avanzar al minuto siguiente, la ventana se renueva
     currentNow = new Date('2026-09-23T05:01:00.000Z');
     expect(
-      await fake.submit_offer({ requestId: REQ_EXPIRED_ID, amountArs: 1600, etaMinutes: 15 })
-    ).toEqual({ ok: false, code: 'REQUEST_EXPIRED' });
+      await fake.submit_offer({ requestId: REQ_3_ID, amountArs: 1600, etaMinutes: 15 })
+    ).toEqual({ ok: true, data: expect.objectContaining({ status: 'pending' }) });
   });
 });
 
@@ -771,6 +799,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
         status: 'matched',
         matchedAt: '2026-09-23T10:00:00.000Z',
         idempotent: false,
+        totalAmountArs: 1500,
       },
     });
     for (const loser of losers) {
@@ -795,6 +824,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
         status: 'matched',
         matchedAt: '2026-09-23T10:00:00.000Z',
         idempotent: true,
+        totalAmountArs: 1500,
       },
     });
 
@@ -1115,6 +1145,12 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
   });
 
   describe('T-206: Cableado de push en transiciones de negocio (offers)', () => {
+    // Vitest 4 reutiliza un spy ya creado sobre el mismo método: sin restaurar entre casos, las llamadas de un test
+    // se acumulan en el siguiente (T-344, decisión 1-A).
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('submit_offer despacha push al comercio solicitante después del éxito de la RPC', async () => {
       const push = await import('@/server/push');
       const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
@@ -1166,6 +1202,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
               requestId: REQ_1_ID,
               status: 'pending',
               amountArs: 1500,
+              totalAmountArs: 1500,
               createdAt: FIXED_NOW_ISO,
             },
             error: null,
@@ -1240,6 +1277,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
             requestId: REQ_1_ID,
             status: 'pending',
             amountArs: 1500,
+            totalAmountArs: 1500,
             createdAt: FIXED_NOW_ISO,
           },
           error: null,
@@ -1287,6 +1325,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
             requestId: REQ_1_ID,
             status: 'pending',
             amountArs: 1500,
+            totalAmountArs: 1500,
             createdAt: FIXED_NOW_ISO,
           },
           error: null,
@@ -1377,6 +1416,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
               status: 'matched',
               matchedAt: FIXED_NOW_ISO,
               idempotent: false,
+              totalAmountArs: 1500,
             },
             error: null,
           };
@@ -1429,6 +1469,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
             status: 'matched',
             matchedAt: FIXED_NOW_ISO,
             idempotent: true,
+            totalAmountArs: 1500,
           },
           error: null,
         }),
@@ -1483,6 +1524,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
             status: 'matched',
             matchedAt: FIXED_NOW_ISO,
             idempotent: false,
+            totalAmountArs: 1500,
           },
           error: null,
         }),
@@ -1540,6 +1582,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
             status: 'matched',
             matchedAt: FIXED_NOW_ISO,
             idempotent: false,
+            totalAmountArs: 1500,
           },
           error: null,
         }),
@@ -1598,6 +1641,7 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
             status: 'matched',
             matchedAt: FIXED_NOW_ISO,
             idempotent: false,
+            totalAmountArs: 1500,
           },
           error: null,
         }),
@@ -1610,6 +1654,228 @@ describe('T-102 · RPC accept_offer atómica e idempotente', () => {
       expect(result.ok).toBe(true);
       expect(safeNotifySpy).not.toHaveBeenCalled();
       safeNotifySpy.mockRestore();
+    });
+  });
+
+  describe('T-339 / CC-021: RPC take_request y cableado de push/eventos', () => {
+    it('take_request con auto_assign = false (offerStatus: pending) despacha push offer_submitted al comercio y nunca offer_accepted', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 1,
+        sentCount: 1,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: MERCHANT_ID },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            offerId: OFFER_1_ID,
+            requestId: REQ_1_ID,
+            amountArs: 1500,
+            totalAmountArs: 1500,
+            offerStatus: 'pending',
+            requestStatus: 'published',
+            matchedAt: null,
+            idempotent: false,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await takeRequestRpc(client, {
+        requestId: REQ_1_ID,
+        etaMinutes: 20,
+        message: 'Voy en moto',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).toHaveBeenCalledTimes(1);
+      const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
+      expect(recipients).toEqual([MERCHANT_ID]);
+      expect(payload).toEqual({
+        event: 'offer_submitted',
+        requestId: REQ_1_ID,
+        offerId: OFFER_1_ID,
+      });
+      safeNotifySpy.mockRestore();
+    });
+
+    it('take_request con auto_assign = true (offerStatus: accepted) despacha push offer_accepted a ambas partes sin offer_submitted intermedio', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 2,
+        sentCount: 2,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const adminSupabase = await import('@/server/supabase/admin');
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { merchant_id: MERCHANT_ID },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { courier_id: COURIER_1_ID },
+                  error: null,
+                }),
+              }),
+            }),
+          };
+        }
+        return {};
+      });
+      vi.spyOn(adminSupabase, 'createAdminClient').mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            offerId: OFFER_1_ID,
+            requestId: REQ_1_ID,
+            amountArs: 1500,
+            totalAmountArs: 1500,
+            offerStatus: 'accepted',
+            requestStatus: 'matched',
+            matchedAt: FIXED_NOW_ISO,
+            idempotent: false,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await takeRequestRpc(client, {
+        requestId: REQ_1_ID,
+        etaMinutes: 15,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).toHaveBeenCalledTimes(1);
+      const [recipients, payload] = safeNotifySpy.mock.calls[0]!;
+      expect(recipients).toEqual([MERCHANT_ID, COURIER_1_ID]);
+      expect(payload).toEqual({
+        event: 'offer_accepted',
+        requestId: REQ_1_ID,
+        offerId: OFFER_1_ID,
+      });
+      safeNotifySpy.mockRestore();
+    });
+
+    it('take_request con idempotent: true NO genera push ni consulta destinatarios', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: {
+            offerId: OFFER_1_ID,
+            requestId: REQ_1_ID,
+            amountArs: 1500,
+            totalAmountArs: 1500,
+            offerStatus: 'accepted',
+            requestStatus: 'matched',
+            matchedAt: FIXED_NOW_ISO,
+            idempotent: true,
+          },
+          error: null,
+        }),
+      };
+
+      const result = await takeRequestRpc(client, {
+        requestId: REQ_1_ID,
+        etaMinutes: 15,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('take_request con fallo en gate de consentimiento CC-007 NO genera push y retorna error de dominio', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition');
+
+      const client: SupabaseRpcCaller = {
+        rpc: vi.fn().mockResolvedValue({
+          data: null,
+          error: { code: 'P0001', message: 'UNAUTHORIZED_ACTOR' },
+        }),
+      };
+
+      const result = await takeRequestRpc(client, {
+        requestId: REQ_1_ID,
+        etaMinutes: 15,
+      });
+
+      expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+      expect(safeNotifySpy).not.toHaveBeenCalled();
+      safeNotifySpy.mockRestore();
+    });
+
+    it('take_request valida entradas y mapea errores canónicos', async () => {
+      const client: SupabaseRpcCaller = { rpc: vi.fn() };
+
+      // Entrada inválida no llega a la base
+      expect(await takeRequestRpc(client, { requestId: 'invalid', etaMinutes: 15 })).toEqual({
+        ok: false,
+        code: 'VALIDATION_ERROR',
+      });
+      expect(client.rpc).not.toHaveBeenCalled();
+
+      // Mapeo de errores canónicos
+      for (const code of RPC_CONTRACTS.take_request.errorCodes) {
+        (client.rpc as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+          data: null,
+          error: { code: 'P0001', message: code },
+        });
+        const res = await takeRequestRpc(client, {
+          requestId: REQ_1_ID,
+          etaMinutes: 15,
+        });
+        expect(res).toEqual({ ok: false, code });
+      }
+
+      // createOffersRpcServerClient incluye take_request
+      const bound = createOffersRpcServerClient(client);
+      expect(typeof bound.take_request).toBe('function');
     });
   });
 });

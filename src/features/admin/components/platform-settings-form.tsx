@@ -16,6 +16,7 @@ import { updatePlatformSettingAction } from '../actions';
 import { ADMIN_COPY } from '../copy';
 import {
   graceDaysFormSchema,
+  maxDropsFormSchema,
   minOfferFormSchema,
   requestTtlFormSchema,
   termsVersionFormSchema,
@@ -97,6 +98,12 @@ export function PlatformSettingsForm({ settings }: PlatformSettingsFormProps) {
         schema={termsVersionFormSchema}
         initialValue={settings.pilotTermsVersion}
         toInput={(value) => ({ key: 'pilot_terms_version', value: value.trim() })}
+      />
+      <ValueSettingRow
+        settingKey="max_drops_per_request"
+        schema={maxDropsFormSchema}
+        initialValue={String(settings.maxDropsPerRequest)}
+        toInput={(value) => ({ key: 'max_drops_per_request', value: Number(value) })}
       />
     </div>
   );

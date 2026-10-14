@@ -14,6 +14,8 @@ const TripCancelDialog = dynamic<TripCancelDialogProps>(
 import {
   markTripPickedUpAction,
   markTripDeliveredAction,
+  markDropDeliveredAction,
+  markDropFailedAction,
   courierCancelTripAction,
 } from '../actions';
 import { notify } from '@/ui/notify';
@@ -49,6 +51,30 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
     });
   };
 
+  const handleMarkDropDelivered = (dropId: string) => {
+    startTransition(async () => {
+      const res = await markDropDeliveredAction({ requestId: trip.id, dropId });
+      if (res.ok) {
+        notify.success('Entrega confirmada.');
+        router.refresh();
+      } else {
+        notify.error('No se pudo confirmar la entrega.');
+      }
+    });
+  };
+
+  const handleMarkDropFailed = (dropId: string, reason: string) => {
+    startTransition(async () => {
+      const res = await markDropFailedAction({ requestId: trip.id, dropId, reason });
+      if (res.ok) {
+        notify.success('Entrega registrada como no entregada.');
+        router.refresh();
+      } else {
+        notify.error('No se pudo registrar la entrega no realizada.');
+      }
+    });
+  };
+
   const handleOpenCancelModal = () => {
     setCancelModalOpen(true);
   };
@@ -76,6 +102,8 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
         trip={trip}
         onAdvanceTrip={handleAdvanceTrip}
         onCancelTrip={handleOpenCancelModal}
+        onMarkDropDelivered={handleMarkDropDelivered}
+        onMarkDropFailed={handleMarkDropFailed}
         isAdvancing={isPending}
       />
       <TripCancelDialog

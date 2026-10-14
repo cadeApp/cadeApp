@@ -44,7 +44,7 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
     // Coordenadas de San Miguel de Tucumán o fuera de Aguilares
     const outsideLat = {
       ...validPayload,
-      defaultPickupLat: -26.82, // Tucumán capital (fuera de [-27.455, -27.41])
+      defaultPickupLat: -26.82, // Tucumán capital (fuera de [-27.48, -27.38], CC-019)
       defaultPickupLng: -65.61,
     };
     const latResult = merchantOnboardingSchema.safeParse(outsideLat);
@@ -53,7 +53,7 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
     const outsideLng = {
       ...validPayload,
       defaultPickupLat: -27.43,
-      defaultPickupLng: -65.1, // Fuera de [-65.64, -65.595]
+      defaultPickupLng: -65.1, // Fuera de [-65.645, -65.58], CC-019
     };
     const lngResult = merchantOnboardingSchema.safeParse(outsideLng);
     expect(lngResult.success).toBe(false);

@@ -16,10 +16,46 @@ import {
   getRequestInspectionData,
   findRequestIdByNotesMarker,
   cleanupStagingData,
+  base32Decode,
+  generateTotp,
+  seedAdminUser,
+  elevateAdminToAal2,
+  seedDeliveryRequestInState,
+  getPlatformSettingNumber,
+  setMerchantSubscriptionStatus,
   KNOWN_STAGING_PROJECT_REFS,
   type StagingSeedContext,
   type AdminClientType,
 } from './staging-seed';
+
+/**
+ * Fake de `delivery_requests.update(...).eq('id', x).eq('status', 'draft').select('id').single()`,
+ * la única forma en que los seeds publican una solicitud de fixture (T-340, PR320-H01/H02).
+ */
+function draftFinalizeUpdate(
+  onUpdate?: (payload: Record<string, unknown>, filters: Record<string, unknown>) => void
+) {
+  return vi.fn((payload: Record<string, unknown>) => {
+    const filters: Record<string, unknown> = {};
+    const chain = {
+      eq: (column: string, value: unknown) => {
+        filters[column] = value;
+        return chain;
+      },
+      // cleanupStagingData desvincula accepted_offer_id con update().in('id', ids).
+      in: async () => ({ error: null }),
+      select: () => ({
+        single: async () => {
+          onUpdate?.(payload, filters);
+          return { data: { id: filters.id }, error: null };
+        },
+      }),
+    };
+    return chain;
+  });
+}
+
+const childInsertOk = () => ({ insert: vi.fn().mockResolvedValue({ error: null }) });
 
 describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-Closed', () => {
   describe('Protección fail-closed de entorno (assertAllowedE2EEnvironment)', () => {
@@ -215,7 +251,11 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                   }),
                 };
               }),
+              update: draftFinalizeUpdate(),
             };
+          }
+          if (table === 'delivery_request_drops' || table === 'delivery_request_drop_contacts') {
+            return childInsertOk();
           }
           if (table === 'profiles' || table === 'merchants') {
             return {
@@ -250,6 +290,11 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(row.merchant_id).not.toContain('e2e_');
       expect(row.pickup_zone_id).not.toBe('caba_norte');
 
+      // Con zonas activas reutilizadas, el seed NO crea zonas nuevas ni las
+      // registra para cleanup. No debe confundirse con ausencia de zonas.
+      expect(row.pickup_zone_id).toBe(mockZoneId);
+      expect(row.dropoff_zone_id).toBe(mockZoneId);
+      expect(ctx.createdZoneIds).toHaveLength(0);
       expect(ctx.createdRequestIds).toContain(row.id);
     });
 
@@ -287,7 +332,10 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             };
           }
           if (table === 'delivery_requests') {
-            return { insert: requestInsert };
+            return { insert: requestInsert, update: draftFinalizeUpdate() };
+          }
+          if (table === 'delivery_request_drops' || table === 'delivery_request_drop_contacts') {
+            return childInsertOk();
           }
           throw new Error(`Unexpected table: ${table}`);
         }),
@@ -627,6 +675,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                   }),
                 }),
               }),
+              update: draftFinalizeUpdate(),
               delete: vi.fn().mockReturnValue({ in: deleteReqMock }),
             };
           }
@@ -637,6 +686,7 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
             };
           }
           return {
+            insert: vi.fn().mockResolvedValue({ error: null }),
             delete: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
           };
         }),
@@ -932,6 +982,8 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       const mockReqId = '123e4567-e89b-12d3-a456-426614175015';
 
       const contactInserts: Array<Record<string, unknown>> = [];
+      const dropInserts: Array<Record<string, unknown>> = [];
+      const dropContactInserts: Array<Record<string, unknown>> = [];
       const offerInserts: Array<Record<string, unknown>> = [];
 
       let userCounter = 0;
@@ -958,12 +1010,29 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                   single: vi.fn().mockResolvedValue({ data: { id: mockReqId }, error: null }),
                 })),
               })),
+              update: draftFinalizeUpdate(),
             };
           }
           if (table === 'delivery_request_contacts') {
             return {
               insert: vi.fn(async (payload: Record<string, unknown>) => {
                 contactInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return {
+              insert: vi.fn(async (payload: Record<string, unknown>) => {
+                dropInserts.push(payload);
+                return { error: null };
+              }),
+            };
+          }
+          if (table === 'delivery_request_drop_contacts') {
+            return {
+              insert: vi.fn(async (payload: Record<string, unknown>) => {
+                dropContactInserts.push(payload);
                 return { error: null };
               }),
             };
@@ -1012,6 +1081,23 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
       expect(contact0?.recipient_name).toBe('Juan Pérez Test');
       expect(contact0?.recipient_consent_declared).toBe(true);
       expect(ctx.createdContactRequestIds).toContain(mockReqId);
+
+      // CC-022: una solicitud publicada del seed debe tener exactamente
+      // un drop real y contactos privados con FK consistente.
+      expect(dropInserts).toHaveLength(1);
+      const [drop] = dropInserts;
+      expect(drop?.request_id).toBe(mockReqId);
+      expect(drop?.position).toBe(1);
+      expect(drop?.dropoff_zone_id).toBe(mockZoneId);
+      expect(drop?.status).toBe('pending');
+      expect(dropContactInserts).toHaveLength(1);
+      const [dropContact] = dropContactInserts;
+      expect(dropContact?.drop_id).toBe(drop?.id);
+      expect(isValidUuid(dropContact?.drop_id as string)).toBe(true);
+      expect(dropContact?.recipient_name).toBe('Juan Pérez Test');
+      expect(dropContact?.recipient_phone).toBe('+5493865123456');
+      expect(dropContact?.recipient_consent_declared).toBe(true);
+      expect(dropContact?.notes).toBe(`E2E automated test run ${ctx.testRunId}`);
 
       // Verificación de inserción y tracking de 2 ofertas reales
       expect(offerInserts).toHaveLength(2);
@@ -1381,6 +1467,26 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
                 })),
               };
             }
+            if (table === 'incidents') {
+              return {
+                select: vi.fn(() => ({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [],
+                    error: null,
+                  }),
+                })),
+              };
+            }
+            if (table === 'request_cancellation_reasons') {
+              return {
+                select: vi.fn(() => ({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [],
+                    error: null,
+                  }),
+                })),
+              };
+            }
             throw new Error(`Unexpected table: ${table}`);
           }),
         } as unknown as AdminClientType;
@@ -1695,6 +1801,61 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         } as unknown as AdminClientType;
 
         const foundId = await findRequestIdByNotesMarker(ctx, 'marker-exact-456', mockClient);
+        expect(foundId).toBe(mockRequestId);
+        expect(ctx.createdRequestIds).toContain(mockRequestId);
+      });
+
+      it('encuentra solicitud por marcador en delivery_request_drop_contacts cuando delivery_requests.notes es null (Paso 3)', async () => {
+        const ctx = createStagingSeedContext();
+        ctx.merchantUser = {
+          id: mockMerchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockDropId = '11111111-1111-4111-8111-111111111111';
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockResolvedValue({
+                      data: [], // notes es null en delivery_requests tras la limpieza de Paso 3
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_request_drop_contacts') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [{ drop_id: mockDropId }],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_request_drops') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  in: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockResolvedValue({
+                      data: [{ request_id: mockRequestId }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            return {};
+          }),
+        } as unknown as AdminClientType;
+
+        const foundId = await findRequestIdByNotesMarker(ctx, 'marker-drop-contact-789', mockClient);
         expect(foundId).toBe(mockRequestId);
         expect(ctx.createdRequestIds).toContain(mockRequestId);
       });
@@ -2096,6 +2257,1493 @@ describe('H02 / H08 / H10: Seed y Cleanup REAL en Staging con protección Fail-C
         expect(profileDeleted).toBe(true);
         expect(authUserDeleted).toBe(true);
       });
+    });
+  });
+
+  describe('T-304: Extensiones de seed, autenticación, MFA y estados para E2E real', () => {
+    const validEnv = {
+      NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+      E2E_TEST: 'true',
+    };
+
+    describe('base32Decode y generateTotp (RFC 6238)', () => {
+      it('decodifica correctamente base32 y maneja caracteres inválidos', () => {
+        const decoded = base32Decode('JBSWY3DPEHPK3PXP');
+        expect(decoded.toString('latin1')).toBe('Hello!\xde\xad\xbe\xef');
+
+        expect(() => base32Decode('INVALID_CHAR_89!')).toThrow(/Carácter base32 inválido/i);
+      });
+
+      it('genera código TOTP de 6 dígitos numéricos determinístico', () => {
+        const fixedTimeMs = 1700000000000;
+        const code1 = generateTotp('JBSWY3DPEHPK3PXP', fixedTimeMs);
+        const code2 = generateTotp('JBSWY3DPEHPK3PXP', fixedTimeMs);
+
+        expect(code1).toMatch(/^\d{6}$/);
+        expect(code1).toBe(code2);
+      });
+    });
+
+    describe('trackEntityForCleanup para incidentes', () => {
+      it('registra incidentes con UUIDs válidos y rechaza inválidos', () => {
+        const ctx = createStagingSeedContext();
+        const validIncidentId = '11111111-2222-3333-4444-555555555555';
+
+        trackEntityForCleanup(ctx, 'incident', validIncidentId);
+        expect(ctx.createdIncidentIds).toContain(validIncidentId);
+
+        expect(() => trackEntityForCleanup(ctx, 'incident', 'invalid-id')).toThrow(
+          /UUID válido/i
+        );
+      });
+    });
+
+    describe('Limpieza de incidents (H11)', () => {
+      it('consulta incidents para request_ids creados y agrega los IDs descubiertos a createdIncidentIds', async () => {
+        const ctx = createStagingSeedContext();
+        const reqId = '11111111-1111-4111-8111-111111111111';
+        const incId = '22222222-2222-4222-8222-222222222222';
+        ctx.createdRequestIds = [reqId];
+
+        const incidentsDeleteIn = vi.fn().mockResolvedValue({ error: null });
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({
+                    data: [{ id: incId }],
+                    error: null,
+                  }),
+                }),
+                delete: vi.fn().mockReturnValue({
+                  in: incidentsDeleteIn,
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient, validEnv);
+        expect(incidentsDeleteIn).toHaveBeenCalledWith('id', [incId]);
+      });
+
+      it('ejecuta delete() sobre incidents antes de delivery_requests', async () => {
+        const ctx = createStagingSeedContext();
+        const reqId = '11111111-1111-4111-8111-111111111111';
+        const incId = '22222222-2222-4222-8222-222222222222';
+        ctx.createdRequestIds = [reqId];
+        ctx.createdIncidentIds = [incId];
+
+        const callOrder: string[] = [];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ data: [], error: null }),
+                }),
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockImplementation(() => {
+                    callOrder.push('incidents.delete');
+                    return Promise.resolve({ error: null });
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockImplementation(() => {
+                    callOrder.push('delivery_requests.delete');
+                    return Promise.resolve({ error: null });
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient, validEnv);
+        expect(callOrder).toEqual(['incidents.delete', 'delivery_requests.delete']);
+        expect(ctx.createdIncidentIds).toHaveLength(0);
+        expect(ctx.createdRequestIds).toHaveLength(0);
+      });
+
+      it('si el delete de incidents falla, conserva los IDs en createdIncidentIds y reporta cleanupErrors', async () => {
+        const ctx = createStagingSeedContext();
+        const incId = '22222222-2222-4222-8222-222222222222';
+        ctx.createdIncidentIds = [incId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  in: vi.fn().mockResolvedValue({ error: { message: 'FK violation or DB error' } }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(cleanupStagingData(ctx, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Cleanup Error\] Falló la limpieza de staging: incidents.*FK violation or DB error/i
+        );
+        expect(ctx.createdIncidentIds).toContain(incId);
+      });
+
+      it('no intenta delete() sobre incidents si no hay ninguno registrado ni descubierto', async () => {
+        const ctx = createStagingSeedContext();
+        let incidentsDeleteCalled = false;
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'incidents') {
+              return {
+                delete: vi.fn().mockImplementation(() => {
+                  incidentsDeleteCalled = true;
+                  return { in: vi.fn().mockResolvedValue({ error: null }) };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await cleanupStagingData(ctx, mockClient, validEnv);
+        expect(incidentsDeleteCalled).toBe(false);
+      });
+    });
+
+    describe('seedAdminUser (H12)', () => {
+      it('crea usuario administrador en auth y profiles con bootstrap legítimo y tracking', async () => {
+        const ctx = createStagingSeedContext();
+        const mockAdminId = '99999999-8888-7777-6666-555555555555';
+
+        const createUserMock = vi.fn().mockResolvedValue({
+          data: { user: { id: mockAdminId } },
+          error: null,
+        });
+        const updateUserByIdMock = vi.fn().mockResolvedValue({
+          data: { user: { id: mockAdminId } },
+          error: null,
+        });
+
+        const merchantsDeleteEqMock = vi.fn().mockResolvedValue({ error: null });
+        const profilesUpdateEqMock = vi.fn().mockResolvedValue({ error: null });
+
+        let profilesUpdatePayload: unknown = null;
+
+        const mockClient = {
+          auth: {
+            admin: {
+              createUser: createUserMock,
+              updateUserById: updateUserByIdMock,
+            },
+          },
+          from: vi.fn((table: string) => {
+            if (table === 'merchants') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  eq: merchantsDeleteEqMock,
+                }),
+              };
+            }
+            if (table === 'profiles') {
+              return {
+                update: vi.fn((payload) => {
+                  profilesUpdatePayload = payload;
+                  return {
+                    eq: profilesUpdateEqMock,
+                  };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const creds = await seedAdminUser(ctx, mockClient, validEnv);
+
+        // 1. auth.admin.createUser recibe role: 'merchant' (no 'admin' para evitar INVALID_SIGNUP_ROLE)
+        expect(createUserMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            user_metadata: expect.objectContaining({ role: 'merchant' }),
+          })
+        );
+
+        // 2. se ejecuta delete sobre merchants con eq('profile_id', adminUserId)
+        expect(merchantsDeleteEqMock).toHaveBeenCalledWith('profile_id', mockAdminId);
+
+        // 3. se ejecuta update sobre profiles con role: 'admin'
+        expect(profilesUpdatePayload).toEqual(
+          expect.objectContaining({
+            role: 'admin',
+            consent_status: 'active',
+          })
+        );
+        expect(profilesUpdateEqMock).toHaveBeenCalledWith('id', mockAdminId);
+
+        // 4. se ejecuta updateUserById con role: 'admin'
+        expect(updateUserByIdMock).toHaveBeenCalledWith(
+          mockAdminId,
+          expect.objectContaining({
+            user_metadata: expect.objectContaining({ role: 'admin' }),
+          })
+        );
+
+        // Credenciales y tracking
+        expect(creds.id).toBe(mockAdminId);
+        expect(creds.role).toBe('admin');
+        expect(creds.email).toContain('admin@cadeapp-staging.test');
+        expect(ctx.createdUserIds).toContain(mockAdminId);
+        expect(ctx.adminUser).toEqual(creds);
+      });
+
+      it('si el update de profiles falla, se lanza error y el usuario ya está en createdUserIds', async () => {
+        const ctx = createStagingSeedContext();
+        const mockAdminId = '99999999-8888-7777-6666-555555555555';
+
+        const mockClient = {
+          auth: {
+            admin: {
+              createUser: vi.fn().mockResolvedValue({
+                data: { user: { id: mockAdminId } },
+                error: null,
+              }),
+            },
+          },
+          from: vi.fn((table: string) => {
+            if (table === 'merchants') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({ error: null }),
+                }),
+              };
+            }
+            if (table === 'profiles') {
+              return {
+                update: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({ error: { message: 'Database lock or constraint error' } }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(seedAdminUser(ctx, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Seed Error\] Falló la promoción del profile a admin: Database lock or constraint error/i
+        );
+
+        // El usuario ya quedó registrado para cleanup a pesar del fallo
+        expect(ctx.createdUserIds).toContain(mockAdminId);
+      });
+
+      it('si la eliminación del subtipo merchant temporal falla, se lanza error, el usuario permanece en createdUserIds y no se ejecutan updates posteriores (H18)', async () => {
+        const ctx = createStagingSeedContext();
+        const mockAdminId = '99999999-8888-7777-6666-555555555555';
+
+        const profilesUpdateMock = vi.fn();
+        const updateUserByIdMock = vi.fn();
+
+        const mockClient = {
+          auth: {
+            admin: {
+              createUser: vi.fn().mockResolvedValue({
+                data: { user: { id: mockAdminId } },
+                error: null,
+              }),
+              updateUserById: updateUserByIdMock,
+            },
+          },
+          from: vi.fn((table: string) => {
+            if (table === 'merchants') {
+              return {
+                delete: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({ error: { message: 'Merchants delete constraint lock' } }),
+                }),
+              };
+            }
+            if (table === 'profiles') {
+              return {
+                update: profilesUpdateMock,
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(seedAdminUser(ctx, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Seed Error\] Falló la eliminación del subtipo merchant temporal para admin: Merchants delete constraint lock/i
+        );
+
+        expect(ctx.createdUserIds).toContain(mockAdminId);
+        expect(profilesUpdateMock).not.toHaveBeenCalled();
+        expect(updateUserByIdMock).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('seedDeliveryRequestInState', () => {
+      it('crea solicitud en estado draft con precondiciones y tracking', async () => {
+        const ctx = createStagingSeedContext();
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        ctx.merchantUser = {
+          id: merchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'zones') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [
+                        { id: '22222222-2222-4222-8222-222222222222' },
+                        { id: '33333333-3333-4333-8333-333333333333' },
+                      ],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            if (table === 'delivery_request_contacts') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          { status: 'draft', withContacts: true },
+          mockClient,
+          validEnv
+        );
+
+        expect(result.requestId).toBeDefined();
+        expect(ctx.createdRequestIds).toContain(result.requestId);
+        expect(ctx.createdContactRequestIds).toContain(result.requestId);
+      });
+
+      it('crea solicitud en estado matched con oferta aceptada e incidentes opcionales', async () => {
+        const ctx = createStagingSeedContext();
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        const courierId = '44444444-4444-4444-8444-444444444444';
+        ctx.merchantUser = {
+          id: merchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+        ctx.courierUsers = [
+          { id: courierId, email: 'courier@test.local', password: 'pass', role: 'courier' },
+        ];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'zones') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [{ id: '22222222-2222-4222-8222-222222222222' }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+                update: draftFinalizeUpdate(),
+              };
+            }
+            if (table === 'delivery_request_drops' || table === 'delivery_request_drop_contacts') {
+              return childInsertOk();
+            }
+            if (table === 'incidents') {
+              return {
+                insert: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          {
+            status: 'matched',
+            assignedCourierId: courierId,
+            withIncident: {
+              kind: 'other',
+              description: 'Incidente de prueba',
+              reporterId: merchantId,
+            },
+          },
+          mockClient,
+          validEnv
+        );
+
+        expect(result.requestId).toBeDefined();
+        expect(result.acceptedOfferId).toBeDefined();
+        expect(result.incidentId).toBeDefined();
+        expect(ctx.createdRequestIds).toContain(result.requestId);
+        expect(ctx.createdOfferIds).toContain(result.acceptedOfferId);
+        expect(ctx.createdIncidentIds).toContain(result.incidentId);
+      });
+
+      it('cumple con el orden relacional de FK (H06): draft con accepted_offer_id null, luego offers, drop, contacto privado y recién al final el update de estado con accepted_offer_id', async () => {
+        const ctx = createStagingSeedContext();
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        const courierId = '44444444-4444-4444-8444-444444444444';
+        ctx.merchantUser = {
+          id: merchantId,
+          email: 'merchant@test.local',
+          password: 'pass',
+          role: 'merchant',
+        };
+        ctx.courierUsers = [
+          { id: courierId, email: 'courier@test.local', password: 'pass', role: 'courier' },
+        ];
+
+        const calls: Array<{ op: string; payload?: unknown }> = [];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'zones') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue({
+                      data: [{ id: '22222222-2222-4222-8222-222222222222' }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'delivery_requests') {
+              return {
+                insert: vi.fn((payload) => {
+                  calls.push({ op: 'delivery_requests.insert', payload });
+                  return Promise.resolve({ error: null });
+                }),
+                update: draftFinalizeUpdate((payload) => {
+                  calls.push({ op: 'delivery_requests.update', payload });
+                }),
+              };
+            }
+            if (
+              table === 'offers' ||
+              table === 'delivery_request_drops' ||
+              table === 'delivery_request_drop_contacts'
+            ) {
+              return {
+                insert: vi.fn((payload) => {
+                  calls.push({ op: `${table}.insert`, payload });
+                  return Promise.resolve({ error: null });
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          { status: 'matched', assignedCourierId: courierId },
+          mockClient,
+          validEnv
+        );
+
+        expect(result.requestId).toBeDefined();
+        expect(result.acceptedOfferId).toBeDefined();
+
+        // Verificar el orden exacto de llamadas:
+        // 1. delivery_requests.insert (draft, con accepted_offer_id: null para respetar FK)
+        // 2. offers.insert (con request_id: requestId)
+        // 3. delivery_request_drops.insert (drop 1)
+        // 4. delivery_request_drop_contacts.insert (contacto privado del drop 1)
+        // 5. delivery_requests.update (estado matched con accepted_offer_id: acceptedOfferId)
+        expect(calls.map((c) => c.op)).toEqual([
+          'delivery_requests.insert',
+          'offers.insert',
+          'delivery_request_drops.insert',
+          'delivery_request_drop_contacts.insert',
+          'delivery_requests.update',
+        ]);
+
+        const reqInsert = calls[0]?.payload as Record<string, unknown>;
+        expect(reqInsert.id).toBe(result.requestId);
+        expect(reqInsert.status).toBe('draft');
+        expect(reqInsert.accepted_offer_id).toBeNull();
+
+        const offInsert = calls[1]?.payload as Record<string, unknown>;
+        expect(offInsert.id).toBe(result.acceptedOfferId);
+        expect(offInsert.request_id).toBe(result.requestId);
+        expect(offInsert.status).toBe('accepted');
+
+        const reqUpdate = calls[4]?.payload as Record<string, unknown>;
+        expect(reqUpdate.status).toBe('matched');
+        expect(reqUpdate.accepted_offer_id).toBe(result.acceptedOfferId);
+      });
+    });
+
+    describe('getPlatformSettingNumber fail-closed (H13)', () => {
+      it('1. lectura exitosa de un número entero', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { value: 45 },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const val = await getPlatformSettingNumber('request_ttl_minutes', mockClient, validEnv);
+        expect(val).toBe(45);
+      });
+
+      it('2. lectura exitosa de un número en string numérico (ej: "45")', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { value: '45' },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const val = await getPlatformSettingNumber('request_ttl_minutes', mockClient, validEnv);
+        expect(val).toBe(45);
+      });
+
+      it('3. error si la fila no existe', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: null,
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getPlatformSettingNumber('missing_key', mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'missing_key': fila no encontrada/i
+        );
+      });
+
+      it('4. error si la consulta devuelve error de PostgREST', async () => {
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'platform_settings') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: null,
+                      error: { message: 'connection refused' },
+                    }),
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getPlatformSettingNumber('request_ttl_minutes', mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'request_ttl_minutes': connection refused/i
+        );
+      });
+
+      it('5. error si el valor es null, NaN, string no numérico o no finito', async () => {
+        const createClientWithValue = (val: unknown) =>
+          ({
+            from: vi.fn((table: string) => {
+              if (table === 'platform_settings') {
+                return {
+                  select: vi.fn().mockReturnValue({
+                    eq: vi.fn().mockReturnValue({
+                      single: vi.fn().mockResolvedValue({
+                        data: { value: val },
+                        error: null,
+                      }),
+                    }),
+                  }),
+                };
+              }
+              throw new Error(`Unexpected table: ${table}`);
+            }),
+          }) as unknown as AdminClientType;
+
+        await expect(getPlatformSettingNumber('key1', createClientWithValue(null), validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key1': el valor es nulo o indefinido/i
+        );
+
+        await expect(getPlatformSettingNumber('key2', createClientWithValue(undefined), validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key2': el valor es nulo o indefinido/i
+        );
+
+        await expect(
+          getPlatformSettingNumber('key3', createClientWithValue('not-a-number'), validEnv)
+        ).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key3': el valor 'not-a-number' no es un número finito/i
+        );
+
+        await expect(
+          getPlatformSettingNumber('key4', createClientWithValue(Infinity), validEnv)
+        ).rejects.toThrow(
+          /\[E2E Inspection Error\] No se pudo leer la configuración 'key4': el valor 'Infinity' no es un número finito/i
+        );
+      });
+    });
+
+    describe('setMerchantSubscriptionStatus (H09)', () => {
+
+      it('actualiza el subscription_status en merchants', async () => {
+        const merchantId = '11111111-1111-4111-8111-111111111111';
+        let updatedPayload: unknown = null;
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'merchants') {
+              return {
+                update: vi.fn((payload) => {
+                  updatedPayload = payload;
+                  return {
+                    eq: vi.fn().mockResolvedValue({ error: null }),
+                  };
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await setMerchantSubscriptionStatus(merchantId, 'expired', mockClient, validEnv);
+        expect(updatedPayload).toEqual({ subscription_status: 'expired' });
+      });
+    });
+
+    describe('getRequestInspectionData extendido', () => {
+      it('retorna campos extendidos de solicitud, ofertas, incidentes y cancellationReasons', async () => {
+        const ctx = createStagingSeedContext();
+        const requestId = '77777777-7777-4777-8777-777777777777';
+        ctx.createdRequestIds = [requestId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: {
+                        id: requestId,
+                        status: 'in_transit',
+                        accepted_offer_id: '88888888-8888-4888-8888-888888888888',
+                        published_at: '2026-10-01T20:00:00Z',
+                        expires_at: '2026-10-01T20:45:00Z',
+                        matched_at: '2026-10-01T20:10:00Z',
+                        picked_up_at: '2026-10-01T20:20:00Z',
+                        delivered_at: null,
+                        cancelled_at: null,
+                        cancel_reason: null,
+                      },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: '88888888-8888-4888-8888-888888888888',
+                        status: 'accepted',
+                        courier_id: 'courier-1',
+                        amount_ars: 2000,
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: 'inc-1',
+                        status: 'open',
+                        kind: 'safety',
+                        reporter_id: 'courier-1',
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            if (table === 'request_cancellation_reasons') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [
+                      {
+                        id: 'cr-1',
+                        request_id: requestId,
+                        offer_id: '88888888-8888-4888-8888-888888888888',
+                        actor_id: 'actor-1',
+                        action: 'courier_cancel_match',
+                        reason: 'Problema mecánico con la moto',
+                      },
+                    ],
+                    error: null,
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const inspection = await getRequestInspectionData(ctx, requestId, mockClient, validEnv);
+
+        expect(inspection.requestId).toBe(requestId);
+        expect(inspection.requestStatus).toBe('in_transit');
+        expect(inspection.pickedUpAt).toBe('2026-10-01T20:20:00Z');
+        expect(inspection.offers).toHaveLength(1);
+        expect(inspection.offers[0]?.status).toBe('accepted');
+        expect(inspection.incidents).toHaveLength(1);
+        expect(inspection.incidents?.[0]?.kind).toBe('safety');
+        expect(inspection.cancellationReasons).toHaveLength(1);
+        expect(inspection.cancellationReasons?.[0]?.action).toBe('courier_cancel_match');
+        expect(inspection.cancellationReasons?.[0]?.reason).toBe('Problema mecánico con la moto');
+      });
+
+      it('retorna incidents vacíos cuando PostgreSQL devuelve data: [] y error: null (H16)', async () => {
+        const ctx = createStagingSeedContext();
+        const requestId = '77777777-7777-4777-8777-777777777777';
+        ctx.createdRequestIds = [requestId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { id: requestId, status: 'delivered' },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'incidents') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'request_cancellation_reasons') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        const inspection = await getRequestInspectionData(ctx, requestId, mockClient, validEnv);
+        expect(inspection.incidents).toEqual([]);
+      });
+
+      it('falla cerrado con [E2E Inspection Error] si incidents devuelve error de PostgREST (H16)', async () => {
+        const ctx = createStagingSeedContext();
+        const requestId = '77777777-7777-4777-8777-777777777777';
+        ctx.createdRequestIds = [requestId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { id: requestId, status: 'delivered' },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: { message: 'permission denied for table incidents' },
+                  }),
+                }),
+              };
+            }
+            if (table === 'request_cancellation_reasons') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getRequestInspectionData(ctx, requestId, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] Error al consultar incidents: permission denied for table incidents/i
+        );
+      });
+
+      it('falla cerrado con [E2E Inspection Error] si la consulta a incidents lanza una excepción (H16)', async () => {
+        const ctx = createStagingSeedContext();
+        const requestId = '77777777-7777-4777-8777-777777777777';
+        ctx.createdRequestIds = [requestId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { id: requestId, status: 'delivered' },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'incidents') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockRejectedValue(new Error('Network socket disconnected')),
+                }),
+              };
+            }
+            if (table === 'request_cancellation_reasons') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getRequestInspectionData(ctx, requestId, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] Error inesperado al consultar incidents: Network socket disconnected/i
+        );
+      });
+
+      it('falla cerrado con [E2E Inspection Error] si request_cancellation_reasons devuelve error de PostgREST (H16)', async () => {
+        const ctx = createStagingSeedContext();
+        const requestId = '77777777-7777-4777-8777-777777777777';
+        ctx.createdRequestIds = [requestId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { id: requestId, status: 'delivered' },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'incidents') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'request_cancellation_reasons') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: { message: 'timeout acquiring connection' },
+                  }),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getRequestInspectionData(ctx, requestId, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] Error al consultar request_cancellation_reasons: timeout acquiring connection/i
+        );
+      });
+
+      it('falla cerrado con [E2E Inspection Error] si la consulta a request_cancellation_reasons lanza una excepción (H16)', async () => {
+        const ctx = createStagingSeedContext();
+        const requestId = '77777777-7777-4777-8777-777777777777';
+        ctx.createdRequestIds = [requestId];
+
+        const mockClient = {
+          from: vi.fn((table: string) => {
+            if (table === 'delivery_requests') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    single: vi.fn().mockResolvedValue({
+                      data: { id: requestId, status: 'delivered' },
+                      error: null,
+                    }),
+                  }),
+                }),
+              };
+            }
+            if (table === 'offers') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'incidents') {
+              return { select: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ data: [], error: null }) }) };
+            }
+            if (table === 'request_cancellation_reasons') {
+              return {
+                select: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockRejectedValue(new Error('Connection reset by peer')),
+                }),
+              };
+            }
+            throw new Error(`Unexpected table: ${table}`);
+          }),
+        } as unknown as AdminClientType;
+
+        await expect(getRequestInspectionData(ctx, requestId, mockClient, validEnv)).rejects.toThrow(
+          /\[E2E Inspection Error\] Error inesperado al consultar request_cancellation_reasons: Connection reset by peer/i
+        );
+      });
+    });
+  });
+});
+
+describe('T-340 PR320-H01/H02: los fixtures no-draft nacen con drop 1 y contacto privado', () => {
+  const seedEnv = {
+    NEXT_PUBLIC_SUPABASE_URL: 'https://axwvmyqwhwfghyjdufny.supabase.co',
+    E2E_TEST: 'true',
+  };
+  const MERCHANT_ID = '5a1e0000-0000-4000-8000-000000000001';
+  const COURIER_ID = '5a1e0000-0000-4000-8000-000000000002';
+  const PICKUP_ZONE_ID = '5a1e0000-0000-4000-8000-000000000003';
+  const DROPOFF_ZONE_ID = '5a1e0000-0000-4000-8000-000000000004';
+
+  interface SeedCall {
+    op: string;
+    payload: Record<string, unknown>;
+    filters?: Record<string, unknown>;
+  }
+
+  /**
+   * Cliente service-role falso que registra cada escritura en orden y puede
+   * devolver el error de Supabase de una operación concreta (`tabla.op`).
+   */
+  function createRecordingSeedClient(failOn?: string) {
+    const calls: SeedCall[] = [];
+    const errorFor = (op: string) => (failOn === op ? { message: `${op} rejected by DB` } : null);
+
+    const client = {
+      from: vi.fn((table: string) => ({
+        select: () => ({
+          eq: () => ({
+            limit: async () => ({
+              data: [
+                { id: PICKUP_ZONE_ID, name: 'Centro' },
+                { id: DROPOFF_ZONE_ID, name: 'Norte' },
+              ],
+              error: null,
+            }),
+          }),
+        }),
+        upsert: async (payload: Record<string, unknown>) => {
+          calls.push({ op: `${table}.upsert`, payload });
+          return { error: errorFor(`${table}.upsert`) };
+        },
+        insert: (payload: Record<string, unknown>) => {
+          calls.push({ op: `${table}.insert`, payload });
+          const error = errorFor(`${table}.insert`);
+          return Object.assign(Promise.resolve({ error }), {
+            select: () => ({
+              single: async () =>
+                error ? { data: null, error } : { data: { id: payload.id }, error: null },
+            }),
+          });
+        },
+        update: (payload: Record<string, unknown>) => {
+          const filters: Record<string, unknown> = {};
+          const chain = {
+            eq: (column: string, value: unknown) => {
+              filters[column] = value;
+              return chain;
+            },
+            select: () => ({
+              single: async () => {
+                calls.push({ op: `${table}.update`, payload, filters });
+                const error = errorFor(`${table}.update`);
+                return error ? { data: null, error } : { data: { id: filters.id }, error: null };
+              },
+            }),
+          };
+          return chain;
+        },
+      })),
+      auth: {
+        admin: {
+          createUser: async () => ({ data: { user: { id: MERCHANT_ID } }, error: null }),
+        },
+      },
+    } as unknown as AdminClientType;
+
+    return { client, calls };
+  }
+
+  const opsOf = (calls: SeedCall[]) => calls.map((c) => c.op);
+  const only = (calls: SeedCall[], op: string) => calls.filter((c) => c.op === op);
+
+  /**
+   * Invariante común: por cada solicitud, el padre se inserta en draft, tiene
+   * exactamente un drop de posición 1 con FK real, un contacto privado con FK al
+   * drop, y el estado definitivo se escribe una sola vez y después de los hijos.
+   */
+  function expectMaterializedBeforeFinalState(calls: SeedCall[], requestId: string) {
+    const insertIdx = calls.findIndex(
+      (c) => c.op === 'delivery_requests.insert' && c.payload.id === requestId
+    );
+    expect(insertIdx).toBeGreaterThanOrEqual(0);
+    expect(calls[insertIdx]?.payload.status).toBe('draft');
+    expect(calls[insertIdx]?.payload.published_at ?? null).toBeNull();
+
+    const drops = calls.filter(
+      (c) => c.op === 'delivery_request_drops.insert' && c.payload.request_id === requestId
+    );
+    expect(drops).toHaveLength(1);
+    const drop = drops[0]!;
+    expect(isValidUuid(drop.payload.id as string)).toBe(true);
+    expect(drop.payload.position).toBe(1);
+    expect(drop.payload.dropoff_zone_id).toBe(DROPOFF_ZONE_ID);
+    expect(drop.payload.package_type).toBe('chico');
+    expect(drop.payload.recipient_payment_method).toBe('cash');
+    expect(drop.payload.needs_change).toBe(false);
+
+    const dropContacts = calls.filter(
+      (c) =>
+        c.op === 'delivery_request_drop_contacts.insert' && c.payload.drop_id === drop.payload.id
+    );
+    expect(dropContacts).toHaveLength(1);
+    const dropContact = dropContacts[0]!;
+    expect(dropContact.payload.recipient_consent_declared).toBe(true);
+    expect(dropContact.payload.cash_change_amount).toBeNull();
+
+    const updates = calls.filter(
+      (c) => c.op === 'delivery_requests.update' && c.filters?.id === requestId
+    );
+    expect(updates).toHaveLength(1);
+    const update = updates[0]!;
+    // Solo se publica una fila que sigue en draft.
+    expect(update.filters?.status).toBe('draft');
+
+    const dropIdx = calls.indexOf(drop);
+    const dropContactIdx = calls.indexOf(dropContact);
+    const updateIdx = calls.indexOf(update);
+    expect(insertIdx).toBeLessThan(dropIdx);
+    expect(dropIdx).toBeLessThan(dropContactIdx);
+    expect(dropContactIdx).toBeLessThan(updateIdx);
+
+    return { drop, dropContact, update };
+  }
+
+  describe('seedStagingData', () => {
+    it('published SIN contactos opcionales: igual materializa drop 1 y contacto privado antes de publicar', async () => {
+      const ctx = createStagingSeedContext();
+      const { client, calls } = createRecordingSeedClient();
+
+      await seedStagingData(ctx, { requestsCount: 1, merchantId: MERCHANT_ID }, client, seedEnv);
+
+      const [requestId] = ctx.createdRequestIds;
+      expect(requestId).toBeDefined();
+      expect(opsOf(calls)).toEqual([
+        'delivery_requests.insert',
+        'delivery_request_drops.insert',
+        'delivery_request_drop_contacts.insert',
+        'delivery_requests.update',
+      ]);
+
+      const { dropContact, update } = expectMaterializedBeforeFinalState(calls, requestId!);
+      expect(dropContact.payload.recipient_name).toBe('Destinatario E2E');
+      expect(dropContact.payload.recipient_phone).toBe('+5493865123456');
+      expect(dropContact.payload.dropoff_address).toBe('San Martín 400, Aguilares');
+      expect(dropContact.payload.notes).toBe(`E2E automated test run ${ctx.testRunId}`);
+      expect(update.payload.status).toBe('published');
+      expect(typeof update.payload.published_at).toBe('string');
+
+      // Sin contactos legacy opcionales: ni fila legacy ni tracking de contacto.
+      expect(only(calls, 'delivery_request_contacts.insert')).toHaveLength(0);
+      expect(ctx.createdContactRequestIds).toHaveLength(0);
+      expect(ctx.sentinelPhone).toBeUndefined();
+    });
+
+    it('published CON contactos opcionales: contacto legacy y contacto privado comparten los datos pedidos', async () => {
+      const ctx = createStagingSeedContext();
+      const { client, calls } = createRecordingSeedClient();
+
+      await seedStagingData(
+        ctx,
+        {
+          requestsCount: 1,
+          merchantId: MERCHANT_ID,
+          withContacts: true,
+          recipientName: 'Ana Fixture',
+          recipientPhone: '+5493865000999',
+          dropoffAddress: 'Mitre 55, Aguilares',
+        },
+        client,
+        seedEnv
+      );
+
+      const [requestId] = ctx.createdRequestIds;
+      expect(opsOf(calls)).toEqual([
+        'delivery_requests.insert',
+        'delivery_request_contacts.insert',
+        'delivery_request_drops.insert',
+        'delivery_request_drop_contacts.insert',
+        'delivery_requests.update',
+      ]);
+      const { dropContact, update } = expectMaterializedBeforeFinalState(calls, requestId!);
+      expect(dropContact.payload).toMatchObject({
+        recipient_name: 'Ana Fixture',
+        recipient_phone: '+5493865000999',
+        dropoff_address: 'Mitre 55, Aguilares',
+      });
+      expect(only(calls, 'delivery_request_contacts.insert')[0]?.payload).toMatchObject({
+        request_id: requestId,
+        recipient_name: 'Ana Fixture',
+        recipient_phone: '+5493865000999',
+      });
+      expect(update.payload.status).toBe('published');
+      expect(ctx.createdContactRequestIds).toEqual([requestId]);
+      expect(ctx.sentinelPhone).toBe('+5493865000999');
+    });
+
+    it('varias solicitudes: cada una tiene su propio drop y se publica después de sus hijos', async () => {
+      const ctx = createStagingSeedContext();
+      const { client, calls } = createRecordingSeedClient();
+
+      await seedStagingData(ctx, { requestsCount: 2, merchantId: MERCHANT_ID }, client, seedEnv);
+
+      expect(ctx.createdRequestIds).toHaveLength(2);
+      const [first, second] = ctx.createdRequestIds;
+      expect(first).not.toBe(second);
+      const a = expectMaterializedBeforeFinalState(calls, first!);
+      const b = expectMaterializedBeforeFinalState(calls, second!);
+      expect(a.drop.payload.id).not.toBe(b.drop.payload.id);
+      expect(only(calls, 'delivery_request_drops.insert')).toHaveLength(2);
+      expect(only(calls, 'delivery_request_drop_contacts.insert')).toHaveLength(2);
+    });
+
+    it.each([
+      [
+        'delivery_request_drops.insert',
+        /Falló la materialización del drop: delivery_request_drops.insert rejected by DB/,
+      ],
+      [
+        'delivery_request_drop_contacts.insert',
+        /Falló la materialización de contactos privados del drop: delivery_request_drop_contacts.insert rejected by DB/,
+      ],
+      [
+        'delivery_requests.update',
+        /Falló la publicación de la solicitud .* en estado published: delivery_requests.update rejected by DB/,
+      ],
+    ])(
+      'falla cerrado si Supabase rechaza %s y nunca deja una publicada incompleta',
+      async (failOn, message) => {
+        const ctx = createStagingSeedContext();
+        const { client, calls } = createRecordingSeedClient(failOn);
+
+        await expect(
+          seedStagingData(ctx, { requestsCount: 1, merchantId: MERCHANT_ID }, client, seedEnv)
+        ).rejects.toThrow(message);
+
+        // El draft queda trackeado para que el cleanup por IDs de la corrida lo borre.
+        expect(ctx.createdRequestIds).toHaveLength(1);
+        expect(only(calls, 'delivery_requests.update')).toHaveLength(
+          failOn === 'delivery_requests.update' ? 1 : 0
+        );
+      }
+    );
+  });
+
+  describe('seedDeliveryRequestInState', () => {
+    const merchantCtx = () => {
+      const ctx = createStagingSeedContext();
+      ctx.merchantUser = { id: MERCHANT_ID, email: 'm@test.local', password: 'x', role: 'merchant' };
+      ctx.courierUsers = [{ id: COURIER_ID, email: 'c@test.local', password: 'x', role: 'courier' }];
+      return ctx;
+    };
+
+    it('draft: borrador incompleto sin drops, sin contacto privado y sin update de estado', async () => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient();
+
+      const result = await seedDeliveryRequestInState(
+        ctx,
+        { status: 'draft', withContacts: true },
+        client,
+        seedEnv
+      );
+
+      expect(opsOf(calls)).toEqual(['delivery_requests.insert', 'delivery_request_contacts.insert']);
+      const insert = calls[0]!.payload;
+      expect(insert.id).toBe(result.requestId);
+      expect(insert.status).toBe('draft');
+      expect(insert.published_at ?? null).toBeNull();
+      expect(insert.expires_at ?? null).toBeNull();
+      expect(ctx.createdRequestIds).toEqual([result.requestId]);
+      expect(ctx.createdContactRequestIds).toEqual([result.requestId]);
+    });
+
+    it('draft: rechaza marcas temporales que lo harían incoherente', async () => {
+      const ctx = merchantCtx();
+      const { client } = createRecordingSeedClient();
+
+      await expect(
+        seedDeliveryRequestInState(
+          ctx,
+          { status: 'draft', publishedAt: new Date().toISOString() },
+          client,
+          seedEnv
+        )
+      ).rejects.toThrow(/Un draft no admite marcas temporales/);
+    });
+
+    it('published: drop pendiente y contacto privado antes de publicar con expires_at', async () => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient();
+
+      const result = await seedDeliveryRequestInState(
+        ctx,
+        { status: 'published', withPendingOffersCount: 1 },
+        client,
+        seedEnv
+      );
+
+      const { drop, dropContact, update } = expectMaterializedBeforeFinalState(
+        calls,
+        result.requestId
+      );
+      expect(drop.payload.status).toBe('pending');
+      expect(drop.payload.delivered_at).toBeNull();
+      expect(dropContact.payload.notes).toBe(`E2E state seed ${ctx.testRunId}`);
+      expect(update.payload).toMatchObject({
+        status: 'published',
+        matched_at: null,
+        picked_up_at: null,
+        delivered_at: null,
+        accepted_offer_id: null,
+      });
+      expect(typeof update.payload.published_at).toBe('string');
+      expect(typeof update.payload.expires_at).toBe('string');
+      expect(result.acceptedOfferId).toBeNull();
+
+      // Las ofertas pendientes de un published se crean sobre la solicitud ya completa.
+      const pending = only(calls, 'offers.insert');
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.payload.status).toBe('pending');
+      expect(calls.indexOf(pending[0]!)).toBeGreaterThan(calls.indexOf(update));
+    });
+
+    it.each([
+      ['matched', { picked: false, delivered: false }],
+      ['in_transit', { picked: true, delivered: false }],
+      ['delivered', { picked: true, delivered: true }],
+    ] as const)(
+      '%s: oferta aceptada, drop y contacto antes del estado definitivo con marcas coherentes',
+      async (status, expected) => {
+        const ctx = merchantCtx();
+        const { client, calls } = createRecordingSeedClient();
+
+        const result = await seedDeliveryRequestInState(
+          ctx,
+          { status, assignedCourierId: COURIER_ID },
+          client,
+          seedEnv
+        );
+
+        expect(opsOf(calls)).toEqual([
+          'delivery_requests.insert',
+          'offers.insert',
+          'delivery_request_drops.insert',
+          'delivery_request_drop_contacts.insert',
+          'delivery_requests.update',
+        ]);
+        expect(calls[0]?.payload.accepted_offer_id).toBeNull();
+
+        const offer = only(calls, 'offers.insert')[0]!;
+        expect(offer.payload).toMatchObject({
+          id: result.acceptedOfferId,
+          request_id: result.requestId,
+          courier_id: COURIER_ID,
+          status: 'accepted',
+        });
+        expect(ctx.createdOfferIds).toEqual([result.acceptedOfferId]);
+
+        const { drop, update } = expectMaterializedBeforeFinalState(calls, result.requestId);
+        expect(update.payload.status).toBe(status);
+        expect(update.payload.accepted_offer_id).toBe(result.acceptedOfferId);
+        expect(typeof update.payload.published_at).toBe('string');
+        expect(typeof update.payload.matched_at).toBe('string');
+        expect(update.payload.expires_at).toBeNull();
+        expect(update.payload.picked_up_at !== null).toBe(expected.picked);
+        expect(update.payload.delivered_at !== null).toBe(expected.delivered);
+
+        // CHECK ((status = 'delivered') = (delivered_at is not null)) del drop.
+        if (expected.delivered) {
+          expect(drop.payload.status).toBe('delivered');
+          expect(drop.payload.delivered_at).toBe(update.payload.delivered_at);
+        } else {
+          expect(drop.payload.status).toBe('pending');
+          expect(drop.payload.delivered_at).toBeNull();
+        }
+      }
+    );
+
+    it('delivered respeta la marca deliveredAt pedida en padre y drop', async () => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient();
+      const deliveredAt = '2026-10-01T12:00:00.000Z';
+
+      const result = await seedDeliveryRequestInState(
+        ctx,
+        { status: 'delivered', assignedCourierId: COURIER_ID, deliveredAt },
+        client,
+        seedEnv
+      );
+
+      const { drop, update } = expectMaterializedBeforeFinalState(calls, result.requestId);
+      expect(update.payload.delivered_at).toBe(deliveredAt);
+      expect(drop.payload.delivered_at).toBe(deliveredAt);
+    });
+
+    it.each([
+      ['delivery_request_drops.insert', /Falló la materialización del drop/],
+      [
+        'delivery_request_drop_contacts.insert',
+        /Falló la materialización de contactos privados del drop/,
+      ],
+      ['delivery_requests.update', /Falló la publicación de la solicitud .* en estado matched/],
+    ])('matched falla cerrado si Supabase rechaza %s', async (failOn, message) => {
+      const ctx = merchantCtx();
+      const { client, calls } = createRecordingSeedClient(failOn);
+
+      await expect(
+        seedDeliveryRequestInState(
+          ctx,
+          { status: 'matched', assignedCourierId: COURIER_ID },
+          client,
+          seedEnv
+        )
+      ).rejects.toThrow(message);
+
+      expect(ctx.createdRequestIds).toHaveLength(1);
+      expect(ctx.createdOfferIds).toHaveLength(1);
+      expect(only(calls, 'delivery_requests.update')).toHaveLength(
+        failOn === 'delivery_requests.update' ? 1 : 0
+      );
+    });
+
+    it('falla cerrado si Supabase rechaza la consulta de zonas', async () => {
+      const ctx = merchantCtx();
+      const client = {
+        from: vi.fn(() => ({
+          select: () => ({
+            eq: () => ({
+              limit: async () => ({ data: null, error: { message: 'zones offline' } }),
+            }),
+          }),
+        })),
+      } as unknown as AdminClientType;
+
+      await expect(
+        seedDeliveryRequestInState(ctx, { status: 'published' }, client, seedEnv)
+      ).rejects.toThrow(/Error al consultar zonas: zones offline/);
+      expect(ctx.createdRequestIds).toHaveLength(0);
     });
   });
 });

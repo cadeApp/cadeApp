@@ -1,3 +1,5 @@
+import type { PackageType, RecipientPaymentMethod } from '@/domain/schemas';
+
 export const OFFERS_COPY = {
   // Feed
   feedTitle: 'Solicitudes abiertas',
@@ -17,21 +19,39 @@ export const OFFERS_COPY = {
 
   // Tarjeta de solicitud
   offerButton: 'Ofertar',
+  takeRequestButton: (amount: string) => `Tomar a ${amount}`,
+  takeMultiDropButton: (amount: string, count: number) => `Tomar a ${amount} c/u (${count} entregas)`,
   alreadyOfferedPrefix: 'Ya ofertaste',
   changeNeededBadge: 'Necesita cambio',
   changeAmountPrefix: 'Cambio para',
-  cashPayment: 'Paga en efectivo',
-  transferPayment: 'Paga con transferencia',
+  dropsCountBadge: (count: number) => `${count} entregas`,
+  totalQuoteSummary: (perDrop: string, total: string, count: number) =>
+    `${perDrop} por entrega · Total: ${total} (${count} entregas)`,
+  totalOfferQuote: (total: string, count: number) =>
+    `Total cotizado: ${total} (${count} entregas)`,
+  // Medio de pago del destinatario: una etiqueta por valor canónico (RECIPIENT_PAYMENT_METHODS)
+  paymentLabels: {
+    cash: 'Paga en efectivo',
+    transfer: 'Paga con transferencia',
+    to_agree: 'A coordinar',
+  } satisfies Record<RecipientPaymentMethod, string>,
   approxDistancePrefix: '≈',
   kmUnit: 'km',
 
-  // Paquetes
-  packageSmall: 'Paquete chico',
-  packageMedium: 'Mediano',
-  packageLarge: 'Paquete grande',
+  // Paquetes: una etiqueta por valor canónico (PACKAGE_TYPES)
+  packageLabels: {
+    sobre: 'Sobre',
+    chico: 'Paquete chico',
+    mediano: 'Paquete mediano',
+    grande: 'Paquete grande',
+  } satisfies Record<PackageType, string>,
 
   // Bottom Sheet Ofertar (R05)
   offerSheetTitle: 'Tu oferta',
+  takeSheetTitle: 'Tomar solicitud',
+  fixedPriceNotice: 'Precio fijado por el comercio',
+  autoAssignNotice: 'Asignación inmediata: al confirmar, el pedido queda asignado.',
+  manualAssignNotice: 'El comercio confirmará entre quienes tomen la solicitud.',
   amountLabel: 'Monto de la oferta',
   amountPlaceholder: '1.500',
   floorPrefix: 'Mínimo',
@@ -43,8 +63,10 @@ export const OFFERS_COPY = {
     'Si te eligen, vas a ver las direcciones exactas, el mapa del recorrido y el contacto del cliente. El envío se lo cobrás a quien recibe.',
   submitOfferButton: 'Enviar oferta',
   submittingOffer: 'Enviando oferta...',
+  takingRequest: 'Tomando pedido...',
   cancelButton: 'Cancelar',
   offerSuccess: '¡Oferta enviada con éxito!',
+  takeSuccess: '¡Pedido tomado con éxito!',
 
   // Mis ofertas (R06)
   myOffersTitle: 'Mis ofertas',
@@ -59,20 +81,6 @@ export const OFFERS_COPY = {
   withdrawConfirmTitle: '¿Querés retirar tu oferta?',
   withdrawConfirmDescription: 'Si la retirás, el comercio ya no podrá aceptarla para este pedido.',
   withdrawConfirmAction: 'Sí, retirar oferta',
-
-  // En revisión (R03)
-  underReviewTitle: 'Estamos revisando tus datos',
-  underReviewDescription: 'Te avisamos por acá y por notificación cuando estés aprobado.',
-  docDniFront: 'DNI frente',
-  docDniBack: 'DNI dorso',
-  docSelfie: 'Selfie',
-  docProfilePhoto: 'Foto de perfil',
-  docLicense: 'Licencia de conducir (opcional)',
-  docInsurance: 'Seguro (opcional)',
-  docUploaded: 'Cargado',
-  docNotUploaded: 'No cargada',
-  completeDocsButton: 'Completar documentación opcional',
-  logoutButton: 'Cerrar sesión',
 
   // Navegación
   navRequests: 'Solicitudes',

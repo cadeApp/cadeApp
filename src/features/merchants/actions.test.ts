@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { revalidatePath } from 'next/cache';
 import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
 import { merchantOnboardingAction } from './actions';
@@ -9,6 +10,10 @@ vi.mock('@/server/supabase/server', () => ({
 
 vi.mock('@/server/supabase/admin', () => ({
   createAdminClient: vi.fn(),
+}));
+
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
 }));
 
 describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
@@ -176,13 +181,127 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockImplementation((payload) => {
+          update: vi.fn().mockImplementation((payload) => {
             insertedMerchant = payload;
-            return Promise.resolve({ error: null });
+            return {
+              eq: vi.fn().mockImplementation((col, val) => {
+                merchantUpdateFilter = { col, val };
+                return {
+                  select: vi.fn().mockImplementation(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: { profile_id: 'usr-merchant-1' },
+                      error: null,
+                    }),
+                  })),
+                };
+              }),
+            };
           }),
-          insert: vi.fn().mockImplementation((payload) => {
-            insertedMerchant = payload;
-            return Promise.resolve({ error: null });
+        };
+      }
+      return {};
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1', email: 'comercio@test.com' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
+      ? T
+      : never);
+    vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+      from: mockFrom,
+    } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+    let merchantUpdateFilter: { col: string; val: unknown } | null = null;
+    const result = await merchantOnboardingAction(validFormInput);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.redirectTo).toBe('/merchant/dashboard');
+    }
+
+    // Verificación 1: el comercio actualiza business_name, pickup y notes por profile_id sin tocar subscription_status ni paid_until
+    expect(merchantUpdateFilter).toEqual({ col: 'profile_id', val: 'usr-merchant-1' });
+    expect(insertedMerchant).toEqual({
+      business_name: 'Panadería La Espiga',
+      default_pickup_address: 'San Martín 450',
+      default_pickup_lat: -27.43,
+      default_pickup_lng: -65.61,
+      default_pickup_zone_id: '11111111-1111-1111-1111-111111111111',
+      notes: 'Al lado de la plaza',
+    });
+    expect(insertedMerchant).not.toHaveProperty('profile_id');
+    expect(insertedMerchant).not.toHaveProperty('subscription_status');
+    expect(insertedMerchant).not.toHaveProperty('paid_until');
+
+    // Verificación 2: versión de consentimiento guardada en consents mediante upsert idempotente
+    expect(insertedConsent).toMatchObject({
+      profile_id: 'usr-merchant-1',
+      document: 'pilot_terms',
+      version: '1.0',
+    });
+    expect(upsertOptions).toEqual({
+      onConflict: 'profile_id,document,version',
+      ignoreDuplicates: true,
+    });
+
+    // Verificación 3: perfil actualizado con display_name y phone
+    expect(updatedProfile).toMatchObject({
+      display_name: 'Panadería La Espiga',
+      phone: '3815550123',
+    });
+
+    // Verificación 4: rutas invalidadas en cache
+    expect(revalidatePath).toHaveBeenCalledWith('/merchant/dashboard');
+    expect(revalidatePath).toHaveBeenCalledWith('/merchant/onboarding');
+  });
+
+  it('falla con INTERNAL_ERROR si la fila merchants no existe o UPDATE afecta 0 filas', async () => {
+    const mockFrom = vi.fn().mockImplementation((table: string) => {
+      if (table === 'profiles') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        };
+      }
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { value: '1.0' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'consents') {
+        return {
+          insert: vi.fn().mockResolvedValue({ error: null }),
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      if (table === 'merchants') {
+        return {
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null, // Cero filas afectadas / no encontrado
+                  error: null,
+                }),
+              }),
+            }),
           }),
         };
       }
@@ -205,40 +324,10 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
 
     const result = await merchantOnboardingAction(validFormInput);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data.redirectTo).toBe('/merchant/dashboard');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INTERNAL_ERROR');
     }
-
-    // Verificación 1: el comercio queda en subscription_status = 'pilot'
-    expect(insertedMerchant).toMatchObject({
-      profile_id: 'usr-merchant-1',
-      business_name: 'Panadería La Espiga',
-      subscription_status: 'pilot',
-      paid_until: null,
-      default_pickup_address: 'San Martín 450',
-      default_pickup_lat: -27.43,
-      default_pickup_lng: -65.61,
-      default_pickup_zone_id: '11111111-1111-1111-1111-111111111111',
-      notes: 'Al lado de la plaza',
-    });
-
-    // Verificación 2: versión de consentimiento guardada en consents mediante upsert idempotente
-    expect(insertedConsent).toMatchObject({
-      profile_id: 'usr-merchant-1',
-      document: 'pilot_terms',
-      version: '1.0',
-    });
-    expect(upsertOptions).toEqual({
-      onConflict: 'profile_id,document,version',
-      ignoreDuplicates: true,
-    });
-
-    // Verificación 3: perfil actualizado con display_name y phone
-    expect(updatedProfile).toMatchObject({
-      display_name: 'Panadería La Espiga',
-      phone: '3815550123',
-    });
   });
 
   it('mapea errores de base de datos a DomainErrorCode', async () => {
@@ -274,11 +363,15 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({
-            error: { message: 'Database error', code: '500' },
-          }),
-          insert: vi.fn().mockResolvedValue({
-            error: { message: 'Database error', code: '500' },
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { message: 'Database error', code: '500' },
+                }),
+              }),
+            }),
           }),
         };
       }
@@ -396,7 +489,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
@@ -461,8 +563,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
-          insert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
@@ -493,7 +603,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
 
   it('falla con INTERNAL_ERROR sin escribir consent ni merchant si el setting tiene una versión futura no publicada (H04)', async () => {
     const insertConsentSpy = vi.fn();
-    const upsertMerchantSpy = vi.fn();
+    const updateMerchantSpy = vi.fn();
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -524,8 +634,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: upsertMerchantSpy,
-          insert: upsertMerchantSpy,
+          update: updateMerchantSpy,
+          upsert: updateMerchantSpy,
+          insert: updateMerchantSpy,
         };
       }
       return {};
@@ -556,12 +667,12 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       expect(result.code).toBe('INTERNAL_ERROR');
     }
     expect(insertConsentSpy).not.toHaveBeenCalled();
-    expect(upsertMerchantSpy).not.toHaveBeenCalled();
+    expect(updateMerchantSpy).not.toHaveBeenCalled();
   });
 
   it('rechaza con VALIDATION_ERROR sin escribir consent ni merchant si el input tiene versión desactualizada 0.9 (H05)', async () => {
     const insertConsentSpy = vi.fn();
-    const upsertMerchantSpy = vi.fn();
+    const updateMerchantSpy = vi.fn();
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -592,8 +703,9 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: upsertMerchantSpy,
-          insert: upsertMerchantSpy,
+          update: updateMerchantSpy,
+          upsert: updateMerchantSpy,
+          insert: updateMerchantSpy,
         };
       }
       return {};
@@ -624,7 +736,7 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       expect(result.code).toBe('VALIDATION_ERROR');
     }
     expect(insertConsentSpy).not.toHaveBeenCalled();
-    expect(upsertMerchantSpy).not.toHaveBeenCalled();
+    expect(updateMerchantSpy).not.toHaveBeenCalled();
   });
 
   it('reintento merchant después de fallo posterior: no falla aunque pilot_terms ya exista y no reescribe accepted_at (H13)', async () => {
@@ -664,7 +776,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};
@@ -805,7 +926,16 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       }
       if (table === 'merchants') {
         return {
-          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { profile_id: 'usr-merchant-1' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
         };
       }
       return {};

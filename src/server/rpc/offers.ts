@@ -36,7 +36,8 @@ type OfferRpcName =
   | 'submit_offer'
   | 'withdraw_offer'
   | 'accept_offer'
-  | 'set_availability';
+  | 'set_availability'
+  | 'take_request';
 
 function isAllowedOfferRpcError<K extends OfferRpcName>(
   rpcName: K,
@@ -358,19 +359,163 @@ export async function setAvailabilityRpc(
 }
 
 /**
+ * Typed server wrapper for `public.take_request(p_request_id, p_eta_minutes, p_message)`.
+ * Validates inputs at the boundary with `RPC_CONTRACTS.take_request.inputSchema` and parses the JSON response
+ * with `RPC_CONTRACTS.take_request.outputSchema`.
+ * Dispatches post-commit events according to CC-021 §6:
+ * - auto_assign = false (offerStatus = 'pending'): emits `offer_submitted` to the merchant.
+ * - auto_assign = true (offerStatus = 'accepted'): emits `offer_accepted` to both merchant and courier.
+ * - idempotent = true: zero events.
+ */
+export async function takeRequestRpc(
+  client: SupabaseRpcCaller,
+  rawInput: unknown,
+): Promise<
+  ActionResult<RpcOutput<'take_request'>, RpcErrorCode<'take_request'>>
+> {
+  const parsedInput = RPC_CONTRACTS.take_request.inputSchema.safeParse(rawInput);
+  if (!parsedInput.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const { requestId, etaMinutes, message } = parsedInput.data;
+  try {
+    const { data, error } = await client.rpc('take_request', {
+      p_request_id: requestId,
+      p_eta_minutes: etaMinutes,
+      p_message: message ?? null,
+    });
+
+    if (error) {
+      const mapped = mapOfferRpcError('take_request', error);
+      if (mapped === 'INTERNAL_ERROR') {
+        try {
+          await sendCriticalAlert({
+            type: 'take_request_failed',
+            severity: 'critical',
+            message: `Fallo en RPC take_request: ${error.message}`,
+            details: { error: error.message, code: error.code, input: { requestId, etaMinutes } },
+          });
+        } catch {
+          // Fallo de observabilidad no debe interrumpir el retorno al caller
+        }
+      }
+      return err(mapped);
+    }
+
+    const parsedOutput = RPC_CONTRACTS.take_request.outputSchema.safeParse(data);
+    if (!parsedOutput.success) {
+      try {
+        await sendCriticalAlert({
+          type: 'take_request_failed',
+          severity: 'critical',
+          message: 'Error de validación en respuesta de RPC take_request',
+          details: { zodErrors: parsedOutput.error.issues, requestId },
+        });
+      } catch {
+        // Fallo de observabilidad no debe interrumpir el retorno al caller
+      }
+      return err('INTERNAL_ERROR');
+    }
+
+    // CC-021 §6 / PR118-H01: take_request idempotente (idempotent: true) no genera push ni eventos post-commit
+    if (parsedOutput.data.idempotent === true) {
+      return ok(parsedOutput.data);
+    }
+
+    // CC-021 §6: Post-commit events based on path:
+    // Camino 1: auto_assign = true (offerStatus = 'accepted', requestStatus = 'matched')
+    // Disparo post-commit a ambas partes (merchant y courier), igual que accept_offer
+    if (parsedOutput.data.offerStatus === 'accepted') {
+      try {
+        const admin = createAdminClient();
+        const [reqRes, offerRes] = await Promise.all([
+          admin
+            .from('delivery_requests')
+            .select('merchant_id')
+            .eq('id', parsedOutput.data.requestId)
+            .maybeSingle(),
+          admin
+            .from('offers')
+            .select('courier_id')
+            .eq('id', parsedOutput.data.offerId)
+            .maybeSingle(),
+        ]);
+
+        if (
+          !reqRes.error &&
+          !offerRes.error &&
+          reqRes.data?.merchant_id &&
+          offerRes.data?.courier_id
+        ) {
+          const parties = [reqRes.data.merchant_id, offerRes.data.courier_id];
+          await safeNotifyPostTransition(parties, {
+            event: 'offer_accepted',
+            requestId: parsedOutput.data.requestId,
+            offerId: parsedOutput.data.offerId,
+          });
+        }
+      } catch {
+        // Best effort: fallo de push nunca altera la transición exitosa
+      }
+    } else {
+      // Camino 2: auto_assign = false (offerStatus = 'pending')
+      // Disparo post-commit al comercio solicitante, igual que submit_offer
+      try {
+        const admin = createAdminClient();
+        const { data: req, error: reqError } = await admin
+          .from('delivery_requests')
+          .select('merchant_id')
+          .eq('id', parsedOutput.data.requestId)
+          .maybeSingle();
+
+        if (!reqError && req?.merchant_id) {
+          await safeNotifyPostTransition([req.merchant_id], {
+            event: 'offer_submitted',
+            requestId: parsedOutput.data.requestId,
+            offerId: parsedOutput.data.offerId,
+          });
+        }
+      } catch {
+        // Best effort: fallo de push nunca altera la transición exitosa
+      }
+    }
+
+    return ok(parsedOutput.data);
+  } catch (ex) {
+    try {
+      await sendCriticalAlert({
+        type: 'take_request_failed',
+        severity: 'critical',
+        message: `Excepción inesperada en RPC take_request: ${ex instanceof Error ? ex.message : String(ex)}`,
+        details: { error: ex instanceof Error ? ex.stack : String(ex), input: { requestId, etaMinutes } },
+      });
+    } catch {
+      // Fallo de observabilidad no debe interrumpir el retorno al caller
+    }
+    return err('INTERNAL_ERROR');
+  }
+}
+
+/**
  * Creates a server-side RPC client implementing the `submit_offer`,
- * `withdraw_offer`, `accept_offer`, and `set_availability` methods of `RpcClientContract`.
+ * `withdraw_offer`, `accept_offer`, `set_availability`, and `take_request` methods of `RpcClientContract`.
  */
 export function createOffersRpcServerClient(
   client: SupabaseRpcCaller,
 ): Pick<
   RpcClientContract,
-  'submit_offer' | 'withdraw_offer' | 'accept_offer' | 'set_availability'
+  | 'submit_offer'
+  | 'withdraw_offer'
+  | 'accept_offer'
+  | 'set_availability'
+  | 'take_request'
 > {
   return {
     submit_offer: (input) => submitOfferRpc(client, input),
     withdraw_offer: (input) => withdrawOfferRpc(client, input),
     accept_offer: (input) => acceptOfferRpc(client, input),
     set_availability: (input) => setAvailabilityRpc(client, input),
+    take_request: (input) => takeRequestRpc(client, input),
   };
 }

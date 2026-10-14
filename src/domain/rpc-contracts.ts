@@ -4,12 +4,14 @@ import {
   aguilaresLatSchema,
   aguilaresLngSchema,
   courierDocumentKindSchema,
+  deliveryRequestStatusSchema,
   documentReviewStatusSchema,
   incidentDecisionSchema,
   incidentDescriptionHasContact,
   incidentKindSchema,
   incidentStatusSchema,
   merchantSubscriptionStatusSchema,
+  packageTypeSchema,
   platformSettingKeySchema,
   profileRoleSchema,
   recipientPaymentMethodSchema,
@@ -47,6 +49,104 @@ export function validateOfferAmountAgainstFloor(
   return ok(amountArs);
 }
 
+// CC-024: transactional multi-drop creation and publication.
+const createAndPublishMultiDropDropInputSchema = z
+  .object({
+    dropoffZoneId: uuidSchema,
+    dropoffAddress: z.string().trim().min(1).max(200),
+    dropoffLat: aguilaresLatSchema.nullable(),
+    dropoffLng: aguilaresLngSchema.nullable(),
+    recipientName: z.string().trim().min(1).max(100),
+    recipientPhone: z.string().trim().min(8).max(30),
+    recipientConsentDeclared: z.literal(true),
+    packageType: packageTypeSchema,
+    recipientPaymentMethod: recipientPaymentMethodSchema,
+    needsChange: z.boolean(),
+    cashChangeAmount: z.number().int().positive().nullable(),
+    notes: z.string().trim().max(500).nullable(),
+  })
+  .strict()
+  .superRefine((drop, ctx) => {
+    if ((drop.dropoffLat === null) !== (drop.dropoffLng === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dropoffLat'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (
+      drop.recipientPaymentMethod === 'cash' &&
+      drop.needsChange &&
+      drop.cashChangeAmount === null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['cashChangeAmount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (drop.recipientPaymentMethod !== 'cash' && drop.needsChange) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['needsChange'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (
+      (drop.recipientPaymentMethod !== 'cash' || !drop.needsChange) &&
+      drop.cashChangeAmount !== null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['cashChangeAmount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+  });
+
+export const createAndPublishMultiDropInputSchema = z
+  .object({
+    requestId: uuidSchema,
+    pickupZoneId: uuidSchema,
+    pickupAddress: z.string().trim().min(1).max(200),
+    pickupLat: aguilaresLatSchema.nullable(),
+    pickupLng: aguilaresLngSchema.nullable(),
+    fixedPriceArs: z.number().int().positive().nullable(),
+    autoAssign: z.boolean(),
+    drops: z.array(createAndPublishMultiDropDropInputSchema).min(1),
+  })
+  .strict()
+  .superRefine((payload, ctx) => {
+    if ((payload.pickupLat === null) !== (payload.pickupLng === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pickupLat'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (payload.autoAssign && payload.fixedPriceArs === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fixedPriceArs'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+  });
+
+export const createAndPublishMultiDropOutputSchema = z
+  .object({
+    requestId: uuidSchema,
+    status: deliveryRequestStatusSchema,
+    publishedAt: isoTimestampSchema,
+    expiresAt: isoTimestampSchema,
+    routeDistanceM: z.number().int().nonnegative().nullable(),
+    fixedPriceArs: z.number().int().min(1).nullable(),
+    autoAssign: z.boolean(),
+    dropsCount: z.number().int().min(1),
+    idempotent: z.boolean(),
+  })
+  .strict();
+
 // 1. publish_request
 export const publishRequestInputSchema = z.object({
   requestId: uuidSchema,
@@ -57,6 +157,26 @@ export const publishRequestOutputSchema = z.object({
   publishedAt: isoTimestampSchema,
   expiresAt: isoTimestampSchema,
   routeDistanceM: z.number().int().nonnegative().nullable(),
+  fixedPriceArs: z.number().int().min(1).nullable(),
+  autoAssign: z.boolean(),
+  dropsCount: z.number().int().min(1),
+});
+
+// take_request (CC-021)
+export const takeRequestInputSchema = z.object({
+  requestId: uuidSchema,
+  etaMinutes: z.number().int().min(1).max(240),
+  message: z.string().trim().max(280).nullable().optional(),
+});
+export const takeRequestOutputSchema = z.object({
+  offerId: uuidSchema,
+  requestId: uuidSchema,
+  amountArs: z.number().int().min(1),
+  totalAmountArs: z.number().int().min(1),
+  offerStatus: z.enum(['pending', 'accepted']),
+  requestStatus: z.enum(['published', 'matched']),
+  matchedAt: isoTimestampSchema.nullable(),
+  idempotent: z.boolean(),
 });
 
 // 2. cancel_request
@@ -82,6 +202,7 @@ export const submitOfferOutputSchema = z.object({
   requestId: uuidSchema,
   status: z.literal('pending'),
   amountArs: z.number().int().min(1),
+  totalAmountArs: z.number().int().min(1),
   createdAt: isoTimestampSchema,
 });
 
@@ -104,6 +225,34 @@ export const acceptOfferOutputSchema = z.object({
   acceptedOfferId: uuidSchema,
   status: z.literal('matched'),
   matchedAt: isoTimestampSchema,
+  idempotent: z.boolean(),
+  totalAmountArs: z.number().int().min(1),
+});
+
+// mark_drop_delivered (CC-022)
+export const markDropDeliveredInputSchema = z.object({
+  dropId: uuidSchema,
+});
+export const markDropDeliveredOutputSchema = z.object({
+  dropId: uuidSchema,
+  requestId: uuidSchema,
+  status: z.literal('delivered'),
+  deliveredAt: isoTimestampSchema,
+  requestStatus: deliveryRequestStatusSchema,
+  idempotent: z.boolean(),
+});
+
+// mark_drop_failed (CC-022)
+export const markDropFailedInputSchema = z.object({
+  dropId: uuidSchema,
+  reason: z.string().trim().max(500),
+});
+export const markDropFailedOutputSchema = z.object({
+  dropId: uuidSchema,
+  requestId: uuidSchema,
+  status: z.literal('failed'),
+  failedReason: z.string().trim().min(1).max(500),
+  requestStatus: deliveryRequestStatusSchema,
   idempotent: z.boolean(),
 });
 
@@ -232,10 +381,42 @@ export const calculateRouteDistanceOutputSchema = z.union([
   }),
 ]);
 
-// 14. get_trip_details (CC-008)
+// Public drop projection for feed, offers, and live (CC-022 §3) — strictly NO PII
+export const publicDropSummarySchema = z.object({
+  position: z.number().int().min(1),
+  dropoffZoneName: z.string().trim().min(1).max(120),
+  packageType: packageTypeSchema,
+  recipientPaymentMethod: recipientPaymentMethodSchema,
+  needsChange: z.boolean(),
+  approxDistanceM: z.number().int().nonnegative().nullable(),
+});
+export type PublicDropSummary = z.infer<typeof publicDropSummarySchema>;
+
+// 14. get_trip_details (CC-008, CC-022)
 export const getTripDetailsInputSchema = z.object({
   requestId: uuidSchema,
 });
+
+export const tripDropSchema = z.object({
+  id: uuidSchema,
+  position: z.number().int().min(1),
+  dropoffZoneName: z.string().trim().min(1).max(120),
+  dropoffAddress: z.string().trim().min(1),
+  recipientName: z.string().trim().min(1),
+  recipientPhone: z.string().trim().min(1),
+  deliveryNotes: z.string().nullable(),
+  cashChangeAmount: z.number().int().positive().nullable(),
+  packageType: packageTypeSchema,
+  recipientPaymentMethod: recipientPaymentMethodSchema,
+  needsChange: z.boolean(),
+  approxDistanceM: z.number().int().nonnegative().nullable(),
+  status: z.enum(['pending', 'delivered', 'failed']),
+  deliveredAt: isoTimestampSchema.nullable(),
+  failedReason: z.string().nullable(),
+  dropoffLat: aguilaresLatSchema.nullable(),
+  dropoffLng: aguilaresLngSchema.nullable(),
+});
+export type TripDrop = z.infer<typeof tripDropSchema>;
 
 export const getTripDetailsOutputSchema = z.object({
   requestId: uuidSchema,
@@ -264,9 +445,50 @@ export const getTripDetailsOutputSchema = z.object({
   matchedAt: isoTimestampSchema.nullable(),
   pickedUpAt: isoTimestampSchema.nullable(),
   deliveredAt: isoTimestampSchema.nullable(),
+  dropsCount: z.number().int().min(1),
+  drops: z.array(tripDropSchema).min(1),
 });
 
 // 15. admin_decide_courier
+// get_request_offer_couriers (CC-016)
+// `.strict()`: un campo de más (teléfono, patente, dni_hmac, estado de aprobación) invalida la salida.
+export const getRequestOfferCouriersInputSchema = z.object({
+  requestId: uuidSchema,
+});
+
+export const requestOfferCourierSchema = z
+  .object({
+    courierId: uuidSchema,
+    displayName: z.string(),
+    vehicleType: vehicleTypeSchema.nullable(),
+    licenseStatus: documentReviewStatusSchema,
+    insuranceStatus: documentReviewStatusSchema,
+    docLevel: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  })
+  .strict();
+
+export const getRequestOfferCouriersOutputSchema = z
+  .object({
+    requestId: uuidSchema,
+    couriers: z.array(requestOfferCourierSchema),
+  })
+  .strict();
+
+// get_merchant_request_private_fields (CC-023)
+// Indicaciones y monto exacto de cambio de una solicitud propia, solo para el comercio dueño: con CC-023 esas
+// columnas dejan de leerse por tabla. `.strict()`: un campo de más invalida la salida.
+export const getMerchantRequestPrivateFieldsInputSchema = z.object({
+  requestId: uuidSchema,
+});
+
+export const getMerchantRequestPrivateFieldsOutputSchema = z
+  .object({
+    requestId: uuidSchema,
+    notes: z.string().nullable(),
+    cashChangeAmount: z.number().int().positive().nullable(),
+  })
+  .strict();
+
 export const adminDecideCourierInputSchema = z.object({
   courierId: uuidSchema,
   decision: z.enum(['approved', 'rejected']),
@@ -339,6 +561,10 @@ export const adminUpdateSettingInputSchema = z.discriminatedUnion('key', [
     key: z.literal('subscription_grace_days'),
     value: z.number().int().min(0),
   }),
+  z.object({
+    key: z.literal('max_drops_per_request'),
+    value: z.number().int().min(1),
+  }),
 ]);
 export const adminUpdateSettingOutputSchema = adminUpdateSettingInputSchema;
 
@@ -385,6 +611,25 @@ export const adminListIncidentsOutputSchema = z.object({
 });
 
 export const RPC_CONTRACTS = {
+  create_and_publish_multi_drop: {
+    inputSchema: createAndPublishMultiDropInputSchema,
+    outputSchema: createAndPublishMultiDropOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'SUBSCRIPTION_INACTIVE',
+      'MISSING_REQUIRED_FIELDS',
+      'OUT_OF_BOUNDS_AGUILARES',
+      'INVALID_ZONE',
+      'INVALID_STATE_TRANSITION',
+      'OFFER_BELOW_MINIMUM',
+      'RATE_LIMITED',
+      'DROP_LIMIT_EXCEEDED',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   /**
    * Precedencia canónica del ciclo de solicitudes (CC-006 / D01 / D03 — compartida entre
    * `supabase/migrations/20260924010124_rpc_requests_v1.sql` y `src/domain/testing/rpc-fake.ts` para
@@ -423,7 +668,9 @@ export const RPC_CONTRACTS = {
       'OUT_OF_BOUNDS_AGUILARES',
       'INVALID_ZONE',
       'INVALID_STATE_TRANSITION',
+      'OFFER_BELOW_MINIMUM',
       'RATE_LIMITED',
+      'DROP_LIMIT_EXCEEDED',
       'VALIDATION_ERROR',
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
@@ -444,15 +691,18 @@ export const RPC_CONTRACTS = {
     ] as const satisfies readonly DomainErrorCode[],
   },
   /**
-   * Precedencia canónica de errores de `submit_offer` (D05 / CC-001 — compartida entre
-   * `supabase/migrations/20260923050000_rpc_offers_v1.sql` y `src/domain/testing/rpc-fake.ts`):
-   *   1. Actor y rol (`UNAUTHENTICATED` → `UNAUTHORIZED_ACTOR`)
-   *   2. Repartidor (`NOT_FOUND` → `COURIER_SUSPENDED` → `COURIER_NOT_APPROVED` → `COURIER_UNAVAILABLE`)
-   *   3. Parámetros de entrada (`VALIDATION_ERROR`: `requestId`, `amountArs`, `etaMinutes`, `message`)
-   *   4. Piso dinámico `min_offer_ars` (`OFFER_BELOW_MINIMUM`)
-   *   5. Tope por ventana `max_offers_per_min` (`RATE_LIMITED`)
-   *   6. Solicitud (`NOT_FOUND` → `REQUEST_EXPIRED` → `INVALID_STATE_TRANSITION`)
-   *   7. Oferta activa duplicada (`DUPLICATE_ACTIVE_OFFER`)
+   * Precedencia canónica de errores de `submit_offer` (D05 / CC-001 / CC-021 §3 — compartida entre
+   * migraciones y `src/domain/testing/rpc-fake.ts`):
+   *   1. Actor, rol y consentimiento (CC-007): UNAUTHENTICATED → UNAUTHORIZED_ACTOR
+   *   2. Repartidor (sin lock): NOT_FOUND → COURIER_SUSPENDED → COURIER_NOT_APPROVED → COURIER_UNAVAILABLE
+   *   3. Parámetros de entrada: VALIDATION_ERROR
+   *   4. Piso dinámico min_offer_ars: OFFER_BELOW_MINIMUM
+   *   5. Solicitud (for update): NOT_FOUND → REQUEST_EXPIRED → INVALID_STATE_TRANSITION
+   *   6. Precio fijo: FIXED_PRICE_REQUEST
+   *   7. Oferta activa duplicada: DUPLICATE_ACTIVE_OFFER
+   *   8. Repartidor (for share y nueva validación)
+   *   9. Tope por ventana max_offers_per_min: RATE_LIMITED
+   *  10. Mutación: crea oferta pending
    */
   submit_offer: {
     inputSchema: submitOfferInputSchema,
@@ -466,10 +716,47 @@ export const RPC_CONTRACTS = {
       'COURIER_UNAVAILABLE',
       'REQUEST_EXPIRED',
       'INVALID_STATE_TRANSITION',
+      'FIXED_PRICE_REQUEST',
       'OFFER_BELOW_MINIMUM',
       'DUPLICATE_ACTIVE_OFFER',
       'RATE_LIMITED',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  /**
+   * Precedencia canónica de errores de `take_request` (CC-021 §4):
+   *   1. Actor, rol y consentimiento (CC-007): UNAUTHENTICATED → UNAUTHORIZED_ACTOR
+   *   2. Repartidor (sin lock): NOT_FOUND → COURIER_SUSPENDED → COURIER_NOT_APPROVED → COURIER_UNAVAILABLE
+   *   3. Parámetros de entrada: VALIDATION_ERROR
+   *   4. Lock de la solicitud: NOT_FOUND
+   *   5. Idempotencia: reintento propio devuelve éxito previo (idempotent: true)
+   *   6. Estado de la solicitud: ALREADY_MATCHED (otro) → REQUEST_EXPIRED → INVALID_STATE_TRANSITION
+   *   7. Sin precio fijo: NO_FIXED_PRICE
+   *   8. Piso vigente: OFFER_BELOW_MINIMUM
+   *   9. Oferta activa duplicada: DUPLICATE_ACTIVE_OFFER
+   *  10. Lock del repartidor (for share y revalidación de elegibilidad)
+   *  11. Tope por ventana max_offers_per_min: RATE_LIMITED
+   *  12. Mutación (si auto_assign=true llama a app_private.match_offer; si auto_assign=false crea oferta pending)
+   */
+  take_request: {
+    inputSchema: takeRequestInputSchema,
+    outputSchema: takeRequestOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'COURIER_SUSPENDED',
+      'COURIER_NOT_APPROVED',
+      'COURIER_UNAVAILABLE',
+      'VALIDATION_ERROR',
+      'ALREADY_MATCHED',
+      'REQUEST_EXPIRED',
+      'INVALID_STATE_TRANSITION',
+      'NO_FIXED_PRICE',
+      'OFFER_BELOW_MINIMUM',
+      'DUPLICATE_ACTIVE_OFFER',
+      'RATE_LIMITED',
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
@@ -549,6 +836,35 @@ export const RPC_CONTRACTS = {
       'COURIER_SUSPENDED',
       'INVALID_STATE_TRANSITION',
       'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  mark_drop_delivered: {
+    inputSchema: markDropDeliveredInputSchema,
+    outputSchema: markDropDeliveredOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'COURIER_SUSPENDED',
+      'COURIER_NOT_APPROVED',
+      'VALIDATION_ERROR',
+      'INVALID_STATE_TRANSITION',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  mark_drop_failed: {
+    inputSchema: markDropFailedInputSchema,
+    outputSchema: markDropFailedOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'COURIER_SUSPENDED',
+      'COURIER_NOT_APPROVED',
+      'VALIDATION_ERROR',
+      'REASON_REQUIRED',
+      'INVALID_STATE_TRANSITION',
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
@@ -654,6 +970,36 @@ export const RPC_CONTRACTS = {
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  /**
+   * CC-016: solo el comercio dueño de la solicitud. Solicitud inexistente o ajena responden igual
+   * (`NOT_FOUND`) para no confirmar que el id existe.
+   */
+  get_request_offer_couriers: {
+    inputSchema: getRequestOfferCouriersInputSchema,
+    outputSchema: getRequestOfferCouriersOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  /**
+   * CC-023: solo el comercio dueño, en cualquier estado de su solicitud. Solicitud inexistente o ajena
+   * responden igual (`NOT_FOUND`). Repartidor y admin con sesión → `UNAUTHORIZED_ACTOR`.
+   */
+  get_merchant_request_private_fields: {
+    inputSchema: getMerchantRequestPrivateFieldsInputSchema,
+    outputSchema: getMerchantRequestPrivateFieldsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_decide_courier: {
     inputSchema: adminDecideCourierInputSchema,
     outputSchema: adminDecideCourierOutputSchema,
@@ -747,13 +1093,17 @@ export const RPC_CONTRACTS = {
 } as const;
 
 export const ALL_RPC_NAMES = [
+  'create_and_publish_multi_drop',
   'publish_request',
   'cancel_request',
   'submit_offer',
+  'take_request',
   'withdraw_offer',
   'accept_offer',
   'mark_picked_up',
   'mark_delivered',
+  'mark_drop_delivered',
+  'mark_drop_failed',
   'report_no_show',
   'courier_cancel_match',
   'republish_request',
@@ -761,6 +1111,8 @@ export const ALL_RPC_NAMES = [
   'set_availability',
   'calculate_route_distance',
   'get_trip_details',
+  'get_request_offer_couriers',
+  'get_merchant_request_private_fields',
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_verify_document',

@@ -93,6 +93,22 @@ update public.delivery_requests
 set status = 'matched', accepted_offer_id = pg_temp.offer_id(), matched_at = now()
 where id = pg_temp.request_id();
 
+insert into public.delivery_request_drops (
+  id, request_id, position, dropoff_zone_id, package_type,
+  recipient_payment_method, needs_change, status
+) values (
+  '00000000-0000-4000-8000-000000000021', pg_temp.request_id(), 1, pg_temp.zone_b(), 'chico',
+  'cash', true, 'pending'
+);
+
+insert into public.delivery_request_drop_contacts (
+  drop_id, dropoff_address, recipient_name, recipient_phone,
+  recipient_consent_declared, cash_change_amount, notes
+) values (
+  '00000000-0000-4000-8000-000000000021', 'Belgrano 1220', 'Laura Gómez', '3865123456',
+  true, 5000, 'Casa con reja negra'
+);
+
 insert into public.delivery_requests (
   id, merchant_id, status, pickup_zone_id, dropoff_zone_id, package_type, recipient_payment_method
 ) values (

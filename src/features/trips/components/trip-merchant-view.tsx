@@ -55,15 +55,30 @@ export function TripMerchantView({
     ? buildWhatsAppUrl(trip.courierPhone, coordinationMessage)
     : null;
 
-  const customerMsg = buildNotifyCustomerWhatsAppMessage({
-    amountArs: trip.amountArs,
-    courierName: trip.courierName,
-    recipientPaymentMethod: trip.recipientPaymentMethod,
-    needsChange: trip.needsChange,
-    cashChangeAmount: trip.cashChangeAmount,
-  });
-
-  const customerWaUrl = buildWhatsAppUrl(trip.recipientPhone, customerMsg);
+  const dropsList =
+    trip.drops && trip.drops.length > 0
+      ? trip.drops
+      : [
+          {
+            id: trip.id,
+            position: 1,
+            dropoffZoneName: trip.dropoffZoneName,
+            dropoffAddress: trip.dropoffAddress,
+            recipientName: trip.recipientName,
+            recipientPhone: trip.recipientPhone,
+            deliveryNotes: trip.deliveryNotes,
+            cashChangeAmount: trip.cashChangeAmount,
+            packageType: 'chico' as const,
+            recipientPaymentMethod: trip.recipientPaymentMethod,
+            needsChange: trip.needsChange,
+            approxDistanceM: null,
+            status: 'pending' as const,
+            deliveredAt: null,
+            failedReason: null,
+            dropoffLat: trip.dropoffLat,
+            dropoffLng: trip.dropoffLng,
+          },
+        ];
 
   return (
     <div className="mx-auto max-w-[390px] space-y-4 p-4 pb-24">
@@ -74,7 +89,10 @@ export function TripMerchantView({
           </span>
           <h1 className="font-display text-xl font-bold text-foreground">Viaje en curso</h1>
         </div>
-        <Badge variant={isDelivered ? 'secondary' : 'default'} className="rounded-full text-sm font-medium">
+        <Badge
+          variant={isDelivered ? 'secondary' : 'default'}
+          className="rounded-full text-sm font-medium"
+        >
           {isDelivered ? 'Entregado' : isInTransit ? 'En camino' : 'Asignado'}
         </Badge>
       </div>
@@ -85,7 +103,9 @@ export function TripMerchantView({
           <span>Asignada</span>
         </div>
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-        <div className={`flex items-center gap-1.5 font-medium ${isInTransit || isDelivered ? 'text-foreground' : 'text-primary'}`}>
+        <div
+          className={`flex items-center gap-1.5 font-medium ${isInTransit || isDelivered ? 'text-foreground' : 'text-primary-dark'}`}
+        >
           {isDelivered ? (
             <CheckCircle2 className="h-4 w-4 text-primary" />
           ) : (
@@ -94,7 +114,9 @@ export function TripMerchantView({
           <span>Retirado</span>
         </div>
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-        <div className={`flex items-center gap-1.5 font-medium ${isDelivered ? 'text-foreground' : 'text-muted-foreground'}`}>
+        <div
+          className={`flex items-center gap-1.5 font-medium ${isDelivered ? 'text-foreground' : 'text-muted-foreground'}`}
+        >
           <CheckCircle2 className={`h-4 w-4 ${isDelivered ? 'text-primary' : 'text-muted'}`} />
           <span>Entregado</span>
         </div>
@@ -185,30 +207,47 @@ export function TripMerchantView({
         routeDistanceM={trip.routeDistanceM}
         showExternalNavigation={false}
         title="Mapa del viaje"
+        drops={trip.drops}
       />
 
-      <Card className="border-primary/20 bg-primary/5 shadow-card">
-        <CardContent className="space-y-3 p-4">
-          <div>
-            <h2 className="text-sm font-bold text-foreground">Avisale a tu cliente</h2>
-            <p className="text-sm text-muted-foreground">
-              Destinatario: <strong className="text-foreground">{trip.recipientName}</strong>
-            </p>
-          </div>
-          <div className="rounded-lg border border-border/50 bg-background/80 p-2.5 text-sm italic text-muted-foreground">
-            &quot;{customerMsg}&quot;
-          </div>
-          <a
-            href={customerWaUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
-          >
-            <MessageCircle className="h-4 w-4" />
-            Avisar a mi cliente
-          </a>
-        </CardContent>
-      </Card>
+      {dropsList.map((drop) => {
+        const dropCustomerMsg = buildNotifyCustomerWhatsAppMessage({
+          amountArs: trip.amountArs,
+          courierName: trip.courierName,
+          recipientPaymentMethod: drop.recipientPaymentMethod,
+          needsChange: drop.needsChange,
+          cashChangeAmount: drop.cashChangeAmount,
+        });
+        const dropCustomerWaUrl = buildWhatsAppUrl(drop.recipientPhone, dropCustomerMsg);
+
+        return (
+          <Card key={drop.id} className="border-primary/20 bg-primary/5 shadow-card">
+            <CardContent className="space-y-3 p-4">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">
+                  Avisale a tu cliente{dropsList.length > 1 ? ` (Entrega ${drop.position})` : ''}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Destinatario: <strong className="text-foreground">{drop.recipientName}</strong> ·{' '}
+                  {drop.dropoffZoneName}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/50 bg-background/80 p-2.5 text-sm italic text-muted-foreground">
+                &quot;{dropCustomerMsg}&quot;
+              </div>
+              <a
+                href={dropCustomerWaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
+              >
+                <MessageCircle className="h-4 w-4" />
+                {dropsList.length > 1 ? `Avisar a ${drop.recipientName}` : 'Avisar a mi cliente'}
+              </a>
+            </CardContent>
+          </Card>
+        );
+      })}
 
       {!isDelivered && (
         <div className="space-y-2 pt-2">

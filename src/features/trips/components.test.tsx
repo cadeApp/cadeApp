@@ -1,15 +1,49 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { TripMerchantView } from './components/trip-merchant-view';
 import { TripCourierView } from './components/trip-courier-view';
+import { TripCourierContainer } from './components/trip-courier-container';
 import { TripCancelDialog } from './components/trip-cancel-dialog';
 import { TripSkeleton } from './components/trip-skeleton';
 import { TripErrorState } from './components/trip-error-state';
 import { TripEmptyState } from './components/trip-empty-state';
 import { formatVehicleType, formatRecipientPaymentMethod } from './format';
 import type { TripDetails } from './types';
+
+const mockRouterRefresh = vi.fn();
+const mockRouterPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    refresh: mockRouterRefresh,
+    push: mockRouterPush,
+  }),
+}));
+
+const mockMarkDropDeliveredAction = vi.fn();
+const mockMarkDropFailedAction = vi.fn();
+const mockMarkTripDeliveredAction = vi.fn();
+const mockMarkTripPickedUpAction = vi.fn();
+const mockCourierCancelTripAction = vi.fn();
+
+vi.mock('./actions', () => ({
+  markDropDeliveredAction: (...args: unknown[]) => mockMarkDropDeliveredAction(...args),
+  markDropFailedAction: (...args: unknown[]) => mockMarkDropFailedAction(...args),
+  markTripDeliveredAction: (...args: unknown[]) => mockMarkTripDeliveredAction(...args),
+  markTripPickedUpAction: (...args: unknown[]) => mockMarkTripPickedUpAction(...args),
+  courierCancelTripAction: (...args: unknown[]) => mockCourierCancelTripAction(...args),
+}));
+
+const mockNotifySuccess = vi.fn();
+const mockNotifyError = vi.fn();
+vi.mock('@/ui/notify', () => ({
+  notify: {
+    success: (...args: unknown[]) => mockNotifySuccess(...args),
+    error: (...args: unknown[]) => mockNotifyError(...args),
+    info: vi.fn(),
+  },
+}));
 
 vi.mock('@vis.gl/react-google-maps', () => ({
   APILoadingStatus: {
@@ -56,6 +90,75 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     deliveredAt: null,
   };
 
+  const multiDropTrip: TripDetails = {
+    ...baseTrip,
+    id: 'trip-multi-1',
+    status: 'in_transit',
+    dropsCount: 3,
+    amountArs: 1500,
+    totalAmountArs: 4500,
+    collectibleAmountArs: 3000,
+    drops: [
+      {
+        id: 'drop-1',
+        position: 1,
+        dropoffZoneName: 'Centro',
+        dropoffAddress: 'Calle Uno 100',
+        recipientName: 'Ana',
+        recipientPhone: '3865111111',
+        deliveryNotes: null,
+        cashChangeAmount: null,
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        approxDistanceM: 1000,
+        status: 'delivered',
+        deliveredAt: '2026-09-24T10:15:00Z',
+        failedReason: null,
+        dropoffLat: null,
+        dropoffLng: null,
+      },
+      {
+        id: 'drop-2',
+        position: 2,
+        dropoffZoneName: 'San Martín',
+        dropoffAddress: 'Calle Dos 200',
+        recipientName: 'Beto',
+        recipientPhone: '3865222222',
+        deliveryNotes: 'Dejar en puerta',
+        cashChangeAmount: 1000,
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: true,
+        approxDistanceM: 1500,
+        status: 'pending',
+        deliveredAt: null,
+        failedReason: null,
+        dropoffLat: null,
+        dropoffLng: null,
+      },
+      {
+        id: 'drop-3',
+        position: 3,
+        dropoffZoneName: 'Barrio Sur',
+        dropoffAddress: 'Calle Tres 300',
+        recipientName: 'Carla',
+        recipientPhone: '3865333333',
+        deliveryNotes: null,
+        cashChangeAmount: null,
+        packageType: 'mediano',
+        recipientPaymentMethod: 'transfer',
+        needsChange: false,
+        approxDistanceM: 2000,
+        status: 'failed',
+        deliveredAt: null,
+        failedReason: 'No respondió al timbre',
+        dropoffLat: null,
+        dropoffLng: null,
+      },
+    ],
+  };
+
   // =========================================================================
   // C06: Vista de Viaje del Comercio
   // =========================================================================
@@ -80,7 +183,9 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(waBtn.getAttribute('href')).toContain('wa.me');
       expect(waBtn.getAttribute('href')).toContain('5493865111111');
       expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('REQ-1234');
-      expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('Centro -> Barrio Sur');
+      expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain(
+        'Centro -> Barrio Sur'
+      );
       expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('$ 1.800');
       expect(decodeURIComponent(waBtn.getAttribute('href') ?? '')).toContain('Efectivo');
       expect(screen.getByRole('img', { name: /Foto de Carlos Benítez/i })).toBeDefined();
@@ -105,11 +210,7 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       const onNoShow = vi.fn();
       const onCancel = vi.fn();
       render(
-        <TripMerchantView
-          trip={baseTrip}
-          onReportNoShow={onNoShow}
-          onCancelTrip={onCancel}
-        />
+        <TripMerchantView trip={baseTrip} onReportNoShow={onNoShow} onCancelTrip={onCancel} />
       );
 
       const noShowBtn = screen.getByRole('button', { name: /El repartidor no llegó/i });
@@ -127,11 +228,7 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
 
     it('muestra estado pendiente y deshabilitado en contingencia cuando se está reportando no show (H10)', () => {
       render(
-        <TripMerchantView
-          trip={baseTrip}
-          onReportNoShow={vi.fn()}
-          isReportingNoShow={true}
-        />
+        <TripMerchantView trip={baseTrip} onReportNoShow={vi.fn()} isReportingNoShow={true} />
       );
 
       const noShowBtn = screen.getByRole('button', { name: /Reportando\.\.\./i });
@@ -362,5 +459,198 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
     });
   });
 
-});
+  // =========================================================================
+  // T-350: Contraste AA del texto de acento (axe color-contrast)
+  // =========================================================================
+  describe('T-350: texto de acento con contraste AA (primary-dark)', () => {
+    function expectPrimaryDarkText(element: HTMLElement) {
+      expect(element.classList.contains('text-primary-dark')).toBe(true);
+      expect(element.classList.contains('text-primary')).toBe(false);
+    }
 
+    it('R07: «Cobrás al entregar» usa text-primary-dark y nunca text-primary', () => {
+      render(<TripCourierView trip={baseTrip} />);
+
+      expectPrimaryDarkText(screen.getByText(/Cobrás al entregar/i));
+    });
+
+    it('C06: el paso pendiente «Retirado» usa text-primary-dark y nunca text-primary', () => {
+      render(<TripMerchantView trip={baseTrip} />);
+
+      const pendingStep = screen.getByText('Retirado').parentElement;
+      expect(pendingStep).not.toBeNull();
+      if (pendingStep) expectPrimaryDarkText(pendingStep);
+    });
+  });
+
+  // =========================================================================
+  // PR318-H10: Acciones individuales por drop en pantalla de courier
+  // =========================================================================
+  describe('PR318-H10: Acciones multi-drop del repartidor', () => {
+    it('1 drop legacy en in_transit: muestra botón global Confirmar entrega y llama onAdvanceTrip', () => {
+      const onAdvance = vi.fn();
+      render(
+        <TripCourierView trip={{ ...baseTrip, status: 'in_transit' }} onAdvanceTrip={onAdvance} />
+      );
+
+      const confirmBtn = screen.getByText(/Confirmar entrega/i);
+      expect(confirmBtn).toBeDefined();
+      fireEvent.click(confirmBtn);
+      expect(onAdvance).toHaveBeenCalledTimes(1);
+    });
+
+    it('multi-drop en in_transit: renderiza botones por drop pendiente y no muestra botón global', () => {
+      render(<TripCourierView trip={multiDropTrip} />);
+
+      // No muestra el botón global de confirmar entrega para N>1
+      expect(screen.queryByText(/Confirmar entrega \(/i)).toBeNull();
+
+      // Muestra botones individuales para drop-2 (pending)
+      expect(screen.getByTestId('mark-drop-delivered-drop-2')).toBeDefined();
+      expect(screen.getByTestId('mark-drop-failed-drop-2')).toBeDefined();
+
+      // No muestra botones para drop-1 (delivered) ni drop-3 (failed)
+      expect(screen.queryByTestId('mark-drop-delivered-drop-1')).toBeNull();
+      expect(screen.queryByTestId('mark-drop-delivered-drop-3')).toBeNull();
+
+      // Muestra total cobrable acumulado
+      expect(screen.getByText(/Total cobrable acumulado:/i)).toBeDefined();
+    });
+
+    it('al pulsar Entregada en drop-2, invoca onMarkDropDelivered exclusivamente con id del drop', () => {
+      const onDeliver = vi.fn();
+      const onAdvance = vi.fn();
+      render(
+        <TripCourierView
+          trip={multiDropTrip}
+          onMarkDropDelivered={onDeliver}
+          onAdvanceTrip={onAdvance}
+        />
+      );
+
+      fireEvent.click(screen.getByTestId('mark-drop-delivered-drop-2'));
+      expect(onDeliver).toHaveBeenCalledExactlyOnceWith('drop-2');
+      expect(onAdvance).not.toHaveBeenCalled();
+    });
+
+    it('al pulsar No se pudo entregar en drop-2, abre diálogo y exige motivo no vacío', () => {
+      const onFailed = vi.fn();
+      render(<TripCourierView trip={multiDropTrip} onMarkDropFailed={onFailed} />);
+
+      // Abre diálogo
+      fireEvent.click(screen.getByTestId('mark-drop-failed-drop-2'));
+      expect(screen.getByRole('heading', { name: 'No se pudo entregar' })).toBeDefined();
+
+      const confirmBtn = screen.getByTestId('confirm-drop-failed-btn');
+      expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+
+      // Escribir solo espacios no habilita
+      const input = screen.getByTestId('drop-failed-reason-input');
+      fireEvent.change(input, { target: { value: '   ' } });
+      expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+
+      // Escribir motivo válido habilita y despacha
+      fireEvent.change(input, { target: { value: 'Destinatario ausente' } });
+      expect((confirmBtn as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(confirmBtn);
+
+      expect(onFailed).toHaveBeenCalledExactlyOnceWith('drop-2', 'Destinatario ausente');
+    });
+  });
+
+  describe('H10: Integración TripCourierContainer -> Server Actions', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it('al pulsar Entregada en drop-2, despacha markDropDeliveredAction con {requestId, dropId} y nunca markTripDeliveredAction', async () => {
+      mockMarkDropDeliveredAction.mockResolvedValue({ ok: true });
+
+      render(<TripCourierContainer trip={multiDropTrip} />);
+
+      const deliverBtn = screen.getByTestId('mark-drop-delivered-drop-2');
+      fireEvent.click(deliverBtn);
+
+      expect(mockMarkDropDeliveredAction).toHaveBeenCalledExactlyOnceWith({
+        requestId: multiDropTrip.id,
+        dropId: 'drop-2',
+      });
+      expect(mockMarkTripDeliveredAction).not.toHaveBeenCalled();
+
+      // En éxito hace router.refresh y toast
+      await waitFor(() => {
+        expect(mockNotifySuccess).toHaveBeenCalledWith('Entrega confirmada.');
+        expect(mockRouterRefresh).toHaveBeenCalled();
+      });
+    });
+
+    it('si markDropDeliveredAction falla, muestra toast de error y no hace router.refresh', async () => {
+      mockMarkDropDeliveredAction.mockResolvedValue({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+
+      render(<TripCourierContainer trip={multiDropTrip} />);
+
+      fireEvent.click(screen.getByTestId('mark-drop-delivered-drop-2'));
+
+      await waitFor(() => {
+        expect(mockNotifyError).toHaveBeenCalledWith('No se pudo confirmar la entrega.');
+        expect(mockRouterRefresh).not.toHaveBeenCalled();
+      });
+    });
+
+    it('al pulsar No se pudo entregar en drop-2 con motivo válido, despacha markDropFailedAction; motivo en blanco no lo invoca', async () => {
+      mockMarkDropFailedAction.mockResolvedValue({ ok: true });
+
+      render(<TripCourierContainer trip={multiDropTrip} />);
+
+      fireEvent.click(screen.getByTestId('mark-drop-failed-drop-2'));
+
+      const confirmBtn = screen.getByTestId('confirm-drop-failed-btn');
+      expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+
+      // Motivo en blanco no habilita
+      const input = screen.getByTestId('drop-failed-reason-input');
+      fireEvent.change(input, { target: { value: '   ' } });
+      expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+      expect(mockMarkDropFailedAction).not.toHaveBeenCalled();
+
+      // Motivo válido despacha
+      fireEvent.change(input, { target: { value: 'Destinatario no responde al timbre' } });
+      expect((confirmBtn as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(confirmBtn);
+
+      expect(mockMarkDropFailedAction).toHaveBeenCalledExactlyOnceWith({
+        requestId: multiDropTrip.id,
+        dropId: 'drop-2',
+        reason: 'Destinatario no responde al timbre',
+      });
+
+      await waitFor(() => {
+        expect(mockNotifySuccess).toHaveBeenCalledWith(
+          'Entrega registrada como no entregada.'
+        );
+        expect(mockRouterRefresh).toHaveBeenCalled();
+      });
+    });
+
+    it('viaje 1-drop legacy en in_transit despacha markTripDeliveredAction y jamás markDropDeliveredAction', async () => {
+      mockMarkTripDeliveredAction.mockResolvedValue({ ok: true });
+
+      render(
+        <TripCourierContainer trip={{ ...baseTrip, status: 'in_transit' }} />
+      );
+
+      const confirmBtn = screen.getByText(/Confirmar entrega/i);
+      fireEvent.click(confirmBtn);
+
+      expect(mockMarkTripDeliveredAction).toHaveBeenCalledExactlyOnceWith({
+        requestId: baseTrip.id,
+      });
+      expect(mockMarkDropDeliveredAction).not.toHaveBeenCalled();
+
+      await waitFor(() => {
+        expect(mockNotifySuccess).toHaveBeenCalledWith('¡Entrega confirmada!');
+        expect(mockRouterRefresh).toHaveBeenCalled();
+      });
+    });
+  });
+});

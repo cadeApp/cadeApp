@@ -1,7 +1,14 @@
 import 'server-only';
 import { z } from 'zod';
+import {
+  packageTypeSchema,
+  recipientPaymentMethodSchema,
+  type PackageType,
+  type RecipientPaymentMethod,
+} from '@/domain/schemas';
 import { createClient } from '@/server/supabase/server';
 import { getTripDetailsRpc } from '@/server/rpc/trips';
+import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
 import type {
   LiveAvailableRequestItem,
   LiveFeedResponse,
@@ -9,6 +16,7 @@ import type {
   LiveOffersResponse,
   LivePageCursor,
   LiveTripState,
+  PublicDropSummary,
 } from '@/lib/live-contracts';
 
 const LIVE_PAGE_SIZE = 50;
@@ -33,10 +41,11 @@ interface RawAvailableRequestRow {
   readonly package_type: string;
   readonly recipient_payment_method: string;
   readonly needs_change: boolean;
-  readonly cash_change_amount: number | null;
-  readonly notes: string | null;
   readonly published_at: string | null;
   readonly expires_at: string | null;
+  readonly fixed_price_ars?: number | null;
+  readonly auto_assign?: boolean;
+  readonly drops_count?: number | null;
   readonly pickup_zone?: { name: string } | Array<{ name: string }> | null;
   readonly dropoff_zone?: { name: string } | Array<{ name: string }> | null;
 }
@@ -49,19 +58,6 @@ interface RawOfferRow {
   readonly message: string | null;
   readonly status: string;
   readonly created_at: string;
-  readonly courier?: {
-    readonly vehicle_type?: string | null;
-    readonly license_status?: string;
-    readonly insurance_status?: string;
-    readonly doc_level?: number;
-    readonly profile?: { readonly display_name?: string } | Array<{ readonly display_name?: string }> | null;
-  } | Array<{
-    readonly vehicle_type?: string | null;
-    readonly license_status?: string;
-    readonly insurance_status?: string;
-    readonly doc_level?: number;
-    readonly profile?: { readonly display_name?: string } | Array<{ readonly display_name?: string }> | null;
-  }> | null;
 }
 
 /**
@@ -69,7 +65,7 @@ interface RawOfferRow {
  * - Requiere sesión activa de usuario.
  * - Lee delivery_requests en status=published con SOLO columnas públicas de feed.
  * - Consulta ofertas pendientes del courier para computar hasMyOffer y myOfferAmountArs.
- * - Jamás lee contactos, direcciones exactas ni coordenadas.
+ * - Jamás lee contactos, direcciones exactas, coordenadas, indicaciones ni monto exacto de cambio (D3).
  */
 export async function getAvailableRequestsLiveServer(
   cursor: LivePageCursor | null = null
@@ -86,20 +82,23 @@ export async function getAvailableRequestsLiveServer(
 
   let query = supabase
     .from('delivery_requests')
-    .select(`
+    .select(
+      `
       id,
       created_at,
+      drops_count,
       approx_distance_m,
       package_type,
       recipient_payment_method,
       needs_change,
-      cash_change_amount,
-      notes,
       published_at,
       expires_at,
+      fixed_price_ars,
+      auto_assign,
       pickup_zone:zones!pickup_zone_id(name),
       dropoff_zone:zones!dropoff_zone_id(name)
-    `)
+    `
+    )
     .eq('status', 'published')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -127,20 +126,38 @@ export async function getAvailableRequestsLiveServer(
 
   const requestIds = pageRows.map((r) => r.id);
   const myOffersMap = new Map<string, number>();
+  const dropsMap = new Map<string, PublicDropSummary[]>();
 
-  const { data: userOffers, error: offersError } = await supabase
-    .from('offers')
-    .select('request_id, amount_ars')
-    .eq('courier_id', user.id)
-    .in('request_id', requestIds)
-    .eq('status', 'pending');
+  const [userOffersResult, dropsResult] = await Promise.all([
+    supabase
+      .from('offers')
+      .select('request_id, amount_ars')
+      .eq('courier_id', user.id)
+      .in('request_id', requestIds)
+      .eq('status', 'pending'),
+    supabase
+      .from('delivery_request_drops')
+      .select(
+        `
+        request_id,
+        position,
+        package_type,
+        recipient_payment_method,
+        needs_change,
+        approx_distance_m,
+        dropoff_zone:zones!dropoff_zone_id(name)
+      `
+      )
+      .in('request_id', requestIds)
+      .order('position', { ascending: true }),
+  ]);
 
-  if (offersError) {
+  if (userOffersResult.error || dropsResult.error) {
     return { ok: false, error: 'DATABASE_ERROR', status: 500 };
   }
 
-  if (userOffers) {
-    const rawUserOffers = userOffers as unknown as Array<{
+  if (userOffersResult.data) {
+    const rawUserOffers = userOffersResult.data as unknown as Array<{
       readonly request_id: string;
       readonly amount_ars: number;
     }>;
@@ -149,28 +166,86 @@ export async function getAvailableRequestsLiveServer(
     }
   }
 
-  const mapped: LiveAvailableRequestItem[] = pageRows.map((req) => {
+  if (dropsResult.data) {
+    interface RawLiveDropRow {
+      readonly request_id: string;
+      readonly position: number;
+      readonly package_type: string;
+      readonly recipient_payment_method: string;
+      readonly needs_change: boolean;
+      readonly approx_distance_m: number | null;
+      readonly dropoff_zone:
+        { readonly name: string } | readonly { readonly name: string }[] | null;
+    }
+    for (const d of dropsResult.data as unknown as readonly RawLiveDropRow[]) {
+      const pType = packageTypeSchema.safeParse(d.package_type);
+      const pMethod = recipientPaymentMethodSchema.safeParse(d.recipient_payment_method);
+      if (!pType.success || !pMethod.success) {
+        return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+      }
+      const dropoffZone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+      const summary: PublicDropSummary = {
+        position: d.position,
+        dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+        packageType: pType.data,
+        recipientPaymentMethod: pMethod.data,
+        needsChange: Boolean(d.needs_change),
+        approxDistanceM: d.approx_distance_m != null ? Number(d.approx_distance_m) : null,
+      };
+      const list = dropsMap.get(d.request_id);
+      if (list) {
+        list.push(summary);
+      } else {
+        dropsMap.set(d.request_id, [summary]);
+      }
+    }
+  }
+
+  const mapped: LiveAvailableRequestItem[] = [];
+  for (const req of pageRows) {
     const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
     const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
     const myOfferAmount = myOffersMap.get(req.id) ?? null;
+    const declaredDropsCount = req.drops_count ?? 1;
+    const reqDrops = dropsMap.get(req.id) ?? [];
 
-    return {
+    if (reqDrops.length === 0) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    if (declaredDropsCount > 1 && reqDrops.length !== declaredDropsCount) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    const firstDrop = reqDrops[0];
+    if (!firstDrop) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    const effectiveDrops = reqDrops;
+    const effectivePackageType = firstDrop.packageType;
+    const effectivePaymentMethod = firstDrop.recipientPaymentMethod;
+    const effectiveNeedsChange = firstDrop.needsChange;
+    const effectiveDropoffZoneName = firstDrop.dropoffZoneName;
+
+    mapped.push({
       id: req.id,
       pickupZoneName: pickupZone?.name ?? 'Centro',
-      dropoffZoneName: dropoffZone?.name ?? 'Aguilares',
+      dropoffZoneName: effectiveDropoffZoneName,
       approxDistanceKm: formatApproxDistanceKm(req.approx_distance_m),
-      packageType: (req.package_type as LiveAvailableRequestItem['packageType']) ?? 'small',
-      recipientPaymentMethod:
-        (req.recipient_payment_method as LiveAvailableRequestItem['recipientPaymentMethod']) ?? 'cash',
-      needsChange: Boolean(req.needs_change),
-      cashChangeAmount: req.cash_change_amount,
-      notes: req.notes,
+      packageType: effectivePackageType,
+      recipientPaymentMethod: effectivePaymentMethod,
+      needsChange: effectiveNeedsChange,
       publishedAt: req.published_at ?? new Date().toISOString(),
       expiresAt: req.expires_at,
       hasMyOffer: myOfferAmount !== null,
       myOfferAmountArs: myOfferAmount,
-    };
-  });
+      fixedPriceArs: req.fixed_price_ars ?? null,
+      autoAssign: req.auto_assign ?? false,
+      dropsCount: effectiveDrops.length,
+      drops: effectiveDrops,
+    });
+  }
 
   const tail = pageRows.at(-1);
   const nextCursor: LivePageCursor | null =
@@ -223,22 +298,17 @@ export async function getRequestOffersLiveServer(
 
   let offersQuery = supabase
     .from('offers')
-    .select(`
+    .select(
+      `
       id,
       courier_id,
       amount_ars,
       eta_minutes,
       message,
       status,
-      created_at,
-      courier:couriers!courier_id(
-        vehicle_type,
-        license_status,
-        insurance_status,
-        doc_level,
-        profile:profiles!profile_id(display_name)
-      )
-    `)
+      created_at
+    `
+    )
     .eq('request_id', parsedId.data)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -260,30 +330,41 @@ export async function getRequestOffersLiveServer(
   const hasMore = rawOffers.length > LIVE_PAGE_SIZE;
   const pageRows = rawOffers.slice(0, LIVE_PAGE_SIZE);
 
-  const mapped: LiveMerchantOfferItem[] = pageRows.map((o) => {
-    const courierObj = Array.isArray(o.courier) ? o.courier[0] : o.courier;
-    const profileObj = courierObj?.profile
-      ? Array.isArray(courierObj.profile)
-        ? courierObj.profile[0]
-        : courierObj.profile
+  // CC-016: el comercio no lee `couriers`/`profiles` por RLS; la identidad y la documentación de quienes
+  // ofertaron llegan por la RPC. Sin esa proyección se falla: nunca se inventa un nivel de documentación.
+  const couriersResult =
+    pageRows.length > 0
+      ? await getRequestOfferCouriersRpc(supabase, { requestId: parsedId.data })
       : null;
-    const displayName = profileObj?.display_name || 'Repartidor';
 
-    return {
+  if (couriersResult && !couriersResult.ok) {
+    return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+  }
+
+  const couriersById = couriersResult?.data ?? null;
+  const mapped: LiveMerchantOfferItem[] = [];
+
+  for (const o of pageRows) {
+    const courier = couriersById?.get(o.courier_id);
+    if (!courier) {
+      return { ok: false, error: 'DATABASE_ERROR', status: 500 };
+    }
+
+    mapped.push({
       id: o.id,
       courierId: o.courier_id,
-      courierName: displayName,
-      vehicleType: courierObj?.vehicle_type ?? null,
+      courierName: courier.displayName || 'Repartidor',
+      vehicleType: courier.vehicleType,
       amountArs: o.amount_ars,
       etaMinutes: o.eta_minutes,
       message: o.message,
-      licenseStatus: (courierObj?.license_status as LiveMerchantOfferItem['licenseStatus']) ?? 'none',
-      insuranceStatus: (courierObj?.insurance_status as LiveMerchantOfferItem['insuranceStatus']) ?? 'none',
-      docLevel: ((courierObj?.doc_level as number) ?? 0) as 0 | 1 | 2,
+      licenseStatus: courier.licenseStatus,
+      insuranceStatus: courier.insuranceStatus,
+      docLevel: courier.docLevel,
       createdAt: o.created_at,
       status: o.status as LiveMerchantOfferItem['status'],
-    };
-  });
+    });
+  }
 
   const tail = pageRows.at(-1);
   const nextCursor: LivePageCursor | null =

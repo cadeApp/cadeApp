@@ -24,3 +24,14 @@ export const republishTripSchema = z.object({
   requestId: uuidSchema,
   reason: z.string().trim().max(500).nullable().optional(),
 });
+
+export const markDropDeliveredSchema = z.object({
+  dropId: uuidSchema,
+  requestId: uuidSchema,
+});
+
+export const markDropFailedSchema = z.object({
+  dropId: uuidSchema,
+  requestId: uuidSchema,
+  reason: z.string().trim().min(1, 'El motivo es obligatorio').max(500),
+});

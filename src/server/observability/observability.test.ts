@@ -68,12 +68,14 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(cleaned).toContain('[REDACTED_TOKEN]');
     });
 
-    it('debe proteger campos reservados del destinatario (notes, address, recipient)', () => {
+    it('debe proteger campos reservados del destinatario (notes, address, recipient, cash_change_amount)', () => {
       const sensitiveContext = {
         recipient_name: 'Juan Perez',
         recipient_phone: '+5493865998877',
         delivery_address: 'Av. Mitre 1234, Aguilares',
         notes: 'Dejar en la puerta lateral, timbre roto',
+        cash_change_amount: 5000,
+        cashChangeAmount: 5000,
         request_id: 'req-abc-123',
       };
       const cleaned = scrubPii(sensitiveContext);
@@ -81,6 +83,8 @@ describe('T-310: Observabilidad, Sentry sin PII, Alertas y Runbooks de Backups',
       expect(cleaned.recipient_phone).toBe('[REDACTED_PHONE]');
       expect(cleaned.delivery_address).toBe('[REDACTED_PII]');
       expect(cleaned.notes).toBe('[REDACTED_PII]');
+      expect(cleaned.cash_change_amount).toBe('[REDACTED_PII]');
+      expect(cleaned.cashChangeAmount).toBe('[REDACTED_PII]');
       expect(cleaned.request_id).toBe('req-abc-123');
     });
 

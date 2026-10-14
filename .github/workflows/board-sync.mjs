@@ -135,6 +135,26 @@ export function parseDependencies(body) {
   return [...deps];
 }
 
+/**
+ * Marcador estable de la ficha para la excepción multi-PR (AGENTS.md §5, regla 50). Solo cuenta la línea exacta
+ * `- **Rollout multi-PR:** sí`; una mención libre de «multi-PR» no convierte la tarea en excepción.
+ * @param {string} cardText
+ */
+export function parseMultiPrRollout(cardText) {
+  return /^- \*\*Rollout multi-PR:\*\* sí[ \t]*\r?$/m.test(cardText);
+}
+
+/** @param {string} taskId */
+function loadTaskCardMultiPrRollout(taskId) {
+  const cardPath = resolve(process.cwd(), 'docs', 'tasks', `${taskId}.md`);
+  if (!existsSync(cardPath)) return false;
+  try {
+    return parseMultiPrRollout(readFileSync(cardPath, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
 /** @param {string} taskId */
 function loadTaskCardDependencies(taskId) {
   const cardPath = resolve(process.cwd(), 'docs', 'tasks', `${taskId}.md`);
@@ -153,6 +173,7 @@ function loadTaskCardDependencies(taskId) {
  *   issues: IssueSnapshot[],
  *   pullRequests: PullRequestSnapshot[],
  *   mergedTaskIds?: string[],
+ *   multiPrTaskIds?: string[],
  *   useLocalTaskCards?: boolean,
  * }} input
  * @returns {BoardTransition[]}
@@ -161,10 +182,25 @@ export function computeBoardTransitions({
   issues,
   pullRequests,
   mergedTaskIds = [],
+  multiPrTaskIds = [],
   useLocalTaskCards = false,
 }) {
+  // Tareas con rollout multi-PR: un PR mergeado es un paso, no el fin de la tarea. Solo el cierre real del issue la
+  // completa. «Hubo un merge» (mergedTasks) y «la tarea satisface dependencias» (completedTasks) son cosas distintas.
   /** @type {Set<string>} */
-  const completedTasks = new Set(mergedTaskIds.map((id) => id.toUpperCase()));
+  const multiPrTasks = new Set(multiPrTaskIds.map((id) => id.toUpperCase()));
+  if (useLocalTaskCards) {
+    for (const issue of issues) {
+      const taskId = extractTaskId(issue.title);
+      if (taskId && loadTaskCardMultiPrRollout(taskId)) multiPrTasks.add(taskId);
+    }
+  }
+
+  /** @type {Set<string>} */
+  const mergedTasks = new Set(mergedTaskIds.map((id) => id.toUpperCase()));
+
+  /** @type {Set<string>} */
+  const completedTasks = new Set([...mergedTasks].filter((id) => !multiPrTasks.has(id)));
 
   /** @type {Map<string, PullRequestSnapshot>} */
   const openPrByTask = new Map();
@@ -212,6 +248,9 @@ export function computeBoardTransitions({
       targetState = 'hecha';
     } else if (openPr) {
       targetState = openPr.isDraft ? 'en-curso' : 'en-review';
+    } else if (multiPrTasks.has(taskId) && mergedTasks.has(taskId)) {
+      // Multi-PR con al menos un paso mergeado y el issue abierto: sigue en curso.
+      targetState = 'en-curso';
     } else {
       const cardDeps = useLocalTaskCards ? loadTaskCardDependencies(taskId) : null;
       const deps = cardDeps ?? parseDependencies(issue.body);

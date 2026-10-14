@@ -17,7 +17,7 @@ import {
   updatePasswordSchema,
   type SignupRole,
 } from './schemas';
-import { getRoleDefaultPath, resolvePostLoginRedirect } from './guards';
+import { getRoleDefaultPath, parseOnboardingComplete, resolvePostLoginRedirect } from './guards';
 import { areCurrentLegalVersions } from '@/features/legal';
 import { publicEnv } from '@/lib/env.public';
 
@@ -25,7 +25,13 @@ export async function loginAction(
   input: unknown
 ): Promise<
   ActionResult<
-    { userId: string; role: ProfileRole; consentStatus: ConsentStatus; redirectTo: string },
+    {
+      userId: string;
+      role: ProfileRole;
+      consentStatus: ConsentStatus;
+      onboardingComplete?: boolean;
+      redirectTo: string;
+    },
     DomainErrorCode
   >
 > {
@@ -66,12 +72,39 @@ export async function loginAction(
 
   const role = roleParsed.data;
   const consentStatus = consentParsed.data;
-  const redirectTo = resolvePostLoginRedirect(parsed.data.redirectTo, role, consentStatus);
+
+  // T-334: con onboarding incompleto el destino es el onboarding. Cliente del usuario (RLS *_select_self).
+  let onboardingComplete: boolean | undefined;
+  if (consentStatus === 'active' && (role === 'merchant' || role === 'courier')) {
+    const onboarding =
+      role === 'merchant'
+        ? await supabase
+            .from('merchants')
+            .select('business_name')
+            .eq('profile_id', data.user.id)
+            .maybeSingle()
+        : await supabase
+            .from('couriers')
+            .select('vehicle_type')
+            .eq('profile_id', data.user.id)
+            .maybeSingle();
+    if (!onboarding.error) {
+      onboardingComplete = parseOnboardingComplete(role, onboarding.data);
+    }
+  }
+
+  const redirectTo = resolvePostLoginRedirect(
+    parsed.data.redirectTo,
+    role,
+    consentStatus,
+    onboardingComplete
+  );
 
   return ok({
     userId: data.user.id,
     role,
     consentStatus,
+    onboardingComplete,
     redirectTo,
   });
 }
@@ -286,7 +319,35 @@ export async function updatePasswordAction(
   const consentParsed = consentStatusSchema.safeParse(profile?.consent_status);
 
   if (roleParsed.success && consentParsed.success) {
-    redirectTo = resolvePostLoginRedirect(null, roleParsed.data, consentParsed.data);
+    let onboardingComplete: boolean | undefined;
+    if (
+      consentParsed.data === 'active' &&
+      (roleParsed.data === 'merchant' || roleParsed.data === 'courier')
+    ) {
+      const onboarding =
+        roleParsed.data === 'merchant'
+          ? await supabase
+              .from('merchants')
+              .select('business_name')
+              .eq('profile_id', data.user.id)
+              .maybeSingle()
+          : await supabase
+              .from('couriers')
+              .select('vehicle_type')
+              .eq('profile_id', data.user.id)
+              .maybeSingle();
+
+      if (!onboarding.error) {
+        onboardingComplete = parseOnboardingComplete(roleParsed.data, onboarding.data);
+      }
+    }
+
+    redirectTo = resolvePostLoginRedirect(
+      null,
+      roleParsed.data,
+      consentParsed.data,
+      onboardingComplete
+    );
   } else if (roleParsed.success) {
     redirectTo = getRoleDefaultPath(roleParsed.data);
   }

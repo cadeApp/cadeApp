@@ -25,7 +25,9 @@ La copia web se usa para facilitar la lectura/transcripción; las fotografías a
 
 ## Regla de numeración
 
-La leyenda municipal usa numeración **discontinua**. La transcripción visible contiene 62 entradas entre 01 y 67 y no muestra entradas 03, 21, 22, 47 ni 58.
+La leyenda municipal usa numeración **discontinua**. La lista aprobada contiene 63 entradas entre 01 y 67 y no tiene entradas 21, 22, 47 ni 58.
+
+La transcripción inicial tenía 62 entradas y omitía la 03. La leyenda del PDF completo sí la incluye (`03- 1º de Mayo`), con su rótulo circular `(03)` en el mapa. El 2026-10-02 Lautaro073 decidió incorporarla (decisión P1, opción A, hallazgo PR218-H05) como barrio aprobado número 63. Se agrega con su número municipal, sin renumerar los demás.
 
 **No renumerar, no inventar entradas para llenar huecos y no interpretar el número como ID de DB.**
 
@@ -35,6 +37,7 @@ La leyenda municipal usa numeración **discontinua**. La transcripción visible 
 |---:|---|---|---|
 | 01 | Chacarita | Chacarita | claro |
 | 02 | San Jose | San José | claro |
+| 03 | 1º de Mayo | 1º de Mayo | aprobado por Lautaro073 |
 | 04 | Sto. Domingo | Santo Domingo | aprobado por Lautaro073 |
 | 05 | J.F. Kennedy | J. F. Kennedy | claro |
 | 06 | El Porvenir | El Porvenir | claro |
@@ -122,7 +125,7 @@ El resto de la transcripción queda exactamente con la normalización candidata 
 ## Estado de decisiones antes de SQL
 
 ### Aprobado
-- La lista de **62 entradas** queda aprobada por Lautaro073.
+- La lista de **63 entradas** queda aprobada por Lautaro073: las 62 iniciales más `03 — 1º de Mayo` (decisión P1 del 2026-10-02, opción A).
 - Las normalizaciones finales quedan aprobadas, incluidas las cinco correcciones explícitas anteriores.
 - No se inventarán centroides.
 

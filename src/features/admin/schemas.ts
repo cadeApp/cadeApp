@@ -170,6 +170,9 @@ export const requestTtlFormSchema = z.object({
 export const graceDaysFormSchema = z.object({
   value: integerTextSchema(0, 'Ingresá una cantidad entera de días (0 o más).'),
 });
+export const maxDropsFormSchema = z.object({
+  value: integerTextSchema(1, 'Ingresá una cantidad entera de entregas mayor a 0.'),
+});
 export const termsVersionFormSchema = z.object({
   value: z.string().trim().min(1, 'Ingresá la versión de los términos.'),
 });

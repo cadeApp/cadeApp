@@ -1,6 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { sortOffersForMerchant } from '@/domain/priority';
 import * as serverSupabase from '@/server/supabase/server';
 import {
+  assertAndMapMerchantDrops,
   getActiveZones,
   getMerchantDefaultPickup,
   getMerchantHistoryRequests,
@@ -8,10 +11,62 @@ import {
   getMerchantRequestWithOffers,
   parseMerchantHistorySearchParams,
 } from './queries';
+import type { MerchantDropSummary } from './types';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
 }));
+
+function mockDropsTable(data?: unknown[]) {
+  return {
+    select: vi.fn().mockReturnValue({
+      in: vi.fn().mockImplementation((_col: string, ids: string[]) => ({
+        order: vi.fn().mockImplementation(() => {
+          if (data !== undefined) {
+            return Promise.resolve({ data, error: null });
+          }
+          const defaultDrops = (ids ?? []).map((id) => ({
+            id: `drop-${id}`,
+            request_id: id,
+            position: 1,
+            package_type: 'chico',
+            recipient_payment_method: 'cash',
+            needs_change: false,
+            approx_distance_m: 1000,
+            status: 'delivered',
+            delivered_at: null,
+            failed_reason: null,
+            dropoff_zone: { name: 'Barrio Sur' },
+          }));
+          return Promise.resolve({ data: defaultDrops, error: null });
+        }),
+      })),
+      eq: vi.fn().mockImplementation((_col: string, id: string) => ({
+        order: vi.fn().mockImplementation(() => {
+          if (data !== undefined) {
+            return Promise.resolve({ data, error: null });
+          }
+          const defaultDrops = [
+            {
+              id: `drop-${id}`,
+              request_id: id,
+              position: 1,
+              package_type: 'chico',
+              recipient_payment_method: 'cash',
+              needs_change: false,
+              approx_distance_m: 1000,
+              status: 'delivered',
+              delivered_at: null,
+              failed_reason: null,
+              dropoff_zone: { name: 'Barrio Sur' },
+            },
+          ];
+          return Promise.resolve({ data: defaultDrops, error: null });
+        }),
+      })),
+    }),
+  };
+}
 
 describe('T-112 / T-118: queries de requests e historial', () => {
   beforeEach(() => {
@@ -170,6 +225,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           };
         }
+        if (table === 'delivery_request_drops') return mockDropsTable();
         return {};
       });
 
@@ -242,6 +298,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           };
         }
+        if (table === 'delivery_request_drops') return mockDropsTable();
         return {};
       });
 
@@ -348,6 +405,9 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             eq: vi.fn().mockResolvedValue({ data: [], error: null }),
           };
         }
+        if (table === 'delivery_request_drops') {
+          return mockDropsTable();
+        }
         return {};
       });
 
@@ -425,6 +485,9 @@ describe('T-112 / T-118: queries de requests e historial', () => {
             }),
           };
         }
+        if (table === 'delivery_request_drops') {
+          return mockDropsTable();
+        }
         return {};
       });
 
@@ -483,6 +546,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn().mockImplementation((table: string) => {
           if (table === 'delivery_requests') return queryBuilder;
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {
             select: vi.fn().mockReturnThis(),
             in: vi.fn().mockReturnThis(),
@@ -569,6 +633,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -750,6 +815,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -857,6 +923,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: [], error: null }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
@@ -873,6 +940,19 @@ describe('T-112 / T-118: queries de requests e historial', () => {
 
   describe('getMerchantRequestWithOffers', () => {
     const validUuid = '11111111-1111-1111-1111-111111111111';
+    // CC-023: el detalle también llama a get_merchant_request_private_fields; el resto de las RPC van al mock
+    // de cada test.
+    type RpcMock = Mock<(fn: string, args?: Record<string, unknown>) => unknown>;
+    const withPrivateFields = (couriersRpc: ReturnType<typeof vi.fn>) =>
+      vi.fn((fn: string, args?: Record<string, unknown>) =>
+        fn === 'get_merchant_request_private_fields'
+          ? Promise.resolve({
+              data: { requestId: validUuid, notes: null, cashChangeAmount: null },
+              error: null,
+            })
+          : (couriersRpc as RpcMock)(fn, args)
+      );
+    const courierUuid = (i: number) => `10000000-0000-0000-0000-${String(i).padStart(12, '0')}`;
     const mockRequestRow = {
       id: validUuid,
       approx_distance_m: 1500,
@@ -893,21 +973,30 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       const mockOffers = [
         {
           id: '22222222-2222-2222-2222-222222222222',
-          courier_id: 'courier-1',
+          courier_id: courierUuid(1),
           amount_ars: 2000,
           eta_minutes: 15,
           message: null,
           status: 'pending',
           created_at: '2026-09-26T12:05:00.000Z',
-          courier: {
-            vehicle_type: 'motorcycle',
-            license_status: 'verified',
-            insurance_status: 'verified',
-            doc_level: 2,
-            profile: { display_name: 'Carlos' },
-          },
         },
       ];
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              courierId: courierUuid(1),
+              displayName: 'Carlos',
+              vehicleType: 'moto',
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+          ],
+        },
+        error: null,
+      });
 
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn((table: string) => {
@@ -926,33 +1015,53 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: mockOffers, error: null }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
+        rpc: withPrivateFields(couriersRpc),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(couriersRpc).toHaveBeenCalledExactlyOnceWith('get_request_offer_couriers', {
+        p_request_id: validUuid,
+      });
       expect(result).not.toBeNull();
       expect(result?.offers).toHaveLength(1);
+      expect(result?.offers[0]).toMatchObject({
+        courierName: 'Carlos',
+        vehicleType: 'moto',
+        licenseStatus: 'verified',
+        insuranceStatus: 'verified',
+        docLevel: 2,
+        amountArs: 2000,
+      });
       expect(result?.nextOffersCursor).toBeNull();
     });
 
     it('pagina ofertas con limit(51), retorna 50 ítems y nextOffersCursor con datos de fila 50', async () => {
       const fiftyOneOffers = Array.from({ length: 51 }, (_, i) => ({
         id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
-        courier_id: `courier-${i + 1}`,
+        courier_id: courierUuid(i + 1),
         amount_ars: 2000 + i * 10,
         eta_minutes: 15,
         message: null,
         status: 'pending',
         created_at: `2026-09-26T12:${String(59 - i).padStart(2, '0')}:00.000Z`,
-        courier: {
-          vehicle_type: 'motorcycle',
-          license_status: 'verified',
-          insurance_status: 'none',
-          doc_level: 1,
-          profile: { display_name: `Courier ${i + 1}` },
-        },
       }));
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: fiftyOneOffers.map((offer, i) => ({
+            courierId: offer.courier_id,
+            displayName: `Courier ${i + 1}`,
+            vehicleType: 'moto',
+            licenseStatus: 'verified',
+            insuranceStatus: 'none',
+            docLevel: 1,
+          })),
+        },
+        error: null,
+      });
 
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         from: vi.fn((table: string) => {
@@ -971,8 +1080,10 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               limit: vi.fn().mockResolvedValue({ data: fiftyOneOffers, error: null }),
             };
           }
+          if (table === 'delivery_request_drops') return mockDropsTable();
           return {};
         }),
+        rpc: withPrivateFields(couriersRpc),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
@@ -982,6 +1093,970 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(result?.nextOffersCursor).toEqual(
         targetOffer ? { createdAt: targetOffer.created_at, id: targetOffer.id } : null
       );
+    });
+
+    function mockMerchantDetailClient(offers: readonly unknown[], rpc: ReturnType<typeof vi.fn>) {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: mockRequestRow, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: offers, error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') return mockDropsTable();
+          return {};
+        }),
+        rpc: withPrivateFields(rpc),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    }
+
+    const pendingOffer = (i: number, amountArs: number) => ({
+      id: `22222222-2222-2222-2222-${String(i).padStart(12, '0')}`,
+      courier_id: courierUuid(i),
+      amount_ars: amountArs,
+      eta_minutes: 15,
+      message: null,
+      status: 'pending',
+      created_at: `2026-09-26T12:0${i}:00.000Z`,
+    });
+
+    it('CC-016: no embebe couriers/profiles en la consulta de ofertas del comercio', () => {
+      const sourceCode = readFileSync('src/features/requests/queries.ts', 'utf8');
+      const fnSource = sourceCode.slice(
+        sourceCode.indexOf('export async function getMerchantRequestWithOffers')
+      );
+      expect(fnSource).not.toMatch(/couriers!courier_id|profiles!profile_id/);
+      expect(fnSource).toContain('getRequestOfferCouriersRpc');
+    });
+
+    it('CC-016: sin ofertas no llama a la RPC', async () => {
+      const couriersRpc = vi.fn();
+      mockMerchantDetailClient([], couriersRpc);
+
+      const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      expect(result?.offers).toEqual([]);
+      expect(couriersRpc).not.toHaveBeenCalled();
+    });
+
+    it('CC-016: si la RPC falla lanza en lugar de inventar «Repartidor» y docLevel 0', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'NOT_FOUND' },
+      });
+      mockMerchantDetailClient([pendingOffer(1, 2000)], couriersRpc);
+
+      await expect(getMerchantRequestWithOffers(validUuid, 'merchant-1')).rejects.toThrow(
+        'Error al cargar repartidores de las ofertas: NOT_FOUND'
+      );
+    });
+
+    it('CC-016: si una oferta no tiene su repartidor en la proyección lanza', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: { requestId: validUuid, couriers: [] },
+        error: null,
+      });
+      mockMerchantDetailClient([pendingOffer(1, 2000)], couriersRpc);
+
+      await expect(getMerchantRequestWithOffers(validUuid, 'merchant-1')).rejects.toThrow(
+        'Error al cargar repartidores de las ofertas: NOT_FOUND'
+      );
+    });
+
+    it('CC-016: entrega los niveles reales que la lista necesita para ordenar por documentación y por precio', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              courierId: courierUuid(1),
+              displayName: 'Courier Doc2',
+              vehicleType: 'moto',
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+            {
+              courierId: courierUuid(2),
+              displayName: 'Courier Doc0',
+              vehicleType: null,
+              licenseStatus: 'none',
+              insuranceStatus: 'none',
+              docLevel: 0,
+            },
+          ],
+        },
+        error: null,
+      });
+      mockMerchantDetailClient([pendingOffer(1, 2000), pendingOffer(2, 1500)], couriersRpc);
+
+      const result = await getMerchantRequestWithOffers(validUuid, 'merchant-1');
+      const offers = result?.offers ?? [];
+      expect(offers).toHaveLength(2);
+
+      expect(sortOffersForMerchant(offers, 'doc_level').map((o) => o.courierName)).toEqual([
+        'Courier Doc2',
+        'Courier Doc0',
+      ]);
+      expect(sortOffersForMerchant(offers, 'price').map((o) => o.courierName)).toEqual([
+        'Courier Doc0',
+        'Courier Doc2',
+      ]);
+    });
+  });
+
+  const validUuidB = '33333333-3333-4333-8333-333333333334';
+
+  describe('CC-023: los lectores del comercio no leen notes ni cash_change_amount por tabla', () => {
+    const requestId = '33333333-3333-4333-8333-333333333333';
+    const requestRow = (id: string, status = 'published') => ({
+      id,
+      approx_distance_m: 1500,
+      package_type: 'chico',
+      recipient_payment_method: 'cash',
+      needs_change: true,
+      status,
+      expires_at: null,
+      created_at: new Date().toISOString(),
+      accepted_offer_id: null,
+      pickup_zone: { name: 'Centro' },
+      dropoff_zone: { name: 'Sur' },
+    });
+
+    // Builder encadenable y awaitable en cualquier punto, como el de PostgREST.
+    function chain(rows: readonly unknown[], selects: string[]) {
+      const result = { data: rows, error: null };
+      const builder: Record<string, unknown> = {
+        then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
+      };
+      builder.select = vi.fn((columns: string) => {
+        selects.push(columns);
+        return builder;
+      });
+      for (const method of ['eq', 'in', 'lt', 'or', 'order', 'limit']) {
+        builder[method] = vi.fn(() => builder);
+      }
+      builder.maybeSingle = vi.fn().mockResolvedValue({ data: rows[0] ?? null, error: null });
+      return builder;
+    }
+
+    function mockClient(
+      requestRows: readonly unknown[],
+      rpc: ReturnType<typeof vi.fn> = vi.fn()
+    ): string[] {
+      const requestSelects: string[] = [];
+      const dropRows = (requestRows as Array<{ id: string }>).map((r) => ({
+        id: `drop-${r.id}`,
+        request_id: r.id,
+        position: 1,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: true,
+        approx_distance_m: 1000,
+        status: 'pending',
+        delivered_at: null,
+        failed_reason: null,
+        dropoff_zone: { name: 'Sur' },
+      }));
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') return chain(requestRows, requestSelects);
+          if (table === 'delivery_request_drops') return chain(dropRows, []);
+          return chain([], []);
+        }),
+        rpc,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+      return requestSelects;
+    }
+
+    it('getMerchantHistoryRequests no selecciona cash_change_amount y no expone cashChangeAmount', async () => {
+      const selects = mockClient([
+        requestRow(requestId, 'delivered'),
+        requestRow(validUuidB, 'delivered'),
+      ]);
+
+      const result = await getMerchantHistoryRequests('merchant-1', { limit: 50 });
+      expect(result.requests).toHaveLength(2);
+
+      expect(selects.length).toBeGreaterThan(0);
+      for (const columns of selects) {
+        expect(columns).not.toContain('cash_change_amount');
+        expect(columns).not.toMatch(/\bnotes\b/);
+      }
+      expect(result.requests[0]).not.toHaveProperty('cashChangeAmount');
+    });
+
+    it('getMerchantRequests no selecciona cash_change_amount en ninguna de sus consultas', async () => {
+      const selects = mockClient([requestRow(requestId), requestRow(validUuidB)]);
+
+      const result = await getMerchantRequests('merchant-1', { limit: 50 });
+      expect(result.requests).toHaveLength(2);
+
+      expect(selects.length).toBeGreaterThan(0);
+      for (const columns of selects) {
+        expect(columns).not.toContain('cash_change_amount');
+        expect(columns).not.toMatch(/\bnotes\b/);
+      }
+      expect(result.requests[0]).not.toHaveProperty('cashChangeAmount');
+    });
+
+    it('getMerchantRequestWithOffers obtiene notes y cashChangeAmount por get_merchant_request_private_fields', async () => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: { requestId, notes: 'Tocar timbre 2B', cashChangeAmount: 5000 },
+        error: null,
+      });
+      const selects = mockClient([requestRow(requestId)], rpc);
+
+      const result = await getMerchantRequestWithOffers(requestId, 'merchant-1');
+
+      expect(selects).toHaveLength(1);
+      expect(selects[0]).not.toContain('cash_change_amount');
+      expect(selects[0]).not.toMatch(/\bnotes\b/);
+      expect(rpc).toHaveBeenCalledExactlyOnceWith('get_merchant_request_private_fields', {
+        p_request_id: requestId,
+      });
+      expect(result?.request).toMatchObject({
+        id: requestId,
+        needsChange: true,
+        cashChangeAmount: 5000,
+        notes: 'Tocar timbre 2B',
+      });
+    });
+
+    it('getMerchantRequestWithOffers lanza si la RPC de campos privados falla, sin inventar valores', async () => {
+      const rpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'UNAUTHORIZED_ACTOR' },
+      });
+      mockClient([requestRow(requestId)], rpc);
+
+      await expect(getMerchantRequestWithOffers(requestId, 'merchant-1')).rejects.toThrow(
+        'Error al cargar los datos privados de la solicitud: UNAUTHORIZED_ACTOR'
+      );
+    });
+
+    it('getMerchantRequestWithOffers no llama a la RPC si la solicitud no es del comercio', async () => {
+      const rpc = vi.fn();
+      mockClient([], rpc);
+
+      expect(await getMerchantRequestWithOffers(requestId, 'merchant-1')).toBeNull();
+      expect(rpc).not.toHaveBeenCalled();
+    });
+
+    it('H06: getMerchantRequestWithOffers con parent null y 3 drops dispares proyecta drops[] y deriva escalares del primer drop', async () => {
+      const testReqId = '33333333-3333-3333-3333-333333333333';
+      const parentRowNulls = {
+        id: testReqId,
+        approx_distance_m: 2500,
+        package_type: null, // parent null
+        recipient_payment_method: null, // parent null
+        needs_change: null, // parent null
+        status: 'published',
+        expires_at: null,
+        created_at: '2026-10-12T10:00:00.000Z',
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Barrio Centro' },
+        dropoff_zone: null, // parent null
+      };
+
+      const threeDrops = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'mediano',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+        {
+          id: 'drop-2',
+          request_id: testReqId,
+          position: 2,
+          package_type: 'grande',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1500,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Este' },
+        },
+        {
+          id: 'drop-3',
+          request_id: testReqId,
+          position: 3,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 800,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: parentRowNulls, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(threeDrops);
+          }
+          return {};
+        }),
+        rpc: vi.fn().mockResolvedValue({
+          data: { requestId: testReqId, notes: null, cashChangeAmount: null },
+          error: null,
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequestWithOffers(testReqId, 'merchant-1');
+      expect(result).not.toBeNull();
+      // Verificación de compatibilidad escalar derivada del primer hijo (NO inventada de fallback)
+      expect(result?.request.packageType).toBe('mediano');
+      expect(result?.request.recipientPaymentMethod).toBe('transfer');
+      expect(result?.request.needsChange).toBe(false);
+      expect(result?.request.dropoffZoneName).toBe('Barrio Norte');
+      expect(result?.request.dropsCount).toBe(3);
+
+      // Verificación de la colección completa drops[]
+      expect(result?.request.drops).toHaveLength(3);
+      expect(result?.request.drops?.[0]).toMatchObject({
+        id: 'drop-1',
+        position: 1,
+        packageType: 'mediano',
+        recipientPaymentMethod: 'transfer',
+        dropoffZoneName: 'Barrio Norte',
+      });
+      expect(result?.request.drops?.[1]).toMatchObject({
+        id: 'drop-2',
+        position: 2,
+        packageType: 'grande',
+        recipientPaymentMethod: 'cash',
+        dropoffZoneName: 'Barrio Este',
+      });
+      expect(result?.request.drops?.[2]).toMatchObject({
+        id: 'drop-3',
+        position: 3,
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        dropoffZoneName: 'Barrio Sur',
+      });
+    });
+
+    it('H06/H11 positivo: getMerchantRequests con parent null y 3 drops dispares proyecta 3 entregas y deriva primer hijo', async () => {
+      const testReqId = '44444444-4444-4444-4444-444444444444';
+      const parentRow = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: null,
+        recipient_payment_method: null,
+        needs_change: null,
+        status: 'published',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      const threeDrops = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'grande',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Zona Industrial' },
+        },
+        {
+          id: 'drop-2',
+          request_id: testReqId,
+          position: 2,
+          package_type: 'mediano',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1500,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+        {
+          id: 'drop-3',
+          request_id: testReqId,
+          position: 3,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 2000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [parentRow], error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(threeDrops);
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequests('merchant-1', { limit: 10 });
+      expect(result.requests).toHaveLength(1);
+      const req = result.requests[0]!;
+      expect(req.packageType).toBe('grande');
+      expect(req.recipientPaymentMethod).toBe('transfer');
+      expect(req.dropoffZoneName).toBe('Zona Industrial');
+      expect(req.dropsCount).toBe(3);
+      expect(req.drops).toHaveLength(3);
+      expect(req.drops?.[0]?.position).toBe(1);
+      expect(req.drops?.[1]?.position).toBe(2);
+      expect(req.drops?.[2]?.position).toBe(3);
+    });
+
+    it('H06/H11 positivo: getMerchantHistoryRequests con parent null y 3 drops dispares en estado delivered proyecta 3 entregas y deriva primer hijo', async () => {
+      const testReqId = '55555555-5555-4555-8555-555555555555';
+      const parentRow = {
+        id: testReqId,
+        approx_distance_m: 3000,
+        package_type: null,
+        recipient_payment_method: null,
+        needs_change: null,
+        status: 'delivered',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      const threeDrops = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'grande',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'delivered',
+          delivered_at: new Date().toISOString(),
+          failed_reason: null,
+          dropoff_zone: { name: 'Zona Industrial' },
+        },
+        {
+          id: 'drop-2',
+          request_id: testReqId,
+          position: 2,
+          package_type: 'mediano',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 2000,
+          status: 'delivered',
+          delivered_at: new Date().toISOString(),
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+        {
+          id: 'drop-3',
+          request_id: testReqId,
+          position: 3,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 3000,
+          status: 'delivered',
+          delivered_at: new Date().toISOString(),
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [parentRow], error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(threeDrops);
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantHistoryRequests('merchant-1', { limit: 10, status: 'all' });
+      expect(result.requests).toHaveLength(1);
+      const req = result.requests[0]!;
+      expect(req.packageType).toBe('grande');
+      expect(req.recipientPaymentMethod).toBe('transfer');
+      expect(req.dropoffZoneName).toBe('Zona Industrial');
+      expect(req.dropsCount).toBe(3);
+      expect(req.drops).toHaveLength(3);
+    });
+
+    it('H06/H11 negativo: getMerchantRequests falla cerrado ante cardinalidad inconsistente (declarado 3, devuelto 1)', async () => {
+      const testReqId = '66666666-6666-4666-8666-666666666666';
+      const parentRow = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        status: 'published',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      const oneDrop = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Zona Industrial' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [parentRow], error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(oneDrop);
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantRequests('merchant-1', { limit: 10 })).rejects.toThrow(
+        /se declararon 3 entregas pero se encontraron 1/i
+      );
+    });
+
+    it('H06/H11 negativo: getMerchantRequests falla cerrado ante 0 entregas en estado publicado (3/0 y 1/0)', async () => {
+      const testReqId = '77777777-7777-4777-8777-777777777777';
+      const parentRow = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        status: 'published',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [parentRow], error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable([]);
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantRequests('merchant-1', { limit: 10 })).rejects.toThrow(
+        /requiere al menos 1 entrega materializada, pero se encontraron 0/i
+      );
+    });
+
+    it('H06/H11 negativo: getMerchantRequests falla cerrado ante posiciones no consecutivas', async () => {
+      const testReqId = '88888888-8888-4888-8888-888888888888';
+      const parentRow = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        status: 'published',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 2,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      const nonConsecutiveDrops = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Zona Industrial' },
+        },
+        {
+          id: 'drop-3',
+          request_id: testReqId,
+          position: 3, // Posición 3 en vez de 2
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 1500,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [parentRow], error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(nonConsecutiveDrops);
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantRequests('merchant-1', { limit: 10 })).rejects.toThrow(
+        /las posiciones de las entregas no son consecutivas iniciando en 1/i
+      );
+    });
+
+    it('H06/H11 negativo: getMerchantHistoryRequests falla cerrado ante cardinalidad inconsistente (3/1)', async () => {
+      const testReqId = '99999999-9999-4999-8999-999999999999';
+      const parentRow = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        status: 'delivered',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      const oneDrop = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'delivered',
+          delivered_at: new Date().toISOString(),
+          failed_reason: null,
+          dropoff_zone: { name: 'Zona Industrial' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [parentRow], error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              in: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(oneDrop);
+          }
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(
+        getMerchantHistoryRequests('merchant-1', { limit: 10, status: 'all' })
+      ).rejects.toThrow(/se declararon 3 entregas pero se encontraron 1/i);
+    });
+
+    it('H06/H11 negativo: getMerchantRequestWithOffers falla cerrado ante cardinalidad inconsistente (3/1)', async () => {
+      const testReqId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      const requestData = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: null,
+        recipient_payment_method: null,
+        needs_change: null,
+        status: 'published',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: 3,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: null,
+      };
+
+      const oneDrop = [
+        {
+          id: 'drop-1',
+          request_id: testReqId,
+          position: 1,
+          package_type: 'mediano',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          approx_distance_m: 1000,
+          status: 'pending',
+          delivered_at: null,
+          failed_reason: null,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+      ];
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: requestData, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable(oneDrop);
+          }
+          return {};
+        }),
+        rpc: vi.fn().mockResolvedValue({
+          data: { requestId: testReqId, notes: null, cashChangeAmount: null },
+          error: null,
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantRequestWithOffers(testReqId, 'merchant-1')).rejects.toThrow(
+        /se declararon 3 entregas pero se encontraron 1/i
+      );
+    });
+
+    it('H06/H11 draft: assertAndMapMerchantDrops no falla ante borrador sin entregas y retorna drops undefined', () => {
+      const result = assertAndMapMerchantDrops('draft-id', 'draft', null, []);
+      expect(result.drops).toBeUndefined();
+      expect(result.firstDrop).toBeUndefined();
+      expect(result.dropsCount).toBe(1);
+    });
+
+    it('H06/H11 draft: assertAndMapMerchantDrops con entregas en borrador las valida y mapea correctamente', () => {
+      const draftDrop: MerchantDropSummary = {
+        id: 'drop-d1',
+        position: 1,
+        dropoffZoneName: 'Centro',
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        approxDistanceKm: '1.0 km',
+        status: 'draft',
+        deliveredAt: null,
+        failedReason: null,
+      };
+      const result = assertAndMapMerchantDrops('draft-id', 'draft', 1, [draftDrop]);
+      expect(result.drops).toHaveLength(1);
+      expect(result.firstDrop).toEqual(draftDrop);
+      expect(result.dropsCount).toBe(1);
+    });
+
+    it('H06/H11 draft: getMerchantRequestWithOffers en estado draft sin entregas no falla y devuelve drops undefined', async () => {
+      const testReqId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+      const requestData = {
+        id: testReqId,
+        approx_distance_m: 2000,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        status: 'draft',
+        expires_at: null,
+        created_at: new Date().toISOString(),
+        accepted_offer_id: null,
+        drops_count: null,
+        pickup_zone: { name: 'Centro' },
+        dropoff_zone: { name: 'Barrio Norte' },
+      };
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        from: vi.fn((table: string) => {
+          if (table === 'delivery_requests') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: requestData, error: null }),
+            };
+          }
+          if (table === 'offers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              order: vi.fn().mockReturnThis(),
+              limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+            };
+          }
+          if (table === 'delivery_request_drops') {
+            return mockDropsTable([]);
+          }
+          return {};
+        }),
+        rpc: vi.fn().mockResolvedValue({
+          data: { requestId: testReqId, notes: null, cashChangeAmount: null },
+          error: null,
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getMerchantRequestWithOffers(testReqId, 'merchant-1');
+      expect(result).not.toBeNull();
+      expect(result?.request.status).toBe('draft');
+      expect(result?.request.drops).toBeUndefined();
+      expect(result?.request.dropsCount).toBe(1);
+      expect(result?.request.dropoffZoneName).toBe('Barrio Norte');
     });
   });
 });

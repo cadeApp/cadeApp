@@ -36,6 +36,8 @@ const SENSITIVE_KEYS = new Set([
   'vehicle_plate',
   'storage_path',
   'notes',
+  'cash_change_amount',
+  'cashchangeamount',
   'dni',
   'document_number',
   'selfie',

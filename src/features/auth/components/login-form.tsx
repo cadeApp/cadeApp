@@ -37,11 +37,13 @@ export function LoginForm({ initialRedirectTo }: { initialRedirectTo?: string })
         return;
       }
 
-      // Sanitiza el destino final previniendo Open Redirect y salto de roles
+      // T-334: el cliente conserva la auditoría canónica de rutas, pero usa el mismo dato de onboarding
+      // que calculó el Server Action. Sin el cuarto argumento, un courier incompleto se recalcularía a /courier/feed.
       const targetUrl = resolvePostLoginRedirect(
         initialRedirectTo,
         result.data.role,
-        result.data.consentStatus
+        result.data.consentStatus,
+        result.data.onboardingComplete
       );
       router.push(targetUrl);
       router.refresh();

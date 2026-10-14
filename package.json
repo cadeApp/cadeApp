@@ -10,13 +10,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint --dir src --file middleware.ts --max-warnings 0 && eslint --no-ignore --ext .mjs .github/workflows --max-warnings 0",
+    "lint": "next lint --dir src --max-warnings 0 && eslint --no-ignore --ext .mjs .github/workflows --max-warnings 0",
     "typecheck": "tsc --noEmit && tsc --project .github/workflows/tsconfig.json",
     "test": "vitest run && node --test .github/workflows/verify-workflows.test.mjs && node --test docs/adr/verify-adr.test.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "format": "prettier --write \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
-    "format:check": "prettier --check \"{src,tools}/**/*.{ts,tsx,mjs,css}\" middleware.ts \".github/workflows/*.mjs\"",
+    "format": "prettier --write \"{src,tools}/**/*.{ts,tsx,mjs,css}\" \".github/workflows/*.mjs\"",
+    "format:check": "prettier --check \"{src,tools}/**/*.{ts,tsx,mjs,css}\" \".github/workflows/*.mjs\"",
     "db:types": "node tools/db-types.mjs",
     "admin:mfa-enroll": "node tools/admin-mfa-enroll.mjs",
     "test:db": "supabase test db"
@@ -49,13 +49,14 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "1.55.1",
     "@testing-library/react": "16.3.3",
     "@types/eslint": "8.56.12",
     "@types/node": "20.19.43",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
-    "@vitest/coverage-v8": "3.2.7",
+    "@vitest/coverage-v8": "4.1.11",
     "autoprefixer": "10.6.1",
     "eslint": "8.57.1",
     "eslint-config-next": "15.5.26",
@@ -68,14 +69,21 @@
     "supabase": "2.116.0",
     "tailwindcss": "3.4.19",
     "typescript": "5.9.3",
-    "vitest": "3.2.7"
+    "vitest": "4.1.11"
   },
   "pnpm": {
     "overrides": {
       "glob": "10.5.0",
-      "handlebars": "4.7.9",
+      "handlebars": "4.7.10",
       "postcss": "8.5.28",
+      "sharp": "0.35.5",
+      "source-map-js": "1.2.2",
       "vite": "6.4.3"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-vfj7-8cjw-p6xm"
+      ]
     }
   }
 }

@@ -1,6 +1,9 @@
 import { z } from 'zod';
-import { uuidSchema } from '@/domain/rpc-contracts';
+import { uuidSchema, type PublicDropSummary } from '@/domain/rpc-contracts';
 import { courierStatusSchema } from '@/domain/schemas';
+import type { PackageType, RecipientPaymentMethod } from '@/domain/schemas';
+
+export type { PublicDropSummary };
 
 export const submitOfferFormSchema = z.object({
   requestId: uuidSchema,
@@ -41,21 +44,42 @@ export const acceptOfferFormSchema = z.object({
 
 export type AcceptOfferFormInput = z.infer<typeof acceptOfferFormSchema>;
 
+export const takeRequestFormSchema = z.object({
+  requestId: uuidSchema,
+  etaMinutes: z
+    .number({
+      required_error: 'Seleccioná el tiempo estimado de llegada.',
+      invalid_type_error: 'El tiempo estimado debe ser un número.',
+    })
+    .int()
+    .min(1, 'El tiempo mínimo es 1 minuto.')
+    .max(240, 'El tiempo máximo es 240 minutos (4 horas).'),
+  message: z
+    .string()
+    .trim()
+    .max(280, 'El mensaje no puede superar los 280 caracteres.')
+    .nullable()
+    .optional(),
+});
+
+export type TakeRequestFormInput = z.infer<typeof takeRequestFormSchema>;
 
 export interface AvailableRequestItem {
   readonly id: string;
   readonly pickupZoneName: string;
   readonly dropoffZoneName: string;
   readonly approxDistanceKm: string;
-  readonly packageType: 'small' | 'medium' | 'large';
-  readonly recipientPaymentMethod: 'cash' | 'transfer';
+  readonly packageType: PackageType;
+  readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;
-  readonly cashChangeAmount: number | null;
-  readonly notes: string | null;
   readonly publishedAt: string;
   readonly expiresAt: string | null;
   readonly hasMyOffer: boolean;
   readonly myOfferAmountArs: number | null;
+  readonly fixedPriceArs?: number | null;
+  readonly autoAssign?: boolean;
+  readonly dropsCount?: number;
+  readonly drops?: PublicDropSummary[];
 }
 
 export type CourierStatus = z.infer<typeof courierStatusSchema>;
