@@ -12,3 +12,8 @@
 - H04 rollback sin asserts de audit 0; H06 runner de carrera con orden solo nominal y sleep-oráculo; H07 JSON string true aceptado como consentimiento.
 - CI unit 2144/2144, db-tests 2151/2151, 4 escenarios runner GREEN; e2e-preview no GREEN, Gate 3 pendiente. Ver `revisiones/ronda-2.md` y `evidencia/comandos.md`.
 - No aprobar/mergear; sin mutaciones SQL/Node propias del revisor.
+
+## Ronda 3 — 2026-10-14
+- SHA `4996f1b772f249eb2f6f269e5afa8deb835ff484`. H04/H06/H07 **arreglados-verificados**, con CI DB 2177/2177, runner 5 GREEN, unit 2144/2144 y tipos generados sin drift.
+- **Nuevo BLOQUEANTE H08** de evidencia: tres etiquetas RED del harness no representan fallo de una aserción de contrato inalterada; hay que corregir demostración/reclasificación sin rehacer RPC.
+- Ver `revisiones/ronda-3.md`, `hallazgos.jsonl`, evidencia. PR Draft, no aprobada ni mergeada. Revisor no ejecutó Docker/SQL local ni mutaciones propias.

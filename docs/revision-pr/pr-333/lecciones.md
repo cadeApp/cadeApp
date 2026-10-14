@@ -12,3 +12,6 @@
 - `setTimeout` para esperar COMMIT es sleep-oráculo: confirmar COMMIT con marcador devuelto por psql y cero errores (P08).
 - Construir campo audit en un helper y no afirmarlo deja un hueco de control aunque tests pasen (P08).
 - Sin número AG nuevo al no verificar máximo global en todas las ramas; no inventar secuencias.
+- Ronda 3: imprimir «RED» no convierte una expectativa diseñada para pasar sobre un defecto en un test rojo real. RED exige que la misma aserción de negocio dé FAIL frente a mutante funcional, y GREEN después de restaurar (P08).
+- Mutar expectedWinnerIndex es un test del oráculo, no mutación del ganador efectivo SQL; útil como diagnóstico si se etiqueta honestamente.
+- `throws_matching` positivo frente a error artificial de helper instrumental es test de instrumentación, no evidencia de fallo de pgTAP original. No degradar hallazgos reales H04/H06/H07 por este desacople: funcionalmente se corrigieron.
