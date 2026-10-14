@@ -370,6 +370,16 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function pgTapSummary(output, expectedResult) {
+  const lines = output.split(/\r?\n/);
+  const filesLine = lines.find((line) => line.includes('Files='));
+  const resultLine = lines.find((line) => line.includes('Result:'));
+  assert.ok(filesLine, '[CC-024][H07] pgTAP debe informar el resumen Files/Tests');
+  assert.ok(resultLine, '[CC-024][H07] pgTAP debe informar el resultado final');
+  assert.match(resultLine, new RegExp(`Result:\\s*${expectedResult}`), `[CC-024][H07] pgTAP debe informar Result: ${expectedResult}`);
+  return `${filesLine.trim()} ${resultLine.trim()}`;
+}
+
 function assertConsentPgTapFailure(result, description) {
   assert.equal(result.signal, null, '[CC-024][H07] el pgTAP mutado no debe terminar por señal');
   assert.notEqual(result.exit, null, '[CC-024][H07] el pgTAP mutado debe informar código de salida');
@@ -379,6 +389,7 @@ function assertConsentPgTapFailure(result, description) {
     new RegExp(`# Failed test \\d+: "${escapeRegExp(description)}"`),
     '[CC-024][H07] el fallo debe pertenecer exactamente a la aserción de consentimiento JSON string true'
   );
+  return pgTapSummary(result.output, 'FAIL');
 }
 
 function assertConsentPgTapGreen(result, description) {
@@ -390,6 +401,7 @@ function assertConsentPgTapGreen(result, description) {
     new RegExp(`# Failed test \\d+: "${escapeRegExp(description)}"`),
     '[CC-024][H07] la aserción de consentimiento JSON string true debe volver a pasar'
   );
+  return pgTapSummary(result.output, 'PASS');
 }
 
 async function runConsentMutationCheck() {
@@ -399,15 +411,15 @@ async function runConsentMutationCheck() {
   try {
     installLegacyConsentGuard(definition);
     const red = runConsentPgTap();
-    assertConsentPgTapFailure(red, description);
-    console.log(`[CC-024][H07] RED auténtico: pgTAP inalterado falló en ${description} (exit ${red.exit}).`);
+    const redSummary = assertConsentPgTapFailure(red, description);
+    console.log(`[CC-024][H07] RED auténtico: pgTAP inalterado falló en ${description} (exit ${red.exit}; ${redSummary}).`);
   } finally {
     runSql(definition);
   }
 
   const green = runConsentPgTap();
-  assertConsentPgTapGreen(green, description);
-  console.log(`[CC-024][H07] GREEN auténtico: la misma suite pgTAP pasó tras restaurar la guarda JSONB (exit ${green.exit}).`);
+  const greenSummary = assertConsentPgTapGreen(green, description);
+  console.log(`[CC-024][H07] GREEN auténtico: la misma suite pgTAP pasó tras restaurar la guarda JSONB (exit ${green.exit}; ${greenSummary}).`);
 }
 
 async function runRetryMutationCheck(actorId) {
