@@ -14,3 +14,9 @@ No hubo ejecución local de tests/SQL ni verificación independiente de mutantes
 - SHA inspeccionado: `014029270f431280fa831ea910d052da9b12fd1d`; **CON BLOQUEANTES H03 + H07**; mejora de bitácora H08.
 - H01/H02/H04/H05/H06 resueltos y verificados con **E2E real del mismo SHA** (74/74 Chromium; 3/3 global-settings) y CI unit 2143/2143; db-tests 2039/2039. La nueva RPC todavía no existe en esta PR.
 - Ver `revisiones/ronda-3.md`, `hallazgos.jsonl` y `evidencia/comandos.md`. Sin ejecuciones/mutaciones locales independientes. No aprobada ni mergeada.
+
+## Ronda 4 — 2026-10-14
+- SHA revisado de Asako `141173d8965f63575cbe51dade4326550fcd7b9d`. **CON BLOQUEANTE H03** (writer aún hace INSERTs separados). H07/H08 **arreglados-verificados** con inspección + unit CI 2145/2145; H01/H02/H04/H05/H06 siguen cerrados históricamente.
+- **Actualización backend:** CC-024 PR #333 mergeada a develop `c97e0d8`; `migrate-develop` [38609451699](https://github.com/cadeApp/cadeApp/actions/runs/38609451699) SUCCESS y aplicó la migración CC-024. **No hay checkpoint postmerge 1/N + legacy acreditado**: últimos dos dispatch E2E postmerge fueron SKIPPED.
+- GitHub mergeability dirty/mergeable=false entre PR330 y develop; archivo solapado `docs/tasks/log/T-340.md`, requiere merge normal y preservar bitácoras.
+- Informe `revisiones/ronda-4.md` y evidencia con SHAs, logs y límites. No aprobado ni mergeado, sin SQL/Docker/pruebas locales del revisor.

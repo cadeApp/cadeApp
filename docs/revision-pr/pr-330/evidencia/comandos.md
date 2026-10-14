@@ -42,3 +42,15 @@ Verificaciones futuras exigidas: E2E chromium del SHA actual con map-privacy y m
 - **H03 lectura exacta**: `src/features/requests/actions.ts:54–179` inserciones HTTP de tablas separadas y luego `publish_request`; no se revisó implementación RPC que aún no está en #330.
 - Las pruebas RED/GREEN de `src/features/requests/components/create-request-form.test.tsx` ante fallo de red seguido de edición NO existen todavía. Proponer nuevo test que se ponga en rojo con código actual y quede verde tras aviso/guard.
 - Sin SQL/Docker local, sin secretos, sin tests falsos, sin mutantes commiteados.
+
+## Ronda 4 — 2026-10-14 — Asako H07/H08 y CC-024 merge
+- PR #330 HEAD `141173d8965f63575cbe51dade4326550fcd7b9d`, diff desde 4ee363b8: `src/features/requests/components/create-request-form.tsx`, su test y `copy.ts` más bitácora; author asako669. No cambios a acciones.ts/SQL ni carp. de revisión.
+- H07 lectura: Form :644–655 snapshot; :721–805 comparación canónica, bloqueo, acciones reintento original y nueva solicitud confirmada; tests :686–864 oráculos de 1 RPC accionada, mismo/diferente UUID y dirección. Unit CI run 38574983243 job 115889598848 129 archivos y 2145 tests PASS; form 23 tests PASS. Mutaciones declaradas por autor, no reproducidas por revisor.
+- H08: entrada log :1617–1621 coincide con run 38562296772/job 115846119404 `Files=21 Tests=2039 Result PASS`.
+- `get_pr_info(333)`, GitHub REST PR#333 merged 2026-10-14T17:46:05Z, merge SHA c97e0d8. Develop fetch HEAD c97e0d8; RPC contracts and wrapper present.
+- migrate-develop run 38609451699 job 116008725669 SUCCESS; log `Applying migration 20261014110000_cc024_atomic_multi_drop.sql`, `Finished supabase db push`. No SQL remoto manual ejecutado por revisor.
+- e2e-preview workflows 38609638111 / 38609638126 HEAD develop c97e0d8: resolve-preview SUCCESS, e2e-preview SKIPPED. No validación nueva RPC 1/N ni legacy tras merge.
+- `compare_commits` desde base 3a453762: único archivo cambiado en ambas ramas docs/tasks/log/T-340.md. GitHub PR330 `mergeable_state=dirty` (conflicto), no merge-tree local corrido.
+- actions.ts original mantiene inserts HTTP + publish_request; Gate 4 H03 ABIERTO. CI branch anterior al backend (unit 2145/2145, db 2039 PASS). E2E run 38575138784 chromium 73 PASS, 1 flaky courier-onboarding (pasó en segundo retry), global settings 3 PASS, writer #46 PASS con escritor no transaccional.
+- NO ejecutado por revisor: SQL propio, Docker, pnpm local, pruebas mutadas propias, git merge-tree ni E2E Gate 3 postmigración; no atribuirlos como PASS.
+
