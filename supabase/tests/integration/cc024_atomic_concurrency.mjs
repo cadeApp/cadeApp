@@ -342,7 +342,7 @@ function createAndPublishDefinition() {
 }
 
 function consentProbe(actorId, payload) {
-  return runSql(`
+  const output = runSql(`
     begin;
     create or replace function pg_temp.cc024_consent_probe(p_actor uuid, p_payload jsonb)
     returns text language plpgsql as $probe$
@@ -362,6 +362,7 @@ function consentProbe(actorId, payload) {
     select pg_temp.cc024_consent_probe('${actorId}', ${payload});
     rollback;
   `);
+  return output.split(/\r?\n/).filter(Boolean).pop() ?? '';
 }
 
 function installLegacyConsentGuard(definition) {
