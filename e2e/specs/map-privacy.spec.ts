@@ -650,10 +650,12 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
     // Verificar que existen exactamente 2 botones "Usar mi ubicación" (retiro y entrega) en el formulario (H02)
     await expect(page.getByRole('button', { name: /^usar mi ubicación$/i })).toHaveCount(2);
 
-    // Acotar de forma precisa a la Card de destino y entrega mediante su encabezado (H02)
-    const heading = page.getByRole('heading', { name: /^destino y entrega$/i });
-    const dropoffCard = heading.locator('xpath=../..');
-    const deliveryGps = dropoffCard.getByRole('button', { name: /^usar mi ubicación$/i });
+    // GPS de la primera entrega: locator semántico de la Card multi-drop
+    const dropoffCard = page.getByTestId('drop-card-0');
+    await expect(dropoffCard).toBeVisible();
+    const deliveryGps = dropoffCard.getByRole('button', {
+      name: /^usar mi ubicación$/i,
+    });
     await expect(deliveryGps).toHaveCount(1);
     await expect(deliveryGps).toBeVisible();
     await deliveryGps.click();

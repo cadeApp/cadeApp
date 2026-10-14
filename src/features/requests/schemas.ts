@@ -6,16 +6,8 @@ import {
   recipientPaymentMethodSchema,
 } from '@/domain/schemas';
 
-export const createDeliveryRequestSchema = z
+export const dropSchema = z
   .object({
-    pickupZoneId: z.string().uuid('Seleccioná un barrio de retiro válido'),
-    pickupAddress: z
-      .string()
-      .trim()
-      .min(1, 'La dirección de retiro es obligatoria')
-      .max(200, 'La dirección de retiro es demasiado larga'),
-    pickupLat: aguilaresLatSchema.nullable().optional(),
-    pickupLng: aguilaresLngSchema.nullable().optional(),
     dropoffZoneId: z.string().uuid('Seleccioná un barrio de entrega válido'),
     dropoffAddress: z
       .string()
@@ -54,22 +46,23 @@ export const createDeliveryRequestSchema = z
       .max(500, 'Las indicaciones no pueden superar los 500 caracteres')
       .nullable()
       .optional(),
-    fixedPriceArs: z
-      .number()
-      .int('El precio del envío debe ser un número entero')
-      .positive('El precio del envío debe ser mayor a 0')
-      .nullable()
-      .optional(),
-    autoAssign: z.boolean().optional().default(false),
-  })
-  .refine((data) => (data.pickupLat == null) === (data.pickupLng == null), {
-    message: 'Las coordenadas de retiro deben enviarse juntas o ambas nulas.',
-    path: ['pickupLat'],
   })
   .refine((data) => (data.dropoffLat == null) === (data.dropoffLng == null), {
     message: 'Las coordenadas de entrega deben enviarse juntas o ambas nulas.',
     path: ['dropoffLat'],
   })
+  .refine(
+    (data) => {
+      if (data.recipientPaymentMethod !== 'cash' && data.needsChange) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'Solo los pagos en efectivo pueden requerir cambio.',
+      path: ['needsChange'],
+    }
+  )
   .refine(
     (data) => {
       if (data.recipientPaymentMethod === 'cash' && data.needsChange) {
@@ -82,6 +75,42 @@ export const createDeliveryRequestSchema = z
       path: ['cashChangeAmount'],
     }
   )
+  .transform((data) => ({
+    ...data,
+    cashChangeAmount:
+      data.recipientPaymentMethod === 'cash' && data.needsChange
+        ? (data.cashChangeAmount ?? null)
+        : null,
+    notes: data.notes?.trim() ? data.notes.trim() : null,
+  }));
+
+export type DropInput = z.input<typeof dropSchema>;
+export type DropOutput = z.output<typeof dropSchema>;
+
+export const baseCreateDeliveryRequestSchema = z
+  .object({
+    requestId: z.string().uuid('Identificador de solicitud inválido').optional(),
+    pickupZoneId: z.string().uuid('Seleccioná un barrio de retiro válido'),
+    pickupAddress: z
+      .string()
+      .trim()
+      .min(1, 'La dirección de retiro es obligatoria')
+      .max(200, 'La dirección de retiro es demasiado larga'),
+    pickupLat: aguilaresLatSchema.nullable().optional(),
+    pickupLng: aguilaresLngSchema.nullable().optional(),
+    fixedPriceArs: z
+      .number()
+      .int('El precio del envío debe ser un número entero')
+      .positive('El precio del envío debe ser mayor a 0')
+      .nullable()
+      .optional(),
+    autoAssign: z.boolean().optional().default(false),
+    drops: z.array(dropSchema).min(1, 'Debés incluir al menos una entrega'),
+  })
+  .refine((data) => (data.pickupLat == null) === (data.pickupLng == null), {
+    message: 'Las coordenadas de retiro deben enviarse juntas o ambas nulas.',
+    path: ['pickupLat'],
+  })
   .refine(
     (data) => {
       if (data.autoAssign && !data.fixedPriceArs) {
@@ -96,13 +125,62 @@ export const createDeliveryRequestSchema = z
   )
   .transform((data) => ({
     ...data,
-    cashChangeAmount:
-      data.recipientPaymentMethod === 'cash' && data.needsChange
-        ? (data.cashChangeAmount ?? null)
-        : null,
     fixedPriceArs: data.fixedPriceArs ?? null,
     autoAssign: data.fixedPriceArs != null ? Boolean(data.autoAssign) : false,
   }));
 
-export type CreateDeliveryRequestInput = z.input<typeof createDeliveryRequestSchema>;
-export type CreateDeliveryRequestOutput = z.output<typeof createDeliveryRequestSchema>;
+export type CreateDeliveryRequestInput = z.input<typeof baseCreateDeliveryRequestSchema>;
+export type CreateDeliveryRequestOutput = z.output<typeof baseCreateDeliveryRequestSchema>;
+
+export const createDeliveryRequestSchema: z.ZodType<
+  CreateDeliveryRequestOutput,
+  z.ZodTypeDef,
+  CreateDeliveryRequestInput
+> = z.preprocess((raw) => {
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    (!('drops' in raw) || !Array.isArray((raw as Record<string, unknown>).drops)) &&
+    ('dropoffZoneId' in raw || 'dropoffAddress' in raw)
+  ) {
+    const {
+      dropoffZoneId,
+      dropoffAddress,
+      dropoffLat,
+      dropoffLng,
+      recipientName,
+      recipientPhone,
+      recipientConsentDeclared,
+      packageType,
+      recipientPaymentMethod,
+      needsChange,
+      cashChangeAmount,
+      notes,
+      ...rest
+    } = raw as Record<string, unknown>;
+    return {
+      ...rest,
+      drops: [
+        {
+          dropoffZoneId,
+          dropoffAddress,
+          dropoffLat,
+          dropoffLng,
+          recipientName,
+          recipientPhone,
+          recipientConsentDeclared,
+          packageType,
+          recipientPaymentMethod,
+          needsChange,
+          cashChangeAmount,
+          notes,
+        },
+      ],
+    };
+  }
+  return raw;
+}, baseCreateDeliveryRequestSchema) as unknown as z.ZodType<
+  CreateDeliveryRequestOutput,
+  z.ZodTypeDef,
+  CreateDeliveryRequestInput
+>;

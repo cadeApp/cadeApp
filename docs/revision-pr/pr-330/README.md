@@ -1,0 +1,35 @@
+# Revisión independiente PR #330 — T-340 Paso 4
+
+Ronda 1 (2026-10-14). SHA inspeccionado: 2a9e5e4c0e8545b67f29371a09117f565e5adee8
+Resultado: **CON BLOQUEANTES (5)**. Decisión B de Lautaro073 para H03. CC issue https://github.com/cadeApp/cadeApp/issues/331.
+Archivos: revisiones/ronda-1.md; hallazgos.jsonl; evidencia/comandos.md; lecciones.md.
+No hubo ejecución local de tests/SQL ni verificación independiente de mutantes. No aprobado ni mergeado.
+
+## Ronda 2 · 2026-10-14
+- HEAD revisado: b29d8e8f6638a5d56d9652e33c045ff04c49adac. **CON BLOQUEANTE H03** (RPC inexistente). H05 corregido/verificado, H04/H06 corregidos por inspección sin Preview terminado, H01/H02 requieren revalidar SHA.
+- db-tests FALLÓ por bloqueo Docker/puerto; e2e-preview en curso; no hay revisión aprobatoria.
+- Ver `revisiones/ronda-2.md`, hallazgos actualizados y evidencia.
+
+## Ronda 3 · 2026-10-14
+- SHA inspeccionado: `014029270f431280fa831ea910d052da9b12fd1d`; **CON BLOQUEANTES H03 + H07**; mejora de bitácora H08.
+- H01/H02/H04/H05/H06 resueltos y verificados con **E2E real del mismo SHA** (74/74 Chromium; 3/3 global-settings) y CI unit 2143/2143; db-tests 2039/2039. La nueva RPC todavía no existe en esta PR.
+- Ver `revisiones/ronda-3.md`, `hallazgos.jsonl` y `evidencia/comandos.md`. Sin ejecuciones/mutaciones locales independientes. No aprobada ni mergeada.
+
+## Ronda 4 — 2026-10-14
+- SHA revisado de Asako `141173d8965f63575cbe51dade4326550fcd7b9d`. **CON BLOQUEANTE H03** (writer aún hace INSERTs separados). H07/H08 **arreglados-verificados** con inspección + unit CI 2145/2145; H01/H02/H04/H05/H06 siguen cerrados históricamente.
+- **Actualización backend:** CC-024 PR #333 mergeada a develop `c97e0d8`; `migrate-develop` [38609451699](https://github.com/cadeApp/cadeApp/actions/runs/38609451699) SUCCESS y aplicó la migración CC-024. **No hay checkpoint postmerge 1/N + legacy acreditado**: últimos dos dispatch E2E postmerge fueron SKIPPED.
+- GitHub mergeability dirty/mergeable=false entre PR330 y develop; archivo solapado `docs/tasks/log/T-340.md`, requiere merge normal y preservar bitácoras.
+- Informe `revisiones/ronda-4.md` y evidencia con SHAs, logs y límites. No aprobado ni mergeado, sin SQL/Docker/pruebas locales del revisor.
+
+## Ronda 5 — 2026-10-14
+- HEAD revisado: `fa0b8437ed440278a855a606305711ad6d6f48ec` (último commit solo de bitácora; código funcional en `a8321157a234bdadab6a1e3c1cce13093fb6ba6e`), base develop `c97e0d8`. **CON BLOQUEANTE nuevo H09** (Server Action genera UUID cuando requestId falta; CC-024 lo prohíbe). **MEJORA H10** (mutante directo insert cae en TypeError de mock, no en aserción).
+- **H03 arreglado-verificado**: única RPC con actor+payload, unit 10 actions PASS, CI unit 129 archivos, db-tests 2177 PASS; E2E real 74/74 Chromium y 3/3 global-settings sobre checkout a8321157 (código idéntico en el SHA revisado, salvo bitácora) (incluye writer 3 drops y legacy 1 drop). H01–H08 cerrados.
+- approval-policy FAIL por informe sin bloqueantes, coherente con H09. No staging ni testing humano ahora, por decisión de Lautaro073.
+- Ver `revisiones/ronda-5.md`, `hallazgos.jsonl`, `evidencia/comandos.md`; sin mutaciones locales independientes del revisor.
+
+## Ronda 6 — 2026-10-14
+- HEAD inspeccionado `99c0ac956b85d4736adb43fc36f5dd5a28763be1`. **SIN BLOQUEANTES**: H09/H10 corregidos y verificados con lectura de código y CI real del mismo SHA. H01–H08 previamente cerrados.
+- CI `38620279932`: unit **2154/2154**, db-tests **2177/2177**; typecheck/lint/build/audit/bundle-budget PASS.
+- E2E `38620391687`: checkout exacto `99c0ac95`; **73 Chromium PASS + 1 flaky** de mapa (HTTP 500 primera ejecución, PASS retry #1), **3/3 global-settings PASS**; writer 3 drops y legacy 1 drop PASS.
+- Observación flake T-314 fuera de alcance y no bloqueante; no reducir tests. `approval-policy` falla porque el body anterior carecía de informe SIN BLOQUEANTES; actualizar body (no CI) una vez publicada R6.
+- Ronda 6 `revisiones/ronda-6.md`; PR sigue Draft. Merge/Ready requieren decisión humana de Lautaro073. Tests locales y mutantes propios del revisor NO EJECUTADOS.

@@ -3,7 +3,14 @@
 import * as React from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
+import {
+  type FieldErrors,
+  useFieldArray,
+  useForm,
+  type UseFormRegister,
+  type UseFormSetValue,
+  type UseFormWatch,
+} from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   AlertCircle,
@@ -16,6 +23,8 @@ import {
   Navigation,
   Package,
   Phone,
+  Plus,
+  Trash2,
   User,
 } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
@@ -49,27 +58,551 @@ const MapPicker = dynamic(
 export interface CreateRequestFormProps {
   readonly zones: ZoneOption[];
   readonly defaultPickup?: MerchantDefaultPickup | null;
+  readonly maxDrops?: number;
 }
 
-export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormProps) {
-  const router = useRouter();
+interface DropCardProps {
+  readonly fieldId: string;
+  readonly index: number;
+  readonly totalDrops: number;
+  readonly canRemove: boolean;
+  readonly onRemove: () => void;
+  readonly zones: ZoneOption[];
+  readonly register: UseFormRegister<CreateDeliveryRequestInput>;
+  readonly setValue: UseFormSetValue<CreateDeliveryRequestInput>;
+  readonly watch: UseFormWatch<CreateDeliveryRequestInput>;
+  readonly errors?: FieldErrors<CreateDeliveryRequestInput>;
+  readonly onSetDropoffCoords: (
+    fieldId: string,
+    coords: { lat: number | null; lng: number | null }
+  ) => void;
+}
+
+function DropCard({
+  fieldId,
+  index,
+  totalDrops,
+  canRemove,
+  onRemove,
+  zones,
+  register,
+  setValue,
+  watch,
+  errors,
+  onSetDropoffCoords,
+}: DropCardProps) {
   const copy = requestsCopy.newRequest;
 
-  // Estados efímeros de UI
-  const [pickupLocating, setPickupLocating] = React.useState(false);
-  const [pickupCoordsError, setPickupCoordsError] = React.useState<string | null>(null);
-
+  // Estados locales independientes por tarjeta (aislados por componente y clave estable fieldId)
   const [dropoffLocating, setDropoffLocating] = React.useState(false);
   const [dropoffCoordsError, setDropoffCoordsError] = React.useState<string | null>(null);
   const [showDropoffMap, setShowDropoffMap] = React.useState(false);
-
   const [customChangeInput, setCustomChangeInput] = React.useState('');
+
+  const dropLat = watch(`drops.${index}.dropoffLat`);
+  const dropLng = watch(`drops.${index}.dropoffLng`);
+  const dropZoneId = watch(`drops.${index}.dropoffZoneId`);
+  const dropZone = zones.find((z) => z.id === dropZoneId);
+  const dropZoneCenter =
+    dropZone?.centroidLat != null && dropZone?.centroidLng != null
+      ? { lat: dropZone.centroidLat, lng: dropZone.centroidLng }
+      : null;
+
+  const packageType = watch(`drops.${index}.packageType`);
+  const paymentMethod = watch(`drops.${index}.recipientPaymentMethod`);
+  const needsChange = watch(`drops.${index}.needsChange`);
+  const cashChangeAmount = watch(`drops.${index}.cashChangeAmount`);
+
+  const dropErrors = errors?.drops?.[index];
+
+  const handleUseMyLocationDropoff = () => {
+    if (!navigator.geolocation) {
+      setDropoffCoordsError('Tu dispositivo no soporta geolocalización.');
+      return;
+    }
+    setDropoffLocating(true);
+    setDropoffCoordsError(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setDropoffLocating(false);
+        const { latitude, longitude } = pos.coords;
+        if (!isWithinAguilaresBounds(latitude, longitude)) {
+          setDropoffCoordsError(copy.mapOutOfAguilares);
+          onSetDropoffCoords(fieldId, { lat: null, lng: null });
+          return;
+        }
+        onSetDropoffCoords(fieldId, { lat: latitude, lng: longitude });
+        setDropoffCoordsError(null);
+      },
+      () => {
+        setDropoffLocating(false);
+        setDropoffCoordsError('No pudimos obtener la ubicación. Podés continuar con la dirección.');
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
+
+  const handlePresetChangeAmount = (amount: number) => {
+    setValue(`drops.${index}.cashChangeAmount`, amount, { shouldValidate: true });
+    setCustomChangeInput('');
+  };
+
+  const handleCustomChangeChange = (val: string) => {
+    setCustomChangeInput(val);
+    const parsed = Number.parseInt(val.replace(/\D/g, ''), 10);
+    setValue(
+      `drops.${index}.cashChangeAmount`,
+      Number.isNaN(parsed) || parsed <= 0 ? null : parsed,
+      { shouldValidate: true }
+    );
+  };
+
+  return (
+    <Card className="space-y-4 p-5 sm:p-6" data-testid={`drop-card-${index}`}>
+      {/* Encabezado de la entrega */}
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <div className="flex items-center gap-2">
+          <Navigation className="h-4 w-4 text-primary-dark" aria-hidden="true" />
+          <h2 className="font-display text-base font-bold text-foreground">
+            {totalDrops === 1 ? copy.stepDropoff : copy.dropCardTitle(index + 1)}
+          </h2>
+          <Badge
+            variant="outline"
+            className="border-primary/30 text-sm font-medium text-primary-dark ml-1"
+            aria-label={copy.dropCounterAria(index + 1, totalDrops)}
+          >
+            {totalDrops > 1 ? copy.dropCounterAria(index + 1, totalDrops) : copy.dropCardTitle(index + 1)}
+          </Badge>
+        </div>
+
+        {/* Botón Quitar entrega */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onRemove}
+          disabled={!canRemove}
+          aria-label={`Quitar entrega ${index + 1}`}
+          className={cn(
+            'min-h-11 px-3 text-sm font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive',
+            !canRemove && 'opacity-40 cursor-not-allowed'
+          )}
+        >
+          <Trash2 className="h-4 w-4 mr-1.5" />
+          {copy.removeDropButton}
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {/* Barrio de entrega */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor={`dropoff-zone-${fieldId}`}
+            className="block text-sm font-medium text-foreground"
+          >
+            {copy.dropoffZoneLabel} <span className="text-destructive">*</span>
+          </label>
+          <select
+            id={`dropoff-zone-${fieldId}`}
+            {...register(`drops.${index}.dropoffZoneId`)}
+            aria-invalid={Boolean(dropErrors?.dropoffZoneId)}
+            className="flex h-12 w-full rounded-lg border border-input bg-card px-3.5 py-2 text-base text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="" disabled>
+              Seleccioná un barrio de entrega
+            </option>
+            {zones.map((zone) => (
+              <option key={zone.id} value={zone.id}>
+                {zone.name}
+              </option>
+            ))}
+          </select>
+          {dropErrors?.dropoffZoneId && (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {dropErrors.dropoffZoneId.message}
+            </p>
+          )}
+        </div>
+
+        {/* Dirección de entrega */}
+        <div className="space-y-1.5">
+          <label
+            htmlFor={`dropoff-address-${fieldId}`}
+            className="block text-sm font-medium text-foreground"
+          >
+            {copy.dropoffAddressLabel} <span className="text-destructive">*</span>
+          </label>
+          <Input
+            id={`dropoff-address-${fieldId}`}
+            {...register(`drops.${index}.dropoffAddress`)}
+            placeholder={copy.dropoffAddressPlaceholder}
+            maxLength={200}
+            aria-invalid={Boolean(dropErrors?.dropoffAddress)}
+          />
+          {dropErrors?.dropoffAddress && (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {dropErrors.dropoffAddress.message}
+            </p>
+          )}
+        </div>
+
+        {/* Geolocalización y mapa */}
+        <div className="pt-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDropoffMap((prev) => !prev)}
+              className="min-h-12 gap-2 text-sm"
+            >
+              <MapPin className="h-4 w-4 text-primary-dark" />
+              {showDropoffMap ? 'Ocultar mapa' : 'Fijar en mapa interactivo'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleUseMyLocationDropoff}
+              disabled={dropoffLocating}
+              className="min-h-12 gap-2 text-sm"
+            >
+              <Navigation className="h-4 w-4 text-primary-dark" />
+              {dropoffLocating ? 'Obteniendo GPS...' : 'Usar mi ubicación'}
+            </Button>
+            {dropLat != null && dropLng != null && !dropoffCoordsError && (
+              <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-dark">
+                <CheckCircle2 className="h-4 w-4" /> Pin fijado
+              </span>
+            )}
+          </div>
+
+          {showDropoffMap && (
+            <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
+              <MapPicker
+                value={
+                  dropLat != null && dropLng != null ? { lat: dropLat, lng: dropLng } : null
+                }
+                onChange={(coords) => {
+                  onSetDropoffCoords(fieldId, coords);
+                  setDropoffCoordsError(null);
+                }}
+                defaultZoneCenter={dropZoneCenter}
+              />
+            </div>
+          )}
+
+          {dropoffCoordsError && (
+            <p className="mt-2 text-sm text-destructive">{dropoffCoordsError}</p>
+          )}
+          {dropErrors?.dropoffLat && (
+            <p role="alert" className="mt-2 text-sm text-destructive">
+              {dropErrors.dropoffLat.message}
+            </p>
+          )}
+        </div>
+
+        {/* Datos del destinatario */}
+        <div className="mt-4 border-t border-border pt-4">
+          <h3 className="mb-3 text-sm font-semibold text-foreground">Datos del destinatario</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label
+                htmlFor={`recipient-name-${fieldId}`}
+                className="block text-sm font-medium text-foreground"
+              >
+                {copy.recipientNameLabel} <span className="text-destructive">*</span>
+              </label>
+              <div className="relative">
+                <User className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                <Input
+                  id={`recipient-name-${fieldId}`}
+                  {...register(`drops.${index}.recipientName`)}
+                  placeholder={copy.recipientNamePlaceholder}
+                  maxLength={100}
+                  aria-invalid={Boolean(dropErrors?.recipientName)}
+                  className="pl-10"
+                />
+              </div>
+              {dropErrors?.recipientName && (
+                <p role="alert" className="text-sm font-medium text-destructive">
+                  {dropErrors.recipientName.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor={`recipient-phone-${fieldId}`}
+                className="block text-sm font-medium text-foreground"
+              >
+                {copy.recipientPhoneLabel} <span className="text-destructive">*</span>
+              </label>
+              <div className="relative">
+                <Phone className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
+                <Input
+                  id={`recipient-phone-${fieldId}`}
+                  type="tel"
+                  inputMode="tel"
+                  {...register(`drops.${index}.recipientPhone`)}
+                  placeholder={copy.recipientPhonePlaceholder}
+                  maxLength={30}
+                  aria-invalid={Boolean(dropErrors?.recipientPhone)}
+                  className="pl-10"
+                />
+              </div>
+              {dropErrors?.recipientPhone && (
+                <p role="alert" className="text-sm font-medium text-destructive">
+                  {dropErrors.recipientPhone.message}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Declaración de consentimiento */}
+          <div className="mt-4 flex flex-col gap-1.5">
+            <div className="flex items-start gap-3 rounded-lg border border-border/70 bg-muted/30 p-3.5">
+              <input
+                id={`recipient-consent-${fieldId}`}
+                type="checkbox"
+                {...register(`drops.${index}.recipientConsentDeclared`)}
+                className="mt-1 h-5 w-5 rounded border-border text-primary focus:ring-primary"
+              />
+              <label
+                htmlFor={`recipient-consent-${fieldId}`}
+                className="cursor-pointer text-sm leading-relaxed text-foreground"
+              >
+                {copy.recipientConsentLabel}
+              </label>
+            </div>
+            {dropErrors?.recipientConsentDeclared && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {dropErrors.recipientConsentDeclared.message}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Tamaño del paquete */}
+        <div className="mt-4 border-t border-border pt-4 space-y-2">
+          <label className="block text-sm font-medium text-foreground">
+            {copy.packageTypeLabel}
+          </label>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(['sobre', 'chico', 'mediano', 'grande'] as const).map((type) => {
+              const opt = copy.packageOptions[type];
+              const isSelected = packageType === type;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setValue(`drops.${index}.packageType`, type, { shouldValidate: true })}
+                  className={cn(
+                    'flex min-h-[58px] flex-col items-start justify-center rounded-lg border p-3 text-left transition-colors',
+                    isSelected
+                      ? 'border-primary bg-primary/10 font-semibold text-primary-dark'
+                      : 'border-border bg-background text-foreground hover:bg-muted/50'
+                  )}
+                >
+                  <span className="text-sm font-bold capitalize">{opt.label}</span>
+                  <span
+                    className={cn(
+                      'line-clamp-2 text-sm font-normal',
+                      isSelected ? 'text-primary-dark' : 'text-muted-foreground'
+                    )}
+                  >
+                    {opt.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Pago del envío */}
+        <div className="mt-4 border-t border-border pt-4 space-y-3">
+          <div className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary-dark" />
+            <p>{copy.paymentMethodHint}</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-foreground">
+              {copy.paymentMethodLabel}
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['cash', 'transfer', 'to_agree'] as const).map((method) => {
+                const isSelected = paymentMethod === method;
+                return (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => {
+                      setValue(`drops.${index}.recipientPaymentMethod`, method, {
+                        shouldValidate: true,
+                      });
+                      if (method !== 'cash') {
+                        setValue(`drops.${index}.needsChange`, false, { shouldValidate: true });
+                        setValue(`drops.${index}.cashChangeAmount`, null, { shouldValidate: true });
+                        setCustomChangeInput('');
+                      }
+                    }}
+                    className={cn(
+                      'flex min-h-[48px] items-center justify-center gap-2 rounded-lg border p-3 text-sm font-semibold transition-colors',
+                      isSelected
+                        ? 'border-primary bg-primary/10 text-primary-dark'
+                        : 'border-border bg-background text-foreground hover:bg-muted/50'
+                    )}
+                  >
+                    {method === 'cash' && <Banknote className="h-4 w-4" />}
+                    {method === 'transfer' && <CreditCard className="h-4 w-4" />}
+                    {method === 'to_agree' && <HelpCircle className="h-4 w-4" />}
+                    <span>{copy.paymentOptions[method]}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Opciones de cambio si es efectivo */}
+          {paymentMethod === 'cash' && (
+            <div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground">{copy.needsChangeLabel}</span>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={needsChange ? 'default' : 'outline'}
+                    onClick={() => {
+                      setValue(`drops.${index}.needsChange`, true, { shouldValidate: true });
+                      if (!cashChangeAmount) {
+                        setValue(`drops.${index}.cashChangeAmount`, 2000, { shouldValidate: true });
+                      }
+                    }}
+                    className="min-h-12 min-w-[60px] text-sm"
+                  >
+                    Sí
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={!needsChange ? 'default' : 'outline'}
+                    onClick={() => {
+                      setValue(`drops.${index}.needsChange`, false, { shouldValidate: true });
+                      setValue(`drops.${index}.cashChangeAmount`, null, { shouldValidate: true });
+                      setCustomChangeInput('');
+                    }}
+                    className="min-h-12 min-w-[60px] text-sm"
+                  >
+                    No
+                  </Button>
+                </div>
+              </div>
+
+              {needsChange && (
+                <div className="space-y-3 pt-2">
+                  <label className="block text-sm font-medium text-foreground">
+                    {copy.changePresetLabel}
+                  </label>
+                  {/* Chips rápidos de billete */}
+                  <div className="flex flex-wrap gap-2">
+                    {copy.changePresets.map((preset) => {
+                      const isSelected = cashChangeAmount === preset && customChangeInput === '';
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => handlePresetChangeAmount(preset)}
+                          className={cn(
+                            'min-h-12 rounded-full border px-4 py-2 text-sm font-semibold transition-colors',
+                            isSelected
+                              ? 'border-primary bg-primary text-primary-foreground shadow-sm'
+                              : 'border-border bg-card text-foreground hover:bg-muted'
+                          )}
+                        >
+                          Paga con: {formatArs(preset)}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Input libre de cambio */}
+                  <div className="pt-1">
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={customChangeInput}
+                      onChange={(e) => handleCustomChangeChange(e.target.value)}
+                      placeholder={copy.changeCustomPlaceholder}
+                      aria-invalid={Boolean(dropErrors?.cashChangeAmount)}
+                    />
+                    {cashChangeAmount != null && (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Monto registrado:{' '}
+                        <span className="font-semibold text-foreground">
+                          {formatArs(cashChangeAmount)}
+                        </span>
+                      </p>
+                    )}
+                    {dropErrors?.cashChangeAmount && (
+                      <p role="alert" className="mt-1 text-sm font-medium text-destructive">
+                        {dropErrors.cashChangeAmount.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Indicaciones de entrega */}
+        <div className="mt-4 border-t border-border pt-4 space-y-1.5">
+          <label
+            htmlFor={`notes-${fieldId}`}
+            className="block text-sm font-medium text-foreground"
+          >
+            {copy.notesLabel}
+          </label>
+          <Textarea
+            id={`notes-${fieldId}`}
+            {...register(`drops.${index}.notes`)}
+            placeholder={copy.notesPlaceholder}
+            maxLength={500}
+            aria-invalid={Boolean(dropErrors?.notes)}
+            className="min-h-[80px]"
+          />
+          {dropErrors?.notes && (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {dropErrors.notes.message}
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function CreateRequestForm({
+  zones,
+  defaultPickup,
+  maxDrops = 5,
+}: CreateRequestFormProps) {
+  const router = useRouter();
+  const copy = requestsCopy.newRequest;
+
+  // Estados efímeros de UI para punto de retiro
+  const [pickupLocating, setPickupLocating] = React.useState(false);
+  const [pickupCoordsError, setPickupCoordsError] = React.useState<string | null>(null);
+
   const [fixedPriceInput, setFixedPriceInput] = React.useState('');
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   // Formulario gobernado por react-hook-form + zodResolver
   const {
     register,
+    control,
     handleSubmit,
     setValue,
     watch,
@@ -81,37 +614,65 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
       pickupZoneId: defaultPickup?.defaultPickupZoneId ?? zones[0]?.id ?? '',
       pickupLat: defaultPickup?.defaultPickupLat ?? null,
       pickupLng: defaultPickup?.defaultPickupLng ?? null,
-      dropoffAddress: '',
-      dropoffZoneId: zones[1]?.id ?? zones[0]?.id ?? '',
-      dropoffLat: null,
-      dropoffLng: null,
-      recipientName: '',
-      recipientPhone: '',
-      recipientConsentDeclared: false as unknown as true,
-      packageType: 'chico',
-      recipientPaymentMethod: 'cash',
-      needsChange: false,
-      cashChangeAmount: null,
       fixedPriceArs: null,
       autoAssign: false,
-      notes: defaultPickup?.notes ?? '',
+      drops: [
+        {
+          dropoffAddress: '',
+          dropoffZoneId: zones[1]?.id ?? zones[0]?.id ?? '',
+          dropoffLat: null,
+          dropoffLng: null,
+          recipientName: '',
+          recipientPhone: '',
+          recipientConsentDeclared: false as unknown as true,
+          packageType: 'chico',
+          recipientPaymentMethod: 'cash',
+          needsChange: false,
+          cashChangeAmount: null,
+          notes: '',
+        },
+      ],
     },
   });
 
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'drops',
+  });
+
+  // CC-024 / Decisión B: requestId estable generado por intención de creación y reusado en retries
+  const requestIdRef = React.useRef<string>(crypto.randomUUID());
+
+  // CC-024 / H07: memoria del último intento para detectar reintentos con payload editado
+  const lastAttemptRef = React.useRef<{
+    requestId: string;
+    originalPayload: CreateDeliveryRequestOutput;
+    canonical: string;
+  } | null>(null);
+
+  const [payloadConflict, setPayloadConflict] = React.useState<boolean>(false);
+  const [showNewRequestConfirm, setShowNewRequestConfirm] = React.useState<boolean>(false);
+  const [isSubmittingOriginal, setIsSubmittingOriginal] = React.useState<boolean>(false);
+
+  // Referencia mutable a los campos para resolver índices actuales por fieldId estable (R1 riesgo GPS)
+  const fieldsRef = React.useRef(fields);
+  fieldsRef.current = fields;
+
+  const handleSetDropoffCoords = React.useCallback(
+    (fieldId: string, coords: { lat: number | null; lng: number | null }) => {
+      const currentIndex = fieldsRef.current.findIndex((f) => f.id === fieldId);
+      if (currentIndex === -1) {
+        // La tarjeta fue eliminada mientras la geolocalización estaba pendiente; no mutar nada
+        return;
+      }
+      setValue(`drops.${currentIndex}.dropoffLat`, coords.lat, { shouldValidate: true });
+      setValue(`drops.${currentIndex}.dropoffLng`, coords.lng, { shouldValidate: true });
+    },
+    [setValue]
+  );
+
   const pickupLat = watch('pickupLat');
   const pickupLng = watch('pickupLng');
-  const dropoffLat = watch('dropoffLat');
-  const dropoffLng = watch('dropoffLng');
-  const dropoffZoneId = watch('dropoffZoneId');
-  const dropoffZone = zones.find((z) => z.id === dropoffZoneId);
-  const dropoffZoneCenter =
-    dropoffZone?.centroidLat != null && dropoffZone?.centroidLng != null
-      ? { lat: dropoffZone.centroidLat, lng: dropoffZone.centroidLng }
-      : null;
-  const packageType = watch('packageType');
-  const paymentMethod = watch('recipientPaymentMethod');
-  const needsChange = watch('needsChange');
-  const cashChangeAmount = watch('cashChangeAmount');
   const fixedPriceArs = watch('fixedPriceArs');
   const autoAssign = watch('autoAssign');
 
@@ -157,54 +718,33 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
     );
   };
 
-  // Geolocalización para entrega
-  const handleUseMyLocationDropoff = () => {
-    if (!navigator.geolocation) {
-      setDropoffCoordsError('Tu dispositivo no soporta geolocalización.');
-      return;
-    }
-    setDropoffLocating(true);
-    setDropoffCoordsError(null);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setDropoffLocating(false);
-        const { latitude, longitude } = pos.coords;
-        if (!isWithinAguilaresBounds(latitude, longitude)) {
-          setDropoffCoordsError(copy.mapOutOfAguilares);
-          setValue('dropoffLat', null, { shouldValidate: true });
-          setValue('dropoffLng', null, { shouldValidate: true });
-          return;
-        }
-        setValue('dropoffLat', latitude, { shouldValidate: true });
-        setValue('dropoffLng', longitude, { shouldValidate: true });
-        setDropoffCoordsError(null);
-      },
-      () => {
-        setDropoffLocating(false);
-        setDropoffCoordsError('No pudimos obtener la ubicación. Podés continuar con la dirección.');
-      },
-      { timeout: 10000, enableHighAccuracy: true }
-    );
-  };
-
-  const handlePresetChangeAmount = (amount: number) => {
-    setValue('cashChangeAmount', amount, { shouldValidate: true });
-    setCustomChangeInput('');
-  };
-
-  const handleCustomChangeChange = (val: string) => {
-    setCustomChangeInput(val);
-    const parsed = Number.parseInt(val.replace(/\D/g, ''), 10);
-    setValue('cashChangeAmount', Number.isNaN(parsed) || parsed <= 0 ? null : parsed, {
-      shouldValidate: true,
-    });
-  };
-
   const onSubmit = async (data: CreateDeliveryRequestOutput) => {
     setServerError(null);
 
+    const canonical = JSON.stringify(data);
+
+    // CC-024 / H07: Si hubo un intento previo que falló o tuvo respuesta incierta
+    // y los datos normalizados actuales difieren del snapshot original,
+    // NO invocar a la Server Action automáticamente. Exigir decisión explícita.
+    if (lastAttemptRef.current !== null && lastAttemptRef.current.canonical !== canonical) {
+      setPayloadConflict(true);
+      return;
+    }
+
+    // Si es el primer intento, registrar snapshot en memoria
+    if (lastAttemptRef.current === null) {
+      lastAttemptRef.current = {
+        requestId: requestIdRef.current,
+        originalPayload: data,
+        canonical,
+      };
+    }
+
     try {
-      const result = await createDeliveryRequestAction(data);
+      const result = await createDeliveryRequestAction({
+        ...data,
+        requestId: requestIdRef.current,
+      });
 
       if (!result.ok) {
         const msg = getDomainErrorMessage(result.code);
@@ -213,12 +753,57 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         return;
       }
 
+      // Éxito: limpiar snapshot y regenerar requestId para que una nueva intención futura tenga un nuevo UUID
+      lastAttemptRef.current = null;
+      setPayloadConflict(false);
+      setShowNewRequestConfirm(false);
+      requestIdRef.current = crypto.randomUUID();
       notify.success('Solicitud publicada con éxito');
       router.push(result.data.redirectTo);
     } catch {
       setServerError(copy.errorGeneric);
       notify.error(copy.errorGeneric);
     }
+  };
+
+  // CC-024 / H07 Opción 1: Reintentar solicitud original con el mismo requestId y payload original intacto
+  const handleRetryOriginal = async () => {
+    if (!lastAttemptRef.current) return;
+    setServerError(null);
+    setIsSubmittingOriginal(true);
+    try {
+      const result = await createDeliveryRequestAction({
+        ...lastAttemptRef.current.originalPayload,
+        requestId: lastAttemptRef.current.requestId,
+      });
+
+      if (!result.ok) {
+        const msg = getDomainErrorMessage(result.code);
+        setServerError(msg);
+        notify.error(msg);
+        return;
+      }
+
+      lastAttemptRef.current = null;
+      setPayloadConflict(false);
+      setShowNewRequestConfirm(false);
+      requestIdRef.current = crypto.randomUUID();
+      notify.success('Solicitud publicada con éxito');
+      router.push(result.data.redirectTo);
+    } catch {
+      setServerError(copy.errorGeneric);
+      notify.error(copy.errorGeneric);
+    } finally {
+      setIsSubmittingOriginal(false);
+    }
+  };
+
+  // CC-024 / H07 Opción 2: Comenzar otra solicitud -> tras confirmación de usuario, gira a UUID nuevo y limpia snapshot
+  const handleConfirmNewRequest = () => {
+    requestIdRef.current = crypto.randomUUID();
+    lastAttemptRef.current = null;
+    setPayloadConflict(false);
+    setShowNewRequestConfirm(false);
   };
 
   return (
@@ -241,6 +826,68 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         </div>
       )}
 
+      {payloadConflict && (
+        <div
+          role="alert"
+          className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-foreground"
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="space-y-1">
+              <p className="font-semibold text-foreground">{copy.payloadConflictAlert}</p>
+              {showNewRequestConfirm && (
+                <p className="text-sm font-medium text-destructive">
+                  {copy.payloadConflictWarning}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRetryOriginal}
+              disabled={isSubmittingOriginal}
+              className="border-amber-600/40 hover:bg-amber-500/20"
+            >
+              {isSubmittingOriginal ? 'Reintentando...' : copy.retryOriginalButton}
+            </Button>
+
+            {!showNewRequestConfirm ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowNewRequestConfirm(true)}
+              >
+                {copy.startNewRequestButton}
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleConfirmNewRequest}
+                >
+                  {copy.confirmNewRequestButton}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowNewRequestConfirm(false)}
+                >
+                  {copy.cancelNewRequestButton}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 1. Punto de retiro (precargado y editable) */}
       <Card className="space-y-4 p-5 sm:p-6">
         <div className="flex items-center justify-between border-b border-border pb-3">
@@ -249,7 +896,10 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
             <h2 className="font-display text-base font-bold text-foreground">{copy.stepPickup}</h2>
           </div>
           {defaultPickup && (
-            <Badge variant="outline" className="border-primary/30 text-sm font-medium text-primary-dark">
+            <Badge
+              variant="outline"
+              className="border-primary/30 text-sm font-medium text-primary-dark"
+            >
               Precargado editable
             </Badge>
           )}
@@ -309,9 +959,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               disabled={pickupLocating}
               className="min-h-12 gap-2 text-sm"
             >
-              <Navigation
-                className="h-4 w-4 text-primary-dark"
-              />
+              <Navigation className="h-4 w-4 text-primary-dark" />
               {pickupLocating ? 'Obteniendo GPS...' : copy.useMyLocation}
             </Button>
             {pickupLat != null && pickupLng != null && !pickupCoordsError && (
@@ -331,388 +979,74 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         </div>
       </Card>
 
-      {/* 2. Destino y entrega */}
-      <Card className="space-y-4 p-5 sm:p-6">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Navigation className="h-4 w-4 text-primary-dark" aria-hidden="true" />
-          <h2 className="font-display text-base font-bold text-foreground">{copy.stepDropoff}</h2>
-        </div>
+      {/* 2. Tarjetas repetibles de entregas (useFieldArray con keys estables field.id) */}
+      <div className="space-y-4">
+        {fields.map((field, index) => (
+          <DropCard
+            key={field.id}
+            fieldId={field.id}
+            index={index}
+            totalDrops={fields.length}
+            canRemove={fields.length > 1}
+            onRemove={() => remove(index)}
+            zones={zones}
+            register={register}
+            setValue={setValue}
+            watch={watch}
+            errors={errors}
+            onSetDropoffCoords={handleSetDropoffCoords}
+          />
+        ))}
 
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <label htmlFor="dropoff-zone" className="block text-sm font-medium text-foreground">
-              {copy.dropoffZoneLabel} <span className="text-destructive">*</span>
-            </label>
-            <select
-              id="dropoff-zone"
-              {...register('dropoffZoneId')}
-              aria-invalid={Boolean(errors.dropoffZoneId)}
-              className="flex h-12 w-full rounded-lg border border-input bg-card px-3.5 py-2 text-base text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="" disabled>
-                Seleccioná un barrio de entrega
-              </option>
-              {zones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.name}
-                </option>
-              ))}
-            </select>
-            {errors.dropoffZoneId && (
-              <p role="alert" className="text-sm font-medium text-destructive">
-                {errors.dropoffZoneId.message}
-              </p>
+        {/* Barra de control multi-drop: contador y botón "Agregar otra entrega" */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-dashed border-border bg-card/60 p-4">
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-sm font-semibold px-2.5 py-1">
+              {fields.length} / {maxDrops} entregas
+            </Badge>
+            {fields.length >= maxDrops && (
+              <span role="status" className="text-sm text-muted-foreground font-medium">
+                {copy.dropsLimitReached(maxDrops)}
+              </span>
             )}
           </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="dropoff-address" className="block text-sm font-medium text-foreground">
-              {copy.dropoffAddressLabel} <span className="text-destructive">*</span>
-            </label>
-            <Input
-              id="dropoff-address"
-              {...register('dropoffAddress')}
-              placeholder={copy.dropoffAddressPlaceholder}
-              maxLength={200}
-              aria-invalid={Boolean(errors.dropoffAddress)}
-            />
-            {errors.dropoffAddress && (
-              <p role="alert" className="text-sm font-medium text-destructive">
-                {errors.dropoffAddress.message}
-              </p>
-            )}
-          </div>
-
-          <div className="pt-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowDropoffMap((prev) => !prev)}
-                className="min-h-12 gap-2 text-sm"
-              >
-                <MapPin className="h-4 w-4 text-primary-dark" />
-                {showDropoffMap ? 'Ocultar mapa' : 'Fijar en mapa interactivo'}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleUseMyLocationDropoff}
-                disabled={dropoffLocating}
-                className="min-h-12 gap-2 text-sm"
-              >
-                <Navigation
-                  className="h-4 w-4 text-primary-dark"
-                />
-                {dropoffLocating ? 'Obteniendo GPS...' : 'Usar mi ubicación'}
-              </Button>
-              {dropoffLat != null && dropoffLng != null && !dropoffCoordsError && (
-                <span className="inline-flex items-center gap-1 text-sm font-medium text-primary-dark">
-                  <CheckCircle2 className="h-4 w-4" /> Pin fijado
-                </span>
-              )}
-            </div>
-
-            {showDropoffMap && (
-              <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
-                <MapPicker
-                  value={
-                    dropoffLat != null && dropoffLng != null
-                      ? { lat: dropoffLat, lng: dropoffLng }
-                      : null
-                  }
-                  onChange={(coords) => {
-                    setValue('dropoffLat', coords.lat, { shouldValidate: true });
-                    setValue('dropoffLng', coords.lng, { shouldValidate: true });
-                    setDropoffCoordsError(null);
-                  }}
-                  defaultZoneCenter={dropoffZoneCenter}
-                />
-              </div>
-            )}
-
-            {dropoffCoordsError && (
-              <p className="mt-2 text-sm text-destructive">{dropoffCoordsError}</p>
-            )}
-            {errors.dropoffLat && (
-              <p role="alert" className="mt-2 text-sm text-destructive">
-                {errors.dropoffLat.message}
-              </p>
-            )}
-          </div>
-
-          {/* Datos del destinatario */}
-          <div className="mt-4 border-t border-border pt-4">
-            <h3 className="mb-3 text-sm font-semibold text-foreground">Datos del destinatario</h3>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="recipient-name"
-                  className="block text-sm font-medium text-foreground"
-                >
-                  {copy.recipientNameLabel} <span className="text-destructive">*</span>
-                </label>
-                <div className="relative">
-                  <User className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                  <Input
-                    id="recipient-name"
-                    {...register('recipientName')}
-                    placeholder={copy.recipientNamePlaceholder}
-                    maxLength={100}
-                    aria-invalid={Boolean(errors.recipientName)}
-                    className="pl-10"
-                  />
-                </div>
-                {errors.recipientName && (
-                  <p role="alert" className="text-sm font-medium text-destructive">
-                    {errors.recipientName.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="recipient-phone"
-                  className="block text-sm font-medium text-foreground"
-                >
-                  {copy.recipientPhoneLabel} <span className="text-destructive">*</span>
-                </label>
-                <div className="relative">
-                  <Phone className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted-foreground" />
-                  <Input
-                    id="recipient-phone"
-                    type="tel"
-                    inputMode="tel"
-                    {...register('recipientPhone')}
-                    placeholder={copy.recipientPhonePlaceholder}
-                    maxLength={30}
-                    aria-invalid={Boolean(errors.recipientPhone)}
-                    className="pl-10"
-                  />
-                </div>
-                {errors.recipientPhone && (
-                  <p role="alert" className="text-sm font-medium text-destructive">
-                    {errors.recipientPhone.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Declaración de consentimiento */}
-            <div className="mt-4 flex flex-col gap-1.5">
-              <div className="flex items-start gap-3 rounded-lg border border-border/70 bg-muted/30 p-3.5">
-                <input
-                  id="recipient-consent"
-                  type="checkbox"
-                  {...register('recipientConsentDeclared')}
-                  className="mt-1 h-5 w-5 rounded border-border text-primary focus:ring-primary"
-                />
-                <label
-                  htmlFor="recipient-consent"
-                  className="cursor-pointer text-sm leading-relaxed text-foreground"
-                >
-                  {copy.recipientConsentLabel}
-                </label>
-              </div>
-              {errors.recipientConsentDeclared && (
-                <p role="alert" className="text-sm font-medium text-destructive">
-                  {errors.recipientConsentDeclared.message}
-                </p>
-              )}
-            </div>
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (fields.length < maxDrops) {
+                append({
+                  dropoffAddress: '',
+                  dropoffZoneId: zones[1]?.id ?? zones[0]?.id ?? '',
+                  dropoffLat: null,
+                  dropoffLng: null,
+                  recipientName: '',
+                  recipientPhone: '',
+                  recipientConsentDeclared: false as unknown as true,
+                  packageType: 'chico',
+                  recipientPaymentMethod: 'cash',
+                  needsChange: false,
+                  cashChangeAmount: null,
+                  notes: '',
+                });
+              }
+            }}
+            disabled={fields.length >= maxDrops}
+            className="min-h-11 gap-2 text-sm font-semibold border-primary/40 text-primary-dark hover:bg-primary/10"
+          >
+            <Plus className="h-4 w-4" />
+            {copy.addDropButton}
+          </Button>
         </div>
-      </Card>
+        {errors.drops && typeof errors.drops.message === 'string' && (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            {errors.drops.message}
+          </p>
+        )}
+      </div>
 
-      {/* 3. Detalles del paquete */}
-      <Card className="space-y-4 p-5 sm:p-6">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Package className="h-4 w-4 text-primary-dark" aria-hidden="true" />
-          <h2 className="font-display text-base font-bold text-foreground">{copy.stepPackage}</h2>
-        </div>
-
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-foreground">
-            {copy.packageTypeLabel}
-          </label>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {(['sobre', 'chico', 'mediano', 'grande'] as const).map((type) => {
-              const opt = copy.packageOptions[type];
-              const isSelected = packageType === type;
-              return (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setValue('packageType', type, { shouldValidate: true })}
-                  className={cn(
-                    'flex min-h-[58px] flex-col items-start justify-center rounded-lg border p-3 text-left transition-colors',
-                    isSelected
-                      ? 'border-primary bg-primary/10 font-semibold text-primary-dark'
-                      : 'border-border bg-background text-foreground hover:bg-muted/50'
-                  )}
-                >
-                  <span className="text-sm font-bold capitalize">{opt.label}</span>
-                  <span
-                    className={cn(
-                      'line-clamp-2 text-sm font-normal',
-                      isSelected ? 'text-primary-dark' : 'text-muted-foreground'
-                    )}
-                  >
-                    {opt.description}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </Card>
-
-      {/* 4. Pago del envío */}
-      <Card className="space-y-4 p-5 sm:p-6">
-        <div className="flex items-center gap-2 border-b border-border pb-3">
-          <Banknote className="h-4 w-4 text-primary-dark" aria-hidden="true" />
-          <h2 className="font-display text-base font-bold text-foreground">{copy.stepPayment}</h2>
-        </div>
-
-        <div className="space-y-3">
-          <div className="flex items-start gap-2 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
-            <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary-dark" />
-            <p>{copy.paymentMethodHint}</p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-foreground">
-              {copy.paymentMethodLabel}
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['cash', 'transfer', 'to_agree'] as const).map((method) => {
-                const isSelected = paymentMethod === method;
-                return (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() => {
-                      setValue('recipientPaymentMethod', method, { shouldValidate: true });
-                      if (method !== 'cash') {
-                        setValue('needsChange', false, { shouldValidate: true });
-                        setValue('cashChangeAmount', null, { shouldValidate: true });
-                        setCustomChangeInput('');
-                      }
-                    }}
-                    className={cn(
-                      'flex min-h-[48px] items-center justify-center gap-2 rounded-lg border p-3 text-sm font-semibold transition-colors',
-                      isSelected
-                        ? 'border-primary bg-primary/10 text-primary-dark'
-                        : 'border-border bg-background text-foreground hover:bg-muted/50'
-                    )}
-                  >
-                    {method === 'cash' && <Banknote className="h-4 w-4" />}
-                    {method === 'transfer' && <CreditCard className="h-4 w-4" />}
-                    {method === 'to_agree' && <HelpCircle className="h-4 w-4" />}
-                    <span>{copy.paymentOptions[method]}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Opciones de cambio si es efectivo */}
-          {paymentMethod === 'cash' && (
-            <div className="mt-4 space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-foreground">{copy.needsChangeLabel}</span>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={needsChange ? 'default' : 'outline'}
-                    onClick={() => {
-                      setValue('needsChange', true, { shouldValidate: true });
-                      if (!cashChangeAmount) {
-                        setValue('cashChangeAmount', 2000, { shouldValidate: true });
-                      }
-                    }}
-                    className="min-h-12 min-w-[60px] text-sm"
-                  >
-                    Sí
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={!needsChange ? 'default' : 'outline'}
-                    onClick={() => {
-                      setValue('needsChange', false, { shouldValidate: true });
-                      setValue('cashChangeAmount', null, { shouldValidate: true });
-                      setCustomChangeInput('');
-                    }}
-                    className="min-h-12 min-w-[60px] text-sm"
-                  >
-                    No
-                  </Button>
-                </div>
-              </div>
-
-              {needsChange && (
-                <div className="space-y-3 pt-2">
-                  <label className="block text-sm font-medium text-foreground">
-                    {copy.changePresetLabel}
-                  </label>
-                  {/* Chips rápidos de billete */}
-                  <div className="flex flex-wrap gap-2">
-                    {copy.changePresets.map((preset) => {
-                      const isSelected = cashChangeAmount === preset && customChangeInput === '';
-                      return (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => handlePresetChangeAmount(preset)}
-                          className={cn(
-                            'min-h-12 rounded-full border px-4 py-2 text-sm font-semibold transition-colors',
-                            isSelected
-                              ? 'border-primary bg-primary text-primary-foreground shadow-sm'
-                              : 'border-border bg-card text-foreground hover:bg-muted'
-                          )}
-                        >
-                          Paga con: {formatArs(preset)}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Input libre de cambio */}
-                  <div className="pt-1">
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      value={customChangeInput}
-                      onChange={(e) => handleCustomChangeChange(e.target.value)}
-                      placeholder={copy.changeCustomPlaceholder}
-                      aria-invalid={Boolean(errors.cashChangeAmount)}
-                    />
-                    {cashChangeAmount != null && (
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        Monto registrado:{' '}
-                        <span className="font-semibold text-foreground">
-                          {formatArs(cashChangeAmount)}
-                        </span>
-                      </p>
-                    )}
-                    {errors.cashChangeAmount && (
-                      <p role="alert" className="mt-1 text-sm font-medium text-destructive">
-                        {errors.cashChangeAmount.message}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </Card>
-
-      {/* 5. Precio de envío acordado (opcional) */}
+      {/* 3. Precio de envío acordado (opcional) */}
       <Card className="space-y-4 p-5 sm:p-6">
         <div className="flex items-center gap-2 border-b border-border pb-3">
           <Banknote className="h-4 w-4 text-primary-dark" aria-hidden="true" />
@@ -723,6 +1057,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
 
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">{copy.fixedPriceHint}</p>
+          <p className="text-sm text-muted-foreground/90">{copy.fixedPricePerDropHint}</p>
 
           <div className="space-y-2">
             <label htmlFor="fixedPriceArs" className="block text-sm font-medium text-foreground">
@@ -738,12 +1073,21 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
               aria-invalid={Boolean(errors.fixedPriceArs)}
             />
             {fixedPriceArs != null && fixedPriceArs > 0 && (
-              <p className="text-sm text-muted-foreground">
-                Precio fijo establecido:{' '}
-                <span className="font-semibold text-foreground">
-                  {formatArs(fixedPriceArs)}
-                </span>
-              </p>
+              <div className="rounded-lg bg-primary/10 p-3 space-y-1 text-sm border border-primary/20">
+                <p className="font-medium text-primary-dark">
+                  Precio por entrega:{' '}
+                  <span className="font-bold">{formatArs(fixedPriceArs)}</span>
+                </p>
+                <p className="font-bold text-foreground">
+                  Total cotizado al repartidor:{' '}
+                  <span className="text-primary-dark font-extrabold text-base">
+                    {formatArs(fixedPriceArs * fields.length)}
+                  </span>{' '}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    ({fields.length} {fields.length === 1 ? 'entrega' : 'entregas'})
+                  </span>
+                </p>
+              </div>
             )}
             {errors.fixedPriceArs && (
               <p role="alert" className="text-sm font-medium text-destructive">
@@ -799,27 +1143,7 @@ export function CreateRequestForm({ zones, defaultPickup }: CreateRequestFormPro
         </div>
       </Card>
 
-      {/* 6. Indicaciones adicionales */}
-      <Card className="space-y-3 p-5 sm:p-6">
-        <label htmlFor="notes" className="block text-base font-semibold text-foreground">
-          {copy.notesLabel}
-        </label>
-        <Textarea
-          id="notes"
-          {...register('notes')}
-          placeholder={copy.notesPlaceholder}
-          maxLength={500}
-          aria-invalid={Boolean(errors.notes)}
-          className="min-h-[96px]"
-        />
-        {errors.notes && (
-          <p role="alert" className="text-sm font-medium text-destructive">
-            {errors.notes.message}
-          </p>
-        )}
-      </Card>
-
-      {/* 6. Botón de envío */}
+      {/* 4. Botón de envío */}
       <Button
         type="submit"
         size="lg"
