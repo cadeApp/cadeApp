@@ -49,20 +49,22 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
     const admin = createAdminClient();
     const { data: seeded, error: seedErr } = await admin
       .from('delivery_requests')
-      .update({ recipient_payment_method: 'cash', needs_change: true, cash_change_amount: CHANGE_AMOUNT })
+      .update({ recipient_payment_method: 'cash', needs_change: true })
       .eq('id', requestId)
-      .select('notes, status')
+      .select('id, status, notes, cash_change_amount, updated_at')
       .single();
-    if (seedErr || !seeded?.notes || seeded.status !== 'published') {
-      throw new Error(
-        `[E2E Seed Error] Falló la preparación de la solicitud: ${seedErr?.message ?? `notes/status inválidos (${seeded?.status})`}`
-      );
+    expect(seedErr).toBeNull();
+    expect(seeded).toMatchObject({
+      id: requestId,
+      status: 'published',
+      notes: null,
+      cash_change_amount: null,
+    });
+    if (!seeded?.updated_at) {
+      throw new Error('[E2E Seed Error] Falta updated_at del request publicado');
     }
-    const notes = seeded.notes;
+    const previousUpdatedAt = seeded.updated_at;
 
-    // El lector del Paso 2 obtiene el monto y las indicaciones del contacto
-    // PRIVADO del drop, no de las columnas legacy. Mantener el fixture
-    // coherente en ambos modelos sin relajar las aserciones de privacidad.
     const { data: seededDrop, error: seededDropErr } = await admin
       .from('delivery_request_drops')
       .select('id')
@@ -70,20 +72,28 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
       .eq('position', 1)
       .single();
     expect(seededDropErr).toBeNull();
-    expect(seededDrop?.id).toBeDefined();
     if (!seededDrop?.id) {
-      throw new Error('[E2E Seed Error] Falta el drop 1 materializado para la solicitud publicada');
+      throw new Error('[E2E Seed Error] Falta el drop 1 de la solicitud publicada');
     }
+
     const { error: dropUpdateErr } = await admin
       .from('delivery_request_drops')
       .update({ recipient_payment_method: 'cash', needs_change: true })
       .eq('id', seededDrop.id);
     expect(dropUpdateErr).toBeNull();
-    const { error: privateUpdateErr } = await admin
+
+    const { data: privateData, error: privateUpdateErr } = await admin
       .from('delivery_request_drop_contacts')
-      .update({ cash_change_amount: CHANGE_AMOUNT, notes })
-      .eq('drop_id', seededDrop.id);
+      .update({ cash_change_amount: CHANGE_AMOUNT })
+      .eq('drop_id', seededDrop.id)
+      .select('notes, cash_change_amount')
+      .single();
     expect(privateUpdateErr).toBeNull();
+    if (typeof privateData?.notes !== 'string' || !privateData.notes.trim()) {
+      throw new Error('[E2E Seed Error] Falta notes en drop_contacts del drop 1');
+    }
+    const notes = privateData.notes;
+    expect(privateData.cash_change_amount).toBe(CHANGE_AMOUNT);
 
     // 2. PostgREST con el token del repartidor aprobado: columnas privadas → 42501, públicas → la fila
     const courierClient = await createAuthenticatedClient(courier);
@@ -140,27 +150,49 @@ test.describe('T-345 — columnas privadas de delivery_requests cerradas por API
     });
 
     try {
-      const { error: updateErr } = await admin
+      // UPDATE público real: nunca reintroducir monto o notes legacy.
+      // PostgreSQL asigna updated_at mediante public.set_updated_at.
+      const { data: touched, error: updateErr } = await admin
         .from('delivery_requests')
-        .update({ cash_change_amount: UPDATED_CHANGE_AMOUNT })
-        .eq('id', requestId);
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', requestId)
+        .select('id, status, updated_at, notes, cash_change_amount')
+        .single();
       expect(updateErr).toBeNull();
+      expect(touched).toMatchObject({
+        id: requestId,
+        status: 'published',
+        notes: null,
+        cash_change_amount: null,
+      });
+      if (!touched?.updated_at) {
+        throw new Error('[E2E Seed Error] No se obtuvo updated_at del UPDATE');
+      }
+      expect(touched.updated_at).not.toBe(previousUpdatedAt);
+      const emittedAt = Date.parse(touched.updated_at);
+      expect(Number.isFinite(emittedAt)).toBe(true);
 
-      // La edición del campo legacy anterior prueba el filtrado de Realtime;
-      // para la proyección privada del lector Paso 2 actualizamos el mismo
-      // importe en el único drop autorizado.
-      const { error: privateAmountErr } = await admin
+      const { data: privateAfter, error: privateAmountErr } = await admin
         .from('delivery_request_drop_contacts')
         .update({ cash_change_amount: UPDATED_CHANGE_AMOUNT })
-        .eq('drop_id', seededDrop.id);
+        .eq('drop_id', seededDrop.id)
+        .select('notes, cash_change_amount')
+        .single();
       expect(privateAmountErr).toBeNull();
+      expect(privateAfter?.notes).toBe(notes);
+      expect(privateAfter?.cash_change_amount).toBe(UPDATED_CHANGE_AMOUNT);
 
-      await expect.poll(() => received.length, { timeout: 25_000 }).toBeGreaterThan(0);
-      const record = received[0] ?? {};
-      expect(record.id).toBe(requestId);
-      expect(record.status).toBe('published');
+      const matches = (row: Record<string, unknown>) =>
+        row.id === requestId && Date.parse(String(row.updated_at)) === emittedAt;
+      await expect.poll(
+        () => received.some(matches),
+        { timeout: 25_000 }
+      ).toBe(true);
+      const record = received.find(matches);
+      expect(record).toBeDefined();
+      expect(record?.status).toBe('published');
       for (const column of PRIVATE_COLUMNS) {
-        expect(Object.keys(record), `el payload de Realtime no trae ${column}`).not.toContain(column);
+        expect(Object.keys(record ?? {}), 'Realtime no expone ' + column).not.toContain(column);
       }
       expect(JSON.stringify(record)).not.toContain(notes);
       expect(JSON.stringify(record)).not.toContain(String(UPDATED_CHANGE_AMOUNT));

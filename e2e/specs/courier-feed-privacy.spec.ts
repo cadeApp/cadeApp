@@ -41,18 +41,18 @@ test.describe('T-342 — privacidad del feed del repartidor antes del match', ()
     const admin = createAdminClient();
     const { data: seeded, error: seedErr } = await admin
       .from('delivery_requests')
-      .update({ recipient_payment_method: 'cash', needs_change: true, cash_change_amount: CHANGE_AMOUNT })
+      .update({ recipient_payment_method: 'cash', needs_change: true })
       .eq('id', requestId)
-      .select('notes')
+      .select('id, status, notes, cash_change_amount')
       .single();
-    if (seedErr || !seeded?.notes) {
-      throw new Error(`[E2E Seed Error] Falló la preparación de la solicitud: ${seedErr?.message ?? 'sin notes'}`);
-    }
-    const notes = seeded.notes;
+    expect(seedErr).toBeNull();
+    expect(seeded).toMatchObject({
+      id: requestId,
+      status: 'published',
+      notes: null,
+      cash_change_amount: null,
+    });
 
-    // El lector del Paso 2 obtiene el monto y las indicaciones del contacto
-    // PRIVADO del drop, no de las columnas legacy. Mantener el fixture
-    // coherente en ambos modelos sin relajar las aserciones de privacidad.
     const { data: seededDrop, error: seededDropErr } = await admin
       .from('delivery_request_drops')
       .select('id')
@@ -60,20 +60,28 @@ test.describe('T-342 — privacidad del feed del repartidor antes del match', ()
       .eq('position', 1)
       .single();
     expect(seededDropErr).toBeNull();
-    expect(seededDrop?.id).toBeDefined();
     if (!seededDrop?.id) {
-      throw new Error('[E2E Seed Error] Falta el drop 1 materializado para la solicitud publicada');
+      throw new Error('[E2E Seed Error] Falta el drop 1 de la solicitud publicada');
     }
+
     const { error: dropUpdateErr } = await admin
       .from('delivery_request_drops')
       .update({ recipient_payment_method: 'cash', needs_change: true })
       .eq('id', seededDrop.id);
     expect(dropUpdateErr).toBeNull();
-    const { error: privateUpdateErr } = await admin
+
+    const { data: privateData, error: privateUpdateErr } = await admin
       .from('delivery_request_drop_contacts')
-      .update({ cash_change_amount: CHANGE_AMOUNT, notes })
-      .eq('drop_id', seededDrop.id);
+      .update({ cash_change_amount: CHANGE_AMOUNT })
+      .eq('drop_id', seededDrop.id)
+      .select('notes, cash_change_amount')
+      .single();
     expect(privateUpdateErr).toBeNull();
+    if (typeof privateData?.notes !== 'string' || !privateData.notes.trim()) {
+      throw new Error('[E2E Seed Error] Falta notes en drop_contacts del drop 1');
+    }
+    const notes = privateData.notes;
+    expect(privateData.cash_change_amount).toBe(CHANGE_AMOUNT);
     const amountLabel = formatArs(CHANGE_AMOUNT);
 
     // 2. Feed del repartidor no aceptado
