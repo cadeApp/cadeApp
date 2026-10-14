@@ -73,6 +73,8 @@ describe('T-340: CreateRequestForm multi-drop', () => {
     centroidLng: -65.62,
   };
   const mockZones = [zoneCentro, zoneSanMartin];
+  const pickupZone = mockZones[0];
+  if (!pickupZone) throw new Error('El fixture requiere al menos una zona');
 
   it('renderiza todos los campos principales, 1 entrega por defecto y precarga datos del comercio', () => {
     render(
@@ -519,7 +521,7 @@ describe('T-340: CreateRequestForm multi-drop', () => {
         zones={mockZones}
         defaultPickup={{
           defaultPickupAddress: 'San Martín 350',
-          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupZoneId: pickupZone.id,
           defaultPickupLat: -27.43,
           defaultPickupLng: -65.61,
           notes: null,
@@ -573,7 +575,7 @@ describe('T-340: CreateRequestForm multi-drop', () => {
         zones={mockZones}
         defaultPickup={{
           defaultPickupAddress: 'San Martín 350',
-          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupZoneId: pickupZone.id,
           defaultPickupLat: null,
           defaultPickupLng: null,
           notes: null,
@@ -602,7 +604,7 @@ describe('T-340: CreateRequestForm multi-drop', () => {
         zones={mockZones}
         defaultPickup={{
           defaultPickupAddress: 'San Martín 350',
-          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupZoneId: pickupZone.id,
           defaultPickupLat: null,
           defaultPickupLng: null,
           notes: null,
@@ -642,7 +644,7 @@ describe('T-340: CreateRequestForm multi-drop', () => {
         zones={mockZones}
         defaultPickup={{
           defaultPickupAddress: 'San Martín 350',
-          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupZoneId: pickupZone.id,
           defaultPickupLat: null,
           defaultPickupLng: null,
           notes: null,

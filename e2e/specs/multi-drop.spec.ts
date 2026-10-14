@@ -784,11 +784,17 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       expect(deliveredCount).toBe(2);
       expect(failedCount).toBe(1);
 
-      // Afirmar totalAmountArs = amountArs * 3 y collectibleAmountArs = amountArs * 2 (H04)
-      const totalAmountArs = offerAmountArs * 3;
-      const collectibleAmountArs = offerAmountArs * deliveredCount;
-      expect(totalAmountArs).toBe(4500);
-      expect(collectibleAmountArs).toBe(3000);
+      // Afirmar totalAmountArs y collectibleAmountArs en la UI autenticada del courier (H04)
+      await courierBrowserPage.goto(`/trips/${createdReq.id}`);
+      await waitForNoSkeletons(courierBrowserPage);
+
+      // Comprobar total cotizado ($ 4.500) en TripCourierView
+      await expect(courierBrowserPage.getByText(formatArs(4500))).toBeVisible();
+      // Comprobar desglose de 3 entregas y monto a cobrar derivado por el lector real ($ 3.000)
+      await expect(
+        courierBrowserPage.getByText(new RegExp(`A cobrar:\\s*${formatArs(3000).replace('$', '\\$')}`, 'i'))
+      ).toBeVisible();
+      await expect(courierBrowserPage.getByText(/3 entregas/i).first()).toBeVisible();
 
       // Solicitud finaliza en 'delivered' con delivered_at registrado
       const { data: finalReq, error: finalReqErr } = await admin
@@ -808,6 +814,8 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
   });
 
   test('DoD: solicitud multi-drop con todas las entregas fallidas finaliza en delivered con collectibleAmountArs=0', async ({
+    page,
+    loginAsCourier,
     stagingContext,
   }) => {
     assertAllowedE2EEnvironment();
@@ -936,7 +944,15 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       .eq('request_id', requestId);
     const deliveredCount = (allDrops ?? []).filter((d) => d.status === 'delivered').length;
     expect(deliveredCount).toBe(0);
-    const collectibleAmountArs = offerAmountArs * deliveredCount;
-    expect(collectibleAmountArs).toBe(0);
+
+    // 7. En el caso todas fallidas, verificar en la UI auténtica que se muestra 'A cobrar: $ 0' (H04)
+    await loginAsCourier(0, page);
+    await page.goto(`/trips/${requestId}`);
+    await waitForNoSkeletons(page);
+
+    await expect(
+      page.getByText(new RegExp(`A cobrar:\\s*${formatArs(0).replace('$', '\\$')}`, 'i'))
+    ).toBeVisible();
+    await expect(page.getByText(/2 entregas/i).first()).toBeVisible();
   });
 });
