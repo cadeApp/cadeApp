@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { publicEnv } from '@/lib/env.public';
 import type { Database } from '@/types/database.types';
 import { consentStatusSchema, profileRoleSchema } from '@/domain/schemas';
-import { evaluateRouteGuard, type AuthSession } from './guards';
+import { evaluateRouteGuard, parseOnboardingComplete, type AuthSession } from './guards';
 
 export * from './queries';
 export * from './guards';
@@ -71,6 +71,30 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
           consentStatus: consentParsed.data,
         };
       }
+    }
+  }
+
+  // T-334: estado del onboarding con el cliente del usuario (RLS *_select_self), solo con consentimiento activo.
+  if (session && session.consentStatus === 'active') {
+    let onboarding: { data: unknown; error: unknown } | null = null;
+    if (session.role === 'merchant') {
+      onboarding = await supabase
+        .from('merchants')
+        .select('business_name')
+        .eq('profile_id', session.userId)
+        .maybeSingle();
+    } else if (session.role === 'courier') {
+      onboarding = await supabase
+        .from('couriers')
+        .select('vehicle_type')
+        .eq('profile_id', session.userId)
+        .maybeSingle();
+    }
+    if (onboarding && !onboarding.error) {
+      session = {
+        ...session,
+        onboardingComplete: parseOnboardingComplete(session.role, onboarding.data),
+      };
     }
   }
 

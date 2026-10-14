@@ -1,7 +1,6 @@
-const CACHE_NAME = 'cadeapp-shell-v1';
+const CACHE_NAME = 'cadeapp-shell-v2';
 
 const STATIC_ASSETS = [
-  '/',
   '/manifest.webmanifest',
   '/brand/logo.svg',
   '/brand/logo.webp',
@@ -78,19 +77,21 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Navegación HTML same-origin (Network-First con fallback a /, NUNCA persiste HTML dinámico)
+  // 4. Navegación HTML same-origin (Network-First con respuesta «Sin conexión», NUNCA persiste HTML dinámico)
   const isNavigation =
     request.mode === 'navigate' || request.headers.get('accept')?.includes('text/html');
 
   if (isNavigation) {
     event.respondWith(
-      fetch(request).catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        const shell = await cache.match('/');
-        if (shell) {
-          return shell;
-        }
-        return new Response('Sin conexión', { status: 503, statusText: 'Offline' });
+      fetch(request).catch(() => {
+        return new Response(
+          '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Sin conexión</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="background:#12182C;color:#fff;font-family:sans-serif;padding:2rem;text-align:center;"><h1>Sin conexión</h1><p>No se pudo conectar a Internet. Verificá tu red y volvé a intentar.</p></body></html>',
+          {
+            status: 503,
+            statusText: 'Offline',
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+          }
+        );
       })
     );
     return;
@@ -181,7 +182,7 @@ function getNotificationDataForEvent(rawPayload, baseOrigin) {
       body: 'Tenés una actualización en la aplicación.',
       icon: icon,
       badge: badge,
-      data: { url: origin + '/', event: 'unknown' },
+      data: { url: origin + '/login', event: 'unknown' },
     };
   }
 
@@ -284,7 +285,7 @@ self.addEventListener('notificationclick', (event) => {
   const rawUrl =
     event.notification && event.notification.data ? event.notification.data.url : null;
   const origin = (self.location && self.location.origin) || 'https://cadeapp.ar';
-  let targetUrl = rawUrl || origin + '/';
+  let targetUrl = rawUrl || origin + '/login';
 
   if (targetUrl.startsWith('/')) {
     targetUrl = origin + targetUrl;

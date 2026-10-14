@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(43);
+select plan(44);
 
 -- IDs de actores para pruebas de T-101
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000011a1'::uuid $$;
@@ -339,6 +339,14 @@ select throws_ok(
   'P0001'::char(5),
   'RATE_LIMITED',
   'Limita ofertas exitosas por ventana: cuando el contador alcanza platform_settings.max_offers_per_min (10), submit_offer rechaza con RATE_LIMITED'
+);
+
+-- 31b. CC-021 §3: Precedencia nueva: solicitud vencida rechaza con REQUEST_EXPIRED antes que RATE_LIMITED
+select throws_ok(
+  $$ select public.submit_offer(pg_temp.req_expired_id(), 1600, 15, 'Excede rate limit sobre vencida') $$,
+  'P0001'::char(5),
+  'REQUEST_EXPIRED',
+  'CC-021: Con rate limit superado, una solicitud vencida devuelve REQUEST_EXPIRED antes que RATE_LIMITED'
 );
 
 -- 32. D04 / H04: Afirma el valor exacto del contador (3 tras las 3 ofertas exitosas de courier_approved_1_id) con limit 1

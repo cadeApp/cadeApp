@@ -184,6 +184,16 @@ export function MerchantHistoryView({
                     Boolean(req.acceptedOfferId) &&
                     typeof req.acceptedAmountArs === 'number' &&
                     req.acceptedAmountArs > 0;
+                  const isMultiDrop = (req.dropsCount ?? req.drops?.length ?? 1) > 1;
+                  const destinationText =
+                    req.drops && req.drops.length > 1
+                      ? `${req.pickupZoneName} → ${req.drops.map((d) => d.dropoffZoneName).join(' · ')}`
+                      : `${req.pickupZoneName} → ${req.dropoffZoneName}`;
+                  const packageLabel =
+                    req.drops && req.drops.length > 1
+                      ? req.drops.map((d) => d.packageType).join(' · ')
+                      : req.packageType;
+
                   return (
                     <Link
                       key={req.id}
@@ -192,9 +202,16 @@ export function MerchantHistoryView({
                     >
                       <Card className="flex items-center justify-between p-4 transition-colors hover:border-border/80 hover:bg-card/80">
                         <div className="space-y-1 pr-3">
-                          <p className="font-display text-base font-bold text-foreground">
-                            {req.pickupZoneName} → {req.dropoffZoneName}
-                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-display text-base font-bold text-foreground">
+                              {destinationText}
+                            </p>
+                            {isMultiDrop && (
+                              <Badge variant="outline">
+                                {req.dropsCount ?? req.drops?.length} entregas
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-sm font-medium text-foreground">
                             {hasAcceptedOffer ? (
                               <>
@@ -217,7 +234,7 @@ export function MerchantHistoryView({
                                 : 'Distancia no calculada'}
                             </span>
                             <span>·</span>
-                            <span className="capitalize">{req.packageType}</span>
+                            <span className="capitalize">{packageLabel}</span>
                             <span>·</span>
                             <span>
                               {new Date(req.createdAt).toLocaleTimeString('es-AR', {

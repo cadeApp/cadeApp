@@ -4,7 +4,6 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
 import { CourierFeed } from './components/courier-feed';
-import { UnderReview } from './components/under-review';
 import { OfferSheet } from './components/offer-sheet';
 import { MyOffersList } from './components/my-offers-list';
 import { OFFERS_COPY } from './copy';
@@ -50,18 +49,16 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     pickupZoneName: 'Centro',
     dropoffZoneName: 'Barrio Norte',
     approxDistanceKm: '2,5',
-    packageType: 'small',
+    packageType: 'chico',
     recipientPaymentMethod: 'cash',
     needsChange: true,
-    cashChangeAmount: 5000,
-    notes: 'Frágil',
     publishedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
     expiresAt: new Date(Date.now() + 27 * 60 * 1000).toISOString(),
     hasMyOffer: false,
     myOfferAmountArs: null,
   };
 
-  it('DoD 1: Un repartidor pending ve la pantalla "en revisión"', () => {
+  it('DoD 1: Un repartidor pending ve la pantalla "en revisión"', async () => {
     render(
       <CourierFeed
         courierStatus="pending"
@@ -71,9 +68,79 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       />
     );
 
-    expect(screen.getByText(/estamos revisando tus datos/i)).toBeDefined();
+    // La vista de revisión se carga con next/dynamic (hotfix T-325): se espera a que monte.
+    expect(await screen.findByText(/estamos revisando tus datos/i)).toBeDefined();
     expect(screen.getByText(/te avisamos por acá y por notificación/i)).toBeDefined();
     expect(screen.queryByText(/solicitudes abiertas/i)).toBeNull();
+    // PR242-H02: dentro del feed no hay CTA hacia el propio feed.
+    expect(screen.queryByRole('button', { name: /Ir al panel de repartidor/i })).toBeNull();
+  });
+
+  describe('Hotfix T-325: el feed pending muestra los documentos reales, no una lista fija', () => {
+    const MANDATORY = [
+      { kind: 'dni_front', status: 'submitted' },
+      { kind: 'dni_back', status: 'submitted' },
+      { kind: 'selfie', status: 'submitted' },
+      { kind: 'avatar', status: 'submitted' },
+    ] as const;
+
+    function rowOf(label: RegExp) {
+      return screen.getByText(label).closest('div[class*="flex items-center justify-between"]');
+    }
+
+    it('licencia y seguro enviados figuran cargados ("Listo"), nunca "No cargada"', async () => {
+      render(
+        <CourierFeed
+          courierStatus="pending"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+          documents={[
+            ...MANDATORY,
+            { kind: 'license', status: 'submitted' },
+            { kind: 'insurance', status: 'verified' },
+          ]}
+        />
+      );
+
+      await screen.findByText(/estamos revisando tus datos/i);
+      expect(rowOf(/Licencia/)?.textContent).toContain('Listo');
+      expect(rowOf(/Seguro/)?.textContent).toContain('Listo');
+      expect(screen.queryByText('No cargada')).toBeNull();
+    });
+
+    it('sin licencia ni seguro figuran como opcionales ausentes', async () => {
+      render(
+        <CourierFeed
+          courierStatus="pending"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+          documents={[...MANDATORY]}
+        />
+      );
+
+      await screen.findByText(/estamos revisando tus datos/i);
+      expect(rowOf(/Licencia/)?.textContent).toContain('No cargado (opcional)');
+      expect(rowOf(/Seguro/)?.textContent).toContain('No cargado (opcional)');
+    });
+
+    it('sin documentos persistidos no inventa obligatorios cargados', async () => {
+      render(
+        <CourierFeed
+          courierStatus="pending"
+          isAvailable={false}
+          requests={[]}
+          minOfferArs={1000}
+          documents={[]}
+        />
+      );
+
+      await screen.findByText(/estamos revisando tus datos/i);
+      expect(rowOf(/DNI frente y dorso/)?.textContent).toContain('Pendiente');
+      expect(rowOf(/Selfie de seguridad/)?.textContent).toContain('Pendiente');
+      expect(screen.queryByText('Cargado')).toBeNull();
+    });
   });
 
   it('DoD 2: Una oferta bajo el piso muestra el error del servidor', async () => {
@@ -225,11 +292,9 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
     const reqLive2: AvailableRequestItem = {
       id: '22222222-2222-2222-2222-222222222222',
       approxDistanceKm: '1,5',
-      packageType: 'medium',
+      packageType: 'mediano',
       recipientPaymentMethod: 'transfer',
       needsChange: false,
-      cashChangeAmount: null,
-      notes: 'Urgente',
       publishedAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
       pickupZoneName: 'Plaza',
@@ -373,11 +438,9 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       pickupZoneName: 'Barrio Oeste',
       dropoffZoneName: 'Barrio Este',
       approxDistanceKm: '1,5',
-      packageType: 'small',
+      packageType: 'chico',
       recipientPaymentMethod: 'cash',
       needsChange: false,
-      cashChangeAmount: null,
-      notes: null,
       publishedAt: '2026-09-26T11:00:00.000Z',
       expiresAt: null,
       hasMyOffer: false,
@@ -588,6 +651,101 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
 
       const amountInput = screen.getByRole('textbox', { name: OFFERS_COPY.amountLabel });
       expect(amountInput.getAttribute('inputmode')).toBe('numeric');
+    });
+  });
+
+  describe('T-339 DoD: Solicitud con precio fijo y toma directa', () => {
+    const fixedPriceRequest: AvailableRequestItem = {
+      ...sampleRequest,
+      id: '99999999-9999-9999-9999-999999999999',
+      fixedPriceArs: 2500,
+      autoAssign: true,
+    };
+
+    it('RequestCard muestra botón «Tomar a $X» en lugar de «Ofertar»', () => {
+      render(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[fixedPriceRequest]}
+          minOfferArs={1000}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: /tomar a \$ 2\.500/i })).toBeDefined();
+      expect(screen.queryByRole('button', { name: /^ofertar$/i })).toBeNull();
+    });
+
+    it('OfferSheet con precio fijo oculta campo de monto y presets de chips, y muestra aviso de asignación inmediata', () => {
+      const { container } = render(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={fixedPriceRequest}
+          minOfferArs={1000}
+          onTakeRequest={vi.fn()}
+        />
+      );
+
+      // No muestra campo de monto ni chips
+      expect(screen.queryByRole('textbox', { name: OFFERS_COPY.amountLabel })).toBeNull();
+      expect(screen.queryByText(/mínimo/i)).toBeNull();
+
+      // Muestra título de tomar solicitud y monto fijo
+      expect(screen.getByText(OFFERS_COPY.takeSheetTitle)).toBeDefined();
+      expect(screen.getByText(OFFERS_COPY.fixedPriceNotice)).toBeDefined();
+      expect(screen.getAllByText(/\$ 2\.500/).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(OFFERS_COPY.autoAssignNotice)).toBeDefined();
+
+      // Botón de submit dice Tomar a $ 2.500
+      expect(screen.getByRole('button', { name: /tomar a \$ 2\.500/i })).toBeDefined();
+
+      // Cláusula Anti-12px (sin text-xs)
+      const textXsElements = container.querySelectorAll('.text-xs');
+      expect(textXsElements.length).toBe(0);
+    });
+
+    it('OfferSheet con precio fijo invoca onTakeRequest al confirmar', async () => {
+      const takeMock = vi.fn().mockResolvedValue({ ok: true });
+      const closeMock = vi.fn();
+
+      render(
+        <OfferSheet
+          isOpen={true}
+          onClose={closeMock}
+          request={fixedPriceRequest}
+          minOfferArs={1000}
+          onTakeRequest={takeMock}
+        />
+      );
+
+      const submitBtn = screen.getByRole('button', { name: /tomar a \$ 2\.500/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(takeMock).toHaveBeenCalledWith({
+          requestId: fixedPriceRequest.id,
+          etaMinutes: 15,
+          message: null,
+        });
+        expect(closeMock).toHaveBeenCalled();
+      });
+    });
+
+    it('OfferSheet sin precio fijo conserva el flujo habitual de oferta y chips', () => {
+      render(
+        <OfferSheet
+          isOpen={true}
+          onClose={vi.fn()}
+          request={sampleRequest}
+          minOfferArs={1000}
+          onSubmitOffer={vi.fn()}
+        />
+      );
+
+      expect(screen.getByRole('textbox', { name: OFFERS_COPY.amountLabel })).toBeDefined();
+      expect(screen.getByText(OFFERS_COPY.offerSheetTitle)).toBeDefined();
+      expect(screen.getByRole('button', { name: OFFERS_COPY.submitOfferButton })).toBeDefined();
     });
   });
 });

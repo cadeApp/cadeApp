@@ -12,6 +12,7 @@ import {
   ArrowRight,
   RotateCw,
   AlertTriangle,
+  type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/ui/button';
 import { Input } from '@/ui/input';
@@ -20,6 +21,7 @@ import { BrandLogo } from '@/ui/brand-logo';
 import { compressImage } from '@/lib/image-compression';
 import { COURIER_ONBOARDING_COPY } from '../copy';
 import { StepIndicator } from './step-indicator';
+import { DocumentUploadCard, type DocumentUploadStatus } from './document-upload-card';
 import { type CourierDocumentKind, uploadCourierDocument } from '../upload-manager';
 import { courierOnboardingAction } from '../actions';
 import { ARGENTINA_PLATE_REGEX } from '../schemas';
@@ -35,6 +37,28 @@ export interface VehicleFormProps {
 }
 
 const EMPTY_INITIAL_DOCS: Record<string, string> = {};
+
+type OptionalDocumentKind = Extract<CourierDocumentKind, 'license' | 'insurance'>;
+
+const OPTIONAL_DOCS: {
+  kind: OptionalDocumentKind;
+  title: string;
+  subtitle: string;
+  icon: LucideIcon;
+}[] = [
+  {
+    kind: 'license',
+    title: COURIER_ONBOARDING_COPY.licenseTitle,
+    subtitle: COURIER_ONBOARDING_COPY.licenseSub,
+    icon: FileCheck,
+  },
+  {
+    kind: 'insurance',
+    title: COURIER_ONBOARDING_COPY.insuranceTitle,
+    subtitle: COURIER_ONBOARDING_COPY.insuranceSub,
+    icon: Shield,
+  },
+];
 
 export function VehicleForm({
   courierId,
@@ -61,12 +85,18 @@ export function VehicleForm({
   const [vehiclePlate, setVehiclePlate] = React.useState('');
   const [plateTouched, setPlateTouched] = React.useState(false);
 
-  // Documentos opcionales (licencia y seguro)
+  // Documentos opcionales (licencia y seguro): mismos estados que el paso 2 (T-325)
   const [optionalDocs, setOptionalDocs] = React.useState<
-    Partial<Record<'license' | 'insurance', string>>
+    Partial<Record<OptionalDocumentKind, string>>
   >({});
-  const [uploadingOptional, setUploadingOptional] = React.useState<
-    Partial<Record<'license' | 'insurance', boolean>>
+  const [optionalStatuses, setOptionalStatuses] = React.useState<
+    Partial<Record<OptionalDocumentKind, DocumentUploadStatus>>
+  >({});
+  const [compressingOptional, setCompressingOptional] = React.useState<
+    Partial<Record<OptionalDocumentKind, boolean>>
+  >({});
+  const [optionalFileNames, setOptionalFileNames] = React.useState<
+    Partial<Record<OptionalDocumentKind, string>>
   >({});
 
   // Consentimientos obligatorios
@@ -88,24 +118,33 @@ export function VehicleForm({
   const areConsentsValid = tosAccepted && privacyAccepted && contractAccepted;
   const isFormValid =
     (!requiresPlate || (vehiclePlate.trim().length > 0 && isPlateValid)) && areConsentsValid;
+  // Consejo (Frontend/Persona): mientras un opcional sube no se envía, para no mandar el payload sin ese
+  // archivo y dejar la subida huérfana. No los vuelve obligatorios: sin subida en curso se envía igual.
+  const isOptionalUploading =
+    requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
 
-  const handleOptionalUpload = async (kind: 'license' | 'insurance', file: File | null) => {
-    if (!file) return;
-    setUploadingOptional((prev) => ({ ...prev, [kind]: true }));
+  const handleOptionalUpload = async (kind: OptionalDocumentKind, file: File) => {
+    setOptionalFileNames((prev) => ({ ...prev, [kind]: file.name }));
+    setCompressingOptional((prev) => ({ ...prev, [kind]: true }));
+    setOptionalStatuses((prev) => ({ ...prev, [kind]: 'uploading' }));
+
+    // PR237-H01: el último path exitoso se conserva hasta que el reemplazo devuelva uno nuevo.
     try {
       const compressed = await compressImage(file);
+      setCompressingOptional((prev) => ({ ...prev, [kind]: false }));
       const res = await uploadCourierDocument({ courierId, kind, file: compressed });
       setOptionalDocs((prev) => ({ ...prev, [kind]: res.storagePath }));
+      setOptionalStatuses((prev) => ({ ...prev, [kind]: 'success' }));
     } catch {
-      // Error silencioso en opcionales, usuario puede reintentar
-    } finally {
-      setUploadingOptional((prev) => ({ ...prev, [kind]: false }));
+      // Opcional, pero no silencioso: la tarjeta muestra el error y permite reintentar.
+      setCompressingOptional((prev) => ({ ...prev, [kind]: false }));
+      setOptionalStatuses((prev) => ({ ...prev, [kind]: 'error' }));
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid || isSubmitting) return;
+    if (!isFormValid || isSubmitting || isOptionalUploading) return;
 
     setIsSubmitting(true);
     setServerError(null);
@@ -315,81 +354,19 @@ export function VehicleForm({
                 {COURIER_ONBOARDING_COPY.optionalDocsTitle}
               </h3>
 
-              {/* Licencia */}
-              <Card className="flex items-center justify-between gap-3 p-3.5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <FileCheck className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-foreground">
-                      {COURIER_ONBOARDING_COPY.licenseTitle}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {COURIER_ONBOARDING_COPY.licenseSub}
-                    </span>
-                  </div>
-                </div>
-                <label
-                  htmlFor="upload-license"
-                  className="flex h-12 min-h-12 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-muted"
-                >
-                  {uploadingOptional.license ? (
-                    <RotateCw className="h-4 w-4 text-primary" />
-                  ) : optionalDocs.license ? (
-                    <span className="text-success">{COURIER_ONBOARDING_COPY.btnUploaded}</span>
-                  ) : (
-                    COURIER_ONBOARDING_COPY.btnUpload
-                  )}
-                </label>
-                <input
-                  id="upload-license"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={(e) =>
-                    void handleOptionalUpload('license', e.target.files?.[0] || null)
-                  }
+              {OPTIONAL_DOCS.map((doc) => (
+                <DocumentUploadCard
+                  key={doc.kind}
+                  kind={doc.kind}
+                  title={doc.title}
+                  subtitle={doc.subtitle}
+                  icon={doc.icon}
+                  status={optionalStatuses[doc.kind] || 'idle'}
+                  compressing={compressingOptional[doc.kind]}
+                  fileName={optionalFileNames[doc.kind]}
+                  onFileSelected={(file) => void handleOptionalUpload(doc.kind, file)}
                 />
-              </Card>
-
-              {/* Seguro */}
-              <Card className="flex items-center justify-between gap-3 p-3.5">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                    <Shield className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-foreground">
-                      {COURIER_ONBOARDING_COPY.insuranceTitle}
-                    </span>
-                    <span className="text-sm text-muted-foreground">
-                      {COURIER_ONBOARDING_COPY.insuranceSub}
-                    </span>
-                  </div>
-                </div>
-                <label
-                  htmlFor="upload-insurance"
-                  className="flex h-12 min-h-12 cursor-pointer items-center justify-center rounded-lg border border-border bg-card px-4 text-sm font-semibold hover:bg-muted"
-                >
-                  {uploadingOptional.insurance ? (
-                    <RotateCw className="h-4 w-4 text-primary" />
-                  ) : optionalDocs.insurance ? (
-                    <span className="text-success">{COURIER_ONBOARDING_COPY.btnUploaded}</span>
-                  ) : (
-                    COURIER_ONBOARDING_COPY.btnUpload
-                  )}
-                </label>
-                <input
-                  id="upload-insurance"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="sr-only"
-                  onChange={(e) =>
-                    void handleOptionalUpload('insurance', e.target.files?.[0] || null)
-                  }
-                />
-              </Card>
+              ))}
             </section>
           </>
         )}
@@ -455,8 +432,7 @@ export function VehicleForm({
               >
                 Condiciones para repartidores
               </Link>
-              .{' '}
-              {COURIER_ONBOARDING_COPY.consentContractText}
+              . {COURIER_ONBOARDING_COPY.consentContractText}
             </span>
           </label>
         </section>
@@ -466,7 +442,7 @@ export function VehicleForm({
           <Button
             type="submit"
             size="lg"
-            disabled={!isFormValid || isSubmitting}
+            disabled={!isFormValid || isSubmitting || isOptionalUploading}
             className="w-full font-bold"
           >
             {isSubmitting ? (

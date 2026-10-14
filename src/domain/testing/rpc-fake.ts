@@ -19,6 +19,7 @@ import {
   type IncidentStatus,
   type MerchantSubscriptionStatus,
   type OfferStatus,
+  type PackageType,
   PLATFORM_SETTING_KEYS,
   type PlatformSettingKey,
   type ProfileRole,
@@ -46,6 +47,52 @@ export interface FakePlatformSettings {
   readonly pilotActive: boolean;
   readonly pilotTermsVersion: string;
   readonly subscriptionGraceDays: number;
+  readonly maxDropsPerRequest?: number;
+}
+
+export interface FakeSeedDrop {
+  readonly id?: string;
+  readonly position?: number;
+  readonly dropoffZoneId?: string;
+  readonly dropoffZoneName?: string;
+  readonly dropoffAddress?: string;
+  readonly dropoffLat?: number | null;
+  readonly dropoffLng?: number | null;
+  readonly packageType?: PackageType;
+  readonly recipientName?: string;
+  readonly recipientPhone?: string;
+  readonly recipientConsentDeclared?: boolean;
+  readonly recipientPaymentMethod?: RecipientPaymentMethod;
+  readonly needsChange?: boolean;
+  readonly cashChangeAmount?: number | null;
+  readonly notes?: string | null;
+  readonly approxDistanceM?: number | null;
+  readonly status?: 'pending' | 'delivered' | 'failed';
+  readonly deliveredAt?: string | null;
+  readonly failedReason?: string | null;
+}
+
+export interface FakeDropRecord {
+  id: string;
+  requestId: string;
+  position: number;
+  dropoffZoneId: string;
+  dropoffZoneName: string;
+  dropoffAddress: string;
+  dropoffLat: number | null;
+  dropoffLng: number | null;
+  packageType: PackageType;
+  recipientName: string;
+  recipientPhone: string;
+  recipientConsentDeclared: boolean;
+  recipientPaymentMethod: RecipientPaymentMethod;
+  needsChange: boolean;
+  cashChangeAmount: number | null;
+  notes: string | null;
+  approxDistanceM: number | null;
+  status: 'pending' | 'delivered' | 'failed';
+  deliveredAt: string | null;
+  failedReason: string | null;
 }
 
 export interface FakeActorContext {
@@ -84,6 +131,10 @@ export interface FakeSeedRequest {
   readonly notes?: string | null;
   readonly createdAt?: string;
   readonly pickedUpAt?: string | null;
+  readonly fixedPriceArs?: number | null;
+  readonly autoAssign?: boolean;
+  readonly drops?: readonly FakeSeedDrop[];
+  readonly dropsCount?: number;
 }
 
 export interface FakeRequestRecord {
@@ -105,12 +156,16 @@ export interface FakeRequestRecord {
   dropoffAddress: string;
   recipientName: string;
   recipientPhone: string;
-  recipientPaymentMethod: RecipientPaymentMethod;
+  recipientPaymentMethod: RecipientPaymentMethod | null;
   needsChange: boolean;
   cashChangeAmount: number | null;
   notes: string | null;
   createdAt: string;
   pickedUpAt: string | null;
+  fixedPriceArs: number | null;
+  autoAssign: boolean;
+  drops: FakeDropRecord[];
+  dropsCount: number;
 }
 
 export interface FakeSeedOffer {
@@ -228,6 +283,7 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedRequest: (request: FakeSeedRequest) => void;
   readonly seedOffer: (offer: FakeSeedOffer) => void;
   readonly seedCourier: (courier: FakeSeedCourier) => void;
+  readonly deleteCourier: (courierId: string) => void;
   readonly seedMerchant: (merchant: FakeSeedMerchant) => void;
   readonly seedDocument: (doc: FakeSeedDocument) => void;
   readonly seedIncident: (incident: FakeSeedIncident) => void;
@@ -253,13 +309,17 @@ const DEFAULT_ACTOR: FakeActorContext = {
 };
 
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
+  create_and_publish_multi_drop: ['merchant'],
   publish_request: ['merchant'],
   cancel_request: ['merchant', 'admin'],
   submit_offer: ['courier'],
+  take_request: ['courier'],
   withdraw_offer: ['courier'],
   accept_offer: ['merchant'],
   mark_picked_up: ['courier'],
   mark_delivered: ['courier'],
+  mark_drop_delivered: ['courier'],
+  mark_drop_failed: ['courier'],
   report_no_show: ['merchant'],
   courier_cancel_match: ['courier'],
   republish_request: ['merchant'],
@@ -268,6 +328,8 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   set_availability: ['courier'],
   calculate_route_distance: ['merchant', 'courier', 'admin'],
   get_trip_details: ['merchant', 'courier'],
+  get_request_offer_couriers: ['merchant'],
+  get_merchant_request_private_fields: ['merchant'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_verify_document: ['admin'],
@@ -347,11 +409,13 @@ function assertValidFakeOptions(options: FakeRpcOptions | undefined): FakePlatfo
     typeof settings.pilotTermsVersion !== 'string' ||
     settings.pilotTermsVersion.trim().length === 0 ||
     !Number.isInteger(settings.subscriptionGraceDays) ||
-    settings.subscriptionGraceDays < 0
+    settings.subscriptionGraceDays < 0 ||
+    (settings.maxDropsPerRequest !== undefined &&
+      (!Number.isInteger(settings.maxDropsPerRequest) || settings.maxDropsPerRequest < 1))
   ) {
     throw new Error('createFakeRpcClient received invalid options.settings values');
   }
-  return { ...settings };
+  return { ...settings, maxDropsPerRequest: settings.maxDropsPerRequest ?? 5 };
 }
 
 export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
@@ -365,6 +429,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   };
 
   let offerSeq = 0;
+  let dropSeq = 0;
   let incidentSeq = 0;
 
   const requests = new Map<string, FakeRequestRecord>();
@@ -374,6 +439,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const documents = new Map<string, FakeDocumentRecord>();
   const incidents = new Map<string, FakeIncidentRecord>();
   const rateLimits = new Map<string, number>();
+  const multiDropSnapshots = new Map<
+    string,
+    {
+      readonly input: RpcInput<'create_and_publish_multi_drop'>;
+      readonly publishedAt: string;
+      readonly routeDistanceM: number | null;
+    }
+  >();
 
   function getWindowBucketKey(subject: string, action: string, currentNow: Date): string {
     const minuteIso = new Date(Math.floor(currentNow.getTime() / 60_000) * 60_000).toISOString();
@@ -413,7 +486,41 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     }
   }
 
+  function nextUniqueDropId(): string {
+    while (true) {
+      dropSeq += 1;
+      const candidate = `40000000-0000-4000-8000-${String(dropSeq).padStart(12, '0')}`;
+      const alreadyUsed = [...requests.values()].some((request) =>
+        request.drops.some((drop) => drop.id === candidate)
+      );
+      if (!alreadyUsed) return candidate;
+    }
+  }
+
   function putRequest(r: FakeSeedRequest) {
+    const drops: FakeDropRecord[] = (r.drops ?? []).map((d, index) => ({
+      id: d.id ?? `40000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      requestId: r.requestId,
+      position: d.position ?? index + 1,
+      dropoffZoneId: d.dropoffZoneId ?? '00000000-0000-4000-8000-000000000099',
+      dropoffZoneName: d.dropoffZoneName ?? 'Centro',
+      dropoffAddress: d.dropoffAddress ?? 'Belgrano 1220',
+      dropoffLat: d.dropoffLat ?? null,
+      dropoffLng: d.dropoffLng ?? null,
+      packageType: d.packageType ?? 'chico',
+      recipientName: d.recipientName ?? 'Cliente',
+      recipientPhone: d.recipientPhone ?? '3865123456',
+      recipientConsentDeclared: d.recipientConsentDeclared ?? true,
+      recipientPaymentMethod: d.recipientPaymentMethod ?? 'cash',
+      needsChange: d.needsChange ?? false,
+      cashChangeAmount: d.cashChangeAmount ?? null,
+      notes: d.notes ?? null,
+      approxDistanceM: d.approxDistanceM ?? null,
+      status: d.status ?? 'pending',
+      deliveredAt: d.deliveredAt ?? null,
+      failedReason: d.failedReason ?? null,
+    }));
+
     requests.set(r.requestId, {
       requestId: r.requestId,
       merchantId: r.merchantId,
@@ -439,6 +546,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       notes: r.notes ?? null,
       createdAt: r.createdAt ?? '2026-09-22T14:00:00.000Z',
       pickedUpAt: r.pickedUpAt ?? null,
+      fixedPriceArs: r.fixedPriceArs ?? null,
+      autoAssign: r.autoAssign ?? false,
+      drops,
+      dropsCount: r.dropsCount ?? (drops.length > 0 ? drops.length : 1),
     });
   }
 
@@ -531,13 +642,26 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     if (!actor.userId || !actor.role) {
       return err('UNAUTHENTICATED' as RpcErrorCode<K>);
     }
+    // CC-023: la RPC valida el id antes del rol (misma precedencia que la función SQL).
+    if (
+      rpcName === 'get_merchant_request_private_fields' &&
+      !RPC_CONTRACTS[rpcName].inputSchema.safeParse(rawInput).success
+    ) {
+      return err('VALIDATION_ERROR' as RpcErrorCode<K>);
+    }
     if (!ALLOWED_ROLES_BY_RPC[rpcName].includes(actor.role)) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
     }
     // CC-007: RPC operativas de comercio/repartidor que exigen consentimiento activo antes de validar
-    // parámetros. CC-012 conserva el gate en la función standalone `report_incident`.
+    // parámetros. CC-012 conserva el gate en la función standalone `report_incident`. CC-021 lo extiende
+    // a submit_offer y take_request.
     if (
-      (rpcName === 'get_trip_details' || rpcName === 'report_incident') &&
+      (rpcName === 'get_trip_details' ||
+        rpcName === 'get_request_offer_couriers' ||
+        rpcName === 'get_merchant_request_private_fields' ||
+        rpcName === 'report_incident' ||
+        rpcName === 'submit_offer' ||
+        rpcName === 'take_request') &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
@@ -559,7 +683,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         return err('INVALID_SETTING_VALUE' as RpcErrorCode<K>);
       }
     }
-    if (rpcName === 'submit_offer') {
+    if (rpcName === 'submit_offer' || rpcName === 'take_request') {
       const courier = couriers.get(actor.userId);
       if (!courier) {
         return err('NOT_FOUND' as RpcErrorCode<K>);
@@ -618,6 +742,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     seedRequest: putRequest,
     seedOffer: (o) => offers.set(o.offerId, { ...o }),
     seedCourier: putCourier,
+    deleteCourier: (courierId) => {
+      couriers.delete(courierId);
+    },
     seedMerchant: putMerchant,
     seedDocument: (d) => documents.set(d.documentId, { ...d }),
     seedIncident: putIncident,
@@ -627,6 +754,177 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     getCourier: (courierId) => couriers.get(courierId),
     getSettings: () => ({ ...settings }),
     triggerErrorCode: async (code) => err(code),
+
+    create_and_publish_multi_drop: (rawInput) =>
+      executeRpc('create_and_publish_multi_drop', rawInput, false, (input) => {
+        const existing = requests.get(input.requestId);
+        if (existing) {
+          if (existing.merchantId !== actor.userId) return err('NOT_FOUND');
+
+          const snapshot = multiDropSnapshots.get(input.requestId);
+          if (!snapshot || JSON.stringify(snapshot.input) !== JSON.stringify(input)) {
+            return err('VALIDATION_ERROR');
+          }
+
+          return ok({
+            requestId: existing.requestId,
+            status: existing.status,
+            publishedAt: snapshot.publishedAt,
+            expiresAt: existing.expiresAt ?? snapshot.publishedAt,
+            routeDistanceM: snapshot.routeDistanceM,
+            fixedPriceArs: existing.fixedPriceArs,
+            autoAssign: existing.autoAssign,
+            dropsCount: existing.dropsCount,
+            idempotent: true,
+          });
+        }
+
+        const currentNow = nowFn();
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) return err('SUBSCRIPTION_INACTIVE');
+        const subCheck = canMerchantPublishRequest({
+          subscriptionStatus: merchant.subscriptionStatus,
+          pilotActive: settings.pilotActive,
+          paidUntil: merchant.paidUntil,
+          graceDays: settings.subscriptionGraceDays,
+          now: currentNow,
+        });
+        if (!subCheck.ok) {
+          return err(subCheck.code as RpcErrorCode<'create_and_publish_multi_drop'>);
+        }
+
+        const maxDrops = settings.maxDropsPerRequest ?? 5;
+        if (input.drops.length > maxDrops) return err('DROP_LIMIT_EXCEEDED');
+        if (input.fixedPriceArs !== null && input.fixedPriceArs < settings.minOfferArs) {
+          return err('OFFER_BELOW_MINIMUM');
+        }
+
+        if (
+          input.pickupLat !== null &&
+          input.pickupLng !== null &&
+          !isWithinAguilaresBounds(input.pickupLat, input.pickupLng)
+        ) {
+          return err('OUT_OF_BOUNDS_AGUILARES');
+        }
+        for (const drop of input.drops) {
+          if (
+            drop.dropoffLat !== null &&
+            drop.dropoffLng !== null &&
+            !isWithinAguilaresBounds(drop.dropoffLat, drop.dropoffLng)
+          ) {
+            return err('OUT_OF_BOUNDS_AGUILARES');
+          }
+        }
+
+        const rate = consumeRequestRate(
+          'publish_request',
+          settings.maxRequestPublicationsPerMin,
+          currentNow
+        );
+        if (!rate.ok) return rate;
+
+        let currentLat = input.pickupLat;
+        let currentLng = input.pickupLng;
+        let routeDistanceM: number | null = null;
+        let canCalculateRoute = currentLat !== null && currentLng !== null;
+        let totalDistanceM = 0;
+        const drops: FakeDropRecord[] = input.drops.map((drop, index) => {
+          let approxDistanceM: number | null = null;
+          if (
+            canCalculateRoute &&
+            currentLat !== null &&
+            currentLng !== null &&
+            drop.dropoffLat !== null &&
+            drop.dropoffLng !== null
+          ) {
+            approxDistanceM = calculateHaversineRouteDistanceM(
+              { lat: currentLat, lng: currentLng },
+              { lat: drop.dropoffLat, lng: drop.dropoffLng }
+            );
+            totalDistanceM += approxDistanceM;
+            currentLat = drop.dropoffLat;
+            currentLng = drop.dropoffLng;
+          } else {
+            canCalculateRoute = false;
+          }
+
+          return {
+            id: nextUniqueDropId(),
+            requestId: input.requestId,
+            position: index + 1,
+            dropoffZoneId: drop.dropoffZoneId,
+            dropoffZoneName: drop.dropoffZoneId,
+            dropoffAddress: drop.dropoffAddress,
+            dropoffLat: drop.dropoffLat,
+            dropoffLng: drop.dropoffLng,
+            packageType: drop.packageType,
+            recipientName: drop.recipientName,
+            recipientPhone: drop.recipientPhone,
+            recipientConsentDeclared: drop.recipientConsentDeclared,
+            recipientPaymentMethod: drop.recipientPaymentMethod,
+            needsChange: drop.needsChange,
+            cashChangeAmount: drop.cashChangeAmount,
+            notes: drop.notes,
+            approxDistanceM,
+            status: 'pending',
+            deliveredAt: null,
+            failedReason: null,
+          };
+        });
+        if (canCalculateRoute) routeDistanceM = totalDistanceM;
+
+        const publishedAt = currentNow.toISOString();
+        const expiresAt = new Date(
+          currentNow.getTime() + settings.requestTtlMinutes * 60_000
+        ).toISOString();
+        requests.set(input.requestId, {
+          requestId: input.requestId,
+          merchantId: actor.userId,
+          status: 'published',
+          expiresAt,
+          matchedAt: null,
+          deliveredAt: null,
+          acceptedOfferId: null,
+          assignedCourierId: null,
+          pickupLat: input.pickupLat,
+          pickupLng: input.pickupLng,
+          dropoffLat: null,
+          dropoffLng: null,
+          pickupZoneName: input.pickupZoneId,
+          dropoffZoneName: '',
+          pickupAddress: input.pickupAddress,
+          dropoffAddress: '',
+          recipientName: '',
+          recipientPhone: '',
+          recipientPaymentMethod: null,
+          needsChange: false,
+          cashChangeAmount: null,
+          notes: null,
+          createdAt: publishedAt,
+          pickedUpAt: null,
+          fixedPriceArs: input.fixedPriceArs,
+          autoAssign: input.autoAssign,
+          drops,
+          dropsCount: drops.length,
+        });
+        multiDropSnapshots.set(input.requestId, {
+          input,
+          publishedAt,
+          routeDistanceM,
+        });
+
+        return ok({
+          requestId: input.requestId,
+          status: 'published',
+          publishedAt,
+          expiresAt,
+          routeDistanceM,
+          fixedPriceArs: input.fixedPriceArs,
+          autoAssign: input.autoAssign,
+          dropsCount: drops.length,
+          idempotent: false,
+        });
+      }),
 
     publish_request: (rawInput) =>
       executeRpc('publish_request', rawInput, false, (input) => {
@@ -653,23 +951,152 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err(subCheck.code as RpcErrorCode<'publish_request'>);
         }
 
-        let routeDistanceM: number | null = null;
-        if (
-          req.pickupLat !== null &&
-          req.pickupLng !== null &&
-          req.dropoffLat !== null &&
-          req.dropoffLng !== null
-        ) {
+        // 1. Legacy bridge si la solicitud tiene 0 drops
+        if (req.drops.length === 0) {
           if (
-            !isWithinAguilaresBounds(req.pickupLat, req.pickupLng) ||
-            !isWithinAguilaresBounds(req.dropoffLat, req.dropoffLng)
+            !req.dropoffAddress ||
+            !req.dropoffZoneName ||
+            !req.recipientName ||
+            !req.recipientPhone
           ) {
+            return err('MISSING_REQUIRED_FIELDS');
+          }
+
+          const recipientPaymentMethod = req.recipientPaymentMethod ?? 'cash';
+          if (recipientPaymentMethod === 'cash') {
+            if (req.needsChange && (!req.cashChangeAmount || req.cashChangeAmount <= 0)) {
+              return err('VALIDATION_ERROR');
+            }
+          }
+
+          const drop1: FakeDropRecord = {
+            id: `40000000-0000-4000-8000-${String(1).padStart(12, '0')}`,
+            requestId: req.requestId,
+            position: 1,
+            dropoffZoneId: '00000000-0000-4000-8000-000000000099',
+            dropoffZoneName: req.dropoffZoneName,
+            dropoffAddress: req.dropoffAddress,
+            dropoffLat: req.dropoffLat,
+            dropoffLng: req.dropoffLng,
+            packageType: 'chico',
+            recipientName: req.recipientName,
+            recipientPhone: req.recipientPhone,
+            recipientConsentDeclared: true,
+            recipientPaymentMethod,
+            needsChange: recipientPaymentMethod === 'cash' ? req.needsChange : false,
+            cashChangeAmount:
+              recipientPaymentMethod === 'cash' && req.needsChange
+                ? req.cashChangeAmount
+                : null,
+            notes: req.notes,
+            approxDistanceM: null,
+            status: 'pending',
+            deliveredAt: null,
+            failedReason: null,
+          };
+          req.drops = [drop1];
+          req.dropsCount = 1;
+        }
+
+        if (req.drops.length === 0) {
+          return err('MISSING_REQUIRED_FIELDS');
+        }
+
+        const maxDrops = settings.maxDropsPerRequest ?? 5;
+        if (req.drops.length > maxDrops) {
+          return err('DROP_LIMIT_EXCEEDED');
+        }
+
+        // Posiciones consecutivas desde 1
+        const positions = req.drops.map((d) => d.position).sort((a, b) => a - b);
+        const consecutive = positions.every((pos, idx) => pos === idx + 1);
+        if (!consecutive) {
+          return err('VALIDATION_ERROR');
+        }
+
+        // Validación de cada drop
+        for (const drop of req.drops) {
+          if (!drop.dropoffAddress || !drop.recipientName || !drop.recipientPhone) {
+            return err('MISSING_REQUIRED_FIELDS');
+          }
+          if (drop.dropoffLat !== null && drop.dropoffLng !== null) {
+            if (!isWithinAguilaresBounds(drop.dropoffLat, drop.dropoffLng)) {
+              return err('OUT_OF_BOUNDS_AGUILARES');
+            }
+          }
+          if (drop.recipientPaymentMethod !== 'cash' && drop.needsChange) {
+            return err('VALIDATION_ERROR');
+          }
+          if (drop.recipientPaymentMethod === 'cash' && drop.needsChange) {
+            if (drop.cashChangeAmount === null || drop.cashChangeAmount <= 0) {
+              return err('VALIDATION_ERROR');
+            }
+          } else {
+            if (drop.cashChangeAmount !== null) {
+              return err('VALIDATION_ERROR');
+            }
+          }
+        }
+
+        if (req.pickupLat !== null && req.pickupLng !== null) {
+          if (!isWithinAguilaresBounds(req.pickupLat, req.pickupLng)) {
             return err('OUT_OF_BOUNDS_AGUILARES');
           }
-          routeDistanceM = calculateHaversineRouteDistanceM(
-            { lat: req.pickupLat, lng: req.pickupLng },
-            { lat: req.dropoffLat, lng: req.dropoffLng }
-          );
+        }
+
+        let routeDistanceM: number | null = null;
+        if (req.drops.length === 1) {
+          const drop = req.drops[0]!;
+          if (
+            req.pickupLat !== null &&
+            req.pickupLng !== null &&
+            drop.dropoffLat !== null &&
+            drop.dropoffLng !== null
+          ) {
+            routeDistanceM = calculateHaversineRouteDistanceM(
+              { lat: req.pickupLat, lng: req.pickupLng },
+              { lat: drop.dropoffLat, lng: drop.dropoffLng }
+            );
+          }
+        } else {
+          let currentLat = req.pickupLat;
+          let currentLng = req.pickupLng;
+          let totalDist = 0;
+          let canCalculateTotal = currentLat !== null && currentLng !== null;
+
+          const sortedDrops = [...req.drops].sort((a, b) => a.position - b.position);
+          for (const drop of sortedDrops) {
+            if (
+              canCalculateTotal &&
+              currentLat !== null &&
+              currentLng !== null &&
+              drop.dropoffLat !== null &&
+              drop.dropoffLng !== null
+            ) {
+              const segDist = calculateHaversineRouteDistanceM(
+                { lat: currentLat, lng: currentLng },
+                { lat: drop.dropoffLat, lng: drop.dropoffLng }
+              );
+              drop.approxDistanceM = segDist;
+              totalDist += segDist;
+              currentLat = drop.dropoffLat;
+              currentLng = drop.dropoffLng;
+            } else {
+              canCalculateTotal = false;
+              drop.approxDistanceM = null;
+            }
+          }
+          routeDistanceM = canCalculateTotal ? totalDist : null;
+        }
+
+        req.dropsCount = req.drops.length;
+
+        if (
+          req.fixedPriceArs !== null &&
+          req.fixedPriceArs !== undefined &&
+          req.fixedPriceArs < settings.minOfferArs
+        ) {
+          return err('OFFER_BELOW_MINIMUM');
         }
 
         const rate = consumeRequestRate(
@@ -691,6 +1118,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           publishedAt,
           expiresAt,
           routeDistanceM,
+          fixedPriceArs: req.fixedPriceArs ?? null,
+          autoAssign: req.autoAssign ?? false,
+          dropsCount: req.dropsCount,
         });
       }),
 
@@ -760,12 +1190,6 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
 
         const currentNow = nowFn();
-        if (
-          getWindowRateCount(actor.userId, 'submit_offer', currentNow) + 1 >
-          settings.maxOffersPerMin
-        ) {
-          return err('RATE_LIMITED');
-        }
 
         const req = requests.get(input.requestId);
         if (!req) return err('NOT_FOUND');
@@ -777,6 +1201,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('INVALID_STATE_TRANSITION');
         }
 
+        if (req.fixedPriceArs !== null && req.fixedPriceArs !== undefined) {
+          return err('FIXED_PRICE_REQUEST');
+        }
+
         for (const existing of offers.values()) {
           if (
             existing.requestId === input.requestId &&
@@ -785,6 +1213,19 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           ) {
             return err('DUPLICATE_ACTIVE_OFFER');
           }
+        }
+
+        const courier = couriers.get(actor.userId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
+        if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
+        if (!courier.available) return err('COURIER_UNAVAILABLE');
+
+        if (
+          getWindowRateCount(actor.userId, 'submit_offer', currentNow) + 1 >
+          settings.maxOffersPerMin
+        ) {
+          return err('RATE_LIMITED');
         }
 
         incrementWindowRateCount(actor.userId, 'submit_offer', currentNow);
@@ -803,7 +1244,178 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           requestId: input.requestId,
           status: 'pending',
           amountArs: input.amountArs,
+          totalAmountArs: input.amountArs * (req.dropsCount ?? 1),
           createdAt: currentNow.toISOString(),
+        });
+      }),
+
+    take_request: (rawInput) =>
+      executeRpc('take_request', rawInput, false, (input) => {
+        const req = requests.get(input.requestId);
+        if (!req) return err('NOT_FOUND');
+
+        const currentNow = nowFn();
+
+        // 5. Idempotencia (§5)
+        if (req.fixedPriceArs !== null && req.fixedPriceArs !== undefined) {
+          if (req.status === 'matched') {
+            const acceptedOffer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : null;
+            if (acceptedOffer && acceptedOffer.courierId === actor.userId) {
+              return ok({
+                offerId: acceptedOffer.offerId,
+                requestId: req.requestId,
+                amountArs: req.fixedPriceArs,
+                totalAmountArs: req.fixedPriceArs * (req.dropsCount ?? 1),
+                offerStatus: 'accepted' as const,
+                requestStatus: 'matched' as const,
+                matchedAt: req.matchedAt,
+                idempotent: true,
+              });
+            }
+          } else if (req.status === 'published') {
+            for (const existing of offers.values()) {
+              if (
+                existing.requestId === req.requestId &&
+                existing.courierId === actor.userId &&
+                existing.status === 'pending'
+              ) {
+                return ok({
+                  offerId: existing.offerId,
+                  requestId: req.requestId,
+                  amountArs: req.fixedPriceArs,
+                  totalAmountArs: req.fixedPriceArs * (req.dropsCount ?? 1),
+                  offerStatus: 'pending' as const,
+                  requestStatus: 'published' as const,
+                  matchedAt: null,
+                  idempotent: true,
+                });
+              }
+            }
+          }
+        } else {
+          if (req.status === 'matched') {
+            const acceptedOffer = req.acceptedOfferId ? offers.get(req.acceptedOfferId) : null;
+            if (acceptedOffer && acceptedOffer.courierId === actor.userId) {
+              return err('NO_FIXED_PRICE');
+            }
+          } else if (req.status === 'published') {
+            for (const existing of offers.values()) {
+              if (
+                existing.requestId === req.requestId &&
+                existing.courierId === actor.userId &&
+                existing.status === 'pending'
+              ) {
+                return err('NO_FIXED_PRICE');
+              }
+            }
+          }
+        }
+
+        // 6. Estado de la solicitud
+        if (req.status === 'matched') {
+          return err('ALREADY_MATCHED');
+        }
+        if (isRequestExpired(req.status, req.expiresAt, currentNow)) {
+          return err('REQUEST_EXPIRED');
+        }
+        if (req.status !== 'published') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        // 7. Sin precio fijo
+        if (req.fixedPriceArs === null || req.fixedPriceArs === undefined) {
+          return err('NO_FIXED_PRICE');
+        }
+
+        // 8. Piso vigente
+        if (req.fixedPriceArs < settings.minOfferArs) {
+          return err('OFFER_BELOW_MINIMUM');
+        }
+
+        // 9. Oferta activa duplicada
+        for (const existing of offers.values()) {
+          if (
+            existing.requestId === input.requestId &&
+            existing.courierId === actor.userId &&
+            (existing.status === 'pending' || existing.status === 'accepted')
+          ) {
+            return err('DUPLICATE_ACTIVE_OFFER');
+          }
+        }
+
+        // 10. Lock del repartidor y nueva validación
+        const courier = couriers.get(actor.userId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'suspended') return err('COURIER_SUSPENDED');
+        if (courier.status !== 'approved') return err('COURIER_NOT_APPROVED');
+        if (!courier.available) return err('COURIER_UNAVAILABLE');
+
+        // 11. Rate limit (comparte ventana con submit_offer)
+        if (
+          getWindowRateCount(actor.userId, 'submit_offer', currentNow) + 1 >
+          settings.maxOffersPerMin
+        ) {
+          return err('RATE_LIMITED');
+        }
+
+        incrementWindowRateCount(actor.userId, 'submit_offer', currentNow);
+
+        // 12. Mutación
+        const offerId = nextUniqueOfferId();
+        const amountArs = req.fixedPriceArs;
+
+        if (req.autoAssign) {
+          offers.set(offerId, {
+            offerId,
+            requestId: input.requestId,
+            courierId: actor.userId,
+            amountArs,
+            status: 'accepted',
+          });
+          for (const sibling of offers.values()) {
+            if (
+              sibling.requestId === req.requestId &&
+              sibling.offerId !== offerId &&
+              sibling.status === 'pending'
+            ) {
+              sibling.status = 'rejected';
+            }
+          }
+          const matchedAt = currentNow.toISOString();
+          req.status = 'matched';
+          req.acceptedOfferId = offerId;
+          req.assignedCourierId = actor.userId;
+          req.matchedAt = matchedAt;
+
+          return ok({
+            offerId,
+            requestId: input.requestId,
+            amountArs,
+            totalAmountArs: amountArs * (req.dropsCount ?? 1),
+            offerStatus: 'accepted' as const,
+            requestStatus: 'matched' as const,
+            matchedAt,
+            idempotent: false,
+          });
+        }
+
+        offers.set(offerId, {
+          offerId,
+          requestId: input.requestId,
+          courierId: actor.userId,
+          amountArs,
+          status: 'pending',
+        });
+
+        return ok({
+          offerId,
+          requestId: input.requestId,
+          amountArs,
+          totalAmountArs: amountArs * (req.dropsCount ?? 1),
+          offerStatus: 'pending' as const,
+          requestStatus: 'published' as const,
+          matchedAt: null,
+          idempotent: false,
         });
       }),
 
@@ -855,6 +1467,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             status: 'matched',
             matchedAt: req.matchedAt ?? currentNow.toISOString(),
             idempotent: true,
+            totalAmountArs: offer.amountArs * (req.dropsCount ?? 1),
           });
         }
         if (req.status === 'matched') {
@@ -898,6 +1511,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           status: 'matched',
           matchedAt: matchedIso,
           idempotent: false,
+          totalAmountArs: offer.amountArs * (req.dropsCount ?? 1),
         });
       }),
 
@@ -935,6 +1549,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('UNAUTHORIZED_ACTOR');
         }
 
+        if (req.dropsCount > 1 || req.drops.length > 1) {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
         const currentNow = nowFn();
         const effectiveStatus = getEffectiveRequestStatus(req.status, req.expiresAt, currentNow);
         if (effectiveStatus !== 'in_transit') {
@@ -944,10 +1562,157 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         const deliveredAt = currentNow.toISOString();
         req.status = 'delivered';
         req.deliveredAt = deliveredAt;
+        if (req.drops[0]) {
+          req.drops[0].status = 'delivered';
+          req.drops[0].deliveredAt = deliveredAt;
+        }
         return ok({
           requestId: input.requestId,
           status: 'delivered',
           deliveredAt,
+        });
+      }),
+
+    mark_drop_delivered: (rawInput) =>
+      executeRpc('mark_drop_delivered', rawInput, false, (input) => {
+        const eligibility = checkCourierEligibility();
+        if (!eligibility.ok) return eligibility;
+
+        let targetReq: FakeRequestRecord | undefined;
+        let targetDrop: FakeDropRecord | undefined;
+
+        for (const r of requests.values()) {
+          const d = r.drops.find((drop) => drop.id === input.dropId);
+          if (d) {
+            targetReq = r;
+            targetDrop = d;
+            break;
+          }
+        }
+
+        if (!targetReq || !targetDrop) return err('NOT_FOUND');
+        if (targetReq.assignedCourierId !== actor.userId) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+
+        if (targetDrop.status === 'delivered') {
+          return ok({
+            dropId: input.dropId,
+            requestId: targetReq.requestId,
+            status: 'delivered',
+            requestStatus: targetReq.status,
+            deliveredAt: targetDrop.deliveredAt ?? nowFn().toISOString(),
+            idempotent: true,
+          });
+        }
+
+        if (targetDrop.status === 'failed') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        const currentNow = nowFn();
+        const effectiveStatus = getEffectiveRequestStatus(
+          targetReq.status,
+          targetReq.expiresAt,
+          currentNow
+        );
+        if (effectiveStatus !== 'in_transit') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        if (targetDrop.status !== 'pending') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        const deliveredAt = currentNow.toISOString();
+        targetDrop.status = 'delivered';
+        targetDrop.deliveredAt = deliveredAt;
+
+        const anyPending = targetReq.drops.some((d) => d.status === 'pending');
+        if (!anyPending) {
+          targetReq.status = 'delivered';
+          targetReq.deliveredAt = deliveredAt;
+        }
+
+        return ok({
+          dropId: input.dropId,
+          requestId: targetReq.requestId,
+          status: 'delivered',
+          requestStatus: targetReq.status,
+          deliveredAt,
+          idempotent: false,
+        });
+      }),
+
+    mark_drop_failed: (rawInput) =>
+      executeRpc('mark_drop_failed', rawInput, false, (input) => {
+        if (!input.reason || input.reason.trim().length === 0) {
+          return err('REASON_REQUIRED');
+        }
+
+        const eligibility = checkCourierEligibility();
+        if (!eligibility.ok) return eligibility;
+
+        let targetReq: FakeRequestRecord | undefined;
+        let targetDrop: FakeDropRecord | undefined;
+
+        for (const r of requests.values()) {
+          const d = r.drops.find((drop) => drop.id === input.dropId);
+          if (d) {
+            targetReq = r;
+            targetDrop = d;
+            break;
+          }
+        }
+
+        if (!targetReq || !targetDrop) return err('NOT_FOUND');
+        if (targetReq.assignedCourierId !== actor.userId) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+
+        if (targetDrop.status === 'failed') {
+          return ok({
+            dropId: input.dropId,
+            requestId: targetReq.requestId,
+            status: 'failed',
+            requestStatus: targetReq.status,
+            failedReason: targetDrop.failedReason ?? input.reason,
+            idempotent: true,
+          });
+        }
+
+        if (targetDrop.status === 'delivered') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        const currentNow = nowFn();
+        const effectiveStatus = getEffectiveRequestStatus(
+          targetReq.status,
+          targetReq.expiresAt,
+          currentNow
+        );
+        if (effectiveStatus !== 'in_transit') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+        if (targetDrop.status !== 'pending') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        targetDrop.status = 'failed';
+        targetDrop.failedReason = input.reason;
+
+        const anyPending = targetReq.drops.some((d) => d.status === 'pending');
+        if (!anyPending) {
+          targetReq.status = 'delivered';
+          targetReq.deliveredAt = currentNow.toISOString();
+        }
+
+        return ok({
+          dropId: input.dropId,
+          requestId: targetReq.requestId,
+          status: 'failed',
+          requestStatus: targetReq.status,
+          failedReason: input.reason,
+          idempotent: false,
         });
       }),
 
@@ -1210,7 +1975,61 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
         const merchant = merchants.get(req.merchantId);
         const courier = couriers.get(offer.courierId);
-        if (!merchant || !courier || offer.amountArs < 1) return err('NOT_FOUND');
+        if (!merchant || !courier) {
+          return err('NOT_FOUND');
+        }
+        const drops = req.drops.length > 0
+          ? [...req.drops].sort((a, b) => a.position - b.position)
+          : [
+              {
+                id: `40000000-0000-4000-8000-${req.requestId.slice(-12)}`,
+                requestId: req.requestId,
+                position: 1,
+                dropoffZoneId: '00000000-0000-4000-8000-000000000099',
+                dropoffZoneName: req.dropoffZoneName,
+                dropoffAddress: req.dropoffAddress,
+                dropoffLat: req.dropoffLat,
+                dropoffLng: req.dropoffLng,
+                packageType: 'chico' as const,
+                recipientName: req.recipientName,
+                recipientPhone: req.recipientPhone,
+                recipientConsentDeclared: true,
+                recipientPaymentMethod: req.recipientPaymentMethod ?? 'cash',
+                needsChange: req.needsChange,
+                cashChangeAmount: req.cashChangeAmount,
+                notes: req.notes,
+                approxDistanceM: null,
+                status: 'pending' as const,
+                deliveredAt: null,
+                failedReason: null,
+              },
+            ];
+
+        const mappedDrops = drops.map((d) => ({
+          id: d.id,
+          position: d.position,
+          dropoffZoneName: d.dropoffZoneName,
+          dropoffAddress: d.dropoffAddress,
+          recipientName: d.recipientName,
+          recipientPhone: d.recipientPhone,
+          deliveryNotes: d.notes ?? null,
+          cashChangeAmount: d.cashChangeAmount ?? null,
+          packageType: d.packageType ?? 'chico',
+          recipientPaymentMethod: d.recipientPaymentMethod,
+          needsChange: d.needsChange,
+          approxDistanceM: d.approxDistanceM ?? null,
+          status: d.status,
+          deliveredAt: d.deliveredAt ?? null,
+          failedReason: d.failedReason ?? null,
+          dropoffLat: d.dropoffLat ?? null,
+          dropoffLng: d.dropoffLng ?? null,
+        }));
+
+        const firstDrop = mappedDrops[0];
+        if (!firstDrop) {
+          return err('NOT_FOUND');
+        }
+
         return ok({
           requestId: req.requestId,
           code: `REQ-${req.requestId.slice(0, 8).toUpperCase()}`,
@@ -1226,18 +2045,57 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           amountArs: offer.amountArs,
           pickupAddress: req.pickupAddress,
           pickupZoneName: req.pickupZoneName,
-          dropoffAddress: req.dropoffAddress,
-          dropoffZoneName: req.dropoffZoneName,
-          deliveryNotes: req.notes,
-          recipientName: req.recipientName,
-          recipientPhone: req.recipientPhone,
-          recipientPaymentMethod: req.recipientPaymentMethod,
-          needsChange: req.needsChange,
-          cashChangeAmount: req.cashChangeAmount,
+          dropoffAddress: firstDrop.dropoffAddress,
+          dropoffZoneName: firstDrop.dropoffZoneName,
+          deliveryNotes: firstDrop.deliveryNotes,
+          recipientName: firstDrop.recipientName,
+          recipientPhone: firstDrop.recipientPhone,
+          recipientPaymentMethod: firstDrop.recipientPaymentMethod,
+          needsChange: firstDrop.needsChange,
+          cashChangeAmount: firstDrop.cashChangeAmount,
           createdAt: req.createdAt,
           matchedAt: req.matchedAt,
           pickedUpAt: req.pickedUpAt,
           deliveredAt: req.deliveredAt,
+          dropsCount: mappedDrops.length,
+          drops: mappedDrops,
+        });
+      }),
+
+    get_request_offer_couriers: (rawInput) =>
+      executeRpc('get_request_offer_couriers', rawInput, false, (input) => {
+        const req = requests.get(input.requestId);
+        if (!req || req.merchantId !== actor.userId) return err('NOT_FOUND');
+        const courierIds = new Set(
+          [...offers.values()].filter((o) => o.requestId === req.requestId).map((o) => o.courierId)
+        );
+        return ok({
+          requestId: req.requestId,
+          couriers: [...courierIds].sort().flatMap((courierId) => {
+            const courier = couriers.get(courierId);
+            if (!courier) return [];
+            return [
+              {
+                courierId,
+                displayName: courier.displayName,
+                vehicleType: courier.vehicleType,
+                licenseStatus: courier.licenseStatus,
+                insuranceStatus: courier.insuranceStatus,
+                docLevel: computeDocLevel(courier.licenseStatus, courier.insuranceStatus),
+              },
+            ];
+          }),
+        });
+      }),
+
+    get_merchant_request_private_fields: (rawInput) =>
+      executeRpc('get_merchant_request_private_fields', rawInput, false, (input) => {
+        const req = requests.get(input.requestId);
+        if (!req || req.merchantId !== actor.userId) return err('NOT_FOUND');
+        return ok({
+          requestId: req.requestId,
+          notes: req.notes,
+          cashChangeAmount: req.cashChangeAmount,
         });
       }),
 
@@ -1375,6 +2233,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           case 'subscription_grace_days':
             settings = { ...settings, subscriptionGraceDays: input.value };
             break;
+          case 'max_drops_per_request':
+            settings = { ...settings, maxDropsPerRequest: input.value };
+            break;
         }
         return ok(input);
       }),
@@ -1455,8 +2316,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             reporterRole: incident.reporterRole,
             reporterName: incident.reporterName,
           })),
-          nextCursor:
-            ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
+          nextCursor: ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
         });
       }),
   };

@@ -12,10 +12,14 @@ import {
   merchantReportNoShowSchema,
   merchantCancelTripSchema,
   republishTripSchema,
+  markDropDeliveredSchema,
+  markDropFailedSchema,
 } from './schemas';
 
 export type MarkPickedUpResult = RpcOutput<'mark_picked_up'>;
 export type MarkDeliveredResult = RpcOutput<'mark_delivered'>;
+export type MarkDropDeliveredResult = RpcOutput<'mark_drop_delivered'>;
+export type MarkDropFailedResult = RpcOutput<'mark_drop_failed'>;
 export type CourierCancelMatchResult = RpcOutput<'courier_cancel_match'>;
 export type ReportNoShowResult = RpcOutput<'report_no_show'>;
 export type CancelRequestResult = RpcOutput<'cancel_request'>;
@@ -171,5 +175,50 @@ export async function republishTripAction(
 
   revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/merchant/requests');
+  return ok(rpcResult.data);
+}
+
+/**
+ * Repartidor marca una entrega específica como entregada (CC-022 / T-340).
+ */
+export async function markDropDeliveredAction(
+  input: unknown
+): Promise<ActionResult<MarkDropDeliveredResult, DomainErrorCode>> {
+  const auth = await authenticateRole('courier');
+  if (auth.error || !auth.supabase) return auth.error;
+
+  const parsed = markDropDeliveredSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+
+  const rpcResult = await callRequestRpc(auth.supabase, 'mark_drop_delivered', {
+    dropId: parsed.data.dropId,
+  });
+  if (!rpcResult.ok) return err(rpcResult.code);
+
+  revalidatePath(`/trips/${parsed.data.requestId}`);
+  revalidatePath('/courier/feed');
+  return ok(rpcResult.data);
+}
+
+/**
+ * Repartidor marca una entrega específica como fallida con motivo obligatorio (CC-022 / T-340).
+ */
+export async function markDropFailedAction(
+  input: unknown
+): Promise<ActionResult<MarkDropFailedResult, DomainErrorCode>> {
+  const auth = await authenticateRole('courier');
+  if (auth.error || !auth.supabase) return auth.error;
+
+  const parsed = markDropFailedSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION_ERROR');
+
+  const rpcResult = await callRequestRpc(auth.supabase, 'mark_drop_failed', {
+    dropId: parsed.data.dropId,
+    reason: parsed.data.reason,
+  });
+  if (!rpcResult.ok) return err(rpcResult.code);
+
+  revalidatePath(`/trips/${parsed.data.requestId}`);
+  revalidatePath('/courier/feed');
   return ok(rpcResult.data);
 }

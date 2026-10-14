@@ -70,7 +70,11 @@ export class CourierPage extends BasePage {
     return this.page.getByText(/mínimo/i);
   }
 
-  requestCardByNotes(testRunId: string): Locator {
-    return this.page.getByTestId('request-card').filter({ hasText: testRunId });
+  /**
+   * Tarjeta del feed de una solicitud concreta. Se identifica por id porque el feed no muestra las
+   * indicaciones antes del match (D3, T-342), así que no sirven como marcador.
+   */
+  requestCardById(requestId: string): Locator {
+    return this.page.locator(`[data-testid="request-card"][data-request-id="${requestId}"]`);
   }
 }

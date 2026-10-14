@@ -20,17 +20,8 @@ function calculateRelativeMinutes(dateIso: string | null): number | null {
 }
 
 export function RequestCard({ request, onOfferClick, isOffline = false }: RequestCardProps) {
-  const packageLabel =
-    request.packageType === 'small'
-      ? OFFERS_COPY.packageSmall
-      : request.packageType === 'medium'
-      ? OFFERS_COPY.packageMedium
-      : OFFERS_COPY.packageLarge;
-
-  const paymentLabel =
-    request.recipientPaymentMethod === 'cash'
-      ? OFFERS_COPY.cashPayment
-      : OFFERS_COPY.transferPayment;
+  const packageLabel = OFFERS_COPY.packageLabels[request.packageType];
+  const paymentLabel = OFFERS_COPY.paymentLabels[request.recipientPaymentMethod];
 
   const minutesPublishedAgo = Math.max(
     1,
@@ -42,15 +33,23 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
   return (
     <Card
       data-testid="request-card"
+      data-request-id={request.id}
       className="p-4 shadow-sm border border-border hover:border-primary/40 transition-colors"
     >
       <CardContent className="p-0 space-y-3">
         {/* Recorrido entre barrios (piso 14px -> text-base/text-sm) */}
-        <div className="flex items-center gap-2">
-          <MapPin className="h-5 w-5 text-primary shrink-0" aria-hidden="true" />
-          <h4 className="font-display text-base font-bold text-foreground">
-            {request.pickupZoneName} → {request.dropoffZoneName}
-          </h4>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-primary shrink-0" aria-hidden="true" />
+            <h4 className="font-display text-base font-bold text-foreground">
+              {request.pickupZoneName} → {request.dropoffZoneName}
+            </h4>
+          </div>
+          {request.dropsCount && request.dropsCount > 1 ? (
+            <Badge variant="outline" className="text-sm font-semibold shrink-0">
+              {OFFERS_COPY.dropsCountBadge(request.dropsCount)}
+            </Badge>
+          ) : null}
         </div>
 
         {/* Detalle de distancia y paquete (piso 14px -> text-sm) */}
@@ -75,17 +74,34 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
           {request.needsChange && (
             <Badge variant="in_transit" className="text-sm font-semibold">
               {OFFERS_COPY.changeNeededBadge}
-              {request.cashChangeAmount ? ` (${formatArs(request.cashChangeAmount)})` : ''}
             </Badge>
           )}
         </div>
 
-        {/* Indicaciones si hay */}
-        {request.notes && (
-          <p className="text-sm text-muted-foreground italic">
-            Indicaciones: {request.notes}
-          </p>
-        )}
+        {/* Desglose de entregas si tiene múltiples destinos */}
+        {request.drops && request.drops.length > 1 ? (
+          <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5 text-sm">
+            <span className="font-semibold text-foreground">
+              Entregas ({request.drops.length}):
+            </span>
+            <ul className="space-y-1">
+              {request.drops.map((drop) => (
+                <li
+                  key={drop.position}
+                  className="flex items-center justify-between text-muted-foreground"
+                >
+                  <span>
+                    {drop.position}. {drop.dropoffZoneName} · {OFFERS_COPY.packageLabels[drop.packageType]}
+                  </span>
+                  <span className="font-medium text-foreground">
+                    {OFFERS_COPY.paymentLabels[drop.recipientPaymentMethod]}
+                    {drop.needsChange ? ' (con cambio)' : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {/* Tiempos de publicación y vencimiento (piso 14px -> text-sm) */}
         <div className="flex items-center gap-1 text-sm text-muted-foreground pt-1">
@@ -96,7 +112,7 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
           )}
         </div>
 
-        {/* Botón Ofertar (48px target) o indicador de ya ofertaste */}
+        {/* Botón Ofertar / Tomar (48px target) o indicador de ya ofertaste */}
         <div className="pt-2">
           {request.hasMyOffer && request.myOfferAmountArs ? (
             <div className="flex min-h-12 w-full items-center justify-center rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-bold text-primary-dark">
@@ -105,12 +121,16 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
           ) : (
             <Button
               type="button"
-              variant="secondary"
+              variant={request.fixedPriceArs ? 'default' : 'secondary'}
               onClick={() => onOfferClick(request)}
               disabled={isOffline}
               className="w-full min-h-12 text-sm font-bold"
             >
-              {OFFERS_COPY.offerButton}
+              {request.fixedPriceArs
+                ? request.dropsCount && request.dropsCount > 1
+                  ? OFFERS_COPY.takeMultiDropButton(formatArs(request.fixedPriceArs), request.dropsCount)
+                  : OFFERS_COPY.takeRequestButton(formatArs(request.fixedPriceArs))
+                : OFFERS_COPY.offerButton}
             </Button>
           )}
         </div>

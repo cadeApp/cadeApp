@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
 import { Store, Phone, MapPin, AlertTriangle, AlertCircle, Info, Crosshair } from 'lucide-react';
 import { isWithinAguilaresBounds } from '@/domain/schemas';
 import { Badge } from '@/ui/badge';
@@ -10,6 +9,7 @@ import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { Input } from '@/ui/input';
 import { MapSkeleton } from '@/ui/map-skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/ui/select';
 import { Textarea } from '@/ui/textarea';
 import { merchantOnboardingAction } from '../actions';
 import { merchantCopy } from '../copy';
@@ -19,21 +19,16 @@ import type { ZoneOption } from '../queries';
 import Link from 'next/link';
 import { getLegalDocument } from '@/features/legal';
 
-const MapPicker = dynamic(
-  () => import('@/ui/map').then((mod) => mod.MapPicker),
-  {
-    ssr: false,
-    loading: () => <MapSkeleton className="h-64 w-full" />,
-  }
-);
+const MapPicker = dynamic(() => import('@/ui/map').then((mod) => mod.MapPicker), {
+  ssr: false,
+  loading: () => <MapSkeleton className="h-64 w-full" />,
+});
 
 interface MerchantOnboardingFormProps {
   readonly zones: ZoneOption[];
 }
 
 export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
-  const router = useRouter();
-
   const [coordsError, setCoordsError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
@@ -109,11 +104,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
     const finalLat = data.defaultPickupLat ?? selectedZoneCenter?.lat ?? null;
     const finalLng = data.defaultPickupLng ?? selectedZoneCenter?.lng ?? null;
 
-    if (
-      finalLat != null &&
-      finalLng != null &&
-      !isWithinAguilaresBounds(finalLat, finalLng)
-    ) {
+    if (finalLat != null && finalLng != null && !isWithinAguilaresBounds(finalLat, finalLng)) {
       setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);
       return;
     }
@@ -134,8 +125,7 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
         return;
       }
 
-      router.push(result.data.redirectTo);
-      router.refresh();
+      window.location.assign(result.data.redirectTo);
     } catch {
       setErrorMessage(merchantCopy.onboarding.errorGeneric);
     }
@@ -219,22 +209,31 @@ export function MerchantOnboardingForm({ zones }: MerchantOnboardingFormProps) {
           <label htmlFor="zone" className="text-sm font-medium text-foreground">
             {merchantCopy.onboarding.zoneLabel}
           </label>
-          <select
-            id="zone"
-            {...register('defaultPickupZoneId', {
-              setValueAs: (v: string) => (v === '' ? null : v),
-            })}
-            className="flex h-12 w-full rounded-lg border border-input bg-card px-3.5 py-2 text-base text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Select
+            value={selectedZoneId ?? ''}
+            onValueChange={(zoneId) =>
+              setValue('defaultPickupZoneId', zoneId, { shouldValidate: true })
+            }
           >
-            <option value="">{merchantCopy.onboarding.zonePlaceholder}</option>
-            {zones.map((zone) => (
-              <option key={zone.id} value={zone.id}>
-                {zone.name}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              id="zone"
+              hasError={Boolean(errors.defaultPickupZoneId)}
+              aria-describedby={errors.defaultPickupZoneId ? 'zone-error' : undefined}
+            >
+              <SelectValue placeholder={merchantCopy.onboarding.zonePlaceholder} />
+            </SelectTrigger>
+            <SelectContent>
+              {zones.map((zone) => (
+                <SelectItem key={zone.id} value={zone.id}>
+                  {zone.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {errors.defaultPickupZoneId && (
-            <p className="text-sm text-destructive">{errors.defaultPickupZoneId.message}</p>
+            <p id="zone-error" className="text-sm text-destructive">
+              {errors.defaultPickupZoneId.message}
+            </p>
           )}
         </div>
 

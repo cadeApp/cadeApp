@@ -307,8 +307,12 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     await courierPage.gotoFeed();
     await waitForNoSkeletons(page);
 
-    // Identificar de forma inequívoca la solicitud correspondiente a la corrida actual
-    const targetCard = courierPage.requestCardByNotes(stagingContext.testRunId);
+    // Identificar de forma inequívoca la solicitud sembrada en la corrida actual
+    const targetRequestId = stagingContext.createdRequestIds[0];
+    if (!targetRequestId) {
+      throw new Error('[E2E Error] No request ID found in stagingContext');
+    }
+    const targetCard = courierPage.requestCardById(targetRequestId);
     await expect(targetCard).toBeVisible();
 
     // Abrir la solicitud
@@ -519,6 +523,10 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       // Sonner queda por encima del CTA durante unos segundos; esperar a que deje de interceptar clicks.
       const pickedUpToast = courierBrowserPage.getByText(/Pedido marcado como retirado/i);
       await expect(pickedUpToast).toBeVisible({ timeout: 10000 });
+
+      // Sonner pausa el auto-dismiss mientras el puntero queda sobre el toast.
+      // Moverlo a una zona neutra permite que expire sin forzar clicks ni sleeps.
+      await courierBrowserPage.mouse.move(0, 0);
       await expect(pickedUpToast).not.toBeVisible({ timeout: 10000 });
 
       // Confirmar entrega -> estado entregado

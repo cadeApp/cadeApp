@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import React from 'react';
 import Link from 'next/link';
 import { BrandLogo } from '@/ui/brand-logo';
 import { Button } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { TopBar } from '@/ui/top-bar';
 import { Store, Wallet, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { StandaloneRedirect } from '@/features/notifications';
 
 // El año del footer se actualiza solo: la página se regenera una vez por día.
 export const revalidate = 86400;
@@ -15,7 +17,8 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div className="flex min-h-screen w-full flex-col justify-between bg-background text-foreground">
+    <StandaloneRedirect to="/login">
+      <div className="flex min-h-screen w-full flex-col justify-between bg-background text-foreground">
       <TopBar
         rightAction={
           <Link href="/login">
@@ -236,5 +239,6 @@ export default function HomePage() {
         </div>
       </footer>
     </div>
+    </StandaloneRedirect>
   );
 }

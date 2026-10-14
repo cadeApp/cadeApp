@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import React from 'react';
 import fs from 'node:fs';
 import path from 'node:path';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { useRequestOffers } from './use-request-offers';
 import { requestKeys } from '../query-keys';
 import * as browserClient from '@/lib/supabase/browser';
@@ -178,26 +178,218 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
       },
     ];
 
-    const fetchOffersMock = vi.fn().mockResolvedValue(updatedOffers);
+    // T-333: el fetch inicial (initialDataUpdatedAt: 0) devuelve la lista vieja; solo la reconexión trae la nueva.
+    const fetchOffersMock = vi
+      .fn()
+      .mockResolvedValueOnce(initialOffers)
+      .mockResolvedValue(updatedOffers);
 
-    const { result } = renderHook(
-      () =>
-        useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers, {
-          fetcher: fetchOffersMock,
-        }),
-      { wrapper }
-    );
+    try {
+      const { result } = renderHook(
+        () =>
+          useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers, {
+            fetcher: fetchOffersMock,
+          }),
+        { wrapper }
+      );
 
-    expect(result.current.offers).toHaveLength(1);
+      // 1. Esperar el fetch inicial y que la query quede quieta antes de fijar el baseline.
+      await waitFor(() => {
+        expect(fetchOffersMock).toHaveBeenCalledTimes(1);
+        expect(result.current.isRefetching).toBe(false);
+      });
+      const baseline = fetchOffersMock.mock.calls.length;
+      expect(result.current.offers).toHaveLength(1);
 
-    act(() => {
-      window.dispatchEvent(new Event('online'));
+      // 2. Transición real offline -> online del onlineManager de TanStack.
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+
+      // 3. Exigir una llamada posterior al baseline: el fetch inicial no alcanza.
+      await waitFor(() => {
+        expect(fetchOffersMock.mock.calls.length).toBeGreaterThan(baseline);
+      });
+      await waitFor(() => {
+        expect(result.current.offers).toHaveLength(2);
+      });
+
+      // 4. Exactamente una llamada adicional: TanStack es el único que refetchea en idle.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(fetchOffersMock).toHaveBeenCalledTimes(baseline + 1);
+    } finally {
+      onlineManager.setOnline(true);
+    }
+  });
+
+  describe('T-333: reconexión mientras el fetch inicial sigue en vuelo', () => {
+    const requestId = '11111111-1111-1111-1111-111111111111';
+    const newOffer: MerchantOfferItem = {
+      id: '77777777-7777-7777-7777-777777777777',
+      courierId: '88888888-8888-8888-8888-888888888888',
+      courierName: 'Lucía Paz',
+      vehicleType: 'bicycle',
+      amountArs: 1700,
+      etaMinutes: 20,
+      message: null,
+      licenseStatus: 'none',
+      insuranceStatus: 'none',
+      docLevel: 1,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    };
+
+    function deferred<T>() {
+      let resolve: (value: T) => void = () => undefined;
+      const promise = new Promise<T>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    }
+
+    async function flushMicrotasks() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    // La llamada #1 queda abierta hasta que el test la resuelve; las siguientes traen la oferta nueva.
+    function setupInFlight() {
+      const first = deferred<readonly MerchantOfferItem[]>();
+      const fetcher = vi
+        .fn<() => Promise<readonly MerchantOfferItem[]>>()
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValue([...initialOffers, newOffer]);
+      const hook = renderHook(() => useRequestOffers(requestId, initialOffers, { fetcher }), {
+        wrapper,
+      });
+      return { first, fetcher, ...hook };
+    }
+
+    afterEach(() => {
+      onlineManager.setOnline(true);
     });
 
-    await waitFor(() => {
-      expect(result.current.offers).toHaveLength(2);
+    it('B: offline → online con la llamada #1 pendiente dispara exactamente una llamada #2 tras el settle', async () => {
+      onlineManager.setOnline(true);
+      const { first, fetcher, result } = setupInFlight();
+
+      await waitFor(() => {
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(result.current.isRefetching).toBe(true);
+      });
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+      await flushMicrotasks();
+
+      // La #1 sigue abierta: TanStack reutiliza ese fetch (cancelRefetch: false) y no aparece una #2 todavía.
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        first.resolve(initialOffers);
+        await first.promise;
+      });
+
+      await waitFor(() => {
+        expect(fetcher).toHaveBeenCalledTimes(2);
+      });
+      await waitFor(() => {
+        expect(result.current.offers.map((o) => o.id)).toContain(newOffer.id);
+      });
+      await flushMicrotasks();
+      expect(fetcher).toHaveBeenCalledTimes(2);
     });
-    expect(fetchOffersMock).toHaveBeenCalledTimes(1);
+
+    it('C: sin offline → online, el settle de la llamada #1 no agrega llamadas', async () => {
+      onlineManager.setOnline(true);
+      const { first, fetcher, result } = setupInFlight();
+
+      await waitFor(() => {
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(result.current.isRefetching).toBe(true);
+      });
+
+      await act(async () => {
+        first.resolve(initialOffers);
+        await first.promise;
+      });
+      await waitFor(() => {
+        expect(result.current.isRefetching).toBe(false);
+      });
+      await flushMicrotasks();
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(result.current.offers).toHaveLength(1);
+    });
+
+    it('E: si tras el reconnect arranca un refetch competidor que trae datos frescos, no hay una llamada #3', async () => {
+      onlineManager.setOnline(true);
+      const { fetcher, result } = setupInFlight();
+
+      await waitFor(() => {
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(result.current.isRefetching).toBe(true);
+      });
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+      await flushMicrotasks();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+
+      // Con la #1 todavía abierta, un invalidate explícito (cancelRefetch: true por defecto) la reemplaza por la #2.
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(requestId) });
+      });
+
+      await waitFor(() => {
+        expect(result.current.offers.map((o) => o.id)).toContain(newOffer.id);
+        expect(result.current.isRefetching).toBe(false);
+      });
+      await flushMicrotasks();
+
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    it('D: desmontar antes del settle no deja un refetch tardío', async () => {
+      onlineManager.setOnline(true);
+      const { first, fetcher, result, unmount } = setupInFlight();
+
+      await waitFor(() => {
+        expect(fetcher).toHaveBeenCalledTimes(1);
+        expect(result.current.isRefetching).toBe(true);
+      });
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+      unmount();
+
+      await act(async () => {
+        first.resolve(initialOffers);
+        await first.promise;
+      });
+      await flushMicrotasks();
+
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('DoD: al desmontar la pantalla se cierra el canal', async () => {

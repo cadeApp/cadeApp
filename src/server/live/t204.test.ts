@@ -9,6 +9,7 @@ import {
 import * as serverSupabase from '@/server/supabase/server';
 import * as tripsRpc from '@/server/rpc/trips';
 import { ok, err } from '@/domain';
+import { liveFeedResponseSchema } from '@/lib/live-contracts';
 
 vi.mock('@/server/supabase/server');
 vi.mock('@/server/rpc/trips');
@@ -51,7 +52,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     ) => Promise<unknown>;
   }
 
-  function createMockQueryBuilder<T>(resolvedData: T, resolvedError: unknown = null): MockBuilder<T> {
+  function createMockQueryBuilder<T>(
+    resolvedData: T,
+    resolvedError: unknown = null
+  ): MockBuilder<T> {
     const calls: MockCallLog = {
       select: [],
       eq: [],
@@ -112,7 +116,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       id,
       created_at: createdAt,
       approx_distance_m: 1000,
-      package_type: 'small',
+      package_type: 'chico',
       recipient_payment_method: 'cash',
       needs_change: false,
       cash_change_amount: null,
@@ -138,14 +142,55 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       message: null,
       status: 'pending',
       created_at: createdAt,
-      courier: {
-        vehicle_type: 'motorcycle',
-        license_status: 'verified',
-        insurance_status: 'none',
-        doc_level: 1,
-        profile: { display_name: `Repartidor ${i}` },
-      },
     };
+  }
+
+  // CC-016: forma exacta de la salida de `get_request_offer_couriers`.
+  function makeCourierProjection(i: number) {
+    return {
+      courierId: `10000000-0000-0000-0000-${String(i).padStart(12, '0')}`,
+      displayName: `Repartidor ${i}`,
+      vehicleType: 'moto',
+      licenseStatus: 'verified',
+      insuranceStatus: 'none',
+      docLevel: 1,
+    };
+  }
+
+  function makeCouriersRpc(requestId: string, indexes: readonly number[]) {
+    return vi.fn().mockResolvedValue({
+      data: { requestId, couriers: indexes.map(makeCourierProjection) },
+      error: null,
+    });
+  }
+
+  function makeOwnedRequestBuilder() {
+    return {
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { id: validUuid, merchant_id: mockUser.id },
+            error: null,
+          }),
+        }),
+      }),
+    };
+  }
+
+  function mockMerchantClient(offerRows: readonly unknown[], rpc: ReturnType<typeof vi.fn>) {
+    const offersBuilder = createMockQueryBuilder(offerRows);
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+      },
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return makeOwnedRequestBuilder();
+        if (table === 'offers') return offersBuilder;
+        return {};
+      }),
+      rpc,
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    return offersBuilder;
   }
 
   describe('3.1 getAvailableRequestsLiveServer', () => {
@@ -200,9 +245,11 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     it('retorna 500 si falla la consulta de offers', async () => {
       const reqBuilder = createMockQueryBuilder([makeRequestRow(1)]);
       const offersBuilder = createMockQueryBuilder(null, new Error('Offers query error'));
+      const dropsBuilder = createMockQueryBuilder([]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -225,9 +272,22 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       const row = makeRequestRow(1);
       const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([{ request_id: row.id, amount_ars: 1800 }]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -249,14 +309,147 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
       }
     });
 
+    it('T-342 D3: no lee ni transporta indicaciones ni monto exacto de cambio antes del match', async () => {
+      const row = {
+        ...makeRequestRow(1),
+        needs_change: true,
+        cash_change_amount: 5000,
+        notes: 'Portón negro, tocar timbre 2B',
+      };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return reqBuilder;
+        if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+
+      const projection = String(reqBuilder._calls.select[0]?.[0] ?? '');
+      const columns = projection.split(/[\s,]+/).filter(Boolean);
+      expect(columns).not.toContain('notes');
+      expect(columns).not.toContain('cash_change_amount');
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const first = result.data.data[0];
+      if (!first) throw new Error('First request should be defined');
+      expect(first).not.toHaveProperty('notes');
+      expect(first).not.toHaveProperty('cashChangeAmount');
+      expect(first.needsChange).toBe(true);
+      const serialized = JSON.stringify(result.data);
+      expect(serialized).not.toContain('Portón negro');
+      expect(serialized).not.toContain('5000');
+    });
+
+    function mockFeedClient(rows: readonly unknown[]) {
+      const reqBuilder = createMockQueryBuilder(rows);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsRows = (
+        rows as Array<{
+          id?: string;
+          package_type?: string;
+          recipient_payment_method?: string;
+          needs_change?: boolean;
+          approx_distance_m?: number;
+        }>
+      ).map((r, i) => ({
+        id: `drop-${r.id ?? i}`,
+        request_id: r.id ?? `req-${i}`,
+        position: 1,
+        package_type: r.package_type ?? 'chico',
+        recipient_payment_method: r.recipient_payment_method ?? 'cash',
+        needs_change: Boolean(r.needs_change),
+        approx_distance_m: r.approx_distance_m ?? 1000,
+        dropoff_zone: { name: 'Aguilares' },
+      }));
+      const dropsBuilder = createMockQueryBuilder(dropsRows);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    }
+
+    it('T-343: con los valores reales de la base la respuesta pasa liveFeedResponseSchema sin traducirlos', async () => {
+      const combos = (['sobre', 'chico', 'mediano', 'grande'] as const).flatMap((packageType) =>
+        (['cash', 'transfer', 'to_agree'] as const).map((method) => [packageType, method] as const)
+      );
+      const rows = combos.map(([packageType, method], i) => ({
+        ...makeRequestRow(i + 1),
+        package_type: packageType,
+        recipient_payment_method: method,
+      }));
+      mockFeedClient(rows);
+
+      const result = await getAvailableRequestsLiveServer();
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const parsed = liveFeedResponseSchema.parse(result.data);
+      expect(parsed.data.map((r) => [r.packageType, r.recipientPaymentMethod])).toEqual(combos);
+    });
+
+    it('T-343: un valor fuera del dominio canónico no se fuerza: responde 500', async () => {
+      mockFeedClient([{ ...makeRequestRow(1), package_type: 'small' }]);
+
+      const result = await getAvailableRequestsLiveServer();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(500);
+        expect(result.error).toBe('DATABASE_ERROR');
+      }
+    });
+
     it('A & E: Feed con 51 filas -> 50 resultados + nextCursor de fila 50 y hasMyOffer consulta SOLO 50 ids', async () => {
       const rows51 = Array.from({ length: 51 }, (_, i) => makeRequestRow(i + 1));
       const reqBuilder = createMockQueryBuilder(rows51);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder(
+        rows51.map((r) => ({
+          id: `drop-${r.id}`,
+          request_id: r.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: Boolean(r.needs_change),
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        }))
+      );
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -290,12 +483,26 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
     });
 
     it('B: Feed segunda página -> spy demuestra order(created_at), order(id), limit(51) y .or(...) exacto', async () => {
-      const reqBuilder = createMockQueryBuilder([makeRequestRow(1)]);
+      const row = makeRequestRow(1);
+      const reqBuilder = createMockQueryBuilder([row]);
       const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([
+        {
+          id: 'drop-1',
+          request_id: row.id,
+          position: 1,
+          package_type: 'chico',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          approx_distance_m: 1000,
+          dropoff_zone: { name: 'Aguilares' },
+        },
+      ]);
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
         if (table === 'offers') return offersBuilder;
+        if (table === 'delivery_request_drops') return dropsBuilder;
         return {};
       });
 
@@ -323,6 +530,126 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
         ],
       ]);
+    });
+
+    it('PR318-H05: responde 500 si drops_count = 1 pero delivery_request_drops devuelve vacío', async () => {
+      const row = {
+        ...makeRequestRow(1),
+        drops_count: 1,
+      };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(500);
+        expect(result.error).toBe('DATABASE_ERROR');
+      }
+    });
+
+    it('PR318-H05: responde 500 si drops_count > 1 pero delivery_request_drops devuelve vacío', async () => {
+      const row = {
+        ...makeRequestRow(1),
+        drops_count: 3,
+      };
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder([]);
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(500);
+        expect(result.error).toBe('DATABASE_ERROR');
+      }
+    });
+
+    it('PR318-H05: responde con éxito cuando parent tiene columnas legacy nulas y deriva de drops', async () => {
+      const reqId = '22222222-2222-2222-2222-222222222222';
+      const row = {
+        ...makeRequestRow(1),
+        id: reqId,
+        drops_count: 2,
+        package_type: null,
+        recipient_payment_method: null,
+        needs_change: null,
+        dropoff_zone: null,
+      };
+      const dropRows = [
+        {
+          id: 'drop-live-1',
+          request_id: reqId,
+          position: 1,
+          approx_distance_m: 1200,
+          package_type: 'mediano',
+          recipient_payment_method: 'transfer',
+          needs_change: false,
+          dropoff_zone: { name: 'Barrio Norte' },
+        },
+        {
+          id: 'drop-live-2',
+          request_id: reqId,
+          position: 2,
+          approx_distance_m: 1800,
+          package_type: 'grande',
+          recipient_payment_method: 'cash',
+          needs_change: true,
+          dropoff_zone: { name: 'Barrio Sur' },
+        },
+      ];
+      const reqBuilder = createMockQueryBuilder([row]);
+      const offersBuilder = createMockQueryBuilder([]);
+      const dropsBuilder = createMockQueryBuilder(dropRows);
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'delivery_requests') return reqBuilder;
+          if (table === 'offers') return offersBuilder;
+          if (table === 'delivery_request_drops') return dropsBuilder;
+          return {};
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getAvailableRequestsLiveServer();
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const item = result.data.data[0];
+        expect(item?.packageType).toBe('mediano');
+        expect(item?.recipientPaymentMethod).toBe('transfer');
+        expect(item?.needsChange).toBe(false);
+        expect(item?.dropoffZoneName).toBe('Barrio Norte');
+        expect(item?.dropsCount).toBe(2);
+        expect(item?.drops).toHaveLength(2);
+      }
     });
   });
 
@@ -401,6 +728,7 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         }),
       };
       const offersBuilder = createMockQueryBuilder([offer]);
+      const couriersRpc = makeCouriersRpc(validUuid, [1]);
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') return reqBuilder;
@@ -413,14 +741,24 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
         },
         from: mockFrom,
+        rpc: couriersRpc,
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getRequestOffersLiveServer(validUuid);
+      expect(couriersRpc).toHaveBeenCalledExactlyOnceWith('get_request_offer_couriers', {
+        p_request_id: validUuid,
+      });
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.data.data).toHaveLength(1);
-        expect(result.data.data[0]?.courierName).toBe('Repartidor 1');
-        expect(result.data.data[0]?.amountArs).toBe(1501);
+        expect(result.data.data[0]).toMatchObject({
+          courierName: 'Repartidor 1',
+          amountArs: 1501,
+          vehicleType: 'moto',
+          licenseStatus: 'verified',
+          insuranceStatus: 'none',
+          docLevel: 1,
+        });
         expect(result.data.nextCursor).toBeNull();
       }
     });
@@ -450,6 +788,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
         },
         from: mockFrom,
+        rpc: makeCouriersRpc(
+          validUuid,
+          offers51.map((_, i) => i + 1)
+        ),
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       const result = await getRequestOffersLiveServer(validUuid);
@@ -510,6 +852,92 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
           `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
         ],
       ]);
+    });
+  });
+
+  describe('3.2 getRequestOffersLiveServer — proyección de repartidores (CC-016)', () => {
+    it('no embebe couriers/profiles en la consulta de ofertas del comercio', () => {
+      const sourceCode = readFileSync('src/server/live/t204.ts', 'utf8');
+      expect(sourceCode).not.toMatch(/couriers!courier_id|profiles!profile_id/);
+      expect(sourceCode).toContain('getRequestOfferCouriersRpc');
+    });
+
+    it('sin ofertas no llama a la RPC y responde lista vacía', async () => {
+      const couriersRpc = vi.fn();
+      mockMerchantClient([], couriersRpc);
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: true, data: { data: [], nextCursor: null } });
+      expect(couriersRpc).not.toHaveBeenCalled();
+    });
+
+    it('si la RPC falla responde 500 en lugar de inventar «Repartidor» y docLevel 0', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: 'P0001', message: 'NOT_FOUND' },
+      });
+      mockMerchantClient([makeOfferRow(1, validUuid)], couriersRpc);
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: false, error: 'DATABASE_ERROR', status: 500 });
+    });
+
+    it('si una oferta no tiene su repartidor en la proyección responde 500', async () => {
+      mockMerchantClient(
+        [makeOfferRow(1, validUuid), makeOfferRow(2, validUuid)],
+        makeCouriersRpc(validUuid, [1])
+      );
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: false, error: 'DATABASE_ERROR', status: 500 });
+    });
+
+    it('si la RPC devuelve un campo fuera del contrato (teléfono) responde 500', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [{ ...makeCourierProjection(1), phone: '3865000001' }],
+        },
+        error: null,
+      });
+      mockMerchantClient([makeOfferRow(1, validUuid)], couriersRpc);
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result).toEqual({ ok: false, error: 'DATABASE_ERROR', status: 500 });
+    });
+
+    it('conserva los niveles reales para ordenar: doc 2 con $2000 y doc 0 con $1500', async () => {
+      const couriersRpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId: validUuid,
+          couriers: [
+            {
+              ...makeCourierProjection(1),
+              licenseStatus: 'verified',
+              insuranceStatus: 'verified',
+              docLevel: 2,
+            },
+            { ...makeCourierProjection(2), licenseStatus: 'none', docLevel: 0 },
+          ],
+        },
+        error: null,
+      });
+      mockMerchantClient(
+        [
+          { ...makeOfferRow(1, validUuid), amount_ars: 2000 },
+          { ...makeOfferRow(2, validUuid), amount_ars: 1500 },
+        ],
+        couriersRpc
+      );
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.data.map((o) => [o.courierName, o.docLevel, o.amountArs])).toEqual([
+          ['Repartidor 1', 2, 2000],
+          ['Repartidor 2', 0, 1500],
+        ]);
+      }
     });
   });
 
@@ -634,13 +1062,10 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         'supabase/migrations/20260926173000_t204_live_pagination_indexes.sql'
       );
       const sqlContent = readFileSync(migrationPath, 'utf8');
-      const normalizedSql = sqlContent
-        .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .trim();
+      const normalizedSql = sqlContent.toLowerCase().replace(/\s+/g, ' ').trim();
 
       expect(normalizedSql).toContain(
-        'create index delivery_requests_published_cursor_idx on public.delivery_requests (created_at desc, id desc) where status = \'published\';'
+        "create index delivery_requests_published_cursor_idx on public.delivery_requests (created_at desc, id desc) where status = 'published';"
       );
       expect(normalizedSql).toContain(
         'create index offers_request_created_cursor_idx on public.offers (request_id, created_at desc, id desc);'

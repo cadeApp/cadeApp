@@ -1,6 +1,7 @@
 import type {
   RecipientPaymentMethod,
   VehicleType,
+  TripDrop,
 } from '@/domain';
 
 export type TripStatus = 'matched' | 'in_transit' | 'delivered';
@@ -19,6 +20,9 @@ export interface TripDetails {
   licensePlate: string | null;
   avatarUrl: string | null;
   amountArs: number;
+  totalAmountArs?: number;
+  collectibleAmountArs?: number;
+  allDropsFailed?: boolean;
   pickupAddress: string;
   pickupZoneName: string;
   pickupLat?: number | null;
@@ -38,4 +42,6 @@ export interface TripDetails {
   matchedAt: string | null;
   pickedUpAt: string | null;
   deliveredAt: string | null;
+  dropsCount?: number;
+  drops?: TripDrop[];
 }

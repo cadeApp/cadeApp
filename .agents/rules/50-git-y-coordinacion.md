@@ -18,6 +18,26 @@
 - `src/types/database.types.ts`: solo lo regenera un PR de migración (`pnpm db:types`).
 - Archivos de otra zona: solo si la ficha nombra la subruta concreta; el PR lo revisa el dueño de esa zona.
 
+## Excepción: varios PR sucesivos para una misma tarea
+Por defecto, una tarea = un issue = una rama = un PR. Excepcionalmente, un CC puede exigir varios PR sucesivos para la
+misma tarea cuando un único merge no es seguro por el orden de rollout entre esquema y aplicación (por ejemplo: crear
+una RPC, migrar los lectores y recién después revocar permisos). Condiciones:
+- **Decisión explícita de Lautaro073**, registrada en el CC y en la ficha, con los pasos y el checkpoint de cada uno.
+- **Cada paso:** rama propia `feat/T-xxx-<paso>`, PR propio, CI propio y revisión independiente propia.
+- **Secuencial:** no es trabajo paralelo sobre la misma tarea. El paso siguiente no se empieza ni se mergea hasta
+  cumplir el checkpoint documentado del anterior.
+- **Issue:** según la variante que declare el CC:
+  - **sin gate posterior al merge:** los PR intermedios usan `Refs #<issue>` y el último `Closes #<issue>`;
+  - **con gate posterior al merge** (por ejemplo, un E2E que solo puede correr con la migración ya aplicada en
+    Develop): todos los PR mergeables usan `Refs #<issue>`, el issue queda abierto y se cierra a mano recién con el
+    gate documentado en verde.
+- **Marcador de la ficha:** `- **Rollout multi-PR:** sí`, exacto. Con él, `board-sync` no da por terminada la tarea por
+  un PR mergeado mientras el issue siga abierto: la deja «En curso» (o «En review» con un PR listo), no la cierra sola
+  y no desbloquea dependencias hasta que el issue se cierra.
+- **Bitácora única:** `docs/tasks/log/T-xxx.md` registra cada paso y su PR.
+
+Autorizada por Lautaro073 el 2026-10-06 para T-345 / CC-023 (PR #282).
+
 ## Ramas y ambientes
 - `feat/T-xxx-*` → PR a `develop` (squash merge). Release semanal: PR `develop → staging` abierto por el
   capitán de release (rota P1 → P2 → P3) solo si develop está verde; el PR de release no resuelve conflictos.

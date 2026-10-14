@@ -28,7 +28,6 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
       packageType: 'chico',
       recipientPaymentMethod: 'cash',
       needsChange: true,
-      cashChangeAmount: 5000,
       status: 'published',
       expiresAt: '2026-09-24T12:00:00Z',
       createdAt: '2026-09-24T09:30:00Z',
@@ -43,7 +42,6 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
       packageType: 'mediano',
       recipientPaymentMethod: 'transfer',
       needsChange: false,
-      cashChangeAmount: null,
       status: 'published',
       expiresAt: '2026-09-24T12:30:00Z',
       createdAt: '2026-09-24T10:00:00Z',
@@ -58,7 +56,6 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
       packageType: 'grande',
       recipientPaymentMethod: 'cash',
       needsChange: false,
-      cashChangeAmount: null,
       status: 'matched',
       expiresAt: '2026-09-24T11:00:00Z',
       createdAt: '2026-09-24T08:15:00Z',
@@ -131,7 +128,6 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
         packageType: 'chico',
         recipientPaymentMethod: 'cash',
         needsChange: false,
-        cashChangeAmount: null,
         status: 'delivered',
         expiresAt: null,
         createdAt: '2026-09-24T09:30:00Z',
@@ -162,7 +158,6 @@ describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {
       packageType: 'mediano',
       recipientPaymentMethod: 'cash',
       needsChange: false,
-      cashChangeAmount: null,
       status: 'delivered',
       expiresAt: null,
       createdAt: '2026-09-24T12:00:00Z',
@@ -179,7 +174,6 @@ describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {
       packageType: 'chico',
       recipientPaymentMethod: 'transfer',
       needsChange: false,
-      cashChangeAmount: null,
       status: 'expired',
       expiresAt: '2026-09-23T12:00:00Z',
       createdAt: '2026-09-23T10:00:00Z',
@@ -196,7 +190,6 @@ describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {
       packageType: 'sobre',
       recipientPaymentMethod: 'cash',
       needsChange: false,
-      cashChangeAmount: null,
       status: 'published',
       expiresAt: '2026-09-24T15:00:00Z',
       createdAt: '2026-09-24T13:00:00Z',
@@ -215,5 +208,113 @@ describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {
     expect(screen.getByText('Sin repartidor asignado · Sin tarifa acordada')).toBeDefined();
     // PR87-H17: excluye solicitudes activas en status="all"
     expect(screen.queryByText(/Zona Activa Intrusa/i)).toBeNull();
+  });
+
+  it('H06: renderiza solicitud multi-drop con destinos múltiples y badge de entregas en historial', () => {
+    const multiDropHistoryReq: MerchantRequestSummary = {
+      id: 'req-hist-md',
+      pickupZoneName: 'Centro Aguilares',
+      dropoffZoneName: 'Barrio Norte',
+      approxDistanceKm: '3,2',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'delivered',
+      expiresAt: null,
+      createdAt: '2026-09-24T12:00:00Z',
+      offersCount: 1,
+      acceptedOfferId: 'off-1',
+      acceptedAmountArs: 2500,
+      acceptedCourierName: 'María Pérez',
+      dropsCount: 2,
+      drops: [
+        {
+          id: 'd1',
+          position: 1,
+          dropoffZoneName: 'Barrio Norte',
+          packageType: 'chico',
+          recipientPaymentMethod: 'cash',
+          needsChange: false,
+        },
+        {
+          id: 'd2',
+          position: 2,
+          dropoffZoneName: 'Barrio Sur',
+          packageType: 'grande',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+        },
+      ],
+    };
+
+    render(
+      <MerchantHistoryView
+        requests={[multiDropHistoryReq]}
+        activeStatus="all"
+        nextCursor={null}
+      />
+    );
+
+    expect(screen.getByText('Centro Aguilares → Barrio Norte · Barrio Sur')).toBeDefined();
+    expect(screen.getByText('2 entregas')).toBeDefined();
+    expect(screen.getByText(/chico · grande/i)).toBeDefined();
+  });
+});
+
+describe('H06: MerchantRequestsList con multi-drop', () => {
+  it('renderiza destinos múltiples, badge de entregas, paquetes y medios combinados', () => {
+    const multiDropRequest: MerchantRequestSummary = {
+      id: 'req-md-active',
+      pickupZoneName: 'Barrio Centro',
+      dropoffZoneName: 'Barrio Norte',
+      approxDistanceKm: '4,5',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'published',
+      expiresAt: '2026-09-24T12:00:00Z',
+      createdAt: '2026-09-24T09:30:00Z',
+      offersCount: 2,
+      acceptedOfferId: null,
+      dropsCount: 3,
+      drops: [
+        {
+          id: 'd1',
+          position: 1,
+          dropoffZoneName: 'Barrio Norte',
+          packageType: 'chico',
+          recipientPaymentMethod: 'cash',
+          needsChange: false,
+        },
+        {
+          id: 'd2',
+          position: 2,
+          dropoffZoneName: 'Barrio Este',
+          packageType: 'mediano',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+        },
+        {
+          id: 'd3',
+          position: 3,
+          dropoffZoneName: 'Barrio Sur',
+          packageType: 'grande',
+          recipientPaymentMethod: 'cash',
+          needsChange: false,
+        },
+      ],
+    };
+
+    render(
+      <MerchantRequestsList
+        requests={[multiDropRequest]}
+        metrics={{ dispatchedToday: 1, avgRateArs: 2000, activeCount: 1 }}
+      />
+    );
+
+    expect(screen.getByText('Barrio Norte · Barrio Este · Barrio Sur')).toBeDefined();
+    expect(screen.getByText('3 entregas')).toBeDefined();
+    expect(screen.getByText('Paquetes: Chico, Mediano, Grande')).toBeDefined();
+    expect(screen.getByText('Medios: Efectivo, Transferencia')).toBeDefined();
   });
 });

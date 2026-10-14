@@ -14,6 +14,7 @@ vi.mock('@/server/supabase/admin', () => ({ createAdminClient: vi.fn() }));
 const requestId = '00000000-0000-4000-8000-0000000008e1';
 const merchantId = '00000000-0000-4000-8000-0000000008b1';
 const courierId = '00000000-0000-4000-8000-0000000008c1';
+const dropId = '00000000-0000-4000-8000-0000000008d1';
 const time = '2026-09-25T20:00:00.000Z';
 
 const output = {
@@ -43,6 +44,28 @@ const output = {
   matchedAt: time,
   pickedUpAt: null,
   deliveredAt: null,
+  dropsCount: 1,
+  drops: [
+    {
+      id: dropId,
+      position: 1,
+      dropoffZoneName: 'Barrio San Martín',
+      dropoffAddress: 'Belgrano 1220',
+      recipientName: 'Laura Gómez',
+      recipientPhone: '3865123456',
+      deliveryNotes: 'Casa con reja negra',
+      cashChangeAmount: 5000,
+      packageType: 'chico' as const,
+      recipientPaymentMethod: 'cash' as const,
+      needsChange: true,
+      approxDistanceM: 1200,
+      status: 'pending' as const,
+      deliveredAt: null,
+      failedReason: null,
+      dropoffLat: null,
+      dropoffLng: null,
+    },
+  ],
 };
 
 describe('CC-008 — get_trip_details server boundary', () => {

@@ -24,7 +24,8 @@ describe('T-201: Web App Manifest & Maskable Icons (PR117-H09)', () => {
 
     expect(data.name).toContain('cadeApp');
     expect(data.short_name).toBe('cadeApp');
-    expect(data.start_url).toBe('/');
+    expect(data.start_url).toBe('/login');
+    expect(data.id).toBe('/');
     expect(data.display).toBe('standalone');
     expect(data.theme_color).toBe('#09BABD');
     expect(data.background_color).toBe('#12182C');

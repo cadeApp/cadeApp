@@ -206,11 +206,9 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
     pickupZoneName: 'Centro',
     dropoffZoneName: 'Barrio Norte',
     approxDistanceKm: '2,5',
-    packageType: 'small',
+    packageType: 'chico',
     recipientPaymentMethod: 'cash',
     needsChange: true,
-    cashChangeAmount: 5000,
-    notes: 'Frágil',
     publishedAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
     expiresAt: new Date(Date.now() + 27 * 60 * 1000).toISOString(),
     hasMyOffer: false,
@@ -403,6 +401,14 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       expect(markers).toHaveLength(2);
       expect(screen.getByTestId('mock-route-polyline')).toBeDefined();
       expect(screen.queryByRole('link', { name: /abrir en google maps/i })).toBeNull();
+    });
+
+    it('T-350: C06 muestra «Ruta directa sin desvíos» con text-primary-dark y nunca text-primary (axe AA)', () => {
+      render(<TripMerchantView trip={baseTrip} />);
+
+      const routeNote = screen.getByText('Ruta directa sin desvíos');
+      expect(routeNote.classList.contains('text-primary-dark')).toBe(true);
+      expect(routeNote.classList.contains('text-primary')).toBe(false);
     });
 
     it('la sección de mapa muestra la distancia calculada en servidor con formato aproximado', () => {

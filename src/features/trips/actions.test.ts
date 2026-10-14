@@ -9,6 +9,8 @@ import {
   merchantReportNoShowAction,
   merchantCancelTripAction,
   republishTripAction,
+  markDropDeliveredAction,
+  markDropFailedAction,
 } from './actions';
 
 vi.mock('next/cache', () => ({
@@ -451,6 +453,87 @@ describe('T-115 DoD: tests de actions por transición de viaje', () => {
       });
       expect(res.ok).toBe(false);
       if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('markDropDeliveredAction: rechaza dropId o requestId inválido con VALIDATION_ERROR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await markDropDeliveredAction({ dropId: 'bad-uuid', requestId: validRequestId });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('markDropFailedAction: rechaza motivo vacío con VALIDATION_ERROR', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      const res = await markDropFailedAction({
+        dropId: '40000000-0000-4000-8000-000000000001',
+        requestId: validRequestId,
+        reason: '   ',
+      });
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('CC-022 / T-340 / H03: markDropDeliveredAction y markDropFailedAction invocan RPC con argumentos exactos', () => {
+    const validDropId = '40000000-0000-4000-8000-000000000001';
+
+    it('markDropDeliveredAction: ejecuta mark_drop_delivered solo con { dropId } y revalida la ruta del viaje', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValueOnce({
+        ok: true,
+        data: {
+          dropId: validDropId,
+          requestId: validRequestId,
+          status: 'delivered',
+          deliveredAt: '2026-09-24T10:00:00.000Z',
+          requestStatus: 'in_transit',
+          idempotent: false,
+        },
+      });
+
+      const res = await markDropDeliveredAction({
+        dropId: validDropId,
+        requestId: validRequestId,
+      });
+
+      expect(res.ok).toBe(true);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledExactlyOnceWith(
+        currentMockClient,
+        'mark_drop_delivered',
+        { dropId: validDropId }
+      );
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
+    });
+
+    it('markDropFailedAction: ejecuta mark_drop_failed con { dropId, reason } y revalida la ruta del viaje', async () => {
+      mockSupabaseSession(validCourierUser, 'courier');
+      vi.mocked(requestsRpc.callRequestRpc).mockResolvedValueOnce({
+        ok: true,
+        data: {
+          dropId: validDropId,
+          requestId: validRequestId,
+          status: 'failed',
+          failedReason: 'Dirección inaccesible',
+          requestStatus: 'delivered',
+          idempotent: false,
+        },
+      });
+
+      const res = await markDropFailedAction({
+        dropId: validDropId,
+        requestId: validRequestId,
+        reason: 'Dirección inaccesible',
+      });
+
+      expect(res.ok).toBe(true);
+      expect(requestsRpc.callRequestRpc).toHaveBeenCalledExactlyOnceWith(
+        currentMockClient,
+        'mark_drop_failed',
+        { dropId: validDropId, reason: 'Dirección inaccesible' }
+      );
+      expect(revalidatePath).toHaveBeenCalledWith(`/trips/${validRequestId}`);
+      expect(revalidatePath).toHaveBeenCalledWith('/courier/feed');
     });
   });
 });

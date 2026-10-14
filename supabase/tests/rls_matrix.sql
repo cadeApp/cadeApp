@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(64);
+select plan(65);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -114,12 +114,13 @@ begin
 end;
 $$;
 
--- 1. anon no ve delivery_requests
+-- 1. anon no ve delivery_requests: desde CC-023 no tiene SELECT sobre la tabla (antes: 0 filas por RLS)
 select pg_temp.act_as('anon');
-select is(
-  (select count(*) from public.delivery_requests),
-  0::bigint,
-  'anon sees 0 delivery_requests'
+select throws_ok(
+  'select count(*) from public.delivery_requests',
+  '42501'::char(5),
+  null::text,
+  'anon has no SELECT on delivery_requests'
 );
 
 -- 2. anon no ve delivery_request_contacts
@@ -321,14 +322,30 @@ select throws_ok(
   'courier cannot forge decided_by approval record'
 );
 
--- 24. H05: merchants update legítimo permitido
+-- 24. H05 + T-348/H11: merchants update legítimo permitido (business_name y notes)
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select lives_ok(
-  'update public.merchants set business_name = ''Pizzeria Centro'' where profile_id = pg_temp.merchant_1_id()',
-  'merchant can update business_name'
+  'update public.merchants set business_name = ''Pizzeria Centro'', notes = ''Entrada por calle lateral'' where profile_id = pg_temp.merchant_1_id()',
+  'merchant can update business_name and notes'
+);
+
+-- 24b. T-348/H11 (PR302-H01): un merchant activo no puede insertar su propia fila merchants.
+-- merchant_idle no se vuelve a usar después del caso 11; se borra su fila para que el INSERT self solo dependa de RLS.
+select pg_temp.reset_actor();
+
+delete from public.merchants
+where profile_id = pg_temp.merchant_idle_id();
+
+select pg_temp.act_as('authenticated', pg_temp.merchant_idle_id());
+select throws_ok(
+  'insert into public.merchants (profile_id) values (pg_temp.merchant_idle_id())',
+  '42501'::char(5),
+  null::text,
+  'merchant cannot insert its own merchant row directly'
 );
 
 -- 25. H02: merchants update rechaza autoconcederse suscripción
+select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select throws_ok(
   'update public.merchants set subscription_status = ''active'', paid_until = ''2099-12-31'' where profile_id = pg_temp.merchant_1_id()',
   '42501'::char(5),

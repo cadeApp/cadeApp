@@ -22,6 +22,7 @@ const settings: PlatformSettingsSnapshot = {
   pilotActive: true,
   pilotTermsVersion: '1.1',
   subscriptionGraceDays: 3,
+  maxDropsPerRequest: 5,
 };
 
 function inputFor(label: RegExp): HTMLInputElement {
@@ -41,12 +42,13 @@ describe('T-123: PlatformSettingsForm (A04)', () => {
     vi.clearAllMocks();
   });
 
-  it('muestra los cinco parámetros vigentes recibidos del servidor', () => {
+  it('muestra los parámetros vigentes recibidos del servidor', () => {
     render(<PlatformSettingsForm settings={settings} />);
     expect(inputFor(/oferta m[ií]nima/i).value).toBe('1500');
     expect(inputFor(/vencimiento/i).value).toBe('45');
     expect(inputFor(/d[ií]as de gracia/i).value).toBe('3');
     expect(inputFor(/versi[oó]n de t[eé]rminos/i).value).toBe('1.1');
+    expect(inputFor(/m[aá]ximo de entregas/i).value).toBe('5');
     expect(pilotSwitch().getAttribute('aria-checked')).toBe('true');
   });
 
@@ -87,6 +89,12 @@ describe('T-123: PlatformSettingsForm (A04)', () => {
       save: /guardar d[ií]as de gracia/i,
       change: () => fireEvent.change(inputFor(/d[ií]as de gracia/i), { target: { value: '5' } }),
       payload: { key: 'subscription_grace_days', value: 5 },
+    },
+    {
+      name: 'máximo de entregas',
+      save: /guardar m[aá]ximo de entregas/i,
+      change: () => fireEvent.change(inputFor(/m[aá]ximo de entregas/i), { target: { value: '8' } }),
+      payload: { key: 'max_drops_per_request', value: 8 },
     },
   ] as const)('guarda $name con admin_update_setting y refresca', async ({ save, change, payload }) => {
     vi.mocked(updatePlatformSettingAction).mockResolvedValue({ ok: true, data: payload });

@@ -128,6 +128,21 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
         <div className="flex flex-col space-y-3">
           {activeRequests.map((req) => {
             const statusConfig = getStatusBadgeConfig(req.status, req.offersCount);
+            const isMultiDrop = (req.dropsCount ?? req.drops?.length ?? 1) > 1;
+            const destinations =
+              req.drops && req.drops.length > 1
+                ? req.drops.map((d) => d.dropoffZoneName).join(' · ')
+                : req.dropoffZoneName;
+            const packagesText =
+              req.drops && req.drops.length > 1
+                ? `Paquetes: ${req.drops.map((d) => getPackageLabel(d.packageType)).join(', ')}`
+                : `Paquete ${getPackageLabel(req.packageType)}`;
+            const paymentMethodsText =
+              req.drops && req.drops.length > 1
+                ? `Medios: ${Array.from(new Set(req.drops.map((d) => (d.recipientPaymentMethod === 'cash' ? 'Efectivo' : 'Transferencia')))).join(', ')}`
+                : req.recipientPaymentMethod === 'cash'
+                  ? 'Efectivo'
+                  : 'Transferencia';
 
             return (
               <Card
@@ -141,8 +156,13 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
                       <div className="flex items-center gap-1.5 text-base font-semibold text-foreground">
                         <span>{req.pickupZoneName}</span>
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                        <span>{req.dropoffZoneName}</span>
+                        <span>{destinations}</span>
                       </div>
+                      {isMultiDrop && (
+                        <Badge variant="outline">
+                          {req.dropsCount ?? req.drops?.length} entregas
+                        </Badge>
+                      )}
                       <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
                     </div>
 
@@ -154,11 +174,9 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
                           : 'Distancia no calculada'}
                       </span>
                       <span>·</span>
-                      <span>Paquete {getPackageLabel(req.packageType)}</span>
+                      <span>{packagesText}</span>
                       <span>·</span>
-                      <span>
-                        {req.recipientPaymentMethod === 'cash' ? 'Efectivo' : 'Transferencia'}
-                      </span>
+                      <span>{paymentMethodsText}</span>
                       {req.createdAt && (
                         <>
                           <span>·</span>

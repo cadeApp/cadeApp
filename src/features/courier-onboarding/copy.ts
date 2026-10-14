@@ -36,6 +36,7 @@ export const COURIER_ONBOARDING_COPY = {
   btnUploaded: 'Cargado',
   btnChange: 'Cambiar',
   btnUpload: 'Subir',
+  uploadErrorRetry: 'Error al subir. Tocá para reintentar.',
 
   // R02 - Vehículo
   vehicleTitle: 'Tu vehículo',
