@@ -7,3 +7,8 @@
 - No manipular tipos generados para pasar typecheck: CI con base efímera debe producir y verificar output de `pnpm db:types --local`.
 - User authorized runner de concurrencia CC-024 propio, no reuso indiscriminado de `t340_concurrency.mjs`; documentar la autorización en la ficha y preservar el resto de CI.
 - Sin número AG nuevo asignado: no se consultó el máximo de TODAS las ramas remotas y no se inventa número.
+- JSONB `->>` compara texto, no tipos: consentimiento debe requerir JSON literal true (P08).
+- Permutar etiquetas `holderFirst` no demuestra órdenes distintos de ganador SQL. Exigir payload y actor persistidos que permitan detectar qué actor realmente ganó el lock (P08).
+- `setTimeout` para esperar COMMIT es sleep-oráculo: confirmar COMMIT con marcador devuelto por psql y cero errores (P08).
+- Construir campo audit en un helper y no afirmarlo deja un hueco de control aunque tests pasen (P08).
+- Sin número AG nuevo al no verificar máximo global en todas las ramas; no inventar secuencias.
