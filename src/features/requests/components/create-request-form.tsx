@@ -164,14 +164,14 @@ function DropCard({
         <div className="flex items-center gap-2">
           <Navigation className="h-4 w-4 text-primary-dark" aria-hidden="true" />
           <h2 className="font-display text-base font-bold text-foreground">
-            {copy.dropCardTitle(index + 1)}
+            {totalDrops === 1 ? copy.stepDropoff : copy.dropCardTitle(index + 1)}
           </h2>
           <Badge
             variant="outline"
             className="border-primary/30 text-sm font-medium text-primary-dark ml-1"
             aria-label={copy.dropCounterAria(index + 1, totalDrops)}
           >
-            {copy.dropCounterAria(index + 1, totalDrops)}
+            {totalDrops > 1 ? copy.dropCounterAria(index + 1, totalDrops) : copy.dropCardTitle(index + 1)}
           </Badge>
         </div>
 
