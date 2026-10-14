@@ -19,3 +19,15 @@ H05 rg de aserciones non-null y sustituir por guards tipados.
 GPS: retener callback geolocation, borrar tarjeta anterior, resolver callback y detectar posible escritura cruzada.
 
 Verificación de la documentación: docs/revision-pr/analizar.mjs verificacion se debe ejecutar en runner de autor/revisor con clon; no ejecutada aquí.
+
+## Ronda 2 — 2026-10-14 · HEAD b29d8e8f6638a5d56d9652e33c045ff04c49adac
+
+- GitHub get_pr_info(330): HEAD b29d8e8f6638a5d56d9652e33c045ff04c49adac, base develop 3a4537624, abierta Draft.
+- compare_commits(d0c492c3, b29d8e8f6638a5d56d9652e33c045ff04c49adac): 2 commits, 4 archivos (E2E map-privacy, E2E multi-drop, unit formulario, bitácora).
+- Inspección del diff: map-privacy.spec.ts cambia el locator por getByTestId('drop-card-0') y mantiene error fuera de Aguilares; multi-drop.spec.ts reemplaza cálculo local de collectibleAmountArs por getByText en TripCourierView autenticada ($3000 y $0); create-request-form.test.tsx reemplaza los 4 ! por pickupZone.id con guard.
+- GitHub unit job 115840251827 (run 38560544025): Test Files 129 passed, Tests 2143 passed.
+- GitHub db-tests job 115840252038: falla Docker Rate exceeded y port 54322 address already in use; no hubo resultado pgTAP de ese job.
+- GitHub E2E run 38560715122 estaba in_progress; no declaramos GREEN. Previous E2E run 38519053397, checkout 046e103, 73 PASS / 1 FAIL map-privacy:657; writer multi-drop pasó, pero no se transfiere automáticamente el PASS al HEAD actual.
+- No ejecutado en esta sesión: pnpm local, Docker, pgTAP, mutantes RED/GREEN independientes, Preview Playwright nuevo.
+
+Verificaciones futuras exigidas: E2E chromium del SHA actual con map-privacy y multi-drop, global-settings; nuevo db-tests con arranque Docker real, Result: PASS y Files/Tests; E2E + SQL de la RPC futura Gate 2/3.
