@@ -144,6 +144,30 @@ export async function getActiveZones(): Promise<ZoneOption[]> {
   }));
 }
 
+export async function getMaxDropsPerRequest(): Promise<number> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'max_drops_per_request')
+    .maybeSingle<{ value: unknown }>();
+
+  if (error) {
+    throw new Error(`Error al cargar max_drops_per_request: ${error.message}`);
+  }
+
+  if (!data || data.value == null) {
+    throw new Error('Configuración max_drops_per_request no encontrada en platform_settings');
+  }
+
+  const parsed = typeof data.value === 'number' ? data.value : Number(data.value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`Valor inválido de max_drops_per_request: ${String(data.value)}`);
+  }
+
+  return parsed;
+}
+
 export async function getMerchantDefaultPickup(
   merchantProfileId: string
 ): Promise<MerchantDefaultPickup | null> {

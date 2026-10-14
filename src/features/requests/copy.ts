@@ -70,6 +70,13 @@ export const requestsCopy = {
     errorGeneric: 'Ocurrió un error al crear la solicitud. Por favor, intentá nuevamente.',
     errorSubscription:
       'Tu cuenta no cuenta con una suscripción activa ni período piloto para publicar envíos. Contactate con soporte.',
+    addDropButton: 'Agregar otra entrega',
+    removeDropButton: 'Quitar entrega',
+    dropCardTitle: (index: number) => `Entrega ${index}`,
+    dropCounterAria: (index: number, total: number) => `Entrega ${index} de ${total}`,
+    dropsLimitReached: (max: number) => `Alcanzaste el límite de ${max} entregas por solicitud.`,
+    fixedPricePerDropHint:
+      'El precio del envío es por entrega. Si tenés varias entregas, se multiplica automáticamente.',
   },
   offers: {
     waitingOffers: 'Esperando ofertas',

@@ -1,17 +1,11 @@
 'use server';
 
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
-import { calculateHaversineRouteDistanceM, profileRoleSchema } from '@/domain/schemas';
+import { profileRoleSchema } from '@/domain/schemas';
 import { callRequestRpc } from '@/server/rpc/requests';
 import { createClient } from '@/server/supabase/server';
 import type { TablesInsert } from '@/types/database.types';
 import { createDeliveryRequestSchema } from './schemas';
-
-interface ZoneCentroidRow {
-  id: string;
-  centroid_lat: number | null;
-  centroid_lng: number | null;
-}
 
 export interface CreateDeliveryRequestResult {
   readonly requestId: string;
@@ -49,8 +43,7 @@ export async function createDeliveryRequestAction(
     return err('UNAUTHORIZED_ACTOR');
   }
 
-  // 3. Validación de datos de entrada con Zod.
-  // La suscripción/piloto no se chequea acá: la decide `publish_request` (paso 7).
+  // 3. Validación de datos de entrada con Zod
   const parsed = createDeliveryRequestSchema.safeParse(input);
   if (!parsed.success) {
     return err('VALIDATION_ERROR');
@@ -58,60 +51,17 @@ export async function createDeliveryRequestAction(
 
   const data = parsed.data;
 
-  // 4. Cálculo de distancia server-side (Haversine con factor 1.30 o centroides de zones)
-  let routeDistanceM: number | null = null;
-
-  if (
-    data.pickupLat != null &&
-    data.pickupLng != null &&
-    data.dropoffLat != null &&
-    data.dropoffLng != null
-  ) {
-    routeDistanceM = calculateHaversineRouteDistanceM(
-      { lat: data.pickupLat, lng: data.pickupLng },
-      { lat: data.dropoffLat, lng: data.dropoffLng }
-    );
-  } else {
-    // Fallback: consulta centroides de los barrios seleccionados
-    const { data: zones } = await supabase
-      .from('zones')
-      .select<string, ZoneCentroidRow>('id, centroid_lat, centroid_lng')
-      .in('id', [data.pickupZoneId, data.dropoffZoneId]);
-
-    if (Array.isArray(zones) && zones.length > 0) {
-      const pickupZone = zones.find((z) => z.id === data.pickupZoneId);
-      const dropoffZone = zones.find((z) => z.id === data.dropoffZoneId);
-
-      if (
-        pickupZone?.centroid_lat != null &&
-        pickupZone?.centroid_lng != null &&
-        dropoffZone?.centroid_lat != null &&
-        dropoffZone?.centroid_lng != null
-      ) {
-        routeDistanceM = calculateHaversineRouteDistanceM(
-          { lat: pickupZone.centroid_lat, lng: pickupZone.centroid_lng },
-          { lat: dropoffZone.centroid_lat, lng: dropoffZone.centroid_lng }
-        );
-      }
-    }
-  }
-
-  // 5. Inserción en delivery_requests (status 'draft')
-  // CC-022 §10 (Paso 3): el escritor deja de escribir en las columnas legacy notes y cash_change_amount
+  // 4. Inserción en delivery_requests (status 'draft')
+  // CC-022 §10 Paso 4: Sin campos legacy de destino, notas ni cambio
   const requestPayload: TablesInsert<'delivery_requests'> = {
     merchant_id: user.id,
     pickup_zone_id: data.pickupZoneId,
-    dropoff_zone_id: data.dropoffZoneId,
-    package_type: data.packageType,
-    recipient_payment_method: data.recipientPaymentMethod,
-    needs_change: data.needsChange,
-    cash_change_amount: null,
-    notes: null,
     status: 'draft',
-    route_distance_m: routeDistanceM,
-    approx_distance_m: routeDistanceM,
+    notes: null,
+    cash_change_amount: null,
     fixed_price_ars: data.fixedPriceArs ?? null,
     auto_assign: data.autoAssign ?? false,
+    drops_count: data.drops.length,
   };
 
   const { data: createdRequest, error: requestInsertError } = await supabase
@@ -124,18 +74,18 @@ export async function createDeliveryRequestAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 6. Inserción en delivery_request_contacts (retiro y destino legacy)
+  // 5. Inserción en delivery_request_contacts (solo datos de retiro)
   const contactsPayload: TablesInsert<'delivery_request_contacts'> = {
     request_id: createdRequest.id,
     pickup_address: data.pickupAddress,
     pickup_lat: data.pickupLat ?? null,
     pickup_lng: data.pickupLng ?? null,
-    dropoff_address: data.dropoffAddress,
-    dropoff_lat: data.dropoffLat ?? null,
-    dropoff_lng: data.dropoffLng ?? null,
-    recipient_name: data.recipientName,
-    recipient_phone: data.recipientPhone,
-    recipient_consent_declared: data.recipientConsentDeclared,
+    dropoff_address: null,
+    dropoff_lat: null,
+    dropoff_lng: null,
+    recipient_name: null,
+    recipient_phone: null,
+    recipient_consent_declared: null,
   };
 
   const { error: contactsInsertError } = await supabase
@@ -146,41 +96,59 @@ export async function createDeliveryRequestAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 7. Inserción en delivery_request_drops (position 1) - CC-022 §10 Paso 3
-  const dropPayload: TablesInsert<'delivery_request_drops'> = {
-    request_id: createdRequest.id,
-    position: 1,
-    dropoff_zone_id: data.dropoffZoneId,
-    package_type: data.packageType,
-    recipient_payment_method: data.recipientPaymentMethod,
-    needs_change: data.recipientPaymentMethod === 'cash' ? data.needsChange : false,
-  };
+  // 6. Inserción en delivery_request_drops (position 1..N)
+  const dropsPayload: TablesInsert<'delivery_request_drops'>[] = data.drops.map(
+    (drop, index) => ({
+      request_id: createdRequest.id,
+      position: index + 1,
+      dropoff_zone_id: drop.dropoffZoneId,
+      package_type: drop.packageType,
+      recipient_payment_method: drop.recipientPaymentMethod,
+      needs_change: drop.recipientPaymentMethod === 'cash' ? drop.needsChange : false,
+    })
+  );
 
-  const { data: createdDrop, error: dropInsertError } = await supabase
+  const { data: createdDrops, error: dropsInsertError } = await supabase
     .from('delivery_request_drops')
-    .insert(dropPayload as never)
-    .select('id')
-    .single<{ id: string }>();
+    .insert(dropsPayload as never)
+    .select('id, position');
 
-  if (dropInsertError || !createdDrop) {
+  if (
+    dropsInsertError ||
+    !createdDrops ||
+    (createdDrops as Array<{ id: string; position: number }>).length !== data.drops.length
+  ) {
     return err('INTERNAL_ERROR');
   }
 
-  // 8. Inserción en delivery_request_drop_contacts (datos privados por entrega) - CC-022 §10 Paso 3
-  const dropContactsPayload: TablesInsert<'delivery_request_drop_contacts'> = {
-    drop_id: createdDrop.id,
-    dropoff_address: data.dropoffAddress,
-    dropoff_lat: data.dropoffLat ?? null,
-    dropoff_lng: data.dropoffLng ?? null,
-    recipient_name: data.recipientName,
-    recipient_phone: data.recipientPhone,
-    recipient_consent_declared: data.recipientConsentDeclared,
-    cash_change_amount:
-      data.recipientPaymentMethod === 'cash' && data.needsChange
-        ? data.cashChangeAmount
-        : null,
-    notes: data.notes ?? null,
-  };
+  // Mapear por position (NUNCA asumir orden de retorno)
+  const dropByPosition = new Map<number, string>(
+    (createdDrops as Array<{ id: string; position: number }>).map((d) => [d.position, d.id])
+  );
+
+  for (let i = 0; i < data.drops.length; i++) {
+    if (!dropByPosition.has(i + 1)) {
+      return err('INTERNAL_ERROR');
+    }
+  }
+
+  // 7. Inserción en delivery_request_drop_contacts (datos privados por entrega)
+  const dropContactsPayload: TablesInsert<'delivery_request_drop_contacts'>[] = data.drops.map(
+    (drop, i) => ({
+      drop_id: dropByPosition.get(i + 1)!,
+      dropoff_address: drop.dropoffAddress,
+      dropoff_lat: drop.dropoffLat ?? null,
+      dropoff_lng: drop.dropoffLng ?? null,
+      recipient_name: drop.recipientName,
+      recipient_phone: drop.recipientPhone,
+      recipient_consent_declared: drop.recipientConsentDeclared,
+      cash_change_amount:
+        drop.recipientPaymentMethod === 'cash' && drop.needsChange
+          ? drop.cashChangeAmount
+          : null,
+      notes: drop.notes ?? null,
+    })
+  );
 
   const { error: dropContactsInsertError } = await supabase
     .from('delivery_request_drop_contacts')
@@ -190,8 +158,8 @@ export async function createDeliveryRequestAction(
     return err('INTERNAL_ERROR');
   }
 
-  // 9. Publicación: la transición draft -> published y su autorización (suscripción/piloto,
-  // zonas, bordes, rate limit) las valida la RPC. Si rechaza, la solicitud queda en draft.
+  // 8. Publicación: la transición draft -> published y su autorización (suscripción/piloto,
+  // zonas, bordes, rate limit, max_drops_per_request) las valida la RPC.
   const published = await callRequestRpc(supabase, 'publish_request', {
     requestId: createdRequest.id,
   });
@@ -200,8 +168,6 @@ export async function createDeliveryRequestAction(
     return err(published.code);
   }
 
-  // T-352: destino final. `/merchant/requests` es un alias que redirige al dashboard y sumaba una navegación
-  // y otra pasada completa por el middleware después de publicar.
   return ok({
     requestId: createdRequest.id,
     redirectTo: '/merchant/dashboard',

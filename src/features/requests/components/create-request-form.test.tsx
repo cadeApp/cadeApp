@@ -53,7 +53,7 @@ vi.mock('@/ui/map', () => ({
   AGUILARES_CENTER: { lat: -27.4341, lng: -65.6144 },
 }));
 
-describe('T-112: CreateRequestForm', () => {
+describe('T-340: CreateRequestForm multi-drop', () => {
   afterEach(cleanup);
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,7 +74,7 @@ describe('T-112: CreateRequestForm', () => {
   };
   const mockZones = [zoneCentro, zoneSanMartin];
 
-  it('renderiza todos los campos principales y precarga datos del comercio', () => {
+  it('renderiza todos los campos principales, 1 entrega por defecto y precarga datos del comercio', () => {
     render(
       <CreateRequestForm
         zones={mockZones}
@@ -90,8 +90,90 @@ describe('T-112: CreateRequestForm', () => {
 
     expect(screen.getByText('Nueva solicitud de envío')).toBeDefined();
     expect(screen.getByDisplayValue('San Martín 350')).toBeDefined();
-    expect(screen.getByDisplayValue('Timbre blanco')).toBeDefined();
     expect(screen.getByText('Precargado editable')).toBeDefined();
+    // 1 entrega por defecto
+    expect(screen.getByText('Entrega 1')).toBeDefined();
+    expect(screen.getByText(/1 \/ 5 entregas/i)).toBeDefined();
+  });
+
+  it('el botón «Quitar entrega» está deshabilitado cuando hay exactamente 1 entrega', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    const removeBtn = screen.getByRole('button', { name: /quitar entrega 1/i });
+    expect(removeBtn).toBeDefined();
+    expect((removeBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('botón «Agregar otra entrega» añade una nueva tarjeta con valores independientes', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    // Inicia con 1 entrega
+    expect(screen.getAllByTestId(/^drop-card-/)).toHaveLength(1);
+
+    // Escribir datos en drop 1
+    const drop1Address = screen.getByLabelText(/dirección de entrega/i);
+    fireEvent.change(drop1Address, { target: { value: 'Av. Sarmiento 100' } });
+
+    // Agregar segunda entrega
+    const addBtn = screen.getByRole('button', { name: /agregar otra entrega/i });
+    fireEvent.click(addBtn);
+
+    // Ahora hay 2 entregas
+    const cards = screen.getAllByTestId(/^drop-card-/);
+    expect(cards).toHaveLength(2);
+    expect(screen.getByText('Entrega 1')).toBeDefined();
+    expect(screen.getByText('Entrega 2')).toBeDefined();
+    expect(screen.getByText(/2 \/ 5 entregas/i)).toBeDefined();
+
+    // La segunda tarjeta tiene la dirección vacía y no afecta a la primera
+    const addressInputs = screen.getAllByLabelText(/dirección de entrega/i);
+    expect(addressInputs).toHaveLength(2);
+    expect((addressInputs[0] as HTMLInputElement).value).toBe('Av. Sarmiento 100');
+    expect((addressInputs[1] as HTMLInputElement).value).toBe('');
+  });
+
+  it('«Quitar entrega» borra solo la entrega indicada y conserva los datos de las demás', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    const addBtn = screen.getByRole('button', { name: /agregar otra entrega/i });
+    fireEvent.click(addBtn); // Drop 2
+    fireEvent.click(addBtn); // Drop 3
+
+    expect(screen.getAllByTestId(/^drop-card-/)).toHaveLength(3);
+
+    const addressInputs = screen.getAllByLabelText(/dirección de entrega/i);
+    const in0 = addressInputs[0];
+    const in1 = addressInputs[1];
+    const in2 = addressInputs[2];
+    if (!in0 || !in1 || !in2) throw new Error('Inputs missing');
+    fireEvent.change(in0, { target: { value: 'Calle Primera 111' } });
+    fireEvent.change(in1, { target: { value: 'Calle Segunda 222' } });
+    fireEvent.change(in2, { target: { value: 'Calle Tercera 333' } });
+
+    // Quitar la segunda entrega (index 1)
+    const removeBtnDrop2 = screen.getByRole('button', { name: /quitar entrega 2/i });
+    fireEvent.click(removeBtnDrop2);
+
+    // Ahora quedan 2 entregas
+    expect(screen.getAllByTestId(/^drop-card-/)).toHaveLength(2);
+    const remainingInputs = screen.getAllByLabelText(/dirección de entrega/i);
+    expect(remainingInputs).toHaveLength(2);
+    expect((remainingInputs[0] as HTMLInputElement | undefined)?.value).toBe('Calle Primera 111');
+    expect((remainingInputs[1] as HTMLInputElement | undefined)?.value).toBe('Calle Tercera 333');
+  });
+
+  it('respeta el tope dinámico recibido por props deshabilitando el botón agregar al alcanzarlo', () => {
+    render(<CreateRequestForm zones={mockZones} maxDrops={2} />);
+
+    const addBtn = screen.getByRole('button', { name: /agregar otra entrega/i });
+    expect((addBtn as HTMLButtonElement).disabled).toBe(false);
+
+    // Agregar segunda entrega (alcanza tope de 2)
+    fireEvent.click(addBtn);
+
+    expect(screen.getAllByTestId(/^drop-card-/)).toHaveLength(2);
+    expect((addBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/alcanzaste el límite de 2 entregas/i)).toBeDefined();
   });
 
   it('muestra los chips de cambio en efectivo ("Paga con: $ 2.000 / $ 5.000 / $ 10.000") cuando needsChange es true', () => {
@@ -169,7 +251,7 @@ describe('T-112: CreateRequestForm', () => {
   it('H05: el evento onChange de MapPicker actualiza dropoffLat y dropoffLng y persisten en createDeliveryRequestAction', async () => {
     vi.mocked(actions.createDeliveryRequestAction).mockResolvedValueOnce({
       ok: true,
-      data: { requestId: 'req-123', redirectTo: '/merchant/requests/req-123' },
+      data: { requestId: 'req-123', redirectTo: '/merchant/dashboard' },
     });
 
     render(
@@ -220,9 +302,10 @@ describe('T-112: CreateRequestForm', () => {
     const firstCall = vi.mocked(actions.createDeliveryRequestAction).mock.calls[0];
     expect(firstCall).toBeDefined();
     if (!firstCall) return;
-    const callArgs = firstCall[0] as Record<string, unknown>;
-    expect(callArgs['dropoffLat']).toBe(-27.4385);
-    expect(callArgs['dropoffLng']).toBe(-65.6185);
+    const callArgs = firstCall[0] as { drops: Array<Record<string, unknown>> };
+    expect(callArgs.drops).toHaveLength(1);
+    expect(callArgs.drops[0]?.['dropoffLat']).toBe(-27.4385);
+    expect(callArgs.drops[0]?.['dropoffLng']).toBe(-65.6185);
   });
 
   it('#209: si la publicación es rechazada muestra el error de dominio y no anuncia éxito', async () => {
@@ -289,13 +372,6 @@ describe('T-112: CreateRequestForm', () => {
     // Botones de geolocalización: exactamente 2 en total (uno en retiro, uno en entrega), ninguno duplicado por el mapa
     const gpsButtons = screen.getAllByRole('button', { name: /usar mi ubicación/i });
     expect(gpsButtons).toHaveLength(2);
-
-    // Verificamos que dropoffAddress es único
-    const allInputs = screen.getAllByRole('textbox');
-    const dropoffAddressInputMatch = allInputs.filter(
-      (input) => input.getAttribute('id') === 'dropoff-address'
-    );
-    expect(dropoffAddressInputMatch).toHaveLength(1);
   });
 
   it('los inputs de teléfono y cambio numérico declaran inputmode adecuado ("tel" y "numeric")', () => {
@@ -311,6 +387,25 @@ describe('T-112: CreateRequestForm', () => {
 
     const customChangeInput = screen.getByPlaceholderText('Otro monto en efectivo');
     expect(customChangeInput.getAttribute('inputmode')).toBe('numeric');
+  });
+
+  it('muestra el precio total multiplicado por la cantidad de entregas (fixedPriceArs × drops.length)', () => {
+    render(<CreateRequestForm zones={mockZones} />);
+
+    const priceInput = screen.getByLabelText(/precio del envío acordado/i);
+    fireEvent.change(priceInput, { target: { value: '1500' } });
+
+    // 1 entrega: 1500
+    expect(screen.getByText(/Total cotizado al repartidor:/i)).toBeDefined();
+    expect(screen.getByText(/1 entrega\)/i)).toBeDefined();
+
+    // Añadir segunda entrega
+    const addBtn = screen.getByRole('button', { name: /agregar otra entrega/i });
+    fireEvent.click(addBtn);
+
+    // 2 entregas: total 3000
+    expect(screen.getByText(/2 entregas\)/i)).toBeDefined();
+    expect(screen.getByText(/\$ 3\.000/i)).toBeDefined();
   });
 
   it('no muestra el switch de asignación automática cuando no hay precio fijo cargado (DoD T-339)', () => {

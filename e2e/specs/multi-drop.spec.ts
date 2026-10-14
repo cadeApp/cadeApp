@@ -18,10 +18,10 @@ import {
 } from '@/server/live/privacy-checker';
 
 /**
- * T-340 Paso 2/4: Lectores multi-drop, privacidad pre-match y revelación post-match (CC-022 §3, §8, §10).
+ * T-340 Paso 2/4 y Paso 4/4: Multi-drop (CC-022 §3, §8, §10).
  *
  * Verificaciones:
- * 1. Feed y Hoja de Oferta:
+ * 1. Feed y Hoja de Oferta (Lector):
  *    - Muestra resumen público sin PII de las 3 entregas (zonas, tipos de paquete, medios de pago).
  *    - Oculta nombres de destinatarios, direcciones exactas, indicaciones y montos exactos de cambio.
  * 2. Vista de Viaje del Repartidor (post-match):
@@ -29,6 +29,10 @@ import {
  *    - Revela nombres de clientes, direcciones, indicaciones y monto exacto de cambio por entrega.
  * 3. Vista de Viaje del Comercio (post-match):
  *    - Muestra tarjetas individuales "Avisale a tu cliente" por cada entrega con sus respectivos datos.
+ * 4. Formulario y Escritor multi-drop desde la UI (Paso 4/4):
+ *    - Creación de solicitud con 3 entregas desde `/merchant/requests/new`.
+ *    - Verificación en base de datos de estructura de tablas y aislamiento privado.
+ *    - Oferta, aceptación y transiciones de estados por entrega hasta cierre de la solicitud.
  */
 
 const DROP_1_CHANGE = 3000;
@@ -354,6 +358,321 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       ).toBeVisible();
     } finally {
       await merchantContext.close();
+    }
+  });
+
+  test('DoD: escritor multi-drop desde la UI crea 3 entregas, valida DB y completa ciclo de viaje', async ({
+    page,
+    stagingContext,
+    loginAsMerchant,
+    loginAsCourier,
+    browser,
+  }, testInfo) => {
+    assertAllowedE2EEnvironment();
+
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Error] Se requieren merchant y courier en stagingContext');
+    }
+
+    const admin = createAdminClient();
+
+    // 1. Obtener al menos 3 zonas activas para las entregas
+    const { data: dbZones, error: zonesErr } = await admin
+      .from('zones')
+      .select('id, name')
+      .eq('active', true)
+      .limit(3);
+    expect(zonesErr).toBeNull();
+
+    const distinctZones: Array<{ id: string; name: string }> = [...(dbZones ?? [])];
+    while (distinctZones.length < 3) {
+      const extraZoneId = randomUUID();
+      const zoneName = `Zona E2E Writer ${distinctZones.length + 1}`;
+      const { error: extraZoneErr } = await admin.from('zones').insert({
+        id: extraZoneId,
+        name: zoneName,
+        active: true,
+        centroid_lat: -27.405,
+        centroid_lng: -65.605,
+      });
+      expect(extraZoneErr).toBeNull();
+      trackEntityForCleanup(stagingContext, 'zone', extraZoneId);
+      distinctZones.push({ id: extraZoneId, name: zoneName });
+    }
+
+    const [zone1, zone2, zone3] = distinctZones as [
+      { id: string; name: string },
+      { id: string; name: string },
+      { id: string; name: string }
+    ];
+
+    // -------------------------------------------------------------------------
+    // Paso 1: Comercio inicia sesión y va al formulario de nueva solicitud
+    // -------------------------------------------------------------------------
+    await loginAsMerchant(page);
+    await page.goto('/merchant/requests/new');
+    await waitForNoSkeletons(page);
+
+    // Completar retiro si está vacío
+    const pickupAddressInput = page.getByLabel(/dirección del comercio|dirección de retiro/i);
+    const currentPickup = await pickupAddressInput.inputValue();
+    if (!currentPickup.trim()) {
+      await pickupAddressInput.fill('Av. San Martín 150');
+    }
+
+    // Inicialmente hay 1 entrega. Agregar 2 entregas más para llegar a 3
+    const addDropBtn = page.getByRole('button', { name: /agregar otra entrega/i });
+    await addDropBtn.click();
+    await addDropBtn.click();
+
+    const dropCards = page.getByTestId(/^drop-card-/);
+    await expect(dropCards).toHaveCount(3);
+
+    // -------------------------------------------------------------------------
+    // Paso 2: Llenar las 3 entregas con datos distintos e independientes
+    // -------------------------------------------------------------------------
+    // Entrega 1: Chico, Efectivo con cambio ($ 2.000)
+    const card0 = dropCards.nth(0);
+    await card0.locator('select').selectOption(zone1.id);
+    await card0.locator('input[id^="dropoff-address-"]').fill('Av. Sarmiento 101');
+    await card0.locator('input[id^="recipient-name-"]').fill('Destinatario Uno Writer');
+    await card0.locator('input[id^="recipient-phone-"]').fill('3865111111');
+    await card0.locator('input[id^="recipient-consent-"]').check();
+    await card0.getByRole('button', { name: /^chico/i }).click();
+    await card0.getByRole('button', { name: /^efectivo$/i }).click();
+    await card0.getByRole('button', { name: /^sí$/i }).click();
+    await card0.getByRole('button', { name: /paga con: \$ 2\.000/i }).click();
+    await card0.locator('textarea[id^="notes-"]').fill('Indicaciones drop 1 Writer');
+
+    // Entrega 2: Mediano, Transferencia (sin cambio)
+    const card1 = dropCards.nth(1);
+    await card1.locator('select').selectOption(zone2.id);
+    await card1.locator('input[id^="dropoff-address-"]').fill('San Martín 202');
+    await card1.locator('input[id^="recipient-name-"]').fill('Destinatario Dos Writer');
+    await card1.locator('input[id^="recipient-phone-"]').fill('3865222222');
+    await card1.locator('input[id^="recipient-consent-"]').check();
+    await card1.getByRole('button', { name: /^mediano/i }).click();
+    await card1.getByRole('button', { name: /^transferencia$/i }).click();
+    await card1.locator('textarea[id^="notes-"]').fill('Indicaciones drop 2 Writer');
+
+    // Entrega 3: Grande, Efectivo sin cambio
+    const card2 = dropCards.nth(2);
+    await card2.locator('select').selectOption(zone3.id);
+    await card2.locator('input[id^="dropoff-address-"]').fill('Mitre 303');
+    await card2.locator('input[id^="recipient-name-"]').fill('Destinatario Tres Writer');
+    await card2.locator('input[id^="recipient-phone-"]').fill('3865333333');
+    await card2.locator('input[id^="recipient-consent-"]').check();
+    await card2.getByRole('button', { name: /^grande/i }).click();
+    await card2.getByRole('button', { name: /^efectivo$/i }).click();
+    await card2.getByRole('button', { name: /^no$/i }).click();
+    await card2.locator('textarea[id^="notes-"]').fill('Indicaciones drop 3 Writer');
+
+    // -------------------------------------------------------------------------
+    // Paso 3: Publicar la solicitud y verificar redirección al dashboard
+    // -------------------------------------------------------------------------
+    const submitBtn = page.getByRole('button', { name: /publicar solicitud/i });
+    await submitBtn.click();
+
+    await page.waitForURL(/\/merchant\/dashboard/, { timeout: 15000 });
+    await waitForNoSkeletons(page);
+
+    // -------------------------------------------------------------------------
+    // Paso 4: Comprobar estructura persistida en la base de datos
+    // -------------------------------------------------------------------------
+    const { data: createdReqRows, error: findReqErr } = await admin
+      .from('delivery_requests')
+      .select('*')
+      .eq('merchant_id', merchant.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    expect(findReqErr).toBeNull();
+    expect(createdReqRows).not.toBeNull();
+    expect(createdReqRows?.length).toBe(1);
+
+    const createdReq = createdReqRows?.[0];
+    if (!createdReq) {
+      throw new Error('[E2E Error] No se encontró la solicitud creada');
+    }
+    trackEntityForCleanup(stagingContext, 'request', createdReq.id);
+
+    // 1 fila en delivery_requests con status='published', drops_count=3, notes=null, cash_change_amount=null
+    expect(createdReq.status).toBe('published');
+    expect(createdReq.drops_count).toBe(3);
+    expect(createdReq.notes).toBeNull();
+    expect(createdReq.cash_change_amount).toBeNull();
+
+    // 1 fila en delivery_request_contacts con solo retiro
+    const { data: contactsRow, error: contactsErr } = await admin
+      .from('delivery_request_contacts')
+      .select('*')
+      .eq('request_id', createdReq.id)
+      .single();
+    expect(contactsErr).toBeNull();
+    expect(contactsRow).not.toBeNull();
+    if (!contactsRow) throw new Error('Missing contactsRow');
+    expect(contactsRow.pickup_address).toBeTruthy();
+    expect(contactsRow.dropoff_address).toBeNull();
+    expect(contactsRow.recipient_name).toBeNull();
+    expect(contactsRow.recipient_phone).toBeNull();
+
+    // 3 filas en delivery_request_drops con position 1, 2, 3 en estado pending
+    const { data: dropsRows, error: dropsErr } = await admin
+      .from('delivery_request_drops')
+      .select('*')
+      .eq('request_id', createdReq.id)
+      .order('position', { ascending: true });
+    expect(dropsErr).toBeNull();
+    expect(dropsRows).toHaveLength(3);
+    if (!dropsRows || dropsRows.length < 3) throw new Error('Expected 3 dropsRows');
+
+    const drop0 = dropsRows[0]!;
+    const drop1 = dropsRows[1]!;
+    const drop2 = dropsRows[2]!;
+
+    expect(drop0.position).toBe(1);
+    expect(drop0.status).toBe('pending');
+    expect(drop0.package_type).toBe('chico');
+    expect(drop0.recipient_payment_method).toBe('cash');
+    expect(drop0.needs_change).toBe(true);
+
+    expect(drop1.position).toBe(2);
+    expect(drop1.status).toBe('pending');
+    expect(drop1.package_type).toBe('mediano');
+    expect(drop1.recipient_payment_method).toBe('transfer');
+    expect(drop1.needs_change).toBe(false);
+
+    expect(drop2.position).toBe(3);
+    expect(drop2.status).toBe('pending');
+    expect(drop2.package_type).toBe('grande');
+    expect(drop2.recipient_payment_method).toBe('cash');
+    expect(drop2.needs_change).toBe(false);
+
+    // 3 filas en delivery_request_drop_contacts con sus datos privados respectivos
+    const dropIds = dropsRows.map((d) => d.id);
+    const { data: dropContactsRows, error: dropContactsErr } = await admin
+      .from('delivery_request_drop_contacts')
+      .select('*')
+      .in('drop_id', dropIds);
+    expect(dropContactsErr).toBeNull();
+    expect(dropContactsRows).toHaveLength(3);
+
+    const contactsByDropId = new Map(dropContactsRows!.map((c) => [c.drop_id, c]));
+
+    const contact1 = contactsByDropId.get(drop0.id);
+    expect(contact1?.recipient_name).toBe('Destinatario Uno Writer');
+    expect(contact1?.dropoff_address).toBe('Av. Sarmiento 101');
+    expect(contact1?.recipient_phone).toBe('3865111111');
+    expect(contact1?.cash_change_amount).toBe(2000);
+    expect(contact1?.notes).toBe('Indicaciones drop 1 Writer');
+
+    const contact2 = contactsByDropId.get(drop1.id);
+    expect(contact2?.recipient_name).toBe('Destinatario Dos Writer');
+    expect(contact2?.dropoff_address).toBe('San Martín 202');
+    expect(contact2?.cash_change_amount).toBeNull();
+    expect(contact2?.notes).toBe('Indicaciones drop 2 Writer');
+
+    const contact3 = contactsByDropId.get(drop2.id);
+    expect(contact3?.recipient_name).toBe('Destinatario Tres Writer');
+    expect(contact3?.dropoff_address).toBe('Mitre 303');
+    expect(contact3?.cash_change_amount).toBeNull();
+    expect(contact3?.notes).toBe('Indicaciones drop 3 Writer');
+
+    // -------------------------------------------------------------------------
+    // Paso 5: Feed del repartidor y oferta
+    // -------------------------------------------------------------------------
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('[E2E Error] Falta baseURL');
+    }
+
+    const courierContext = await browser.newContext({ baseURL });
+    try {
+      const courierBrowserPage = await courierContext.newPage();
+      await loginAsCourier(0, courierBrowserPage);
+      await courierBrowserPage.goto('/courier/feed');
+      await waitForNoSkeletons(courierBrowserPage);
+
+      // El repartidor ve el badge «3 entregas» y NO ve PII
+      await expect(courierBrowserPage.getByText(/3 entregas/i).first()).toBeVisible();
+      await expect(courierBrowserPage.getByText('Destinatario Uno Writer')).toHaveCount(0);
+      await expect(courierBrowserPage.getByText('Indicaciones drop 1 Writer')).toHaveCount(0);
+      await expect(courierBrowserPage.getByText(formatArs(2000))).toHaveCount(0);
+
+      // Crear oferta del repartidor vía insert en offers
+      const offerId = randomUUID();
+      const { error: offerErr } = await admin.from('offers').insert({
+        id: offerId,
+        request_id: createdReq.id,
+        courier_id: courier.id,
+        amount_ars: 1500,
+        eta_minutes: 20,
+        message: 'Oferta E2E escritor',
+        status: 'pending',
+      });
+      expect(offerErr).toBeNull();
+      trackEntityForCleanup(stagingContext, 'offer', offerId);
+
+      // Comercio acepta la oferta
+      const merchantClient = await createAuthenticatedClient(merchant);
+      const { error: acceptErr } = await merchantClient.rpc('accept_offer', {
+        p_offer_id: offerId,
+      });
+      expect(acceptErr).toBeNull();
+
+      // -------------------------------------------------------------------------
+      // Paso 6: Vista de viaje del repartidor post-match revela los datos
+      // -------------------------------------------------------------------------
+      await courierBrowserPage.goto(`/trips/${createdReq.id}`);
+      await waitForNoSkeletons(courierBrowserPage);
+
+      await expect(courierBrowserPage.getByText('Destinatario Uno Writer')).toBeVisible();
+      await expect(courierBrowserPage.getByText('Destinatario Dos Writer')).toBeVisible();
+      await expect(courierBrowserPage.getByText('Destinatario Tres Writer')).toBeVisible();
+      await expect(courierBrowserPage.getByText(/Indicaciones drop 1 Writer/i)).toBeVisible();
+      await expect(courierBrowserPage.getByText(/Indicaciones drop 2 Writer/i)).toBeVisible();
+      await expect(courierBrowserPage.getByText(/Indicaciones drop 3 Writer/i)).toBeVisible();
+
+      // -------------------------------------------------------------------------
+      // Paso 7: Repartidor completa entregas y solicitud pasa a delivered
+      // -------------------------------------------------------------------------
+      const courierClient = await createAuthenticatedClient(courier);
+
+      // Drop 1: entregado
+      const { error: mark1Err } = await courierClient.rpc('mark_drop_delivered', {
+        p_drop_id: drop0.id,
+      });
+      expect(mark1Err).toBeNull();
+
+      // Drop 2: entregado
+      const { error: mark2Err } = await courierClient.rpc('mark_drop_delivered', {
+        p_drop_id: drop1.id,
+      });
+      expect(mark2Err).toBeNull();
+
+      // Drop 3: fallido
+      const { error: mark3Err } = await courierClient.rpc('mark_drop_failed', {
+        p_drop_id: drop2.id,
+        p_reason: 'Destinatario no atendió en el domicilio',
+      });
+      expect(mark3Err).toBeNull();
+
+      // Solicitud finaliza en 'delivered' con delivered_at registrado
+      const { data: finalReq, error: finalReqErr } = await admin
+        .from('delivery_requests')
+        .select('status, delivered_at')
+        .eq('id', createdReq.id)
+        .single();
+
+      expect(finalReqErr).toBeNull();
+      expect(finalReq).not.toBeNull();
+      if (!finalReq) throw new Error('Missing finalReq');
+      expect(finalReq.status).toBe('delivered');
+      expect(finalReq.delivered_at).not.toBeNull();
+    } finally {
+      await courierContext.close();
     }
   });
 });

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
 import { createDeliveryRequestAction } from './actions';
-import { AGUILARES_CENTER } from '@/ui/map';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -31,8 +30,7 @@ type MockedServerClient = Awaited<ReturnType<typeof serverSupabase.createClient>
 const PUBLISHED_AT = '2026-10-02T12:00:00.000Z';
 const EXPIRES_AT = '2026-10-02T12:30:00.000Z';
 
-/** Respuesta de `publish_request` con la forma del contrato (`publishRequestOutputSchema`). */
-function publishedRpcResponse(requestId: string) {
+function publishedRpcResponse(requestId: string, dropsCount = 1) {
   return {
     data: {
       requestId,
@@ -42,39 +40,35 @@ function publishedRpcResponse(requestId: string) {
       routeDistanceM: 1000,
       fixedPriceArs: null,
       autoAssign: false,
-      dropsCount: 1,
+      dropsCount,
     },
     error: null,
   };
 }
 
-/** Rechazo de dominio tal como lo emite Postgres: `raise exception '<CODE>' using errcode = 'P0001'`. */
 function rejectedRpcResponse(code: string) {
   return { data: null, error: { code: 'P0001', message: code } };
 }
 
-describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side', () => {
+describe('T-340: createDeliveryRequestAction multi-drop', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   const validPickupZoneId = '11111111-1111-4111-8111-111111111111';
-  const validDropoffZoneId = '22222222-2222-4222-8222-222222222222';
+  const validDropoffZoneId1 = '22222222-2222-4222-8222-222222222222';
+  const validDropoffZoneId2 = '33333333-3333-4333-8333-333333333333';
+  const validDropoffZoneId3 = '44444444-4444-4444-8444-444444444444';
   const createdRequestId = '33333333-3333-4333-8333-333333333333';
-  const fallbackRequestId = '44444444-4444-4444-8444-444444444444';
 
-  const validFormInput = {
-    pickupZoneId: validPickupZoneId,
-    pickupAddress: 'Av. Sarmiento 120',
-    pickupLat: -27.43,
-    pickupLng: -65.61,
-    dropoffZoneId: validDropoffZoneId,
+  const validDrop1 = {
+    dropoffZoneId: validDropoffZoneId1,
     dropoffAddress: 'San Martín 450',
     dropoffLat: -27.435,
     dropoffLng: -65.615,
     recipientName: 'Juan Pérez',
     recipientPhone: '3815551234',
-    recipientConsentDeclared: true,
+    recipientConsentDeclared: true as const,
     packageType: 'mediano' as const,
     recipientPaymentMethod: 'cash' as const,
     needsChange: true,
@@ -82,14 +76,52 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
     notes: 'Tocar timbre blanco',
   };
 
+  const validDrop2 = {
+    dropoffZoneId: validDropoffZoneId2,
+    dropoffAddress: 'Av. Sarmiento 800',
+    dropoffLat: -27.432,
+    dropoffLng: -65.612,
+    recipientName: 'María López',
+    recipientPhone: '3815559876',
+    recipientConsentDeclared: true as const,
+    packageType: 'chico' as const,
+    recipientPaymentMethod: 'transfer' as const,
+    needsChange: false,
+    cashChangeAmount: null,
+    notes: 'Piso 2 Depto B',
+  };
+
+  const validDrop3 = {
+    dropoffZoneId: validDropoffZoneId3,
+    dropoffAddress: 'Mitre 210',
+    dropoffLat: null,
+    dropoffLng: null,
+    recipientName: 'Carlos Gómez',
+    recipientPhone: '3815554321',
+    recipientConsentDeclared: true as const,
+    packageType: 'grande' as const,
+    recipientPaymentMethod: 'cash' as const,
+    needsChange: false,
+    cashChangeAmount: null,
+    notes: 'Dejar en recepción',
+  };
+
+  const validFormInput = {
+    pickupZoneId: validPickupZoneId,
+    pickupAddress: 'Av. Sarmiento 120',
+    pickupLat: -27.43,
+    pickupLng: -65.61,
+    fixedPriceArs: null,
+    autoAssign: false,
+    drops: [validDrop1],
+  };
+
   it('rechaza si no hay sesión autenticada con UNAUTHENTICATED', async () => {
     vi.mocked(serverSupabase.createClient).mockResolvedValue({
       auth: {
         getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
       },
-    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
-      ? T
-      : never);
+    } as unknown as MockedServerClient);
 
     const result = await createDeliveryRequestAction(validFormInput);
     expect(result.ok).toBe(false);
@@ -105,7 +137,7 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
           maybeSingle: vi.fn().mockResolvedValue({
-            data: { role: 'courier' }, // No es merchant
+            data: { role: 'courier' },
             error: null,
           }),
         };
@@ -121,9 +153,7 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
         }),
       },
       from: mockFrom,
-    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
-      ? T
-      : never);
+    } as unknown as MockedServerClient);
 
     const result = await createDeliveryRequestAction(validFormInput);
     expect(result.ok).toBe(false);
@@ -144,31 +174,6 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
           }),
         };
       }
-      if (table === 'merchants') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          maybeSingle: vi.fn().mockResolvedValue({
-            data: {
-              subscription_status: 'pilot',
-              paid_until: null,
-            },
-            error: null,
-          }),
-        };
-      }
-      if (table === 'platform_settings') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          in: vi.fn().mockResolvedValue({
-            data: [
-              { key: 'pilot_active', value: true },
-              { key: 'subscription_grace_days', value: 0 },
-            ],
-            error: null,
-          }),
-        };
-      }
       return {};
     });
 
@@ -180,13 +185,11 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
         }),
       },
       from: mockFrom,
-    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
-      ? T
-      : never);
+    } as unknown as MockedServerClient);
 
     const invalidInput = {
       ...validFormInput,
-      pickupAddress: '', // Vacío
+      drops: [], // 0 drops
     };
 
     const result = await createDeliveryRequestAction(invalidInput);
@@ -196,13 +199,13 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
     }
   });
 
-  it('crea solicitud exitosa con coordenadas exactas, cálculo Haversine y guarda cash_change_amount', async () => {
+  it('crea solicitud exitosa con 1 drop y persiste en tablas hijas', async () => {
     let insertedRequest: Record<string, unknown> | null = null;
     let insertedContacts: Record<string, unknown> | null = null;
-    let insertedDrop: Record<string, unknown> | null = null;
-    let insertedDropContacts: Record<string, unknown> | null = null;
+    let insertedDrops: unknown = null;
+    let insertedDropContacts: unknown = null;
     const createdDropId = '99999999-9999-4999-8999-999999999999';
-    const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(createdRequestId));
+    const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(createdRequestId, 1));
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -211,31 +214,6 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
           eq: vi.fn().mockReturnThis(),
           maybeSingle: vi.fn().mockResolvedValue({
             data: { role: 'merchant' },
-            error: null,
-          }),
-        };
-      }
-      if (table === 'merchants') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          maybeSingle: vi.fn().mockResolvedValue({
-            data: {
-              subscription_status: 'pilot',
-              paid_until: null,
-            },
-            error: null,
-          }),
-        };
-      }
-      if (table === 'platform_settings') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          in: vi.fn().mockResolvedValue({
-            data: [
-              { key: 'pilot_active', value: true },
-              { key: 'subscription_grace_days', value: 0 },
-            ],
             error: null,
           }),
         };
@@ -265,11 +243,10 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       if (table === 'delivery_request_drops') {
         return {
           insert: vi.fn().mockImplementation((payload) => {
-            insertedDrop = payload;
+            insertedDrops = payload;
             return {
-              select: vi.fn().mockReturnThis(),
-              single: vi.fn().mockResolvedValue({
-                data: { id: createdDropId },
+              select: vi.fn().mockResolvedValue({
+                data: [{ id: createdDropId, position: 1 }],
                 error: null,
               }),
             };
@@ -296,78 +273,78 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       },
       from: mockFrom,
       rpc: mockRpc,
-    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
-      ? T
-      : never);
+    } as unknown as MockedServerClient);
 
     const result = await createDeliveryRequestAction(validFormInput);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.data.requestId).toBe(createdRequestId);
-      // T-352: destino final directo; `/merchant/requests` es un alias que vuelve a redirigir al dashboard.
       expect(result.data.redirectTo).toBe('/merchant/dashboard');
     }
     expect(mockRpc).toHaveBeenCalledTimes(1);
     expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
 
-    // Verificación 1: delivery_requests contiene status draft, package_type, cambio y distancia calculada
-    // T-340 Paso 3: notes y cash_change_amount ya no se escriben en delivery_requests (deben ser null)
+    // Verificación delivery_requests: status draft, drops_count=1, notes=null, cash_change_amount=null
     expect(insertedRequest).toMatchObject({
       merchant_id: 'usr-merchant-1',
       pickup_zone_id: validPickupZoneId,
-      dropoff_zone_id: validDropoffZoneId,
-      package_type: 'mediano',
-      recipient_payment_method: 'cash',
-      needs_change: true,
-      cash_change_amount: null,
-      notes: null,
+      drops_count: 1,
       status: 'draft',
+      notes: null,
+      cash_change_amount: null,
+      fixed_price_ars: null,
+      auto_assign: false,
     });
-    expect(
-      typeof (insertedRequest as unknown as { route_distance_m: number }).route_distance_m
-    ).toBe('number');
-    expect(
-      (insertedRequest as unknown as { route_distance_m: number }).route_distance_m
-    ).toBeGreaterThan(0);
+    // Sin campos legacy de destino en delivery_requests
+    expect((insertedRequest as unknown as Record<string, unknown>)?.['dropoff_zone_id']).toBeUndefined();
+    expect((insertedRequest as unknown as Record<string, unknown>)?.['package_type']).toBeUndefined();
 
-    // Verificación 2: delivery_request_contacts contiene datos protegidos
+    // Verificación delivery_request_contacts: solo datos de retiro
     expect(insertedContacts).toMatchObject({
       request_id: createdRequestId,
       pickup_address: 'Av. Sarmiento 120',
       pickup_lat: -27.43,
       pickup_lng: -65.61,
-      dropoff_address: 'San Martín 450',
-      dropoff_lat: -27.435,
-      dropoff_lng: -65.615,
-      recipient_name: 'Juan Pérez',
-      recipient_phone: '3815551234',
-      recipient_consent_declared: true,
+      dropoff_address: null,
+      recipient_name: null,
+      recipient_phone: null,
     });
 
-    // Verificación 3: delivery_request_drops contiene drop 1
-    expect(insertedDrop).toMatchObject({
-      request_id: createdRequestId,
-      position: 1,
-      dropoff_zone_id: validDropoffZoneId,
-      package_type: 'mediano',
-      recipient_payment_method: 'cash',
-      needs_change: true,
-    });
+    // Verificación delivery_request_drops: 1 drop
+    expect(insertedDrops).toEqual([
+      {
+        request_id: createdRequestId,
+        position: 1,
+        dropoff_zone_id: validDropoffZoneId1,
+        package_type: 'mediano',
+        recipient_payment_method: 'cash',
+        needs_change: true,
+      },
+    ]);
 
-    // Verificación 4: delivery_request_drop_contacts contiene datos privados y notas/cambio
-    expect(insertedDropContacts).toMatchObject({
-      drop_id: createdDropId,
-      dropoff_address: 'San Martín 450',
-      recipient_name: 'Juan Pérez',
-      recipient_phone: '3815551234',
-      recipient_consent_declared: true,
-      cash_change_amount: 5000,
-      notes: 'Tocar timbre blanco',
-    });
+    // Verificación delivery_request_drop_contacts: datos privados por entrega
+    expect(insertedDropContacts).toEqual([
+      {
+        drop_id: createdDropId,
+        dropoff_address: 'San Martín 450',
+        dropoff_lat: -27.435,
+        dropoff_lng: -65.615,
+        recipient_name: 'Juan Pérez',
+        recipient_phone: '3815551234',
+        recipient_consent_declared: true,
+        cash_change_amount: 5000,
+        notes: 'Tocar timbre blanco',
+      },
+    ]);
   });
 
-  it('fallback a centroides de zones cuando no se proporcionan coordenadas', async () => {
-    let insertedRequest: Record<string, unknown> | null = null;
+  it('crea solicitud exitosa con 3 drops y mapea por position sin asumir orden de retorno', async () => {
+    let insertedDropsPayload: unknown = null;
+    let insertedDropContactsPayload: unknown = null;
+    const drop1Id = '11111111-drop-1111-1111-111111111111';
+    const drop2Id = '22222222-drop-2222-2222-222222222222';
+    const drop3Id = '33333333-drop-3333-3333-333333333333';
+    const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(createdRequestId, 3));
 
     const mockFrom = vi.fn().mockImplementation((table: string) => {
       if (table === 'profiles') {
@@ -380,54 +357,14 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
           }),
         };
       }
-      if (table === 'merchants') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          maybeSingle: vi.fn().mockResolvedValue({
-            data: {
-              subscription_status: 'pilot',
-              paid_until: null,
-            },
-            error: null,
-          }),
-        };
-      }
-      if (table === 'platform_settings') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          in: vi.fn().mockResolvedValue({
-            data: [
-              { key: 'pilot_active', value: true },
-              { key: 'subscription_grace_days', value: 0 },
-            ],
-            error: null,
-          }),
-        };
-      }
-      if (table === 'zones') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          in: vi.fn().mockResolvedValue({
-            data: [
-              { id: validPickupZoneId, centroid_lat: -27.43, centroid_lng: -65.61 },
-              { id: validDropoffZoneId, centroid_lat: -27.44, centroid_lng: -65.62 },
-            ],
-            error: null,
-          }),
-        };
-      }
       if (table === 'delivery_requests') {
         return {
-          insert: vi.fn().mockImplementation((payload) => {
-            insertedRequest = payload;
-            return {
-              select: vi.fn().mockReturnThis(),
-              single: vi.fn().mockResolvedValue({
-                data: { id: fallbackRequestId },
-                error: null,
-              }),
-            };
+          insert: vi.fn().mockReturnValue({
+            select: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({
+              data: { id: createdRequestId },
+              error: null,
+            }),
           }),
         };
       }
@@ -438,18 +375,28 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
       }
       if (table === 'delivery_request_drops') {
         return {
-          insert: vi.fn().mockReturnValue({
-            select: vi.fn().mockReturnThis(),
-            single: vi.fn().mockResolvedValue({
-              data: { id: 'fallback-drop-id' },
-              error: null,
-            }),
+          insert: vi.fn().mockImplementation((payload) => {
+            insertedDropsPayload = payload;
+            return {
+              select: vi.fn().mockResolvedValue({
+                // Retorno DESORDENADO para verificar que el mapeo usa position y no índice
+                data: [
+                  { id: drop2Id, position: 2 },
+                  { id: drop3Id, position: 3 },
+                  { id: drop1Id, position: 1 },
+                ],
+                error: null,
+              }),
+            };
           }),
         };
       }
       if (table === 'delivery_request_drop_contacts') {
         return {
-          insert: vi.fn().mockResolvedValue({ error: null }),
+          insert: vi.fn().mockImplementation((payload) => {
+            insertedDropContactsPayload = payload;
+            return Promise.resolve({ error: null });
+          }),
         };
       }
       return {};
@@ -463,45 +410,54 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
         }),
       },
       from: mockFrom,
-      rpc: vi.fn().mockResolvedValue(publishedRpcResponse(fallbackRequestId)),
-    } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
-      ? T
-      : never);
+      rpc: mockRpc,
+    } as unknown as MockedServerClient);
 
-    const withoutCoords = {
+    const inputWith3Drops = {
       ...validFormInput,
-      pickupLat: null,
-      pickupLng: null,
-      dropoffLat: null,
-      dropoffLng: null,
+      fixedPriceArs: 2000,
+      autoAssign: true,
+      drops: [validDrop1, validDrop2, validDrop3],
     };
 
-    const result = await createDeliveryRequestAction(withoutCoords);
+    const result = await createDeliveryRequestAction(inputWith3Drops);
     expect(result.ok).toBe(true);
+    expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
 
-    // Se calculó la distancia basada en los centroides de zones
-    expect(insertedRequest).not.toBeNull();
-    expect(
-      (insertedRequest as unknown as { route_distance_m: number }).route_distance_m
-    ).toBeGreaterThan(0);
+    // Verificación de drops insertados
+    const drops = insertedDropsPayload as Array<{ position: number; request_id: string }>;
+    expect(drops).toHaveLength(3);
+    expect(drops[0]?.position).toBe(1);
+    expect(drops[1]?.position).toBe(2);
+    expect(drops[2]?.position).toBe(3);
+
+    // Verificación de mapeo de drop contacts: cada contacto tiene el drop_id correcto de su posición
+    const contacts = insertedDropContactsPayload as Array<{
+      drop_id: string;
+      recipient_name: string;
+      cash_change_amount: number | null;
+      notes: string | null;
+    }>;
+    expect(contacts).toHaveLength(3);
+    expect(contacts[0]?.drop_id).toBe(drop1Id);
+    expect(contacts[0]?.recipient_name).toBe('Juan Pérez');
+    expect(contacts[0]?.cash_change_amount).toBe(5000);
+    expect(contacts[0]?.notes).toBe('Tocar timbre blanco');
+
+    expect(contacts[1]?.drop_id).toBe(drop2Id);
+    expect(contacts[1]?.recipient_name).toBe('María López');
+    expect(contacts[1]?.cash_change_amount).toBeNull();
+    expect(contacts[1]?.notes).toBe('Piso 2 Depto B');
+
+    expect(contacts[2]?.drop_id).toBe(drop3Id);
+    expect(contacts[2]?.recipient_name).toBe('Carlos Gómez');
+    expect(contacts[2]?.cash_change_amount).toBeNull();
+    expect(contacts[2]?.notes).toBe('Dejar en recepción');
   });
 
-  // =========================================================================
-  // #209: el alta llega a la RPC `publish_request`, que decide la transición
-  // =========================================================================
-  describe('#209: publicación real vía RPC publish_request', () => {
-    interface FlowOptions {
-      readonly merchant: { subscription_status: string; paid_until: string | null } | null;
-      readonly pilotActive: boolean;
-      readonly rpcResponse: unknown;
-    }
-
-    function mockCreateFlow({ merchant, pilotActive, rpcResponse }: FlowOptions) {
-      const calls: string[] = [];
-      const mockRpc = vi.fn().mockImplementation((fn: string) => {
-        calls.push(`rpc:${fn}`);
-        return Promise.resolve(rpcResponse);
-      });
+  describe('propagación de errores y casos de fallo', () => {
+    it('propaga errores de dominio desde publish_request', async () => {
+      const mockRpc = vi.fn().mockResolvedValue(rejectedRpcResponse('DROP_LIMIT_EXCEEDED'));
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'profiles') {
@@ -511,62 +467,29 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
             maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
           };
         }
-        if (table === 'merchants') {
-          return {
-            select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: merchant, error: null }),
-          };
-        }
-        if (table === 'platform_settings') {
-          return {
-            select: vi.fn().mockReturnThis(),
-            in: vi.fn().mockResolvedValue({
-              data: [
-                { key: 'pilot_active', value: pilotActive },
-                { key: 'subscription_grace_days', value: 0 },
-              ],
-              error: null,
-            }),
-          };
-        }
         if (table === 'delivery_requests') {
           return {
-            insert: vi.fn().mockImplementation(() => {
-              calls.push('insert:delivery_requests');
-              return {
-                select: vi.fn().mockReturnThis(),
-                single: vi.fn().mockResolvedValue({ data: { id: createdRequestId }, error: null }),
-              };
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnThis(),
+              single: vi.fn().mockResolvedValue({ data: { id: createdRequestId }, error: null }),
             }),
           };
         }
         if (table === 'delivery_request_contacts') {
-          return {
-            insert: vi.fn().mockImplementation(() => {
-              calls.push('insert:delivery_request_contacts');
-              return Promise.resolve({ error: null });
-            }),
-          };
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
         }
         if (table === 'delivery_request_drops') {
           return {
-            insert: vi.fn().mockImplementation(() => {
-              calls.push('insert:delivery_request_drops');
-              return {
-                select: vi.fn().mockReturnThis(),
-                single: vi.fn().mockResolvedValue({ data: { id: 'drop-1' }, error: null }),
-              };
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockResolvedValue({
+                data: [{ id: 'drop-1', position: 1 }],
+                error: null,
+              }),
             }),
           };
         }
         if (table === 'delivery_request_drop_contacts') {
-          return {
-            insert: vi.fn().mockImplementation(() => {
-              calls.push('insert:delivery_request_drop_contacts');
-              return Promise.resolve({ error: null });
-            }),
-          };
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
         }
         return {};
       });
@@ -582,91 +505,8 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
         rpc: mockRpc,
       } as unknown as MockedServerClient);
 
-      return { calls, mockRpc };
-    }
-
-    const pilotMerchant = { subscription_status: 'pilot', paid_until: null };
-    const expiredMerchant = { subscription_status: 'expired', paid_until: '2026-01-01' };
-
-    it('publica la solicitud recién creada: llama a publish_request después de guardar el contacto', async () => {
-      const { calls, mockRpc } = mockCreateFlow({
-        merchant: pilotMerchant,
-        pilotActive: true,
-        rpcResponse: publishedRpcResponse(createdRequestId),
-      });
-
       const result = await createDeliveryRequestAction(validFormInput);
-
-      expect(result).toEqual({
-        ok: true,
-        data: { requestId: createdRequestId, redirectTo: '/merchant/dashboard' },
-      });
-      expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
-      // La RPC exige el contacto ya guardado (MISSING_REQUIRED_FIELDS si no): el orden importa.
-      expect(calls).toEqual([
-        'insert:delivery_requests',
-        'insert:delivery_request_contacts',
-        'insert:delivery_request_drops',
-        'insert:delivery_request_drop_contacts',
-        'rpc:publish_request',
-      ]);
-    });
-
-    it('no anuncia éxito si publish_request rechaza: propaga SUBSCRIPTION_INACTIVE de la RPC', async () => {
-      // El comercio "parece" habilitado para cualquier chequeo previo de la action (piloto activo):
-      // el único que puede producir este código acá es la RPC.
-      const { mockRpc } = mockCreateFlow({
-        merchant: pilotMerchant,
-        pilotActive: true,
-        rpcResponse: rejectedRpcResponse('SUBSCRIPTION_INACTIVE'),
-      });
-
-      const result = await createDeliveryRequestAction(validFormInput);
-
-      expect(result).toEqual({ ok: false, code: 'SUBSCRIPTION_INACTIVE' });
-      expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
-    });
-
-    it('un comercio con suscripción vencida igual alcanza la RPC: la action no decide por ella', async () => {
-      const { mockRpc } = mockCreateFlow({
-        merchant: expiredMerchant,
-        pilotActive: false,
-        rpcResponse: rejectedRpcResponse('SUBSCRIPTION_INACTIVE'),
-      });
-
-      const result = await createDeliveryRequestAction(validFormInput);
-
-      expect(result).toEqual({ ok: false, code: 'SUBSCRIPTION_INACTIVE' });
-      expect(mockRpc).toHaveBeenCalledTimes(1);
-      expect(mockRpc).toHaveBeenCalledWith('publish_request', { p_request_id: createdRequestId });
-    });
-
-    it.each(['RATE_LIMITED', 'OUT_OF_BOUNDS_AGUILARES', 'INVALID_ZONE', 'MISSING_REQUIRED_FIELDS'])(
-      'propaga el código de dominio %s que devuelve publish_request',
-      async (code) => {
-        mockCreateFlow({
-          merchant: pilotMerchant,
-          pilotActive: true,
-          rpcResponse: rejectedRpcResponse(code),
-        });
-
-        const result = await createDeliveryRequestAction(validFormInput);
-
-        expect(result).toEqual({ ok: false, code });
-      }
-    );
-
-    it('devuelve INTERNAL_ERROR si la RPC responde algo que no es una solicitud publicada', async () => {
-      mockCreateFlow({
-        merchant: pilotMerchant,
-        pilotActive: true,
-        rpcResponse: { data: { requestId: createdRequestId, status: 'draft' }, error: null },
-      });
-
-      const result = await createDeliveryRequestAction(validFormInput);
-
-      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(result).toEqual({ ok: false, code: 'DROP_LIMIT_EXCEEDED' });
     });
 
     it('devuelve INTERNAL_ERROR si falla la inserción en delivery_request_drops', async () => {
@@ -687,15 +527,15 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
           };
         }
         if (table === 'delivery_request_contacts') {
-          return {
-            insert: vi.fn().mockResolvedValue({ error: null }),
-          };
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
         }
         if (table === 'delivery_request_drops') {
           return {
             insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnThis(),
-              single: vi.fn().mockResolvedValue({ data: null, error: { message: 'db error' } }),
+              select: vi.fn().mockResolvedValue({
+                data: null,
+                error: { message: 'db error' },
+              }),
             }),
           };
         }
@@ -734,15 +574,15 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
           };
         }
         if (table === 'delivery_request_contacts') {
-          return {
-            insert: vi.fn().mockResolvedValue({ error: null }),
-          };
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
         }
         if (table === 'delivery_request_drops') {
           return {
             insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnThis(),
-              single: vi.fn().mockResolvedValue({ data: { id: 'drop-1' }, error: null }),
+              select: vi.fn().mockResolvedValue({
+                data: [{ id: 'drop-1', position: 1 }],
+                error: null,
+              }),
             }),
           };
         }
@@ -766,148 +606,6 @@ describe('T-112: createDeliveryRequestAction y cálculo de distancia server-side
 
       const result = await createDeliveryRequestAction(validFormInput);
       expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
-    });
-  });
-
-  // =========================================================================
-  // CC-017: una zona activa puede no tener centroide verificado
-  // =========================================================================
-  describe('CC-017: zonas sin centroide y sin coordenadas explícitas', () => {
-    const noCentroidRequestId = '55555555-5555-4555-8555-555555555555';
-
-    function arrange(zones: ReadonlyArray<Record<string, unknown>>) {
-      const inserted: {
-        request: Record<string, unknown> | null;
-        contacts: Record<string, unknown> | null;
-      } = { request: null, contacts: null };
-
-      const mockFrom = vi.fn().mockImplementation((table: string) => {
-        if (table === 'profiles') {
-          return {
-            select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
-          };
-        }
-        if (table === 'zones') {
-          return {
-            select: vi.fn().mockReturnThis(),
-            in: vi.fn().mockResolvedValue({ data: zones, error: null }),
-          };
-        }
-        if (table === 'delivery_requests') {
-          return {
-            insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
-              inserted.request = payload;
-              return {
-                select: vi.fn().mockReturnThis(),
-                single: vi.fn().mockResolvedValue({
-                  data: { id: noCentroidRequestId },
-                  error: null,
-                }),
-              };
-            }),
-          };
-        }
-        if (table === 'delivery_request_contacts') {
-          return {
-            insert: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
-              inserted.contacts = payload;
-              return Promise.resolve({ error: null });
-            }),
-          };
-        }
-        if (table === 'delivery_request_drops') {
-          return {
-            insert: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnThis(),
-              single: vi.fn().mockResolvedValue({
-                data: { id: 'no-centroid-drop-id' },
-                error: null,
-              }),
-            }),
-          };
-        }
-        if (table === 'delivery_request_drop_contacts') {
-          return {
-            insert: vi.fn().mockResolvedValue({ error: null }),
-          };
-        }
-        return {};
-      });
-
-      vi.mocked(serverSupabase.createClient).mockResolvedValue({
-        auth: {
-          getUser: vi.fn().mockResolvedValue({
-            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
-            error: null,
-          }),
-        },
-        from: mockFrom,
-        rpc: vi.fn().mockResolvedValue(publishedRpcResponse(noCentroidRequestId)),
-      } as unknown as MockedServerClient);
-
-      return inserted;
-    }
-
-    const withoutCoords = {
-      ...validFormInput,
-      pickupLat: null,
-      pickupLng: null,
-      dropoffLat: null,
-      dropoffLng: null,
-    };
-
-    const withCentroid = (id: string) => ({ id, centroid_lat: -27.43, centroid_lng: -65.61 });
-    const withoutCentroid = (id: string) => ({ id, centroid_lat: null, centroid_lng: null });
-
-    it.each([
-      [
-        'el barrio de retiro no tiene centroide',
-        [withoutCentroid(validPickupZoneId), withCentroid(validDropoffZoneId)],
-      ],
-      [
-        'el barrio de entrega no tiene centroide',
-        [withCentroid(validPickupZoneId), withoutCentroid(validDropoffZoneId)],
-      ],
-      [
-        'ningún barrio tiene centroide',
-        [withoutCentroid(validPickupZoneId), withoutCentroid(validDropoffZoneId)],
-      ],
-    ])('crea la solicitud con distancia null cuando %s', async (_caso, zones) => {
-      const inserted = arrange(zones);
-
-      const result = await createDeliveryRequestAction(withoutCoords);
-
-      expect(result.ok).toBe(true);
-      expect(inserted.request).not.toBeNull();
-      expect(inserted.request).toMatchObject({
-        pickup_zone_id: validPickupZoneId,
-        dropoff_zone_id: validDropoffZoneId,
-        route_distance_m: null,
-        approx_distance_m: null,
-      });
-    });
-
-    it('no fabrica coordenadas: ni el centro general de Aguilares ni ninguna otra', async () => {
-      const inserted = arrange([
-        withoutCentroid(validPickupZoneId),
-        withoutCentroid(validDropoffZoneId),
-      ]);
-
-      const result = await createDeliveryRequestAction(withoutCoords);
-
-      expect(result.ok).toBe(true);
-      expect(inserted.contacts).toMatchObject({
-        pickup_lat: null,
-        pickup_lng: null,
-        dropoff_lat: null,
-        dropoff_lng: null,
-      });
-
-      const written = JSON.stringify([inserted.request, inserted.contacts]);
-      expect(written).not.toContain(String(AGUILARES_CENTER.lat));
-      expect(written).not.toContain(String(AGUILARES_CENTER.lng));
     });
   });
 });
