@@ -7,7 +7,10 @@ import {
   submitOfferOutputSchema,
   takeRequestOutputSchema,
   acceptOfferOutputSchema,
+  createAndPublishMultiDropInputSchema,
+  ALL_RPC_NAMES,
   RPC_CONTRACTS,
+  type RpcInput,
 } from './rpc-contracts';
 import {
   createFakeRpcClient,
@@ -20,6 +23,303 @@ const REQ_ID = '30000000-0000-4000-8000-000000000001';
 const DROP_ID = '40000000-0000-4000-8000-000000000001';
 
 describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
+  type SingleDropMultiDropInput = Omit<
+    RpcInput<'create_and_publish_multi_drop'>,
+    'drops'
+  > & {
+    drops: [RpcInput<'create_and_publish_multi_drop'>['drops'][number]];
+  };
+
+  const validMultiDropInput = (): SingleDropMultiDropInput => ({
+    requestId: REQ_ID,
+    pickupZoneId: '00000000-0000-4000-8000-000000000001',
+    pickupAddress: 'San Martín 100',
+    pickupLat: null,
+    pickupLng: null,
+    fixedPriceArs: null,
+    autoAssign: false,
+    drops: [
+      {
+        dropoffZoneId: '00000000-0000-4000-8000-000000000002',
+        dropoffAddress: 'Alberdi 200',
+        dropoffLat: null,
+        dropoffLng: null,
+        recipientName: 'Juan',
+        recipientPhone: '3865123456',
+        recipientConsentDeclared: true,
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        cashChangeAmount: null,
+        notes: null,
+      },
+    ],
+  });
+
+  it('valida las ramas de entrada de CC-024 sin coerciones ni campos desconocidos', () => {
+    const validAutoAssign = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      fixedPriceArs: 1500,
+      autoAssign: true,
+    });
+    expect(validAutoAssign.success).toBe(true);
+
+    const pickupPairMismatch = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      pickupLat: -27.433,
+      pickupLng: null,
+    });
+    expect(pickupPairMismatch.success).toBe(false);
+
+    const dropPairMismatch = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      drops: [{ ...validMultiDropInput().drops[0], dropoffLat: -27.425, dropoffLng: null }],
+    });
+    expect(dropPairMismatch.success).toBe(false);
+
+    const autoAssignWithoutPrice = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      autoAssign: true,
+    });
+    expect(autoAssignWithoutPrice.success).toBe(false);
+
+    const nonCashWithChange = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      drops: [
+        {
+          ...validMultiDropInput().drops[0],
+          recipientPaymentMethod: 'transfer',
+          needsChange: true,
+        },
+      ],
+    });
+    expect(nonCashWithChange.success).toBe(false);
+
+    const missingCashChange = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      drops: [{ ...validMultiDropInput().drops[0], needsChange: true }],
+    });
+    expect(missingCashChange.success).toBe(false);
+
+    const unexpectedCashChange = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      drops: [{ ...validMultiDropInput().drops[0], cashChangeAmount: 1000 }],
+    });
+    expect(unexpectedCashChange.success).toBe(false);
+
+    const falseConsent = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      drops: [{ ...validMultiDropInput().drops[0], recipientConsentDeclared: false }],
+    });
+    expect(falseConsent.success).toBe(false);
+
+    const unknownRootKey = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      unexpected: true,
+    });
+    expect(unknownRootKey.success).toBe(false);
+
+    const unknownDropKey = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      drops: [{ ...validMultiDropInput().drops[0], unexpected: true }],
+    });
+    expect(unknownDropKey.success).toBe(false);
+
+    const emptyDrops = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      drops: [],
+    });
+    expect(emptyDrops.success).toBe(false);
+
+    const trimmed = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      pickupAddress: '  San Martín 100  ',
+      drops: [{ ...validMultiDropInput().drops[0], notes: '  dejar en recepción  ' }],
+    });
+    expect(trimmed.success).toBe(true);
+    if (trimmed.success) {
+      expect(trimmed.data.pickupAddress).toBe('San Martín 100');
+      expect(trimmed.data.drops[0]?.notes).toBe('dejar en recepción');
+    }
+
+    const outOfBounds = createAndPublishMultiDropInputSchema.safeParse({
+      ...validMultiDropInput(),
+      pickupLat: -34.6037,
+      pickupLng: -58.3816,
+    });
+    expect(outOfBounds.success).toBe(false);
+  });
+
+  it('el fake aplica precio fijo, suscripción, colisión de actor y estados de retry', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      initialActor: { ...MERCHANT_ACTOR, merchantSubscriptionStatus: 'expired' },
+    });
+    const input = { ...validMultiDropInput(), fixedPriceArs: 1500, autoAssign: true };
+
+    const inactive = await fake.create_and_publish_multi_drop(input);
+    expect(inactive).toEqual({ ok: false, code: 'SUBSCRIPTION_INACTIVE' });
+
+    fake.setActor(MERCHANT_ACTOR);
+    const first = await fake.create_and_publish_multi_drop(input);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const created = fake.getRequest(REQ_ID);
+    expect(created?.autoAssign).toBe(true);
+    expect(created?.fixedPriceArs).toBe(1500);
+
+    fake.setActor({ userId: '20000000-0000-4000-8000-000000000099', role: 'merchant' });
+    const foreignRetry = await fake.create_and_publish_multi_drop(input);
+    expect(foreignRetry).toEqual({ ok: false, code: 'NOT_FOUND' });
+
+    fake.setActor(MERCHANT_ACTOR);
+    for (const status of ['matched', 'in_transit', 'delivered', 'cancelled', 'expired'] as const) {
+      const request = fake.getRequest(REQ_ID);
+      if (request) request.status = status;
+      if (request && status === 'expired') request.expiresAt = null;
+      const retry = await fake.create_and_publish_multi_drop(input);
+      expect(retry.ok).toBe(true);
+      if (retry.ok) {
+        expect(retry.data.status).toBe(status);
+        expect(retry.data.idempotent).toBe(true);
+        expect(retry.data.publishedAt).toBe(first.data.publishedAt);
+      }
+    }
+
+    const changedDrop = await fake.create_and_publish_multi_drop({
+      ...input,
+      drops: [{ ...input.drops[0], notes: 'payload distinto' }],
+    });
+    expect(changedDrop).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(fake.getRequest(REQ_ID)?.drops).toHaveLength(1);
+  });
+
+  it('el fake no acepta un retry sin snapshot persistido', async () => {
+    const fake = createFakeRpcClient({ settings: BASE_SETTINGS, initialActor: MERCHANT_ACTOR });
+    fake.seedRequest({
+      requestId: REQ_ID,
+      merchantId: MERCHANT_ACTOR.userId,
+      status: 'published',
+      fixedPriceArs: 1500,
+      autoAssign: true,
+      drops: [{ id: DROP_ID, position: 1 }],
+    });
+
+    const result = await fake.create_and_publish_multi_drop({
+      ...validMultiDropInput(),
+      fixedPriceArs: 1500,
+      autoAssign: true,
+    });
+    expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+  });
+
+  it('CC-024 expone el contrato de alta y publicación atómica multi-drop', () => {
+    expect(RPC_CONTRACTS).toHaveProperty('create_and_publish_multi_drop');
+    expect(ALL_RPC_NAMES).toContain('create_and_publish_multi_drop');
+  });
+
+  it('el fake crea y publica una solicitud con drops sin poblar columnas legacy de destino', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      initialActor: MERCHANT_ACTOR,
+    });
+
+    const result = await fake.create_and_publish_multi_drop({
+      requestId: REQ_ID,
+      pickupZoneId: '00000000-0000-4000-8000-000000000001',
+      pickupAddress: 'San Martín 100',
+      pickupLat: null,
+      pickupLng: null,
+      fixedPriceArs: null,
+      autoAssign: false,
+      drops: [
+        {
+          dropoffZoneId: '00000000-0000-4000-8000-000000000002',
+          dropoffAddress: 'Alberdi 200',
+          dropoffLat: null,
+          dropoffLng: null,
+          recipientName: 'Juan',
+          recipientPhone: '3865123456',
+          recipientConsentDeclared: true as const,
+          packageType: 'chico',
+          recipientPaymentMethod: 'cash',
+          needsChange: false as const,
+          cashChangeAmount: null,
+          notes: null,
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toMatchObject({
+        requestId: REQ_ID,
+        status: 'published',
+        idempotent: false,
+        dropsCount: 1,
+      });
+    }
+    const request = fake.getRequest(REQ_ID);
+    expect(request?.dropoffAddress).toBe('');
+    expect(request?.recipientName).toBe('');
+    expect(request?.notes).toBeNull();
+  });
+
+  it('reintenta de forma idempotente y rechaza un mismo requestId con otro payload', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      initialActor: MERCHANT_ACTOR,
+    });
+    const input = {
+      requestId: REQ_ID,
+      pickupZoneId: '00000000-0000-4000-8000-000000000001',
+      pickupAddress: 'San Martín 100',
+      pickupLat: null,
+      pickupLng: null,
+      fixedPriceArs: null,
+      autoAssign: false,
+      drops: [
+        {
+          dropoffZoneId: '00000000-0000-4000-8000-000000000002',
+          dropoffAddress: 'Alberdi 200',
+          dropoffLat: null,
+          dropoffLng: null,
+          recipientName: 'Juan',
+          recipientPhone: '3865123456',
+          recipientConsentDeclared: true as const,
+          packageType: 'chico' as const,
+          recipientPaymentMethod: 'cash' as const,
+          needsChange: false as const,
+          cashChangeAmount: null,
+          notes: null,
+        },
+      ],
+    };
+
+    const first = await fake.create_and_publish_multi_drop(input);
+    const retry = await fake.create_and_publish_multi_drop(input);
+
+    expect(first.ok).toBe(true);
+    expect(retry.ok).toBe(true);
+    if (first.ok && retry.ok) {
+      expect(first.data.idempotent).toBe(false);
+      expect(retry.data).toMatchObject({
+        requestId: REQ_ID,
+        status: 'published',
+        idempotent: true,
+        publishedAt: first.data.publishedAt,
+      });
+    }
+    expect(fake.getRequest(REQ_ID)?.drops).toHaveLength(1);
+
+    const conflicting = await fake.create_and_publish_multi_drop({
+      ...input,
+      pickupAddress: 'Otra dirección',
+    });
+    expect(conflicting).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+  });
+
   it('DOMAIN_ERROR_CODES contains DROP_LIMIT_EXCEEDED and publish_request contract includes it', () => {
     expect(DOMAIN_ERROR_CODES).toContain('DROP_LIMIT_EXCEEDED');
     expect(isDomainErrorCode('DROP_LIMIT_EXCEEDED')).toBe(true);
@@ -631,7 +931,9 @@ describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
       const offerId = '50000000-0000-4000-8000-000000000088';
 
       // 1. Solicitud no existente
-      const notFoundRes = await fake.get_trip_details({ requestId: '30000000-0000-4000-8000-000000000000' });
+      const notFoundRes = await fake.get_trip_details({
+        requestId: '30000000-0000-4000-8000-000000000000',
+      });
       expect(notFoundRes.ok).toBe(false);
       if (!notFoundRes.ok) expect(notFoundRes.code).toBe('NOT_FOUND');
 
@@ -682,6 +984,50 @@ describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
         amountArs: 1500,
         status: 'accepted',
       });
+
+      const legacyTripReqId = '30000000-0000-4000-8000-000000000089';
+      const legacyOfferId = '50000000-0000-4000-8000-000000000089';
+      fake.seedOffer({
+        offerId: legacyOfferId,
+        requestId: legacyTripReqId,
+        courierId: COURIER_ACTOR.userId,
+        amountArs: 1500,
+        status: 'accepted',
+      });
+      fake.seedRequest({
+        requestId: legacyTripReqId,
+        merchantId: MERCHANT_ACTOR.userId,
+        status: 'matched',
+        acceptedOfferId: legacyOfferId,
+        pickupAddress: 'San Martín 100',
+        pickupZoneName: 'Centro',
+      });
+      const legacyDetails = await fake.get_trip_details({ requestId: legacyTripReqId });
+      expect(legacyDetails.ok).toBe(true);
+      if (legacyDetails.ok) {
+        expect(legacyDetails.data.dropsCount).toBe(1);
+        expect(legacyDetails.data.drops[0]?.recipientPaymentMethod).toBe('cash');
+      }
+
+      const missingMerchantReqId = '30000000-0000-4000-8000-000000000090';
+      const missingMerchantOfferId = '50000000-0000-4000-8000-000000000090';
+      fake.seedOffer({
+        offerId: missingMerchantOfferId,
+        requestId: missingMerchantReqId,
+        courierId: COURIER_ACTOR.userId,
+        amountArs: 1500,
+        status: 'accepted',
+      });
+      fake.seedRequest({
+        requestId: missingMerchantReqId,
+        merchantId: '20000000-0000-4000-8000-000000000090',
+        status: 'matched',
+        acceptedOfferId: missingMerchantOfferId,
+      });
+      fake.setActor(COURIER_ACTOR);
+      const missingMerchant = await fake.get_trip_details({ requestId: missingMerchantReqId });
+      expect(missingMerchant).toEqual({ ok: false, code: 'NOT_FOUND' });
+      fake.setActor(MERCHANT_ACTOR);
 
       fake.seedRequest({
         requestId: tripReqId,
@@ -804,11 +1150,16 @@ describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
       fake.setActor(COURIER_ACTOR);
 
       // 3. Drop inexistente
-      const delivNotFound = await fake.mark_drop_delivered({ dropId: '40000000-0000-4000-8000-000000000000' });
+      const delivNotFound = await fake.mark_drop_delivered({
+        dropId: '40000000-0000-4000-8000-000000000000',
+      });
       expect(delivNotFound.ok).toBe(false);
       if (!delivNotFound.ok) expect(delivNotFound.code).toBe('NOT_FOUND');
 
-      const failNotFound = await fake.mark_drop_failed({ dropId: '40000000-0000-4000-8000-000000000000', reason: 'Test' });
+      const failNotFound = await fake.mark_drop_failed({
+        dropId: '40000000-0000-4000-8000-000000000000',
+        reason: 'Test',
+      });
       expect(failNotFound.ok).toBe(false);
       if (!failNotFound.ok) expect(failNotFound.code).toBe('NOT_FOUND');
 
@@ -845,7 +1196,10 @@ describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
       }
 
       // No se puede marcar fallido un drop ya entregado
-      const failAfterDeliv = await fake.mark_drop_failed({ dropId: drop1Id, reason: 'Ya fue entregado' });
+      const failAfterDeliv = await fake.mark_drop_failed({
+        dropId: drop1Id,
+        reason: 'Ya fue entregado',
+      });
       expect(failAfterDeliv.ok).toBe(false);
       if (!failAfterDeliv.ok) expect(failAfterDeliv.code).toBe('INVALID_STATE_TRANSITION');
 
