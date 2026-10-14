@@ -15,3 +15,6 @@
 - Ronda 3: imprimir «RED» no convierte una expectativa diseñada para pasar sobre un defecto en un test rojo real. RED exige que la misma aserción de negocio dé FAIL frente a mutante funcional, y GREEN después de restaurar (P08).
 - Mutar expectedWinnerIndex es un test del oráculo, no mutación del ganador efectivo SQL; útil como diagnóstico si se etiqueta honestamente.
 - `throws_matching` positivo frente a error artificial de helper instrumental es test de instrumentación, no evidencia de fallo de pgTAP original. No degradar hallazgos reales H04/H06/H07 por este desacople: funcionalmente se corrigieron.
+- Ronda 4: cuando se exige sensibilidad del test, ejecutar el MISMO caso de negocio bajo el mutante SQL real y exigir salida de proceso FAIL, nombre exacto de la aserción, recuperación de función en `finally` y GREEN del mismo test; no alcanza con un log de texto que diga RED.
+- Un control de sensibilidad de oráculo o un error esperado del helper de pruebas sí puede ser útil, pero debe etiquetarse correctamente como diagnóstico PASS, no como mutación RED de una propiedad SQL.
+- Reportar con trazabilidad de SHA y logs reales; una documentación docs-only que mueve HEAD también requiere nuevo CI, aunque no modifique lógica.

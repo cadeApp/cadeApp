@@ -17,3 +17,9 @@
 - SHA `4996f1b772f249eb2f6f269e5afa8deb835ff484`. H04/H06/H07 **arreglados-verificados**, con CI DB 2177/2177, runner 5 GREEN, unit 2144/2144 y tipos generados sin drift.
 - **Nuevo BLOQUEANTE H08** de evidencia: tres etiquetas RED del harness no representan fallo de una aserción de contrato inalterada; hay que corregir demostración/reclasificación sin rehacer RPC.
 - Ver `revisiones/ronda-3.md`, `hallazgos.jsonl`, evidencia. PR Draft, no aprobada ni mergeada. Revisor no ejecutó Docker/SQL local ni mutaciones propias.
+
+## Ronda 4 — 2026-10-14
+- SHA revisado `961e65f1db74fb468bc886858e4950aca41f5e89`, código funcional `9ca04675`. **SIN BLOQUEANTES TÉCNICOS del Gate 2**. H08 corregido/verificado con RED auténtico de pgTAP H07 bajo guard SQL mutado + GREEN tras restauración; H01–H07 permanecen cerrados.
+- CI del MISMO SHA: unit 2144/2144, DB 2177/2177, 5 escenarios concurrencia GREEN, cobertura/typings/approval-policy verdes. E2E previo a merge queda ERROR/BLOCKED por migración aún no presente en Develop, conforme excepción de orden explícita en T-340 (NO es GREEN).
+- **Requiere actuación humana:** pasar PR de Draft a Ready y autorización expresa de merge de Lautaro073. Después, `migrate-develop` y checkpoint real de RPC 1/N + legacy antes de desbloquear #330. Sin aprobación/merge ejecutados por revisor.
+- Revisá `revisiones/ronda-4.md` y evidencias; no se ejecutó PostgreSQL/Docker local.
