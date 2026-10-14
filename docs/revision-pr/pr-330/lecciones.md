@@ -15,3 +15,6 @@ No se asignó número AG nuevo: faltaría inspeccionar todas las ramas remotas p
 - Un E2E `success` de un workflow con el job importante SKIPPED no es un E2E real; mirar jobs y SHA, no el color verde de la ejecución.
 - Mantener una sola fuente de instrucciones activa tras merge de backend: ya no pedir crear RPC, solo integrarla mediante wrapper tipado y sustituir inserts seriales del writer.
 - Ronda 4: un merge funcional puede bloquear otra PR por una bitácora compartida; conservar ambas sesiones sin perder datos, usando merge normal, nunca rebase/force.
+- Ronda 5: el backend atómico puede estar correctamente instalado y el flujo UI E2E verde, pero una ruta opcional de ID en la frontera Server Action contradice la garantía de idempotencia. Testear el ID ausente y no permitir generarlo del lado servidor, incluso si la UI siempre lo adjunta (P05).
+- Ronda 5: mutante que falla por `TypeError: .insert is not a function` en un stub truncado NO demuestra RED de ausencia de INSERT. Un test de negocio debe tener stub suficiente para llegar a su aserción explícita y fallar ahí (P08).
+- Diferenciar cobertura de CI/E2E sobre HEAD de reviewer del ejercicio de mutaciones propio; logs del autor no sustituyen batría mutacional independiente. Sin clon, registrar alcance honestamente.

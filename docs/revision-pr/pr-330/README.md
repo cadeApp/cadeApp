@@ -20,3 +20,9 @@ No hubo ejecución local de tests/SQL ni verificación independiente de mutantes
 - **Actualización backend:** CC-024 PR #333 mergeada a develop `c97e0d8`; `migrate-develop` [38609451699](https://github.com/cadeApp/cadeApp/actions/runs/38609451699) SUCCESS y aplicó la migración CC-024. **No hay checkpoint postmerge 1/N + legacy acreditado**: últimos dos dispatch E2E postmerge fueron SKIPPED.
 - GitHub mergeability dirty/mergeable=false entre PR330 y develop; archivo solapado `docs/tasks/log/T-340.md`, requiere merge normal y preservar bitácoras.
 - Informe `revisiones/ronda-4.md` y evidencia con SHAs, logs y límites. No aprobado ni mergeado, sin SQL/Docker/pruebas locales del revisor.
+
+## Ronda 5 — 2026-10-14
+- HEAD revisado: `fa0b8437ed440278a855a606305711ad6d6f48ec` (último commit solo de bitácora; código funcional en `a8321157a234bdadab6a1e3c1cce13093fb6ba6e`), base develop `c97e0d8`. **CON BLOQUEANTE nuevo H09** (Server Action genera UUID cuando requestId falta; CC-024 lo prohíbe). **MEJORA H10** (mutante directo insert cae en TypeError de mock, no en aserción).
+- **H03 arreglado-verificado**: única RPC con actor+payload, unit 10 actions PASS, CI unit 129 archivos, db-tests 2177 PASS; E2E real 74/74 Chromium y 3/3 global-settings sobre checkout a8321157 (código idéntico en el SHA revisado, salvo bitácora) (incluye writer 3 drops y legacy 1 drop). H01–H08 cerrados.
+- approval-policy FAIL por informe sin bloqueantes, coherente con H09. No staging ni testing humano ahora, por decisión de Lautaro073.
+- Ver `revisiones/ronda-5.md`, `hallazgos.jsonl`, `evidencia/comandos.md`; sin mutaciones locales independientes del revisor.
