@@ -54,6 +54,7 @@ export async function createDeliveryRequestAction(
   // 4. Inserción en delivery_requests (status 'draft')
   // CC-022 §10 Paso 4: Sin campos legacy de destino, notas ni cambio
   const requestPayload: TablesInsert<'delivery_requests'> = {
+    ...(data.requestId ? { id: data.requestId } : {}),
     merchant_id: user.id,
     pickup_zone_id: data.pickupZoneId,
     status: 'draft',
@@ -133,9 +134,18 @@ export async function createDeliveryRequestAction(
   }
 
   // 7. Inserción en delivery_request_drop_contacts (datos privados por entrega)
-  const dropContactsPayload: TablesInsert<'delivery_request_drop_contacts'>[] = data.drops.map(
-    (drop, i) => ({
-      drop_id: dropByPosition.get(i + 1)!,
+  const dropContactsPayload: TablesInsert<'delivery_request_drop_contacts'>[] = [];
+  for (let i = 0; i < data.drops.length; i++) {
+    const drop = data.drops[i];
+    if (!drop) {
+      return err('INTERNAL_ERROR');
+    }
+    const dropId = dropByPosition.get(i + 1);
+    if (!dropId) {
+      return err('INTERNAL_ERROR');
+    }
+    dropContactsPayload.push({
+      drop_id: dropId,
       dropoff_address: drop.dropoffAddress,
       dropoff_lat: drop.dropoffLat ?? null,
       dropoff_lng: drop.dropoffLng ?? null,
@@ -147,8 +157,8 @@ export async function createDeliveryRequestAction(
           ? drop.cashChangeAmount
           : null,
       notes: drop.notes ?? null,
-    })
-  );
+    });
+  }
 
   const { error: dropContactsInsertError } = await supabase
     .from('delivery_request_drop_contacts')

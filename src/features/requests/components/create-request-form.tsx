@@ -72,6 +72,10 @@ interface DropCardProps {
   readonly setValue: UseFormSetValue<CreateDeliveryRequestInput>;
   readonly watch: UseFormWatch<CreateDeliveryRequestInput>;
   readonly errors?: FieldErrors<CreateDeliveryRequestInput>;
+  readonly onSetDropoffCoords: (
+    fieldId: string,
+    coords: { lat: number | null; lng: number | null }
+  ) => void;
 }
 
 function DropCard({
@@ -85,6 +89,7 @@ function DropCard({
   setValue,
   watch,
   errors,
+  onSetDropoffCoords,
 }: DropCardProps) {
   const copy = requestsCopy.newRequest;
 
@@ -123,12 +128,10 @@ function DropCard({
         const { latitude, longitude } = pos.coords;
         if (!isWithinAguilaresBounds(latitude, longitude)) {
           setDropoffCoordsError(copy.mapOutOfAguilares);
-          setValue(`drops.${index}.dropoffLat`, null, { shouldValidate: true });
-          setValue(`drops.${index}.dropoffLng`, null, { shouldValidate: true });
+          onSetDropoffCoords(fieldId, { lat: null, lng: null });
           return;
         }
-        setValue(`drops.${index}.dropoffLat`, latitude, { shouldValidate: true });
-        setValue(`drops.${index}.dropoffLng`, longitude, { shouldValidate: true });
+        onSetDropoffCoords(fieldId, { lat: latitude, lng: longitude });
         setDropoffCoordsError(null);
       },
       () => {
@@ -281,8 +284,7 @@ function DropCard({
                   dropLat != null && dropLng != null ? { lat: dropLat, lng: dropLng } : null
                 }
                 onChange={(coords) => {
-                  setValue(`drops.${index}.dropoffLat`, coords.lat, { shouldValidate: true });
-                  setValue(`drops.${index}.dropoffLng`, coords.lng, { shouldValidate: true });
+                  onSetDropoffCoords(fieldId, coords);
                   setDropoffCoordsError(null);
                 }}
                 defaultZoneCenter={dropZoneCenter}
@@ -638,6 +640,26 @@ export function CreateRequestForm({
     name: 'drops',
   });
 
+  // CC-024 / Decisión B: requestId estable generado por intención de creación y reusado en retries
+  const requestIdRef = React.useRef<string>(crypto.randomUUID());
+
+  // Referencia mutable a los campos para resolver índices actuales por fieldId estable (R1 riesgo GPS)
+  const fieldsRef = React.useRef(fields);
+  fieldsRef.current = fields;
+
+  const handleSetDropoffCoords = React.useCallback(
+    (fieldId: string, coords: { lat: number | null; lng: number | null }) => {
+      const currentIndex = fieldsRef.current.findIndex((f) => f.id === fieldId);
+      if (currentIndex === -1) {
+        // La tarjeta fue eliminada mientras la geolocalización estaba pendiente; no mutar nada
+        return;
+      }
+      setValue(`drops.${currentIndex}.dropoffLat`, coords.lat, { shouldValidate: true });
+      setValue(`drops.${currentIndex}.dropoffLng`, coords.lng, { shouldValidate: true });
+    },
+    [setValue]
+  );
+
   const pickupLat = watch('pickupLat');
   const pickupLng = watch('pickupLng');
   const fixedPriceArs = watch('fixedPriceArs');
@@ -689,7 +711,10 @@ export function CreateRequestForm({
     setServerError(null);
 
     try {
-      const result = await createDeliveryRequestAction(data);
+      const result = await createDeliveryRequestAction({
+        ...data,
+        requestId: requestIdRef.current,
+      });
 
       if (!result.ok) {
         const msg = getDomainErrorMessage(result.code);
@@ -698,6 +723,8 @@ export function CreateRequestForm({
         return;
       }
 
+      // Éxito: regenerar requestId para que una nueva intención futura tenga un nuevo UUID
+      requestIdRef.current = crypto.randomUUID();
       notify.success('Solicitud publicada con éxito');
       router.push(result.data.redirectTo);
     } catch {
@@ -832,6 +859,7 @@ export function CreateRequestForm({
             setValue={setValue}
             watch={watch}
             errors={errors}
+            onSetDropoffCoords={handleSetDropoffCoords}
           />
         ))}
 

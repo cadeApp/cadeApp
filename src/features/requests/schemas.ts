@@ -89,6 +89,7 @@ export type DropOutput = z.output<typeof dropSchema>;
 
 export const baseCreateDeliveryRequestSchema = z
   .object({
+    requestId: z.string().uuid('Identificador de solicitud inválido').optional(),
     pickupZoneId: z.string().uuid('Seleccioná un barrio de retiro válido'),
     pickupAddress: z
       .string()

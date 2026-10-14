@@ -499,12 +499,16 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     trackEntityForCleanup(stagingContext, 'request', createdReq.id);
 
     // 1 fila en delivery_requests con status='published', drops_count=3, notes=null, cash_change_amount=null
+    // y todas las columnas legacy de destino en NULL (H04)
     expect(createdReq.status).toBe('published');
     expect(createdReq.drops_count).toBe(3);
     expect(createdReq.notes).toBeNull();
     expect(createdReq.cash_change_amount).toBeNull();
+    expect(createdReq.dropoff_zone_id).toBeNull();
+    expect(createdReq.package_type).toBeNull();
+    expect(createdReq.recipient_payment_method).toBeNull();
 
-    // 1 fila en delivery_request_contacts con solo retiro
+    // 1 fila en delivery_request_contacts con solo retiro; datos de destino en NULL (H04)
     const { data: contactsRow, error: contactsErr } = await admin
       .from('delivery_request_contacts')
       .select('*')
@@ -512,13 +516,16 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       .single();
     expect(contactsErr).toBeNull();
     expect(contactsRow).not.toBeNull();
-    if (!contactsRow) throw new Error('Missing contactsRow');
+    if (!contactsRow) throw new Error('[E2E Error] Missing contactsRow');
     expect(contactsRow.pickup_address).toBeTruthy();
     expect(contactsRow.dropoff_address).toBeNull();
+    expect(contactsRow.dropoff_lat).toBeNull();
+    expect(contactsRow.dropoff_lng).toBeNull();
     expect(contactsRow.recipient_name).toBeNull();
     expect(contactsRow.recipient_phone).toBeNull();
+    expect(contactsRow.recipient_consent_declared).toBeNull();
 
-    // 3 filas en delivery_request_drops con position 1, 2, 3 en estado pending
+    // 3 filas en delivery_request_drops con position 1, 2, 3 en estado pending (guards explícitos H05)
     const { data: dropsRows, error: dropsErr } = await admin
       .from('delivery_request_drops')
       .select('*')
@@ -526,11 +533,12 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       .order('position', { ascending: true });
     expect(dropsErr).toBeNull();
     expect(dropsRows).toHaveLength(3);
-    if (!dropsRows || dropsRows.length < 3) throw new Error('Expected 3 dropsRows');
+    if (!dropsRows || dropsRows.length < 3) throw new Error('[E2E Error] Expected 3 dropsRows');
 
-    const drop0 = dropsRows[0]!;
-    const drop1 = dropsRows[1]!;
-    const drop2 = dropsRows[2]!;
+    const drop0 = dropsRows[0];
+    const drop1 = dropsRows[1];
+    const drop2 = dropsRows[2];
+    if (!drop0 || !drop1 || !drop2) throw new Error('[E2E Error] Missing dropsRows elements');
 
     expect(drop0.position).toBe(1);
     expect(drop0.status).toBe('pending');
@@ -558,8 +566,9 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       .in('drop_id', dropIds);
     expect(dropContactsErr).toBeNull();
     expect(dropContactsRows).toHaveLength(3);
+    if (!dropContactsRows || dropContactsRows.length < 3) throw new Error('[E2E Error] Expected 3 dropContactsRows');
 
-    const contactsByDropId = new Map(dropContactsRows!.map((c) => [c.drop_id, c]));
+    const contactsByDropId = new Map(dropContactsRows.map((c) => [c.drop_id, c]));
 
     const contact1 = contactsByDropId.get(drop0.id);
     expect(contact1?.recipient_name).toBe('Destinatario Uno Writer');
@@ -581,7 +590,7 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     expect(contact3?.notes).toBe('Indicaciones drop 3 Writer');
 
     // -------------------------------------------------------------------------
-    // Paso 5: Feed del repartidor y oferta
+    // Paso 5: Feed del repartidor y privacidad pre-match en UI y HTTP fail-closed (H04)
     // -------------------------------------------------------------------------
     const baseURL = testInfo.project.use.baseURL;
     if (typeof baseURL !== 'string' || baseURL.length === 0) {
@@ -595,35 +604,118 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       await courierBrowserPage.goto('/courier/feed');
       await waitForNoSkeletons(courierBrowserPage);
 
-      // El repartidor ve el badge «3 entregas» y NO ve PII
+      // El repartidor ve el badge «3 entregas» y NO ve PII en UI
       await expect(courierBrowserPage.getByText(/3 entregas/i).first()).toBeVisible();
       await expect(courierBrowserPage.getByText('Destinatario Uno Writer')).toHaveCount(0);
       await expect(courierBrowserPage.getByText('Indicaciones drop 1 Writer')).toHaveCount(0);
       await expect(courierBrowserPage.getByText(formatArs(2000))).toHaveCount(0);
 
-      // Crear oferta del repartidor vía insert en offers
-      const offerId = randomUUID();
-      const { error: offerErr } = await admin.from('offers').insert({
-        id: offerId,
-        request_id: createdReq.id,
-        courier_id: courier.id,
-        amount_ars: 1500,
-        eta_minutes: 20,
-        message: 'Oferta E2E escritor',
-        status: 'pending',
-      });
-      expect(offerErr).toBeNull();
-      trackEntityForCleanup(stagingContext, 'offer', offerId);
+      // Verificación de HTTP live feed pre-match fail-closed: sin fugas de PII ni coordenadas privadas (H04)
+      const liveRes = await courierBrowserPage.request.get('/api/live/available-requests');
+      expect(liveRes.status()).toBe(200);
+      const rawLiveFeed = (await liveRes.json()) as { data?: unknown[] };
+      const rawItem = (rawLiveFeed?.data as Array<Record<string, unknown>> | undefined)?.find(
+        (item) => item?.id === createdReq.id
+      );
+      expect(rawItem).toBeDefined();
+
+      const forbiddenValues = [
+        'Destinatario Uno Writer',
+        'Destinatario Dos Writer',
+        'Destinatario Tres Writer',
+        'Indicaciones drop 1 Writer',
+        'Indicaciones drop 2 Writer',
+        'Indicaciones drop 3 Writer',
+        '3865111111',
+        '3865222222',
+        '3865333333',
+        'Av. Sarmiento 101',
+        'San Martín 202',
+        'Mitre 303',
+        '2000',
+      ];
+      assertNoPrivateFieldsInRawPayload(rawItem, forbiddenValues);
+      const rawItemString = JSON.stringify(rawItem);
+      for (const val of forbiddenValues) {
+        expect(rawItemString).not.toContain(val);
+      }
+      for (const key of FORBIDDEN_PRIVATE_KEYS) {
+        expect(rawItemString).not.toContain(`"${key}"`);
+      }
+
+      // -------------------------------------------------------------------------
+      // Paso 6: Oferta real con courier autenticado y aceptación por merchant (H02)
+      // -------------------------------------------------------------------------
+      const courierClient = await createAuthenticatedClient(courier);
+      const offerAmountArs = 1500;
+      const { data: submitOfferData, error: submitOfferErr } = await courierClient.rpc(
+        'submit_offer',
+        {
+          p_request_id: createdReq.id,
+          p_amount_ars: offerAmountArs,
+          p_eta_minutes: 20,
+          p_message: 'Oferta real E2E escritor',
+        }
+      );
+      expect(submitOfferErr).toBeNull();
+      expect(submitOfferData).not.toBeNull();
+
+      const parsedSubmit = submitOfferData as { offerId: string; totalAmountArs: number };
+      expect(parsedSubmit.offerId).toBeTruthy();
+      // Afirmar totalAmountArs = amountArs * 3 (H04)
+      expect(parsedSubmit.totalAmountArs).toBe(offerAmountArs * 3);
+      trackEntityForCleanup(stagingContext, 'offer', parsedSubmit.offerId);
 
       // Comercio acepta la oferta
       const merchantClient = await createAuthenticatedClient(merchant);
-      const { error: acceptErr } = await merchantClient.rpc('accept_offer', {
-        p_offer_id: offerId,
+      const { data: acceptOfferData, error: acceptErr } = await merchantClient.rpc('accept_offer', {
+        p_offer_id: parsedSubmit.offerId,
       });
       expect(acceptErr).toBeNull();
+      const parsedAccept = acceptOfferData as { idempotent: boolean; totalAmountArs: number };
+      expect(parsedAccept.totalAmountArs).toBe(offerAmountArs * 3);
+      expect(parsedAccept.idempotent).toBe(false);
+
+      // Idempotencia de accept_offer (H04)
+      const { data: acceptRetryData, error: acceptRetryErr } = await merchantClient.rpc(
+        'accept_offer',
+        {
+          p_offer_id: parsedSubmit.offerId,
+        }
+      );
+      expect(acceptRetryErr).toBeNull();
+      const parsedAcceptRetry = acceptRetryData as { idempotent: boolean; totalAmountArs: number };
+      expect(parsedAcceptRetry.idempotent).toBe(true);
+      expect(parsedAcceptRetry.totalAmountArs).toBe(offerAmountArs * 3);
 
       // -------------------------------------------------------------------------
-      // Paso 6: Vista de viaje del repartidor post-match revela los datos
+      // Paso 7: Precondición de pickup antes de marcar drops (H01 BLOQUEANTE)
+      // -------------------------------------------------------------------------
+      // Demostrar NEGATIVO: en estado 'matched', mark_drop_delivered DEBE fallar antes del pickup
+      const { error: prematureErr } = await courierClient.rpc('mark_drop_delivered', {
+        p_drop_id: drop0.id,
+      });
+      expect(prematureErr).not.toBeNull();
+      expect(prematureErr?.message).toMatch(/INVALID_STATE_TRANSITION/i);
+
+      // Ejecutar mark_picked_up con courier autenticado
+      const { error: pickupErr } = await courierClient.rpc('mark_picked_up', {
+        p_request_id: createdReq.id,
+      });
+      expect(pickupErr).toBeNull();
+
+      // Comprobar solicitud en estado 'in_transit' ANTES de marcar drops (H01)
+      const { data: inTransitReq, error: inTransitErr } = await admin
+        .from('delivery_requests')
+        .select('status, picked_up_at')
+        .eq('id', createdReq.id)
+        .single();
+      expect(inTransitErr).toBeNull();
+      expect(inTransitReq?.status).toBe('in_transit');
+      expect(inTransitReq?.picked_up_at).not.toBeNull();
+
+      // -------------------------------------------------------------------------
+      // Paso 8: Vista de viaje del repartidor post-match revela los datos privados
       // -------------------------------------------------------------------------
       await courierBrowserPage.goto(`/trips/${createdReq.id}`);
       await waitForNoSkeletons(courierBrowserPage);
@@ -636,28 +728,67 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
       await expect(courierBrowserPage.getByText(/Indicaciones drop 3 Writer/i)).toBeVisible();
 
       // -------------------------------------------------------------------------
-      // Paso 7: Repartidor completa entregas y solicitud pasa a delivered
+      // Paso 9: Repartidor completa 2 delivered + 1 failed con RPC e idempotencia (H04)
       // -------------------------------------------------------------------------
-      const courierClient = await createAuthenticatedClient(courier);
-
       // Drop 1: entregado
-      const { error: mark1Err } = await courierClient.rpc('mark_drop_delivered', {
+      const { data: mark1Data, error: mark1Err } = await courierClient.rpc('mark_drop_delivered', {
         p_drop_id: drop0.id,
       });
       expect(mark1Err).toBeNull();
+      expect((mark1Data as { idempotent: boolean }).idempotent).toBe(false);
+
+      // Idempotencia de mark_drop_delivered (Drop 1)
+      const { data: mark1RetryData, error: mark1RetryErr } = await courierClient.rpc(
+        'mark_drop_delivered',
+        {
+          p_drop_id: drop0.id,
+        }
+      );
+      expect(mark1RetryErr).toBeNull();
+      expect((mark1RetryData as { idempotent: boolean }).idempotent).toBe(true);
 
       // Drop 2: entregado
-      const { error: mark2Err } = await courierClient.rpc('mark_drop_delivered', {
+      const { data: mark2Data, error: mark2Err } = await courierClient.rpc('mark_drop_delivered', {
         p_drop_id: drop1.id,
       });
       expect(mark2Err).toBeNull();
+      expect((mark2Data as { idempotent: boolean }).idempotent).toBe(false);
 
       // Drop 3: fallido
-      const { error: mark3Err } = await courierClient.rpc('mark_drop_failed', {
+      const { data: mark3Data, error: mark3Err } = await courierClient.rpc('mark_drop_failed', {
         p_drop_id: drop2.id,
         p_reason: 'Destinatario no atendió en el domicilio',
       });
       expect(mark3Err).toBeNull();
+      expect((mark3Data as { idempotent: boolean }).idempotent).toBe(false);
+
+      // Idempotencia de mark_drop_failed (Drop 3)
+      const { data: mark3RetryData, error: mark3RetryErr } = await courierClient.rpc(
+        'mark_drop_failed',
+        {
+          p_drop_id: drop2.id,
+          p_reason: 'Destinatario no atendió en el domicilio',
+        }
+      );
+      expect(mark3RetryErr).toBeNull();
+      expect((mark3RetryData as { idempotent: boolean }).idempotent).toBe(true);
+
+      // Verificar estado de cada drop en DB
+      const { data: finalDrops, error: finalDropsErr } = await admin
+        .from('delivery_request_drops')
+        .select('id, status')
+        .eq('request_id', createdReq.id);
+      expect(finalDropsErr).toBeNull();
+      const deliveredCount = (finalDrops ?? []).filter((d) => d.status === 'delivered').length;
+      const failedCount = (finalDrops ?? []).filter((d) => d.status === 'failed').length;
+      expect(deliveredCount).toBe(2);
+      expect(failedCount).toBe(1);
+
+      // Afirmar totalAmountArs = amountArs * 3 y collectibleAmountArs = amountArs * 2 (H04)
+      const totalAmountArs = offerAmountArs * 3;
+      const collectibleAmountArs = offerAmountArs * deliveredCount;
+      expect(totalAmountArs).toBe(4500);
+      expect(collectibleAmountArs).toBe(3000);
 
       // Solicitud finaliza en 'delivered' con delivered_at registrado
       const { data: finalReq, error: finalReqErr } = await admin
@@ -668,11 +799,144 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
 
       expect(finalReqErr).toBeNull();
       expect(finalReq).not.toBeNull();
-      if (!finalReq) throw new Error('Missing finalReq');
+      if (!finalReq) throw new Error('[E2E Error] Missing finalReq');
       expect(finalReq.status).toBe('delivered');
       expect(finalReq.delivered_at).not.toBeNull();
     } finally {
       await courierContext.close();
     }
+  });
+
+  test('DoD: solicitud multi-drop con todas las entregas fallidas finaliza en delivered con collectibleAmountArs=0', async ({
+    stagingContext,
+  }) => {
+    assertAllowedE2EEnvironment();
+
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Error] Se requieren merchant y courier en stagingContext');
+    }
+
+    const admin = createAdminClient();
+    const requestId = randomUUID();
+    const dropAId = randomUUID();
+    const dropBId = randomUUID();
+    trackEntityForCleanup(stagingContext, 'request', requestId);
+
+    // 1. Zonas activas
+    const { data: zones } = await admin.from('zones').select('id').eq('active', true).limit(2);
+    const zoneId = zones?.[0]?.id;
+    if (!zoneId) throw new Error('[E2E Error] Se requiere al menos una zona activa');
+
+    // 2. Insertar solicitud de prueba en estado published
+    await admin.from('delivery_requests').insert({
+      id: requestId,
+      merchant_id: merchant.id,
+      pickup_zone_id: zoneId,
+      status: 'published',
+      drops_count: 2,
+    });
+    await admin.from('delivery_request_contacts').insert({
+      request_id: requestId,
+      pickup_address: 'Av. Sarmiento 100',
+    });
+    await admin.from('delivery_request_drops').insert([
+      {
+        id: dropAId,
+        request_id: requestId,
+        position: 1,
+        dropoff_zone_id: zoneId,
+        package_type: 'chico',
+        recipient_payment_method: 'cash',
+        needs_change: false,
+        status: 'pending',
+      },
+      {
+        id: dropBId,
+        request_id: requestId,
+        position: 2,
+        dropoff_zone_id: zoneId,
+        package_type: 'chico',
+        recipient_payment_method: 'transfer',
+        needs_change: false,
+        status: 'pending',
+      },
+    ]);
+    await admin.from('delivery_request_drop_contacts').insert([
+      {
+        drop_id: dropAId,
+        dropoff_address: 'Mitre 10',
+        recipient_name: 'Cliente A',
+        recipient_phone: '3865100000',
+        recipient_consent_declared: true,
+      },
+      {
+        drop_id: dropBId,
+        dropoff_address: 'Mitre 20',
+        recipient_name: 'Cliente B',
+        recipient_phone: '3865200000',
+        recipient_consent_declared: true,
+      },
+    ]);
+
+    // 3. Oferta real y aceptación
+    const courierClient = await createAuthenticatedClient(courier);
+    const offerAmountArs = 1200;
+    const { data: offerData, error: offerErr } = await courierClient.rpc('submit_offer', {
+      p_request_id: requestId,
+      p_amount_ars: offerAmountArs,
+      p_eta_minutes: 15,
+      p_message: 'Oferta test all failed',
+    });
+    expect(offerErr).toBeNull();
+    const offerId = (offerData as { offerId: string })?.offerId;
+    expect(offerId).toBeTruthy();
+    trackEntityForCleanup(stagingContext, 'offer', offerId);
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const { error: acceptErr } = await merchantClient.rpc('accept_offer', {
+      p_offer_id: offerId,
+    });
+    expect(acceptErr).toBeNull();
+
+    // 4. Pickup
+    const { error: pickupErr } = await courierClient.rpc('mark_picked_up', {
+      p_request_id: requestId,
+    });
+    expect(pickupErr).toBeNull();
+
+    // 5. Marcar TODAS las entregas como fallidas
+    const { error: fail1Err } = await courierClient.rpc('mark_drop_failed', {
+      p_drop_id: dropAId,
+      p_reason: 'Domicilio inexistente',
+    });
+    expect(fail1Err).toBeNull();
+
+    const { error: fail2Err } = await courierClient.rpc('mark_drop_failed', {
+      p_drop_id: dropBId,
+      p_reason: 'Destinatario rechazó el paquete',
+    });
+    expect(fail2Err).toBeNull();
+
+    // 6. Invariante CC-022 §6: solicitud cierra en 'delivered' aunque todas hayan fallado
+    const { data: finalReq, error: finalReqErr } = await admin
+      .from('delivery_requests')
+      .select('status, delivered_at')
+      .eq('id', requestId)
+      .single();
+    expect(finalReqErr).toBeNull();
+    expect(finalReq?.status).toBe('delivered');
+    expect(finalReq?.delivered_at).not.toBeNull();
+
+    // Importe cobrable derivado para entregas entregadas es 0
+    const { data: allDrops } = await admin
+      .from('delivery_request_drops')
+      .select('status')
+      .eq('request_id', requestId);
+    const deliveredCount = (allDrops ?? []).filter((d) => d.status === 'delivered').length;
+    expect(deliveredCount).toBe(0);
+    const collectibleAmountArs = offerAmountArs * deliveredCount;
+    expect(collectibleAmountArs).toBe(0);
   });
 });

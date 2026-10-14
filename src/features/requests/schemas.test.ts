@@ -338,4 +338,24 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
     const resInvalid = dropSchema.safeParse(invalidPackage);
     expect(resInvalid.success).toBe(false);
   });
+
+  it('acepta y preserva requestId cuando es un UUID válido (CC-024)', () => {
+    const validUuid = '12345678-1234-4234-8234-123456789abc';
+    const result = createDeliveryRequestSchema.safeParse({
+      ...baseValidInput,
+      requestId: validUuid,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.requestId).toBe(validUuid);
+    }
+  });
+
+  it('rechaza requestId que no sea un UUID válido', () => {
+    const result = createDeliveryRequestSchema.safeParse({
+      ...baseValidInput,
+      requestId: 'invalid-uuid-string',
+    });
+    expect(result.success).toBe(false);
+  });
 });

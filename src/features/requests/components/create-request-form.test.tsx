@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import { notify } from '@/ui/notify';
@@ -436,5 +436,248 @@ describe('T-340: CreateRequestForm multi-drop', () => {
     // Borrar el precio oculta el switch
     fireEvent.change(priceInput, { target: { value: '' } });
     expect(screen.queryByRole('switch', { name: /asignar al primer repartidor que tome/i })).toBeNull();
+  });
+
+  it('geolocalización diferida en tarjeta 2 actualiza la tarjeta correcta si se elimina tarjeta 1 previamente (R1 riesgo GPS)', async () => {
+    let geoSuccessCallback: ((pos: { coords: { latitude: number; longitude: number } }) => void) | undefined;
+    const mockGeolocation = {
+      getCurrentPosition: vi.fn((success) => {
+        geoSuccessCallback = success;
+      }),
+    };
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      geolocation: mockGeolocation,
+    });
+
+    render(<CreateRequestForm zones={mockZones} />);
+
+    // Agregar segunda entrega
+    const addBtn = screen.getByRole('button', { name: /agregar otra entrega/i });
+    fireEvent.click(addBtn);
+
+    const cards = screen.getAllByTestId(/^drop-card-/);
+    expect(cards).toHaveLength(2);
+
+    // Clic en "Usar mi ubicación" en la segunda entrega (index 1)
+    const useLocationButtons = screen.getAllByRole('button', { name: /usar mi ubicación/i });
+    // el botón 0 es retiro, el botón 1 es drop 1, el botón 2 es drop 2
+    expect(useLocationButtons.length).toBeGreaterThanOrEqual(3);
+    const drop2GpsBtn = useLocationButtons[2];
+    expect(drop2GpsBtn).toBeDefined();
+    if (!drop2GpsBtn) throw new Error('Missing drop2 GPS button');
+    fireEvent.click(drop2GpsBtn);
+
+    expect(mockGeolocation.getCurrentPosition).toHaveBeenCalledTimes(1);
+
+    // Mientras el GPS está pendiente, eliminar la primera entrega (Drop 1)
+    const removeButtons = screen.getAllByRole('button', { name: /quitar entrega/i });
+    expect(removeButtons).toHaveLength(2);
+    const removeBtn0 = removeButtons[0];
+    expect(removeBtn0).toBeDefined();
+    if (!removeBtn0) throw new Error('Missing remove button');
+    fireEvent.click(removeBtn0);
+
+    // Ahora solo queda 1 tarjeta de entrega (la que era drop 2, ahora es drop 1)
+    expect(screen.getAllByTestId(/^drop-card-/)).toHaveLength(1);
+
+    // Ahora se resuelve la geolocalización pendiente
+    act(() => {
+      geoSuccessCallback?.({
+        coords: {
+          latitude: -27.4341,
+          longitude: -65.6144,
+        },
+      });
+    });
+
+    // El pin de la entrega sobreviviente debe haberse fijado correctamente
+    await waitFor(() => {
+      expect(screen.getByText('Pin fijado')).toBeDefined();
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('reutiliza el mismo requestId en un reintento tras fallo (CC-024 / Decisión B)', async () => {
+    const capturedRequestIds: string[] = [];
+    vi.mocked(actions.createDeliveryRequestAction).mockImplementation(async (input: unknown) => {
+      const data = input as { requestId?: string };
+      if (data?.requestId) {
+        capturedRequestIds.push(data.requestId);
+      }
+      // Primer intento falla
+      if (capturedRequestIds.length === 1) {
+        return { ok: false, code: 'INTERNAL_ERROR' };
+      }
+      // Reintento tiene éxito
+      return { ok: true, data: { requestId: data.requestId ?? '', redirectTo: '/merchant/dashboard' } };
+    });
+
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupLat: -27.43,
+          defaultPickupLng: -65.61,
+          notes: null,
+        }}
+      />
+    );
+
+    // Llenar campos requeridos de la entrega 1
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Sarmiento 100' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'Juan Destinatario' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3865123456' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /autorización del destinatario/i }));
+
+    const submitBtn = screen.getByRole('button', { name: /publicar solicitud/i });
+
+    // Intento 1
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(getDomainErrorMessage('INTERNAL_ERROR'))).toBeDefined();
+    });
+    expect(capturedRequestIds).toHaveLength(1);
+
+    // Reintento (mismo formulario, mismo submit)
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(capturedRequestIds).toHaveLength(2);
+    });
+
+    // Invariante CC-024: el requestId DEBE ser idéntico entre el intento original y el reintento
+    expect(capturedRequestIds[0]).toBe(capturedRequestIds[1]);
+  });
+
+  it('dos formularios montados independientemente no comparten identificador de solicitud', async () => {
+    const ids: string[] = [];
+    vi.mocked(actions.createDeliveryRequestAction).mockImplementation(async (input: unknown) => {
+      const data = input as { requestId?: string };
+      if (data?.requestId) ids.push(data.requestId);
+      return { ok: false, code: 'INTERNAL_ERROR' };
+    });
+
+    const { unmount: unmount1 } = render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupLat: null,
+          defaultPickupLng: null,
+          notes: null,
+        }}
+      />
+    );
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Sarmiento 100' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'Juan Destinatario' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3865123456' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /autorización del destinatario/i }));
+    fireEvent.click(screen.getByRole('button', { name: /publicar solicitud/i }));
+
+    await waitFor(() => {
+      expect(ids).toHaveLength(1);
+    });
+    unmount1();
+
+    const { unmount: unmount2 } = render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupLat: null,
+          defaultPickupLng: null,
+          notes: null,
+        }}
+      />
+    );
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Mitre 200' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'María Destinataria' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3865654321' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /autorización del destinatario/i }));
+    fireEvent.click(screen.getByRole('button', { name: /publicar solicitud/i }));
+
+    await waitFor(() => {
+      expect(ids).toHaveLength(2);
+    });
+    unmount2();
+
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('éxito en la publicación genera un nuevo requestId para una próxima intención (CC-024)', async () => {
+    const ids: string[] = [];
+    vi.mocked(actions.createDeliveryRequestAction).mockImplementation(async (input: unknown) => {
+      const data = input as { requestId?: string };
+      if (data?.requestId) ids.push(data.requestId);
+      return { ok: true, data: { requestId: data?.requestId ?? '', redirectTo: '/merchant/dashboard' } };
+    });
+
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: mockZones[0]!.id,
+          defaultPickupLat: null,
+          defaultPickupLng: null,
+          notes: null,
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Sarmiento 100' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'Juan Destinatario' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3865123456' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /autorización del destinatario/i }));
+
+    const submitBtn = screen.getByRole('button', { name: /publicar solicitud/i });
+
+    // Envío 1 (exitoso)
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(ids).toHaveLength(1);
+    });
+
+    // Envío 2 posterior (nueva intención)
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(ids).toHaveLength(2);
+    });
+
+    // Debe haberse generado un UUID nuevo tras el éxito
+    expect(ids[0]).not.toBe(ids[1]);
   });
 });

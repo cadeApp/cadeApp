@@ -607,5 +607,103 @@ describe('T-340: createDeliveryRequestAction multi-drop', () => {
       const result = await createDeliveryRequestAction(validFormInput);
       expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
     });
+
+    it('respeta y propaga requestId estable cuando es provisto en el payload (CC-024 / Decisión B)', async () => {
+      const stableRequestId = 'a0000000-0000-4000-8000-000000000001';
+      let insertedPayload: Record<string, unknown> | undefined;
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+          };
+        }
+        if (table === 'delivery_requests') {
+          return {
+            insert: vi.fn().mockImplementation((payload) => {
+              insertedPayload = payload;
+              return {
+                select: vi.fn().mockReturnThis(),
+                single: vi.fn().mockResolvedValue({ data: { id: stableRequestId }, error: null }),
+              };
+            }),
+          };
+        }
+        if (table === 'delivery_request_contacts') {
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
+        }
+        if (table === 'delivery_request_drops') {
+          return {
+            insert: vi.fn().mockReturnValue({
+              select: vi.fn().mockResolvedValue({
+                data: [{ id: 'drop-1', position: 1 }],
+                error: null,
+              }),
+            }),
+          };
+        }
+        if (table === 'delivery_request_drop_contacts') {
+          return { insert: vi.fn().mockResolvedValue({ error: null }) };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+        rpc: vi.fn().mockResolvedValue(publishedRpcResponse(stableRequestId, 1)),
+      } as unknown as MockedServerClient);
+
+      const result = await createDeliveryRequestAction({
+        ...validFormInput,
+        requestId: stableRequestId,
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.data.requestId).toBe(stableRequestId);
+      }
+      expect(insertedPayload?.id).toBe(stableRequestId);
+    });
+
+    it('rechaza requestId que no sea un UUID válido con VALIDATION_ERROR', async () => {
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as MockedServerClient);
+
+      const result = await createDeliveryRequestAction({
+        ...validFormInput,
+        requestId: 'not-a-valid-uuid',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('VALIDATION_ERROR');
+      }
+    });
   });
 });
