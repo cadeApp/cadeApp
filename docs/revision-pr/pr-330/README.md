@@ -26,3 +26,10 @@ No hubo ejecución local de tests/SQL ni verificación independiente de mutantes
 - **H03 arreglado-verificado**: única RPC con actor+payload, unit 10 actions PASS, CI unit 129 archivos, db-tests 2177 PASS; E2E real 74/74 Chromium y 3/3 global-settings sobre checkout a8321157 (código idéntico en el SHA revisado, salvo bitácora) (incluye writer 3 drops y legacy 1 drop). H01–H08 cerrados.
 - approval-policy FAIL por informe sin bloqueantes, coherente con H09. No staging ni testing humano ahora, por decisión de Lautaro073.
 - Ver `revisiones/ronda-5.md`, `hallazgos.jsonl`, `evidencia/comandos.md`; sin mutaciones locales independientes del revisor.
+
+## Ronda 6 — 2026-10-14
+- HEAD inspeccionado `99c0ac956b85d4736adb43fc36f5dd5a28763be1`. **SIN BLOQUEANTES**: H09/H10 corregidos y verificados con lectura de código y CI real del mismo SHA. H01–H08 previamente cerrados.
+- CI `38620279932`: unit **2154/2154**, db-tests **2177/2177**; typecheck/lint/build/audit/bundle-budget PASS.
+- E2E `38620391687`: checkout exacto `99c0ac95`; **73 Chromium PASS + 1 flaky** de mapa (HTTP 500 primera ejecución, PASS retry #1), **3/3 global-settings PASS**; writer 3 drops y legacy 1 drop PASS.
+- Observación flake T-314 fuera de alcance y no bloqueante; no reducir tests. `approval-policy` falla porque el body anterior carecía de informe SIN BLOQUEANTES; actualizar body (no CI) una vez publicada R6.
+- Ronda 6 `revisiones/ronda-6.md`; PR sigue Draft. Merge/Ready requieren decisión humana de Lautaro073. Tests locales y mutantes propios del revisor NO EJECUTADOS.
