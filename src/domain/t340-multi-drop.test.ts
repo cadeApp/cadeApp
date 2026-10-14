@@ -7,6 +7,7 @@ import {
   submitOfferOutputSchema,
   takeRequestOutputSchema,
   acceptOfferOutputSchema,
+  ALL_RPC_NAMES,
   RPC_CONTRACTS,
 } from './rpc-contracts';
 import {
@@ -20,6 +21,112 @@ const REQ_ID = '30000000-0000-4000-8000-000000000001';
 const DROP_ID = '40000000-0000-4000-8000-000000000001';
 
 describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
+  it('CC-024 expone el contrato de alta y publicación atómica multi-drop', () => {
+    expect(RPC_CONTRACTS).toHaveProperty('create_and_publish_multi_drop');
+    expect(ALL_RPC_NAMES).toContain('create_and_publish_multi_drop');
+  });
+
+  it('el fake crea y publica una solicitud con drops sin poblar columnas legacy de destino', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      initialActor: MERCHANT_ACTOR,
+    });
+
+    const result = await fake.create_and_publish_multi_drop({
+      requestId: REQ_ID,
+      pickupZoneId: '00000000-0000-4000-8000-000000000001',
+      pickupAddress: 'San Martín 100',
+      pickupLat: null,
+      pickupLng: null,
+      fixedPriceArs: null,
+      autoAssign: false,
+      drops: [
+        {
+          dropoffZoneId: '00000000-0000-4000-8000-000000000002',
+          dropoffAddress: 'Alberdi 200',
+          dropoffLat: null,
+          dropoffLng: null,
+          recipientName: 'Juan',
+          recipientPhone: '3865123456',
+          recipientConsentDeclared: true as const,
+          packageType: 'chico',
+          recipientPaymentMethod: 'cash',
+          needsChange: false as const,
+          cashChangeAmount: null,
+          notes: null,
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toMatchObject({
+        requestId: REQ_ID,
+        status: 'published',
+        idempotent: false,
+        dropsCount: 1,
+      });
+    }
+    const request = fake.getRequest(REQ_ID);
+    expect(request?.dropoffAddress).toBe('');
+    expect(request?.recipientName).toBe('');
+    expect(request?.notes).toBeNull();
+  });
+
+  it('reintenta de forma idempotente y rechaza un mismo requestId con otro payload', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      initialActor: MERCHANT_ACTOR,
+    });
+    const input = {
+      requestId: REQ_ID,
+      pickupZoneId: '00000000-0000-4000-8000-000000000001',
+      pickupAddress: 'San Martín 100',
+      pickupLat: null,
+      pickupLng: null,
+      fixedPriceArs: null,
+      autoAssign: false,
+      drops: [
+        {
+          dropoffZoneId: '00000000-0000-4000-8000-000000000002',
+          dropoffAddress: 'Alberdi 200',
+          dropoffLat: null,
+          dropoffLng: null,
+          recipientName: 'Juan',
+          recipientPhone: '3865123456',
+          recipientConsentDeclared: true as const,
+          packageType: 'chico' as const,
+          recipientPaymentMethod: 'cash' as const,
+          needsChange: false as const,
+          cashChangeAmount: null,
+          notes: null,
+        },
+      ],
+    };
+
+    const first = await fake.create_and_publish_multi_drop(input);
+    const retry = await fake.create_and_publish_multi_drop(input);
+
+    expect(first.ok).toBe(true);
+    expect(retry.ok).toBe(true);
+    if (first.ok && retry.ok) {
+      expect(first.data.idempotent).toBe(false);
+      expect(retry.data).toMatchObject({
+        requestId: REQ_ID,
+        status: 'published',
+        idempotent: true,
+        publishedAt: first.data.publishedAt,
+      });
+    }
+    expect(fake.getRequest(REQ_ID)?.drops).toHaveLength(1);
+
+    const conflicting = await fake.create_and_publish_multi_drop({
+      ...input,
+      pickupAddress: 'Otra dirección',
+    });
+    expect(conflicting).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+  });
+
   it('DOMAIN_ERROR_CODES contains DROP_LIMIT_EXCEEDED and publish_request contract includes it', () => {
     expect(DOMAIN_ERROR_CODES).toContain('DROP_LIMIT_EXCEEDED');
     expect(isDomainErrorCode('DROP_LIMIT_EXCEEDED')).toBe(true);
@@ -631,7 +738,9 @@ describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
       const offerId = '50000000-0000-4000-8000-000000000088';
 
       // 1. Solicitud no existente
-      const notFoundRes = await fake.get_trip_details({ requestId: '30000000-0000-4000-8000-000000000000' });
+      const notFoundRes = await fake.get_trip_details({
+        requestId: '30000000-0000-4000-8000-000000000000',
+      });
       expect(notFoundRes.ok).toBe(false);
       if (!notFoundRes.ok) expect(notFoundRes.code).toBe('NOT_FOUND');
 
@@ -804,11 +913,16 @@ describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
       fake.setActor(COURIER_ACTOR);
 
       // 3. Drop inexistente
-      const delivNotFound = await fake.mark_drop_delivered({ dropId: '40000000-0000-4000-8000-000000000000' });
+      const delivNotFound = await fake.mark_drop_delivered({
+        dropId: '40000000-0000-4000-8000-000000000000',
+      });
       expect(delivNotFound.ok).toBe(false);
       if (!delivNotFound.ok) expect(delivNotFound.code).toBe('NOT_FOUND');
 
-      const failNotFound = await fake.mark_drop_failed({ dropId: '40000000-0000-4000-8000-000000000000', reason: 'Test' });
+      const failNotFound = await fake.mark_drop_failed({
+        dropId: '40000000-0000-4000-8000-000000000000',
+        reason: 'Test',
+      });
       expect(failNotFound.ok).toBe(false);
       if (!failNotFound.ok) expect(failNotFound.code).toBe('NOT_FOUND');
 
@@ -845,7 +959,10 @@ describe('T-340 / CC-022: Multi-drop contracts & domain errors', () => {
       }
 
       // No se puede marcar fallido un drop ya entregado
-      const failAfterDeliv = await fake.mark_drop_failed({ dropId: drop1Id, reason: 'Ya fue entregado' });
+      const failAfterDeliv = await fake.mark_drop_failed({
+        dropId: drop1Id,
+        reason: 'Ya fue entregado',
+      });
       expect(failAfterDeliv.ok).toBe(false);
       if (!failAfterDeliv.ok) expect(failAfterDeliv.code).toBe('INVALID_STATE_TRANSITION');
 

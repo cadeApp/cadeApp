@@ -156,7 +156,7 @@ export interface FakeRequestRecord {
   dropoffAddress: string;
   recipientName: string;
   recipientPhone: string;
-  recipientPaymentMethod: RecipientPaymentMethod;
+  recipientPaymentMethod: RecipientPaymentMethod | null;
   needsChange: boolean;
   cashChangeAmount: number | null;
   notes: string | null;
@@ -309,6 +309,7 @@ const DEFAULT_ACTOR: FakeActorContext = {
 };
 
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
+  create_and_publish_multi_drop: ['merchant'],
   publish_request: ['merchant'],
   cancel_request: ['merchant', 'admin'],
   submit_offer: ['courier'],
@@ -428,6 +429,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   };
 
   let offerSeq = 0;
+  let dropSeq = 0;
   let incidentSeq = 0;
 
   const requests = new Map<string, FakeRequestRecord>();
@@ -437,6 +439,14 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   const documents = new Map<string, FakeDocumentRecord>();
   const incidents = new Map<string, FakeIncidentRecord>();
   const rateLimits = new Map<string, number>();
+  const multiDropSnapshots = new Map<
+    string,
+    {
+      readonly input: RpcInput<'create_and_publish_multi_drop'>;
+      readonly publishedAt: string;
+      readonly routeDistanceM: number | null;
+    }
+  >();
 
   function getWindowBucketKey(subject: string, action: string, currentNow: Date): string {
     const minuteIso = new Date(Math.floor(currentNow.getTime() / 60_000) * 60_000).toISOString();
@@ -473,6 +483,17 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       if (!offers.has(candidate)) {
         return candidate;
       }
+    }
+  }
+
+  function nextUniqueDropId(): string {
+    while (true) {
+      dropSeq += 1;
+      const candidate = `40000000-0000-4000-8000-${String(dropSeq).padStart(12, '0')}`;
+      const alreadyUsed = [...requests.values()].some((request) =>
+        request.drops.some((drop) => drop.id === candidate)
+      );
+      if (!alreadyUsed) return candidate;
     }
   }
 
@@ -734,6 +755,177 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     getSettings: () => ({ ...settings }),
     triggerErrorCode: async (code) => err(code),
 
+    create_and_publish_multi_drop: (rawInput) =>
+      executeRpc('create_and_publish_multi_drop', rawInput, false, (input) => {
+        const existing = requests.get(input.requestId);
+        if (existing) {
+          if (existing.merchantId !== actor.userId) return err('NOT_FOUND');
+
+          const snapshot = multiDropSnapshots.get(input.requestId);
+          if (!snapshot || JSON.stringify(snapshot.input) !== JSON.stringify(input)) {
+            return err('VALIDATION_ERROR');
+          }
+
+          return ok({
+            requestId: existing.requestId,
+            status: existing.status,
+            publishedAt: snapshot.publishedAt,
+            expiresAt: existing.expiresAt ?? snapshot.publishedAt,
+            routeDistanceM: snapshot.routeDistanceM,
+            fixedPriceArs: existing.fixedPriceArs,
+            autoAssign: existing.autoAssign,
+            dropsCount: existing.dropsCount,
+            idempotent: true,
+          });
+        }
+
+        const currentNow = nowFn();
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) return err('SUBSCRIPTION_INACTIVE');
+        const subCheck = canMerchantPublishRequest({
+          subscriptionStatus: merchant.subscriptionStatus,
+          pilotActive: settings.pilotActive,
+          paidUntil: merchant.paidUntil,
+          graceDays: settings.subscriptionGraceDays,
+          now: currentNow,
+        });
+        if (!subCheck.ok) {
+          return err(subCheck.code as RpcErrorCode<'create_and_publish_multi_drop'>);
+        }
+
+        const maxDrops = settings.maxDropsPerRequest ?? 5;
+        if (input.drops.length > maxDrops) return err('DROP_LIMIT_EXCEEDED');
+        if (input.fixedPriceArs !== null && input.fixedPriceArs < settings.minOfferArs) {
+          return err('OFFER_BELOW_MINIMUM');
+        }
+
+        if (
+          input.pickupLat !== null &&
+          input.pickupLng !== null &&
+          !isWithinAguilaresBounds(input.pickupLat, input.pickupLng)
+        ) {
+          return err('OUT_OF_BOUNDS_AGUILARES');
+        }
+        for (const drop of input.drops) {
+          if (
+            drop.dropoffLat !== null &&
+            drop.dropoffLng !== null &&
+            !isWithinAguilaresBounds(drop.dropoffLat, drop.dropoffLng)
+          ) {
+            return err('OUT_OF_BOUNDS_AGUILARES');
+          }
+        }
+
+        const rate = consumeRequestRate(
+          'publish_request',
+          settings.maxRequestPublicationsPerMin,
+          currentNow
+        );
+        if (!rate.ok) return rate;
+
+        let currentLat = input.pickupLat;
+        let currentLng = input.pickupLng;
+        let routeDistanceM: number | null = null;
+        let canCalculateRoute = currentLat !== null && currentLng !== null;
+        let totalDistanceM = 0;
+        const drops: FakeDropRecord[] = input.drops.map((drop, index) => {
+          let approxDistanceM: number | null = null;
+          if (
+            canCalculateRoute &&
+            currentLat !== null &&
+            currentLng !== null &&
+            drop.dropoffLat !== null &&
+            drop.dropoffLng !== null
+          ) {
+            approxDistanceM = calculateHaversineRouteDistanceM(
+              { lat: currentLat, lng: currentLng },
+              { lat: drop.dropoffLat, lng: drop.dropoffLng }
+            );
+            totalDistanceM += approxDistanceM;
+            currentLat = drop.dropoffLat;
+            currentLng = drop.dropoffLng;
+          } else {
+            canCalculateRoute = false;
+          }
+
+          return {
+            id: nextUniqueDropId(),
+            requestId: input.requestId,
+            position: index + 1,
+            dropoffZoneId: drop.dropoffZoneId,
+            dropoffZoneName: drop.dropoffZoneId,
+            dropoffAddress: drop.dropoffAddress,
+            dropoffLat: drop.dropoffLat,
+            dropoffLng: drop.dropoffLng,
+            packageType: drop.packageType,
+            recipientName: drop.recipientName,
+            recipientPhone: drop.recipientPhone,
+            recipientConsentDeclared: drop.recipientConsentDeclared,
+            recipientPaymentMethod: drop.recipientPaymentMethod,
+            needsChange: drop.needsChange,
+            cashChangeAmount: drop.cashChangeAmount,
+            notes: drop.notes,
+            approxDistanceM,
+            status: 'pending',
+            deliveredAt: null,
+            failedReason: null,
+          };
+        });
+        if (canCalculateRoute) routeDistanceM = totalDistanceM;
+
+        const publishedAt = currentNow.toISOString();
+        const expiresAt = new Date(
+          currentNow.getTime() + settings.requestTtlMinutes * 60_000
+        ).toISOString();
+        requests.set(input.requestId, {
+          requestId: input.requestId,
+          merchantId: actor.userId,
+          status: 'published',
+          expiresAt,
+          matchedAt: null,
+          deliveredAt: null,
+          acceptedOfferId: null,
+          assignedCourierId: null,
+          pickupLat: input.pickupLat,
+          pickupLng: input.pickupLng,
+          dropoffLat: null,
+          dropoffLng: null,
+          pickupZoneName: input.pickupZoneId,
+          dropoffZoneName: '',
+          pickupAddress: input.pickupAddress,
+          dropoffAddress: '',
+          recipientName: '',
+          recipientPhone: '',
+          recipientPaymentMethod: null,
+          needsChange: false,
+          cashChangeAmount: null,
+          notes: null,
+          createdAt: publishedAt,
+          pickedUpAt: null,
+          fixedPriceArs: input.fixedPriceArs,
+          autoAssign: input.autoAssign,
+          drops,
+          dropsCount: drops.length,
+        });
+        multiDropSnapshots.set(input.requestId, {
+          input,
+          publishedAt,
+          routeDistanceM,
+        });
+
+        return ok({
+          requestId: input.requestId,
+          status: 'published',
+          publishedAt,
+          expiresAt,
+          routeDistanceM,
+          fixedPriceArs: input.fixedPriceArs,
+          autoAssign: input.autoAssign,
+          dropsCount: drops.length,
+          idempotent: false,
+        });
+      }),
+
     publish_request: (rawInput) =>
       executeRpc('publish_request', rawInput, false, (input) => {
         const req = requests.get(input.requestId);
@@ -770,7 +962,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             return err('MISSING_REQUIRED_FIELDS');
           }
 
-          if (req.recipientPaymentMethod === 'cash') {
+          const recipientPaymentMethod = req.recipientPaymentMethod ?? 'cash';
+          if (recipientPaymentMethod === 'cash') {
             if (req.needsChange && (!req.cashChangeAmount || req.cashChangeAmount <= 0)) {
               return err('VALIDATION_ERROR');
             }
@@ -789,10 +982,10 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             recipientName: req.recipientName,
             recipientPhone: req.recipientPhone,
             recipientConsentDeclared: true,
-            recipientPaymentMethod: req.recipientPaymentMethod,
-            needsChange: req.recipientPaymentMethod === 'cash' ? req.needsChange : false,
+            recipientPaymentMethod,
+            needsChange: recipientPaymentMethod === 'cash' ? req.needsChange : false,
             cashChangeAmount:
-              req.recipientPaymentMethod === 'cash' && req.needsChange
+              recipientPaymentMethod === 'cash' && req.needsChange
                 ? req.cashChangeAmount
                 : null,
             notes: req.notes,
@@ -1801,7 +1994,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
                 recipientName: req.recipientName,
                 recipientPhone: req.recipientPhone,
                 recipientConsentDeclared: true,
-                recipientPaymentMethod: req.recipientPaymentMethod,
+                recipientPaymentMethod: req.recipientPaymentMethod ?? 'cash',
                 needsChange: req.needsChange,
                 cashChangeAmount: req.cashChangeAmount,
                 notes: req.notes,
@@ -2123,8 +2316,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
             reporterRole: incident.reporterRole,
             reporterName: incident.reporterName,
           })),
-          nextCursor:
-            ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
+          nextCursor: ordered.length > limit && last ? { createdAt: last.createdAt, id: last.incidentId } : null,
         });
       }),
   };

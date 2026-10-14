@@ -15,6 +15,7 @@ import { safeNotifyPostTransition } from '@/server/push';
 import type { SupabaseRpcCaller } from './offers';
 
 export type RequestLifecycleRpcName =
+  | 'create_and_publish_multi_drop'
   | 'publish_request'
   | 'cancel_request'
   | 'mark_picked_up'
@@ -41,7 +42,9 @@ export async function callRequestRpc<K extends RequestRpcName>(
   const input = parsed.data as Record<string, unknown>;
   const args: Record<string, unknown> = {};
 
-  if (rpcName === 'mark_drop_delivered') {
+  if (rpcName === 'create_and_publish_multi_drop') {
+    args.p_payload = input;
+  } else if (rpcName === 'mark_drop_delivered') {
     args.p_drop_id = input.dropId;
   } else if (rpcName === 'mark_drop_failed') {
     args.p_drop_id = input.dropId;
@@ -105,7 +108,11 @@ export async function callRequestRpc<K extends RequestRpcName>(
     }
 
     // T-206: Disparo post-commit best-effort
-    if (rpcName === 'publish_request') {
+    if (
+      rpcName === 'publish_request' ||
+      (rpcName === 'create_and_publish_multi_drop' &&
+        !(output.data as { idempotent?: boolean }).idempotent)
+    ) {
       try {
         const admin = createAdminClient();
         const { data: couriers, error: couriersError } = await admin
@@ -214,6 +221,8 @@ export function createRequestsRpcServerClient(
   client: SupabaseRpcCaller
 ): Pick<RpcClientContract, RequestLifecycleRpcName> {
   return {
+    create_and_publish_multi_drop: (input) =>
+      callRequestRpc(client, 'create_and_publish_multi_drop', input),
     publish_request: (input) => callRequestRpc(client, 'publish_request', input),
     cancel_request: (input) => callRequestRpc(client, 'cancel_request', input),
     mark_picked_up: (input) => callRequestRpc(client, 'mark_picked_up', input),

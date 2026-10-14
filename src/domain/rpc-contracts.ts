@@ -49,6 +49,97 @@ export function validateOfferAmountAgainstFloor(
   return ok(amountArs);
 }
 
+// CC-024: transactional multi-drop creation and publication.
+const createAndPublishMultiDropDropInputSchema = z
+  .object({
+    dropoffZoneId: uuidSchema,
+    dropoffAddress: z.string().trim().min(1).max(200),
+    dropoffLat: aguilaresLatSchema.nullable(),
+    dropoffLng: aguilaresLngSchema.nullable(),
+    recipientName: z.string().trim().min(1).max(100),
+    recipientPhone: z.string().trim().min(8).max(30),
+    recipientConsentDeclared: z.literal(true),
+    packageType: packageTypeSchema,
+    recipientPaymentMethod: recipientPaymentMethodSchema,
+    needsChange: z.boolean(),
+    cashChangeAmount: z.number().int().positive().nullable(),
+    notes: z.string().trim().max(500).nullable(),
+  })
+  .strict()
+  .superRefine((drop, ctx) => {
+    if ((drop.dropoffLat === null) !== (drop.dropoffLng === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dropoffLat'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (
+      drop.recipientPaymentMethod === 'cash' &&
+      drop.needsChange &&
+      drop.cashChangeAmount === null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['cashChangeAmount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (
+      (drop.recipientPaymentMethod !== 'cash' || !drop.needsChange) &&
+      drop.cashChangeAmount !== null
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['cashChangeAmount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+  });
+
+export const createAndPublishMultiDropInputSchema = z
+  .object({
+    requestId: uuidSchema,
+    pickupZoneId: uuidSchema,
+    pickupAddress: z.string().trim().min(1).max(200),
+    pickupLat: aguilaresLatSchema.nullable(),
+    pickupLng: aguilaresLngSchema.nullable(),
+    fixedPriceArs: z.number().int().positive().nullable(),
+    autoAssign: z.boolean(),
+    drops: z.array(createAndPublishMultiDropDropInputSchema).min(1),
+  })
+  .strict()
+  .superRefine((payload, ctx) => {
+    if ((payload.pickupLat === null) !== (payload.pickupLng === null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pickupLat'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (payload.autoAssign && payload.fixedPriceArs === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fixedPriceArs'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+  });
+
+export const createAndPublishMultiDropOutputSchema = z
+  .object({
+    requestId: uuidSchema,
+    status: deliveryRequestStatusSchema,
+    publishedAt: isoTimestampSchema,
+    expiresAt: isoTimestampSchema,
+    routeDistanceM: z.number().int().nonnegative().nullable(),
+    fixedPriceArs: z.number().int().min(1).nullable(),
+    autoAssign: z.boolean(),
+    dropsCount: z.number().int().min(1),
+    idempotent: z.boolean(),
+  })
+  .strict();
+
 // 1. publish_request
 export const publishRequestInputSchema = z.object({
   requestId: uuidSchema,
@@ -513,6 +604,25 @@ export const adminListIncidentsOutputSchema = z.object({
 });
 
 export const RPC_CONTRACTS = {
+  create_and_publish_multi_drop: {
+    inputSchema: createAndPublishMultiDropInputSchema,
+    outputSchema: createAndPublishMultiDropOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'SUBSCRIPTION_INACTIVE',
+      'MISSING_REQUIRED_FIELDS',
+      'OUT_OF_BOUNDS_AGUILARES',
+      'INVALID_ZONE',
+      'INVALID_STATE_TRANSITION',
+      'OFFER_BELOW_MINIMUM',
+      'RATE_LIMITED',
+      'DROP_LIMIT_EXCEEDED',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   /**
    * Precedencia canónica del ciclo de solicitudes (CC-006 / D01 / D03 — compartida entre
    * `supabase/migrations/20260924010124_rpc_requests_v1.sql` y `src/domain/testing/rpc-fake.ts` para
@@ -976,6 +1086,7 @@ export const RPC_CONTRACTS = {
 } as const;
 
 export const ALL_RPC_NAMES = [
+  'create_and_publish_multi_drop',
   'publish_request',
   'cancel_request',
   'submit_offer',
