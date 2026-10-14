@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(136);
+select plan(274);
 
 -- Actores para pruebas T-340
 create function pg_temp.merchant_id() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000034a1'::uuid $$;
@@ -1975,6 +1975,942 @@ select is(
   (select cash_change_amount from public.delivery_requests where id = '30000000-0000-4000-8000-000000003471'),
   2500,
   'segunda ejecucion mantiene cash_change_amount intacto en borrador incompleto (H01/H03 Escenario 5C)'
+);
+
+-- 11. CC-024: alta y publicación atómica multi-drop por RPC pública.
+select has_function(
+  'public',
+  'create_and_publish_multi_drop',
+  array['jsonb'],
+  'create_and_publish_multi_drop existe con firma canónica'
+);
+select is(
+  (select prosecdef
+   from pg_proc p
+   join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'create_and_publish_multi_drop'),
+  true,
+  'create_and_publish_multi_drop es SECURITY DEFINER'
+);
+select ok(
+  (select 'search_path=public, pg_temp' = any(proconfig)
+   from pg_proc p
+   join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'create_and_publish_multi_drop'),
+  'create_and_publish_multi_drop fija search_path seguro'
+);
+
+create function pg_temp.t340_multi_drop_payload(p_request_id uuid, p_pickup_zone_id uuid)
+returns jsonb language sql as $$
+  select jsonb_build_object(
+    'requestId', p_request_id,
+    'pickupZoneId', p_pickup_zone_id,
+    'pickupAddress', 'Av Mitre 900',
+    'pickupLat', -27.4330,
+    'pickupLng', -65.6150,
+    'fixedPriceArs', null,
+    'autoAssign', false,
+    'drops', jsonb_build_array(
+      jsonb_build_object(
+        'dropoffZoneId', pg_temp.dropoff_zone_id(),
+        'dropoffAddress', 'Alberdi 900',
+        'dropoffLat', -27.4250,
+        'dropoffLng', -65.6080,
+        'recipientName', 'Destinatario Uno',
+        'recipientPhone', '+543865111111',
+        'recipientConsentDeclared', true,
+        'packageType', 'chico',
+        'recipientPaymentMethod', 'cash',
+        'needsChange', false,
+        'cashChangeAmount', null,
+        'notes', 'Indicacion uno'
+      ),
+      jsonb_build_object(
+        'dropoffZoneId', pg_temp.dropoff_zone_id(),
+        'dropoffAddress', 'Belgrano 900',
+        'dropoffLat', -27.4200,
+        'dropoffLng', -65.6050,
+        'recipientName', 'Destinatario Dos',
+        'recipientPhone', '+543865222222',
+        'recipientConsentDeclared', true,
+        'packageType', 'mediano',
+        'recipientPaymentMethod', 'transfer',
+        'needsChange', false,
+        'cashChangeAmount', null,
+        'notes', null
+      )
+    )
+  );
+$$;
+
+create function pg_temp.t340_multi_drop_payload_n(
+  p_request_id uuid,
+  p_pickup_zone_id uuid,
+  p_drop_count integer,
+  p_auto_assign boolean default false,
+  p_fixed_price integer default null
+)
+returns jsonb language sql as $$
+  select jsonb_build_object(
+    'requestId', p_request_id,
+    'pickupZoneId', p_pickup_zone_id,
+    'pickupAddress', 'Av Mitre 900',
+    'pickupLat', -27.4330,
+    'pickupLng', -65.6150,
+    'fixedPriceArs', p_fixed_price,
+    'autoAssign', p_auto_assign,
+    'drops', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'dropoffZoneId', pg_temp.dropoff_zone_id(),
+        'dropoffAddress', 'Alberdi ' || position,
+        'dropoffLat', -27.4250,
+        'dropoffLng', -65.6080,
+        'recipientName', 'Destinatario ' || position,
+        'recipientPhone', '3865123' || lpad(position::text, 3, '0'),
+        'recipientConsentDeclared', true,
+        'packageType', 'chico',
+        'recipientPaymentMethod', 'cash',
+        'needsChange', false,
+        'cashChangeAmount', null,
+        'notes', null
+      ) order by position)
+      from generate_series(1, p_drop_count) as positions(position)
+    ), '[]'::jsonb)
+  );
+$$;
+
+create function pg_temp.test_cc024_create() returns jsonb language plpgsql as $$
+declare
+  v_result jsonb;
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  select public.create_and_publish_multi_drop(
+    pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003491', pg_temp.pickup_zone_id())
+  ) into v_result;
+  perform pg_temp.reset_actor();
+  return v_result;
+exception when others then
+  perform pg_temp.reset_actor();
+  return jsonb_build_object('error', SQLERRM);
+end;
+$$;
+
+select is(
+  (pg_temp.test_cc024_create()->>'idempotent')::boolean,
+  false,
+  'CC-024 informa idempotent=false en la primera publicación'
+);
+select is(
+  (select status::text from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'),
+  'published',
+  'CC-024 crea y publica la solicitud multi-drop en una transacción'
+);
+select is(
+  (select drops_count::integer from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'),
+  2,
+  'CC-024 publica los dos drops en la respuesta'
+);
+select ok(
+  (select route_distance_m from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491') > 0,
+  'CC-024 calcula la distancia encadenada de la ruta'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_requests
+   where id = '30000000-0000-4000-8000-000000003491'
+     and status = 'published'
+     and dropoff_zone_id is null
+     and package_type is null
+     and recipient_payment_method is null
+     and needs_change = false
+     and notes is null
+     and cash_change_amount is null),
+  1,
+  'CC-024 no duplica destino ni datos privados en delivery_requests'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_contacts
+   where request_id = '30000000-0000-4000-8000-000000003491'
+     and pickup_address = 'Av Mitre 900'
+     and dropoff_address is null
+     and recipient_name is null
+     and recipient_phone is null
+     and recipient_consent_declared is null),
+  1,
+  'CC-024 conserva en la tabla legacy únicamente el contacto de retiro'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drops
+   where request_id = '30000000-0000-4000-8000-000000003491'),
+  2,
+  'CC-024 inserta exactamente un drop por destinatario'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-000000003491'),
+  2,
+  'CC-024 persiste los contactos privados en drop_contacts'
+);
+
+create function pg_temp.test_cc024_retry() returns jsonb language plpgsql as $$
+declare
+  v_result jsonb;
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  select public.create_and_publish_multi_drop(
+    pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003491', pg_temp.pickup_zone_id())
+  ) into v_result;
+  perform pg_temp.reset_actor();
+  return v_result;
+exception when others then
+  perform pg_temp.reset_actor();
+  return jsonb_build_object('error', SQLERRM);
+end;
+$$;
+
+select is(
+  (pg_temp.test_cc024_retry()->>'idempotent')::boolean,
+  true,
+  'CC-024 repite el mismo payload sin republicar'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drops
+   where request_id = '30000000-0000-4000-8000-000000003491'),
+  2,
+  'CC-024 el retry idempotente no duplica drops'
+);
+
+create function pg_temp.test_cc024_conflict() returns text language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.create_and_publish_multi_drop(
+    pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003491', pg_temp.pickup_zone_id())
+    || jsonb_build_object('pickupAddress', 'Otra direccion')
+  );
+  perform pg_temp.reset_actor();
+  return 'NO_ERROR';
+exception when others then
+  perform pg_temp.reset_actor();
+  return SQLERRM;
+end;
+$$;
+
+select is(
+  pg_temp.test_cc024_conflict(),
+  'VALIDATION_ERROR',
+  'CC-024 rechaza el mismo requestId con payload divergente'
+);
+
+create function pg_temp.test_cc024_unauthorized() returns text language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.courier_1_id());
+  perform public.create_and_publish_multi_drop(
+    pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003492', pg_temp.pickup_zone_id())
+  );
+  perform pg_temp.reset_actor();
+  return 'NO_ERROR';
+exception when others then
+  perform pg_temp.reset_actor();
+  return SQLERRM;
+end;
+$$;
+
+select is(
+  pg_temp.test_cc024_unauthorized(),
+  'UNAUTHORIZED_ACTOR',
+  'CC-024 restringe la creación al comercio con consentimiento activo'
+);
+
+create function pg_temp.test_cc024_invalid_zone() returns text language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.create_and_publish_multi_drop(
+    pg_temp.t340_multi_drop_payload(
+      '30000000-0000-4000-8000-000000003493',
+      '00000000-0000-4000-8000-000000003493'
+    )
+  );
+  perform pg_temp.reset_actor();
+  return 'NO_ERROR';
+exception when others then
+  perform pg_temp.reset_actor();
+  return SQLERRM;
+end;
+$$;
+
+select is(
+  pg_temp.test_cc024_invalid_zone(),
+  'INVALID_ZONE',
+  'CC-024 rechaza una zona de retiro inexistente sin error de FK crudo'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-000000003493'),
+  0,
+  'CC-024 revierte el alta completa cuando falla la validación de zona'
+);
+
+create function pg_temp.test_cc024_extra_key() returns text language plpgsql as $$
+begin
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.create_and_publish_multi_drop(
+    pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003494', pg_temp.pickup_zone_id())
+    || jsonb_build_object('unexpected', 'no permitido')
+  );
+  perform pg_temp.reset_actor();
+  return 'NO_ERROR';
+exception when others then
+  perform pg_temp.reset_actor();
+  return SQLERRM;
+end;
+$$;
+
+select is(
+  pg_temp.test_cc024_extra_key(),
+  'VALIDATION_ERROR',
+  'CC-024 rechaza campos no declarados en el payload'
+);
+
+-- 12. CC-024: ramas de negocio, privacidad, retries por estado y rollback por fase.
+create function pg_temp.test_cc024_call(p_actor uuid, p_payload jsonb) returns jsonb language plpgsql as $$
+declare
+  v_result jsonb;
+begin
+  perform pg_temp.act_as(p_actor);
+  select public.create_and_publish_multi_drop(p_payload) into v_result;
+  perform pg_temp.reset_actor();
+  return v_result;
+exception when others then
+  perform pg_temp.reset_actor();
+  return jsonb_build_object('error', SQLERRM);
+end;
+$$;
+
+select is(
+  (pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-000000003495', pg_temp.pickup_zone_id(), 1, true, 1500)
+  )->>'idempotent')::boolean,
+  false,
+  'CC-024 publica un drop con autoAssign=true y precio fijo válido'
+);
+select is(
+  (select fixed_price_ars from public.delivery_requests where id = '30000000-0000-4000-8000-000000003495'),
+  1500,
+  'CC-024 persiste el precio fijo entero de autoAssign'
+);
+select is(
+  (select auto_assign from public.delivery_requests where id = '30000000-0000-4000-8000-000000003495'),
+  true,
+  'CC-024 persiste autoAssign=true'
+);
+select is(
+  (pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload_n(
+      '30000000-0000-4000-8000-000000003496',
+      pg_temp.pickup_zone_id(),
+      app_private.request_setting_int('max_drops_per_request')
+    )
+  )->>'dropsCount')::integer,
+  app_private.request_setting_int('max_drops_per_request'),
+  'CC-024 acepta exactamente el tope max_drops_per_request vigente'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003496'),
+  app_private.request_setting_int('max_drops_per_request'),
+  'CC-024 persiste todos los drops del tope vigente'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-000000003496'),
+  app_private.request_setting_int('max_drops_per_request'),
+  'CC-024 persiste todos los contactos privados del tope vigente'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-000000003497', pg_temp.pickup_zone_id(), 0)
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza cero drops'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-000000003497'),
+  0,
+  'CC-024 revierte cero filas al rechazar cero drops'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload_n(
+      '30000000-0000-4000-8000-000000003498',
+      pg_temp.pickup_zone_id(),
+      app_private.request_setting_int('max_drops_per_request') + 1
+    )
+  )->>'error',
+  'DROP_LIMIT_EXCEEDED',
+  'CC-024 rechaza max_drops_per_request + 1'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-000000003498'),
+  0,
+  'CC-024 no deja padre al rechazar el tope excedido'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-000000003499', pg_temp.pickup_zone_id(), 1, true, null)
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 exige precio fijo cuando autoAssign=true'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-000000003499'),
+  0,
+  'CC-024 no inserta padre con autoAssign=true sin precio fijo'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034a5', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,needsChange}', 'true'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 exige monto para cash con cambio'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034a5'),
+  0,
+  'CC-024 revierte cash con cambio sin monto'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      jsonb_set(
+        pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034a6', pg_temp.pickup_zone_id(), 1),
+        '{drops,0,recipientPaymentMethod}', '"transfer"'::jsonb
+      ),
+      '{drops,0,needsChange}', 'true'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza cambio para transfer'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034a6'),
+  0,
+  'CC-024 revierte medio no cash con cambio'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034a7', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', 'false'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento de destinatario falso'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034a7'),
+  0,
+  'CC-024 revierte consentimiento inválido sin padre'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034ae', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', '"true"'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento JSON string "true"'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034ae'),
+  0,
+  'CC-024 no deja padre con consentimiento JSON string "true"'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034ae'),
+  0,
+  'CC-024 no deja drop con consentimiento JSON string "true"'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034ae'),
+  0,
+  'CC-024 no deja contacto con consentimiento JSON string "true"'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034af', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', 'false'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento booleano false'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034af'),
+  0,
+  'CC-024 no deja padre con consentimiento booleano false'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034af'),
+  0,
+  'CC-024 no deja drop con consentimiento booleano false'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034af'),
+  0,
+  'CC-024 no deja contacto con consentimiento booleano false'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034b0', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', 'null'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento JSON null'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034b0'),
+  0,
+  'CC-024 no deja padre con consentimiento JSON null'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034b0'),
+  0,
+  'CC-024 no deja drop con consentimiento JSON null'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034b0'),
+  0,
+  'CC-024 no deja contacto con consentimiento JSON null'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034b8', pg_temp.pickup_zone_id(), 1),
+      '{drops,0,recipientConsentDeclared}', '1'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza consentimiento JSON numérico'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034b8'),
+  0,
+  'CC-024 no deja padre con consentimiento JSON numérico'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-0000000034b8'),
+  0,
+  'CC-024 no deja drop con consentimiento JSON numérico'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_drop_contacts dc
+   join public.delivery_request_drops d on d.id = dc.drop_id
+   where d.request_id = '30000000-0000-4000-8000-0000000034b8'),
+  0,
+  'CC-024 no deja contacto con consentimiento JSON numérico'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      jsonb_set(
+        pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034a8', pg_temp.pickup_zone_id(), 1),
+        '{pickupLat}', '-34.6037'::jsonb
+      ),
+      '{pickupLng}', '-58.3816'::jsonb
+    )
+  )->>'error',
+  'OUT_OF_BOUNDS_AGUILARES',
+  'CC-024 rechaza retiro fuera de Aguilares'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034a8'),
+  0,
+  'CC-024 no deja filas con retiro fuera de Aguilares'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      jsonb_set(
+        pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034a9', pg_temp.pickup_zone_id(), 1),
+        '{drops,0,dropoffLat}', '-34.6037'::jsonb
+      ),
+      '{drops,0,dropoffLng}', '-58.3816'::jsonb
+    )
+  )->>'error',
+  'OUT_OF_BOUNDS_AGUILARES',
+  'CC-024 rechaza entrega fuera de Aguilares'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034aa'),
+  0,
+  'CC-024 no deja filas con entrega fuera de Aguilares'
+);
+
+update public.merchants set subscription_status = 'expired' where profile_id = pg_temp.merchant_id();
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034ab', pg_temp.pickup_zone_id(), 1)
+  )->>'error',
+  'SUBSCRIPTION_INACTIVE',
+  'CC-024 rechaza comercio con suscripción inactiva'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034ab'),
+  0,
+  'CC-024 no deja padre con suscripción inactiva'
+);
+update public.merchants set subscription_status = 'pilot' where profile_id = pg_temp.merchant_id();
+
+update public.profiles set consent_status = 'reconsent_required' where id = pg_temp.merchant_id();
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034ac', pg_temp.pickup_zone_id(), 1)
+  )->>'error',
+  'UNAUTHORIZED_ACTOR',
+  'CC-024 rechaza comercio sin consentimiento activo'
+);
+select is(
+  (select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-0000000034ac'),
+  0,
+  'CC-024 no deja padre sin consentimiento activo'
+);
+update public.profiles set consent_status = 'active' where id = pg_temp.merchant_id();
+
+create function pg_temp.test_cc024_anon(p_payload jsonb) returns text language plpgsql as $$
+begin
+  set local role anon;
+  perform set_config('request.jwt.claims', '', true);
+  perform public.create_and_publish_multi_drop(p_payload);
+  perform pg_temp.reset_actor();
+  return 'NO_ERROR';
+exception when others then
+  perform pg_temp.reset_actor();
+  return SQLERRM;
+end;
+$$;
+select is(
+  pg_temp.test_cc024_anon(pg_temp.t340_multi_drop_payload_n('30000000-0000-4000-8000-0000000034ad', pg_temp.pickup_zone_id(), 1)),
+  'permission denied for function create_and_publish_multi_drop',
+  'CC-024 mantiene la RPC inaccesible para anon'
+);
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_other_id(),
+    pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003491', pg_temp.pickup_zone_id())
+  )->>'error',
+  'NOT_FOUND',
+  'CC-024 no revela la existencia a otro comercio'
+);
+select is(
+  (select count(*)::integer
+   from public.delivery_request_contacts
+   where request_id = '30000000-0000-4000-8000-000000003491'
+     and pickup_lat is not null and pickup_lng is not null
+     and dropoff_address is null and dropoff_lat is null and dropoff_lng is null
+     and recipient_name is null and recipient_phone is null
+     and recipient_consent_declared is null),
+  1,
+  'CC-024 deja todos los campos legacy de destino del contacto de retiro en NULL'
+);
+select ok(
+  pg_temp.test_cc024_retry()::text !~ 'Destinatario|Indicacion|386512',
+  'CC-024 no expone PII en la respuesta de retry'
+);
+select is(
+  (select count(*)::integer
+   from public.audit_log
+   where target_id = '30000000-0000-4000-8000-000000003491'
+     and action = 'publish_request'),
+  1,
+  'CC-024 registra un solo evento de publicación'
+);
+select is(
+  (select count(*)::integer
+   from public.audit_log
+   where target_id = '30000000-0000-4000-8000-000000003491'
+     and (coalesce(before, '{}'::jsonb)::text ~ 'Destinatario|Indicacion|386512'
+       or coalesce(after, '{}'::jsonb)::text ~ 'Destinatario|Indicacion|386512')),
+  0,
+  'CC-024 no escribe PII en audit_log'
+);
+
+create temporary table cc024_retry_results(status text primary key, result jsonb) on commit drop;
+create function pg_temp.test_cc024_retry_state(p_status text) returns void language plpgsql as $$
+declare
+  v_result jsonb;
+begin
+  perform pg_temp.reset_actor();
+  update public.delivery_requests
+  set status = p_status::public.delivery_request_status,
+      expires_at = null
+  where id = '30000000-0000-4000-8000-000000003491';
+  select pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003491', pg_temp.pickup_zone_id())
+  ) into v_result;
+  insert into cc024_retry_results(status, result) values (p_status, v_result);
+end;
+$$;
+select pg_temp.test_cc024_retry_state('matched');
+select pg_temp.test_cc024_retry_state('in_transit');
+select pg_temp.test_cc024_retry_state('delivered');
+select pg_temp.test_cc024_retry_state('cancelled');
+select pg_temp.test_cc024_retry_state('expired');
+
+select is((select result->>'status' from cc024_retry_results where status = 'matched'), 'matched', 'CC-024 retry matched devuelve el estado vigente');
+select is((select (result->>'idempotent')::boolean from cc024_retry_results where status = 'matched'), true, 'CC-024 retry matched es idempotente');
+select is((select (result->>'publishedAt')::timestamptz from cc024_retry_results where status = 'matched'), (select published_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry matched conserva publishedAt');
+select is((select (result->>'expiresAt')::timestamptz from cc024_retry_results where status = 'matched'), (select expires_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry matched conserva expiresAt');
+select is((select result->>'status' from cc024_retry_results where status = 'in_transit'), 'in_transit', 'CC-024 retry in_transit devuelve el estado vigente');
+select is((select (result->>'idempotent')::boolean from cc024_retry_results where status = 'in_transit'), true, 'CC-024 retry in_transit es idempotente');
+select is((select (result->>'publishedAt')::timestamptz from cc024_retry_results where status = 'in_transit'), (select published_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry in_transit conserva publishedAt');
+select is((select (result->>'expiresAt')::timestamptz from cc024_retry_results where status = 'in_transit'), (select expires_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry in_transit conserva expiresAt');
+select is((select result->>'status' from cc024_retry_results where status = 'delivered'), 'delivered', 'CC-024 retry delivered devuelve el estado vigente');
+select is((select (result->>'idempotent')::boolean from cc024_retry_results where status = 'delivered'), true, 'CC-024 retry delivered es idempotente');
+select is((select (result->>'publishedAt')::timestamptz from cc024_retry_results where status = 'delivered'), (select published_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry delivered conserva publishedAt');
+select is((select (result->>'expiresAt')::timestamptz from cc024_retry_results where status = 'delivered'), (select expires_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry delivered conserva expiresAt');
+select is((select result->>'status' from cc024_retry_results where status = 'cancelled'), 'cancelled', 'CC-024 retry cancelled devuelve el estado vigente');
+select is((select (result->>'idempotent')::boolean from cc024_retry_results where status = 'cancelled'), true, 'CC-024 retry cancelled es idempotente');
+select is((select (result->>'publishedAt')::timestamptz from cc024_retry_results where status = 'cancelled'), (select published_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry cancelled conserva publishedAt');
+select is((select (result->>'expiresAt')::timestamptz from cc024_retry_results where status = 'cancelled'), (select expires_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry cancelled conserva expiresAt');
+select is((select result->>'status' from cc024_retry_results where status = 'expired'), 'expired', 'CC-024 retry expired devuelve el estado vigente');
+select is((select (result->>'idempotent')::boolean from cc024_retry_results where status = 'expired'), true, 'CC-024 retry expired es idempotente');
+select is((select (result->>'publishedAt')::timestamptz from cc024_retry_results where status = 'expired'), (select published_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry expired conserva publishedAt');
+select is((select (result->>'expiresAt')::timestamptz from cc024_retry_results where status = 'expired'), (select expires_at from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 'CC-024 retry expired conserva expiresAt');
+select is((select count(*)::integer from public.delivery_requests where id = '30000000-0000-4000-8000-000000003491'), 1, 'CC-024 retries conservan un solo padre');
+select is((select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003491'), 2, 'CC-024 retries conservan N drops');
+select is((select count(*)::integer from public.delivery_request_drop_contacts dc join public.delivery_request_drops d on d.id = dc.drop_id where d.request_id = '30000000-0000-4000-8000-000000003491'), 2, 'CC-024 retries conservan N contactos');
+
+select is(
+  pg_temp.test_cc024_call(
+    pg_temp.merchant_id(),
+    jsonb_set(
+      pg_temp.t340_multi_drop_payload('30000000-0000-4000-8000-000000003491', pg_temp.pickup_zone_id()),
+      '{drops,0,notes}', '"Nota distinta"'::jsonb
+    )
+  )->>'error',
+  'VALIDATION_ERROR',
+  'CC-024 rechaza retry con contacto privado divergente'
+);
+select is(
+  (select count(*)::integer from public.delivery_request_drops where request_id = '30000000-0000-4000-8000-000000003491'),
+  2,
+  'CC-024 no muta hijos ante conflicto de contenido'
+);
+
+create function pg_temp.test_cc024_contact_visibility(p_actor uuid) returns integer language plpgsql as $$
+declare
+  v_count integer;
+begin
+  perform pg_temp.act_as(p_actor);
+  select count(*)::integer into v_count
+  from public.delivery_request_drop_contacts dc
+  join public.delivery_request_drops d on d.id = dc.drop_id
+  where d.request_id = '30000000-0000-4000-8000-000000003491';
+  perform pg_temp.reset_actor();
+  return v_count;
+exception when others then
+  perform pg_temp.reset_actor();
+  return -1;
+end;
+$$;
+select is(pg_temp.test_cc024_contact_visibility(pg_temp.merchant_id()), 2, 'CC-024 permite al dueño leer sus contactos privados');
+select is(pg_temp.test_cc024_contact_visibility(pg_temp.courier_1_id()), 0, 'CC-024 no expone contactos privados a courier no asignado');
+
+create function pg_temp.cc024_fail_after_insert() returns trigger language plpgsql as $$
+declare
+  v_phase text := current_setting('cc024.fail_after', true);
+  v_target text := TG_TABLE_NAME || ':INSERT';
+  v_position integer;
+begin
+  if TG_TABLE_NAME = 'delivery_request_drop_contacts' then
+    select position into v_position from public.delivery_request_drops where id = new.drop_id;
+  elsif TG_TABLE_NAME = 'delivery_request_drops' then
+    v_position := new.position;
+  end if;
+  if v_phase = v_target
+     or (v_phase = v_target || ':2' and v_position = 2) then
+    raise exception using errcode = 'P0001', message = 'CC024_TEST_FAILURE';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger cc024_fail_request_after_insert
+after insert on public.delivery_requests
+for each row execute function pg_temp.cc024_fail_after_insert();
+create trigger cc024_fail_pickup_after_insert
+after insert on public.delivery_request_contacts
+for each row execute function pg_temp.cc024_fail_after_insert();
+create trigger cc024_fail_drop_after_insert
+after insert on public.delivery_request_drops
+for each row execute function pg_temp.cc024_fail_after_insert();
+create trigger cc024_fail_drop_contact_after_insert
+after insert on public.delivery_request_drop_contacts
+for each row execute function pg_temp.cc024_fail_after_insert();
+create trigger cc024_fail_audit_after_insert
+after insert on public.audit_log
+for each row execute function pg_temp.cc024_fail_after_insert();
+
+create function pg_temp.test_cc024_rollback(p_request_id uuid, p_phase text) returns jsonb language plpgsql as $$
+begin
+  perform pg_temp.reset_actor();
+  perform set_config('cc024.fail_after', p_phase, true);
+  perform pg_temp.act_as(pg_temp.merchant_id());
+  perform public.create_and_publish_multi_drop(
+    pg_temp.t340_multi_drop_payload(p_request_id, pg_temp.pickup_zone_id())
+  );
+  perform pg_temp.reset_actor();
+  return jsonb_build_object('error', 'NO_ERROR');
+exception when others then
+  perform pg_temp.reset_actor();
+  perform set_config('cc024.fail_after', '', true);
+  return jsonb_build_object(
+    'error', SQLERRM,
+    'requests', (select count(*) from public.delivery_requests where id = p_request_id),
+    'pickup', (select count(*) from public.delivery_request_contacts where request_id = p_request_id),
+    'drops', (select count(*) from public.delivery_request_drops where request_id = p_request_id),
+    'contacts', (select count(*) from public.delivery_request_drop_contacts dc join public.delivery_request_drops d on d.id = dc.drop_id where d.request_id = p_request_id),
+    'audit', (select count(*) from public.audit_log where target_id = p_request_id::text and action = 'publish_request')
+  );
+end;
+$$;
+
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del padre devuelve error controlado');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'requests', '0', 'CC-024 rollback del padre deja cero requests');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'pickup', '0', 'CC-024 rollback del padre deja cero pickups');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'drops', '0', 'CC-024 rollback del padre deja cero drops');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'contacts', '0', 'CC-024 rollback del padre deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b1', 'delivery_requests:INSERT')->>'audit', '0', 'CC-024 rollback del padre deja cero eventos de auditoría');
+
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del pickup devuelve error controlado');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'requests', '0', 'CC-024 rollback del pickup deja cero requests');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'pickup', '0', 'CC-024 rollback del pickup deja cero pickups');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'drops', '0', 'CC-024 rollback del pickup deja cero drops');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'contacts', '0', 'CC-024 rollback del pickup deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b2', 'delivery_request_contacts:INSERT')->>'audit', '0', 'CC-024 rollback del pickup deja cero eventos de auditoría');
+
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del primer drop devuelve error controlado');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'requests', '0', 'CC-024 rollback del primer drop deja cero requests');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'pickup', '0', 'CC-024 rollback del primer drop deja cero pickups');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'drops', '0', 'CC-024 rollback del primer drop deja cero drops');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'contacts', '0', 'CC-024 rollback del primer drop deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b3', 'delivery_request_drops:INSERT')->>'audit', '0', 'CC-024 rollback del primer drop deja cero eventos de auditoría');
+
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del segundo drop devuelve error controlado');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'requests', '0', 'CC-024 rollback del segundo drop deja cero requests');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'pickup', '0', 'CC-024 rollback del segundo drop deja cero pickups');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'drops', '0', 'CC-024 rollback del segundo drop deja cero drops');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'contacts', '0', 'CC-024 rollback del segundo drop deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b4', 'delivery_request_drops:INSERT:2')->>'audit', '0', 'CC-024 rollback del segundo drop deja cero eventos de auditoría');
+
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del contacto privado devuelve error controlado');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'requests', '0', 'CC-024 rollback del contacto privado deja cero requests');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'pickup', '0', 'CC-024 rollback del contacto privado deja cero pickups');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'drops', '0', 'CC-024 rollback del contacto privado deja cero drops');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'contacts', '0', 'CC-024 rollback del contacto privado deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b5', 'delivery_request_drop_contacts:INSERT')->>'audit', '0', 'CC-024 rollback del contacto privado deja cero eventos de auditoría');
+
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback después del segundo contacto devuelve error controlado');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'requests', '0', 'CC-024 rollback del segundo contacto deja cero requests');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'pickup', '0', 'CC-024 rollback del segundo contacto deja cero pickups');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'drops', '0', 'CC-024 rollback del segundo contacto deja cero drops');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'contacts', '0', 'CC-024 rollback del segundo contacto deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b6', 'delivery_request_drop_contacts:INSERT:2')->>'audit', '0', 'CC-024 rollback del segundo contacto deja cero eventos de auditoría');
+
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'error', 'CC024_TEST_FAILURE', 'CC-024 rollback dentro de request_cycle devuelve error controlado');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'requests', '0', 'CC-024 rollback de publicación deja cero requests');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'pickup', '0', 'CC-024 rollback de publicación deja cero pickups');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'drops', '0', 'CC-024 rollback de publicación deja cero drops');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'contacts', '0', 'CC-024 rollback de publicación deja cero contactos');
+select is(pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b7', 'audit_log:INSERT')->>'audit', '0', 'CC-024 rollback de publicación deja cero eventos de auditoría');
+
+create temporary table cc024_fail_trigger_source(definition text) on commit drop;
+insert into cc024_fail_trigger_source(definition)
+select pg_get_functiondef('pg_temp.cc024_fail_after_insert()'::regprocedure);
+
+create or replace function pg_temp.cc024_fail_after_insert() returns trigger language plpgsql as $$
+begin
+  return new;
+end;
+$$;
+
+create function pg_temp.cc024_assert_rollback_instrumentation_control() returns void language plpgsql as $$
+declare
+  v_result jsonb;
+begin
+  v_result := pg_temp.test_cc024_rollback(
+    '30000000-0000-0000-0000-0000000034b9',
+    'audit_log:INSERT'
+  );
+  if v_result->>'error' <> 'CC024_TEST_FAILURE' then
+    raise exception using errcode = 'P0001', message = 'CC024_INSTRUMENTATION_ASSERTION_FAILED';
+  end if;
+end;
+$$;
+
+select throws_matching(
+  'select pg_temp.cc024_assert_rollback_instrumentation_control()',
+  'CC024_INSTRUMENTATION_ASSERTION_FAILED',
+  'CC-024 control negativo de instrumentación: sin trigger detecta ausencia de CC024_TEST_FAILURE'
+);
+
+do $$
+declare
+  v_definition text;
+begin
+  select definition into v_definition from cc024_fail_trigger_source;
+  execute v_definition;
+end;
+$$;
+
+select is(
+  pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b9', 'audit_log:INSERT')->>'error',
+  'CC024_TEST_FAILURE',
+  'CC-024 control de instrumentación: restaurar el trigger repone el error controlado'
+);
+select is(
+  pg_temp.test_cc024_rollback('30000000-0000-0000-0000-0000000034b9', 'audit_log:INSERT')->>'audit',
+  '0',
+  'CC-024 control de instrumentación: el rollback restaurado deja cero eventos de auditoría'
 );
 
 select pg_temp.reset_actor();

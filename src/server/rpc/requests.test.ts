@@ -6,6 +6,31 @@ import { callRequestRpc, createRequestsRpcServerClient } from './requests';
 const requestId = '10300000-0000-4000-8000-000000000020';
 const offerId = '10300000-0000-4000-8000-000000000030';
 const time = '2026-09-23T18:00:00.000Z';
+const multiDropInput = {
+  requestId,
+  pickupZoneId: '10300000-0000-4000-8000-000000000040',
+  pickupAddress: 'San Martín 100',
+  pickupLat: null,
+  pickupLng: null,
+  fixedPriceArs: null,
+  autoAssign: false,
+  drops: [
+    {
+      dropoffZoneId: '10300000-0000-4000-8000-000000000041',
+      dropoffAddress: 'Alberdi 200',
+      dropoffLat: null,
+      dropoffLng: null,
+      recipientName: 'Juan',
+      recipientPhone: '3865123456',
+      recipientConsentDeclared: true,
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      cashChangeAmount: null,
+      notes: null,
+    },
+  ],
+} as const;
 const cases = [
   {
     name: 'publish_request',
@@ -68,6 +93,28 @@ const cases = [
 ] as const;
 
 describe('T-103 — Wrapper de RPC de solicitudes', () => {
+  it('create_and_publish_multi_drop envía el payload completo en p_payload', async () => {
+    const output = {
+      requestId,
+      status: 'published' as const,
+      publishedAt: time,
+      expiresAt: time,
+      routeDistanceM: null,
+      fixedPriceArs: null,
+      autoAssign: false,
+      dropsCount: 1,
+      idempotent: false,
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
+
+    const result = await callRequestRpc({ rpc }, 'create_and_publish_multi_drop', multiDropInput);
+
+    expect(result).toEqual({ ok: true, data: output });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('create_and_publish_multi_drop', {
+      p_payload: multiDropInput,
+    });
+  });
+
   it('la matriz pgTAP contrasta los errores reales con los contratos vigentes', () => {
     const sql = readFileSync('supabase/tests/rpc_requests.sql', 'utf8');
     for (const c of cases) {
@@ -328,11 +375,13 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     });
   });
 
-  it('report_no_show conserva false y el cliente implementa las ocho RPC del contrato', async () => {
+  it('report_no_show conserva false y el cliente implementa las RPC de solicitudes del contrato', async () => {
     const output = { requestId, status: 'cancelled', cancelledOfferId: offerId, expiresAt: null };
     const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
     const client = createRequestsRpcServerClient({ rpc });
-    expect(Object.keys(client).sort()).toEqual(cases.map((c) => c.name).sort());
+    expect(Object.keys(client).sort()).toEqual(
+      [...cases.map((c) => c.name), 'create_and_publish_multi_drop'].sort()
+    );
     expect(await client.report_no_show({ requestId, republish: false })).toEqual({
       ok: true,
       data: output,
@@ -405,6 +454,45 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
   }, 1000);
 
   describe('T-206: Cableado de push en transiciones de negocio (requests)', () => {
+    it('create_and_publish_multi_drop no despacha push en un retry idempotente', async () => {
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 0,
+        sentCount: 0,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          requestId,
+          status: 'published',
+          publishedAt: time,
+          expiresAt: time,
+          routeDistanceM: null,
+          fixedPriceArs: null,
+          autoAssign: false,
+          dropsCount: 1,
+          idempotent: true,
+        },
+        error: null,
+      });
+
+      try {
+        const result = await callRequestRpc(
+          { rpc },
+          'create_and_publish_multi_drop',
+          multiDropInput
+        );
+        expect(result.ok).toBe(true);
+        expect(safeNotifySpy).not.toHaveBeenCalled();
+      } finally {
+        safeNotifySpy.mockRestore();
+      }
+    });
+
     it('publish_request despacha push a repartidores habilitados y disponibles después del éxito', async () => {
       const push = await import('@/server/push');
       const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
