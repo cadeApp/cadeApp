@@ -894,10 +894,6 @@ export type Database = {
         Args: { p_reason?: string; p_request_id: string }
         Returns: Json
       }
-      create_and_publish_multi_drop: {
-        Args: { p_payload: Json }
-        Returns: Json
-      }
       courier_cancel_match: {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
