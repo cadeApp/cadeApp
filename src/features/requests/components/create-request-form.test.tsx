@@ -682,4 +682,182 @@ describe('T-340: CreateRequestForm multi-drop', () => {
     // Debe haberse generado un UUID nuevo tras el éxito
     expect(ids[0]).not.toBe(ids[1]);
   });
+
+  it('CC-024: edición tras respuesta HTTP incierta exige decisión explícita y permite reintentar original', async () => {
+    vi.mocked(actions.createDeliveryRequestAction)
+      .mockRejectedValueOnce(new Error('network lost'))
+      .mockImplementationOnce(async (input: unknown) => {
+        const data = input as { requestId?: string; drops: Array<{ dropoffAddress: string }> };
+        return { ok: true, data: { requestId: data?.requestId ?? '', redirectTo: '/merchant/dashboard' } };
+      });
+
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: pickupZone.id,
+          defaultPickupLat: null,
+          defaultPickupLng: null,
+          notes: null,
+        }}
+      />
+    );
+
+    // Llenar formulario válido
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Sarmiento 100' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'Juan Destinatario' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3865123456' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /autorización del destinatario/i }));
+
+    const submitBtn = screen.getByRole('button', { name: /publicar solicitud/i });
+
+    // Intento 1: falla con error de red
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+    });
+
+    const firstCallArgs = vi.mocked(actions.createDeliveryRequestAction).mock.calls[0]?.[0] as {
+      requestId: string;
+      drops: Array<{ dropoffAddress: string }>;
+    };
+    expect(firstCallArgs).toBeDefined();
+    const originalRequestId = firstCallArgs.requestId;
+    expect(firstCallArgs.drops[0]?.dropoffAddress).toBe('Av. Sarmiento 100');
+
+    // Editar la dirección de entrega de la entrega 1
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Belgrano 500' },
+    });
+
+    // Intento 2 con datos editados: NO debe llamar a la acción, debe mostrar alerta
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+
+    // La acción NO debe haberse llamado una segunda vez
+    expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+
+    // Debe mostrar los botones de decisión explícita
+    const retryOriginalBtn = screen.getByRole('button', { name: /reintentar solicitud original/i });
+    expect(retryOriginalBtn).toBeDefined();
+    expect(screen.getByRole('button', { name: /comenzar otra solicitud/i })).toBeDefined();
+
+    // Pulsar «Reintentar solicitud original»
+    fireEvent.click(retryOriginalBtn);
+
+    await waitFor(() => {
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(2);
+    });
+
+    // La segunda llamada debe usar el MISMO requestId y la dirección ORIGINAL ('Av. Sarmiento 100')
+    const secondCallArgs = vi.mocked(actions.createDeliveryRequestAction).mock.calls[1]?.[0] as {
+      requestId: string;
+      drops: Array<{ dropoffAddress: string }>;
+    };
+    expect(secondCallArgs.requestId).toBe(originalRequestId);
+    expect(secondCallArgs.drops[0]?.dropoffAddress).toBe('Av. Sarmiento 100');
+  });
+
+  it('CC-024: «Comenzar otra solicitud» tras edición requiere confirmación y usa nuevo UUID', async () => {
+    vi.mocked(actions.createDeliveryRequestAction)
+      .mockRejectedValueOnce(new Error('network lost'))
+      .mockImplementationOnce(async (input: unknown) => {
+        const data = input as { requestId?: string; drops: Array<{ dropoffAddress: string }> };
+        return { ok: true, data: { requestId: data?.requestId ?? '', redirectTo: '/merchant/dashboard' } };
+      });
+
+    render(
+      <CreateRequestForm
+        zones={mockZones}
+        defaultPickup={{
+          defaultPickupAddress: 'San Martín 350',
+          defaultPickupZoneId: pickupZone.id,
+          defaultPickupLat: null,
+          defaultPickupLng: null,
+          notes: null,
+        }}
+      />
+    );
+
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Sarmiento 100' },
+    });
+    fireEvent.change(screen.getByLabelText(/nombre de quien recibe/i), {
+      target: { value: 'Juan Destinatario' },
+    });
+    fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+      target: { value: '3865123456' },
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /autorización del destinatario/i }));
+
+    const submitBtn = screen.getByRole('button', { name: /publicar solicitud/i });
+
+    // Intento 1: falla
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+    });
+
+    const firstCallArgs = vi.mocked(actions.createDeliveryRequestAction).mock.calls[0]?.[0] as {
+      requestId: string;
+    };
+    const oldUuid = firstCallArgs.requestId;
+
+    // Editar dirección
+    fireEvent.change(screen.getByLabelText(/dirección de entrega/i), {
+      target: { value: 'Av. Belgrano 500' },
+    });
+
+    // Intentar enviar con datos modificados -> bloqueado por alerta
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeDefined();
+    });
+    expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+
+    // Pulsar «Comenzar otra solicitud»
+    const startNewBtn = screen.getByRole('button', { name: /comenzar otra solicitud/i });
+    fireEvent.click(startNewBtn);
+
+    // No debe llamar a la acción sin confirmación previa
+    expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+
+    // Debe mostrar advertencia y botón de confirmación
+    const confirmBtn = screen.getByRole('button', { name: /confirmar nueva solicitud/i });
+    expect(confirmBtn).toBeDefined();
+
+    // Confirmar la nueva solicitud
+    fireEvent.click(confirmBtn);
+
+    // Aún no envía hasta que el usuario pulse enviar
+    expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(1);
+
+    // Ahora enviar con el formulario editado
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(actions.createDeliveryRequestAction).toHaveBeenCalledTimes(2);
+    });
+
+    const secondCallArgs = vi.mocked(actions.createDeliveryRequestAction).mock.calls[1]?.[0] as {
+      requestId: string;
+      drops: Array<{ dropoffAddress: string }>;
+    };
+    // Debe usar un UUID DIFERENTE y la dirección EDITADA
+    expect(secondCallArgs.requestId).not.toBe(oldUuid);
+    expect(secondCallArgs.drops[0]?.dropoffAddress).toBe('Av. Belgrano 500');
+  });
 });

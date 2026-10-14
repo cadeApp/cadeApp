@@ -643,6 +643,17 @@ export function CreateRequestForm({
   // CC-024 / Decisión B: requestId estable generado por intención de creación y reusado en retries
   const requestIdRef = React.useRef<string>(crypto.randomUUID());
 
+  // CC-024 / H07: memoria del último intento para detectar reintentos con payload editado
+  const lastAttemptRef = React.useRef<{
+    requestId: string;
+    originalPayload: CreateDeliveryRequestOutput;
+    canonical: string;
+  } | null>(null);
+
+  const [payloadConflict, setPayloadConflict] = React.useState<boolean>(false);
+  const [showNewRequestConfirm, setShowNewRequestConfirm] = React.useState<boolean>(false);
+  const [isSubmittingOriginal, setIsSubmittingOriginal] = React.useState<boolean>(false);
+
   // Referencia mutable a los campos para resolver índices actuales por fieldId estable (R1 riesgo GPS)
   const fieldsRef = React.useRef(fields);
   fieldsRef.current = fields;
@@ -710,6 +721,25 @@ export function CreateRequestForm({
   const onSubmit = async (data: CreateDeliveryRequestOutput) => {
     setServerError(null);
 
+    const canonical = JSON.stringify(data);
+
+    // CC-024 / H07: Si hubo un intento previo que falló o tuvo respuesta incierta
+    // y los datos normalizados actuales difieren del snapshot original,
+    // NO invocar a la Server Action automáticamente. Exigir decisión explícita.
+    if (lastAttemptRef.current !== null && lastAttemptRef.current.canonical !== canonical) {
+      setPayloadConflict(true);
+      return;
+    }
+
+    // Si es el primer intento, registrar snapshot en memoria
+    if (lastAttemptRef.current === null) {
+      lastAttemptRef.current = {
+        requestId: requestIdRef.current,
+        originalPayload: data,
+        canonical,
+      };
+    }
+
     try {
       const result = await createDeliveryRequestAction({
         ...data,
@@ -723,7 +753,10 @@ export function CreateRequestForm({
         return;
       }
 
-      // Éxito: regenerar requestId para que una nueva intención futura tenga un nuevo UUID
+      // Éxito: limpiar snapshot y regenerar requestId para que una nueva intención futura tenga un nuevo UUID
+      lastAttemptRef.current = null;
+      setPayloadConflict(false);
+      setShowNewRequestConfirm(false);
       requestIdRef.current = crypto.randomUUID();
       notify.success('Solicitud publicada con éxito');
       router.push(result.data.redirectTo);
@@ -731,6 +764,46 @@ export function CreateRequestForm({
       setServerError(copy.errorGeneric);
       notify.error(copy.errorGeneric);
     }
+  };
+
+  // CC-024 / H07 Opción 1: Reintentar solicitud original con el mismo requestId y payload original intacto
+  const handleRetryOriginal = async () => {
+    if (!lastAttemptRef.current) return;
+    setServerError(null);
+    setIsSubmittingOriginal(true);
+    try {
+      const result = await createDeliveryRequestAction({
+        ...lastAttemptRef.current.originalPayload,
+        requestId: lastAttemptRef.current.requestId,
+      });
+
+      if (!result.ok) {
+        const msg = getDomainErrorMessage(result.code);
+        setServerError(msg);
+        notify.error(msg);
+        return;
+      }
+
+      lastAttemptRef.current = null;
+      setPayloadConflict(false);
+      setShowNewRequestConfirm(false);
+      requestIdRef.current = crypto.randomUUID();
+      notify.success('Solicitud publicada con éxito');
+      router.push(result.data.redirectTo);
+    } catch {
+      setServerError(copy.errorGeneric);
+      notify.error(copy.errorGeneric);
+    } finally {
+      setIsSubmittingOriginal(false);
+    }
+  };
+
+  // CC-024 / H07 Opción 2: Comenzar otra solicitud -> tras confirmación de usuario, gira a UUID nuevo y limpia snapshot
+  const handleConfirmNewRequest = () => {
+    requestIdRef.current = crypto.randomUUID();
+    lastAttemptRef.current = null;
+    setPayloadConflict(false);
+    setShowNewRequestConfirm(false);
   };
 
   return (
@@ -750,6 +823,68 @@ export function CreateRequestForm({
         >
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
           <span>{serverError}</span>
+        </div>
+      )}
+
+      {payloadConflict && (
+        <div
+          role="alert"
+          className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-foreground"
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="space-y-1">
+              <p className="font-semibold text-foreground">{copy.payloadConflictAlert}</p>
+              {showNewRequestConfirm && (
+                <p className="text-sm font-medium text-destructive">
+                  {copy.payloadConflictWarning}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRetryOriginal}
+              disabled={isSubmittingOriginal}
+              className="border-amber-600/40 hover:bg-amber-500/20"
+            >
+              {isSubmittingOriginal ? 'Reintentando...' : copy.retryOriginalButton}
+            </Button>
+
+            {!showNewRequestConfirm ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowNewRequestConfirm(true)}
+              >
+                {copy.startNewRequestButton}
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleConfirmNewRequest}
+                >
+                  {copy.confirmNewRequestButton}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowNewRequestConfirm(false)}
+                >
+                  {copy.cancelNewRequestButton}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
