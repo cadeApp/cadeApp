@@ -85,6 +85,13 @@ const createAndPublishMultiDropDropInputSchema = z
         message: 'VALIDATION_ERROR',
       });
     }
+    if (drop.recipientPaymentMethod !== 'cash' && drop.needsChange) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['needsChange'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
     if (
       (drop.recipientPaymentMethod !== 'cash' || !drop.needsChange) &&
       drop.cashChangeAmount !== null

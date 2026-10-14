@@ -99,11 +99,13 @@ begin
 
   if length(v_pickup_address) not between 1 and 200
      or (v_pickup_lat is null) <> (v_pickup_lng is null)
-     or (v_pickup_lat is not null and (v_pickup_lat not between -27.4800 and -27.3800 or v_pickup_lng not between -65.6450 and -65.5800))
      or (v_fixed_price_value is not null and (v_fixed_price_value < 1 or v_fixed_price_value > 2147483647 or v_fixed_price_value <> trunc(v_fixed_price_value)))
-     or (v_auto_assign and v_fixed_price is null)
+     or (v_auto_assign and v_fixed_price_value is null)
      or v_drop_count < 1 then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+  end if;
+  if v_pickup_lat is not null and (v_pickup_lat not between -27.4800 and -27.3800 or v_pickup_lng not between -65.6450 and -65.5800) then
+    raise exception using errcode = 'P0001', message = 'OUT_OF_BOUNDS_AGUILARES';
   end if;
   v_fixed_price := v_fixed_price_value::integer;
 
@@ -164,13 +166,15 @@ begin
        or v_package_type not in ('sobre', 'chico', 'mediano', 'grande')
        or v_payment_method not in ('cash', 'transfer', 'to_agree')
        or (v_dropoff_lat is null) <> (v_dropoff_lng is null)
-       or (v_dropoff_lat is not null and (v_dropoff_lat not between -27.4800 and -27.3800 or v_dropoff_lng not between -65.6450 and -65.5800))
        or length(coalesce(v_notes, '')) > 500
        or (v_payment_method <> 'cash' and v_needs_change)
        or (v_cash_change_value is not null and (v_cash_change_value < 1 or v_cash_change_value > 2147483647 or v_cash_change_value <> trunc(v_cash_change_value)))
        or (v_needs_change and (v_cash_change_value is null or v_cash_change_value <= 0))
        or ((not v_needs_change or v_payment_method <> 'cash') and v_cash_change_value is not null) then
       raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
+    end if;
+    if v_dropoff_lat is not null and (v_dropoff_lat not between -27.4800 and -27.3800 or v_dropoff_lng not between -65.6450 and -65.5800) then
+      raise exception using errcode = 'P0001', message = 'OUT_OF_BOUNDS_AGUILARES';
     end if;
     v_cash_change := v_cash_change_value::integer;
 
@@ -250,7 +254,11 @@ begin
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
-  if v_existing.status <> 'draft' or not v_inserted then
+  if not v_inserted then
+    if v_existing.status = 'draft' then
+      raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
+    end if;
+
     select jsonb_build_object(
       'requestId', r.id,
       'pickupZoneId', r.pickup_zone_id,
@@ -286,9 +294,6 @@ begin
 
     if v_existing_payload is distinct from v_normalized_payload then
       raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
-    end if;
-    if not v_inserted then
-      raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
     end if;
     if v_existing.published_at is null or v_existing.expires_at is null then
       raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
