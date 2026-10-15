@@ -83,7 +83,7 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // DoD Invariante 2: Aceptación concurrente en dos sesiones independientes (PR360-H05 / PR160-H02)
+  // DoD Invariante 2: Aceptación concurrente en dos sesiones independientes (PR360-H05 / R01 / PR160-H02)
   // ---------------------------------------------------------------------------
   test('DoD: Aceptación concurrente en dos sesiones independientes navega a /trips/[id] y converge', async ({
     browser,
@@ -105,13 +105,13 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     const context2 = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
 
     try {
-      // Sesión 1: Comercio autenticado
+      // Sesión 1: Comercio autenticado en contexto 1
       const page1 = await context1.newPage();
       const loginPage1 = new LoginPage(page1);
       await loginPage1.navigate();
       await loginPage1.login(merchant.email, merchant.password);
 
-      // Sesión 2: Mismo comercio autenticado en contexto independiente
+      // Sesión 2: Mismo comercio autenticado en contexto 2 independiente
       const page2 = await context2.newPage();
       const loginPage2 = new LoginPage(page2);
       await loginPage2.navigate();
@@ -154,10 +154,12 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
         .toBe(true);
 
       // Oráculo de estado final: exactamente 1 oferta accepted y request en matched
+      let finalInspection: Awaited<ReturnType<typeof getRequestInspectionData>> | null = null;
       await expect
         .poll(
           async () => {
             const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
+            finalInspection = inspection;
             const acceptedOffers = inspection.offers.filter((o) => o.status === 'accepted');
             const nonAcceptedOffers = inspection.offers.filter((o) => o.status !== 'accepted');
             return {
@@ -183,30 +185,61 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
           matchedWinner: true,
         });
 
-      // La sesión ganadora navega a /trips/[id]
-      const winnerPage = page1.url().includes('/trips/') ? page1 : page2;
+      // R01: Esperar explícitamente a que alguna página complete la navegación a /trips/[id] antes de clasificar
+      await expect
+        .poll(
+          async () =>
+            page1.url().includes(`/trips/${targetRequestId}`) ||
+            page2.url().includes(`/trips/${targetRequestId}`),
+          {
+            message: 'Al menos una sesión debe completar la navegación a /trips/[id]',
+            timeout: 15000,
+            intervals: [250, 500, 1000],
+          }
+        )
+        .toBe(true);
+
+      const winnerPage = page1.url().includes(`/trips/${targetRequestId}`) ? page1 : page2;
       const loserPage = winnerPage === page1 ? page2 : page1;
 
-      await expect
-        .poll(async () => winnerPage.url(), {
-          message: 'La sesión ganadora debe navegar a /trips/[id]',
-          timeout: 10000,
-        })
-        .toContain(`/trips/${targetRequestId}`);
+      // H02 / H05: En la sesión perdedora, verificar que inmediatamente no queda ningún botón Aceptar
+      await expect(loserPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
 
+      // H05: En la sesión ganadora, verificar la vista del viaje
       const tripPageWinner = new TripPage(winnerPage);
       await waitForNoSkeletons(winnerPage);
       await expect(tripPageWinner.assignedStatus).toBeVisible();
 
-      // La sesión perdedora al intentar navegar a /merchant/requests/[id] es redirigida al viaje
-      await loserPage.goto(`/merchant/requests/${targetRequestId}`);
-      await waitForNoSkeletons(loserPage);
-      await expect(loserPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      // Verificar monto auténtico de la oferta aceptada en la vista de viaje
+      const inspectionData =
+        finalInspection ?? (await getRequestInspectionData(stagingContext, targetRequestId));
+      const winningOffer = inspectionData.offers.find(
+        (o) => o.id === inspectionData.acceptedOfferId
+      );
+      if (winningOffer) {
+        await expect(winnerPage.getByText(formatArs(winningOffer.amountArs))).toBeVisible();
+      }
 
-      // Refrescar en la página ganadora conserva la vista del viaje asignado
+      // Contacto de repartidor habilitado post-match
+      await expect(winnerPage.getByRole('link', { name: /whatsapp/i })).toBeVisible();
+
+      // H05: Probar page.goBack() en la ganadora: no expone selector ni ofertas stale
+      await winnerPage.goBack();
+      await waitForNoSkeletons(winnerPage);
+      await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // H05: Probar reload() en la ganadora: conserva el viaje sin selector
       await winnerPage.reload();
       await waitForNoSkeletons(winnerPage);
       await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // H05: La sesión perdedora, al navegar directamente a /merchant/requests/[id], es redirigida al viaje
+      await loserPage.goto(`/merchant/requests/${targetRequestId}`);
+      await waitForNoSkeletons(loserPage);
+      await expect(loserPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      await expect(loserPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
 
       // En el dashboard del comercio, "Ver detalle" vincula a /trips/[id]
       const merchantDashPage = new MerchantPage(winnerPage);

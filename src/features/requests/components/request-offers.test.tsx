@@ -548,7 +548,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       });
     });
 
-    it('H02: carrera concurrente con ALREADY_MATCHED cierra el modal, notifica error y fuerza router.refresh()', async () => {
+    it('H02: carrera concurrente con ALREADY_MATCHED bloquea inmediatamente todos los botones Aceptar y no incrementa action en segundo click', async () => {
       mockAcceptOfferAction.mockResolvedValue({
         ok: false,
         code: 'ALREADY_MATCHED',
@@ -558,6 +558,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
 
       const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons.length).toBeGreaterThan(0);
       fireEvent.click(acceptButtons[0]!);
 
       const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
@@ -570,9 +571,14 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
       // Modal cerrado tras reconciliación
       expect(screen.queryByRole('button', { name: /sí, aceptar/i })).toBeNull();
+
+      // Bloqueo inmediato: ningún botón Aceptar debe estar visible en la vista mientras se reconcilia
+      const remainingAcceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(remainingAcceptButtons).toHaveLength(0);
+      expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
     });
 
-    it('H02: carrera con REQUEST_EXPIRED cierra el modal, notifica error y fuerza router.refresh()', async () => {
+    it('H02: carrera con REQUEST_EXPIRED bloquea inmediatamente todos los botones Aceptar y no incrementa action', async () => {
       mockAcceptOfferAction.mockResolvedValue({
         ok: false,
         code: 'REQUEST_EXPIRED',
@@ -582,6 +588,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
 
       const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons.length).toBeGreaterThan(0);
       fireEvent.click(acceptButtons[0]!);
 
       const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
@@ -594,6 +601,35 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
       // Modal cerrado
       expect(screen.queryByRole('button', { name: /sí, aceptar/i })).toBeNull();
+
+      // Bloqueo inmediato
+      const remainingAcceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(remainingAcceptButtons).toHaveLength(0);
+      expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('H02: error transitorio permite reintento y no activa latch de reconciliación permanente', async () => {
+      mockAcceptOfferAction.mockResolvedValueOnce({
+        ok: false,
+        code: 'UNKNOWN_ERROR',
+        message: 'Fallo de conexión',
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+      });
+
+      // El modal permanece abierto con mensaje de error para permitir reintentar
+      expect(screen.getByRole('button', { name: /sí, aceptar/i })).toBeDefined();
+      expect(mockRefresh).not.toHaveBeenCalled();
     });
 
     it('H03: no muestra botón Aceptar si expiresAt ya venció en la solicitud', () => {

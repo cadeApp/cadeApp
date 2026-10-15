@@ -98,8 +98,10 @@ export function RequestOffersList({
     if (!request.expiresAt) return false;
     return new Date(request.expiresAt).getTime() <= Date.now();
   });
+  const [isReconciling, setIsReconciling] = useState<boolean>(false);
 
-  const isAcceptableStatus = request.status === 'published' && !isExpired;
+  const isAcceptableStatus =
+    request.status === 'published' && !isExpired && !isReconciling;
   const isMatchedOrLater =
     request.status === 'matched' ||
     request.status === 'in_transit' ||
@@ -140,7 +142,14 @@ export function RequestOffersList({
     const currentExpired = Boolean(
       request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()
     );
-    if (!isAcceptableStatus || currentExpired || (offer.status && offer.status !== 'pending')) return;
+    if (
+      !isAcceptableStatus ||
+      currentExpired ||
+      isReconciling ||
+      (offer.status && offer.status !== 'pending')
+    ) {
+      return;
+    }
     setAcceptError(null);
     setSelectedOffer(offer);
   };
@@ -152,12 +161,13 @@ export function RequestOffersList({
   };
 
   const handleConfirmAccept = async () => {
-    if (!selectedOffer) return;
+    if (!selectedOffer || isReconciling) return;
 
     const currentExpired = Boolean(
       request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()
     );
     if (request.status !== 'published' || isExpired || currentExpired) {
+      setIsReconciling(true);
       notify.error('La solicitud ha expirado.');
       setSelectedOffer(null);
       router.refresh();
@@ -176,6 +186,7 @@ export function RequestOffersList({
         router.replace(`/trips/${request.id}`);
       } else {
         if (res.code === 'ALREADY_MATCHED') {
+          setIsReconciling(true);
           setAcceptError(
             'Esta solicitud ya fue asignada a otro repartidor o la oferta no está disponible.'
           );
@@ -183,6 +194,7 @@ export function RequestOffersList({
           setSelectedOffer(null);
           router.refresh();
         } else if (res.code === 'REQUEST_EXPIRED') {
+          setIsReconciling(true);
           setAcceptError('La solicitud ha expirado.');
           notify.error('La solicitud ha expirado.');
           setSelectedOffer(null);
@@ -208,10 +220,23 @@ export function RequestOffersList({
       {acceptError && (
         <div
           role="alert"
-          className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
+          className="flex flex-col gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between"
         >
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <p>{acceptError}</p>
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p>{acceptError}</p>
+          </div>
+          {isReconciling && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => router.refresh()}
+              className="shrink-0 self-start sm:self-auto"
+            >
+              Reintentar consulta
+            </Button>
+          )}
         </div>
       )}
 
