@@ -12,14 +12,13 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
-  const mockMetrics: MerchantMetrics = {
-    dispatchedToday: 4,
-    avgRateArs: 1850,
-    activeCount: 2,
-  };
+const mockMetrics: MerchantMetrics = {
+  dispatchedToday: 4,
+  avgRateArs: 1850,
+  activeCount: 2,
+};
 
-  const mockRequests: MerchantRequestSummary[] = [
+const mockRequests: MerchantRequestSummary[] = [
     {
       id: 'req-1',
       pickupZoneName: 'Barrio Centro',
@@ -64,6 +63,7 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
     },
   ];
 
+describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
   it('renderiza métricas C02 con formato ARS y Anti-12px', () => {
     render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
 

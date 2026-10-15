@@ -37,6 +37,7 @@ export interface RequestOffersListProps {
     cashChangeAmount: number | null;
     status: string;
     expiresAt: string | null;
+    acceptedOfferId?: string | null;
     dropsCount?: number;
     drops?: readonly MerchantDropSummary[];
   };

@@ -7,8 +7,10 @@ import { requestsCopy } from '../copy';
 import type { MerchantOfferItem, MerchantRequestDetail } from '../types';
 import type { RpcOutput } from '@/domain';
 
-// Mock server actions
-const mockPush = vi.fn();
+const { mockPush } = vi.hoisted(() => ({
+  mockPush: vi.fn(),
+}));
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: mockPush,
@@ -545,7 +547,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
     });
 
     it('DoD 2: si la solicitud ya está en estado matched, no muestra botón Aceptar y ofrece enlace al viaje', () => {
-      const matchedRequest: MerchantRequestDetail = {
+      const matchedRequest = {
         ...mockRequest,
         status: 'matched',
         acceptedOfferId: '11111111-1111-1111-1111-111111111111',
