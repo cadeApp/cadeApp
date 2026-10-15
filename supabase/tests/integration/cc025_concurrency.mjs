@@ -7,13 +7,13 @@
  *   2. public.courier_documents (por id)
  *
  * Escenarios probados:
- *   1. Admin AAL2 verifica mientras Courier intenta sustituir el documento (orden couriers -> docs).
+ *   1. Admin AAL2 decide mientras Courier intenta sustituir el documento (orden couriers -> docs).
  *      No hay deadlock SQLSTATE 40P01; se preserva versión única vigente e integridad de auditoría.
  *   2. Courier sustituye mientras Admin AAL2 intenta decidir sobre el documento.
  *      No hay deadlock SQLSTATE 40P01; Admin recibe INVALID_STATE_TRANSITION al quedar obsoleto el doc.
  *   3. Control de mutación negativa (--mutation-check):
- *      Invertir el orden de adquisición en admin_verify_document provoca deadlock real (SQLSTATE 40P01)
- *      bajo concurrencia cruzada; restaurar el orden devuelve GREEN.
+ *      Invertir el orden de adquisición entre couriers y courier_documents provoca deadlock real (SQLSTATE 40P01)
+ *      bajo concurrencia cruzada; el orden uniforme de producción previene el deadlock.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -251,15 +251,29 @@ async function runScenario2(adminId, courierId, docId) {
     await adminSession.configure(adminId, 'admin', 'aal2');
     await courierSession.configure(courierId, 'courier', 'aal1');
 
-    // 1. Courier adquiere lock de couriers
-    const lockMarker = `COURIER_LOCKED_${crypto.randomUUID()}`;
+    // 1. Courier ejecuta replace_courier_document en su transacción (retiene lock couriers y courier_documents)
+    const courierResultMarker = `COURIER_RES_${crypto.randomUUID()}`;
     courierSession.send(`
-      select 1 from public.couriers where profile_id = '${courierId}' for update;
-      select '${lockMarker}';
+      do $c2$
+      declare
+        v_res jsonb;
+      begin
+        begin
+          v_res := public.replace_courier_document(jsonb_build_object(
+            'kind', 'license',
+            'storagePath', 'courier/${courierId}/license_v2.jpg',
+            'idempotencyKey', '00000000-0000-4000-8000-0000000001a2'
+          ));
+          raise notice '${courierResultMarker}:OK:%:END_${courierResultMarker}', v_res::text;
+        exception when others then
+          raise notice '${courierResultMarker}:ERROR:%:END_${courierResultMarker}', SQLERRM;
+        end;
+      end $c2$;
     `);
-    await courierSession.waitFor(lockMarker);
+    await courierSession.waitFor(`END_${courierResultMarker}`);
+    assert.ok(courierSession.output.includes(`${courierResultMarker}:OK:`), 'Courier debe ejecutar reemplazo exitoso en su tx');
 
-    // 2. Admin intenta admin_verify_document concurrentemente (bloqueará en couriers)
+    // 2. Admin intenta admin_verify_document concurrentemente antes del commit del courier (bloqueará en couriers)
     const adminResultMarker = `ADMIN_RES_${crypto.randomUUID()}`;
     adminSession.send(`
       do $a2$
@@ -278,21 +292,16 @@ async function runScenario2(adminId, courierId, docId) {
     // 3. Confirmar que Admin está bloqueado esperando a Courier
     await waitForBlockedLock(courierPid, adminPid);
 
-    // 4. Courier ejecuta reemplazo exitoso y comitea
+    // 4. Courier comitea su transacción liberando los locks
     const courierCommitMarker = `COURIER_COMMITTED_${crypto.randomUUID()}`;
     courierSession.send(`
-      select public.replace_courier_document(jsonb_build_object(
-        'kind', 'license',
-        'storagePath', 'courier/${courierId}/license_v2.jpg',
-        'idempotencyKey', '00000000-0000-4000-8000-0000000001a2'
-      ));
       commit;
       select '${courierCommitMarker}';
     `);
     await courierSession.waitFor(courierCommitMarker);
 
-    // 5. Admin se desbloquea: debe evaluar que docId ya no es vigente (is_current = false)
-    // y fallar limpiamente con INVALID_STATE_TRANSITION
+    // 5. Admin se desbloquea: bajo lock descubre que docId ya no es vigente (is_current = false)
+    // y falla limpiamente con INVALID_STATE_TRANSITION
     await adminSession.waitFor(`END_${adminResultMarker}`);
     const adminOutput = adminSession.output;
 
@@ -345,8 +354,9 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
     const pidA = await sessionA.initPid();
     const pidB = await sessionB.initPid();
 
+    // Ambas sesiones con privilegios para adquirir locks sobre couriers y courier_documents
     await sessionA.configure(adminId, 'admin', 'aal2');
-    await sessionB.configure(courierId, 'courier', 'aal1');
+    await sessionB.configure(adminId, 'admin', 'aal2');
 
     // Sesión A adquiere lock en courier_documents
     sessionA.send(`
@@ -439,8 +449,8 @@ async function main() {
     runSql(`
       delete from public.audit_log where actor_id in ('${adminId}', '${courierId}') or target_id in ('${adminId}', '${courierId}');
       delete from public.courier_documents where courier_id = '${courierId}';
-      delete from storage.objects where bucket_id = 'courier-docs' and owner = '${courierId}';
       delete from public.couriers where profile_id = '${courierId}';
+      update storage.objects set owner = null where owner = '${courierId}';
       delete from public.profiles where id in ('${adminId}', '${courierId}');
       delete from auth.users where id in ('${adminId}', '${courierId}');
     `);

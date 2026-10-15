@@ -183,6 +183,9 @@ async function runBackfillTest() {
   console.log('[CC-025][H06] Verificando aserciones del backfill...');
   verifyBackfillAssertions(ids);
 
+  // 5. Restaurar DB completa con seed para siguientes suites
+  runCommand(pnpmCmd, ['supabase', 'db', 'reset'], 'Restaurando DB completa con pnpm supabase db reset');
+
   console.log('[CC-025][H06] === PRUEBA DE BACKFILL GREEN COMPLETADA EXITOSAMENTE ===');
 }
 
