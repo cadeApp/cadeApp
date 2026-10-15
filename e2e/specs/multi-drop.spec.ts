@@ -959,25 +959,139 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
   test('T-353 / PR362-H06: rechaza teléfono o destinatario inválido en el formulario de pedido y permite corregir sin perder datos', async ({
     page,
     loginAsMerchant,
+    stagingContext,
   }) => {
     assertAllowedE2EEnvironment();
     await loginAsMerchant(page);
     await page.goto('/merchant/requests/new');
     await waitForNoSkeletons(page);
 
-    const phoneInput = page.locator('input[name*="recipientPhone"]').first();
-    if (await phoneInput.isVisible()) {
-      await phoneInput.fill('3815551234abc');
-      await phoneInput.blur();
-
-      const submitBtn = page.getByRole('button', { name: /publicar solicitud/i });
-      await submitBtn.click();
-      await expect(page.getByText(/El teléfono debe ser un número argentino válido/i)).toBeVisible();
-
-      // Corregir teléfono
-      await phoneInput.fill('3815551234');
-      await phoneInput.blur();
-      await expect(page.getByText(/El teléfono debe ser un número argentino válido/i)).not.toBeVisible();
+    // 1. Completar dirección de retiro si está vacía
+    const pickupAddressInput = page.getByLabel(/dirección del comercio|dirección de retiro/i);
+    const currentPickup = await pickupAddressInput.inputValue();
+    if (!currentPickup.trim()) {
+      await pickupAddressInput.fill('Av. San Martín 150');
     }
+
+    // 2. Localizar tarjeta de entrega 0 de forma incondicional y acotada
+    const dropCard = page.getByTestId('drop-card-0');
+    await expect(dropCard).toBeVisible();
+
+    // Seleccionar barrio/zona de entrega
+    const zoneSelect = dropCard.locator('select[id^="dropoff-zone-"]');
+    await expect(zoneSelect).toBeVisible();
+    const firstZoneOption = await zoneSelect
+      .locator('option:not([disabled])')
+      .first()
+      .getAttribute('value');
+    if (firstZoneOption) {
+      await zoneSelect.selectOption(firstZoneOption);
+    }
+
+    // Completar dirección y nombre del destinatario
+    const dropoffAddressInput = dropCard.locator('input[id^="dropoff-address-"]');
+    await expect(dropoffAddressInput).toBeVisible();
+    await dropoffAddressInput.fill('Av. Sarmiento 101');
+
+    const recipientNameInput = dropCard.locator('input[id^="recipient-name-"]');
+    await expect(recipientNameInput).toBeVisible();
+    await recipientNameInput.fill('Destinatario Prueba');
+
+    // Teléfono con selector acotado al drop, verificado incondicionalmente (H08)
+    const phoneInput = dropCard.locator('input[id^="recipient-phone-"]');
+    await expect(phoneInput).toBeVisible();
+
+    // Marcar consentimiento de destinatario
+    const consentCheckbox = dropCard.locator('input[id^="recipient-consent-"]');
+    await consentCheckbox.check();
+
+    // Seleccionar tipo de paquete, medio de pago sin cambio
+    await dropCard.getByRole('button', { name: /^chico/i }).click();
+    await dropCard.getByRole('button', { name: /^efectivo$/i }).click();
+    await dropCard.getByRole('button', { name: /^no$/i }).click();
+
+    // 3. Ingresar teléfono semánticamente inválido con letras
+    await phoneInput.fill('3815551234abc');
+    await phoneInput.blur();
+
+    const submitBtn = page.getByRole('button', { name: /publicar solicitud/i });
+    await submitBtn.click();
+
+    // 4. Comprobar que el error específico es visible acotado a la tarjeta y la solicitud no se publicó
+    const phoneError = dropCard
+      .getByRole('alert')
+      .filter({ hasText: /El teléfono debe ser un número argentino válido/i });
+    await expect(phoneError).toBeVisible();
+    expect(page.url()).toContain('/merchant/requests/new');
+
+    // 5. Corregir teléfono con número válido y verificar que el error desaparece
+    await phoneInput.fill('3865123456');
+    await phoneInput.blur();
+    await expect(phoneError).not.toBeVisible();
+
+    // 6. Verificar que los demás campos conservaron sus valores intactos
+    expect(await recipientNameInput.inputValue()).toBe('Destinatario Prueba');
+    expect(await dropoffAddressInput.inputValue()).toBe('Av. Sarmiento 101');
+
+    // 7. Publicar solicitud y verificar navegación exitosa al dashboard
+    await submitBtn.click();
+    await page.waitForURL(/\/merchant\/dashboard/, { timeout: 15000 });
+    await waitForNoSkeletons(page);
+
+    // 8. Verificar que en la base de datos se creó válidamente sin datos privados prematch
+    const admin = createAdminClient();
+    const merchantUser = stagingContext.merchantUser;
+    if (!merchantUser) {
+      throw new Error('[E2E Error] Se requiere merchantUser en stagingContext');
+    }
+
+    const { data: createdReqRows, error: findReqErr } = await admin
+      .from('delivery_requests')
+      .select('*')
+      .eq('merchant_id', merchantUser.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    expect(findReqErr).toBeNull();
+    expect(createdReqRows).toHaveLength(1);
+    const createdReq = createdReqRows?.[0];
+    if (!createdReq) {
+      throw new Error('[E2E Error] No se encontró la solicitud creada');
+    }
+    trackEntityForCleanup(stagingContext, 'request', createdReq.id);
+
+    expect(createdReq.status).toBe('published');
+    expect(createdReq.drops_count).toBe(1);
+
+    // Aislamiento privado en delivery_requests pública: sin PII ni claves privadas
+    const rawReqString = JSON.stringify(createdReq);
+    for (const key of FORBIDDEN_PRIVATE_KEYS) {
+      expect(rawReqString).not.toContain(`"${key}"`);
+    }
+    assertNoPrivateFieldsInRawPayload(createdReq, [
+      '3865123456',
+      'Av. Sarmiento 101',
+      'Destinatario Prueba',
+    ]);
+
+    // Verificación de teléfono canónico en tabla privada delivery_request_drop_contacts
+    const { data: dropsRows } = await admin
+      .from('delivery_request_drops')
+      .select('id')
+      .eq('request_id', createdReq.id);
+    expect(dropsRows).toHaveLength(1);
+    const dropId = dropsRows?.[0]?.id;
+    if (!dropId) {
+      throw new Error('[E2E Error] No se encontró el drop creado');
+    }
+
+    const { data: dropContact } = await admin
+      .from('delivery_request_drop_contacts')
+      .select('*')
+      .eq('drop_id', dropId)
+      .single();
+
+    expect(dropContact?.recipient_phone).toBe('3865123456');
+    expect(dropContact?.recipient_name).toBe('Destinatario Prueba');
   });
 });
