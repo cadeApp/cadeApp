@@ -962,6 +962,20 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     stagingContext,
   }) => {
     assertAllowedE2EEnvironment();
+    const admin = createAdminClient();
+    const merchantUser = stagingContext.merchantUser;
+    if (!merchantUser) {
+      throw new Error('[E2E Error] Se requiere merchantUser en stagingContext');
+    }
+
+    // Baseline de IDs existentes del comercio en delivery_requests
+    const { data: baselineRows, error: baselineErr } = await admin
+      .from('delivery_requests')
+      .select('id')
+      .eq('merchant_id', merchantUser.id);
+    expect(baselineErr).toBeNull();
+    const beforeIds = new Set((baselineRows ?? []).map((r) => r.id));
+
     await loginAsMerchant(page);
     await page.goto('/merchant/requests/new');
     await waitForNoSkeletons(page);
@@ -1017,12 +1031,24 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     const submitBtn = page.getByRole('button', { name: /publicar solicitud/i });
     await submitBtn.click();
 
-    // 4. Comprobar que el error específico es visible acotado a la tarjeta y la solicitud no se publicó
+    // 4. Comprobar que el error específico es visible acotado a la tarjeta y la URL no cambió
     const phoneError = dropCard
       .getByRole('alert')
       .filter({ hasText: /El teléfono debe ser un número argentino válido/i });
     await expect(phoneError).toBeVisible();
     expect(page.url()).toContain('/merchant/requests/new');
+
+    // Comprobar ausencia de escritura en la base de datos tras intento inválido (H06)
+    const { data: afterInvalidRows, error: invalidErr } = await admin
+      .from('delivery_requests')
+      .select('id')
+      .eq('merchant_id', merchantUser.id);
+    expect(invalidErr).toBeNull();
+    const afterInvalidIds = (afterInvalidRows ?? []).map((r) => r.id);
+    expect(afterInvalidIds).toHaveLength(beforeIds.size);
+    for (const id of afterInvalidIds) {
+      expect(beforeIds.has(id)).toBe(true);
+    }
 
     // 5. Corregir teléfono con número válido y verificar que el error desaparece
     await phoneInput.fill('3865123456');
@@ -1038,27 +1064,31 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     await page.waitForURL(/\/merchant\/dashboard/, { timeout: 15000 });
     await waitForNoSkeletons(page);
 
-    // 8. Verificar que en la base de datos se creó válidamente sin datos privados prematch
-    const admin = createAdminClient();
-    const merchantUser = stagingContext.merchantUser;
-    if (!merchantUser) {
-      throw new Error('[E2E Error] Se requiere merchantUser en stagingContext');
+    // 8. Derivar el nuevo ID diferencial exacto y comprobar persistencia
+    const { data: afterValidRows, error: validErr } = await admin
+      .from('delivery_requests')
+      .select('id')
+      .eq('merchant_id', merchantUser.id);
+    expect(validErr).toBeNull();
+    const newIds = (afterValidRows ?? [])
+      .map((r) => r.id)
+      .filter((id) => !beforeIds.has(id));
+    expect(newIds).toHaveLength(1);
+    const newRequestId = newIds[0];
+    if (!newRequestId) {
+      throw new Error('[E2E Error] No se encontró el nuevo ID de la solicitud');
     }
+    trackEntityForCleanup(stagingContext, 'request', newRequestId);
 
-    const { data: createdReqRows, error: findReqErr } = await admin
+    const { data: createdReq, error: reqErr } = await admin
       .from('delivery_requests')
       .select('*')
-      .eq('merchant_id', merchantUser.id)
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    expect(findReqErr).toBeNull();
-    expect(createdReqRows).toHaveLength(1);
-    const createdReq = createdReqRows?.[0];
+      .eq('id', newRequestId)
+      .single();
+    expect(reqErr).toBeNull();
     if (!createdReq) {
-      throw new Error('[E2E Error] No se encontró la solicitud creada');
+      throw new Error('[E2E Error] No se pudo leer la solicitud creada');
     }
-    trackEntityForCleanup(stagingContext, 'request', createdReq.id);
 
     expect(createdReq.status).toBe('published');
     expect(createdReq.drops_count).toBe(1);
@@ -1075,21 +1105,23 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     ]);
 
     // Verificación de teléfono canónico en tabla privada delivery_request_drop_contacts
-    const { data: dropsRows } = await admin
+    const { data: dropsRows, error: dropsErr } = await admin
       .from('delivery_request_drops')
       .select('id')
-      .eq('request_id', createdReq.id);
+      .eq('request_id', newRequestId);
+    expect(dropsErr).toBeNull();
     expect(dropsRows).toHaveLength(1);
     const dropId = dropsRows?.[0]?.id;
     if (!dropId) {
       throw new Error('[E2E Error] No se encontró el drop creado');
     }
 
-    const { data: dropContact } = await admin
+    const { data: dropContact, error: contactErr } = await admin
       .from('delivery_request_drop_contacts')
       .select('*')
       .eq('drop_id', dropId)
       .single();
+    expect(contactErr).toBeNull();
 
     expect(dropContact?.recipient_phone).toBe('3865123456');
     expect(dropContact?.recipient_name).toBe('Destinatario Prueba');
