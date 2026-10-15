@@ -13,6 +13,19 @@ export const OFFERS_COPY = {
   loadMore: 'Cargar más',
   loadingMore: 'Cargando…',
 
+  // Mis viajes activos (T-360)
+  activeTripsTitle: 'Mis viajes activos',
+  viewTripButton: 'Ver viaje',
+  activeTripsBadge: (count: number) => `${count}`,
+  activeTripStatus: {
+    matched: 'Aceptado · Por retirar',
+    in_transit: 'En camino',
+  },
+  multiDropSummary: (count: number) => `${count} entregas`,
+  perDropSuffix: 'por entrega',
+  activeTripsErrorTitle: 'No se pudieron cargar los viajes activos',
+  activeTripsErrorDescription: 'Ocurrió un problema al sincronizar tus viajes en curso.',
+
   // Disponibilidad en feed
   unavailableAlertTitle: 'No estás disponible',
   unavailableAlertDescription: 'Activá Disponible para ver las solicitudes y recibir avisos.',

@@ -1,24 +1,46 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MerchantRequestsList } from './merchant-requests-list';
 import { MerchantHistoryView } from './merchant-history-view';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
+import { notify } from '@/ui/notify';
+import { cancelMerchantRequestAction } from '../actions';
+
+const mockRefresh = vi.fn();
+const mockPush = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: vi.fn(),
+    push: mockPush,
+    refresh: mockRefresh,
   }),
 }));
 
-const mockMetrics: MerchantMetrics = {
-  dispatchedToday: 4,
-  avgRateArs: 1850,
-  activeCount: 2,
-};
+vi.mock('@/ui/notify', () => ({
+  notify: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
 
-const mockRequests: MerchantRequestSummary[] = [
+vi.mock('../actions', () => ({
+  cancelMerchantRequestAction: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
+  const mockMetrics: MerchantMetrics = {
+    dispatchedToday: 4,
+    avgRateArs: 1850,
+    activeCount: 2,
+  };
+
+  const mockRequests: MerchantRequestSummary[] = [
     {
       id: 'req-1',
       pickupZoneName: 'Barrio Centro',
@@ -63,7 +85,6 @@ const mockRequests: MerchantRequestSummary[] = [
     },
   ];
 
-describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
   it('renderiza métricas C02 con formato ARS y Anti-12px', () => {
     render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
 
@@ -145,6 +166,33 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
 
     expect(screen.queryByText(/Zona Terminal Intrusa/i)).toBeNull();
     expect(screen.getByText(/No tenés solicitudes activas/i)).toBeDefined();
+  });
+  describe('T-359: Navegación post-match del comercio', () => {
+    it('solicitud en estado matched vincula botón "Ver detalle" a /trips/[id] en lugar de /merchant/requests/[id]', () => {
+      render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
+
+      const detailLinks = screen.getAllByRole('link', { name: /ver detalle/i });
+      expect(detailLinks.length).toBe(1);
+      expect(detailLinks[0]?.getAttribute('href')).toBe('/trips/req-3');
+    });
+
+    it('solicitud en estado in_transit vincula botón "Ver detalle" a /trips/[id]', () => {
+      const inTransitRequest: MerchantRequestSummary = {
+        ...mockRequests[0]!,
+        id: 'req-in-transit',
+        status: 'in_transit',
+      };
+
+      render(
+        <MerchantRequestsList
+          requests={[inTransitRequest]}
+          metrics={mockMetrics}
+        />
+      );
+
+      const detailLink = screen.getByRole('link', { name: /ver detalle/i });
+      expect(detailLink.getAttribute('href')).toBe('/trips/req-in-transit');
+    });
   });
 });
 
@@ -317,32 +365,412 @@ describe('H06: MerchantRequestsList con multi-drop', () => {
     expect(screen.getByText('Paquetes: Chico, Mediano, Grande')).toBeDefined();
     expect(screen.getByText('Medios: Efectivo, Transferencia')).toBeDefined();
   });
+});
 
-  describe('T-359: Navegación post-match del comercio', () => {
-    it('solicitud en estado matched vincula botón "Ver detalle" a /trips/[id] en lugar de /merchant/requests/[id]', () => {
-      render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
+describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al detalle', () => {
+  const t364Metrics: MerchantMetrics = {
+    dispatchedToday: 2,
+    avgRateArs: 1500,
+    activeCount: 3,
+  };
 
-      const detailLinks = screen.getAllByRole('link', { name: /ver detalle/i });
-      expect(detailLinks.length).toBe(1);
-      expect(detailLinks[0]?.getAttribute('href')).toBe('/trips/req-3');
+  const nowMs = Date.now();
+  const t364Requests: MerchantRequestSummary[] = [
+    {
+      id: 'req-pub-vigente',
+      pickupZoneName: 'Barrio Centro',
+      dropoffZoneName: 'Barrio Norte',
+      approxDistanceKm: '2,5',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: true,
+      status: 'published',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(), // Vigente (+30m)
+      createdAt: new Date(nowMs - 5 * 60 * 1000).toISOString(),
+      offersCount: 0,
+      acceptedOfferId: null,
+    },
+    {
+      id: 'req-pub-vencida',
+      pickupZoneName: 'Barrio Centro',
+      dropoffZoneName: 'Barrio Sur',
+      approxDistanceKm: '1,5',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'published',
+      expiresAt: new Date(nowMs - 30 * 60 * 1000).toISOString(), // Vencida (-30m)
+      createdAt: new Date(nowMs - 60 * 60 * 1000).toISOString(),
+      offersCount: 0,
+      acceptedOfferId: null,
+    },
+    {
+      id: 'req-matched-2',
+      pickupZoneName: 'San Martín',
+      dropoffZoneName: 'Villa Nueva',
+      approxDistanceKm: '1,8',
+      packageType: 'mediano',
+      recipientPaymentMethod: 'transfer',
+      needsChange: false,
+      status: 'matched',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 10 * 60 * 1000).toISOString(),
+      offersCount: 1,
+      acceptedOfferId: 'off-1',
+    },
+    {
+      id: 'req-transit-3',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Colón',
+      approxDistanceKm: '3,0',
+      packageType: 'grande',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'in_transit',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 15 * 60 * 1000).toISOString(),
+      offersCount: 1,
+      acceptedOfferId: 'off-2',
+    },
+    {
+      id: 'req-delivered-4',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Sarmiento',
+      approxDistanceKm: '2,0',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'delivered',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 120 * 60 * 1000).toISOString(),
+      offersCount: 1,
+      acceptedOfferId: 'off-3',
+    },
+    {
+      id: 'req-cancelled-5',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Belgrano',
+      approxDistanceKm: '1,2',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'cancelled',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 180 * 60 * 1000).toISOString(),
+      offersCount: 0,
+      acceptedOfferId: null,
+    },
+  ];
+
+  it('DoD 1, 2 & PR361-H04: muestra botón «Cancelar» solo para published vigente y matched; lo oculta en published vencida, in_transit y terminales', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    // Cancelar debe estar visible exactamente para req-pub-vigente y req-matched-2 (2 veces)
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    expect(cancelButtons.length).toBe(2);
+
+    // Las acciones principales siguen presentes
+    expect(screen.getAllByRole('link', { name: /ver ofertas/i }).length).toBe(2);
+    expect(screen.getAllByRole('link', { name: /ver detalle/i }).length).toBe(2);
+  });
+
+  it('DoD 3: al hacer click en «Cancelar», abre el modal solicitando motivo (paso 1)', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    expect(screen.getByText(/¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
+    expect(screen.getByText('Ya no hace falta')).toBeDefined();
+    expect(screen.getByText('Lo resolví de otra forma')).toBeDefined();
+    expect(screen.getByText('Me equivoqué en los datos')).toBeDefined();
+    expect(screen.getByText('Otro')).toBeDefined();
+
+    // Botón continuar deshabilitado hasta seleccionar motivo
+    const continueBtn = screen.getByRole('button', { name: /continuar/i });
+    expect(continueBtn.hasAttribute('disabled') || continueBtn.getAttribute('aria-disabled') === 'true').toBe(true);
+  });
+
+  it('DoD 3: seleccionar motivo habilita Continuar y muestra confirmación definitiva en paso 2', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    const reasonOption = screen.getByLabelText('Ya no hace falta');
+    fireEvent.click(reasonOption);
+
+    const continueBtn = screen.getByRole('button', { name: /continuar/i });
+    expect(continueBtn.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(continueBtn);
+
+    expect(screen.getByText(/¿Confirmás la cancelación definitiva\?/i)).toBeDefined();
+    expect(screen.getByText(/Las ofertas se van a cerrar\. No se puede deshacer\./i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /sí, cancelar/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /atrás/i })).toBeDefined();
+  });
+
+  it('DoD 3: botón Atrás en paso 2 vuelve al paso 1 conservando el motivo seleccionado', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Lo resolví de otra forma'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    expect(screen.getByText(/¿Confirmás la cancelación definitiva\?/i)).toBeDefined();
+
+    const backBtn = screen.getByRole('button', { name: /atrás/i });
+    fireEvent.click(backBtn);
+
+    expect(screen.getByText(/¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
+    const reasonRadio = screen.getByLabelText('Lo resolví de otra forma') as HTMLInputElement;
+    expect(reasonRadio.checked).toBe(true);
+  });
+
+  it('DoD 1 & PR361-H09: confirmar cancelación ejecuta acción productiva con requestId y motivo, notificando éxito y refrescando exactamente una vez', async () => {
+    const validUuid = '11111111-2222-3333-4444-555555555555';
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        requestId: validUuid,
+        status: 'cancelled',
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
     });
 
-    it('solicitud en estado in_transit vincula botón "Ver detalle" a /trips/[id]', () => {
-      const inTransitRequest: MerchantRequestSummary = {
-        ...mockRequests[0]!,
-        id: 'req-in-transit',
-        status: 'in_transit',
-      };
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
 
-      render(
-        <MerchantRequestsList
-          requests={[inTransitRequest]}
-          metrics={mockMetrics}
-        />
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!); // req-pub-vigente
+
+    fireEvent.click(screen.getByLabelText('Lo resolví de otra forma'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    const confirmBtn = screen.getByRole('button', { name: /sí, cancelar/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(cancelMerchantRequestAction).toHaveBeenCalledWith({
+        requestId: 'req-pub-vigente',
+        reason: 'Lo resolví de otra forma',
+      });
+    });
+
+    await waitFor(() => {
+      expect(notify.success).toHaveBeenCalledWith('Solicitud cancelada.');
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('DoD 1 & PR361-H09: compatibilidad con prop inyectable onCancel con RpcOutput canónico', async () => {
+    const mockOnCancel = vi.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        requestId: 'req-pub-vigente',
+        status: 'cancelled' as const,
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
+    });
+
+    render(
+      <MerchantRequestsList
+        requests={t364Requests}
+        metrics={t364Metrics}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Ya no hace falta'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-vigente', 'Ya no hace falta');
+      expect(notify.success).toHaveBeenCalledWith('Solicitud cancelada.');
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('DoD 3 & PR361-H09: error por carrera concurrente (INVALID_STATE_TRANSITION) muestra mensaje literal amigable y refresca', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValueOnce({
+      ok: false,
+      code: 'INVALID_STATE_TRANSITION',
+    });
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[1]!); // req-matched-2
+
+    fireEvent.click(screen.getByLabelText('Otro'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(cancelMerchantRequestAction).toHaveBeenCalledWith({
+        requestId: 'req-matched-2',
+        reason: 'Otro',
+      });
+    });
+
+    await waitFor(() => {
+      expect(notify.error).toHaveBeenCalledWith('El estado actual del pedido no permite este cambio.');
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('PR361-H09: error cuando el servidor responde REQUEST_EXPIRED muestra mensaje literal y refresca', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValueOnce({
+      ok: false,
+      code: 'REQUEST_EXPIRED',
+    });
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!); // req-pub-vigente
+
+    fireEvent.click(screen.getByLabelText('Ya no hace falta'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(cancelMerchantRequestAction).toHaveBeenCalledWith({
+        requestId: 'req-pub-vigente',
+        reason: 'Ya no hace falta',
+      });
+    });
+
+    await waitFor(() => {
+      expect(notify.error).toHaveBeenCalledWith('La solicitud venció por falta de ofertas a tiempo.');
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('PR361-H08: error de red o excepción rechazada captura en catch, muestra notify.error amigable, no muestra éxito y refresca', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockRejectedValueOnce(new Error('Network failure'));
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Me equivoqué en los datos'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(cancelMerchantRequestAction).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(notify.error).toHaveBeenCalledWith(
+        'No se pudo conectar para cancelar la solicitud. Intentá nuevamente.'
       );
+      expect(notify.success).not.toHaveBeenCalled();
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
 
-      const detailLink = screen.getByRole('link', { name: /ver detalle/i });
-      expect(detailLink.getAttribute('href')).toBe('/trips/req-in-transit');
+  it('PR361-H07: guarda sincrónica inFlightRef bloquea doble confirmación concurrente antes del re-render', async () => {
+    type CancelResult = Awaited<ReturnType<typeof cancelMerchantRequestAction>>;
+    let resolveAction!: (result: CancelResult) => void;
+    const deferredPromise = new Promise<CancelResult>((resolve) => {
+      resolveAction = resolve;
+    });
+
+    vi.mocked(cancelMerchantRequestAction).mockReturnValueOnce(deferredPromise);
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Ya no hace falta'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    const confirmBtn = screen.getByRole('button', { name: /sí, cancelar/i });
+
+    // Disparar dos clicks consecutivos inmediatos
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn);
+
+    expect(cancelMerchantRequestAction).toHaveBeenCalledTimes(1);
+
+    // Resolver la acción en vuelo
+    resolveAction({
+      ok: true,
+      data: {
+        requestId: 'req-pub-vigente',
+        status: 'cancelled',
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
+    });
+
+    await waitFor(() => {
+      expect(notify.success).toHaveBeenCalledWith('Solicitud cancelada.');
+    });
+  });
+
+  it('PR361-H06: reset de diálogo garantiza que aperturas consecutivas inicien en paso 1 con motivo vacío y Continuar deshabilitado', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValue({
+      ok: true,
+      data: {
+        requestId: 'req-pub-vigente',
+        status: 'cancelled',
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
+    });
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    // 1. Abrir diálogo para solicitud A, avanzar a paso 2 y confirmar
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!); // Solicitud 1
+
+    fireEvent.click(screen.getByLabelText('Lo resolví de otra forma'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    expect(screen.getByText(/¿Confirmás la cancelación definitiva\?/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(notify.success).toHaveBeenCalledTimes(1);
+    });
+
+    // 2. Abrir diálogo para solicitud B: debe iniciar en paso 1, sin motivo y Continuar deshabilitado
+    fireEvent.click(cancelButtons[1]!); // Solicitud 2
+    expect(screen.getByText(/¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
+    const continueBtn = screen.getByRole('button', { name: /continuar/i });
+    expect(continueBtn.hasAttribute('disabled') || continueBtn.getAttribute('aria-disabled') === 'true').toBe(true);
+
+    // Verificar que ningún radio está marcado
+    const radios = screen.getAllByRole('radio');
+    radios.forEach((r) => {
+      expect((r as HTMLInputElement).checked).toBe(false);
+    });
+  });
+
+  it('PR361-H10: botón «Cancelar» y enlaces del listado tienen clase min-h-12 (>=48px)', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    cancelButtons.forEach((btn) => {
+      expect(btn.className).toContain('min-h-12');
+    });
+
+    const detailLinks = screen.getAllByRole('link', { name: /ver ofertas|ver detalle/i });
+    detailLinks.forEach((link) => {
+      expect(link.className).toContain('min-h-12');
     });
   });
 });

@@ -6,6 +6,7 @@ export type {
   CourierStatus,
   CourierStatusInfo,
   CourierOfferItem,
+  ActiveTripSummary,
 } from './schemas';
 
 export { acceptOfferAction } from './actions';

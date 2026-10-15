@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
-import { createDeliveryRequestAction } from './actions';
+import { createDeliveryRequestAction, cancelMerchantRequestAction } from './actions';
+
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}));
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -580,5 +584,195 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
         expect(result.data.redirectTo).toBe('/merchant/dashboard');
       }
     });
+  });
+});
+
+describe('T-364: cancelMerchantRequestAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const validRequestId = '11111111-1111-4111-8111-111111111111';
+  const validReason = 'El cliente retirará en el local comercial';
+
+  it('rechaza llamada no autenticada con UNAUTHENTICATED', async () => {
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'No session' },
+        }),
+      },
+    } as unknown as MockedServerClient);
+
+    const result = await cancelMerchantRequestAction({
+      requestId: validRequestId,
+      reason: validReason,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('UNAUTHENTICATED');
+    }
+  });
+
+  it('rechaza actor no autorizado si el perfil no es merchant', async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'courier' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-courier-1' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as MockedServerClient);
+
+    const result = await cancelMerchantRequestAction({
+      requestId: validRequestId,
+      reason: validReason,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('UNAUTHORIZED_ACTOR');
+    }
+  });
+
+  it('rechaza validación si el requestId no es UUID o reason está vacío', async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+    } as unknown as MockedServerClient);
+
+    const resultInvalidId = await cancelMerchantRequestAction({
+      requestId: 'invalid-id',
+      reason: validReason,
+    });
+    expect(resultInvalidId.ok).toBe(false);
+    if (!resultInvalidId.ok) {
+      expect(resultInvalidId.code).toBe('VALIDATION_ERROR');
+    }
+
+    const resultEmptyReason = await cancelMerchantRequestAction({
+      requestId: validRequestId,
+      reason: '   ',
+    });
+    expect(resultEmptyReason.ok).toBe(false);
+    if (!resultEmptyReason.ok) {
+      expect(resultEmptyReason.code).toBe('VALIDATION_ERROR');
+    }
+  });
+
+  it('ejecuta cancel_request exitosamente y retorna el resultado de RPC', async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: {
+        status: 'cancelled',
+        requestId: validRequestId,
+        cancelledAt: '2026-10-15T00:00:00.000Z',
+      },
+      error: null,
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+      rpc: mockRpc,
+    } as unknown as MockedServerClient);
+
+    const result = await cancelMerchantRequestAction({
+      requestId: validRequestId,
+      reason: validReason,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.status).toBe('cancelled');
+    }
+    expect(mockRpc).toHaveBeenCalledWith('cancel_request', {
+      p_request_id: validRequestId,
+      p_reason: validReason,
+    });
+  });
+
+  it('propaga error de dominio retornado por la RPC (p. ej. INVALID_STATE_TRANSITION)', async () => {
+    const mockFrom = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: { role: 'merchant' },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { code: 'P0001', message: 'INVALID_STATE_TRANSITION' },
+    });
+
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: 'usr-merchant-1' } },
+          error: null,
+        }),
+      },
+      from: mockFrom,
+      rpc: mockRpc,
+    } as unknown as MockedServerClient);
+
+    const result = await cancelMerchantRequestAction({
+      requestId: validRequestId,
+      reason: validReason,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_STATE_TRANSITION');
+    }
   });
 });
