@@ -182,10 +182,23 @@ jobs:
             pnpm supabase db reset
             pnpm supabase test db
 
+            # CC-026 H11: el oráculo de atomicidad debe detectar si deja de instalarse
+            # el trigger que fuerza la falla de offers. La mutación vive sólo en $RUNNER_TEMP.
+            CC026_MUTANT="$RUNNER_TEMP/cc026_without_offer_fault.sql"
+            sed '/^create trigger cc026_fail_offer /d' supabase/tests/cc026_reconcile_expired_requests.sql > "$CC026_MUTANT"
+            if pnpm supabase test db "$CC026_MUTANT"; then
+              echo 'CC026_H11_MUTATION inesperadamente verde sin el trigger de offers'
+              exit 1
+            fi
+            echo 'CC026_H11_MUTATION RED: la suite detectó la falta del trigger de offers.'
+            pnpm supabase test db supabase/tests/cc026_reconcile_expired_requests.sql
+            echo 'CC026_H11_MUTATION GREEN: la suite original pasa tras restaurar el trigger.'
+
             # Concurrencia de dos sesiones (H08 / T-340 / CC-022 §2b y §6)
             DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n 1)"
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc024_atomic_concurrency.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc026_reconcile_expired_requests.mjs
 
             # Control negativo RED->GREEN de mutaciones funcionales en DB efímera (H15 / T-340)
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs --mutation-check
@@ -195,10 +208,18 @@ jobs:
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs
 
             pnpm db:types --local
-            git diff --exit-code -- src/types/database.types.ts
           else
             echo 'No hay migraciones todavía; las pruebas de base empiezan en T-004.'
           fi
+      - name: Upload generated database types
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: generated-database-types
+          path: src/types/database.types.ts
+          retention-days: 1
+          if-no-files-found: error
+      - name: Compare generated database types
+        run: git diff --exit-code -- src/types/database.types.ts
 
   # Acá vivía el job db-types, que comparaba los tipos commiteados contra el
   # esquema remoto de staging. Comparar contra staging en un PR a develop es

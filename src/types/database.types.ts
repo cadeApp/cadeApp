@@ -923,6 +923,11 @@ export type Database = {
       }
       mark_picked_up: { Args: { p_request_id: string }; Returns: Json }
       publish_request: { Args: { p_request_id: string }; Returns: Json }
+      reconcile_expired_requests: { Args: never; Returns: Json }
+      reconcile_expired_requests_cron: {
+        Args: { p_limit?: number }
+        Returns: Json
+      }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }
         Returns: Json
