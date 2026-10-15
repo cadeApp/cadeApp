@@ -93,10 +93,10 @@ select lives_ok(
 select lives_ok(
   $$
     insert into public.courier_documents (courier_id, kind, storage_path, status)
-    values (pg_temp.test_courier(), 'license', 'courier/exp_lic_1.jpg', 'submitted')
+    values (pg_temp.test_courier(), 'license', 'courier/exp_lic_2.jpg', 'submitted')
     on conflict (storage_path) do update set status = 'submitted';
   $$,
-  'Old writer UPSERT (ON CONFLICT DO UPDATE) must succeed under authenticated role'
+  'Old writer UPSERT (ON CONFLICT DO UPDATE for new row) must succeed under authenticated role'
 );
 
 -- 6. Guard enforcement: attempts to forge invalid values must fail with check constraint violation (23514)

@@ -124,7 +124,7 @@ async function runCompatibilityTests() {
     set local role authenticated;
     set local "request.jwt.claims" to '{"sub":"${courierId}","role":"authenticated","aal":"aal2"}';
     insert into public.courier_documents (courier_id, kind, storage_path, status)
-    values ('${courierId}', 'license', 'courier/${courierId}/lic.jpg', 'submitted')
+    values ('${courierId}', 'avatar', 'courier/${courierId}/av_upsert.jpg', 'submitted')
     on conflict (storage_path) do update set status = 'submitted';
   `);
   console.log('[CC-025-A] Compatibilidad de writer antiguo GREEN: INSERT y UPSERT bajo authenticated funcionan sin 42501.');
