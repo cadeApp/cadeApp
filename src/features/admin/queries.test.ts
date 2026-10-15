@@ -455,7 +455,10 @@ const CHAIN_METHODS = [
 /**
  * Cliente simulado que registra cada llamada del query builder sin fijar su orden.
  */
-function mockClient(resultsByTable: Record<string, { data: unknown; error: unknown }>) {
+function mockClient(
+  resultsByTable: Record<string, { data: unknown; error: unknown }>,
+  rpcResult: { data: unknown; error: unknown } = { data: [], error: null }
+) {
   const calls: RecordedCall[] = [];
   const from = vi.fn((table: string) => {
     const result = resultsByTable[table] ?? { data: [], error: null };
@@ -471,7 +474,7 @@ function mockClient(resultsByTable: Record<string, { data: unknown; error: unkno
     }
     return builder;
   });
-  const client = { from, rpc: vi.fn() };
+  const client = { from, rpc: vi.fn().mockResolvedValue(rpcResult) };
   vi.mocked(serverSupabase.createClient).mockResolvedValue(client as unknown as ServerClient);
   return { client, calls };
 }
@@ -491,7 +494,6 @@ function merchantRow(id: string, overrides: Record<string, unknown> = {}) {
     paid_until: '2026-10-31',
     profiles: { display_name: 'Rosa Díaz', phone: '3865551234' },
     zones: { name: 'Centro' },
-    delivery_requests: [{ count: 42 }],
     ...overrides,
   };
 }
@@ -508,7 +510,7 @@ describe('T-123: getAdminMerchants (A03)', () => {
     expect(adminSupabase.createAdminClient).not.toHaveBeenCalled();
   });
 
-  it('no selecciona CUIT y cuenta despachos entregados', async () => {
+  it('no selecciona CUIT ni embebe delivery_requests (CC-023 cerró su SELECT de tabla, issue 336)', async () => {
     const { calls } = mockClient({ merchants: { data: [], error: null } });
     await getAdminMerchants();
 
@@ -516,10 +518,84 @@ describe('T-123: getAdminMerchants (A03)', () => {
     expect(select).toBeDefined();
     const columns = String(select?.args[0]);
     expect(columns).not.toMatch(/cuit/i);
-    expect(columns).toMatch(/delivery_requests\s*\(\s*count\s*\)/);
-    expect(callsOf(calls, 'merchants', 'eq')).toContainEqual(
-      expect.objectContaining({ args: ['delivery_requests.status', 'delivered'] })
+    expect(columns).not.toMatch(/delivery_requests|count/i);
+    expect(
+      calls.filter((call) => call.args.some((arg) => String(arg).includes('delivery_requests')))
+    ).toHaveLength(0);
+    expect(calls.filter((call) => call.table !== 'merchants')).toHaveLength(0);
+  });
+
+  it('pide los conteos con una sola RPC y solo con los IDs de la página visible (sin N+1)', async () => {
+    const MERCHANT_C = 'f0000000-0000-4000-8000-00000000000c';
+    const { client } = mockClient(
+      {
+        merchants: {
+          data: [merchantRow(MERCHANT_C), merchantRow(MERCHANT_B), merchantRow(MERCHANT_A)],
+          error: null,
+        },
+      },
+      {
+        data: [
+          { merchant_id: MERCHANT_B, delivered_count: 3 },
+          { merchant_id: MERCHANT_C, delivered_count: 7 },
+        ],
+        error: null,
+      }
     );
+
+    const result = await getAdminMerchants({ pageSize: 2 });
+
+    expect(client.rpc).toHaveBeenCalledTimes(1);
+    expect(client.rpc).toHaveBeenCalledWith('admin_merchant_delivered_counts', {
+      p_merchant_ids: [MERCHANT_C, MERCHANT_B],
+    });
+    expect(result.items.map((item) => [item.id, item.deliveredCount])).toEqual([
+      [MERCHANT_C, 7],
+      [MERCHANT_B, 3],
+    ]);
+    expect(result.nextCursor).toBe(MERCHANT_B);
+  });
+
+  it('no llama a la RPC si la página está vacía', async () => {
+    const { client } = mockClient({ merchants: { data: [], error: null } });
+    const result = await getAdminMerchants();
+    expect(client.rpc).not.toHaveBeenCalled();
+    expect(result.items).toEqual([]);
+  });
+
+  it('un comercio sin solicitudes entregadas queda en 0', async () => {
+    mockClient(
+      { merchants: { data: [merchantRow(MERCHANT_B), merchantRow(MERCHANT_A)], error: null } },
+      { data: [{ merchant_id: MERCHANT_B, delivered_count: 0 }], error: null }
+    );
+
+    const result = await getAdminMerchants();
+
+    expect(result.items.map((item) => [item.id, item.deliveredCount])).toEqual([
+      [MERCHANT_B, 0],
+      [MERCHANT_A, 0],
+    ]);
+  });
+
+  it('propaga el error de la RPC de conteos para el error boundary', async () => {
+    mockClient(
+      { merchants: { data: [merchantRow(MERCHANT_B)], error: null } },
+      { data: null, error: { message: 'AAL2_REQUIRED' } }
+    );
+    await expect(getAdminMerchants()).rejects.toThrow(
+      'Error al contar las solicitudes entregadas: AAL2_REQUIRED'
+    );
+  });
+
+  it('rechaza una salida de la RPC con campos fuera del contrato (sin datos privados)', async () => {
+    mockClient(
+      { merchants: { data: [merchantRow(MERCHANT_B)], error: null } },
+      {
+        data: [{ merchant_id: MERCHANT_B, delivered_count: 1, notes: 'Timbre 2B' }],
+        error: null,
+      }
+    );
+    await expect(getAdminMerchants()).rejects.toThrow();
   });
 
   it('pagina server-side por cursor: limit(pageSize + 1), sin range()', async () => {
@@ -552,12 +628,15 @@ describe('T-123: getAdminMerchants (A03)', () => {
   });
 
   it('mapea filas a items sin CUIT y calcula nextCursor', async () => {
-    mockClient({
-      merchants: {
-        data: [merchantRow(MERCHANT_B), merchantRow(MERCHANT_A, { cuit: '20-12345678-9' })],
-        error: null,
+    mockClient(
+      {
+        merchants: {
+          data: [merchantRow(MERCHANT_B), merchantRow(MERCHANT_A, { cuit: '20-12345678-9' })],
+          error: null,
+        },
       },
-    });
+      { data: [{ merchant_id: MERCHANT_B, delivered_count: 42 }], error: null }
+    );
 
     const result = await getAdminMerchants({ pageSize: 1 });
 
