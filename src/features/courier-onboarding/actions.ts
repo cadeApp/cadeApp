@@ -24,6 +24,52 @@ function computeDniHmac(dni: string, secret: string): string {
   return createHmac('sha256', secret).update(normalizedDni).digest('hex');
 }
 
+export type DocumentValidationResult =
+  | { status: 'MATCH' }
+  | { status: 'DUPLICATE'; kind: string }
+  | { status: 'MISSING'; kind: string }
+  | { status: 'DIFFERENT_PATH'; kind: string; expected: string; actual: string }
+  | { status: 'INVALID_STATUS'; kind: string; docStatus: string };
+
+/**
+ * Valida de forma pura el conjunto de documentos vigentes de un repartidor contra las entradas esperadas.
+ * Recorre todas las filas is_current reales por courier:
+ * - Si hay más de una de un kind -> DUPLICATE
+ * - Si alguno de los kinds esperados tiene status distinto de 'submitted' / 'verified' -> INVALID_STATUS
+ * - Si storage_path es distinto al esperado -> DIFFERENT_PATH
+ * - Si faltan kinds requeridos -> MISSING
+ * - Si todos coinciden exactamente -> MATCH
+ */
+export async function validateCurrentDocumentSet(
+  expectedEntries: Array<{ kind: string; storage_path: string }>,
+  docs: Array<{ id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>
+): Promise<DocumentValidationResult> {
+  const activeDocs = (docs ?? []).filter((d) => d.is_current !== false);
+  const byKind = new Map<string, { id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>();
+
+  for (const doc of activeDocs) {
+    if (byKind.has(doc.kind)) {
+      return { status: 'DUPLICATE', kind: doc.kind };
+    }
+    byKind.set(doc.kind, doc);
+  }
+
+  for (const expected of expectedEntries) {
+    const existing = byKind.get(expected.kind);
+    if (!existing) {
+      return { status: 'MISSING', kind: expected.kind };
+    }
+    if (existing.status !== 'submitted' && existing.status !== 'verified') {
+      return { status: 'INVALID_STATUS', kind: expected.kind, docStatus: existing.status };
+    }
+    if (existing.storage_path !== expected.storage_path) {
+      return { status: 'DIFFERENT_PATH', kind: expected.kind, expected: expected.storage_path, actual: existing.storage_path };
+    }
+  }
+
+  return { status: 'MATCH' };
+}
+
 export async function courierOnboardingAction(
   input: unknown
 ): Promise<ActionResult<CourierOnboardingResult, DomainErrorCode>> {
@@ -206,7 +252,23 @@ export async function courierOnboardingAction(
     const existing = existingByKind.get(entry.kind);
     if (!existing) {
       documentEntriesToInsert.push(entry);
-    } else if (existing.storage_path !== entry.storage_path) {
+    } else {
+      if (existing.status !== 'submitted' && existing.status !== 'verified') {
+        return err('VALIDATION_ERROR');
+      }
+      if (existing.storage_path !== entry.storage_path) {
+        return err('VALIDATION_ERROR');
+      }
+    }
+  }
+
+  // Si no hay documentos para insertar (todos ya existían), verificar que el conjunto completo sea MATCH
+  if (documentEntriesToInsert.length === 0) {
+    const initialValidation = await validateCurrentDocumentSet(documentEntries, activeExistingDocs);
+    if (initialValidation.status !== 'MATCH') {
+      if (initialValidation.status === 'DUPLICATE') {
+        return err('INTERNAL_ERROR');
+      }
       return err('VALIDATION_ERROR');
     }
   }
@@ -257,35 +319,21 @@ export async function courierOnboardingAction(
           return err('INTERNAL_ERROR');
         }
 
-        const recheckedByKind = new Map<string, { id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>();
-        const activeRecheckedDocs = ((recheckedDocs as Array<{ id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
-          .filter((d) => d.is_current !== false);
-
-        for (const doc of activeRecheckedDocs) {
-          if (recheckedByKind.has(doc.kind)) {
+        const recheckValidation = await validateCurrentDocumentSet(documentEntries, recheckedDocs as any);
+        if (recheckValidation.status !== 'MATCH') {
+          if (recheckValidation.status === 'DUPLICATE') {
             return err('INTERNAL_ERROR');
           }
-          recheckedByKind.set(doc.kind, doc);
-        }
-
-        for (const entry of documentEntries) {
-          const rechecked = recheckedByKind.get(entry.kind);
-          if (
-            !rechecked ||
-            rechecked.storage_path !== entry.storage_path ||
-            (rechecked.status !== 'submitted' && rechecked.status !== 'verified')
-          ) {
-            return err('VALIDATION_ERROR');
-          }
+          return err('VALIDATION_ERROR');
         }
       } else {
         return err('INTERNAL_ERROR');
       }
     } else {
-      // Post-verificación defensiva para Fase B (donde aún no rige el índice único de Fase C):
-      // Si dos peticiones simultáneas hicieron INSERT sin error, verificar si se generaron
-      // duplicados vigentes del mismo kind. Si se detectan duplicados (count > 1), abortar de
-      // forma segura con INTERNAL_ERROR sin actualizar el perfil ni marcar el onboarding como completo.
+      // H03: Post-verificación estricta tras INSERT exitoso.
+      // Releer todas las filas y validar con validateCurrentDocumentSet que todos los kinds requeridos
+      // existan, tengan exactamente el storage_path esperado, status permitido ('submitted' / 'verified')
+      // y no existan duplicados (por carreras de inserción concurrente sin índice único).
       const { data: postDocs, error: postDocsError } = await supabase
         .from('courier_documents')
         .select('id, kind, storage_path, status, is_current')
@@ -295,16 +343,12 @@ export async function courierOnboardingAction(
         return err('INTERNAL_ERROR');
       }
 
-      const postActiveDocs = ((postDocs as Array<{ id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
-        .filter((d) => d.is_current !== false);
-
-      const activeCountByKind = new Map<string, number>();
-      for (const doc of postActiveDocs) {
-        const currentCount = (activeCountByKind.get(doc.kind) ?? 0) + 1;
-        if (currentCount > 1) {
+      const postValidation = await validateCurrentDocumentSet(documentEntries, postDocs as any);
+      if (postValidation.status !== 'MATCH') {
+        if (postValidation.status === 'DUPLICATE') {
           return err('INTERNAL_ERROR');
         }
-        activeCountByKind.set(doc.kind, currentCount);
+        return err('VALIDATION_ERROR');
       }
     }
   }
