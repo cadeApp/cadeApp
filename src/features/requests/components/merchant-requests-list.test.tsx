@@ -655,12 +655,13 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
   });
 
   it('PR361-H07: guarda sincrónica inFlightRef bloquea doble confirmación concurrente antes del re-render', async () => {
-    let resolveAction!: (val: unknown) => void;
-    const deferredPromise = new Promise((resolve) => {
+    type CancelResult = Awaited<ReturnType<typeof cancelMerchantRequestAction>>;
+    let resolveAction!: (result: CancelResult) => void;
+    const deferredPromise = new Promise<CancelResult>((resolve) => {
       resolveAction = resolve;
     });
 
-    vi.mocked(cancelMerchantRequestAction).mockReturnValue(deferredPromise as any);
+    vi.mocked(cancelMerchantRequestAction).mockReturnValueOnce(deferredPromise);
 
     render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
 

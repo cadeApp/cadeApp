@@ -824,7 +824,7 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
   // ---------------------------------------------------------------------------
   // T-364: Cancelación rápida desde «Mis solicitudes» del comercio sin entrar al detalle
   // ---------------------------------------------------------------------------
-  test('T-364 (§5.1): Cancelación rápida por comercio dueño en published/matched: UI, oráculo SQL y rechazo ajeno', async ({
+  test('T-364 (§5.1): Cancelación rápida por comercio dueño en published: UI Playwright, oráculo SQL y rechazo ajeno', async ({
     page,
     stagingContext,
     loginAsMerchant,
@@ -872,48 +872,52 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       await cleanupStagingData(secondContext);
     }
 
-    // 2. Flujo UI real con Playwright navegando como el comercio dueño
-    if (page && loginAsMerchant) {
-      await loginAsMerchant(page);
-      await page.goto('/merchant/dashboard');
+    // 2. Flujo UI real con Playwright navegando como el comercio dueño (fail-closed, sin fallback RPC)
+    await loginAsMerchant(page);
+    await page.goto('/merchant/dashboard');
 
-      // Localizar botón Cancelar de la solicitud en la tarjeta
-      const cancelBtn = page.getByRole('button', { name: /cancelar/i }).first();
-      await cancelBtn.waitFor({ state: 'visible', timeout: 10000 });
-      await cancelBtn.click();
+    // Localizar tarjeta específica por requestId y medir contador de solicitudes activas previo
+    const requestLink = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await requestLink.waitFor({ state: 'visible', timeout: 10000 });
 
-      // Comprobar diálogo - Paso 1: título, motivo obligatorio y continuar deshabilitado
-      await expect(page.getByText('¿Por qué cancelás esta solicitud?')).toBeVisible();
-      const continueBtn = page.getByRole('button', { name: /continuar/i });
-      await expect(continueBtn).toBeDisabled();
+    const activeCountLocator = page.locator('div:has(> div > span:text-is("Solicitudes activas")) > p');
+    const initialCountText = await activeCountLocator.innerText();
+    const initialCount = parseInt(initialCountText.trim(), 10);
+    expect(Number.isFinite(initialCount)).toBe(true);
 
-      // Seleccionar motivo obligatorio
-      const reasonRadio = page.getByLabel('Lo resolví de otra forma');
-      await reasonRadio.click();
-      await expect(continueBtn).toBeEnabled();
-      await continueBtn.click();
+    const cancelBtn = requestLink.locator('xpath=..').getByRole('button', { name: /cancelar/i });
+    await cancelBtn.waitFor({ state: 'visible', timeout: 10000 });
+    await cancelBtn.click();
 
-      // Paso 2: confirmación irreversible y botón de confirmación
-      await expect(page.getByText('¿Confirmás la cancelación definitiva?')).toBeVisible();
-      await expect(page.getByText('Lo resolví de otra forma')).toBeVisible();
-      const confirmBtn = page.getByRole('button', { name: /sí, cancelar/i });
-      await confirmBtn.click();
+    // Comprobar diálogo - Paso 1: título, motivo obligatorio y continuar deshabilitado
+    await expect(page.getByText('¿Por qué cancelás esta solicitud?')).toBeVisible();
+    const continueBtn = page.getByRole('button', { name: /continuar/i });
+    await expect(continueBtn).toBeDisabled();
 
-      // Esperar que se cierre el modal y desaparezca de solicitudes activas
-      await expect(page.getByText('¿Confirmás la cancelación definitiva?')).not.toBeVisible({ timeout: 10000 });
+    // Seleccionar motivo obligatorio
+    const reasonRadio = page.getByLabel('Lo resolví de otra forma');
+    await reasonRadio.click();
+    await expect(continueBtn).toBeEnabled();
+    await continueBtn.click();
 
-      // Comprobar en /merchant/history que figura cancelada
-      await page.goto('/merchant/history');
-      await expect(page.getByText(/cancelad[ao]/i).first()).toBeVisible({ timeout: 10000 });
-    } else {
-      // Invocación autoritativa directa si se corre sin browser
-      const merchantClient = await createAuthenticatedClient(merchant);
-      const { error: cancelError } = await merchantClient.rpc('cancel_request', {
-        p_request_id: requestId,
-        p_reason: 'Lo resolví de otra forma',
-      });
-      expect(cancelError).toBeNull();
-    }
+    // Paso 2: confirmación irreversible y botón de confirmación
+    await expect(page.getByText('¿Confirmás la cancelación definitiva?')).toBeVisible();
+    await expect(page.getByText('Lo resolví de otra forma')).toBeVisible();
+    const confirmBtn = page.getByRole('button', { name: /sí, cancelar/i });
+    await confirmBtn.click();
+
+    // Esperar que se cierre el modal
+    await expect(page.getByText('¿Confirmás la cancelación definitiva?')).not.toBeVisible({ timeout: 10000 });
+
+    // Comprobar que ese link ya no existe en activas y que el contador descendió exactamente en 1
+    await expect(requestLink).not.toBeVisible({ timeout: 10000 });
+    await expect(activeCountLocator).toHaveText(String(initialCount - 1), { timeout: 10000 });
+
+    // Comprobar en /merchant/history que figura esa misma solicitud por requestId con estado Cancelada
+    await page.goto('/merchant/history');
+    const historyLink = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await expect(historyLink).toBeVisible({ timeout: 10000 });
+    await expect(historyLink).toContainText('Cancelada');
 
     // 3. Oráculo server-side en PostgreSQL
     const inspection = await getRequestInspectionData(stagingContext, requestId);
