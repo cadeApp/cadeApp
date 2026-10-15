@@ -18,3 +18,9 @@ No se asignan lecciones AG-xx nuevas sin relevar la numeración de todas las ram
 - **AG-36 / H07:** el autor aportó ahora un RED razonablemente concreto para H02, pero el revisor no lo reprodujo; esa precisión documental es mejora real, no verificación independiente.
 
 No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
+## Ronda 5 — deploy READY vs E2E real y guía vigente
+
+- H05 / P15: el workflow `resolve-preview` verde representa una decisión de seguridad de no correr (`run=false`), **no prueba Playwright**, aunque el deployment Vercel esté READY. El check de commit debe tener contexto `e2e-preview` del SHA y resultado real.
+- Diagnóstico separado: gate correcto por `project.id` vs configuración de webhook por proyecto. El revisor no debe tratar un deployment de `cadeapp-staging` como el Preview seguro de `cadeapp-develop`. La existencia de ambos proyectos/depoys no demuestra cuál entregó el evento.
+- La configuración de webhooks devolvió 403. Una hipótesis acerca de un hook ausente se registra como **posibilidad no comprobada**, no como defecto asegurado. Las correcciones en settings requieren acceso del dueño; jamás leer secretos.
+- Regla de ubicación: las instrucciones expresas del usuario indican `docs/revision-pr/pr-NN` en la rama de PR incluso P2/P3, reemplazando la tabla histórica de `COMO-ENTREGAR.md`. El error anterior de escribir ronda 4 solo en `docs/revisiones` se remedia copiándola y siguiendo el nuevo mandato en ronda 5.

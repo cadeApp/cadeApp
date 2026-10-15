@@ -139,3 +139,16 @@ git diff --check
 ```
 
 Estos comandos no fueron ejecutados en la sesión del revisor; el entorno carece de clone/pnpm. No se declaran mutaciones verificadas.
+
+## Ronda 5 — inspección del SHA e1e7e53ee1c50bdfa89468132ff5194d6b781860 (2026-10-15)
+
+- `compare efb22c421..e1e7e53ee1c50bdfa89468132ff5194d6b781860`: 1 commit, 1 archivo modificado `docs/tasks/log/T-359.md` (25+ / 1-). Ningún archivo de app, CI o E2E tocado.
+- Check-runs GitHub: `unit` job 116253582996 SUCCESS; `db-tests` 116253583040 SUCCESS; typecheck/lint/build/audit/bundle-budget SUCCESS; approval-policy 116253579354 FAILURE; ningún `e2e-preview`.
+- Log db-tests job 116253583040: `Files=22, Tests=2205`, `Result: PASS`.
+- Log unit job 116253582996: `Test Files 130 passed (130)`; 79 workflows pass; 6 ADR pass. El cuerpo del PR declara 2180 tests Vitest, coherente con el job en verde.
+- E2E dispatch `38683340222` (resolve job 116252553470) y `38683340102` (resolve job 116252552770): `resolve-preview success`, `e2e-preview skipped`, `report-preview-status skipped`, texto literal `El deployment no pertenece al proyecto Vercel de develop.`
+- Runs adicionales `38683699875`, `38683734389`, `38683748905`, `38683868520`, `38684013129` muestran el mismo descarte, confirmados con logs de resolve; no se atribuye al código de la PR.
+- `.github/workflows/e2e-preview-target.mjs` desde develop: `matchPreview` compara `payload.project.id` con `VERCEL_PROJECT_ID` del Environment develop, requiere PR abierta contra develop con SHA exacto y gate de duplicados.
+- Vercel lectura: proyectos distintos `cadeapp-staging` y `cadeapp-develop`; ambos tienen deployment READY para `e1e7e53ee1c50bdfa89468132ff5194d6b781860` (ID del proyecto/deploy no se pega porque no es necesario). `get_webhooks` para develop devolvió 403 Forbidden; no se pudo acreditar configuración.
+- No se ejecutó E2E/mutación local por el revisor. No se modificaron los workflows/secretos/entornos remotos.
+- Reproducir una vez que webhook del proyecto develop esté validado: comprobar que run resolve declara `PR interna #360 contra develop`, que `needs.resolve.outputs.run=true`, que E2E Playwright pasa, y que `report-preview-status` publica `e2e-preview=success` en el SHA exacto.
