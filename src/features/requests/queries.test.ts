@@ -13,9 +13,40 @@ import {
 } from './queries';
 import type { MerchantDropSummary } from './types';
 
-vi.mock('@/server/supabase/server', () => ({
-  createClient: vi.fn(),
-}));
+vi.mock('@/server/supabase/server', () => {
+  const createClientMock = vi.fn();
+  return {
+    createClient: new Proxy(createClientMock, {
+      apply(target, thisArg, argArray) {
+        const result = Reflect.apply(target, thisArg, argArray);
+        if (result && typeof result.then === 'function') {
+          return result.then((resolved: unknown) => {
+            if (
+              resolved &&
+              typeof resolved === 'object' &&
+              !('rpc' in (resolved as Record<string, unknown>))
+            ) {
+              return {
+                ...resolved,
+                rpc: vi.fn().mockImplementation((name: string) => {
+                  if (name === 'reconcile_expired_requests') {
+                    return Promise.resolve({
+                      data: { expiredRequestIds: [], expiredCount: 0, hasMore: false },
+                      error: null,
+                    });
+                  }
+                  return Promise.resolve({ data: null, error: null });
+                }),
+              };
+            }
+            return resolved;
+          });
+        }
+        return result;
+      },
+    }),
+  };
+});
 
 function mockDropsTable(data?: unknown[]) {
   return {
@@ -1251,7 +1282,15 @@ describe('T-112 / T-118: queries de requests e historial', () => {
 
     function mockClient(
       requestRows: readonly unknown[],
-      rpc: ReturnType<typeof vi.fn> = vi.fn()
+      rpc: ReturnType<typeof vi.fn> = vi.fn().mockImplementation((name: string) => {
+        if (name === 'reconcile_expired_requests') {
+          return Promise.resolve({
+            data: { expiredRequestIds: [], expiredCount: 0, hasMore: false },
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: null, error: null });
+      })
     ): string[] {
       const requestSelects: string[] = [];
       const dropRows = (requestRows as Array<{ id: string }>).map((r) => ({
@@ -2059,4 +2098,477 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(result?.request.dropoffZoneName).toBe('Barrio Norte');
     });
   });
+
+  describe('T-366: Reconciliación de expiración en consultas del comercio (CC-026)', () => {
+    interface FakeDbRow {
+      id: string;
+      merchant_id: string;
+      status: string;
+      expires_at: string | null;
+      created_at: string;
+      accepted_offer_id: string | null;
+      drops_count: number;
+      approx_distance_m: number;
+      package_type: string;
+      recipient_payment_method: string;
+      needs_change: boolean;
+      pickup_zone: { name: string };
+      dropoff_zone: { name: string };
+    }
+
+    function createFakeSupabase(
+      initialRows: FakeDbRow[],
+      options?: {
+        rpcOverride?: (
+          name: string,
+          args: Record<string, unknown>
+        ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>;
+        now?: () => Date;
+        onRpcCall?: (name: string, args: Record<string, unknown>) => void;
+        batchLimit?: number;
+      }
+    ) {
+      const rows: FakeDbRow[] = initialRows.map((r) => ({ ...r }));
+      const getNow = options?.now ?? (() => new Date('2026-10-15T12:00:00.000Z'));
+      const batchLimit = options?.batchLimit ?? 50;
+
+      const rpcFn = vi.fn().mockImplementation(async (name: string, args: Record<string, unknown> = {}) => {
+        options?.onRpcCall?.(name, args);
+        if (options?.rpcOverride) {
+          return options.rpcOverride(name, args);
+        }
+        if (name === 'reconcile_expired_requests') {
+          const nowIso = getNow().toISOString();
+          const eligible = rows.filter(
+            (r) =>
+              r.status === 'published' &&
+              r.accepted_offer_id === null &&
+              r.expires_at !== null &&
+              r.expires_at <= nowIso
+          );
+          const toReconcile = eligible.slice(0, batchLimit);
+          for (const item of toReconcile) {
+            item.status = 'expired';
+          }
+          const hasMore = eligible.length > toReconcile.length;
+          return {
+            data: {
+              expiredRequestIds: toReconcile.map((r) => r.id),
+              expiredCount: toReconcile.length,
+              hasMore,
+            },
+            error: null,
+          };
+        }
+        return { data: null, error: null };
+      });
+
+      const fromFn = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') {
+          let selectedStatusFilter: string[] | string | null = null;
+          let merchantIdFilter: string | null = null;
+          let limitCount: number | null = null;
+          let cursorFilter: { createdAt: string; id: string } | null = null;
+
+          const builder = {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockImplementation((col: string, val: string) => {
+              if (col === 'merchant_id') merchantIdFilter = val;
+              if (col === 'status') selectedStatusFilter = val;
+              return builder;
+            }),
+            in: vi.fn().mockImplementation((col: string, vals: string[]) => {
+              if (col === 'status') selectedStatusFilter = vals;
+              return builder;
+            }),
+            order: vi.fn().mockReturnThis(),
+            limit: vi.fn().mockImplementation((n: number) => {
+              limitCount = n;
+              return builder;
+            }),
+            or: vi.fn().mockImplementation((expr: string) => {
+              const match = expr.match(
+                /created_at\.lt\.([^,]+),and\(created_at\.eq\.\1,id\.lt\.([^)]+)\)/
+              );
+              if (match) {
+                cursorFilter = { createdAt: match[1]!, id: match[2]! };
+              }
+              return builder;
+            }),
+            then: (
+              resolve: (val: { data: FakeDbRow[]; error: null }) => void,
+              _reject?: (err: unknown) => void
+            ) => {
+              let result = [...rows];
+              if (merchantIdFilter) {
+                result = result.filter((r) => r.merchant_id === merchantIdFilter);
+              }
+              if (selectedStatusFilter) {
+                if (Array.isArray(selectedStatusFilter)) {
+                  result = result.filter((r) => selectedStatusFilter!.includes(r.status));
+                } else {
+                  result = result.filter((r) => r.status === selectedStatusFilter);
+                }
+              }
+              result.sort((a, b) => {
+                const dateCmp = b.created_at.localeCompare(a.created_at);
+                if (dateCmp !== 0) return dateCmp;
+                return b.id.localeCompare(a.id);
+              });
+              if (cursorFilter) {
+                result = result.filter(
+                  (r) =>
+                    r.created_at < cursorFilter!.createdAt ||
+                    (r.created_at === cursorFilter!.createdAt && r.id < cursorFilter!.id)
+                );
+              }
+              if (limitCount !== null) {
+                result = result.slice(0, limitCount);
+              }
+              resolve({ data: result, error: null });
+            },
+          };
+          return builder;
+        }
+        if (table === 'offers') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            in: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          };
+        }
+        if (table === 'delivery_request_drops') return mockDropsTable();
+        return {};
+      });
+
+      return {
+        from: fromFn,
+        rpc: rpcFn,
+        rows,
+      };
+    }
+
+    function makeTestRow(overrides: Partial<FakeDbRow> = {}): FakeDbRow {
+      return {
+        id: overrides.id ?? '11111111-1111-4111-8111-111111111111',
+        merchant_id: overrides.merchant_id ?? 'merchant-1',
+        status: overrides.status ?? 'published',
+        expires_at: overrides.expires_at ?? '2026-10-15T10:00:00.000Z',
+        created_at: overrides.created_at ?? '2026-10-15T09:00:00.000Z',
+        accepted_offer_id: overrides.accepted_offer_id ?? null,
+        drops_count: overrides.drops_count ?? 1,
+        approx_distance_m: overrides.approx_distance_m ?? 1200,
+        package_type: overrides.package_type ?? 'chico',
+        recipient_payment_method: overrides.recipient_payment_method ?? 'cash',
+        needs_change: overrides.needs_change ?? false,
+        pickup_zone: overrides.pickup_zone ?? { name: 'Centro' },
+        dropoff_zone: overrides.dropoff_zone ?? { name: 'Sur' },
+      };
+    }
+
+    it('getMerchantHistoryRequests con filtro expired incluye solicitud vencida tras reconciliación autoritativa', async () => {
+      const expiredPastRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111101',
+        status: 'published',
+        expires_at: '2026-10-15T11:00:00.000Z',
+      });
+      const fake = createFakeSupabase([expiredPastRow]);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await getMerchantHistoryRequests('merchant-1', {
+        status: 'expired',
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+
+      expect(fake.rpc).toHaveBeenCalledWith('reconcile_expired_requests', {});
+      expect(result.requests).toHaveLength(1);
+      expect(result.requests[0]?.id).toBe(expiredPastRow.id);
+      expect(result.requests[0]?.status).toBe('expired');
+      expect(fake.rows[0]?.status).toBe('expired');
+    });
+
+    it('getMerchantHistoryRequests con filtro all incluye solicitud vencida con status expired', async () => {
+      const deliveredRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111102',
+        status: 'delivered',
+        created_at: '2026-10-15T08:00:00.000Z',
+      });
+      const expiredPastRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111103',
+        status: 'published',
+        expires_at: '2026-10-15T11:00:00.000Z',
+        created_at: '2026-10-15T09:00:00.000Z',
+      });
+      const fake = createFakeSupabase([deliveredRow, expiredPastRow]);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await getMerchantHistoryRequests('merchant-1', {
+        status: 'all',
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+
+      expect(fake.rpc).toHaveBeenCalledWith('reconcile_expired_requests', {});
+      expect(result.requests).toHaveLength(2);
+      const expiredFound = result.requests.find((r) => r.id === expiredPastRow.id);
+      expect(expiredFound).toBeDefined();
+      expect(expiredFound?.status).toBe('expired');
+    });
+
+    it('getMerchantRequests excluye solicitud vencida de la lista de solicitudes activas', async () => {
+      const activeRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111104',
+        status: 'published',
+        expires_at: '2026-10-15T14:00:00.000Z', // futuro
+      });
+      const expiredPastRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111105',
+        status: 'published',
+        expires_at: '2026-10-15T11:00:00.000Z', // vencida
+      });
+      const fake = createFakeSupabase([activeRow, expiredPastRow]);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await getMerchantRequests('merchant-1', {
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+
+      expect(fake.rpc).toHaveBeenCalledWith('reconcile_expired_requests', {});
+      expect(result.requests).toHaveLength(1);
+      expect(result.requests[0]?.id).toBe(activeRow.id);
+      expect(result.requests[0]?.status).toBe('published');
+    });
+
+    it('condición de borde: solicitud con expires_at futuro permanece published en activas y no aparece en expired', async () => {
+      const futureRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111106',
+        status: 'published',
+        expires_at: '2026-10-15T12:00:01.000Z', // 1 segundo en el futuro
+      });
+      const fake = createFakeSupabase([futureRow], {
+        now: () => new Date('2026-10-15T12:00:00.000Z'),
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const historyResult = await getMerchantHistoryRequests('merchant-1', {
+        status: 'expired',
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+      expect(historyResult.requests).toHaveLength(0);
+
+      const activeResult = await getMerchantRequests('merchant-1', {
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+      expect(activeResult.requests).toHaveLength(1);
+      expect(activeResult.requests[0]?.id).toBe(futureRow.id);
+      expect(activeResult.requests[0]?.status).toBe('published');
+    });
+
+    it('condición de borde: solicitud con expires_at exactamente en el corte (now) transiciona a expired', async () => {
+      const exactNowIso = '2026-10-15T12:00:00.000Z';
+      const exactRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111107',
+        status: 'published',
+        expires_at: exactNowIso, // exactamente now
+      });
+      const fake = createFakeSupabase([exactRow], {
+        now: () => new Date(exactNowIso),
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const historyResult = await getMerchantHistoryRequests('merchant-1', {
+        status: 'expired',
+        now: new Date(exactNowIso),
+      });
+      expect(historyResult.requests).toHaveLength(1);
+      expect(historyResult.requests[0]?.id).toBe(exactRow.id);
+      expect(historyResult.requests[0]?.status).toBe('expired');
+
+      const activeResult = await getMerchantRequests('merchant-1', {
+        now: new Date(exactNowIso),
+      });
+      expect(activeResult.requests).toHaveLength(0);
+    });
+
+    it('estados no terminales o en tránsito (matched, in_transit, delivered, cancelled) no son alterados por la reconciliación', async () => {
+      const pastDeadline = '2026-10-15T10:00:00.000Z';
+      const matchedRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111108',
+        status: 'matched',
+        expires_at: pastDeadline,
+        accepted_offer_id: 'offer-1',
+      });
+      const inTransitRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111109',
+        status: 'in_transit',
+        expires_at: pastDeadline,
+        accepted_offer_id: 'offer-2',
+      });
+      const cancelledRow = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111110',
+        status: 'cancelled',
+        expires_at: pastDeadline,
+      });
+
+      const fake = createFakeSupabase([matchedRow, inTransitRow, cancelledRow]);
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const historyResult = await getMerchantHistoryRequests('merchant-1', {
+        status: 'expired',
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+      expect(historyResult.requests).toHaveLength(0);
+
+      expect(fake.rows.find((r) => r.id === matchedRow.id)?.status).toBe('matched');
+      expect(fake.rows.find((r) => r.id === inTransitRow.id)?.status).toBe('in_transit');
+      expect(fake.rows.find((r) => r.id === cancelledRow.id)?.status).toBe('cancelled');
+    });
+
+    it('reconciliación multi-lote (>50 filas): consume lotes con hasMore=true hasta hasMore=false y pagina correctamente', async () => {
+      const sixtyRows: FakeDbRow[] = Array.from({ length: 60 }, (_, idx) => {
+        const num = String(idx + 1).padStart(4, '0');
+        return makeTestRow({
+          id: `00000000-0000-4000-8000-00000000${num}`,
+          status: 'published',
+          expires_at: '2026-10-15T11:00:00.000Z',
+          created_at: `2026-10-15T10:${String(59 - idx).padStart(2, '0')}:00.000Z`,
+        });
+      });
+
+      const rpcCalls: string[] = [];
+      const fake = createFakeSupabase(sixtyRows, {
+        batchLimit: 50,
+        onRpcCall: (name) => rpcCalls.push(name),
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await getMerchantHistoryRequests('merchant-1', {
+        status: 'expired',
+        limit: 50,
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+
+      // Debe haber consumido 2 lotes (50 en el primero, 10 en el segundo)
+      expect(rpcCalls).toEqual(['reconcile_expired_requests', 'reconcile_expired_requests']);
+      // Las 60 filas deben haber transicionado a expired
+      expect(fake.rows.every((r) => r.status === 'expired')).toBe(true);
+      // La primera página retorna 50 ítems con cursor válido
+      expect(result.requests).toHaveLength(50);
+      expect(result.nextCursor).not.toBeNull();
+
+      // Consultar la segunda página con el cursor
+      const page2Result = await getMerchantHistoryRequests('merchant-1', {
+        status: 'expired',
+        limit: 50,
+        cursor: result.nextCursor,
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+      expect(page2Result.requests).toHaveLength(10);
+      expect(page2Result.nextCursor).toBeNull();
+    });
+
+    it('resiliencia ante locks concurrentes: si hasMore=true pero expiredCount=0, corta el loop sin ciclar indefinidamente', async () => {
+      const row = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111111',
+        status: 'published',
+        expires_at: '2026-10-15T10:00:00.000Z',
+      });
+      let callCount = 0;
+      const fake = createFakeSupabase([row], {
+        rpcOverride: async (name) => {
+          if (name === 'reconcile_expired_requests') {
+            callCount++;
+            return {
+              data: {
+                expiredRequestIds: [],
+                expiredCount: 0,
+                hasMore: true, // locked por otra transacción con SKIP LOCKED
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      // No debe entrar en bucle infinito ni arrojar excepción; corta limpiamente
+      await getMerchantHistoryRequests('merchant-1', { status: 'expired' });
+      expect(callCount).toBe(1);
+    });
+
+    it('falla cerrado: si se agota el presupuesto máximo de lotes y hasMore sigue true, lanza error', async () => {
+      const row = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111112',
+        status: 'published',
+        expires_at: '2026-10-15T10:00:00.000Z',
+      });
+      let callCount = 0;
+      const fake = createFakeSupabase([row], {
+        rpcOverride: async (name) => {
+          if (name === 'reconcile_expired_requests') {
+            callCount++;
+            return {
+              data: {
+                expiredRequestIds: [`00000000-0000-4000-8000-${String(callCount).padStart(12, '0')}`],
+                expiredCount: 1,
+                hasMore: true, // simula stream interminable > 10 lotes
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      await expect(
+        getMerchantHistoryRequests('merchant-1', { status: 'expired' })
+      ).rejects.toThrow('Presupuesto de reconciliación de solicitudes vencidas agotado');
+      expect(callCount).toBe(10);
+    });
+
+    it('falla cerrado ante error de RPC: si reconcile_expired_requests retorna error, la consulta falla y no devuelve estado parcial', async () => {
+      const row = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111113',
+        status: 'published',
+        expires_at: '2026-10-15T10:00:00.000Z',
+      });
+      const fake = createFakeSupabase([row], {
+        rpcOverride: async () => ({
+          data: null,
+          error: { code: 'P0001', message: 'UNAUTHORIZED_ACTOR' },
+        }),
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      await expect(
+        getMerchantHistoryRequests('merchant-1', { status: 'expired' })
+      ).rejects.toThrow('Error al reconciliar solicitudes vencidas: UNAUTHORIZED_ACTOR');
+
+      await expect(
+        getMerchantRequests('merchant-1')
+      ).rejects.toThrow('Error al reconciliar solicitudes vencidas: UNAUTHORIZED_ACTOR');
+    });
+  });
 });
+

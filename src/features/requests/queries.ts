@@ -4,6 +4,42 @@ import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
 import { getMerchantRequestPrivateFieldsRpc } from '@/server/rpc/request-private-fields';
+import { createRequestsRpcServerClient } from '@/server/rpc/requests';
+import type { SupabaseRpcCaller } from '@/server/rpc/offers';
+
+export const MAX_RECONCILE_BATCHES = 10;
+
+/**
+ * CC-026 / T-366: Reconcilia transaccionalmente en PostgreSQL las solicitudes vencidas
+ * del comercio autenticado antes de ejecutar lecturas con paginación keyset.
+ * Consume lotes (hasta 50 por lote) mientras `hasMore` sea true.
+ * Si SKIP LOCKED deja filas bloqueadas concurrentemente (`expiredCount === 0 && hasMore === true`),
+ * se corta la iteración para no bloquear la consulta. Si se agota el presupuesto máximo
+ * de lotes (10) y aún restan filas pendientes, se falla cerrado.
+ */
+export async function reconcileMerchantExpiredRequests(
+  client: SupabaseRpcCaller
+): Promise<void> {
+  const rpcClient = createRequestsRpcServerClient(client);
+
+  for (let batch = 0; batch < MAX_RECONCILE_BATCHES; batch++) {
+    const res = await rpcClient.reconcile_expired_requests({});
+    if (!res.ok) {
+      throw new Error(`Error al reconciliar solicitudes vencidas: ${res.code}`);
+    }
+
+    if (!res.data.hasMore) {
+      return;
+    }
+
+    if (res.data.expiredCount === 0) {
+      return;
+    }
+  }
+
+  throw new Error('Presupuesto de reconciliación de solicitudes vencidas agotado');
+}
+
 import type {
   MerchantRequestSummary,
   MerchantRequestDetail,
@@ -395,6 +431,7 @@ export async function getMerchantHistoryRequests(
   status: HistoryFilterStatus;
 }> {
   const supabase = await createClient();
+  await reconcileMerchantExpiredRequests(supabase);
   const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
   const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
   const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
@@ -600,6 +637,7 @@ export async function getMerchantRequests(
   nextCursor: MerchantHistoryCursor | null;
 }> {
   const supabase = await createClient();
+  await reconcileMerchantExpiredRequests(supabase);
   const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
   const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
   const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';

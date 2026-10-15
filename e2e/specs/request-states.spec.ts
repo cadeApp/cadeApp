@@ -264,7 +264,24 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       'REQUEST_EXPIRED'
     );
 
-    // 3. Ejecución del endpoint de cron /api/cron/sweep si CRON_SECRET está configurado
+    // 3. CC-026 / T-366: Reconciliación transaccional autoritativa por RPC del comercio sin esperar sweep
+    const { data: reconcileData, error: reconcileError } = await merchantClient.rpc(
+      'reconcile_expired_requests'
+    );
+    expect(reconcileError).toBeNull();
+    expect(reconcileData).toMatchObject({
+      expiredRequestIds: expect.arrayContaining([requestId]),
+      expiredCount: expect.any(Number),
+      hasMore: false,
+    });
+
+    // Oráculo server-side en PostgreSQL: estado físico actualizado a expired por la RPC
+    const inspectionAfterReconcile = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspectionAfterReconcile.requestStatus).toBe('expired');
+    const offerAfterReconcile = inspectionAfterReconcile.offers.find((o) => o.id === pendingOfferId);
+    expect(offerAfterReconcile?.status).toBe('expired');
+
+    // 4. Ejecución del endpoint de cron /api/cron/sweep si CRON_SECRET está configurado (idempotente)
     if (process.env.CRON_SECRET) {
       const sweepResponse = await request.post('/api/cron/sweep', {
         headers: {
@@ -273,7 +290,7 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       });
       expect(sweepResponse.ok()).toBe(true);
 
-      // Oráculo server-side en PostgreSQL: estado físico actualizado a expired
+      // Oráculo server-side en PostgreSQL: estado físico permanece expired
       const inspection = await getRequestInspectionData(stagingContext, requestId);
       expect(inspection.requestStatus).toBe('expired');
       const offer = inspection.offers.find((o) => o.id === pendingOfferId);
@@ -931,5 +948,50 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       expect(offer?.status).toBe('expired');
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // T-366: Expiración coherente en el historial del comercio (CC-026)
+  // ---------------------------------------------------------------------------
+  test('T-366 (§5.1): Solicitud vencida se reconcilia al consultar historial y aparece como Expirada sin esperar sweep', async ({
+    page,
+    stagingContext,
+    loginAsMerchant,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    if (!merchant) {
+      throw new Error('[E2E Precondition Error] Se requiere merchant en stagingContext');
+    }
+
+    // Precondición: solicitud published con expires_at en el pasado (10 minutos atrás) y oferta pendiente
+    const pastExpiresAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const requestId = seedResult.requestId;
+
+    // Login y navegación a historial como el comercio dueño
+    await loginAsMerchant(page);
+    await page.goto('/merchant/history');
+
+    // Comprobar que en la vista "Todas" figura la solicitud reconciliada con estado "Expirada"
+    const historyItemAll = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await expect(historyItemAll).toBeVisible({ timeout: 10000 });
+    await expect(historyItemAll).toContainText('Expirada');
+
+    // Navegar a la pestaña "Vencidas" y comprobar presencia coherente
+    await page.goto('/merchant/history?status=expired');
+    const historyItemExpired = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await expect(historyItemExpired).toBeVisible({ timeout: 10000 });
+    await expect(historyItemExpired).toContainText('Expirada');
+
+    // Oráculo server-side en PostgreSQL: el estado persistido fue actualizado a expired
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('expired');
+  });
 });
+
 
