@@ -1093,16 +1093,19 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     expect(createdReq.status).toBe('published');
     expect(createdReq.drops_count).toBe(1);
 
-    // Aislamiento privado en delivery_requests pública: sin PII ni claves privadas
-    const rawReqString = JSON.stringify(createdReq);
-    for (const key of FORBIDDEN_PRIVATE_KEYS) {
-      expect(rawReqString).not.toContain(`"${key}"`);
-    }
-    assertNoPrivateFieldsInRawPayload(createdReq, [
+    // Las columnas legacy existen en la tabla física, pero no deben
+    // almacenar datos privados del nuevo pedido.
+    expect(createdReq.notes).toBeNull();
+    expect(createdReq.cash_change_amount).toBeNull();
+
+    const persistedRequestPayload = JSON.stringify(createdReq);
+    for (const privateValue of [
       '3865123456',
       'Av. Sarmiento 101',
       'Destinatario Prueba',
-    ]);
+    ]) {
+      expect(persistedRequestPayload).not.toContain(privateValue);
+    }
 
     // Verificación de teléfono canónico en tabla privada delivery_request_drop_contacts
     const { data: dropsRows, error: dropsErr } = await admin

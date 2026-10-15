@@ -228,3 +228,14 @@ export const createDeliveryRequestSchema: z.ZodType<
   z.ZodTypeDef,
   CreateDeliveryRequestInput
 >;
+
+export const cancelMerchantRequestSchema = z.object({
+  requestId: z.string().uuid('Identificador de solicitud inválido'),
+  reason: z
+    .string()
+    .trim()
+    .min(1, 'El motivo es obligatorio')
+    .max(500, 'El motivo es demasiado largo'),
+});
+
+export type CancelMerchantRequestInput = z.infer<typeof cancelMerchantRequestSchema>;

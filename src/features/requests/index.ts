@@ -15,6 +15,7 @@ export { CreateRequestSkeleton, RequestOffersSkeleton };
 export * from './components/merchant-requests-list';
 export * from './components/merchant-requests-skeleton';
 export * from './components/merchant-history-view';
+export * from './components/merchant-request-cancel-dialog';
 
 export const CreateRequestForm = dynamic<CreateRequestFormProps>(
   () => import('./components/create-request-form').then((mod) => mod.CreateRequestForm),

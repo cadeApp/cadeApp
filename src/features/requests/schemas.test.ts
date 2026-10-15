@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDeliveryRequestSchema, dropSchema } from './schemas';
+import { createDeliveryRequestSchema, dropSchema, cancelMerchantRequestSchema } from './schemas';
 
 describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
   const validPickupZoneId = '11111111-1111-4111-8111-111111111111';
@@ -358,7 +358,6 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
     });
     expect(result.success).toBe(false);
   });
-
   describe('T-353: Validación semántica integral de solicitudes de envío y multi-drop', () => {
     describe('recipientName', () => {
       it('acepta nombres legítimos de personas con acentos, ñ, guiones y apóstrofes', () => {
@@ -590,3 +589,44 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
   });
 });
 
+describe('T-364: cancelMerchantRequestSchema', () => {
+  it('valida correctamente un requestId UUID y motivo no vacío', () => {
+    const valid = {
+      requestId: '11111111-1111-4111-8111-111111111111',
+      reason: 'Ya no hace falta el envío',
+    };
+    const res = cancelMerchantRequestSchema.safeParse(valid);
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(res.data.requestId).toBe(valid.requestId);
+      expect(res.data.reason).toBe(valid.reason);
+    }
+  });
+
+  it('rechaza requestId que no sea UUID válido', () => {
+    const invalid = {
+      requestId: 'no-uuid',
+      reason: 'Ya no hace falta',
+    };
+    const res = cancelMerchantRequestSchema.safeParse(invalid);
+    expect(res.success).toBe(false);
+  });
+
+  it('rechaza motivo vacío o compuesto solo por espacios', () => {
+    const invalid = {
+      requestId: '11111111-1111-4111-8111-111111111111',
+      reason: '    ',
+    };
+    const res = cancelMerchantRequestSchema.safeParse(invalid);
+    expect(res.success).toBe(false);
+  });
+
+  it('rechaza motivo que supere los 500 caracteres', () => {
+    const invalid = {
+      requestId: '11111111-1111-4111-8111-111111111111',
+      reason: 'a'.repeat(501),
+    };
+    const res = cancelMerchantRequestSchema.safeParse(invalid);
+    expect(res.success).toBe(false);
+  });
+});
