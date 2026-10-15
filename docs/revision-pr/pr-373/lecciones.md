@@ -21,3 +21,16 @@ La prueba agregada pasa por un único comercio y dos solicitudes, mientras la im
 ## Advertencia
 
 No promover reglas a `AGENTS.md` automáticamente por una sola PR. La demostración runtime y los mutantes independientes quedan pendientes de entorno con clon y suites disponibles; no escribir `verificado_en_sha` hasta ejecutarlos.
+
+## Ronda 2 — PR #373, HEAD `f62a385c6e152ea206598aa3460eeec31f97b2a1`
+
+### pr-373/AG-80 — Un bypass de fecha es una transición de negocio no autorizada
+**Origen: H05; P17.** En el test pgTAP, un comerciante pudo ejecutar `UPDATE delivery_requests.expires_at` y un courier `UPDATE offers.decided_at` sin excepción. Las policies RLS revisadas congelan status/otras columnas pero omiten esas dos. Un `WITH CHECK` que ignore un campo no lo congela. **Regla:** enumerar cada columna de tiempo/decisión controlada por RPC, impedir UPDATE directo con una barrera comprobable y afirmar resultado de la fila, no solo SQLSTATE. La vulnerabilidad afecta plazo y trazabilidad.
+
+### pr-373/AG-81 — Un archivo de prueba no ejecutado y un mock obsoleto no son pruebas
+**Origen: H06/H07/H08/H09; P15/P08.** El workflow solo invoca los scripts de concurrencia T-340/CC-024; subir `cc026_reconcile_expired_requests.mjs` no lo conecta al job. El test pgTAP abortó por limpiar parent antes de offers; otra suite cron no se adaptó a la nueva RPC. **Regla:** rastrear cada prueba hasta el comando CI real; forzar fallo de SQL (ON_ERROR_STOP=1 y assertion de salida) y verificar que rompe el job antes de proclamar concurrencia verde. Corregir mocks únicamente para reflejar la API nueva, manteniendo las afirmaciones del resultado real.
+
+### pr-373/AG-82 — `hasMore` debe dirigir el barrido de mantenimiento
+**Origen: H10; P06.** El mismo resultado SQL contiene `hasMore` pero `runSweep` realiza solo una llamada con limit 200. El cron diario puede postergar solicitudes si hay más de 200 pendientes. **Regla:** testear explícitamente lotes 201/401 y establecer presupuesto temporal/acotado que no haga spin cuando `SKIP LOCKED` informa pendientes bloqueados, devolviendo un estado claro de continuación.
+
+No promover reglas de una sola revisión automáticamente a AGENTS.md. Sin mutaciones independientes locales verificadas: el resultado CI fallido es evidencia observada, no un RED provocado por el revisor.

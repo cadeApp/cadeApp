@@ -80,3 +80,45 @@ node docs/revision-pr/analizar.mjs verificacion
 git diff --check
 git status --short
 ```
+
+## Ronda 2 — Consultas ejecutadas al SHA `f62a385c6e152ea206598aa3460eeec31f97b2a1`
+
+**Fuente verificable:** GitHub connector, `get_pr_info`, `compare_commits`, `fetch_file`, GitHub Actions CI [run 38711509294](https://github.com/cadeApp/cadeApp/actions/runs/38711509294). No se ejecutó Docker, SQL remoto, ni tests locales del revisor.
+
+### CI y resultados observados en el SHA exacto
+- `lint`: SUCCESS; `audit`: SUCCESS.
+- `typecheck`: FAILURE TS2345 en `src/server/cron/sweep.ts:73`: `reconcile_expired_requests_cron` no pertenece a los nombres generados en `Database['public']['Functions']`. `src/types/database.types.ts` sigue sin ambas nuevas firmas; `build` falla por lo mismo.
+- `unit`: FAILURE 2240/2241 PASS; `src/app/api/cron/sweep/route.test.ts:199` espera HTTP 200 y recibió 500. `runSweep` usa `supabase.rpc('reconcile_expired_requests_cron', {p_limit:200})` pero fixture de route.test sigue exponiendo mock PostgREST de la fase vieja.
+- `db-tests`: FAILURE; `supabase/tests/cc026_reconcile_expired_requests.sql` test 34 (`UPDATE delivery_requests.expires_at`) y test 36 (`UPDATE offers.decided_at`) recibieron SQLSTATE NULL cuando esperaban 42501. Estos son hallazgos de seguridad **realmente detectados por CI**. En `pg_temp.clear_requests` lineas 135-145 se elimina `delivery_requests` sin borrar primero `offers` => FK `offers_request_id_fkey` en línea 248, clave `...0004`.
+- `Vercel`: FAILURE, `approval-policy`: FAILURE, `bundle-budget`: SKIPPED, `Supabase Preview`: SKIPPED.
+- `db-tests` sí arrancó Postgres de CI; avisos transitorios de límite Docker Hub no impidieron llegar a pgTAP. El harness nuevo `supabase/tests/integration/cc026_reconcile_expired_requests.mjs` **NO** está en los comandos del job `.github/workflows/ci.yml:186-195`. El autor tampoco declaró haberlo ejecutado.
+
+### Diagnósticos por inspección
+```sql
+-- RED ya demostrado en CI, reproducir y luego GREEN sin rebajar assertions:
+-- actor merchant autenticado sobre solicitud propia:
+update public.delivery_requests set expires_at = now() where id = '<ID_PROPIO>';
+-- actor courier autenticado sobre oferta propia:
+update public.offers set decided_at = now() where id = '<ID_OFERTA_PROPIA>';
+```
+Verificar además la fila `OLD/NEW` persistida y que se deniega el intento mediante `42501` u otro error SQL legítimo establecido por la barrera nueva, sin aceptar éxito silencioso. El test debe ejecutar el `UPDATE` contra una fila visible/autorizada al SELECT, no contra 0 rows invisibles.
+
+```bash
+# Reproducciones para el autor en su propio worktree (NO ejecutadas por el revisor):
+pnpm exec vitest run src/app/api/cron/sweep/route.test.ts src/server/cron/sweep.test.ts
+pnpm typecheck && pnpm lint && pnpm test
+pnpm supabase test db supabase/tests/cc026_reconcile_expired_requests.sql
+# Tras restaurar DB local de CI: ejecutar harness con DB_CONTAINER real
+DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc026_reconcile_expired_requests.mjs
+pnpm db:types --local
+git diff --exit-code -- src/types/database.types.ts
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+### Casos adversariales pedidos, NO ejecutados
+1. Crear oferta con `decided_at` pendiente y alterar directamente fecha por JWT courier: test revierte al salir del scope y demuestra denegación efectiva; mutation de quitar barrera debe volverlo rojo.
+2. Reactivar UPDATE directo `expires_at` como merchant: test debe fallar RED si quitan la barrera.
+3. `cc026_reconcile_expired_requests.mjs` debe ejecutarse en CI; test negativo de SQL inválido dentro de sesión PsqlSession debe dar FAILURE (el actual `ON_ERROR_STOP=0` permite continuar luego de errores).
+4. Con >200 solicitudes vencidas, `runSweep` debe avanzar por batches hasta presupuesto sin ignorar `hasMore`; el counter y los IDs nunca cuentan filas no actualizadas; sin bucle infinito ante locked-only.
+5. Romper `rpc('reconcile_expired_requests_cron')` en el mock de route.test: fixture debe hacer fallar el HTTP 200 e incluir un caso 500 por `{error}`; prohibido forzar `GET` a 200 o suprimir assertions.
+6. Eliminar el helper SQL y asegurar pgTAP RED (sin falsos checks de presencia por texto); cubrir concurrencia real en DB con su shell CI y resultados explícitos.
