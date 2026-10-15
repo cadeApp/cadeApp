@@ -352,14 +352,12 @@ select throws_matching(
   'Admin AAL2 no puede hacer INSERT directo sobre courier_documents'
 );
 
--- 4e. Anon: sin ningun permiso directo (SELECT, INSERT, UPDATE, DELETE)
+-- 4e. Anon: sin acceso de lectura ni insercion (RLS) y sin permisos de modificacion (42501)
 select pg_temp.act_as_anon();
-select throws_matching(
-  $$
-    select * from public.courier_documents;
-  $$,
-  '42501|permission denied',
-  'Anon no tiene permiso SELECT sobre courier_documents'
+select is(
+  (select count(*)::int from public.courier_documents),
+  0,
+  'Anon no ve ninguna fila de courier_documents por RLS'
 );
 
 select throws_matching(
@@ -375,8 +373,8 @@ select throws_matching(
       true
     );
   $$,
-  '42501|permission denied',
-  'Anon no tiene permiso INSERT sobre courier_documents'
+  'violates row-level security',
+  'Anon no puede hacer INSERT sobre courier_documents (bloqueado por RLS)'
 );
 
 select throws_matching(
