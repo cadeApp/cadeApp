@@ -1332,5 +1332,327 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       expect(mockUpsert).not.toHaveBeenCalled();
       expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
     });
+
+    it('h) PR364-R03: tras SELECT inicial vacío, INSERT devuelve 42501 (RLS por not exists) y segundo SELECT muestra mismos 4 kinds/path con consent activo -> éxito idempotente', async () => {
+      const insertedDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({ data: insertedDocs, error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '42501',
+          message: 'new row violates row-level security policy for table "courier_documents"',
+        },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(mockInsert).toHaveBeenCalledTimes(1);
+      expect(selectCallCount).toBe(2);
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('i) PR364-R03: tras SELECT inicial vacío, INSERT devuelve 42501 (RLS) y segundo SELECT muestra path discrepante: rechazar con VALIDATION_ERROR', async () => {
+      const conflictingDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_OTHER.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({ data: conflictingDocs, error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '42501',
+          message: 'new row violates row-level security policy for table "courier_documents"',
+        },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(selectCallCount).toBe(2);
+    });
+
+    it('j) PR364-R03: tras SELECT inicial vacío, INSERT devuelve 42501 pero el actor tiene consent_status pendiente: rechazar con UNAUTHORIZED_ACTOR', async () => {
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          return Promise.resolve({ data: [], error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '42501',
+          message: 'new row violates row-level security policy for table "courier_documents"',
+        },
+      });
+
+      let profileSelectCount = 0;
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockImplementation(() => {
+                profileSelectCount++;
+                if (profileSelectCount === 1) {
+                  return Promise.resolve({ data: { role: 'courier' }, error: null });
+                }
+                return Promise.resolve({
+                  data: { id: currentUserId, role: 'courier', consent_status: 'pending' },
+                  error: null,
+                });
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    });
+
+    it('k) PR364-R03: simulación de interleaving real de dos sesiones: A lee vacío, B commitea documentos, A intenta INSERT y recupera idempotentemente vía RLS 42501', async () => {
+      const dbDocuments: Array<{ id: string; kind: string; storage_path: string; status: string; is_current: boolean }> = [];
+
+      const mockSessionASelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          return Promise.resolve({ data: [...dbDocuments], error: null });
+        }),
+      });
+
+      const mockSessionAInsert = vi.fn().mockImplementation((entries: Array<any>) => {
+        for (const entry of entries) {
+          if (dbDocuments.some((d) => d.kind === entry.kind && d.is_current)) {
+            return Promise.resolve({
+              error: {
+                code: '42501',
+                message: 'new row violates row-level security policy for table "courier_documents"',
+              },
+            });
+          }
+        }
+        dbDocuments.push(...entries.map((e, idx) => ({ id: `doc-${idx}`, ...e, is_current: true })));
+        return Promise.resolve({ error: null });
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSessionASelect,
+              insert: mockSessionAInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      // En el snapshot inicial, Sesión A lee vacío []. Justo después, Sesión B commitea en DB:
+      mockSessionASelect.mockReturnValueOnce({
+        eq: vi.fn().mockImplementation(() => {
+          dbDocuments.push(
+            { id: 'b-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+            { id: 'b-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+            { id: 'b-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+            { id: 'b-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+          );
+          return Promise.resolve({ data: [], error: null });
+        }),
+      });
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(dbDocuments).toHaveLength(4);
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+    });
   });
 });

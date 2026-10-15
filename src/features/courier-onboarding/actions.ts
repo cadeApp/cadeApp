@@ -210,14 +210,37 @@ export async function courierOnboardingAction(
       .insert(documentEntriesToInsert as never);
 
     if (documentsError) {
-      const errObj = documentsError as { code?: string; message?: string };
+      const errObj = documentsError as { code?: string; message?: string; details?: string };
       const isUniqueConflict =
         errObj.code === '23505' ||
         String(errObj.message ?? '').includes('23505') ||
-        String(errObj.message ?? '').includes('unique');
+        String(errObj.message ?? '').toLowerCase().includes('unique') ||
+        String(errObj.details ?? '').toLowerCase().includes('already exists');
 
-      if (isUniqueConflict) {
-        // En carrera concurrente (dos envíos simultáneos), releer todas las versiones vigentes
+      const isRlsConflict =
+        errObj.code === '42501' ||
+        String(errObj.message ?? '').includes('42501') ||
+        String(errObj.message ?? '').toLowerCase().includes('row-level security') ||
+        String(errObj.message ?? '').toLowerCase().includes('permission denied');
+
+      if (isUniqueConflict || isRlsConflict) {
+        // En carrera concurrente (dos envíos simultáneos), volver a validar actor y consentimientos
+        const { data: recheckedProfile, error: profileRecheckError } = await supabase
+          .from('profiles')
+          .select('id, role, consent_status')
+          .eq('id', user.id)
+          .maybeSingle<{ id: string; role: string; consent_status?: string }>();
+
+        if (
+          profileRecheckError ||
+          !recheckedProfile ||
+          recheckedProfile.role !== 'courier' ||
+          (recheckedProfile.consent_status !== undefined && recheckedProfile.consent_status !== 'active')
+        ) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+
+        // Releer todas las versiones vigentes del courier
         const { data: recheckedDocs, error: recheckError } = await supabase
           .from('courier_documents')
           .select('id, kind, storage_path, status, is_current')
@@ -235,7 +258,11 @@ export async function courierOnboardingAction(
 
         for (const entry of documentEntries) {
           const rechecked = recheckedByKind.get(entry.kind);
-          if (!rechecked || rechecked.storage_path !== entry.storage_path) {
+          if (
+            !rechecked ||
+            rechecked.storage_path !== entry.storage_path ||
+            (rechecked.status !== 'submitted' && rechecked.status !== 'verified')
+          ) {
             return err('VALIDATION_ERROR');
           }
         }
