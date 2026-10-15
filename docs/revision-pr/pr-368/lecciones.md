@@ -15,3 +15,12 @@ No se numera lección AG nueva en esta ronda preparatoria: primero se necesitan 
 - **Buenas prácticas observadas:** copy compartido entre `StatusView` y perfil, tests del DOM y preservación de controles de estado al actualizar nombres. La autorización para tocar un test de otra feature quedó limitada a una línea.
 
 No se asignan números AG nuevos sin enumerar el máximo global remoto y sin evidencia reproducida del patrón estructural. El mismo hallazgo de proceso ya se conoce como P08 y P15.
+
+## Ronda 3
+
+- Corrección del revisor: para PR de KiraK72, approval-policy exige APPROVED de Lautaro073, no un informe pegado. Ambas rondas anteriores diagnosticaron esto incorrectamente.
+- El E2E de la SHA anterior cancelado no invalida automáticamente un nuevo run de otra SHA: comprobar commit status del SHA exacto y su run target; en 0acb5a7 estaba pending.
+- El arreglo de React resuelve la dependencia del componente directamente en lugar de agregar estado global a un test; mejora verificable con CI en mismo SHA y controles propios.
+- El harness y las capturas en scratch no son evidencia recuperable por otra revisión. Evitar afirmar GREEN de Playwright si solo hay un run cancelado o pending.
+
+No modificar AGENTS.md ni crear número de lección AG sin contrastar otras PRs.

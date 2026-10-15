@@ -130,3 +130,61 @@ node docs/revision-pr/analizar.mjs verificacion
 ### Reproducción pendientísima de autor
 
 Los 9 RED de KiraK72 están únicamente **declarados como sumarios** en bitácora. Falta harness con mutaciones en código real + salidas RED reales de Vitest para reproducirlos sin confiar en el autor. Ronda siguiente deberá ejecutar sus controles originales (GREEN) y mutarlos independientemente (RED), no inventar el resultado. Ver H02.
+
+## Ronda 3 — SHA 0acb5a7e975638d128921851fc39cc39e3f30f45
+
+Consulta de 9 archivos por conector; ejecución directa en JavaScript sobre los contenidos remotos, sin escribir sobre el repositorio. **14 controles GREEN y 14 mutaciones propias sobre copias de memoria detectadas**; NO es Vitest runtime. Script completo equivalente para un worktree en SHA fijado:
+
+```js
+// Ejecutar en un worktree limpio sobre el SHA indicado: node /tmp/pr368-r3.mjs
+// INSPECCION ESTATICA: muta strings en memoria; NO ejecuta Vitest/Playwright.
+import fs from 'node:fs';
+const files={
+ copy:'src/features/courier-onboarding/copy.ts',
+ status:'src/features/courier-onboarding/components/status-view.tsx',
+ profile:'src/features/courier-onboarding/components/courier-profile-view.tsx',
+ card:'src/features/courier-onboarding/components/document-upload-card.tsx',
+ admin:'src/features/admin/copy.ts',
+ test:'src/features/courier-onboarding/components.test.tsx',
+ adminTest:'src/features/admin/components/applicant-detail-view.test.tsx',
+ queue:'src/features/admin/components/applicants-queue.tsx',
+ cross:'src/features/offers/courier-panel.test.tsx'
+};
+const src=Object.fromEntries(Object.entries(files).map(([k,p])=>[k,fs.readFileSync(p,'utf8')]));
+const instruction='Sostené el DNI junto a tu rostro. Ambos deben verse legibles, sin reflejos ni obstrucciones';
+const cases=[
+ ['title','copy',"selfieTitle: 'Selfie con el DNI'","selfieTitle: 'Selfie de validación'"],
+ ['subtitle','copy',instruction,'Rostro y DNI legibles'],
+ ['status','status','COURIER_ONBOARDING_COPY.selfieTitle, status: selfieStatus',"'Selfie de seguridad', status: selfieStatus"],
+ ['profile','profile','{COURIER_ONBOARDING_COPY.selfieTitle}','Selfie de identidad'],
+ ['detail','admin',"selfie: 'Selfie con el DNI'","selfie: 'Selfie con DNI'"],
+ ['badge','admin',"selfieBadge: 'Selfie con el DNI'","selfieBadge: 'Selfie'"],
+ ['wrap','card',"status === 'error' || kind === 'selfie'","status === 'error'"],
+ ['aria','card','aria-label={title}','aria-label="Selfie"'],
+ ['pending','cross',"rowOf(/Selfie con el DNI/)?.textContent).toContain('Pendiente')","rowOf(/Selfie con el DNI/)?.textContent).toBeDefined()"],
+ ['noAny','adminTest',"import React from 'react';","import React from 'react';\n(globalThis as any).React = React;"],
+ ['noBang','test','getElementById(describedById)','getElementById(describedById!)'],
+ ['react','queue',"import * as React from 'react';",''],
+ ['ariaTest','test','expect(describedNode?.textContent).toBe(instructionText);','expect(describedNode).not.toBeNull();'],
+ ['adminTest','adminTest',"expect(selfieTab?.textContent).toContain('Selfie con el DNI');","expect(selfieTab).toBeDefined();"]
+];
+const verify=(key,s)=>key==='noAny'?!s.adminTest.includes('(globalThis as any).React = React;')
+:key==='noBang'?!s.test.includes('getElementById(describedById!)')
+:key==='react'?s.queue.includes("import * as React from 'react';")
+:s[({ariaTest:'test',adminTest:'adminTest'})[key]||cases.find(x=>x[0]===key)[1]]
+.includes(cases.find(x=>x[0]===key)[2]);
+let green=0,red=0;
+for(const [k,f,from,to] of cases){
+ if(!src[f].includes(from))throw Error('MUTANT TARGET MISSING: '+k);
+ if(!verify(k,src))throw Error('BASELINE RED: '+k);
+ green++;
+ if(verify(k,{...src,[f]:src[f].replace(from,to)}))throw Error('MUTANT UNDETECTED: '+k);
+ red++;
+}
+console.log('GREEN',green,'/',cases.length,' MUTANTS DETECTED',red,'/',cases.length);
+
+```
+
+CI de SHA exacto: unit job 116281255834: Test Files 131 passed (131), Tests 2209 passed (2209). DB job 116281255838: Files=22 Tests=2205 Result PASS. e2e-preview commit status pending con run 38692469970. Run 38687321259 del SHA viejo cancelado. Approval-policy requiere aprobación formal de Lautaro073 (según log y regla actual, NO informe de texto).
+
+No se ejecutaron comandos en Vercel, Supabase ni git clone; no se visualizaron capturas scratch. No declarar e2e verde sin status success. No se corrieron RED de Vitest del autor en esta sesión.
