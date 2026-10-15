@@ -15,6 +15,7 @@ import { safeNotifyPostTransition } from '@/server/push';
 import type { SupabaseRpcCaller } from './offers';
 
 export type RequestLifecycleRpcName =
+  | 'reconcile_expired_requests'
   | 'create_and_publish_multi_drop'
   | 'publish_request'
   | 'cancel_request'
@@ -221,6 +222,8 @@ export function createRequestsRpcServerClient(
   client: SupabaseRpcCaller
 ): Pick<RpcClientContract, RequestLifecycleRpcName> {
   return {
+    reconcile_expired_requests: (input) =>
+      callRequestRpc(client, 'reconcile_expired_requests', input),
     create_and_publish_multi_drop: (input) =>
       callRequestRpc(client, 'create_and_publish_multi_drop', input),
     publish_request: (input) => callRequestRpc(client, 'publish_request', input),

@@ -309,6 +309,7 @@ const DEFAULT_ACTOR: FakeActorContext = {
 };
 
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
+  reconcile_expired_requests: ['merchant'],
   create_and_publish_multi_drop: ['merchant'],
   publish_request: ['merchant'],
   cancel_request: ['merchant', 'admin'],
@@ -659,6 +660,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       (rpcName === 'get_trip_details' ||
         rpcName === 'get_request_offer_couriers' ||
         rpcName === 'get_merchant_request_private_fields' ||
+        rpcName === 'reconcile_expired_requests' ||
         rpcName === 'report_incident' ||
         rpcName === 'submit_offer' ||
         rpcName === 'take_request') &&
@@ -754,6 +756,41 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     getCourier: (courierId) => couriers.get(courierId),
     getSettings: () => ({ ...settings }),
     triggerErrorCode: async (code) => err(code),
+
+    reconcile_expired_requests: (rawInput) =>
+      executeRpc('reconcile_expired_requests', rawInput, false, () => {
+        const currentNow = nowFn();
+        const eligible = [...requests.values()]
+          .filter(
+            (request) =>
+              request.merchantId === actor.userId &&
+              request.status === 'published' &&
+              request.acceptedOfferId === null &&
+              isRequestExpired(request.status, request.expiresAt, currentNow)
+          )
+          .sort((left, right) => {
+            const leftExpiry = left.expiresAt ?? '';
+            const rightExpiry = right.expiresAt ?? '';
+            return leftExpiry.localeCompare(rightExpiry) || left.requestId.localeCompare(right.requestId);
+          });
+        const reconciled = eligible.slice(0, 50);
+        const reconciledIds = new Set(reconciled.map((request) => request.requestId));
+
+        for (const request of reconciled) {
+          request.status = 'expired';
+        }
+        for (const offer of offers.values()) {
+          if (reconciledIds.has(offer.requestId) && offer.status === 'pending') {
+            offer.status = 'expired';
+          }
+        }
+
+        return ok({
+          expiredRequestIds: reconciled.map((request) => request.requestId),
+          expiredCount: reconciled.length,
+          hasMore: eligible.length > reconciled.length,
+        });
+      }),
 
     create_and_publish_multi_drop: (rawInput) =>
       executeRpc('create_and_publish_multi_drop', rawInput, false, (input) => {

@@ -147,6 +147,16 @@ export const createAndPublishMultiDropOutputSchema = z
   })
   .strict();
 
+// CC-026: el comercio no elige ámbito, estado ni reloj; la RPC deriva todo de la sesión y PostgreSQL.
+export const reconcileExpiredRequestsInputSchema = z.object({}).strict();
+export const reconcileExpiredRequestsOutputSchema = z
+  .object({
+    expiredRequestIds: z.array(uuidSchema),
+    expiredCount: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+  })
+  .strict();
+
 // 1. publish_request
 export const publishRequestInputSchema = z.object({
   requestId: uuidSchema,
@@ -611,6 +621,15 @@ export const adminListIncidentsOutputSchema = z.object({
 });
 
 export const RPC_CONTRACTS = {
+  reconcile_expired_requests: {
+    inputSchema: reconcileExpiredRequestsInputSchema,
+    outputSchema: reconcileExpiredRequestsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   create_and_publish_multi_drop: {
     inputSchema: createAndPublishMultiDropInputSchema,
     outputSchema: createAndPublishMultiDropOutputSchema,
@@ -1093,6 +1112,7 @@ export const RPC_CONTRACTS = {
 } as const;
 
 export const ALL_RPC_NAMES = [
+  'reconcile_expired_requests',
   'create_and_publish_multi_drop',
   'publish_request',
   'cancel_request',

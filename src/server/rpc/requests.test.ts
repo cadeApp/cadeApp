@@ -93,6 +93,28 @@ const cases = [
 ] as const;
 
 describe('T-103 — Wrapper de RPC de solicitudes', () => {
+  it('CC-026 expone reconcile_expired_requests sin argumentos controlados por el caller', async () => {
+    const output = {
+      expiredRequestIds: [requestId],
+      expiredCount: 1,
+      hasMore: false,
+    };
+    const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
+    const client = createRequestsRpcServerClient({ rpc });
+    const entry = Object.entries(client).find(
+      ([rpcName]) => rpcName === 'reconcile_expired_requests'
+    );
+
+    expect(entry).toBeDefined();
+    if (!entry) return;
+
+    const [, reconcile] = entry;
+    const result = await (reconcile as (input: Record<string, never>) => Promise<unknown>)({});
+
+    expect(result).toEqual({ ok: true, data: output });
+    expect(rpc).toHaveBeenCalledExactlyOnceWith('reconcile_expired_requests', {});
+  });
+
   it('create_and_publish_multi_drop envía el payload completo en p_payload', async () => {
     const output = {
       requestId,
@@ -380,7 +402,7 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     const rpc = vi.fn().mockResolvedValue({ data: output, error: null });
     const client = createRequestsRpcServerClient({ rpc });
     expect(Object.keys(client).sort()).toEqual(
-      [...cases.map((c) => c.name), 'create_and_publish_multi_drop'].sort()
+      [...cases.map((c) => c.name), 'create_and_publish_multi_drop', 'reconcile_expired_requests'].sort()
     );
     expect(await client.report_no_show({ requestId, republish: false })).toEqual({
       ok: true,
