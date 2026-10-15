@@ -24,3 +24,11 @@ No se asignan números AG nuevos sin enumerar el máximo global remoto y sin evi
 - El harness y las capturas en scratch no son evidencia recuperable por otra revisión. Evitar afirmar GREEN de Playwright si solo hay un run cancelado o pending.
 
 No modificar AGENTS.md ni crear número de lección AG sin contrastar otras PRs.
+
+## Ronda 4
+
+- **P04, harness que se autoaprueba (H05):** capturar de manera indiscriminada una excepción lanzada deliberadamente después de un `execSync` exitoso permite llamar RED a un test siempre verde. Un control de mutación debe fallar explícitamente cuando el mutante sobrevive y separar errores de test de infraestructura.
+- **E2E por commit:** el nuevo SHA 20392c26 tiene run SUCCESS con 76 pruebas Chromium y 3 global-settings; no heredar un run de una SHA anterior. La aprobación formal de Lautaro073 llegó después de esos checks.
+- **Evidencia móvil recuperable:** el nombre de archivo `mobile-verification.md` en la bitácora no sustituye el enlace a PNGs/artefactos. Respetar la diferencia entre la validación declarada por autor y la verificación independiente.
+
+El hallazgo nuevo se clasifica como P04 ya existente. No modificar AGENTS.md por una sola aparición nueva.

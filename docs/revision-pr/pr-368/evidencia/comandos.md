@@ -188,3 +188,48 @@ console.log('GREEN',green,'/',cases.length,' MUTANTS DETECTED',red,'/',cases.len
 CI de SHA exacto: unit job 116281255834: Test Files 131 passed (131), Tests 2209 passed (2209). DB job 116281255838: Files=22 Tests=2205 Result PASS. e2e-preview commit status pending con run 38692469970. Run 38687321259 del SHA viejo cancelado. Approval-policy requiere aprobación formal de Lautaro073 (según log y regla actual, NO informe de texto).
 
 No se ejecutaron comandos en Vercel, Supabase ni git clone; no se visualizaron capturas scratch. No declarar e2e verde sin status success. No se corrieron RED de Vitest del autor en esta sesión.
+
+## Ronda 4 — reproducción independiente sobre SHA 20392c26a3f2dbdef41f75984b925af43dc65021
+
+### Harness defectuoso: experimento hermético realmente ejecutado
+
+```bash
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+printf 'original\n' > "$tmp/source.txt"
+cat > "$tmp/demo.mjs" <<'JS'
+import fs from 'node:fs';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
+const root = process.cwd();
+const m = {id:'demo',file:'source.txt',target:'original',replacement:'mutant',testCmd:'node -e "process.exit(0)"'};
+const filePath = path.join(root,m.file);
+const originalContent = fs.readFileSync(filePath,'utf8');
+if(!originalContent.includes(m.target))throw Error('target missing');
+try {
+  fs.writeFileSync(filePath,originalContent.replace(m.target,m.replacement),'utf8');
+  execSync(m.testCmd,{cwd:root,encoding:'utf8',stdio:['pipe','pipe','pipe']});
+  throw new Error('Expected mutation demo to fail!');
+} catch(err) {
+  // Same generic catch as author: treats a surviving mutant as RED.
+} finally {
+  fs.writeFileSync(filePath,originalContent,'utf8');
+}
+execSync(m.testCmd,{cwd:root,encoding:'utf8',stdio:['pipe','pipe','pipe']});
+console.log('HARNESS_EXITED_SUCCESS; TEST_WAS_ALWAYS_GREEN; RESTORED='+fs.readFileSync(filePath,'utf8').trim());
+JS
+(cd "$tmp" && node demo.mjs)
+# Observed: HARNESS_EXITED_SUCCESS; TEST_WAS_ALWAYS_GREEN; RESTORED=original
+```
+
+**Resultado observado con exit 0:** `HARNESS_EXITED_SUCCESS; TEST_WAS_ALWAYS_GREEN; RESTORED=original`.
+Este es un control negativo: el comando es SIEMPRE GREEN, y el harness incorrecto debió detectar que ningún RED ocurrió. No usó código privado, DB, GitHub, ni alteró el árbol de cadeApp.
+
+### Checks oficiales leídos (del SHA exacto)
+
+- GitHub `unit` job 116289562284: 131 Vitest files y 2230 tests passed. `typecheck`, `lint`, `build`, `audit`, `bundle-budget`: success.
+- `db-tests` job 116289562303: `Files=22, Tests=2205, Result: PASS`, sin atribuir ese control al copy de T-354.
+- `e2e-preview`: commit status SHA 20392c26 success y run 38695142292, intento 2, job 116302712269: `76 passed (20.4m)` Chromium y `3 passed (1.0m)` global-settings.
+- Reviews: @Lautaro073 APPROVED sobre 20392c26 a las 07:58:46Z; dos jobs recientes approval-policy success.
+- Artefactos del run 38695142292: `playwright-report` id 11955984022; no se obtuvo enlace a capturas mobiles indicadas como `mobile-verification.md`.
+- El contenedor no puede resolver github.com: `git ls-remote` falló DNS; no se corrió `pnpm` local, `git merge-tree` ni E2E nuevo. La ejecución propia fue solo el control negativo del harness.
