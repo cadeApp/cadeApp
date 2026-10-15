@@ -64,6 +64,7 @@ class PsqlSession {
         this.processFailure = `proceso terminó por señal ${signal}`;
       }
     });
+    this.proc.stdin.on('error', () => {});
     this.proc.stdout.on('data', (d) => {
       this.output += d.toString('utf8');
     });
@@ -118,8 +119,10 @@ class PsqlSession {
 
   async close() {
     try {
-      this.proc.stdin.write('rollback;\n\\q\n');
-      this.proc.stdin.end();
+      if (this.proc.exitCode === null && this.proc.stdin && !this.proc.stdin.destroyed) {
+        this.proc.stdin.write('rollback;\n\\q\n');
+        this.proc.stdin.end();
+      }
       await new Promise((resolve) => {
         if (this.proc.exitCode !== null) return resolve();
         this.proc.once('close', resolve);
