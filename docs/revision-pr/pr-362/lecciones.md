@@ -46,3 +46,12 @@ No se asigna AG nuevo sin enumeración remota completa de todas las ramas.
 - **H06 (P15):** hay al menos tres señales independientes que no deben confundirse: **Vercel Deployment READY**, **GitHub CI/unit success** y **`e2e-preview` status con SHA exacto y Playwright**. Solo la tercera cumple el DoD E2E.
 - **Infraestructura externa:** un `403` en webhooks restringe la revisión a observación; no inferir que el webhook falta por la ausencia del status. Escalar a quien tenga acceso para verificar entregas y permisos sin revelar secretos ni disparar pruebas artificiales.
 - **Policy:** el error `El PR requiere aprobación vigente de Lautaro073` es intencional hasta aprobación de P1; no crear un bypass. La aprobación vendrá luego de quitar los bloqueantes.
+
+---
+
+## Ronda 6 (`20de71c`)
+
+- **P08/P15 — Frontera de privacidad:** verificar que un **payload público crudo de red** no tiene claves privadas requiere probar realmente esa superficie. Un objeto retornado por `createAdminClient().select('*')` tiene **otra autorización** y puede contener columnas legacy con valores null. Aplicarle la política de ausencia de claves da RED falso, incluso sin exposición pública.
+- **Instrumentación:** cuando E2E finalmente corre, un RED real reproducible en la misma aserción 3 veces es más informativo que declarar infra fallida; revisar la línea y el origen del dato antes de cambiar RLS o test. La cobertura real de acceso T-345 pasó y no debe ser debilitada.
+- **Calidad:** nunca convertir el fallo en verde con `.select('id,status,drops_count')`, `.catch()`, `.skip`, eliminación de `expect`, mocks o una respuesta artificial que omita campos. El control sustituto debe mirar la fila física íntegra, asegurar null de columnas legacy y ausencia de valores confidenciales; la API real se prueba separadamente.
+- **Seguridad:** no mover la prueba a Staging, no ejecutar migraciones ni insertar datos sensibles para justificar el resultado; el gate se prueba contra Vercel Develop Preview + Supabase Develop.

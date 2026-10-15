@@ -242,3 +242,36 @@ gh api "repos/cadeApp/cadeApp/commits/$SHA/check-runs" --jq '.check_runs[] | [.n
 ```
 
 **No se ejecutó** ningún test E2E, Vitest ni mutación a este SHA en la sesión del revisor. No se dispararon workflows.
+
+---
+
+## Ronda 6 — SHA `20de71c1e5c9431cfb7ac8207a468879093d550d`
+
+**GitHub diff incremental `db71f028..20de71c`:** solo `docs/tasks/log/T-353.md`, +23/-0, ningún código de aplicación/E2E. Autor informa run anterior cancelado `38687859485` en nueva sesión.
+
+**Gate real actual `38688520658` (`repository_dispatch` / commit `20de71c1e5c9431cfb7ac8207a468879093d550d`):**
+- `resolve-preview` = success (job `116268809672`).
+- `e2e-preview` = **failure** (job `116268870636`).
+- `report-preview-status` = success (job `116276249321`).
+- Commit status `e2e-preview=failure`. Vercel `cadeapp-develop` = success; CI `38688423087` = success, 7/7 jobs; `approval-policy=failure` por aprobación P1 pendiente.
+
+**Lectura independiente del log del job 116268870636:**
+```text
+Running 76 tests using 1 worker
+✓ courier-onboarding.spec.ts:672 T-353 DNI invalid/correction
+✓ courier-private-columns.spec.ts:32 T-345 column privileges
+✘ multi-drop.spec.ts:959 T-353 / PR362-H06
+✘ multi-drop.spec.ts:959 retry #1
+✘ multi-drop.spec.ts:959 retry #2
+Error: expect(received).not.toContain(expected)
+Expected substring: not "\"notes\""
+at e2e/specs/multi-drop.spec.ts:1099:32
+1 failed
+75 passed (20.1m)
+Process completed with exit code 1
+```
+Se omitieron deliberadamente del informe las filas SQL y los identificadores de fixture impresos por Playwright. El fragmento de fallo mostraba `"notes":null` en el objeto leído por `createAdminClient().from('delivery_requests').select('*')`. El uso de `FORBIDDEN_PRIVATE_KEYS` y `assertNoPrivateFieldsInRawPayload` aplica la política del payload público de red al registro administrativo, aunque `notes` sea columna física legacy. No se corrió `global-settings` por error anterior en shell.
+
+**Verificación independiente de código:** `src/server/live/privacy-checker.ts` declara que inspecciona payloads **crudos de red** antes de Zod; `e2e/specs/courier-private-columns.spec.ts` asegura acceso real a columnas privadas con token courier, y su E2E fue verde. `e2e/specs/multi-drop.spec.ts` usa el helper `assertNoPrivateFieldsInRawPayload` y `FORBIDDEN_PRIVATE_KEYS` en **otros tests**, por lo que esos imports y esas comprobaciones anteriores se deben conservar.
+
+**No corrí Playwright/Vitest local** ni alteré datos remotos; la evidencia es el workflow automático real, inspeccionado directamente. **H06 no verificado verde**. No corregir el contexto con una publicación manual.
