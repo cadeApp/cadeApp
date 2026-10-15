@@ -88,25 +88,56 @@ describe('T-115 DoD: Unit de los mensajes de WhatsApp (monto aceptado, sin datos
     });
   });
 
-  describe('buildNotifyCustomerWhatsAppMessage ("Avisar a mi cliente": comercio ↔ destinatario)', () => {
+  describe('buildNotifyCustomerWhatsAppMessage ("Avisar a mi cliente": repartidor ↔ destinatario [T-361])', () => {
     const baseCustomerParams: NotifyCustomerMessageParams = {
-      amountArs: 1800,
       courierName: 'Carlos Benítez',
+      status: 'in_transit',
+      amountArs: 1800,
       recipientPaymentMethod: 'cash',
       needsChange: true,
       cashChangeAmount: 2000,
     };
 
-    it('incluye el costo del envío acordado, nombre del repartidor y medio de pago', () => {
+    it('en estado in_transit: genera texto claro, humano y natural avisando que está en camino', () => {
       const msg = buildNotifyCustomerWhatsAppMessage(baseCustomerParams);
 
-      expect(msg).toContain('$ 1.800');
+      expect(msg).toBe(
+        '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Te aviso que estoy en camino. ¡Nos vemos pronto!'
+      );
       expect(msg).toContain('Carlos Benítez');
-      expect(msg).toContain('Efectivo');
-      expect(msg).toContain('$ 2.000');
+      expect(msg).toContain('estoy en camino');
+      expect(msg).not.toContain('REQ-');
+      expect(msg).not.toContain('Costo de envío:');
+      expect(msg).not.toContain('Medio de pago:');
     });
 
-    it('H04: invariante "sin datos de más": no contiene teléfono del repartidor, patente, DNI, ids ni sentinelas', () => {
+    it('en estado matched (antes del retiro): no afirma "en camino" y avisa pedido asignado por retirar', () => {
+      const prePickupMsg = buildNotifyCustomerWhatsAppMessage({
+        ...baseCustomerParams,
+        status: 'matched',
+      });
+
+      expect(prePickupMsg).toBe(
+        '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!'
+      );
+      expect(prePickupMsg).toContain('Carlos Benítez');
+      expect(prePickupMsg.toLowerCase()).not.toContain('en camino');
+      expect(prePickupMsg).not.toContain('REQ-');
+    });
+
+    it('en estado delivered: avisa entrega completada con cortesía', () => {
+      const deliveredMsg = buildNotifyCustomerWhatsAppMessage({
+        ...baseCustomerParams,
+        status: 'delivered',
+      });
+
+      expect(deliveredMsg).toBe(
+        '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Tu pedido ya fue entregado. ¡Muchas gracias!'
+      );
+      expect(deliveredMsg.toLowerCase()).not.toContain('en camino');
+    });
+
+    it('H04 & T-361: invariante "sin datos de más": no contiene teléfono del repartidor, patente, DNI, ids técnicos ni sentinelas', () => {
       const wideCustomerParams = {
         ...baseCustomerParams,
         courierPhone: SENTINEL_PHONE,
@@ -114,22 +145,20 @@ describe('T-115 DoD: Unit de los mensajes de WhatsApp (monto aceptado, sin datos
         deliveryNotes: SENTINEL_NOTE,
         coords: SENTINEL_COORDS,
         requestId: SENTINEL_ID,
+        requestCode: 'REQ-9999',
         dni: SENTINEL_DNI,
         licensePlate: 'AB 123 CD',
       } as unknown as NotifyCustomerMessageParams;
 
       const msg = buildNotifyCustomerWhatsAppMessage(wideCustomerParams);
 
-      // Solo datos necesarios para el cliente
-      expect(msg).toContain('$ 1.800');
       expect(msg).toContain('Carlos Benítez');
-
-      // Privacidad estricta: ningún sentinela debe filtrarse
       expect(msg).not.toContain(SENTINEL_PHONE);
       expect(msg).not.toContain(SENTINEL_ADDR);
       expect(msg).not.toContain(SENTINEL_NOTE);
       expect(msg).not.toContain(SENTINEL_COORDS);
       expect(msg).not.toContain(SENTINEL_ID);
+      expect(msg).not.toContain('REQ-9999');
       expect(msg).not.toContain(SENTINEL_DNI);
       expect(msg.toLowerCase()).not.toContain('patente');
       expect(msg.toLowerCase()).not.toContain('dni');
