@@ -187,6 +187,10 @@ jobs:
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc024_atomic_concurrency.mjs
 
+            # Compatibilidad y control de mutación de migración expansiva CC-025 (PR A)
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_expand_compatibility.mjs
+            DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc025_expand_compatibility.mjs --mutation-check
+
             # Control negativo RED->GREEN de mutaciones funcionales en DB efímera (H15 / T-340)
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs --mutation-check
 
