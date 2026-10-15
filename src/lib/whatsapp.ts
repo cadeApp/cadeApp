@@ -21,11 +21,19 @@ export interface NotifyCustomerMessageParams {
 /**
  * Normaliza y valida estrictamente un número de teléfono argentino a 10 dígitos nacionales.
  * Limpia +54, 549, 0 inicial y 15 móvil intermedio tras códigos de área (2, 3 o 4 dígitos).
- * Lanza un error descriptivo si el número resultante no tiene exactamente 10 dígitos.
+ * Lanza un error descriptivo si el número contiene letras, caracteres inválidos o no tiene exactamente 10 dígitos.
  */
 export function extractValidArgentineTenDigits(rawPhone: string): string {
-  if (!rawPhone || typeof rawPhone !== 'string') {
+  if (!rawPhone || typeof rawPhone !== 'string' || rawPhone.trim().length === 0) {
     throw new Error('Número de teléfono inválido: se requieren 10 dígitos nacionales');
+  }
+
+  if (/[a-zA-Z]/.test(rawPhone)) {
+    throw new Error('El número de teléfono no puede contener letras');
+  }
+
+  if (/[^0-9\s+().-]/.test(rawPhone)) {
+    throw new Error('El número de teléfono contiene caracteres o símbolos no permitidos');
   }
 
   let digits = rawPhone.replace(/\D/g, '');
@@ -56,6 +64,18 @@ export function extractValidArgentineTenDigits(rawPhone: string): string {
   }
 
   return digits;
+}
+
+/**
+ * Determina si una cadena representa un número de teléfono argentino válido (10 dígitos nacionales).
+ */
+export function isValidArgentinePhone(phone: string): boolean {
+  try {
+    extractValidArgentineTenDigits(phone);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -1,27 +1,61 @@
 import { z } from 'zod';
 import { aguilaresLatSchema, aguilaresLngSchema } from '@/domain/schemas';
 
+import { isValidArgentinePhone } from '@/lib/whatsapp';
+
+const CONTROL_CHARS_REGEX = /[\x00-\x1F\x7F]/;
+const HAS_ALPHANUMERIC_REGEX = /[a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ]/;
+
 export const merchantOnboardingSchema = z
   .object({
     businessName: z
-      .string()
+      .string({ required_error: 'El nombre del negocio es obligatorio' })
       .trim()
       .min(1, 'El nombre del negocio es obligatorio')
-      .max(100, 'El nombre es demasiado largo'),
+      .max(100, 'El nombre es demasiado largo')
+      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+        message: 'El nombre contiene caracteres de control no permitidos',
+      })
+      .refine((val) => !/[<>]/.test(val), {
+        message: 'El nombre no puede contener etiquetas HTML o scripts',
+      })
+      .refine((val) => HAS_ALPHANUMERIC_REGEX.test(val), {
+        message: 'El nombre debe contener al menos una letra o número',
+      }),
     phone: z
-      .string()
+      .string({ required_error: 'El teléfono de contacto es obligatorio' })
       .trim()
       .min(1, 'El teléfono de contacto es obligatorio')
-      .max(30, 'El teléfono es demasiado largo'),
+      .max(30, 'El teléfono es demasiado largo')
+      .refine((val) => isValidArgentinePhone(val), {
+        message: 'El teléfono debe ser un número argentino válido (10 dígitos nacionales)',
+      }),
     defaultPickupZoneId: z.string().uuid().nullable().optional(),
     defaultPickupAddress: z
-      .string()
+      .string({ required_error: 'La dirección de retiro es obligatoria' })
       .trim()
       .min(1, 'La dirección de retiro es obligatoria')
-      .max(200, 'La dirección es demasiado larga'),
+      .max(200, 'La dirección es demasiado larga')
+      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+        message: 'La dirección contiene caracteres de control no permitidos',
+      })
+      .refine((val) => !/[<>]/.test(val), {
+        message: 'La dirección no puede contener etiquetas HTML o scripts',
+      })
+      .refine((val) => HAS_ALPHANUMERIC_REGEX.test(val), {
+        message: 'La dirección debe contener al menos el nombre de la calle o número',
+      }),
     defaultPickupLat: aguilaresLatSchema.nullable().optional(),
     defaultPickupLng: aguilaresLngSchema.nullable().optional(),
-    notes: z.string().trim().max(500, 'Las notas son demasiado largas').nullable().optional(),
+    notes: z
+      .string()
+      .trim()
+      .max(500, 'Las notas son demasiado largas')
+      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+        message: 'Las notas contienen caracteres de control no permitidos',
+      })
+      .nullable()
+      .optional(),
     acceptPilotTerms: z.literal(true, {
       errorMap: () => ({ message: 'Tenés que aceptar los Términos del piloto' }),
     }),
