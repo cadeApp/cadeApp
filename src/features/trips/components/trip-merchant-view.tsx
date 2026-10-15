@@ -212,13 +212,21 @@ export function TripMerchantView({
 
       {dropsList.map((drop) => {
         const dropCustomerMsg = buildNotifyCustomerWhatsAppMessage({
-          amountArs: trip.amountArs,
           courierName: trip.courierName,
+          status: trip.status,
+          amountArs: trip.amountArs,
           recipientPaymentMethod: drop.recipientPaymentMethod,
           needsChange: drop.needsChange,
           cashChangeAmount: drop.cashChangeAmount,
         });
-        const dropCustomerWaUrl = buildWhatsAppUrl(drop.recipientPhone, dropCustomerMsg);
+        let dropCustomerWaUrl: string | null = null;
+        if (drop.recipientPhone) {
+          try {
+            dropCustomerWaUrl = buildWhatsAppUrl(drop.recipientPhone, dropCustomerMsg);
+          } catch {
+            dropCustomerWaUrl = null;
+          }
+        }
 
         return (
           <Card key={drop.id} className="border-primary/20 bg-primary/5 shadow-card">
@@ -235,15 +243,22 @@ export function TripMerchantView({
               <div className="rounded-lg border border-border/50 bg-background/80 p-2.5 text-sm italic text-muted-foreground">
                 &quot;{dropCustomerMsg}&quot;
               </div>
-              <a
-                href={dropCustomerWaUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
-              >
-                <MessageCircle className="h-4 w-4" />
-                {dropsList.length > 1 ? `Avisar a ${drop.recipientName}` : 'Avisar a mi cliente'}
-              </a>
+              {dropCustomerWaUrl ? (
+                <a
+                  href={dropCustomerWaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  {dropsList.length > 1 ? `Avisar a ${drop.recipientName}` : 'Avisar a mi cliente'}
+                </a>
+              ) : (
+                <Button type="button" variant="whatsapp" disabled className="min-h-[48px] w-full">
+                  <MessageCircle className="mr-2 h-4 w-4" />
+                  WhatsApp no disponible
+                </Button>
+              )}
             </CardContent>
           </Card>
         );

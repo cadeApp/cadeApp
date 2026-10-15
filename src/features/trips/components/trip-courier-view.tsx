@@ -7,7 +7,11 @@ import { Button } from '@/ui/button';
 import { Card, CardContent } from '@/ui/card';
 import { Badge } from '@/ui/badge';
 import { formatArs } from '@/lib/format';
-import { buildTripCoordinationWhatsAppMessage, buildWhatsAppUrl } from '@/lib/whatsapp';
+import {
+  buildNotifyCustomerWhatsAppMessage,
+  buildTripCoordinationWhatsAppMessage,
+  buildWhatsAppUrl,
+} from '@/lib/whatsapp';
 import { formatRecipientPaymentMethod } from '../format';
 import {
   AlertCircle,
@@ -217,6 +221,24 @@ export function TripCourierView({
                   ? 'destructive'
                   : 'outline';
 
+            const dropCustomerMsg = buildNotifyCustomerWhatsAppMessage({
+              courierName: trip.courierName,
+              status: trip.status,
+              amountArs: trip.amountArs,
+              recipientPaymentMethod: drop.recipientPaymentMethod,
+              needsChange: drop.needsChange,
+              cashChangeAmount: drop.cashChangeAmount,
+            });
+
+            let dropCustomerWaUrl: string | null = null;
+            if (drop.recipientPhone) {
+              try {
+                dropCustomerWaUrl = buildWhatsAppUrl(drop.recipientPhone, dropCustomerMsg);
+              } catch {
+                dropCustomerWaUrl = null;
+              }
+            }
+
             return (
               <div key={drop.id} className="space-y-1 border-t border-border/60 pt-3">
                 <div className="flex items-center justify-between">
@@ -239,9 +261,10 @@ export function TripCourierView({
                   <p className="text-sm font-medium text-foreground">
                     Cliente: {drop.recipientName}
                   </p>
-                  {arr.length > 1 && drop.recipientPhone && (
+                  {drop.recipientPhone && (
                     <a
                       href={`tel:${drop.recipientPhone}`}
+                      aria-label={`Llamar a ${drop.recipientName}`}
                       className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm font-medium text-foreground hover:bg-muted"
                     >
                       <Phone className="h-3.5 w-3.5 text-primary" />
@@ -249,6 +272,19 @@ export function TripCourierView({
                     </a>
                   )}
                 </div>
+                {dropCustomerWaUrl && (
+                  <div className="pt-2">
+                    <a
+                      href={dropCustomerWaUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-3 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      {arr.length > 1 ? `Avisar a ${drop.recipientName}` : 'Avisar a mi cliente'}
+                    </a>
+                  </div>
+                )}
                 {arr.length > 1 && (
                   <p className="text-sm text-muted-foreground">
                     Pago: {formatRecipientPaymentMethod(drop.recipientPaymentMethod)}
