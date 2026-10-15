@@ -973,6 +973,10 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       withPendingOffersCount: 1,
     });
     const requestId = seedResult.requestId;
+    const pendingOfferId = seedResult.pendingOfferIds[0];
+    if (!pendingOfferId) {
+      throw new Error('[E2E Precondition Error] No se creó oferta pendiente');
+    }
 
     // Precondición B: solicitud matched con expires_at en el pasado (debe preservarse en matched, NO expirar)
     const matchedSeedResult = await seedDeliveryRequestInState(stagingContext, {
@@ -983,6 +987,16 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       withContacts: true,
     });
     const matchedRequestId = matchedSeedResult.requestId;
+
+    // Precondición C: segunda solicitud published con expires_at en el pasado para probar competencia de dos lectores del mismo comercio
+    const concurrentSeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const concurrentRequestId = concurrentSeedResult.requestId;
 
     // 2. Aislamiento y permisos: un segundo comercio autenticado ejecuta reconciliación y NO puede afectar solicitudes ajenas
     const secondContext = createStagingSeedContext();
@@ -1003,34 +1017,92 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       const secondResult = secondReconcileData as { expiredRequestIds: string[] } | null;
       expect(secondResult?.expiredRequestIds).not.toContain(requestId);
       expect(secondResult?.expiredRequestIds).not.toContain(matchedRequestId);
+      expect(secondResult?.expiredRequestIds).not.toContain(concurrentRequestId);
     } finally {
       await cleanupStagingData(secondContext);
     }
 
-    // 3. Flujo Playwright navegando como el comercio dueño
+    // 3. Clientes autenticados del comercio dueño para comprobación de RPC y concurrencia
+    const merchantClientA = await createAuthenticatedClient(merchant);
+    const merchantClientB = await createAuthenticatedClient(merchant);
+
+    // 4. Flujo Playwright navegando como el comercio dueño
     await loginAsMerchant(page);
 
-    // 3a. Navegación a historial "Todas": la solicitud vencida se reconcilia y figura con badge "Vencida"
+    // 4a. Navegación a "Ver ofertas" (/merchant/requests/<id>) ANTES de reconciliar:
+    await page.goto(`/merchant/requests/${requestId}`);
+    await expect(page.getByText('Expirada')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Ofertas recibidas')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /aceptar/i })).toBeVisible({ timeout: 10000 });
+
+    // Intento de aceptación sobre oferta vencida falla con REQUEST_EXPIRED en RPC
+    await expectRpcFailure(
+      merchantClientA.rpc('accept_offer', { p_offer_id: pendingOfferId }),
+      'REQUEST_EXPIRED'
+    );
+
+    // 5. Competencia concurrente: dos sesiones independientes del MISMO comercio ejecutan reconcile_expired_requests concurrentemente
+    const [reconcileResultA, reconcileResultB] = await Promise.all([
+      merchantClientA.rpc('reconcile_expired_requests'),
+      merchantClientB.rpc('reconcile_expired_requests'),
+    ]);
+
+    expect(reconcileResultA.error).toBeNull();
+    expect(reconcileResultB.error).toBeNull();
+
+    const dataA = reconcileResultA.data as {
+      expiredRequestIds: string[];
+      expiredCount: number;
+      hasMore: boolean;
+    } | null;
+    const dataB = reconcileResultB.data as {
+      expiredRequestIds: string[];
+      expiredCount: number;
+      hasMore: boolean;
+    } | null;
+
+    const idsA = dataA?.expiredRequestIds ?? [];
+    const idsB = dataB?.expiredRequestIds ?? [];
+
+    // Ninguna respuesta contiene IDs ajenos (sólo solicitudes del propio merchant)
+    // En la unión de ambas respuestas, concurrentRequestId aparece a lo sumo UNA vez (transición atómica única)
+    const countInA = idsA.filter((id) => id === concurrentRequestId).length;
+    const countInB = idsB.filter((id) => id === concurrentRequestId).length;
+    expect(countInA + countInB).toBeLessThanOrEqual(1);
+
+    // Si alguno quedó con hasMore: true por SKIP LOCKED, drenar hasta completar
+    let hasMore = Boolean(dataA?.hasMore || dataB?.hasMore);
+    while (hasMore) {
+      const { data: drainData, error: drainErr } = await merchantClientA.rpc('reconcile_expired_requests');
+      expect(drainErr).toBeNull();
+      hasMore = Boolean((drainData as { hasMore?: boolean } | null)?.hasMore);
+    }
+
+    // 6. Navegación a historial "Todas": la solicitud vencida se reconcilia y figura con badge "Vencida"
     await page.goto('/merchant/history');
     const historyItemAll = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(historyItemAll).toBeVisible({ timeout: 10000 });
     await expect(historyItemAll).toContainText('Vencida');
 
-    // 3b. Navegación a historial "Vencidas": también figura la solicitud reconciliada con badge "Vencida"
+    // 7. Navegación a historial "Vencidas": también figura la solicitud reconciliada con badge "Vencida"
     await page.goto('/merchant/history?status=expired');
     const historyItemExpired = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(historyItemExpired).toBeVisible({ timeout: 10000 });
     await expect(historyItemExpired).toContainText('Vencida');
 
-    // 3c. Comprobar que en "Mis solicitudes" (dashboard activas), la solicitud vencida ya NO aparece
+    // 8. Comprobar que en "Mis solicitudes" (dashboard activas), la solicitud vencida ya NO aparece
     await page.goto('/merchant/dashboard');
     const activeItem = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(activeItem).not.toBeVisible({ timeout: 10000 });
 
-    // 4. Oráculo server-side en PostgreSQL
+    // 9. Oráculo server-side en PostgreSQL
     const inspection = await getRequestInspectionData(stagingContext, requestId);
     expect(inspection.requestStatus).toBe('expired');
     expect(inspection.offers.every((o) => o.status === 'expired')).toBe(true);
+
+    const concurrentInspection = await getRequestInspectionData(stagingContext, concurrentRequestId);
+    expect(concurrentInspection.requestStatus).toBe('expired');
+    expect(concurrentInspection.offers.every((o) => o.status === 'expired')).toBe(true);
 
     // La solicitud matched anterior conserva su estado matched inalterado
     const matchedInspection = await getRequestInspectionData(stagingContext, matchedRequestId);
