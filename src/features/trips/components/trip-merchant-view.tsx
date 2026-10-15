@@ -246,10 +246,15 @@ export function TripMerchantView({
                   href={dropCustomerWaUrl}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={
+                    dropsList.length > 1
+                      ? `Avisar a ${drop.recipientName} por WhatsApp`
+                      : undefined
+                  }
                   className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-4 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
                 >
                   <MessageCircle className="h-4 w-4" />
-                  {dropsList.length > 1 ? `Avisar a ${drop.recipientName}` : 'Avisar a mi cliente'}
+                  {dropsList.length > 1 ? 'Avisar por WhatsApp' : 'Avisar a mi cliente'}
                 </a>
               ) : (
                 <Button type="button" variant="whatsapp" disabled className="min-h-[48px] w-full">

@@ -275,10 +275,15 @@ export function TripCourierView({
                       href={dropCustomerWaUrl}
                       target="_blank"
                       rel="noopener noreferrer"
+                      aria-label={
+                        arr.length > 1
+                          ? `Avisar a ${drop.recipientName} por WhatsApp`
+                          : undefined
+                      }
                       className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-whatsapp px-3 text-sm font-medium text-whatsapp-foreground shadow-sm transition-colors hover:bg-whatsapp-hover"
                     >
                       <MessageCircle className="h-4 w-4" />
-                      {arr.length > 1 ? `Avisar a ${drop.recipientName}` : 'Avisar a mi cliente'}
+                      {arr.length > 1 ? 'Avisar por WhatsApp' : 'Avisar a mi cliente'}
                     </a>
                   </div>
                 )}
