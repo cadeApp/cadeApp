@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(40);
+select plan(57);
 
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025a1'::uuid $$;
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025c1'::uuid $$;
@@ -83,9 +83,122 @@ select ok(
   'courier_documents tiene check de catalogo seguro para rejection_code'
 );
 
--- 2. Inserción inicial permitida por RLS cuando no existe documento
+-- 2a. PR364-R01: UPSERT (ON CONFLICT DO UPDATE) falla con SQLSTATE 42501 incluso en fila nueva por revocacion de UPDATE
 select pg_temp.act_as(pg_temp.courier_a());
 
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025d1',
+      '00000000-0000-4000-8000-0000000025c1',
+      'license',
+      'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg',
+      'submitted',
+      true
+    ) on conflict (id) do update set storage_path = excluded.storage_path;
+  $$,
+  '42501|permission denied',
+  'PR364-R01: INSERT ... ON CONFLICT DO UPDATE es rechazado con 42501 porque UPDATE esta revocado'
+);
+
+-- 2b. PR364-R02: RLS bloquea INSERT directo con idempotency_key asignada (debe ser null)
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current, idempotency_key
+    ) values (
+      '00000000-0000-4000-8000-0000000025d1',
+      '00000000-0000-4000-8000-0000000025c1',
+      'license',
+      'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg',
+      'submitted',
+      true,
+      '00000000-0000-4000-8000-000000000099'::uuid
+    );
+  $$,
+  'violates row-level security',
+  'PR364-R02: RLS rechaza INSERT directo con idempotency_key asignada'
+);
+
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a() and kind = 'license'),
+  0,
+  'PR364-R02: Cero filas insertadas tras intento con idempotency_key no null'
+);
+
+-- 2c. RLS bloquea intentos directos de alterar status, rejection_code, is_current o courier_id en INSERT
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025d1',
+      '00000000-0000-4000-8000-0000000025c1',
+      'license',
+      'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg',
+      'verified',
+      true
+    );
+  $$,
+  'violates row-level security',
+  'RLS bloquea INSERT directo intentando auto-verificar documento'
+);
+
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current, rejection_code
+    ) values (
+      '00000000-0000-4000-8000-0000000025d1',
+      '00000000-0000-4000-8000-0000000025c1',
+      'license',
+      'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg',
+      'submitted',
+      true,
+      'illegible'
+    );
+  $$,
+  'violates row-level security',
+  'RLS bloquea INSERT directo con rejection_code asignado'
+);
+
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025d1',
+      '00000000-0000-4000-8000-0000000025c1',
+      'license',
+      'courier/00000000-0000-4000-8000-0000000025c1/license_initial.jpg',
+      'submitted',
+      false
+    );
+  $$,
+  'violates row-level security',
+  'RLS bloquea INSERT directo con is_current = false'
+);
+
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025d1',
+      '00000000-0000-4000-8000-0000000025c2',
+      'license',
+      'courier/00000000-0000-4000-8000-0000000025c2/license_initial.jpg',
+      'submitted',
+      true
+    );
+  $$,
+  'violates row-level security',
+  'RLS bloquea INSERT directo asignando courier_id ajeno'
+);
+
+-- 2d. Inserción inicial legítima permitida por RLS cuando no existe documento
 select lives_ok(
   $$
     insert into public.courier_documents (
@@ -120,7 +233,8 @@ select throws_matching(
   'RLS bloquea INSERT directo cuando ya existe un documento del mismo kind (PR358-H01 cerrado)'
 );
 
--- 4. PR364-H03: UPDATE y DELETE directos REVOCADOS sobre courier_documents
+-- 4. Matriz RLS y permisos: UPDATE, DELETE e INSERT directos en courier_documents
+-- 4a. Courier propio: UPDATE y DELETE directos REVOCADOS
 select pg_temp.act_as(pg_temp.courier_a());
 select throws_matching(
   $$
@@ -132,6 +246,37 @@ select throws_matching(
   'Courier no puede hacer UPDATE directo (permiso UPDATE revocado en tabla)'
 );
 
+select throws_matching(
+  $$
+    delete from public.courier_documents
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'DELETE directo revocado para usuarios autenticados'
+);
+
+-- 4b. Courier ajeno: UPDATE y DELETE sobre documento de otro courier
+select pg_temp.act_as(pg_temp.courier_b());
+select throws_matching(
+  $$
+    update public.courier_documents
+    set status = 'verified'
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'Courier ajeno no puede hacer UPDATE directo'
+);
+
+select throws_matching(
+  $$
+    delete from public.courier_documents
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'Courier ajeno no puede hacer DELETE directo'
+);
+
+-- 4c. Admin AAL1: UPDATE, DELETE e INSERT directos REVOCADOS / BLOQUEADOS
 select pg_temp.act_as(pg_temp.admin_a(), 'aal1');
 select throws_matching(
   $$
@@ -143,6 +288,33 @@ select throws_matching(
   'Admin AAL1 no puede hacer UPDATE directo (debe usar RPC admin_verify_document con AAL2)'
 );
 
+select throws_matching(
+  $$
+    delete from public.courier_documents
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'Admin AAL1 no puede hacer DELETE directo'
+);
+
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025a2',
+      '00000000-0000-4000-8000-0000000025c1',
+      'dni_back',
+      'courier/00000000-0000-4000-8000-0000000025c1/dni_back.jpg',
+      'submitted',
+      true
+    );
+  $$,
+  'violates row-level security',
+  'Admin AAL1 no puede hacer INSERT directo sobre courier_documents'
+);
+
+-- 4d. Admin AAL2: UPDATE, DELETE e INSERT directos REVOCADOS / BLOQUEADOS
 select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
 select throws_matching(
   $$
@@ -154,14 +326,73 @@ select throws_matching(
   'Admin AAL2 no puede saltar la RPC auditada mediante UPDATE directo'
 );
 
-select pg_temp.act_as(pg_temp.courier_a());
 select throws_matching(
   $$
     delete from public.courier_documents
     where id = '00000000-0000-4000-8000-0000000025d1';
   $$,
   '42501|permission denied',
-  'DELETE directo revocado para usuarios autenticados'
+  'Admin AAL2 no puede hacer DELETE directo'
+);
+
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025a3',
+      '00000000-0000-4000-8000-0000000025c1',
+      'dni_back',
+      'courier/00000000-0000-4000-8000-0000000025c1/dni_back.jpg',
+      'submitted',
+      true
+    );
+  $$,
+  'violates row-level security',
+  'Admin AAL2 no puede hacer INSERT directo sobre courier_documents'
+);
+
+-- 4e. Anon: sin ningun permiso directo (SELECT, INSERT, UPDATE, DELETE)
+select pg_temp.act_as_anon();
+select throws_matching(
+  $$
+    select * from public.courier_documents;
+  $$,
+  '42501|permission denied',
+  'Anon no tiene permiso SELECT sobre courier_documents'
+);
+
+select throws_matching(
+  $$
+    insert into public.courier_documents (
+      id, courier_id, kind, storage_path, status, is_current
+    ) values (
+      '00000000-0000-4000-8000-0000000025a4',
+      '00000000-0000-4000-8000-0000000025c1',
+      'dni_back',
+      'courier/00000000-0000-4000-8000-0000000025c1/dni_back.jpg',
+      'submitted',
+      true
+    );
+  $$,
+  '42501|permission denied',
+  'Anon no tiene permiso INSERT sobre courier_documents'
+);
+
+select throws_matching(
+  $$
+    update public.courier_documents set status = 'verified';
+  $$,
+  '42501|permission denied',
+  'Anon no tiene permiso UPDATE sobre courier_documents'
+);
+
+select throws_matching(
+  $$
+    delete from public.courier_documents;
+  $$,
+  '42501|permission denied',
+  'Anon no tiene permiso DELETE sobre courier_documents'
 );
 
 -- 5a. RPC replace_courier_document: anon no tiene permisos de ejecución

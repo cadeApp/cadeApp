@@ -177,47 +177,71 @@ export async function courierOnboardingAction(
     });
   }
 
-  // 8. Inserción de documentos en courier_documents con idempotencia ante reintentos (PR364-H05)
-  const queryBuilder = supabase.from('courier_documents');
-  let documentEntriesToInsert = documentEntries;
+  // 8. Inserción de documentos en courier_documents con idempotencia ante reintentos (PR364-H05 / PR364-R01)
+  // Se usa cliente de sesión autenticado e INSERT autorizado (el permiso UPDATE está revocado para authenticated).
+  const { data: existingDocs, error: checkDocsError } = await supabase
+    .from('courier_documents')
+    .select('id, kind, storage_path, status, is_current')
+    .eq('courier_id', user.id);
 
-  if (typeof (queryBuilder as unknown as { select?: unknown }).select === 'function') {
-    const { data: existingDocs, error: checkDocsError } = await (
-      queryBuilder as unknown as {
-        select: (cols: string) => { eq: (col: string, val: string) => Promise<{ data: unknown[]; error: unknown }> };
-      }
-    )
-      .select('id, kind, storage_path, status, is_current')
-      .eq('courier_id', user.id);
+  if (checkDocsError) {
+    return err('INTERNAL_ERROR');
+  }
 
-    if (checkDocsError) {
-      return err('INTERNAL_ERROR');
-    }
+  const existingByKind = new Map(
+    ((existingDocs as Array<{ kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
+      .filter((d) => d.is_current !== false)
+      .map((d) => [d.kind, d])
+  );
 
-    const existingByKind = new Map(
-      ((existingDocs as Array<{ kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
-        .filter((d) => d.is_current !== false)
-        .map((d) => [d.kind, d])
-    );
-
-    documentEntriesToInsert = [];
-    for (const entry of documentEntries) {
-      const existing = existingByKind.get(entry.kind);
-      if (!existing) {
-        documentEntriesToInsert.push(entry);
-      } else if (existing.storage_path !== entry.storage_path) {
-        return err('VALIDATION_ERROR');
-      }
+  const documentEntriesToInsert: typeof documentEntries = [];
+  for (const entry of documentEntries) {
+    const existing = existingByKind.get(entry.kind);
+    if (!existing) {
+      documentEntriesToInsert.push(entry);
+    } else if (existing.storage_path !== entry.storage_path) {
+      return err('VALIDATION_ERROR');
     }
   }
 
   if (documentEntriesToInsert.length > 0) {
-    const { error: documentsError } = await queryBuilder.upsert(
-      documentEntriesToInsert as never
-    );
+    const { error: documentsError } = await supabase
+      .from('courier_documents')
+      .insert(documentEntriesToInsert as never);
 
     if (documentsError) {
-      return err('INTERNAL_ERROR');
+      const errObj = documentsError as { code?: string; message?: string };
+      const isUniqueConflict =
+        errObj.code === '23505' ||
+        String(errObj.message ?? '').includes('23505') ||
+        String(errObj.message ?? '').includes('unique');
+
+      if (isUniqueConflict) {
+        // En carrera concurrente (dos envíos simultáneos), releer todas las versiones vigentes
+        const { data: recheckedDocs, error: recheckError } = await supabase
+          .from('courier_documents')
+          .select('id, kind, storage_path, status, is_current')
+          .eq('courier_id', user.id);
+
+        if (recheckError) {
+          return err('INTERNAL_ERROR');
+        }
+
+        const recheckedByKind = new Map(
+          ((recheckedDocs as Array<{ kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
+            .filter((d) => d.is_current !== false)
+            .map((d) => [d.kind, d])
+        );
+
+        for (const entry of documentEntries) {
+          const rechecked = recheckedByKind.get(entry.kind);
+          if (!rechecked || rechecked.storage_path !== entry.storage_path) {
+            return err('VALIDATION_ERROR');
+          }
+        }
+      } else {
+        return err('INTERNAL_ERROR');
+      }
     }
   }
 

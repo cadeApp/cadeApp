@@ -91,6 +91,7 @@ create policy courier_documents_insert_self on public.courier_documents
     and status = 'submitted'
     and coalesce(is_current, true) = true
     and rejection_code is null
+    and idempotency_key is null
     and purge_after is null
     and purged_at is null
     and not exists (
