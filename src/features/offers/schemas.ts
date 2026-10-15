@@ -103,3 +103,13 @@ export interface CourierOfferItem {
   readonly requestExpiresAt: string | null;
   readonly approxDistanceKm: string;
 }
+
+export interface ActiveTripSummary {
+  readonly id: string;
+  readonly status: 'matched' | 'in_transit';
+  readonly pickupZoneName: string;
+  readonly dropoffZoneName: string | null;
+  readonly dropsCount: number;
+  readonly amountArs: number;
+  readonly matchedAt: string | null;
+}
