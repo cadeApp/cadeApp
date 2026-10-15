@@ -1,79 +1,81 @@
-# Evidencia — PR #360 — comandos y harness independiente
+# Evidencia y comandos PR #360 — ronda 2
 
-**SHA inspeccionado:** `325a9a6a09de404efedd40ad1ee5728e5d9f218f`. **Sin ejecución real de pruebas** en terminal del revisor (no existe clon y falla DNS). Ningún RED/GREEN de abajo se atribuye a esta revisión.
+**HEAD leído:** aacf8291fdb331da53b94fa7471679b2792f5ecf. Revisor no tiene clone/pnpm ni red git hacia github.com; no se corrieron tests locales ni E2E ni mutaciones. Fuente: conector GitHub y logs de CI, no supabase remoto.
 
-## Inspección
+- Unit job 116235162530: `Test Files 130 passed (130)` y `Tests 2179 passed (2179)`; workflow checks 79 passed, ADR 6 passed.
+- db-tests job 116235162614: `Files=22, Tests=2205, Result: PASS`; el check incluye `git diff --exit-code -- src/types/database.types.ts`.
+- `e2e-preview` ausente entre los 13 check-runs del SHA. `approval-policy` rojo. Vercel Ready no es E2E.
+
+## Comandos baseline para runner con repositorio
 
 ```bash
 git fetch origin
-git diff origin/develop...HEAD --stat
-git merge-tree --write-tree origin/develop HEAD >/tmp/pr360-merge-tree.txt
 git status --porcelain
+git merge-tree --write-tree origin/develop HEAD > /tmp/pr360-merge-tree.txt
+pnpm exec vitest run 'src/features/requests/components/request-offers.test.tsx' 'src/app/(merchant)/merchant/requests/[id]/page.test.tsx' > /tmp/pr360-unit.log 2>&1
+grep -E 'Test Files|Tests ' /tmp/pr360-unit.log | tail -4
+pnpm typecheck > /tmp/pr360-tsc.log 2>&1
+pnpm lint > /tmp/pr360-lint.log 2>&1
+pnpm test > /tmp/pr360-full.log 2>&1
+grep -E 'Test Files|Tests ' /tmp/pr360-full.log | tail -4
 ```
 
-## Baseline, GREEN normal (sólo después del arreglo)
+## Harness independiente completo: guardar bytes en memoria, nunca checkout
+
+El test normal debe dar GREEN primero; un ancla faltante es SIN OBJETIVO (error del instrumento), no RED. No se ejecutó este script. Reproducir en worktree limpio con dependencias instaladas.
 
 ```bash
-pnpm exec vitest run 'src/features/requests/components/request-offers.test.tsx' 'src/features/requests/components/merchant-requests-list.test.tsx' 'src/app/(merchant)/merchant/requests/[id]/page.test.tsx' >/tmp/pr360-unit.log 2>&1
-grep -E 'Test Files|Tests ' /tmp/pr360-unit.log | tail -5
-pnpm typecheck >/tmp/pr360-typecheck.log 2>&1
-pnpm lint >/tmp/pr360-lint.log 2>&1
-pnpm test >/tmp/pr360-test.log 2>&1
-grep -E 'Test Files|Tests ' /tmp/pr360-test.log | tail -5
-```
-
-## Harness completo de mutación de producción — NO EJECUTADO
-
-Crear el script en `/tmp` y correrlo sobre un worktree limpio con dependencias instaladas. El harness guarda bytes originales **en memoria**, cambia exclusivamente el archivo de producción, comprueba RED por aserción y siempre restaura en `finally`. Si el objetivo no coincide con el código del arreglo, sale como **SIN OBJETIVO**, no como RED. No usar `git checkout` para mutaciones.
-
-```bash
-cat >/tmp/pr360_mutaciones.py <<'PY'
+cat > /tmp/pr360_r2_mutaciones.py <<'PY'
 from pathlib import Path
-import subprocess, sys, re
+import subprocess, re, sys
 root = Path(subprocess.check_output(['git','rev-parse','--show-toplevel'],text=True).strip())
 if subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True).strip(): sys.exit('ABORT: árbol sucio')
-def vitest(test):
-    r = subprocess.run(['pnpm','exec','vitest','run',test],cwd=root,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-    summary = ' | '.join(x.strip() for x in r.stdout.splitlines() if 'Test Files' in x or re.search(r'\bTests\s+',x))
-    return r.returncode, summary, r.stdout
-cases = [
-('ruta-postmatch','src/app/(merchant)/merchant/requests/[id]/page.tsx',"result.request.status === 'matched'", "result.request.status === 'published'",'src/app/(merchant)/merchant/requests/[id]/page.test.tsx'),
-('enlace-dashboard','src/features/requests/components/merchant-requests-list.tsx','`/trips/${req.id}`','`/merchant/requests/${req.id}`','src/features/requests/components/merchant-requests-list.test.tsx'),
-('aceptacion-duplicada','src/features/requests/components/request-offers-list.tsx',"request.status === 'published'", "request.status === 'matched'",'src/features/requests/components/request-offers.test.tsx'),
-('navegacion-viaje','src/features/requests/components/request-offers-list.tsx','router.replace(`/trips/${request.id}`)','router.refresh()','src/features/requests/components/request-offers.test.tsx'),
-('terminal-expired','src/app/(merchant)/merchant/requests/[id]/page.tsx',"result.request.status === 'expired'", "result.request.status === 'published'",'src/app/(merchant)/merchant/requests/[id]/page.test.tsx')
+def test(file):
+    r = subprocess.run(['pnpm','exec','vitest','run',file],cwd=root,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+    summ = ' | '.join(s.strip() for s in r.stdout.splitlines() if 'Test Files' in s or re.search(r'\bTests\s+',s))
+    return r.returncode,summ,r.stdout
+cases=[
+ ('terminal','src/app/(merchant)/merchant/requests/[id]/page.tsx',"request.status === 'cancelled' || request.status === 'expired'","request.status === 'cancelled'",'src/app/(merchant)/merchant/requests/[id]/page.test.tsx'),
+ ('expiracion','src/features/requests/components/request-offers-list.tsx',"request.status === 'published' && !isExpired","request.status === 'published' && isExpired",'src/features/requests/components/request-offers.test.tsx'),
+ ('replace','src/features/requests/components/request-offers-list.tsx','router.replace(`/trips/${request.id}`)','router.refresh()','src/features/requests/components/request-offers.test.tsx'),
+ ('refresh-ya-asignada','src/features/requests/components/request-offers-list.tsx',"notify.error('Esta solicitud ya fue asignada a otro repartidor.');\n          setSelectedOffer(null);\n          router.refresh();","notify.error('Esta solicitud ya fue asignada a otro repartidor.');\n          setSelectedOffer(null);",'src/features/requests/components/request-offers.test.tsx'),
 ]
-fail=[]
-for name,path,old,new,test in cases:
-    p=root/path; original=p.read_bytes(); text=original.decode('utf-8')
-    rc,s,out=vitest(test); print(f'{name} BASE GREEN rc={rc} {s}')
-    if rc: fail.append(name+': baseline no verde'); continue
-    if text.count(old)!=1: fail.append(name+': SIN OBJETIVO'); continue
+failed=[]
+for name,path,needle,replacement,spec in cases:
+    rc,summary,_ = test(spec)
+    print(name,'GREEN baseline',rc,summary)
+    if rc: failed.append(name+': baseline roja'); continue
+    p=root/path
+    before=p.read_bytes()
+    content=before.decode('utf-8')
+    if content.count(needle)!=1: failed.append(name+': SIN OBJETIVO'); continue
     try:
-        p.write_bytes(text.replace(old,new,1).encode('utf-8'))
-        rc,s,out=vitest(test)
-        red=rc!=0 and ('AssertionError' in out or 'expected' in out.lower())
-        print(f'{name} MUTACIÓN RED rc={rc}, asercion={red} {s}')
-        if not red: fail.append(name+': mutacion no detectada')
-    finally: p.write_bytes(original)
-    rc,s,out=vitest(test); print(f'{name} RESTAURADO GREEN rc={rc} {s}')
-    if rc: fail.append(name+': no vuelve a verde')
-if subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True).strip(): fail.append('árbol sucio')
-if fail: sys.exit('FALLOS: '+'; '.join(fail))
-print('Todas las mutaciones efectivamente detectadas')
+        p.write_bytes(content.replace(needle,replacement,1).encode('utf-8'))
+        rc,summary,output=test(spec)
+        red = rc!=0 and ('AssertionError' in output or re.search(r'\bexpected\b',output,re.I))
+        print(name,'RED mutado',rc,bool(red),summary)
+        if not red: failed.append(name+': mutación no detectada')
+    finally: p.write_bytes(before)
+    rc,summary,_=test(spec)
+    print(name,'GREEN restaurado',rc,summary)
+    if rc: failed.append(name+': no restauró GREEN')
+if subprocess.check_output(['git','status','--porcelain'],cwd=root,text=True).strip(): failed.append('árbol sucio')
+if failed: sys.exit('FALLOS: '+'; '.join(failed))
+print('Mutaciones de producción detectadas')
 PY
-python3 /tmp/pr360_mutaciones.py | tee /tmp/pr360-mutaciones.log
+python3 /tmp/pr360_r2_mutaciones.py | tee /tmp/pr360-r2-mutations.log
 ```
 
-**Importante:** las anclas de `replace` y terminal aún NO existen en el HEAD inspeccionado; son anclas exigidas al arreglo, y deben adaptarse SIN contar como RED si no coinciden. Queda pendiente su ejecución en nueva ronda. No mutar E2E con código inseguro desplegado: usar sólo `e2e-mutation` aprobado.
+**Pendiente para arreglo H02:** mutar además el nuevo latch de reconciliación (quitarlo del render y handlers), demostrar RED del test que verifica que Aceptar permanece oculto durante router.refresh, restaurar y GREEN. No atribuir esa mutación a este SHA porque no existe el latch.
 
-## E2E Preview
+## Preview sin producción
 
-Extender `e2e/specs/main-flow.spec.ts`: contextos de navegador independientes, éxito y carrera, ID de solicitud real con fixtures, DB `acceptedCount=1`, postmatch permitido, contacto prematch no visible para courier no asignado, reload/back/URL directa y dashboard. Registrar **workflow, job, run y SHA** en bitácora; 'Vercel Ready' no prueba DoD.
+Playwright E2E de 2 sesiones, oráculo DB real, contacto prematch/postmatch, monto/pago, retroceso y refresh, sin cambiar fixtures para forzar verde. Capturar SHA, run, job y resultado `e2e-preview`; nunca ejecutar Docker ni Supabase local, ni disparar workflows manualmente.
 
 ```bash
 node docs/revision-pr/analizar.mjs verificacion
+git diff --check
 git ls-remote origin feat/T-359-detalle-merchant-post-aceptacion
 ```
 
-**Sin datos inventados:** ninguno de esos comandos se ejecutó en este entorno; sólo se verificó estructura JSONL en memoria y se inspeccionaron fuentes GitHub.
+**Nada de lo anterior se presenta como ejecutado por el revisor.**

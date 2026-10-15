@@ -1,31 +1,29 @@
-# PR #360 — T-359 · Detalle del comercio post-aceptación
+# PR #360 — T-359 · Revisión independiente
 
-**PR:** https://github.com/cadeApp/cadeApp/pull/360 · **Autor:** @asako669 · **Fecha:** 2026-10-15
-**HEAD revisado:** `325a9a6a09de404efedd40ad1ee5728e5d9f218f` · **Base develop:** `14c28ed3c41cb2bde92705fc018c7dd0df73245b`
-**Rama:** `feat/T-359-detalle-merchant-post-aceptacion` · **Estado:** Draft, CON BLOQUEANTES (3 altos, 4 medios)
+**PR:** https://github.com/cadeApp/cadeApp/pull/360 · Autor: asako669 · Rama: feat/T-359-detalle-merchant-post-aceptacion → develop.
 
-## Ronda
-
-| Ronda | SHA | Informe |
-|---|---|---|
-| 1 | `325a9a6a09de404efedd40ad1ee5728e5d9f218f` | [ronda-1.md](revisiones/ronda-1.md) |
+## Rondas
+| Ronda | HEAD de autor inspeccionado | Resultado | Informe |
+|---|---|---|---|
+| 1 | 325a9a6a09de404efedd40ad1ee5728e5d9f218f | CON BLOQUEANTES | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | aacf8291fdb331da53b94fa7471679b2792f5ecf | CON BLOQUEANTES | [ronda-2.md](revisiones/ronda-2.md) |
 
 ## Hallazgos
+| ID | Severidad | Estado |
+|---|---|---|
+| PR360-H01 | alto | arreglado-sin-verificar |
+| PR360-H02 | alto | parcial |
+| PR360-H03 | medio | arreglado-sin-verificar |
+| PR360-H04 | medio | arreglado-sin-verificar |
+| PR360-H05 | alto | parcial |
+| PR360-H06 | medio | arreglado-sin-verificar |
+| PR360-H07 | medio | parcial |
+| PR360-R01 | medio | abierto |
 
-| ID | Prioridad | Tema | Estado |
-|---|---|---|---|
-| PR360-H01 | alto | Los estados cancelled/expired no ofrecen vista terminal B | abierto |
-| PR360-H02 | alto | ALREADY_MATCHED deja abierta la aceptación obsoleta | abierto |
-| PR360-H03 | medio | El botón Aceptar no contempla vencimiento por expiresAt | abierto |
-| PR360-H04 | medio | La navegación usa push y no acredita back/refresh sin ofertas obsoletas | abierto |
-| PR360-H05 | alto | Falta el E2E de dos sesiones aisladas y post-match | abierto |
-| PR360-H06 | medio | Tests incompletos para draft, terminal y estados stale | abierto |
-| PR360-H07 | medio | Bitácora WIP y autorrevisión declaran evidencia que no existe | abierto |
+**Sin certificaciones falsas:** no hay hallazgos `arreglado-verificado`; no hubo mutaciones ni E2E reproducidos en el entorno revisor. H01, H03, H04, H06 se corrigieron por inspección y permanecen sin verificar independientemente. H02, H05, H07 y R01 bloquean la siguiente decisión de merge.
 
-Ver [hallazgos.jsonl](hallazgos.jsonl), [evidencia/comandos.md](evidencia/comandos.md) y [lecciones.md](lecciones.md).
+**Decisión de Lautaro073:** B (vistas cancelled/expired con resumen en la misma URL) — implementada.
 
-**Decisión de Lautaro073: B**, para `cancelled/expired` se conserva la ruta y se muestra resumen terminal seguro sin selector ni botón Aceptar.
+**CI del SHA autor:** unit 130/130, Vitest 2179/2179, workflow 79, ADR 6; db-tests 2205 PASS. No se encontró `e2e-preview`. `approval-policy` falló; no se presume ejecución de E2E.
 
-**Lo ya bien implementado por agy en este SHA (por inspección):** aceptación navega a `/trips/{id}`; redirección server de matched/in_transit/delivered; links de dashboard para viajes activos; filtrado de ofertas accepted/rejected; reporte no-show va a solicitudes. No se declaran verificados por pruebas ejecutadas.
-
-**Pendiente:** corrección de hallazgos, controles RED/GREEN independientes y E2E Preview de 2 sesiones con run real. El autor debe hacer `git pull` antes de modificar, porque esta carpeta se agrega mediante commit de revisión.
+Fuentes: [hallazgos.jsonl](hallazgos.jsonl), [evidencia/comandos.md](evidencia/comandos.md), [lecciones.md](lecciones.md). El autor no modifica docs/revision-pr/**.

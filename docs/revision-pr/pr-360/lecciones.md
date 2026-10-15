@@ -1,9 +1,11 @@
-# Lecciones — PR #360 / T-359
+# Lecciones PR #360
 
-**Patrón:** La implementación básica es coherente con el objetivo, pero la reconciliación de dos sesiones, los estados terminales y la caducidad requieren controles más fuertes que mocks unitarios de navegación.
+Ronda 2: las correcciones H01/H03/H04/H06 son consistentes por inspección; H02 evidencia que `router.refresh()` no constituye bloqueo sincrónico de acciones con props viejas.
 
-- **AG-37/P06:** enumerar la clase completa de estados `draft/published/matched/in_transit/delivered/cancelled/expired` y el ciclo de oferta `pending/accepted/rejected/withdrawn`, además del tiempo de vencimiento.
-- **P08:** un spy de `router.push` no prueba Back/refresh real ni concurrencia. Usar E2E Preview con contextos aislados y oráculo DB.
-- **AG-36/P03:** la bitácora del autor documenta pruebas; sólo revisión independiente escribe `hallazgos.jsonl` y `verificado_en_sha`. Body con SIN BLOQUEANTES no debe coexistir con tests pendientes.
+- P08: `expect(mockRefresh).toHaveBeenCalled()` no prueba que los botones Aceptar desaparezcan durante la carrera.
+- P01: el oráculo de DB puede adelantarse a la navegación SPA; seleccionar `winnerPage` requiere espera observable, no un ternario inmediato por URL.
+- AG-36: GREEN de CI no reproduce los RED previos, y autor no puede certificar `verificado_en_sha`.
 
-No asignar AG-xx nuevo sin consultar el máximo en todas las ramas remotas; no se alteran reglas globales con evidencia aún no ejecutada.
+**Corrección del propio revisor:** la batería de ronda 1 usaba un ancla `result.request.status` que no existe después de `const { request } = result`; se habría reportado SIN OBJETIVO. Esta es falla del instrumento, no del autor. La ronda 2 corrige esa ancla; sin ejecución no afirma mutaciones verificadas.
+
+No se asignan lecciones AG-xx nuevas sin relevar la numeración de todas las ramas.
