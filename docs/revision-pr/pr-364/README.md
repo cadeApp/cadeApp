@@ -50,3 +50,12 @@
 | 3 | `6c1d124ce17e271858915df3bb57de9beeb1aa6e` | CON BLOQUEANTES: R03 alto, R04 medio; H02/H05/H06 parciales |
 
 CI real run 38702747664: 133 suites/2254 unit; 23 archivos/2262 pgTAP PASS. [Informe](revisiones/ronda-3.md), [Prompt](prompt-agy-ronda-3.md), [Evidencia](evidencia/ronda-3.md). Historial R1/R2 preservado.
+
+
+## Ronda 4 — estado actualizado
+
+| Ronda | SHA funcional | Resultado |
+|---|---|---|
+| 4 | `2251ee79122b914034bf0b28d0b2a2a3e07a4c09` | CON BLOQUEANTES: R04 (rollout), R05 (is_current ausente pre-migración); H02/H06 cuentan con CI real, RED→GREEN autor |
+
+CI verificado run 38711308994: 23 archivos / 2262 pgTAP PASS y 133 archivos unit PASS; revisión independiente NO ejecutó mutaciones DB. [Informe](revisiones/ronda-4.md) · [Prompt](prompt-agy-ronda-4.md) · [Evidencia](evidencia/ronda-4.md).

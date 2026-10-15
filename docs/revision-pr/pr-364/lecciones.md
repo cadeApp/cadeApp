@@ -29,3 +29,10 @@ Sin asignar AG nueva sin examinar ramas remotas, donde existe numeración duplic
 - R04: compatibilidad es orden de despliegue real DB/app, no solo CI del SHA final con ambas capas nuevas.
 - H02: scripts de CI multisesión ya existen para T-340/CC-024; no declarar imposible comprobar otra RPC.
 - H06: un test que vuelve a escribir el backfill después de migrar no verifica SQL original.
+
+
+## Ronda 4
+- R05, patrón P11: cualquier promesa de compatibilidad app-nueva/DB-vieja debe enumerar explícitamente las columnas y RPC consumidas y probarlas en el esquema previo.
+- R04, patrón P05: leer workflows reales de promoción, no aceptar un plan Markdown que los contradiga. migrate.yml ejecuta antes que deploy.yml para staging/main; publicar app y SQL desde un único SHA no constituye una entrega expand/contract.
+- H02/H06: los logs ahora sí muestran dos sesiones reales y migración original con mutación RED→GREEN. No negar la evidencia; distinguir SQL cruzado artificial del mutation-test de la definición de RPC.
+- R03: simulación de interleaving mediante mocks puede validar rama de código, pero no reemplaza el comportamiento PostgREST/RLS bajo sesiones simultáneas.
