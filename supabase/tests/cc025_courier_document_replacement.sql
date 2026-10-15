@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(25);
+select plan(26);
 
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025a1'::uuid $$;
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025c1'::uuid $$;
@@ -26,6 +26,14 @@ returns void language plpgsql as $$
 begin
   set local role anon;
   perform set_config('request.jwt.claims', jsonb_build_object('role', 'anon')::text, true);
+end;
+$$;
+
+create function pg_temp.act_as_authenticated_without_subject()
+returns void language plpgsql as $$
+begin
+  set local role authenticated;
+  perform set_config('request.jwt.claims', jsonb_build_object('role', 'authenticated', 'aal', 'aal1')::text, true);
 end;
 $$;
 
@@ -117,8 +125,22 @@ select is(
   'Courier no puede alterar status mediante UPDATE directo (RLS deniega update a no admins)'
 );
 
--- 5. RPC replace_courier_document: rechazo no autenticado
+-- 5a. RPC replace_courier_document: anon no tiene permisos de ejecución
 select pg_temp.act_as_anon();
+select throws_ok(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'license',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_new.jpg'
+    ));
+  $$,
+  '42501'::char(5),
+  null::text,
+  'replace_courier_document rechaza actor anonimo por falta de execute grant'
+);
+
+-- 5b. RPC replace_courier_document: authenticated sin sub devuelve UNAUTHENTICATED
+select pg_temp.act_as_authenticated_without_subject();
 select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
@@ -127,7 +149,7 @@ select throws_matching(
     ));
   $$,
   'UNAUTHENTICATED',
-  'replace_courier_document rechaza actor anonimo'
+  'replace_courier_document rechaza actor authenticated sin sub'
 );
 
 -- 6. RPC replace_courier_document: rechazo actor no courier
