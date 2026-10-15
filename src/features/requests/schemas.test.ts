@@ -358,4 +358,160 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  describe('T-353: Validación semántica integral de solicitudes de envío y multi-drop', () => {
+    describe('recipientName', () => {
+      it('acepta nombres legítimos de personas con acentos, ñ, guiones y apóstrofes', () => {
+        const legitimateNames = [
+          'Juan Pérez',
+          'María Belén Gómez-López',
+          "Esteban O'Connor",
+          'Dr. Carlos Menéndez',
+          'Ana Sofía Núñez',
+        ];
+        for (const name of legitimateNames) {
+          const res = dropSchema.safeParse({ ...validDrop1, recipientName: name });
+          expect(res.success, `Falló para nombre legítimo: ${name}`).toBe(true);
+        }
+      });
+
+      it('rechaza inyecciones HTML en el nombre del destinatario', () => {
+        const malicious = ['<script>alert(1)</script>', 'Destinatario <img src=x>'];
+        for (const name of malicious) {
+          const res = dropSchema.safeParse({ ...validDrop1, recipientName: name });
+          expect(res.success, `Debería rechazar: ${name}`).toBe(false);
+        }
+      });
+
+      it('rechaza nombres que son solo números o símbolos sin letras', () => {
+        const invalidNames = ['12345678', '---', '!@#$%^&*', '...'];
+        for (const name of invalidNames) {
+          const res = dropSchema.safeParse({ ...validDrop1, recipientName: name });
+          expect(res.success, `Debería rechazar: ${name}`).toBe(false);
+        }
+      });
+
+      it('rechaza caracteres de control en el nombre del destinatario', () => {
+        const withControl = 'Juan\x00Pérez';
+        const res = dropSchema.safeParse({ ...validDrop1, recipientName: withControl });
+        expect(res.success).toBe(false);
+      });
+    });
+
+    describe('recipientPhone (teléfono argentino plausible)', () => {
+      it('acepta teléfonos argentinos válidos con formatos normalizables', () => {
+        const validPhones = [
+          '3865123456',
+          '3865 123456',
+          '03865 15-123456',
+          '+54 9 3865 123456',
+          '11 2345-6789',
+          '(011) 15-2345-6789',
+        ];
+        for (const phone of validPhones) {
+          const res = dropSchema.safeParse({ ...validDrop1, recipientPhone: phone });
+          expect(res.success, `Falló para teléfono válido: ${phone}`).toBe(true);
+        }
+      });
+
+      it('rechaza teléfonos que contienen letras o palabras', () => {
+        const withLetters = ['abcdefgh', '3865123456abc', 'telefono123', 'N/A'];
+        for (const phone of withLetters) {
+          const res = dropSchema.safeParse({ ...validDrop1, recipientPhone: phone });
+          expect(res.success, `Debería rechazar letras: ${phone}`).toBe(false);
+        }
+      });
+
+      it('rechaza teléfonos con caracteres o símbolos arbitrarios no telefónicos', () => {
+        const withSymbols = ['3865#123456', '<script>', '3865@123456', '3865!123456'];
+        for (const phone of withSymbols) {
+          const res = dropSchema.safeParse({ ...validDrop1, recipientPhone: phone });
+          expect(res.success, `Debería rechazar símbolos: ${phone}`).toBe(false);
+        }
+      });
+    });
+
+    describe('dropoffAddress y pickupAddress', () => {
+      it('rechaza inyecciones HTML en direcciones de retiro y entrega', () => {
+        const badPickup = { ...baseValidInput, pickupAddress: '<script>alert(1)</script>' };
+        expect(createDeliveryRequestSchema.safeParse(badPickup).success).toBe(false);
+
+        const badDrop = { ...validDrop1, dropoffAddress: '<script>alert(1)</script>' };
+        expect(dropSchema.safeParse(badDrop).success).toBe(false);
+      });
+
+      it('rechaza direcciones que son únicamente símbolos sin calle ni números', () => {
+        const onlySymbols = '---';
+        const badPickup = { ...baseValidInput, pickupAddress: onlySymbols };
+        expect(createDeliveryRequestSchema.safeParse(badPickup).success).toBe(false);
+
+        const badDrop = { ...validDrop1, dropoffAddress: onlySymbols };
+        expect(dropSchema.safeParse(badDrop).success).toBe(false);
+      });
+
+      it('rechaza caracteres de control en las direcciones', () => {
+        const withControl = 'San Martín 450\x00Aguilares';
+        const badPickup = { ...baseValidInput, pickupAddress: withControl };
+        expect(createDeliveryRequestSchema.safeParse(badPickup).success).toBe(false);
+
+        const badDrop = { ...validDrop1, dropoffAddress: withControl };
+        expect(dropSchema.safeParse(badDrop).success).toBe(false);
+      });
+    });
+
+    describe('fixedPriceArs (monto entero ARS, desbordes y precisión)', () => {
+      it('acepta precios enteros válidos razonables', () => {
+        const withPrice = { ...baseValidInput, fixedPriceArs: 2500 };
+        expect(createDeliveryRequestSchema.safeParse(withPrice).success).toBe(true);
+      });
+
+      it('rechaza precios con decimales/flotantes (ARS no fraccionario)', () => {
+        const withFloat = { ...baseValidInput, fixedPriceArs: 1500.5 };
+        expect(createDeliveryRequestSchema.safeParse(withFloat).success).toBe(false);
+      });
+
+      it('rechaza precios negativos o cero', () => {
+        const withNeg = { ...baseValidInput, fixedPriceArs: -500 };
+        expect(createDeliveryRequestSchema.safeParse(withNeg).success).toBe(false);
+
+        const withZero = { ...baseValidInput, fixedPriceArs: 0 };
+        expect(createDeliveryRequestSchema.safeParse(withZero).success).toBe(false);
+      });
+
+      it('rechaza precios que superen el límite razonable o provoquen desborde (overflow)', () => {
+        const overflowPrice = { ...baseValidInput, fixedPriceArs: 999_999_999_999 };
+        expect(createDeliveryRequestSchema.safeParse(overflowPrice).success).toBe(false);
+      });
+    });
+
+    describe('cashChangeAmount (monto de cambio entero ARS y desbordes)', () => {
+      it('rechaza montos de cambio con decimales/flotantes', () => {
+        const withFloatChange = {
+          ...validDrop1,
+          recipientPaymentMethod: 'cash' as const,
+          needsChange: true,
+          cashChangeAmount: 2000.5,
+        };
+        expect(dropSchema.safeParse(withFloatChange).success).toBe(false);
+      });
+
+      it('rechaza montos de cambio desbordados (> 10.000.000 ARS)', () => {
+        const withOverflowChange = {
+          ...validDrop1,
+          recipientPaymentMethod: 'cash' as const,
+          needsChange: true,
+          cashChangeAmount: 999_999_999_999,
+        };
+        expect(dropSchema.safeParse(withOverflowChange).success).toBe(false);
+      });
+    });
+
+    describe('notes', () => {
+      it('rechaza caracteres de control en las notas del drop', () => {
+        const withControl = { ...validDrop1, notes: 'Indicación\x00peligrosa' };
+        expect(dropSchema.safeParse(withControl).success).toBe(false);
+      });
+    });
+  });
 });
+
