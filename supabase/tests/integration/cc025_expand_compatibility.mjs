@@ -160,10 +160,14 @@ async function runMutationCheck() {
   const originalContent = fs.readFileSync(migrationPath, 'utf8');
 
   try {
-    // Mutación: omitir la columna is_current
-    const mutatedContent = originalContent.replace(
+    // Mutación: omitir la columna is_current y su referencia en el constraint
+    let mutatedContent = originalContent.replace(
       'add column if not exists is_current boolean not null default true,',
       '-- add column if not exists is_current boolean not null default true,'
+    );
+    mutatedContent = mutatedContent.replace(
+      'is_current = true and ',
+      ''
     );
 
     if (mutatedContent === originalContent) {
