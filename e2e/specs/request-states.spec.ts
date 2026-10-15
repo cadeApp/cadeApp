@@ -963,7 +963,11 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
     }
 
-    // 1. Precondición A: solicitud published con expires_at en el pasado (10 minutos atrás) y oferta pendiente
+    // 1. Iniciar sesión Playwright como el comercio dueño ANTES de sembrar solicitudes vencidas
+    // (para que la redirección post-login a /merchant/dashboard no reconcilie prematuramente las fixtures de prueba)
+    await loginAsMerchant(page);
+
+    // 2. Precondición A: solicitud published con expires_at en el pasado (10 minutos atrás) y oferta pendiente
     const pastExpiresAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const seedResult = await seedDeliveryRequestInState(stagingContext, {
       status: 'published',
@@ -998,7 +1002,23 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     });
     const concurrentRequestId = concurrentSeedResult.requestId;
 
-    // 2. Aislamiento y permisos: un segundo comercio autenticado ejecuta reconciliación y NO puede afectar solicitudes ajenas
+    // 3. Clientes autenticados del comercio dueño para comprobación de RPC y concurrencia
+    const merchantClientA = await createAuthenticatedClient(merchant);
+    const merchantClientB = await createAuthenticatedClient(merchant);
+
+    // 4. Navegación a "Ver ofertas" (/merchant/requests/<id>) ANTES de reconciliar:
+    await page.goto(`/merchant/requests/${requestId}`);
+    await expect(page.getByText('Expirada')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Ofertas recibidas')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /aceptar/i })).toBeVisible({ timeout: 10000 });
+
+    // Intento de aceptación sobre oferta de solicitud vencida (aún en estado published en DB) falla con REQUEST_EXPIRED en RPC
+    await expectRpcFailure(
+      merchantClientA.rpc('accept_offer', { p_offer_id: pendingOfferId }),
+      'REQUEST_EXPIRED'
+    );
+
+    // 5. Aislamiento y permisos: un segundo comercio autenticado ejecuta reconciliación y NO puede afectar solicitudes ajenas
     const secondContext = createStagingSeedContext();
     try {
       await seedStagingData(secondContext, {
@@ -1022,26 +1042,7 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       await cleanupStagingData(secondContext);
     }
 
-    // 3. Clientes autenticados del comercio dueño para comprobación de RPC y concurrencia
-    const merchantClientA = await createAuthenticatedClient(merchant);
-    const merchantClientB = await createAuthenticatedClient(merchant);
-
-    // 4. Flujo Playwright navegando como el comercio dueño
-    await loginAsMerchant(page);
-
-    // 4a. Navegación a "Ver ofertas" (/merchant/requests/<id>) ANTES de reconciliar:
-    await page.goto(`/merchant/requests/${requestId}`);
-    await expect(page.getByText('Expirada')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByText('Ofertas recibidas')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: /aceptar/i })).toBeVisible({ timeout: 10000 });
-
-    // Intento de aceptación sobre oferta vencida falla con REQUEST_EXPIRED en RPC
-    await expectRpcFailure(
-      merchantClientA.rpc('accept_offer', { p_offer_id: pendingOfferId }),
-      'REQUEST_EXPIRED'
-    );
-
-    // 5. Competencia concurrente: dos sesiones independientes del MISMO comercio ejecutan reconcile_expired_requests concurrentemente
+    // 6. Competencia concurrente: dos sesiones independientes del MISMO comercio ejecutan reconcile_expired_requests concurrentemente
     const [reconcileResultA, reconcileResultB] = await Promise.all([
       merchantClientA.rpc('reconcile_expired_requests'),
       merchantClientB.rpc('reconcile_expired_requests'),
