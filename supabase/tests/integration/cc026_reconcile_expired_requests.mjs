@@ -267,7 +267,7 @@ async function run() {
     assert.deepEqual(requestState(republish.requestId), {
       status: 'published',
       expiresInFuture: true,
-      offerStatus: 'pending',
+      offerStatus: 'expired',
       auditCount: 0,
     });
 

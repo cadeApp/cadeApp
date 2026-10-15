@@ -267,6 +267,8 @@ export interface FakeIncidentRecord {
 export interface FakeRpcOptions {
   readonly settings: FakePlatformSettings;
   readonly now?: () => Date;
+  /** Solo para probar que el adaptador rechaza una salida RPC que viola su contrato. */
+  readonly invalidOutputFor?: RpcName;
   readonly initialActor?: Partial<FakeActorContext>;
   readonly initialRequests?: readonly FakeSeedRequest[];
   readonly initialOffers?: readonly FakeSeedOffer[];
@@ -706,7 +708,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     }
     const result = handler(parsed.data as RpcInput<K>);
     if (result.ok) {
-      const outParsed = RPC_CONTRACTS[rpcName].outputSchema.safeParse(result.data);
+      const output = options.invalidOutputFor === rpcName ? {} : result.data;
+      const outParsed = RPC_CONTRACTS[rpcName].outputSchema.safeParse(output);
       if (!outParsed.success) {
         return err('VALIDATION_ERROR' as RpcErrorCode<K>);
       }

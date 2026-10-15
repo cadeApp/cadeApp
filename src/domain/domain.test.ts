@@ -142,6 +142,29 @@ describe('CC-026 — Contrato de reconciliación de vencimientos', () => {
     ).toBe(false);
   });
 
+  it('falla cerrado si una salida de reconciliación viola el contrato', async () => {
+    const fake = createFakeRpcClient({
+      settings: BASE_SETTINGS,
+      now: () => new Date('2026-10-15T12:00:00.000Z'),
+      invalidOutputFor: 'reconcile_expired_requests',
+      initialActor: { userId: MERCHANT_1, role: 'merchant', consentStatus: 'active' },
+      initialRequests: [
+        {
+          requestId: REQ_1,
+          merchantId: MERCHANT_1,
+          status: 'published',
+          expiresAt: '2026-10-15T12:00:00.000Z',
+        },
+      ],
+    });
+
+    await expect(fake.reconcile_expired_requests({})).resolves.toEqual({
+      ok: false,
+      code: 'VALIDATION_ERROR',
+    });
+    expect(fake.getRequest(REQ_1)?.status).toBe('expired');
+  });
+
   it('reconcilia únicamente solicitudes vencidas propias y expira sus ofertas pendientes', async () => {
     const fake = createFakeRpcClient({
       settings: BASE_SETTINGS,
