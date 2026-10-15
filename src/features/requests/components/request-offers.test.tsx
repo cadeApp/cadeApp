@@ -8,6 +8,15 @@ import type { MerchantOfferItem, MerchantRequestDetail } from '../types';
 import type { RpcOutput } from '@/domain';
 
 // Mock server actions
+const mockPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
 const mockAcceptOfferAction = vi.fn();
 vi.mock('@/features/offers/actions', () => ({
   acceptOfferAction: (...args: unknown[]) => mockAcceptOfferAction(...args),
@@ -508,4 +517,78 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       expect(container.textContent).toContain('Transferencia');
     });
   });
+
+  describe('T-359: Redirección y estado post-aceptación', () => {
+    it('DoD 1: al aceptar una oferta con éxito, navega a /trips/[id]', async () => {
+      mockAcceptOfferAction.mockResolvedValue({
+        ok: true,
+        data: {
+          status: 'matched',
+          requestId: mockRequest.id,
+          acceptedOfferId: '11111111-1111-1111-1111-111111111111',
+          matchedAt: '2026-09-24T01:30:00Z',
+          idempotent: false,
+        },
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockPush).toHaveBeenCalledWith(`/trips/${mockRequest.id}`);
+      });
+    });
+
+    it('DoD 2: si la solicitud ya está en estado matched, no muestra botón Aceptar y ofrece enlace al viaje', () => {
+      const matchedRequest: MerchantRequestDetail = {
+        ...mockRequest,
+        status: 'matched',
+        acceptedOfferId: '11111111-1111-1111-1111-111111111111',
+      };
+
+      render(<RequestOffersList request={matchedRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(0);
+
+      const tripLinks = screen.getAllByRole('link', { name: /ver viaje|ver detalle/i });
+      expect(tripLinks.length).toBeGreaterThanOrEqual(1);
+      expect(tripLinks[0]?.getAttribute('href')).toBe(`/trips/${mockRequest.id}`);
+    });
+
+    it('DoD 3: no ofrece botón Aceptar sobre una oferta que ya no está pendiente (accepted/rejected)', () => {
+      const mixedOffers: MerchantOfferItem[] = [
+        {
+          ...initialOffers[0]!,
+          id: 'offer-acc',
+          status: 'accepted',
+        },
+        {
+          ...initialOffers[1]!,
+          id: 'offer-rej',
+          status: 'rejected',
+        },
+        {
+          ...initialOffers[2]!,
+          id: 'offer-pend',
+          status: 'pending',
+        },
+      ];
+
+      render(<RequestOffersList request={mockRequest} initialOffers={mixedOffers} />);
+
+      // Solo la oferta pending debe tener botón Aceptar
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(1);
+
+      // La oferta accepted debe mostrar badge identificatorio
+      expect(screen.getByText('Oferta aceptada')).toBeDefined();
+    });
+  });
 });
+

@@ -317,4 +317,33 @@ describe('H06: MerchantRequestsList con multi-drop', () => {
     expect(screen.getByText('Paquetes: Chico, Mediano, Grande')).toBeDefined();
     expect(screen.getByText('Medios: Efectivo, Transferencia')).toBeDefined();
   });
+
+  describe('T-359: Navegación post-match del comercio', () => {
+    it('solicitud en estado matched vincula botón "Ver detalle" a /trips/[id] en lugar de /merchant/requests/[id]', () => {
+      render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
+
+      const detailLinks = screen.getAllByRole('link', { name: /ver detalle/i });
+      expect(detailLinks.length).toBe(1);
+      expect(detailLinks[0]?.getAttribute('href')).toBe('/trips/req-3');
+    });
+
+    it('solicitud en estado in_transit vincula botón "Ver detalle" a /trips/[id]', () => {
+      const inTransitRequest: MerchantRequestSummary = {
+        ...mockRequests[0]!,
+        id: 'req-in-transit',
+        status: 'in_transit',
+      };
+
+      render(
+        <MerchantRequestsList
+          requests={[inTransitRequest]}
+          metrics={mockMetrics}
+        />
+      );
+
+      const detailLink = screen.getByRole('link', { name: /ver detalle/i });
+      expect(detailLink.getAttribute('href')).toBe('/trips/req-in-transit');
+    });
+  });
 });
+
