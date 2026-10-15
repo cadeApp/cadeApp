@@ -21,3 +21,11 @@ La próxima ronda debe comprobar los RED auténticos en mutaciones del **código
 - H02: una transacción pgTAP no prueba ausencia de deadlock multisesión (pr-64/AG-62).
 
 Sin asignar AG nueva sin examinar ramas remotas, donde existe numeración duplicada.
+
+
+## Ronda 3
+
+- R03: en carrera de SELECT/INSERT un rechazo de RLS (42501) por fila ya creada es distinto de unique violation (23505). Cubrir ambos sin tratar denegación genuina como éxito.
+- R04: compatibilidad es orden de despliegue real DB/app, no solo CI del SHA final con ambas capas nuevas.
+- H02: scripts de CI multisesión ya existen para T-340/CC-024; no declarar imposible comprobar otra RPC.
+- H06: un test que vuelve a escribir el backfill después de migrar no verifica SQL original.

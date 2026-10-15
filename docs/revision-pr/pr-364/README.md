@@ -41,3 +41,12 @@
 [Informe ronda 2](revisiones/ronda-2.md) · [Evidencia ronda 2](evidencia/ronda-2.md) · [Prompt ronda 2](prompt-agy-ronda-2.md).
 
 **CI HEAD auditado:** 133 archivos / 2228 Vitest PASS; 23 archivos / 2245 pgTAP PASS, run 38692082266. Rama 2 commits detrás de develop. No mezclar el SHA de la carpeta de revisión con el SHA funcional auditado.
+
+
+## Ronda 3
+
+| Ronda | SHA funcional revisado | Dictamen |
+|---|---|---|
+| 3 | `6c1d124ce17e271858915df3bb57de9beeb1aa6e` | CON BLOQUEANTES: R03 alto, R04 medio; H02/H05/H06 parciales |
+
+CI real run 38702747664: 133 suites/2254 unit; 23 archivos/2262 pgTAP PASS. [Informe](revisiones/ronda-3.md), [Prompt](prompt-agy-ronda-3.md), [Evidencia](evidencia/ronda-3.md). Historial R1/R2 preservado.
