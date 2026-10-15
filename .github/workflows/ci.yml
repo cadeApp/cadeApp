@@ -182,6 +182,18 @@ jobs:
             pnpm supabase db reset
             pnpm supabase test db
 
+            # CC-026 H11: el oráculo de atomicidad debe detectar si deja de instalarse
+            # el trigger que fuerza la falla de offers. La mutación vive sólo en $RUNNER_TEMP.
+            CC026_MUTANT="$RUNNER_TEMP/cc026_without_offer_fault.sql"
+            sed '/^create trigger cc026_fail_offer /d' supabase/tests/cc026_reconcile_expired_requests.sql > "$CC026_MUTANT"
+            if pnpm supabase test db "$CC026_MUTANT"; then
+              echo 'CC026_H11_MUTATION inesperadamente verde sin el trigger de offers'
+              exit 1
+            fi
+            echo 'CC026_H11_MUTATION RED: la suite detectó la falta del trigger de offers.'
+            pnpm supabase test db supabase/tests/cc026_reconcile_expired_requests.sql
+            echo 'CC026_H11_MUTATION GREEN: la suite original pasa tras restaurar el trigger.'
+
             # Concurrencia de dos sesiones (H08 / T-340 / CC-022 §2b y §6)
             DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n 1)"
             DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/t340_concurrency.mjs
