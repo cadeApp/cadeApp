@@ -11,3 +11,5 @@ Ronda 2: [revisiones/ronda-2.md](revisiones/ronda-2.md) · corregidos cinco TS23
 Ronda 3: [revisiones/ronda-3.md](revisiones/ronda-3.md) · Vitest requiere import React explícito en page.tsx para render de JSX; los seis tests permanecen sin cambios.
 
 Ronda 4: [revisiones/ronda-4.md](revisiones/ronda-4.md) · detectada falla real para prefijo 549 incompleto; rechazo explícito sin cambiar helper compartido.
+
+Ronda 5: [revisiones/ronda-5.md](revisiones/ronda-5.md) · priorización exclusiva prefijo 549/54 corregida por inspección previa a CI.
