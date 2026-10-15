@@ -354,12 +354,11 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
     const pidA = await sessionA.initPid();
     const pidB = await sessionB.initPid();
 
-    // Ambas sesiones con privilegios para adquirir locks sobre couriers y courier_documents
-    await sessionA.configure(adminId, 'admin', 'aal2');
-    await sessionB.configure(adminId, 'admin', 'aal2');
-
-    // Sesión A adquiere lock en courier_documents
+    // Ambas sesiones ejecutan como postgres para tener permisos de bloqueo en ambas tablas
     sessionA.send(`
+      \\pset tuples_only on
+      \\pset format unaligned
+      begin;
       select 1 from public.courier_documents where id = '${docId}' for update;
       select 'LOCKED_A';
     `);
@@ -367,6 +366,9 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
 
     // Sesión B adquiere lock en couriers
     sessionB.send(`
+      \\pset tuples_only on
+      \\pset format unaligned
+      begin;
       select 1 from public.couriers where profile_id = '${courierId}' for update;
       select 'LOCKED_B';
     `);
@@ -374,20 +376,38 @@ async function runDeadlockMutationCheck(adminId, courierId, docId) {
 
     // Sesión A intenta lock en couriers (bloquea esperando a B)
     sessionA.send(`
-      select 1 from public.couriers where profile_id = '${courierId}' for update;
+      do $mutant_a$
+      begin
+        select 1 from public.couriers where profile_id = '${courierId}' for update;
+        raise notice 'ACQUIRED_A';
+      exception when deadlock_detected then
+        raise notice 'DEADLOCK_40P01_DETECTED';
+      end $mutant_a$;
+      select 'DONE_A';
     `);
     await waitForBlockedLock(pidB, pidA);
 
     // Sesión B intenta lock en courier_documents (bloquea esperando a A -> DEADLOCK 40P01!)
     sessionB.send(`
-      select 1 from public.courier_documents where id = '${docId}' for update;
+      do $mutant_b$
+      begin
+        select 1 from public.courier_documents where id = '${docId}' for update;
+        raise notice 'ACQUIRED_B';
+      exception when deadlock_detected then
+        raise notice 'DEADLOCK_40P01_DETECTED';
+      end $mutant_b$;
+      select 'DONE_B';
     `);
 
     // Esperar a que el detector de deadlock de PostgreSQL termine una de las transacciones con 40P01
     const deadline = Date.now() + 8000;
     while (Date.now() < deadline) {
-      if (sessionA.output.includes('40P01') || sessionB.output.includes('40P01') ||
-          sessionA.output.includes('deadlock') || sessionB.output.includes('deadlock')) {
+      if (
+        sessionA.output.includes('DEADLOCK_40P01_DETECTED') ||
+        sessionB.output.includes('DEADLOCK_40P01_DETECTED') ||
+        sessionA.output.includes('40P01') ||
+        sessionB.output.includes('40P01')
+      ) {
         deadlockDetected = true;
         break;
       }
