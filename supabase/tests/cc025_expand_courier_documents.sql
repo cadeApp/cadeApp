@@ -3,11 +3,15 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(18);
+select plan(24);
 
 -- Test actors
 create function pg_temp.test_courier() returns uuid language sql as $$
   select '00000000-0000-4000-8000-000000025a01'::uuid
+$$;
+
+create function pg_temp.other_courier() returns uuid language sql as $$
+  select '00000000-0000-4000-8000-000000025a99'::uuid
 $$;
 
 create function pg_temp.act_as(p_actor_id uuid) returns void language plpgsql as $$
@@ -66,9 +70,9 @@ select ok(
   'authenticated must retain UPDATE privilege on courier_documents during expand phase'
 );
 
--- Setup test courier
+-- Setup test couriers
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
-values (pg_temp.test_courier(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'courier_expand@test.com', 'pwd', '{"role":"courier"}'::jsonb)
+values (pg_temp.test_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'courier_expand@test.com', 'pwd', '{"role":"courier"}'::jsonb)
 on conflict (id) do nothing;
 
 insert into public.profiles (id, role, consent_status)
@@ -79,9 +83,26 @@ insert into public.couriers (profile_id, status, available, vehicle_type, vehicl
 values (pg_temp.test_courier(), 'pending', false, 'moto', 'EXP01')
 on conflict (profile_id) do nothing;
 
--- 5. Old writer compatibility: INSERT and UPSERT without specifying new columns must succeed under authenticated role
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+values (pg_temp.other_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'courier_other@test.com', 'pwd', '{"role":"courier"}'::jsonb)
+on conflict (id) do nothing;
+
+insert into public.profiles (id, role, consent_status)
+values (pg_temp.other_courier(), 'courier', 'active')
+on conflict (id) do update set role = excluded.role, consent_status = 'active';
+
+insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
+values (pg_temp.other_courier(), 'pending', false, 'moto', 'EXP99')
+on conflict (profile_id) do nothing;
+
+-- 5. Old writer compatibility & actor verification (H01 & H02)
 select pg_temp.act_as(pg_temp.test_courier());
 
+-- H02: Explicitly assert current_user and auth.uid() within the active authenticated session
+select is(current_user::text, 'authenticated', 'Actor current_user must be authenticated');
+select is(auth.uid(), pg_temp.test_courier(), 'Actor auth.uid() must match test courier');
+
+-- H01: Plain INSERT without new fields must succeed
 select lives_ok(
   $$
     insert into public.courier_documents (courier_id, kind, storage_path, status)
@@ -90,16 +111,59 @@ select lives_ok(
   'Old writer INSERT without new fields must succeed under authenticated role'
 );
 
+-- H01: PostgREST-style UPSERT on NEW row (ON CONFLICT (id) DO UPDATE with new ID)
 select lives_ok(
   $$
-    insert into public.courier_documents (courier_id, kind, storage_path, status)
-    values (pg_temp.test_courier(), 'license', 'courier/exp_lic_2.jpg', 'submitted')
-    on conflict (storage_path) do update set status = 'submitted';
+    insert into public.courier_documents (id, courier_id, kind, storage_path, status)
+    values ('00000000-0000-4000-8000-000000025d02'::uuid, pg_temp.test_courier(), 'license', 'courier/exp_lic_new.jpg', 'submitted')
+    on conflict (id) do update set status = excluded.status;
   $$,
-  'Old writer UPSERT (ON CONFLICT DO UPDATE for new row) must succeed under authenticated role'
+  'Old writer UPSERT (ON CONFLICT (id) DO UPDATE with new ID) must succeed under authenticated role'
+);
+
+select is(
+  (select count(*)::integer from public.courier_documents where id = '00000000-0000-4000-8000-000000025d02'::uuid),
+  1,
+  'Document with new ID has exactly 1 row'
+);
+
+-- H01 & H02: Collision on existing ID
+-- When a courier attempts to execute the UPDATE branch on an existing row,
+-- PostgreSQL evaluates RLS UPDATE policy courier_documents_write_admin (which requires admin)
+-- and correctly denies it with SQLSTATE 42501 (pre-existing RLS limitation).
+select throws_ok(
+  $$
+    insert into public.courier_documents (id, courier_id, kind, storage_path, status)
+    values ('00000000-0000-4000-8000-000000025d02'::uuid, pg_temp.test_courier(), 'license', 'courier/exp_lic_retry.jpg', 'submitted')
+    on conflict (id) do update set storage_path = excluded.storage_path;
+  $$,
+  '42501',
+  NULL,
+  'Attempt to execute UPDATE branch on existing row as courier is denied by inherited courier_documents_write_admin policy (42501)'
+);
+
+select is(
+  (select storage_path from public.courier_documents where id = '00000000-0000-4000-8000-000000025d02'::uuid),
+  'courier/exp_lic_new.jpg',
+  'Storage path remains unchanged after denied update'
+);
+
+-- H02 Negative test: Another authenticated user cannot insert documents for this courier
+select pg_temp.act_as(pg_temp.other_courier());
+
+select throws_ok(
+  $$
+    insert into public.courier_documents (courier_id, kind, storage_path, status)
+    values (pg_temp.test_courier(), 'avatar', 'courier/spoofed.jpg', 'submitted');
+  $$,
+  '42501',
+  NULL,
+  'Different user cannot insert documents for another courier (RLS 42501)'
 );
 
 -- 6. Guard enforcement: attempts to forge invalid values must fail with check constraint violation (23514)
+select pg_temp.act_as(pg_temp.test_courier());
+
 select throws_ok(
   $$
     insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)

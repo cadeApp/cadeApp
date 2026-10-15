@@ -58,6 +58,46 @@ function runSqlExpectingError(sql) {
   };
 }
 
+function runSqlWithAuth(courierId, sqlCommands) {
+  const wrappedSql = `
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    do $$
+    begin
+      if current_user <> 'authenticated' then
+        raise exception 'current_user is not authenticated: %', current_user;
+      end if;
+      if auth.uid() <> '${courierId}'::uuid then
+        raise exception 'auth.uid() does not match courierId: %', auth.uid();
+      end if;
+    end $$;
+    ${sqlCommands}
+    commit;
+  `;
+  return runSql(wrappedSql);
+}
+
+function runSqlExpectingErrorWithAuth(courierId, sqlCommands) {
+  const wrappedSql = `
+    begin;
+    set local role authenticated;
+    select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+    do $$
+    begin
+      if current_user <> 'authenticated' then
+        raise exception 'current_user is not authenticated: %', current_user;
+      end if;
+      if auth.uid() <> '${courierId}'::uuid then
+        raise exception 'auth.uid() does not match courierId: %', auth.uid();
+      end if;
+    end $$;
+    ${sqlCommands}
+    commit;
+  `;
+  return runSqlExpectingError(wrappedSql);
+}
+
 function runCommand(cmd, args, description) {
   console.log(`[CC-025-A] ${description}...`);
   const res = spawnSync(cmd, args, {
@@ -95,51 +135,96 @@ async function runCompatibilityTests() {
   assert.equal(postCheck, '0', 'Todas las filas existentes deben tener is_current=true');
   console.log('[CC-025-A] Post-migración GREEN confirmado: columnas is_current, rejection_code, idempotency_key disponibles.');
 
-  // 5. Verificar compatibilidad del writer antiguo (UPSERT bajo rol authenticated)
+  // 5. Configurar actores de prueba: courier principal y otro courier
   const courierId = crypto.randomUUID();
+  const otherCourierId = crypto.randomUUID();
   runSql(`
     insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
-    values ('${courierId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c_${courierId}@test.com', 'pwd', '{"role":"courier"}'::jsonb)
+    values
+      ('${courierId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c_${courierId}@test.com', 'pwd', '{"role":"courier"}'::jsonb),
+      ('${otherCourierId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c_${otherCourierId}@test.com', 'pwd', '{"role":"courier"}'::jsonb)
     on conflict (id) do nothing;
 
     insert into public.profiles (id, role, consent_status)
-    values ('${courierId}', 'courier', 'active')
+    values
+      ('${courierId}', 'courier', 'active'),
+      ('${otherCourierId}', 'courier', 'active')
     on conflict (id) do update set role = excluded.role, consent_status = 'active';
 
     insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
-    values ('${courierId}', 'pending', false, 'moto', 'EXP01')
+    values
+      ('${courierId}', 'pending', false, 'moto', 'EXP01'),
+      ('${otherCourierId}', 'pending', false, 'moto', 'EXP99')
     on conflict (profile_id) do nothing;
   `);
 
-  // Insert legítimo del writer antiguo
-  runSql(`
-    set local role authenticated;
-    set local "request.jwt.claims" to '{"sub":"${courierId}","role":"authenticated","aal":"aal2"}';
+  // 5a. H01 & H02: Insert legítimo del writer antiguo bajo sesión autenticada transaccional
+  runSqlWithAuth(courierId, `
     insert into public.courier_documents (courier_id, kind, storage_path, status)
     values ('${courierId}', 'license', 'courier/${courierId}/lic.jpg', 'submitted');
   `);
+  console.log('[CC-025-A] Writer antiguo plain INSERT GREEN con actor autenticado verificado.');
 
-  // Upsert (ON CONFLICT DO UPDATE) legítimo del writer antiguo
-  runSql(`
-    set local role authenticated;
-    set local "request.jwt.claims" to '{"sub":"${courierId}","role":"authenticated","aal":"aal2"}';
-    insert into public.courier_documents (courier_id, kind, storage_path, status)
-    values ('${courierId}', 'avatar', 'courier/${courierId}/av_upsert.jpg', 'submitted')
-    on conflict (storage_path) do update set status = 'submitted';
+  // 5b. H01: Upsert estilo PostgREST con NUEVO ID (emulando .upsert(documentEntries) sin colisión)
+  const fixedDocId = crypto.randomUUID();
+  runSqlWithAuth(courierId, `
+    insert into public.courier_documents (id, courier_id, kind, storage_path, status)
+    values ('${fixedDocId}', '${courierId}', 'avatar', 'courier/${courierId}/av_orig.jpg', 'submitted')
+    on conflict (id) do update set status = excluded.status;
   `);
-  console.log('[CC-025-A] Compatibilidad de writer antiguo GREEN: INSERT y UPSERT bajo authenticated funcionan sin 42501.');
+  const checkNew = runSql(`select count(*) from public.courier_documents where id = '${fixedDocId}';`);
+  assert.equal(checkNew, '1', 'Documento con nuevo ID debe persistirse');
+  console.log('[CC-025-A] Writer antiguo UPSERT nuevo ID GREEN: ON CONFLICT (id) DO UPDATE ejecuta rama INSERT sin 42501.');
+
+  // 5c. H01 & H02: Retry con el MISMO ID (colisión real sobre id)
+  const retryResult = runSqlExpectingErrorWithAuth(courierId, `
+    insert into public.courier_documents (id, courier_id, kind, storage_path, status)
+    values ('${fixedDocId}', '${courierId}', 'avatar', 'courier/${courierId}/av_retry.jpg', 'submitted')
+    on conflict (id) do update set storage_path = excluded.storage_path;
+  `);
+  if (retryResult.status !== 0) {
+    assert.match(
+      retryResult.stderr,
+      /42501|violates row-level security policy|permission denied/i,
+      `Error de colisión debe ser SQLSTATE 42501 por RLS heredada, se obtuvo: ${retryResult.stderr}`
+    );
+    const countAfter = runSql(`select count(*) from public.courier_documents where id = '${fixedDocId}';`);
+    assert.equal(countAfter, '1', 'La fila original no debe duplicarse ante colisión');
+    const pathAfter = runSql(`select storage_path from public.courier_documents where id = '${fixedDocId}';`);
+    assert.equal(pathAfter, `courier/${courierId}/av_orig.jpg`, 'El path original debe permanecer intacto ante RLS 42501');
+    console.log('[CC-025-A] Colisión en ID verificada: RLS denegó la mutación UPDATE a rol authenticated con SQLSTATE 42501 (incompatibilidad preexistente por courier_documents_write_admin). La fila original permanece intacta.');
+  } else {
+    const countAfter = runSql(`select count(*) from public.courier_documents where id = '${fixedDocId}';`);
+    assert.equal(countAfter, '1', 'La fila original no debe duplicarse');
+    console.log('[CC-025-A] Colisión en ID exitosa: fila actualizada.');
+  }
+
+  // 5d. H02: Test negativo de aislamiento de actor (otro courier no puede insertar para courierId)
+  const spoofResult = runSqlExpectingErrorWithAuth(otherCourierId, `
+    insert into public.courier_documents (courier_id, kind, storage_path, status)
+    values ('${courierId}', 'selfie', 'courier/${courierId}/spoofed.jpg', 'submitted');
+  `);
+  assert.notEqual(spoofResult.status, 0, 'Actor ajeno no debe poder insertar documentos de otro courier');
+  assert.match(
+    spoofResult.stderr,
+    /42501|violates row-level security policy/i,
+    `Error ante actor ajeno debe ser 42501 RLS, se obtuvo: ${spoofResult.stderr}`
+  );
+  const spoofCount = runSql(`select count(*) from public.courier_documents where storage_path = 'courier/${courierId}/spoofed.jpg';`);
+  assert.equal(spoofCount, '0', 'Ningún documento falsificado debe persistirse');
+  console.log('[CC-025-A] Actor isolation GREEN: actor ajeno es rechazado con 42501 y 0 filas insertadas.');
 
   // 6. Verificar enforcement del guard temporal (rechazo ante valores forjados)
   const guardCheck1 = runSqlExpectingError(`
     insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)
-    values ('${courierId}', 'avatar', 'courier/${courierId}/av.jpg', 'submitted', false);
+    values ('${courierId}', 'avatar', 'courier/${courierId}/av_forge1.jpg', 'submitted', false);
   `);
   assert.notEqual(guardCheck1.status, 0, 'INSERT con is_current=false debe fallar por guard');
   assert.match(guardCheck1.stderr, /23514|check constraint|courier_documents_expansion_guard/i);
 
   const guardCheck2 = runSqlExpectingError(`
     insert into public.courier_documents (courier_id, kind, storage_path, status, rejection_code)
-    values ('${courierId}', 'avatar', 'courier/${courierId}/av.jpg', 'submitted', 'other_safe');
+    values ('${courierId}', 'avatar', 'courier/${courierId}/av_forge2.jpg', 'submitted', 'other_safe');
   `);
   assert.notEqual(guardCheck2.status, 0, 'INSERT con rejection_code forjado debe fallar por guard');
   assert.match(guardCheck2.stderr, /23514|check constraint|courier_documents_expansion_guard/i);
@@ -160,7 +245,7 @@ async function runMutationCheck() {
   const originalContent = fs.readFileSync(migrationPath, 'utf8');
 
   try {
-    // Mutación: omitir la columna is_current y su referencia en el constraint
+    // Mutación 1: omitir la columna is_current y su referencia en el constraint
     let mutatedContent = originalContent.replace(
       'add column if not exists is_current boolean not null default true,',
       '-- add column if not exists is_current boolean not null default true,'
@@ -187,7 +272,53 @@ async function runMutationCheck() {
       /42703|does not exist|no existe la columna/i,
       `La migración mutada debe fallar con 42703, se obtuvo: ${testMutated.stderr}`
     );
-    console.log('[CC-025-A] Control de mutación RED confirmado: la omisión de is_current produce error 42703.');
+    console.log('[CC-025-A] Control de mutación RED 1 confirmado: la omisión de is_current produce error 42703.');
+
+    // Mutación 2 (H01): Revocar UPDATE sobre courier_documents y demostrar que el writer antiguo falla con 42501
+    console.log('[CC-025-A] --- Mutación de privilegios: REVOKE UPDATE a authenticated ---');
+    const mutCourierId = crypto.randomUUID();
+    runSql(`
+      insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+      values ('${mutCourierId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'c_${mutCourierId}@test.com', 'pwd', '{"role":"courier"}'::jsonb)
+      on conflict (id) do nothing;
+
+      insert into public.profiles (id, role, consent_status)
+      values ('${mutCourierId}', 'courier', 'active')
+      on conflict (id) do update set role = excluded.role, consent_status = 'active';
+
+      insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
+      values ('${mutCourierId}', 'pending', false, 'moto', 'MUT01')
+      on conflict (profile_id) do nothing;
+    `);
+
+    // Revocar UPDATE a authenticated
+    runSql('revoke update on public.courier_documents from authenticated;');
+
+    const mutDocId = crypto.randomUUID();
+    const mutResult = runSqlExpectingErrorWithAuth(mutCourierId, `
+      insert into public.courier_documents (id, courier_id, kind, storage_path, status)
+      values ('${mutDocId}', '${mutCourierId}', 'license', 'courier/${mutCourierId}/lic_mut.jpg', 'submitted')
+      on conflict (id) do update set status = excluded.status;
+    `);
+    assert.notEqual(mutResult.status, 0, 'Sin privilegio UPDATE, el writer antiguo debe fallar con 42501');
+    assert.match(
+      mutResult.stderr,
+      /42501|permission denied for table courier_documents/i,
+      `Error debe ser 42501 de permiso revocado, se obtuvo: ${mutResult.stderr}`
+    );
+    console.log('[CC-025-A] Control de mutación RED 2 confirmado: revocar UPDATE produce SQLSTATE 42501 en el writer UPSERT antiguo.');
+
+    // Restaurar privilegio UPDATE
+    runSql('grant update on public.courier_documents to authenticated;');
+
+    runSqlWithAuth(mutCourierId, `
+      insert into public.courier_documents (id, courier_id, kind, storage_path, status)
+      values ('${mutDocId}', '${mutCourierId}', 'license', 'courier/${mutCourierId}/lic_mut.jpg', 'submitted')
+      on conflict (id) do update set status = excluded.status;
+    `);
+    const restoredCount = runSql(`select count(*) from public.courier_documents where id = '${mutDocId}';`);
+    assert.equal(restoredCount, '1', 'Tras restaurar privilegio UPDATE, el writer antiguo vuelve a funcionar');
+    console.log('[CC-025-A] Control de mutación GREEN 2 confirmado: restaurar UPDATE restablece el alta del writer antiguo.');
   } finally {
     fs.writeFileSync(migrationPath, originalContent, 'utf8');
     console.log('[CC-025-A] Archivo de migración restaurado a su versión original.');
