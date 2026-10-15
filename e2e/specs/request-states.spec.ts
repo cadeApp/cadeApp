@@ -817,4 +817,53 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(inspection.cancelledAt).toBeNull();
     expect(inspection.cancelReason).toBeNull();
   });
+
+  // ---------------------------------------------------------------------------
+  // T-364: Cancelación de solicitud por comercio dueño y frontera autoritativa
+  // ---------------------------------------------------------------------------
+  test('T-364 (§5.1): Cancelación rápida por comercio dueño en published/matched: rechaza comercio ajeno y persiste trazabilidad', async ({
+    stagingContext,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
+    }
+
+    // Precondición: solicitud published de merchant
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const requestId = seedResult.requestId;
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const courierClient = await createAuthenticatedClient(courier);
+
+    // 1. Caso negativo: courier u otro actor no autorizado intenta cancelar
+    await expectRpcFailure(
+      courierClient.rpc('cancel_request', {
+        p_request_id: requestId,
+        p_reason: 'Intento no autorizado',
+      }),
+      'UNAUTHORIZED_ACTOR'
+    );
+
+    // 2. Caso positivo: comercio dueño cancela directamente con motivo
+    const { data: cancelData, error: cancelError } = await merchantClient.rpc('cancel_request', {
+      p_request_id: requestId,
+      p_reason: 'Lo resolví de otra forma',
+    });
+    expect(cancelError).toBeNull();
+    expect(cancelData).toBeDefined();
+
+    // 3. Oráculo en base de datos: estado cancelled, motivo y cancelled_at persistidos
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('cancelled');
+    expect(inspection.cancelledAt).not.toBeNull();
+    expect(inspection.cancelReason).toBe('Lo resolví de otra forma');
+  });
 });
+

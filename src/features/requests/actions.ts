@@ -1,10 +1,12 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
+import type { RpcOutput } from '@/domain/rpc-contracts';
 import { callRequestRpc } from '@/server/rpc/requests';
 import { createClient } from '@/server/supabase/server';
-import { createDeliveryRequestSchema } from './schemas';
+import { createDeliveryRequestSchema, cancelMerchantRequestSchema } from './schemas';
 
 export interface CreateDeliveryRequestResult {
   readonly requestId: string;
@@ -91,4 +93,55 @@ export async function createDeliveryRequestAction(
     requestId: rpcResult.data.requestId,
     redirectTo: '/merchant/dashboard',
   });
+}
+
+export type CancelMerchantRequestResult = RpcOutput<'cancel_request'>;
+
+/**
+ * Comercio cancela solicitud en estado cancelable (published o matched).
+ * Valida sesión y rol merchant, ejecuta RPC cancel_request y revalida vistas.
+ */
+export async function cancelMerchantRequestAction(
+  input: unknown
+): Promise<ActionResult<CancelMerchantRequestResult, DomainErrorCode>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'merchant') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const parsed = cancelMerchantRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  const rpcResult = await callRequestRpc(supabase, 'cancel_request', parsed.data);
+  if (!rpcResult.ok) {
+    return err(rpcResult.code);
+  }
+
+  revalidatePath(`/trips/${parsed.data.requestId}`);
+  revalidatePath('/merchant/requests');
+  revalidatePath('/merchant/dashboard');
+  return ok(rpcResult.data);
 }

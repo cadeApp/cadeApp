@@ -464,7 +464,7 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
   it('DoD 3: error por carrera concurrente o fallo muestra error amigable y refresca la vista', async () => {
     const mockOnCancel = vi.fn().mockResolvedValue({
       ok: false,
-      error: 'INVALID_STATE_TRANSITION',
+      code: 'INVALID_STATE_TRANSITION',
     });
 
     render(
