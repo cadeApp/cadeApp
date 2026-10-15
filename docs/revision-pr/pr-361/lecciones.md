@@ -28,3 +28,10 @@ Estos problemas están identificados por inspección; no proclamar mutaciones ex
 - H12 ilustra la diferencia entre **fail-closed correcto** (el local bloqueó proyecto Supabase desconocido) y **E2E exitoso de Preview** (no demostrado). No confundir 'falla segura' con 'prueba superada'.
 - El repo tiene gate `.github/workflows/e2e-preview.yml` en trusted default branch disparado por `repository_dispatch` y que publica el status `e2e-preview` al commit probado. La señal objetiva de cierre es **status success para el SHA**, no un comentario afirmando que el runner dispone de credenciales.
 - No asignar un nuevo hallazgo duplicado: H12 sigue abierto por evidencia. No tocar `AGENTS.md` por una PR aislada.
+
+## Ronda 5 — Evitar misdiagnósticos de integración y rondas redundantes
+
+- Un evento `repository_dispatch` puede pertenecer a distintos proyectos Vercel del mismo repo. `matchPreview` explícitamente descarta proyectos ajenos; **una corrida skipped no demuestra que un secret esté mal**. Correlacionar siempre deployment/project/SHA y buscar eventos aceptados antes de recomendar cambiar configuración sensible.
+- La evidencia E2E debe cruzar **tres señales**: run del trusted workflow, línea del test específico y commit status `e2e-preview` sobre el SHA; el job Vercel `Ready` no sustituye el test.
+- Registrar una prueba inestable de un feature ajeno, como T-314 en retry, sin volverla bloqueante de T-364 ni esconder el fallo inicial.
+- Cuando una revisión agrega únicamente documentación después de una ejecución remota larga, moverá el SHA y reactivará los checks. Diferenciar explícitamente **SHA verificado** y **HEAD post informe**, evitando falsear resultados y repetir arreglos de código.

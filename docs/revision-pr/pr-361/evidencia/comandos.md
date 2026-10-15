@@ -155,3 +155,36 @@ git status --short
 ```
 
 El aviso del autor "entorno local bloqueado" **no** significa que el E2E de Preview falló: significa que **su resultado sigue pendiente/no demostrado**. No simular credenciales ni alterar el guard de staging.
+
+---
+
+# Ronda 5 — CI / Trusted E2E confirmado en `0beec112e1d1b114b4e8480ff846c247dfb7421c`
+
+## Metodología: solo observación de run real y código
+Se consultaron GitHub PR #361, commit statuses, changed files, CI jobs/logs y repositorio trusted `.github/workflows/e2e-preview-target.mjs`. No se dispone de clon/Playwright propios en esta sesión; **no se ejecutaron mutaciones propias**. No se alteraron secretos, runners, workflows, Supabase ni deployment.
+
+### Datos verificables (sin contraseñas)
+- HEAD del autor: `0beec112e1d1b114b4e8480ff846c247dfb7421c`. Comparación con el reviewer commit de R4: solo `docs/tasks/log/T-364.md` modificado, un commit `0beec112`.
+- CI general run 38684858567 `success`, unit 129 files / 2180 tests PASS, db-tests 22 files / 2205 pgTAP PASS, typecheck/lint/build/audit/bundle-budget success.
+- Trusted E2E run 38684930479, jobs 116257499357 resolve (success), 116257546537 Playwright (success), 116263773415 reporter (success).
+- El resolver escribió `PR interna #361 contra develop.` y `Preview listo para E2E.`.
+- El reporter publicó `TARGET_SHA: 0beec112e1d1b114b4e8480ff846c247dfb7421c`, `RESULT: success` y `DEPLOYMENT_ID: dpl_6VTyStofwVUxbH1v1WwX7aejX3Am`.
+- Preview validado `https://cadeapp-develop-57xcy4uv5-lautaroj073.vercel.app`; el Environment `develop` confirmó refs de Supabase develop ≠ staging, sin exponer secretos.
+- Test T-364 Chromium lineado: `✓ 65 [chromium] › e2e/specs/request-states.spec.ts:827:7 › T-364 (§5.1): Cancelación rápida por comercio dueño en published: UI Playwright, oráculo SQL y rechazo ajeno (25.7s)`.
+- Browser: `74 passed (20.0m)`; `1 flaky` de `e2e/specs/map-privacy.spec.ts:438` T-314, falla HTTP 200 en intento #1 y `✓` en retry #1. global-settings: `3 passed (1.1m)`.
+- Commit status antes de escribir ronda: `e2e-preview=success`, target URL `https://github.com/cadeApp/cadeApp/actions/runs/38684930479`.
+- Evento viejo run 38684575890: `El deployment no pertenece al proyecto Vercel de develop`, 2 jobs E2E/report skipped; es un **skip legítimo** de proyecto ajeno. La rama trusted `matchPreview` menciona explícitamente staging como ejemplo de skip.
+
+## Estado de verificación
+- H01/H05/H11/H12: chequeo real confiable bajo commit SHA y revisión independiente de logs, **sin mutación propia**; `verificado_en_sha=0beec112e1d1b114b4e8480ff846c247dfb7421c`.
+- Otros hallazgos: correcciones leídas, unit CI exitosos; no mutación independiente; `verificado_en_sha=null`.
+- No dar por GREEN el nuevo commit del revisor hasta que se observe CI/E2E sobre ese nuevo HEAD.
+
+## Reproducción futura recomendada (NO EJECUTADA)
+```bash
+git rev-parse HEAD
+git status --short
+# Si la PR sigue abierta, GitHub: comprobar estado Vercel, CI y e2e-preview por SHA HEAD.
+# Run 38684930479 debe figurar vinculado a 0beec112..., no a un commit de docs posterior.
+# node docs/revision-pr/analizar.mjs verificacion
+```
