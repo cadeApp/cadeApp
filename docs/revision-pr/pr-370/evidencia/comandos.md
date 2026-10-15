@@ -48,3 +48,40 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 **Nota:** `node docs/revision-pr/analizar.mjs verificacion` tampoco se ejecutó en el repositorio completo por falta de clon; el `hallazgos.jsonl` de esta ronda es vacío porque no hay defecto imputado al diff.
+## Ronda 2 — SHA 3903388ef6869c218cd405ca0ccc164541ca22e6
+
+Inspección remota: PR #370 files/diff + base develop; `src/features/requests/queries.ts:25–40`, `queries.test.ts:2483–2512`, `e2e/specs/request-states.spec.ts:948–994`, `docs/tasks/T-366.md` desde develop y desde HEAD; issue #355, bitácora y comentarios; status E2E SHA en https://github.com/cadeApp/cadeApp/actions/runs/38793046464 (cancelled); CI https://github.com/cadeApp/cadeApp/actions/runs/38792912853 (SUCCESS).
+
+Reproducción **aislada** y ejecutada en container Node 22, no reemplaza test del repo (GitHub DNS inaccesible):
+```bash
+node <<'JS'
+async function reconcile(rpcClient) {
+  for (let batch = 0; batch < 10; batch++) {
+    const res = await rpcClient.reconcile_expired_requests({});
+    if (!res.ok) throw new Error(res.code);
+    if (!res.data.hasMore) return;
+    if (res.data.expiredCount === 0) return; // instrucción exacta que falla
+  }
+  throw Error('Budget exceeded');
+}
+const fake = { reconcile_expired_requests: async () => ({ ok: true, data: { expiredRequestIds: [], expiredCount: 0, hasMore: true } }) };
+reconcile(fake).then(() => console.log('RETURN_OK despite hasMore=true'));
+JS
+```
+Salida ejecutada: `RETURN_OK despite hasMore=true`.
+
+**No ejecutado por revisor**: `pnpm test`, `pnpm test:db`, `pnpm typecheck`, `git merge-tree`, E2E Playwright en Preview, suite de mutaciones propia sobre código real. No se reportan como GREEN/RED ejecutados.
+
+**Mutación RED a exigir al implementador y a una próxima revisión independiente:** en copia aislada de código productivo, reemplazar temporalmente el guard correcto de incompletitud `if (hasMore && expiredCount===0) throw` por `if (hasMore && expiredCount===0) return`, mantener sin modificar el test que exige `rejects.toThrow` y que no haya SELECT. Ejecutar el test focalizado para registrar que cae exactamente por el invariante y restaurar verde. No usar `git checkout` para revertir mutaciones; aplicar/corregir en memoria o worktree limpio sin tocar el HEAD remoto.
+
+Verificación próxima ronda desde clon/worktree limpio:
+```bash
+git fetch origin
+git merge-tree --write-tree origin/develop HEAD
+pnpm exec vitest run src/features/requests/queries.test.ts
+pnpm exec vitest run tools/verify-fichas.test.ts
+pnpm typecheck && pnpm lint && pnpm test
+node docs/revision-pr/analizar.mjs verificacion
+git diff --check
+```
+Revisar log completo de db-tests en CI para pgTAP real de CC-026, pero no iniciar Supabase o Docker local.

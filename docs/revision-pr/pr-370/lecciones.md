@@ -10,3 +10,10 @@ No se enumeran nuevos hallazgos de implementación ni se asigna un nuevo número
 - **P08**: tests que inspeccionan strings SQL o mocks sin ejecutar un caso real no prueban permisos/transacciones.
 
 Criterio para ronda 2: ningún hallazgo puede darse como `arreglado-verificado` solo por la declaración de Kira o por checks verdes. Exigir ensayo que falle por la propiedad comprobada, prueba sin mutar y verificación en SHA publicado.
+
+## Ronda 2 — lección sin nuevo número AG
+
+- **P05 + P08** (`pr-370/R2`): la prueba de SKIP LOCKED confirmó la cantidad de llamadas (1) y permisividad, pero no el resultado que importa: **con `hasMore=true` la lectura no está completa**. Cuando un agente crea una prueba de no-loop, debe combinarla con el invariante fail-closed; si no, la prueba consolida el bug. La revisión independiente encontró H01/H02 que no estaban en la autorrevisión del agy.
+- **P15** (`pr-370/R2`): marcar DoD de E2E completo requiere **una ejecución E2E real PASS en el SHA revisado**, no solo un archivo .spec.ts modificado o CI unit GREEN. La corrida de este SHA fue cancelada.
+- **P10** (`pr-370/R2`): las fuentes de verdad viven en develop. Una ficha modificada dentro de la misma PR no cumple el gate previamente acordado de incorporarla en develop antes de implementar.
+- No asignar AG sin calcular máximo de todas las ramas remotas; este entorno no tiene clon GitHub resoluble. Los comentarios y reportes siguen citando por carpeta.
