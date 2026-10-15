@@ -967,4 +967,151 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     expect(storedRow).toBeDefined();
     expect(storedRow?.accepted_at).toBe(originalAcceptedAt);
   });
+
+  describe('T-353 / PR362-H02 / PR362-H05: validación semántica en Action y persistencia canónica', () => {
+    it('rechaza nombres de negocio con inyección HTML, teléfonos inválidos o direcciones con solo símbolos con VALIDATION_ERROR y sin mutar datos', async () => {
+      const mockProfilesUpdate = vi.fn();
+      const mockMerchantsUpdate = vi.fn();
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'merchant' },
+              error: null,
+            }),
+            update: mockProfilesUpdate,
+          };
+        }
+        if (table === 'merchants') {
+          return {
+            update: mockMerchantsUpdate,
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
+        ? T
+        : never);
+
+      // 1. Nombre con script
+      const resBadName = await merchantOnboardingAction({
+        ...validFormInput,
+        businessName: '<script>alert(1)</script>',
+      });
+      expect(resBadName).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockProfilesUpdate).not.toHaveBeenCalled();
+      expect(mockMerchantsUpdate).not.toHaveBeenCalled();
+
+      // 2. Teléfono con letras
+      const resBadPhone = await merchantOnboardingAction({
+        ...validFormInput,
+        phone: '3865123456abc',
+      });
+      expect(resBadPhone).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockProfilesUpdate).not.toHaveBeenCalled();
+      expect(mockMerchantsUpdate).not.toHaveBeenCalled();
+
+      // 3. Dirección solo de símbolos
+      const resBadAddr = await merchantOnboardingAction({
+        ...validFormInput,
+        defaultPickupAddress: '---',
+      });
+      expect(resBadAddr).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockProfilesUpdate).not.toHaveBeenCalled();
+      expect(mockMerchantsUpdate).not.toHaveBeenCalled();
+    });
+
+    it('persiste el teléfono normalizado a 10 dígitos nacionales en profiles al procesar un alta exitosa', async () => {
+      const mockProfilesUpdate = vi.fn().mockImplementation(() => ({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }));
+      const mockMerchantsUpdate = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { profile_id: 'usr-merchant-1' },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { role: 'merchant' },
+              error: null,
+            }),
+            update: mockProfilesUpdate,
+          };
+        }
+        if (table === 'platform_settings') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { key: 'pilot_terms_version', value: '1.0' },
+              error: null,
+            }),
+          };
+        }
+        if (table === 'consents') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            insert: vi.fn().mockResolvedValue({ error: null }),
+            upsert: vi.fn().mockResolvedValue({ error: null }),
+          };
+        }
+        if (table === 'merchants') {
+          return { update: mockMerchantsUpdate };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as ReturnType<typeof serverSupabase.createClient> extends Promise<infer T>
+        ? T
+        : never);
+      vi.mocked(adminSupabase.createAdminClient).mockReturnValue({
+        from: mockFrom,
+      } as unknown as ReturnType<typeof adminSupabase.createAdminClient>);
+
+      const result = await merchantOnboardingAction({
+        ...validFormInput,
+        phone: '+54 9 3865 123456', // Formato internacional
+      });
+
+      expect(result.ok).toBe(true);
+      const firstCall = mockProfilesUpdate.mock.calls[0];
+      expect(firstCall?.[0]).toEqual(
+        expect.objectContaining({
+          phone: '3865123456',
+        })
+      );
+    });
+  });
 });

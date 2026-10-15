@@ -584,5 +584,46 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       const payload = await submitAndReadPayload();
       expect(payload['defaultPickupZoneId']).toBeUndefined();
     });
+
+    it('T-353 / PR362-H06: muestra error de validación ante teléfono con letras, permite corregirlo y completar el alta', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValue({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
+      render(<MerchantOnboardingForm zones={barrios} />);
+      await screen.findByTestId('map-picker');
+
+      fireEvent.change(screen.getByLabelText(/nombre del negocio/i), {
+        target: { value: 'Comercio Aguilares' },
+      });
+      // Teléfono inválido con letras
+      fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+        target: { value: '3865123456abc' },
+      });
+      fireEvent.change(screen.getByLabelText(/dirección de retiro habitual/i), {
+        target: { value: 'Av. Sarmiento 123' },
+      });
+      fireEvent.click(screen.getByRole('checkbox'));
+
+      fireEvent.click(screen.getByRole('button', { name: /^Empezar$/i }));
+
+      // Esperar error de validación en pantalla
+      await waitFor(() => {
+        expect(screen.getByText(/El teléfono debe ser un número argentino válido/i)).toBeDefined();
+      });
+      expect(merchantOnboardingAction).not.toHaveBeenCalled();
+
+      // Corrección del teléfono manteniendo el resto de campos
+      fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+        target: { value: '3865123456' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /^Empezar$/i }));
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+    });
   });
 });

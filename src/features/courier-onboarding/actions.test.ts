@@ -795,4 +795,42 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
     expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
     expect(mockAdminUpdate).not.toHaveBeenCalled();
   });
+
+  describe('T-353 / PR362-H03 / PR362-H05: validación semántica y no escritura en Action real', () => {
+    it('rechaza DNI con letras o formato inválido con VALIDATION_ERROR y no realiza escrituras en base de datos', async () => {
+      const { mockAdminUpdate, mockUpsertConsents, mockUpsertDocuments } = setupClients({});
+
+      const invalidInput = {
+        ...validInput,
+        dni: '1234567A', // Letra inválida en DNI
+      };
+
+      const result = await courierOnboardingAction(invalidInput);
+
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+      expect(mockUpsertConsents).not.toHaveBeenCalled();
+      expect(mockUpsertDocuments).not.toHaveBeenCalled();
+    });
+
+    it('normaliza vehicle_plate a null en couriers.update para walk y bike aun si el payload contenía patente (Decisión 2A)', async () => {
+      const { mockAdminUpdate } = setupClients({});
+
+      const walkInputWithPlate = {
+        ...validInput,
+        vehicleType: 'walk',
+        vehiclePlate: 'TEXTO_ARBITRARIO_QUE_NO_DEBERIA_PERSISTIR',
+      };
+
+      const result = await courierOnboardingAction(walkInputWithPlate);
+
+      expect(result.ok).toBe(true);
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+      const firstCall = mockAdminUpdate.mock.calls[0];
+      expect(firstCall?.[0]).toMatchObject({
+        vehicle_type: 'walk',
+        vehicle_plate: null,
+      });
+    });
+  });
 });

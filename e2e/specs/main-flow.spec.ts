@@ -494,9 +494,14 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     const messageText = parsedUrl.searchParams.get('text');
     expect(messageText).toBeTruthy();
     const decodedMessage = messageText ?? '';
-    expect(decodedMessage).toContain(formatArs(acceptedOffer.amountArs));
     expect(decodedMessage).toContain(acceptedCourier.displayName);
-    expect(decodedMessage).toMatch(/efectivo/i);
+    expect(decodedMessage.toLowerCase()).not.toContain('estoy en camino');
+    expect(decodedMessage).toContain(`${acceptedCourier.displayName} es el repartidor asignado`);
+    expect(decodedMessage).not.toContain(`Soy ${acceptedCourier.displayName}`);
+    expect(decodedMessage).not.toMatch(/REQ-[A-Z0-9]+/i);
+    expect(decodedMessage).not.toContain(targetRequestId);
+    expect(decodedMessage).not.toContain(formatArs(acceptedOffer.amountArs));
+    expect(decodedMessage).not.toMatch(/efectivo|transferencia/i);
 
     // 2. Repartidor asignado (Courier 0) accede al viaje en un contexto de navegador separado
     const baseURL = testInfo.project.use.baseURL;
@@ -514,6 +519,24 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       // Verificar medio de pago visible
       await expect(courierBrowserPage.getByText(/cobrás al entregar/i)).toBeVisible();
 
+      // Verificar enlace de WhatsApp al cliente desde el repartidor (pre-retiro: primera persona, sin falsa promesa)
+      await expect(courierTripPage.notifyCustomerLink).toBeVisible();
+      const courierPreHref = await courierTripPage.notifyCustomerLink.getAttribute('href');
+      if (!courierPreHref) {
+        throw new Error('[E2E Error] No se encontró el atributo href en notifyCustomerLink del courier');
+      }
+      const courierPreUrl = new URL(courierPreHref);
+      expect(courierPreUrl.protocol).toBe('https:');
+      expect(courierPreUrl.hostname).toBe('wa.me');
+      expect(courierPreUrl.pathname).toContain(rawSentinelDigits);
+      const courierPreMsg = courierPreUrl.searchParams.get('text') ?? '';
+      expect(courierPreMsg).toContain(`Soy ${acceptedCourier.displayName}`);
+      expect(courierPreMsg.toLowerCase()).not.toContain('estoy en camino');
+      expect(courierPreMsg).not.toMatch(/REQ-[A-Z0-9]+/i);
+      expect(courierPreMsg).not.toContain(targetRequestId);
+      expect(courierPreMsg).not.toContain(formatArs(acceptedOffer.amountArs));
+      expect(courierPreMsg).not.toMatch(/efectivo|transferencia/i);
+
       // Marcar como retirado -> estado in_transit
       await expect(courierTripPage.markPickedUpButton).toBeVisible();
       await courierTripPage.markPickedUpButton.click();
@@ -528,6 +551,24 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       // Moverlo a una zona neutra permite que expire sin forzar clicks ni sleeps.
       await courierBrowserPage.mouse.move(0, 0);
       await expect(pickedUpToast).not.toBeVisible({ timeout: 10000 });
+
+      // Esperar estado real in_transit y verificar enlace de WhatsApp con texto en reparto
+      await expect(courierTripPage.inTransitStatus).toBeVisible();
+      const courierPostHref = await courierTripPage.notifyCustomerLink.getAttribute('href');
+      if (!courierPostHref) {
+        throw new Error('[E2E Error] No se encontró el atributo href en notifyCustomerLink del courier tras retiro');
+      }
+      const courierPostUrl = new URL(courierPostHref);
+      expect(courierPostUrl.protocol).toBe('https:');
+      expect(courierPostUrl.hostname).toBe('wa.me');
+      expect(courierPostUrl.pathname).toContain(rawSentinelDigits);
+      const courierPostMsg = courierPostUrl.searchParams.get('text') ?? '';
+      expect(courierPostMsg).toContain(`Soy ${acceptedCourier.displayName}`);
+      expect(courierPostMsg.toLowerCase()).toMatch(/recorrido|reparto/);
+      expect(courierPostMsg).not.toMatch(/REQ-[A-Z0-9]+/i);
+      expect(courierPostMsg).not.toContain(targetRequestId);
+      expect(courierPostMsg).not.toContain(formatArs(acceptedOffer.amountArs));
+      expect(courierPostMsg).not.toMatch(/efectivo|transferencia/i);
 
       // Confirmar entrega -> estado entregado
       await courierTripPage.confirmDeliveryButton.click();

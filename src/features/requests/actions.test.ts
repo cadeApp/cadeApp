@@ -584,6 +584,116 @@ describe('T-340: createDeliveryRequestAction atómica multi-drop (CC-024 / Gate 
         expect(result.data.redirectTo).toBe('/merchant/dashboard');
       }
     });
+    describe('T-353 / PR362-H02 / PR362-H05: validación semántica real y no invocación de RPC', () => {
+      it('rechaza segundo drop con datos inválidos (inyección, teléfono inválido o desborde) con VALIDATION_ERROR y no invoca la RPC', async () => {
+        const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse('some-request-id'));
+        const mockFrom = vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+            };
+          }
+          return {};
+        });
+
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({
+              data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+              error: null,
+            }),
+          },
+          from: mockFrom,
+          rpc: mockRpc,
+        } as unknown as MockedServerClient);
+
+        // 1. Drop 2 con inyección HTML en nombre
+        const resBadName = await createDeliveryRequestAction({
+          ...validFormInput,
+          requestId: 'b0000000-0000-4000-8000-000000000001',
+          drops: [
+            validDrop1,
+            { ...validDrop2, recipientName: '<script>alert(1)</script>' },
+          ],
+        });
+        expect(resBadName).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+        expect(mockRpc).not.toHaveBeenCalled();
+
+        // 2. Drop 2 con teléfono inválido (con letras)
+        const resBadPhone = await createDeliveryRequestAction({
+          ...validFormInput,
+          requestId: 'b0000000-0000-4000-8000-000000000002',
+          drops: [
+            validDrop1,
+            { ...validDrop2, recipientPhone: '3815551234abc' },
+          ],
+        });
+        expect(resBadPhone).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+        expect(mockRpc).not.toHaveBeenCalled();
+
+        // 3. Monto desbordado (> 2_147_483_647)
+        const resOverflow = await createDeliveryRequestAction({
+          ...validFormInput,
+          requestId: 'b0000000-0000-4000-8000-000000000003',
+          fixedPriceArs: 2_147_483_648,
+          drops: [validDrop1],
+        });
+        expect(resOverflow).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+        expect(mockRpc).not.toHaveBeenCalled();
+      });
+
+      it('envía los teléfonos de entrega canonizados a 10 dígitos a la RPC create_and_publish_multi_drop', async () => {
+        const stableRequestId = 'c0000000-0000-4000-8000-000000000001';
+        const mockRpc = vi.fn().mockResolvedValue(publishedRpcResponse(stableRequestId, 1));
+        const mockFrom = vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'merchant' }, error: null }),
+            };
+          }
+          return {};
+        });
+
+        vi.mocked(serverSupabase.createClient).mockResolvedValue({
+          auth: {
+            getUser: vi.fn().mockResolvedValue({
+              data: { user: { id: 'usr-merchant-1', email: 'merchant@test.com' } },
+              error: null,
+            }),
+          },
+          from: mockFrom,
+          rpc: mockRpc,
+        } as unknown as MockedServerClient);
+
+        const result = await createDeliveryRequestAction({
+          ...validFormInput,
+          requestId: stableRequestId,
+          drops: [
+            {
+              ...validDrop1,
+              recipientPhone: '+54 9 381 555 1234', // Formato internacional
+            },
+          ],
+        });
+
+        expect(result.ok).toBe(true);
+        expect(mockRpc).toHaveBeenCalledTimes(1);
+        const firstCall = mockRpc.mock.calls[0];
+        const rpcPayload = firstCall?.[1] as
+          | {
+              p_payload?: { drops?: Array<{ recipientPhone: string }> };
+              drops?: Array<{ recipientPhone: string }>;
+            }
+          | undefined;
+        // En create_and_publish_multi_drop, callRequestRpc empaqueta el input dentro de p_payload
+        const dropsPassed = rpcPayload?.p_payload?.drops ?? rpcPayload?.drops;
+        expect(dropsPassed?.[0]?.recipientPhone).toBe('3815551234');
+      });
+    });
   });
 });
 
