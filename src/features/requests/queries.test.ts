@@ -2129,6 +2129,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       }
     ) {
       const rows: FakeDbRow[] = initialRows.map((r) => ({ ...r }));
+      const queriedTables: string[] = [];
       const getNow = options?.now ?? (() => new Date('2026-10-15T12:00:00.000Z'));
       const batchLimit = options?.batchLimit ?? 50;
 
@@ -2164,6 +2165,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       });
 
       const fromFn = vi.fn().mockImplementation((table: string) => {
+        queriedTables.push(table);
         if (table === 'delivery_requests') {
           let selectedStatusFilter: string[] | string | null = null;
           let merchantIdFilter: string | null = null;
@@ -2245,6 +2247,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         from: fromFn,
         rpc: rpcFn,
         rows,
+        queriedTables,
       };
     }
 
@@ -2480,7 +2483,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(page2Result.nextCursor).toBeNull();
     });
 
-    it('resiliencia ante locks concurrentes: si hasMore=true pero expiredCount=0, corta el loop sin ciclar indefinidamente', async () => {
+    it('H02 resiliencia ante locks concurrentes: si hasMore=true con 0 cambios persiste hasta agotar reintentos, falla cerrado y NO ejecuta SELECT de delivery_requests', async () => {
       const row = makeTestRow({
         id: '11111111-1111-4111-8111-111111111111',
         status: 'published',
@@ -2495,7 +2498,7 @@ describe('T-112 / T-118: queries de requests e historial', () => {
               data: {
                 expiredRequestIds: [],
                 expiredCount: 0,
-                hasMore: true, // locked por otra transacción con SKIP LOCKED
+                hasMore: true, // locked por otra transacción concurrente con SKIP LOCKED
               },
               error: null,
             };
@@ -2507,9 +2510,163 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
       );
 
-      // No debe entrar en bucle infinito ni arrojar excepción; corta limpiamente
-      await getMerchantHistoryRequests('merchant-1', { status: 'expired' });
-      expect(callCount).toBe(1);
+      // Debe fallar cerrado tras agotar los 3 reintentos consecutivos por locks
+      await expect(
+        getMerchantHistoryRequests('merchant-1', { status: 'expired' })
+      ).rejects.toThrow('Solicitudes vencidas bloqueadas concurrentemente; reintentos agotados');
+
+      expect(callCount).toBe(3);
+      // NUNCA debe ejecutar SELECT sobre delivery_requests en estado bloqueado
+      expect(fake.queriedTables).not.toContain('delivery_requests');
+      // La fila en BD permanece intacta sin cambios no autorizados
+      expect(fake.rows[0]?.status).toBe('published');
+    });
+
+    it('H02 resiliencia ante locks concurrentes en getMerchantRequests: si hasMore=true con 0 cambios persiste, falla cerrado sin consultar activas', async () => {
+      const row = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111112',
+        status: 'published',
+        expires_at: '2026-10-15T10:00:00.000Z',
+      });
+      let callCount = 0;
+      const fake = createFakeSupabase([row], {
+        rpcOverride: async (name) => {
+          if (name === 'reconcile_expired_requests') {
+            callCount++;
+            return {
+              data: {
+                expiredRequestIds: [],
+                expiredCount: 0,
+                hasMore: true,
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      await expect(
+        getMerchantRequests('merchant-1')
+      ).rejects.toThrow('Solicitudes vencidas bloqueadas concurrentemente; reintentos agotados');
+
+      expect(callCount).toBe(3);
+      expect(fake.queriedTables).not.toContain('delivery_requests');
+    });
+
+    it('H02 recuperación de locks concurrentes: 0/true seguido de 1/false procesa la reconciliación y devuelve el historial actualizado', async () => {
+      const row = makeTestRow({
+        id: '11111111-1111-4111-8111-111111111113',
+        status: 'published',
+        expires_at: '2026-10-15T10:00:00.000Z',
+      });
+      let callCount = 0;
+      const fake = createFakeSupabase([row], {
+        rpcOverride: async (name) => {
+          if (name === 'reconcile_expired_requests') {
+            callCount++;
+            if (callCount === 1) {
+              // Intento 1: fila transitoriamente bloqueada
+              return {
+                data: {
+                  expiredRequestIds: [],
+                  expiredCount: 0,
+                  hasMore: true,
+                },
+                error: null,
+              };
+            }
+            // Intento 2: lock liberado, fila transiciona a expired
+            fake.rows[0]!.status = 'expired';
+            return {
+              data: {
+                expiredRequestIds: [row.id],
+                expiredCount: 1,
+                hasMore: false,
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const result = await getMerchantHistoryRequests('merchant-1', { status: 'expired' });
+      expect(callCount).toBe(2);
+      expect(fake.queriedTables).toContain('delivery_requests');
+      expect(result.requests).toHaveLength(1);
+      expect(result.requests[0]?.id).toBe(row.id);
+      expect(result.requests[0]?.status).toBe('expired');
+      expect(fake.rows[0]?.status).toBe('expired');
+    });
+
+    it('H05 disponibilidad backlog 500 filas: procesa 10 lotes completos de 50 items (500) y completa sin error', async () => {
+      const fiveHundredRows: FakeDbRow[] = Array.from({ length: 500 }, (_, idx) => {
+        const num = String(idx + 1).padStart(4, '0');
+        return makeTestRow({
+          id: `00000000-0000-4000-8000-${num.padStart(12, '0')}`,
+          status: 'published',
+          expires_at: '2026-10-15T11:00:00.000Z',
+          created_at: `2026-10-15T10:00:00.000Z`,
+        });
+      });
+
+      let callCount = 0;
+      const fake = createFakeSupabase(fiveHundredRows, {
+        batchLimit: 50,
+        onRpcCall: () => callCount++,
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      const start = performance.now();
+      const result = await getMerchantHistoryRequests('merchant-1', {
+        status: 'expired',
+        limit: 50,
+        now: new Date('2026-10-15T12:00:00.000Z'),
+      });
+      const durationMs = performance.now() - start;
+
+      // 10 lotes exactamente consumidos para 500 filas
+      expect(callCount).toBe(10);
+      expect(fake.rows.every((r) => r.status === 'expired')).toBe(true);
+      expect(result.requests).toHaveLength(50);
+      expect(result.nextCursor).not.toBeNull();
+      // Latencia en memoria debe ser sub-100ms
+      expect(durationMs).toBeLessThan(500);
+    });
+
+    it('H05 backlog 501 filas: falla cerrado con presupuesto agotado cuando el lote 10 aún reporta hasMore=true', async () => {
+      const fiveHundredOneRows: FakeDbRow[] = Array.from({ length: 501 }, (_, idx) => {
+        const num = String(idx + 1).padStart(4, '0');
+        return makeTestRow({
+          id: `00000000-0000-4000-8000-${num.padStart(12, '0')}`,
+          status: 'published',
+          expires_at: '2026-10-15T11:00:00.000Z',
+        });
+      });
+
+      let callCount = 0;
+      const fake = createFakeSupabase(fiveHundredOneRows, {
+        batchLimit: 50,
+        onRpcCall: () => callCount++,
+      });
+      vi.mocked(serverSupabase.createClient).mockResolvedValue(
+        fake as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>
+      );
+
+      await expect(
+        getMerchantHistoryRequests('merchant-1', { status: 'expired' })
+      ).rejects.toThrow('Presupuesto de reconciliación de solicitudes vencidas agotado');
+      expect(callCount).toBe(10);
+      expect(fake.queriedTables).not.toContain('delivery_requests');
     });
 
     it('falla cerrado: si se agota el presupuesto máximo de lotes y hasMore sigue true, lanza error', async () => {

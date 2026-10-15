@@ -958,11 +958,12 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     loginAsMerchant,
   }) => {
     const merchant = stagingContext.merchantUser;
-    if (!merchant) {
-      throw new Error('[E2E Precondition Error] Se requiere merchant en stagingContext');
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
     }
 
-    // Precondición: solicitud published con expires_at en el pasado (10 minutos atrás) y oferta pendiente
+    // 1. Precondición A: solicitud published con expires_at en el pasado (10 minutos atrás) y oferta pendiente
     const pastExpiresAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const seedResult = await seedDeliveryRequestInState(stagingContext, {
       status: 'published',
@@ -973,24 +974,67 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     });
     const requestId = seedResult.requestId;
 
-    // Login y navegación a historial como el comercio dueño
-    await loginAsMerchant(page);
-    await page.goto('/merchant/history');
+    // Precondición B: solicitud matched con expires_at en el pasado (debe preservarse en matched, NO expirar)
+    const matchedSeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+    });
+    const matchedRequestId = matchedSeedResult.requestId;
 
-    // Comprobar que en la vista "Todas" figura la solicitud reconciliada con estado "Expirada"
+    // 2. Aislamiento y permisos: un segundo comercio autenticado ejecuta reconciliación y NO puede afectar solicitudes ajenas
+    const secondContext = createStagingSeedContext();
+    try {
+      await seedStagingData(secondContext, {
+        requestsCount: 0,
+        withMerchant: true,
+      });
+      const secondMerchant = secondContext.merchantUser;
+      if (!secondMerchant) {
+        throw new Error('[E2E Precondition Error] No se pudo inicializar segundo comercio');
+      }
+      const secondMerchantClient = await createAuthenticatedClient(secondMerchant);
+      const { data: secondReconcileData, error: secondReconcileError } = await secondMerchantClient.rpc(
+        'reconcile_expired_requests'
+      );
+      expect(secondReconcileError).toBeNull();
+      const secondResult = secondReconcileData as { expiredRequestIds: string[] } | null;
+      expect(secondResult?.expiredRequestIds).not.toContain(requestId);
+      expect(secondResult?.expiredRequestIds).not.toContain(matchedRequestId);
+    } finally {
+      await cleanupStagingData(secondContext);
+    }
+
+    // 3. Flujo Playwright navegando como el comercio dueño
+    await loginAsMerchant(page);
+
+    // 3a. Navegación a historial "Todas": la solicitud vencida se reconcilia y figura con estado "Expirada"
+    await page.goto('/merchant/history');
     const historyItemAll = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(historyItemAll).toBeVisible({ timeout: 10000 });
     await expect(historyItemAll).toContainText('Expirada');
 
-    // Navegar a la pestaña "Vencidas" y comprobar presencia coherente
+    // 3b. Navegación a historial "Vencidas": también figura la solicitud reconciliada
     await page.goto('/merchant/history?status=expired');
     const historyItemExpired = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(historyItemExpired).toBeVisible({ timeout: 10000 });
     await expect(historyItemExpired).toContainText('Expirada');
 
-    // Oráculo server-side en PostgreSQL: el estado persistido fue actualizado a expired
+    // 3c. Comprobar que en "Mis solicitudes" (dashboard activas), la solicitud vencida ya NO aparece
+    await page.goto('/merchant/dashboard');
+    const activeItem = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await expect(activeItem).not.toBeVisible({ timeout: 10000 });
+
+    // 4. Oráculo server-side en PostgreSQL
     const inspection = await getRequestInspectionData(stagingContext, requestId);
     expect(inspection.requestStatus).toBe('expired');
+    expect(inspection.offers.every((o) => o.status === 'expired')).toBe(true);
+
+    // La solicitud matched anterior conserva su estado matched inalterado
+    const matchedInspection = await getRequestInspectionData(stagingContext, matchedRequestId);
+    expect(matchedInspection.requestStatus).toBe('matched');
   });
 });
 
