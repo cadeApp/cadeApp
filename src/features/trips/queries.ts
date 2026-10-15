@@ -105,3 +105,186 @@ export async function getTripDetails(requestId: string): Promise<TripDetails | n
     drops,
   };
 }
+
+export interface ActiveTripSummary {
+  readonly id: string;
+  readonly status: 'matched' | 'in_transit';
+  readonly pickupZoneName: string;
+  readonly dropoffZoneName: string | null;
+  readonly dropsCount: number;
+  readonly amountArs: number;
+  readonly matchedAt: string | null;
+}
+
+interface RawActiveRequest {
+  id: string;
+  status: string;
+  accepted_offer_id: string | null;
+  drops_count: number | null;
+  matched_at: string | null;
+  pickup_zone: { name: string } | { name: string }[] | null;
+  dropoff_zone: { name: string } | { name: string }[] | null;
+}
+
+interface RawActiveOffer {
+  id: string;
+  request_id: string;
+  amount_ars: number;
+}
+
+/**
+ * Consulta autorizada de viajes activos para el repartidor autenticado.
+ * Invariante D3/D15: No proyecta direcciones exactas, contactos de destinatario,
+ * teléfonos de comercio ni coordenadas en el feed de viajes activos.
+ */
+export async function getActiveTripsForCourier(): Promise<{
+  courierId: string;
+  trips: ActiveTripSummary[];
+}> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error('No autenticado al consultar viajes activos');
+  }
+
+  const { data: requestsData, error: requestsError } = await supabase
+    .from('delivery_requests')
+    .select(`
+      id,
+      status,
+      accepted_offer_id,
+      drops_count,
+      matched_at,
+      pickup_zone:zones!pickup_zone_id(name),
+      dropoff_zone:zones!dropoff_zone_id(name)
+    `)
+    .in('status', ['matched', 'in_transit']);
+
+  if (requestsError) {
+    throw new Error('Error al consultar solicitudes activas');
+  }
+
+  const requests = (requestsData as unknown as RawActiveRequest[] | null) ?? [];
+  if (requests.length === 0) {
+    return { courierId: user.id, trips: [] };
+  }
+
+  const acceptedOfferIds = requests
+    .map((r) => r.accepted_offer_id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+  if (acceptedOfferIds.length === 0) {
+    return { courierId: user.id, trips: [] };
+  }
+
+  const { data: offersData, error: offersError } = await supabase
+    .from('offers')
+    .select('id, request_id, amount_ars')
+    .in('id', acceptedOfferIds)
+    .eq('courier_id', user.id)
+    .eq('status', 'accepted');
+
+  if (offersError) {
+    throw new Error('Error al consultar ofertas activas');
+  }
+
+  const offers = (offersData as unknown as RawActiveOffer[] | null) ?? [];
+  if (offers.length === 0) {
+    return { courierId: user.id, trips: [] };
+  }
+
+  const offersById = new Map<string, RawActiveOffer>();
+  for (const offer of offers) {
+    offersById.set(offer.id, offer);
+  }
+
+  const candidateTrips: ActiveTripSummary[] = [];
+
+  for (const req of requests) {
+    if (!req.accepted_offer_id) continue;
+    const matchingOffer = offersById.get(req.accepted_offer_id);
+    if (!matchingOffer || matchingOffer.request_id !== req.id) {
+      continue;
+    }
+    if (req.status !== 'matched' && req.status !== 'in_transit') {
+      continue;
+    }
+
+    const pickupZone = Array.isArray(req.pickup_zone) ? req.pickup_zone[0] : req.pickup_zone;
+    const dropoffZone = Array.isArray(req.dropoff_zone) ? req.dropoff_zone[0] : req.dropoff_zone;
+
+    const dropsCount = req.drops_count != null && req.drops_count > 0 ? req.drops_count : 1;
+    const dropoffZoneName = dropsCount > 1 ? null : (dropoffZone?.name ?? null);
+
+    candidateTrips.push({
+      id: req.id,
+      status: req.status,
+      pickupZoneName: pickupZone?.name ?? 'Aguilares',
+      dropoffZoneName,
+      dropsCount,
+      amountArs: matchingOffer.amount_ars,
+      matchedAt: req.matched_at,
+    });
+  }
+
+  const needsDropsLookup = candidateTrips.filter(
+    (t) => t.dropsCount <= 1 && !t.dropoffZoneName
+  );
+  if (needsDropsLookup.length > 0) {
+    const { data: dropsData } = await supabase
+      .from('delivery_request_drops')
+      .select('request_id, position, dropoff_zone:zones!dropoff_zone_id(name)')
+      .in('request_id', needsDropsLookup.map((t) => t.id))
+      .eq('position', 1);
+
+    if (dropsData && Array.isArray(dropsData)) {
+      interface RawDropZone {
+        request_id: string;
+        dropoff_zone: { name: string } | { name: string }[] | null;
+      }
+      const dropZoneMap = new Map<string, string>();
+      for (const d of dropsData as unknown as RawDropZone[]) {
+        const zone = Array.isArray(d.dropoff_zone) ? d.dropoff_zone[0] : d.dropoff_zone;
+        if (zone?.name) {
+          dropZoneMap.set(d.request_id, zone.name);
+        }
+      }
+      for (const trip of candidateTrips) {
+        if (trip.dropsCount <= 1 && !trip.dropoffZoneName) {
+          const zoneName = dropZoneMap.get(trip.id);
+          if (zoneName) {
+            (trip as { dropoffZoneName: string | null }).dropoffZoneName = zoneName;
+          }
+        }
+      }
+    }
+  }
+
+  // Orden estable por matchedAt descendente y por id como desempate, deduplicado por id
+  candidateTrips.sort((a, b) => {
+    const timeA = a.matchedAt ? new Date(a.matchedAt).getTime() : 0;
+    const timeB = b.matchedAt ? new Date(b.matchedAt).getTime() : 0;
+    if (timeB !== timeA) {
+      return timeB - timeA;
+    }
+    return b.id.localeCompare(a.id);
+  });
+
+  const uniqueTrips: ActiveTripSummary[] = [];
+  const seenIds = new Set<string>();
+  for (const trip of candidateTrips) {
+    if (!seenIds.has(trip.id)) {
+      seenIds.add(trip.id);
+      uniqueTrips.push(trip);
+    }
+  }
+
+  return {
+    courierId: user.id,
+    trips: uniqueTrips,
+  };
+}
