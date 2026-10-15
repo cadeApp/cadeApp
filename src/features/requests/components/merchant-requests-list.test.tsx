@@ -1,15 +1,27 @@
 // @vitest-environment jsdom
 import * as React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MerchantRequestsList } from './merchant-requests-list';
 import { MerchantHistoryView } from './merchant-history-view';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
+import { notify } from '@/ui/notify';
+
+const mockRefresh = vi.fn();
+const mockPush = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: vi.fn(),
+    push: mockPush,
+    refresh: mockRefresh,
   }),
+}));
+
+vi.mock('@/ui/notify', () => ({
+  notify: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
@@ -318,3 +330,167 @@ describe('H06: MerchantRequestsList con multi-drop', () => {
     expect(screen.getByText('Medios: Efectivo, Transferencia')).toBeDefined();
   });
 });
+
+describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al detalle', () => {
+  const t364Metrics: MerchantMetrics = {
+    dispatchedToday: 2,
+    avgRateArs: 1500,
+    activeCount: 3,
+  };
+
+  const t364Requests: MerchantRequestSummary[] = [
+    {
+      id: 'req-pub-1',
+      pickupZoneName: 'Barrio Centro',
+      dropoffZoneName: 'Barrio Norte',
+      approxDistanceKm: '2,5',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: true,
+      status: 'published',
+      expiresAt: '2026-09-24T12:00:00Z',
+      createdAt: '2026-09-24T09:30:00Z',
+      offersCount: 0,
+      acceptedOfferId: null,
+    },
+    {
+      id: 'req-matched-2',
+      pickupZoneName: 'San Martín',
+      dropoffZoneName: 'Villa Nueva',
+      approxDistanceKm: '1,8',
+      packageType: 'mediano',
+      recipientPaymentMethod: 'transfer',
+      needsChange: false,
+      status: 'matched',
+      expiresAt: '2026-09-24T12:30:00Z',
+      createdAt: '2026-09-24T10:00:00Z',
+      offersCount: 1,
+      acceptedOfferId: 'off-1',
+    },
+    {
+      id: 'req-transit-3',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Colón',
+      approxDistanceKm: '3,0',
+      packageType: 'grande',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'in_transit',
+      expiresAt: '2026-09-24T11:00:00Z',
+      createdAt: '2026-09-24T08:15:00Z',
+      offersCount: 1,
+      acceptedOfferId: 'off-2',
+    },
+  ];
+
+  it('DoD 1 & 2: muestra botón «Cancelar» para solicitudes en estado published y matched, pero no para in_transit', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    // Cancelar debe estar visible exactamente para req-pub-1 y req-matched-2 (2 veces)
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    expect(cancelButtons.length).toBe(2);
+
+    // Las acciones principales siguen presentes
+    expect(screen.getByRole('link', { name: /ver ofertas/i })).toBeDefined();
+    expect(screen.getAllByRole('link', { name: /ver detalle/i }).length).toBe(2);
+  });
+
+  it('DoD 3: al hacer click en «Cancelar», abre el modal solicitando motivo (paso 1)', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    expect(screen.getByText(/¿Por qué cancelás este viaje\?|¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
+    expect(screen.getByText('Ya no hace falta')).toBeDefined();
+    expect(screen.getByText('Lo resolví de otra forma')).toBeDefined();
+    expect(screen.getByText('Me equivoqué en los datos')).toBeDefined();
+    expect(screen.getByText('Otro')).toBeDefined();
+
+    // Botón continuar deshabilitado hasta seleccionar motivo
+    const continueBtn = screen.getByRole('button', { name: /continuar/i });
+    expect(continueBtn.hasAttribute('disabled') || continueBtn.getAttribute('aria-disabled') === 'true').toBe(true);
+  });
+
+  it('DoD 3: seleccionar motivo habilita Continuar y muestra confirmación definitiva en paso 2', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    const reasonOption = screen.getByLabelText('Ya no hace falta');
+    fireEvent.click(reasonOption);
+
+    const continueBtn = screen.getByRole('button', { name: /continuar/i });
+    expect(continueBtn.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(continueBtn);
+
+    expect(screen.getByText(/¿Confirmás la cancelación definitiva\?/i)).toBeDefined();
+    expect(screen.getByText(/Las ofertas se van a cerrar\. No se puede deshacer\./i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /sí, cancelar/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /atrás/i })).toBeDefined();
+  });
+
+  it('DoD 1: confirmar cancelación ejecuta acción con requestId y motivo, notificando éxito y refrescando', async () => {
+    const mockOnCancel = vi.fn().mockResolvedValue({ ok: true, data: { status: 'cancelled' } });
+
+    render(
+      <MerchantRequestsList
+        requests={t364Requests}
+        metrics={t364Metrics}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Lo resolví de otra forma'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    const confirmBtn = screen.getByRole('button', { name: /sí, cancelar/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-1', 'Lo resolví de otra forma');
+    });
+
+    await waitFor(() => {
+      expect(notify.success).toHaveBeenCalledWith(expect.stringMatching(/cancelad[ao]/i));
+      expect(mockRefresh).toHaveBeenCalled();
+    });
+  });
+
+  it('DoD 3: error por carrera concurrente o fallo muestra error amigable y refresca la vista', async () => {
+    const mockOnCancel = vi.fn().mockResolvedValue({
+      ok: false,
+      error: 'INVALID_STATE_TRANSITION',
+    });
+
+    render(
+      <MerchantRequestsList
+        requests={t364Requests}
+        metrics={t364Metrics}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[1]!); // req-matched-2
+
+    fireEvent.click(screen.getByLabelText('Otro'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(mockOnCancel).toHaveBeenCalledWith('req-matched-2', 'Otro');
+    });
+
+    await waitFor(() => {
+      expect(notify.error).toHaveBeenCalledWith(expect.stringContaining('no permite este cambio'));
+      expect(mockRefresh).toHaveBeenCalled();
+    });
+  });
+});
+
