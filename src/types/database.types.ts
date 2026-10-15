@@ -83,9 +83,11 @@ export type Database = {
         Row: {
           courier_id: string
           id: string
+          is_current: boolean
           kind: Database["public"]["Enums"]["courier_document_kind"]
           purge_after: string | null
           purged_at: string | null
+          rejection_code: string | null
           status: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at: string
@@ -93,9 +95,11 @@ export type Database = {
         Insert: {
           courier_id: string
           id?: string
+          is_current?: boolean
           kind: Database["public"]["Enums"]["courier_document_kind"]
           purge_after?: string | null
           purged_at?: string | null
+          rejection_code?: string | null
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path: string
           uploaded_at?: string
@@ -103,9 +107,11 @@ export type Database = {
         Update: {
           courier_id?: string
           id?: string
+          is_current?: boolean
           kind?: Database["public"]["Enums"]["courier_document_kind"]
           purge_after?: string | null
           purged_at?: string | null
+          rejection_code?: string | null
           status?: Database["public"]["Enums"]["document_review_status"]
           storage_path?: string
           uploaded_at?: string
@@ -878,7 +884,12 @@ export type Database = {
         Returns: Json
       }
       admin_verify_document: {
-        Args: { p_decision: string; p_document_id: string; p_reason?: string }
+        Args: {
+          p_decision: string
+          p_document_id: string
+          p_reason?: string
+          p_rejection_code?: string
+        }
         Returns: Json
       }
       calculate_route_distance: {
@@ -933,6 +944,10 @@ export type Database = {
       }
       republish_request: {
         Args: { p_reason?: string; p_request_id: string }
+        Returns: Json
+      }
+      replace_courier_document: {
+        Args: { p_payload: Json }
         Returns: Json
       }
       set_availability: { Args: { p_available: boolean }; Returns: Json }

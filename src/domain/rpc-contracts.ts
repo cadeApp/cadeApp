@@ -5,6 +5,7 @@ import {
   aguilaresLngSchema,
   courierDocumentKindSchema,
   deliveryRequestStatusSchema,
+  documentRejectionCodeSchema,
   documentReviewStatusSchema,
   incidentDecisionSchema,
   incidentDescriptionHasContact,
@@ -517,13 +518,30 @@ export const adminVerifyDocumentInputSchema = z.object({
   documentId: uuidSchema,
   decision: z.enum(['verified', 'rejected']),
   reason: z.string().trim().max(500).nullable().optional(),
+  rejectionCode: documentRejectionCodeSchema.nullable().optional(),
 });
 export const adminVerifyDocumentOutputSchema = z.object({
   documentId: uuidSchema,
   courierId: uuidSchema,
   kind: courierDocumentKindSchema,
   status: documentReviewStatusSchema,
+  rejectionCode: documentRejectionCodeSchema.nullable().optional(),
   docLevel: z.number().int().min(0).max(2),
+});
+
+// CC-025: replace_courier_document
+export const replaceCourierDocumentInputSchema = z.object({
+  kind: courierDocumentKindSchema,
+  storagePath: z.string().trim().min(1).max(500),
+  idempotencyKey: uuidSchema.optional(),
+});
+export const replaceCourierDocumentOutputSchema = z.object({
+  documentId: uuidSchema,
+  kind: courierDocumentKindSchema,
+  status: documentReviewStatusSchema,
+  replacedDocumentId: uuidSchema.nullable(),
+  isCurrent: z.boolean(),
+  idempotent: z.boolean(),
 });
 
 // 17. admin_set_subscription
@@ -1039,6 +1057,17 @@ export const RPC_CONTRACTS = {
       'VALIDATION_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },
+  replace_courier_document: {
+    inputSchema: replaceCourierDocumentInputSchema,
+    outputSchema: replaceCourierDocumentOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'NOT_FOUND',
+      'INVALID_STATE_TRANSITION',
+      'VALIDATION_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   admin_set_subscription: {
     inputSchema: adminSetSubscriptionInputSchema,
     outputSchema: adminSetSubscriptionOutputSchema,
@@ -1116,6 +1145,7 @@ export const ALL_RPC_NAMES = [
   'admin_decide_courier',
   'admin_suspend_courier',
   'admin_verify_document',
+  'replace_courier_document',
   'admin_set_subscription',
   'admin_update_setting',
   'admin_resolve_incident',
