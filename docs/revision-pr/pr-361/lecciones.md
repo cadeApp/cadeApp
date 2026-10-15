@@ -22,3 +22,9 @@ Estos problemas están identificados por inspección; no proclamar mutaciones ex
 - **H12 / P08:** una prueba titulada de navegador nunca debe tener un `else` que la convierta en test directo de RPC. Si faltan `page` o credenciales de fixture, fallar cerrado. El autor debe informar SHA/run E2E para afirmar ejecución.
 - **H13 / P01:** `as any` incluso en tests de concurrencia inutiliza el tipo cuya interfaz se quiere proteger; usar el retorno de `typeof action` para promesas diferidas.
 - El autor sí corrigió guard, catch, reset y 48px; no pedirles que se reimplementen. Falta la reproducción independiente RED→GREEN para cambiar sus estados a verificados.
+
+## Ronda 4 — Cierre de código vs cierre de ejecución
+- H11 y H13 aparecen corregidos en el diff y unit/typecheck están verdes, pero el DoD no se cumple si el E2E Browser real no corre en el entorno autorizado.
+- H12 ilustra la diferencia entre **fail-closed correcto** (el local bloqueó proyecto Supabase desconocido) y **E2E exitoso de Preview** (no demostrado). No confundir 'falla segura' con 'prueba superada'.
+- El repo tiene gate `.github/workflows/e2e-preview.yml` en trusted default branch disparado por `repository_dispatch` y que publica el status `e2e-preview` al commit probado. La señal objetiva de cierre es **status success para el SHA**, no un comentario afirmando que el runner dispone de credenciales.
+- No asignar un nuevo hallazgo duplicado: H12 sigue abierto por evidencia. No tocar `AGENTS.md` por una PR aislada.

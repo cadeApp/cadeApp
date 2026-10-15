@@ -123,3 +123,35 @@ pnpm exec playwright test e2e/specs/request-states.spec.ts --project=chromium -g
 - **H06–H10:** reproducir independiente con mutantes nuevos por familia, sin adoptar como hechos propios las salidas declaradas en la bitácora del autor.
 
 **Restricción de verificación:** no se pudo levantar un clon limpio en el contenedor (DNS de github.com), así que no hay harness local de mutaciones copiado/corrido en esta ronda. Nunca presentar lo anterior como una ejecución real. La carencia de esa comprobación obliga a mantener `verificado_en_sha=null`.
+
+---
+
+# Ronda 4 — `2ce18ac6e98ecbc4ae08b6ccbf43f70127ae75c3` — 2026-10-15
+
+## Consultas reales
+- PR #361 HEAD `2ce18ac6e98ecbc4ae08b6ccbf43f70127ae75c3`, base `14c28ed3c41cb2bde92705fc018c7dd0df73245b`, `mergeable=true`, sin merge.
+- Compare `56032fbc7bdd2ae1c129a54bb87b7b9f27637fde...2ce18ac6e98ecbc4ae08b6ccbf43f70127ae75c3`: 2 commits, cambios solo en E2E, test unitario, bitácora. Revisión no tocada por agy.
+- Inspect `e2e/specs/request-states.spec.ts:879–920`: `requestLink` por ID, `activeCountLocator`, `historyLink` por ID, sin branch fallback a RPC.
+- Inspect `merchant-requests-list.test.tsx:657–664`: Promise con `Awaited<ReturnType<...>>`, sin `as any`.
+- Log CI `unit`: `Test Files 129 passed (129)`, `Tests 2180 passed (2180)`.
+- GitHub Actions run 38683222503: typecheck, lint, build, audit, unit, bundle-budget success; db-tests in_progress al observar.
+- Combined commit status: solo `Vercel – cadeapp-staging: success`, **no `e2e-preview`**.
+- `.github/workflows/e2e-preview.yml` en develop: `repository_dispatch`, job `e2e-preview` en Environment `develop`, `pnpm exec playwright test --project=chromium --workers=1`, publica status e2e-preview al SHA probado. Ese workflow **no** aparece entre los jobs de CI PR.
+- Bitácora autor: ejecución local `pnpm.cmd exec playwright test ... -g 'T-364'` devolvió error fail-closed `Proyecto Supabase 'desconocido'`. No hay ejecución GREEN real sobre Preview/Develop demostrada.
+
+## Límites
+Solo análisis remoto estático y resultados CI existentes. NO corrida Playwright propia; NO acceso a Supabase Develop; NO mutaciones propias; NO completé E2E. `verificado_en_sha` queda `null` en todos.
+
+## Instrucciones de comprobación futura (NO EJECUTADAS)
+
+```bash
+git rev-parse HEAD
+git status --short
+# Requerir URL Vercel Preview del SHA exacto (NO producción)
+# Gate automatizado existente: .github/workflows/e2e-preview.yml
+# Verificar en GitHub el commit status e2e-preview=success con URL de run.
+# Verificar que Playwright en el run descubrió T-364 y que su caso pasó.
+# Evidencia: contar activas antes/después, fila requestId historial, SQL status/motivo/oferta y actor ajeno.
+```
+
+El aviso del autor "entorno local bloqueado" **no** significa que el E2E de Preview falló: significa que **su resultado sigue pendiente/no demostrado**. No simular credenciales ni alterar el guard de staging.
