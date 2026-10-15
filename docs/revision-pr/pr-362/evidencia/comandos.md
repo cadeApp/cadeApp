@@ -141,3 +141,76 @@ git diff --check
 git status --short
 git ls-remote origin feat/T-353-validacion-formularios
 ```
+
+---
+
+## Ronda 4 — `aa191cbc` (2026-10-15)
+
+Revisión remota por conector GitHub. Comparación `266f125..aa191cbc`: 1 commit, 2 archivos, fuera de `docs/revision-pr`.
+`GET /repos/cadeApp/cadeApp/commits/aa191cbc039f3600cfc46abe79edc090c72a8f5f/check-runs`: 10 checks, success en unit/lint/typecheck/build/audit/bundle-budget/Vercel Preview Comments; in_progress en db-tests, failure en approval-policy, skipped en Supabase Preview; NO `e2e-preview`. Combined status muestra Vercel – cadeapp-staging: success, sin `e2e-preview`.
+
+### Probe Node aislado (ejecutado aquí, NO Vitest)
+
+```bash
+node <<'JS'
+const parsed = { success: false, data: undefined };
+try {
+  if (false && !parsed.success) throw Error('VALIDATION_ERROR');
+  const data = parsed.data;
+  if (!data.requestId) throw Error('VALIDATION_ERROR');
+} catch (error) {
+  console.log(error.name + ': ' + error.message);
+}
+JS
+```
+
+**Salida verificada:** `TypeError: Cannot read properties of undefined (reading 'requestId')`. La mutación que suprime la guarda no es un mutante semántico válido para la expectativa de no-escritura.
+
+### Propuesta de control RED válido para el agy (no ejecutado por la revisión)
+
+Copiar a `/tmp/pr362-mutant-h05.cjs` (fuera de la rama). Ejecuta `GREEN control → RED semántico → GREEN restaurado` y restaura `src/features/requests/schemas.ts` con `finally` incluso ante error. El usuario del runner debe disponer de `pnpm`, Vitest y worktree limpio:
+
+```js
+'use strict';
+const fs = require('node:fs');
+const cp = require('node:child_process');
+const file = 'src/features/requests/schemas.ts';
+const original = fs.readFileSync(file, 'utf8');
+const needle = ".refine((val) => !/[<>]/.test(val), {\n        message: 'El nombre no puede contener etiquetas HTML o scripts',";
+const altered = ".refine(() => true, {\n        message: 'El nombre no puede contener etiquetas HTML o scripts',";
+if (original.split(needle).length !== 2) throw new Error('El objetivo H05 no es único, abortar');
+const run = (label) => {
+  const r = cp.spawnSync('pnpm', ['exec','vitest','run','src/features/requests/actions.test.ts'], { encoding:'utf8' });
+  const out = String(r.stdout||'')+'\n'+String(r.stderr||'');
+  console.log('--- '+label+' exit='+r.status+' ---');
+  console.log(out.split('\n').filter(x => /Test Files|Tests|AssertionError|TypeError|SyntaxError/.test(x)).slice(-20).join('\n'));
+  return { status:r.status, out };
+};
+try {
+  const control=run('GREEN-ORIGINAL');
+  if (control.status!==0) throw new Error('Control original no verde');
+  fs.writeFileSync(file, original.replace(needle,altered));
+  const red=run('RED-PREDICADO-NOMBRE');
+  if (red.status===0) throw new Error('Mutante sobrevivió');
+  if (!red.out.includes('AssertionError') || /TypeError|SyntaxError/.test(red.out)) throw new Error('RED inválido: excepción del arnés y no aserción');
+} finally {
+  fs.writeFileSync(file, original);
+}
+const restored=run('GREEN-RESTABLECIDO');
+if (restored.status!==0) throw new Error('Restauración no quedó GREEN');
+```
+
+**No declarar que el script anterior se ejecutó:** solamente la semántica de TypeError se probó en esta revisión.
+
+Comandos finales tras restauración:
+```bash
+node /tmp/pr362-mutant-h05.cjs > /tmp/pr362-h05-output.log 2>&1
+grep -E 'GREEN-|RED-|Test Files|Tests|AssertionError|TypeError|SyntaxError' /tmp/pr362-h05-output.log | tail -25
+git diff --exit-code -- src/features/requests/schemas.ts
+pnpm typecheck > /tmp/pr362-r4-typecheck.log 2>&1
+pnpm lint > /tmp/pr362-r4-lint.log 2>&1
+pnpm test > /tmp/pr362-r4-test.log 2>&1
+grep -E 'Test Files|Tests ' /tmp/pr362-r4-test.log | tail -8
+git diff --check
+git status --short
+```

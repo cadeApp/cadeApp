@@ -29,3 +29,11 @@ No se asigna AG nuevo sin enumeración remota completa de todas las ramas.
 - **H06 — invariante de no-escritura**: la ausencia de navegación no es un proxy válido de ausencia de escritura; contrastar conjuntos de IDs en DB antes/después y correlacionar el recurso creado con las comprobaciones y cleanup.
 - **H07 — trazabilidad de RED**: listar nombres correctos de tests es bueno, pero no reemplaza la **salida roja real** de una prueba de sensibilidad. Anotar la imposibilidad de mutar de manera segura si ocurre, sin mentir.
 - Evitar interpretar `Vercel Preview Comments = success` como `e2e-preview = success`; el gate publica contexto de commit aparte después de `repository_dispatch`.
+
+---
+
+## Ronda 4 (`aa191cbc`)
+
+- **H06:** verificar el registro creado con diferencial exacto de IDs y comprobar que la ruta inválida no generó filas: P2 lo implementó correctamente en la spec, pero sin correr E2E no se puede certificar.
+- **H07:** neutralizar `if (!parsed.success)` y observar `TypeError` de `parsed.data === undefined` no es una mutación válida de comportamiento de negocio. Mutar **solo el predicado semántico** para que `safeParse` siga entregando `data` y ejercer RPC/escritura; si el test cae por aserción, evidencia útil.
+- **CI:** deploy exitoso y `unit` exitoso no sustituyen `e2e-preview`, contexto que se publica mediante dispatch confiable. No atribuir ausencia de evento a causa específica sin evidencia.
