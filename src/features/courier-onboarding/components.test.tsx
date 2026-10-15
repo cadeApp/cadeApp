@@ -1139,7 +1139,7 @@ describe('T-354 — Unificación de copy «Selfie con el DNI» y accesibilidad',
     // 4. aria-describedby referenciando un nodo real con el subtítulo
     const describedById = fileInput.getAttribute('aria-describedby');
     expect(describedById).toBeTruthy();
-    const describedNode = document.getElementById(describedById!);
+    const describedNode = describedById ? document.getElementById(describedById) : null;
     expect(describedNode).not.toBeNull();
     expect(describedNode?.textContent).toBe(instructionText);
 

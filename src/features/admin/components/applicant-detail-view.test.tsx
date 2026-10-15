@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import React from 'react';
-(globalThis as any).React = React;
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ApplicantDetailView } from './applicant-detail-view';
