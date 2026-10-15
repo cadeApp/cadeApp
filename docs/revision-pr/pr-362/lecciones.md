@@ -20,3 +20,12 @@ No se asigna AG nuevo sin enumeración remota completa de todas las ramas.
 - **H06:** desaparecer un error no equivale a completar una operación válida; el test tiene que observar su efecto posterior y el destino esperado.
 - **H07:** la bitácora append-only no debe presentar números de línea inexistentes como prueba de una ejecución; citar el nombre de la prueba y pegar salida capturada verificable. Una descripción de lo que hubiera fallado NO equivale al rojo real.
 - **H01-H05:** los cambios son consistentes por inspección; falta ejecución y mutación independiente, sin prematuro `arreglado-verificado`.
+
+---
+
+## Ronda 3 (`55fa228`)
+
+- **H08**: exigir `expect(locator).toBeVisible()` antes de validar un campo, nunca condicionar toda la suite a `isVisible()`. La versión nueva corrige la estructura, falta un run real.
+- **H06 — invariante de no-escritura**: la ausencia de navegación no es un proxy válido de ausencia de escritura; contrastar conjuntos de IDs en DB antes/después y correlacionar el recurso creado con las comprobaciones y cleanup.
+- **H07 — trazabilidad de RED**: listar nombres correctos de tests es bueno, pero no reemplaza la **salida roja real** de una prueba de sensibilidad. Anotar la imposibilidad de mutar de manera segura si ocurre, sin mentir.
+- Evitar interpretar `Vercel Preview Comments = success` como `e2e-preview = success`; el gate publica contexto de commit aparte después de `repository_dispatch`.

@@ -105,3 +105,39 @@ git ls-remote origin feat/T-353-validacion-formularios
 ```
 
 Este documento registra condiciones para las pruebas, no resultados inventados. La verificación RED de E2E exige corrida segura de la spec en el ambiente configurado (sin desplegar código mutado).
+
+---
+
+## Ronda 3 — lectura exacta de `55fa228e8d8b37b3d06426d02e816ce776398419` (2026-10-15)
+
+**Lecturas verificables mediante conector GitHub:** `compare(57f748c5,55fa228)`=1 commit, 3 archivos: `docs/tasks/log/T-353.md`, `e2e/specs/courier-onboarding.spec.ts`, `e2e/specs/multi-drop.spec.ts`. No cambios a `docs/revision-pr/**` escritos por P2. Los snippets exactos están en el informe R3.
+
+**GitHub check-runs** `GET /repos/cadeApp/cadeApp/commits/55fa228e8d8b37b3d06426d02e816ce776398419/check-runs` (consultado durante R3):
+- success: lint, unit, typecheck, build, audit, bundle-budget, Vercel Preview Comments.
+- in_progress: db-tests.
+- failure: approval-policy.
+- skipped: Supabase Preview.
+- No contexto `e2e-preview` visible entre los 10 checks de este SHA. Es falta de evidencia de ejecución, no un RED E2E probado.
+
+**Comandos de lectura que puede usar el agy SIN disparar workflows:**
+```bash
+gh api repos/cadeApp/cadeApp/commits/55fa228e8d8b37b3d06426d02e816ce776398419/check-runs --jq '.check_runs[] | [.name,.status,.conclusion,.details_url] | @tsv'
+gh api repos/cadeApp/cadeApp/commits/55fa228e8d8b37b3d06426d02e816ce776398419/status --jq '.statuses[] | [.context,.state,.target_url] | @tsv'
+```
+- `e2e-preview` confiable se activa por `repository_dispatch` de Vercel, no mediante test: los cambios de la PR no deben editar ese workflow ni simular un green.
+- En `e2e/specs/multi-drop.spec.ts`, eliminar la dependencia de `order(created_at).limit(1)` usando conjuntos de IDs antes y después de la acción. Dejar la consulta privada al drop identificado, sin revelar datos sensibles por consola.
+- **Mutaciones R3 de este revisor:** NO ejecutadas por falta de clon runtime. Reproducir en worktree aislado más adelante, no presentar control Node copiado como ejecución de Playwright.
+
+### Validación local pendiente del autor
+
+```bash
+pnpm exec vitest run src/features/requests/schemas.test.ts src/features/merchants/schemas.test.ts src/features/courier-onboarding/schemas.test.ts src/features/requests/actions.test.ts src/features/merchants/actions.test.ts src/features/courier-onboarding/actions.test.ts src/lib/whatsapp.test.ts > /tmp/pr362-r3-focused.log 2>&1
+grep -E 'Test Files|Tests ' /tmp/pr362-r3-focused.log | tail -10
+pnpm typecheck > /tmp/pr362-r3-typecheck.log 2>&1
+pnpm lint > /tmp/pr362-r3-lint.log 2>&1
+pnpm test > /tmp/pr362-r3-test.log 2>&1
+grep -E 'Test Files|Tests ' /tmp/pr362-r3-test.log | tail -10
+git diff --check
+git status --short
+git ls-remote origin feat/T-353-validacion-formularios
+```
