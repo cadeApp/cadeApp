@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import * as React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MerchantRequestsList } from './merchant-requests-list';
 import { MerchantHistoryView } from './merchant-history-view';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
 import { notify } from '@/ui/notify';
+import { getDomainErrorMessage } from '@/lib/error-messages';
 
 const mockRefresh = vi.fn();
 const mockPush = vi.fn();
@@ -23,6 +24,10 @@ vi.mock('@/ui/notify', () => ({
     error: vi.fn(),
   },
 }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
   const mockMetrics: MerchantMetrics = {
@@ -338,9 +343,10 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     activeCount: 3,
   };
 
+  const nowMs = Date.now();
   const t364Requests: MerchantRequestSummary[] = [
     {
-      id: 'req-pub-1',
+      id: 'req-pub-vigente',
       pickupZoneName: 'Barrio Centro',
       dropoffZoneName: 'Barrio Norte',
       approxDistanceKm: '2,5',
@@ -348,8 +354,22 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
       recipientPaymentMethod: 'cash',
       needsChange: true,
       status: 'published',
-      expiresAt: '2026-09-24T12:00:00Z',
-      createdAt: '2026-09-24T09:30:00Z',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(), // Vigente (+30m)
+      createdAt: new Date(nowMs - 5 * 60 * 1000).toISOString(),
+      offersCount: 0,
+      acceptedOfferId: null,
+    },
+    {
+      id: 'req-pub-vencida',
+      pickupZoneName: 'Barrio Centro',
+      dropoffZoneName: 'Barrio Sur',
+      approxDistanceKm: '1,5',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'published',
+      expiresAt: new Date(nowMs - 30 * 60 * 1000).toISOString(), // Vencida (-30m)
+      createdAt: new Date(nowMs - 60 * 60 * 1000).toISOString(),
       offersCount: 0,
       acceptedOfferId: null,
     },
@@ -362,8 +382,8 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
       recipientPaymentMethod: 'transfer',
       needsChange: false,
       status: 'matched',
-      expiresAt: '2026-09-24T12:30:00Z',
-      createdAt: '2026-09-24T10:00:00Z',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 10 * 60 * 1000).toISOString(),
       offersCount: 1,
       acceptedOfferId: 'off-1',
     },
@@ -376,22 +396,50 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
       recipientPaymentMethod: 'cash',
       needsChange: false,
       status: 'in_transit',
-      expiresAt: '2026-09-24T11:00:00Z',
-      createdAt: '2026-09-24T08:15:00Z',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 15 * 60 * 1000).toISOString(),
       offersCount: 1,
       acceptedOfferId: 'off-2',
     },
+    {
+      id: 'req-delivered-4',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Sarmiento',
+      approxDistanceKm: '2,0',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'delivered',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 120 * 60 * 1000).toISOString(),
+      offersCount: 1,
+      acceptedOfferId: 'off-3',
+    },
+    {
+      id: 'req-cancelled-5',
+      pickupZoneName: 'Centro',
+      dropoffZoneName: 'Barrio Belgrano',
+      approxDistanceKm: '1,2',
+      packageType: 'chico',
+      recipientPaymentMethod: 'cash',
+      needsChange: false,
+      status: 'cancelled',
+      expiresAt: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      createdAt: new Date(nowMs - 180 * 60 * 1000).toISOString(),
+      offersCount: 0,
+      acceptedOfferId: null,
+    },
   ];
 
-  it('DoD 1 & 2: muestra botón «Cancelar» para solicitudes en estado published y matched, pero no para in_transit', () => {
+  it('DoD 1, 2 & PR361-H04: muestra botón «Cancelar» solo para published vigente y matched; lo oculta en published vencida, in_transit y terminales', () => {
     render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
 
-    // Cancelar debe estar visible exactamente para req-pub-1 y req-matched-2 (2 veces)
+    // Cancelar debe estar visible exactamente para req-pub-vigente y req-matched-2 (2 veces)
     const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
     expect(cancelButtons.length).toBe(2);
 
     // Las acciones principales siguen presentes
-    expect(screen.getByRole('link', { name: /ver ofertas/i })).toBeDefined();
+    expect(screen.getAllByRole('link', { name: /ver ofertas/i }).length).toBe(2);
     expect(screen.getAllByRole('link', { name: /ver detalle/i }).length).toBe(2);
   });
 
@@ -401,7 +449,7 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
     fireEvent.click(cancelButtons[0]!);
 
-    expect(screen.getByText(/¿Por qué cancelás este viaje\?|¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
+    expect(screen.getByText(/¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
     expect(screen.getByText('Ya no hace falta')).toBeDefined();
     expect(screen.getByText('Lo resolví de otra forma')).toBeDefined();
     expect(screen.getByText('Me equivoqué en los datos')).toBeDefined();
@@ -431,7 +479,7 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     expect(screen.getByRole('button', { name: /atrás/i })).toBeDefined();
   });
 
-  it('DoD 1: confirmar cancelación ejecuta acción con requestId y motivo, notificando éxito y refrescando', async () => {
+  it('DoD 1 & PR361-H02: confirmar cancelación ejecuta acción con requestId y motivo, notificando éxito y refrescando exactamente una vez', async () => {
     const mockOnCancel = vi.fn().mockResolvedValue({ ok: true, data: { status: 'cancelled' } });
 
     render(
@@ -443,7 +491,7 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     );
 
     const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
-    fireEvent.click(cancelButtons[0]!);
+    fireEvent.click(cancelButtons[0]!); // req-pub-vigente
 
     fireEvent.click(screen.getByLabelText('Lo resolví de otra forma'));
     fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
@@ -452,16 +500,16 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-1', 'Lo resolví de otra forma');
+      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-vigente', 'Lo resolví de otra forma');
     });
 
     await waitFor(() => {
       expect(notify.success).toHaveBeenCalledWith(expect.stringMatching(/cancelad[ao]/i));
-      expect(mockRefresh).toHaveBeenCalled();
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('DoD 3: error por carrera concurrente o fallo muestra error amigable y refresca la vista', async () => {
+  it('DoD 3, PR361-H02 & PR361-H03: error por carrera concurrente (INVALID_STATE_TRANSITION) muestra error amigable y refresca exactamente una vez', async () => {
     const mockOnCancel = vi.fn().mockResolvedValue({
       ok: false,
       code: 'INVALID_STATE_TRANSITION',
@@ -488,8 +536,40 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     });
 
     await waitFor(() => {
-      expect(notify.error).toHaveBeenCalledWith(expect.stringContaining('no permite este cambio'));
-      expect(mockRefresh).toHaveBeenCalled();
+      expect(notify.error).toHaveBeenCalledWith(getDomainErrorMessage('INVALID_STATE_TRANSITION'));
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('PR361-H03 & PR361-H04: error cuando el servidor responde REQUEST_EXPIRED notifica error y refresca la vista', async () => {
+    const mockOnCancel = vi.fn().mockResolvedValue({
+      ok: false,
+      code: 'REQUEST_EXPIRED',
+    });
+
+    render(
+      <MerchantRequestsList
+        requests={t364Requests}
+        metrics={t364Metrics}
+        onCancel={mockOnCancel}
+      />
+    );
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!); // req-pub-vigente
+
+    fireEvent.click(screen.getByLabelText('Ya no hace falta'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-vigente', 'Ya no hace falta');
+    });
+
+    await waitFor(() => {
+      expect(notify.error).toHaveBeenCalledWith(getDomainErrorMessage('REQUEST_EXPIRED'));
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -75,7 +75,15 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const isCancelable = (status: string) => status === 'published' || status === 'matched';
+  const isCancelable = (req: MerchantRequestSummary) => {
+    if (req.status === 'matched') return true;
+    if (req.status === 'published') {
+      if (!req.expiresAt) return false;
+      const expiresAtMs = new Date(req.expiresAt).getTime();
+      return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+    }
+    return false;
+  };
 
   const handleOpenCancel = (requestId: string) => {
     setSelectedRequestId(requestId);
@@ -231,7 +239,7 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
 
                   {/* Acciones */}
                   <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
-                    {isCancelable(req.status) && (
+                    {isCancelable(req) && (
                       <Button
                         type="button"
                         variant="outline"

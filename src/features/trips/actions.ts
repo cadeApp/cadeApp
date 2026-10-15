@@ -156,6 +156,7 @@ export async function merchantCancelTripAction(
   revalidatePath(`/trips/${parsed.data.requestId}`);
   revalidatePath('/merchant/requests');
   revalidatePath('/merchant/dashboard');
+  revalidatePath('/merchant/history');
   return ok(rpcResult.data);
 }
 
