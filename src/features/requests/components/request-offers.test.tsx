@@ -548,7 +548,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       });
     });
 
-    it('H02: carrera concurrente con ALREADY_MATCHED bloquea inmediatamente todos los botones Aceptar y no incrementa action en segundo click', async () => {
+    it('H02: carrera concurrente con ALREADY_MATCHED bloquea inmediatamente todos los botones Aceptar e impide nuevas acciones de match', async () => {
       mockAcceptOfferAction.mockResolvedValue({
         ok: false,
         code: 'ALREADY_MATCHED',
@@ -578,7 +578,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
     });
 
-    it('H02: carrera con REQUEST_EXPIRED bloquea inmediatamente todos los botones Aceptar y no incrementa action', async () => {
+    it('H02: carrera con REQUEST_EXPIRED bloquea inmediatamente todos los botones Aceptar e impide nuevas acciones de match', async () => {
       mockAcceptOfferAction.mockResolvedValue({
         ok: false,
         code: 'REQUEST_EXPIRED',

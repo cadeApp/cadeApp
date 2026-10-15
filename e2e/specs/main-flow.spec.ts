@@ -6,6 +6,7 @@ import {
   findRequestIdByNotesMarker,
 } from '../fixtures';
 import { formatArs, formatPhone } from '@/lib/format';
+import { extractValidArgentineTenDigits } from '@/lib/whatsapp';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { LoginPage, MerchantPage, TripPage } from '../pages';
 
@@ -142,9 +143,22 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       // Al menos una sesión debe reflejar rechazo específico por concurrencia ALREADY_MATCHED
       const alert1 = merchantPage1.alreadyMatchedAlert;
       const alert2 = merchantPage2.alreadyMatchedAlert;
+      let loserIndex: 1 | 2 | null = null;
       await expect
         .poll(
-          async () => (await alert1.isVisible()) || (await alert2.isVisible()),
+          async () => {
+            const is1 = await alert1.isVisible().catch(() => false);
+            if (is1) {
+              loserIndex = 1;
+              return true;
+            }
+            const is2 = await alert2.isVisible().catch(() => false);
+            if (is2) {
+              loserIndex = 2;
+              return true;
+            }
+            return false;
+          },
           {
             message: 'Una de las dos sesiones debe mostrar el rechazo ALREADY_MATCHED',
             timeout: 10000,
@@ -153,7 +167,22 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
         )
         .toBe(true);
 
-      // Oráculo de estado final: exactamente 1 oferta accepted y request en matched
+      expect(loserIndex).not.toBeNull();
+      const winnerPage = loserIndex === 1 ? page2 : page1;
+      const loserPage = loserIndex === 1 ? page1 : page2;
+      const loserMerchantPage = loserIndex === 1 ? merchantPage1 : merchantPage2;
+
+      // PR360-H02 / H05: En el actor perdedor, verificar alerta ALREADY_MATCHED y 0 botones Aceptar antes de forzar navegación
+      await expect(loserMerchantPage.alreadyMatchedAlert).toBeVisible();
+      await expect(loserPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // PR360-R01: Esperar explícitamente a que la sesión ganadora complete la navegación a /trips/[id]
+      await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(winnerPage);
+
+      // Oráculo de estado final en DB: exactamente 1 oferta accepted y request en matched
       let finalInspection: Awaited<ReturnType<typeof getRequestInspectionData>> | null = null;
       await expect
         .poll(
@@ -185,52 +214,72 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
           matchedWinner: true,
         });
 
-      // R01: Esperar explícitamente a que alguna página complete la navegación a /trips/[id] antes de clasificar
-      await expect
-        .poll(
-          async () =>
-            page1.url().includes(`/trips/${targetRequestId}`) ||
-            page2.url().includes(`/trips/${targetRequestId}`),
-          {
-            message: 'Al menos una sesión debe completar la navegación a /trips/[id]',
-            timeout: 15000,
-            intervals: [250, 500, 1000],
-          }
-        )
-        .toBe(true);
-
-      const winnerPage = page1.url().includes(`/trips/${targetRequestId}`) ? page1 : page2;
-      const loserPage = winnerPage === page1 ? page2 : page1;
-
-      // H02 / H05: En la sesión perdedora, verificar que inmediatamente no queda ningún botón Aceptar
-      await expect(loserPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
-
-      // H05: En la sesión ganadora, verificar la vista del viaje
-      const tripPageWinner = new TripPage(winnerPage);
-      await waitForNoSkeletons(winnerPage);
-      await expect(tripPageWinner.assignedStatus).toBeVisible();
-
-      // Verificar monto auténtico de la oferta aceptada en la vista de viaje
+      // PR360-H05: Oráculos completos y no condicionales (sin envoltorios que oculten fallas)
       const inspectionData =
         finalInspection ?? (await getRequestInspectionData(stagingContext, targetRequestId));
-      const winningOffer = inspectionData.offers.find(
+      const acceptedOffer = inspectionData.offers.find(
         (o) => o.id === inspectionData.acceptedOfferId
       );
-      if (winningOffer) {
-        await expect(winnerPage.getByText(formatArs(winningOffer.amountArs))).toBeVisible();
+      expect(acceptedOffer).toBeDefined();
+      if (!acceptedOffer) {
+        throw new Error('acceptedOffer no encontrada en inspectionData');
       }
 
-      // Contacto de repartidor habilitado post-match
-      await expect(winnerPage.getByRole('link', { name: /whatsapp/i })).toBeVisible();
+      // Resolver courier asignado a partir del stagingContext
+      const courier = stagingContext.courierUsers?.find(
+        (c) => c.id === acceptedOffer.courierId
+      );
+      expect(courier).toBeDefined();
+      if (!courier) {
+        throw new Error(
+          `courier con id ${acceptedOffer.courierId} no encontrado en stagingContext.courierUsers`
+        );
+      }
 
-      // H05: Probar page.goBack() en la ganadora: no expone selector ni ofertas stale
-      await winnerPage.goBack();
+      // H05: En la sesión ganadora, verificar la vista del viaje con datos auténticos
+      const tripPageWinner = new TripPage(winnerPage);
+      await expect(tripPageWinner.assignedStatus).toBeVisible();
+      await expect(
+        winnerPage.getByRole('heading', { level: 2, name: /repartidor asignado/i })
+      ).toBeVisible();
+      await expect(
+        winnerPage.getByRole('heading', { level: 3, name: courier.displayName })
+      ).toBeVisible();
+      await expect(winnerPage.getByText(formatArs(acceptedOffer.amountArs))).toBeVisible();
+      await expect(winnerPage.getByText(/Medio de pago:\s*Efectivo/i)).toBeVisible();
+
+      // Contacto de repartidor habilitado post-match con enlace real WhatsApp
+      const waLink = winnerPage.getByRole('link', { name: /^whatsapp$/i });
+      await expect(waLink).toBeVisible();
+      expect(courier.phone).toBeDefined();
+      if (courier.phone) {
+        const rawTenDigits = extractValidArgentineTenDigits(courier.phone);
+        await expect(waLink).toHaveAttribute('href', new RegExp(`wa\\.me/549${rawTenDigits}`));
+      }
+
+      // PR360-R02 - A) En la sesión ganadora, ejecutar reload() mientras sigue en /trips/[id]
+      await winnerPage.reload();
       await waitForNoSkeletons(winnerPage);
       await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      await expect(tripPageWinner.assignedStatus).toBeVisible();
+      await expect(
+        winnerPage.getByRole('heading', { level: 3, name: courier.displayName })
+      ).toBeVisible();
+      await expect(winnerPage.getByText(formatArs(acceptedOffer.amountArs))).toBeVisible();
       await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
 
-      // H05: Probar reload() en la ganadora: conserva el viaje sin selector
-      await winnerPage.reload();
+      // PR360-R02 - B) Back en el historial del navegador: replace sustituyó la entrada actual.
+      // Esperar a que la navegación termine; en cualquier destino jamás mostrar selector ni botones Aceptar.
+      await winnerPage.goBack();
+      await waitForNoSkeletons(winnerPage);
+      if (winnerPage.url().includes(`/merchant/requests/${targetRequestId}`)) {
+        await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+      }
+      await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
+
+      // PR360-R02 - C) Independientemente de dónde terminó Back, navegar directamente a /merchant/requests/[id]
+      // debe redirigir server-side canónicamente al viaje y no mostrar botones Aceptar
+      await winnerPage.goto(`/merchant/requests/${targetRequestId}`);
       await waitForNoSkeletons(winnerPage);
       await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
       await expect(winnerPage.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
