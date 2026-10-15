@@ -398,19 +398,33 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
       });
     });
 
-    describe('recipientPhone (teléfono argentino plausible)', () => {
-      it('acepta teléfonos argentinos válidos con formatos normalizables', () => {
+    describe('recipientPhone (teléfono argentino plausible y normalización canónica)', () => {
+      it('acepta teléfonos argentinos válidos con formatos normalizables y los canoniza a 10 dígitos', () => {
         const validPhones = [
           '3865123456',
           '3865 123456',
           '03865 15-123456',
           '+54 9 3865 123456',
+          '+5493865123456',
           '11 2345-6789',
           '(011) 15-2345-6789',
         ];
         for (const phone of validPhones) {
           const res = dropSchema.safeParse({ ...validDrop1, recipientPhone: phone });
           expect(res.success, `Falló para teléfono válido: ${phone}`).toBe(true);
+        }
+
+        // PR362-H02: Verificar transformación a 10 dígitos nacionales
+        const resIntl = dropSchema.safeParse({ ...validDrop1, recipientPhone: '+54 9 3865 123456' });
+        expect(resIntl.success).toBe(true);
+        if (resIntl.success) {
+          expect(resIntl.data.recipientPhone).toBe('3865123456');
+        }
+
+        const resLocal = dropSchema.safeParse({ ...validDrop1, recipientPhone: '03865 15-123456' });
+        expect(resLocal.success).toBe(true);
+        if (resLocal.success) {
+          expect(resLocal.data.recipientPhone).toBe('3865123456');
         }
       });
 
@@ -422,8 +436,18 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
         }
       });
 
-      it('rechaza teléfonos con caracteres o símbolos arbitrarios no telefónicos', () => {
-        const withSymbols = ['3865#123456', '<script>', '3865@123456', '3865!123456'];
+      it('rechaza teléfonos con caracteres, símbolos arbitrarios o prefijos mal ubicados', () => {
+        const withSymbols = [
+          '3865#123456',
+          '<script>',
+          '3865@123456',
+          '3865!123456',
+          '++54 9 3865 123456',
+          '3865 +123456',
+          '(3865 123456',
+          '3865) 123456',
+          ')3865( 123456',
+        ];
         for (const phone of withSymbols) {
           const res = dropSchema.safeParse({ ...validDrop1, recipientPhone: phone });
           expect(res.success, `Debería rechazar símbolos: ${phone}`).toBe(false);
@@ -459,10 +483,16 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
       });
     });
 
-    describe('fixedPriceArs (monto entero ARS, desbordes y precisión)', () => {
-      it('acepta precios enteros válidos razonables', () => {
+    describe('fixedPriceArs (monto entero ARS, desbordes y precisión - Decisión 1B)', () => {
+      it('acepta precios enteros válidos razonables y hasta el límite SQL INTEGER de 2.147.483.647', () => {
         const withPrice = { ...baseValidInput, fixedPriceArs: 2500 };
         expect(createDeliveryRequestSchema.safeParse(withPrice).success).toBe(true);
+
+        const overTenMillion = { ...baseValidInput, fixedPriceArs: 10_000_001 };
+        expect(createDeliveryRequestSchema.safeParse(overTenMillion).success).toBe(true);
+
+        const maxIntPrice = { ...baseValidInput, fixedPriceArs: 2_147_483_647 };
+        expect(createDeliveryRequestSchema.safeParse(maxIntPrice).success).toBe(true);
       });
 
       it('rechaza precios con decimales/flotantes (ARS no fraccionario)', () => {
@@ -470,46 +500,91 @@ describe('T-340: createDeliveryRequestSchema y dropSchema', () => {
         expect(createDeliveryRequestSchema.safeParse(withFloat).success).toBe(false);
       });
 
-      it('rechaza precios negativos o cero', () => {
-        const withNeg = { ...baseValidInput, fixedPriceArs: -500 };
-        expect(createDeliveryRequestSchema.safeParse(withNeg).success).toBe(false);
-
-        const withZero = { ...baseValidInput, fixedPriceArs: 0 };
-        expect(createDeliveryRequestSchema.safeParse(withZero).success).toBe(false);
+      it('rechaza precios negativos, cero o no finitos', () => {
+        expect(createDeliveryRequestSchema.safeParse({ ...baseValidInput, fixedPriceArs: -500 }).success).toBe(false);
+        expect(createDeliveryRequestSchema.safeParse({ ...baseValidInput, fixedPriceArs: 0 }).success).toBe(false);
+        expect(createDeliveryRequestSchema.safeParse({ ...baseValidInput, fixedPriceArs: Infinity }).success).toBe(false);
+        expect(createDeliveryRequestSchema.safeParse({ ...baseValidInput, fixedPriceArs: NaN }).success).toBe(false);
       });
 
-      it('rechaza precios que superen el límite razonable o provoquen desborde (overflow)', () => {
-        const overflowPrice = { ...baseValidInput, fixedPriceArs: 999_999_999_999 };
+      it('rechaza precios que superen el límite SQL INTEGER (> 2.147.483.647)', () => {
+        const overflowPrice = { ...baseValidInput, fixedPriceArs: 2_147_483_648 };
         expect(createDeliveryRequestSchema.safeParse(overflowPrice).success).toBe(false);
+
+        const extremeOverflow = { ...baseValidInput, fixedPriceArs: 999_999_999_999 };
+        expect(createDeliveryRequestSchema.safeParse(extremeOverflow).success).toBe(false);
       });
     });
 
-    describe('cashChangeAmount (monto de cambio entero ARS y desbordes)', () => {
-      it('rechaza montos de cambio con decimales/flotantes', () => {
-        const withFloatChange = {
+    describe('cashChangeAmount (monto de cambio entero ARS y desbordes - Decisión 1B)', () => {
+      it('acepta montos de cambio válidos hasta el límite SQL INTEGER de 2.147.483.647', () => {
+        const withValidChange = {
           ...validDrop1,
           recipientPaymentMethod: 'cash' as const,
           needsChange: true,
-          cashChangeAmount: 2000.5,
+          cashChangeAmount: 5000,
         };
-        expect(dropSchema.safeParse(withFloatChange).success).toBe(false);
+        expect(dropSchema.safeParse(withValidChange).success).toBe(true);
+
+        const withOverTenMillionChange = {
+          ...validDrop1,
+          recipientPaymentMethod: 'cash' as const,
+          needsChange: true,
+          cashChangeAmount: 10_000_001,
+        };
+        expect(dropSchema.safeParse(withOverTenMillionChange).success).toBe(true);
+
+        const withMaxIntChange = {
+          ...validDrop1,
+          recipientPaymentMethod: 'cash' as const,
+          needsChange: true,
+          cashChangeAmount: 2_147_483_647,
+        };
+        expect(dropSchema.safeParse(withMaxIntChange).success).toBe(true);
       });
 
-      it('rechaza montos de cambio desbordados (> 10.000.000 ARS)', () => {
-        const withOverflowChange = {
+      it('rechaza montos de cambio con decimales, negativos, cero o no finitos', () => {
+        const baseChangeDrop = {
           ...validDrop1,
           recipientPaymentMethod: 'cash' as const,
           needsChange: true,
-          cashChangeAmount: 999_999_999_999,
         };
-        expect(dropSchema.safeParse(withOverflowChange).success).toBe(false);
+        expect(dropSchema.safeParse({ ...baseChangeDrop, cashChangeAmount: 2000.5 }).success).toBe(false);
+        expect(dropSchema.safeParse({ ...baseChangeDrop, cashChangeAmount: -500 }).success).toBe(false);
+        expect(dropSchema.safeParse({ ...baseChangeDrop, cashChangeAmount: 0 }).success).toBe(false);
+        expect(dropSchema.safeParse({ ...baseChangeDrop, cashChangeAmount: Infinity }).success).toBe(false);
+        expect(dropSchema.safeParse({ ...baseChangeDrop, cashChangeAmount: NaN }).success).toBe(false);
+      });
+
+      it('rechaza montos de cambio que superen el límite SQL INTEGER (> 2.147.483.647)', () => {
+        const baseChangeDrop = {
+          ...validDrop1,
+          recipientPaymentMethod: 'cash' as const,
+          needsChange: true,
+        };
+        expect(dropSchema.safeParse({ ...baseChangeDrop, cashChangeAmount: 2_147_483_648 }).success).toBe(false);
+        expect(dropSchema.safeParse({ ...baseChangeDrop, cashChangeAmount: 999_999_999_999 }).success).toBe(false);
       });
     });
 
-    describe('notes', () => {
-      it('rechaza caracteres de control en las notas del drop', () => {
+    describe('notes (multilínea legítima y control de caracteres - PR362-H04)', () => {
+      it('acepta saltos de línea y tabulaciones legítimas en las indicaciones del drop', () => {
+        const multilineNotes = [
+          'Portón azul\nPiso 2',
+          'Tocar timbre blanco.\r\nDejar paquete en recepción.\tPiso 3',
+        ];
+        for (const note of multilineNotes) {
+          const res = dropSchema.safeParse({ ...validDrop1, notes: note });
+          expect(res.success, `Falló para nota multilínea: ${JSON.stringify(note)}`).toBe(true);
+        }
+      });
+
+      it('rechaza caracteres de control no imprimibles (NUL, etc.) en las notas del drop', () => {
         const withControl = { ...validDrop1, notes: 'Indicación\x00peligrosa' };
         expect(dropSchema.safeParse(withControl).success).toBe(false);
+
+        const withBell = { ...validDrop1, notes: 'Indicación\x07con alarma' };
+        expect(dropSchema.safeParse(withBell).success).toBe(false);
       });
     });
   });

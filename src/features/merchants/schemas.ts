@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { aguilaresLatSchema, aguilaresLngSchema } from '@/domain/schemas';
 
-import { isValidArgentinePhone } from '@/lib/whatsapp';
+import { extractValidArgentineTenDigits, isValidArgentinePhone } from '@/lib/whatsapp';
 
 const CONTROL_CHARS_REGEX = /[\x00-\x1F\x7F]/;
+const NOTES_CONTROL_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
 const HAS_ALPHANUMERIC_REGEX = /[a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ]/;
 
 export const merchantOnboardingSchema = z
@@ -29,7 +30,8 @@ export const merchantOnboardingSchema = z
       .max(30, 'El teléfono es demasiado largo')
       .refine((val) => isValidArgentinePhone(val), {
         message: 'El teléfono debe ser un número argentino válido (10 dígitos nacionales)',
-      }),
+      })
+      .transform((val) => extractValidArgentineTenDigits(val)),
     defaultPickupZoneId: z.string().uuid().nullable().optional(),
     defaultPickupAddress: z
       .string({ required_error: 'La dirección de retiro es obligatoria' })
@@ -51,7 +53,7 @@ export const merchantOnboardingSchema = z
       .string()
       .trim()
       .max(500, 'Las notas son demasiado largas')
-      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+      .refine((val) => !NOTES_CONTROL_REGEX.test(val), {
         message: 'Las notas contienen caracteres de control no permitidos',
       })
       .nullable()

@@ -665,4 +665,44 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     expect(auditLogEntry).not.toBeNull();
     expect(auditLogEntry?.actor_id).toBe(admin.id);
   });
+
+  // ---------------------------------------------------------------------------
+  // T-353: Validación semántica en UI de onboarding (PR362-H06)
+  // ---------------------------------------------------------------------------
+  test('T-353: Validación semántica en UI de onboarding: DNI con letras muestra error accesible, corrección habilita avance', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
+    }
+    await resetCourierToPendingOnboarding(courier.id);
+    await loginAsCourier(0, page);
+
+    await page.goto('/courier/onboarding/identity');
+    await waitForNoSkeletons(page);
+
+    const dniInput = page.getByPlaceholder(COURIER_ONBOARDING_COPY.dniPlaceholder);
+    const continueBtn = page.getByRole('button', {
+      name: new RegExp(COURIER_ONBOARDING_COPY.btnContinue, 'i'),
+    });
+
+    // 1. Ingresar DNI inválido con letras
+    await dniInput.fill('1234567A');
+    await dniInput.blur();
+
+    // 2. Muestra mensaje de error accesible y botón deshabilitado
+    const errorAlert = page.locator('#dni-error');
+    await expect(errorAlert).toBeVisible();
+    await expect(errorAlert).toHaveText(/El DNI debe tener 7 u 8 dígitos numéricos/i);
+    await expect(continueBtn).toBeDisabled();
+
+    // 3. Corregir con DNI numérico válido
+    await dniInput.fill('38123456');
+    await dniInput.blur();
+
+    await expect(errorAlert).not.toBeVisible();
+  });
 });

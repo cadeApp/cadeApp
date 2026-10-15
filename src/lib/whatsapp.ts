@@ -28,15 +28,53 @@ export function extractValidArgentineTenDigits(rawPhone: string): string {
     throw new Error('Número de teléfono inválido: se requieren 10 dígitos nacionales');
   }
 
-  if (/[a-zA-Z]/.test(rawPhone)) {
+  const trimmed = rawPhone.trim();
+
+  if (/[a-zA-Z]/.test(trimmed)) {
     throw new Error('El número de teléfono no puede contener letras');
   }
 
-  if (/[^0-9\s+().-]/.test(rawPhone)) {
+  if (/[^0-9\s+().-]/.test(trimmed)) {
     throw new Error('El número de teléfono contiene caracteres o símbolos no permitidos');
   }
 
-  let digits = rawPhone.replace(/\D/g, '');
+  // Validar signo + (solo al inicio como prefijo internacional +54, máximo uno)
+  const plusMatches = trimmed.match(/\+/g);
+  if (plusMatches) {
+    if (plusMatches.length > 1) {
+      throw new Error('El prefijo internacional + solo puede figurar una vez al inicio');
+    }
+    if (!trimmed.startsWith('+')) {
+      throw new Error('El signo + solo puede figurar al inicio del número como prefijo internacional');
+    }
+    if (!/^\+\s*54/.test(trimmed)) {
+      throw new Error('El prefijo internacional debe corresponder a Argentina (+54)');
+    }
+  }
+
+  // Validar paréntesis (código de área balanceado, máximo un par, orden correcto)
+  const openParens = (trimmed.match(/\(/g) || []).length;
+  const closeParens = (trimmed.match(/\)/g) || []).length;
+  if (openParens !== closeParens) {
+    throw new Error('Los paréntesis del código de área están desbalanceados');
+  }
+  if (openParens > 1) {
+    throw new Error('Solo se permite un par de paréntesis para el código de área');
+  }
+  if (openParens === 1) {
+    const openIdx = trimmed.indexOf('(');
+    const closeIdx = trimmed.indexOf(')');
+    if (openIdx > closeIdx || !/\(\s*\d+\s*\)/.test(trimmed)) {
+      throw new Error('Formato de paréntesis inválido para el código de área');
+    }
+  }
+
+  // Rechazar símbolos repetidos no telefónicos (ej: -- o ..)
+  if (/--|\.\./.test(trimmed)) {
+    throw new Error('El número contiene separadores repetidos o inválidos');
+  }
+
+  let digits = trimmed.replace(/\D/g, '');
 
   if (digits.startsWith('549') && digits.length >= 13) {
     digits = digits.slice(3);

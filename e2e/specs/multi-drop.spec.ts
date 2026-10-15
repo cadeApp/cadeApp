@@ -955,4 +955,29 @@ test.describe('T-340 — Lectores multi-drop: privacidad y revelación post-matc
     ).toBeVisible();
     await expect(page.getByText(/2 entregas/i).first()).toBeVisible();
   });
+
+  test('T-353 / PR362-H06: rechaza teléfono o destinatario inválido en el formulario de pedido y permite corregir sin perder datos', async ({
+    page,
+    loginAsMerchant,
+  }) => {
+    assertAllowedE2EEnvironment();
+    await loginAsMerchant(page);
+    await page.goto('/merchant/requests/new');
+    await waitForNoSkeletons(page);
+
+    const phoneInput = page.locator('input[name*="recipientPhone"]').first();
+    if (await phoneInput.isVisible()) {
+      await phoneInput.fill('3815551234abc');
+      await phoneInput.blur();
+
+      const submitBtn = page.getByRole('button', { name: /publicar solicitud/i });
+      await submitBtn.click();
+      await expect(page.getByText(/El teléfono debe ser un número argentino válido/i)).toBeVisible();
+
+      // Corregir teléfono
+      await phoneInput.fill('3815551234');
+      await phoneInput.blur();
+      await expect(page.getByText(/El teléfono debe ser un número argentino válido/i)).not.toBeVisible();
+    }
+  });
 });

@@ -100,6 +100,28 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         expect(screen.getByText(/El DNI debe tener 7 u 8 dígitos numéricos/i)).toBeDefined();
       });
     });
+
+    it('muestra error de validación cuando el DNI contiene letras (ej: 1234567A) y mantiene deshabilitado el botón Continuar', async () => {
+      render(<IdentityForm courierId="test-courier" />);
+      const dniInput = screen.getByLabelText(/Número de DNI/i);
+      const continueBtn = screen.getByRole('button', { name: /Continuar/i });
+
+      fireEvent.change(dniInput, { target: { value: '1234567A' } });
+      fireEvent.blur(dniInput);
+
+      await waitFor(() => {
+        expect(screen.getByText(/El DNI debe tener 7 u 8 dígitos numéricos/i)).toBeDefined();
+      });
+      expect((continueBtn as HTMLButtonElement).disabled).toBe(true);
+
+      // Corrección con DNI válido sin perder estado
+      fireEvent.change(dniInput, { target: { value: '12345678' } });
+      fireEvent.blur(dniInput);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/El DNI debe tener 7 u 8 dígitos numéricos/i)).toBeNull();
+      });
+    });
   });
 
   describe('VehicleForm (R02)', () => {

@@ -144,18 +144,45 @@ describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () =
       expect(res.success).toBe(false);
     });
 
-    it('anula o no persiste patente arbitraria si el vehículo es walk o bike', () => {
-      const walkWithPlate = {
-        ...baseCourierInput,
-        vehicleType: 'walk' as const,
-        vehiclePlate: 'TEXTO_ARBITRARIO_QUE_NO_DEBERIA_PERSISTIR',
-      };
-      const res = courierOnboardingSchema.safeParse(walkWithPlate);
-      if (res.success) {
-        expect(res.data.vehiclePlate).toBeNull();
-      } else {
-        expect(res.success).toBe(false);
+    it.each(['walk', 'bike'] as const)(
+      'acepta vehículo %s y normaliza vehiclePlate a null con patente arbitraria/inválida, válida u omitida',
+      (vehicle) => {
+        // Con patente inválida / arbitraria
+        const withInvalidPlate = {
+          ...baseCourierInput,
+          vehicleType: vehicle,
+          vehiclePlate: 'TEXTO_ARBITRARIO_QUE_NO_DEBERIA_PERSISTIR',
+        };
+        const resInvalid = courierOnboardingSchema.safeParse(withInvalidPlate);
+        expect(resInvalid.success).toBe(true);
+        if (resInvalid.success) {
+          expect(resInvalid.data.vehiclePlate).toBeNull();
+        }
+
+        // Con patente válida
+        const withValidPlate = {
+          ...baseCourierInput,
+          vehicleType: vehicle,
+          vehiclePlate: 'AB 123 CD',
+        };
+        const resValid = courierOnboardingSchema.safeParse(withValidPlate);
+        expect(resValid.success).toBe(true);
+        if (resValid.success) {
+          expect(resValid.data.vehiclePlate).toBeNull();
+        }
+
+        // Sin patente (null u omitida)
+        const withoutPlate = {
+          ...baseCourierInput,
+          vehicleType: vehicle,
+          vehiclePlate: null,
+        };
+        const resOmitted = courierOnboardingSchema.safeParse(withoutPlate);
+        expect(resOmitted.success).toBe(true);
+        if (resOmitted.success) {
+          expect(resOmitted.data.vehiclePlate).toBeNull();
+        }
       }
-    });
+    );
   });
 });

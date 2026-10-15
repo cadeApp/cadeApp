@@ -5,9 +5,10 @@ import {
   packageTypeSchema,
   recipientPaymentMethodSchema,
 } from '@/domain/schemas';
-import { isValidArgentinePhone } from '@/lib/whatsapp';
+import { extractValidArgentineTenDigits, isValidArgentinePhone } from '@/lib/whatsapp';
 
 const CONTROL_CHARS_REGEX = /[\x00-\x1F\x7F]/;
+const NOTES_CONTROL_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/;
 const HAS_ALPHANUMERIC_REGEX = /[a-zA-Z0-9áéíóúÁÉÍÓÚüÜñÑ]/;
 const HAS_LETTERS_REGEX = /[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ]/;
 
@@ -51,7 +52,8 @@ export const dropSchema = z
       .max(30, 'El teléfono es demasiado largo')
       .refine((val) => isValidArgentinePhone(val), {
         message: 'El teléfono debe ser un número argentino válido (10 dígitos nacionales)',
-      }),
+      })
+      .transform((val) => extractValidArgentineTenDigits(val)),
     recipientConsentDeclared: z.literal(true, {
       errorMap: () => ({
         message: 'Debés declarar que contás con la autorización del destinatario.',
@@ -65,14 +67,14 @@ export const dropSchema = z
       .int('El monto de cambio debe ser un número entero')
       .finite('El monto de cambio debe ser un número finito')
       .positive('El monto para el cambio debe ser mayor a 0')
-      .max(10_000_000, 'El monto para el cambio no puede superar los $10.000.000')
+      .max(2_147_483_647, 'El monto para el cambio no puede superar los $2.147.483.647')
       .nullable()
       .optional(),
     notes: z
       .string()
       .trim()
       .max(500, 'Las indicaciones no pueden superar los 500 caracteres')
-      .refine((val) => !CONTROL_CHARS_REGEX.test(val), {
+      .refine((val) => !NOTES_CONTROL_REGEX.test(val), {
         message: 'Las indicaciones no pueden contener caracteres de control',
       })
       .nullable()
@@ -143,7 +145,7 @@ export const baseCreateDeliveryRequestSchema = z
       .int('El precio del envío debe ser un número entero')
       .finite('El precio del envío debe ser un número finito')
       .positive('El precio del envío debe ser mayor a 0')
-      .max(10_000_000, 'El precio del envío no puede superar los $10.000.000')
+      .max(2_147_483_647, 'El precio del envío no puede superar los $2.147.483.647')
       .nullable()
       .optional(),
     autoAssign: z.boolean().optional().default(false),

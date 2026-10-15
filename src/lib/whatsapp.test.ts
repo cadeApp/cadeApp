@@ -56,6 +56,22 @@ describe('T-353: Validación semántica y normalización estricta de teléfonos 
       expect(() => extractValidArgentineTenDigits('3865@123456%')).toThrow();
     });
 
+    it('rechaza prefijo + mal ubicado, duplicado o que no sea +54', () => {
+      expect(() => extractValidArgentineTenDigits('++54 9 3865 123456')).toThrow();
+      expect(() => extractValidArgentineTenDigits('3865 +123456')).toThrow();
+      expect(() => extractValidArgentineTenDigits('3865123456+')).toThrow();
+      expect(() => extractValidArgentineTenDigits('+1 3865 123456')).toThrow();
+      expect(() => extractValidArgentineTenDigits('+55 3865 123456')).toThrow();
+    });
+
+    it('rechaza paréntesis desbalanceados, mal ordenados o espurios', () => {
+      expect(() => extractValidArgentineTenDigits('(3865 123456')).toThrow();
+      expect(() => extractValidArgentineTenDigits('3865) 123456')).toThrow();
+      expect(() => extractValidArgentineTenDigits(')3865( 123456')).toThrow();
+      expect(() => extractValidArgentineTenDigits('((3865)) 123456')).toThrow();
+      expect(() => extractValidArgentineTenDigits('3865--123456')).toThrow();
+    });
+
     it('rechaza teléfonos con longitud nacional insuficiente (< 10 dígitos)', () => {
       expect(() => extractValidArgentineTenDigits('1234567')).toThrow(/10 dígitos/i);
       expect(() => extractValidArgentineTenDigits('38651234')).toThrow(/10 dígitos/i);

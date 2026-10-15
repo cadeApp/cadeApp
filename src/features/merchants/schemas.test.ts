@@ -153,8 +153,8 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
       });
     });
 
-    describe('phone (teléfono argentino plausible)', () => {
-      it('acepta teléfonos argentinos válidos en diferentes formatos', () => {
+    describe('phone (teléfono argentino plausible y normalización canónica)', () => {
+      it('acepta teléfonos argentinos válidos en diferentes formatos y los normaliza a 10 dígitos', () => {
         const validPhones = [
           '3865123456',
           '3865 123456',
@@ -162,6 +162,7 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
           '(03865) 15-123456',
           '+54 9 3865 123456',
           '+54 3865 123456',
+          '+5493865123456',
           '11 2345-6789',
           '(011) 15 2345-6789',
           '381 4123456',
@@ -169,6 +170,25 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
         for (const phone of validPhones) {
           const res = merchantOnboardingSchema.safeParse({ ...validPayload, phone });
           expect(res.success, `Falló para teléfono válido: ${phone}`).toBe(true);
+        }
+
+        // PR362-H02: Verificar que el output parseado sea canónico de 10 dígitos
+        const parsedIntl = merchantOnboardingSchema.safeParse({
+          ...validPayload,
+          phone: '+54 9 3865 123456',
+        });
+        expect(parsedIntl.success).toBe(true);
+        if (parsedIntl.success) {
+          expect(parsedIntl.data.phone).toBe('3865123456');
+        }
+
+        const parsedLocal = merchantOnboardingSchema.safeParse({
+          ...validPayload,
+          phone: '03865 15-123456',
+        });
+        expect(parsedLocal.success).toBe(true);
+        if (parsedLocal.success) {
+          expect(parsedLocal.data.phone).toBe('3865123456');
         }
       });
 
@@ -180,8 +200,19 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
         }
       });
 
-      it('rechaza teléfonos con símbolos no telefónicos o inyecciones', () => {
-        const withSymbols = ['3865#123456', '<script>', '3865@555', '3865$123456'];
+      it('rechaza teléfonos con símbolos no telefónicos, inyecciones o prefijos mal ubicados', () => {
+        const withSymbols = [
+          '3865#123456',
+          '<script>',
+          '3865@555',
+          '3865$123456',
+          '++54 9 3865 123456',
+          '3865 +123456',
+          '3865123456+',
+          '(3865 123456',
+          '3865) 123456',
+          ')3865( 123456',
+        ];
         for (const phone of withSymbols) {
           const res = merchantOnboardingSchema.safeParse({ ...validPayload, phone });
           expect(res.success, `Debería rechazar símbolos: ${phone}`).toBe(false);
@@ -236,11 +267,26 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
       });
     });
 
-    describe('notes', () => {
-      it('rechaza caracteres de control en las notas', () => {
-        const withControl = 'Nota válida\x00con byte nulo';
+    describe('notes (multilínea legítima y rechazo de control)', () => {
+      it('acepta saltos de línea y tabulaciones legítimas en las notas (PR362-H04)', () => {
+        const multilineNotes = [
+          'Portón azul\nPiso 2',
+          'Línea 1\r\nLínea 2\tReferencia con tab',
+          'Timbre blanco.\nDejar en recepción.',
+        ];
+        for (const note of multilineNotes) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, notes: note });
+          expect(res.success, `Falló para nota multilínea: ${JSON.stringify(note)}`).toBe(true);
+        }
+      });
+
+      it('rechaza caracteres de control no imprimibles (NUL, etc.) en las notas (PR362-H04)', () => {
+        const withControl = 'Portón\x00azul';
         const res = merchantOnboardingSchema.safeParse({ ...validPayload, notes: withControl });
         expect(res.success).toBe(false);
+
+        const withOtherControl = 'Nota\x07con bip';
+        expect(merchantOnboardingSchema.safeParse({ ...validPayload, notes: withOtherControl }).success).toBe(false);
       });
     });
   });
