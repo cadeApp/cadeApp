@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(41);
+select plan(40);
 
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025a1'::uuid $$;
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025c1'::uuid $$;
@@ -290,7 +290,7 @@ select throws_matching(
 -- 10b. Objeto existe en bucket equivocado -> falla con NOT_FOUND
 select pg_temp.reset_actor();
 insert into storage.objects (id, bucket_id, name, owner)
-values ('00000000-0000-4000-8000-0000000025o1', 'other-bucket', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
+values ('00000000-0000-4000-8000-0000000025e1', 'other-bucket', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
 on conflict do nothing;
 
 select pg_temp.act_as(pg_temp.courier_a());
@@ -308,7 +308,7 @@ select throws_matching(
 -- 11. Courier reemplaza documento rechazado exitosamente cuando el objeto existe en courier-docs
 select pg_temp.reset_actor();
 insert into storage.objects (id, bucket_id, name, owner)
-values ('00000000-0000-4000-8000-0000000025o2', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
+values ('00000000-0000-4000-8000-0000000025e2', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
 on conflict do nothing;
 
 select pg_temp.act_as(pg_temp.courier_a());

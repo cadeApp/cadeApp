@@ -168,15 +168,6 @@ begin
     end if;
   end if;
 
-  -- PR364-H01: Verificación INCONDICIONAL del objeto en storage.objects
-  -- Falla con NOT_FOUND aunque el bucket esté completamente vacío si el objeto no existe
-  if not exists (
-    select 1 from storage.objects
-    where bucket_id = 'courier-docs' and name = v_storage_path
-  ) then
-    raise exception using errcode = 'P0001', message = 'NOT_FOUND';
-  end if;
-
   -- PR364-H02: Lock ordenado unificado en todo el sistema: 1. couriers
   perform 1 from public.couriers
   where profile_id = v_actor_id
@@ -237,6 +228,15 @@ begin
   -- Solo se permite reemplazar un documento en estado 'rejected'
   if v_current_status <> 'rejected' then
     raise exception using errcode = 'P0001', message = 'INVALID_STATE_TRANSITION';
+  end if;
+
+  -- PR364-H01: Verificación INCONDICIONAL del objeto en storage.objects
+  -- Falla con NOT_FOUND aunque el bucket esté completamente vacío si el objeto no existe
+  if not exists (
+    select 1 from storage.objects
+    where bucket_id = 'courier-docs' and name = v_storage_path
+  ) then
+    raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
   -- Desactivar documento rechazado anterior (retención 30 días tras reemplazo, D8 / Decisión B)
