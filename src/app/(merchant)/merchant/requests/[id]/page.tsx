@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/server/supabase/server';
 import { getMerchantRequestWithOffers } from '@/features/requests/server';
@@ -24,6 +25,14 @@ export default async function CanonicalMerchantRequestDetailPage({
 
   if (!result) {
     notFound();
+  }
+
+  if (
+    result.request.status === 'matched' ||
+    result.request.status === 'in_transit' ||
+    result.request.status === 'delivered'
+  ) {
+    redirect(`/trips/${id}`);
   }
 
   return (

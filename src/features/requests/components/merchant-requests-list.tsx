@@ -189,7 +189,11 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
                   {/* Acciones */}
                   <div className="flex items-center gap-2 self-end sm:self-center">
                     <Link
-                      href={`/merchant/requests/${req.id}`}
+                      href={
+                        req.status === 'published'
+                          ? `/merchant/requests/${req.id}`
+                          : `/trips/${req.id}`
+                      }
                       className={buttonVariants({ variant: 'outline', size: 'sm' })}
                     >
                       {req.status === 'published' ? 'Ver ofertas' : 'Ver detalle'}
