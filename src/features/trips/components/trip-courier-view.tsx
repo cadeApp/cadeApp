@@ -261,10 +261,9 @@ export function TripCourierView({
                   <p className="text-sm font-medium text-foreground">
                     Cliente: {drop.recipientName}
                   </p>
-                  {drop.recipientPhone && (
+                  {arr.length > 1 && drop.recipientPhone && (
                     <a
                       href={`tel:${drop.recipientPhone}`}
-                      aria-label={`Llamar a ${drop.recipientName}`}
                       className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm font-medium text-foreground hover:bg-muted"
                     >
                       <Phone className="h-3.5 w-3.5 text-primary" />
