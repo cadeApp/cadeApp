@@ -59,7 +59,15 @@ select has_column('public', 'courier_documents', 'is_current', 'courier_document
 select col_not_null('public', 'courier_documents', 'is_current', 'is_current es not null');
 select col_has_default('public', 'courier_documents', 'is_current', 'is_current tiene default true');
 select has_column('public', 'courier_documents', 'rejection_code', 'courier_documents tiene columna rejection_code');
-select has_check('public', 'courier_documents', 'courier_documents_rejection_code_check', 'rejection_code tiene check de catalogo seguro');
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = to_regclass('public.courier_documents')
+      and conname = 'courier_documents_rejection_code_check'
+      and contype = 'c'
+  ),
+  'courier_documents tiene check de catalogo seguro para rejection_code'
+);
 
 -- 2. Inserción inicial permitida por RLS cuando no existe documento
 select pg_temp.act_as(pg_temp.courier_a());
@@ -98,15 +106,15 @@ select throws_matching(
   'RLS bloquea INSERT directo cuando ya existe un documento del mismo kind (PR358-H01 cerrado)'
 );
 
--- 4. UPDATE directo bloqueado para couriers
-select throws_matching(
-  $$
-    update public.courier_documents
-    set status = 'verified'
-    where id = '00000000-0000-4000-8000-0000000025d1';
-  $$,
-  '',
-  'Courier no puede hacer UPDATE directo sobre courier_documents'
+-- 4. UPDATE directo bloqueado para couriers (RLS no concede update)
+update public.courier_documents
+set status = 'verified'
+where id = '00000000-0000-4000-8000-0000000025d1';
+
+select is(
+  (select status from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d1'),
+  'submitted'::public.document_review_status,
+  'Courier no puede alterar status mediante UPDATE directo (RLS deniega update a no admins)'
 );
 
 -- 5. RPC replace_courier_document: rechazo no autenticado

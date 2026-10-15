@@ -242,4 +242,84 @@ describe('CC-025 — FakeRpcClient replace_courier_document', () => {
       expect(res.code).toBe('INVALID_STATE_TRANSITION');
     }
   });
+
+  it('admin_verify_document asigna other_safe por defecto al rechazar sin código explícito', async () => {
+    const client = setupClient(ADMIN_ID, 'admin');
+    const docId = '30000000-0000-4000-8000-0000000025d3';
+    client.seedDocument({
+      documentId: docId,
+      courierId: COURIER_ID,
+      kind: 'dni_back',
+      status: 'submitted',
+      isCurrent: true,
+    });
+
+    const res = await client.admin_verify_document({
+      documentId: docId,
+      decision: 'rejected',
+      reason: 'Rechazo genérico',
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.rejectionCode).toBe('other_safe');
+  });
+
+  it('reemplaza exitosamente un documento rejected de tipo insurance actualizando insuranceStatus', async () => {
+    const client = setupClient();
+    const insDocId = '30000000-0000-4000-8000-0000000025d4';
+    client.seedDocument({
+      documentId: insDocId,
+      courierId: COURIER_ID,
+      kind: 'insurance',
+      status: 'rejected',
+      isCurrent: true,
+      storagePath: `courier/${COURIER_ID}/insurance_old.jpg`,
+    });
+
+    const res = await client.replace_courier_document({
+      kind: 'insurance',
+      storagePath: `courier/${COURIER_ID}/insurance_new.jpg`,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.status).toBe('submitted');
+
+    const courier = client.getCourier(COURIER_ID);
+    expect(courier?.insuranceStatus).toBe('submitted');
+  });
+
+  it('reemplaza exitosamente un documento rejected de tipo dni_front sin alterar licenseStatus ni insuranceStatus', async () => {
+    const client = setupClient();
+    const dniDocId = '30000000-0000-4000-8000-0000000025d5';
+    client.seedDocument({
+      documentId: dniDocId,
+      courierId: COURIER_ID,
+      kind: 'dni_front',
+      status: 'rejected',
+      isCurrent: true,
+      storagePath: `courier/${COURIER_ID}/dni_front_old.jpg`,
+    });
+
+    const res = await client.replace_courier_document({
+      kind: 'dni_front',
+      storagePath: `courier/${COURIER_ID}/dni_front_new.jpg`,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.status).toBe('submitted');
+  });
+
+  it('replace_courier_document devuelve NOT_FOUND si el courier no existe en couriers', async () => {
+    const client = setupClient();
+    client.deleteCourier(COURIER_ID);
+
+    const res = await client.replace_courier_document({
+      kind: 'license',
+      storagePath: `courier/${COURIER_ID}/license_orphan.jpg`,
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe('NOT_FOUND');
+    }
+  });
 });

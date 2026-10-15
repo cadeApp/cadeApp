@@ -590,12 +590,20 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   }
 
   function putDocument(d: FakeSeedDocument) {
+    const isCurrent = d.isCurrent !== false;
+    if (isCurrent) {
+      for (const existing of documents.values()) {
+        if (existing.courierId === d.courierId && existing.kind === d.kind) {
+          existing.isCurrent = false;
+        }
+      }
+    }
     documents.set(d.documentId, {
       documentId: d.documentId,
       courierId: d.courierId,
       kind: d.kind,
       status: d.status,
-      isCurrent: d.isCurrent ?? true,
+      isCurrent,
       rejectionCode: d.rejectionCode ?? null,
       storagePath: d.storagePath ?? `courier/${d.courierId}/${d.kind}_default.jpg`,
       purgeAfter: d.purgeAfter ?? null,

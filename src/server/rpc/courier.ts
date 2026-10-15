@@ -67,25 +67,29 @@ export async function replaceCourierDocumentRpc(
     return err('VALIDATION_ERROR');
   }
 
-  const { data, error } = await client.rpc('replace_courier_document', {
-    p_payload: {
-      kind: parsedInput.data.kind,
-      storagePath: parsedInput.data.storagePath,
-      ...(parsedInput.data.idempotencyKey
-        ? { idempotencyKey: parsedInput.data.idempotencyKey }
-        : {}),
-    },
-  });
+  try {
+    const { data, error } = await client.rpc('replace_courier_document', {
+      p_payload: {
+        kind: parsedInput.data.kind,
+        storagePath: parsedInput.data.storagePath,
+        ...(parsedInput.data.idempotencyKey
+          ? { idempotencyKey: parsedInput.data.idempotencyKey }
+          : {}),
+      },
+    });
 
-  if (error) {
-    return err(mapReplaceCourierDocumentRpcError(error));
-  }
+    if (error) {
+      return err(mapReplaceCourierDocumentRpcError(error));
+    }
 
-  const parsedOutput =
-    RPC_CONTRACTS.replace_courier_document.outputSchema.safeParse(data);
-  if (!parsedOutput.success) {
+    const parsedOutput =
+      RPC_CONTRACTS.replace_courier_document.outputSchema.safeParse(data);
+    if (!parsedOutput.success) {
+      return err('INTERNAL_ERROR');
+    }
+
+    return ok(parsedOutput.data);
+  } catch {
     return err('INTERNAL_ERROR');
   }
-
-  return ok(parsedOutput.data);
 }
