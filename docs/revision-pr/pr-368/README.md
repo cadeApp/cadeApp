@@ -6,34 +6,37 @@
 | Tarea | T-354 · Issue #341 |
 | Autor | @KiraK72 (P2) |
 | Rama | `feat/T-354-unificar-texto-selfie-dni` → `develop` |
-| Base consultada | `eff5274dd5dbb1d6a0fb658299bbbdaceff44911` |
-| HEAD de implementación inspeccionado | `83734650a04cc438ce117772419f2f3a61142083` |
-| HEAD revisado (incluida actualización autorizada de ficha) | `8316ea4f25a5e02b8db1e1c78a0efafb1d96e960` |
-| Estado | Draft, **CON BLOQUEANTES 2** (sin código de implementación todavía) |
+| Base develop de ronda 2 | `b5b9bf036c4c863c334948065a8780f76a88f758` |
+| HEAD de implementación inspeccionado ronda 2 | `b94c683756b3f37b3574d6691f95b2557c030416` |
+| Estado | Draft · CON BLOQUEANTES (2 nuevos + evidencia parcial H02) |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | HEAD revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `8316ea4f25a5e02b8db1e1c78a0efafb1d96e960` | 2 abiertos | [Ronda 1](revisiones/ronda-1.md) |
+| 1 | `8316ea4f25a5e02b8db1e1c78a0efafb1d96e960` | 2 pendientes | [Ronda 1](revisiones/ronda-1.md) |
+| 2 | `b94c683756b3f37b3574d6691f95b2557c030416` | 2 bloqueantes nuevos; H01 resuelto, H02 parcial | [Ronda 2](revisiones/ronda-2.md) |
 
-## Hallazgos
+## Estado de hallazgos
 
-| ID | Título | Severidad | Estado |
-|---|---|---|---|
-| PR368-H01 | Objetivo de T-354 todavía no implementado | alto | abierto |
-| PR368-H02 | Pruebas nuevas, mutaciones y E2E todavía sin evidencia | alto | abierto |
+| ID | Clasificación | Estado |
+|---|---|---|
+| PR368-H01 — no había implementación | Alto | arreglado-verificado por inspección + CI unit + controles estáticos propios |
+| PR368-H02 — falta prueba de efectividad | Alto | parcial: CI y estructura sí, RED Vitest de autor no reproducido y E2E no verificado |
+| PR368-H03 — `any`, mutación de `globalThis` y `!` | Alto | abierto |
+| PR368-H04 — falta evidencia E2E y visual | Alto | abierto |
 
-Registro estructurado: [hallazgos.jsonl](hallazgos.jsonl). Evidencia y comandos: [evidencia/comandos.md](evidencia/comandos.md).
+La revisión preserva `revisiones/ronda-1.md` intacto. Los datos estructurados están en [hallazgos.jsonl](hallazgos.jsonl) y los pasos independientes en [evidencia/comandos.md](evidencia/comandos.md).
 
-## Decisiones resueltas
-- **1-A:** autorizar exclusivamente `src/features/offers/courier-panel.test.tsx` para actualizar aserción del nombre, conservando estado.
-- **2-B:** `Sostené el DNI junto a tu rostro. Ambos deben verse legibles, sin reflejos ni obstrucciones`, sin truncar en móvil.
-- **3-A:** etiqueta completa `Selfie con el DNI` también en el badge de cola admin.
+## Decisiones resueltas por Lautaro073
 
-Las tres decisiones quedaron registradas en la ficha de la PR. Esta revisión no implementa cambios de interfaz; los debe realizar el autor y luego deben recibir verificación independiente nueva.
+1-A test cruzado puntual; 2-B instrucción literal y multilínea; 3-A nombre completo en badge administrativo. Se aplicaron en la implementación; **no hay decisiones adicionales**.
 
-## Pendiente
-Implementación de copy en cuatro vistas y estados, actualización controlada de aserciones, RED→GREEN real, test accesible, evidencia visual móvil, E2E Preview con SHA y run, checks completos y próxima ronda independiente. La rama se encontraba 4 commits por detrás de develop en la consulta previa; el autor debe integrarlo por merge, sin rebase.
+## Verificaciones y límites
 
-Ver [lecciones.md](lecciones.md).
+- En CI del SHA `b94c683756b3f37b3574d6691f95b2557c030416`: typecheck, lint, unit, build, audit y bundle-budget en verde; unit: **130 archivos, 2172 tests pasados** según log leído. `db-tests` en curso al consultar; `approval-policy` rojo a la espera de informe y body; E2E Preview sin run verificable.
+- Revisión estática independiente vía conector GitHub: 11/11 controles sobre fuentes reales y 10/10 mutaciones de copia en memoria detectadas. **No equivalen a ejecutar los tests de Vitest mutados**.
+- El entorno de revisión no permite clonar el repositorio ni instalar dependencias externas; no se declara ejecución local ni verificación visual de la web.
+- Comparación remota detectó rama 12 commits por detrás de develop antes de cerrar ronda; integrar por merge antes del siguiente cierre, no rebase.
+
+Para continuar: corregir H03 y H04 y completar evidencia pendiente de H02. No aprobar ni mergear.
