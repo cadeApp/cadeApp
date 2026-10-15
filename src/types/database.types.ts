@@ -934,6 +934,7 @@ export type Database = {
       }
       mark_picked_up: { Args: { p_request_id: string }; Returns: Json }
       publish_request: { Args: { p_request_id: string }; Returns: Json }
+      replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }
         Returns: Json
@@ -944,10 +945,6 @@ export type Database = {
       }
       republish_request: {
         Args: { p_reason?: string; p_request_id: string }
-        Returns: Json
-      }
-      replace_courier_document: {
-        Args: { p_payload: Json }
         Returns: Json
       }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
