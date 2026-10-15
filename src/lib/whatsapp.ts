@@ -21,14 +21,60 @@ export interface NotifyCustomerMessageParams {
 /**
  * Normaliza y valida estrictamente un número de teléfono argentino a 10 dígitos nacionales.
  * Limpia +54, 549, 0 inicial y 15 móvil intermedio tras códigos de área (2, 3 o 4 dígitos).
- * Lanza un error descriptivo si el número resultante no tiene exactamente 10 dígitos.
+ * Lanza un error descriptivo si el número contiene letras, caracteres inválidos o no tiene exactamente 10 dígitos.
  */
 export function extractValidArgentineTenDigits(rawPhone: string): string {
-  if (!rawPhone || typeof rawPhone !== 'string') {
+  if (!rawPhone || typeof rawPhone !== 'string' || rawPhone.trim().length === 0) {
     throw new Error('Número de teléfono inválido: se requieren 10 dígitos nacionales');
   }
 
-  let digits = rawPhone.replace(/\D/g, '');
+  const trimmed = rawPhone.trim();
+
+  if (/[a-zA-Z]/.test(trimmed)) {
+    throw new Error('El número de teléfono no puede contener letras');
+  }
+
+  if (/[^0-9\s+().-]/.test(trimmed)) {
+    throw new Error('El número de teléfono contiene caracteres o símbolos no permitidos');
+  }
+
+  // Validar signo + (solo al inicio como prefijo internacional +54, máximo uno)
+  const plusMatches = trimmed.match(/\+/g);
+  if (plusMatches) {
+    if (plusMatches.length > 1) {
+      throw new Error('El prefijo internacional + solo puede figurar una vez al inicio');
+    }
+    if (!trimmed.startsWith('+')) {
+      throw new Error('El signo + solo puede figurar al inicio del número como prefijo internacional');
+    }
+    if (!/^\+\s*54/.test(trimmed)) {
+      throw new Error('El prefijo internacional debe corresponder a Argentina (+54)');
+    }
+  }
+
+  // Validar paréntesis (código de área balanceado, máximo un par, orden correcto)
+  const openParens = (trimmed.match(/\(/g) || []).length;
+  const closeParens = (trimmed.match(/\)/g) || []).length;
+  if (openParens !== closeParens) {
+    throw new Error('Los paréntesis del código de área están desbalanceados');
+  }
+  if (openParens > 1) {
+    throw new Error('Solo se permite un par de paréntesis para el código de área');
+  }
+  if (openParens === 1) {
+    const openIdx = trimmed.indexOf('(');
+    const closeIdx = trimmed.indexOf(')');
+    if (openIdx > closeIdx || !/\(\s*\d+\s*\)/.test(trimmed)) {
+      throw new Error('Formato de paréntesis inválido para el código de área');
+    }
+  }
+
+  // Rechazar símbolos repetidos no telefónicos (ej: -- o ..)
+  if (/--|\.\./.test(trimmed)) {
+    throw new Error('El número contiene separadores repetidos o inválidos');
+  }
+
+  let digits = trimmed.replace(/\D/g, '');
 
   if (digits.startsWith('549') && digits.length >= 13) {
     digits = digits.slice(3);
@@ -56,6 +102,18 @@ export function extractValidArgentineTenDigits(rawPhone: string): string {
   }
 
   return digits;
+}
+
+/**
+ * Determina si una cadena representa un número de teléfono argentino válido (10 dígitos nacionales).
+ */
+export function isValidArgentinePhone(phone: string): boolean {
+  try {
+    extractValidArgentineTenDigits(phone);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
