@@ -34,3 +34,14 @@ No inventar resultados RED ni pasarlos por equivalentes a pruebas ejecutadas.
 
 ## Herramientas locales que NO se ejecutaron aquí
 `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test:db`, `pnpm db:types` y `node docs/revision-pr/analizar.mjs verificacion`. La evidencia se limita a inspección GitHub y logs de CI. No se usó Docker/Supabase remoto.
+
+## Ronda 2 — verificación del cierre documental en HEAD `82989c0fa52e1cf1cb0fb41fe056f2a7c1645ac4`
+- GitHub `compare_commits(a3c88ee3, 82989c0f)`: dos commits adicionales, solamente cinco archivos de revisor R1 y **`docs/tasks/log/T-340.md`** (+43 líneas).
+- `fetch_commit(82989c0f)`: cambio único a bitácora; ingreso de `## 2026-10-14 — ... Hotfix #336 / PR #337`; apartados Contexto, Hecho, Pruebas y evidencia, Falta, Bloqueos, Último commit de código.
+- [Run CI 38666588931](https://github.com/cadeApp/cadeApp/actions/runs/38666588931), checkout SHA exacto `82989c0f`:
+  - `unit` job **116199831119**: Test Files **129 passed**, Tests **2159 passed**.
+  - `db-tests` job **116199831204**: `admin_merchant_delivered_counts.sql .. ok`; **Files=22 Tests=2205 Result: PASS**; tipos regenerados sin drift.
+  - typecheck/lint/build/audit/bundle-budget: **PASS**.
+  - `approval-policy` job 116199825266: **FAIL** con mensaje `Falta el informe completo de revisar-pr sin bloqueantes` (faltaba dictamen R2 en body, no fallo de código).
+- Revisión de autoría y límites: ningún archivo productivo ni prueba cambió desde `a3c88ee3`, los mutantes son los CI auténticos de #338/#339 y no se declara staging/AAL2 E2E como ejecutado.
+- Revisor no corrió herramientas locales, Supabase, Docker ni Playwright. Solo inspección remota de archivos, diff, workflow y logs.

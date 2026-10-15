@@ -10,3 +10,6 @@ No numerar nueva lección AG por un único caso administrativo. Reutilizar la re
 
 ## Advertencia
 La ausencia de E2E admin AAL2 es un pendiente de despliegue expresamente diferido en el Issue #336, **no** una prueba ejecutada ni un defecto automáticamente probado.
+
+## Estado tras Ronda 2
+El autor completó la sesión #336 en la bitácora (commit `82989c0f`) sin modificar otros archivos. H01 se declara **arreglado-verificado** por la revisión independiente. No se crea una regla nueva por un incidente aislado. El gate de staging posterior al merge sigue pendiente.
