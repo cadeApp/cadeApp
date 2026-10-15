@@ -73,7 +73,7 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
     expect(link.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it.each([undefined, '', 'numero-mal-formado', '+54 9 3865 123'])(
+  it.each([undefined, '', 'numero-mal-formado', '+54 9 3865 123', '5493865123', '+54 9 3865 12345'])(
     'sin número válido (%s), no genera un enlace WhatsApp sin destinatario',
     async (number) => {
       if (number === undefined) delete process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER;

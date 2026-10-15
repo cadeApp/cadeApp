@@ -17,6 +17,16 @@ function getSupportWhatsAppHref(rawPhone: string | undefined): string | null {
   const parsed = z.string().trim().regex(/^[+()\d\s-]{10,32}$/).safeParse(rawPhone);
   if (!parsed.success) return null;
 
+  // Un prefijo internacional parcial no puede tratarse como diez dígitos nacionales.
+  // El helper compartido acepta dígitos sin prefijo: comprobamos aquí la forma internacional.
+  const digits = parsed.data.replace(/\D/g, '');
+  if (
+    (digits.startsWith('549') && digits.length !== 13) ||
+    (digits.startsWith('54') && digits.length !== 12)
+  ) {
+    return null;
+  }
+
   try {
     return buildWhatsAppUrl(
       parsed.data,

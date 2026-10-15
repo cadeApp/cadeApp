@@ -9,3 +9,5 @@ PR de código depende de la ficha PR #367 ya mergeada; checks reales y deploy se
 Ronda 2: [revisiones/ronda-2.md](revisiones/ronda-2.md) · corregidos cinco TS2339 con aserciones DOM equivalentes; revalidación CI pendiente.
 
 Ronda 3: [revisiones/ronda-3.md](revisiones/ronda-3.md) · Vitest requiere import React explícito en page.tsx para render de JSX; los seis tests permanecen sin cambios.
+
+Ronda 4: [revisiones/ronda-4.md](revisiones/ronda-4.md) · detectada falla real para prefijo 549 incompleto; rechazo explícito sin cambiar helper compartido.
