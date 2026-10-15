@@ -2,11 +2,13 @@
 
 import * as React from 'react';
 import { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Clock, ShieldCheck, AlertCircle, AlertTriangle, ArrowRight } from 'lucide-react';
 import { sortOffersForMerchant, type OfferSortOrder } from '@/domain/priority';
 import { formatArs } from '@/lib/format';
 import { Badge } from '@/ui/badge';
-import { Button } from '@/ui/button';
+import { Button, buttonVariants } from '@/ui/button';
 import { Card } from '@/ui/card';
 import {
   Dialog,
@@ -77,6 +79,7 @@ export function RequestOffersList({
   initialNextCursor,
   onAcceptSuccess,
 }: RequestOffersListProps) {
+  const router = useRouter();
   const {
     offers,
     hasNextPage,
@@ -90,6 +93,12 @@ export function RequestOffersList({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+
+  const isAcceptableStatus = request.status === 'published';
+  const isMatchedOrLater =
+    request.status === 'matched' ||
+    request.status === 'in_transit' ||
+    request.status === 'delivered';
 
   // Cronómetro de vencimiento sin non-null assertions
   useEffect(() => {
@@ -121,6 +130,7 @@ export function RequestOffersList({
   }, [offers, sortOrder]);
 
   const handleOpenAcceptModal = (offer: MerchantOfferItem) => {
+    if (!isAcceptableStatus || (offer.status && offer.status !== 'pending')) return;
     setAcceptError(null);
     setSelectedOffer(offer);
   };
@@ -143,6 +153,7 @@ export function RequestOffersList({
         notify.success('¡Oferta aceptada! El repartidor ya va en camino.');
         setSelectedOffer(null);
         onAcceptSuccess?.(selectedOffer.id);
+        router.push(`/trips/${request.id}`);
       } else {
         if (res.code === 'ALREADY_MATCHED') {
           setAcceptError(
@@ -167,6 +178,26 @@ export function RequestOffersList({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col space-y-6">
+      {/* Aviso de asignación C06 */}
+      {isMatchedOrLater && (
+        <Card className="flex flex-col gap-3 border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-0.5">
+            <p className="font-semibold text-foreground">
+              Esta solicitud ya tiene un repartidor asignado
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Podés consultar los datos del repartidor, contactos y estado del envío en el detalle del viaje.
+            </p>
+          </div>
+          <Link
+            href={`/trips/${request.id}`}
+            className={buttonVariants({ variant: 'default', size: 'sm' }) + ' shrink-0 self-start sm:self-auto'}
+          >
+            Ver viaje asignado
+          </Link>
+        </Card>
+      )}
+
       {/* Resumen de la solicitud */}
       <Card className="border border-border bg-card p-4 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -367,13 +398,19 @@ export function RequestOffersList({
                   </div>
                 </div>
 
-                <Button
-                  type="button"
-                  variant="default"
-                  onClick={() => handleOpenAcceptModal(offer)}
-                >
-                  Aceptar
-                </Button>
+                {isAcceptableStatus && (!offer.status || offer.status === 'pending') ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={() => handleOpenAcceptModal(offer)}
+                  >
+                    Aceptar
+                  </Button>
+                ) : offer.status === 'accepted' || offer.id === request.acceptedOfferId ? (
+                  <Badge variant="matched">Oferta aceptada</Badge>
+                ) : offer.status === 'rejected' ? (
+                  <Badge variant="outline">Rechazada</Badge>
+                ) : null}
               </div>
             </Card>
           ))}
