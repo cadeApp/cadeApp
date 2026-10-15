@@ -104,3 +104,34 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 Los comandos con `;` muestran salidas incluso con fallos: **el agy debe detenerse ante cualquier exit distinto de cero, no ocultarlo**. `pnpm test:db` no es exigido por T-361 sin cambios de esquema/servidor, y esta revisión no levantó Supabase/Docker local. El E2E se corre con la infraestructura Preview+Supabase Develop existente, sobre el nuevo SHA; registrar run, URL y oráculos de usuario reales sin secretos. No modificar tests para fabricar verde.
+
+## Ronda 2 — CI E2E (2026-10-15)
+
+**Ejecutado remotamente, log leído por el revisor** (no simulación):
+- Run: https://github.com/cadeApp/cadeApp/actions/runs/38758120713; job `e2e-preview=116502029876`; evento `repository_dispatch`.
+- `workflow_run.head_sha=3b9f409048e2b3555377108cc29765c091fc995a` (**es develop, no el SHA efectivamente testeado**).
+- Log: `actions/checkout ref: 7909e3bca66e29980b3bd6bb9b3c536844143f1a`, `HEAD is now at 7909e3b` y `git log -1 --format=%H => 7909e3...`.
+- `pnpm exec playwright test --project=chromium --workers=1`: **76 passed, 2 failed**. E2E Flujo 5 en `main-flow.spec.ts:435`: **PASS 33.2s**.
+- `e2e/specs/multi-drop.spec.ts:313`: `getByText('Destinatario Uno MD')`, strict mode: 1. `<p>Cliente: Destinatario Uno MD</p>`; 2. `<a>Avisar a Destinatario Uno MD</a>`.
+- `e2e/specs/multi-drop.spec.ts:723`: `getByText('Destinatario Uno Writer')`, misma duplicación. Ambos fallan retry 1/2.
+
+**Receta reproducible sobre checkout verdadero (NO ejecutada localmente por el revisor):**
+
+```bash
+git fetch origin
+git switch feat/T-361-whatsapp-destinatario-natural
+git pull --ff-only origin feat/T-361-whatsapp-destinatario-natural
+git status --short
+# RED ya observado en la suite Preview previa:
+# https://github.com/cadeApp/cadeApp/actions/runs/38758120713
+# Antes de arreglar, añadir test estricto para texto visible y nombre accesible en components.test.tsx.
+pnpm exec vitest run src/features/trips/components.test.tsx > /tmp/t361-r01-red.log 2>&1; code=$?; tail -20 /tmp/t361-r01-red.log; echo "red_exit=$code"
+# En el arreglo: texto visible multi-drop = 'Avisar por WhatsApp'
+# aria-label por destinatario; no tocar e2e/specs/multi-drop.spec.ts.
+# GREEN, revertir cualquier mutación con un backup /tmp verificable, sin git checkout.
+pnpm exec vitest run src/features/trips/components.test.tsx > /tmp/t361-r01-green.log 2>&1; code=$?; tail -20 /tmp/t361-r01-green.log; test "$code" -eq 0
+pnpm typecheck && pnpm lint && pnpm test
+node docs/revision-pr/analizar.mjs verificacion
+```
+
+**Mutaciones independientes pendientes para ronda 3:** en copia aislada `/tmp`, probar volver `Avisar a ${drop.recipientName}` al texto visible mientras `aria-label` permanece y comprobar que la nueva prueba de texto visible cae (sin tocar fixtures ni tests); cambiar `href` de Beto a teléfono de Ana y comprobar que el oráculo de teléfono por drop cae; cambiar un estado `failed` por copy de `pending` y comprobar que el test de contenido por estado cae. Registrar comandos completos y verde original → rojo mutante → verde restaurado. **No se presentaron estas mutaciones como ejecutadas.**
