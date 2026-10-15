@@ -18,6 +18,8 @@ describe('T-360 — useActiveTrips: hook de viajes activos del repartidor', () =
   let mockOn: ReturnType<typeof vi.fn>;
   let mockChannel: { on: typeof mockOn; subscribe: typeof mockSubscribe };
   let subscribedTables: string[];
+  const callbacksByTable = new Map<string, (payload: unknown) => void>();
+  let subscribeStatusCallback: ((status: string) => void) | null = null;
 
   const courierId = '00000000-0000-4000-8000-0000000008c1';
 
@@ -42,13 +44,22 @@ describe('T-360 — useActiveTrips: hook de viajes activos del repartidor', () =
     });
 
     subscribedTables = [];
+    callbacksByTable.clear();
+    subscribeStatusCallback = null;
+
     mockSubscribe = vi.fn().mockImplementation((cb) => {
-      if (typeof cb === 'function') cb('SUBSCRIBED');
+      if (typeof cb === 'function') {
+        subscribeStatusCallback = cb;
+        cb('SUBSCRIBED');
+      }
       return mockChannel;
     });
-    mockOn = vi.fn().mockImplementation((_event, filterObj) => {
+    mockOn = vi.fn().mockImplementation((_event, filterObj, cb) => {
       if (filterObj?.table) {
         subscribedTables.push(filterObj.table);
+        if (typeof cb === 'function') {
+          callbacksByTable.set(filterObj.table, cb);
+        }
       }
       return mockChannel;
     });
@@ -246,7 +257,7 @@ describe('T-360 — useActiveTrips: hook de viajes activos del repartidor', () =
     });
   });
 
-  it('invalida la consulta ante evento Realtime o llamada explícita', async () => {
+  it('evento Realtime en delivery_requests invoca refetch y actualiza viajes sin mutar caché manualmente', async () => {
     vi.mocked(actions.readActiveTripsAction).mockResolvedValue({
       courierId,
       trips: [sampleTrip],
@@ -256,25 +267,170 @@ describe('T-360 — useActiveTrips: hook de viajes activos del repartidor', () =
       () =>
         useActiveTrips({
           courierId,
-          initialTrips: [],
+          initialTrips: [sampleTrip],
+          courierStatus: 'approved',
+        }),
+      { wrapper }
+    );
+
+    // Esperar a que el canal se suscriba y registre los callbacks
+    await waitFor(() => {
+      expect(callbacksByTable.has('delivery_requests')).toBe(true);
+    });
+
+    // Simular que el viaje se cancela o finaliza en DB
+    vi.mocked(actions.readActiveTripsAction).mockResolvedValue({
+      courierId,
+      trips: [],
+    });
+
+    const deliveryRequestsCb = callbacksByTable.get('delivery_requests');
+    expect(deliveryRequestsCb).toBeDefined();
+
+    // Invocar el callback real de Postgres Changes
+    await act(async () => {
+      deliveryRequestsCb?.({
+        eventType: 'UPDATE',
+        new: { id: sampleTrip.id, status: 'cancelled' },
+      });
+    });
+
+    // useRealtimeInvalidation tiene debounce de 300ms; waitFor espera el refetch real
+    await waitFor(
+      () => {
+        expect(result.current.trips).toEqual([]);
+      },
+      { timeout: 2000 }
+    );
+
+    expect(actions.readActiveTripsAction).toHaveBeenCalledTimes(2);
+  });
+
+  it('evento Realtime en offers invoca refetch y actualiza viajes cuando cambia la oferta', async () => {
+    vi.mocked(actions.readActiveTripsAction).mockResolvedValue({
+      courierId,
+      trips: [sampleTrip],
+    });
+
+    const { result } = renderHook(
+      () =>
+        useActiveTrips({
+          courierId,
+          initialTrips: [sampleTrip],
           courierStatus: 'approved',
         }),
       { wrapper }
     );
 
     await waitFor(() => {
-      expect(actions.readActiveTripsAction).toHaveBeenCalledTimes(1);
+      expect(callbacksByTable.has('offers')).toBe(true);
     });
 
-    // Invalidar consulta directamente
+    const updatedTrip: ActiveTripSummary = {
+      ...sampleTrip,
+      amountArs: 3500,
+    };
+    vi.mocked(actions.readActiveTripsAction).mockResolvedValue({
+      courierId,
+      trips: [updatedTrip],
+    });
+
+    const offersCb = callbacksByTable.get('offers');
+    expect(offersCb).toBeDefined();
+
     await act(async () => {
-      await queryClient.invalidateQueries({
-        queryKey: offerKeys.activeTrips(courierId),
+      offersCb?.({
+        eventType: 'UPDATE',
+        new: { id: 'offer-1', amount_ars: 3500 },
       });
     });
 
+    await waitFor(
+      () => {
+        expect(result.current.trips[0]?.amountArs).toBe(3500);
+      },
+      { timeout: 2000 }
+    );
+
+    expect(actions.readActiveTripsAction).toHaveBeenCalledTimes(2);
+  });
+
+  it('evento Realtime actualiza transición de estado de matched a in_transit', async () => {
+    vi.mocked(actions.readActiveTripsAction).mockResolvedValue({
+      courierId,
+      trips: [sampleTrip],
+    });
+
+    const { result } = renderHook(
+      () =>
+        useActiveTrips({
+          courierId,
+          initialTrips: [sampleTrip],
+          courierStatus: 'approved',
+        }),
+      { wrapper }
+    );
+
     await waitFor(() => {
-      expect(actions.readActiveTripsAction).toHaveBeenCalledTimes(2);
+      expect(callbacksByTable.has('delivery_requests')).toBe(true);
+    });
+
+    const inTransitTrip: ActiveTripSummary = {
+      ...sampleTrip,
+      status: 'in_transit',
+    };
+    vi.mocked(actions.readActiveTripsAction).mockResolvedValue({
+      courierId,
+      trips: [inTransitTrip],
+    });
+
+    const deliveryRequestsCb = callbacksByTable.get('delivery_requests');
+    expect(deliveryRequestsCb).toBeDefined();
+
+    await act(async () => {
+      deliveryRequestsCb?.({
+        eventType: 'UPDATE',
+        new: { id: sampleTrip.id, status: 'in_transit' },
+      });
+    });
+
+    await waitFor(
+      () => {
+        expect(result.current.trips[0]?.status).toBe('in_transit');
+      },
+      { timeout: 2000 }
+    );
+  });
+
+  it('resuscripción SUBSCRIBED tras reconexión invalida la consulta automáticamente', async () => {
+    vi.mocked(actions.readActiveTripsAction).mockResolvedValue({
+      courierId,
+      trips: [sampleTrip],
+    });
+
+    const { result } = renderHook(
+      () =>
+        useActiveTrips({
+          courierId,
+          initialTrips: [sampleTrip],
+          courierStatus: 'approved',
+        }),
+      { wrapper }
+    );
+
+    await waitFor(() => {
+      expect(subscribeStatusCallback).not.toBeNull();
+    });
+
+    const initialCalls = vi.mocked(actions.readActiveTripsAction).mock.calls.length;
+
+    // Simular reconexión del canal pasando a SUBSCRIBED
+    await act(async () => {
+      subscribeStatusCallback?.('SUBSCRIBED');
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(actions.readActiveTripsAction).mock.calls.length).toBeGreaterThan(initialCalls);
     });
   });
 });

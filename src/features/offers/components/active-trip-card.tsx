@@ -25,9 +25,14 @@ export function ActiveTripCard({ trip }: ActiveTripCardProps) {
           <Badge variant={badgeVariant} className="text-sm">
             {statusLabel}
           </Badge>
-          <span className="font-display text-base font-bold text-foreground">
-            {formatArs(trip.amountArs)}
-          </span>
+          <div className="flex items-baseline gap-1.5 font-display text-base font-bold text-foreground">
+            <span>{formatArs(trip.amountArs)}</span>
+            {isMultiDrop && (
+              <span className="text-sm font-normal text-muted-foreground">
+                {OFFERS_COPY.perDropSuffix}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 text-sm text-foreground">

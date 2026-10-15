@@ -886,7 +886,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
       expect(screen.getByText(OFFERS_COPY.activeTripStatus.in_transit)).toBeDefined();
     });
 
-    it('5. multi-drop con dropsCount=3 muestra "3 entregas" y omite zona de destino individual', () => {
+    it('5. multi-drop con dropsCount=3 muestra monto con "por entrega", resumen "3 entregas" y omite zona individual', () => {
       renderWithClient(
         <CourierFeed
           courierStatus="approved"
@@ -898,8 +898,25 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
         />
       );
 
+      // Muestra "por entrega" junto al importe en multi-drop
+      expect(screen.getByText(OFFERS_COPY.perDropSuffix)).toBeDefined();
       expect(screen.getByText(OFFERS_COPY.multiDropSummary(3))).toBeDefined();
       expect(screen.getByText(multiDropTrip.pickupZoneName)).toBeDefined();
+    });
+
+    it('5b. single-drop no muestra la etiqueta "por entrega"', () => {
+      renderWithClient(
+        <CourierFeed
+          courierStatus="approved"
+          isAvailable={true}
+          requests={[]}
+          minOfferArs={1000}
+          courierId={courierId}
+          initialActiveTrips={[singleDropTrip]}
+        />
+      );
+
+      expect(screen.queryByText(OFFERS_COPY.perDropSuffix)).toBeNull();
     });
 
     it('6. isAvailable=false conserva la sección de viajes activos visible y accesible', () => {

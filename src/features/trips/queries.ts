@@ -235,11 +235,15 @@ export async function getActiveTripsForCourier(): Promise<{
     (t) => t.dropsCount <= 1 && !t.dropoffZoneName
   );
   if (needsDropsLookup.length > 0) {
-    const { data: dropsData } = await supabase
+    const { data: dropsData, error: dropsError } = await supabase
       .from('delivery_request_drops')
       .select('request_id, position, dropoff_zone:zones!dropoff_zone_id(name)')
       .in('request_id', needsDropsLookup.map((t) => t.id))
       .eq('position', 1);
+
+    if (dropsError) {
+      throw new Error('Error al consultar zonas de entregas activas');
+    }
 
     if (dropsData && Array.isArray(dropsData)) {
       interface RawDropZone {

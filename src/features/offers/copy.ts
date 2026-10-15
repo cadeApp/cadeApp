@@ -22,6 +22,7 @@ export const OFFERS_COPY = {
     in_transit: 'En camino',
   },
   multiDropSummary: (count: number) => `${count} entregas`,
+  perDropSuffix: 'por entrega',
   activeTripsErrorTitle: 'No se pudieron cargar los viajes activos',
   activeTripsErrorDescription: 'Ocurrió un problema al sincronizar tus viajes en curso.',
 

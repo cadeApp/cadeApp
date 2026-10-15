@@ -552,6 +552,72 @@ describe('T-360 — getActiveTripsForCourier', () => {
     expect(mockDropsEqPosition).toHaveBeenCalledWith('position', 1);
   });
 
+  it('lanza error sanitizado si la consulta de delivery_request_drops falla', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-single',
+          status: 'matched',
+          accepted_offer_id: 'off-s',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: null,
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-s', request_id: 'req-single', amount_ars: 2000 }],
+      error: null,
+    });
+
+    mockDropsEqPosition.mockResolvedValue({
+      data: null,
+      error: new Error('permission denied on delivery_request_drops'),
+    });
+
+    await expect(getActiveTripsForCourier()).rejects.toThrow(
+      'Error al consultar zonas de entregas activas'
+    );
+  });
+
+  it('conserva dropoffZoneName en null si delivery_request_drops devuelve array vacío sin error', async () => {
+    mockRequestsIn.mockResolvedValue({
+      data: [
+        {
+          id: 'req-single',
+          status: 'matched',
+          accepted_offer_id: 'off-s',
+          drops_count: 1,
+          matched_at: '2026-10-15T00:00:00.000Z',
+          pickup_zone: { name: 'Centro' },
+          dropoff_zone: null,
+        },
+      ],
+      error: null,
+    });
+
+    mockOffersEqStatus.mockResolvedValue({
+      data: [{ id: 'off-s', request_id: 'req-single', amount_ars: 2000 }],
+      error: null,
+    });
+
+    mockDropsEqPosition.mockResolvedValue({
+      data: [],
+      error: null,
+    });
+
+    const result = await getActiveTripsForCourier();
+
+    expect(result.trips).toHaveLength(1);
+    const [singleTrip] = result.trips;
+    expect(singleTrip).toBeDefined();
+    if (!singleTrip) throw new Error('Expected one trip');
+    expect(singleTrip.dropoffZoneName).toBeNull();
+  });
+
   it('lanza error si la sesión está ausente o auth.getUser falla', async () => {
     mockAuthGetUser.mockResolvedValue({
       data: { user: null },
