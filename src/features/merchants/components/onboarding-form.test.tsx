@@ -3,7 +3,7 @@ import * as React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MerchantOnboardingForm } from './onboarding-form';
-import { merchantOnboardingAction } from '../actions';
+import { merchantOnboardingAction, updateMerchantProfileAction } from '../actions';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -14,6 +14,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('../actions', () => ({
   merchantOnboardingAction: vi.fn(),
+  updateMerchantProfileAction: vi.fn(),
 }));
 
 interface MockMapPickerProps {
@@ -624,6 +625,108 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       await waitFor(() => {
         expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
       });
+    });
+  });
+
+  describe('T-358: Modo edición de datos del comercio preexistente', () => {
+    const existingInitialData = {
+      isComplete: true,
+      businessName: 'Panadería La Espiga',
+      phone: '3815550123',
+      defaultPickupAddress: 'San Martín 450',
+      defaultPickupZoneId: '11111111-1111-4111-8111-111111111111', // zoneA: Centro
+      defaultPickupLat: -27.435,
+      defaultPickupLng: -65.615,
+      notes: 'Portón verde al lado de la farmacia',
+    };
+
+    it('renderiza en modo edición con título "Datos de tu negocio" y botón "Guardar cambios", sin barra de pasos ni checkbox de términos', async () => {
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      expect(screen.getByRole('heading', { name: /datos de tu negocio/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /guardar cambios/i })).toBeDefined();
+      expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(screen.queryByRole('checkbox')).toBeNull();
+      expect(screen.queryByText(/piloto gratis/i)).toBeNull();
+      expect(screen.queryByText(/paso 2 de 2/i)).toBeNull();
+    });
+
+    it('precarga todos los valores en los inputs y posiciona el pin en el mapa si existen coordenadas', async () => {
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      expect(screen.getByLabelText(/nombre del negocio/i)).toHaveProperty('value', 'Panadería La Espiga');
+      expect(screen.getByLabelText(/teléfono de contacto/i)).toHaveProperty('value', '3815550123');
+      expect(screen.getByLabelText(/dirección de retiro habitual/i)).toHaveProperty('value', 'San Martín 450');
+      expect(screen.getByLabelText(/referencia adicional/i)).toHaveProperty('value', 'Portón verde al lado de la farmacia');
+      expect(screen.getByText('Centro')).toBeDefined();
+      expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify({ lat: -27.435, lng: -65.615 }));
+    });
+
+    it('si el comercio preexistente no tiene coordenadas guardadas, no inventa un pin en el mapa', async () => {
+      const dataWithoutCoords = {
+        ...existingInitialData,
+        defaultPickupLat: null,
+        defaultPickupLng: null,
+      };
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={dataWithoutCoords} />);
+      await screen.findByTestId('map-picker');
+
+      expect(screen.getByTestId('map-value').textContent).toBe('null');
+    });
+
+    it('al cambiar solo el teléfono en modo edición, llama a updateMerchantProfileAction con el nuevo teléfono y preserva los restantes campos', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
+      fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs['businessName']).toBe('Panadería La Espiga');
+      expect(callArgs['phone']).toBe('3865999888');
+      expect(callArgs['defaultPickupAddress']).toBe('San Martín 450');
+      expect(callArgs['defaultPickupZoneId']).toBe('11111111-1111-4111-8111-111111111111');
+      expect(callArgs['defaultPickupLat']).toBe(-27.435);
+      expect(callArgs['defaultPickupLng']).toBe(-65.615);
+      expect(callArgs['notes']).toBe('Portón verde al lado de la farmacia');
+    });
+
+    it('permite borrar notas enviando cadena vacía y llama a updateMerchantProfileAction con notes null', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const notesInput = screen.getByLabelText(/referencia adicional/i);
+      fireEvent.change(notesInput, { target: { value: '' } });
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs['notes']).toBeNull();
     });
   });
 });

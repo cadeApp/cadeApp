@@ -7,9 +7,13 @@ import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/error
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
 import { getLegalDocument } from '@/features/legal';
-import { merchantOnboardingSchema } from './schemas';
+import { merchantOnboardingSchema, merchantUpdateSchema } from './schemas';
 
 export interface MerchantOnboardingResult {
+  readonly redirectTo: string;
+}
+
+export interface MerchantUpdateResult {
   readonly redirectTo: string;
 }
 
@@ -147,5 +151,134 @@ export async function merchantOnboardingAction(
 
   return ok({
     redirectTo: '/merchant/dashboard',
+  });
+}
+
+export async function updateMerchantProfileAction(
+  input: unknown
+): Promise<ActionResult<MerchantUpdateResult, DomainErrorCode>> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  // 1. Verificación de rol del actor
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'merchant') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  // 2. Validación semántica del payload parcial
+  const parsed = merchantUpdateSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // 3. Lectura de registros existentes para preservar datos no alterados
+  interface ExistingMerchantRow {
+    business_name: string;
+    default_pickup_address: string | null;
+    default_pickup_lat: number | null;
+    default_pickup_lng: number | null;
+    default_pickup_zone_id: string | null;
+    notes: string | null;
+  }
+
+  const [{ data: existingMerchant, error: merchantFetchError }, { data: existingProfile, error: profileFetchError }] =
+    await Promise.all([
+      supabase
+        .from('merchants')
+        .select(
+          'business_name, default_pickup_address, default_pickup_lat, default_pickup_lng, default_pickup_zone_id, notes'
+        )
+        .eq('profile_id', user.id)
+        .maybeSingle<ExistingMerchantRow>(),
+      supabase
+        .from('profiles')
+        .select('display_name, phone')
+        .eq('id', user.id)
+        .maybeSingle<{ display_name: string | null; phone: string | null }>(),
+    ]);
+
+  if (merchantFetchError || !existingMerchant || profileFetchError || !existingProfile) {
+    return err('INTERNAL_ERROR');
+  }
+
+  // 4. Actualización condicional en profiles (teléfono y nombre visible)
+  const profilePayload: TablesUpdate<'profiles'> = {};
+  if (parsed.data.phone !== undefined) {
+    profilePayload.phone = parsed.data.phone;
+  }
+  if (parsed.data.businessName !== undefined) {
+    profilePayload.display_name = parsed.data.businessName;
+  }
+
+  if (Object.keys(profilePayload).length > 0) {
+    const { error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update(profilePayload as never)
+      .eq('id', user.id);
+
+    if (profileUpdateError) {
+      return err('INTERNAL_ERROR');
+    }
+  }
+
+  // 5. Actualización en merchants preservando campos no enviados
+  const merchantPayload: TablesUpdate<'merchants'> = {
+    business_name: parsed.data.businessName ?? existingMerchant.business_name,
+    default_pickup_address:
+      parsed.data.defaultPickupAddress ?? existingMerchant.default_pickup_address,
+    default_pickup_lat:
+      parsed.data.defaultPickupLat !== undefined
+        ? parsed.data.defaultPickupLat
+        : existingMerchant.default_pickup_lat,
+    default_pickup_lng:
+      parsed.data.defaultPickupLng !== undefined
+        ? parsed.data.defaultPickupLng
+        : existingMerchant.default_pickup_lng,
+    default_pickup_zone_id:
+      parsed.data.defaultPickupZoneId !== undefined
+        ? parsed.data.defaultPickupZoneId
+        : existingMerchant.default_pickup_zone_id,
+    notes:
+      parsed.data.notes !== undefined
+        ? parsed.data.notes || null
+        : existingMerchant.notes,
+  };
+
+  const { data: merchant, error: merchantUpdateError } = await supabase
+    .from('merchants')
+    .update(merchantPayload as never)
+    .eq('profile_id', user.id)
+    .select('profile_id')
+    .maybeSingle();
+
+  if (merchantUpdateError || !merchant) {
+    return err('INTERNAL_ERROR');
+  }
+
+  revalidatePath('/merchant/dashboard');
+  revalidatePath('/merchant/onboarding');
+  revalidatePath('/merchant/plan');
+
+  return ok({
+    redirectTo: '/merchant/plan',
   });
 }

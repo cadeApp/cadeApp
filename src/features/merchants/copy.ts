@@ -38,6 +38,12 @@ export const merchantCopy = {
     errorGeneric: 'Ocurrió un error al guardar los datos. Por favor reintentá.',
     errorTermsRequired: 'Tenés que aceptar los Términos del piloto para continuar.',
   },
+  edit: {
+    title: 'Datos de tu negocio',
+    subtitle: 'Actualizá los datos de contacto y retiro habitual de tu comercio.',
+    submitButton: 'Guardar cambios',
+    loadingButton: 'Guardando...',
+  },
 } as const;
 
 export type MerchantSubscriptionStatus = 'pilot' | 'active' | 'expired' | 'cancelled';

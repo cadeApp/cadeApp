@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AGUILARES_BOUNDS } from '@/domain/schemas';
-import { merchantOnboardingSchema } from './schemas';
+import { merchantOnboardingSchema, merchantUpdateSchema } from './schemas';
 
 describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
   const validPayload = {
@@ -288,6 +288,68 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
         const withOtherControl = 'Nota\x07con bip';
         expect(merchantOnboardingSchema.safeParse({ ...validPayload, notes: withOtherControl }).success).toBe(false);
       });
+    });
+  });
+
+  describe('T-358: Schema de actualización parcial del comercio (merchantUpdateSchema)', () => {
+    it('permite una actualización parcial de solo el teléfono y lo normaliza a 10 dígitos', () => {
+      const res = merchantUpdateSchema.safeParse({ phone: '+54 9 3865 123456' });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.phone).toBe('3865123456');
+        expect(res.data.businessName).toBeUndefined();
+        expect(res.data.defaultPickupAddress).toBeUndefined();
+      }
+    });
+
+    it('permite una actualización parcial de solo el nombre del negocio', () => {
+      const res = merchantUpdateSchema.safeParse({ businessName: 'Nuevo Nombre SRL' });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.businessName).toBe('Nuevo Nombre SRL');
+      }
+    });
+
+    it('permite borrar explícitamente notas opcionales enviando null', () => {
+      const res = merchantUpdateSchema.safeParse({ notes: null });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.notes).toBeNull();
+      }
+    });
+
+    it('rechaza campos obligatorios si se envían explícitamente como cadena vacía', () => {
+      expect(merchantUpdateSchema.safeParse({ businessName: '' }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ phone: '' }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupAddress: '' }).success).toBe(false);
+    });
+
+    it('rechaza coordenadas si se envía solo latitud o solo longitud', () => {
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -27.43, defaultPickupLng: null }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: null, defaultPickupLng: -65.61 }).success).toBe(false);
+    });
+
+    it('rechaza coordenadas fuera de los límites urbanos de Aguilares', () => {
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -26.82, defaultPickupLng: -65.61 }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -27.43, defaultPickupLng: -65.1 }).success).toBe(false);
+    });
+
+    it('acepta coordenadas válidas dentro de Aguilares', () => {
+      const res = merchantUpdateSchema.safeParse({ defaultPickupLat: -27.435, defaultPickupLng: -65.615 });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.defaultPickupLat).toBe(-27.435);
+        expect(res.data.defaultPickupLng).toBe(-65.615);
+      }
+    });
+
+    it('no exige acceptPilotTerms ni pilotTermsVersion durante la edición de datos', () => {
+      const res = merchantUpdateSchema.safeParse({
+        businessName: 'Panadería La Espiga',
+        phone: '3865123456',
+        defaultPickupAddress: 'San Martín 450',
+      });
+      expect(res.success).toBe(true);
     });
   });
 });

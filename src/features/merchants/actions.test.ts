@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { revalidatePath } from 'next/cache';
 import * as serverSupabase from '@/server/supabase/server';
 import * as adminSupabase from '@/server/supabase/admin';
-import { merchantOnboardingAction } from './actions';
+import { merchantOnboardingAction, updateMerchantProfileAction } from './actions';
 
 vi.mock('@/server/supabase/server', () => ({
   createClient: vi.fn(),
@@ -1112,6 +1112,197 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
           phone: '3865123456',
         })
       );
+    });
+  });
+
+  describe('T-358: updateMerchantProfileAction (edición parcial segura)', () => {
+    const existingMerchantRecord = {
+      profile_id: 'usr-merchant-1',
+      business_name: 'Panadería La Espiga',
+      default_pickup_address: 'San Martín 450',
+      default_pickup_lat: -27.435,
+      default_pickup_lng: -65.615,
+      default_pickup_zone_id: '11111111-1111-1111-1111-111111111111',
+      notes: 'Portón verde',
+    };
+
+    const existingProfileRecord = {
+      id: 'usr-merchant-1',
+      role: 'merchant',
+      display_name: 'Panadería La Espiga',
+      phone: '3815550123',
+    };
+
+    function setupMockSupabase(overrides?: {
+      user?: { id: string; email?: string } | null;
+      role?: string;
+      merchantRecord?: typeof existingMerchantRecord | null;
+      profileRecord?: typeof existingProfileRecord | null;
+      updateMerchantError?: Error | null;
+    }) {
+      const user = overrides?.user !== undefined ? overrides.user : { id: 'usr-merchant-1', email: 'merchant@test.com' };
+      const role = overrides?.role ?? 'merchant';
+      const merchantRecord = overrides?.merchantRecord !== undefined ? overrides.merchantRecord : { ...existingMerchantRecord };
+      const profileRecord = overrides?.profileRecord !== undefined ? overrides.profileRecord : { ...existingProfileRecord, role };
+
+      let capturedMerchantUpdate: Record<string, unknown> | null = null;
+      let capturedProfileUpdate: Record<string, unknown> | null = null;
+      const consentsCalled = vi.fn();
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: profileRecord,
+              error: null,
+            }),
+            update: vi.fn().mockImplementation((payload) => {
+              capturedProfileUpdate = payload;
+              return {
+                eq: vi.fn().mockResolvedValue({ error: null }),
+              };
+            }),
+          };
+        }
+        if (table === 'merchants') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: merchantRecord,
+              error: null,
+            }),
+            update: vi.fn().mockImplementation((payload) => {
+              capturedMerchantUpdate = payload;
+              return {
+                eq: vi.fn().mockReturnValue({
+                  select: vi.fn().mockReturnValue({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: overrides?.updateMerchantError ? null : { profile_id: user?.id },
+                      error: overrides?.updateMerchantError ?? null,
+                    }),
+                  }),
+                }),
+              };
+            }),
+          };
+        }
+        if (table === 'consents') {
+          return {
+            insert: consentsCalled,
+            upsert: consentsCalled,
+          };
+        }
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user },
+            error: null,
+          }),
+        },
+        from: mockFrom,
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      return {
+        getCapturedMerchantUpdate: () => capturedMerchantUpdate,
+        getCapturedProfileUpdate: () => capturedProfileUpdate,
+        consentsCalled,
+      };
+    }
+
+    it('rechaza si no hay sesión autenticada con UNAUTHENTICATED', async () => {
+      setupMockSupabase({ user: null });
+      const res = await updateMerchantProfileAction({ phone: '3865999888' });
+      expect(res).toEqual({ ok: false, code: 'UNAUTHENTICATED' });
+    });
+
+    it('rechaza si el actor no tiene rol merchant con UNAUTHORIZED_ACTOR', async () => {
+      setupMockSupabase({ role: 'courier' });
+      const res = await updateMerchantProfileAction({ phone: '3865999888' });
+      expect(res).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    });
+
+    it('rechaza datos inválidos con VALIDATION_ERROR (por ej. teléfono con letras)', async () => {
+      setupMockSupabase();
+      const res = await updateMerchantProfileAction({ phone: '3865invalid' });
+      expect(res).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    });
+
+    it('edición parcial de teléfono: actualiza profile.phone y preserva intactos todos los datos del comercio', async () => {
+      const { getCapturedMerchantUpdate, getCapturedProfileUpdate, consentsCalled } = setupMockSupabase();
+
+      const res = await updateMerchantProfileAction({ phone: '+54 9 3865 999888' });
+      expect(res).toEqual({ ok: true, data: { redirectTo: '/merchant/plan' } });
+
+      // Profile recibe teléfono normalizado
+      expect(getCapturedProfileUpdate()).toEqual(
+        expect.objectContaining({
+          phone: '3865999888',
+        })
+      );
+
+      // Merchants conserva intactos nombre, dirección, coordenadas, zona y notas
+      expect(getCapturedMerchantUpdate()).toEqual({
+        business_name: 'Panadería La Espiga',
+        default_pickup_address: 'San Martín 450',
+        default_pickup_lat: -27.435,
+        default_pickup_lng: -65.615,
+        default_pickup_zone_id: '11111111-1111-1111-1111-111111111111',
+        notes: 'Portón verde',
+      });
+
+      // NO debe tocar la tabla de consentimientos
+      expect(consentsCalled).not.toHaveBeenCalled();
+
+      // Rutas invalidadas
+      expect(revalidatePath).toHaveBeenCalledWith('/merchant/dashboard');
+      expect(revalidatePath).toHaveBeenCalledWith('/merchant/onboarding');
+      expect(revalidatePath).toHaveBeenCalledWith('/merchant/plan');
+    });
+
+    it('borrado explícito de notas (notes: null o empty): actualiza notes a null preservando el resto', async () => {
+      const { getCapturedMerchantUpdate } = setupMockSupabase();
+
+      const res = await updateMerchantProfileAction({ notes: null });
+      expect(res.ok).toBe(true);
+
+      expect(getCapturedMerchantUpdate()).toEqual(
+        expect.objectContaining({
+          notes: null,
+          business_name: 'Panadería La Espiga',
+          default_pickup_address: 'San Martín 450',
+        })
+      );
+    });
+
+    it('edición de nombre de negocio: actualiza merchants.business_name y profiles.display_name', async () => {
+      const { getCapturedMerchantUpdate, getCapturedProfileUpdate } = setupMockSupabase();
+
+      const res = await updateMerchantProfileAction({ businessName: 'Panadería Renovada' });
+      expect(res.ok).toBe(true);
+
+      expect(getCapturedProfileUpdate()).toEqual(
+        expect.objectContaining({
+          display_name: 'Panadería Renovada',
+        })
+      );
+      expect(getCapturedMerchantUpdate()).toEqual(
+        expect.objectContaining({
+          business_name: 'Panadería Renovada',
+        })
+      );
+    });
+
+    it('rechaza con INTERNAL_ERROR si el update en merchants no afecta filas (seguridad RLS)', async () => {
+      setupMockSupabase({ updateMerchantError: new Error('0 rows updated') });
+
+      const res = await updateMerchantProfileAction({ phone: '3865999888' });
+      expect(res).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
     });
   });
 });
