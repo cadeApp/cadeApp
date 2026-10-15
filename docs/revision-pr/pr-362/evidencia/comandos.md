@@ -67,3 +67,41 @@ git ls-remote origin feat/T-353-validacion-formularios
 **Plan de mutaciones (no ejecutado aquí, debe ejecutarse en el scratch del agente y verificarse independientemente después):** H01 restaurar `.max(10_000_000)`; H02 eliminar transform del phone y permitir `++54`; H03 reemplazar transform `walk/bike` por rechazo; H04 usar regex de controles completo en notes; H05 saltar el parseo de Action; H06 invertir el caso UI válido/inválido. Nunca commitear mutaciones, ni modificar tests para conseguir verde.
 
 Para E2E, usar el job existente asociado al Preview de la PR y registrar URL, SHA y run verdaderos; nunca ejecutar contra producción.
+
+---
+
+## Ronda 2 — inspección `5dfb57b` (2026-10-15)
+
+**Fuente:** GitHub conector, comparación de `edcc933a` a `5dfb57b`, lectura de archivos exact-head y estado de Actions. No había clon por imposibilidad de resolver DNS github.com. Se respetó la regla de no presentar inspección como ejecución.
+
+- `e2e/specs/multi-drop.spec.ts:968-982`: `if (await phoneInput.isVisible())` abarca todas las aserciones. Ausencia del campo → cero expectativas ejecutadas.
+- `e2e/specs/courier-onboarding.spec.ts:672-707`: tras corregir DNI la última línea afirma que no se muestra el error; no hay submit ni destino válido.
+- `src/lib/whatsapp.test.ts`: 109 líneas, pero la bitácora afirma RED para `162-178`.
+- `src/features/courier-onboarding/schemas.test.ts`: 189 líneas, pero la bitácora afirma RED para `384-406`.
+- `src/features/merchants/schemas.test.ts`: 295 líneas, pero la bitácora cita `285-300`.
+
+### Arreglos exigidos y mutaciones en scratch — ejecutar en entorno del agy
+
+```bash
+# Primero actualizar rama sin rebase
+git pull origin feat/T-353-validacion-formularios
+
+# Tests enfocados antes de mutar (GREEN real capturado)
+pnpm exec vitest run src/lib/whatsapp.test.ts src/features/requests/schemas.test.ts src/features/merchants/schemas.test.ts src/features/courier-onboarding/schemas.test.ts src/features/requests/actions.test.ts src/features/merchants/actions.test.ts src/features/courier-onboarding/actions.test.ts > /tmp/pr362-r2-focused.log 2>&1
+grep -E 'Test Files|Tests ' /tmp/pr362-r2-focused.log | tail -10
+
+# Solo E2E contra Preview+Supabase Develop, mediante el workflow existente.
+# Aportar run ID, SHA exacto, resultado de specs aplicables y pasos reales, sin producción.
+# Mutación 1: apuntar el locator de recipientPhone a un name imposible; el test DEBE caer por toBeVisible.
+# Mutación 2: impedir el submit final de formulario reparado; el E2E DEBE caer por no completar flujo.
+# Las mutaciones se revierten antes del commit, nunca se pushean ni se despliegan.
+pnpm typecheck > /tmp/pr362-r2-typecheck.log 2>&1
+pnpm lint > /tmp/pr362-r2-lint.log 2>&1
+pnpm test > /tmp/pr362-r2-unit.log 2>&1
+grep -E 'Test Files|Tests ' /tmp/pr362-r2-unit.log | tail -10
+git diff --check
+git status --short
+git ls-remote origin feat/T-353-validacion-formularios
+```
+
+Este documento registra condiciones para las pruebas, no resultados inventados. La verificación RED de E2E exige corrida segura de la spec en el ambiente configurado (sin desplegar código mutado).

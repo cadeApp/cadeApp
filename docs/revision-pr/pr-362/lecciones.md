@@ -9,3 +9,14 @@ No se asigna un AG nuevo: se reutilizan los patrones existentes mientras no pued
 - **Decisión 1B:** evitar introducir una regla comercial sin contrato de servidor; el límite de un `integer` de Postgres NO define un precio recomendado, solo la cota técnica. Si el negocio necesita otra, definir CC aparte.
 
 En una nueva ronda, agregar mutaciones propias a lo que el autor arregle, sin adoptar ciegamente su batería.
+
+---
+
+## Ronda 2 (SHA `5dfb57b`)
+
+No se asigna AG nuevo sin enumeración remota completa de todas las ramas.
+
+- **H08 — P04/P08:** en E2E está prohibido envolver TODAS las aserciones en `if (await locator.isVisible())`. Un campo ausente debe poner el test en rojo, no omitirlo silenciosamente.
+- **H06:** desaparecer un error no equivale a completar una operación válida; el test tiene que observar su efecto posterior y el destino esperado.
+- **H07:** la bitácora append-only no debe presentar números de línea inexistentes como prueba de una ejecución; citar el nombre de la prueba y pegar salida capturada verificable. Una descripción de lo que hubiera fallado NO equivale al rojo real.
+- **H01-H05:** los cambios son consistentes por inspección; falta ejecución y mutación independiente, sin prematuro `arreglado-verificado`.

@@ -7,30 +7,31 @@
 | **Autor** | @asako669 (P2) |
 | **Rama** | `feat/T-353-validacion-formularios` → `develop` |
 | **Base revisada** | `14c28ed3c41cb2bde92705fc018c7dd0df73245b` |
-| **HEAD revisado** | `1a433728edcd8e7d6a5e89f27e07763fe330083a` |
-| **Estado** | **CON BLOQUEANTES (7)** — ronda 1 |
-| **Tipo de comprobación** | Inspección del diff y fuentes de GitHub + control Node aislado; sin clon ni ejecución Vitest |
+| **SHA R1** | `1a433728edcd8e7d6a5e89f27e07763fe330083a` |
+| **SHA R2** | `5dfb57b33f32f4fb4d20f3a824db7bd9cfc5b754` |
+| **Estado** | **CON BLOQUEANTES**: H06, H07 y H08 pendientes |
+| **Verificación** | Inspección GitHub + estado CI parcial; sin ejecución local Vitest, E2E ni mutaciones de producción |
 
 ## Rondas
 
-| Ronda | SHA revisado | Hallazgos | Informe |
+| Ronda | SHA revisado | Resultado | Informe |
 |---|---|---|---|
-| 1 | `1a433728edcd8e7d6a5e89f27e07763fe330083a` | 7 abiertos | [ronda-1.md](revisiones/ronda-1.md) |
+| 1 | `1a433728` | 7 hallazgos | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `5dfb57b` | 5 arreglados por inspección sin verificar runtime; H06/H07 parciales, H08 nuevo | [ronda-2.md](revisiones/ronda-2.md) |
 
-## Estado por hallazgo
+## Estado de hallazgos
+- **PR362-H01** · Límite monetario contrario a decisión 1B · `arreglado-sin-verificar`
+- **PR362-H02** · Teléfonos aceptados sin persistencia normalizada y sintaxis permisiva · `arreglado-sin-verificar`
+- **PR362-H03** · Prueba walk/bike da verde aunque el onboarding rechace la operación · `arreglado-sin-verificar`
+- **PR362-H04** · El filtro de controles rechaza saltos de línea legítimos en notas · `arreglado-sin-verificar`
+- **PR362-H05** · Faltan pruebas en la frontera real de Server Actions · `arreglado-sin-verificar`
+- **PR362-H06** · E2E Preview y validación de UI por campo pendientes · `parcial`
+- **PR362-H07** · La bitácora declara RED→GREEN sin salida roja reproducible · `parcial`
+- **PR362-H08** · E2E multi-drop pasa sin ejecutar aserciones si falta el teléfono · `abierto`
 
-- **PR362-H01** · Límite monetario contrario a decisión 1B · alto · abierto
-- **PR362-H02** · Teléfonos aceptados sin persistencia normalizada y sintaxis permisiva · alto · abierto
-- **PR362-H03** · Prueba walk/bike da verde aunque el onboarding rechace la operación · medio · abierto
-- **PR362-H04** · El filtro de controles rechaza saltos de línea legítimos en notas · medio · abierto
-- **PR362-H05** · Faltan pruebas en la frontera real de Server Actions · alto · abierto
-- **PR362-H06** · E2E Preview y validación de UI por campo pendientes · alto · abierto
-- **PR362-H07** · La bitácora declara RED→GREEN sin salida roja reproducible · medio · abierto
+## Decisiones de Lautaro073
+- 2026-10-15: **1B** límite `integer` de PostgreSQL 1…2_147_483_647 ARS; **2A** patente a `null` para `walk/bike`.
+- Las dos se reflejan en el código de R2. No nuevas decisiones abiertas.
+- No aprobar ni mergear con bloqueantes.
 
-## Decisiones de Lautaro073 (2026-10-15)
-- **1B:** conservar el rango positivo de PostgreSQL `integer` (1 … 2_147_483_647 ARS), sin límite comercial arbitrario de 10 millones.
-- **2A:** `vehiclePlate: null` para `walk` y `bike`; comprobar aceptación del onboarding y ausencia de persistencia indebida.
-- Estas decisiones se recogieron ANTES de cerrar la ronda. No se impone ahora un nuevo CC ni restricciones arbitrarias de placa por subtipo sin validación oficial.
-- No aprobar ni mergear hasta nueva ronda independiente con evidencia exacta del nuevo SHA.
-
-Datos: [hallazgos.jsonl](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md).
+[hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).
