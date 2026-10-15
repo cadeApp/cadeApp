@@ -24,3 +24,10 @@ No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
 - Diagnóstico separado: gate correcto por `project.id` vs configuración de webhook por proyecto. El revisor no debe tratar un deployment de `cadeapp-staging` como el Preview seguro de `cadeapp-develop`. La existencia de ambos proyectos/depoys no demuestra cuál entregó el evento.
 - La configuración de webhooks devolvió 403. Una hipótesis acerca de un hook ausente se registra como **posibilidad no comprobada**, no como defecto asegurado. Las correcciones en settings requieren acceso del dueño; jamás leer secretos.
 - Regla de ubicación: las instrucciones expresas del usuario indican `docs/revision-pr/pr-NN` en la rama de PR incluso P2/P3, reemplazando la tabla histórica de `COMO-ENTREGAR.md`. El error anterior de escribir ronda 4 solo en `docs/revisiones` se remedia copiándola y siguiendo el nuevo mandato en ronda 5.
+
+## Ronda 6 — PR360-R03 (E2E RED verdadero)
+
+- **P07:** en una pantalla con importe duplicado por diseño (tarjeta del repartidor y mensaje del cliente), `page.getByText(formattedAmount)` de Playwright strict mode no es un oráculo único. Se debe anclar a la sección semántica del dato que se desea validar, sin reducir la prueba a `.first()` o `toHaveCount(2)`.
+- **Error de revisiones anteriores:** inspeccioné el código de `TripMerchantView` sin detectar que el importe estaba en el mensaje construido por `buildNotifyCustomerWhatsAppMessage`. El E2E real detectó esa omisión. Reconocerlo y no pedirle al agy cambios de producto por un bug de selector propio del E2E.
+- La suite global verde no ejecuta los asserts de navegador. La primera ejecución E2E (75 PASS, 1 FAIL) es evidencia superior al supuesto de verde basado en existencia de test.
+- La comprobación debe alcanzar la línea previa al reload y la posterior, y los asserts de WhatsApp, Back y privacidad que aún no alcanzó el flujo. No agregar número de lección AG sin relevar el máximo de todas las ramas remotas.

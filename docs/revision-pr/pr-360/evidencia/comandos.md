@@ -152,3 +152,31 @@ Estos comandos no fueron ejecutados en la sesión del revisor; el entorno carece
 - Vercel lectura: proyectos distintos `cadeapp-staging` y `cadeapp-develop`; ambos tienen deployment READY para `e1e7e53ee1c50bdfa89468132ff5194d6b781860` (ID del proyecto/deploy no se pega porque no es necesario). `get_webhooks` para develop devolvió 403 Forbidden; no se pudo acreditar configuración.
 - No se ejecutó E2E/mutación local por el revisor. No se modificaron los workflows/secretos/entornos remotos.
 - Reproducir una vez que webhook del proyecto develop esté validado: comprobar que run resolve declara `PR interna #360 contra develop`, que `needs.resolve.outputs.run=true`, que E2E Playwright pasa, y que `report-preview-status` publica `e2e-preview=success` en el SHA exacto.
+
+## Ronda 6 — 2026-10-15 — HEAD ceb1161b07f1419992e764bbe17db9a28ea2fc2e
+
+**Fuente real del RED:** https://github.com/cadeApp/cadeApp/actions/runs/38694202782, job https://github.com/cadeApp/cadeApp/actions/runs/38694202782/job/116286928820, `Run preview E2E gate`, SHA objetivo registrado por commit status `e2e-preview=failure`.
+
+Resumen textual real de Playwright:
+```
+1 failed
+  [chromium] › e2e/specs/main-flow.spec.ts:89:7 › ... › DoD: Aceptación concurrente en dos sesiones independientes navega a /trips/[id] y converge
+75 passed (21.1m)
+Error: expect.toBeVisible: Error: strict mode violation: getByText('$ 1.500') resolved to 2 elements
+1) <span class="shrink-0 font-display text-lg font-bold text-foreground">$ 1.500</span>
+2) <div class="rounded-lg border border-border/50 bg-background/80 p-2.5 text-sm italic text-muted-foreground">"Hola! Tu pedido va en camino con ...</div>
+e2e/specs/main-flow.spec.ts:248:78
+```
+Hubo retries que fallaron con el mismo tipo de strict mode (valores $ 1.500 y $ 2.000). El test pudo ejecutar sus asserts previos a línea 248, no los posteriores. No concluir que WhatsApp, Back y reload están validados. La bitácora propia todavía no consigna este RED.
+
+**Comparación de DOM en SHA inspeccionado:** `src/features/trips/components/trip-merchant-view.tsx` tiene `<Card><CardHeader><h2>Repartidor asignado</h2></CardHeader><CardContent>...<span>{formatArs(trip.amountArs)}</span>...</CardContent></Card>` y otra Card de "Avisale a tu cliente" con `dropCustomerMsg` (`src/lib/whatsapp.ts` lo construye incluyendo costo de envío). `getByText` amplio coincide con ambos.
+
+**Causa exacta del RED** es demostrada por Playwright. **No se ejecutó mutación independiente ni Playwright local**: no hay clon/pnpm en este entorno. No inventar un comando verde.
+
+**Alcance del merge previo:** `ceb1161b` tiene dos padres: `235559ec` y `cba78a29`. El E2E T-359 y T-360 coexisten, en tests merchant conviven T-359/T-364, y el source merchant-requests-list de develop ya tiene ruta /trips y acción de cancelar. `develop` volvió a avanzar a `3b9f4090`: esos cambios son otras rutas y schemas, sin conflicto demostrado; requiere revalidar el merge-tree antes del merge final.
+
+**CI del HEAD:** `unit` SUCCESS: 132 suites Vitest, 79 workflow y 6 ADR; `db-tests` SUCCESS: `Files=22 Tests=2205 Result: PASS` (el job ejecutó otros checks de mutación RED/GREEN de CC-024, no confundir con evidencia T-359); `typecheck/lint/build/audit/bundle-budget` SUCCESS. `approval-policy` FAIL por aprobación vigente pendiente. `e2e-preview` commit status `failure`.
+
+**Reproducción pedida al autor**: reemplazar SOLO selector amplio en las DOS aserciones de monto del spec (antes y después de reload). Seleccionar la Card usando el heading h2 `Repartidor asignado` y los dos niveles padre `locator('..').locator('..')`, dentro de ella `getByText(formatArs(acceptedOffer.amountArs), {exact:true})`, con `toHaveCount(1)` y `toBeVisible()`. Sin `first`, `nth`, temporizadores, fake DOM ni cambio de UI. Ejecutar test completo sobre Preview real del nuevo SHA, conservar el RED original y anotar GREEN si sucede.
+
+No se ejecutó `git merge-tree` ni `pnpm` desde clon local; la PR figuraba `mergeable:true` y develop se movió desde la última sincronización, por lo que no se declara rebase completo.

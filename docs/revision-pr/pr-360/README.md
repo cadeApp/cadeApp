@@ -13,6 +13,7 @@
 | 3 | `19439be7962e8f1b8cde4b02c910f7bbfd717577` | Con bloqueantes | [ronda-3](revisiones/ronda-3.md) |
 | 4 | `efb22c421b1ded80f48380fef4edc9e4981831f5` | Sin nuevos bloqueantes de código; E2E bloqueado | [ronda-4](revisiones/ronda-4.md) |
 | 5 | `e1e7e53ee1c50bdfa89468132ff5194d6b781860` | **Con bloqueo de validación E2E; sin cambios de código** | [ronda-5](revisiones/ronda-5.md) |
+| 6 | `ceb1161b07f1419992e764bbe17db9a28ea2fc2e` | **CON BLOQUEANTE R03: E2E real falla** | [ronda-6](revisiones/ronda-6.md) |
 
 ## Hallazgos actuales
 
@@ -27,8 +28,9 @@
 | PR360-H07 | medio | arreglado-sin-verificar |
 | PR360-R01 | medio | arreglado-sin-verificar |
 | PR360-R02 | alto | arreglado-sin-verificar |
+| PR360-R03 | alto | abierto |
 
-**Solo sigue parcial H05**, porque el E2E no se ejecutó contra Vercel Preview + Supabase Develop. Todo el resto sigue `arreglado-sin-verificar`, no `arreglado-verificado`, ya que esta sesión no tiene clon/pnpm ni mutaciones independientes. El resultado `SUCCESS` de `resolve-preview` cuando deja `run=false` no equivale a haber corrido Playwright.
+**H05 sigue parcial y R03 está abierto:** el E2E ya corrió contra Vercel Preview + Supabase Develop, pero **falló de verdad** (75 PASS, 1 FAIL) por un locator de monto no único. Todo el resto sigue `arreglado-sin-verificar`, no `arreglado-verificado`, ya que esta sesión no tiene clon/pnpm ni mutaciones independientes. El run 38694202782 sí ejecutó Playwright; su resultado E2E RED bloquea merge hasta corrección y nueva corrida satisfactoria. Un `resolve-preview SUCCESS` por sí solo nunca es prueba.
 
 **Decisión humana B ya cerrada:** cancelled/expired como terminales seguros en el mismo detalle. **La PR NO se aprueba ni mergea aquí.** `approval-policy` requiere aprobación vigente de Lautaro073.
 
