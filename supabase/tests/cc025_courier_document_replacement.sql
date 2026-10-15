@@ -394,12 +394,6 @@ select is(
   'PR364-H07: Reintento con misma idempotencyKey retorna idempotent = true'
 );
 
-select is(
-  (select count(*)::int from public.audit_log where action = 'replace_courier_document' and actor_id = pg_temp.courier_a()),
-  1,
-  'PR364-H07: Reintento idempotente NO duplica eventos en audit_log'
-);
-
 select throws_matching(
   $$
     select public.replace_courier_document(jsonb_build_object(
@@ -410,6 +404,13 @@ select throws_matching(
   $$,
   'VALIDATION_ERROR',
   'PR364-H07: Misma idempotencyKey con storagePath diferente falla con VALIDATION_ERROR'
+);
+
+select pg_temp.reset_actor();
+select is(
+  (select count(*)::int from public.audit_log where action = 'replace_courier_document' and actor_id = pg_temp.courier_a()),
+  1,
+  'PR364-H07: Reintento idempotente NO duplica eventos en audit_log'
 );
 
 -- 15. PR364-H02: Admin no puede decidir sobre un documento obsoleto
