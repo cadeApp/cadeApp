@@ -72,3 +72,54 @@ grep -E 'Test Files|Tests|FAIL|PASS' /tmp/pr361-r2-vitest.log | tail -20
 - H10: inspección de clase exacta `min-h-12` en controles reales.
 
 **IMPORTANTE:** no hay harness de mutación aquí porque no puede ejecutarse en este contenedor. Estos son escenarios futuros, no falsos resultados. El agente no debe escribir la carpeta de revisión ni firmar verificación independiente. Prohibido ejecutar Supabase o Docker local y usar secretos remotos.
+
+---
+
+# Ronda 3 — `25a787adfe2aaeeed7b9013231582a5c3dddce14` — 2026-10-15
+
+## Orígenes
+- Diff entre ronda 2 y este HEAD: dos commits `12f6e01f...` y `25a787adfe2aaeeed7b9013231582a5c3dddce14`; se tocaron solo `docs/tasks/log/T-364.md`, `e2e/specs/request-states.spec.ts`, `merchant-request-cancel-dialog.tsx`, `merchant-requests-list.tsx`, `merchant-requests-list.test.tsx`. **No hubo edición autoral en carpeta de revisión.**
+- GitHub informa `mergeable=true` pero clon local y `merge-tree` no disponibles; comando `git ls-remote https://github.com/cadeApp/cadeApp.git refs/heads/feat/T-364-cancelar-desde-mis-solicitudes` devolvió `fatal: ... Could not resolve host: github.com`.
+- GitHub Actions CI run 38681382821 para `25a787adfe2aaeeed7b9013231582a5c3dddce14`: lint, typecheck, build, audit, bundle-budget, unit y db-tests **success**.
+- Logs CI: `Tests 2180 passed (2180)` en unit y `Files=22, Tests=2205, Result: PASS` en pgTAP.
+- No aparece ejecución identificada del `T-364` Playwright UI en el comentario/bitácora del autor ni en la ejecución de CI revisada. No afirmar que falló; informar que **no está comprobada**.
+- Usuario: no se extrajeron claves/secretos ni se conectó a DB/Vercel de forma operativa.
+
+## Demostración ejecutada con Node de la falsedad de un oráculo léxico (H11)
+
+```bash
+node -e 'for (const s of ["Canceladas","Cancelada","Cancelado"]) console.log(s, /cancelad[ao]/i.test(s))'
+```
+
+**Salida observada:**
+```text
+Canceladas true
+Cancelada true
+Cancelado true
+```
+
+Esta reproducción **no es una mutación ni un E2E**, solo prueba que el matcher coincide con el tab que siempre existe en la pantalla.
+
+## Comandos de revalidación (propuestos, no ejecutados por este revisor)
+
+```bash
+git fetch origin
+git switch feat/T-364-cancelar-desde-mis-solicitudes
+git rev-parse HEAD
+git status --short
+git merge-tree --write-tree origin/develop HEAD
+pnpm typecheck > /tmp/pr361-r3-typecheck.log 2>&1
+pnpm lint > /tmp/pr361-r3-lint.log 2>&1
+pnpm exec vitest run src/features/requests/components/merchant-requests-list.test.tsx > /tmp/pr361-r3-unit.log 2>&1
+grep -E 'Test Files|Tests|FAIL|PASS' /tmp/pr361-r3-unit.log | tail -20
+# Requiere Preview del HEAD y Supabase Develop:
+pnpm exec playwright test e2e/specs/request-states.spec.ts --project=chromium -g 'T-364'
+```
+
+## Batería independiente propuesta (NO ejecutada)
+- **H11 / oráculo historial:** mantener tab `Canceladas` mientras se quita temporalmente **solo** la fila cancelada del listado (mutación no desplegada) y exigir RED de `href` ligado a `requestId`, no match del tab. Para el contador, mutar el incremento/cómputo de `activeCount` en un control seguro y exigir RED exacto de diferencia.
+- **H12 / fail-closed:** quitar temporalmente navegación/clic del E2E dentro de una copia de la spec y exigir RED de estado final; no dejar alternativa `rpc` en flujo positivo. No tocar endpoint ni mutar políticas de autorización; mutaciones de seguridad vía `e2e-mutation`.
+- **H13 / contrato:** pasar como retorno diferido `{ok:false,error:'INVALID_STATE_TRANSITION'}` y exigir error de tipos TS; devolver el tipo real, baseline GREEN y sin `as any`.
+- **H06–H10:** reproducir independiente con mutantes nuevos por familia, sin adoptar como hechos propios las salidas declaradas en la bitácora del autor.
+
+**Restricción de verificación:** no se pudo levantar un clon limpio en el contenedor (DNS de github.com), así que no hay harness local de mutaciones copiado/corrido en esta ronda. Nunca presentar lo anterior como una ejecución real. La carencia de esa comprobación obliga a mantener `verificado_en_sha=null`.

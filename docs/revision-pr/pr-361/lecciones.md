@@ -16,3 +16,9 @@ No se asigna un número AG nuevo ni se modifica `AGENTS.md` en esta ronda inicia
 - **H09 / P04:** no calcular en el test la expectativa invocando la misma función de traducción de errores que se está validando. Probar además el camino productivo, no exclusivamente un callback inyectado.
 
 Estos problemas están identificados por inspección; no proclamar mutaciones exitosas sin poder correrlas. No cambiar `AGENTS.md` por un caso aislado.
+
+## Ronda 3 — evidencia de reincidencia (sin numeración AG nueva)
+- **H11 / P04:** un E2E puede hacer pasos reales y luego afirmar un texto de navegación persistente, no la entidad que acaba de mutar. Oráculos de UI deben ligar el ID concreto y el cambio de contador, además del SQL.
+- **H12 / P08:** una prueba titulada de navegador nunca debe tener un `else` que la convierta en test directo de RPC. Si faltan `page` o credenciales de fixture, fallar cerrado. El autor debe informar SHA/run E2E para afirmar ejecución.
+- **H13 / P01:** `as any` incluso en tests de concurrencia inutiliza el tipo cuya interfaz se quiere proteger; usar el retorno de `typeof action` para promesas diferidas.
+- El autor sí corrigió guard, catch, reset y 48px; no pedirles que se reimplementen. Falta la reproducción independiente RED→GREEN para cambiar sus estados a verificados.

@@ -14,19 +14,17 @@
 | Ronda | SHA revisado | Hallazgos | Informe |
 |---|---|---|---|
 | 1 | `5d1be4bc129e96a4ba16e493ef355206ee74c44e` | H01–H04 | [ronda-1.md](revisiones/ronda-1.md) |
-| 2 | `f397c21b39f04de03d32615aedbdbaa8a9cbe559` | H05–H09 bloqueantes, H10 mejora | [ronda-2.md](revisiones/ronda-2.md) |
+| 2 | `f397c21b39f04de03d32615aedbdbaa8a9cbe559` | H05–H09, H10 mejora | [ronda-2.md](revisiones/ronda-2.md) |
+| 3 | `25a787adfe2aaeeed7b9013231582a5c3dddce14` | H11–H13 bloqueantes | [ronda-3.md](revisiones/ronda-3.md) |
 
 ## Estado resumido
 
-- **H01:** parcial, funcionalidad incorporada pero DoD E2E no probado.
-- **H02–H04:** arreglados por inspección; **sin ejecución de mutaciones independientes**.
-- **H05:** el supuesto E2E no ejerce la UI ni el actor merchant ajeno.
-- **H06:** el diálogo controlado conserva paso y motivo después de cierre del padre.
-- **H07:** doble submit sin guarda sincrónica.
-- **H08:** falta manejo de promesas rechazadas.
-- **H09:** mocks/oráculos UI no conectan con la Server Action real.
-- **H10:** targets 44px en listado vs declaración >=48px.
+- **H01 / H05:** parcial; el E2E ahora recorre UI y otro comercio, pero no valida historial ni contador y no hay evidencia de corrida Playwright en Preview.
+- **H02–H04 / H06–H10:** arreglados por inspección, sin mutación ejecutada por esta revisión.
+- **H11:** aserción `Canceladas` tautológica; contador no verificado.
+- **H12:** bypass `else rpc()`, botón `first()` y ausencia de run E2E exacto.
+- **H13:** `as any` en la prueba de doble clic (prohibido por skill).
 
-**Evidencia de CI:** 2174 unit y 2205 pgTAP PASS para el SHA revisado; insuficiente para completar DoD UI.
+CI del SHA original de ronda 3: run [38681382821](https://github.com/cadeApp/cadeApp/actions/runs/38681382821), success; 2180 Vitest / 2205 pgTAP PASS. No confundir con E2E Playwright.
 
-Datos: [hallazgos.jsonl](hallazgos.jsonl). Evidencia y comandos: [comandos.md](evidencia/comandos.md).
+Datos: [hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).
