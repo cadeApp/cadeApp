@@ -13,6 +13,7 @@ import { EmptyState } from '@/ui/empty-state';
 import { notify } from '@/ui/notify';
 import { getDomainErrorMessage } from '@/lib/error-messages';
 import type { ActionResult, DomainErrorCode } from '@/domain/errors';
+import type { RpcOutput } from '@/domain/rpc-contracts';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
 import { cancelMerchantRequestAction } from '../actions';
 import { MerchantRequestCancelDialog } from './merchant-request-cancel-dialog';
@@ -23,7 +24,7 @@ export interface MerchantRequestsListProps {
   readonly onCancel?: (
     requestId: string,
     reason: string
-  ) => Promise<ActionResult<unknown, DomainErrorCode>>;
+  ) => Promise<ActionResult<RpcOutput<'cancel_request'>, DomainErrorCode>>;
 }
 
 function getStatusBadgeConfig(
@@ -74,6 +75,7 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const inFlightRef = React.useRef(false);
 
   const isCancelable = (req: MerchantRequestSummary) => {
     if (req.status === 'matched') return true;
@@ -86,28 +88,40 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
   };
 
   const handleOpenCancel = (requestId: string) => {
+    if (isPending || inFlightRef.current) return;
     setSelectedRequestId(requestId);
     setCancelModalOpen(true);
   };
 
   const handleConfirmCancel = (reason: string) => {
-    if (!selectedRequestId) return;
+    if (!selectedRequestId || inFlightRef.current) return;
+    inFlightRef.current = true;
     const reqId = selectedRequestId;
-    startTransition(async () => {
-      const res = onCancel
-        ? await onCancel(reqId, reason)
-        : await cancelMerchantRequestAction({ requestId: reqId, reason });
 
-      if (res.ok) {
-        notify.success('Solicitud cancelada.');
+    startTransition(async () => {
+      try {
+        const res = onCancel
+          ? await onCancel(reqId, reason)
+          : await cancelMerchantRequestAction({ requestId: reqId, reason });
+
+        if (res.ok) {
+          notify.success('Solicitud cancelada.');
+          setCancelModalOpen(false);
+          setSelectedRequestId(null);
+          router.refresh();
+        } else {
+          notify.error(getDomainErrorMessage(res.code));
+          setCancelModalOpen(false);
+          setSelectedRequestId(null);
+          router.refresh();
+        }
+      } catch {
+        notify.error('No se pudo conectar para cancelar la solicitud. Intentá nuevamente.');
         setCancelModalOpen(false);
         setSelectedRequestId(null);
         router.refresh();
-      } else {
-        notify.error(getDomainErrorMessage(res.code));
-        setCancelModalOpen(false);
-        setSelectedRequestId(null);
-        router.refresh();
+      } finally {
+        inFlightRef.current = false;
       }
     });
   };
@@ -244,8 +258,9 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
                         type="button"
                         variant="outline"
                         size="sm"
+                        disabled={isPending || inFlightRef.current}
                         onClick={() => handleOpenCancel(req.id)}
-                        className="min-h-[44px] text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        className="min-h-12 text-destructive hover:bg-destructive/10 hover:text-destructive"
                         aria-label={`Cancelar solicitud ${destinations}`}
                       >
                         Cancelar
@@ -257,7 +272,7 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
                           ? `/merchant/requests/${req.id}`
                           : `/trips/${req.id}`
                       }
-                      className={buttonVariants({ variant: 'outline', size: 'sm' }) + ' min-h-[44px]'}
+                      className={buttonVariants({ variant: 'outline', size: 'sm' }) + ' min-h-12'}
                     >
                       {req.status === 'published' ? 'Ver ofertas' : 'Ver detalle'}
                     </Link>
@@ -270,8 +285,13 @@ export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRe
       )}
 
       <MerchantRequestCancelDialog
+        key={selectedRequestId ?? 'cancel-dialog'}
         open={cancelModalOpen}
-        onOpenChange={setCancelModalOpen}
+        onOpenChange={(nextOpen) => {
+          if (!isPending && !inFlightRef.current) {
+            setCancelModalOpen(nextOpen);
+          }
+        }}
         onConfirm={handleConfirmCancel}
         isPending={isPending}
       />

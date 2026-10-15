@@ -37,6 +37,13 @@ export function MerchantRequestCancelDialog({
   const [step, setStep] = useState<1 | 2>(1);
   const [reason, setReason] = useState<string>('');
 
+  React.useEffect(() => {
+    if (!open) {
+      setStep(1);
+      setReason('');
+    }
+  }, [open]);
+
   const isReasonValid = reason.trim().length > 0;
 
   const resetAndClose = () => {

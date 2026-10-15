@@ -6,7 +6,7 @@ import { MerchantRequestsList } from './merchant-requests-list';
 import { MerchantHistoryView } from './merchant-history-view';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
 import { notify } from '@/ui/notify';
-import { getDomainErrorMessage } from '@/lib/error-messages';
+import { cancelMerchantRequestAction } from '../actions';
 
 const mockRefresh = vi.fn();
 const mockPush = vi.fn();
@@ -23,6 +23,10 @@ vi.mock('@/ui/notify', () => ({
     success: vi.fn(),
     error: vi.fn(),
   },
+}));
+
+vi.mock('../actions', () => ({
+  cancelMerchantRequestAction: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -479,16 +483,37 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     expect(screen.getByRole('button', { name: /atrás/i })).toBeDefined();
   });
 
-  it('DoD 1 & PR361-H02: confirmar cancelación ejecuta acción con requestId y motivo, notificando éxito y refrescando exactamente una vez', async () => {
-    const mockOnCancel = vi.fn().mockResolvedValue({ ok: true, data: { status: 'cancelled' } });
+  it('DoD 3: botón Atrás en paso 2 vuelve al paso 1 conservando el motivo seleccionado', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
 
-    render(
-      <MerchantRequestsList
-        requests={t364Requests}
-        metrics={t364Metrics}
-        onCancel={mockOnCancel}
-      />
-    );
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Lo resolví de otra forma'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    expect(screen.getByText(/¿Confirmás la cancelación definitiva\?/i)).toBeDefined();
+
+    const backBtn = screen.getByRole('button', { name: /atrás/i });
+    fireEvent.click(backBtn);
+
+    expect(screen.getByText(/¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
+    const reasonRadio = screen.getByLabelText('Lo resolví de otra forma') as HTMLInputElement;
+    expect(reasonRadio.checked).toBe(true);
+  });
+
+  it('DoD 1 & PR361-H09: confirmar cancelación ejecuta acción productiva con requestId y motivo, notificando éxito y refrescando exactamente una vez', async () => {
+    const validUuid = '11111111-2222-3333-4444-555555555555';
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        requestId: validUuid,
+        status: 'cancelled',
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
+    });
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
 
     const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
     fireEvent.click(cancelButtons[0]!); // req-pub-vigente
@@ -500,19 +525,26 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-vigente', 'Lo resolví de otra forma');
+      expect(cancelMerchantRequestAction).toHaveBeenCalledWith({
+        requestId: 'req-pub-vigente',
+        reason: 'Lo resolví de otra forma',
+      });
     });
 
     await waitFor(() => {
-      expect(notify.success).toHaveBeenCalledWith(expect.stringMatching(/cancelad[ao]/i));
+      expect(notify.success).toHaveBeenCalledWith('Solicitud cancelada.');
       expect(mockRefresh).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('DoD 3, PR361-H02 & PR361-H03: error por carrera concurrente (INVALID_STATE_TRANSITION) muestra error amigable y refresca exactamente una vez', async () => {
+  it('DoD 1 & PR361-H09: compatibilidad con prop inyectable onCancel con RpcOutput canónico', async () => {
     const mockOnCancel = vi.fn().mockResolvedValue({
-      ok: false,
-      code: 'INVALID_STATE_TRANSITION',
+      ok: true,
+      data: {
+        requestId: 'req-pub-vigente',
+        status: 'cancelled' as const,
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
     });
 
     render(
@@ -522,6 +554,29 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
         onCancel={mockOnCancel}
       />
     );
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Ya no hace falta'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-vigente', 'Ya no hace falta');
+      expect(notify.success).toHaveBeenCalledWith('Solicitud cancelada.');
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('DoD 3 & PR361-H09: error por carrera concurrente (INVALID_STATE_TRANSITION) muestra mensaje literal amigable y refresca', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValueOnce({
+      ok: false,
+      code: 'INVALID_STATE_TRANSITION',
+    });
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
 
     const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
     fireEvent.click(cancelButtons[1]!); // req-matched-2
@@ -532,28 +587,25 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
 
     await waitFor(() => {
-      expect(mockOnCancel).toHaveBeenCalledWith('req-matched-2', 'Otro');
+      expect(cancelMerchantRequestAction).toHaveBeenCalledWith({
+        requestId: 'req-matched-2',
+        reason: 'Otro',
+      });
     });
 
     await waitFor(() => {
-      expect(notify.error).toHaveBeenCalledWith(getDomainErrorMessage('INVALID_STATE_TRANSITION'));
+      expect(notify.error).toHaveBeenCalledWith('El estado actual del pedido no permite este cambio.');
       expect(mockRefresh).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('PR361-H03 & PR361-H04: error cuando el servidor responde REQUEST_EXPIRED notifica error y refresca la vista', async () => {
-    const mockOnCancel = vi.fn().mockResolvedValue({
+  it('PR361-H09: error cuando el servidor responde REQUEST_EXPIRED muestra mensaje literal y refresca', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValueOnce({
       ok: false,
       code: 'REQUEST_EXPIRED',
     });
 
-    render(
-      <MerchantRequestsList
-        requests={t364Requests}
-        metrics={t364Metrics}
-        onCancel={mockOnCancel}
-      />
-    );
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
 
     const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
     fireEvent.click(cancelButtons[0]!); // req-pub-vigente
@@ -564,12 +616,133 @@ describe('T-364: Cancelar desde «Mis solicitudes» del comercio sin entrar al d
     fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
 
     await waitFor(() => {
-      expect(mockOnCancel).toHaveBeenCalledWith('req-pub-vigente', 'Ya no hace falta');
+      expect(cancelMerchantRequestAction).toHaveBeenCalledWith({
+        requestId: 'req-pub-vigente',
+        reason: 'Ya no hace falta',
+      });
     });
 
     await waitFor(() => {
-      expect(notify.error).toHaveBeenCalledWith(getDomainErrorMessage('REQUEST_EXPIRED'));
+      expect(notify.error).toHaveBeenCalledWith('La solicitud venció por falta de ofertas a tiempo.');
       expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('PR361-H08: error de red o excepción rechazada captura en catch, muestra notify.error amigable, no muestra éxito y refresca', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockRejectedValueOnce(new Error('Network failure'));
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Me equivoqué en los datos'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(cancelMerchantRequestAction).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(notify.error).toHaveBeenCalledWith(
+        'No se pudo conectar para cancelar la solicitud. Intentá nuevamente.'
+      );
+      expect(notify.success).not.toHaveBeenCalled();
+      expect(mockRefresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('PR361-H07: guarda sincrónica inFlightRef bloquea doble confirmación concurrente antes del re-render', async () => {
+    let resolveAction!: (val: unknown) => void;
+    const deferredPromise = new Promise((resolve) => {
+      resolveAction = resolve;
+    });
+
+    vi.mocked(cancelMerchantRequestAction).mockReturnValue(deferredPromise as any);
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!);
+
+    fireEvent.click(screen.getByLabelText('Ya no hace falta'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    const confirmBtn = screen.getByRole('button', { name: /sí, cancelar/i });
+
+    // Disparar dos clicks consecutivos inmediatos
+    fireEvent.click(confirmBtn);
+    fireEvent.click(confirmBtn);
+
+    expect(cancelMerchantRequestAction).toHaveBeenCalledTimes(1);
+
+    // Resolver la acción en vuelo
+    resolveAction({
+      ok: true,
+      data: {
+        requestId: 'req-pub-vigente',
+        status: 'cancelled',
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
+    });
+
+    await waitFor(() => {
+      expect(notify.success).toHaveBeenCalledWith('Solicitud cancelada.');
+    });
+  });
+
+  it('PR361-H06: reset de diálogo garantiza que aperturas consecutivas inicien en paso 1 con motivo vacío y Continuar deshabilitado', async () => {
+    vi.mocked(cancelMerchantRequestAction).mockResolvedValue({
+      ok: true,
+      data: {
+        requestId: 'req-pub-vigente',
+        status: 'cancelled',
+        cancelledAt: '2026-10-15T01:00:00.000Z',
+      },
+    });
+
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    // 1. Abrir diálogo para solicitud A, avanzar a paso 2 y confirmar
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    fireEvent.click(cancelButtons[0]!); // Solicitud 1
+
+    fireEvent.click(screen.getByLabelText('Lo resolví de otra forma'));
+    fireEvent.click(screen.getByRole('button', { name: /continuar/i }));
+
+    expect(screen.getByText(/¿Confirmás la cancelación definitiva\?/i)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: /sí, cancelar/i }));
+
+    await waitFor(() => {
+      expect(notify.success).toHaveBeenCalledTimes(1);
+    });
+
+    // 2. Abrir diálogo para solicitud B: debe iniciar en paso 1, sin motivo y Continuar deshabilitado
+    fireEvent.click(cancelButtons[1]!); // Solicitud 2
+    expect(screen.getByText(/¿Por qué cancelás esta solicitud\?/i)).toBeDefined();
+    const continueBtn = screen.getByRole('button', { name: /continuar/i });
+    expect(continueBtn.hasAttribute('disabled') || continueBtn.getAttribute('aria-disabled') === 'true').toBe(true);
+
+    // Verificar que ningún radio está marcado
+    const radios = screen.getAllByRole('radio');
+    radios.forEach((r) => {
+      expect((r as HTMLInputElement).checked).toBe(false);
+    });
+  });
+
+  it('PR361-H10: botón «Cancelar» y enlaces del listado tienen clase min-h-12 (>=48px)', () => {
+    render(<MerchantRequestsList requests={t364Requests} metrics={t364Metrics} />);
+
+    const cancelButtons = screen.getAllByRole('button', { name: /cancelar/i });
+    cancelButtons.forEach((btn) => {
+      expect(btn.className).toContain('min-h-12');
+    });
+
+    const detailLinks = screen.getAllByRole('link', { name: /ver ofertas|ver detalle/i });
+    detailLinks.forEach((link) => {
+      expect(link.className).toContain('min-h-12');
     });
   });
 });

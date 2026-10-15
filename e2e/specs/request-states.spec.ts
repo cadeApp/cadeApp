@@ -8,6 +8,9 @@ import {
   seedAdminUser,
   getPlatformSettingNumber,
   setMerchantSubscriptionStatus,
+  createStagingSeedContext,
+  seedStagingData,
+  cleanupStagingData,
 } from '../fixtures';
 
 /**
@@ -819,18 +822,19 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // T-364: Cancelación de solicitud por comercio dueño y frontera autoritativa
+  // T-364: Cancelación rápida desde «Mis solicitudes» del comercio sin entrar al detalle
   // ---------------------------------------------------------------------------
-  test('T-364 (§5.1): Cancelación rápida por comercio dueño en published/matched: rechaza comercio ajeno y persiste trazabilidad', async ({
+  test('T-364 (§5.1): Cancelación rápida por comercio dueño en published/matched: UI, oráculo SQL y rechazo ajeno', async ({
+    page,
     stagingContext,
+    loginAsMerchant,
   }) => {
     const merchant = stagingContext.merchantUser;
-    const courier = stagingContext.courierUsers?.[0];
-    if (!merchant || !courier) {
-      throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
+    if (!merchant) {
+      throw new Error('[E2E Precondition Error] Se requiere merchant en stagingContext');
     }
 
-    // Precondición: solicitud published de merchant
+    // Precondición: solicitud published de merchant con oferta pending
     const seedResult = await seedDeliveryRequestInState(stagingContext, {
       status: 'published',
       merchantId: merchant.id,
@@ -838,32 +842,90 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       withPendingOffersCount: 1,
     });
     const requestId = seedResult.requestId;
+    const pendingOfferId = seedResult.pendingOfferIds[0];
 
-    const merchantClient = await createAuthenticatedClient(merchant);
-    const courierClient = await createAuthenticatedClient(courier);
+    // 1. Caso negativo: intento de cancelación por un SEGUNDO COMERCIO real sobre solicitud ajena
+    const secondContext = createStagingSeedContext();
+    try {
+      await seedStagingData(secondContext, {
+        requestsCount: 0,
+        withMerchant: true,
+      });
+      const secondMerchant = secondContext.merchantUser;
+      if (!secondMerchant) {
+        throw new Error('[E2E Precondition Error] No se pudo inicializar segundo comercio');
+      }
+      const secondMerchantClient = await createAuthenticatedClient(secondMerchant);
+      await expectRpcFailure(
+        secondMerchantClient.rpc('cancel_request', {
+          p_request_id: requestId,
+          p_reason: 'Intento de cancelación por comercio no dueño',
+        }),
+        'UNAUTHORIZED_ACTOR'
+      );
 
-    // 1. Caso negativo: courier u otro actor no autorizado intenta cancelar
-    await expectRpcFailure(
-      courierClient.rpc('cancel_request', {
+      // Oráculo DB intermedio: la solicitud permanece intacta en published
+      const intermediateInspection = await getRequestInspectionData(stagingContext, requestId);
+      expect(intermediateInspection.requestStatus).toBe('published');
+      expect(intermediateInspection.cancelledAt).toBeNull();
+    } finally {
+      await cleanupStagingData(secondContext);
+    }
+
+    // 2. Flujo UI real con Playwright navegando como el comercio dueño
+    if (page && loginAsMerchant) {
+      await loginAsMerchant(page);
+      await page.goto('/merchant/dashboard');
+
+      // Localizar botón Cancelar de la solicitud en la tarjeta
+      const cancelBtn = page.getByRole('button', { name: /cancelar/i }).first();
+      await cancelBtn.waitFor({ state: 'visible', timeout: 10000 });
+      await cancelBtn.click();
+
+      // Comprobar diálogo - Paso 1: título, motivo obligatorio y continuar deshabilitado
+      await expect(page.getByText('¿Por qué cancelás esta solicitud?')).toBeVisible();
+      const continueBtn = page.getByRole('button', { name: /continuar/i });
+      await expect(continueBtn).toBeDisabled();
+
+      // Seleccionar motivo obligatorio
+      const reasonRadio = page.getByLabel('Lo resolví de otra forma');
+      await reasonRadio.click();
+      await expect(continueBtn).toBeEnabled();
+      await continueBtn.click();
+
+      // Paso 2: confirmación irreversible y botón de confirmación
+      await expect(page.getByText('¿Confirmás la cancelación definitiva?')).toBeVisible();
+      await expect(page.getByText('Lo resolví de otra forma')).toBeVisible();
+      const confirmBtn = page.getByRole('button', { name: /sí, cancelar/i });
+      await confirmBtn.click();
+
+      // Esperar que se cierre el modal y desaparezca de solicitudes activas
+      await expect(page.getByText('¿Confirmás la cancelación definitiva?')).not.toBeVisible({ timeout: 10000 });
+
+      // Comprobar en /merchant/history que figura cancelada
+      await page.goto('/merchant/history');
+      await expect(page.getByText(/cancelad[ao]/i).first()).toBeVisible({ timeout: 10000 });
+    } else {
+      // Invocación autoritativa directa si se corre sin browser
+      const merchantClient = await createAuthenticatedClient(merchant);
+      const { error: cancelError } = await merchantClient.rpc('cancel_request', {
         p_request_id: requestId,
-        p_reason: 'Intento no autorizado',
-      }),
-      'UNAUTHORIZED_ACTOR'
-    );
+        p_reason: 'Lo resolví de otra forma',
+      });
+      expect(cancelError).toBeNull();
+    }
 
-    // 2. Caso positivo: comercio dueño cancela directamente con motivo
-    const { data: cancelData, error: cancelError } = await merchantClient.rpc('cancel_request', {
-      p_request_id: requestId,
-      p_reason: 'Lo resolví de otra forma',
-    });
-    expect(cancelError).toBeNull();
-    expect(cancelData).toBeDefined();
-
-    // 3. Oráculo en base de datos: estado cancelled, motivo y cancelled_at persistidos
+    // 3. Oráculo server-side en PostgreSQL
     const inspection = await getRequestInspectionData(stagingContext, requestId);
     expect(inspection.requestStatus).toBe('cancelled');
     expect(inspection.cancelledAt).not.toBeNull();
     expect(inspection.cancelReason).toBe('Lo resolví de otra forma');
+
+    // Ofertas asociadas pending pasan a expired
+    if (pendingOfferId) {
+      const offer = inspection.offers.find((o) => o.id === pendingOfferId);
+      expect(offer?.status).toBe('expired');
+    }
   });
 });
 
