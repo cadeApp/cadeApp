@@ -75,7 +75,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       // Las 4 tarjetas obligatorias
       expect(screen.getByText('DNI frente')).toBeDefined();
       expect(screen.getByText('DNI dorso')).toBeDefined();
-      expect(screen.getByText('Selfie de validación')).toBeDefined();
+      expect(screen.getByText('Selfie con el DNI')).toBeDefined();
       expect(screen.getByText('Foto de perfil')).toBeDefined();
 
       // Botón Continuar deshabilitado inicialmente
@@ -239,7 +239,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       expect(screen.getByText('Estamos revisando tus datos')).toBeDefined();
       expect(screen.getByText('En revisión manual')).toBeDefined();
       expect(screen.getByText('DNI frente y dorso')).toBeDefined();
-      expect(screen.getByText('Selfie de seguridad')).toBeDefined();
+      expect(screen.getByText('Selfie con el DNI')).toBeDefined();
       expect(screen.getByRole('button', { name: /Ir al panel de repartidor/i })).toBeDefined();
     });
 
@@ -263,7 +263,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       render(<StatusView documents={documents} />);
 
       expect(screen.getByText('DNI frente y dorso')).toBeDefined();
-      expect(screen.getByText('Selfie de seguridad')).toBeDefined();
+      expect(screen.getByText('Selfie con el DNI')).toBeDefined();
       expect(screen.getByText('Foto de perfil para comercios')).toBeDefined();
       expect(screen.getByText('Vehículo y consentimientos')).toBeDefined();
 
@@ -348,7 +348,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
       render(<StatusView documents={documents} />);
 
       // Obligatorio faltante muestra 'Pendiente'
-      const selfieRow = screen.getByText('Selfie de seguridad').closest('div[class*="flex items-center justify-between"]');
+      const selfieRow = screen.getByText('Selfie con el DNI').closest('div[class*="flex items-center justify-between"]');
       expect(selfieRow?.textContent).toContain('Pendiente');
 
       // Opcional faltante muestra 'No cargado (opcional)', NUNCA 'Pendiente'
@@ -367,7 +367,7 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
 
       render(<StatusView documents={documents} />);
 
-      const selfieRow = screen.getByText('Selfie de seguridad').closest('div[class*="flex items-center justify-between"]');
+      const selfieRow = screen.getByText('Selfie con el DNI').closest('div[class*="flex items-center justify-between"]');
       expect(selfieRow?.textContent).toContain('Observado');
       expect(selfieRow?.textContent).not.toContain('Listo');
     });
@@ -965,7 +965,7 @@ describe('T-325: licencia y seguro usan el mismo sistema de carga que el paso 2'
     selectFile(front.input, 'frente.jpg');
     await waitFor(() => expect(front.card.getAttribute('data-status')).toBe('success'));
 
-    for (const label of [/DNI dorso/, /Selfie de validación/, /Foto de perfil/]) {
+    for (const label of [/DNI dorso/, /Selfie con el DNI/, /Foto de perfil/]) {
       const { input, card } = uploadCard(label);
       selectFile(input, 'doc.jpg');
       await waitFor(() => expect(card.getAttribute('data-status')).toBe('success'));
@@ -1117,3 +1117,81 @@ describe('T-351: contraste WCAG AA de la tarjeta de carga en sus cuatro estados'
     expectAa(within(label).getByText('*'), 'text-primary-dark', [white, page]);
   });
 });
+
+describe('T-354 — Unificación de copy «Selfie con el DNI» y accesibilidad', () => {
+  it('IdentityForm muestra título e instrucción exactos, input file accesible y sin truncate en subtítulo', () => {
+    render(<IdentityForm courierId="c-test-t354" />);
+
+    // 1. Título exacto
+    expect(screen.getByText('Selfie con el DNI')).toBeDefined();
+
+    // 2. Instrucción exacta
+    const instructionText =
+      'Sostené el DNI junto a tu rostro. Ambos deben verse legibles, sin reflejos ni obstrucciones';
+    expect(screen.getByText(instructionText)).toBeDefined();
+
+    // 3. input[type=file] asociado por etiqueta
+    const fileInput = screen.getByLabelText(/Selfie con el DNI/i);
+    expect(fileInput).toBeDefined();
+    expect(fileInput.getAttribute('type')).toBe('file');
+    expect(fileInput.getAttribute('aria-label')).toBe('Selfie con el DNI');
+
+    // 4. aria-describedby referenciando un nodo real con el subtítulo
+    const describedById = fileInput.getAttribute('aria-describedby');
+    expect(describedById).toBeTruthy();
+    const describedNode = document.getElementById(describedById!);
+    expect(describedNode).not.toBeNull();
+    expect(describedNode?.textContent).toBe(instructionText);
+
+    // 5. Instrucción visible sin truncate
+    expect(describedNode?.className).not.toContain('truncate');
+    expect(describedNode?.className).toContain('whitespace-normal');
+  });
+
+  it('StatusView muestra «Selfie con el DNI» y refleja estados pendiente, observado y listo', () => {
+    // Faltante -> Pendiente
+    const { rerender } = render(<StatusView documents={[]} />);
+    const rowPending = screen
+      .getByText('Selfie con el DNI')
+      .closest('div[class*="flex items-center justify-between"]');
+    expect(rowPending).not.toBeNull();
+    expect(rowPending?.textContent).toContain('Pendiente');
+
+    // Rechazada -> Observado
+    rerender(<StatusView documents={[{ kind: 'selfie', status: 'rejected' }]} />);
+    const rowRejected = screen
+      .getByText('Selfie con el DNI')
+      .closest('div[class*="flex items-center justify-between"]');
+    expect(rowRejected).not.toBeNull();
+    expect(rowRejected?.textContent).toContain('Observado');
+
+    // Cargada / verificada -> Listo
+    rerender(<StatusView documents={[{ kind: 'selfie', status: 'submitted' }]} />);
+    const rowSubmitted = screen
+      .getByText('Selfie con el DNI')
+      .closest('div[class*="flex items-center justify-between"]');
+    expect(rowSubmitted).not.toBeNull();
+    expect(rowSubmitted?.textContent).toContain('Listo');
+  });
+
+  it('CourierProfileView nombra la selfie como «Selfie con el DNI» en perfil activo', () => {
+    render(
+      <CourierProfileView
+        profile={{
+          displayName: 'Repartidor Test',
+          email: 'courier@test.com',
+          vehicleType: 'moto',
+          plate: 'A123BCD',
+          dniStatus: 'verified',
+          selfieStatus: 'submitted',
+          licenseStatus: 'none',
+          insuranceStatus: 'none',
+          courierStatus: 'pending',
+          onboardingComplete: true,
+        }}
+      />
+    );
+    expect(screen.getByText('Selfie con el DNI')).toBeDefined();
+  });
+});
+

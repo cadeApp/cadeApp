@@ -1,21 +1,24 @@
 // @vitest-environment jsdom
 import React from 'react';
+(globalThis as any).React = React;
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ApplicantDetailView } from './applicant-detail-view';
+import { ApplicantsQueue } from './applicants-queue';
 import {
   viewCourierDocumentAction,
   decideCourierAction,
   suspendCourierAction,
   verifyCourierDocumentAction,
 } from '../actions';
-import type { ApplicantDetail } from '../types';
+import type { ApplicantDetail, ApplicantListItem } from '../types';
 
 const refresh = vi.fn();
 const push = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh, push }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('../actions', () => ({
@@ -320,4 +323,52 @@ describe('ApplicantDetailView (PR106-H14, PR106-H13, PR106-H16)', () => {
     expect(image.className).toContain('rotate-0');
   });
 
+  it('9. DoD T-354: muestra el tab con el nombre completo «Selfie con el DNI» cuando hay documento selfie', () => {
+    const applicantWithSelfie: ApplicantDetail = {
+      ...mockApplicant,
+      documents: [
+        ...mockApplicant.documents,
+        {
+          id: 'd0000000-0000-0000-0000-000000000003',
+          documentType: 'selfie',
+          storagePath: 'courier-docs/selfie.webp',
+          status: 'submitted',
+          uploadedAt: '2026-09-20T10:07:00.000Z',
+        },
+      ],
+    };
+
+    render(<ApplicantDetailView applicant={applicantWithSelfie} />);
+    const tabs = screen.getAllByRole('tab');
+    const selfieTab = tabs.find((t) => t.textContent?.includes('Selfie'));
+    expect(selfieTab).toBeDefined();
+    expect(selfieTab?.textContent).toContain('Selfie con el DNI');
+  });
+
+  it('10. DoD T-354: ApplicantsQueue renderiza badge «Selfie con el DNI ✓» cuando hasSelfie es true', () => {
+    const applicantItem: ApplicantListItem = {
+      id: 'a0000000-0000-0000-0000-000000000001',
+      fullName: 'Juan Repartidor',
+      dniHash: 'hash-1234',
+      phone: '3865123456',
+      vehicleType: 'moto',
+      docLevel: 1,
+      createdAt: '2026-09-20T10:00:00.000Z',
+      status: 'pending',
+      licenseStatus: 'none',
+      insuranceStatus: 'none',
+      documentsSummary: {
+        hasDniFront: true,
+        hasDniBack: true,
+        hasSelfie: true,
+        hasLicense: false,
+        hasInsurance: false,
+      },
+    };
+
+    render(<ApplicantsQueue initialTab="pending" applicants={[applicantItem]} />);
+    expect(screen.getByText(/Selfie con el DNI/)).toBeDefined();
+    expect(screen.getByText(/Selfie con el DNI\s*✓/)).toBeDefined();
+  });
 });
+

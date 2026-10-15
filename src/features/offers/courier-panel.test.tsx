@@ -138,7 +138,7 @@ describe('T-114 DoD: Courier panel UI, privacidad y reglas de negocio', () => {
 
       await screen.findByText(/estamos revisando tus datos/i);
       expect(rowOf(/DNI frente y dorso/)?.textContent).toContain('Pendiente');
-      expect(rowOf(/Selfie de seguridad/)?.textContent).toContain('Pendiente');
+      expect(rowOf(/Selfie con el DNI/)?.textContent).toContain('Pendiente');
       expect(screen.queryByText('Cargado')).toBeNull();
     });
   });
