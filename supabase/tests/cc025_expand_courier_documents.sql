@@ -43,7 +43,15 @@ select col_is_null('public', 'courier_documents', 'idempotency_key', 'idempotenc
 select col_type_is('public', 'courier_documents', 'idempotency_key', 'text', 'idempotency_key type must be text');
 
 -- 2. Guard constraint existence
-select has_check('public', 'courier_documents', 'courier_documents_expansion_guard', 'Expansion guard constraint must exist');
+select ok(
+  exists (
+    select 1 from pg_constraint
+    where conrelid = to_regclass('public.courier_documents')
+      and conname = 'courier_documents_expansion_guard'
+      and contype = 'c'
+  ),
+  'Expansion guard constraint must exist'
+);
 
 -- 3. Invariants on pre-existing rows: all rows must have is_current=true, rejection_code=NULL, idempotency_key=NULL
 select is(
