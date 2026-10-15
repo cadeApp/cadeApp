@@ -45,3 +45,11 @@ No promover reglas de una sola revisión automáticamente a AGENTS.md. Sin mutac
 
 ### Observación de coordinación
 El test de concurrencia mejora su detección de errores, pero sin integrarlo al runner no genera evidencia de CI. Las modificaciones de alcance para workflow y master-plan son decisiones a resolver por Lautaro073: están comparadas y recomendadas en `revisiones/ronda-3.md`. No extender en silencio alcance autorizado.
+
+## Ronda 4 — Decisiones de alcance y evidencia remota
+
+**pr-373/R4-alcance — No presentar “autorización posterior” como elección del propietario sin referencia trazable.** El implementador corrigió bien y los nuevos controles pasaron CI, pero la rama incorpora `.github/workflows/ci.yml` y `docs/master-plan.md` después de la R3, que había pedido expresamente D1 y D2. La solución técnica no autoriza por sí misma ampliar la ficha. Registrar opción elegida por Lautaro073 antes de cerrar el dictamen. Una vez autorizada, preferir conservar el control automatizado en CI y la única frase de paridad temporal.
+
+**pr-373/R4-evidencia — Una prueba de DB real sigue siendo prueba observada de CI, no una mutación del revisor.** Se verificaron logs con los números completos, el RED del mutante H11, el GREEN 54/54, el harness de 2 sesiones y el diff de tipos; distinguirlo de tests independientes ejecutados localmente (no ejecutados). El E2E marcado BLOCKED por migración de Develop no es ni PASS ni FAIL del flujo de navegador.
+
+No se crea un ID AG adicional sin inspeccionar el máximo de todas las ramas remotas, disponible sólo mediante clon completo.

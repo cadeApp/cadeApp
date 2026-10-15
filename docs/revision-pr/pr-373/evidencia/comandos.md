@@ -167,3 +167,24 @@ for (const m of mutations) {
   // No confundir este diseño con una mutación independiente ejecutada.
 }
 ```
+
+## Ronda 4 — HEAD inspeccionado `23e394f828df3872a5681c4cdadf2da9eb3db399`
+
+**Consultas hechas:** GitHub PR #373 metadata (Draft, reviewer solicitada por comentario), comparación `07a7a381...23e394f8` (4 commits, 7 rutas); diff completo 23 rutas; fuente contractual `docs/contracts/CC-026.md` y ficha T-366 desde develop; GitHub Actions logs exactos del HEAD run [38783733680](https://github.com/cadeApp/cadeApp/actions/runs/38783733680); status e2e-preview en el HEAD; aprobación run [38784748063](https://github.com/cadeApp/cadeApp/actions/runs/38784748063).
+
+**CI directo observado:**
+```text
+unit: Test Files 133 passed (133); Tests 2348 passed (2348)
+db-tests: Files=23, Tests=2259; Result: PASS
+cc026 pgTAP: Files=1, Tests=54; Result: PASS
+cc026 pgTAP mutation: 8/54 FAIL [42-49], RED reconocido por CI
+cc026 pgTAP after restore: 54/54 PASS, GREEN reconocido por CI
+cc026 harness: [CC-026] GREEN: dos lectores, aceptación y republicación se serializan sin expiraciones parciales.
+db-types: generated-database-types artifact 11995924838; git diff --exit-code -- src/types/database.types.ts PASS
+approval-policy: Falta el informe completo de revisar-pr sin bloqueantes.
+e2e-preview: ERROR / BLOCKED / REQUIRES DEVELOP MIGRATION [dpl_KFLxJ7TFSyNrnQf9yxKwVbMtGzMJ]
+```
+
+**No ejecutados por el revisor:** mutaciones locales independientes, `git merge-tree`, `pnpm test`, `pnpm supabase test db`, `docker`, consultas contra Supabase remoto, `node docs/revision-pr/analizar.mjs verificacion`. No se deben presentar como hechos. PR API indicó mergeable=true; no certifica ausencia de conflicto por `git merge-tree`.
+
+**Responsabilidad humana:** en R3 se preguntó D1/D2 y se recomendaron A/A, pero no se localizó una elección explícita en comentarios issue #371/PR #373; cuerpo de PR declara “autorización posterior” sin evidencia de selección. No deshacer archivos automáticamente; solicitar ratificación o abrir PR separado. La revisión corrigió metadata del issue #355 de `en-curso` a `bloqueada` preservando @KiraK72.
