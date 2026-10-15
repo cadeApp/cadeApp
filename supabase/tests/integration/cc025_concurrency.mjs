@@ -322,7 +322,7 @@ async function runScenario2(adminId, courierId, docId) {
 
     const auditCount = Number(
       runSql(
-        `select count(*)::int from public.audit_log where target_id = '${courierId}' and action = 'replace_courier_document';`
+        `select count(*)::int from public.audit_log where actor_id = '${courierId}' and action = 'replace_courier_document';`
       )
     );
     assert.equal(auditCount, 1, 'Debe existir exactamente 1 registro en audit_log para el reemplazo');
