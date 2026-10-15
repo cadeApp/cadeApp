@@ -273,15 +273,16 @@ create trigger cc026_fail_offer before update on public.offers for each row exec
 create trigger cc026_fail_audit before insert on public.audit_log for each row execute function pg_temp.fail_cc026_write();
 
 select set_config('cc026.fail_target', 'offers', true);
-select like(pg_temp.as_authenticated(pg_temp.merchant_id(), 'select public.reconcile_expired_requests()')->>'error', 'CC026_FORCED_offers%', 'fallo de offers aborta la RPC');
+select ok(coalesce((pg_temp.as_authenticated(pg_temp.merchant_id(), 'select public.reconcile_expired_requests()')->>'error' like 'CC026_FORCED_offers%'), false), 'fallo de offers aborta la RPC');
 select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('20')), 'published', 'fallo de offers revierte estado de solicitud');
 select is((select status::text from public.offers where request_id = pg_temp.cc026_id('20')), 'pending', 'fallo de offers conserva oferta pending');
 select is((select count(*)::integer from public.audit_log where target_id = pg_temp.cc026_id('20')::text), 0, 'fallo de offers no deja auditoría parcial');
 
 select set_config('cc026.fail_target', 'audit_log', true);
-select like(pg_temp.as_authenticated(pg_temp.merchant_id(), 'select public.reconcile_expired_requests()')->>'error', 'CC026_FORCED_audit_log%', 'fallo de audit aborta la RPC');
+select ok(coalesce((pg_temp.as_authenticated(pg_temp.merchant_id(), 'select public.reconcile_expired_requests()')->>'error' like 'CC026_FORCED_audit_log%'), false), 'fallo de audit aborta la RPC');
 select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('20')), 'published', 'fallo de audit revierte estado de solicitud');
 select is((select status::text from public.offers where request_id = pg_temp.cc026_id('20')), 'pending', 'fallo de audit conserva oferta pending');
+select is((select count(*)::integer from public.audit_log where target_id = pg_temp.cc026_id('20')::text), 0, 'fallo de audit no deja auditoría parcial');
 select set_config('cc026.fail_target', '', true);
 
 select pg_temp.clear_requests();

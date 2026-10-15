@@ -163,6 +163,13 @@ describe('CC-026 — Contrato de reconciliación de vencimientos', () => {
       ],
       initialOffers: [
         { offerId: DOC_1, requestId: REQ_1, courierId: COURIER_1, amountArs: 1500, status: 'pending' },
+        {
+          offerId: '40000000-0000-4000-8000-000000000003',
+          requestId: REQ_1,
+          courierId: COURIER_2,
+          amountArs: 1500,
+          status: 'withdrawn',
+        },
         { offerId: DOC_2, requestId: REQ_2, courierId: COURIER_2, amountArs: 1500, status: 'pending' },
       ],
     });
@@ -175,6 +182,7 @@ describe('CC-026 — Contrato de reconciliación de vencimientos', () => {
     });
     expect(fake.getRequest(REQ_1)?.status).toBe('expired');
     expect(fake.getOffer(DOC_1)?.status).toBe('expired');
+    expect(fake.getOffer('40000000-0000-4000-8000-000000000003')?.status).toBe('withdrawn');
     expect(fake.getRequest(REQ_2)?.status).toBe('published');
     expect(fake.getOffer(DOC_2)?.status).toBe('pending');
   });
