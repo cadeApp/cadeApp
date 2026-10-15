@@ -1,0 +1,26 @@
+# Lecciones PR #360
+
+Ronda 2: las correcciones H01/H03/H04/H06 son consistentes por inspección; H02 evidencia que `router.refresh()` no constituye bloqueo sincrónico de acciones con props viejas.
+
+- P08: `expect(mockRefresh).toHaveBeenCalled()` no prueba que los botones Aceptar desaparezcan durante la carrera.
+- P01: el oráculo de DB puede adelantarse a la navegación SPA; seleccionar `winnerPage` requiere espera observable, no un ternario inmediato por URL.
+- AG-36: GREEN de CI no reproduce los RED previos, y autor no puede certificar `verificado_en_sha`.
+
+**Corrección del propio revisor:** la batería de ronda 1 usaba un ancla `result.request.status` que no existe después de `const { request } = result`; se habría reportado SIN OBJETIVO. Esta es falla del instrumento, no del autor. La ronda 2 corrige esa ancla; sin ejecución no afirma mutaciones verificadas.
+
+No se asignan lecciones AG-xx nuevas sin relevar la numeración de todas las ramas.
+
+## Ronda 3 — de test a contrato observado
+
+- **P01 (R02):** `replace` no significa que Back se queda donde estás. El E2E debe medir el requisito observable (ausencia de Aceptar tras match), no una ruta específica de historial que el DoD nunca impuso. El propio revisor sugirió probar Back sin precisar esta diferencia en ronda 2: **omisión nuestra al formular el prompt**, que aquí se documenta.
+- **P08 (H05):** `if (winningOffer) expect(monto)` no es buena aserción del dinero aunque un oracle DB previo garantice que existe; afirmar explícitamente identidad de oferta y actor, no saltar el control.
+- **P01 (R01):** esperar primera URL reduce flakiness de velocidad, pero no demuestra *quién* ganó: los dos contextos pueden llegar al mismo viaje por mecanismos diferentes. La distinción de causalidad viene de `acceptedOfferId` o del error ALREADY_MATCHED, no de URL.
+- **AG-36 / H07:** el autor aportó ahora un RED razonablemente concreto para H02, pero el revisor no lo reprodujo; esa precisión documental es mejora real, no verificación independiente.
+
+No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
+## Ronda 4 — proceso y alcance
+
+- Se corrigió el lugar de los entregables: la guía `COMO-ENTREGAR.md` especifica `docs/revisiones` para P2/P3, pero las rondas 1–3 se commitearon previamente en la feature del autor. Se copia el histórico a la rama dedicada y se evita **otro** commit sobre la feature. Esta es una corrección de la revisión, no defecto de agy.
+- R01/R02: el test mejoró al usar el evento de concurrencia y la semántica real de Back, no al aumentar timeouts o debilitar guards.
+- H05: unit/build verde no suple un E2E que nunca se ejecutó. Las invariantes server-side, post-match, WhatsApp y navegación sólo quedan plenamente acreditadas con Preview contra SHA exacto.
+- H07: «RED histórico no conservado» es documentación válida; una afirmación RED no se considera verificada independientemente hasta reproducirse.
