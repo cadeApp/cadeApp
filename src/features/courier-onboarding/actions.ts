@@ -281,6 +281,31 @@ export async function courierOnboardingAction(
       } else {
         return err('INTERNAL_ERROR');
       }
+    } else {
+      // Post-verificación defensiva para Fase B (donde aún no rige el índice único de Fase C):
+      // Si dos peticiones simultáneas hicieron INSERT sin error, verificar si se generaron
+      // duplicados vigentes del mismo kind. Si se detectan duplicados (count > 1), abortar de
+      // forma segura con INTERNAL_ERROR sin actualizar el perfil ni marcar el onboarding como completo.
+      const { data: postDocs, error: postDocsError } = await supabase
+        .from('courier_documents')
+        .select('id, kind, storage_path, status, is_current')
+        .eq('courier_id', user.id);
+
+      if (postDocsError) {
+        return err('INTERNAL_ERROR');
+      }
+
+      const postActiveDocs = ((postDocs as Array<{ id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
+        .filter((d) => d.is_current !== false);
+
+      const activeCountByKind = new Map<string, number>();
+      for (const doc of postActiveDocs) {
+        const currentCount = (activeCountByKind.get(doc.kind) ?? 0) + 1;
+        if (currentCount > 1) {
+          return err('INTERNAL_ERROR');
+        }
+        activeCountByKind.set(doc.kind, currentCount);
+      }
     }
   }
 

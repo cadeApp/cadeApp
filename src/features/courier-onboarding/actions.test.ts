@@ -1801,5 +1801,88 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       expect(selectCallCount).toBe(2);
       expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
+
+    it('n) Fase B / carrera concurrente sin índice único: dos envíos simultáneos donde ambos INSERT tienen éxito -> la post-verificación detecta duplicados y rechaza con INTERNAL_ERROR sin actualizar courier', async () => {
+      const dbDocuments: Array<{ id: string; kind: string; storage_path: string; status: string; is_current: boolean }> = [];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({
+            data: [
+              ...dbDocuments,
+              { id: 'concurrent-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+              { id: 'concurrent-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+              { id: 'concurrent-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+              { id: 'concurrent-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+            ],
+            error: null,
+          });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockImplementation((entries: Array<any>) => {
+        dbDocuments.push(...entries.map((e, idx) => ({ id: `doc-${idx}`, ...e, is_current: true })));
+        return Promise.resolve({ error: null });
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn();
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(mockInsert).toHaveBeenCalledTimes(1);
+      expect(selectCallCount).toBe(2);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+    });
   });
 });
