@@ -233,3 +233,67 @@ Este es un control negativo: el comando es SIEMPRE GREEN, y el harness incorrect
 - Reviews: @Lautaro073 APPROVED sobre 20392c26 a las 07:58:46Z; dos jobs recientes approval-policy success.
 - Artefactos del run 38695142292: `playwright-report` id 11955984022; no se obtuvo enlace a capturas mobiles indicadas como `mobile-verification.md`.
 - El contenedor no puede resolver github.com: `git ls-remote` falló DNS; no se corrió `pnpm` local, `git merge-tree` ni E2E nuevo. La ejecución propia fue solo el control negativo del harness.
+
+## Ronda 5 — 2026-10-15 — SHA e97323fe2290a33dec2152ab1b0020037d327a5f
+
+### Experimento independiente realmente ejecutado (Node, sin repo)
+
+Se reprodujo la lógica nueva del harness publicado por Kira en `docs/tasks/log/T-354.md` sobre una copia temporal que muta `source.txt`. Se comprobó GREEN inicial, RED (fallo esperado) y GREEN restaurado, y dos casos negativos. Para reproducir copiar todo el siguiente código a `/tmp/check_harness_t354.mjs` y ejecutar `node /tmp/check_harness_t354.mjs`:
+
+```js
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execSync } from 'node:child_process';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'t354-harness-review-'));
+const filePath=path.join(root,'source.txt');
+fs.writeFileSync(filePath,'expected-content');
+function runVitest(cmd){
+ try {const stdout=execSync(cmd,{cwd:root,encoding:'utf8',stdio:['pipe','pipe','pipe'],env:{...process.env,NO_COLOR:'1'}});return {code:0,output:stdout}}
+ catch(e){if(typeof e.status!=='number')throw e;return {code:e.status,output:String(e.stdout??'')+'\n'+String(e.stderr??'')}}
+}
+function validate(cmd){
+ const original=fs.readFileSync(filePath,'utf8');
+ if(!original.includes('expected-content'))throw Error('Missing target');
+ const initial=runVitest(cmd);
+ if(initial.code!==0||!/Tests\s+\d+\s+passed/.test(initial.output))throw Error('Control GREEN inicial ausente');
+ let mutated;
+ try {fs.writeFileSync(filePath,original.replace('expected-content','mutant'),'utf8');mutated=runVitest(cmd)}
+ finally {fs.writeFileSync(filePath,original,'utf8')}
+ if(mutated.code!==1||!/Tests\s+\d+\s+failed/.test(mutated.output))throw Error('Mutante sobreviviente o fallo no atribuible a test: exit='+mutated.code);
+ const restored=runVitest(cmd);
+ if(restored.code!==0||!/Tests\s+\d+\s+passed/.test(restored.output))throw Error('GREEN tras restaurar ausente');
+ return 'DETECTED';
+}
+const cases={
+ 'always-green-vitest-looking':`node -e "console.log('Tests 1 passed (1)')"`,
+ 'invalid-command':'comando_que_no_existe_12345',
+ 'real-red-green-dummy':`node -e "const fs=require('fs');const s=fs.readFileSync('source.txt','utf8');if(s==='mutant'){console.log('Tests 1 failed (1)');process.exit(1)}console.log('Tests 1 passed (1)')"`,
+};
+try {
+ for(const [name,cmd] of Object.entries(cases)){
+  try{const r=validate(cmd);console.log(name+' RESULT='+r+' CLEAN='+fs.readFileSync(filePath,'utf8'))}
+  catch(e){console.log(name+' RESULT=REJECTED reason='+e.message+' CLEAN='+fs.readFileSync(filePath,'utf8'))}
+ }
+} finally {fs.rmSync(root,{recursive:true,force:true})}
+```
+
+**Salida observada real:**
+
+```text
+always-green-vitest-looking RESULT=REJECTED reason=Mutante sobreviviente o fallo no atribuible a test: exit=0 CLEAN=expected-content
+invalid-command RESULT=REJECTED reason=Control GREEN inicial ausente CLEAN=expected-content
+real-red-green-dummy RESULT=DETECTED CLEAN=expected-content
+```
+
+Este harness demuestra que la lógica corregida no crea falsos RED ante un mutante sobreviviente y restaura fuentes. **No equivale a ejecutar las nueve mutaciones de Vitest originales.** Los textos de los controles negativos reportados por Kira difieren de los que produce el código publicado si se emplean exactamente los comandos citados, sin un wrapper adicional.
+
+### Controles de aplicación independientes
+
+Se leyeron las fuentes reales de 9 archivos (copy, status, profile, card, admin, tests, queue, cross) en el SHA e97323fe2290a33dec2152ab1b0020037d327a5f. 14/14 invariantes de fuente GREEN: título y subtítulo exactos, status, perfil, badge admin, no truncate selfie, aria-label, Pendiente cruzado, test descripción, no globalThis ni non-null assertion, import React explícito. La cadena `1. DOCUMENTUPLOADCARD` **no aparece como encabezado JSX de cliente**. Es terminología técnica presente solo como nombre del componente; el recorte entregado por el usuario parece documento/reporte QA. Se corrigió el rótulo de las dos imágenes y se añadió aclaración en el body de la PR, sin alterar capturas.
+
+### CI oficial GitHub
+
+- SHA e97323fe2290a33dec2152ab1b0020037d327a5f unit 116621365095: 133 files, 2370 Vitest passed, más 79 workflow tests y 6 ADR. db-tests 116621365268: Files=24, Tests=2283, Result: PASS. typecheck, lint, build, audit, bundle-budget SUCCESS. approval-policy SUCCESS por review APPROVED vigente.
+- E2E commit status ERROR, Vercel deployment `dpl_8isGQv9cJEi1pBJfof727GfxvMTj`, run 38792914312, `e2e-preview` CANCELLED. Run anterior 38695142292 PASSED sobre SHA anterior 20392c26, NO es equivalente.
+- `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` intentado desde contenedor, exit=128, `Could not resolve host: github.com`; no hubo pnpm Vitest de repo ni navegador directo.

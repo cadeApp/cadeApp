@@ -32,3 +32,10 @@ No modificar AGENTS.md ni crear número de lección AG sin contrastar otras PRs.
 - **Evidencia móvil recuperable:** el nombre de archivo `mobile-verification.md` en la bitácora no sustituye el enlace a PNGs/artefactos. Respetar la diferencia entre la validación declarada por autor y la verificación independiente.
 
 El hallazgo nuevo se clasifica como P04 ya existente. No modificar AGENTS.md por una sola aparición nueva.
+
+## Ronda 5
+
+- H05: no basta con corregir el `catch`; el revisor debe mostrar que el control rechazó un mutante superviviente con salida GREEN, un error de infraestructura y aceptó un RED verdadero. Reproducción hermética realizada. Distinguimos prueba del algoritmo del harness y reproducción del runtime real de Vitest.
+- Las salidas de controles negativos declaradas por el autor no encajan con el script publicado al sustituir el comando completo (el GREEN inicial falla antes); pedir comandos/lógica exactos, no asumir intención fraudulenta ni declarar verificadas las nueve mutaciones que no corrimos.
+- Los nombres de componentes como DocumentUploadCard son apropiados para un informe técnico, pero no para demostrar texto dirigido al cliente. Fuente UI revisada usa selfieTitle correcto; PR body corregido para explicar distinción y rotular capturas en lenguaje público. No alterar evidencias gráficas.
+- E2E sobre nuevo HEAD: el run exitoso previo no cubre automáticamente un merge posterior; status `e2e-preview=error` del SHA `e97323fe` por cancelación debe quedar explícito.
