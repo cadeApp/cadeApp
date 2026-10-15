@@ -1010,17 +1010,17 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     // 3. Flujo Playwright navegando como el comercio dueño
     await loginAsMerchant(page);
 
-    // 3a. Navegación a historial "Todas": la solicitud vencida se reconcilia y figura con estado "Expirada"
+    // 3a. Navegación a historial "Todas": la solicitud vencida se reconcilia y figura con badge "Vencida"
     await page.goto('/merchant/history');
     const historyItemAll = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(historyItemAll).toBeVisible({ timeout: 10000 });
-    await expect(historyItemAll).toContainText('Expirada');
+    await expect(historyItemAll).toContainText('Vencida');
 
-    // 3b. Navegación a historial "Vencidas": también figura la solicitud reconciliada
+    // 3b. Navegación a historial "Vencidas": también figura la solicitud reconciliada con badge "Vencida"
     await page.goto('/merchant/history?status=expired');
     const historyItemExpired = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(historyItemExpired).toBeVisible({ timeout: 10000 });
-    await expect(historyItemExpired).toContainText('Expirada');
+    await expect(historyItemExpired).toContainText('Vencida');
 
     // 3c. Comprobar que en "Mis solicitudes" (dashboard activas), la solicitud vencida ya NO aparece
     await page.goto('/merchant/dashboard');
