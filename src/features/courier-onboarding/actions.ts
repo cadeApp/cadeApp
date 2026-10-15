@@ -177,12 +177,111 @@ export async function courierOnboardingAction(
     });
   }
 
-  const { error: documentsError } = await supabase
+  // 8. Inserción de documentos en courier_documents con idempotencia ante reintentos (PR364-H05 / PR364-R01)
+  // Se usa cliente de sesión autenticado e INSERT autorizado (el permiso UPDATE está revocado para authenticated).
+  const { data: existingDocs, error: checkDocsError } = await supabase
     .from('courier_documents')
-    .upsert(documentEntries as never);
+    .select('id, kind, storage_path, status, is_current')
+    .eq('courier_id', user.id);
 
-  if (documentsError) {
+  if (checkDocsError) {
     return err('INTERNAL_ERROR');
+  }
+
+  // En base expandida previa a Fase C pueden coexistir duplicados históricos con is_current=true.
+  // No aceptar selección arbitraria en Map: si hay duplicados del mismo kind, rechazar con fallo seguro (INTERNAL_ERROR).
+  const existingByKind = new Map<string, { id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>();
+  const activeExistingDocs = ((existingDocs as Array<{ id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
+    .filter((d) => d.is_current !== false);
+
+  for (const doc of activeExistingDocs) {
+    if (existingByKind.has(doc.kind)) {
+      return err('INTERNAL_ERROR');
+    }
+    existingByKind.set(doc.kind, doc);
+  }
+
+  const documentEntriesToInsert: typeof documentEntries = [];
+  for (const entry of documentEntries) {
+    const existing = existingByKind.get(entry.kind);
+    if (!existing) {
+      documentEntriesToInsert.push(entry);
+    } else if (existing.storage_path !== entry.storage_path) {
+      return err('VALIDATION_ERROR');
+    }
+  }
+
+  if (documentEntriesToInsert.length > 0) {
+    const { error: documentsError } = await supabase
+      .from('courier_documents')
+      .insert(documentEntriesToInsert as never);
+
+    if (documentsError) {
+      const errObj = documentsError as { code?: string; message?: string; details?: string };
+      const isUniqueConflict =
+        errObj.code === '23505' ||
+        String(errObj.message ?? '').includes('23505') ||
+        String(errObj.message ?? '').toLowerCase().includes('unique') ||
+        String(errObj.details ?? '').toLowerCase().includes('already exists');
+
+      const isRlsConflict =
+        errObj.code === '42501' ||
+        String(errObj.message ?? '').includes('42501') ||
+        String(errObj.message ?? '').toLowerCase().includes('row-level security') ||
+        String(errObj.message ?? '').toLowerCase().includes('permission denied');
+
+      if (isUniqueConflict || isRlsConflict) {
+        // En carrera concurrente (dos envíos simultáneos), volver a validar actor y consentimientos
+        const { data: recheckedProfile, error: profileRecheckError } = await supabase
+          .from('profiles')
+          .select('id, role, consent_status')
+          .eq('id', user.id)
+          .maybeSingle<{ id: string; role: string; consent_status?: string }>();
+
+        if (
+          profileRecheckError ||
+          !recheckedProfile ||
+          recheckedProfile.role !== 'courier' ||
+          (recheckedProfile.consent_status !== undefined && recheckedProfile.consent_status !== 'active')
+        ) {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+
+        // Releer todas las versiones vigentes del courier
+        const { data: recheckedDocs, error: recheckError } = await supabase
+          .from('courier_documents')
+          .select('id, kind, storage_path, status, is_current')
+          .eq('courier_id', user.id);
+
+        if (recheckError) {
+          return err('INTERNAL_ERROR');
+        }
+
+        const recheckedByKind = new Map<string, { id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>();
+        const activeRecheckedDocs = ((recheckedDocs as Array<{ id?: string; kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
+          .filter((d) => d.is_current !== false);
+
+        for (const doc of activeRecheckedDocs) {
+          if (recheckedByKind.has(doc.kind)) {
+            return err('INTERNAL_ERROR');
+          }
+          recheckedByKind.set(doc.kind, doc);
+        }
+
+        for (const entry of documentEntries) {
+          const rechecked = recheckedByKind.get(entry.kind);
+          if (
+            !rechecked ||
+            rechecked.storage_path !== entry.storage_path ||
+            (rechecked.status !== 'submitted' && rechecked.status !== 'verified')
+          ) {
+            return err('VALIDATION_ERROR');
+          }
+        }
+      } else {
+        return err('INTERNAL_ERROR');
+      }
+    }
   }
 
   // 6. Persistencia de dni_hmac y vehículo en couriers via adminClient.

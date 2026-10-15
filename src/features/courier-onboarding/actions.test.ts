@@ -238,7 +238,7 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
   it('permite el onboarding si el DNI es nuevo y registra datos, consentimientos y documentos', async () => {
     const mockUpdateCourier = vi.fn().mockResolvedValue({ error: null });
     const mockUpsertConsents = vi.fn().mockResolvedValue({ error: null });
-    const mockUpsertDocuments = vi.fn().mockResolvedValue({ error: null });
+    const mockInsertDocuments = vi.fn().mockResolvedValue({ error: null });
 
     vi.mocked(serverAuth.createClient).mockResolvedValue({
       auth: {
@@ -263,7 +263,13 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
         }
         if (table === 'courier_documents') {
           return {
-            upsert: mockUpsertDocuments,
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            insert: mockInsertDocuments,
+            upsert: vi.fn().mockResolvedValue({
+              error: { code: '42501', message: 'permission denied for table courier_documents (UPDATE revoked)' },
+            }),
           };
         }
         return { select: vi.fn().mockReturnThis() };
@@ -350,8 +356,8 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
       }
     );
 
-    expect(mockUpsertDocuments).toHaveBeenCalledTimes(1);
-    expect(mockUpsertDocuments).toHaveBeenCalledWith([
+    expect(mockInsertDocuments).toHaveBeenCalledTimes(1);
+    expect(mockInsertDocuments).toHaveBeenCalledWith([
       {
         courier_id: currentUserId,
         kind: 'dni_front',
@@ -548,7 +554,15 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
           };
         }
         if (table === 'courier_documents') {
-          return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            insert: vi.fn().mockResolvedValue({ error: null }),
+            upsert: vi.fn().mockResolvedValue({
+              error: { code: '42501', message: 'permission denied for table courier_documents (UPDATE revoked)' },
+            }),
+          };
         }
         return { select: vi.fn().mockReturnThis() };
       }),
@@ -635,7 +649,15 @@ describe('T-121 · DoD 3: DNI de un rechazado bloqueado y Server Action de Onboa
           };
         }
         if (table === 'courier_documents') {
-          return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            insert: vi.fn().mockResolvedValue({ error: null }),
+            upsert: vi.fn().mockResolvedValue({
+              error: { code: '42501', message: 'permission denied for table courier_documents (UPDATE revoked)' },
+            }),
+          };
         }
         return { select: vi.fn().mockReturnThis() };
       }),
@@ -727,7 +749,15 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
           };
         }
         if (table === 'courier_documents') {
-          return { upsert: mockUpsertDocuments };
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+            insert: mockUpsertDocuments,
+            upsert: vi.fn().mockResolvedValue({
+              error: { code: '42501', message: 'permission denied for table courier_documents (UPDATE revoked)' },
+            }),
+          };
         }
         return { select: vi.fn().mockReturnThis() };
       }),
@@ -796,41 +826,980 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
     expect(mockAdminUpdate).not.toHaveBeenCalled();
   });
 
-  describe('T-353 / PR362-H03 / PR362-H05: validación semántica y no escritura en Action real', () => {
-    it('rechaza DNI con letras o formato inválido con VALIDATION_ERROR y no realiza escrituras en base de datos', async () => {
-      const { mockAdminUpdate, mockUpsertConsents, mockUpsertDocuments } = setupClients({});
+  describe('PR364-H05 y PR364-R01: Idempotencia y compatibilidad de alta de documentos con INSERT autorizado (sin UPSERT)', () => {
+    const validOnboardingPayload = {
+      dni: '38123456',
+      vehicleType: 'moto' as const,
+      vehiclePlate: 'A 123 BCD',
+      documents: {
+        dni_front: 'courier/courier-current-user-uuid/dni_front_1.jpg',
+        dni_back: 'courier/courier-current-user-uuid/dni_back_1.jpg',
+        selfie: 'courier/courier-current-user-uuid/selfie_1.jpg',
+        avatar: 'courier/courier-current-user-uuid/avatar_1.jpg',
+      },
+      consents: {
+        tos: true,
+        privacy: true,
+        courierContract: true,
+        tosVersion: '1.0',
+        privacyVersion: '1.1',
+        courierContractVersion: '1.0',
+      },
+    };
 
-      const invalidInput = {
-        ...validInput,
-        dni: '1234567A', // Letra inválida en DNI
-      };
+    it('a) primer onboarding con cuatro kinds sin docs: llamada .insert con array idéntico y cero .upsert', async () => {
+      const mockInsert = vi.fn().mockResolvedValue({ error: null });
+      const mockUpsert = vi.fn().mockResolvedValue({
+        error: { code: '42501', message: 'permission denied for table courier_documents (UPDATE revoked)' },
+      });
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+      });
 
-      const result = await courierOnboardingAction(invalidInput);
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: mockUpsert,
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
 
-      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
-      expect(mockAdminUpdate).not.toHaveBeenCalled();
-      expect(mockUpsertConsents).not.toHaveBeenCalled();
-      expect(mockUpsertDocuments).not.toHaveBeenCalled();
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(mockInsert).toHaveBeenCalledTimes(1);
+      expect(mockInsert).toHaveBeenCalledWith([
+        {
+          courier_id: currentUserId,
+          kind: 'dni_front',
+          storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg',
+          status: 'submitted',
+        },
+        {
+          courier_id: currentUserId,
+          kind: 'dni_back',
+          storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg',
+          status: 'submitted',
+        },
+        {
+          courier_id: currentUserId,
+          kind: 'selfie',
+          storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg',
+          status: 'submitted',
+        },
+        {
+          courier_id: currentUserId,
+          kind: 'avatar',
+          storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg',
+          status: 'submitted',
+        },
+      ]);
+      expect(mockUpsert).not.toHaveBeenCalled();
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
     });
 
-    it('normaliza vehicle_plate a null en couriers.update para walk y bike aun si el payload contenía patente (Decisión 2A)', async () => {
-      const { mockAdminUpdate } = setupClients({});
-
-      const walkInputWithPlate = {
-        ...validInput,
-        vehicleType: 'walk',
-        vehiclePlate: 'TEXTO_ARBITRARIO_QUE_NO_DEBERIA_PERSISTIR',
-      };
-
-      const result = await courierOnboardingAction(walkInputWithPlate);
-
-      expect(result.ok).toBe(true);
-      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
-      const firstCall = mockAdminUpdate.mock.calls[0];
-      expect(firstCall?.[0]).toMatchObject({
-        vehicle_type: 'walk',
-        vehicle_plate: null,
+    it('b) reintento con mismos kinds/path existentes: SELECT detecta coincidencia y realiza cero writes', async () => {
+      const mockInsert = vi.fn();
+      const mockUpsert = vi.fn().mockResolvedValue({
+        error: { code: '42501', message: 'permission denied' },
       });
+      const existingDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({ data: existingDocs, error: null }),
+              }),
+              insert: mockInsert,
+              upsert: mockUpsert,
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(mockInsert).not.toHaveBeenCalled();
+      expect(mockUpsert).not.toHaveBeenCalled();
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('c) reintento con path distinto sobre documento vigente: retorna VALIDATION_ERROR y cero writes', async () => {
+      const mockInsert = vi.fn();
+      const mockUpsert = vi.fn();
+      const existingDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_OTHER.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({ data: existingDocs, error: null }),
+              }),
+              insert: mockInsert,
+              upsert: mockUpsert,
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockInsert).not.toHaveBeenCalled();
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+
+    it('d) tras SELECT inicial vacío, INSERT da 23505 (carrera concurrente) y segundo SELECT muestra mismos 4 kinds/path: éxito idempotente', async () => {
+      const concurrentDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({ data: concurrentDocs, error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '23505',
+          message: 'duplicate key value violates unique constraint courier_documents_unique_current',
+        },
+      });
+      const mockUpsert = vi.fn().mockResolvedValue({
+        error: { code: '42501', message: 'permission denied' },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: mockUpsert,
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(mockInsert).toHaveBeenCalledTimes(1);
+      expect(mockUpsert).not.toHaveBeenCalled();
+      expect(selectCallCount).toBe(2);
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('e) tras SELECT inicial vacío, INSERT da 23505 y segundo SELECT muestra path distinto o falta de kind: rechazar con VALIDATION_ERROR', async () => {
+      const conflictingDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_DIFFERENT.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({ data: conflictingDocs, error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: { code: '23505', message: 'duplicate key value violates unique constraint' },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(selectCallCount).toBe(2);
+    });
+
+    it('f) fallo en DB distinto de 23505 en INSERT: retorna INTERNAL_ERROR', async () => {
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+      });
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: { code: 'P0001', message: 'connection failure' },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+    });
+
+    it('g) nunca toca documentos en estado verified o submitted salvo la lectura', async () => {
+      const mockInsert = vi.fn();
+      const mockUpsert = vi.fn();
+      const existingDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'verified', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'verified', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({ data: existingDocs, error: null }),
+              }),
+              insert: mockInsert,
+              upsert: mockUpsert,
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(mockInsert).not.toHaveBeenCalled();
+      expect(mockUpsert).not.toHaveBeenCalled();
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('h) PR364-R03: tras SELECT inicial vacío, INSERT devuelve 42501 (RLS por not exists) y segundo SELECT muestra mismos 4 kinds/path con consent activo -> éxito idempotente', async () => {
+      const insertedDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({ data: insertedDocs, error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '42501',
+          message: 'new row violates row-level security policy for table "courier_documents"',
+        },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(mockInsert).toHaveBeenCalledTimes(1);
+      expect(selectCallCount).toBe(2);
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('i) PR364-R03: tras SELECT inicial vacío, INSERT devuelve 42501 (RLS) y segundo SELECT muestra path discrepante: rechazar con VALIDATION_ERROR', async () => {
+      const conflictingDocs = [
+        { id: 'doc-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_OTHER.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({ data: conflictingDocs, error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '42501',
+          message: 'new row violates row-level security policy for table "courier_documents"',
+        },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(selectCallCount).toBe(2);
+    });
+
+    it('j) PR364-R03: tras SELECT inicial vacío, INSERT devuelve 42501 pero el actor tiene consent_status pendiente: rechazar con UNAUTHORIZED_ACTOR', async () => {
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          return Promise.resolve({ data: [], error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '42501',
+          message: 'new row violates row-level security policy for table "courier_documents"',
+        },
+      });
+
+      let profileSelectCount = 0;
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockImplementation(() => {
+                profileSelectCount++;
+                if (profileSelectCount === 1) {
+                  return Promise.resolve({ data: { role: 'courier' }, error: null });
+                }
+                return Promise.resolve({
+                  data: { id: currentUserId, role: 'courier', consent_status: 'pending' },
+                  error: null,
+                });
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+    });
+
+    it('k) PR364-R03: simulación de interleaving real de dos sesiones: A lee vacío, B commitea documentos, A intenta INSERT y recupera idempotentemente vía RLS 42501', async () => {
+      const dbDocuments: Array<{ id: string; kind: string; storage_path: string; status: string; is_current: boolean }> = [];
+
+      const mockSessionASelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          return Promise.resolve({ data: [...dbDocuments], error: null });
+        }),
+      });
+
+      const mockSessionAInsert = vi.fn().mockImplementation((entries: Array<any>) => {
+        for (const entry of entries) {
+          if (dbDocuments.some((d) => d.kind === entry.kind && d.is_current)) {
+            return Promise.resolve({
+              error: {
+                code: '42501',
+                message: 'new row violates row-level security policy for table "courier_documents"',
+              },
+            });
+          }
+        }
+        dbDocuments.push(...entries.map((e, idx) => ({ id: `doc-${idx}`, ...e, is_current: true })));
+        return Promise.resolve({ error: null });
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSessionASelect,
+              insert: mockSessionAInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      // En el snapshot inicial, Sesión A lee vacío []. Justo después, Sesión B commitea en DB:
+      mockSessionASelect.mockReturnValueOnce({
+        eq: vi.fn().mockImplementation(() => {
+          dbDocuments.push(
+            { id: 'b-1', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+            { id: 'b-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+            { id: 'b-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+            { id: 'b-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+          );
+          return Promise.resolve({ data: [], error: null });
+        }),
+      });
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: true, data: { redirectTo: '/onboarding/status' } });
+      expect(dbDocuments).toHaveLength(4);
+      expect(mockAdminUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it('l) Fase B / ambigüedad en lectura inicial: coexisten múltiples filas is_current=true para el mismo kind -> rechaza con INTERNAL_ERROR sin mutar ni llamar a update', async () => {
+      const ambiguousDocs = [
+        { id: 'doc-1a', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-1b', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_OLD.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      const mockInsert = vi.fn();
+      const mockUpsert = vi.fn();
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: { role: 'courier' }, error: null }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({ data: ambiguousDocs, error: null }),
+              }),
+              insert: mockInsert,
+              upsert: mockUpsert,
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn();
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(mockInsert).not.toHaveBeenCalled();
+      expect(mockUpsert).not.toHaveBeenCalled();
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
+    });
+
+    it('m) Fase B / ambigüedad en relectura tras colisión: si la relectura contiene múltiples filas is_current=true del mismo kind -> rechaza con INTERNAL_ERROR', async () => {
+      const ambiguousDocsOnRecheck = [
+        { id: 'doc-1a', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-1b', kind: 'dni_front', storage_path: 'courier/courier-current-user-uuid/dni_front_2.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-2', kind: 'dni_back', storage_path: 'courier/courier-current-user-uuid/dni_back_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-3', kind: 'selfie', storage_path: 'courier/courier-current-user-uuid/selfie_1.jpg', status: 'submitted', is_current: true },
+        { id: 'doc-4', kind: 'avatar', storage_path: 'courier/courier-current-user-uuid/avatar_1.jpg', status: 'submitted', is_current: true },
+      ];
+
+      let selectCallCount = 0;
+      const mockSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockImplementation(() => {
+          selectCallCount++;
+          if (selectCallCount === 1) {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return Promise.resolve({ data: ambiguousDocsOnRecheck, error: null });
+        }),
+      });
+
+      const mockInsert = vi.fn().mockResolvedValue({
+        error: {
+          code: '42501',
+          message: 'new row violates row-level security policy for table "courier_documents"',
+        },
+      });
+
+      vi.mocked(serverAuth.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: currentUserId, email: 'courier@cadeapp.test' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { id: currentUserId, role: 'courier', consent_status: 'active' },
+                error: null,
+              }),
+            };
+          }
+          if (table === 'courier_documents') {
+            return {
+              select: mockSelect,
+              insert: mockInsert,
+              upsert: vi.fn(),
+            };
+          }
+          return { select: vi.fn().mockReturnThis() };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
+
+      const mockAdminUpdate = vi.fn();
+      vi.mocked(adminAuth.createAdminClient).mockReturnValue({
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'couriers') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+              update: vi.fn().mockReturnValue({ eq: mockAdminUpdate }),
+            };
+          }
+          if (table === 'consents') {
+            return { upsert: vi.fn().mockResolvedValue({ error: null }) };
+          }
+          return {};
+        }),
+      } as unknown as ReturnType<typeof adminAuth.createAdminClient>);
+
+      const result = await courierOnboardingAction(validOnboardingPayload);
+
+      expect(result).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(selectCallCount).toBe(2);
+      expect(mockAdminUpdate).not.toHaveBeenCalled();
     });
   });
 });
