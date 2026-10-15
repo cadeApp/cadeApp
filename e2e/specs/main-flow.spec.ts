@@ -83,12 +83,12 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // DoD Invariante 2: Aceptación concurrente en dos pestañas (PR160-H02)
+  // DoD Invariante 2: Aceptación concurrente en dos sesiones independientes (PR360-H05 / PR160-H02)
   // ---------------------------------------------------------------------------
-  test('DoD: Falla si se aceptan dos ofertas para la misma solicitud en dos pestañas concurrentes', async ({
-    context,
+  test('DoD: Aceptación concurrente en dos sesiones independientes navega a /trips/[id] y converge', async ({
+    browser,
     stagingContext,
-  }) => {
+  }, testInfo) => {
     // Precrear explícitamente las dos ofertas que competirán en concurrencia
     await seedOffersForFirstRequest(stagingContext);
 
@@ -101,84 +101,123 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       throw new Error('[E2E Error] No merchant user seeded in stagingContext');
     }
 
-    // Pestañas bajo el contexto provisto por Playwright (configurado con baseURL)
-    const tab1 = await context.newPage();
-    const loginPage = new LoginPage(tab1);
-    await loginPage.navigate();
-    await loginPage.login(merchant.email, merchant.password);
+    const context1 = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
+    const context2 = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
 
-    const merchantPage1 = new MerchantPage(tab1);
-    await merchantPage1.gotoRequestDetail(targetRequestId);
-    await waitForNoSkeletons(tab1);
+    try {
+      // Sesión 1: Comercio autenticado
+      const page1 = await context1.newPage();
+      const loginPage1 = new LoginPage(page1);
+      await loginPage1.navigate();
+      await loginPage1.login(merchant.email, merchant.password);
 
-    // Segunda pestaña bajo el mismo contexto (mismo comercio autenticado)
-    const tab2 = await context.newPage();
-    const merchantPage2 = new MerchantPage(tab2);
-    await merchantPage2.gotoRequestDetail(targetRequestId);
-    await waitForNoSkeletons(tab2);
+      // Sesión 2: Mismo comercio autenticado en contexto independiente
+      const page2 = await context2.newPage();
+      const loginPage2 = new LoginPage(page2);
+      await loginPage2.navigate();
+      await loginPage2.login(merchant.email, merchant.password);
 
-    // Tab 1 abre modal sobre la primera oferta
-    await merchantPage1.acceptOfferButton.first().click();
-    await expect(merchantPage1.confirmAcceptButton).toBeVisible();
+      const merchantPage1 = new MerchantPage(page1);
+      await merchantPage1.gotoRequestDetail(targetRequestId);
+      await waitForNoSkeletons(page1);
 
-    // Tab 2 abre modal sobre la segunda oferta
-    await merchantPage2.acceptOfferButton.nth(1).click();
-    await expect(merchantPage2.confirmAcceptButton).toBeVisible();
+      const merchantPage2 = new MerchantPage(page2);
+      await merchantPage2.gotoRequestDetail(targetRequestId);
+      await waitForNoSkeletons(page2);
 
-    // Disparar las confirmaciones en paralelo real mediante barrera Promise.all
-    await Promise.all([
-      merchantPage1.confirmAcceptButton.click(),
-      merchantPage2.confirmAcceptButton.click(),
-    ]);
+      // Sesión 1 abre modal sobre la primera oferta
+      await merchantPage1.acceptOfferButton.first().click();
+      await expect(merchantPage1.confirmAcceptButton).toBeVisible();
 
-    // Al menos una pestaña debe reflejar rechazo específico por concurrencia ALREADY_MATCHED.
-    // Los locators pertenecen a páginas distintas: no usar locator.or() entre frames/pages.
-    const alert1 = merchantPage1.alreadyMatchedAlert;
-    const alert2 = merchantPage2.alreadyMatchedAlert;
-    await expect
-      .poll(
-        async () => (await alert1.isVisible()) || (await alert2.isVisible()),
-        {
-          message: 'Una de las dos pestañas debe mostrar el rechazo ALREADY_MATCHED',
+      // Sesión 2 abre modal sobre la segunda oferta
+      await merchantPage2.acceptOfferButton.nth(1).click();
+      await expect(merchantPage2.confirmAcceptButton).toBeVisible();
+
+      // Disparar las confirmaciones en paralelo real mediante barrera Promise.all
+      await Promise.all([
+        merchantPage1.confirmAcceptButton.click(),
+        merchantPage2.confirmAcceptButton.click(),
+      ]);
+
+      // Al menos una sesión debe reflejar rechazo específico por concurrencia ALREADY_MATCHED
+      const alert1 = merchantPage1.alreadyMatchedAlert;
+      const alert2 = merchantPage2.alreadyMatchedAlert;
+      await expect
+        .poll(
+          async () => (await alert1.isVisible()) || (await alert2.isVisible()),
+          {
+            message: 'Una de las dos sesiones debe mostrar el rechazo ALREADY_MATCHED',
+            timeout: 10000,
+            intervals: [250, 500, 1000],
+          }
+        )
+        .toBe(true);
+
+      // Oráculo de estado final: exactamente 1 oferta accepted y request en matched
+      await expect
+        .poll(
+          async () => {
+            const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
+            const acceptedOffers = inspection.offers.filter((o) => o.status === 'accepted');
+            const nonAcceptedOffers = inspection.offers.filter((o) => o.status !== 'accepted');
+            return {
+              requestStatus: inspection.requestStatus,
+              acceptedOfferId: inspection.acceptedOfferId,
+              acceptedCount: acceptedOffers.length,
+              nonAcceptedCount: nonAcceptedOffers.length,
+              matchedWinner: acceptedOffers[0]?.id === inspection.acceptedOfferId,
+            };
+          },
+          {
+            message:
+              'Debe haber exactamente 1 oferta accepted, la otra no accepted, request en matched y accepted_offer_id coincidente',
+            timeout: 10000,
+            intervals: [250, 500, 1000],
+          }
+        )
+        .toEqual({
+          requestStatus: 'matched',
+          acceptedOfferId: expect.any(String),
+          acceptedCount: 1,
+          nonAcceptedCount: 1,
+          matchedWinner: true,
+        });
+
+      // La sesión ganadora navega a /trips/[id]
+      const winnerPage = page1.url().includes('/trips/') ? page1 : page2;
+      const loserPage = winnerPage === page1 ? page2 : page1;
+
+      await expect
+        .poll(async () => winnerPage.url(), {
+          message: 'La sesión ganadora debe navegar a /trips/[id]',
           timeout: 10000,
-          intervals: [250, 500, 1000],
-        }
-      )
-      .toBe(true);
+        })
+        .toContain(`/trips/${targetRequestId}`);
 
-    // Oráculo de estado final: convergencia observada server-side con expect.poll
-    await expect
-      .poll(
-        async () => {
-          const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
-          const acceptedOffers = inspection.offers.filter((o) => o.status === 'accepted');
-          const nonAcceptedOffers = inspection.offers.filter((o) => o.status !== 'accepted');
-          return {
-            requestStatus: inspection.requestStatus,
-            acceptedOfferId: inspection.acceptedOfferId,
-            acceptedCount: acceptedOffers.length,
-            nonAcceptedCount: nonAcceptedOffers.length,
-            matchedWinner: acceptedOffers[0]?.id === inspection.acceptedOfferId,
-          };
-        },
-        {
-          message:
-            'Debe haber exactamente 1 oferta accepted, la otra no accepted, request en matched y accepted_offer_id coincidente',
-          timeout: 10000,
-          intervals: [250, 500, 1000],
-        }
-      )
-      .toEqual({
-        requestStatus: 'matched',
-        acceptedOfferId: expect.any(String),
-        acceptedCount: 1,
-        nonAcceptedCount: 1,
-        matchedWinner: true,
-      });
+      const tripPageWinner = new TripPage(winnerPage);
+      await waitForNoSkeletons(winnerPage);
+      await expect(tripPageWinner.assignedStatus).toBeVisible();
 
-    // Tras refrescar la pestaña ganadora, renderiza la vista de viaje o asignación sin duplicados
-    await tab1.reload();
-    await waitForNoSkeletons(tab1);
+      // La sesión perdedora al intentar navegar a /merchant/requests/[id] es redirigida al viaje
+      await loserPage.goto(`/merchant/requests/${targetRequestId}`);
+      await waitForNoSkeletons(loserPage);
+      await expect(loserPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+
+      // Refrescar en la página ganadora conserva la vista del viaje asignado
+      await winnerPage.reload();
+      await waitForNoSkeletons(winnerPage);
+      await expect(winnerPage).toHaveURL(new RegExp(`/trips/${targetRequestId}`));
+
+      // En el dashboard del comercio, "Ver detalle" vincula a /trips/[id]
+      const merchantDashPage = new MerchantPage(winnerPage);
+      await merchantDashPage.navigate();
+      await waitForNoSkeletons(winnerPage);
+      const detailLink = winnerPage.getByRole('link', { name: /ver detalle/i }).first();
+      await expect(detailLink).toHaveAttribute('href', `/trips/${targetRequestId}`);
+    } finally {
+      await context1.close();
+      await context2.close();
+    }
   });
 
   // ---------------------------------------------------------------------------

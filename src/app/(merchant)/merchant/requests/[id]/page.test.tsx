@@ -1,5 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import CanonicalMerchantRequestDetailPage from './page';
 
 const mockRedirect = vi.fn((url: string) => {
@@ -135,7 +136,107 @@ describe('T-359: CanonicalMerchantRequestDetailPage', () => {
     });
 
     expect(mockRedirect).not.toHaveBeenCalled();
-    expect(jsx).toBeDefined();
+    const { container } = render(jsx);
+    expect(screen.getByTestId('request-offers-list')).toBeDefined();
+    expect(container).toBeDefined();
+  });
+
+  it('renderiza vista terminal para solicitud cancelled con badge y enlace a historial sin RequestOffersList', async () => {
+    mockGetMerchantRequestWithOffers.mockResolvedValue({
+      request: {
+        id: 'req-cancelled-1',
+        status: 'cancelled',
+        pickupZoneName: 'Barrio Centro',
+        dropoffZoneName: 'Barrio Norte',
+        packageType: 'chico',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        cashChangeAmount: null,
+        notes: null,
+        expiresAt: null,
+        createdAt: '2026-10-15T00:00:00Z',
+        acceptedOfferId: null,
+      },
+      offers: [],
+      nextOffersCursor: null,
+    });
+
+    const jsx = await CanonicalMerchantRequestDetailPage({
+      params: Promise.resolve({ id: 'req-cancelled-1' }),
+    });
+
+    expect(mockRedirect).not.toHaveBeenCalled();
+    render(jsx);
+
+    expect(screen.getByText('Cancelada')).toBeDefined();
+    expect(screen.getByRole('link', { name: /ver historial/i })).toBeDefined();
+    expect(screen.getByRole('link', { name: /ver historial/i }).getAttribute('href')).toBe('/merchant/history');
+    expect(screen.queryByTestId('request-offers-list')).toBeNull();
+  });
+
+  it('renderiza vista terminal para solicitud expired con badge y enlace a historial sin RequestOffersList', async () => {
+    mockGetMerchantRequestWithOffers.mockResolvedValue({
+      request: {
+        id: 'req-expired-1',
+        status: 'expired',
+        pickupZoneName: 'Barrio Centro',
+        dropoffZoneName: 'Barrio Sur',
+        packageType: 'mediano',
+        recipientPaymentMethod: 'transfer',
+        needsChange: false,
+        cashChangeAmount: null,
+        notes: null,
+        expiresAt: '2026-10-14T23:00:00Z',
+        createdAt: '2026-10-14T22:30:00Z',
+        acceptedOfferId: null,
+      },
+      offers: [],
+      nextOffersCursor: null,
+    });
+
+    const jsx = await CanonicalMerchantRequestDetailPage({
+      params: Promise.resolve({ id: 'req-expired-1' }),
+    });
+
+    expect(mockRedirect).not.toHaveBeenCalled();
+    render(jsx);
+
+    expect(screen.getByText('Expirada')).toBeDefined();
+    expect(screen.getByRole('link', { name: /ver historial/i })).toBeDefined();
+    expect(screen.queryByTestId('request-offers-list')).toBeNull();
+  });
+
+  it('renderiza estado no publicado para solicitud draft sin selector ni RequestOffersList', async () => {
+    mockGetMerchantRequestWithOffers.mockResolvedValue({
+      request: {
+        id: 'req-draft-1',
+        status: 'draft',
+        pickupZoneName: 'Barrio Centro',
+        dropoffZoneName: 'Barrio Este',
+        packageType: 'grande',
+        recipientPaymentMethod: 'cash',
+        needsChange: false,
+        cashChangeAmount: null,
+        notes: null,
+        expiresAt: null,
+        createdAt: '2026-10-15T00:00:00Z',
+        acceptedOfferId: null,
+      },
+      offers: [],
+      nextOffersCursor: null,
+    });
+
+    const jsx = await CanonicalMerchantRequestDetailPage({
+      params: Promise.resolve({ id: 'req-draft-1' }),
+    });
+
+    expect(mockRedirect).not.toHaveBeenCalled();
+    render(jsx);
+
+    expect(screen.getByRole('heading', { name: /solicitud en borrador/i })).toBeDefined();
+    expect(screen.getByText('Borrador')).toBeDefined();
+    expect(screen.queryByTestId('request-offers-list')).toBeNull();
+    expect(screen.queryByRole('button', { name: /aceptar/i })).toBeNull();
   });
 });
 

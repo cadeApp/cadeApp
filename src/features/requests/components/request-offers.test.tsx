@@ -7,15 +7,17 @@ import { requestsCopy } from '../copy';
 import type { MerchantOfferItem, MerchantRequestDetail } from '../types';
 import type { RpcOutput } from '@/domain';
 
-const { mockPush } = vi.hoisted(() => ({
+const { mockPush, mockReplace, mockRefresh } = vi.hoisted(() => ({
   mockPush: vi.fn(),
+  mockReplace: vi.fn(),
+  mockRefresh: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: mockPush,
-    replace: vi.fn(),
-    refresh: vi.fn(),
+    replace: mockReplace,
+    refresh: mockRefresh,
   }),
 }));
 
@@ -521,7 +523,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
   });
 
   describe('T-359: Redirección y estado post-aceptación', () => {
-    it('DoD 1: al aceptar una oferta con éxito, navega a /trips/[id]', async () => {
+    it('DoD 1 / H04: al aceptar una oferta con éxito, navega a /trips/[id] con router.replace', async () => {
       mockAcceptOfferAction.mockResolvedValue({
         ok: true,
         data: {
@@ -542,14 +544,148 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       fireEvent.click(confirmButton);
 
       await waitFor(() => {
-        expect(mockPush).toHaveBeenCalledWith(`/trips/${mockRequest.id}`);
+        expect(mockReplace).toHaveBeenCalledWith(`/trips/${mockRequest.id}`);
       });
     });
 
-    it('DoD 2: si la solicitud ya está en estado matched, no muestra botón Aceptar y ofrece enlace al viaje', () => {
+    it('H02: carrera concurrente con ALREADY_MATCHED cierra el modal, notifica error y fuerza router.refresh()', async () => {
+      mockAcceptOfferAction.mockResolvedValue({
+        ok: false,
+        code: 'ALREADY_MATCHED',
+        message: 'La solicitud ya fue asignada',
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+        expect(mockRefresh).toHaveBeenCalled();
+      });
+
+      // Modal cerrado tras reconciliación
+      expect(screen.queryByRole('button', { name: /sí, aceptar/i })).toBeNull();
+    });
+
+    it('H02: carrera con REQUEST_EXPIRED cierra el modal, notifica error y fuerza router.refresh()', async () => {
+      mockAcceptOfferAction.mockResolvedValue({
+        ok: false,
+        code: 'REQUEST_EXPIRED',
+        message: 'La solicitud ha expirado',
+      });
+
+      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      await waitFor(() => {
+        expect(mockAcceptOfferAction).toHaveBeenCalledTimes(1);
+        expect(mockRefresh).toHaveBeenCalled();
+      });
+
+      // Modal cerrado
+      expect(screen.queryByRole('button', { name: /sí, aceptar/i })).toBeNull();
+    });
+
+    it('H03: no muestra botón Aceptar si expiresAt ya venció en la solicitud', () => {
+      const expiredRequest = {
+        ...mockRequest,
+        expiresAt: new Date(Date.now() - 60000).toISOString(),
+      };
+
+      render(<RequestOffersList request={expiredRequest} initialOffers={initialOffers} />);
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(0);
+      expect(screen.getByText('Expirada')).toBeDefined();
+    });
+
+    it('H03: deshabilita aceptación al transicionar a vencida mediante reloj y bloquea confirmación abierta', async () => {
+      vi.useFakeTimers();
+      const nearFutureExpiresAt = new Date(Date.now() + 5000).toISOString();
+      const expiringRequest = {
+        ...mockRequest,
+        expiresAt: nearFutureExpiresAt,
+      };
+
+      render(<RequestOffersList request={expiringRequest} initialOffers={initialOffers} />);
+
+      // Inicialmente vigente
+      const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons.length).toBeGreaterThan(0);
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(screen.getByRole('button', { name: /sí, aceptar/i })).toBeDefined();
+
+      // Avanzamos el tiempo para que expire
+      act(() => {
+        vi.advanceTimersByTime(6000);
+      });
+
+      // Intentar confirmar con la solicitud ya vencida
+      const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
+      fireEvent.click(confirmButton);
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+      expect(mockRefresh).toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+
+    it('H03: no ofrece botón Aceptar sobre ofertas con status withdrawn o rejected', () => {
+      const mixedOffers: MerchantOfferItem[] = [
+        {
+          ...initialOffers[0]!,
+          id: 'offer-withdrawn',
+          status: 'withdrawn',
+        },
+        {
+          ...initialOffers[1]!,
+          id: 'offer-rej',
+          status: 'rejected',
+        },
+      ];
+
+      render(<RequestOffersList request={mockRequest} initialOffers={mixedOffers} />);
+
+      const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+      expect(acceptButtons).toHaveLength(0);
+      expect(screen.getByText('Retirada')).toBeDefined();
+      expect(screen.getByText('Rechazada')).toBeDefined();
+    });
+
+    it('H03: no ofrece botón Aceptar si request.status es draft, matched, cancelled o expired', () => {
+      const statuses = ['draft', 'matched', 'cancelled', 'expired'] as const;
+
+      for (const st of statuses) {
+        const req = {
+          ...mockRequest,
+          status: st,
+        };
+
+        const { unmount } = render(
+          <RequestOffersList request={req} initialOffers={initialOffers} />
+        );
+
+        const acceptButtons = screen.queryAllByRole('button', { name: /^aceptar$/i });
+        expect(acceptButtons).toHaveLength(0);
+        unmount();
+      }
+    });
+
+    it('DoD 2: si la solicitud ya está en estado matched, ofrece enlace al viaje', () => {
       const matchedRequest = {
         ...mockRequest,
-        status: 'matched',
+        status: 'matched' as const,
         acceptedOfferId: '11111111-1111-1111-1111-111111111111',
       };
 
@@ -563,7 +699,7 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       expect(tripLinks[0]?.getAttribute('href')).toBe(`/trips/${mockRequest.id}`);
     });
 
-    it('DoD 3: no ofrece botón Aceptar sobre una oferta que ya no está pendiente (accepted/rejected)', () => {
+    it('DoD 3: muestra badge Oferta aceptada para la oferta aceptada', () => {
       const mixedOffers: MerchantOfferItem[] = [
         {
           ...initialOffers[0]!,
@@ -572,11 +708,6 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
         },
         {
           ...initialOffers[1]!,
-          id: 'offer-rej',
-          status: 'rejected',
-        },
-        {
-          ...initialOffers[2]!,
           id: 'offer-pend',
           status: 'pending',
         },
@@ -584,11 +715,8 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
 
       render(<RequestOffersList request={mockRequest} initialOffers={mixedOffers} />);
 
-      // Solo la oferta pending debe tener botón Aceptar
       const acceptButtons = screen.getAllByRole('button', { name: /^aceptar$/i });
       expect(acceptButtons).toHaveLength(1);
-
-      // La oferta accepted debe mostrar badge identificatorio
       expect(screen.getByText('Oferta aceptada')).toBeDefined();
     });
   });

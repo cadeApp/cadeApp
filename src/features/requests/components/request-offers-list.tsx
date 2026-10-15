@@ -94,8 +94,12 @@ export function RequestOffersList({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<string>('');
+  const [isExpired, setIsExpired] = useState<boolean>(() => {
+    if (!request.expiresAt) return false;
+    return new Date(request.expiresAt).getTime() <= Date.now();
+  });
 
-  const isAcceptableStatus = request.status === 'published';
+  const isAcceptableStatus = request.status === 'published' && !isExpired;
   const isMatchedOrLater =
     request.status === 'matched' ||
     request.status === 'in_transit' ||
@@ -113,9 +117,11 @@ export function RequestOffersList({
 
       if (diffMs <= 0) {
         setTimeRemaining('Expirada');
+        setIsExpired(true);
         return;
       }
 
+      setIsExpired(false);
       const diffMins = Math.floor(diffMs / 60000);
       const diffSecs = Math.floor((diffMs % 60000) / 1000);
       setTimeRemaining(`${diffMins}m ${diffSecs.toString().padStart(2, '0')}s`);
@@ -131,7 +137,10 @@ export function RequestOffersList({
   }, [offers, sortOrder]);
 
   const handleOpenAcceptModal = (offer: MerchantOfferItem) => {
-    if (!isAcceptableStatus || (offer.status && offer.status !== 'pending')) return;
+    const currentExpired = Boolean(
+      request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()
+    );
+    if (!isAcceptableStatus || currentExpired || (offer.status && offer.status !== 'pending')) return;
     setAcceptError(null);
     setSelectedOffer(offer);
   };
@@ -145,6 +154,16 @@ export function RequestOffersList({
   const handleConfirmAccept = async () => {
     if (!selectedOffer) return;
 
+    const currentExpired = Boolean(
+      request.expiresAt && new Date(request.expiresAt).getTime() <= Date.now()
+    );
+    if (request.status !== 'published' || isExpired || currentExpired) {
+      notify.error('La solicitud ha expirado.');
+      setSelectedOffer(null);
+      router.refresh();
+      return;
+    }
+
     setIsSubmitting(true);
     setAcceptError(null);
 
@@ -154,14 +173,20 @@ export function RequestOffersList({
         notify.success('¡Oferta aceptada! El repartidor ya va en camino.');
         setSelectedOffer(null);
         onAcceptSuccess?.(selectedOffer.id);
-        router.push(`/trips/${request.id}`);
+        router.replace(`/trips/${request.id}`);
       } else {
         if (res.code === 'ALREADY_MATCHED') {
           setAcceptError(
             'Esta solicitud ya fue asignada a otro repartidor o la oferta no está disponible.'
           );
+          notify.error('Esta solicitud ya fue asignada a otro repartidor.');
+          setSelectedOffer(null);
+          router.refresh();
         } else if (res.code === 'REQUEST_EXPIRED') {
           setAcceptError('La solicitud ha expirado.');
+          notify.error('La solicitud ha expirado.');
+          setSelectedOffer(null);
+          router.refresh();
         } else {
           setAcceptError('No se pudo aceptar la oferta. Por favor, intentá nuevamente.');
         }
@@ -179,6 +204,17 @@ export function RequestOffersList({
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col space-y-6">
+      {/* Aviso de error de aceptación */}
+      {acceptError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
+        >
+          <AlertCircle className="h-5 w-5 shrink-0" />
+          <p>{acceptError}</p>
+        </div>
+      )}
+
       {/* Aviso de asignación C06 */}
       {isMatchedOrLater && (
         <Card className="flex flex-col gap-3 border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -411,6 +447,8 @@ export function RequestOffersList({
                   <Badge variant="matched">Oferta aceptada</Badge>
                 ) : offer.status === 'rejected' ? (
                   <Badge variant="outline">Rechazada</Badge>
+                ) : offer.status === 'withdrawn' ? (
+                  <Badge variant="outline">Retirada</Badge>
                 ) : null}
               </div>
             </Card>
