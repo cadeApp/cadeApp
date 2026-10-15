@@ -1,42 +1,20 @@
-# Evidencia y comandos — PR #359 · ronda 1
+# Evidencia y comandos — PR #359, ronda 2
 
-**SHA leído en GitHub:** `65997dd27f652cf4d00aa616b1d26c46d16fd3e0`. **Base:** `14c28ed3c41cb2bde92705fc018c7dd0df73245b`. Fecha: 2026-10-15.
+Ronda 1 se conserva en `revisiones/ronda-1.md`; esta sección no reescribe sus resultados.
+Revisión de Github de código en `bfbd9e5eb0ef7697ea351708f5c2b6163f174cc5` sin clon ejecutable para ejecutar Vitest ni batería de mutación propia. Afirmaciones sobre M1–M8 en bitácora son del AUTOR, no verificaciones del revisor.
 
-## Evidencia disponible [INSPECCIÓN REMOTA]
+CI observado: [unit](https://github.com/cadeApp/cadeApp/actions/runs/38681881491/job/116248028605) SUCCESS; [db-tests](https://github.com/cadeApp/cadeApp/actions/runs/38681881491/job/116248029162) SUCCESS con Files=22, Tests=2205, Result: PASS; [approval-policy](https://github.com/cadeApp/cadeApp/actions/runs/38681879165/job/116248023193) FAIL por falta informe sin bloqueantes.
 
-- Metadatos PR #359: Draft, 1 commit, 1 archivo cambiado, +13/-0 líneas.
-- Diff: único archivo `docs/tasks/log/T-360.md`; sesión de inicio, todos los checks pendientes.
-- Ficha de origen: `docs/tasks/T-360.md` desde `develop`.
-- Lectura estática: feed, página SSR, query de viajes, offers, RLS, CC-023, T-340.
-
-## Comandos para reproducir en un clon (NO ejecutados en esta sesión)
-
+## Para reproducir (COMANDOS NO EJECUTADOS en esta sesión)
 ```bash
 git fetch origin
-git diff --name-only 14c28ed3c41cb2bde92705fc018c7dd0df73245b 65997dd27f652cf4d00aa616b1d26c46d16fd3e0
-git diff --stat 14c28ed3c41cb2bde92705fc018c7dd0df73245b 65997dd27f652cf4d00aa616b1d26c46d16fd3e0
-git show 65997dd27f652cf4d00aa616b1d26c46d16fd3e0:docs/tasks/log/T-360.md
-git show 65997dd27f652cf4d00aa616b1d26c46d16fd3e0:src/features/offers/components/courier-feed.tsx
-git show 14c28ed3c41cb2bde92705fc018c7dd0df73245b:docs/tasks/T-360.md
-```
-
-Resultado observado **mediante GitHub, no salida del shell**: un único archivo modificado (bitácora). No existen cambios de función/trips en la PR. No se inventan salidas de consola.
-
-## Mutaciones
-
-**No se ejecutaron ni se atribuyen mutaciones RED/GREEN**: todavía no existe código T-360 cuya propiedad se pueda romper. En ronda 2, sobre el SHA implementado, se deberá proporcionar batería completa independiente y reproducible, con salida real y restauración segura en memoria.
-
-## CI
-
-No evaluado como criterio de aprobación porque hay bloqueantes. `test:db` no aplica sin CC. No levantar Docker ni Supabase local.
-
-## Comandos requeridos al autor
-
-```bash
-pnpm exec vitest run src/features/trips/queries.test.ts 'src/app/(courier)/courier/feed/page.test.tsx' src/features/offers/courier-panel.test.tsx src/features/offers/hooks/use-active-trips.test.tsx
+git show bfbd9e5eb0ef7697ea351708f5c2b6163f174cc5:src/features/offers/hooks/use-active-trips.test.tsx
+git show bfbd9e5eb0ef7697ea351708f5c2b6163f174cc5:src/features/trips/queries.ts
+git show bfbd9e5eb0ef7697ea351708f5c2b6163f174cc5:src/features/offers/components/active-trip-card.tsx
+git show bfbd9e5eb0ef7697ea351708f5c2b6163f174cc5:e2e/specs/main-flow.spec.ts
+pnpm exec vitest run src/features/trips/queries.test.ts src/features/offers/hooks/use-active-trips.test.tsx src/features/offers/courier-panel.test.tsx
 pnpm typecheck && pnpm lint && pnpm test
-git diff --check
-git status --short
+node docs/revision-pr/analizar.mjs verificacion
 ```
 
-El autor debe guardar resultados verdaderos en la bitácora y entregar SHA nuevo para ronda 2.
+Mutaciones independientes propuestas, TODAVÍA NO ejecutadas: H03 silenciar triggerInvalidation conservando subscriptions; H04 invertir sección y header; H05 ignorar dropsError; H06 quitar etiqueta por entrega. Primero control GREEN, luego mutación temporal RED, restauración y GREEN. Si un test no falla ante su mutación, es insuficiente. NO afirmar que un script en /tmp fue ejecutado sin evidencia real.
