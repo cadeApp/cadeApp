@@ -13,8 +13,6 @@ as $$
 declare
   v_counts jsonb;
 begin
-  perform app_private.assert_admin_aal2();
-
   -- Una página del listado A03 tiene como máximo 50 comercios.
   if p_merchant_ids is null
     or cardinality(p_merchant_ids) > 50
