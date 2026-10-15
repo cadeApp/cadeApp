@@ -188,3 +188,11 @@ e2e-preview: ERROR / BLOCKED / REQUIRES DEVELOP MIGRATION [dpl_KFLxJ7TFSyNrnQf9y
 **No ejecutados por el revisor:** mutaciones locales independientes, `git merge-tree`, `pnpm test`, `pnpm supabase test db`, `docker`, consultas contra Supabase remoto, `node docs/revision-pr/analizar.mjs verificacion`. No se deben presentar como hechos. PR API indicó mergeable=true; no certifica ausencia de conflicto por `git merge-tree`.
 
 **Responsabilidad humana:** en R3 se preguntó D1/D2 y se recomendaron A/A, pero no se localizó una elección explícita en comentarios issue #371/PR #373; cuerpo de PR declara “autorización posterior” sin evidencia de selección. No deshacer archivos automáticamente; solicitar ratificación o abrir PR separado. La revisión corrigió metadata del issue #355 de `en-curso` a `bloqueada` preservando @KiraK72.
+
+## Cierre de alcance R4 — 2026-10-15
+
+- Decisión humana expresa: **D1-A y D2-A**.
+- Evidencia en PR: https://github.com/cadeApp/cadeApp/pull/373#issuecomment-6199481008
+- Evidencia en issue: https://github.com/cadeApp/cadeApp/issues/371#issuecomment-6199481799
+- Sin cambios en SQL, TS, CI ni master-plan por esta revisión; la documentación de revisión solo registra la decisión. No se corrieron nuevos tests ni mutaciones del revisor.
+- Se verificó que `#355` está abierto, debe permanecer `bloqueada` y a cargo de @KiraK72. La autorización de alcance no implica aprobación o merge.
