@@ -26,3 +26,14 @@ El E2E Playwright se ejecuta vía gate e2e-preview de confianza en environment d
 
 ## Mutación H07 requerida (pendiente)
 Primero control Playwright GREEN en Preview contra SHA real; modificar temporalmente selector del spec para elegir al repartidor 1 (no dueño) y exigir que el assert de actor caiga RED; restaurar copia segura fuera del repo y volver a GREEN. No desplegar ni commitear mutación en el repo; si el gate no permite mutación remota segura, reportar NO EJECUTADO y usar el mecanismo confiable existente e2e-mutation, si soporta la propiedad, sin cambiarlo.
+
+## Ronda 4 — comprobaciones observadas sobre `361317a17b9b99d0c3bdc3d9366966eb898064a0`
+**Evidencia de salida remota real, NO simulada:**
+- E2E [run 38686292491](https://github.com/cadeApp/cadeApp/actions/runs/38686292491), job 116261838001, checkout `HEAD is now at 361317a`; Preview Develop health+environment PASS.
+- `✓ 34 [chromium] › e2e/specs/main-flow.spec.ts:544:7 › T-360 ... (44.7s)`.
+- `75 passed (19.5m)`; `3 passed (1.0m)`; commit status `e2e-preview: success` sobre `361317a17b9b99d0c3bdc3d9366966eb898064a0`.
+- CI [unit](https://github.com/cadeApp/cadeApp/actions/runs/38686225890/job/116261575917): `Test Files 131 passed (131)`, `Tests 2204 passed (2204)`.
+- CI [db-tests](https://github.com/cadeApp/cadeApp/actions/runs/38686225890/job/116261575856): `Files=22, Tests=2205, Result: PASS`.
+- Ejecutadas por agente de revisión: consultas de código/metadata/log de Github y contraste exacto de SHA; no `pnpm` local ni clon ejecutable, **mutaciones independientes NO EJECUTADAS**.
+- Verificación original H07: fuente de Card renderiza `<div>`, spec corregido usa `div.rounded-xl.border-border.bg-card` y `heading h4` exacto; test integrado PASS.
+**Comandos opcionales para futura mutación independiente no ejecutada:** `pnpm exec vitest run src/features/offers/hooks/use-active-trips.test.tsx src/features/trips/queries.test.ts src/features/offers/courier-panel.test.tsx`; instrumentar cambios temporales EN MEMORIA de callback, dropsError y perDropSuffix y exigir RED, restaurar desde copia segura y GREEN. No afirmar ejecución sin salida.
