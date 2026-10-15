@@ -1,10 +1,12 @@
 import 'server-only';
 
+import { z } from 'zod';
 import {
   PLATFORM_SETTING_KEYS,
   merchantSubscriptionStatusSchema,
   type PlatformSettingKey,
 } from '@/domain';
+import type { SupabaseRpcCaller } from '@/server/rpc/admin';
 import { createClient } from '@/server/supabase/server';
 import { ADMIN_COPY } from './copy';
 import { updatePlatformSettingSchema, type AdminAuditFilters } from './schemas';
@@ -288,12 +290,23 @@ interface MerchantRow {
   paid_until: string | null;
   profiles: { display_name: string | null; phone: string | null } | null;
   zones: { name: string } | null;
-  delivery_requests: { count: number }[] | null;
 }
+
+// Issue 336: salida de `admin_merchant_delivered_counts`. Solo id del comercio y cantidad de solicitudes entregadas.
+const merchantDeliveredCountsSchema = z.array(
+  z
+    .object({
+      merchant_id: z.string().uuid(),
+      delivered_count: z.number().int().nonnegative(),
+    })
+    .strict()
+);
 
 /**
  * A03: comercios paginados por cursor; se identifican por nombre del local y teléfono.
  * Cuenta solo solicitudes entregadas. Usa el cliente de sesión (RLS del admin).
+ * CC-023 cerró el SELECT de tabla de `delivery_requests`, así que el conteo no se embebe: sale de una única
+ * llamada a la RPC admin `admin_merchant_delivered_counts` con los comercios de la página visible (issue 336).
  */
 export async function getAdminMerchants(
   options?: GetAdminMerchantsOptions
@@ -310,11 +323,9 @@ export async function getAdminMerchants(
       subscription_status,
       paid_until,
       profiles!merchants_profile_id_fkey ( display_name, phone ),
-      zones:default_pickup_zone_id ( name ),
-      delivery_requests ( count )
+      zones:default_pickup_zone_id ( name )
     `
     )
-    .eq('delivery_requests.status', 'delivered')
     .order('profile_id', { ascending: false });
 
   if (options?.cursor) {
@@ -331,6 +342,24 @@ export async function getAdminMerchants(
   const hasNextPage = rows.length > pageSize;
   const visibleRows = rows.slice(0, pageSize);
 
+  const deliveredCounts = new Map<string, number>();
+  if (visibleRows.length > 0) {
+    // Mismo cliente de sesión, tipado como en las demás RPC (`SupabaseRpcCaller`).
+    const rpcClient: SupabaseRpcCaller = supabase;
+    const { data: countsData, error: countsError } = await rpcClient.rpc(
+      'admin_merchant_delivered_counts',
+      { p_merchant_ids: visibleRows.map((row) => row.profile_id) }
+    );
+
+    if (countsError) {
+      throw new Error(`Error al contar las solicitudes entregadas: ${countsError.message}`);
+    }
+
+    for (const count of merchantDeliveredCountsSchema.parse(countsData)) {
+      deliveredCounts.set(count.merchant_id, count.delivered_count);
+    }
+  }
+
   const items: AdminMerchantListItem[] = visibleRows.map((row) => ({
     id: row.profile_id,
     businessName: row.business_name,
@@ -339,7 +368,7 @@ export async function getAdminMerchants(
     pickupZoneName: row.zones?.name ?? null,
     subscriptionStatus: merchantSubscriptionStatusSchema.parse(row.subscription_status),
     paidUntil: row.paid_until,
-    deliveredCount: row.delivery_requests?.[0]?.count ?? 0,
+    deliveredCount: deliveredCounts.get(row.profile_id) ?? 0,
   }));
 
   return {

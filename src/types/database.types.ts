@@ -852,6 +852,10 @@ export type Database = {
         }
         Returns: Json
       }
+      admin_merchant_delivered_counts: {
+        Args: { p_merchant_ids: string[] }
+        Returns: Json
+      }
       admin_resolve_incident: {
         Args: { p_decision: string; p_incident_id: string; p_reason: string }
         Returns: Json
