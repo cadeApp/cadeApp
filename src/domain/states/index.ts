@@ -47,7 +47,7 @@ export function isRequestExpired(
   if (status !== 'published') return false;
   const expiresMs = parseTimestampMs(expiresAt);
   if (expiresMs === null) return false;
-  return now.getTime() > expiresMs;
+  return now.getTime() >= expiresMs;
 }
 
 export function getEffectiveRequestStatus(

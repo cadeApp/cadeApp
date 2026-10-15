@@ -9,109 +9,129 @@ export interface SweepResult {
   expiredSubscriptionsCount: number;
 }
 
+const RECONCILE_EXPIRED_REQUESTS_CRON_LIMIT = 200;
+const MAX_RECONCILE_EXPIRED_REQUESTS_CRON_BATCHES = 5;
+
+interface ReconcileExpiredRequestsCronResult {
+  readonly expiredRequestIds: readonly string[];
+  readonly expiredOfferCourierIdsByRequest: Readonly<Record<string, readonly string[]>>;
+  readonly expiredCount: number;
+  readonly hasMore: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseReconcileExpiredRequestsCronResult(
+  value: unknown
+): ReconcileExpiredRequestsCronResult | null {
+  if (!isRecord(value)) return null;
+  const requestIds = value.expiredRequestIds;
+  const courierIdsByRequest = value.expiredOfferCourierIdsByRequest;
+  if (
+    !Array.isArray(requestIds) ||
+    !requestIds.every((requestId) => typeof requestId === 'string') ||
+    new Set(requestIds).size !== requestIds.length ||
+    !Number.isInteger(value.expiredCount) ||
+    value.expiredCount !== requestIds.length ||
+    value.expiredCount < 0 ||
+    value.expiredCount > RECONCILE_EXPIRED_REQUESTS_CRON_LIMIT ||
+    typeof value.hasMore !== 'boolean' ||
+    !isRecord(courierIdsByRequest)
+  ) {
+    return null;
+  }
+
+  const knownRequestIds = new Set(requestIds);
+  for (const [requestId, courierIds] of Object.entries(courierIdsByRequest)) {
+    if (
+      !knownRequestIds.has(requestId) ||
+      !Array.isArray(courierIds) ||
+      !courierIds.every((courierId) => typeof courierId === 'string') ||
+      new Set(courierIds).size !== courierIds.length
+    ) {
+      return null;
+    }
+  }
+
+  return {
+    expiredRequestIds: requestIds,
+    expiredOfferCourierIdsByRequest: courierIdsByRequest as Readonly<
+      Record<string, readonly string[]>
+    >,
+    expiredCount: value.expiredCount,
+    hasMore: value.hasMore,
+  };
+}
+
 export async function runSweep(): Promise<SweepResult> {
   const supabase = createAdminClient();
   const nowIso = new Date().toISOString();
 
-  // 1. Solicitudes vencidas (delivery_requests con status = 'published' y expires_at <= now())
-  const { data: expiredRequests, error: reqFetchError } = await supabase
-    .from('delivery_requests')
-    .select('id, merchant_id')
-    .eq('status', 'published')
-    .lte('expires_at', nowIso);
-
-  if (reqFetchError) {
-    throw new Error(`Failed to fetch expired requests: ${reqFetchError.message}`);
-  }
-
+  // 1. Solicitudes vencidas: la transacción, guardas, auditoría y ofertas viven en PostgreSQL.
+  // El límite evita que un backlog consuma toda la ejecución diaria; la próxima ejecución continúa el resto.
   let expiredRequestsCount = 0;
+  const notifiedRequestIds = new Set<string>();
 
-  if (expiredRequests && expiredRequests.length > 0) {
-    const expiredRequestIds = expiredRequests.map((r) => r.id);
-
-    // Actualizar solicitudes a 'expired' (con guarda TOCTOU status = 'published' y expires_at <= nowIso)
-    // D02: delivery_requests.update primero para obtener las filas efectivamente actualizadas
-    const { data: updatedRequests, error: reqUpdateError } = await supabase
-      .from('delivery_requests')
-      .update({ status: 'expired' })
-      .in('id', expiredRequestIds)
-      .eq('status', 'published')
-      .lte('expires_at', nowIso)
-      .select('id, merchant_id');
-
-    if (reqUpdateError) {
-      throw new Error(`Failed to update delivery_requests to expired: ${reqUpdateError.message}`);
+  for (let batch = 0; batch < MAX_RECONCILE_EXPIRED_REQUESTS_CRON_BATCHES; batch += 1) {
+    const { data: reconciliationData, error: reconciliationError } = await supabase.rpc(
+      'reconcile_expired_requests_cron',
+      { p_limit: RECONCILE_EXPIRED_REQUESTS_CRON_LIMIT }
+    );
+    if (reconciliationError) {
+      throw new Error(`Failed to reconcile expired requests: ${reconciliationError.message}`);
+    }
+    const reconciliation = parseReconcileExpiredRequestsCronResult(reconciliationData);
+    if (!reconciliation) {
+      throw new Error('Failed to reconcile expired requests: invalid RPC response');
     }
 
-    if (updatedRequests && updatedRequests.length > 0) {
-      const actuallyExpiredIds = updatedRequests.map((r) => r.id);
+    expiredRequestsCount += reconciliation.expiredCount;
+    const newlyExpiredRequestIds = reconciliation.expiredRequestIds.filter(
+      (requestId) => !notifiedRequestIds.has(requestId)
+    );
+    newlyExpiredRequestIds.forEach((requestId) => notifiedRequestIds.add(requestId));
 
-      // D02: audit_log antes de offers.update para que un fallo no deje huecos de auditoría
-      const auditEntries = updatedRequests.map((r) => ({
-        target_type: 'delivery_request',
-        target_id: r.id,
-        action: 'expired',
-        before: { status: 'published' },
-        after: { status: 'expired', expired_at: nowIso },
-      }));
+    // T-206: el push es post-commit y best-effort. Solo recibe IDs que la transacción realmente cambió.
+    if (newlyExpiredRequestIds.length > 0) {
+      try {
+        const { data: updatedRequests, error: updatedRequestsError } = await supabase
+          .from('delivery_requests')
+          .select('id, merchant_id')
+          .in('id', newlyExpiredRequestIds);
 
-      const { error: auditError } = await supabase.from('audit_log').insert(auditEntries);
-      if (auditError) {
-        throw new Error(`Failed to insert audit_log for expired requests: ${auditError.message}`);
-      }
-
-      // Actualizar ofertas 'pending' asociadas a 'expired' con decided_at = now()
-      // PR118-H03 / PR118-R01: Seleccionar request_id y courier_id de las ofertas efectivamente actualizadas
-      const { data: expiredOffers, error: offersUpdateError } = await supabase
-        .from('offers')
-        .update({ status: 'expired', decided_at: nowIso })
-        .in('request_id', actuallyExpiredIds)
-        .eq('status', 'pending')
-        .select('request_id, courier_id');
-
-      if (offersUpdateError) {
-        throw new Error(`Failed to update offers to expired: ${offersUpdateError.message}`);
-      }
-
-      // Agrupar couriers de ofertas efectivamente expiradas por request_id para evitar avisar a couriers no expirados
-      const couriersByRequestId = new Map<string, Set<string>>();
-      if (expiredOffers) {
-        for (const o of expiredOffers) {
-          let set = couriersByRequestId.get(o.request_id);
-          if (!set) {
-            set = new Set<string>();
-            couriersByRequestId.set(o.request_id, set);
-          }
-          set.add(o.courier_id);
-        }
-      }
-
-      // T-206: Disparo post-commit best-effort de request_expired a comercios y repartidores afectados
-      for (const req of updatedRequests) {
-        try {
-          const recipients = new Set<string>();
-          if (req.merchant_id) {
-            recipients.add(req.merchant_id);
-          }
-          const reqCouriers = couriersByRequestId.get(req.id);
-          if (reqCouriers) {
-            for (const courierId of reqCouriers) {
+        if (!updatedRequestsError && updatedRequests) {
+          const merchantByRequestId = new Map(
+            updatedRequests.map((request) => [request.id, request.merchant_id])
+          );
+          for (const requestId of newlyExpiredRequestIds) {
+            const recipients = new Set<string>();
+            const merchantId = merchantByRequestId.get(requestId);
+            if (merchantId) recipients.add(merchantId);
+            for (const courierId of reconciliation.expiredOfferCourierIdsByRequest[requestId] ?? []) {
               recipients.add(courierId);
             }
+            if (recipients.size > 0) {
+              await safeNotifyPostTransition(Array.from(recipients), {
+                event: 'request_expired',
+                requestId,
+              });
+            }
           }
-
-          if (recipients.size > 0) {
-            await safeNotifyPostTransition(Array.from(recipients), {
-              event: 'request_expired',
-              requestId: req.id,
-            });
-          }
-        } catch {
-          // Best effort: fallo de push nunca altera la expiración ni la ejecución del cron
         }
+      } catch {
+        // Best effort: fallar al resolver o enviar push nunca revierte la transacción SQL.
       }
+    }
 
-      expiredRequestsCount = updatedRequests.length;
+    if (!reconciliation.hasMore) break;
+    if (reconciliation.expiredCount === 0) {
+      console.warn('[cron/sweep] expiraciones pendientes bloqueadas; se reintentará en el próximo cron');
+      break;
+    }
+    if (batch === MAX_RECONCILE_EXPIRED_REQUESTS_CRON_BATCHES - 1) {
+      console.warn('[cron/sweep] expiraciones pendientes tras alcanzar el presupuesto de lotes');
     }
   }
 
