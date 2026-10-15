@@ -31,3 +31,13 @@
 [Informe](revisiones/ronda-1.md) · [JSONL](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md) · [Prompt completo](prompt-agy.md).
 
 **CI del SHA original:** run 38684238884, 23 archivos / 2231 pgTAP PASS y 131 archivos / 2179 Vitest PASS; no cubre los 7 escenarios. Desfase develop: 12 commits behind y mergeable=false; revalidar tras integrar develop.
+
+## Ronda 2 — 2026-10-15
+
+| Ronda | SHA revisado | Dictamen |
+|---|---|---|
+| 2 | 6e06e8ae7ade883d974644344f3597dcb526e2c2 | Bloqueada: nueva R01 alta, nueva R02 media; cuatro hallazgos arreglados sin verificar y tres parciales |
+
+[Informe ronda 2](revisiones/ronda-2.md) · [Evidencia ronda 2](evidencia/ronda-2.md) · [Prompt ronda 2](prompt-agy-ronda-2.md).
+
+**CI HEAD auditado:** 133 archivos / 2228 Vitest PASS; 23 archivos / 2245 pgTAP PASS, run 38692082266. Rama 2 commits detrás de develop. No mezclar el SHA de la carpeta de revisión con el SHA funcional auditado.
