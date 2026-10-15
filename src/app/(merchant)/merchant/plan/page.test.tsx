@@ -58,8 +58,8 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
     expect(screen.getByText(/cadeApp no procesa ese pago/)).toBeTruthy();
     expect(screen.queryByText(/flete/i)).toBeNull();
     expect(screen.queryByText(/documento legal en publicación/i)).toBeNull();
-    expect(screen.getByRole('link', { name: 'Términos y condiciones del Piloto' }))
-      .toHaveAttribute('href', '/legal/pilot');
+    expect(screen.getByRole('link', { name: 'Términos y condiciones del Piloto' }).getAttribute('href'))
+      .toBe('/legal/pilot');
     expect(screen.getByText(/Cuando finalice el piloto/)).toBeTruthy();
     expect(screen.queryByText(/abono mensual fijo/i)).toBeNull();
   });
@@ -68,8 +68,9 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
     process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER = '+54 9 3865 123456';
     await renderPage();
     const link = screen.getByRole('link', { name: 'Hablar con cadeApp' });
-    expect(link).toHaveAttribute('href', 'https://wa.me/5493865123456?text=Hola%20cadeApp%2C%20quiero%20consultar%20sobre%20los%20planes%20para%20comercios.');
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(link.getAttribute('href'))
+      .toBe('https://wa.me/5493865123456?text=Hola%20cadeApp%2C%20quiero%20consultar%20sobre%20los%20planes%20para%20comercios.');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
   it.each([undefined, '', 'numero-mal-formado', '+54 9 3865 123'])(
@@ -79,8 +80,9 @@ describe('T-368 — Mi plan: textos reales, términos publicados y WhatsApp conf
       else process.env.CADEAPP_SUPPORT_WHATSAPP_NUMBER = number;
       await renderPage();
       expect(screen.queryByRole('link', { name: 'Hablar con cadeApp' })).toBeNull();
-      expect(screen.getByRole('button', { name: 'Hablar con cadeApp' })).toBeDisabled();
-      expect(screen.getByRole('status')).toHaveTextContent('no está disponible');
+      expect((screen.getByRole('button', { name: 'Hablar con cadeApp' }) as HTMLButtonElement).disabled)
+        .toBe(true);
+      expect(screen.getByRole('status').textContent).toContain('no está disponible');
     }
   );
 });
