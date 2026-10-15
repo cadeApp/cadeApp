@@ -36,7 +36,6 @@ begin
     select dr.merchant_id, count(*)::integer as n
     from public.delivery_requests dr
     where dr.merchant_id = any (p_merchant_ids)
-      and dr.status = 'delivered'
     group by dr.merchant_id
   ) as delivered on delivered.merchant_id = requested.merchant_id;
 
