@@ -234,6 +234,7 @@ export interface FakeSeedDocument {
   readonly rejectionCode?: DocumentRejectionCode | null;
   readonly storagePath?: string;
   readonly purgeAfter?: string | null;
+  readonly idempotencyKey?: string | null;
 }
 
 export interface FakeDocumentRecord {
@@ -245,6 +246,7 @@ export interface FakeDocumentRecord {
   rejectionCode: DocumentRejectionCode | null;
   storagePath: string;
   purgeAfter: string | null;
+  idempotencyKey: string | null;
 }
 
 export interface FakeSeedIncident {
@@ -607,6 +609,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       rejectionCode: d.rejectionCode ?? null,
       storagePath: d.storagePath ?? `courier/${d.courierId}/${d.kind}_default.jpg`,
       purgeAfter: d.purgeAfter ?? null,
+      idempotencyKey: d.idempotencyKey ?? null,
     });
   }
 
@@ -2142,6 +2145,29 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           return err('VALIDATION_ERROR');
         }
 
+        if (input.idempotencyKey) {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(input.idempotencyKey)) {
+            return err('VALIDATION_ERROR');
+          }
+
+          for (const d of documents.values()) {
+            if (d.courierId === actor.userId && d.kind === input.kind && d.idempotencyKey === input.idempotencyKey) {
+              if (d.storagePath !== input.storagePath) {
+                return err('VALIDATION_ERROR');
+              }
+              return ok({
+                documentId: d.documentId,
+                kind: d.kind,
+                status: d.status,
+                replacedDocumentId: null,
+                isCurrent: d.isCurrent,
+                idempotent: true,
+              });
+            }
+          }
+        }
+
         let currentDoc: FakeDocumentRecord | undefined;
         for (const d of documents.values()) {
           if (d.courierId === actor.userId && d.kind === input.kind && d.isCurrent) {
@@ -2182,6 +2208,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           rejectionCode: null,
           storagePath: input.storagePath,
           purgeAfter: null,
+          idempotencyKey: input.idempotencyKey ?? null,
         };
         documents.set(newDocId, newDoc);
 

@@ -83,6 +83,7 @@ export type Database = {
         Row: {
           courier_id: string
           id: string
+          idempotency_key: string | null
           is_current: boolean
           kind: Database["public"]["Enums"]["courier_document_kind"]
           purge_after: string | null
@@ -95,6 +96,7 @@ export type Database = {
         Insert: {
           courier_id: string
           id?: string
+          idempotency_key?: string | null
           is_current?: boolean
           kind: Database["public"]["Enums"]["courier_document_kind"]
           purge_after?: string | null
@@ -107,6 +109,7 @@ export type Database = {
         Update: {
           courier_id?: string
           id?: string
+          idempotency_key?: string | null
           is_current?: boolean
           kind?: Database["public"]["Enums"]["courier_document_kind"]
           purge_after?: string | null

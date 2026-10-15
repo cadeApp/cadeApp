@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(26);
+select plan(41);
 
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025a1'::uuid $$;
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025c1'::uuid $$;
@@ -62,11 +62,17 @@ update public.couriers
 set status = 'pending', available = false, vehicle_type = 'moto', vehicle_plate = 'CC25AAA'
 where profile_id in (pg_temp.courier_a(), pg_temp.courier_b());
 
+-- Asegurar existencia de buckets en storage
+insert into storage.buckets (id, name, public)
+values ('courier-docs', 'courier-docs', false), ('other-bucket', 'other-bucket', false)
+on conflict do nothing;
+
 -- 1. Schema: columnas y constraints
 select has_column('public', 'courier_documents', 'is_current', 'courier_documents tiene columna is_current');
 select col_not_null('public', 'courier_documents', 'is_current', 'is_current es not null');
 select col_has_default('public', 'courier_documents', 'is_current', 'is_current tiene default true');
 select has_column('public', 'courier_documents', 'rejection_code', 'courier_documents tiene columna rejection_code');
+select has_column('public', 'courier_documents', 'idempotency_key', 'courier_documents tiene columna idempotency_key');
 select ok(
   exists (
     select 1 from pg_constraint
@@ -114,15 +120,48 @@ select throws_matching(
   'RLS bloquea INSERT directo cuando ya existe un documento del mismo kind (PR358-H01 cerrado)'
 );
 
--- 4. UPDATE directo bloqueado para couriers (RLS no concede update)
-update public.courier_documents
-set status = 'verified'
-where id = '00000000-0000-4000-8000-0000000025d1';
+-- 4. PR364-H03: UPDATE y DELETE directos REVOCADOS sobre courier_documents
+select pg_temp.act_as(pg_temp.courier_a());
+select throws_matching(
+  $$
+    update public.courier_documents
+    set status = 'verified'
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'Courier no puede hacer UPDATE directo (permiso UPDATE revocado en tabla)'
+);
 
-select is(
-  (select status from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d1'),
-  'submitted'::public.document_review_status,
-  'Courier no puede alterar status mediante UPDATE directo (RLS deniega update a no admins)'
+select pg_temp.act_as(pg_temp.admin_a(), 'aal1');
+select throws_matching(
+  $$
+    update public.courier_documents
+    set status = 'verified'
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'Admin AAL1 no puede hacer UPDATE directo (debe usar RPC admin_verify_document con AAL2)'
+);
+
+select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
+select throws_matching(
+  $$
+    update public.courier_documents
+    set status = 'verified'
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'Admin AAL2 no puede saltar la RPC auditada mediante UPDATE directo'
+);
+
+select pg_temp.act_as(pg_temp.courier_a());
+select throws_matching(
+  $$
+    delete from public.courier_documents
+    where id = '00000000-0000-4000-8000-0000000025d1';
+  $$,
+  '42501|permission denied',
+  'DELETE directo revocado para usuarios autenticados'
 );
 
 -- 5a. RPC replace_courier_document: anon no tiene permisos de ejecución
@@ -189,6 +228,18 @@ select throws_matching(
   'replace_courier_document rechaza storagePath con path traversal'
 );
 
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'license',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_new.jpg',
+      'idempotencyKey', 'not-a-valid-uuid'
+    ));
+  $$,
+  'VALIDATION_ERROR',
+  'replace_courier_document rechaza idempotencyKey con formato no UUID'
+);
+
 -- 8. RPC replace_courier_document: no se puede reemplazar documento en estado submitted
 select throws_matching(
   $$
@@ -215,19 +266,57 @@ select lives_ok(
   'admin_verify_document rechaza con p_rejection_code seguro'
 );
 
--- Verificar que el documento rechazado tiene rejection_code = 'illegible'
 select is(
   (select rejection_code from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d1'),
   'illegible',
   'courier_documents almacena rejection_code seguro'
 );
 
--- 10. Courier reemplaza documento rechazado exitosamente
+-- 10. PR364-H01: Comprobación incondicional de objeto en Storage
+select pg_temp.act_as(pg_temp.courier_a());
+
+-- 10a. Bucket vacío (no existe objeto en courier-docs) -> falla con NOT_FOUND
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'license',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg'
+    ));
+  $$,
+  'NOT_FOUND',
+  'H01: replace_courier_document falla con NOT_FOUND cuando el objeto no existe en Storage (bucket vacio)'
+);
+
+-- 10b. Objeto existe en bucket equivocado -> falla con NOT_FOUND
+select pg_temp.reset_actor();
+insert into storage.objects (id, bucket_id, name, owner)
+values ('00000000-0000-4000-8000-0000000025o1', 'other-bucket', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
+on conflict do nothing;
+
+select pg_temp.act_as(pg_temp.courier_a());
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'license',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg'
+    ));
+  $$,
+  'NOT_FOUND',
+  'H01: replace_courier_document falla con NOT_FOUND cuando el objeto esta en bucket equivocado'
+);
+
+-- 11. Courier reemplaza documento rechazado exitosamente cuando el objeto existe en courier-docs
+select pg_temp.reset_actor();
+insert into storage.objects (id, bucket_id, name, owner)
+values ('00000000-0000-4000-8000-0000000025o2', 'courier-docs', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg', pg_temp.courier_a())
+on conflict do nothing;
+
 select pg_temp.act_as(pg_temp.courier_a());
 create table pg_temp.replace_res as
 select public.replace_courier_document(jsonb_build_object(
   'kind', 'license',
-  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg'
+  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg',
+  'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
 )) as res;
 
 select is(
@@ -254,7 +343,7 @@ select is(
   'replace_courier_document referencia al documento reemplazado'
 );
 
--- 11. Verificar base de datos: documento previo desactivado con retención de 30 días (D8 / Decisión 3B)
+-- 12. Verificar base de datos: documento previo desactivado con retención de 30 días (D8 / Decisión B)
 select pg_temp.reset_actor();
 
 select is(
@@ -265,24 +354,65 @@ select is(
 
 select ok(
   (select purge_after > now() + interval '29 days' from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d1'),
-  'Documento anterior conserva retencion de 30 dias (D8 / Decision 3B)'
+  'Documento anterior conserva retencion de 30 dias (D8 / Decision B)'
 );
 
--- 12. Idempotencia ante reintento con mismo path
+-- 13. PR364-H04: Privacidad del historial en RLS SELECT
+select pg_temp.act_as(pg_temp.courier_a());
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a()),
+  1,
+  'PR364-H04: Courier dueno solo ve su documento vigente (is_current=true), no ve historicos'
+);
+
+select pg_temp.act_as(pg_temp.courier_b());
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a()),
+  0,
+  'PR364-H04: Courier ajeno no puede ver ningun documento de otro courier'
+);
+
+select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_a()),
+  2,
+  'PR364-H04: Admin puede ver documentos vigentes e historicos para revision y auditoria'
+);
+
+-- 14. PR364-H07: Idempotencia estricta por idempotency_key
 select pg_temp.act_as(pg_temp.courier_a());
 create table pg_temp.retry_res as
 select public.replace_courier_document(jsonb_build_object(
   'kind', 'license',
-  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg'
+  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg',
+  'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
 )) as res;
 
 select is(
   (select res->>'idempotent' from pg_temp.retry_res)::boolean,
   true,
-  'Reintento con mismo storagePath sobre version promovida es idempotente'
+  'PR364-H07: Reintento con misma idempotencyKey retorna idempotent = true'
 );
 
--- 13. Admin no puede decidir sobre un documento obsoleto (PR358-H02 cerrado)
+select is(
+  (select count(*)::int from public.audit_log where action = 'replace_courier_document' and actor_id = pg_temp.courier_a()),
+  1,
+  'PR364-H07: Reintento idempotente NO duplica eventos en audit_log'
+);
+
+select throws_matching(
+  $$
+    select public.replace_courier_document(jsonb_build_object(
+      'kind', 'license',
+      'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_other_path.jpg',
+      'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
+    ));
+  $$,
+  'VALIDATION_ERROR',
+  'PR364-H07: Misma idempotencyKey con storagePath diferente falla con VALIDATION_ERROR'
+);
+
+-- 15. PR364-H02: Admin no puede decidir sobre un documento obsoleto
 select pg_temp.act_as(pg_temp.admin_a(), 'aal2');
 select throws_matching(
   $$
@@ -295,7 +425,7 @@ select throws_matching(
   'admin_verify_document rechaza decidir sobre documento obsoleto (is_current = false)'
 );
 
--- 14. Admin verifica la nueva versión vigente exitosamente
+-- 16. Admin verifica la nueva versión vigente exitosamente
 create table pg_temp.verify_res as
 select public.admin_verify_document(
   (select (res->>'documentId')::uuid from pg_temp.replace_res),
@@ -308,7 +438,22 @@ select is(
   'admin_verify_document aprueba la nueva version vigente'
 );
 
--- 15. Invariante de indice unico: no pueden existir dos is_current = true para el mismo courier y kind
+-- 17. PR364-H07: Reintento con misma idempotencyKey despues de que admin verifico devuelve status verified
+select pg_temp.act_as(pg_temp.courier_a());
+create table pg_temp.retry_after_verified as
+select public.replace_courier_document(jsonb_build_object(
+  'kind', 'license',
+  'storagePath', 'courier/00000000-0000-4000-8000-0000000025c1/license_v2.jpg',
+  'idempotencyKey', '00000000-0000-4000-8000-0000000000f1'
+)) as res;
+
+select is(
+  (select res->>'status' from pg_temp.retry_after_verified),
+  'verified',
+  'PR364-H07: Reintento con misma idempotencyKey tras aprobacion admin devuelve status verified'
+);
+
+-- 18. Invariante de indice unico: no pueden existir dos is_current = true para el mismo courier y kind
 select pg_temp.reset_actor();
 select throws_matching(
   $$
@@ -324,6 +469,42 @@ select throws_matching(
   $$,
   'courier_documents_unique_current',
   'Indice unico parcial impide dos documentos vigentes para el mismo (courier_id, kind)'
+);
+
+-- 19. PR364-H06: Backfill no vence prematuramente documentos antiguos
+-- Si un documento fue subido hace 90 dias y no tenia purge_after, el backfill asigna now() + 30 dias
+insert into public.courier_documents (
+  id, courier_id, kind, storage_path, status, uploaded_at, purge_after, is_current
+) values (
+  '00000000-0000-4000-8000-0000000025d9',
+  '00000000-0000-4000-8000-0000000025c2',
+  'license',
+  'courier/00000000-0000-4000-8000-0000000025c2/license_90d.jpg',
+  'submitted',
+  now() - interval '90 days',
+  null,
+  false
+);
+
+-- Ejecutar logica de backfill sobre duplicados
+with ranked as (
+  select
+    id,
+    row_number() over (partition by courier_id, kind order by uploaded_at desc, id desc) as rn
+  from public.courier_documents
+  where courier_id = '00000000-0000-4000-8000-0000000025c2'
+)
+update public.courier_documents cd
+set purge_after = case
+  when cd.purge_after is null then now() + interval '30 days'
+  else cd.purge_after
+end
+from ranked
+where cd.id = ranked.id and cd.id = '00000000-0000-4000-8000-0000000025d9';
+
+select ok(
+  (select purge_after > now() + interval '29 days' from public.courier_documents where id = '00000000-0000-4000-8000-0000000025d9'),
+  'PR364-H06: Backfill preserva retencion asignando now() + 30 dias para historicos antiguos sin purge_after'
 );
 
 rollback;

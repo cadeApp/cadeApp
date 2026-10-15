@@ -322,4 +322,76 @@ describe('CC-025 — FakeRpcClient replace_courier_document', () => {
       expect(res.code).toBe('NOT_FOUND');
     }
   });
+
+  it('PR364-H07: procesa idempotencyKey: reintento idéntico retorna ok idempotente, reuso con path distinto falla con VALIDATION_ERROR', async () => {
+    const client = setupClient();
+    const idemKey = '00000000-0000-4000-8000-0000000000f1';
+    const storagePath = `courier/${COURIER_ID}/license_idem.jpg`;
+
+    // 1. Primer reemplazo con idempotencyKey
+    const firstRes = await client.replace_courier_document({
+      kind: 'license',
+      storagePath,
+      idempotencyKey: idemKey,
+    });
+    expect(firstRes.ok).toBe(true);
+    if (!firstRes.ok) return;
+    expect(firstRes.data.idempotent).toBe(false);
+    expect(firstRes.data.status).toBe('submitted');
+    const createdDocId = firstRes.data.documentId;
+
+    // 2. Segundo intento idéntico con la misma idempotencyKey: debe ser idempotente
+    const secondRes = await client.replace_courier_document({
+      kind: 'license',
+      storagePath,
+      idempotencyKey: idemKey,
+    });
+    expect(secondRes.ok).toBe(true);
+    if (!secondRes.ok) return;
+    expect(secondRes.data.idempotent).toBe(true);
+    expect(secondRes.data.documentId).toBe(createdDocId);
+
+    // 3. Reintento con misma idempotencyKey pero storagePath distinto: debe fallar con VALIDATION_ERROR
+    const diffPathRes = await client.replace_courier_document({
+      kind: 'license',
+      storagePath: `courier/${COURIER_ID}/license_different.jpg`,
+      idempotencyKey: idemKey,
+    });
+    expect(diffPathRes.ok).toBe(false);
+    if (!diffPathRes.ok) {
+      expect(diffPathRes.code).toBe('VALIDATION_ERROR');
+    }
+
+    // 4. Si el admin aprueba el documento y luego ocurre un reintento de la misma idempotencyKey, retorna estado verificado sin error
+    client.setActor({ userId: ADMIN_ID, role: 'admin', aal: 'aal2' });
+    const verifyRes = await client.admin_verify_document({
+      documentId: createdDocId,
+      decision: 'verified',
+    });
+    expect(verifyRes.ok).toBe(true);
+
+    client.setActor({ userId: COURIER_ID, role: 'courier', aal: 'aal1' });
+    const retryAfterVerified = await client.replace_courier_document({
+      kind: 'license',
+      storagePath,
+      idempotencyKey: idemKey,
+    });
+    expect(retryAfterVerified.ok).toBe(true);
+    if (!retryAfterVerified.ok) return;
+    expect(retryAfterVerified.data.idempotent).toBe(true);
+    expect(retryAfterVerified.data.status).toBe('verified');
+  });
+
+  it('PR364-H07: rechaza idempotencyKey con formato no-UUID', async () => {
+    const client = setupClient();
+    const res = await client.replace_courier_document({
+      kind: 'license',
+      storagePath: `courier/${COURIER_ID}/license_invalid_key.jpg`,
+      idempotencyKey: 'not-a-valid-uuid',
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe('VALIDATION_ERROR');
+    }
+  });
 });

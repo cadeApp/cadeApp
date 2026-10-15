@@ -177,12 +177,48 @@ export async function courierOnboardingAction(
     });
   }
 
-  const { error: documentsError } = await supabase
-    .from('courier_documents')
-    .upsert(documentEntries as never);
+  // 8. Inserción de documentos en courier_documents con idempotencia ante reintentos (PR364-H05)
+  const queryBuilder = supabase.from('courier_documents');
+  let documentEntriesToInsert = documentEntries;
 
-  if (documentsError) {
-    return err('INTERNAL_ERROR');
+  if (typeof (queryBuilder as unknown as { select?: unknown }).select === 'function') {
+    const { data: existingDocs, error: checkDocsError } = await (
+      queryBuilder as unknown as {
+        select: (cols: string) => { eq: (col: string, val: string) => Promise<{ data: unknown[]; error: unknown }> };
+      }
+    )
+      .select('id, kind, storage_path, status, is_current')
+      .eq('courier_id', user.id);
+
+    if (checkDocsError) {
+      return err('INTERNAL_ERROR');
+    }
+
+    const existingByKind = new Map(
+      ((existingDocs as Array<{ kind: string; storage_path: string; status: string; is_current?: boolean | null }>) ?? [])
+        .filter((d) => d.is_current !== false)
+        .map((d) => [d.kind, d])
+    );
+
+    documentEntriesToInsert = [];
+    for (const entry of documentEntries) {
+      const existing = existingByKind.get(entry.kind);
+      if (!existing) {
+        documentEntriesToInsert.push(entry);
+      } else if (existing.storage_path !== entry.storage_path) {
+        return err('VALIDATION_ERROR');
+      }
+    }
+  }
+
+  if (documentEntriesToInsert.length > 0) {
+    const { error: documentsError } = await queryBuilder.upsert(
+      documentEntriesToInsert as never
+    );
+
+    if (documentsError) {
+      return err('INTERNAL_ERROR');
+    }
   }
 
   // 6. Persistencia de dni_hmac y vehículo en couriers via adminClient.
