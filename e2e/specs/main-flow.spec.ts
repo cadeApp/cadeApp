@@ -568,14 +568,24 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
     await merchantPage.gotoRequestDetail(targetRequestId);
     await waitForNoSkeletons(page);
 
+    // Buscar encabezado con el nombre exacto de Courier 0
+    const courierHeading = page.getByRole('heading', {
+      level: 4,
+      name: targetCourier.displayName,
+      exact: true,
+    });
+    await expect(courierHeading).toHaveCount(1);
+
+    // Localizar la tarjeta Card contenedora (div.rounded-xl.border-border.bg-card) asociada al courier
     const courierCard = page
-      .locator(`article:has-text("${targetCourier.displayName}"), [data-courier-id="${targetCourier.id}"]`)
-      .first();
-    if (await courierCard.isVisible()) {
-      await courierCard.getByRole('button', { name: /aceptar/i }).click();
-    } else {
-      await merchantPage.acceptOfferButton.first().click();
-    }
+      .locator('div.rounded-xl.border-border.bg-card')
+      .filter({ has: courierHeading });
+    await expect(courierCard).toHaveCount(1);
+
+    const acceptButton = courierCard.getByRole('button', { name: /^aceptar$/i });
+    await expect(acceptButton).toHaveCount(1);
+    await acceptButton.click();
+
     await merchantPage.confirmAcceptButton.click();
     await waitForNoSkeletons(page);
 
