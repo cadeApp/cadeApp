@@ -11,11 +11,12 @@ export interface CoordinationMessageParams {
 }
 
 export interface NotifyCustomerMessageParams {
-  amountArs: number;
   courierName: string;
-  recipientPaymentMethod: string;
-  needsChange: boolean;
-  cashChangeAmount: number | null;
+  status?: 'matched' | 'in_transit' | 'delivered';
+  amountArs?: number;
+  recipientPaymentMethod?: string;
+  needsChange?: boolean;
+  cashChangeAmount?: number | null;
 }
 
 /**
@@ -99,24 +100,20 @@ export function buildTripCoordinationWhatsAppMessage(params: CoordinationMessage
 }
 
 /**
- * Genera el mensaje de WhatsApp "Avisar a mi cliente" (comercio ↔ destinatario).
- * Cumple "sin datos de más" usando allowlist estricta (H04).
+ * Genera el mensaje de WhatsApp natural para el destinatario (T-361).
+ * Redacción clara, humana y concisa según el estado real del viaje (matched vs in_transit).
+ * Sin IDs internos, códigos técnicos ni datos innecesarios (H04 & D3).
  */
 export function buildNotifyCustomerWhatsAppMessage(params: NotifyCustomerMessageParams): string {
-  const courier = params.courierName;
-  const amount = formatArs(params.amountArs);
+  const courier = params.courierName?.trim() || 'tu repartidor';
 
-  let paymentText = 'Efectivo';
-  if (params.recipientPaymentMethod === 'transfer') {
-    paymentText = 'Transferencia';
-  } else if (params.recipientPaymentMethod === 'to_agree') {
-    paymentText = 'A coordinar';
+  if (params.status === 'matched') {
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!`;
   }
 
-  let changeText = '';
-  if (params.needsChange && params.cashChangeAmount) {
-    changeText = ` (necesita cambio de ${formatArs(params.cashChangeAmount)})`;
+  if (params.status === 'delivered') {
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Tu pedido ya fue entregado. ¡Muchas gracias!`;
   }
 
-  return `Hola! Tu pedido va en camino con ${courier}. Costo de envío: ${amount}. Medio de pago: ${paymentText}${changeText}.`;
+  return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Te aviso que estoy en camino. ¡Nos vemos pronto!`;
 }
