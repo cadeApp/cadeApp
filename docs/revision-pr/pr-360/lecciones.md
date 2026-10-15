@@ -9,3 +9,12 @@ Ronda 2: las correcciones H01/H03/H04/H06 son consistentes por inspección; H02 
 **Corrección del propio revisor:** la batería de ronda 1 usaba un ancla `result.request.status` que no existe después de `const { request } = result`; se habría reportado SIN OBJETIVO. Esta es falla del instrumento, no del autor. La ronda 2 corrige esa ancla; sin ejecución no afirma mutaciones verificadas.
 
 No se asignan lecciones AG-xx nuevas sin relevar la numeración de todas las ramas.
+
+## Ronda 3 — de test a contrato observado
+
+- **P01 (R02):** `replace` no significa que Back se queda donde estás. El E2E debe medir el requisito observable (ausencia de Aceptar tras match), no una ruta específica de historial que el DoD nunca impuso. El propio revisor sugirió probar Back sin precisar esta diferencia en ronda 2: **omisión nuestra al formular el prompt**, que aquí se documenta.
+- **P08 (H05):** `if (winningOffer) expect(monto)` no es buena aserción del dinero aunque un oracle DB previo garantice que existe; afirmar explícitamente identidad de oferta y actor, no saltar el control.
+- **P01 (R01):** esperar primera URL reduce flakiness de velocidad, pero no demuestra *quién* ganó: los dos contextos pueden llegar al mismo viaje por mecanismos diferentes. La distinción de causalidad viene de `acceptedOfferId` o del error ALREADY_MATCHED, no de URL.
+- **AG-36 / H07:** el autor aportó ahora un RED razonablemente concreto para H02, pero el revisor no lo reprodujo; esa precisión documental es mejora real, no verificación independiente.
+
+No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
