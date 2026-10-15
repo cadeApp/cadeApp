@@ -134,6 +134,15 @@ on conflict (id) do nothing;
 
 create function pg_temp.clear_requests() returns void language plpgsql as $$
 begin
+  -- Rompe la referencia inversa de una oferta aceptada antes de borrar las ofertas hijas.
+  update public.delivery_requests
+  set accepted_offer_id = null
+  where merchant_id in (pg_temp.merchant_id(), pg_temp.other_merchant_id());
+  delete from public.offers
+  where request_id in (
+    select id from public.delivery_requests
+    where merchant_id in (pg_temp.merchant_id(), pg_temp.other_merchant_id())
+  );
   delete from public.audit_log
   where target_id in (
     select id::text from public.delivery_requests
@@ -211,7 +220,7 @@ update public.profiles set consent_status = 'active' where id = pg_temp.merchant
 select pg_temp.clear_requests();
 select pg_temp.seed_request(pg_temp.cc026_id('1'), pg_temp.merchant_id(), 'published', now() - interval '1 millisecond');
 select pg_temp.seed_request(pg_temp.cc026_id('2'), pg_temp.merchant_id(), 'published', now());
-select pg_temp.seed_request(pg_temp.cc026_id('3'), pg_temp.merchant_id(), 'published', now() + interval '1 millisecond');
+select pg_temp.seed_request(pg_temp.cc026_id('3'), pg_temp.merchant_id(), 'published', now() + interval '5 minutes');
 select pg_temp.seed_request(pg_temp.cc026_id('4'), pg_temp.merchant_id(), 'published', null);
 select pg_temp.seed_request(pg_temp.cc026_id('5'), pg_temp.merchant_id(), 'published', now() - interval '1 minute', true);
 select pg_temp.seed_request(pg_temp.cc026_id('6'), pg_temp.merchant_id(), 'matched', now() - interval '1 minute');
@@ -224,7 +233,7 @@ select pg_temp.seed_request(pg_temp.cc026_id('11'), pg_temp.other_merchant_id(),
 select is((pg_temp.as_authenticated(pg_temp.merchant_id(), 'select public.reconcile_expired_requests()')->'data'->>'expiredCount')::integer, 2, 'vencen solo las dos published propias en o antes del límite');
 select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('1')), 'expired', 'vence justo antes del límite');
 select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('2')), 'expired', 'vence en el instante exacto');
-select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('3')), 'published', 'no vence justo después del límite');
+select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('3')), 'published', 'no vence antes del límite');
 select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('4')), 'published', 'expires_at nulo no vence');
 select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('5')), 'published', 'accepted_offer_id no nulo no vence');
 select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('6')), 'matched', 'matched permanece intacta');
@@ -240,10 +249,15 @@ select is((pg_temp.as_authenticated(pg_temp.merchant_id(), 'select public.reconc
 select is((select count(*)::integer from public.audit_log where target_id = pg_temp.cc026_id('1')::text and action = 'expired'), 1, 'reintento no duplica auditoría');
 
 select is(pg_temp.error_state_as_authenticated(pg_temp.merchant_id(), format('update public.delivery_requests set status = ''expired'' where id = %L', pg_temp.cc026_id('3'))), '42501', 'comercio no actualiza delivery_requests.status directo');
+select is((select status::text from public.delivery_requests where id = pg_temp.cc026_id('3')), 'published', 'bypass de status no persiste cambio');
 select is(pg_temp.error_state_as_authenticated(pg_temp.merchant_id(), format('update public.delivery_requests set accepted_offer_id = null where id = %L', pg_temp.cc026_id('5'))), '42501', 'comercio no actualiza accepted_offer_id directo');
+select ok((select accepted_offer_id is not null from public.delivery_requests where id = pg_temp.cc026_id('5')), 'bypass de accepted_offer_id no persiste cambio');
 select is(pg_temp.error_state_as_authenticated(pg_temp.merchant_id(), format('update public.delivery_requests set expires_at = now() where id = %L', pg_temp.cc026_id('3'))), '42501', 'comercio no actualiza expires_at directo');
+select ok((select expires_at > now() + interval '4 minutes' from public.delivery_requests where id = pg_temp.cc026_id('3')), 'bypass de expires_at no persiste cambio');
 select is(pg_temp.error_state_as_authenticated(pg_temp.courier_id(), format('update public.offers set status = ''expired'' where request_id = %L', pg_temp.cc026_id('3'))), '42501', 'repartidor no actualiza offers.status directo');
+select is((select status::text from public.offers where request_id = pg_temp.cc026_id('3')), 'pending', 'bypass de offers.status no persiste cambio');
 select is(pg_temp.error_state_as_authenticated(pg_temp.courier_id(), format('update public.offers set decided_at = now() where request_id = %L', pg_temp.cc026_id('3'))), '42501', 'repartidor no actualiza offers.decided_at directo');
+select ok((select decided_at is null from public.offers where request_id = pg_temp.cc026_id('3')), 'bypass de offers.decided_at no persiste cambio');
 
 select pg_temp.clear_requests();
 select pg_temp.seed_request(pg_temp.cc026_id('20'), pg_temp.merchant_id(), 'published', now() - interval '1 minute');

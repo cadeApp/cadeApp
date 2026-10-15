@@ -10,6 +10,7 @@ export interface SweepResult {
 }
 
 const RECONCILE_EXPIRED_REQUESTS_CRON_LIMIT = 200;
+const MAX_RECONCILE_EXPIRED_REQUESTS_CRON_BATCHES = 5;
 
 interface ReconcileExpiredRequestsCronResult {
   readonly expiredRequestIds: readonly string[];
@@ -69,49 +70,68 @@ export async function runSweep(): Promise<SweepResult> {
   const nowIso = new Date().toISOString();
 
   // 1. Solicitudes vencidas: la transacción, guardas, auditoría y ofertas viven en PostgreSQL.
-  const { data: reconciliationData, error: reconciliationError } = await supabase.rpc(
-    'reconcile_expired_requests_cron',
-    { p_limit: RECONCILE_EXPIRED_REQUESTS_CRON_LIMIT }
-  );
-  if (reconciliationError) {
-    throw new Error(`Failed to reconcile expired requests: ${reconciliationError.message}`);
-  }
-  const reconciliation = parseReconcileExpiredRequestsCronResult(reconciliationData);
-  if (!reconciliation) {
-    throw new Error('Failed to reconcile expired requests: invalid RPC response');
-  }
+  // El límite evita que un backlog consuma toda la ejecución diaria; la próxima ejecución continúa el resto.
+  let expiredRequestsCount = 0;
+  const notifiedRequestIds = new Set<string>();
 
-  const expiredRequestsCount = reconciliation.expiredCount;
+  for (let batch = 0; batch < MAX_RECONCILE_EXPIRED_REQUESTS_CRON_BATCHES; batch += 1) {
+    const { data: reconciliationData, error: reconciliationError } = await supabase.rpc(
+      'reconcile_expired_requests_cron',
+      { p_limit: RECONCILE_EXPIRED_REQUESTS_CRON_LIMIT }
+    );
+    if (reconciliationError) {
+      throw new Error(`Failed to reconcile expired requests: ${reconciliationError.message}`);
+    }
+    const reconciliation = parseReconcileExpiredRequestsCronResult(reconciliationData);
+    if (!reconciliation) {
+      throw new Error('Failed to reconcile expired requests: invalid RPC response');
+    }
 
-  // T-206: el push es post-commit y best-effort. Solo recibe IDs que la transacción realmente cambió.
-  if (reconciliation.expiredRequestIds.length > 0) {
-    try {
-      const { data: updatedRequests, error: updatedRequestsError } = await supabase
-        .from('delivery_requests')
-        .select('id, merchant_id')
-        .in('id', reconciliation.expiredRequestIds);
+    expiredRequestsCount += reconciliation.expiredCount;
+    const newlyExpiredRequestIds = reconciliation.expiredRequestIds.filter(
+      (requestId) => !notifiedRequestIds.has(requestId)
+    );
+    newlyExpiredRequestIds.forEach((requestId) => notifiedRequestIds.add(requestId));
 
-      if (!updatedRequestsError && updatedRequests) {
-        const merchantByRequestId = new Map(
-          updatedRequests.map((request) => [request.id, request.merchant_id])
-        );
-        for (const requestId of reconciliation.expiredRequestIds) {
-          const recipients = new Set<string>();
-          const merchantId = merchantByRequestId.get(requestId);
-          if (merchantId) recipients.add(merchantId);
-          for (const courierId of reconciliation.expiredOfferCourierIdsByRequest[requestId] ?? []) {
-            recipients.add(courierId);
-          }
-          if (recipients.size > 0) {
-            await safeNotifyPostTransition(Array.from(recipients), {
-              event: 'request_expired',
-              requestId,
-            });
+    // T-206: el push es post-commit y best-effort. Solo recibe IDs que la transacción realmente cambió.
+    if (newlyExpiredRequestIds.length > 0) {
+      try {
+        const { data: updatedRequests, error: updatedRequestsError } = await supabase
+          .from('delivery_requests')
+          .select('id, merchant_id')
+          .in('id', newlyExpiredRequestIds);
+
+        if (!updatedRequestsError && updatedRequests) {
+          const merchantByRequestId = new Map(
+            updatedRequests.map((request) => [request.id, request.merchant_id])
+          );
+          for (const requestId of newlyExpiredRequestIds) {
+            const recipients = new Set<string>();
+            const merchantId = merchantByRequestId.get(requestId);
+            if (merchantId) recipients.add(merchantId);
+            for (const courierId of reconciliation.expiredOfferCourierIdsByRequest[requestId] ?? []) {
+              recipients.add(courierId);
+            }
+            if (recipients.size > 0) {
+              await safeNotifyPostTransition(Array.from(recipients), {
+                event: 'request_expired',
+                requestId,
+              });
+            }
           }
         }
+      } catch {
+        // Best effort: fallar al resolver o enviar push nunca revierte la transacción SQL.
       }
-    } catch {
-      // Best effort: fallar al resolver o enviar push nunca revierte la transacción SQL.
+    }
+
+    if (!reconciliation.hasMore) break;
+    if (reconciliation.expiredCount === 0) {
+      console.warn('[cron/sweep] expiraciones pendientes bloqueadas; se reintentará en el próximo cron');
+      break;
+    }
+    if (batch === MAX_RECONCILE_EXPIRED_REQUESTS_CRON_BATCHES - 1) {
+      console.warn('[cron/sweep] expiraciones pendientes tras alcanzar el presupuesto de lotes');
     }
   }
 

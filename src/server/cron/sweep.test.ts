@@ -35,6 +35,72 @@ function setAdminClientMock(mock: AdminClientMock) {
   } as ReturnType<typeof createAdminClient>);
 }
 
+function reconciliationBatch(batch: number, count: number, hasMore: boolean) {
+  const expiredRequestIds = Array.from(
+    { length: count },
+    (_, index) => `40000000-0000-4000-8000-${String(batch * 1_000 + index + 1).padStart(12, '0')}`
+  );
+
+  return {
+    data: {
+      expiredRequestIds,
+      expiredOfferCourierIdsByRequest: {},
+      expiredCount: count,
+      hasMore,
+    },
+    error: null,
+  };
+}
+
+function setSweepBatches(batches: ReadonlyArray<ReturnType<typeof reconciliationBatch>>) {
+  const rpc = vi.fn();
+  for (const batch of batches) rpc.mockResolvedValueOnce(batch);
+
+  const deliveryRequestsIn = vi.fn().mockImplementation((_column: string, requestIds: readonly string[]) =>
+    Promise.resolve({
+      data: requestIds.map((id, index) => ({
+        id,
+        merchant_id: `50000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      })),
+      error: null,
+    })
+  );
+  const courierDocumentsSelect = vi.fn().mockReturnValue({
+    lte: vi.fn().mockReturnValue({
+      is: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }),
+  });
+  const merchantsSelect = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+  });
+
+  setAdminClientMock({
+    rpc,
+    from: vi.fn().mockImplementation((table: string) => {
+      if (table === 'delivery_requests') {
+        return {
+          select: vi.fn().mockReturnValue({ in: deliveryRequestsIn }),
+        };
+      }
+      if (table === 'courier_documents') return { select: courierDocumentsSelect };
+      if (table === 'platform_settings') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: { value: '0' }, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'merchants') return { select: merchantsSelect };
+      return {};
+    }),
+    storage: { from: vi.fn() },
+  });
+
+  return { courierDocumentsSelect, deliveryRequestsIn, merchantsSelect, rpc };
+}
+
 describe('runSweep logic', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,6 +108,84 @@ describe('runSweep logic', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('CC-026 no abandona la segunda página cuando la RPC devuelve 200 cambios y luego 1', async () => {
+    const { courierDocumentsSelect, deliveryRequestsIn, merchantsSelect, rpc } = setSweepBatches([
+      reconciliationBatch(1, 200, true),
+      reconciliationBatch(2, 1, false),
+    ]);
+    const push = await import('@/server/push');
+    const notify = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+      totalSubscriptions: 0,
+      sentCount: 0,
+      failedCount: 0,
+      deletedSubscriptions: [],
+      attempts: [],
+      errors: [],
+    });
+
+    try {
+      await expect(runSweep()).resolves.toMatchObject({ expiredRequestsCount: 201 });
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(rpc).toHaveBeenNthCalledWith(1, 'reconcile_expired_requests_cron', { p_limit: 200 });
+      expect(rpc).toHaveBeenNthCalledWith(2, 'reconcile_expired_requests_cron', { p_limit: 200 });
+      expect(deliveryRequestsIn).toHaveBeenCalledTimes(2);
+      expect(notify).toHaveBeenCalledTimes(201);
+      expect(new Set(notify.mock.calls.map(([, payload]) => payload.requestId)).size).toBe(201);
+      expect(courierDocumentsSelect).toHaveBeenCalledTimes(1);
+      expect(merchantsSelect).toHaveBeenCalledTimes(1);
+    } finally {
+      notify.mockRestore();
+    }
+  });
+
+  it('CC-026 agota tres lotes con cambios antes de purgar documentos y suscripciones una sola vez', async () => {
+    const { courierDocumentsSelect, deliveryRequestsIn, merchantsSelect, rpc } = setSweepBatches([
+      reconciliationBatch(1, 200, true),
+      reconciliationBatch(2, 200, true),
+      reconciliationBatch(3, 1, false),
+    ]);
+    const push = await import('@/server/push');
+    const notify = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+      totalSubscriptions: 0,
+      sentCount: 0,
+      failedCount: 0,
+      deletedSubscriptions: [],
+      attempts: [],
+      errors: [],
+    });
+
+    try {
+      await expect(runSweep()).resolves.toMatchObject({ expiredRequestsCount: 401 });
+      expect(rpc).toHaveBeenCalledTimes(3);
+      expect(deliveryRequestsIn).toHaveBeenCalledTimes(3);
+      expect(notify).toHaveBeenCalledTimes(401);
+      expect(new Set(notify.mock.calls.map(([, payload]) => payload.requestId)).size).toBe(401);
+      expect(courierDocumentsSelect).toHaveBeenCalledTimes(1);
+      expect(merchantsSelect).toHaveBeenCalledTimes(1);
+    } finally {
+      notify.mockRestore();
+    }
+  });
+
+  it('CC-026 no reintenta indefinidamente un lote solo bloqueado', async () => {
+    const { courierDocumentsSelect, deliveryRequestsIn, merchantsSelect, rpc } = setSweepBatches([
+      reconciliationBatch(1, 0, true),
+    ]);
+    const push = await import('@/server/push');
+    const notify = vi.spyOn(push, 'safeNotifyPostTransition');
+
+    try {
+      await expect(runSweep()).resolves.toMatchObject({ expiredRequestsCount: 0 });
+      expect(rpc).toHaveBeenCalledTimes(1);
+      expect(deliveryRequestsIn).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+      expect(courierDocumentsSelect).toHaveBeenCalledTimes(1);
+      expect(merchantsSelect).toHaveBeenCalledTimes(1);
+    } finally {
+      notify.mockRestore();
+    }
   });
 
   it('procesa correctamente expiraciones, purga y suscripciones vencidas con guardas TOCTOU, orden defensivo y audit_log singular (H01-H10)', async () => {

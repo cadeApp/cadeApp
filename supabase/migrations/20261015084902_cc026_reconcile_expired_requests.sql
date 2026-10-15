@@ -170,3 +170,26 @@ $$;
 revoke all on function public.reconcile_expired_requests_cron(integer)
   from public, anon, authenticated;
 grant execute on function public.reconcile_expired_requests_cron(integer) to service_role;
+
+-- La policy RLS no puede comparar de forma segura una fila NEW con la fila previa
+-- cuando la subconsulta vuelve a ver la actualización. Los permisos de columna hacen
+-- inmutables las columnas operativas para clientes; las RPC SECURITY DEFINER siguen
+-- ejecutándose como el owner de la función.
+revoke update on public.delivery_requests from authenticated;
+grant update (
+  pickup_zone_id,
+  dropoff_zone_id,
+  package_type,
+  notes,
+  recipient_payment_method,
+  needs_change,
+  cash_change_amount,
+  approx_distance_m,
+  route_distance_m,
+  cancel_reason,
+  fixed_price_ars,
+  auto_assign
+) on public.delivery_requests to authenticated;
+
+revoke update on public.offers from authenticated;
+grant update (amount_ars, eta_minutes, message) on public.offers to authenticated;
