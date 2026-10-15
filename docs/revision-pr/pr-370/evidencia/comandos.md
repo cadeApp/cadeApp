@@ -85,3 +85,29 @@ node docs/revision-pr/analizar.mjs verificacion
 git diff --check
 ```
 Revisar log completo de db-tests en CI para pgTAP real de CC-026, pero no iniciar Supabase o Docker local.
+## Ronda 3 — SHA 26dbe512
+
+Inspección remota: compare 07281133..26dbe512 = 5 commits, 5 archivos, sin tocar review docs; queries.ts:25-50, tests:2486-2670, E2E request-states.spec.ts:955+, ficha develop y PR377. GitHub CI exacta [#38809253455](https://github.com/cadeApp/cadeApp/actions/runs/38809253455), HEAD correcto:
+
+```text
+unit: Test Files 133 passed (133); Tests 2379 passed (2379)
+db-tests: Files=24, Tests=2283; Result: PASS
+pgTAP CC-026: Files=1 Tests=54 PASS; mutante 8/54 FAIL esperado y restaura 54/54 PASS
+e2e-preview: run #38809405892, checkout 26dbe51, 79 Chromium PASS (25.0m), 3 global-settings PASS (1.1m); caso #68 T-366 PASS
+```
+
+PR #377 OPEN: build job #116635875603 FAIL `next/font` TypeError null reading '1', aunque su diff consta solo `docs/tasks/T-366.md`. Approval-policy todavía sin aprobación de P1.
+
+**No ejecutado por revisor**: pnpm typecheck/lint/test/db; Playwright independiente; mutaciones propias; git merge-tree; Docker/Supabase. `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` falla por DNS. No declarar `verificado_en_sha` ni atribuir mutación autor al revisor.
+
+Para R4 ejecutar en worktree limpio, después de merge documental:
+```bash
+git fetch origin
+git merge-tree --write-tree origin/develop HEAD
+pnpm exec vitest run src/features/requests/queries.test.ts
+pnpm exec vitest run tools/verify-fichas.test.ts
+pnpm typecheck && pnpm lint && pnpm test
+node docs/revision-pr/analizar.mjs verificacion
+git diff --check
+```
+Registrar versión final de Preview E2E + RED causal, no cambiar checks ni fabricar resultados.

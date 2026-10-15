@@ -36,3 +36,9 @@ Informe: [ronda-1](revisiones/ronda-1.md); datos: [hallazgos.jsonl](hallazgos.js
 - **Mejora:** H05 backlog >500 requiere evaluar presupuesto de reconciliación.
 - [Informe R2](revisiones/ronda-2.md) · [hallazgos actualizados](hallazgos.jsonl) · [evidencia](evidencia/comandos.md).
 - **Revisor no ejecutó tests repositorio**, solo inspección del código/CI y reproducción aislada Node del caso 0/true.
+
+## Ronda 3 — `26dbe512`
+
+- [Informe R3](revisiones/ronda-3.md): **H01/H02 corregidos por inspección+CI; H03 y H04 parciales y bloqueantes; H05 mejora no bloqueante**.
+- CI del HEAD #38809253455 SUCCESS (unit 2379 PASS; db-tests 2283 PASS), y [E2E #38809405892](https://github.com/cadeApp/cadeApp/actions/runs/38809405892) **79 Chromium + 3 settings PASS**, incluido caso T-366. No equivale a cobertura de todo el DoD (Ver ofertas y dos sesiones concurrentes aún faltan en spec).
+- [PR documental #377](https://github.com/cadeApp/cadeApp/pull/377) está OPEN, ficha T-366 aún vieja en develop. R3: CON BLOQUEANTES (2); no mergear #370.
