@@ -135,3 +135,60 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 **Mutaciones independientes pendientes para ronda 3:** en copia aislada `/tmp`, probar volver `Avisar a ${drop.recipientName}` al texto visible mientras `aria-label` permanece y comprobar que la nueva prueba de texto visible cae (sin tocar fixtures ni tests); cambiar `href` de Beto a teléfono de Ana y comprobar que el oráculo de teléfono por drop cae; cambiar un estado `failed` por copy de `pending` y comprobar que el test de contenido por estado cae. Registrar comandos completos y verde original → rojo mutante → verde restaurado. **No se presentaron estas mutaciones como ejecutadas.**
+
+## Ronda 3 — batería independiente real sobre SHA ea33a97
+
+**Método y alcance:** El revisor obtuvo `src/lib/whatsapp.ts` del SHA `ea33a97064985f1e062c80bd0ba93f9b8ee053f8` por el conector GitHub y ejecutó en V8 aislado el **cuerpo real** de `buildNotifyCustomerWhatsAppMessage` (sin compilar TS ni montar React). **9 escenarios GREEN** originales, **6 mutaciones RED** propias (failed, delivered, identidad de emisor, matched, privacidad y pending) y **GREEN restaurado**. No se hicieron cambios en el repo. Los mensajes y tests React no se trataron como ejecutados por este harness.
+
+**Script íntegro para repetir en un clon limpio con Node** (el V8 aislado del revisor ejecutó la misma lógica sobre el cuerpo remoto; este guion reproduce los pasos, no es Vitest):
+
+```bash
+cat > /tmp/review-pr357-r3.mjs <<'NODE'
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+const root = process.argv[2] ?? '.';
+const code = readFileSync(root+'/src/lib/whatsapp.ts','utf8');
+const match=code.match(/export function buildNotifyCustomerWhatsAppMessage\(params: NotifyCustomerMessageParams\): string \{([\s\S]*?)\n\}/);
+assert.ok(match,'sin objetivo: firma inesperada');
+const body=match[1];
+const fn=(source)=>new Function('params',source);
+const checks=[
+ ['failed/courier',{courierName:'Prueba',sender:'courier',tripStatus:'in_transit',dropStatus:'failed'},['no se pudo completar','Soy Prueba'],['en camino','ya fue entregado','REQ-']],
+ ['failed/merchant',{courierName:'Prueba',sender:'merchant',tripStatus:'in_transit',dropStatus:'failed'},['Prueba no pudo completar','Te escribo del comercio'],['Soy Prueba','en camino','ya fue entregado','REQ-']],
+ ['delivered/courier',{courierName:'Prueba',sender:'courier',tripStatus:'in_transit',dropStatus:'delivered'},['ya fue entregado','Soy Prueba'],['en camino','no se pudo completar','REQ-']],
+ ['delivered/merchant',{courierName:'Prueba',sender:'merchant',tripStatus:'delivered',dropStatus:'delivered'},['ya fue entregado por Prueba','Te escribo del comercio'],['Soy Prueba','en camino','REQ-']],
+ ['pending/courier',{courierName:'Prueba',sender:'courier',tripStatus:'in_transit',dropStatus:'pending'},['en recorrido','Soy Prueba'],['ya fue entregado','no se pudo completar','REQ-']],
+ ['pending/merchant',{courierName:'Prueba',sender:'merchant',tripStatus:'in_transit',dropStatus:'pending'},['está en recorrido','Te escribo del comercio'],['Soy Prueba','ya fue entregado','REQ-']],
+ ['matched/courier',{courierName:'Prueba',sender:'courier',tripStatus:'matched'},['Ya tengo asignado tu pedido'],['en camino','ya fue entregado','REQ-']],
+ ['matched/merchant',{courierName:'Prueba',sender:'merchant',tripStatus:'matched'},['es el repartidor asignado'],['Soy Prueba','en camino','ya fue entregado','REQ-']],
+ ['legacy/delivered',{courierName:'Prueba',sender:'courier',tripStatus:'delivered'},['ya fue entregado'],['en camino','REQ-']]
+];
+function failures(source){const run=fn(source),errors=[];for(const [name,params,must,avoid] of checks){const msg=run(params);for(const t of must)if(!msg.includes(t))errors.push(name+' missing '+t);for(const t of avoid)if(msg.includes(t))errors.push(name+' leaked '+t)}return errors;}
+assert.deepEqual(failures(body),[],'baseline no está verde'); console.log('GREEN baseline: 9 casos');
+const mutants=[
+ ['failed no reconocido',"params.dropStatus === 'failed'","params.dropStatus === 'never'"],
+ ['delivered no reconocido',"params.dropStatus === 'delivered'","params.dropStatus === 'never'"],
+ ['emisor merchant invertido',"if (params.sender === 'merchant')","if (params.sender === 'courier')"],
+ ['matched dice en camino','Ya tengo asignado tu pedido','Estoy en camino con tu pedido'],
+ ['REQ- incrustado','Quería avisarte que no se pudo completar la entrega','REQ-1234. Quería avisarte que no se pudo completar la entrega'],
+ ['pending dice entregado','Ya retiré tu pedido y estoy en recorrido','Tu pedido ya fue entregado y estoy en recorrido']
+];
+for(const [name,needle,replacement] of mutants){assert.ok(body.includes(needle),'MUTANTE SIN OBJETIVO: '+name);const damaged=body.replace(needle,replacement);assert.notEqual(damaged,body);const errors=failures(damaged);assert.ok(errors.length,'MUTANTE SOBREVIVIENTE: '+name);assert.deepEqual(failures(body),[]);console.log('RED '+name+': '+errors[0]+'; GREEN restaurado');}
+const courier=readFileSync(root+'/src/features/trips/components/trip-courier-view.tsx','utf8');
+const merchant=readFileSync(root+'/src/features/trips/components/trip-merchant-view.tsx','utf8');
+const tag='Avisar a '+String.fromCharCode(36)+'{drop.recipientName} por WhatsApp';
+for(const [source,token] of [
+ [courier,"arr.length > 1 ? 'Avisar por WhatsApp' : 'Avisar a mi cliente'"],
+ [merchant,"dropsList.length > 1 ? 'Avisar por WhatsApp' : 'Avisar a mi cliente'"],
+ [courier,tag],[merchant,tag],
+ [courier,"dropStatus: arr.length > 1 ? drop.status : undefined"],
+ [merchant,"dropStatus: dropsList.length > 1 ? drop.status : undefined"]
+])assert.ok(source.includes(token),'Token estructural ausente: '+token);
+console.log('PASS 6 tokens estructurales (inspección, NO DOM React)');
+NODE
+node /tmp/review-pr357-r3.mjs .
+```
+
+**Salida resumida REAL del V8 aislado**: baseline GREEN de 9 casos; 6 mutantes RED con aserciones rotas y verde original restaurado. Mutante `failed` deja de producir «no se pudo completar», `delivered` deja de anunciar entrega, invertir merchant rompe la identidad, matched con «en camino» viola el oráculo, inyectar REQ- viola privacidad y pending falsamente entregado viola estado. El guion Node es la versión copiable del mismo harness, no su propia ejecución confirmada por el revisor.
+
+**CI:** HEAD ea33a97 [38783727001](https://github.com/cadeApp/cadeApp/actions/runs/38783727001) unit 133/2345 PASS; DB Files=22 Tests=2205 Result PASS. **E2E sobre código 5da667c:** [38779673898](https://github.com/cadeApp/cadeApp/actions/runs/38779673898) 78+3 PASS; T-340 multi-drop :41 y :364 PASS, T-361 Flujo 5 PASS. **E2E sobre HEAD documental ea33a97:** run 38783885818 en curso. H06: bitácora reconoce que los logs RED históricos R1 no se guardaron; no se los afirma ni reconstruye.

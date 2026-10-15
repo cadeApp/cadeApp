@@ -12,3 +12,9 @@
 - **P07/Playwright:** los selectores por contenido pueden abarcar varias zonas semánticas cuando se añaden acciones. Enumerar todas las apariciones en las vistas afectadas, no remendar únicamente la primera falla.
 - **Trazabilidad de `repository_dispatch`:** `workflow_run.head_sha` puede ser el commit de la rama que alberga el workflow (`develop`); comprobar `actions/checkout.ref` y `git log -1` del job antes de atribuir resultado a SHA auditado.
 - No se asigna nueva numeración AG global sin inspeccionar máximo de todas las ramas y verificar el patrón reincidente.
+
+## Ronda 3 — pruebas y SHAs
+
+- La ejecución E2E verde del último código `5da667c` (78 Chromium + 3 global settings) es una demostración mucho más fuerte que modificar test T-340 para adaptarlo al nuevo CTA; se preservó el test anterior y se arregló la UI.
+- Distinguir SHA del código comprobado, SHA de bitácora posterior y SHA de la propia revisión. Una automatización repository_dispatch puede anunciar `develop` como `head_sha`, mientras su job hace checkout del PR.
+- La pérdida de RED históricos se registra con honestidad. Un harness nuevo independiente puede comprobar invariantes actuales, no probar que los comandos históricos fueron ejecutados.
