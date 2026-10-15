@@ -223,11 +223,9 @@ export function TripCourierView({
 
             const dropCustomerMsg = buildNotifyCustomerWhatsAppMessage({
               courierName: trip.courierName,
-              status: trip.status,
-              amountArs: trip.amountArs,
-              recipientPaymentMethod: drop.recipientPaymentMethod,
-              needsChange: drop.needsChange,
-              cashChangeAmount: drop.cashChangeAmount,
+              sender: 'courier',
+              tripStatus: trip.status,
+              dropStatus: arr.length > 1 ? drop.status : undefined,
             });
 
             let dropCustomerWaUrl: string | null = null;

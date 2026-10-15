@@ -213,11 +213,9 @@ export function TripMerchantView({
       {dropsList.map((drop) => {
         const dropCustomerMsg = buildNotifyCustomerWhatsAppMessage({
           courierName: trip.courierName,
-          status: trip.status,
-          amountArs: trip.amountArs,
-          recipientPaymentMethod: drop.recipientPaymentMethod,
-          needsChange: drop.needsChange,
-          cashChangeAmount: drop.cashChangeAmount,
+          sender: 'merchant',
+          tripStatus: trip.status,
+          dropStatus: dropsList.length > 1 ? drop.status : undefined,
         });
         let dropCustomerWaUrl: string | null = null;
         if (drop.recipientPhone) {

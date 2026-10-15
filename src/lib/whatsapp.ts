@@ -12,11 +12,9 @@ export interface CoordinationMessageParams {
 
 export interface NotifyCustomerMessageParams {
   courierName: string;
-  status?: 'matched' | 'in_transit' | 'delivered';
-  amountArs?: number;
-  recipientPaymentMethod?: string;
-  needsChange?: boolean;
-  cashChangeAmount?: number | null;
+  sender: 'courier' | 'merchant';
+  tripStatus: 'matched' | 'in_transit' | 'delivered';
+  dropStatus?: 'pending' | 'delivered' | 'failed';
 }
 
 /**
@@ -159,19 +157,51 @@ export function buildTripCoordinationWhatsAppMessage(params: CoordinationMessage
 
 /**
  * Genera el mensaje de WhatsApp natural para el destinatario (T-361).
- * Redacción clara, humana y concisa según el estado real del viaje (matched vs in_transit).
+ * Redacción clara, humana y concisa según emisor (1ª persona courier vs 3ª persona merchant)
+ * y estado individual real (dropStatus si es multi-drop, tripStatus si es legacy single-drop).
  * Sin IDs internos, códigos técnicos ni datos innecesarios (H04 & D3).
  */
 export function buildNotifyCustomerWhatsAppMessage(params: NotifyCustomerMessageParams): string {
   const courier = params.courierName?.trim() || 'tu repartidor';
 
-  if (params.status === 'matched') {
-    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!`;
+  // 1. Drop con entrega fallida (incluso si el viaje general avanzó)
+  if (params.dropStatus === 'failed') {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. Quería avisarte que ${courier} no pudo completar la entrega de tu pedido. Por favor avisanos para coordinar. ¡Saludos!`;
+    }
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Quería avisarte que no se pudo completar la entrega de tu pedido. ¡Saludos!`;
   }
 
-  if (params.status === 'delivered') {
+  // 2. Entrega completada (drop delivered o single-drop legacy delivered)
+  if (
+    params.dropStatus === 'delivered' ||
+    (params.dropStatus === undefined && params.tripStatus === 'delivered')
+  ) {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. Tu pedido ya fue entregado por ${courier}. ¡Muchas gracias por tu compra!`;
+    }
     return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Tu pedido ya fue entregado. ¡Muchas gracias!`;
   }
 
-  return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Te aviso que estoy en camino. ¡Nos vemos pronto!`;
+  // 3. Viaje matched (pre-retiro): pedido asignado, aún no retirado
+  if (params.tripStatus === 'matched') {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. ${courier} es el repartidor asignado a tu pedido y en breve va a retirarlo. ¡Saludos!`;
+    }
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!`;
+  }
+
+  // 4. Viaje in_transit: en recorrido / reparto, sin prometer llegada inminente a un drop específico
+  if (params.tripStatus === 'in_transit') {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. ${courier} ya retiró tu pedido y está en recorrido para la entrega. ¡Saludos!`;
+    }
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya retiré tu pedido y estoy en recorrido para la entrega. ¡Nos vemos pronto!`;
+  }
+
+  // Combinación incoherente o desconocida: fallback neutro pre-retiro, nunca asegura "en camino" ni "entregado"
+  if (params.sender === 'merchant') {
+    return `¡Hola! Te escribo del comercio. ${courier} es el repartidor asignado a tu pedido y en breve va a retirarlo. ¡Saludos!`;
+  }
+  return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!`;
 }

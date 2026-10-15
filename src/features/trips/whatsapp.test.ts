@@ -88,82 +88,207 @@ describe('T-115 DoD: Unit de los mensajes de WhatsApp (monto aceptado, sin datos
     });
   });
 
-  describe('buildNotifyCustomerWhatsAppMessage ("Avisar a mi cliente": repartidor ↔ destinatario [T-361])', () => {
-    const baseCustomerParams: NotifyCustomerMessageParams = {
-      courierName: 'Carlos Benítez',
-      status: 'in_transit',
-      amountArs: 1800,
-      recipientPaymentMethod: 'cash',
-      needsChange: true,
-      cashChangeAmount: 2000,
-    };
+  describe('buildNotifyCustomerWhatsAppMessage ("Avisar a mi cliente" [T-361])', () => {
+    describe('Remitente: courier (primera persona)', () => {
+      it('en estado matched (pre-retiro): 1ª persona, asignado por retirar, nunca afirma en camino', () => {
+        const msg = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'courier',
+          tripStatus: 'matched',
+        });
 
-    it('en estado in_transit: genera texto claro, humano y natural avisando que está en camino', () => {
-      const msg = buildNotifyCustomerWhatsAppMessage(baseCustomerParams);
-
-      expect(msg).toBe(
-        '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Te aviso que estoy en camino. ¡Nos vemos pronto!'
-      );
-      expect(msg).toContain('Carlos Benítez');
-      expect(msg).toContain('estoy en camino');
-      expect(msg).not.toContain('REQ-');
-      expect(msg).not.toContain('Costo de envío:');
-      expect(msg).not.toContain('Medio de pago:');
-    });
-
-    it('en estado matched (antes del retiro): no afirma "en camino" y avisa pedido asignado por retirar', () => {
-      const prePickupMsg = buildNotifyCustomerWhatsAppMessage({
-        ...baseCustomerParams,
-        status: 'matched',
+        expect(msg).toBe(
+          '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!'
+        );
+        expect(msg).toContain('Soy Carlos Benítez');
+        expect(msg).toContain('Ya tengo asignado tu pedido');
+        expect(msg.toLowerCase()).not.toContain('en camino');
+        expect(msg).not.toContain('REQ-');
       });
 
-      expect(prePickupMsg).toBe(
-        '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!'
-      );
-      expect(prePickupMsg).toContain('Carlos Benítez');
-      expect(prePickupMsg.toLowerCase()).not.toContain('en camino');
-      expect(prePickupMsg).not.toContain('REQ-');
-    });
+      it('en estado in_transit (reparto/recorrido): 1ª persona, describe recorrido sin asegurar llegada inmediata', () => {
+        const msg = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'courier',
+          tripStatus: 'in_transit',
+          dropStatus: 'pending',
+        });
 
-    it('en estado delivered: avisa entrega completada con cortesía', () => {
-      const deliveredMsg = buildNotifyCustomerWhatsAppMessage({
-        ...baseCustomerParams,
-        status: 'delivered',
+        expect(msg).toBe(
+          '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Ya retiré tu pedido y estoy en recorrido para la entrega. ¡Nos vemos pronto!'
+        );
+        expect(msg).toContain('Soy Carlos Benítez');
+        expect(msg).toMatch(/recorrido|reparto/i);
+        expect(msg).not.toContain('ya fue entregado');
+        expect(msg).not.toContain('no se pudo completar');
       });
 
-      expect(deliveredMsg).toBe(
-        '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Tu pedido ya fue entregado. ¡Muchas gracias!'
-      );
-      expect(deliveredMsg.toLowerCase()).not.toContain('en camino');
+      it('en estado delivered (drop delivered o single drop delivered): 1ª persona, confirmación cortés de entrega', () => {
+        const msgMulti = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'courier',
+          tripStatus: 'in_transit',
+          dropStatus: 'delivered',
+        });
+        expect(msgMulti).toBe(
+          '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Tu pedido ya fue entregado. ¡Muchas gracias!'
+        );
+        expect(msgMulti).toContain('Soy Carlos Benítez');
+        expect(msgMulti).toContain('ya fue entregado');
+        expect(msgMulti.toLowerCase()).not.toContain('en camino');
+
+        const msgSingle = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'courier',
+          tripStatus: 'delivered',
+        });
+        expect(msgSingle).toBe(
+          '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Tu pedido ya fue entregado. ¡Muchas gracias!'
+        );
+      });
+
+      it('en estado failed (drop failed): 1ª persona, aviso honesto de no entrega', () => {
+        const msg = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'courier',
+          tripStatus: 'in_transit',
+          dropStatus: 'failed',
+        });
+
+        expect(msg).toBe(
+          '¡Hola! Soy Carlos Benítez, el repartidor de tu entrega. Quería avisarte que no se pudo completar la entrega de tu pedido. ¡Saludos!'
+        );
+        expect(msg).toContain('Soy Carlos Benítez');
+        expect(msg).toContain('no se pudo completar la entrega');
+        expect(msg.toLowerCase()).not.toContain('en camino');
+        expect(msg).not.toContain('ya fue entregado');
+      });
     });
 
-    it('H04 & T-361: invariante "sin datos de más": no contiene teléfono del repartidor, patente, DNI, ids técnicos ni sentinelas', () => {
-      const wideCustomerParams = {
-        ...baseCustomerParams,
-        courierPhone: SENTINEL_PHONE,
-        dropoffAddress: SENTINEL_ADDR,
-        deliveryNotes: SENTINEL_NOTE,
-        coords: SENTINEL_COORDS,
-        requestId: SENTINEL_ID,
-        requestCode: 'REQ-9999',
-        dni: SENTINEL_DNI,
-        licensePlate: 'AB 123 CD',
-      } as unknown as NotifyCustomerMessageParams;
+    describe('Remitente: merchant (tercera persona)', () => {
+      it('en estado matched (pre-retiro): 3ª persona, jamás dice "Soy Carlos", asignado por retirar', () => {
+        const msg = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'merchant',
+          tripStatus: 'matched',
+        });
 
-      const msg = buildNotifyCustomerWhatsAppMessage(wideCustomerParams);
+        expect(msg).toBe(
+          '¡Hola! Te escribo del comercio. Carlos Benítez es el repartidor asignado a tu pedido y en breve va a retirarlo. ¡Saludos!'
+        );
+        expect(msg).not.toMatch(/soy\s+carlos/i);
+        expect(msg).toContain('Carlos Benítez es el repartidor asignado');
+        expect(msg.toLowerCase()).not.toContain('en camino');
+      });
 
-      expect(msg).toContain('Carlos Benítez');
-      expect(msg).not.toContain(SENTINEL_PHONE);
-      expect(msg).not.toContain(SENTINEL_ADDR);
-      expect(msg).not.toContain(SENTINEL_NOTE);
-      expect(msg).not.toContain(SENTINEL_COORDS);
-      expect(msg).not.toContain(SENTINEL_ID);
-      expect(msg).not.toContain('REQ-9999');
-      expect(msg).not.toContain(SENTINEL_DNI);
-      expect(msg.toLowerCase()).not.toContain('patente');
-      expect(msg.toLowerCase()).not.toContain('dni');
-      expect(msg.toLowerCase()).not.toContain('uuid');
-      expect(msg).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i);
+      it('en estado in_transit (reparto/recorrido): 3ª persona, pedido retirado en recorrido', () => {
+        const msg = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'merchant',
+          tripStatus: 'in_transit',
+          dropStatus: 'pending',
+        });
+
+        expect(msg).toBe(
+          '¡Hola! Te escribo del comercio. Carlos Benítez ya retiró tu pedido y está en recorrido para la entrega. ¡Saludos!'
+        );
+        expect(msg).not.toMatch(/soy\s+carlos/i);
+        expect(msg).toContain('Carlos Benítez ya retiró tu pedido y está en recorrido');
+        expect(msg).not.toContain('ya fue entregado');
+      });
+
+      it('en estado delivered: 3ª persona, entregado por el repartidor', () => {
+        const msg = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'merchant',
+          tripStatus: 'in_transit',
+          dropStatus: 'delivered',
+        });
+
+        expect(msg).toBe(
+          '¡Hola! Te escribo del comercio. Tu pedido ya fue entregado por Carlos Benítez. ¡Muchas gracias por tu compra!'
+        );
+        expect(msg).not.toMatch(/soy\s+carlos/i);
+        expect(msg).toContain('ya fue entregado por Carlos Benítez');
+        expect(msg.toLowerCase()).not.toContain('en camino');
+      });
+
+      it('en estado failed: 3ª persona, aviso honesto de no entrega por parte del repartidor', () => {
+        const msg = buildNotifyCustomerWhatsAppMessage({
+          courierName: 'Carlos Benítez',
+          sender: 'merchant',
+          tripStatus: 'in_transit',
+          dropStatus: 'failed',
+        });
+
+        expect(msg).toBe(
+          '¡Hola! Te escribo del comercio. Quería avisarte que Carlos Benítez no pudo completar la entrega de tu pedido. Por favor avisanos para coordinar. ¡Saludos!'
+        );
+        expect(msg).not.toMatch(/soy\s+carlos/i);
+        expect(msg).toContain('Carlos Benítez no pudo completar la entrega');
+        expect(msg.toLowerCase()).not.toContain('en camino');
+        expect(msg).not.toContain('ya fue entregado');
+      });
+    });
+
+    describe('Invariante de Privacidad (Allowlist estricta y Sentinelas)', () => {
+      it('H04 & T-361: no contiene teléfono del repartidor, patente, DNI, ids técnicos, importes ni sentinelas (courier)', () => {
+        const wideParams = {
+          courierName: 'Carlos Benítez',
+          sender: 'courier' as const,
+          tripStatus: 'in_transit' as const,
+          dropStatus: 'pending' as const,
+          courierPhone: SENTINEL_PHONE,
+          dropoffAddress: SENTINEL_ADDR,
+          deliveryNotes: SENTINEL_NOTE,
+          coords: SENTINEL_COORDS,
+          requestId: SENTINEL_ID,
+          requestCode: 'REQ-9999',
+          dni: SENTINEL_DNI,
+          licensePlate: 'AB 123 CD',
+          amountArs: 1800,
+          recipientPaymentMethod: 'cash',
+        } as unknown as NotifyCustomerMessageParams;
+
+        const msg = buildNotifyCustomerWhatsAppMessage(wideParams);
+
+        expect(msg).toContain('Carlos Benítez');
+        expect(msg).not.toContain(SENTINEL_PHONE);
+        expect(msg).not.toContain(SENTINEL_ADDR);
+        expect(msg).not.toContain(SENTINEL_NOTE);
+        expect(msg).not.toContain(SENTINEL_COORDS);
+        expect(msg).not.toContain(SENTINEL_ID);
+        expect(msg).not.toContain('REQ-9999');
+        expect(msg).not.toContain(SENTINEL_DNI);
+        expect(msg).not.toContain('1800');
+        expect(msg).not.toContain('$');
+        expect(msg.toLowerCase()).not.toContain('efectivo');
+        expect(msg.toLowerCase()).not.toContain('patente');
+        expect(msg.toLowerCase()).not.toContain('dni');
+        expect(msg.toLowerCase()).not.toContain('uuid');
+        expect(msg).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i);
+      });
+
+      it('H04 & T-361: no contiene datos privados ni técnicos para merchant', () => {
+        const wideMerchantParams = {
+          courierName: 'Carlos Benítez',
+          sender: 'merchant' as const,
+          tripStatus: 'matched' as const,
+          courierPhone: SENTINEL_PHONE,
+          requestId: SENTINEL_ID,
+          requestCode: 'REQ-9999',
+          amountArs: 2500,
+        } as unknown as NotifyCustomerMessageParams;
+
+        const msg = buildNotifyCustomerWhatsAppMessage(wideMerchantParams);
+
+        expect(msg).toContain('Carlos Benítez');
+        expect(msg).not.toContain(SENTINEL_PHONE);
+        expect(msg).not.toContain(SENTINEL_ID);
+        expect(msg).not.toContain('REQ-9999');
+        expect(msg).not.toContain('2500');
+        expect(msg).not.toContain('$');
+      });
     });
   });
 
@@ -171,6 +296,13 @@ describe('T-115 DoD: Unit de los mensajes de WhatsApp (monto aceptado, sin datos
     it('construye la URL de wa.me con prefijo internacional 549 y texto codificado para 10 dígitos', () => {
       const url = buildWhatsAppUrl('3865123456', 'Hola, voy en camino');
       expect(url).toBe('https://wa.me/5493865123456?text=Hola%2C%20voy%20en%20camino');
+    });
+
+    it('codifica correctamente caracteres especiales, tildes, signos de puntuación y emojis', () => {
+      const specialMsg = '¡Hola! ¿Cómo estás? Pedido listo 🚀 — San Martín & Belgrano';
+      const url = buildWhatsAppUrl('3865123456', specialMsg);
+      expect(url).toBe(`https://wa.me/5493865123456?text=${encodeURIComponent(specialMsg)}`);
+      expect(decodeURIComponent(new URL(url).searchParams.get('text') ?? '')).toBe(specialMsg);
     });
 
     it('limpia prefijos 0 y 15 para números argentinos manteniendo exactamente 10 dígitos', () => {
@@ -200,6 +332,11 @@ describe('T-115 DoD: Unit de los mensajes de WhatsApp (monto aceptado, sin datos
     it('H12: rechaza cadenas vacías o solo espacios', () => {
       expect(() => buildWhatsAppUrl('', 'Hola')).toThrow();
       expect(() => buildWhatsAppUrl('   ', 'Hola')).toThrow();
+    });
+
+    it('rechaza números con caracteres alfabéticos o símbolos prohibidos', () => {
+      expect(() => buildWhatsAppUrl('3865123456abc', 'Hola')).toThrow(/letras/i);
+      expect(() => buildWhatsAppUrl('3865@123456', 'Hola')).toThrow();
     });
   });
 });
