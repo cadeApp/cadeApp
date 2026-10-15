@@ -11,7 +11,8 @@
 | **SHA R2** | `5dfb57b33f32f4fb4d20f3a824db7bd9cfc5b754` |
 | **SHA R3** | `55fa228e8d8b37b3d06426d02e816ce776398419` |
 | **SHA R4** | `aa191cbc039f3600cfc46abe79edc090c72a8f5f` |
-| **Estado** | **CON BLOQUEANTES**: H06 (falta gate E2E real) y H07 (mutación H05 inválida y reproducción incompleta) |
+| **SHA R5** | `c751cc8fd32b4d402670fbe637dac7d251f23f9b` |
+| **Estado** | **CON BLOQUEANTES (1)**: H06 (gate E2E real no ejecutado/acreditado) |
 | **Verificación** | Inspección GitHub + estado CI parcial; sin ejecución local Vitest, E2E ni mutaciones de producción |
 
 ## Rondas
@@ -22,6 +23,7 @@
 | 2 | `5dfb57b` | 5 arreglados por inspección sin verificar runtime; H06/H07 parciales, H08 nuevo | [ronda-2.md](revisiones/ronda-2.md) |
 | 3 | `55fa228` | H08 arreglado por inspección; H06/H07 pendientes | [ronda-3.md](revisiones/ronda-3.md) |
 | 4 | `aa191cbc` | H06: implementación E2E mejorada, sin run; H07: mutación H05 inválida | [ronda-4.md](revisiones/ronda-4.md) |
+| 5 | `c751cc8` | H07 corregido por inspección; H06 pendiente de E2E Preview y verificación del dispatch | [ronda-5.md](revisiones/ronda-5.md) |
 
 ## Estado de hallazgos
 - **PR362-H01** · Límite monetario contrario a decisión 1B · `arreglado-sin-verificar`
@@ -30,12 +32,12 @@
 - **PR362-H04** · El filtro de controles rechaza saltos de línea legítimos en notas · `arreglado-sin-verificar`
 - **PR362-H05** · Faltan pruebas en la frontera real de Server Actions · `arreglado-sin-verificar`
 - **PR362-H06** · E2E Preview y validación de UI por campo pendientes · `parcial`
-- **PR362-H07** · La bitácora declara RED→GREEN sin salida roja reproducible · `parcial`
+- **PR362-H07** · La bitácora declara RED→GREEN sin salida roja reproducible · `arreglado-sin-verificar`
 - **PR362-H08** · E2E multi-drop pasa sin ejecutar aserciones si falta el teléfono · `arreglado-sin-verificar`
 
 ## Decisiones de Lautaro073
 - 2026-10-15: **1B** límite `integer` de PostgreSQL 1…2_147_483_647 ARS; **2A** patente a `null` para `walk/bike`.
-- Las dos se reflejan en el código de R2/R3/R4. No nuevas decisiones abiertas.
-- No aprobar ni mergear con bloqueantes.
+- Las dos se reflejan en el código de R2/R3/R4/R5. No nuevas decisiones abiertas.
+- No aprobar ni mergear: falta gate E2E real; después de cerrar la revisión, approval-policy requiere aprobación vigente de Lautaro073.
 
 [hallazgos.jsonl](hallazgos.jsonl) · [evidencia/comandos.md](evidencia/comandos.md) · [lecciones.md](lecciones.md).

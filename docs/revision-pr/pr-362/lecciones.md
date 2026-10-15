@@ -37,3 +37,12 @@ No se asigna AG nuevo sin enumeración remota completa de todas las ramas.
 - **H06:** verificar el registro creado con diferencial exacto de IDs y comprobar que la ruta inválida no generó filas: P2 lo implementó correctamente en la spec, pero sin correr E2E no se puede certificar.
 - **H07:** neutralizar `if (!parsed.success)` y observar `TypeError` de `parsed.data === undefined` no es una mutación válida de comportamiento de negocio. Mutar **solo el predicado semántico** para que `safeParse` siga entregando `data` y ejercer RPC/escritura; si el test cae por aserción, evidencia útil.
 - **CI:** deploy exitoso y `unit` exitoso no sustituyen `e2e-preview`, contexto que se publica mediante dispatch confiable. No atribuir ausencia de evento a causa específica sin evidencia.
+
+---
+
+## Ronda 5 (`c751cc8`)
+
+- **H07 (P08):** una mutación semántica que mantiene `parsed.data` definido y rompe una **aserción de comportamiento** es evidencia más útil que la eliminación de la guarda Zod que produce `TypeError`. Mantener separados RED informado por autor y RED reproducido por revisor.
+- **H06 (P15):** hay al menos tres señales independientes que no deben confundirse: **Vercel Deployment READY**, **GitHub CI/unit success** y **`e2e-preview` status con SHA exacto y Playwright**. Solo la tercera cumple el DoD E2E.
+- **Infraestructura externa:** un `403` en webhooks restringe la revisión a observación; no inferir que el webhook falta por la ausencia del status. Escalar a quien tenga acceso para verificar entregas y permisos sin revelar secretos ni disparar pruebas artificiales.
+- **Policy:** el error `El PR requiere aprobación vigente de Lautaro073` es intencional hasta aprobación de P1; no crear un bypass. La aprobación vendrá luego de quitar los bloqueantes.

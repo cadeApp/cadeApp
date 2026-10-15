@@ -214,3 +214,31 @@ grep -E 'Test Files|Tests ' /tmp/pr362-r4-test.log | tail -8
 git diff --check
 git status --short
 ```
+
+---
+
+## Ronda 5 — SHA `c751cc8fd32b4d402670fbe637dac7d251f23f9b`
+
+**Comparación incremental GitHub**:
+`34a72cc0a6f131e8d8a2b7f78354abd2b9319887..c751cc8fd32b4d402670fbe637dac7d251f23f9b` → 1 commit, 1 archivo (`docs/tasks/log/T-353.md`, +42/-1), ningún código E2E/producción modificado.
+
+**Bitácora:** sesión `2026-10-15 01:55`, líneas 190–229, H05 reporta `GREEN-ORIGINAL exit=0 (13 passed)`; `RED-PREDICADO-NOMBRE exit=1` `AssertionError: expected { ok:false, code:'INTERNAL_ERROR' } to deeply equal { ok:false, code:'VALIDATION_ERROR' }` (1 failed); `GREEN-RESTABLECIDO exit=0 (13 passed)`. **Información del autor**, inspeccionada pero no repetida con Vitest independiente.
+
+**Vercel (lectura autenticada)**: `get_deployment("AFZ99p7UwAUewGuCTYiP8an3y4yY",withGitRepoInfo=true)` → `state:"READY"`, `gitSha:c751cc8fd32b4d402670fbe637dac7d251f23f9b`, proyecto `cadeapp-staging`; no revela ningún secreto.
+
+**Vercel (consulta exclusivamente read-only)**: `get_webhooks({projectId:"prj_EZM8RFPCoFeyksobhkDfzwAle4SN"})` → `403 forbidden: You don't have permission to list the webhook.` NO se probó la configuración de webhook ni se dedujo causa.
+
+**GitHub Actions**: `GET /repos/cadeApp/cadeApp/commits/c751cc8fd32b4d402670fbe637dac7d251f23f9b/check-runs` (consulta más reciente): `typecheck/lint/audit` success; `unit/build/db-tests/bundle-budget` cancelled; `approval-policy` failure; `Vercel Preview Comments` success. Combined status `Vercel – cadeapp-staging=success`, sin `e2e-preview`. Los estados cancelados no se transforman en green.
+
+**Approval policy**: GitHub workflow job `116254399640` (workflow confiable de develop, solo lectura), mensaje exacto: `El PR requiere aprobación vigente de Lautaro073.` No modificar workflow ni emitir aprobación en nombre de P1.
+
+**Comandos no destructivos sugeridos a humano con permisos GitHub (no ejecutados por esta revisión):**
+```bash
+SHA=c751cc8fd32b4d402670fbe637dac7d251f23f9b
+gh api "repos/cadeApp/cadeApp/commits/$SHA/status" --jq '.statuses[] | [.context,.state,.target_url] | @tsv'
+gh api "repos/cadeApp/cadeApp/commits/$SHA/check-runs" --jq '.check_runs[] | [.name,.status,.conclusion,.details_url] | @tsv'
+# Inspeccionar historial de runs (read-only) del gate en el GitHub Actions UI:
+# https://github.com/cadeApp/cadeApp/actions/workflows/e2e-preview.yml
+```
+
+**No se ejecutó** ningún test E2E, Vitest ni mutación a este SHA en la sesión del revisor. No se dispararon workflows.
