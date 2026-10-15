@@ -115,6 +115,31 @@ describe('T-103 — Wrapper de RPC de solicitudes', () => {
     expect(rpc).toHaveBeenCalledExactlyOnceWith('reconcile_expired_requests', {});
   });
 
+  it('CC-026 detiene un merchantId inyectado antes de llamar la RPC', async () => {
+    const rpc = vi.fn();
+    const client = createRequestsRpcServerClient({ rpc });
+
+    const result = await (
+      client.reconcile_expired_requests as unknown as (input: unknown) => Promise<unknown>
+    )({ merchantId: requestId });
+
+    expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('CC-026 rechaza la respuesta remota de reconciliación si su conteo contradice los IDs', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { expiredRequestIds: [requestId], expiredCount: 0, hasMore: false },
+      error: null,
+    });
+    const client = createRequestsRpcServerClient({ rpc });
+
+    await expect(client.reconcile_expired_requests({})).resolves.toEqual({
+      ok: false,
+      code: 'INTERNAL_ERROR',
+    });
+  });
+
   it('create_and_publish_multi_drop envía el payload completo en p_payload', async () => {
     const output = {
       requestId,

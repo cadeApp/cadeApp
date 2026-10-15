@@ -149,13 +149,37 @@ export const createAndPublishMultiDropOutputSchema = z
 
 // CC-026: el comercio no elige ámbito, estado ni reloj; la RPC deriva todo de la sesión y PostgreSQL.
 export const reconcileExpiredRequestsInputSchema = z.object({}).strict();
+const MERCHANT_RECONCILIATION_BATCH_LIMIT = 50;
 export const reconcileExpiredRequestsOutputSchema = z
   .object({
     expiredRequestIds: z.array(uuidSchema),
     expiredCount: z.number().int().nonnegative(),
     hasMore: z.boolean(),
   })
-  .strict();
+  .strict()
+  .superRefine((output, ctx) => {
+    if (output.expiredCount !== output.expiredRequestIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiredCount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (new Set(output.expiredRequestIds).size !== output.expiredRequestIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiredRequestIds'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (output.expiredCount > MERCHANT_RECONCILIATION_BATCH_LIMIT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiredCount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+  });
 
 // 1. publish_request
 export const publishRequestInputSchema = z.object({
@@ -627,6 +651,7 @@ export const RPC_CONTRACTS = {
     errorCodes: [
       'UNAUTHENTICATED',
       'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
       'INTERNAL_ERROR',
     ] as const satisfies readonly DomainErrorCode[],
   },

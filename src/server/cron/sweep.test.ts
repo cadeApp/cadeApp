@@ -21,7 +21,18 @@ type DeepPartial<T> = {
 type AdminClientMock = DeepPartial<ReturnType<typeof createAdminClient>>;
 
 function setAdminClientMock(mock: AdminClientMock) {
-  vi.mocked(createAdminClient).mockReturnValue(mock as ReturnType<typeof createAdminClient>);
+  vi.mocked(createAdminClient).mockReturnValue({
+    rpc: vi.fn().mockResolvedValue({
+      data: {
+        expiredRequestIds: [],
+        expiredOfferCourierIdsByRequest: {},
+        expiredCount: 0,
+        hasMore: false,
+      },
+      error: null,
+    }),
+    ...mock,
+  } as ReturnType<typeof createAdminClient>);
 }
 
 describe('runSweep logic', () => {
@@ -36,23 +47,15 @@ describe('runSweep logic', () => {
   it('procesa correctamente expiraciones, purga y suscripciones vencidas con guardas TOCTOU, orden defensivo y audit_log singular (H01-H10)', async () => {
     const mockStorageRemove = vi.fn().mockResolvedValue({ data: [], error: null });
     const mockAuditInsert = vi.fn().mockResolvedValue({ error: null });
-
-    const mockReqUpdateSelect = vi.fn().mockResolvedValue({
-      data: [
-        { id: 'req-101', merchant_id: 'merchant-1' },
-        { id: 'req-102', merchant_id: 'merchant-2' },
-      ],
+    const reconciliationRpc = vi.fn().mockResolvedValue({
+      data: {
+        expiredRequestIds: ['req-101', 'req-102'],
+        expiredOfferCourierIdsByRequest: {},
+        expiredCount: 2,
+        hasMore: false,
+      },
       error: null,
     });
-    const mockReqUpdateLte = vi.fn().mockReturnValue({ select: mockReqUpdateSelect });
-    const mockReqUpdateEq = vi.fn().mockReturnValue({ lte: mockReqUpdateLte });
-    const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
-    const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
-
-    const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
-    const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
-    const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
-    const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
     const mockDocUpdateSelect = vi.fn().mockResolvedValue({
       data: [{ id: 'doc-10' }],
@@ -75,23 +78,8 @@ describe('runSweep logic', () => {
       if (table === 'delivery_requests') {
         return {
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [
-                  { id: 'req-101', merchant_id: 'merchant-1' },
-                  { id: 'req-102', merchant_id: 'merchant-2' },
-                ],
-                error: null,
-              }),
-            }),
+            in: vi.fn().mockResolvedValue({ data: null, error: null }),
           }),
-          update: mockReqUpdate,
-        };
-      }
-
-      if (table === 'offers') {
-        return {
-          update: mockOffersUpdate,
         };
       }
 
@@ -162,6 +150,7 @@ describe('runSweep logic', () => {
     });
 
     setAdminClientMock({
+      rpc: reconciliationRpc,
       from: mockFrom,
       storage: {
         from: vi.fn().mockReturnValue({
@@ -176,47 +165,23 @@ describe('runSweep logic', () => {
     expect(result.purgedDocsCount).toBe(1);
     expect(result.expiredSubscriptionsCount).toBe(1);
 
-    // Verificación de payloads de update (matan mutaciones X02, X03, X05, X06)
-    expect(mockReqUpdate).toHaveBeenCalledWith({ status: 'expired' });
-    expect(mockOffersUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'expired', decided_at: expect.any(String) })
-    );
+    expect(reconciliationRpc).toHaveBeenCalledExactlyOnceWith('reconcile_expired_requests_cron', {
+      p_limit: 200,
+    });
     expect(mockDocUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ purged_at: expect.any(String) })
     );
     expect(mockMerchantUpdate).toHaveBeenCalledWith({ subscription_status: 'expired' });
 
-    // Verificación de ids pasados a .in() (matan mutaciones X04, X09)
-    expect(mockOffersIn).toHaveBeenCalledWith('request_id', ['req-101', 'req-102']);
     expect(mockMerchantIn).toHaveBeenCalledWith('profile_id', ['merchant-expired-1']);
 
-    // Verificación de guardas TOCTOU
-    expect(mockReqUpdateEq).toHaveBeenCalledWith('status', 'published');
-    expect(mockReqUpdateLte).toHaveBeenCalledWith('expires_at', expect.any(String));
-    expect(mockOffersUpdateEq).toHaveBeenCalledWith('status', 'pending');
-    expect(mockOffersUpdateSelect).toHaveBeenCalledWith('request_id, courier_id');
+    // Verificación de guardas TOCTOU que permanecen fuera de la transacción de expiración.
     expect(mockDocUpdateIs).toHaveBeenCalledWith('purged_at', null);
     expect(mockMerchantUpdateEq).toHaveBeenCalledWith('subscription_status', 'active');
     expect(mockMerchantUpdateOr).toHaveBeenCalledWith(expect.stringContaining('paid_until.lte.'));
 
     // Verificación de Storage remove
     expect(mockStorageRemove).toHaveBeenCalledWith(['courier-1/dni.jpg']);
-
-    // Verificación de audit_log con target_type en singular y before
-    expect(mockAuditInsert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        target_type: 'delivery_request',
-        target_id: 'req-101',
-        action: 'expired',
-        before: { status: 'published' },
-      }),
-      expect.objectContaining({
-        target_type: 'delivery_request',
-        target_id: 'req-102',
-        action: 'expired',
-        before: { status: 'published' },
-      }),
-    ]);
 
     expect(mockAuditInsert).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -469,25 +434,18 @@ describe('runSweep logic', () => {
     expect(mockMerchantUpdate).not.toHaveBeenCalled();
   });
 
-  it('descarta solicitudes y comercios actualizados concurrentemente (TOCTOU) y no audita ni expira ofertas descartadas (PR68-H03)', async () => {
+  it('conserva la guarda de suscripciones y delega la guarda de expiraciones atómica a la RPC (PR68-H03)', async () => {
     const mockStorageRemove = vi.fn().mockResolvedValue({ data: [], error: null });
     const mockAuditInsert = vi.fn().mockResolvedValue({ error: null });
-
-    // La consulta inicial vio req-101 y req-republished-102
-    // Pero el update con guarda lte('expires_at') solo actualiza req-101 (req-republished-102 fue republicado)
-    const mockReqUpdateSelect = vi.fn().mockResolvedValue({
-      data: [{ id: 'req-101', merchant_id: 'merchant-1' }],
+    const reconciliationRpc = vi.fn().mockResolvedValue({
+      data: {
+        expiredRequestIds: ['req-101'],
+        expiredOfferCourierIdsByRequest: {},
+        expiredCount: 1,
+        hasMore: false,
+      },
       error: null,
     });
-    const mockReqUpdateLte = vi.fn().mockReturnValue({ select: mockReqUpdateSelect });
-    const mockReqUpdateEq = vi.fn().mockReturnValue({ lte: mockReqUpdateLte });
-    const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
-    const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
-
-    const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
-    const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
-    const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
-    const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
     // La consulta vio merchant-1 y merchant-renewed-2
     // Pero el update con guarda or(paid_until.lte...) solo actualiza merchant-1 (merchant-renewed-2 fue renovado)
@@ -504,21 +462,9 @@ describe('runSweep logic', () => {
       if (table === 'delivery_requests') {
         return {
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: [
-                  { id: 'req-101', merchant_id: 'merchant-1' },
-                  { id: 'req-republished-102', merchant_id: 'merchant-2' },
-                ],
-                error: null,
-              }),
-            }),
+            in: vi.fn().mockResolvedValue({ data: null, error: null }),
           }),
-          update: mockReqUpdate,
         };
-      }
-      if (table === 'offers') {
-        return { update: mockOffersUpdate };
       }
       if (table === 'courier_documents') {
         return {
@@ -570,6 +516,7 @@ describe('runSweep logic', () => {
     });
 
     setAdminClientMock({
+      rpc: reconciliationRpc,
       from: mockFrom,
       storage: {
         from: vi.fn().mockReturnValue({
@@ -584,23 +531,9 @@ describe('runSweep logic', () => {
     expect(result.expiredRequestsCount).toBe(1);
     expect(result.expiredSubscriptionsCount).toBe(1);
 
-    // Las ofertas solo se cancelan para la solicitud efectivamente expirada
-    expect(mockOffersIn).toHaveBeenCalledWith('request_id', ['req-101']);
-    expect(mockOffersIn).not.toHaveBeenCalledWith(
-      'request_id',
-      expect.arrayContaining(['req-republished-102'])
-    );
-
-    // La auditoría NO incluye la solicitud ni el comercio descartados por la guarda
-    expect(mockAuditInsert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        target_type: 'delivery_request',
-        target_id: 'req-101',
-      }),
-    ]);
-    expect(mockAuditInsert).not.toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ target_id: 'req-republished-102' })])
-    );
+    expect(reconciliationRpc).toHaveBeenCalledExactlyOnceWith('reconcile_expired_requests_cron', {
+      p_limit: 200,
+    });
 
     expect(mockAuditInsert).toHaveBeenCalledWith([
       expect.objectContaining({
@@ -696,31 +629,22 @@ describe('runSweep logic', () => {
     expect(mockMerchantUpdate).toHaveBeenCalled();
   });
 
-  it('propaga error si la consulta de delivery_requests falla (PR68-H03)', async () => {
-    const mockFrom = vi.fn().mockImplementation((table: string) => {
-      if (table === 'delivery_requests') {
-        return {
-          select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              lte: vi.fn().mockResolvedValue({
-                data: null,
-                error: { message: 'Postgres network connection failed' },
-              }),
-            }),
-          }),
-        };
-      }
-      return {};
+  it('propaga error si la RPC transaccional de expiraciones falla (CC-026)', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'Postgres network connection failed' },
     });
-
     setAdminClientMock({
-      from: mockFrom,
+      rpc,
+      from: vi.fn(),
       storage: {
         from: vi.fn(),
       },
     });
 
-    await expect(runSweep()).rejects.toThrow('Failed to fetch expired requests');
+    await expect(runSweep()).rejects.toThrow(
+      'Failed to reconcile expired requests: Postgres network connection failed'
+    );
   });
 
   it('propaga error si la consulta de platform_settings falla (PR68-H03 / AG-54)', async () => {
@@ -937,6 +861,81 @@ describe('runSweep logic', () => {
   });
 
   describe('T-206: Cableado de push en transiciones de negocio (sweep / request_expired)', () => {
+    it('CC-026 reconcilia mediante la RPC transaccional y notifica solo destinatarios retornados post-commit', async () => {
+      const requestId = '10300000-0000-4000-8000-000000000050';
+      const merchantId = '10300000-0000-4000-8000-000000000051';
+      const courierId = '10300000-0000-4000-8000-000000000052';
+      const rpc = vi.fn().mockResolvedValue({
+        data: {
+          expiredRequestIds: [requestId],
+          expiredOfferCourierIdsByRequest: { [requestId]: [courierId] },
+          expiredCount: 1,
+          hasMore: false,
+        },
+        error: null,
+      });
+      const push = await import('@/server/push');
+      const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
+        totalSubscriptions: 2,
+        sentCount: 2,
+        failedCount: 0,
+        deletedSubscriptions: [],
+        attempts: [],
+        errors: [],
+      });
+      const deliveryRequestsSelect = vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          lte: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+        in: vi.fn().mockResolvedValue({ data: [{ id: requestId, merchant_id: merchantId }], error: null }),
+      });
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return { select: deliveryRequestsSelect };
+        if (table === 'courier_documents') {
+          return {
+            select: vi.fn().mockReturnValue({
+              lte: vi.fn().mockReturnValue({
+                is: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'platform_settings') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: { value: '0' }, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'merchants') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          };
+        }
+        return {};
+      });
+
+      setAdminClientMock({
+        rpc,
+        from: mockFrom,
+        storage: { from: vi.fn() },
+      });
+
+      await expect(runSweep()).resolves.toMatchObject({ expiredRequestsCount: 1 });
+      expect(rpc).toHaveBeenCalledExactlyOnceWith('reconcile_expired_requests_cron', {
+        p_limit: 200,
+      });
+      expect(safeNotifySpy).toHaveBeenCalledExactlyOnceWith(
+        expect.arrayContaining([merchantId, courierId]),
+        { event: 'request_expired', requestId }
+      );
+      safeNotifySpy.mockRestore();
+    });
+
     it('despacha request_expired a comercio y repartidores con ofertas cuando expira una solicitud', async () => {
       const push = await import('@/server/push');
       const safeNotifySpy = vi.spyOn(push, 'safeNotifyPostTransition').mockResolvedValue({
@@ -948,66 +947,31 @@ describe('runSweep logic', () => {
         errors: [],
       });
 
-      const mockReqUpdateSelect = vi.fn().mockResolvedValue({
-        data: [
-          { id: 'req-expired-10', merchant_id: 'merchant-expired-10' },
-          { id: 'req-expired-20', merchant_id: 'merchant-expired-20' },
-        ],
+      const reconciliationRpc = vi.fn().mockResolvedValue({
+        data: {
+          expiredRequestIds: ['req-expired-10', 'req-expired-20'],
+          expiredOfferCourierIdsByRequest: {
+            'req-expired-10': ['courier-with-offer-1'],
+            'req-expired-20': ['courier-with-offer-2'],
+          },
+          expiredCount: 2,
+          hasMore: false,
+        },
         error: null,
-      });
-      const mockReqUpdateLte = vi.fn().mockReturnValue({ select: mockReqUpdateSelect });
-      const mockReqUpdateEq = vi.fn().mockReturnValue({ lte: mockReqUpdateLte });
-      const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
-      const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
-
-      let offersUpdated = false;
-      let orderIsPostCommit = false;
-      const mockOffersUpdateSelect = vi.fn().mockImplementation(async () => {
-        offersUpdated = true;
-        return {
-          data: [
-            { request_id: 'req-expired-10', courier_id: 'courier-with-offer-1' },
-            { request_id: 'req-expired-20', courier_id: 'courier-with-offer-2' },
-          ],
-          error: null,
-        };
-      });
-      const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
-      const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
-      const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
-
-      safeNotifySpy.mockImplementation(async () => {
-        orderIsPostCommit = offersUpdated;
-        return {
-          totalSubscriptions: 2,
-          sentCount: 2,
-          failedCount: 0,
-          deletedSubscriptions: [],
-          attempts: [],
-          errors: [],
-        };
       });
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') {
           return {
             select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                lte: vi.fn().mockResolvedValue({
-                  data: [
-                    { id: 'req-expired-10', merchant_id: 'merchant-expired-10' },
-                    { id: 'req-expired-20', merchant_id: 'merchant-expired-20' },
-                  ],
-                  error: null,
-                }),
+              in: vi.fn().mockResolvedValue({
+                data: [
+                  { id: 'req-expired-10', merchant_id: 'merchant-expired-10' },
+                  { id: 'req-expired-20', merchant_id: 'merchant-expired-20' },
+                ],
+                error: null,
               }),
             }),
-            update: mockReqUpdate,
-          };
-        }
-        if (table === 'offers') {
-          return {
-            update: mockOffersUpdate,
           };
         }
         if (table === 'courier_documents') {
@@ -1042,6 +1006,7 @@ describe('runSweep logic', () => {
       });
 
       setAdminClientMock({
+        rpc: reconciliationRpc,
         from: mockFrom,
         storage: {
           from: vi.fn().mockReturnValue({
@@ -1053,13 +1018,9 @@ describe('runSweep logic', () => {
       const result = await runSweep();
 
       expect(result.expiredRequestsCount).toBe(2);
-      expect(orderIsPostCommit).toBe(true);
-      expect(mockOffersUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'expired', decided_at: expect.any(String) })
-      );
-      expect(mockOffersIn).toHaveBeenCalledWith('request_id', ['req-expired-10', 'req-expired-20']);
-      expect(mockOffersUpdateEq).toHaveBeenCalledWith('status', 'pending');
-      expect(mockOffersUpdateSelect).toHaveBeenCalledWith('request_id, courier_id');
+      expect(reconciliationRpc).toHaveBeenCalledExactlyOnceWith('reconcile_expired_requests_cron', {
+        p_limit: 200,
+      });
 
       expect(safeNotifySpy).toHaveBeenCalledTimes(2);
 
@@ -1087,37 +1048,25 @@ describe('runSweep logic', () => {
         new Error('Push notification transport error')
       );
 
-      const mockReqUpdateSelect = vi.fn().mockResolvedValue({
-        data: [{ id: 'req-expired-20', merchant_id: 'merchant-expired-20' }],
+      const reconciliationRpc = vi.fn().mockResolvedValue({
+        data: {
+          expiredRequestIds: ['req-expired-20'],
+          expiredOfferCourierIdsByRequest: { 'req-expired-20': ['courier-with-offer-2'] },
+          expiredCount: 1,
+          hasMore: false,
+        },
         error: null,
       });
-      const mockReqUpdateLte = vi.fn().mockReturnValue({ select: mockReqUpdateSelect });
-      const mockReqUpdateEq = vi.fn().mockReturnValue({ lte: mockReqUpdateLte });
-      const mockReqUpdateIn = vi.fn().mockReturnValue({ eq: mockReqUpdateEq });
-      const mockReqUpdate = vi.fn().mockReturnValue({ in: mockReqUpdateIn });
-
-      const mockOffersUpdateSelect = vi.fn().mockResolvedValue({ data: [], error: null });
-      const mockOffersUpdateEq = vi.fn().mockReturnValue({ select: mockOffersUpdateSelect });
-      const mockOffersIn = vi.fn().mockReturnValue({ eq: mockOffersUpdateEq });
-      const mockOffersUpdate = vi.fn().mockReturnValue({ in: mockOffersIn });
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'delivery_requests') {
           return {
             select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                lte: vi.fn().mockResolvedValue({
-                  data: [{ id: 'req-expired-20', merchant_id: 'merchant-expired-20' }],
-                  error: null,
-                }),
+              in: vi.fn().mockResolvedValue({
+                data: [{ id: 'req-expired-20', merchant_id: 'merchant-expired-20' }],
+                error: null,
               }),
             }),
-            update: mockReqUpdate,
-          };
-        }
-        if (table === 'offers') {
-          return {
-            update: mockOffersUpdate,
           };
         }
         if (table === 'courier_documents') {
@@ -1152,6 +1101,7 @@ describe('runSweep logic', () => {
       });
 
       setAdminClientMock({
+        rpc: reconciliationRpc,
         from: mockFrom,
         storage: {
           from: vi.fn().mockReturnValue({
