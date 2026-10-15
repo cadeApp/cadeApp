@@ -537,4 +537,184 @@ test.describe('T-303 — Flujo principal y reglas de negocio', () => {
       await courierContext.close();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // T-360: Resumen de viajes activos del repartidor en el feed
+  // ---------------------------------------------------------------------------
+  test('T-360: El feed del repartidor muestra viajes activos encima de Solicitudes abiertas y los oculta tras entrega', async (
+    {
+      page,
+      merchantPage,
+      stagingContext,
+      loginAsMerchant,
+      loginAsCourier,
+      browser,
+    },
+    testInfo
+  ) => {
+    // 1. Precrear ofertas y comprobar usuarios
+    await seedOffersForFirstRequest(stagingContext);
+    const targetRequestId = stagingContext.createdRequestIds[0];
+    if (!targetRequestId) {
+      throw new Error('[E2E Error] No request ID found in stagingContext');
+    }
+    const targetCourier = stagingContext.courierUsers?.[0];
+    if (!targetCourier) {
+      throw new Error('[E2E Error] No courier user 0 found in stagingContext');
+    }
+
+    // Comercio acepta la oferta específica de Courier 0 de forma determinista
+    await loginAsMerchant(page);
+    await merchantPage.gotoRequestDetail(targetRequestId);
+    await waitForNoSkeletons(page);
+
+    // Buscar encabezado con el nombre exacto de Courier 0
+    const courierHeading = page.getByRole('heading', {
+      level: 4,
+      name: targetCourier.displayName,
+      exact: true,
+    });
+    await expect(courierHeading).toHaveCount(1);
+
+    // Localizar la tarjeta Card contenedora (div.rounded-xl.border-border.bg-card) asociada al courier
+    const courierCard = page
+      .locator('div.rounded-xl.border-border.bg-card')
+      .filter({ has: courierHeading });
+    await expect(courierCard).toHaveCount(1);
+
+    const acceptButton = courierCard.getByRole('button', { name: /^aceptar$/i });
+    await expect(acceptButton).toHaveCount(1);
+    await acceptButton.click();
+
+    await merchantPage.confirmAcceptButton.click();
+    await waitForNoSkeletons(page);
+
+    // Comprobar que en DB la solicitud quedó matched y asignada al courier 0
+    const inspection = await getRequestInspectionData(stagingContext, targetRequestId);
+    expect(inspection.requestStatus).toBe('matched');
+    expect(inspection.acceptedOfferId).toBeTruthy();
+    const acceptedOffer = inspection.offers.find((o) => o.id === inspection.acceptedOfferId);
+    expect(acceptedOffer?.courierId).toBe(targetCourier.id);
+
+    const baseURL = testInfo.project.use.baseURL;
+    if (typeof baseURL !== 'string' || baseURL.length === 0) {
+      throw new Error('[E2E Error] Falta baseURL para crear el contexto del courier');
+    }
+
+    // 2. Courier 0 (asignado) abre /courier/feed y ve la sección de viajes activos
+    const courierContext = await browser.newContext({ baseURL });
+    try {
+      const courierPage = await courierContext.newPage();
+      await loginAsCourier(0, courierPage);
+      await courierPage.goto('/courier/feed');
+      await waitForNoSkeletons(courierPage);
+
+      const activeTripsHeading = courierPage.getByRole('heading', {
+        name: /mis viajes activos/i,
+      });
+      await expect(activeTripsHeading).toBeVisible();
+
+      // Enlace exacto hacia el viaje
+      const viewTripLink = courierPage.getByRole('link', { name: /ver viaje/i }).first();
+      await expect(viewTripLink).toBeVisible();
+      await expect(viewTripLink).toHaveAttribute('href', `/trips/${targetRequestId}`);
+
+      // Estado matched => "Aceptado · Por retirar"
+      await expect(courierPage.getByText(/aceptado/i).first()).toBeVisible();
+
+      // Ausencia de datos privados de contacto en feed pre-match/público
+      const sentinelPhone = stagingContext.sentinelPhone ?? '+5493865123456';
+      const rawSentinel = sentinelPhone.replace(/\D/g, '');
+      const feedHtml = await courierPage.content();
+      expect(feedHtml).not.toContain(rawSentinel);
+
+      // Verificación de orden DOM real mediante compareDocumentPosition:
+      // switch de disponibilidad < section[aria-labelledby="active-trips-title"] < encabezado Solicitudes abiertas
+      const domOrderValid = await courierPage.evaluate(() => {
+        const switchEl = document.querySelector('[role="switch"]');
+        const activeSection = document.querySelector('section[aria-labelledby="active-trips-title"]');
+        const feedHeading = Array.from(document.querySelectorAll('h1')).find((h) =>
+          /solicitudes abiertas/i.test(h.textContent ?? '')
+        );
+        if (!switchEl || !activeSection || !feedHeading) return false;
+        const afterSwitch = Boolean(
+          switchEl.compareDocumentPosition(activeSection) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+        const beforeFeed = Boolean(
+          activeSection.compareDocumentPosition(feedHeading) & Node.DOCUMENT_POSITION_FOLLOWING
+        );
+        return afterSwitch && beforeFeed;
+      });
+      expect(domOrderValid).toBe(true);
+
+      // Conmutar disponibilidad a NO disponible: la sección permanece visible
+      const switchBtn = courierPage.getByRole('switch', {
+        name: /cambiar estado de disponibilidad/i,
+      });
+      await switchBtn.click();
+      await expect(courierPage.getByText(/no estás disponible/i)).toBeVisible();
+      await expect(activeTripsHeading).toBeVisible();
+
+      // Volver a activar disponibilidad
+      await switchBtn.click();
+      await expect(courierPage.getByText(/solicitudes abiertas/i)).toBeVisible();
+
+      // 3. Mantener courierPage ABIERTA en /courier/feed (sin recargar)
+      // En un segundo contexto/página, avanzar y entregar el pedido
+      const tripContext = await browser.newContext({ baseURL });
+      try {
+        const tripActionPage = await tripContext.newPage();
+        await loginAsCourier(0, tripActionPage);
+        const courierTripPage = new TripPage(tripActionPage);
+        await courierTripPage.navigate(targetRequestId);
+        await waitForNoSkeletons(tripActionPage);
+
+        // Retirar
+        await expect(courierTripPage.markPickedUpButton).toBeVisible();
+        await courierTripPage.markPickedUpButton.click();
+        await waitForNoSkeletons(tripActionPage);
+
+        // En courierPage (que sigue en /courier/feed sin recarga), el estado se actualiza a "En camino"
+        await expect
+          .poll(async () => courierPage.getByText(/en camino/i).first().isVisible(), {
+            timeout: 35000,
+          })
+          .toBe(true);
+
+        // Entregar
+        await expect(courierTripPage.confirmDeliveryButton).toBeVisible();
+        const pickedUpToast = tripActionPage.getByText(/Pedido marcado como retirado/i);
+        if (await pickedUpToast.isVisible()) {
+          await tripActionPage.mouse.move(0, 0);
+          await expect(pickedUpToast).not.toBeVisible({ timeout: 10000 });
+        }
+        await courierTripPage.confirmDeliveryButton.click();
+        await waitForNoSkeletons(tripActionPage);
+        await expect(courierTripPage.deliveredStatus).toBeVisible();
+      } finally {
+        await tripContext.close();
+      }
+
+      // 4. En courierPage (que sigue en /courier/feed SIN recargar), el viaje desaparece en vivo
+      await expect
+        .poll(async () => activeTripsHeading.isVisible(), { timeout: 35000 })
+        .toBe(false);
+    } finally {
+      await courierContext.close();
+    }
+
+    // 5. Courier 1 (no asignado) nunca ve el viaje en su feed
+    const otherCourierContext = await browser.newContext({ baseURL });
+    try {
+      const otherCourierPage = await otherCourierContext.newPage();
+      await loginAsCourier(1, otherCourierPage);
+      await otherCourierPage.goto('/courier/feed');
+      await waitForNoSkeletons(otherCourierPage);
+      await expect(
+        otherCourierPage.getByRole('heading', { name: /mis viajes activos/i })
+      ).not.toBeVisible();
+    } finally {
+      await otherCourierContext.close();
+    }
+  });
 });
