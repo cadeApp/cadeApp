@@ -8,6 +8,9 @@ import {
   seedAdminUser,
   getPlatformSettingNumber,
   setMerchantSubscriptionStatus,
+  createStagingSeedContext,
+  seedStagingData,
+  cleanupStagingData,
 } from '../fixtures';
 
 /**
@@ -817,4 +820,116 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(inspection.cancelledAt).toBeNull();
     expect(inspection.cancelReason).toBeNull();
   });
+
+  // ---------------------------------------------------------------------------
+  // T-364: Cancelación rápida desde «Mis solicitudes» del comercio sin entrar al detalle
+  // ---------------------------------------------------------------------------
+  test('T-364 (§5.1): Cancelación rápida por comercio dueño en published: UI Playwright, oráculo SQL y rechazo ajeno', async ({
+    page,
+    stagingContext,
+    loginAsMerchant,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    if (!merchant) {
+      throw new Error('[E2E Precondition Error] Se requiere merchant en stagingContext');
+    }
+
+    // Precondición: solicitud published de merchant con oferta pending
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const requestId = seedResult.requestId;
+    const pendingOfferId = seedResult.pendingOfferIds[0];
+
+    // 1. Caso negativo: intento de cancelación por un SEGUNDO COMERCIO real sobre solicitud ajena
+    const secondContext = createStagingSeedContext();
+    try {
+      await seedStagingData(secondContext, {
+        requestsCount: 0,
+        withMerchant: true,
+      });
+      const secondMerchant = secondContext.merchantUser;
+      if (!secondMerchant) {
+        throw new Error('[E2E Precondition Error] No se pudo inicializar segundo comercio');
+      }
+      const secondMerchantClient = await createAuthenticatedClient(secondMerchant);
+      await expectRpcFailure(
+        secondMerchantClient.rpc('cancel_request', {
+          p_request_id: requestId,
+          p_reason: 'Intento de cancelación por comercio no dueño',
+        }),
+        'UNAUTHORIZED_ACTOR'
+      );
+
+      // Oráculo DB intermedio: la solicitud permanece intacta en published
+      const intermediateInspection = await getRequestInspectionData(stagingContext, requestId);
+      expect(intermediateInspection.requestStatus).toBe('published');
+      expect(intermediateInspection.cancelledAt).toBeNull();
+    } finally {
+      await cleanupStagingData(secondContext);
+    }
+
+    // 2. Flujo UI real con Playwright navegando como el comercio dueño (fail-closed, sin fallback RPC)
+    await loginAsMerchant(page);
+    await page.goto('/merchant/dashboard');
+
+    // Localizar tarjeta específica por requestId y medir contador de solicitudes activas previo
+    const requestLink = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await requestLink.waitFor({ state: 'visible', timeout: 10000 });
+
+    const activeCountLocator = page.locator('div:has(> div > span:text-is("Solicitudes activas")) > p');
+    const initialCountText = await activeCountLocator.innerText();
+    const initialCount = parseInt(initialCountText.trim(), 10);
+    expect(Number.isFinite(initialCount)).toBe(true);
+
+    const cancelBtn = requestLink.locator('xpath=..').getByRole('button', { name: /cancelar/i });
+    await cancelBtn.waitFor({ state: 'visible', timeout: 10000 });
+    await cancelBtn.click();
+
+    // Comprobar diálogo - Paso 1: título, motivo obligatorio y continuar deshabilitado
+    await expect(page.getByText('¿Por qué cancelás esta solicitud?')).toBeVisible();
+    const continueBtn = page.getByRole('button', { name: /continuar/i });
+    await expect(continueBtn).toBeDisabled();
+
+    // Seleccionar motivo obligatorio
+    const reasonRadio = page.getByLabel('Lo resolví de otra forma');
+    await reasonRadio.click();
+    await expect(continueBtn).toBeEnabled();
+    await continueBtn.click();
+
+    // Paso 2: confirmación irreversible y botón de confirmación
+    await expect(page.getByText('¿Confirmás la cancelación definitiva?')).toBeVisible();
+    await expect(page.getByText('Lo resolví de otra forma')).toBeVisible();
+    const confirmBtn = page.getByRole('button', { name: /sí, cancelar/i });
+    await confirmBtn.click();
+
+    // Esperar que se cierre el modal
+    await expect(page.getByText('¿Confirmás la cancelación definitiva?')).not.toBeVisible({ timeout: 10000 });
+
+    // Comprobar que ese link ya no existe en activas y que el contador descendió exactamente en 1
+    await expect(requestLink).not.toBeVisible({ timeout: 10000 });
+    await expect(activeCountLocator).toHaveText(String(initialCount - 1), { timeout: 10000 });
+
+    // Comprobar en /merchant/history que figura esa misma solicitud por requestId con estado Cancelada
+    await page.goto('/merchant/history');
+    const historyLink = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await expect(historyLink).toBeVisible({ timeout: 10000 });
+    await expect(historyLink).toContainText('Cancelada');
+
+    // 3. Oráculo server-side en PostgreSQL
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('cancelled');
+    expect(inspection.cancelledAt).not.toBeNull();
+    expect(inspection.cancelReason).toBe('Lo resolví de otra forma');
+
+    // Ofertas asociadas pending pasan a expired
+    if (pendingOfferId) {
+      const offer = inspection.offers.find((o) => o.id === pendingOfferId);
+      expect(offer?.status).toBe('expired');
+    }
+  });
 });
+

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getPlatformMinOfferArs: vi.fn(),
   getAvailableRequests: vi.fn(),
   getCourierDocumentsStatus: vi.fn(),
+  getActiveTripsForCourier: vi.fn(),
   getUser: vi.fn(),
 }));
 
@@ -17,6 +18,9 @@ vi.mock('@/features/offers/server', () => ({
   getCourierStatusAndAvailability: mocks.getCourierStatusAndAvailability,
   getPlatformMinOfferArs: mocks.getPlatformMinOfferArs,
   getAvailableRequests: mocks.getAvailableRequests,
+}));
+vi.mock('@/features/trips/server', () => ({
+  getActiveTripsForCourier: mocks.getActiveTripsForCourier,
 }));
 vi.mock('@/features/courier-onboarding/server', () => ({
   getCourierDocumentsStatus: mocks.getCourierDocumentsStatus,
@@ -39,6 +43,7 @@ describe('Hotfix T-325 / PR242-H01: /courier/feed usa los documentos persistidos
     vi.clearAllMocks();
     mocks.getPlatformMinOfferArs.mockResolvedValue(1000);
     mocks.getAvailableRequests.mockResolvedValue({ requests: [], nextCursor: null });
+    mocks.getActiveTripsForCourier.mockResolvedValue({ courierId: 'courier-123', trips: [] });
     mocks.getUser.mockResolvedValue({ data: { user: { id: 'courier-123' } }, error: null });
   });
   afterEach(cleanup);
@@ -89,6 +94,61 @@ describe('Hotfix T-325 / PR242-H01: /courier/feed usa los documentos persistidos
     await expect(rejection).rejects.toThrow('Error al verificar sesión del repartidor');
     await expect(rejection).rejects.not.toThrow(/JWT|sb-secret/);
     expect(mocks.getCourierDocumentsStatus).not.toHaveBeenCalled();
+    expect(mocks.CourierFeed).not.toHaveBeenCalled();
+  });
+
+  it('approved: consulta getActiveTripsForCourier y pasa courierId e initialActiveTrips a CourierFeed', async () => {
+    const activeTrips = [
+      {
+        id: 'trip-1',
+        status: 'matched' as const,
+        pickupZoneName: 'Centro',
+        dropoffZoneName: 'Sur',
+        dropsCount: 1,
+        amountArs: 2500,
+        matchedAt: '2026-10-15T00:00:00Z',
+      },
+    ];
+    mocks.getCourierStatusAndAvailability.mockResolvedValue({
+      status: 'approved',
+      available: true,
+    });
+    mocks.getActiveTripsForCourier.mockResolvedValue({
+      courierId: 'courier-123',
+      trips: activeTrips,
+    });
+
+    const props = await renderPage();
+
+    expect(mocks.getActiveTripsForCourier).toHaveBeenCalledTimes(1);
+    expect(props.courierId).toBe('courier-123');
+    expect(props.initialActiveTrips).toBe(activeTrips);
+  });
+
+  it('pending: no consulta getActiveTripsForCourier', async () => {
+    mocks.getCourierStatusAndAvailability.mockResolvedValue({
+      status: 'pending',
+      available: false,
+    });
+    mocks.getCourierDocumentsStatus.mockResolvedValue([]);
+
+    const props = await renderPage();
+
+    expect(mocks.getActiveTripsForCourier).not.toHaveBeenCalled();
+    expect(props.courierId).toBeUndefined();
+    expect(props.initialActiveTrips).toBeUndefined();
+  });
+
+  it('T-360: un error en la consulta de viajes activos de SSR rechaza la promesa y no pasa array vacío', async () => {
+    mocks.getCourierStatusAndAvailability.mockResolvedValue({
+      status: 'approved',
+      available: true,
+    });
+    mocks.getActiveTripsForCourier.mockRejectedValue(
+      new Error('Error al consultar solicitudes activas')
+    );
+
+    await expect(CourierFeedPage()).rejects.toThrow('Error al consultar solicitudes activas');
     expect(mocks.CourierFeed).not.toHaveBeenCalled();
   });
 });

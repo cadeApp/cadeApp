@@ -8,13 +8,15 @@ import { Card } from '@/ui/card';
 import { AvailabilitySwitch } from '@/features/availability';
 import { Radio, AlertCircle } from 'lucide-react';
 import { OFFERS_COPY } from '../copy';
-import type { AvailableRequestItem, CourierStatus } from '../schemas';
+import type { ActiveTripSummary, AvailableRequestItem, CourierStatus } from '../schemas';
 import dynamic from 'next/dynamic';
 import { RequestCard } from './request-card';
+import { ActiveTripCard } from './active-trip-card';
 import type { OfferSheetProps } from './offer-sheet';
 import type { EmptyStateProps } from '@/ui/empty-state';
 import { FeedSkeleton } from './feed-skeleton';
 import { useAvailableRequests } from '../hooks/use-available-requests';
+import { useActiveTrips } from '../hooks/use-active-trips';
 import { useOfflineStatus } from '@/features/notifications';
 import type { CourierDocumentMetadata, StatusViewProps } from '@/features/courier-onboarding';
 
@@ -46,6 +48,10 @@ export interface CourierFeedProps {
   isLoading?: boolean;
   /** Documentos persistidos del repartidor; solo se usan en estado `pending`. */
   documents?: readonly CourierDocumentMetadata[];
+  /** ID del repartidor autenticado para particionar la caché de viajes activos (T-360). */
+  courierId?: string;
+  /** Viajes activos precargados en SSR (T-360). */
+  initialActiveTrips?: readonly ActiveTripSummary[];
 }
 
 export function CourierFeed({
@@ -56,11 +62,24 @@ export function CourierFeed({
   minOfferArs,
   isLoading = false,
   documents = EMPTY_DOCUMENTS,
+  courierId,
+  initialActiveTrips,
 }: CourierFeedProps) {
   const [available, setAvailable] = useState<boolean>(initialAvailable);
   const [selectedRequest, setSelectedRequest] = useState<AvailableRequestItem | null>(null);
   const [isOfferSheetOpen, setIsOfferSheetOpen] = useState<boolean>(false);
   const { isOffline } = useOfflineStatus();
+
+  const {
+    trips: activeTrips,
+    isLoading: isActiveTripsLoading,
+    isError: isActiveTripsError,
+    refetch: refetchActiveTrips,
+  } = useActiveTrips({
+    courierId,
+    initialTrips: initialActiveTrips,
+    courierStatus,
+  });
 
   const {
     requests: liveRequests,
@@ -138,6 +157,70 @@ export function CourierFeed({
         initialAvailable={available}
         onAvailabilityChange={(next) => setAvailable(next)}
       />
+
+      {/* T-360: Sección semántica de viajes activos encima de Solicitudes abiertas */}
+      {isActiveTripsLoading && activeTrips.length === 0 ? (
+        <section aria-labelledby="active-trips-title" className="space-y-3">
+          <h2
+            id="active-trips-title"
+            className="sr-only font-display text-lg font-bold tracking-tight text-foreground"
+          >
+            {OFFERS_COPY.activeTripsTitle}
+          </h2>
+          <div
+            role="status"
+            aria-live="polite"
+            className="h-28 w-full animate-pulse rounded-lg bg-muted"
+          />
+        </section>
+      ) : isActiveTripsError ? (
+        <section aria-labelledby="active-trips-title" className="space-y-3">
+          <div
+            role="alert"
+            className="flex flex-col gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div className="flex items-center gap-2 text-sm text-destructive">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <div>
+                <p id="active-trips-title" className="font-semibold text-foreground">
+                  {OFFERS_COPY.activeTripsErrorTitle}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {OFFERS_COPY.activeTripsErrorDescription}
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void refetchActiveTrips()}
+              className="min-h-[44px] self-end sm:self-center"
+            >
+              {OFFERS_COPY.retryButton}
+            </Button>
+          </div>
+        </section>
+      ) : activeTrips.length > 0 ? (
+        <section aria-labelledby="active-trips-title" className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2
+              id="active-trips-title"
+              className="font-display text-lg font-bold tracking-tight text-foreground"
+            >
+              {OFFERS_COPY.activeTripsTitle}
+            </h2>
+            <span className="text-sm font-semibold text-muted-foreground">
+              {activeTrips.length}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {activeTrips.map((trip) => (
+              <ActiveTripCard key={trip.id} trip={trip} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* Encabezado de la lista */}
       <div className="flex items-center justify-between pt-2">

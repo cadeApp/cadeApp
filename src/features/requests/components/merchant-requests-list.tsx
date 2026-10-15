@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Plus, ArrowRight, Package, Clock, Truck, TrendingUp, CheckCircle2 } from 'lucide-react';
@@ -9,11 +10,21 @@ import { Badge, type BadgeProps } from '@/ui/badge';
 import { Button, buttonVariants } from '@/ui/button';
 import { Card } from '@/ui/card';
 import { EmptyState } from '@/ui/empty-state';
+import { notify } from '@/ui/notify';
+import { getDomainErrorMessage } from '@/lib/error-messages';
+import type { ActionResult, DomainErrorCode } from '@/domain/errors';
+import type { RpcOutput } from '@/domain/rpc-contracts';
 import type { MerchantRequestSummary, MerchantMetrics } from '../types';
+import { cancelMerchantRequestAction } from '../actions';
+import { MerchantRequestCancelDialog } from './merchant-request-cancel-dialog';
 
 export interface MerchantRequestsListProps {
   readonly requests: readonly MerchantRequestSummary[];
   readonly metrics: MerchantMetrics;
+  readonly onCancel?: (
+    requestId: string,
+    reason: string
+  ) => Promise<ActionResult<RpcOutput<'cancel_request'>, DomainErrorCode>>;
 }
 
 function getStatusBadgeConfig(
@@ -59,8 +70,62 @@ function getPackageLabel(packageType: string): string {
   }
 }
 
-export function MerchantRequestsList({ requests, metrics }: MerchantRequestsListProps) {
+export function MerchantRequestsList({ requests, metrics, onCancel }: MerchantRequestsListProps) {
   const router = useRouter();
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const inFlightRef = React.useRef(false);
+
+  const isCancelable = (req: MerchantRequestSummary) => {
+    if (req.status === 'matched') return true;
+    if (req.status === 'published') {
+      if (!req.expiresAt) return false;
+      const expiresAtMs = new Date(req.expiresAt).getTime();
+      return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+    }
+    return false;
+  };
+
+  const handleOpenCancel = (requestId: string) => {
+    if (isPending || inFlightRef.current) return;
+    setSelectedRequestId(requestId);
+    setCancelModalOpen(true);
+  };
+
+  const handleConfirmCancel = (reason: string) => {
+    if (!selectedRequestId || inFlightRef.current) return;
+    inFlightRef.current = true;
+    const reqId = selectedRequestId;
+
+    startTransition(async () => {
+      try {
+        const res = onCancel
+          ? await onCancel(reqId, reason)
+          : await cancelMerchantRequestAction({ requestId: reqId, reason });
+
+        if (res.ok) {
+          notify.success('Solicitud cancelada.');
+          setCancelModalOpen(false);
+          setSelectedRequestId(null);
+          router.refresh();
+        } else {
+          notify.error(getDomainErrorMessage(res.code));
+          setCancelModalOpen(false);
+          setSelectedRequestId(null);
+          router.refresh();
+        }
+      } catch {
+        notify.error('No se pudo conectar para cancelar la solicitud. Intentá nuevamente.');
+        setCancelModalOpen(false);
+        setSelectedRequestId(null);
+        router.refresh();
+      } finally {
+        inFlightRef.current = false;
+      }
+    });
+  };
+
   const activeRequests = requests.filter(
     (r) => r.status === 'published' || r.status === 'matched' || r.status === 'in_transit'
   );
@@ -187,10 +252,27 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
                   </div>
 
                   {/* Acciones */}
-                  <div className="flex items-center gap-2 self-end sm:self-center">
+                  <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
+                    {isCancelable(req) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isPending || inFlightRef.current}
+                        onClick={() => handleOpenCancel(req.id)}
+                        className="min-h-12 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={`Cancelar solicitud ${destinations}`}
+                      >
+                        Cancelar
+                      </Button>
+                    )}
                     <Link
-                      href={`/merchant/requests/${req.id}`}
-                      className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                      href={
+                        req.status === 'published'
+                          ? `/merchant/requests/${req.id}`
+                          : `/trips/${req.id}`
+                      }
+                      className={buttonVariants({ variant: 'outline', size: 'sm' }) + ' min-h-12'}
                     >
                       {req.status === 'published' ? 'Ver ofertas' : 'Ver detalle'}
                     </Link>
@@ -201,6 +283,18 @@ export function MerchantRequestsList({ requests, metrics }: MerchantRequestsList
           })}
         </div>
       )}
+
+      <MerchantRequestCancelDialog
+        key={selectedRequestId ?? 'cancel-dialog'}
+        open={cancelModalOpen}
+        onOpenChange={(nextOpen) => {
+          if (!isPending && !inFlightRef.current) {
+            setCancelModalOpen(nextOpen);
+          }
+        }}
+        onConfirm={handleConfirmCancel}
+        isPending={isPending}
+      />
     </div>
   );
 }
