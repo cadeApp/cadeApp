@@ -11,11 +11,10 @@ export interface CoordinationMessageParams {
 }
 
 export interface NotifyCustomerMessageParams {
-  amountArs: number;
   courierName: string;
-  recipientPaymentMethod: string;
-  needsChange: boolean;
-  cashChangeAmount: number | null;
+  sender: 'courier' | 'merchant';
+  tripStatus: 'matched' | 'in_transit' | 'delivered';
+  dropStatus?: 'pending' | 'delivered' | 'failed';
 }
 
 /**
@@ -157,24 +156,52 @@ export function buildTripCoordinationWhatsAppMessage(params: CoordinationMessage
 }
 
 /**
- * Genera el mensaje de WhatsApp "Avisar a mi cliente" (comercio ↔ destinatario).
- * Cumple "sin datos de más" usando allowlist estricta (H04).
+ * Genera el mensaje de WhatsApp natural para el destinatario (T-361).
+ * Redacción clara, humana y concisa según emisor (1ª persona courier vs 3ª persona merchant)
+ * y estado individual real (dropStatus si es multi-drop, tripStatus si es legacy single-drop).
+ * Sin IDs internos, códigos técnicos ni datos innecesarios (H04 & D3).
  */
 export function buildNotifyCustomerWhatsAppMessage(params: NotifyCustomerMessageParams): string {
-  const courier = params.courierName;
-  const amount = formatArs(params.amountArs);
+  const courier = params.courierName?.trim() || 'tu repartidor';
 
-  let paymentText = 'Efectivo';
-  if (params.recipientPaymentMethod === 'transfer') {
-    paymentText = 'Transferencia';
-  } else if (params.recipientPaymentMethod === 'to_agree') {
-    paymentText = 'A coordinar';
+  // 1. Drop con entrega fallida (incluso si el viaje general avanzó)
+  if (params.dropStatus === 'failed') {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. Quería avisarte que ${courier} no pudo completar la entrega de tu pedido. Por favor avisanos para coordinar. ¡Saludos!`;
+    }
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Quería avisarte que no se pudo completar la entrega de tu pedido. ¡Saludos!`;
   }
 
-  let changeText = '';
-  if (params.needsChange && params.cashChangeAmount) {
-    changeText = ` (necesita cambio de ${formatArs(params.cashChangeAmount)})`;
+  // 2. Entrega completada (drop delivered o single-drop legacy delivered)
+  if (
+    params.dropStatus === 'delivered' ||
+    (params.dropStatus === undefined && params.tripStatus === 'delivered')
+  ) {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. Tu pedido ya fue entregado por ${courier}. ¡Muchas gracias por tu compra!`;
+    }
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Tu pedido ya fue entregado. ¡Muchas gracias!`;
   }
 
-  return `Hola! Tu pedido va en camino con ${courier}. Costo de envío: ${amount}. Medio de pago: ${paymentText}${changeText}.`;
+  // 3. Viaje matched (pre-retiro): pedido asignado, aún no retirado
+  if (params.tripStatus === 'matched') {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. ${courier} es el repartidor asignado a tu pedido y en breve va a retirarlo. ¡Saludos!`;
+    }
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!`;
+  }
+
+  // 4. Viaje in_transit: en recorrido / reparto, sin prometer llegada inminente a un drop específico
+  if (params.tripStatus === 'in_transit') {
+    if (params.sender === 'merchant') {
+      return `¡Hola! Te escribo del comercio. ${courier} ya retiró tu pedido y está en recorrido para la entrega. ¡Saludos!`;
+    }
+    return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya retiré tu pedido y estoy en recorrido para la entrega. ¡Nos vemos pronto!`;
+  }
+
+  // Combinación incoherente o desconocida: fallback neutro pre-retiro, nunca asegura "en camino" ni "entregado"
+  if (params.sender === 'merchant') {
+    return `¡Hola! Te escribo del comercio. ${courier} es el repartidor asignado a tu pedido y en breve va a retirarlo. ¡Saludos!`;
+  }
+  return `¡Hola! Soy ${courier}, el repartidor de tu entrega. Ya tengo asignado tu pedido y en breve voy a retirarlo para llevártelo. ¡Nos vemos pronto!`;
 }
