@@ -17,7 +17,8 @@
 |---|---|---|---|
 | 1 | `65997dd27f652cf4d00aa616b1d26c46d16fd3e0` | 2 históricos | [revisiones/ronda-1.md](revisiones/ronda-1.md) |
 
-| 2 | `bfbd9e5eb0ef7697ea351708f5c2b6163f174cc5` | 4 abiertos | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
+| 2 | `bfbd9e5eb0ef7697ea351708f5c2b6163f174cc5` | 4 históricos | [revisiones/ronda-2.md](revisiones/ronda-2.md) |
+| 3 | `0aa411eb6731c8113718cc363190ad24d76d6820` | 2 bloqueantes vigentes | [revisiones/ronda-3.md](revisiones/ronda-3.md) |
 
 ## Hallazgos
 
@@ -25,10 +26,11 @@
 |---|---|---|
 | PR359-H01 | Consulta y sección de viajes activos faltantes | Arreglado-sin-verificar |
 | PR359-H02 | Tests RED/GREEN y E2E faltantes | Parcial |
-| PR359-H03 | Refetch Realtime no probado mediante evento | Abierto |
-| PR359-H04 | E2E incompleto/no ejecutado | Abierto |
-| PR359-H05 | Fallo de drops ignorado | Abierto |
-| PR359-H06 | Monto multi-drop ambiguo | Abierto |
+| PR359-H03 | Refetch Realtime no probado mediante evento | Arreglado-sin-verificar |
+| PR359-H04 | E2E incompleto/no ejecutado | Parcial (ejecución pendiente) |
+| PR359-H05 | Fallo de drops ignorado | Arreglado-sin-verificar |
+| PR359-H06 | Monto multi-drop ambiguo | Arreglado-sin-verificar |
+| PR359-H07 | E2E recurre a la primera oferta por selector inválido | Abierto |
 
 [Datos estructurados](hallazgos.jsonl) · [Evidencia](evidencia/comandos.md) · [Lecciones](lecciones.md)
 
@@ -38,4 +40,4 @@
 
 ## Pendiente
 
-Corregir bloqueantes H03-H06; E2E Preview real y revisión independiente ronda 3 sobre nuevo SHA. No se autoriza merge ni aprobación con esta ronda.
+Corregir H07, obtener E2E Preview real para H04, nueva revisión independiente ronda 4. Mantener Draft y no mergear. No se autoriza merge ni aprobación con esta ronda.
