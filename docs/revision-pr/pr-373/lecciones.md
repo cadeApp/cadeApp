@@ -34,3 +34,14 @@ No promover reglas a `AGENTS.md` automáticamente por una sola PR. La demostraci
 **Origen: H10; P06.** El mismo resultado SQL contiene `hasMore` pero `runSweep` realiza solo una llamada con limit 200. El cron diario puede postergar solicitudes si hay más de 200 pendientes. **Regla:** testear explícitamente lotes 201/401 y establecer presupuesto temporal/acotado que no haga spin cuando `SKIP LOCKED` informa pendientes bloqueados, devolviendo un estado claro de continuación.
 
 No promover reglas de una sola revisión automáticamente a AGENTS.md. Sin mutaciones independientes locales verificadas: el resultado CI fallido es evidencia observada, no un RED provocado por el revisor.
+
+## Ronda 3 — `f30193d6c633589390b22276cbc09a3bf7d31d2c`
+
+### pr-373/AG-83 — Si el runner aborta antes de los casos críticos, los 41 PASS previos no prueban rollback
+**H11; P15.** El archivo pgTAP registra 41 subtests exitosos y luego `ERROR: function like(text, unknown, unknown) does not exist` justo al entrar a los fallos forzados. **Regla propuesta**: leer último test ejecutado, status del proceso y resultado completo antes de afirmar cobertura del DoD. El objetivo de una prueba no ejecutada no es verde. Verificar la propia API del framework de tests (en SQL, `LIKE` es operador).
+
+### pr-373/AG-84 — 100% de assertions PASS no significa cumplir la política de coverage
+**H12; P08.** Vitest reporta 2347/2347 PASS y mismo job termina FAILURE por `rpc-fake.ts` 89,94 % ramas, bajo mínimo 90 %. **Regla propuesta:** tratar el estado de coverage como parte del resultado unit; cubrir ramas semánticamente importantes del código nuevo, medir mutación RED independiente y no reducir thresholds por comodidad.
+
+### Observación de coordinación
+El test de concurrencia mejora su detección de errores, pero sin integrarlo al runner no genera evidencia de CI. Las modificaciones de alcance para workflow y master-plan son decisiones a resolver por Lautaro073: están comparadas y recomendadas en `revisiones/ronda-3.md`. No extender en silencio alcance autorizado.

@@ -122,3 +122,48 @@ node docs/revision-pr/analizar.mjs verificacion
 4. Con >200 solicitudes vencidas, `runSweep` debe avanzar por batches hasta presupuesto sin ignorar `hasMore`; el counter y los IDs nunca cuentan filas no actualizadas; sin bucle infinito ante locked-only.
 5. Romper `rpc('reconcile_expired_requests_cron')` en el mock de route.test: fixture debe hacer fallar el HTTP 200 e incluir un caso 500 por `{error}`; prohibido forzar `GET` a 200 o suprimir assertions.
 6. Eliminar el helper SQL y asegurar pgTAP RED (sin falsos checks de presencia por texto); cubrir concurrencia real en DB con su shell CI y resultados explícitos.
+
+## Ronda 3 · SHA inspeccionado `f30193d6c633589390b22276cbc09a3bf7d31d2c`
+
+**Consultas efectivas del revisor:** GitHub compare `ddf6524...f30193d` (1 commit, 7 rutas), PR metadata y body, archivos de `supabase/migrations`, `supabase/tests`, `src/server/cron`, `src/app/api/cron/sweep/route.test.ts`, GitHub Actions CI `38761492563` en el HEAD exacto. No se ejecutaron `git`, `node`, `vitest`, `psql`, `docker` ni mutaciones localmente (no hay clon; GitHub DNS inaccesible en este contenedor); sólo consultas de archivos y resultados CI vía conector.
+
+**Run [CI 38761492563](https://github.com/cadeApp/cadeApp/actions/runs/38761492563):**
+- `lint` y `audit` SUCCESS.
+- `typecheck` FAILURE `src/server/cron/sweep.ts:79` TS2345, nombre de RPC cron no existe en types.
+- `build` FAILURE por el mismo tipo.
+- `unit` FAIL de cobertura **después** de `Test Files 133 passed / Tests 2347 passed`: `rpc-fake.ts` branches 89.94% versus 90%.
+- `db-tests` FAIL: `supabase/tests/cc026_reconcile_expired_requests.sql:276` `ERROR function like(text, unknown, unknown) does not exist`. El archivo `Tests: 41 Failed: 0` **no es PASS**, abortó tras el caso 41.
+- `approval-policy` FAIL; Vercel FAIL; `bundle-budget` SKIPPED; `Supabase Preview` SKIPPED; sin E2E Preview verde observado.
+- T-366 issue #355 estaba `en-curso` incorrectamente; vuelto a `bloqueada` manteniendo responsable KiraK72.
+
+**Reproducciones solicitadas al autor, no ejecutadas por revisor:**
+```bash
+pnpm supabase test db supabase/tests/cc026_reconcile_expired_requests.sql
+pnpm exec vitest run src/domain/domain.test.ts src/server/rpc/requests.test.ts src/server/cron/sweep.test.ts src/app/api/cron/sweep/route.test.ts
+pnpm test
+pnpm typecheck && pnpm lint
+# En CI db-tests, tras autorización de scope:
+DB_CONTAINER="$DB_CONTAINER" node supabase/tests/integration/cc026_reconcile_expired_requests.mjs
+# Tras migración en entorno local de generación autorizado, NO editar tipos a mano:
+pnpm db:types --local
+git diff --exit-code -- src/types/database.types.ts
+node docs/revision-pr/analizar.mjs verificacion
+git diff --check
+```
+
+**Script de mutación RED propuesto, NO EJECUTADO (no se declara GREEN):**
+```js
+// test de mutación en memoria con copia del código fuente en /tmp fuera de la rama,
+// a ejecutar por revisor con clon disponible, sin cambiar tests/expectations:
+const mutations = [
+  { file: 'src/domain/testing/rpc-fake.ts', from: 'request.merchantId === actor.userId &&', to: 'true &&' },
+  { file: 'src/domain/testing/rpc-fake.ts', from: 'request.acceptedOfferId === null &&', to: 'true &&' },
+  { file: 'src/domain/testing/rpc-fake.ts', from: 'eligible.slice(0, 50)', to: 'eligible' },
+];
+for (const m of mutations) {
+  // Harness requerido: compilar código con transformación en memoria + inyectar
+  // en Vitest o ejecutar un worktree efímero sin tocar el source original;
+  // cada caso se registra RED → restaurar original → GREEN.
+  // No confundir este diseño con una mutación independiente ejecutada.
+}
+```
