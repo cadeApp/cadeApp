@@ -272,6 +272,41 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(callBtn.getAttribute('href')).toBe('tel:3865222222');
     });
 
+    it('T-361: repartidor asignado tiene acceso a WhatsApp "Avisar a mi cliente" con texto pre-retiro en matched', () => {
+      render(<TripCourierView trip={baseTrip} />);
+
+      const waCustomerLink = screen.getByRole('link', { name: /Avisar a mi cliente/i });
+      expect(waCustomerLink).toBeDefined();
+      expect(waCustomerLink.getAttribute('href')).toContain('5493865123456');
+      const decodedText = decodeURIComponent(waCustomerLink.getAttribute('href') ?? '');
+      expect(decodedText).toContain('Carlos Benítez');
+      expect(decodedText).toContain('Ya tengo asignado tu pedido');
+      expect(decodedText.toLowerCase()).not.toContain('en camino');
+      expect(decodedText).not.toContain('REQ-1234');
+    });
+
+    it('T-361: en in_transit el repartidor tiene WhatsApp al cliente avisando que está en camino', () => {
+      const inTransitTrip: TripDetails = { ...baseTrip, status: 'in_transit' };
+      render(<TripCourierView trip={inTransitTrip} />);
+
+      const waCustomerLink = screen.getByRole('link', { name: /Avisar a mi cliente/i });
+      expect(waCustomerLink).toBeDefined();
+      const decodedText = decodeURIComponent(waCustomerLink.getAttribute('href') ?? '');
+      expect(decodedText).toContain('Carlos Benítez');
+      expect(decodedText).toContain('estoy en camino');
+      expect(decodedText).not.toContain('REQ-1234');
+    });
+
+    it('T-361: en multi-drop cada entrega tiene su propio enlace de WhatsApp al cliente asignado', () => {
+      render(<TripCourierView trip={multiDropTrip} />);
+
+      const waDrop1 = screen.getByRole('link', { name: /Avisar a Ana/i });
+      expect(waDrop1.getAttribute('href')).toContain('5493865111111');
+
+      const waDrop2 = screen.getByRole('link', { name: /Avisar a Beto/i });
+      expect(waDrop2.getAttribute('href')).toContain('5493865222222');
+    });
+
     it('muestra tarjeta de cobro en mano destacada: $ 1.800 en Efectivo con cambio de $ 5.000', () => {
       render(<TripCourierView trip={baseTrip} />);
 
