@@ -90,3 +90,93 @@ node docs/revision-pr/analizar.mjs verificacion
 ```
 
 E2E: flujo normal Preview de la PR y verificar su HEAD exacto, job Chromium completo, global-settings y cleanup; no disparar workflows manuales. Guardar salidas resumidas y redactar nueva ronda sin reescribir esta.
+
+## Ronda 2 (2026-10-16) — Batería **independiente** en memoria sobre SHA `99e3b2a`
+
+**Método y resultado real:** El revisor obtuvo los archivos fuente exactos del SHA por GitHub conectado. Evaluó mediante JavaScript los cuerpos originales de `buildLegUrl`, `buildNavigationLegs`, `computeRouteBounds` y `RouteBoundsFitter` tras retirar **únicamente anotaciones TypeScript**; se inyectaron el serializador de Maps (igual a `maps.ts`), `useMap` y `React.useEffect` de prueba. No modificó ningún archivo ni runner. La batería NO es de autor, ni ejecuta UI Next completa. Los controles base fueron GREEN y las nueve mutaciones propias RED:
+- Navigation GREEN; mutación MAX_WAYPOINTS 3→4 RED `mas de 3 waypoints`; frontera `start=end+1` RED `se pierde o duplica una parada`; longitud sin límite RED `tramo manual no representado`; URL demasiado larga aceptada RED `tramo manual no representado`.
+- Bounds GREEN; mutación norte máximo→mínimo RED `extremos no cubiertos`; span mínima→0 RED `coincidentes sin margen`.
+- Fitter con mapa GREEN, sin mapa GREEN; mutaciones eliminar fitBounds, invertir norte/sur y padding 32→0 RED `no ajusta cámara con bounds completos y padding`.
+
+### Harness completo para reproducir en un clon (solo lectura)
+
+Los resultados se obtuvieron ejecutando los mismos cuerpos reales con mutaciones en memoria; el siguiente script reconstruye la batería desde `git show` en un clon.
+
+```bash
+cat > /tmp/pr386-r2-invariants.mjs <<'NODE'
+import { execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
+const sha=process.argv[2]||'99e3b2ab097326625da4d58f59718976eb643c96';
+const read=p=>execFileSync('git',['show',sha+':'+p],{encoding:'utf8'});
+const r=read('src/features/trips/route-points.ts'),m=read('src/features/trips/components/trip-route-map.tsx');
+let nav=r.slice(r.indexOf('function buildLegUrl('))
+.replace('function buildLegUrl(stops: readonly RouteStop[]): string {','function buildLegUrl(stops) {')
+.replace('export function buildNavigationLegs(stops: readonly RouteStop[]): NavigationLeg[] {','function buildNavigationLegs(stops) {')
+.replace('const legs: NavigationLeg[] = [];','const legs = [];')
+.replace('let leg: NavigationLeg | null = null;','let leg = null;');
+if(!nav.includes('function buildNavigationLegs(stops)'))throw Error('cambio inesperado de firma nav');
+const makeNav=(code,max=3,len=2048)=>new Function('MAX_NAVIGATION_WAYPOINTS','MAX_NAVIGATION_URL_LENGTH','toUrlEndpoint','buildGoogleMapsDirectionsUrl',code+'; return buildNavigationLegs')(max,len,s=>s.coordinate??s.address,({origin,destination,waypoints})=>{
+ const ser=v=>typeof v==='string'?v:v.lat+','+v.lng;
+ let url='https://www.google.com/maps/dir/?api=1&origin='+encodeURIComponent(ser(origin))+'&destination='+encodeURIComponent(ser(destination));
+ if(waypoints?.length)url+='&waypoints='+encodeURIComponent(waypoints.map(ser).join('|'));
+ return url;
+});
+const make=(n,addr=i=>'Dirección '+i+' Aguilares')=>Array.from({length:n+1},(_,i)=>({label:i?'Entrega '+i:'Retiro',address:addr(i),coordinate:null}));
+function navInvariant(fn){
+ const legs=fn(make(9));
+ const ordered=legs.flatMap((leg,i)=>(i?leg.stops.slice(1):leg.stops)).map(s=>s.label);
+ assert.deepEqual(ordered,make(9).map(s=>s.label),'se pierde o duplica una parada');
+ assert.ok(legs.every(l=>l.stops.length<=5),'más de 3 waypoints');
+ assert.ok(legs.every(l=>l.url===null||l.url.length<=2048),'URL supera 2048');
+ assert.equal(fn(make(1,()=> 'Á'.repeat(200)))[0].url,null,'tramo manual no representado');
+}
+const bs=m.slice(m.indexOf('function computeRouteBounds('),m.indexOf('/**\n * Encuadra el mapa',m.indexOf('function computeRouteBounds('))).replace('function computeRouteBounds(points: readonly RouteCoordinate[]): RouteBounds | null {','function computeRouteBounds(points) {');
+if(!bs.includes('function computeRouteBounds(points)'))throw Error('firma bounds cambiada');
+const buildBounds=(src,min=0.002)=>new Function('MIN_ROUTE_BOUNDS_SPAN_DEG',src+'; return computeRouteBounds')(min);
+function boundsInvariant(fn){
+ const b=fn([{lat:-27.48,lng:-65.64},{lat:-27.38,lng:-65.58}]);
+ assert.ok(b.north>=-27.38&&b.south<=-27.48&&b.east>=-65.58&&b.west<=-65.64,'extremos no cubiertos');
+ const x=fn([{lat:-27.43,lng:-65.61},{lat:-27.43,lng:-65.61}]);
+ assert.ok(x.north-x.south>=0.0019&&x.east-x.west>=0.0019,'coincidentes sin margen');
+}
+const fitter=m.slice(m.indexOf('function RouteBoundsFitter('),m.indexOf('export interface TripRouteMapDrop')).replace('function RouteBoundsFitter({ bounds }: { bounds: RouteBounds }) {','function RouteBoundsFitter({ bounds }) {');
+if(!fitter.includes('function RouteBoundsFitter({ bounds })'))throw Error('firma fitter cambiada');
+function fitterInvariant(source,withMap){
+ const calls=[],map=withMap?{fitBounds:(...args)=>calls.push(args)}:null;
+ const comp=new Function('useMap','React','ROUTE_BOUNDS_PADDING_PX',source+'; return RouteBoundsFitter')(()=>map,{useEffect:fn=>fn()},32);
+ comp({bounds:{north:-27.38,south:-27.48,east:-65.58,west:-65.645}});
+ if(withMap)assert.deepEqual(calls,[[{north:-27.38,south:-27.48,east:-65.58,west:-65.645},32]],'no ajusta cámara con bounds completos y padding');
+ else assert.equal(calls.length,0,'fitBounds sin mapa');
+}
+let red=0,green=0;
+function check(name,fn,wantRed=false){
+ try{fn(); if(wantRed)throw Error('NO RED: mutación quedó verde'); green++;console.log('GREEN '+name);}
+ catch(e){if(!wantRed)throw e; red++;console.log('RED '+name+': '+e.message);}
+}
+check('Navegación original',()=>navInvariant(makeNav(nav)));
+check('Navegación M1 waypoints 3->4',()=>navInvariant(makeNav(nav,4)),true);
+check('Navegación M2 se pierde frontera',()=>navInvariant(makeNav(nav.replace('start = end;','start = end + 1;'))),true);
+check('Navegación M3 se quita límite URL',()=>navInvariant(makeNav(nav.replace('if (url.length <= MAX_NAVIGATION_URL_LENGTH) {','if (true) {'))),true);
+check('Navegación M4 enlace manual inválido',()=>navInvariant(makeNav(nav.replace('leg = { stops: legStops, url: null };','leg = { stops: legStops, url };'))),true);
+check('Bounds originales',()=>boundsInvariant(buildBounds(bs)));
+check('Bounds M5 norte min',()=>boundsInvariant(buildBounds(bs.replace('Math.max(...lats)','Math.min(...lats)'))),true);
+check('Bounds M6 sin margen',()=>boundsInvariant(buildBounds(bs,0)),true);
+check('Fitter original con mapa',()=>fitterInvariant(fitter,true));
+check('Fitter original sin mapa',()=>fitterInvariant(fitter,false));
+check('Fitter M7 sin fitBounds',()=>fitterInvariant(fitter.replace('map.fitBounds({ north, south, east, west }, ROUTE_BOUNDS_PADDING_PX);','/* sin fitBounds */'),true),true);
+check('Fitter M8 norte invertido',()=>fitterInvariant(fitter.replace('map.fitBounds({ north, south, east, west }, ROUTE_BOUNDS_PADDING_PX);','map.fitBounds({north:south,south:north,east,west}, ROUTE_BOUNDS_PADDING_PX);'),true),true);
+check('Fitter M9 sin padding',()=>fitterInvariant(fitter.replace('map.fitBounds({ north, south, east, west }, ROUTE_BOUNDS_PADDING_PX);','map.fitBounds({north,south,east,west}, 0);'),true),true);
+assert.equal(red,9);assert.equal(green,4);
+console.log('Resumen GREEN originales='+green+', RED mutaciones='+red);
+NODE
+node /tmp/pr386-r2-invariants.mjs 99e3b2ab097326625da4d58f59718976eb643c96
+```
+
+El arnés ha sido diseñado con los mismos reemplazos que los usados en la ejecución independiente del revisor; **no se afirma que este archivo de /tmp se haya probado contra un clon** porque desde aquí falla el DNS de github.com. No se hace commit de scripts al proyecto.
+
+### Evidencia CI real del SHA
+
+- `unit` job 117197915609: `Test Files 135 passed (135); Tests 2450 passed (2450)`.
+- `db-tests` job 117197915977: `Files=26, Tests=2341, Result: PASS`.
+- `build` job 117197915672: `src/app/layout.tsx` `next/font` `TypeError: Cannot read properties of null (reading '1')` → EXIT 1; bundle-budget omitido. [CI 38967624235](https://github.com/cadeApp/cadeApp/actions/runs/38967624235).
+- E2E `e2e-preview` run 38967749373, job 117198417323: checkout `99e3b2a`, `81 passed (19.7m)` Chromium incluido caso de cinco drops; `3 passed (1.0m)` global-settings. El `head_sha` de workflow por repository_dispatch es develop, **no** el SHA que se testeó. [E2E exact SHA](https://github.com/cadeApp/cadeApp/actions/runs/38967749373).
