@@ -214,6 +214,11 @@ export interface FakeSeedMerchant {
   readonly paidUntil?: string | null;
   readonly businessName?: string;
   readonly phone?: string | null;
+  readonly defaultPickupAddress?: string | null;
+  readonly defaultPickupZoneId?: string | null;
+  readonly defaultPickupLat?: number | null;
+  readonly defaultPickupLng?: number | null;
+  readonly notes?: string | null;
 }
 
 export interface FakeMerchantRecord {
@@ -222,6 +227,11 @@ export interface FakeMerchantRecord {
   paidUntil: string | null;
   businessName: string;
   phone: string | null;
+  defaultPickupAddress: string | null;
+  defaultPickupZoneId: string | null;
+  defaultPickupLat: number | null;
+  defaultPickupLng: number | null;
+  notes: string | null;
 }
 
 export interface FakeSeedDocument {
@@ -311,6 +321,7 @@ const DEFAULT_ACTOR: FakeActorContext = {
 };
 
 const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } = {
+  update_my_merchant_profile: ['merchant'],
   reconcile_expired_requests: ['merchant'],
   create_and_publish_multi_drop: ['merchant'],
   publish_request: ['merchant'],
@@ -572,12 +583,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   }
 
   function putMerchant(m: FakeSeedMerchant) {
+    const prev = merchants.get(m.merchantId);
     merchants.set(m.merchantId, {
       merchantId: m.merchantId,
       subscriptionStatus: m.subscriptionStatus,
       paidUntil: m.paidUntil ?? null,
-      businessName: m.businessName ?? 'Comercio',
-      phone: m.phone ?? '3865222222',
+      businessName: m.businessName ?? prev?.businessName ?? 'Comercio',
+      phone: m.phone ?? prev?.phone ?? '3865222222',
+      defaultPickupAddress: m.defaultPickupAddress ?? prev?.defaultPickupAddress ?? null,
+      defaultPickupZoneId: m.defaultPickupZoneId ?? prev?.defaultPickupZoneId ?? null,
+      defaultPickupLat: m.defaultPickupLat ?? prev?.defaultPickupLat ?? null,
+      defaultPickupLng: m.defaultPickupLng ?? prev?.defaultPickupLng ?? null,
+      notes: m.notes ?? prev?.notes ?? null,
     });
   }
 
@@ -759,6 +776,47 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     getCourier: (courierId) => couriers.get(courierId),
     getSettings: () => ({ ...settings }),
     triggerErrorCode: async (code) => err(code),
+
+    update_my_merchant_profile: (rawInput) =>
+      executeRpc('update_my_merchant_profile', rawInput, false, (input) => {
+        const merchant = merchants.get(actor.userId);
+        if (!merchant) {
+          return err('NOT_FOUND');
+        }
+
+        if (input.businessName !== undefined) {
+          merchant.businessName = input.businessName;
+        }
+        if (input.phone !== undefined) {
+          merchant.phone = input.phone;
+        }
+        if (input.defaultPickupAddress !== undefined) {
+          merchant.defaultPickupAddress = input.defaultPickupAddress;
+        }
+        if (input.defaultPickupZoneId !== undefined) {
+          merchant.defaultPickupZoneId = input.defaultPickupZoneId;
+        }
+        if (input.defaultPickupLat !== undefined) {
+          merchant.defaultPickupLat = input.defaultPickupLat;
+        }
+        if (input.defaultPickupLng !== undefined) {
+          merchant.defaultPickupLng = input.defaultPickupLng;
+        }
+        if (input.notes !== undefined) {
+          merchant.notes = input.notes;
+        }
+
+        return ok({
+          profileId: merchant.merchantId,
+          businessName: merchant.businessName,
+          phone: merchant.phone ?? null,
+          defaultPickupAddress: merchant.defaultPickupAddress ?? null,
+          defaultPickupZoneId: merchant.defaultPickupZoneId ?? null,
+          defaultPickupLat: merchant.defaultPickupLat ?? null,
+          defaultPickupLng: merchant.defaultPickupLng ?? null,
+          notes: merchant.notes ?? null,
+        });
+      }),
 
     reconcile_expired_requests: (rawInput) =>
       executeRpc('reconcile_expired_requests', rawInput, false, () => {
