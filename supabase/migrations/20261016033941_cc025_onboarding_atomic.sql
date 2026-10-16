@@ -27,7 +27,7 @@ declare
   v_existing_doc record;
   v_duplicate_check record;
 begin
-  -- 1. Autenticación y actor
+  -- 1. Autenticación y actor inicial
   if v_courier_id is null then
     raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
   end if;
@@ -40,12 +40,12 @@ begin
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
 
-  if v_consent_status is not null and v_consent_status <> 'active' then
+  if v_consent_status is distinct from 'active' then
     raise exception using errcode = 'P0001', message = 'CONSENT_REQUIRED';
   end if;
 
-  -- 2. Lock transaccional ordenado sobre couriers para serializar solicitudes concurrentes
-  select profile_id, vehicle_type into v_courier_rec
+  -- 2. Lock transaccional serializador sobre couriers (orden unificado CC-025)
+  select profile_id, status, vehicle_type into v_courier_rec
   from public.couriers
   where profile_id = v_courier_id
   for update;
@@ -54,7 +54,26 @@ begin
     raise exception using errcode = 'P0001', message = 'NOT_FOUND';
   end if;
 
-  -- 3. Validación de estructura del payload
+  -- 3. Elegibilidad del courier bajo el lock (H03)
+  if v_courier_rec.status in ('rejected', 'suspended') then
+    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
+  end if;
+
+  -- 4. Revalidación concurrente de perfil y consentimiento legal bajo snapshot actual (H04)
+  select role, consent_status into v_profile_role, v_consent_status
+  from public.profiles
+  where id = v_courier_id
+  for share;
+
+  if not found or v_profile_role is distinct from 'courier' then
+    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
+  end if;
+
+  if v_consent_status is distinct from 'active' then
+    raise exception using errcode = 'P0001', message = 'CONSENT_REQUIRED';
+  end if;
+
+  -- 5. Validación de estructura del payload
   if p_documents is null or jsonb_typeof(p_documents) <> 'array' or jsonb_array_length(p_documents) = 0 then
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
@@ -97,7 +116,7 @@ begin
     raise exception using errcode = 'P0001', message = 'VALIDATION_ERROR';
   end if;
 
-  -- 4. Detección de ambigüedad en documentos existentes (esquema expandido sin índice único)
+  -- 6. Detección de ambigüedad en documentos existentes (esquema expandido sin índice único)
   for v_duplicate_check in
     select kind, count(*) as cnt
     from public.courier_documents
@@ -109,7 +128,7 @@ begin
     raise exception using errcode = 'P0001', message = 'INTERNAL_ERROR';
   end loop;
 
-  -- 5. Procesamiento atómico bajo el lock
+  -- 7. Procesamiento atómico bajo el lock
   for v_doc_elem in select * from jsonb_array_elements(p_documents)
   loop
     v_kind_text := trim(v_doc_elem->>'kind');

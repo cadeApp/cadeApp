@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(28);
+select plan(37);
 
 -- Test actors
 create function pg_temp.test_courier() returns uuid language sql as $$
@@ -20,6 +20,18 @@ $$;
 
 create function pg_temp.orphan_courier() returns uuid language sql as $$
   select '00000000-0000-4000-8000-000000025b04'::uuid
+$$;
+
+create function pg_temp.rejected_courier() returns uuid language sql as $$
+  select '00000000-0000-4000-8000-000000025b05'::uuid
+$$;
+
+create function pg_temp.suspended_courier() returns uuid language sql as $$
+  select '00000000-0000-4000-8000-000000025b06'::uuid
+$$;
+
+create function pg_temp.approved_courier() returns uuid language sql as $$
+  select '00000000-0000-4000-8000-000000025b07'::uuid
 $$;
 
 create function pg_temp.act_as(p_actor_id uuid) returns void language plpgsql as $$
@@ -46,7 +58,10 @@ values
   (pg_temp.test_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb),
   (pg_temp.other_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'other_courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb),
   (pg_temp.test_merchant(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'merchant_b0@test.com', 'pwd', '{"role":"merchant"}'::jsonb),
-  (pg_temp.orphan_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'orphan_courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb)
+  (pg_temp.orphan_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'orphan_courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb),
+  (pg_temp.rejected_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'rejected_courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb),
+  (pg_temp.suspended_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'suspended_courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb),
+  (pg_temp.approved_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'approved_courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb)
 on conflict (id) do nothing;
 
 insert into public.profiles (id, role, display_name, phone, consent_status)
@@ -54,7 +69,10 @@ values
   (pg_temp.test_courier(), 'courier', 'Courier B0', '+543865000001', 'active'),
   (pg_temp.other_courier(), 'courier', 'Other Courier B0', '+543865000002', 'pending'),
   (pg_temp.test_merchant(), 'merchant', 'Merchant B0', '+543865000003', 'active'),
-  (pg_temp.orphan_courier(), 'courier', 'Orphan Courier B0', '+543865000004', 'active')
+  (pg_temp.orphan_courier(), 'courier', 'Orphan Courier B0', '+543865000004', 'active'),
+  (pg_temp.rejected_courier(), 'courier', 'Rejected Courier B0', '+543865000005', 'active'),
+  (pg_temp.suspended_courier(), 'courier', 'Suspended Courier B0', '+543865000006', 'active'),
+  (pg_temp.approved_courier(), 'courier', 'Approved Courier B0', '+543865000007', 'active')
 on conflict (id) do update set
   role = excluded.role,
   consent_status = excluded.consent_status;
@@ -62,7 +80,10 @@ on conflict (id) do update set
 insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
 values
   (pg_temp.test_courier(), 'pending', false, null, null),
-  (pg_temp.other_courier(), 'pending', false, null, null)
+  (pg_temp.other_courier(), 'pending', false, null, null),
+  (pg_temp.rejected_courier(), 'rejected', false, null, null),
+  (pg_temp.suspended_courier(), 'suspended', false, null, null),
+  (pg_temp.approved_courier(), 'approved', false, null, null)
 on conflict (profile_id) do nothing;
 
 delete from public.couriers where profile_id = pg_temp.orphan_courier();
@@ -383,6 +404,132 @@ select results_eq(
   $$,
   $$ values (6, 6) $$,
   'All 6 kinds must be present without duplicates'
+);
+
+-- 19. Courier status guard: rejected courier throws UNAUTHORIZED_ACTOR (H03)
+select pg_temp.act_as(pg_temp.rejected_courier());
+
+select throws_matching(
+  $$
+    select public.submit_courier_onboarding_documents(
+      jsonb_build_array(
+        jsonb_build_object('kind', 'dni_front', 'storage_path', 'courier/' || pg_temp.rejected_courier()::text || '/dni_front.jpg'),
+        jsonb_build_object('kind', 'dni_back', 'storage_path', 'courier/' || pg_temp.rejected_courier()::text || '/dni_back.jpg'),
+        jsonb_build_object('kind', 'selfie', 'storage_path', 'courier/' || pg_temp.rejected_courier()::text || '/selfie.jpg'),
+        jsonb_build_object('kind', 'avatar', 'storage_path', 'courier/' || pg_temp.rejected_courier()::text || '/avatar.jpg')
+      )
+    );
+  $$,
+  'UNAUTHORIZED_ACTOR',
+  'Rejected courier must throw UNAUTHORIZED_ACTOR'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.courier_documents
+    where courier_id = pg_temp.rejected_courier();
+  $$,
+  $$ values (0) $$,
+  'Rejected courier invocation must insert 0 rows'
+);
+
+-- 20. Courier status guard: suspended courier throws UNAUTHORIZED_ACTOR (H03)
+select pg_temp.act_as(pg_temp.suspended_courier());
+
+select throws_matching(
+  $$
+    select public.submit_courier_onboarding_documents(
+      jsonb_build_array(
+        jsonb_build_object('kind', 'dni_front', 'storage_path', 'courier/' || pg_temp.suspended_courier()::text || '/dni_front.jpg'),
+        jsonb_build_object('kind', 'dni_back', 'storage_path', 'courier/' || pg_temp.suspended_courier()::text || '/dni_back.jpg'),
+        jsonb_build_object('kind', 'selfie', 'storage_path', 'courier/' || pg_temp.suspended_courier()::text || '/selfie.jpg'),
+        jsonb_build_object('kind', 'avatar', 'storage_path', 'courier/' || pg_temp.suspended_courier()::text || '/avatar.jpg')
+      )
+    );
+  $$,
+  'UNAUTHORIZED_ACTOR',
+  'Suspended courier must throw UNAUTHORIZED_ACTOR'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.courier_documents
+    where courier_id = pg_temp.suspended_courier();
+  $$,
+  $$ values (0) $$,
+  'Suspended courier invocation must insert 0 rows'
+);
+
+-- 21. Courier status guard: approved courier submission succeeds (H03)
+select pg_temp.act_as(pg_temp.approved_courier());
+
+select lives_ok(
+  $$
+    select public.submit_courier_onboarding_documents(
+      jsonb_build_array(
+        jsonb_build_object('kind', 'dni_front', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/dni_front.jpg'),
+        jsonb_build_object('kind', 'dni_back', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/dni_back.jpg'),
+        jsonb_build_object('kind', 'selfie', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/selfie.jpg'),
+        jsonb_build_object('kind', 'avatar', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/avatar.jpg')
+      )
+    );
+  $$,
+  'Approved courier submission succeeds'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.courier_documents
+    where courier_id = pg_temp.approved_courier();
+  $$,
+  $$ values (4) $$,
+  'Approved courier submission must insert 4 rows'
+);
+
+-- 22. Coexistence reality: direct REST insert with distinct path bypasses Phase A RLS and is detected by RPC (H01)
+-- Under Phase A, only UNIQUE(storage_path) exists. A direct REST insert with an alternative storage_path
+-- passes courier_documents_insert_self policy and creates a second active row for the same kind.
+select lives_ok(
+  $$
+    insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)
+    values (
+      pg_temp.approved_courier(),
+      'dni_front',
+      'courier/' || pg_temp.approved_courier()::text || '/dni_front_alt_path.jpg',
+      'submitted',
+      true
+    );
+  $$,
+  'Direct REST insert with alternative path succeeds under Phase A RLS (bypassing RPC lock)'
+);
+
+select results_eq(
+  $$
+    select count(*)::integer
+    from public.courier_documents
+    where courier_id = pg_temp.approved_courier() and kind = 'dni_front';
+  $$,
+  $$ values (2) $$,
+  'Phase A RLS allows 2 rows for same kind when storage_path is distinct'
+);
+
+-- Subsequent call to the RPC detects the ambiguity and raises INTERNAL_ERROR
+select throws_matching(
+  $$
+    select public.submit_courier_onboarding_documents(
+      jsonb_build_array(
+        jsonb_build_object('kind', 'dni_front', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/dni_front.jpg'),
+        jsonb_build_object('kind', 'dni_back', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/dni_back.jpg'),
+        jsonb_build_object('kind', 'selfie', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/selfie.jpg'),
+        jsonb_build_object('kind', 'avatar', 'storage_path', 'courier/' || pg_temp.approved_courier()::text || '/avatar.jpg')
+      )
+    );
+  $$,
+  'INTERNAL_ERROR',
+  'Subsequent RPC invocation detects pre-existing duplicate kind and fails safely with INTERNAL_ERROR'
 );
 
 select * from finish();

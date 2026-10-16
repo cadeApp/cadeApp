@@ -8,17 +8,27 @@
  *      sin duplicar filas (count = 4).
  *   2. Dos sesiones concurrentes con RUTAS DISTINTAS:
  *      La primera sesión adquiere el lock e inserta el lote A.
- *      La segunda sesión adquiere el lock a continuación, detecta la discrepancia de paths
- *      y rechaza de forma segura con VALIDATION_ERROR.
+ *      La segunda sesión espera determinísticamente en pg_locks el lock couriers FOR UPDATE.
+ *      Tras commit de la primera, la segunda re-evalúa bajo snapshot committed, detecta discrepancia
+ *      de paths y rechaza de forma segura con VALIDATION_ERROR.
  *      La base de datos mantiene exactamente 1 fila por kind (0 duplicados).
- *   3. Diagnóstico de convivencia con escritores directos / legacy:
- *      Demuestra el comportamiento durante la ventana de transición y la necesidad
- *      del gate operativo de despliegue antes de la Fase C.
- *   4. Control de mutación RED->GREEN (--mutation-check):
+ *   3. Diagnóstico de convivencia con escritores directos / legacy (H01):
+ *      Demuestra el comportamiento durante la ventana de transición previa a Fase C:
+ *      - Direct INSERT con misma ruta colisiona con UNIQUE(storage_path) (23505).
+ *      - Direct INSERT con ruta alternativa entra bajo RLS de Fase A (bypass REST),
+ *        creando una fila duplicada por falta de índice parcial (que pertenece a Fase C).
+ *      - La invocación posterior de la RPC detecta la ambigüedad y rechaza con INTERNAL_ERROR,
+ *        evidenciando la necesidad del gate operativo de despliegue antes de Fase C.
+ *   4. Revalidación concurrente de perfil y consentimiento durante espera de lock (H04):
+ *      Demuestra que si el consentimiento legal es revocado mientras la sesión espera el lock
+ *      sobre couriers, la revalidación for share bajo el snapshot actualizado detecta el cambio
+ *      y rechaza con CONSENT_REQUIRED (0 inserciones).
+ *   5. Control de mutación RED->GREEN (--mutation-check) (H02):
+ *      Oráculo estricto sin capturas genéricas de error.
  *      Mutar la RPC eliminando "for update" sobre couriers permite que dos sesiones con
- *      paths distintos lean simultáneamente en vacío y ambas inserten, generando duplicados
- *      de kinds en la base expandida (RED confirmado).
- *      Restaurar "for update" serializa la ejecución y restablece el estado PASS (GREEN confirmado).
+ *      paths distintos ejecuten concurrentemente sin esperar, insertando ambas sus lotes
+ *      y generando 8 filas en DB (RED confirmado por count = 8).
+ *      Restaurar "for update" serializa la ejecución y restablece el estado PASS (GREEN confirmado por count = 4).
  */
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -48,6 +58,22 @@ function runSql(sql) {
     throw new Error(`[CC-025-B0] SQL error: ${res.stderr || res.stdout}\nQuery: ${sql}`);
   }
   return res.stdout.trim();
+}
+
+async function waitForBlockedSession(queryMarker, timeoutMs = 15_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const blockedCount = runSql(`
+      select count(*)
+      from pg_locks l
+      join pg_stat_activity a on l.pid = a.pid
+      where not l.granted
+        and a.query like '%${queryMarker}%';
+    `);
+    if (parseInt(blockedCount, 10) > 0) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error(`Timeout esperando que el lock sea bloqueado para query conteniendo "${queryMarker}"`);
 }
 
 class PsqlSession {
@@ -118,19 +144,22 @@ class PsqlSession {
   }
 }
 
-function createCourierFixture() {
+function createCourierFixture(options = {}) {
   const courierId = crypto.randomUUID();
+  const consentStatus = options.consentStatus || 'active';
+  const courierStatus = options.status || 'pending';
+
   runSql(`
     insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
     values ('${courierId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'courier_${courierId.slice(0, 8)}@test.com', 'pwd', '{"role":"courier"}'::jsonb)
     on conflict (id) do nothing;
 
     insert into public.profiles (id, role, consent_status)
-    values ('${courierId}', 'courier', 'active')
-    on conflict (id) do update set role = 'courier', consent_status = 'active';
+    values ('${courierId}', 'courier', '${consentStatus}')
+    on conflict (id) do update set role = 'courier', consent_status = '${consentStatus}';
 
     insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
-    values ('${courierId}', 'pending', false, 'moto', 'B001')
+    values ('${courierId}', '${courierStatus}', false, 'moto', 'B001')
     on conflict (profile_id) do nothing;
   `);
   return courierId;
@@ -220,8 +249,8 @@ async function testDistinctPathsConcurrency() {
       commit;
     `);
 
-    // Damos un tiempo breve para asegurar que S2 entra y queda en espera del lock
-    await new Promise((r) => setTimeout(r, 200));
+    // Esperar de forma determinística en pg_locks hasta que S2 quede en espera del lock
+    await waitForBlockedSession('submit_courier_onboarding_documents');
 
     // S1 comitea payload A
     session1.send('commit;');
@@ -251,11 +280,11 @@ async function testDistinctPathsConcurrency() {
 }
 
 async function testCoexistenceDirectInsert() {
-  console.log('[CC-025-B0] Test 3: Convivencia con inserciones directas / legacy...');
+  console.log('[CC-025-B0] Test 3: Convivencia con inserciones directas / legacy (H01)...');
   const courierId = createCourierFixture();
   const payload = makePayload(courierId, 'b0');
 
-  // 1. Escritura vía RPC atómica B0
+  // 1. Escritura inicial vía RPC atómica B0
   runSql(`
     begin;
     set local role authenticated;
@@ -264,7 +293,7 @@ async function testCoexistenceDirectInsert() {
     commit;
   `);
 
-  // 2. Intento de reintento directo por storage_path colisiona con UNIQUE(storage_path)
+  // 2. Intento de reintento directo con misma ruta colisiona con UNIQUE(storage_path)
   const directConflict = spawnSync(
     'docker',
     [
@@ -286,79 +315,221 @@ async function testCoexistenceDirectInsert() {
     'Inserción directa con misma ruta debe colisionar con 23505'
   );
 
-  console.log('  -> OK: Convivencia validada; colisión 23505 preservada en inserciones directas');
+  // 3. H01: Convivencia real y bypass de REST con ruta alternativa bajo RLS de Fase A
+  // La Fase A solo posee UNIQUE(storage_path) y no el índice único parcial de Fase C.
+  // Un cliente REST con storage_path alternativo ingresa a la DB sin pasar por el lock de la RPC.
+  const altInsert = spawnSync(
+    'docker',
+    [
+      'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
+      `
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)
+        values ('${courierId}', 'dni_front', 'courier/${courierId}/dni_front_b0_alt.jpg', 'submitted', true);
+        commit;
+      `
+    ],
+    { encoding: 'utf8' }
+  );
+
+  assert.equal(altInsert.status, 0, `Inserción directa con ruta alternativa debe permitirse bajo RLS Fase A: ${altInsert.stderr}`);
+
+  const dniFrontCount = parseInt(
+    runSql(`select count(*) from public.courier_documents where courier_id = '${courierId}' and kind = 'dni_front'`),
+    10
+  );
+  assert.equal(dniFrontCount, 2, `Se esperan 2 filas de dni_front tras el bypass REST con ruta alternativa, obtenido ${dniFrontCount}`);
+
+  // 4. Invocación subsecuente de la RPC detecta la ambigüedad generada por REST y rechaza con INTERNAL_ERROR
+  const rpcAmbiguityCheck = spawnSync(
+    'docker',
+    [
+      'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
+      `
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        select public.submit_courier_onboarding_documents('${payload}'::jsonb);
+        commit;
+      `
+    ],
+    { encoding: 'utf8' }
+  );
+
+  assert(
+    rpcAmbiguityCheck.stderr.includes('INTERNAL_ERROR'),
+    `La RPC debe detectar la ambigüedad y fallar con INTERNAL_ERROR: ${rpcAmbiguityCheck.stderr}`
+  );
+
+  console.log('  -> OK: Convivencia y límites de B0 comprobados: REST colisiona en 23505 para misma ruta; ruta distinta entra bajo Fase A y RPC rechaza con INTERNAL_ERROR');
+}
+
+async function testConsentRevocationWhileWaitingForLock() {
+  console.log('[CC-025-B0] Test 4: Revalidación concurrente de perfil/consentimiento durante espera de lock (H04)...');
+  const courierId = createCourierFixture({ consentStatus: 'active' });
+  const payload = makePayload(courierId, 'consent_race');
+
+  const s1 = new PsqlSession('S1_LOCK_HOLDER');
+  const s2 = new PsqlSession('S2_WAITING_RPC');
+
+  try {
+    // S1 adquiere lock exclusivo sobre couriers
+    s1.send(`
+      begin;
+      select profile_id from public.couriers where profile_id = '${courierId}' for update;
+      select 'S1_LOCK_HELD';
+    `);
+    await s1.waitFor('S1_LOCK_HELD');
+
+    // S2 invoca la RPC. Lee profile inicialmente (consent='active'), pero se bloquea esperando couriers FOR UPDATE
+    s2.send(`
+      begin;
+      set local role authenticated;
+      select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+      select public.submit_courier_onboarding_documents('${payload}'::jsonb);
+      select 'S2_SHOULD_NOT_REACH';
+      commit;
+    `);
+
+    // Esperar a que S2 esté determinísticamente bloqueado en pg_locks
+    await waitForBlockedSession('submit_courier_onboarding_documents');
+
+    // Mientras S2 espera el lock, se revoca el consentimiento en profiles
+    runSql(`update public.profiles set consent_status = 'pending' where id = '${courierId}';`);
+
+    // S1 libera el lock
+    s1.send('rollback;');
+
+    // S2 adquiere el lock, revalida profiles FOR SHARE, detecta consent_status <> 'active' y falla con CONSENT_REQUIRED
+    await s2.waitFor('CONSENT_REQUIRED');
+
+    // Comprobar que en la base de datos se insertaron 0 documentos
+    const count = parseInt(runSql(`select count(*) from public.courier_documents where courier_id = '${courierId}'`), 10);
+    assert.equal(count, 0, `Esperado 0 documentos insertados tras revocación de consentimiento, obtenido ${count}`);
+
+    console.log('  -> OK: Revocación concurrente de consentimiento durante espera de lock detectada y rechazada con CONSENT_REQUIRED (0 inserts)');
+  } finally {
+    await s1.close();
+    await s2.close();
+  }
 }
 
 async function runMutationCheck() {
-  console.log('[CC-025-B0] Test 4: Control de mutación RED->GREEN (--mutation-check)...');
+  console.log('[CC-025-B0] Test 5: Control de mutación RED->GREEN (--mutation-check) (H02)...');
   const originalSql = fs.readFileSync(migrationPath, 'utf8');
 
   // Mutación: eliminar "for update" de la sentencia de lock sobre couriers
   const mutatedSql = originalSql.replace(
-    'where profile_id = v_courier_id\n  for update;',
-    'where profile_id = v_courier_id;'
+    /select profile_id, status, vehicle_type into v_courier_rec\s+from public\.couriers\s+where profile_id = v_courier_id\s+for update;/g,
+    `select profile_id, status, vehicle_type into v_courier_rec
+  from public.couriers
+  where profile_id = v_courier_id;`
   );
 
-  assert.notEqual(originalSql, mutatedSql, 'La mutación debe alterar la sentencia for update');
+  assert.notEqual(originalSql, mutatedSql, 'La mutación debe alterar la sentencia for update sobre couriers');
 
   try {
-    // 1. Aplicar mutación en PostgreSQL
+    // 1. Aplicar mutación en PostgreSQL (elimina for update sobre couriers)
     runSql(mutatedSql);
     console.log('  -> Mutación aplicada: "for update" removido de couriers lock');
 
-    // 2. Probar que dos sesiones concurrentes con paths distintos ahora interleavenean y fallan o generan duplicados
-    let mutationCaught = false;
+    // 2. Demostrar RED con oráculo estricto: dos sesiones concurrentes con paths distintos leen en vacío simultáneamente
+    // y ambas insertan sus lotes, generando duplicados de kinds (count = 8)
+    const courierIdRed = createCourierFixture();
+    const payloadA = makePayload(courierIdRed, 'mut_a');
+    const payloadB = makePayload(courierIdRed, 'mut_b');
+
+    const s1 = new PsqlSession('MUT_S1');
+    const s2 = new PsqlSession('MUT_S2');
+
     try {
-      const courierId = createCourierFixture();
-      const payloadA = makePayload(courierId, 'mut_a');
-      const payloadB = makePayload(courierId, 'mut_b');
+      // S1 ejecuta la RPC pero no hace commit todavía
+      s1.send(`
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierIdRed}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        select public.submit_courier_onboarding_documents('${payloadA}'::jsonb);
+        select 'S1_MUT_INSERTED';
+      `);
+      await s1.waitFor('S1_MUT_INSERTED');
 
-      const s1 = new PsqlSession('MUT_S1');
-      const s2 = new PsqlSession('MUT_S2');
+      // S2 ejecuta la RPC concurrente con payloadB.
+      // Como no hay "for update", S2 no se bloquea, no ve los cambios de S1 (uncommitted en Read Committed)
+      // y también inserta sus 4 documentos
+      s2.send(`
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierIdRed}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        select public.submit_courier_onboarding_documents('${payloadB}'::jsonb);
+        select 'S2_MUT_INSERTED';
+        commit;
+      `);
+      await s2.waitFor('S2_MUT_INSERTED');
 
-      try {
-        // Enviar ambas en paralelo sin lock
-        s1.send(`
-          begin;
-          set local role authenticated;
-          select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
-          select pg_sleep(0.1);
-          select public.submit_courier_onboarding_documents('${payloadA}'::jsonb);
-          commit;
-        `);
+      // S1 hace commit
+      s1.send('commit;');
+      await s1.waitFor('COMMIT');
 
-        s2.send(`
-          begin;
-          set local role authenticated;
-          select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
-          select public.submit_courier_onboarding_documents('${payloadB}'::jsonb);
-          commit;
-        `);
-
-        await Promise.all([s1.waitFor('COMMIT'), s2.waitFor('COMMIT')]);
-
-        const count = parseInt(runSql(`select count(*) from public.courier_documents where courier_id = '${courierId}'`), 10);
-        if (count > 4) {
-          mutationCaught = true;
-          console.log(`  -> RED confirmado: sin "for update", se insertaron ${count} documentos (duplicados permitidos)`);
-        }
-      } finally {
-        await s1.close();
-        await s2.close();
-      }
-    } catch (err) {
-      mutationCaught = true;
-      console.log(`  -> RED confirmado por error de carrera: ${err.message}`);
+      // Verificar el estado de la base de datos: count = 8 (violación del invariante de unicidad por ausencia de serialización)
+      const countRed = parseInt(runSql(`select count(*) from public.courier_documents where courier_id = '${courierIdRed}'`), 10);
+      assert.equal(countRed, 8, `RED esperado: sin "for update", ambas sesiones debieron insertar generando 8 filas, obtenido ${countRed}`);
+      console.log(`  -> RED confirmado con oráculo estricto: sin "for update", se insertaron ${countRed} documentos (duplicados creados en DB)`);
+    } finally {
+      await s1.close();
+      await s2.close();
     }
-
-    assert(mutationCaught, 'El oráculo debe detectar la ausencia de "for update" bajo concurrencia');
 
     // 3. Restaurar migración original (GREEN)
     runSql(originalSql);
     console.log('  -> Restauración GREEN: RPC reinstalada con lock for update');
 
-    await testDistinctPathsConcurrency();
-    console.log('  -> GREEN confirmado tras restauración de for update');
+    // 4. Verificar GREEN con la misma interleaving: S2 debe bloquearse y fallar con VALIDATION_ERROR
+    const courierIdGreen = createCourierFixture();
+    const payloadGreenA = makePayload(courierIdGreen, 'green_a');
+    const payloadGreenB = makePayload(courierIdGreen, 'green_b');
+
+    const s1Green = new PsqlSession('GREEN_S1');
+    const s2Green = new PsqlSession('GREEN_S2');
+
+    try {
+      s1Green.send(`
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierIdGreen}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        select public.submit_courier_onboarding_documents('${payloadGreenA}'::jsonb);
+        select 'S1_GREEN_INSERTED';
+      `);
+      await s1Green.waitFor('S1_GREEN_INSERTED');
+
+      // S2 ejecuta con payloadB: con FOR UPDATE, debe bloquearse esperando el lock de couriers
+      s2Green.send(`
+        begin;
+        set local role authenticated;
+        select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierIdGreen}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
+        select public.submit_courier_onboarding_documents('${payloadGreenB}'::jsonb);
+        select 'S2_SHOULD_FAIL';
+        commit;
+      `);
+
+      // Esperar determinísticamente que S2 esté bloqueado
+      await waitForBlockedSession('submit_courier_onboarding_documents');
+
+      // S1 hace commit
+      s1Green.send('commit;');
+      await s1Green.waitFor('COMMIT');
+
+      // S2 unblocks, re-evalúa y rechaza con VALIDATION_ERROR
+      await s2Green.waitFor('VALIDATION_ERROR');
+
+      const countGreen = parseInt(runSql(`select count(*) from public.courier_documents where courier_id = '${courierIdGreen}'`), 10);
+      assert.equal(countGreen, 4, `GREEN esperado: con "for update", sólo el lote A se inserta y count es 4, obtenido ${countGreen}`);
+      console.log(`  -> GREEN confirmado con oráculo estricto: serialización restablecida, count = 4, 0 duplicados`);
+    } finally {
+      await s1Green.close();
+      await s2Green.close();
+    }
   } finally {
     // Garantizar restauración
     runSql(originalSql);
@@ -374,6 +545,7 @@ async function main() {
     await testIdenticalPathsConcurrency();
     await testDistinctPathsConcurrency();
     await testCoexistenceDirectInsert();
+    await testConsentRevocationWhileWaitingForLock();
   }
 
   console.log('[CC-025-B0] Todos los tests de concurrencia y atomicidad finalizaron EXITOSAMENTE.');
