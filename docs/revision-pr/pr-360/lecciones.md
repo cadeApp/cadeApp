@@ -37,3 +37,9 @@ No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
 - RED→GREEN de un mismo test sí quedó acreditado: run 38694202782 vs run 38945199224, conservando comprobación monetaria en la Card y después de reload.
 - El E2E del SHA de una PR desfasada no certifica automáticamente la combinación con nuevos cambios de develop. Nuevas modificaciones de WhatsApp/TripMerchantView y el E2E compartido justifican revalidar después de merge normal. Esto es riesgo hipotético, no defecto funcional confirmado.
 - Sin mutaciones independientes del revisor no se firma verificado_en_sha, aun con CI en verde.
+
+## Ronda 8 — Cancelaciones de cola y trazabilidad de HEAD
+
+- Un gate `resolve-preview SUCCESS` (identidad validada) junto con `e2e-preview CANCELLED` (cero pasos) es validación **no realizada**, no una falla de dominio ni un PASS; el status error conserva el bloqueo de merge.
+- T-327/#205 ya registra la decisión 5-A de P1 de aceptar que 1 running + 1 pending puede cancelar otros pendientes; no se abre cambio infra ni se interpreta automáticamente como bug de producto. Un re-run de un dispatch legítimo existente es distinto de inventar un workflow manual.
+- Composición de develop tras E2E verde anterior exige nuevo E2E. En esta ronda el código de T-359 permanece estable y CI unit/DB pasa, pero eso no sustituye el resultado real del navegador.

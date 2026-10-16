@@ -15,6 +15,7 @@
 | 5 | `e1e7e53ee1c50bdfa89468132ff5194d6b781860` | **Con bloqueo de validación E2E; sin cambios de código** | [ronda-5](revisiones/ronda-5.md) |
 | 6 | `ceb1161b07f1419992e764bbe17db9a28ea2fc2e` | **CON BLOQUEANTE R03: E2E real falla** | [ronda-6](revisiones/ronda-6.md) |
 | 7 | `6d2c433711ed7a8aa562dfd75099029edf82c888` | **R03 corregido; E2E en verde; pendiente revalidación con develop avanzado** | [ronda-7](revisiones/ronda-7.md) |
+| 8 | `fc5b0a0152b48c7d6716b3b0a0c975746e504ebc` | **Sin defectos nuevos de implementación por inspección; E2E nuevo cancelado tres veces** | [ronda-8](revisiones/ronda-8.md) |
 
 ## Hallazgos actuales
 
@@ -24,15 +25,15 @@
 | PR360-H02 | alto | arreglado-sin-verificar |
 | PR360-H03 | medio | arreglado-sin-verificar |
 | PR360-H04 | medio | arreglado-sin-verificar |
-| PR360-H05 | alto | arreglado-sin-verificar |
+| PR360-H05 | alto | parcial |
 | PR360-H06 | medio | arreglado-sin-verificar |
 | PR360-H07 | medio | arreglado-sin-verificar |
 | PR360-R01 | medio | arreglado-sin-verificar |
 | PR360-R02 | alto | arreglado-sin-verificar |
 | PR360-R03 | alto | arreglado-sin-verificar |
 
-**H05 y R03 tienen RED→GREEN real de Playwright:** el [run 38945199224](https://github.com/cadeApp/cadeApp/actions/runs/38945199224) pasó 76/76 Chromium y 3/3 global-settings sobre `6d2c4337`, incluida la aceptación concurrente con dos sesiones. **No ejecuté mutaciones independientes**: estados `arreglado-sin-verificar`, `verificado_en_sha` sigue null. GitHub indica mergeable:true, pero `develop` agregó 36 commits desde el merge cba78a29, incluyendo E2E main-flow, TripMerchantView y WhatsApp; falta probar el nuevo árbol integrado con develop actual antes del merge. Los checks y aprobación fueron verdes para el SHA inspeccionado; futuros commits pueden requerir nueva aprobación.
+**Ronda 8: la rama ya incorporó develop con merge normal** (`1c8182ed`) y su HEAD de autor es `fc5b0a01`. Los checks unit/DB/build/lint/typecheck/audit/bundle y `approval-policy` pasaron. **Pero el nuevo E2E no se ejecutó:** run [38951040659](https://github.com/cadeApp/cadeApp/actions/runs/38951040659), intentos 1–3 cancelados antes de cualquier paso Playwright; el commit status `e2e-preview=error` NO es PASS de producto. El E2E anterior [38945199224](https://github.com/cadeApp/cadeApp/actions/runs/38945199224) conserva valor histórico (76+3 PASS, SHA `6d2c4337`) pero no prueba la composición post-merge. H05 vuelve a `parcial` por validación actual pendiente; R03 sigue corregido por inspección, sin mutaciones independientes. GitHub `mergeable:true`; develop avanzó solo una confirmación posterior (`01054b14`) sin conflicto comprobado. No hacer merge hasta Playwright GREEN en HEAD actual/final.
 
-**Decisión humana B ya cerrada:** cancelled/expired como terminales seguros en el mismo detalle. **La revisión no aprueba ni mergea.** `approval-policy` pasó con aprobación explícita de Lautaro073 en el SHA examinado; nuevos commits podrían requerir renovarla.
+**Decisión humana B ya cerrada:** cancelled/expired como terminales seguros en el mismo detalle. **La revisión no aprueba ni mergea.** `approval-policy` pasó con aprobación explícita de Lautaro073 en SHA fc5b0a01; nuevos commits de revisión podrían requerir renovación.
 
 Ver [hallazgos.jsonl](hallazgos.jsonl), [lecciones.md](lecciones.md) y [evidencia/comandos.md](evidencia/comandos.md).
