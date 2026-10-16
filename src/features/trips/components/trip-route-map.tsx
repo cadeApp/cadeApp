@@ -5,6 +5,7 @@ import {
   APIProvider,
   Map as GoogleMap,
   AdvancedMarker,
+  Marker,
   Polyline,
   useApiLoadingStatus,
   APILoadingStatus,
@@ -12,7 +13,7 @@ import {
 import { AlertTriangle, ExternalLink, Map as MapIcon, MapPin, Store, WifiOff } from 'lucide-react';
 import { publicEnv } from '@/lib/env.public';
 import { cn } from '@/ui/cn';
-import { buildGoogleMapsDirectionsUrl } from '../maps';
+import { buildTripRoutePlan, type RouteCoordinate, type RouteStop } from '../route-points';
 
 export interface TripRouteMapDrop {
   readonly position: number;
@@ -22,11 +23,6 @@ export interface TripRouteMapDrop {
   readonly dropoffLng?: number | null;
   readonly status?: string;
 }
-
-export type TripRouteMapDropWithCoords = TripRouteMapDrop & {
-  readonly dropoffLat: number;
-  readonly dropoffLng: number;
-};
 
 export interface TripRouteMapProps {
   pickupAddress: string;
@@ -102,97 +98,58 @@ export function TripRouteMap({
     };
   }, []);
 
-  const dropsWithCoords = React.useMemo(() => {
-    if (!drops || drops.length === 0) return null;
-    const valid = drops.filter(
-      (d): d is TripRouteMapDropWithCoords =>
-        typeof d.dropoffLat === 'number' && typeof d.dropoffLng === 'number'
-    );
-    return valid.length > 0 ? valid : null;
-  }, [drops]);
+  const plan = React.useMemo(
+    () =>
+      buildTripRoutePlan({
+        pickupAddress,
+        pickupZoneName,
+        pickupLat,
+        pickupLng,
+        dropoffAddress,
+        dropoffZoneName,
+        dropoffLat,
+        dropoffLng,
+        drops,
+      }),
+    [
+      pickupAddress,
+      pickupZoneName,
+      pickupLat,
+      pickupLng,
+      dropoffAddress,
+      dropoffZoneName,
+      dropoffLat,
+      dropoffLng,
+      drops,
+    ]
+  );
 
-  const hasCoords =
-    pickupLat != null &&
-    pickupLng != null &&
-    (dropsWithCoords != null || (dropoffLat != null && dropoffLng != null));
+  // Puntos con coordenada válida en orden de recorrido. Solo se dibujan si el plan tiene todos los puntos.
+  const mappedStops = React.useMemo(
+    () =>
+      [plan.pickup, ...plan.drops].flatMap((stop) =>
+        stop.coordinate ? [{ stop, coordinate: stop.coordinate }] : []
+      ),
+    [plan]
+  );
 
-  const isMapAvailable = Boolean(apiKey) && isOnline && !apiLoadFailed && hasCoords;
+  const isMapAvailable = Boolean(apiKey) && isOnline && !apiLoadFailed && plan.canDrawMap;
 
   const mapCenter = React.useMemo(() => {
-    if (pickupLat != null && pickupLng != null) {
-      if (dropsWithCoords && dropsWithCoords.length > 0) {
-        const allLats = [pickupLat, ...dropsWithCoords.map((d) => d.dropoffLat!)];
-        const allLngs = [pickupLng, ...dropsWithCoords.map((d) => d.dropoffLng!)];
-        const avgLat = allLats.reduce((a, b) => a + b, 0) / allLats.length;
-        const avgLng = allLngs.reduce((a, b) => a + b, 0) / allLngs.length;
-        return {
-          lat: Number(avgLat.toFixed(6)),
-          lng: Number(avgLng.toFixed(6)),
-        };
-      }
-      if (dropoffLat != null && dropoffLng != null) {
-        return {
-          lat: Number(((pickupLat + dropoffLat) / 2).toFixed(6)),
-          lng: Number(((pickupLng + dropoffLng) / 2).toFixed(6)),
-        };
-      }
+    if (mappedStops.length === 0) {
+      return { lat: -27.4333, lng: -65.6167 }; // Aguilares Centro
     }
-    return { lat: -27.4333, lng: -65.6167 }; // Aguilares Centro
-  }, [pickupLat, pickupLng, dropsWithCoords, dropoffLat, dropoffLng]);
+    const avgLat =
+      mappedStops.reduce((acc, item) => acc + item.coordinate.lat, 0) / mappedStops.length;
+    const avgLng =
+      mappedStops.reduce((acc, item) => acc + item.coordinate.lng, 0) / mappedStops.length;
+    return { lat: Number(avgLat.toFixed(6)), lng: Number(avgLng.toFixed(6)) };
+  }, [mappedStops]);
 
-  const polylinePath = React.useMemo(() => {
-    if (pickupLat == null || pickupLng == null) return [];
-    if (dropsWithCoords && dropsWithCoords.length > 0) {
-      return [
-        { lat: pickupLat, lng: pickupLng },
-        ...dropsWithCoords.map((d) => ({ lat: d.dropoffLat!, lng: d.dropoffLng! })),
-      ];
-    }
-    if (dropoffLat != null && dropoffLng != null) {
-      return [
-        { lat: pickupLat, lng: pickupLng },
-        { lat: dropoffLat, lng: dropoffLng },
-      ];
-    }
-    return [];
-  }, [pickupLat, pickupLng, dropsWithCoords, dropoffLat, dropoffLng]);
-
-  const externalMapUrl = React.useMemo(() => {
-    if (pickupLat != null && pickupLng != null) {
-      if (dropsWithCoords && dropsWithCoords.length > 0) {
-        const lastDrop = dropsWithCoords[dropsWithCoords.length - 1];
-        if (lastDrop) {
-          const intermediateWaypoints = dropsWithCoords.slice(0, -1).map((d) => ({
-            lat: d.dropoffLat,
-            lng: d.dropoffLng,
-          }));
-          return buildGoogleMapsDirectionsUrl({
-            origin: { lat: pickupLat, lng: pickupLng },
-            destination: { lat: lastDrop.dropoffLat, lng: lastDrop.dropoffLng },
-            waypoints: intermediateWaypoints.length > 0 ? intermediateWaypoints : undefined,
-          });
-        }
-      }
-      if (dropoffLat != null && dropoffLng != null) {
-        return buildGoogleMapsDirectionsUrl({
-          origin: { lat: pickupLat, lng: pickupLng },
-          destination: { lat: dropoffLat, lng: dropoffLng },
-        });
-      }
-    }
-    return buildGoogleMapsDirectionsUrl({
-      origin: pickupAddress,
-      destination: dropoffAddress,
-    });
-  }, [
-    pickupLat,
-    pickupLng,
-    dropsWithCoords,
-    dropoffLat,
-    dropoffLng,
-    pickupAddress,
-    dropoffAddress,
-  ]);
+  const polylinePath = React.useMemo(
+    () => mappedStops.map((item) => item.coordinate),
+    [mappedStops]
+  );
 
   const formattedDistance = React.useMemo(() => {
     if (routeDistanceM == null || routeDistanceM < 1) return null;
@@ -203,6 +160,19 @@ export function TripRouteMap({
     });
     return `≈ ${kmStr} km`;
   }, [routeDistanceM]);
+
+  // El fallback nombra la causa: primero los datos faltantes (no dependen del proveedor),
+  // después la conexión, la carga del SDK y la key.
+  const fallbackTitle = !plan.canDrawMap
+    ? 'Sin ubicación exacta en el mapa'
+    : !isOnline
+      ? 'Mapa no disponible sin conexión'
+      : apiLoadFailed
+        ? 'No pudimos conectar con Google Maps'
+        : 'Mapa no configurado';
+  const guidance = showExternalNavigation
+    ? 'Guiate por las direcciones escritas o abrí Google Maps.'
+    : 'Guiate por las direcciones escritas.';
 
   return (
     <section
@@ -218,11 +188,12 @@ export function TripRouteMap({
           <MapIcon className="h-5 w-5 text-primary" />
           <h2 className="font-display text-base font-bold text-foreground">{title}</h2>
         </div>
-        {formattedDistance && (
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-foreground">
-            {formattedDistance}
-          </span>
-        )}
+        <span
+          data-testid="route-map-distance"
+          className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-semibold text-foreground"
+        >
+          {formattedDistance ?? 'Distancia no calculada'}
+        </span>
       </div>
 
       {/* Banner de estado offline si corresponde */}
@@ -240,7 +211,12 @@ export function TripRouteMap({
       )}
 
       {/* Canvas del mapa o Fallback */}
-      <div className="relative h-48 w-full overflow-hidden border-y border-border bg-muted/30">
+      <div
+        className={cn(
+          'relative w-full overflow-hidden border-y border-border bg-muted/30',
+          isMapAvailable ? 'h-48' : 'min-h-48'
+        )}
+      >
         {isMapAvailable ? (
           <APIProvider
             apiKey={apiKey}
@@ -256,71 +232,16 @@ export function TripRouteMap({
               disableDefaultUI
               mapId={mapId}
             >
-              {/* Pin 1: Retiro */}
-              <AdvancedMarker
-                position={{ lat: pickupLat, lng: pickupLng }}
-                title={`Retiro: ${pickupAddress}`}
-              >
-                <div
-                  data-testid="map-pin-pickup"
-                  className="relative flex items-center justify-center"
-                >
-                  <div className="flex flex-col items-center">
-                    <span className="rounded bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground shadow">
-                      Retiro
-                    </span>
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background">
-                      <Store className="h-4 w-4" />
-                    </div>
-                  </div>
-                </div>
-              </AdvancedMarker>
-
-              {/* Pines de Entrega */}
-              {dropsWithCoords && dropsWithCoords.length > 0 ? (
-                dropsWithCoords.map((d) => (
-                  <AdvancedMarker
-                    key={d.position}
-                    position={{ lat: d.dropoffLat!, lng: d.dropoffLng! }}
-                    title={`Entrega ${d.position}: ${d.dropoffAddress}`}
-                  >
-                    <div
-                      data-testid={
-                        d.position === 1 ? 'map-pin-dropoff' : `map-pin-dropoff-${d.position}`
-                      }
-                      className="relative flex items-center justify-center"
-                    >
-                      <div className="flex flex-col items-center">
-                        <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background shadow">
-                          Entrega {d.position}
-                        </span>
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background shadow-md ring-2 ring-background">
-                          <MapPin className="h-4 w-4 text-primary" />
-                        </div>
-                      </div>
-                    </div>
-                  </AdvancedMarker>
-                ))
-              ) : (
-                <AdvancedMarker
-                  position={{ lat: dropoffLat!, lng: dropoffLng! }}
-                  title={`Entrega: ${dropoffAddress}`}
-                >
-                  <div
-                    data-testid="map-pin-dropoff"
-                    className="relative flex items-center justify-center"
-                  >
-                    <div className="flex flex-col items-center">
-                      <span className="rounded bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background shadow">
-                        Entrega
-                      </span>
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background shadow-md ring-2 ring-background">
-                        <MapPin className="h-4 w-4 text-primary" />
-                      </div>
-                    </div>
-                  </div>
-                </AdvancedMarker>
-              )}
+              {mappedStops.map((item, index) => (
+                <RouteMarker
+                  key={item.stop.label}
+                  stop={item.stop}
+                  coordinate={item.coordinate}
+                  isPickup={index === 0}
+                  testId={pinTestId(index)}
+                  useAdvancedMarker={Boolean(mapId)}
+                />
+              ))}
 
               {/* Traza orientativa directa entre pines */}
               {polylinePath.length >= 2 && (
@@ -338,25 +259,34 @@ export function TripRouteMap({
             data-testid="route-map-fallback"
             className="flex h-full w-full flex-col items-center justify-center p-4 text-center text-muted-foreground"
           >
-            {apiLoadFailed ? (
-              <AlertTriangle className="mb-1.5 h-8 w-8 text-destructive" />
+            {!plan.canDrawMap ? (
+              <MapPin className="mb-1.5 h-8 w-8 text-muted-foreground/60" />
             ) : !isOnline ? (
               <WifiOff className="mb-1.5 h-8 w-8 text-muted-foreground" />
+            ) : apiLoadFailed ? (
+              <AlertTriangle className="mb-1.5 h-8 w-8 text-destructive" />
             ) : (
               <MapPin className="mb-1.5 h-8 w-8 text-muted-foreground/60" />
             )}
-            <p className="text-sm font-semibold text-foreground">
-              {!isOnline
-                ? 'Mapa no disponible sin conexión'
-                : apiLoadFailed
-                  ? 'No pudimos conectar con Google Maps'
-                  : !apiKey
-                    ? 'Mapa no configurado'
-                    : 'Mapa en modo simplificado'}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {pickupAddress} ({pickupZoneName}) → {dropoffAddress} ({dropoffZoneName})
-            </p>
+            <p className="text-sm font-semibold text-foreground">{fallbackTitle}</p>
+            {!plan.canDrawMap ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                No se marcó el punto en el mapa para{' '}
+                <span data-testid="route-map-missing-points" className="font-semibold text-foreground">
+                  {plan.missing.map((stop) => stop.label.toLowerCase()).join(', ')}
+                </span>
+                . {guidance}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">{guidance}</p>
+            )}
+            <ul className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+              {[plan.pickup, ...plan.drops].map((stop) => (
+                <li key={stop.label}>
+                  {stop.label}: {stop.address} ({stop.zoneName})
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>
@@ -375,7 +305,7 @@ export function TripRouteMap({
       {showExternalNavigation && (
         <div className="p-3.5">
           <a
-            href={externalMapUrl}
+            href={plan.externalUrl}
             target="_blank"
             rel="noopener noreferrer"
             data-testid="open-google-maps-btn"
@@ -387,5 +317,62 @@ export function TripRouteMap({
         </div>
       )}
     </section>
+  );
+}
+
+function pinTestId(index: number): string {
+  if (index === 0) return 'map-pin-pickup';
+  return index === 1 ? 'map-pin-dropoff' : `map-pin-dropoff-${index}`;
+}
+
+function RouteMarker({
+  stop,
+  coordinate,
+  isPickup,
+  testId,
+  useAdvancedMarker,
+}: {
+  stop: RouteStop;
+  coordinate: RouteCoordinate;
+  isPickup: boolean;
+  testId: string;
+  useAdvancedMarker: boolean;
+}) {
+  const markerTitle = `${stop.label}: ${stop.address}`;
+
+  // AdvancedMarker solo se dibuja con Map ID; sin él se usa el Marker clásico, igual que src/ui/map.tsx.
+  if (!useAdvancedMarker) {
+    return (
+      <Marker
+        position={coordinate}
+        title={markerTitle}
+        label={isPickup ? 'R' : stop.label.replace(/\D/g, '') || 'E'}
+      />
+    );
+  }
+
+  return (
+    <AdvancedMarker position={coordinate} title={markerTitle}>
+      <div data-testid={testId} className="relative flex items-center justify-center">
+        <div className="flex flex-col items-center">
+          <span
+            className={cn(
+              'rounded px-1.5 py-0.5 text-[10px] font-bold shadow',
+              isPickup ? 'bg-primary text-primary-foreground' : 'bg-foreground text-background'
+            )}
+          >
+            {stop.label}
+          </span>
+          <div
+            className={cn(
+              'flex h-7 w-7 items-center justify-center rounded-full shadow-md ring-2 ring-background',
+              isPickup ? 'bg-primary text-primary-foreground' : 'bg-foreground text-background'
+            )}
+          >
+            {isPickup ? <Store className="h-4 w-4" /> : <MapPin className="h-4 w-4 text-primary" />}
+          </div>
+        </div>
+      </div>
+    </AdvancedMarker>
   );
 }

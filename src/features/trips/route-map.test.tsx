@@ -8,6 +8,7 @@ import type { TripDetails } from './types';
 import { TripCourierView } from './components/trip-courier-view';
 import { TripMerchantView } from './components/trip-merchant-view';
 import { buildGoogleMapsDirectionsUrl } from './maps';
+import { buildTripRoutePlan } from './route-points';
 import { CourierFeed, type AvailableRequestItem } from '@/features/offers';
 
 // Mocks para CourierFeed
@@ -100,6 +101,23 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     >
       {children}
     </div>
+  ),
+  Marker: ({
+    position,
+    title,
+    label,
+  }: {
+    position?: { lat: number; lng: number };
+    title?: string;
+    label?: string;
+  }) => (
+    <div
+      data-testid="mock-legacy-marker"
+      data-lat={position?.lat}
+      data-lng={position?.lng}
+      data-title={title}
+      data-label={label}
+    />
   ),
   Pin: ({
     background,
@@ -546,6 +564,173 @@ describe('T-117 — Mapa de recorrido y botón "Abrir en Google Maps" en vista d
       const mapsLink = screen.getByRole('link', { name: /abrir en google maps/i });
       expect(mapsLink).toBeDefined();
       expect(mapsLink.getAttribute('href')).toContain('https://www.google.com/maps/dir/?api=1');
+    });
+  });
+
+  describe('5. T-363 — Fallback honesto: coordenadas faltantes, Map ID ausente y distancia no calculada', () => {
+    const tripWithoutCoords: TripDetails = {
+      ...baseTrip,
+      pickupLat: null,
+      pickupLng: null,
+      dropoffLat: null,
+      dropoffLng: null,
+      routeDistanceM: null,
+    };
+
+    it('sin coordenadas y con proveedor disponible explica la falta de ubicación exacta (nunca «modo simplificado»)', () => {
+      render(<TripCourierView trip={tripWithoutCoords} />);
+
+      const fallback = screen.getByTestId('route-map-fallback');
+      expect(fallback.textContent).toMatch(/sin ubicación exacta en el mapa/i);
+      expect(fallback.textContent).toMatch(/retiro/i);
+      expect(fallback.textContent).toMatch(/entrega/i);
+      expect(fallback.textContent).not.toMatch(/modo simplificado/i);
+      expect(screen.queryByTestId('mock-google-map')).toBeNull();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+    });
+
+    it('con retiro geolocalizado y entrega sin pin: fallback nombra solo la entrega y Google Maps usa el punto válido y la dirección escrita', () => {
+      const partialTrip: TripDetails = { ...baseTrip, dropoffLat: null, dropoffLng: null };
+      render(<TripCourierView trip={partialTrip} />);
+
+      const fallback = screen.getByTestId('route-map-fallback');
+      expect(fallback.textContent).toMatch(/sin ubicación exacta en el mapa/i);
+      expect(screen.getByTestId('route-map-missing-points').textContent).toMatch(/^.*entrega.*$/i);
+      expect(screen.getByTestId('route-map-missing-points').textContent).not.toMatch(/retiro/i);
+
+      const href = screen.getByRole('link', { name: /abrir en google maps/i }).getAttribute('href') ?? '';
+      const url = new URL(href);
+      expect(url.searchParams.get('origin')).toBe(`${baseTrip.pickupLat},${baseTrip.pickupLng}`);
+      expect(url.searchParams.get('destination')).toBe(baseTrip.dropoffAddress);
+    });
+
+    it('coordenadas fuera de Aguilares o no finitas se tratan como faltantes y nunca llegan al mapa ni al enlace', () => {
+      const invalidTrip: TripDetails = {
+        ...baseTrip,
+        pickupLat: 0,
+        pickupLng: 0,
+        dropoffLat: Number.NaN,
+        dropoffLng: -65.61,
+      };
+      render(<TripCourierView trip={invalidTrip} />);
+
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      const href = screen.getByRole('link', { name: /abrir en google maps/i }).getAttribute('href') ?? '';
+      const url = new URL(href);
+      expect(url.searchParams.get('origin')).toBe(baseTrip.pickupAddress);
+      expect(url.searchParams.get('destination')).toBe(baseTrip.dropoffAddress);
+      expect(href).not.toContain('NaN');
+      expect(url.searchParams.get('origin')).not.toBe('0,0');
+    });
+
+    it('sin Map ID configurado los dos pines se dibujan con Marker clásico (AdvancedMarker exige Map ID)', () => {
+      mockPublicMapId = '';
+      render(<TripCourierView trip={baseTrip} />);
+
+      expect(screen.getByTestId('mock-google-map')).toBeDefined();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      const legacy = screen.getAllByTestId('mock-legacy-marker');
+      expect(legacy).toHaveLength(2);
+      const positions = legacy.map((m) => ({
+        lat: Number(m.getAttribute('data-lat')),
+        lng: Number(m.getAttribute('data-lng')),
+      }));
+      expect(positions).toContainEqual({ lat: baseTrip.pickupLat, lng: baseTrip.pickupLng });
+      expect(positions).toContainEqual({ lat: baseTrip.dropoffLat, lng: baseTrip.dropoffLng });
+    });
+
+    it('sin distancia calculada dice «Distancia no calculada» y no muestra ningún valor en km', () => {
+      render(<TripCourierView trip={{ ...baseTrip, routeDistanceM: null }} />);
+
+      const distance = screen.getByTestId('route-map-distance');
+      expect(distance.textContent).toBe('Distancia no calculada');
+      expect(screen.getByTestId('trip-route-map').textContent).not.toMatch(/\bkm\b/);
+    });
+
+    it('multi-drop con una entrega sin pin: no dibuja un recorrido parcial y Google Maps incluye todas las entregas en orden', () => {
+      const dropTemplate: NonNullable<TripDetails['drops']>[number] = {
+        id: '00000000-0000-4000-8000-0000000000d1',
+        position: 1,
+        dropoffZoneName: 'Centro',
+        dropoffAddress: 'Mitre 10, Aguilares',
+        recipientName: 'Cliente A',
+        recipientPhone: '3865100000',
+        deliveryNotes: null,
+        cashChangeAmount: null,
+        packageType: 'chico',
+        recipientPaymentMethod: 'transfer',
+        needsChange: false,
+        approxDistanceM: null,
+        status: 'pending',
+        deliveredAt: null,
+        failedReason: null,
+        dropoffLat: -27.43,
+        dropoffLng: -65.61,
+      };
+      const multiTrip: TripDetails = {
+        ...baseTrip,
+        dropsCount: 2,
+        drops: [
+          dropTemplate,
+          {
+            ...dropTemplate,
+            id: '00000000-0000-4000-8000-0000000000d2',
+            position: 2,
+            dropoffZoneName: 'Norte',
+            dropoffAddress: 'Mitre 20, Aguilares',
+            recipientName: 'Cliente B',
+            recipientPhone: '3865200000',
+            dropoffLat: null,
+            dropoffLng: null,
+          },
+        ],
+      };
+      render(<TripCourierView trip={multiTrip} />);
+
+      expect(screen.getByTestId('route-map-fallback')).toBeDefined();
+      expect(screen.queryByTestId('mock-route-polyline')).toBeNull();
+      expect(screen.getByTestId('route-map-missing-points').textContent).toMatch(/entrega 2/i);
+      expect(screen.getByTestId('route-map-missing-points').textContent).not.toMatch(/entrega 1/i);
+
+      const href = screen.getByRole('link', { name: /abrir en google maps/i }).getAttribute('href') ?? '';
+      const url = new URL(href);
+      expect(url.searchParams.get('origin')).toBe(`${baseTrip.pickupLat},${baseTrip.pickupLng}`);
+      expect(url.searchParams.get('waypoints')).toBe('-27.43,-65.61');
+      expect(url.searchParams.get('destination')).toBe('Mitre 20, Aguilares');
+    });
+
+    it('una entrega intermedia sin pin viaja como dirección escrita en waypoints, sin saltearla', () => {
+      const plan = buildTripRoutePlan({
+        pickupAddress: 'San Martín 450, Centro',
+        pickupZoneName: 'Centro',
+        pickupLat: -27.4333,
+        pickupLng: -65.6167,
+        dropoffAddress: 'Mitre 10, Aguilares',
+        dropoffZoneName: 'Centro',
+        drops: [
+          { position: 2, dropoffAddress: 'Mitre 20, Aguilares', dropoffZoneName: 'Norte', dropoffLat: -27.42, dropoffLng: -65.6 },
+          { position: 1, dropoffAddress: 'Mitre 10, Aguilares', dropoffZoneName: 'Centro', dropoffLat: null, dropoffLng: null },
+        ],
+      });
+
+      expect(plan.canDrawMap).toBe(false);
+      expect(plan.missing.map((stop) => stop.label)).toEqual(['Entrega 1']);
+      const url = new URL(plan.externalUrl);
+      expect(url.searchParams.get('origin')).toBe('-27.4333,-65.6167');
+      expect(url.searchParams.get('waypoints')).toBe('Mitre 10, Aguilares');
+      expect(url.searchParams.get('destination')).toBe('-27.42,-65.6');
+    });
+
+    it('cuando Google Maps falla con coordenadas válidas el fallback lo dice y no lo confunde con falta de ubicación', () => {
+      mockLoadingStatus = 'FAILED';
+      render(<TripCourierView trip={baseTrip} />);
+
+      const fallback = screen.getByTestId('route-map-fallback');
+      expect(fallback.textContent).toMatch(/no pudimos conectar con google maps/i);
+      expect(fallback.textContent).not.toMatch(/sin ubicación exacta/i);
+      expect(screen.queryByTestId('route-map-missing-points')).toBeNull();
     });
   });
 });
