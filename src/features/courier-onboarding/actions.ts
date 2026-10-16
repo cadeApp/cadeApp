@@ -7,7 +7,7 @@ import { serverEnv } from '@/server/env';
 import { type ActionResult, type DomainErrorCode, err, ok } from '@/domain/errors';
 import { profileRoleSchema } from '@/domain/schemas';
 import type { TablesInsert, TablesUpdate } from '@/types/database.types';
-import { courierOnboardingSchema } from './schemas';
+import { courierOnboardingSchema, courierUpdateVehicleSchema } from './schemas';
 import { logoutAction } from '@/features/auth/server';
 import { areCurrentLegalVersions } from '@/features/legal';
 
@@ -208,3 +208,107 @@ export async function courierOnboardingAction(
     redirectTo: '/onboarding/status',
   });
 }
+
+export interface CourierUpdateVehicleResult {
+  readonly redirectTo: string;
+}
+
+export async function updateCourierVehicleAction(
+  input: unknown
+): Promise<ActionResult<CourierUpdateVehicleResult, DomainErrorCode>> {
+  // 1. Cliente autenticado y verificación de sesión
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return err('UNAUTHENTICATED');
+  }
+
+  // 2. Verificación de rol del actor (debe ser courier)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle<{ role: unknown }>();
+
+  if (profileError || !profile) {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  const roleParsed = profileRoleSchema.safeParse(profile.role);
+  if (!roleParsed.success || roleParsed.data !== 'courier') {
+    return err('UNAUTHORIZED_ACTOR');
+  }
+
+  // 3. Validación de datos de entrada
+  const parsed = courierUpdateVehicleSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION_ERROR');
+  }
+
+  // 4. Verificación de existencia del legajo courier
+  const { data: existingCourier, error: courierFetchError } = await supabase
+    .from('couriers')
+    .select('profile_id, status')
+    .eq('profile_id', user.id)
+    .maybeSingle<{ profile_id: string; status: string }>();
+
+  if (courierFetchError || !existingCourier) {
+    return err('NOT_FOUND');
+  }
+
+  // 5. Inserción de documentos opcionales si fueron provistos
+  if (parsed.data.documents) {
+    const documentEntries: TablesInsert<'courier_documents'>[] = [];
+    if (parsed.data.documents.license) {
+      documentEntries.push({
+        courier_id: user.id,
+        kind: 'license',
+        storage_path: parsed.data.documents.license,
+        status: 'submitted',
+      });
+    }
+    if (parsed.data.documents.insurance) {
+      documentEntries.push({
+        courier_id: user.id,
+        kind: 'insurance',
+        storage_path: parsed.data.documents.insurance,
+        status: 'submitted',
+      });
+    }
+
+    if (documentEntries.length > 0) {
+      const { error: documentsError } = await supabase
+        .from('courier_documents')
+        .upsert(documentEntries as never);
+
+      if (documentsError) {
+        return err('INTERNAL_ERROR');
+      }
+    }
+  }
+
+  // 6. Actualización de vehículo en couriers
+  const courierUpdatePayload: TablesUpdate<'couriers'> = {
+    vehicle_type: parsed.data.vehicleType,
+    vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
+  };
+
+  const { error: courierUpdateError } = await supabase
+    .from('couriers')
+    .update(courierUpdatePayload as never)
+    .eq('profile_id', user.id);
+
+  if (courierUpdateError) {
+    return err('INTERNAL_ERROR');
+  }
+
+  return ok({
+    redirectTo: '/courier/profile',
+  });
+}
+

@@ -79,6 +79,45 @@ export const courierOnboardingSchema = z
 
 export type CourierOnboardingInput = z.infer<typeof courierOnboardingSchema>;
 
+export const courierUpdateVehicleDocumentsSchema = z.object({
+  license: z.string().min(1).optional(),
+  insurance: z.string().min(1).optional(),
+});
+
+export const courierUpdateVehicleSchema = z
+  .object({
+    vehicleType: vehicleTypeSchema,
+    vehiclePlate: z.string().trim().optional().nullable(),
+    documents: courierUpdateVehicleDocumentsSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.vehicleType === 'moto' || data.vehicleType === 'car') {
+      if (!data.vehiclePlate || data.vehiclePlate.trim().length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'La patente es obligatoria para motos y autos',
+          path: ['vehiclePlate'],
+        });
+      } else if (!ARGENTINA_PLATE_REGEX.test(data.vehiclePlate.trim())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Formato de patente argentina inválido (ej: AB 123 CD, A 123 BCD o ABC 123)',
+          path: ['vehiclePlate'],
+        });
+      }
+    }
+  })
+  .transform((data) => ({
+    ...data,
+    vehiclePlate:
+      data.vehicleType === 'moto' || data.vehicleType === 'car'
+        ? (data.vehiclePlate?.trim() ? data.vehiclePlate.trim().toUpperCase() : null)
+        : null,
+  }));
+
+export type CourierUpdateVehicleInput = z.infer<typeof courierUpdateVehicleSchema>;
+
+
 import type { Database } from '@/types/database.types';
 
 export type DocumentReviewStatus = Database['public']['Enums']['document_review_status'];

@@ -736,4 +736,73 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     );
     expect(savedDni).toBe('38123456');
   });
+
+  // ---------------------------------------------------------------------------
+  // T-357: Actualización de vehículo desde el perfil del repartidor (Issue #344)
+  // ---------------------------------------------------------------------------
+  test('T-357: Actualización de vehículo desde el perfil del repartidor sin reonboarding ni error genérico', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Error] Se requiere un courier en stagingContext');
+    }
+
+    // Precondición: courier con vehículo existente y habilitado
+    const dbAdmin = createAdminClient();
+    await dbAdmin
+      .from('couriers')
+      .update({
+        vehicle_type: 'moto',
+        vehicle_plate: 'AB 123 CD',
+        status: 'approved',
+      })
+      .eq('profile_id', courier.id);
+
+    // 1. Iniciar sesión como repartidor y navegar al perfil
+    await loginAsCourier(0, page);
+    await page.goto('/courier/profile');
+    await waitForNoSkeletons(page);
+
+    // 2. Verificar que se muestra el vehículo actual y el enlace «Actualizar»
+    await expect(page.getByText('Motocicleta')).toBeVisible();
+    await expect(page.getByText(/Patente: AB 123 CD/i)).toBeVisible();
+
+    const updateLink = page.getByRole('link', { name: /Actualizar/i });
+    await expect(updateLink).toBeVisible();
+    await updateLink.click();
+
+    // 3. Verifica llegada a la pantalla de edición sin pasos de onboarding ni consentimientos
+    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    await expect(page.getByRole('heading', { name: /Actualizar vehículo/i })).toBeVisible();
+    await expect(page.getByText('Paso 3 de 4')).not.toBeVisible();
+    await expect(page.getByRole('checkbox')).toHaveCount(0);
+
+    // 4. Cambiar a Bicicleta (oculta patente)
+    const bikeOption = page.locator('label').filter({ hasText: /Bicicleta|Bici/i });
+    await bikeOption.click();
+
+    const plateInput = page.getByLabel(/Patente del vehículo/i);
+    await expect(plateInput).not.toBeVisible();
+
+    // 5. Guardar cambios
+    const saveButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+
+    // 6. Verifica redirección al perfil y persistencia del cambio a Bicicleta
+    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    await expect(page.getByText('Bicicleta')).toBeVisible();
+  });
 });
+

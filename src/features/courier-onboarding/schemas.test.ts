@@ -5,6 +5,7 @@ import {
   dniSchema,
   vehiclePlateSchema,
   courierOnboardingSchema,
+  courierUpdateVehicleSchema,
 } from './schemas';
 
 describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () => {
@@ -185,4 +186,75 @@ describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () =
       }
     );
   });
+
+  describe('T-357: Validación de actualización de vehículo (courierUpdateVehicleSchema)', () => {
+    it('acepta moto con patente Mercosur o nacional válida y la formatea a mayúsculas', () => {
+      const res = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto',
+        vehiclePlate: 'ab 123 cd',
+      });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.vehicleType).toBe('moto');
+        expect(res.data.vehiclePlate).toBe('AB 123 CD');
+      }
+    });
+
+    it('rechaza moto o auto sin patente o con patente vacía', () => {
+      const withoutPlate = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto',
+      });
+      expect(withoutPlate.success).toBe(false);
+
+      const emptyPlate = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'car',
+        vehiclePlate: '   ',
+      });
+      expect(emptyPlate.success).toBe(false);
+    });
+
+    it('rechaza moto o auto con formato de patente inválido', () => {
+      const res = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto',
+        vehiclePlate: 'INVALIDA',
+      });
+      expect(res.success).toBe(false);
+    });
+
+    it('acepta walk y bike sin patente y normaliza patente residual a null', () => {
+      const walkRes = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'walk',
+      });
+      expect(walkRes.success).toBe(true);
+      if (walkRes.success) {
+        expect(walkRes.data.vehiclePlate).toBeNull();
+      }
+
+      const bikeWithPlate = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'bike',
+        vehiclePlate: 'AB 123 CD',
+      });
+      expect(bikeWithPlate.success).toBe(true);
+      if (bikeWithPlate.success) {
+        expect(bikeWithPlate.data.vehiclePlate).toBeNull();
+      }
+    });
+
+    it('acepta documentos opcionales (licencia y seguro) y no requiere DNI ni consentimientos', () => {
+      const res = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto',
+        vehiclePlate: 'AB 123 CD',
+        documents: {
+          license: 'courier/docs/license.jpg',
+          insurance: 'courier/docs/insurance.jpg',
+        },
+      });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.documents?.license).toBe('courier/docs/license.jpg');
+        expect(res.data.documents?.insurance).toBe('courier/docs/insurance.jpg');
+      }
+    });
+  });
 });
+

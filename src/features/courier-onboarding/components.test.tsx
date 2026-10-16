@@ -252,6 +252,151 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         expect(onSuccess).toHaveBeenCalled();
       });
     });
+
+    describe('VehicleForm en modo edición (T-357 / Issue #344)', () => {
+      it('no renderiza StepIndicator ni el contador de pasos ("Paso 3 de 4")', () => {
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        expect(screen.queryByText('Paso 3 de 4')).toBeNull();
+        expect(screen.queryByText('Datos')).toBeNull();
+        expect(screen.queryByText('Identidad')).toBeNull();
+        expect(screen.queryByText('Listo')).toBeNull();
+      });
+
+      it('no renderiza checkboxes de consentimientos legales obligatorios en edición', () => {
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        expect(screen.queryByRole('checkbox')).toBeNull();
+        expect(screen.queryByText(/Términos para repartidores/i)).toBeNull();
+        expect(screen.queryByText(/Política de privacidad/i)).toBeNull();
+        expect(screen.queryByText(/Condiciones para repartidores/i)).toBeNull();
+      });
+
+      it('precarga vehículo y patente iniciales y botón de guardar', () => {
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        const plateInput = screen.getByLabelText(/Patente del vehículo/i) as HTMLInputElement;
+        expect(plateInput.value).toBe('AB 123 CD');
+        expect(screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i })).toBeDefined();
+      });
+
+      it('al enviar en modo edición invoca updateCourierVehicleAction y no courierOnboardingAction', async () => {
+        const mockOnboardingAction = vi.spyOn(actionsModule, 'courierOnboardingAction');
+        const mockUpdateAction = vi.spyOn(actionsModule, 'updateCourierVehicleAction').mockResolvedValue({
+          ok: true,
+          data: { redirectTo: '/courier/profile' },
+        });
+        const onSuccess = vi.fn();
+
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+            onSuccess={onSuccess}
+          />
+        );
+
+        const submitBtn = screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+        expect((submitBtn as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+          expect(mockUpdateAction).toHaveBeenCalledTimes(1);
+          expect(mockUpdateAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+              vehicleType: 'moto',
+              vehiclePlate: 'AB 123 CD',
+            })
+          );
+          expect(mockOnboardingAction).not.toHaveBeenCalled();
+          expect(onSuccess).toHaveBeenCalled();
+        });
+      });
+
+      it('permite cambiar a bici o pie ocultando patente y enviando sin patente', async () => {
+        const mockUpdateAction = vi.spyOn(actionsModule, 'updateCourierVehicleAction').mockResolvedValue({
+          ok: true,
+          data: { redirectTo: '/courier/profile' },
+        });
+
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        const bikeText = screen.getByText('Bici');
+        fireEvent.click(bikeText);
+
+        await waitFor(() => {
+          expect(screen.queryByLabelText(/Patente del vehículo/i)).toBeNull();
+        });
+
+        const submitBtn = screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+        expect((submitBtn as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+          expect(mockUpdateAction).toHaveBeenCalledTimes(1);
+          expect(mockUpdateAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+              vehicleType: 'bike',
+              vehiclePlate: null,
+            })
+          );
+        });
+      });
+
+      it('muestra error diferenciado de validación ante fallo de la acción', async () => {
+        vi.spyOn(actionsModule, 'updateCourierVehicleAction').mockResolvedValue({
+          ok: false,
+          code: 'VALIDATION_ERROR',
+        });
+
+        render(
+          <VehicleForm
+            courierId="test-courier"
+            isEditing={true}
+            initialVehicleType="moto"
+            initialVehiclePlate="AB 123 CD"
+          />
+        );
+
+        const submitBtn = screen.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+        fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toBeDefined();
+          expect(screen.getByText(/verificá los datos|patente es obligatoria|inválida/i)).toBeDefined();
+        });
+      });
+    });
   });
 
   describe('StatusView (R03)', () => {
