@@ -49,7 +49,7 @@ values
   (pg_temp.orphan_courier(), '00000000-0000-4000-8000-000000000000', 'authenticated', 'authenticated', 'orphan_courier_b0@test.com', 'pwd', '{"role":"courier"}'::jsonb)
 on conflict (id) do nothing;
 
-insert into public.profiles (id, role, full_name, phone, consent_status)
+insert into public.profiles (id, role, display_name, phone, consent_status)
 values
   (pg_temp.test_courier(), 'courier', 'Courier B0', '+543865000001', 'active'),
   (pg_temp.other_courier(), 'courier', 'Other Courier B0', '+543865000002', 'pending'),
