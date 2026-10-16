@@ -75,13 +75,33 @@ insert into public.zones (id, name, centroid_lat, centroid_lng, active)
 values (pg_temp.zone_id(), 'Aguilares - Test Zone CC028', -27.432, -65.616, true)
 on conflict (id) do nothing;
 
-insert into public.profiles (id, display_name, phone, role, consent_status)
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
 values
-  (pg_temp.merchant_id(), 'Comercio Original', '3865000001', 'merchant', 'active'),
-  (pg_temp.other_merchant_id(), 'Otro Comercio', '3865000002', 'merchant', 'active'),
-  (pg_temp.courier_id(), 'Cadete Test', '3865000003', 'courier', 'active'),
-  (pg_temp.admin_id(), 'Admin Test', '3865000004', 'admin', 'active')
+  (pg_temp.merchant_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc028.m1@example.test', 'pwd', '{"role":"merchant"}'::jsonb),
+  (pg_temp.other_merchant_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc028.m2@example.test', 'pwd', '{"role":"merchant"}'::jsonb),
+  (pg_temp.courier_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc028.c1@example.test', 'pwd', '{"role":"courier"}'::jsonb),
+  (pg_temp.admin_id(), '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'cc028.a1@example.test', 'pwd', '{"role":"merchant"}'::jsonb)
 on conflict (id) do nothing;
+
+update public.profiles
+set consent_status = 'active'
+where id in (pg_temp.merchant_id(), pg_temp.other_merchant_id(), pg_temp.courier_id(), pg_temp.admin_id());
+
+update public.profiles
+set display_name = 'Comercio Original', phone = '3865000001', role = 'merchant'
+where id = pg_temp.merchant_id();
+
+update public.profiles
+set display_name = 'Otro Comercio', phone = '3865000002', role = 'merchant'
+where id = pg_temp.other_merchant_id();
+
+update public.profiles
+set display_name = 'Cadete Test', phone = '3865000003', role = 'courier'
+where id = pg_temp.courier_id();
+
+update public.profiles
+set display_name = 'Admin Test', phone = '3865000004', role = 'admin'
+where id = pg_temp.admin_id();
 
 insert into public.merchants (
   profile_id,
@@ -103,7 +123,14 @@ values (
   'Nota previa',
   'pilot'
 )
-on conflict (profile_id) do nothing;
+on conflict (profile_id) do update set
+  business_name = 'Comercio Original',
+  default_pickup_address = 'Av. Sarmiento 123',
+  default_pickup_zone_id = pg_temp.zone_id(),
+  default_pickup_lat = -27.432,
+  default_pickup_lng = -65.616,
+  notes = 'Nota previa',
+  subscription_status = 'pilot';
 
 -- 1. Test: Actor no autenticado -> UNAUTHENTICATED
 select is(
