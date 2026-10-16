@@ -31,3 +31,10 @@ PR375-H07/H08: E2E de `42ace275` en verde, run del HEAD posterior `b3ace3eb` can
 ## Ronda 3 — R04: salida local del autor no corresponde al último SHA
 El primer commit de ronda 3 introdujo el test R03 sin llave de cierre, con bitácora que afirmaba 32/32 tests y 2414 tests totales. GitHub Actions registró TS1005 y una suite sin cargar. Se corrigió en otro commit durante la revisión. Antes de afirmar verde en la bitácora, ejecutar pruebas DESPUÉS del commit final y esperar CI HEAD, no heredar salida de worktree anterior.
 Este caso refuerza P15-entregable-declarado-pero-no-ejecutable y P08-control-no-cubre-lo-que-dice; no asignar nuevo número AG hasta verificar catálogo.
+
+## Ronda 4 — cierre, evidencia y proceso
+- Relacionar **siempre** CI y E2E al último SHA funcional: `d25721a` tuvo 2414 unit/2341 DB/79 E2E Chromium + 3 global y Vercel exitosos.
+- Distinguir ejecución de suite original por CI de un mutante dinámico; los controles independientes de R4 son de **fuente estática**. La clase de mutante importa en el criterio de `verificado_metodo`.
+- R04 demuestra que un test aparentemente pequeño puede bloquear TypeScript, lint, build y unit aunque la bitácora reportara verde local.
+- Los históricos de fichas pueden conservar una nota anterior a la implementación. Tratar como deuda documental sin bloquear injustificadamente una feature con CI/E2E verdes si no altera contratos ni scope.
+- No asignar AG-xx sin comprobar catálogo global.

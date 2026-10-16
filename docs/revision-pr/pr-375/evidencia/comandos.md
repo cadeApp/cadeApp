@@ -153,3 +153,77 @@ git merge-tree --write-tree origin/develop HEAD
 git ls-remote origin refs/heads/feat/T-358-edicion-comercio-precarga
 ```
 Repetir pruebas de mutación R01 (GPS fuera no modifica pin), R02 (barrio inactivo etiqueta accesible), R03 (null/null sin error de validación). Ejecutar GREEN original, RED con mutación temporal *de implementación*, GREEN restaurado, sin adulterar assertions, snapshots, mocks, fixtures, timeouts ni CI. No ejecutar contra DB remota.
+
+---
+## Ronda 4 — SHA d25721a6631151f9957c8efe07e5d857a2c11b28
+
+### CI y E2E reales, verificados por logs del job
+- `CI` https://github.com/cadeApp/cadeApp/actions/runs/38930136340, SHA d25721a6631151f9957c8efe07e5d857a2c11b28: unit 135 suites PASS, 2414 tests PASS; `src/features/merchants/components/onboarding-form.test.tsx` 32 PASS; db-tests final 26 files/2341 tests PASS; typecheck, lint, build, audit, bundle-budget SUCCESS. Se respetaron los `Result: FAIL` intermedios esperados por controles negativos dentro de db-tests; el RESULTADO FINAL fue PASS y el job terminó SUCCESS.
+- `E2E` https://github.com/cadeApp/cadeApp/actions/runs/38930252437, mismo SHA: job e2e-preview 79 PASS en 20.4m; el caso `merchant-registration.spec.ts:454` T-358 PASS. Global-settings: 3 PASS.
+- `Vercel` y `e2e-preview` statuses SUCCESS.
+- `approval-policy` (antes de ronda 4) FAILURE por informe SIN BLOQUEANTES ausente del cuerpo; se corrige mediante edición del body después del informe.
+- Esta sesión NO cuenta con clon ni dependencias de Vitest. No se corrió localmente `pnpm` ni `git merge-tree`.
+
+### Controles de fuente negativos propios del revisor
+
+Se ejecutaron controles estáticos de código devuelto por GitHub con predicados JavaScript; todos dieron:
+`control=true; mutant_changes_source=true; mutant_red=true; restored_green=true`.
+Se verificaron los siguientes 4 mutantes independientemente de la batería del autor:
+1. R01: reintroducir `setFields({ defaultPickupLat: null, defaultPickupLng: null }, ...)` justo antes de `return` en rama GPS fuera.
+2. R02: eliminar `<SelectItem key={inactiveZoneId} ... disabled>` de opción histórica.
+3. R03: sustituir borrado atómico de pin vía `setFields({defaultPickupLat:null,defaultPickupLng:null})` por dos `setValue` aislados.
+4. R03-hook: sustituir `const res = resolver(nextCombined)` por `resolver(values)`.
+
+Control extra H08 sobre body: GREEN para ausencia «Draft inicial», evidencia de CI y DoD de revisión; mutante que agrega «Draft inicial» da RED; luego GREEN.
+
+Estos son **controles estáticos de presencia/guardas en el código real**, no tests de la implementación React con mutation runtime. Hay evidencia de ejecución funcional **no mutada** en CI/E2E.
+
+### Harness reproducible para validación estática sin dependencias
+Se puede copiar el bloque COMPLETO a `/tmp/pr375-r4-static.mjs`, ejecutándolo desde un checkout del SHA funcional.
+```js
+import fs from 'node:fs';
+import path from 'node:path';
+
+const root = process.cwd();
+const form = fs.readFileSync(path.join(root, 'src/features/merchants/components/onboarding-form.tsx'), 'utf8');
+const hook = fs.readFileSync(path.join(root, 'src/features/merchants/components/form-hooks.ts'), 'utf8');
+const tests = fs.readFileSync(path.join(root, 'src/features/merchants/components/onboarding-form.test.tsx'), 'utf8');
+
+function assertMutation(name, baseline, mutation, predicate) {
+  if (!predicate(baseline)) throw Error(name + ': baseline RED');
+  const mutant = mutation(baseline);
+  if (mutant === baseline) throw Error(name + ': SIN OBJETIVO');
+  if (predicate(mutant)) throw Error(name + ': MUTANTE VERDE; control insuficiente');
+  if (!predicate(baseline)) throw Error(name + ': restauracion RED');
+  console.log(name + ': GREEN→RED→GREEN (static)');
+}
+const checkGPS = s => {
+  const start = s.indexOf('if (!isWithinAguilaresBounds(latitude, longitude))');
+  const end = s.indexOf('return;', start);
+  if (start < 0 || end < 0) return false;
+  const branch = s.slice(start, end + 7);
+  return branch.includes('setCoordsError(merchantCopy.onboarding.mapOutOfAguilares)') &&
+    !/set(Value|Fields)\s*\(\s*['"]defaultPickup|setFields\s*\(\s*\{[^}]*defaultPickup(Lat|Lng)/s.test(branch);
+};
+assertMutation('R01-GPS', form, s => s.replace(
+  'setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);\n          return;',
+  'setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);\n          setFields({ defaultPickupLat: null, defaultPickupLng: null }, { shouldValidate: true });\n          return;'
+), checkGPS);
+const checkZone = s => s.includes('inactiveZoneId') &&
+  /if\s*\(\s*inactiveZoneId\s*&&\s*zoneId\s*===\s*inactiveZoneId\s*\)/.test(s) &&
+  /<SelectItem[\s\S]{0,220}?key=\{inactiveZoneId\}[\s\S]{0,210}?disabled[\s\S]{0,210}?Barrio anteriormente asignado \(no disponible\)/.test(s);
+assertMutation('R02-zona-historica', form, s => s.replace(
+  /<SelectItem\s*\n\s*key=\{inactiveZoneId\}[\s\S]*?<\/SelectItem>/, ''
+), checkZone);
+const checkClear = s => /setFields\s*\(\s*\{\s*defaultPickupLat:\s*null,\s*defaultPickupLng:\s*null\s*\}\s*,\s*\{\s*shouldValidate:\s*true\s*\}\s*\)/s.test(s);
+assertMutation('R03-coords', form, s => s.replace(
+  /setFields\(\s*\{\s*defaultPickupLat:\s*null,\s*defaultPickupLng:\s*null\s*\},\s*\{\s*shouldValidate:\s*true\s*\}\s*\);/s,
+  "setValue('defaultPickupLat', null, { shouldValidate: true });\nsetValue('defaultPickupLng', null, { shouldValidate: true });"
+), checkClear);
+const checkHook = s => s.includes('const nextCombined = { ...values, ...patch };') &&
+  s.includes('const res = resolver(nextCombined)') && s.includes('setValues((prev) => ({ ...prev, ...patch }));');
+assertMutation('R03-hook', hook, s => s.replace('const res = resolver(nextCombined);', 'const res = resolver(values);'), checkHook);
+if (!['PR375-R01','PR375-R02','PR375-R03'].every(id => tests.includes(id))) throw Error('Falta test esperado');
+console.log('Oraculos de R01-R03 presentes.');
+```
+El harness está planteado para una ejecución futura en un checkout completo. **No afirmar que ese archivo aislado se ejecutó dentro de un worktree de esta sesión**: se ejecutaron sus comprobaciones equivalentes directamente sobre las cadenas de fuente recibidas en GitHub Connector. No modificar código real en disco.
