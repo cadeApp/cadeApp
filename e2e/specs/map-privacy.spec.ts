@@ -7,6 +7,7 @@ import {
   getRequestInspectionData,
   createAuthenticatedClient,
   trackEntityForCleanup,
+  getPlatformSettingNumber,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { AGUILARES_BOUNDS } from '@/domain/schemas';
@@ -138,7 +139,9 @@ async function setupGoogleMapsMock(
               if (c.center) this.setCenter(c.center);
               if (c.zoom != null) this.setZoom(c.zoom);
             };
-            this.fitBounds = function() {};
+            this.fitBounds = function(bounds, padding) {
+              (window.__routeFitBoundsCalls ||= []).push({ bounds: bounds, padding: padding });
+            };
 
             this.addListener = function(name, handler) {
               (this._listeners[name] ||= []).push(handler);
@@ -947,5 +950,140 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
 
     // Sin coordenadas no se carga Google Maps ni se llama a Google fuera del mock
     expect(mock.unexpectedGoogleUrls).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 8. PR386-H01/H02: viaje multi-drop post-match navega por tramos y encuadra todos los pines
+  // ---------------------------------------------------------------------------
+  test('PR386-H01/H02: con 5 entregas geolocalizadas el viaje encuadra los 6 pines y navega en 2 tramos continuos', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    await setupGoogleMapsMock(page);
+
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier sembrados');
+    }
+    const maxDrops = await getPlatformSettingNumber('max_drops_per_request');
+    if (maxDrops < 5) {
+      throw new Error(`[E2E Precondition Error] max_drops_per_request=${maxDrops}; el caso requiere 5`);
+    }
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const { data: zones, error: zonesErr } = await merchantClient
+      .from('zones')
+      .select('id')
+      .eq('active', true)
+      .limit(1);
+    expect(zonesErr).toBeNull();
+    const zoneId = zones?.[0]?.id;
+    if (!zoneId) {
+      throw new Error('[E2E Precondition Error] No hay zonas activas para publicar la solicitud');
+    }
+
+    const pickup = { lat: -27.44, lng: -65.62 };
+    const dropPoints = [
+      { lat: -27.43, lng: -65.61 },
+      { lat: -27.42, lng: -65.6 },
+      { lat: -27.41, lng: -65.615 },
+      { lat: -27.45, lng: -65.605 },
+      { lat: -27.46, lng: -65.625 },
+    ];
+    const requestId = randomUUID();
+    trackEntityForCleanup(stagingContext, 'request', requestId);
+    const { error: publishErr } = await merchantClient.rpc('create_and_publish_multi_drop', {
+      p_payload: {
+        requestId,
+        pickupZoneId: zoneId,
+        pickupAddress: `Alberdi 150 PR386 ${stagingContext.testRunId}`,
+        pickupLat: pickup.lat,
+        pickupLng: pickup.lng,
+        fixedPriceArs: null,
+        autoAssign: false,
+        drops: dropPoints.map((point, index) => ({
+          dropoffZoneId: zoneId,
+          dropoffAddress: `Mitre ${(index + 1) * 10} PR386`,
+          dropoffLat: point.lat,
+          dropoffLng: point.lng,
+          recipientName: `Cliente PR386 ${index + 1}`,
+          recipientPhone: `386510000${index + 1}`,
+          recipientConsentDeclared: true,
+          packageType: 'chico',
+          recipientPaymentMethod: 'transfer',
+          needsChange: false,
+          cashChangeAmount: null,
+          notes: null,
+        })),
+      },
+    });
+    expect(publishErr).toBeNull();
+
+    const courierClient = await createAuthenticatedClient(courier);
+    const { data: offerData, error: offerErr } = await courierClient.rpc('submit_offer', {
+      p_request_id: requestId,
+      p_amount_ars: 1500,
+      p_eta_minutes: 15,
+      p_message: 'Oferta PR386 multi-drop',
+    });
+    expect(offerErr).toBeNull();
+    const offerId = (offerData as { offerId?: string } | null)?.offerId;
+    if (!offerId) {
+      throw new Error('[E2E Error] submit_offer no devolvió offerId');
+    }
+    trackEntityForCleanup(stagingContext, 'offer', offerId);
+
+    const { error: acceptErr } = await merchantClient.rpc('accept_offer', { p_offer_id: offerId });
+    expect(acceptErr).toBeNull();
+
+    await loginAsCourier(0, page);
+    await page.goto(`/trips/${requestId}`);
+    await waitForNoSkeletons(page);
+
+    // Mapa real con los 6 pines (retiro + 5 entregas), sin fallback
+    await expect(page.locator('[data-testid="trip-route-map"]')).toBeVisible();
+    await expect(page.locator('[data-testid="route-map-fallback"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="map-pin-"]')).toHaveCount(6);
+
+    // H02: la cámara se encuadra con los límites de todos los puntos válidos
+    type FitBoundsCall = { bounds: { north: number; south: number; east: number; west: number }; padding: number };
+    const readFitBounds = () =>
+      page.evaluate(
+        () => (window as unknown as { __routeFitBoundsCalls?: FitBoundsCall[] }).__routeFitBoundsCalls ?? []
+      );
+    await expect.poll(async () => (await readFitBounds()).length).toBeGreaterThan(0);
+    const fitCalls = await readFitBounds();
+    expect(fitCalls.at(-1)?.bounds).toEqual({ north: -27.41, south: -27.46, east: -65.6, west: -65.625 });
+
+    // H01: dos tramos continuos, ≤3 paradas intermedias y ≤2048 caracteres cada uno
+    await expect(page.getByRole('link', { name: /abrir en google maps/i })).toHaveCount(0);
+    const asParam = (point: { lat: number; lng: number }) => `${point.lat},${point.lng}`;
+    const legStops = async (name: RegExp) => {
+      const link = page.getByRole('link', { name });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute('target', '_blank');
+      const rel = (await link.getAttribute('rel')) ?? '';
+      expect(rel).toContain('noopener');
+      expect(rel).toContain('noreferrer');
+      const href = (await link.getAttribute('href')) ?? '';
+      expect(href.length).toBeLessThanOrEqual(2048);
+      const url = new URL(href);
+      expect(url.origin + url.pathname).toBe('https://www.google.com/maps/dir/');
+      const waypoints = url.searchParams.get('waypoints');
+      return [
+        url.searchParams.get('origin'),
+        ...(waypoints ? waypoints.split('|') : []),
+        url.searchParams.get('destination'),
+      ];
+    };
+    const first = await legStops(/abrir tramo 1 de 2/i);
+    const second = await legStops(/abrir tramo 2 de 2/i);
+    expect(first).toEqual([pickup, ...dropPoints.slice(0, 4)].map(asParam));
+    expect(second).toEqual(dropPoints.slice(3).map(asParam));
+
+    // Sin tracking en vivo del repartidor
+    await expect(page.locator('[data-testid="map-pin-courier"]')).toHaveCount(0);
   });
 });

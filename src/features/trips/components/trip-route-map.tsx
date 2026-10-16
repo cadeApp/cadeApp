@@ -8,12 +8,67 @@ import {
   Marker,
   Polyline,
   useApiLoadingStatus,
+  useMap,
   APILoadingStatus,
 } from '@vis.gl/react-google-maps';
 import { AlertTriangle, ExternalLink, Map as MapIcon, MapPin, Store, WifiOff } from 'lucide-react';
 import { publicEnv } from '@/lib/env.public';
 import { cn } from '@/ui/cn';
-import { buildTripRoutePlan, type RouteCoordinate, type RouteStop } from '../route-points';
+import {
+  buildTripRoutePlan,
+  MAX_NAVIGATION_WAYPOINTS,
+  type NavigationLeg,
+  type RouteCoordinate,
+  type RouteStop,
+} from '../route-points';
+
+/** Margen en px alrededor de los pines al encuadrar el recorrido. */
+const ROUTE_BOUNDS_PADDING_PX = 32;
+/** Extensión mínima en grados del encuadre: evita el zoom máximo cuando los puntos coinciden (≈ 200 m). */
+const MIN_ROUTE_BOUNDS_SPAN_DEG = 0.002;
+
+interface RouteBounds {
+  readonly north: number;
+  readonly south: number;
+  readonly east: number;
+  readonly west: number;
+}
+
+/** Caja que contiene todos los puntos, con una extensión mínima para puntos coincidentes o muy cercanos. */
+function computeRouteBounds(points: readonly RouteCoordinate[]): RouteBounds | null {
+  if (points.length === 0) return null;
+  const lats = points.map((point) => point.lat);
+  const lngs = points.map((point) => point.lng);
+  let north = Math.max(...lats);
+  let south = Math.min(...lats);
+  let east = Math.max(...lngs);
+  let west = Math.min(...lngs);
+  if (north - south < MIN_ROUTE_BOUNDS_SPAN_DEG) {
+    const midLat = (north + south) / 2;
+    north = midLat + MIN_ROUTE_BOUNDS_SPAN_DEG / 2;
+    south = midLat - MIN_ROUTE_BOUNDS_SPAN_DEG / 2;
+  }
+  if (east - west < MIN_ROUTE_BOUNDS_SPAN_DEG) {
+    const midLng = (east + west) / 2;
+    east = midLng + MIN_ROUTE_BOUNDS_SPAN_DEG / 2;
+    west = midLng - MIN_ROUTE_BOUNDS_SPAN_DEG / 2;
+  }
+  return { north, south, east, west };
+}
+
+/**
+ * Encuadra el mapa para que todos los pines queden visibles: un zoom fijo sobre el centro no alcanza en un canvas
+ * de 192 px para puntos alejados dentro de Aguilares. Solo vuelve a ajustar si cambian los límites.
+ */
+function RouteBoundsFitter({ bounds }: { bounds: RouteBounds }) {
+  const map = useMap();
+  const { north, south, east, west } = bounds;
+  React.useEffect(() => {
+    if (!map) return;
+    map.fitBounds({ north, south, east, west }, ROUTE_BOUNDS_PADDING_PX);
+  }, [map, north, south, east, west]);
+  return null;
+}
 
 export interface TripRouteMapDrop {
   readonly position: number;
@@ -151,6 +206,8 @@ export function TripRouteMap({
     [mappedStops]
   );
 
+  const routeBounds = React.useMemo(() => computeRouteBounds(polylinePath), [polylinePath]);
+
   const formattedDistance = React.useMemo(() => {
     if (routeDistanceM == null || routeDistanceM < 1) return null;
     const km = routeDistanceM / 1000;
@@ -226,12 +283,13 @@ export function TripRouteMap({
           >
             <MapStatusWatcher onFailed={() => setApiLoadFailed(true)} />
             <GoogleMap
-              center={mapCenter}
+              defaultCenter={mapCenter}
               defaultZoom={14}
               gestureHandling="greedy"
               disableDefaultUI
               mapId={mapId}
             >
+              {routeBounds && <RouteBoundsFitter bounds={routeBounds} />}
               {mappedStops.map((item, index) => (
                 <RouteMarker
                   key={item.stop.label}
@@ -301,22 +359,100 @@ export function TripRouteMap({
         </div>
       )}
 
-      {/* Botón externo prominente de 48 px para R07 */}
-      {showExternalNavigation && (
-        <div className="p-3.5">
+      {/* Navegación externa para R07: un botón de 48 px o un enlace por tramo */}
+      {showExternalNavigation && <RouteNavigation legs={plan.navigationLegs} />}
+    </section>
+  );
+}
+
+const NAVIGATION_LINK_CLASS =
+  'flex h-12 min-h-12 min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]';
+
+function legSequence(leg: NavigationLeg): string {
+  return leg.stops.map((stop) => stop.label).join(' → ');
+}
+
+/** Tramo que no entra en una URL de Google Maps: se navega con las direcciones escritas completas. */
+function ManualLeg({ leg, heading }: { leg: NavigationLeg; heading: string }) {
+  return (
+    <div
+      role="note"
+      data-testid="route-navigation-manual-leg"
+      className="rounded-xl border border-border bg-muted/40 p-3 text-xs text-muted-foreground"
+    >
+      <p className="font-semibold text-foreground">{heading}</p>
+      <p className="mt-1">
+        Las direcciones son demasiado largas para abrir este tramo en Google Maps. Seguí las direcciones escritas:
+      </p>
+      <ol className="mt-1 space-y-0.5">
+        {leg.stops.map((stop) => (
+          <li key={stop.label}>
+            {stop.label}: {stop.address}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function RouteNavigation({ legs }: { legs: readonly NavigationLeg[] }) {
+  const [onlyLeg] = legs;
+  if (legs.length === 1 && onlyLeg) {
+    return (
+      <div className="p-3.5">
+        {onlyLeg.url ? (
           <a
-            href={plan.externalUrl}
+            href={onlyLeg.url}
             target="_blank"
             rel="noopener noreferrer"
             data-testid="open-google-maps-btn"
-            className="flex h-12 min-h-12 min-h-[48px] w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]"
+            className={NAVIGATION_LINK_CLASS}
           >
             <ExternalLink className="h-4 w-4 text-primary" />
             <span>Abrir en Google Maps</span>
           </a>
-        </div>
-      )}
-    </section>
+        ) : (
+          <ManualLeg leg={onlyLeg} heading={`Recorrido: ${legSequence(onlyLeg)}`} />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 p-3.5">
+      <p className="text-xs text-muted-foreground">
+        Google Maps abre hasta {MAX_NAVIGATION_WAYPOINTS + 2} paradas por enlace: el recorrido va en{' '}
+        {legs.length} tramos, en orden. Cada tramo empieza donde terminó el anterior.
+      </p>
+      <ol className="space-y-2">
+        {legs.map((leg, index) => {
+          const heading = `Tramo ${index + 1} de ${legs.length}: ${legSequence(leg)}`;
+          return (
+            <li key={heading}>
+              {leg.url ? (
+                <a
+                  href={leg.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`open-google-maps-leg-${index + 1}`}
+                  className={cn(NAVIGATION_LINK_CLASS, 'h-auto flex-col gap-0.5 py-2')}
+                >
+                  <span className="flex items-center gap-2">
+                    <ExternalLink className="h-4 w-4 text-primary" />
+                    Abrir tramo {index + 1} de {legs.length}
+                  </span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {legSequence(leg)}
+                  </span>
+                </a>
+              ) : (
+                <ManualLeg leg={leg} heading={heading} />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
