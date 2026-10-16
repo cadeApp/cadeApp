@@ -1071,32 +1071,65 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     const countInB = idsB.filter((id) => id === concurrentRequestId).length;
     expect(countInA + countInB).toBeLessThanOrEqual(1);
 
-    // Si alguno quedó con hasMore: true por SKIP LOCKED, drenar hasta completar
+    // Si alguno quedó con hasMore: true por SKIP LOCKED, drenar con presupuesto acotado (máx 10)
     let hasMore = Boolean(dataA?.hasMore || dataB?.hasMore);
-    while (hasMore) {
+    for (let attempt = 0; hasMore && attempt < 10; attempt++) {
       const { data: drainData, error: drainErr } = await merchantClientA.rpc('reconcile_expired_requests');
       expect(drainErr).toBeNull();
       hasMore = Boolean((drainData as { hasMore?: boolean } | null)?.hasMore);
     }
+    expect(hasMore).toBe(false);
 
-    // 6. Navegación a historial "Todas": la solicitud vencida se reconcilia y figura con badge "Vencida"
+    // 7. PR370-R01 (Causalidad estricta de Historial): Se siembra una tercera solicitud vencida (lazyRequestId)
+    // DESPUÉS de que concluyeron todas las llamadas RPC manuales de reconciliación.
+    // Esto demuestra de forma causal e irrefutable que getMerchantHistoryRequests reconcilia en su consulta SQL.
+    const lazySeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const lazyRequestId = lazySeedResult.requestId;
+    const lazyPendingOfferId = lazySeedResult.pendingOfferIds[0];
+    if (!lazyPendingOfferId) {
+      throw new Error('[E2E Precondition Error] No se creó oferta pendiente para lazyRequestId');
+    }
+
+    // Oráculo DB previo: confirmar que lazyRequestId y su oferta permanecen published y pending ANTES de navegar
+    const preLazyInspection = await getRequestInspectionData(stagingContext, lazyRequestId);
+    expect(preLazyInspection.requestStatus).toBe('published');
+    expect(preLazyInspection.offers.some((o) => o.status === 'pending')).toBe(true);
+
+    // 8. Navegación a historial "Vencidas": sin llamar RPC manual, la lectura de historial la reconcilia
+    await page.goto('/merchant/history?status=expired');
+    const lazyHistoryItemExpired = page.locator(`a[href="/merchant/requests/${lazyRequestId}"]`);
+    await expect(lazyHistoryItemExpired).toBeVisible({ timeout: 10000 });
+    await expect(lazyHistoryItemExpired).toContainText('Vencida');
+
+    // Oráculo DB inmediato: constatar que la visita a historial provocó la transición de lazyRequestId y su oferta a expired
+    const postLazyInspection = await getRequestInspectionData(stagingContext, lazyRequestId);
+    expect(postLazyInspection.requestStatus).toBe('expired');
+    expect(postLazyInspection.offers.every((o) => o.status === 'expired')).toBe(true);
+
+    // 9. Navegación a historial "Todas": tanto lazyRequestId como requestId figuran con badge "Vencida"
     await page.goto('/merchant/history');
+    const lazyHistoryItemAll = page.locator(`a[href="/merchant/requests/${lazyRequestId}"]`);
+    await expect(lazyHistoryItemAll).toBeVisible({ timeout: 10000 });
+    await expect(lazyHistoryItemAll).toContainText('Vencida');
+
     const historyItemAll = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(historyItemAll).toBeVisible({ timeout: 10000 });
     await expect(historyItemAll).toContainText('Vencida');
 
-    // 7. Navegación a historial "Vencidas": también figura la solicitud reconciliada con badge "Vencida"
-    await page.goto('/merchant/history?status=expired');
-    const historyItemExpired = page.locator(`a[href="/merchant/requests/${requestId}"]`);
-    await expect(historyItemExpired).toBeVisible({ timeout: 10000 });
-    await expect(historyItemExpired).toContainText('Vencida');
-
-    // 8. Comprobar que en "Mis solicitudes" (dashboard activas), la solicitud vencida ya NO aparece
+    // 10. Comprobar que en "Mis solicitudes" (dashboard activas), ni requestId ni lazyRequestId aparecen
     await page.goto('/merchant/dashboard');
     const activeItem = page.locator(`a[href="/merchant/requests/${requestId}"]`);
     await expect(activeItem).not.toBeVisible({ timeout: 10000 });
+    const lazyActiveItem = page.locator(`a[href="/merchant/requests/${lazyRequestId}"]`);
+    await expect(lazyActiveItem).not.toBeVisible({ timeout: 10000 });
 
-    // 9. Oráculo server-side en PostgreSQL
+    // 11. Oráculos server-side en PostgreSQL de las solicitudes previas
     const inspection = await getRequestInspectionData(stagingContext, requestId);
     expect(inspection.requestStatus).toBe('expired');
     expect(inspection.offers.every((o) => o.status === 'expired')).toBe(true);
