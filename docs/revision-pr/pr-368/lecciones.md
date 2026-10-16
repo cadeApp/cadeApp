@@ -39,3 +39,10 @@ El hallazgo nuevo se clasifica como P04 ya existente. No modificar AGENTS.md por
 - Las salidas de controles negativos declaradas por el autor no encajan con el script publicado al sustituir el comando completo (el GREEN inicial falla antes); pedir comandos/lógica exactos, no asumir intención fraudulenta ni declarar verificadas las nueve mutaciones que no corrimos.
 - Los nombres de componentes como DocumentUploadCard son apropiados para un informe técnico, pero no para demostrar texto dirigido al cliente. Fuente UI revisada usa selfieTitle correcto; PR body corregido para explicar distinción y rotular capturas en lenguaje público. No alterar evidencias gráficas.
 - E2E sobre nuevo HEAD: el run exitoso previo no cubre automáticamente un merge posterior; status `e2e-preview=error` del SHA `e97323fe` por cancelación debe quedar explícito.
+
+## Ronda 6
+
+- Las discrepancias de narración de un test negativo pueden resolverse sin reescribir la implementación: volver a ejecutar el algoritmo con un test siempre GREEN que emita un resumen Vitest y otro que fuerce un RED real. El script corregido rechaza mutantes supervivientes y errores en GREEN inicial.
+- `CI build` puede fallar por la ruta común de next/font aun cuando Vercel y tests verdes no cambien; no atribuir el fallo a T-354 sin comparar el alcance y la fuente, ni modificar paquetes por intuición. Un `bundle-budget` skipped no se considera GREEN.
+- Un E2E cancelado y un E2E PASS en otro SHA son hechos distintos. `e2e-preview-target.mjs` contempla re-run (runAttempt>1) sin bloquearlo como duplicado.
+- La evidencia visual recién compartida puede respaldar al autor, pero un enlace que el revisor no pudo abrir no debe elevarse a `verificado-runtime` o `arreglado-verificado` sin inspección real.

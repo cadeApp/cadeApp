@@ -297,3 +297,69 @@ Se leyeron las fuentes reales de 9 archivos (copy, status, profile, card, admin,
 - SHA e97323fe2290a33dec2152ab1b0020037d327a5f unit 116621365095: 133 files, 2370 Vitest passed, más 79 workflow tests y 6 ADR. db-tests 116621365268: Files=24, Tests=2283, Result: PASS. typecheck, lint, build, audit, bundle-budget SUCCESS. approval-policy SUCCESS por review APPROVED vigente.
 - E2E commit status ERROR, Vercel deployment `dpl_8isGQv9cJEi1pBJfof727GfxvMTj`, run 38792914312, `e2e-preview` CANCELLED. Run anterior 38695142292 PASSED sobre SHA anterior 20392c26, NO es equivalente.
 - `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` intentado desde contenedor, exit=128, `Could not resolve host: github.com`; no hubo pnpm Vitest de repo ni navegador directo.
+
+## Ronda 6 — 2026-10-16 — SHA 5388ed3627e4958cb3bcd112eb38ed66aa892bed
+
+### Comprobación autónoma independiente — caso GREEN superviviente y RED real
+
+Se creó `/tmp/t354-r6-harness-check.mjs` y se ejecutó con `node` en un directorio temporal limpio, **sin clonar cadeApp, sin alterar tests del repositorio y sin conexiones a Supabase/Vercel**. Se transcribe el script completo para reproducción:
+
+```js
+import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {execSync} from 'node:child_process';
+const root=mkdtempSync(join(tmpdir(),'t354-r6-'));
+const file=join(root,'dummy.txt');
+writeFileSync(file,'original\n');
+const runVitest=command=>{
+  try{return {code:0,output:execSync(command,{cwd:root,encoding:'utf8',stdio:['pipe','pipe','pipe'],env:{...process.env,NO_COLOR:'1'}})}}
+  catch(e){if(typeof e.status!=='number')throw e;return {code:e.status,output:String(e.stdout??'')+'\n'+String(e.stderr??'')}}
+};
+function validate(command){
+  const original=readFileSync(file,'utf8');
+  const initial=runVitest(command);
+  if(initial.code!==0||!/Tests\s+\d+\s+passed/.test(initial.output))throw Error('Control GREEN inicial ausente');
+  let mutated;
+  try{writeFileSync(file,'mutant\n');mutated=runVitest(command)}
+  finally{writeFileSync(file,original)}
+  if(mutated.code!==1||!/Tests\s+\d+\s+failed/.test(mutated.output))
+    throw Error('Mutante sobreviviente o fallo no atribuible a test: exit='+mutated.code);
+  const restored=runVitest(command);
+  if(restored.code!==0||!/Tests\s+\d+\s+passed/.test(restored.output))throw Error('GREEN tras restaurar ausente');
+  return 'DETECTED';
+}
+const tests=[
+ ['always-GREEN','node -e "console.log(\'Tests 1 passed (1)\')"','REJECTED'],
+ ['nonexistent-command','comando_que_no_existe_12345','REJECTED'],
+ ['RED-and-GREEN','node -e "const fs=require(\'fs\');if(fs.readFileSync(\'dummy.txt\',\'utf8\').startsWith(\'mutant\')){console.log(\'Tests 1 failed (1)\');process.exit(1)}console.log(\'Tests 1 passed (1)\')"','DETECTED']
+];
+try{
+ for(const [name,command,expected] of tests){
+   let result;try{result=validate(command)}catch(e){result='REJECTED';console.log(name,'reason='+e.message)}
+   const clean=readFileSync(file,'utf8')==='original\n';
+   console.log(name,result,'clean='+clean);
+   if(result!==expected||!clean)process.exitCode=1;
+ }
+}finally{rmSync(root,{recursive:true,force:true})}
+```
+
+Salida real:
+
+```text
+always-GREEN reason=Mutante sobreviviente o fallo no atribuible a test: exit=0
+always-GREEN REJECTED clean=true
+nonexistent-command reason=Control GREEN inicial ausente
+nonexistent-command REJECTED clean=true
+RED-and-GREEN DETECTED clean=true
+R6_HARNESS_VALIDATION=PASS
+```
+
+### Fuente y gates del commit
+
+- Lectura independiente vía GitHub API de 9 fuentes en el HEAD; 14 controles GREEN, 14 mutantes de fuente en memoria detectados. No se ejecutaron los 9 RED originales de Vitest.
+- Autor cambió SOLO `docs/tasks/log/T-354.md` desde el commit de ronda 5, aclarando experimentos. `develop` 4 commits adelantado, `mergeable=true` según GitHub, sin ejecución local `git merge-tree` por falta de clon.
+- CI SHA 5388ed3: unit job 116635958117 -> 133 archivos, 2370 Vitest pass, 79 node:test, 6 ADR; DB job 116635958806 -> 24 files, 2283 tests PASS; typecheck/lint/audit/approval-policy success. `build` 116635958258 FAIL -> `next/font` google loader TypeError reading 1 of null; bundle-budget SKIPPED.
+- E2E commit status `error`, run 38797126543, job 116636476695 CANCELLED; Vercel deployment dpl_GGvsTyGPrmMFKhKyVNqc3dYonmCT success. El autor documentó honestamente la cancelación en bitácora y cuerpo de PR.
+- Las dos capturas nuevas figuran con URLs GitHub user-attachments; no pudimos descargar imágenes originales desde las herramientas de esta sesión, así que no se declara visual revisado. La cadena técnica `DOCUMENTUPLOADCARD` no aparece en el JSX del cliente.
+- Nota de reproducibilidad: `node docs/revision-pr/analizar.mjs verificacion`, los tests reales de Vitest mutado y `git merge-tree` **no se ejecutaron localmente** desde la revisión actual.
