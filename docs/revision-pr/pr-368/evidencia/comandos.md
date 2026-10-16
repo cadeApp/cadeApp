@@ -363,3 +363,39 @@ R6_HARNESS_VALIDATION=PASS
 - E2E commit status `error`, run 38797126543, job 116636476695 CANCELLED; Vercel deployment dpl_GGvsTyGPrmMFKhKyVNqc3dYonmCT success. El autor documentó honestamente la cancelación en bitácora y cuerpo de PR.
 - Las dos capturas nuevas figuran con URLs GitHub user-attachments; no pudimos descargar imágenes originales desde las herramientas de esta sesión, así que no se declara visual revisado. La cadena técnica `DOCUMENTUPLOADCARD` no aparece en el JSX del cliente.
 - Nota de reproducibilidad: `node docs/revision-pr/analizar.mjs verificacion`, los tests reales de Vitest mutado y `git merge-tree` **no se ejecutaron localmente** desde la revisión actual.
+
+ 
+## Ronda 7 — comprobaciones finales del SHA `6c2a6d2d2f5f71d47ca0ae4837e88a862d416322`
+ 
+**Fuente oficial:** API GitHub sobre PR #368, comparación `develop...6c2a6d2d2f5f71d47ca0ae4837e88a862d416322`, diff de 21 archivos, tareas/ficha, CI logs, tests E2E y reviews. La revisión independiente ejecutó sobre nueve contenidos reales **14 checks de fuente baseline** y luego **14 sustituciones de texto en copias in-memory**; todos los baselines GREEN y los 14 mutantes detectados por sus checks. No se editó ningún archivo fuente ni se ejecutó Vitest mutado en clone; esa limitación se conserva expresamente en H02.
+ 
+### Invariantes comprobados y mutados en memoria
+ 
+| ID | Cambio que hizo fallar el control estático |
+|---|---|
+| title | `selfieTitle` nuevo → texto obsoleto |
+| subtitle | subtítulo literal → frase corta |
+| status | StatusView deja de consumir copy |
+| profile | perfil deja de consumir copy |
+| detail | admin documentKind.selfie cambia de texto |
+| badge | admin queue badge cambia de texto |
+| wrap | remoción de condición `kind==='selfie'` |
+| input | aria-label deja de apuntar al título |
+| pending | test cruzado pierde `Pendiente` |
+| noGlobal | test admin reintroduce `globalThis as any` |
+| noBang | test onboarding reintroduce `describedById!` |
+| react | falta import React directo en ApplicantsQueue |
+| ariaTest | test ya no verifica descripción literal |
+| adminTest | test admin ya no verifica badge |
+ 
+**Resultado del instrumento de fuente sobre archivos reales del SHA:** `14/14 baseline GREEN, 14/14 mutantes detectados`. Estos controles **NO son equivalentes a mutaciones de Vitest**. El harness Node hermético de la ronda 6 sigue documentado en el apartado anterior.
+ 
+### Logs consultados del SHA
+ 
+- Unit job `117142235252`: `Test Files 135 passed (135)`, `Tests 2419 passed (2419)`, node:test `79 passed`, ADR `6 passed`.
+- Build job `117142235214`: `Compiled successfully in 28.9s`, `Generating static pages (50/50)`, success.
+- DB job `117142235118`: `Files=26, Tests=2341, Result: PASS` (pruebas normales; se registran también RED intermedios intencionales en otros CC).
+- E2E job `117142691597`, run `38951164081`: `78 passed (20.3m)`, `1 flaky` en `map-privacy.spec.ts:498` por HTTP 500 (expected 200), `3 passed (1.0m)` global-settings. El run y el commit status del **SHA target `6c2a6d2d2f5f71d47ca0ae4837e88a862d416322`** quedaron success.
+- Review formal de Lautaro073: estado `APPROVED`; `approval-policy` success. Branch develop sincronizada (behind=0), `mergeable_state=clean` al consultar.
+ 
+**No observado directamente:** las dos capturas de user-attachments, la ejecución independiente de las nueve mutaciones Vitest y un `git merge-tree` local. La prueba E2E *flaky* de T-314 es evidencia concreta de un HTTP 500 transitorio y justifica seguimiento separado, no un bloqueo de esta PR de copy.

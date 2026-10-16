@@ -46,3 +46,10 @@ El hallazgo nuevo se clasifica como P04 ya existente. No modificar AGENTS.md por
 - `CI build` puede fallar por la ruta común de next/font aun cuando Vercel y tests verdes no cambien; no atribuir el fallo a T-354 sin comparar el alcance y la fuente, ni modificar paquetes por intuición. Un `bundle-budget` skipped no se considera GREEN.
 - Un E2E cancelado y un E2E PASS en otro SHA son hechos distintos. `e2e-preview-target.mjs` contempla re-run (runAttempt>1) sin bloquearlo como duplicado.
 - La evidencia visual recién compartida puede respaldar al autor, pero un enlace que el revisor no pudo abrir no debe elevarse a `verificado-runtime` o `arreglado-verificado` sin inspección real.
+
+ 
+## Ronda 7 — cierre
+- **Un gate de E2E en verde puede ocultar flakiness real, no una falla permanente.** En run 38951164081 una aserción de T-314 vio HTTP 500 del endpoint live; Playwright la clasificó flaky y la aprobó en retry. Registrar el problema con prueba/log, sin atribuirlo a una PR solo de copy y sin cambiar políticas/umbrales para esconderlo.
+- **No presentar una verificación externa como mutación independiente.** El revisor sí hizo 14 mutaciones de fuente en memoria, pero no ejecutó el código Vitest del autor mutado. La distinción queda en H02 parcial y en la evidencia.
+- **Un cambio documental del revisor mueve HEAD.** Los gates se vuelven a consultar tras publicar la carpeta final; la decisión de merge usa `expected_head_sha`.
+- **Después de un merge, los agentes vuelven al board antes de tomar otro trabajo.** El próximo ítem de P2 requiere comprobar dueño, dependencias, rama base y evitar duplicar tareas ya tomadas; iniciar por la skill `tomar-tarea` tras confirmar el merge.
