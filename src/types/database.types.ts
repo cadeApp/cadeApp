@@ -971,6 +971,7 @@ export type Database = {
         }
         Returns: Json
       }
+      update_my_merchant_profile: { Args: { p_patch: Json }; Returns: Json }
       withdraw_offer: { Args: { p_offer_id: string }; Returns: Json }
     }
     Enums: {
