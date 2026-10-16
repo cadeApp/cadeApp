@@ -283,13 +283,19 @@ export async function courierOnboardingAction(
     vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
   };
 
-  const { error: courierUpdateError } = await adminClient
+  const { data: updatedCouriers, error: courierUpdateError } = await adminClient
     .from('couriers')
     .update(courierUpdatePayload as never)
-    .eq('profile_id', user.id);
+    .eq('profile_id', user.id)
+    .in('status', ['pending', 'approved'])
+    .select('profile_id');
 
   if (courierUpdateError) {
     return err('INTERNAL_ERROR');
+  }
+
+  if (!updatedCouriers || (updatedCouriers as Array<{ profile_id: string }>).length !== 1) {
+    return err('UNAUTHORIZED_ACTOR');
   }
 
   // 9. Retorno ok con redirección a estado del onboarding
