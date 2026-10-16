@@ -134,3 +134,22 @@ if(test()!==0)throw Error('GREEN final no confirmado');
 ```
 Para R02 y R03 agregar un bloque equivalente con targets precisos de la corrección implementada, tras constatar 1 needle exacto, baseline GREEN, mutación RED, restauración desde memoria, GREEN final. No ejecutar mutaciones sobre Preview, Supabase ni branch remoto. No simular ejecuciones.
 Comandos al cierre: pnpm typecheck && pnpm lint && pnpm test; git diff --check; git fetch origin; git merge-tree --write-tree origin/develop HEAD; node docs/revision-pr/analizar.mjs verificacion (por revisión, no agy); GitHub E2E automático último SHA.
+
+---
+## Ronda 3 · 2026-10-16
+- SHA fallido inicial `837fc14c`: GitHub Actions https://github.com/cadeApp/cadeApp/actions/runs/38871188667, typecheck TS1005 `'}' expected` en `onboarding-form.test.tsx:932`; lint y build FALLAN; unit 1 suite failed, 134 passed, 2382 tests de suites ejecutadas.
+- SHA corregido en revisión `17330878f795804c5820be94dc64a764f9fa232c`: falta de llave `});` resuelta con una línea adicional. GitHub Actions https://github.com/cadeApp/cadeApp/actions/runs/38922166022: typecheck, lint y audit success al consultar; unit, build, db-tests **in_progress**, e2e-preview **pending**. No declarar el CI final verde hasta obtener resultados.
+- E2E anterior `e8206d77`: run https://github.com/cadeApp/cadeApp/actions/runs/38863810444, success, pero no corresponde a este HEAD.
+
+### Comandos pendientes de ejecución en worktree limpio (no ejecutados por revisión)
+```bash
+pnpm exec vitest run src/features/merchants/components/onboarding-form.test.tsx
+pnpm exec vitest run src/features/merchants/queries.test.ts
+pnpm typecheck && pnpm lint && pnpm test
+git diff --check
+node docs/revision-pr/analizar.mjs verificacion
+git fetch origin
+git merge-tree --write-tree origin/develop HEAD
+git ls-remote origin refs/heads/feat/T-358-edicion-comercio-precarga
+```
+Repetir pruebas de mutación R01 (GPS fuera no modifica pin), R02 (barrio inactivo etiqueta accesible), R03 (null/null sin error de validación). Ejecutar GREEN original, RED con mutación temporal *de implementación*, GREEN restaurado, sin adulterar assertions, snapshots, mocks, fixtures, timeouts ni CI. No ejecutar contra DB remota.

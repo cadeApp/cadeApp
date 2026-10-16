@@ -27,3 +27,7 @@ PR375-H07/H08: E2E de `42ace275` en verde, run del HEAD posterior `b3ace3eb` can
 - R02: los selectores de edición no pueden suponer que todo valor histórico siga en el catálogo active=true; representar estados retirados sin mostrar IDs técnicos.
 - R03: setters múltiples con validación sobre cierres de estado obsoleto dejan errores fantasmas. Validar pares vinculados de forma atómica y probar el mensaje visible.
 - No asignar AG-nuevo sin determinar máximo en todas las ramas remotas.
+
+## Ronda 3 — R04: salida local del autor no corresponde al último SHA
+El primer commit de ronda 3 introdujo el test R03 sin llave de cierre, con bitácora que afirmaba 32/32 tests y 2414 tests totales. GitHub Actions registró TS1005 y una suite sin cargar. Se corrigió en otro commit durante la revisión. Antes de afirmar verde en la bitácora, ejecutar pruebas DESPUÉS del commit final y esperar CI HEAD, no heredar salida de worktree anterior.
+Este caso refuerza P15-entregable-declarado-pero-no-ejecutable y P08-control-no-cubre-lo-que-dice; no asignar nuevo número AG hasta verificar catálogo.
