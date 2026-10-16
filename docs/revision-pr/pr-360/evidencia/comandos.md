@@ -180,3 +180,13 @@ Hubo retries que fallaron con el mismo tipo de strict mode (valores $ 1.500 y $ 
 **Reproducción pedida al autor**: reemplazar SOLO selector amplio en las DOS aserciones de monto del spec (antes y después de reload). Seleccionar la Card usando el heading h2 `Repartidor asignado` y los dos niveles padre `locator('..').locator('..')`, dentro de ella `getByText(formatArs(acceptedOffer.amountArs), {exact:true})`, con `toHaveCount(1)` y `toBeVisible()`. Sin `first`, `nth`, temporizadores, fake DOM ni cambio de UI. Ejecutar test completo sobre Preview real del nuevo SHA, conservar el RED original y anotar GREEN si sucede.
 
 No se ejecutó `git merge-tree` ni `pnpm` desde clon local; la PR figuraba `mergeable:true` y develop se movió desde la última sincronización, por lo que no se declara rebase completo.
+
+## Ronda 7 — 2026-10-16 — SHA 6d2c4337
+
+- Cambios exactos: compare `52549ad7...6d2c4337`, commits `ada6ee57` (locator) y `6d2c4337` (bitácora). Archivos: e2e/specs/main-flow.spec.ts, docs/tasks/log/T-359.md.
+- RED anterior: https://github.com/cadeApp/cadeApp/actions/runs/38694202782: 75 passed / 1 failed, strict mode monto con 2 elementos.
+- GREEN: https://github.com/cadeApp/cadeApp/actions/runs/38945199224, job 117122539233, 76 passed Chromium (19.2m), 3 passed global-settings (58.6s), caso dos sesiones en 33.9s. Reporter dejó estado `e2e-preview=success` contra 6d2c4337.
+- CI: https://github.com/cadeApp/cadeApp/actions/runs/38945110606; unit job 117122154992, `Test Files 136 passed (136)`, `Tests 2435 passed (2435)`, verify-workflows 79/79, verify-adr 6/6. db-tests job 117122155366, `Files=26, Tests=2341, Result: PASS`. Mutaciones RED dentro del job DB son de otras tareas; no contarlas en T-359.
+- Approval-policy: https://github.com/cadeApp/cadeApp/actions/runs/38946219097, aprobación de Lautaro073 vigente para SHA 6d2c4337.
+- Desfase: develop af0cf1d7 vs base integrada cba78a29 = 36 commits nuevos, cambios de main-flow.spec.ts, TripMerchantView, whatsapp y CC-025/026/027/028. GitHub mergeable=true. No corrí merge-tree de clon ni E2E combinado contra develop nuevo.
+- No se ejecutó pnpm ni mutaciones independientes en el entorno revisor por carencia de checkout/git remoto; verificado_en_sha = null.

@@ -31,3 +31,9 @@ No proponer AG-xx nuevo sin máximo de todas las ramas y evidencia ejecutada.
 - **Error de revisiones anteriores:** inspeccioné el código de `TripMerchantView` sin detectar que el importe estaba en el mensaje construido por `buildNotifyCustomerWhatsAppMessage`. El E2E real detectó esa omisión. Reconocerlo y no pedirle al agy cambios de producto por un bug de selector propio del E2E.
 - La suite global verde no ejecuta los asserts de navegador. La primera ejecución E2E (75 PASS, 1 FAIL) es evidencia superior al supuesto de verde basado en existencia de test.
 - La comprobación debe alcanzar la línea previa al reload y la posterior, y los asserts de WhatsApp, Back y privacidad que aún no alcanzó el flujo. No agregar número de lección AG sin relevar el máximo de todas las ramas remotas.
+
+## Ronda 7 — GREEN en Preview vs merge futuro
+
+- RED→GREEN de un mismo test sí quedó acreditado: run 38694202782 vs run 38945199224, conservando comprobación monetaria en la Card y después de reload.
+- El E2E del SHA de una PR desfasada no certifica automáticamente la combinación con nuevos cambios de develop. Nuevas modificaciones de WhatsApp/TripMerchantView y el E2E compartido justifican revalidar después de merge normal. Esto es riesgo hipotético, no defecto funcional confirmado.
+- Sin mutaciones independientes del revisor no se firma verificado_en_sha, aun con CI en verde.

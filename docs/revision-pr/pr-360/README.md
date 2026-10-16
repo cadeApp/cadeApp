@@ -14,6 +14,7 @@
 | 4 | `efb22c421b1ded80f48380fef4edc9e4981831f5` | Sin nuevos bloqueantes de código; E2E bloqueado | [ronda-4](revisiones/ronda-4.md) |
 | 5 | `e1e7e53ee1c50bdfa89468132ff5194d6b781860` | **Con bloqueo de validación E2E; sin cambios de código** | [ronda-5](revisiones/ronda-5.md) |
 | 6 | `ceb1161b07f1419992e764bbe17db9a28ea2fc2e` | **CON BLOQUEANTE R03: E2E real falla** | [ronda-6](revisiones/ronda-6.md) |
+| 7 | `6d2c433711ed7a8aa562dfd75099029edf82c888` | **R03 corregido; E2E en verde; pendiente revalidación con develop avanzado** | [ronda-7](revisiones/ronda-7.md) |
 
 ## Hallazgos actuales
 
@@ -23,15 +24,15 @@
 | PR360-H02 | alto | arreglado-sin-verificar |
 | PR360-H03 | medio | arreglado-sin-verificar |
 | PR360-H04 | medio | arreglado-sin-verificar |
-| PR360-H05 | alto | parcial |
+| PR360-H05 | alto | arreglado-sin-verificar |
 | PR360-H06 | medio | arreglado-sin-verificar |
 | PR360-H07 | medio | arreglado-sin-verificar |
 | PR360-R01 | medio | arreglado-sin-verificar |
 | PR360-R02 | alto | arreglado-sin-verificar |
-| PR360-R03 | alto | abierto |
+| PR360-R03 | alto | arreglado-sin-verificar |
 
-**H05 sigue parcial y R03 está abierto:** el E2E ya corrió contra Vercel Preview + Supabase Develop, pero **falló de verdad** (75 PASS, 1 FAIL) por un locator de monto no único. Todo el resto sigue `arreglado-sin-verificar`, no `arreglado-verificado`, ya que esta sesión no tiene clon/pnpm ni mutaciones independientes. El run 38694202782 sí ejecutó Playwright; su resultado E2E RED bloquea merge hasta corrección y nueva corrida satisfactoria. Un `resolve-preview SUCCESS` por sí solo nunca es prueba.
+**H05 y R03 tienen RED→GREEN real de Playwright:** el [run 38945199224](https://github.com/cadeApp/cadeApp/actions/runs/38945199224) pasó 76/76 Chromium y 3/3 global-settings sobre `6d2c4337`, incluida la aceptación concurrente con dos sesiones. **No ejecuté mutaciones independientes**: estados `arreglado-sin-verificar`, `verificado_en_sha` sigue null. GitHub indica mergeable:true, pero `develop` agregó 36 commits desde el merge cba78a29, incluyendo E2E main-flow, TripMerchantView y WhatsApp; falta probar el nuevo árbol integrado con develop actual antes del merge. Los checks y aprobación fueron verdes para el SHA inspeccionado; futuros commits pueden requerir nueva aprobación.
 
-**Decisión humana B ya cerrada:** cancelled/expired como terminales seguros en el mismo detalle. **La PR NO se aprueba ni mergea aquí.** `approval-policy` requiere aprobación vigente de Lautaro073.
+**Decisión humana B ya cerrada:** cancelled/expired como terminales seguros en el mismo detalle. **La revisión no aprueba ni mergea.** `approval-policy` pasó con aprobación explícita de Lautaro073 en el SHA examinado; nuevos commits podrían requerir renovarla.
 
 Ver [hallazgos.jsonl](hallazgos.jsonl), [lecciones.md](lecciones.md) y [evidencia/comandos.md](evidencia/comandos.md).
