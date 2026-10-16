@@ -21,3 +21,9 @@ PR375-H07/H08: E2E de `42ace275` en verde, run del HEAD posterior `b3ace3eb` can
 - Las mutaciones propuestas por la revisión se vuelven a ejecutar tras cada arreglo; no se confía en la batería del autor.
 
 **Numeración:** deliberadamente no se asigna nuevo AG-xx: no se pudo ejecutar `git grep` sobre **todas** las ramas remotas para calcular máximo global; estos aprendizajes refuerzan lecciones numeradas preexistentes.
+
+## Ronda 2 — casos omitidos que aparecen al editar
+- R01: GPS no válido es un dato de entrada rechazado, NO una orden de borrar una ubicación previamente almacenada. Probar con pin existente y guardar otro campo.
+- R02: los selectores de edición no pueden suponer que todo valor histórico siga en el catálogo active=true; representar estados retirados sin mostrar IDs técnicos.
+- R03: setters múltiples con validación sobre cierres de estado obsoleto dejan errores fantasmas. Validar pares vinculados de forma atómica y probar el mensaje visible.
+- No asignar AG-nuevo sin determinar máximo en todas las ramas remotas.

@@ -105,3 +105,32 @@ if (!baselinesOk) process.exitCode = 1;
 
 ## Restricciones
 No tests falsos, no adulterar expectations/mocks/fixtures/checks/timeouts; no tocar `docs/revision-pr/**` desde agy. No disparar workflows manualmente, no leer `.env*` ni utilizar Supabase remoto de administración.
+
+---
+## Ronda 2 — evidencia y control independiente pendiente
+**SHA:** e8206d770718766fa0888df68252cb078b131bf0; CI https://github.com/cadeApp/cadeApp/actions/runs/38863709147 (7 jobs success vistos); E2E anterior del SHA e07247b4: https://github.com/cadeApp/cadeApp/actions/runs/38861116727, 79 passed T-358 incluido. E2E del SHA de ronda: https://github.com/cadeApp/cadeApp/actions/runs/38863810444 seguía pending. No afirmar ejecución propia.
+
+**R01 (control propuesto):** montar en onboarding-form.test.tsx modo edit con pin previo (-27.435,-65.615). Mock navigator.geolocation.getCurrentPosition que invoque callback success fuera (-34.6,-58.4). Assert pin intacto y tras cambiar phone, patch exactamente {phone:'3865999888'}. Baseline roto RED; tras solución GREEN; mutar temporalmente añadiendo de nuevo ambos setValue(...null...) => RED; restaurar desde bytes en memoria => GREEN.
+**R02:** simular defaultPickupZoneId inactivo fuera de zones activos; assert etiqueta legible y que phone-only no mande zone. Mutar quitando fallback de histórico => RED; restaurar GREEN.
+**R03:** con pin inicial validar después de click Quitar ubicación que no aparece mensaje de par de coordenadas y map-value null. Mutar helper setFields con dos setValue secuenciales con shouldValidate:true => RED; restaurar GREEN.
+
+### Harness completo para ejecutar sólo tras implementar tests y arreglos
+Guardar el siguiente contenido completo en /tmp/pr375-r2-mut.mjs (afuera del repo) y ejecutar en worktree limpio. Verificar needles únicos: SIN OBJETIVO no es pase.
+```js
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+const file = path.resolve('src/features/merchants/components/onboarding-form.tsx');
+const src = fs.readFileSync(file,'utf8');
+const suite = 'src/features/merchants/components/onboarding-form.test.tsx';
+function test(){ const r=spawnSync('pnpm',['exec','vitest','run',suite],{encoding:'utf8',timeout:120000,maxBuffer:16*1024*1024});if(r.error)throw r.error; const lines=((r.stdout||'')+'\n'+(r.stderr||'')).split('\n');console.log(lines.filter(x=>/Test Files|Tests |FAIL|passed|failed/i.test(x)).slice(-12).join('\n'));return r.status??-1;}
+const before = "setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);\n          return;";
+const after = "setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);\n          setValue('defaultPickupLat', null, { shouldValidate: true });\n          setValue('defaultPickupLng', null, { shouldValidate: true });\n          return;";
+if(src.split(before).length!==2){throw Error('R01 SIN OBJETIVO ÚNICO; ajustar needle al fix real. No cuenta como resultado');}
+if(test()!==0)throw Error('Baseline no verde');
+try { fs.writeFileSync(file,src.replace(before,after)); if(test()===0)throw Error('R01 MUTANTE VERDE; test no cubre conservación'); console.log('R01 MUTANTE ROJO'); }
+finally { fs.writeFileSync(file,src); if(fs.readFileSync(file,'utf8')!==src)throw Error('No restaurado'); }
+if(test()!==0)throw Error('GREEN final no confirmado');
+```
+Para R02 y R03 agregar un bloque equivalente con targets precisos de la corrección implementada, tras constatar 1 needle exacto, baseline GREEN, mutación RED, restauración desde memoria, GREEN final. No ejecutar mutaciones sobre Preview, Supabase ni branch remoto. No simular ejecuciones.
+Comandos al cierre: pnpm typecheck && pnpm lint && pnpm test; git diff --check; git fetch origin; git merge-tree --write-tree origin/develop HEAD; node docs/revision-pr/analizar.mjs verificacion (por revisión, no agy); GitHub E2E automático último SHA.
