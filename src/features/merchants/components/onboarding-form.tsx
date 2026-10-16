@@ -32,6 +32,7 @@ export interface MerchantFormInitialData {
   readonly businessName?: string;
   readonly phone?: string;
   readonly defaultPickupZoneId?: string | null;
+  readonly defaultPickupZoneName?: string | null;
   readonly defaultPickupAddress?: string;
   readonly defaultPickupLat?: number | null;
   readonly defaultPickupLng?: number | null;
@@ -70,6 +71,7 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
     register,
     handleSubmit,
     setValue,
+    setFields,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<MerchantEditFormInput>({
@@ -90,6 +92,12 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
   const defaultPickupLat = watch('defaultPickupLat');
   const defaultPickupLng = watch('defaultPickupLng');
   const selectedZoneId = watch('defaultPickupZoneId');
+
+  const inactiveZoneId =
+    initialData?.defaultPickupZoneId &&
+    !zones.some((z) => z.id === initialData.defaultPickupZoneId)
+      ? initialData.defaultPickupZoneId
+      : null;
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId);
   const selectedZoneCenter =
@@ -121,12 +129,12 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
         const { latitude, longitude } = pos.coords;
         if (!isWithinAguilaresBounds(latitude, longitude)) {
           setCoordsError(merchantCopy.onboarding.mapOutOfAguilares);
-          setValue('defaultPickupLat', null, { shouldValidate: true });
-          setValue('defaultPickupLng', null, { shouldValidate: true });
           return;
         }
-        setValue('defaultPickupLat', latitude, { shouldValidate: true });
-        setValue('defaultPickupLng', longitude, { shouldValidate: true });
+        setFields(
+          { defaultPickupLat: latitude, defaultPickupLng: longitude },
+          { shouldValidate: true }
+        );
         setCoordsError(null);
       },
       () => {
@@ -322,9 +330,12 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
           </label>
           <Select
             value={selectedZoneId ?? ''}
-            onValueChange={(zoneId) =>
-              setValue('defaultPickupZoneId', zoneId, { shouldValidate: true })
-            }
+            onValueChange={(zoneId) => {
+              if (inactiveZoneId && zoneId === inactiveZoneId) {
+                return;
+              }
+              setValue('defaultPickupZoneId', zoneId, { shouldValidate: true });
+            }}
           >
             <SelectTrigger
               id="zone"
@@ -334,6 +345,16 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
               <SelectValue placeholder={merchantCopy.onboarding.zonePlaceholder} />
             </SelectTrigger>
             <SelectContent>
+              {inactiveZoneId && (
+                <SelectItem
+                  key={inactiveZoneId}
+                  value={inactiveZoneId}
+                  disabled
+                  className="opacity-60 cursor-not-allowed text-muted-foreground"
+                >
+                  Barrio anteriormente asignado (no disponible)
+                </SelectItem>
+              )}
               {zones.map((zone) => (
                 <SelectItem key={zone.id} value={zone.id}>
                   {zone.name}
@@ -406,8 +427,10 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
                 variant="outline"
                 size="lg"
                 onClick={() => {
-                  setValue('defaultPickupLat', null, { shouldValidate: true });
-                  setValue('defaultPickupLng', null, { shouldValidate: true });
+                  setFields(
+                    { defaultPickupLat: null, defaultPickupLng: null },
+                    { shouldValidate: true }
+                  );
                   setCoordsError(null);
                 }}
                 className="w-full sm:w-auto text-muted-foreground hover:text-destructive shrink-0"
@@ -426,8 +449,10 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
             }
             showMarkerWhenEmpty={!isEdit}
             onChange={(coords) => {
-              setValue('defaultPickupLat', coords.lat, { shouldValidate: true });
-              setValue('defaultPickupLng', coords.lng, { shouldValidate: true });
+              setFields(
+                { defaultPickupLat: coords.lat, defaultPickupLng: coords.lng },
+                { shouldValidate: true }
+              );
               setCoordsError(null);
             }}
             defaultZoneCenter={selectedZoneCenter}
