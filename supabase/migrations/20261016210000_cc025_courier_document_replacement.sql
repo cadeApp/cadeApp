@@ -1,12 +1,13 @@
--- CC-025: Rechazo seguro y reemplazo transaccional de documentos del repartidor (T-356, Issue #363)
+-- CC-025 Fase C (Contract): Rechazo seguro y reemplazo transaccional de documentos del repartidor (T-356, Issue #363)
+-- Precondiciones ya aplicadas:
+--   - Fase A (20261015153311_cc025_expand_courier_documents.sql): columnas is_current, rejection_code, idempotency_key + courier_documents_expansion_guard
+--   - Subetapa B0 (20261016033941_cc025_onboarding_atomic.sql): RPC public.submit_courier_onboarding_documents(jsonb)
+--   - Fase B (PR #376): writer de aplicación conectado a submit_courier_onboarding_documents
 
--- 1. Agregar columnas is_current, rejection_code e idempotency_key a courier_documents
+-- 1. Retirar el guard temporal de la Fase A antes del backfill y aplicar restricción de catálogo seguro
 alter table public.courier_documents
-  add column if not exists is_current boolean not null default true,
-  add column if not exists rejection_code text,
-  add column if not exists idempotency_key text;
+  drop constraint if exists courier_documents_expansion_guard;
 
--- Restricción de catálogo seguro para rejection_code
 alter table public.courier_documents
   drop constraint if exists courier_documents_rejection_code_check;
 
@@ -121,6 +122,8 @@ declare
   v_current_purge_after timestamptz;
   v_new_doc_id uuid;
   v_profile_role text;
+  v_consent_status text;
+  v_courier_rec record;
   v_existing_idem_id uuid;
   v_existing_idem_status public.document_review_status;
   v_existing_idem_path text;
@@ -130,16 +133,12 @@ begin
     raise exception using errcode = 'P0001', message = 'UNAUTHENTICATED';
   end if;
 
-  select role into v_profile_role
+  select role, consent_status into v_profile_role, v_consent_status
   from public.profiles
   where id = v_actor_id;
 
-  if v_profile_role is distinct from 'courier' then
+  if v_profile_role is distinct from 'courier' or v_consent_status is distinct from 'active' then
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
-  end if;
-
-  if not app_private.is_active_operational_actor() then
-    raise exception using errcode = 'P0001', message = 'CONSENT_REQUIRED';
   end if;
 
   v_kind_text := p_payload->>'kind';
@@ -169,10 +168,29 @@ begin
     end if;
   end if;
 
-  -- PR364-H02: Lock ordenado unificado en todo el sistema: 1. couriers
-  perform 1 from public.couriers
+  -- PR364-H02 / B0-H03: Lock ordenado unificado: 1. couriers FOR UPDATE + elegibilidad de estado
+  select profile_id, status into v_courier_rec
+  from public.couriers
   where profile_id = v_actor_id
   for update;
+
+  if not found then
+    raise exception using errcode = 'P0001', message = 'NOT_FOUND';
+  end if;
+
+  if v_courier_rec.status::text in ('rejected', 'suspended') then
+    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
+  end if;
+
+  -- B0-H04: Revalidación concurrente de perfil y consentimiento bajo lock: 2. profiles FOR SHARE
+  select role, consent_status into v_profile_role, v_consent_status
+  from public.profiles
+  where id = v_actor_id
+  for share;
+
+  if not found or v_profile_role is distinct from 'courier' or v_consent_status is distinct from 'active' then
+    raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
+  end if;
 
   -- PR364-H07: Comprobar idempotencia persistida por idempotency_key
   if v_idempotency_key is not null then

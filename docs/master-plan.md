@@ -95,7 +95,7 @@ draft ──publish──▶ published ──accept_offer──▶ matched ─�
 | `draft → published` | merchant dueño | Comercio en piloto o con suscripción activa (`paid_until >= hoy`). Campos obligatorios completos. `expires_at = now() + request_ttl_minutes`. |
 | `published → matched` | merchant dueño | Ver §6.1. |
 | `published → cancelled` | merchant dueño | Sin penalidad. Las ofertas `pending` pasan a `expired`. |
-| `published → expired` | sistema | `now() > expires_at`. La expiración es **perezosa**: toda lectura y toda RPC trata como expirada una solicitud vencida, y un barrido periódico la persiste y avisa. Así la corrección no depende del cron. |
+| `published → expired` | sistema | `now() >= expires_at`. La expiración es **perezosa**: toda lectura y toda RPC trata como expirada una solicitud vencida, y un barrido periódico la persiste y avisa. Así la corrección no depende del cron. |
 | `matched → in_transit` | courier asignado | Marca "retirado". |
 | `matched → published` (republicar) | merchant ("no llegó", con motivo `no_show`) o courier (cancela, con motivo) | Se registra el motivo y se cuenta para el admin. La oferta aceptada pasa a `cancelled`. Hay un nuevo `expires_at`. |
 | `matched → cancelled` | merchant dueño | Motivo obligatorio. Se notifica al repartidor. |

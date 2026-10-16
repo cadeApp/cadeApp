@@ -39,7 +39,9 @@ export function mapReplaceCourierDocumentRpcError(
   }
 
   if (
-    (error.code === '42501' || error.code === '28000') &&
+    (error.code === '42501' ||
+      error.code === '28000' ||
+      trimmedMessage.includes('CONSENT_REQUIRED')) &&
     isAllowedReplaceError('UNAUTHORIZED_ACTOR')
   ) {
     return 'UNAUTHORIZED_ACTOR';

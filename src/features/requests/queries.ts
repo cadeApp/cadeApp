@@ -4,6 +4,54 @@ import { z } from 'zod';
 import { createClient } from '@/server/supabase/server';
 import { getRequestOfferCouriersRpc } from '@/server/rpc/offer-couriers';
 import { getMerchantRequestPrivateFieldsRpc } from '@/server/rpc/request-private-fields';
+import { createRequestsRpcServerClient } from '@/server/rpc/requests';
+import type { SupabaseRpcCaller } from '@/server/rpc/offers';
+
+export const MAX_RECONCILE_BATCHES = 10;
+export const MAX_CONSECUTIVE_LOCK_RETRIES = 3;
+
+/**
+ * CC-026 / T-366: Reconcilia transaccionalmente en PostgreSQL las solicitudes vencidas
+ * del comercio autenticado antes de ejecutar lecturas con paginación keyset.
+ * Consume lotes (hasta 50 por lote) mientras `hasMore` sea true.
+ * Si SKIP LOCKED deja filas bloqueadas concurrentemente (`expiredCount === 0 && hasMore === true`),
+ * se reintenta hasta MAX_CONSECUTIVE_LOCK_RETRIES (3) veces antes de fallar cerrado.
+ * Si se agota el presupuesto de reintentos o el tope global de lotes (10) y aún restan filas
+ * pendientes, se arroja excepción explícita para no ejecutar consultas SQL sobre estado obsoleto.
+ */
+export async function reconcileMerchantExpiredRequests(
+  client: SupabaseRpcCaller
+): Promise<void> {
+  const rpcClient = createRequestsRpcServerClient(client);
+  let consecutiveLockRetries = 0;
+
+  for (let batch = 0; batch < MAX_RECONCILE_BATCHES; batch++) {
+    const res = await rpcClient.reconcile_expired_requests({});
+    if (!res.ok) {
+      throw new Error(`Error al reconciliar solicitudes vencidas: ${res.code}`);
+    }
+
+    if (!res.data.hasMore) {
+      return;
+    }
+
+    if (res.data.expiredCount === 0) {
+      consecutiveLockRetries++;
+      if (consecutiveLockRetries >= MAX_CONSECUTIVE_LOCK_RETRIES) {
+        throw new Error(
+          'Solicitudes vencidas bloqueadas concurrentemente; reintentos agotados'
+        );
+      }
+      continue;
+    }
+
+    // Progreso efectivo: resetear el contador de reintentos consecutivos por locks
+    consecutiveLockRetries = 0;
+  }
+
+  throw new Error('Presupuesto de reconciliación de solicitudes vencidas agotado');
+}
+
 import type {
   MerchantRequestSummary,
   MerchantRequestDetail,
@@ -395,6 +443,7 @@ export async function getMerchantHistoryRequests(
   status: HistoryFilterStatus;
 }> {
   const supabase = await createClient();
+  await reconcileMerchantExpiredRequests(supabase);
   const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
   const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
   const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
@@ -600,6 +649,7 @@ export async function getMerchantRequests(
   nextCursor: MerchantHistoryCursor | null;
 }> {
   const supabase = await createClient();
+  await reconcileMerchantExpiredRequests(supabase);
   const pageSize = Math.min(Math.max(1, options?.limit ?? 50), 50);
   const statusParsed = historyFilterStatusSchema.safeParse(options?.status);
   const status: HistoryFilterStatus = statusParsed.success ? statusParsed.data : 'all';
