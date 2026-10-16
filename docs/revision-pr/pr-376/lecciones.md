@@ -12,3 +12,10 @@
 - Validación pura compartida entre caminos de lectura inicial, error y postINSERT reduce inconsistencia de status/path; H02/H03 cambiaron de abiertos a corregidos por inspección+CI, sin fingir RED independiente.
 - Un lock en RPC protege a quienes invocan esa RPC, no necesariamente a escritor viejo o REST con políticas INSERT abiertas. El rollout de fases requiere analizar ambos actores antes de declarar unicidad global.
 - Las compatibilidades deben probarse contra esquemas de transición: `is_current` en código nuevo exige migración A realmente aplicada. Se corrigió una frase falsa del body sin tocar implementación.
+
+
+## Ronda 3
+- E2E trusted es un estado de commit separado de CI principal y approval-policy. Validar el SHA real del checkout del job repository_dispatch, no el SHA default.
+- Las fixtures de Storage deben respetar prefijo courier/<uid>/ sin fabricar éxito ni suprimir controles.
+- El lock de autorización termina al COMMIT de la RPC; el UPDATE administrativo posterior debe repetir status y comprobar filas realmente afectadas.
+- Un test unit con RPC mock valida la reacción del caller, no la serialización de DB; atribuirla al runner multisesión B0.

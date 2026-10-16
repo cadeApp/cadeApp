@@ -18,3 +18,12 @@
 | 2 | `11e2c7750ce037df022e74ed53bbd065a5dd2a66` | CON BLOQUEANTE H01 (decision-pendiente); H02/H03 arreglados por inspección y CI |
 
 [Informe](revisiones/ronda-2.md) · [Evidencia R2](evidencia/ronda-2.md) · [Prompt al agy](prompt-agy-ronda-2.md). CI 38800650427: 133/2388 unit, 24/2283 pgTAP PASS. Sin mutación DB independiente. Descripción de PR corregida para no afirmar compatibilidad de la app con DB pre-A.
+
+
+## Ronda 3 (2026-10-16)
+
+| Ronda | SHA auditado | Dictamen |
+|---|---|---|
+| 3 | `610204b206b952f85d04e93fb8b0adb47220749b` | CON BLOQUEANTES: R01 E2E Preview rojo sobre HEAD; R02 UPDATE admin posterior sin guard status |
+
+CI [38936922299](https://github.com/cadeApp/cadeApp/actions/runs/38936922299): 135/2405 unit y 26/2341 pgTAP PASS. E2E [38937045004](https://github.com/cadeApp/cadeApp/actions/runs/38937045004) 77/78 FAIL. [Informe](revisiones/ronda-3.md) · [Evidencia](evidencia/ronda-3.md) · [Prompt agy](prompt-agy-ronda-3.md). No merge.
