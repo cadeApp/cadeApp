@@ -36,7 +36,7 @@ export const ADMIN_COPY = {
   documentKind: {
     dni_front: 'DNI Frente',
     dni_back: 'DNI Dorso',
-    selfie: 'Selfie con DNI',
+    selfie: 'Selfie con el DNI',
     avatar: 'Foto de Perfil',
     license: 'Licencia de Conducir',
     insurance: 'Seguro de Vehículo',
@@ -61,7 +61,7 @@ export const ADMIN_COPY = {
     },
     dniHashLabel: 'DNI Hash',
     dniBadge: 'DNI',
-    selfieBadge: 'Selfie',
+    selfieBadge: 'Selfie con el DNI',
     licenseBadge: 'Licencia',
     insuranceBadge: 'Seguro',
     uploadedFeminine: 'subida',

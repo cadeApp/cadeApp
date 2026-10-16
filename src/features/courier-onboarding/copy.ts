@@ -24,8 +24,9 @@ export const COURIER_ONBOARDING_COPY = {
   dniFrontSubtitle: 'Sacá una foto clara del frente',
   dniBackTitle: 'DNI dorso',
   dniBackSubtitle: 'Sacá una foto clara del dorso',
-  selfieTitle: 'Selfie de validación',
-  selfieSubtitle: 'Sin anteojos de sol ni gorra',
+  selfieTitle: 'Selfie con el DNI',
+  selfieSubtitle:
+    'Sostené el DNI junto a tu rostro. Ambos deben verse legibles, sin reflejos ni obstrucciones',
   avatarTitle: 'Foto de perfil',
   avatarSubtitle: 'La van a ver los comercios cuando ofertes',
   acceptedFormatsTip: 'Formatos aceptados: JPG, PNG o WebP. Compresión automática a menos de 500 KB.',
