@@ -27,3 +27,12 @@
 | 3 | `610204b206b952f85d04e93fb8b0adb47220749b` | CON BLOQUEANTES: R01 E2E Preview rojo sobre HEAD; R02 UPDATE admin posterior sin guard status |
 
 CI [38936922299](https://github.com/cadeApp/cadeApp/actions/runs/38936922299): 135/2405 unit y 26/2341 pgTAP PASS. E2E [38937045004](https://github.com/cadeApp/cadeApp/actions/runs/38937045004) 77/78 FAIL. [Informe](revisiones/ronda-3.md) · [Evidencia](evidencia/ronda-3.md) · [Prompt agy](prompt-agy-ronda-3.md). No merge.
+
+
+## Ronda 4 — 2026-10-16
+
+| Ronda | SHA de implementación | Dictamen |
+|---|---|---|
+| 4 | `9e194c346baa4366c402684cbc909a1cfb3445cf` | SIN BLOQUEANTES NUEVOS de implementación; R01/R02 arreglados por inspección+CI, pendiente merge develop y checks HEAD final |
+
+[Informe R4](revisiones/ronda-4.md) · [Evidencia](evidencia/ronda-4.md) · [Prompt de continuidad](prompt-agy-ronda-4.md). Unit 135/2442, pgTAP 26/2341 y trusted E2E 78/78 + 3/3 PASS en el SHA auditado. No aprobación/merge, no certificar garantías globales REST hasta C.

@@ -19,3 +19,11 @@
 - Las fixtures de Storage deben respetar prefijo courier/<uid>/ sin fabricar éxito ni suprimir controles.
 - El lock de autorización termina al COMMIT de la RPC; el UPDATE administrativo posterior debe repetir status y comprobar filas realmente afectadas.
 - Un test unit con RPC mock valida la reacción del caller, no la serialización de DB; atribuirla al runner multisesión B0.
+
+
+## Ronda 4
+
+- P08: un E2E positivo que hace uploads reales a Storage bajo el prefijo del usuario y compara DB/Storage es un control mejor que precargar rutas sintéticas en sessionStorage. Proteger negativo de path inválido, no debilitar guarda.
+- P08: una actualización condicional posterior a RPC debe repetir predicado de status y exigir RETURNING con una fila; comprobar error:null con 0 filas no basta.
+- CI principal y trusted E2E son gates separados por SHA. El workflow E2E es dispatch default branch, pero checkout interno lo ata al SHA de la PR; usar el commit status, no asumir.
+- No confundir archivos incorporados por merge de develop con desvíos del autor al comparar desde la ronda anterior.
