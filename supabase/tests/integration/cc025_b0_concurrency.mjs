@@ -121,16 +121,16 @@ class PsqlSession {
 function createCourierFixture() {
   const courierId = crypto.randomUUID();
   runSql(`
-    insert into auth.users (id, email)
-    values ('${courierId}', 'courier_${courierId.slice(0, 8)}@test.com')
+    insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_user_meta_data)
+    values ('${courierId}', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'courier_${courierId.slice(0, 8)}@test.com', 'pwd', '{"role":"courier"}'::jsonb)
     on conflict (id) do nothing;
 
-    insert into public.profiles (id, role, full_name, phone, consent_status)
-    values ('${courierId}', 'courier', 'Courier Concurrency', '+543865000000', 'active')
+    insert into public.profiles (id, role, consent_status)
+    values ('${courierId}', 'courier', 'active')
     on conflict (id) do update set role = 'courier', consent_status = 'active';
 
-    insert into public.couriers (profile_id, vehicle_type, is_active)
-    values ('${courierId}', null, true)
+    insert into public.couriers (profile_id, status, available, vehicle_type, vehicle_plate)
+    values ('${courierId}', 'pending', false, 'moto', 'B001')
     on conflict (profile_id) do nothing;
   `);
   return courierId;
@@ -257,10 +257,11 @@ async function testCoexistenceDirectInsert() {
 
   // 1. Escritura vía RPC atómica B0
   runSql(`
-    set role authenticated;
+    begin;
+    set local role authenticated;
     select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
     select public.submit_courier_onboarding_documents('${payload}'::jsonb);
-    reset role;
+    commit;
   `);
 
   // 2. Intento de reintento directo por storage_path colisiona con UNIQUE(storage_path)
@@ -269,10 +270,12 @@ async function testCoexistenceDirectInsert() {
     [
       'exec', '-i', dbContainer, 'psql', '-X', '-U', 'postgres', '-d', 'postgres', '-c',
       `
-        set role authenticated;
+        begin;
+        set local role authenticated;
         select set_config('request.jwt.claims', jsonb_build_object('sub', '${courierId}', 'role', 'authenticated', 'aal', 'aal2')::text, true);
         insert into public.courier_documents (courier_id, kind, storage_path, status, is_current)
         values ('${courierId}', 'dni_front', 'courier/${courierId}/dni_front_b0.jpg', 'submitted', true);
+        commit;
       `
     ],
     { encoding: 'utf8' }
