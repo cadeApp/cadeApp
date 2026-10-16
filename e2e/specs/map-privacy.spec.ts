@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { type Page } from '@playwright/test';
 import {
   test,
@@ -5,6 +6,7 @@ import {
   seedOffersForFirstRequest,
   getRequestInspectionData,
   createAuthenticatedClient,
+  trackEntityForCleanup,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
 import { AGUILARES_BOUNDS } from '@/domain/schemas';
@@ -813,6 +815,120 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
 
     // Exigir que el mock haya interceptado peticiones (> 0) y cero peticiones inesperadas (H04)
     expect(mock.interceptedUrls.length).toBeGreaterThan(0);
+    expect(mock.unexpectedGoogleUrls).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. T-363: viaje sin coordenadas con proveedor disponible (caso de #351)
+  // ---------------------------------------------------------------------------
+  test('T-363: sin coordenadas el viaje explica el fallback, no inventa distancia y Google Maps usa las direcciones escritas', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    // Proveedor disponible: el fallback solo puede deberse a la falta de coordenadas
+    const mock = await setupGoogleMapsMock(page);
+
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier sembrados');
+    }
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+    const { data: zones, error: zonesErr } = await merchantClient
+      .from('zones')
+      .select('id')
+      .eq('active', true)
+      .limit(1);
+    expect(zonesErr).toBeNull();
+    const zoneId = zones?.[0]?.id;
+    if (!zoneId) {
+      throw new Error('[E2E Precondition Error] No hay zonas activas para publicar la solicitud');
+    }
+
+    // Solicitud publicada por la RPC real con direcciones escritas y sin pin (pares de coordenadas nulos)
+    const requestId = randomUUID();
+    const pickupAddress = `Alberdi 150 T363 ${stagingContext.testRunId}`;
+    const dropoffAddress = `Mitre 450 T363 ${stagingContext.testRunId}`;
+    trackEntityForCleanup(stagingContext, 'request', requestId);
+    const { error: publishErr } = await merchantClient.rpc('create_and_publish_multi_drop', {
+      p_payload: {
+        requestId,
+        pickupZoneId: zoneId,
+        pickupAddress,
+        pickupLat: null,
+        pickupLng: null,
+        fixedPriceArs: null,
+        autoAssign: false,
+        drops: [
+          {
+            dropoffZoneId: zoneId,
+            dropoffAddress,
+            dropoffLat: null,
+            dropoffLng: null,
+            recipientName: 'Cliente T363',
+            recipientPhone: '3865123456',
+            recipientConsentDeclared: true,
+            packageType: 'chico',
+            recipientPaymentMethod: 'transfer',
+            needsChange: false,
+            cashChangeAmount: null,
+            notes: null,
+          },
+        ],
+      },
+    });
+    expect(publishErr).toBeNull();
+
+    const courierClient = await createAuthenticatedClient(courier);
+    const { data: offerData, error: offerErr } = await courierClient.rpc('submit_offer', {
+      p_request_id: requestId,
+      p_amount_ars: 1500,
+      p_eta_minutes: 15,
+      p_message: 'Oferta T-363 sin coordenadas',
+    });
+    expect(offerErr).toBeNull();
+    const offerId = (offerData as { offerId?: string } | null)?.offerId;
+    if (!offerId) {
+      throw new Error('[E2E Error] submit_offer no devolvió offerId');
+    }
+    trackEntityForCleanup(stagingContext, 'offer', offerId);
+
+    const { error: acceptErr } = await merchantClient.rpc('accept_offer', { p_offer_id: offerId });
+    expect(acceptErr).toBeNull();
+
+    await loginAsCourier(0, page);
+    await page.goto(`/trips/${requestId}`);
+    await waitForNoSkeletons(page);
+
+    const routeMap = page.locator('[data-testid="trip-route-map"]');
+    await expect(routeMap).toBeVisible();
+
+    // Fallback explícito por falta de ubicación exacta, nunca «modo simplificado» ni pines inventados
+    const fallback = page.locator('[data-testid="route-map-fallback"]');
+    await expect(fallback).toBeVisible();
+    await expect(fallback).toContainText(/sin ubicación exacta en el mapa/i);
+    await expect(fallback).not.toContainText(/modo simplificado/i);
+    await expect(page.locator('[data-testid="route-map-missing-points"]')).toHaveText('retiro, entrega');
+    await expect(page.locator('[data-testid="map-pin-pickup"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="map-pin-dropoff"]')).toHaveCount(0);
+
+    // La distancia es la calculada en servidor o se declara no calculada; nunca un «km» vacío
+    await expect(page.locator('[data-testid="route-map-distance"]')).toHaveText(
+      /^(Distancia no calculada|≈ \d+,\d km)$/
+    );
+
+    // Google Maps recibe las direcciones escritas tal cual, sin coordenadas inventadas
+    const href = await page.getByRole('link', { name: /abrir en google maps/i }).getAttribute('href');
+    expect(href).toBeTruthy();
+    const parsedUrl = new URL(href ?? '');
+    expect(parsedUrl.origin).toBe('https://www.google.com');
+    expect(parsedUrl.searchParams.get('origin')).toBe(pickupAddress);
+    expect(parsedUrl.searchParams.get('destination')).toBe(dropoffAddress);
+    expect(parsedUrl.searchParams.get('waypoints')).toBeNull();
+
+    // Sin coordenadas no se carga Google Maps ni se llama a Google fuera del mock
     expect(mock.unexpectedGoogleUrls).toEqual([]);
   });
 });
