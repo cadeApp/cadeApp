@@ -9,3 +9,12 @@
 - CI del SHA funcional: [run 38792087496](https://github.com/cadeApp/cadeApp/actions/runs/38792087496) PASS, **133/2377 unit**, **24/2283 pgTAP**. No prueba carrera real de B.
 - La decisión técnica para agregar RPC aditiva B0 (H01) **requiere autorización humana**; hay alternativas comparadas en ronda-1. No aplicar sin autorización.
 - Esta carpeta es exclusivamente del revisor. Agy no debe editarla.
+
+
+## Ronda 2 (2026-10-16)
+
+| Ronda | SHA de aplicación auditado | Dictamen |
+|---|---|---|
+| 2 | `11e2c7750ce037df022e74ed53bbd065a5dd2a66` | CON BLOQUEANTE H01 (decision-pendiente); H02/H03 arreglados por inspección y CI |
+
+[Informe](revisiones/ronda-2.md) · [Evidencia R2](evidencia/ronda-2.md) · [Prompt al agy](prompt-agy-ronda-2.md). CI 38800650427: 133/2388 unit, 24/2283 pgTAP PASS. Sin mutación DB independiente. Descripción de PR corregida para no afirmar compatibilidad de la app con DB pre-A.
