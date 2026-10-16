@@ -180,3 +180,32 @@ El arnés ha sido diseñado con los mismos reemplazos que los usados en la ejecu
 - `db-tests` job 117197915977: `Files=26, Tests=2341, Result: PASS`.
 - `build` job 117197915672: `src/app/layout.tsx` `next/font` `TypeError: Cannot read properties of null (reading '1')` → EXIT 1; bundle-budget omitido. [CI 38967624235](https://github.com/cadeApp/cadeApp/actions/runs/38967624235).
 - E2E `e2e-preview` run 38967749373, job 117198417323: checkout `99e3b2a`, `81 passed (19.7m)` Chromium incluido caso de cinco drops; `3 passed (1.0m)` global-settings. El `head_sha` de workflow por repository_dispatch es develop, **no** el SHA que se testeó. [E2E exact SHA](https://github.com/cadeApp/cadeApp/actions/runs/38967749373).
+
+## Ronda 3 — SHA exacto `ddae87422246df38ad7fa96142260993125a6f4f` (2026-10-16)
+
+**Origen:** GitHub conectado; sin clon local por DNS de `github.com`. Los siguientes son comandos reproducibles en clon; **no fueron ejecutados localmente por el revisor**. Los resultados CI/E2E que se consignan sí vienen de logs abiertos, no de una afirmación del autor.
+
+```bash
+git fetch origin
+git rev-parse origin/feat/T-363-mapa-recorrido-fallback
+git diff --name-status 6e76e28874179ecc11f51e09f9b147ef5c233989..ddae87422246df38ad7fa96142260993125a6f4f
+git show --stat ddae87422246df38ad7fa96142260993125a6f4f
+git merge-tree --write-tree origin/develop ddae87422246df38ad7fa96142260993125a6f4f
+node docs/revision-pr/analizar.mjs verificacion
+pnpm exec vitest run tools/verify-fichas.test.ts
+git diff --check origin/develop...ddae87422246df38ad7fa96142260993125a6f4f
+```
+
+**Comprobado por GitHub API `compare(6e76e28,ddae874)`:** +23/-0, **solo `docs/tasks/log/T-363.md`**; ficha desde `develop` idéntica a la del HEAD; directorio `docs/revision-pr/pr-386/**` intacto. Head remoto `ddae874`, parent `6e76e28`. No requieren mutaciones independientes adicionales del código que no cambió; el script íntegro de R2 permanece arriba y es el control reproducible.
+
+- CI HEAD: https://github.com/cadeApp/cadeApp/actions/runs/38975035726
+  - unit job 117222316573: `135 passed (135)`, `2464 passed (2464)`.
+  - db-tests job 117222316505: `Files=26, Tests=2341, Result: PASS`; `pnpm db:types --local` y `git diff --exit-code -- src/types/database.types.ts`.
+  - build job 117222316546: `Compiled successfully in 25.4s`; `/trips/[id] 225 kB`, `/merchant/requests/[id] 192 kB`.
+  - bundle job 117222771744: SUCCESS con WARNING por rutas sobre 180 kB.
+  - audit, typecheck, lint SUCCESS; approval-policy run 38975034935 SUCCESS.
+- E2E HEAD: https://github.com/cadeApp/cadeApp/actions/runs/38975178318 ; job 117237111767: checkout exacto `ddae87422246df38ad7fa96142260993125a6f4f`; `81 passed (20.1m)` Chromium y `3 passed (58.7s)` global-settings; prueba multi-drop #386 incluida PASS.
+
+**Ausencia de verificación local:** `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió `fatal: ... Could not resolve host: github.com`. No se encendieron contenedores ni Supabase local/remoto. No se fabricó RED ni prueba mutada; se conserva la de R2 con su SHA de verificación.
+
+**Acciones posteriores:** esperar decisión/merge independiente de PR #385, fusionar `develop` sin rebase en la rama T-363 y probar el SHA combinado; no inferir que el E2E anterior certifica código posterior a ese merge.

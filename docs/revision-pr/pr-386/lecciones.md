@@ -19,3 +19,11 @@ No se adjudican IDs AG nuevos sin barrer **todas** las ramas remotas. Esta ronda
 - H02 ahora utiliza `fitBounds` y margen; no confundir el E2E que intercepta la llamada con una imagen de un mapa real. Confirmación de efecto en mock más contrato del SDK, con limitación expresa.
 - El `build` puede fallar en `next/font` aunque TypeScript, unit, DB y E2E estén verdes. No cambiar CSS, config o package por intuición; demostrar recurrencia y causa. El check build fallido es gate de integración, no prueba de defecto de T-363.
 - No se añade número AG sin conocer máximo de TODAS las ramas remotas; los patrones P01 y P08 ya catalogados bastan para esta ronda.
+
+## Ronda 3 — lecciones operativas
+
+- **El SHA comprobado importa más que el estado del workflow.** El E2E `repository_dispatch` anuncia `head_sha` de otra rama, pero el job de Playwright hizo checkout de `ddae874` y aprobó 81+3. Para trazabilidad, inspeccionar el log del job y el SHA real, no inferir de la cabecera.
+- **La prueba verde no elimina una dependencia de integración.** #385 permanece abierta y `develop` avanzó. Un `mergeable=true` de GitHub no reemplaza la verificación de `merge-tree` y el E2E exacto tras integrar.
+- **No perseguir un fallo transitorio de fuente sin evidencia de causalidad.** `next/font` falló en un commit previo sin cambios de layout; compiló en el siguiente y nuevamente en `ddae874`. No hay evidencia para introducir cambios de dependencias o builds solo por ese incidente.
+- **No reciclar el `verificado_en_sha` como el último HEAD por conveniencia.** No hubo cambio de código: se conserva el SHA de la batería independiente de R2, mientras CI y E2E del HEAD documental quedan como evidencia nueva.
+- **No se crea una nueva regla AG**: no se detectó un nuevo defecto de código ni se estableció un patrón transversal nuevo.
