@@ -8,7 +8,11 @@ interface PageProps {
   searchParams?: Promise<{ mode?: string }>;
 }
 
-export default async function CanonicalCourierOnboardingVehiclePage({ searchParams }: PageProps = {}) {
+export default async function CanonicalCourierOnboardingVehiclePage(): Promise<React.ReactElement>;
+export default async function CanonicalCourierOnboardingVehiclePage(props: PageProps): Promise<React.ReactElement>;
+export default async function CanonicalCourierOnboardingVehiclePage(
+  props?: PageProps
+): Promise<React.ReactElement> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -28,6 +32,7 @@ export default async function CanonicalCourierOnboardingVehiclePage({ searchPara
       status: string;
     }>();
 
+  const searchParams = props && typeof props === 'object' && 'searchParams' in props ? props.searchParams : undefined;
   const resolvedParams = searchParams ? await searchParams : undefined;
   const isEditing = Boolean(courier?.vehicle_type) || resolvedParams?.mode === 'edit';
 
