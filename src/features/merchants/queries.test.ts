@@ -263,6 +263,21 @@ describe('T-111 / T-118: queries de merchants y estado de suscripción (C08)', (
       expect(profile).toBeNull();
     });
 
+    it('PR375-H05: lanza error ante fallo de autenticación para que active error.tsx en lugar de retornar null', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: { message: 'Auth service unreachable' },
+          }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantProfileForEdit()).rejects.toThrow(
+        /Error de autenticación al obtener perfil de comercio: Auth service unreachable/
+      );
+    });
+
     it('propaga error de Supabase para que active error.tsx en lugar de mostrar formulario vacío', async () => {
       vi.mocked(serverSupabase.createClient).mockResolvedValue({
         auth: {

@@ -143,16 +143,16 @@ export const merchantUpdateSchema = z
       .optional(),
   })
   .refine(
-    (data) => {
-      const hasLat = data.defaultPickupLat !== undefined;
-      const hasLng = data.defaultPickupLng !== undefined;
-      if (hasLat || hasLng) {
-        return (data.defaultPickupLat == null) === (data.defaultPickupLng == null);
-      }
-      return true;
-    },
+    (data) => (data.defaultPickupLat === undefined) === (data.defaultPickupLng === undefined),
     {
-      message: 'Las coordenadas de latitud y longitud deben enviarse juntas o ambas nulas.',
+      message: 'Las coordenadas de latitud y longitud deben enviarse juntas.',
+      path: ['defaultPickupLat'],
+    }
+  )
+  .refine(
+    (data) => (data.defaultPickupLat == null) === (data.defaultPickupLng == null),
+    {
+      message: 'Las coordenadas de latitud y longitud deben ser ambas numéricas o ambas nulas.',
       path: ['defaultPickupLat'],
     }
   );

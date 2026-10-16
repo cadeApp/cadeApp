@@ -541,9 +541,34 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
     expect(updatedMerchant.subscription_status).toBe(initialMerchant.subscription_status);
     expect(updatedMerchant.notes).toBe(initialMerchant.notes);
 
-    // 9. Reingresar a /merchant/onboarding y verificar precarga con el nuevo teléfono y datos preservados
+    // 10. PR375-H06 / CC-027: Borrado explícito del pin de ubicación guardado
+    const removeLocationBtn = page.getByRole('button', { name: /quitar ubicación/i });
+    await expect(removeLocationBtn).toBeVisible();
+    await removeLocationBtn.click();
+    await expect(removeLocationBtn).toHaveCount(0);
+
+    // Guardar cambios con ubicación borrada
+    await saveButton.click();
+    await expect(page).toHaveURL(/\/merchant\/plan/);
+    await waitForNoSkeletons(page);
+
+    // Verificar en BD: coordenadas explícitamente en null, restantes datos intactos
+    const { data: noPinMerchant, error: noPinErr } = await admin
+      .from('merchants')
+      .select('business_name, default_pickup_address, default_pickup_zone_id, default_pickup_lat, default_pickup_lng, notes')
+      .eq('profile_id', profileId)
+      .single();
+
+    if (noPinErr || !noPinMerchant) throw new Error(`[E2E Error] No Pin Merchant: ${noPinErr?.message}`);
+    expect(noPinMerchant.default_pickup_lat).toBeNull();
+    expect(noPinMerchant.default_pickup_lng).toBeNull();
+    expect(noPinMerchant.business_name).toBe(initialMerchant.business_name);
+    expect(noPinMerchant.default_pickup_address).toBe(initialMerchant.default_pickup_address);
+
+    // 11. Recargar /merchant/onboarding: no inventa pin en el mapa ni muestra botón "Quitar ubicación"
     await page.goto('/merchant/onboarding');
     await waitForNoSkeletons(page);
+    await expect(page.getByRole('button', { name: /quitar ubicación/i })).toHaveCount(0);
     await expect(page.getByLabel(/^teléfono de contacto$/i)).toHaveValue(newPhoneDigits);
     await expect(page.getByLabel(/^nombre del negocio$/i)).toHaveValue(initialMerchant.business_name);
     await expect(page.getByLabel(/^dirección de retiro habitual$/i)).toHaveValue(initialMerchant.default_pickup_address);

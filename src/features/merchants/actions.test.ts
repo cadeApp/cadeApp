@@ -1115,39 +1115,42 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
     });
   });
 
-  describe('T-358: updateMerchantProfileAction (edición parcial segura)', () => {
-    const existingMerchantRecord = {
-      profile_id: 'usr-merchant-1',
-      business_name: 'Panadería La Espiga',
-      default_pickup_address: 'San Martín 450',
-      default_pickup_lat: -27.435,
-      default_pickup_lng: -65.615,
-      default_pickup_zone_id: '11111111-1111-1111-1111-111111111111',
+  describe('T-358: updateMerchantProfileAction (edición parcial segura vía RPC atómica)', () => {
+    const defaultRpcOutput = {
+      profileId: '11111111-1111-1111-1111-111111111111',
+      businessName: 'Panadería La Espiga',
+      phone: '3865999888',
+      defaultPickupAddress: 'San Martín 450',
+      defaultPickupZoneId: '11111111-1111-1111-1111-111111111111',
+      defaultPickupLat: -27.435,
+      defaultPickupLng: -65.615,
       notes: 'Portón verde',
-    };
-
-    const existingProfileRecord = {
-      id: 'usr-merchant-1',
-      role: 'merchant',
-      display_name: 'Panadería La Espiga',
-      phone: '3815550123',
     };
 
     function setupMockSupabase(overrides?: {
       user?: { id: string; email?: string } | null;
       role?: string;
-      merchantRecord?: typeof existingMerchantRecord | null;
-      profileRecord?: typeof existingProfileRecord | null;
-      updateMerchantError?: Error | null;
+      rpcError?: { message: string; code?: string } | null;
+      rpcData?: unknown;
     }) {
-      const user = overrides?.user !== undefined ? overrides.user : { id: 'usr-merchant-1', email: 'merchant@test.com' };
+      const user = overrides?.user !== undefined ? overrides.user : { id: '11111111-1111-1111-1111-111111111111', email: 'merchant@test.com' };
       const role = overrides?.role ?? 'merchant';
-      const merchantRecord = overrides?.merchantRecord !== undefined ? overrides.merchantRecord : { ...existingMerchantRecord };
-      const profileRecord = overrides?.profileRecord !== undefined ? overrides.profileRecord : { ...existingProfileRecord, role };
 
-      let capturedMerchantUpdate: Record<string, unknown> | null = null;
-      let capturedProfileUpdate: Record<string, unknown> | null = null;
+      const directProfileUpdate = vi.fn();
+      const directMerchantUpdate = vi.fn();
       const consentsCalled = vi.fn();
+      const rpcMock = vi.fn().mockImplementation((fnName: string) => {
+        if (fnName === 'update_my_merchant_profile') {
+          if (overrides?.rpcError) {
+            return Promise.resolve({ data: null, error: overrides.rpcError });
+          }
+          return Promise.resolve({
+            data: overrides?.rpcData !== undefined ? overrides.rpcData : defaultRpcOutput,
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: null, error: { message: 'Unknown RPC' } });
+      });
 
       const mockFrom = vi.fn().mockImplementation((table: string) => {
         if (table === 'profiles') {
@@ -1155,38 +1158,15 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
             select: vi.fn().mockReturnThis(),
             eq: vi.fn().mockReturnThis(),
             maybeSingle: vi.fn().mockResolvedValue({
-              data: profileRecord,
+              data: { role },
               error: null,
             }),
-            update: vi.fn().mockImplementation((payload) => {
-              capturedProfileUpdate = payload;
-              return {
-                eq: vi.fn().mockResolvedValue({ error: null }),
-              };
-            }),
+            update: directProfileUpdate,
           };
         }
         if (table === 'merchants') {
           return {
-            select: vi.fn().mockReturnThis(),
-            eq: vi.fn().mockReturnThis(),
-            maybeSingle: vi.fn().mockResolvedValue({
-              data: merchantRecord,
-              error: null,
-            }),
-            update: vi.fn().mockImplementation((payload) => {
-              capturedMerchantUpdate = payload;
-              return {
-                eq: vi.fn().mockReturnValue({
-                  select: vi.fn().mockReturnValue({
-                    maybeSingle: vi.fn().mockResolvedValue({
-                      data: overrides?.updateMerchantError ? null : { profile_id: user?.id },
-                      error: overrides?.updateMerchantError ?? null,
-                    }),
-                  }),
-                }),
-              };
-            }),
+            update: directMerchantUpdate,
           };
         }
         if (table === 'consents') {
@@ -1206,11 +1186,13 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
           }),
         },
         from: mockFrom,
+        rpc: rpcMock,
       } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
 
       return {
-        getCapturedMerchantUpdate: () => capturedMerchantUpdate,
-        getCapturedProfileUpdate: () => capturedProfileUpdate,
+        rpcMock,
+        directProfileUpdate,
+        directMerchantUpdate,
         consentsCalled,
       };
     }
@@ -1233,30 +1215,22 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       expect(res).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
     });
 
-    it('edición parcial de teléfono: actualiza profile.phone y preserva intactos todos los datos del comercio', async () => {
-      const { getCapturedMerchantUpdate, getCapturedProfileUpdate, consentsCalled } = setupMockSupabase();
+    it('PR375-H02: edición parcial de solo teléfono invoca RPC atómica con { phone: "3865999888" } sin snapshot viejo ni escrituras directas', async () => {
+      const { rpcMock, directProfileUpdate, directMerchantUpdate, consentsCalled } = setupMockSupabase();
 
       const res = await updateMerchantProfileAction({ phone: '+54 9 3865 999888' });
       expect(res).toEqual({ ok: true, data: { redirectTo: '/merchant/plan' } });
 
-      // Profile recibe teléfono normalizado
-      expect(getCapturedProfileUpdate()).toEqual(
-        expect.objectContaining({
+      // Se invoca RPC con exactamente la clave editada, normalizada
+      expect(rpcMock).toHaveBeenCalledWith('update_my_merchant_profile', {
+        p_patch: {
           phone: '3865999888',
-        })
-      );
-
-      // Merchants conserva intactos nombre, dirección, coordenadas, zona y notas
-      expect(getCapturedMerchantUpdate()).toEqual({
-        business_name: 'Panadería La Espiga',
-        default_pickup_address: 'San Martín 450',
-        default_pickup_lat: -27.435,
-        default_pickup_lng: -65.615,
-        default_pickup_zone_id: '11111111-1111-1111-1111-111111111111',
-        notes: 'Portón verde',
+        },
       });
 
-      // NO debe tocar la tabla de consentimientos
+      // No hay escrituras directas ni duplicadas a tablas
+      expect(directProfileUpdate).not.toHaveBeenCalled();
+      expect(directMerchantUpdate).not.toHaveBeenCalled();
       expect(consentsCalled).not.toHaveBeenCalled();
 
       // Rutas invalidadas
@@ -1265,44 +1239,51 @@ describe('T-111: Merchant onboarding action y persistencia de piloto', () => {
       expect(revalidatePath).toHaveBeenCalledWith('/merchant/plan');
     });
 
-    it('borrado explícito de notas (notes: null o empty): actualiza notes a null preservando el resto', async () => {
-      const { getCapturedMerchantUpdate } = setupMockSupabase();
+    it('PR375-H06: borrado explícito de ubicación envía lat/lng null a la RPC atómica', async () => {
+      const { rpcMock } = setupMockSupabase();
+
+      const res = await updateMerchantProfileAction({ defaultPickupLat: null, defaultPickupLng: null });
+      expect(res.ok).toBe(true);
+
+      expect(rpcMock).toHaveBeenCalledWith('update_my_merchant_profile', {
+        p_patch: {
+          defaultPickupLat: null,
+          defaultPickupLng: null,
+        },
+      });
+    });
+
+    it('borrado explícito de notas envía notes: null a la RPC atómica', async () => {
+      const { rpcMock } = setupMockSupabase();
 
       const res = await updateMerchantProfileAction({ notes: null });
       expect(res.ok).toBe(true);
 
-      expect(getCapturedMerchantUpdate()).toEqual(
-        expect.objectContaining({
+      expect(rpcMock).toHaveBeenCalledWith('update_my_merchant_profile', {
+        p_patch: {
           notes: null,
-          business_name: 'Panadería La Espiga',
-          default_pickup_address: 'San Martín 450',
-        })
-      );
+        },
+      });
     });
 
-    it('edición de nombre de negocio: actualiza merchants.business_name y profiles.display_name', async () => {
-      const { getCapturedMerchantUpdate, getCapturedProfileUpdate } = setupMockSupabase();
+    it('PR375-H03: edición de nombre de negocio envía únicamente businessName a la RPC atómica', async () => {
+      const { rpcMock } = setupMockSupabase();
 
       const res = await updateMerchantProfileAction({ businessName: 'Panadería Renovada' });
       expect(res.ok).toBe(true);
 
-      expect(getCapturedProfileUpdate()).toEqual(
-        expect.objectContaining({
-          display_name: 'Panadería Renovada',
-        })
-      );
-      expect(getCapturedMerchantUpdate()).toEqual(
-        expect.objectContaining({
-          business_name: 'Panadería Renovada',
-        })
-      );
+      expect(rpcMock).toHaveBeenCalledWith('update_my_merchant_profile', {
+        p_patch: {
+          businessName: 'Panadería Renovada',
+        },
+      });
     });
 
-    it('rechaza con INTERNAL_ERROR si el update en merchants no afecta filas (seguridad RLS)', async () => {
-      setupMockSupabase({ updateMerchantError: new Error('0 rows updated') });
+    it('propaga códigos de error de la RPC (por ej. OUT_OF_BOUNDS_AGUILARES o VALIDATION_ERROR)', async () => {
+      setupMockSupabase({ rpcError: { message: 'OUT_OF_BOUNDS_AGUILARES', code: 'P0001' } });
 
-      const res = await updateMerchantProfileAction({ phone: '3865999888' });
-      expect(res).toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      const res = await updateMerchantProfileAction({ defaultPickupLat: -27.435, defaultPickupLng: -65.615 });
+      expect(res).toEqual({ ok: false, code: 'OUT_OF_BOUNDS_AGUILARES' });
     });
   });
 });

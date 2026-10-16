@@ -139,7 +139,11 @@ export async function getMerchantProfileForEdit(): Promise<MerchantProfileFormDa
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  if (authError) {
+    throw new Error(`Error de autenticación al obtener perfil de comercio: ${authError.message}`);
+  }
+
+  if (!user) {
     return null;
   }
 

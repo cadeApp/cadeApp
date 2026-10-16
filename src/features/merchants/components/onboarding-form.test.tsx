@@ -21,16 +21,18 @@ interface MockMapPickerProps {
   readonly value?: { lat: number; lng: number } | null;
   readonly onChange?: (coords: { lat: number; lng: number }) => void;
   readonly defaultZoneCenter?: { lat: number; lng: number } | null;
+  readonly showMarkerWhenEmpty?: boolean;
 }
 
 let mockOnChange: ((coords: { lat: number; lng: number }) => void) | undefined;
 
 vi.mock('@/ui/map', () => ({
-  MapPicker: ({ value, onChange, defaultZoneCenter }: MockMapPickerProps) => {
+  MapPicker: ({ value, onChange, defaultZoneCenter, showMarkerWhenEmpty }: MockMapPickerProps) => {
     mockOnChange = onChange;
     return (
       <div data-testid="map-picker">
         <span data-testid="map-value">{JSON.stringify(value)}</span>
+        <span data-testid="map-show-marker-when-empty">{String(showMarkerWhenEmpty)}</span>
         <span data-testid="map-default-zone-center">{JSON.stringify(defaultZoneCenter)}</span>
         <button
           type="button"
@@ -664,7 +666,7 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify({ lat: -27.435, lng: -65.615 }));
     });
 
-    it('si el comercio preexistente no tiene coordenadas guardadas, no inventa un pin en el mapa', async () => {
+    it('PR375-H01: si el comercio preexistente no tiene coordenadas guardadas, pasa showMarkerWhenEmpty={false} y no inventa un pin', async () => {
       const dataWithoutCoords = {
         ...existingInitialData,
         defaultPickupLat: null,
@@ -675,9 +677,43 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       await screen.findByTestId('map-picker');
 
       expect(screen.getByTestId('map-value').textContent).toBe('null');
+      expect(screen.getByTestId('map-show-marker-when-empty').textContent).toBe('false');
+      expect(screen.queryByRole('button', { name: /quitar ubicación/i })).toBeNull();
     });
 
-    it('al cambiar solo el teléfono en modo edición, llama a updateMerchantProfileAction con el nuevo teléfono y preserva los restantes campos', async () => {
+    it('PR375-H06: cuando hay coordenadas guardadas muestra botón "Quitar ubicación" y al cliquearlo limpia ambas coordenadas a null', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const removeLocationBtn = screen.getByRole('button', { name: /quitar ubicación/i });
+      expect(removeLocationBtn).toBeDefined();
+
+      fireEvent.click(removeLocationBtn);
+
+      expect(screen.getByTestId('map-value').textContent).toBe('null');
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        defaultPickupLat: null,
+        defaultPickupLng: null,
+      });
+      expect(callArgs['businessName']).toBeUndefined();
+      expect(callArgs['phone']).toBeUndefined();
+    });
+
+    it('PR375-H02: al cambiar solo el teléfono en modo edición, llama a updateMerchantProfileAction con el nuevo teléfono sin enviar los restantes campos', async () => {
       vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
         ok: true,
         data: { redirectTo: '/merchant/plan' },
@@ -697,16 +733,18 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       });
 
       const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
-      expect(callArgs['businessName']).toBe('Panadería La Espiga');
-      expect(callArgs['phone']).toBe('3865999888');
-      expect(callArgs['defaultPickupAddress']).toBe('San Martín 450');
-      expect(callArgs['defaultPickupZoneId']).toBe('11111111-1111-4111-8111-111111111111');
-      expect(callArgs['defaultPickupLat']).toBe(-27.435);
-      expect(callArgs['defaultPickupLng']).toBe(-65.615);
-      expect(callArgs['notes']).toBe('Portón verde al lado de la farmacia');
+      expect(callArgs).toEqual({
+        phone: '3865999888',
+      });
+      expect(callArgs['businessName']).toBeUndefined();
+      expect(callArgs['defaultPickupAddress']).toBeUndefined();
+      expect(callArgs['defaultPickupZoneId']).toBeUndefined();
+      expect(callArgs['defaultPickupLat']).toBeUndefined();
+      expect(callArgs['defaultPickupLng']).toBeUndefined();
+      expect(callArgs['notes']).toBeUndefined();
     });
 
-    it('permite borrar notas enviando cadena vacía y llama a updateMerchantProfileAction con notes null', async () => {
+    it('permite borrar notas enviando cadena vacía y llama a updateMerchantProfileAction únicamente con notes null', async () => {
       vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
         ok: true,
         data: { redirectTo: '/merchant/plan' },
@@ -726,7 +764,11 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
       });
 
       const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
-      expect(callArgs['notes']).toBeNull();
+      expect(callArgs).toEqual({
+        notes: null,
+      });
+      expect(callArgs['businessName']).toBeUndefined();
+      expect(callArgs['phone']).toBeUndefined();
     });
   });
 });

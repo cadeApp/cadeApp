@@ -324,9 +324,22 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
       expect(merchantUpdateSchema.safeParse({ defaultPickupAddress: '' }).success).toBe(false);
     });
 
-    it('rechaza coordenadas si se envía solo latitud o solo longitud', () => {
+    it('PR375-H04: rechaza coordenadas si se envía solo latitud o solo longitud, incluso con null o undefined', () => {
       expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -27.43, defaultPickupLng: null }).success).toBe(false);
       expect(merchantUpdateSchema.safeParse({ defaultPickupLat: null, defaultPickupLng: -65.61 }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: null }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLng: null }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -27.435 }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLng: -65.615 }).success).toBe(false);
+    });
+
+    it('PR375-H04 / H06: acepta borrado explícito de ubicación enviando ambas coordenadas en null', () => {
+      const res = merchantUpdateSchema.safeParse({ defaultPickupLat: null, defaultPickupLng: null });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.defaultPickupLat).toBeNull();
+        expect(res.data.defaultPickupLng).toBeNull();
+      }
     });
 
     it('rechaza coordenadas fuera de los límites urbanos de Aguilares', () => {

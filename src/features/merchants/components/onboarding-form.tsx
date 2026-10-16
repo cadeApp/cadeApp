@@ -150,16 +150,47 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
 
       setErrorMessage(null);
 
+      // Derivar PATCH solo de campos modificados respecto a initialData
+      const patch: Record<string, unknown> = {};
+
+      if (data.businessName !== (initialData?.businessName ?? '')) {
+        patch.businessName = data.businessName;
+      }
+      if (data.phone !== (initialData?.phone ?? '')) {
+        patch.phone = data.phone;
+      }
+      if (data.defaultPickupAddress !== (initialData?.defaultPickupAddress ?? '')) {
+        patch.defaultPickupAddress = data.defaultPickupAddress;
+      }
+      const initialZone = initialData?.defaultPickupZoneId ?? null;
+      const currentZone = data.defaultPickupZoneId || null;
+      if (currentZone !== initialZone) {
+        patch.defaultPickupZoneId = currentZone;
+      }
+      const initialNotes = initialData?.notes ?? null;
+      const currentNotes = data.notes ? data.notes.trim() : null;
+      if (currentNotes !== initialNotes) {
+        patch.notes = currentNotes;
+      }
+
+      // Coordenadas: si alguna cambió respecto a initialData, enviar ambas (números o ambas null)
+      const initialLat = initialData?.defaultPickupLat ?? null;
+      const initialLng = initialData?.defaultPickupLng ?? null;
+      const currentLat = data.defaultPickupLat ?? null;
+      const currentLng = data.defaultPickupLng ?? null;
+      if (currentLat !== initialLat || currentLng !== initialLng) {
+        patch.defaultPickupLat = currentLat;
+        patch.defaultPickupLng = currentLng;
+      }
+
+      // Si no hubo ningún cambio modificado, redirigir sin llamada
+      if (Object.keys(patch).length === 0) {
+        window.location.assign('/merchant/plan');
+        return;
+      }
+
       try {
-        const result = await updateMerchantProfileAction({
-          businessName: data.businessName,
-          phone: data.phone,
-          defaultPickupAddress: data.defaultPickupAddress,
-          defaultPickupZoneId: data.defaultPickupZoneId || null,
-          defaultPickupLat: data.defaultPickupLat ?? null,
-          defaultPickupLng: data.defaultPickupLng ?? null,
-          notes: data.notes ?? null,
-        });
+        const result = await updateMerchantProfileAction(patch);
 
         if (!result.ok) {
           setErrorMessage(merchantCopy.onboarding.errorGeneric);
@@ -354,19 +385,38 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
             </div>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            onClick={handleUseMyLocation}
-            disabled={locating}
-            className="w-full"
-          >
-            <Crosshair className="h-5 w-5 text-primary-dark" />
-            <span>
-              {locating ? merchantCopy.onboarding.locating : merchantCopy.onboarding.useMyLocation}
-            </span>
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={handleUseMyLocation}
+              disabled={locating}
+              className="w-full"
+            >
+              <Crosshair className="h-5 w-5 text-primary-dark" />
+              <span>
+                {locating ? merchantCopy.onboarding.locating : merchantCopy.onboarding.useMyLocation}
+              </span>
+            </Button>
+
+            {defaultPickupLat != null && defaultPickupLng != null && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  setValue('defaultPickupLat', null, { shouldValidate: true });
+                  setValue('defaultPickupLng', null, { shouldValidate: true });
+                  setCoordsError(null);
+                }}
+                className="w-full sm:w-auto text-muted-foreground hover:text-destructive shrink-0"
+                aria-label="Quitar ubicación"
+              >
+                Quitar ubicación
+              </Button>
+            )}
+          </div>
 
           <MapPicker
             value={
@@ -374,6 +424,7 @@ export function MerchantOnboardingForm({ zones, initialData }: MerchantOnboardin
                 ? { lat: defaultPickupLat, lng: defaultPickupLng }
                 : null
             }
+            showMarkerWhenEmpty={!isEdit}
             onChange={(coords) => {
               setValue('defaultPickupLat', coords.lat, { shouldValidate: true });
               setValue('defaultPickupLng', coords.lng, { shouldValidate: true });
