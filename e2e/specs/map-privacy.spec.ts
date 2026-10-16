@@ -541,7 +541,24 @@ test.describe('T-314 — E2E de mapas, geolocalización, privacidad y degradaci�
 
     // 4. Solo zonas nominales presentes en la tarjeta
     await expect(card.getByText(/→/)).toBeVisible();
-    await expect(card.getByText(/km/i)).toBeVisible();
+
+    // T-363: la distancia refleja el dato real de la solicitud. Sin approx_distance_m se declara
+    // «Distancia no calculada»; antes el feed inventaba «≈ 1,0 km» y esta aserción dependía de ese valor.
+    const courier = stagingContext.courierUsers?.[0];
+    if (!courier) {
+      throw new Error('[E2E Precondition Error] Se requiere el courier sembrado');
+    }
+    const courierClient = await createAuthenticatedClient(courier);
+    const { data: distanceRow, error: distanceErr } = await courierClient
+      .from('delivery_requests')
+      .select('approx_distance_m')
+      .eq('id', requestId)
+      .single();
+    expect(distanceErr).toBeNull();
+    // La semilla publica sin approx_distance_m: precondición explícita, sin ramas condicionales
+    expect(distanceRow?.approx_distance_m).toBeNull();
+    await expect(card.getByText('Distancia no calculada')).toBeVisible();
+    await expect(card.getByText(/km/i)).toHaveCount(0);
   });
 
   // ---------------------------------------------------------------------------
