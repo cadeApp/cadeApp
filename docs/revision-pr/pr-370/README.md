@@ -49,3 +49,9 @@ Informe: [ronda-1](revisiones/ronda-1.md); datos: [hallazgos.jsonl](hallazgos.js
 - H03 mejoró: «Ver ofertas», `REQUEST_EXPIRED`, dos RPC concurrentes y RLS demostrados por [E2E real #38825238979](https://github.com/cadeApp/cadeApp/actions/runs/38825238979) (79 Chromium + 3 settings PASS para 9bbd2ac); el auto-setup de RPC previa a historial abre R01.
 - [CI #38825154664](https://github.com/cadeApp/cadeApp/actions/runs/38825154664) SUCCESS: unit 2379 PASS, pgTAP 2283 PASS, SQL mutante negativo RED y original GREEN. `approval-policy` del PR370 ahora PASS (aprobación de Lautaro073 vigente según log), **no implica merge ni reemplaza review**.
 - H01/H02 corregidos por inspección+CI sin test local del revisor; H05 mejora fail-closed aceptable. Reporte y prompt en un solo comentario de PR.
+
+## Ronda 5 — SHA `ecc87929`
+
+- [Informe R5](revisiones/ronda-5.md). **H03 y R01 corregidos por inspección y E2E real de 82 tests**: fixture tardía `published/pending` después de RPC manuales; ingreso a Vencidas cambia DB a `expired/expired`. `hasMore` con cota. `verificado_en_sha=null` porque revisor no ejecutó su propio mutante.
+- [CI #38836647443](https://github.com/cadeApp/cadeApp/actions/runs/38836647443) verde: unit 2379 y pgTAP 2283; [E2E #38836718124](https://github.com/cadeApp/cadeApp/actions/runs/38836718124): 79 Chromium + 3 global-settings PASS, checkout efectivo ecc8792.
+- **ÚNICO BLOQUEANTE H04:** PR documental #377 sigue sin merge en develop; sus checks build/approval-policy no están verdes. PR370 no apta aún para merge; no rehacer código productivo ya corregido. H05 solo mejora de disponibilidad fail-closed.

@@ -33,3 +33,10 @@ Criterio para ronda 2: ningún hallazgo puede darse como `arreglado-verificado` 
 **Cuidado con la causalidad:** resolver `INVALID_STATE_TRANSITION` reordenando login antes de seed fue correcto; **no** atribuirlo a debilitar el backend. El test ahora cubre oferta expirada y concurrencia real, pero destruye su precondición del escenario de historial. Documentarlo como regresión del instrumento, no del producto.
 
 **H04:** una ficha correcta en PR distinta no actualiza develop hasta su merge; el check `approval-policy` verde de PR370 no basta para PR377. Infraestructuras diferentes pueden tener check rojo por `next/font`; no alterar frontend para una PR docs-only sin diagnosticar causa.
+
+## Ronda 5 — corrección del oráculo y lección de independencia
+
+- **PR370-R01 solucionado por la autora:** sembrar la tercera fixture lazy **después** de las RPC directas conservó la cobertura de competencia sin contaminar la prueba de reconciliación en lectura. Contrastar estado PostgreSQL inmediatamente antes y después de navegar evita un falso E2E verde. El informe reconoce la mejora técnica, sin inventar mutación propia.
+- **H04 externo:** un cambio de ficha correcto en otra PR no equivale a merge en develop; cada PR tiene checks propios. CI verde de #370 NO subsana build/approval-policy rojo de #377. Un fallo next/font en PR documental podría ser infraestructura, pero no se afirma causalidad sin reproducción/CI exitoso.
+- **H05:** carga 501+ falla cerrada para preservar semántica keyset; benchmark fake no representa latencia Supabase. Evaluar mejora con datos reales y no convertirla en blocker por preferencia estética.
+- No asignar número AG nuevo sin enumerar todas las ramas remotas; el entorno carece de clon resoluble. Histórico de informes R1–R4 preservado.
