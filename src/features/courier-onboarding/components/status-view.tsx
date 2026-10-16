@@ -115,7 +115,7 @@ export function StatusView({ documents, onGoToFeed, showFeedButton = true }: Sta
 
   const checklistItems: Array<{ title: string; status: ItemStatus }> = [
     { title: 'DNI frente y dorso', status: dniStatus },
-    { title: 'Selfie de seguridad', status: selfieStatus },
+    { title: COURIER_ONBOARDING_COPY.selfieTitle, status: selfieStatus },
     { title: 'Foto de perfil para comercios', status: avatarStatus },
     { title: 'Vehículo y consentimientos', status: 'uploaded' },
     { title: 'Licencia de conducir (opcional)', status: licenseStatus },
