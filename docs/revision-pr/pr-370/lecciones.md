@@ -25,3 +25,11 @@ Criterio para ronda 2: ningún hallazgo puede darse como `arreglado-verificado` 
 - H04: abrir una PR documental es progreso, pero no hace que develop tenga la ficha actualizada. El build rojo en next/font de PR documental no prueba un defecto causado por docs.
 - H05: fake en memoria sirve para validar semántica 500/501, no para prometer latencia real.
 - Sin numerar AG nuevo sin máximo de todas las ramas remotas (no accesibles por clon en esta sesión).
+
+## Ronda 4 — nueva regresión de test PR370-R01
+
+**P08/P15 (R01):** para cumplir un pedido de probar concurrencia se introdujo una conciliación manual **antes** de la página que tenía que probar la materialización perezosa. Aunque E2E Preview quedó GREEN 79/79, el mismo test podría pasar si se quitara la conciliación del historial. La batería que demuestra un oráculo de lectura debe preservar un registro sin mutar y comprobar su estado en la base **inmediatamente antes de llamar al lector**; concurrencia sobre fixtures distintas no debe contaminarlo. Exigir mutación causal del código productivo (no de asserts) en copia temporal y RED/Green.
+
+**Cuidado con la causalidad:** resolver `INVALID_STATE_TRANSITION` reordenando login antes de seed fue correcto; **no** atribuirlo a debilitar el backend. El test ahora cubre oferta expirada y concurrencia real, pero destruye su precondición del escenario de historial. Documentarlo como regresión del instrumento, no del producto.
+
+**H04:** una ficha correcta en PR distinta no actualiza develop hasta su merge; el check `approval-policy` verde de PR370 no basta para PR377. Infraestructuras diferentes pueden tener check rojo por `next/font`; no alterar frontend para una PR docs-only sin diagnosticar causa.

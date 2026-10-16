@@ -42,3 +42,10 @@ Informe: [ronda-1](revisiones/ronda-1.md); datos: [hallazgos.jsonl](hallazgos.js
 - [Informe R3](revisiones/ronda-3.md): **H01/H02 corregidos por inspección+CI; H03 y H04 parciales y bloqueantes; H05 mejora no bloqueante**.
 - CI del HEAD #38809253455 SUCCESS (unit 2379 PASS; db-tests 2283 PASS), y [E2E #38809405892](https://github.com/cadeApp/cadeApp/actions/runs/38809405892) **79 Chromium + 3 settings PASS**, incluido caso T-366. No equivale a cobertura de todo el DoD (Ver ofertas y dos sesiones concurrentes aún faltan en spec).
 - [PR documental #377](https://github.com/cadeApp/cadeApp/pull/377) está OPEN, ficha T-366 aún vieja en develop. R3: CON BLOQUEANTES (2); no mergear #370.
+
+## Ronda 4 — SHA `9bbd2aca` (2026-10-15)
+
+- [**Informe R4**](revisiones/ronda-4.md). **CON BLOQUEANTES (2)**: R01, test E2E auto-reconcilia antes de abrir historial y pierde el oráculo causal; H04, PR documental #377 sigue sin mergear a develop.
+- H03 mejoró: «Ver ofertas», `REQUEST_EXPIRED`, dos RPC concurrentes y RLS demostrados por [E2E real #38825238979](https://github.com/cadeApp/cadeApp/actions/runs/38825238979) (79 Chromium + 3 settings PASS para 9bbd2ac); el auto-setup de RPC previa a historial abre R01.
+- [CI #38825154664](https://github.com/cadeApp/cadeApp/actions/runs/38825154664) SUCCESS: unit 2379 PASS, pgTAP 2283 PASS, SQL mutante negativo RED y original GREEN. `approval-policy` del PR370 ahora PASS (aprobación de Lautaro073 vigente según log), **no implica merge ni reemplaza review**.
+- H01/H02 corregidos por inspección+CI sin test local del revisor; H05 mejora fail-closed aceptable. Reporte y prompt en un solo comentario de PR.

@@ -111,3 +111,16 @@ node docs/revision-pr/analizar.mjs verificacion
 git diff --check
 ```
 Registrar versión final de Preview E2E + RED causal, no cambiar checks ni fabricar resultados.
+
+## Ronda 4 — inspección SHA `9bbd2aca4e3d96b1673dbac80997bba55e1d02b5`
+
+- Compare `96b09df..9bbd2ac`: 4 commits y SOLO `docs/tasks/log/T-366.md`, `e2e/specs/request-states.spec.ts`. Review folder sin cambios del implementador.
+- E2E [#38825238979](https://github.com/cadeApp/cadeApp/actions/runs/38825238979), job 116731124891: checkout `HEAD is now at 9bbd2ac`, `Running 79 tests`, T-366 (#68) PASS, `79 passed (22.5m)`, luego `3 passed (1.1m)`. El `head_sha` del repository_dispatch corresponde a develop base pero el **checkout efectivo** y status de 9bbd2ac son comprobables. No inventar un run de tipo pull_request.
+- CI [#38825154664](https://github.com/cadeApp/cadeApp/actions/runs/38825154664) jobs lint/typecheck/build/unit/db-tests/audit/bundle-budget SUCCESS. Unit `133 files/2379 tests PASS`; pgTAP `Files=24 Tests=2283 Result: PASS`; mutante CC-026 8/54 FAIL intencional y luego 54/54 PASS; harness CC-026 GREEN. Algunos avisos Docker rate-limit transitorios en log sin resultado final fallido.
+- Approval-policy job 116740004412 log `Aprobación de Lautaro073 vigente.` (check SUCCESS) para PR #370. No implica aprobación por el revisor.
+- Secuencia E2E comprobada en código: `page.goto(merchant requests)` líneas 1010; `accept_offer` RPC 1015; `Promise.all(reconcile_expired_requests)` 1045; `while(hasMore)` 1075; `page.goto('/merchant/history')` 1083; **no hay semilla nueva entre RPC y navegación**. Por tanto no prueba transición automática en el historial.
+- PR #377 OPEN no mergeada, sólo ficha documental, build next/font TypeError null reading 1 job 116635875603, approval-policy FAIL; ficha develop todavía vieja. No usar checks de #370 para justificar el merge de #377.
+
+**Prueba mutacional PENDIENTE, NO ejecutada por revisor:** en copia temporal del código de producción `src/features/requests/queries.ts`, comentar exclusivamente `await reconcileMerchantExpiredRequests(supabase)` al comienzo de `getMerchantHistoryRequests`; con fixture `lazyRequestId` publicada vencida sembrada inmediatamente antes de visitar historial, el E2E debe fallar por ID ausente o DB `published`. Restaurar sin adulterar test y constatar GREEN. Si el mutante **sigue verde**, el instrumento de prueba aún es insuficiente.
+
+**No ejecutado:** clon/worktree local, pnpm, E2E mutation, git merge-tree, node analizar.mjs, Supabase/Docker manual. DNS github.com inaccesible desde contenedor. Ningún `verificado_en_sha` fabricado.
