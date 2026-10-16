@@ -348,43 +348,20 @@ export async function updateCourierVehicleAction(
   // 4. Verificación de existencia del legajo courier
   const { data: existingCourier, error: courierFetchError } = await supabase
     .from('couriers')
-    .select('profile_id, status')
+    .select('profile_id, status, vehicle_type')
     .eq('profile_id', user.id)
-    .maybeSingle<{ profile_id: string; status: string }>();
+    .maybeSingle<{ profile_id: string; status: string; vehicle_type: string | null }>();
 
-  if (courierFetchError || !existingCourier) {
+  if (courierFetchError) {
+    return err('INTERNAL_ERROR');
+  }
+  if (!existingCourier) {
     return err('NOT_FOUND');
   }
-
-  // 5. Inserción de documentos opcionales si fueron provistos
-  if (parsed.data.documents) {
-    const documentEntries: TablesInsert<'courier_documents'>[] = [];
-    if (parsed.data.documents.license) {
-      documentEntries.push({
-        courier_id: user.id,
-        kind: 'license',
-        storage_path: parsed.data.documents.license,
-        status: 'submitted',
-      });
-    }
-    if (parsed.data.documents.insurance) {
-      documentEntries.push({
-        courier_id: user.id,
-        kind: 'insurance',
-        storage_path: parsed.data.documents.insurance,
-        status: 'submitted',
-      });
-    }
-
-    if (documentEntries.length > 0) {
-      const { error: documentsError } = await supabase
-        .from('courier_documents')
-        .upsert(documentEntries as never);
-
-      if (documentsError) {
-        return err('INTERNAL_ERROR');
-      }
-    }
+  // T-334: vehicle_type is the completed-onboarding marker. Query-string edit mode
+  // does not grant the right to set it for a first-time applicant.
+  if (existingCourier.vehicle_type === null || !['pending', 'approved'].includes(existingCourier.status)) {
+    return err('INVALID_STATE_TRANSITION');
   }
 
   // 6. Actualización de vehículo en couriers
@@ -393,13 +370,20 @@ export async function updateCourierVehicleAction(
     vehicle_plate: parsed.data.vehiclePlate ? parsed.data.vehiclePlate.trim().toUpperCase() : null,
   };
 
-  const { error: courierUpdateError } = await supabase
+  const { data: updatedCourier, error: courierUpdateError } = await supabase
     .from('couriers')
     .update(courierUpdatePayload as never)
-    .eq('profile_id', user.id);
+    .eq('profile_id', user.id)
+    .not('vehicle_type', 'is', null)
+    .in('status', ['pending', 'approved'])
+    .select('profile_id')
+    .maybeSingle<{ profile_id: string }>();
 
   if (courierUpdateError) {
     return err('INTERNAL_ERROR');
+  }
+  if (!updatedCourier || updatedCourier.profile_id !== user.id) {
+    return err('NOT_FOUND');
   }
 
   return ok({

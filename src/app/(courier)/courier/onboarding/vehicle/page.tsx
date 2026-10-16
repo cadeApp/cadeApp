@@ -11,7 +11,7 @@ interface PageProps {
 export default async function CanonicalCourierOnboardingVehiclePage(): Promise<React.ReactElement>;
 export default async function CanonicalCourierOnboardingVehiclePage(props: PageProps): Promise<React.ReactElement>;
 export default async function CanonicalCourierOnboardingVehiclePage(
-  props?: PageProps
+  _props?: PageProps
 ): Promise<React.ReactElement> {
   const supabase = await createClient();
   const {
@@ -22,7 +22,7 @@ export default async function CanonicalCourierOnboardingVehiclePage(
     redirect('/login?redirectTo=/courier/onboarding/vehicle');
   }
 
-  const { data: courier } = await supabase
+  const { data: courier, error: courierError } = await supabase
     .from('couriers')
     .select('vehicle_type, vehicle_plate, status')
     .eq('profile_id', user.id)
@@ -32,9 +32,11 @@ export default async function CanonicalCourierOnboardingVehiclePage(
       status: string;
     }>();
 
-  const searchParams = props && typeof props === 'object' && 'searchParams' in props ? props.searchParams : undefined;
-  const resolvedParams = searchParams ? await searchParams : undefined;
-  const isEditing = Boolean(courier?.vehicle_type) || resolvedParams?.mode === 'edit';
+  if (courierError) {
+    throw new Error('No se pudo consultar el legajo del repartidor.');
+  }
+  // An URL parameter is not proof of completed onboarding.
+  const isEditing = Boolean(courier?.vehicle_type);
 
   return (
     <div className="flex flex-col items-center justify-start px-4 py-6">

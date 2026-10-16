@@ -88,8 +88,8 @@ export const courierUpdateVehicleSchema = z
   .object({
     vehicleType: vehicleTypeSchema,
     vehiclePlate: z.string().trim().optional().nullable(),
-    documents: courierUpdateVehicleDocumentsSchema.optional(),
   })
+  .strict()
   .superRefine((data, ctx) => {
     if (data.vehicleType === 'moto' || data.vehicleType === 'car') {
       if (!data.vehiclePlate || data.vehiclePlate.trim().length === 0) {

@@ -130,7 +130,7 @@ export function VehicleForm({
   // Consejo (Frontend/Persona): mientras un opcional sube no se envía, para no mandar el payload sin ese
   // archivo y dejar la subida huérfana. No los vuelve obligatorios: sin subida en curso se envía igual.
   const isOptionalUploading =
-    requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
+    !isEditing && requiresPlate && OPTIONAL_DOCS.some((doc) => optionalStatuses[doc.kind] === 'uploading');
 
   const handleOptionalUpload = async (kind: OptionalDocumentKind, file: File) => {
     setOptionalFileNames((prev) => ({ ...prev, [kind]: file.name }));
@@ -162,12 +162,6 @@ export function VehicleForm({
       const payload = {
         vehicleType,
         vehiclePlate: requiresPlate ? vehiclePlate.trim().toUpperCase() : null,
-        documents: requiresPlate
-          ? {
-              license: optionalDocs.license,
-              insurance: optionalDocs.insurance,
-            }
-          : undefined,
       };
 
       try {
@@ -181,6 +175,10 @@ export function VehicleForm({
             setServerError('Tu cuenta no tiene rol de repartidor habilitado.');
           } else if (result.code === 'UNAUTHENTICATED') {
             setServerError('Tu sesión ha expirado. Por favor iniciá sesión nuevamente.');
+          } else if (result.code === 'NOT_FOUND') {
+            setServerError('No encontramos tu legajo para actualizar. Recargá el perfil e intentá nuevamente.');
+          } else if (result.code === 'INVALID_STATE_TRANSITION') {
+            setServerError('Tu legajo no está habilitado para editar el vehículo. Completá el alta o consultá con soporte.');
           } else {
             setServerError(
               'Ocurrió un error al procesar tu solicitud. Por favor verificá los datos.'
@@ -405,8 +403,8 @@ export function VehicleForm({
               </p>
             </section>
 
-            {/* Documentación opcional (Licencia y Seguro — solo moto/auto) */}
-            <section className="flex flex-col gap-3">
+            {/* Documentación opcional solo durante alta; edición documental ocurre en T-356/CC-025. */}
+            {!isEditing && <section className="flex flex-col gap-3">
               <h3 className="text-sm font-bold text-foreground">
                 {COURIER_ONBOARDING_COPY.optionalDocsTitle}
               </h3>
@@ -424,7 +422,7 @@ export function VehicleForm({
                   onFileSelected={(file) => void handleOptionalUpload(doc.kind, file)}
                 />
               ))}
-            </section>
+            </section>}
           </>
         )}
 
