@@ -927,5 +927,6 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
         defaultPickupLat: null,
         defaultPickupLng: null,
       });
+    });
   });
 });
