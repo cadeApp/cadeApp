@@ -84,7 +84,11 @@ values
   (pg_temp.rejected_courier(), 'rejected', false, null, null),
   (pg_temp.suspended_courier(), 'suspended', false, null, null),
   (pg_temp.approved_courier(), 'approved', false, null, null)
-on conflict (profile_id) do nothing;
+on conflict (profile_id) do update set
+  status = excluded.status,
+  available = excluded.available,
+  vehicle_type = excluded.vehicle_type,
+  vehicle_plate = excluded.vehicle_plate;
 
 delete from public.couriers where profile_id = pg_temp.orphan_courier();
 

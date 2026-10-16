@@ -55,7 +55,7 @@ begin
   end if;
 
   -- 3. Elegibilidad del courier bajo el lock (H03)
-  if v_courier_rec.status in ('rejected', 'suspended') then
+  if v_courier_rec.status::text in ('rejected', 'suspended') then
     raise exception using errcode = 'P0001', message = 'UNAUTHORIZED_ACTOR';
   end if;
 
