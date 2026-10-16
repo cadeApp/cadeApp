@@ -91,7 +91,11 @@ export function DocumentUploadCard({
             <span
               id={statusId}
               role={status === 'error' ? 'alert' : 'status'}
-              className={`text-sm text-muted-foreground ${status === 'error' ? 'whitespace-normal' : 'truncate'}`}
+              className={`text-sm text-muted-foreground ${
+                status === 'error' || kind === 'selfie'
+                  ? 'whitespace-normal break-words'
+                  : 'truncate'
+              }`}
             >
               {statusText}
             </span>
@@ -119,6 +123,7 @@ export function DocumentUploadCard({
       <input
         id={inputId}
         type="file"
+        aria-label={title}
         accept="image/jpeg,image/png,image/webp"
         className="sr-only"
         aria-describedby={statusId}
