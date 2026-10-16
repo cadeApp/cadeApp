@@ -264,7 +264,24 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       'REQUEST_EXPIRED'
     );
 
-    // 3. Ejecución del endpoint de cron /api/cron/sweep si CRON_SECRET está configurado
+    // 3. CC-026 / T-366: Reconciliación transaccional autoritativa por RPC del comercio sin esperar sweep
+    const { data: reconcileData, error: reconcileError } = await merchantClient.rpc(
+      'reconcile_expired_requests'
+    );
+    expect(reconcileError).toBeNull();
+    expect(reconcileData).toMatchObject({
+      expiredRequestIds: expect.arrayContaining([requestId]),
+      expiredCount: expect.any(Number),
+      hasMore: false,
+    });
+
+    // Oráculo server-side en PostgreSQL: estado físico actualizado a expired por la RPC
+    const inspectionAfterReconcile = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspectionAfterReconcile.requestStatus).toBe('expired');
+    const offerAfterReconcile = inspectionAfterReconcile.offers.find((o) => o.id === pendingOfferId);
+    expect(offerAfterReconcile?.status).toBe('expired');
+
+    // 4. Ejecución del endpoint de cron /api/cron/sweep si CRON_SECRET está configurado (idempotente)
     if (process.env.CRON_SECRET) {
       const sweepResponse = await request.post('/api/cron/sweep', {
         headers: {
@@ -273,7 +290,7 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       });
       expect(sweepResponse.ok()).toBe(true);
 
-      // Oráculo server-side en PostgreSQL: estado físico actualizado a expired
+      // Oráculo server-side en PostgreSQL: estado físico permanece expired
       const inspection = await getRequestInspectionData(stagingContext, requestId);
       expect(inspection.requestStatus).toBe('expired');
       const offer = inspection.offers.find((o) => o.id === pendingOfferId);
@@ -931,5 +948,200 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       expect(offer?.status).toBe('expired');
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // T-366: Expiración coherente en el historial del comercio (CC-026)
+  // ---------------------------------------------------------------------------
+  test('T-366 (§5.1): Solicitud vencida se reconcilia al consultar historial y aparece como Expirada sin esperar sweep', async ({
+    page,
+    stagingContext,
+    loginAsMerchant,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
+    }
+
+    // 1. Iniciar sesión Playwright como el comercio dueño ANTES de sembrar solicitudes vencidas
+    // (para que la redirección post-login a /merchant/dashboard no reconcilie prematuramente las fixtures de prueba)
+    await loginAsMerchant(page);
+
+    // 2. Precondición A: solicitud published con expires_at en el pasado (10 minutos atrás) y oferta pendiente
+    const pastExpiresAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const requestId = seedResult.requestId;
+    const pendingOfferId = seedResult.pendingOfferIds[0];
+    if (!pendingOfferId) {
+      throw new Error('[E2E Precondition Error] No se creó oferta pendiente');
+    }
+
+    // Precondición B: solicitud matched con expires_at en el pasado (debe preservarse en matched, NO expirar)
+    const matchedSeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+    });
+    const matchedRequestId = matchedSeedResult.requestId;
+
+    // Precondición C: segunda solicitud published con expires_at en el pasado para probar competencia de dos lectores del mismo comercio
+    const concurrentSeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const concurrentRequestId = concurrentSeedResult.requestId;
+
+    // 3. Clientes autenticados del comercio dueño para comprobación de RPC y concurrencia
+    const merchantClientA = await createAuthenticatedClient(merchant);
+    const merchantClientB = await createAuthenticatedClient(merchant);
+
+    // 4. Navegación a "Ver ofertas" (/merchant/requests/<id>) ANTES de reconciliar:
+    await page.goto(`/merchant/requests/${requestId}`);
+    await expect(page.getByText('Expirada')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Ofertas recibidas')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /aceptar/i })).toBeVisible({ timeout: 10000 });
+
+    // Intento de aceptación sobre oferta de solicitud vencida (aún en estado published en DB) falla con REQUEST_EXPIRED en RPC
+    await expectRpcFailure(
+      merchantClientA.rpc('accept_offer', { p_offer_id: pendingOfferId }),
+      'REQUEST_EXPIRED'
+    );
+
+    // 5. Aislamiento y permisos: un segundo comercio autenticado ejecuta reconciliación y NO puede afectar solicitudes ajenas
+    const secondContext = createStagingSeedContext();
+    try {
+      await seedStagingData(secondContext, {
+        requestsCount: 0,
+        withMerchant: true,
+      });
+      const secondMerchant = secondContext.merchantUser;
+      if (!secondMerchant) {
+        throw new Error('[E2E Precondition Error] No se pudo inicializar segundo comercio');
+      }
+      const secondMerchantClient = await createAuthenticatedClient(secondMerchant);
+      const { data: secondReconcileData, error: secondReconcileError } = await secondMerchantClient.rpc(
+        'reconcile_expired_requests'
+      );
+      expect(secondReconcileError).toBeNull();
+      const secondResult = secondReconcileData as { expiredRequestIds: string[] } | null;
+      expect(secondResult?.expiredRequestIds).not.toContain(requestId);
+      expect(secondResult?.expiredRequestIds).not.toContain(matchedRequestId);
+      expect(secondResult?.expiredRequestIds).not.toContain(concurrentRequestId);
+    } finally {
+      await cleanupStagingData(secondContext);
+    }
+
+    // 6. Competencia concurrente: dos sesiones independientes del MISMO comercio ejecutan reconcile_expired_requests concurrentemente
+    const [reconcileResultA, reconcileResultB] = await Promise.all([
+      merchantClientA.rpc('reconcile_expired_requests'),
+      merchantClientB.rpc('reconcile_expired_requests'),
+    ]);
+
+    expect(reconcileResultA.error).toBeNull();
+    expect(reconcileResultB.error).toBeNull();
+
+    const dataA = reconcileResultA.data as {
+      expiredRequestIds: string[];
+      expiredCount: number;
+      hasMore: boolean;
+    } | null;
+    const dataB = reconcileResultB.data as {
+      expiredRequestIds: string[];
+      expiredCount: number;
+      hasMore: boolean;
+    } | null;
+
+    const idsA = dataA?.expiredRequestIds ?? [];
+    const idsB = dataB?.expiredRequestIds ?? [];
+
+    // Ninguna respuesta contiene IDs ajenos (sólo solicitudes del propio merchant)
+    // En la unión de ambas respuestas, concurrentRequestId aparece a lo sumo UNA vez (transición atómica única)
+    const countInA = idsA.filter((id) => id === concurrentRequestId).length;
+    const countInB = idsB.filter((id) => id === concurrentRequestId).length;
+    expect(countInA + countInB).toBeLessThanOrEqual(1);
+
+    // Si alguno quedó con hasMore: true por SKIP LOCKED, drenar con presupuesto acotado (máx 10)
+    let hasMore = Boolean(dataA?.hasMore || dataB?.hasMore);
+    for (let attempt = 0; hasMore && attempt < 10; attempt++) {
+      const { data: drainData, error: drainErr } = await merchantClientA.rpc('reconcile_expired_requests');
+      expect(drainErr).toBeNull();
+      hasMore = Boolean((drainData as { hasMore?: boolean } | null)?.hasMore);
+    }
+    expect(hasMore).toBe(false);
+
+    // 7. PR370-R01 (Causalidad estricta de Historial): Se siembra una tercera solicitud vencida (lazyRequestId)
+    // DESPUÉS de que concluyeron todas las llamadas RPC manuales de reconciliación.
+    // Esto demuestra de forma causal e irrefutable que getMerchantHistoryRequests reconcilia en su consulta SQL.
+    const lazySeedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'published',
+      merchantId: merchant.id,
+      expiresAt: pastExpiresAt,
+      withContacts: true,
+      withPendingOffersCount: 1,
+    });
+    const lazyRequestId = lazySeedResult.requestId;
+    const lazyPendingOfferId = lazySeedResult.pendingOfferIds[0];
+    if (!lazyPendingOfferId) {
+      throw new Error('[E2E Precondition Error] No se creó oferta pendiente para lazyRequestId');
+    }
+
+    // Oráculo DB previo: confirmar que lazyRequestId y su oferta permanecen published y pending ANTES de navegar
+    const preLazyInspection = await getRequestInspectionData(stagingContext, lazyRequestId);
+    expect(preLazyInspection.requestStatus).toBe('published');
+    expect(preLazyInspection.offers.some((o) => o.status === 'pending')).toBe(true);
+
+    // 8. Navegación a historial "Vencidas": sin llamar RPC manual, la lectura de historial la reconcilia
+    await page.goto('/merchant/history?status=expired');
+    const lazyHistoryItemExpired = page.locator(`a[href="/merchant/requests/${lazyRequestId}"]`);
+    await expect(lazyHistoryItemExpired).toBeVisible({ timeout: 10000 });
+    await expect(lazyHistoryItemExpired).toContainText('Vencida');
+
+    // Oráculo DB inmediato: constatar que la visita a historial provocó la transición de lazyRequestId y su oferta a expired
+    const postLazyInspection = await getRequestInspectionData(stagingContext, lazyRequestId);
+    expect(postLazyInspection.requestStatus).toBe('expired');
+    expect(postLazyInspection.offers.every((o) => o.status === 'expired')).toBe(true);
+
+    // 9. Navegación a historial "Todas": tanto lazyRequestId como requestId figuran con badge "Vencida"
+    await page.goto('/merchant/history');
+    const lazyHistoryItemAll = page.locator(`a[href="/merchant/requests/${lazyRequestId}"]`);
+    await expect(lazyHistoryItemAll).toBeVisible({ timeout: 10000 });
+    await expect(lazyHistoryItemAll).toContainText('Vencida');
+
+    const historyItemAll = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await expect(historyItemAll).toBeVisible({ timeout: 10000 });
+    await expect(historyItemAll).toContainText('Vencida');
+
+    // 10. Comprobar que en "Mis solicitudes" (dashboard activas), ni requestId ni lazyRequestId aparecen
+    await page.goto('/merchant/dashboard');
+    const activeItem = page.locator(`a[href="/merchant/requests/${requestId}"]`);
+    await expect(activeItem).not.toBeVisible({ timeout: 10000 });
+    const lazyActiveItem = page.locator(`a[href="/merchant/requests/${lazyRequestId}"]`);
+    await expect(lazyActiveItem).not.toBeVisible({ timeout: 10000 });
+
+    // 11. Oráculos server-side en PostgreSQL de las solicitudes previas
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('expired');
+    expect(inspection.offers.every((o) => o.status === 'expired')).toBe(true);
+
+    const concurrentInspection = await getRequestInspectionData(stagingContext, concurrentRequestId);
+    expect(concurrentInspection.requestStatus).toBe('expired');
+    expect(concurrentInspection.offers.every((o) => o.status === 'expired')).toBe(true);
+
+    // La solicitud matched anterior conserva su estado matched inalterado
+    const matchedInspection = await getRequestInspectionData(stagingContext, matchedRequestId);
+    expect(matchedInspection.requestStatus).toBe('matched');
+  });
 });
+
 
