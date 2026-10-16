@@ -447,4 +447,137 @@ test.describe('T-313 — E2E de registro de comercio y consentimientos', () => {
       await expectMerchantPanelBlocked(page, path, /\/login\?consentRequired=1/);
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // T-358 DoD: Edición de comercio: precargar y preservar campos sin cambios
+  // ---------------------------------------------------------------------------
+  test('T-358 DoD: Edición de comercio preexistente precarga datos y preserva campos sin cambios al modificar solo el teléfono', async ({
+    page,
+    loginAsMerchant,
+  }) => {
+    // 1. Ingresar como comercio preexistente ya configurado
+    const { user } = await loginAsMerchant();
+    const profileId = user.id;
+
+    // 2. Leer estado inicial directo de la base antes de editar
+    const admin = createAdminClient();
+    const [
+      { data: initialProfile, error: profileErr },
+      { data: initialMerchant, error: merchantErr },
+    ] = await Promise.all([
+      admin.from('profiles').select('display_name, phone').eq('id', profileId).single(),
+      admin
+        .from('merchants')
+        .select('business_name, default_pickup_address, default_pickup_zone_id, default_pickup_lat, default_pickup_lng, subscription_status, notes')
+        .eq('profile_id', profileId)
+        .single(),
+    ]);
+
+    if (profileErr || !initialProfile) throw new Error(`[E2E Error] Profile: ${profileErr?.message}`);
+    if (merchantErr || !initialMerchant || !initialMerchant.default_pickup_address) {
+      throw new Error(`[E2E Error] Merchant: ${merchantErr?.message ?? 'sin dirección'}`);
+    }
+
+    // 3. Ir a Mi Plan y pulsar el enlace 'Editar datos'
+    await page.goto('/merchant/plan');
+    await waitForNoSkeletons(page);
+    const editLink = page.getByRole('link', { name: /editar datos/i });
+    await expect(editLink).toBeVisible();
+    await editLink.click();
+
+    // 4. Verificar llegada al onboarding en modo edición
+    await expect(page).toHaveURL(/\/merchant\/onboarding/);
+    await waitForNoSkeletons(page);
+
+    // En modo edición: título "Datos de tu negocio", botón "Guardar cambios", sin barra de pasos ni checkbox de términos
+    await expect(page.getByRole('heading', { name: /datos de tu negocio/i })).toBeVisible();
+    await expect(page.getByText(/paso 2 de 2/i)).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: /acepto los términos del piloto/i })).toHaveCount(0);
+
+    const businessNameInput = page.getByLabel(/^nombre del negocio$/i);
+    const phoneInput = page.getByLabel(/^teléfono de contacto$/i);
+    const addressInput = page.getByLabel(/^dirección de retiro habitual$/i);
+    const saveButton = page.getByRole('button', { name: /^guardar cambios$/i });
+
+    // 5. Verificar que los datos existentes están precargados y no vacíos
+    await expect(businessNameInput).toHaveValue(initialMerchant.business_name);
+    await expect(addressInput).toHaveValue(initialMerchant.default_pickup_address);
+    await expect(saveButton).toBeVisible();
+
+    // 6. Cambiar ÚNICAMENTE el teléfono de contacto
+    const newPhoneDigits = '3865998877';
+    await phoneInput.fill(newPhoneDigits);
+
+    // 7. Guardar cambios y esperar redirección a /merchant/plan
+    await saveButton.click();
+    await expect(page).toHaveURL(/\/merchant\/plan/);
+    await waitForNoSkeletons(page);
+
+    // 8. Verificar en base de datos: el teléfono se actualizó, los demás campos permanecen IDÉNTICOS
+    const [
+      { data: updatedProfile, error: updatedProfileErr },
+      { data: updatedMerchant, error: updatedMerchantErr },
+    ] = await Promise.all([
+      admin.from('profiles').select('display_name, phone').eq('id', profileId).single(),
+      admin
+        .from('merchants')
+        .select('business_name, default_pickup_address, default_pickup_zone_id, default_pickup_lat, default_pickup_lng, subscription_status, notes')
+        .eq('profile_id', profileId)
+        .single(),
+    ]);
+
+    if (updatedProfileErr || !updatedProfile) throw new Error(`[E2E Error] Updated Profile: ${updatedProfileErr?.message}`);
+    if (updatedMerchantErr || !updatedMerchant) throw new Error(`[E2E Error] Updated Merchant: ${updatedMerchantErr?.message}`);
+
+    // Teléfono actualizado a los 10 dígitos nacionales
+    expect(updatedProfile.phone).toBe(newPhoneDigits);
+
+    // Datos del negocio preservados sin mutación
+    expect(updatedMerchant.business_name).toBe(initialMerchant.business_name);
+    expect(updatedMerchant.default_pickup_address).toBe(initialMerchant.default_pickup_address);
+    expect(updatedMerchant.default_pickup_zone_id).toBe(initialMerchant.default_pickup_zone_id);
+    expect(updatedMerchant.default_pickup_lat).toBe(initialMerchant.default_pickup_lat);
+    expect(updatedMerchant.default_pickup_lng).toBe(initialMerchant.default_pickup_lng);
+    expect(updatedMerchant.subscription_status).toBe(initialMerchant.subscription_status);
+    expect(updatedMerchant.notes).toBe(initialMerchant.notes);
+
+    // 9. Reingresar a /merchant/onboarding y verificar precarga con el nuevo teléfono y datos preservados
+    await page.goto('/merchant/onboarding');
+    await waitForNoSkeletons(page);
+    await expect(page.getByLabel(/^teléfono de contacto$/i)).toHaveValue(newPhoneDigits);
+    await expect(page.getByLabel(/^nombre del negocio$/i)).toHaveValue(initialMerchant.business_name);
+    await expect(page.getByLabel(/^dirección de retiro habitual$/i)).toHaveValue(initialMerchant.default_pickup_address);
+
+    // 10. PR375-H06 / CC-027: Borrado explícito del pin de ubicación guardado
+    const removeLocationBtn = page.getByRole('button', { name: /quitar ubicación/i });
+    await expect(removeLocationBtn).toBeVisible();
+    await removeLocationBtn.click();
+    await expect(removeLocationBtn).toHaveCount(0);
+
+    // Guardar cambios con ubicación borrada
+    await page.getByRole('button', { name: /^guardar cambios$/i }).click();
+    await expect(page).toHaveURL(/\/merchant\/plan/);
+    await waitForNoSkeletons(page);
+
+    // Verificar en BD: coordenadas explícitamente en null, restantes datos intactos
+    const { data: noPinMerchant, error: noPinErr } = await admin
+      .from('merchants')
+      .select('business_name, default_pickup_address, default_pickup_zone_id, default_pickup_lat, default_pickup_lng, notes')
+      .eq('profile_id', profileId)
+      .single();
+
+    if (noPinErr || !noPinMerchant) throw new Error(`[E2E Error] No Pin Merchant: ${noPinErr?.message}`);
+    expect(noPinMerchant.default_pickup_lat).toBeNull();
+    expect(noPinMerchant.default_pickup_lng).toBeNull();
+    expect(noPinMerchant.business_name).toBe(initialMerchant.business_name);
+    expect(noPinMerchant.default_pickup_address).toBe(initialMerchant.default_pickup_address);
+
+    // 11. Recargar /merchant/onboarding: no inventa pin en el mapa ni muestra botón "Quitar ubicación"
+    await page.goto('/merchant/onboarding');
+    await waitForNoSkeletons(page);
+    await expect(page.getByRole('button', { name: /quitar ubicación/i })).toHaveCount(0);
+    await expect(page.getByLabel(/^teléfono de contacto$/i)).toHaveValue(newPhoneDigits);
+    await expect(page.getByLabel(/^nombre del negocio$/i)).toHaveValue(initialMerchant.business_name);
+    await expect(page.getByLabel(/^dirección de retiro habitual$/i)).toHaveValue(initialMerchant.default_pickup_address);
+  });
 });
