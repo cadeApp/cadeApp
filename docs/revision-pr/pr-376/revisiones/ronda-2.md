@@ -1,0 +1,42 @@
+# PR #376 / CC-025 / T-356 — revisión independiente ronda 2
+
+**Fecha:** 2026-10-16. **SHA funcional examinado:** `11e2c7750ce037df022e74ed53bbd065a5dd2a66`. **PR:** https://github.com/cadeApp/cadeApp/pull/376. **Dictamen: CON BLOQUEANTE (H01), pendiente de decisión técnica de autorización B0. NO MERGEAR/NO APROBAR.**
+
+## Diferencias comprobadas desde la ronda 1
+
+Una implementación nueva de `validateCurrentDocumentSet(expectedEntries, docs)` valida el conjunto vigente (`is_current !== false`) con resultados `MATCH, DUPLICATE, MISSING, INVALID_STATUS, DIFFERENT_PATH`. La acción lo usa en la validación inicial completa cuando no falta ningún documento, en la recuperación 23505/42501 y tras INSERT exitoso. Agregó guard específico `submitted|verified` antes de aceptar un path ya existente. Las pruebas o–s y 6 pruebas unitarias del validador cubren rejected, path cambiado, documento faltante, duplicados, históricos y match.
+
+- **PR376-H02 ALTO → arreglado-sin-verificar:** en `actions.ts:250–273`, un documento `rejected` con el mismo path se rechaza `VALIDATION_ERROR` antes de marcar el courier. `actions.test.ts` caso `o` (líneas ~1904–1969) verifica rechazo, cero INSERT y cero update. El autor documentó RED mutando el guard en código de producción y GREEN al restaurarlo; **no ejecutado independientemente por el revisor**.
+- **PR376-H03 MEDIO → arreglado-sin-verificar:** `actions.ts:332–353` usa validador exacto tras INSERT exitoso y rechaza `rejected`, mismatch, kind faltante y duplicados antes de `couriers.update`. Casos `p–s` y tests aislados del helper en `actions.test.ts:1971–2363`. Los tests usan mocks con estados programados; no hay prueba de DB concurrente de este fragmento ni mutación RED funcional ejecutada por esta revisión.
+- **PR376-H01 ALTO → decision-pendiente / ABIERTO:** `actions.ts:228–279, 332–368` conserva SELECT, INSERT, postSELECT y courier.update como operaciones independientes; no hay bloqueo transaccional de un courier que sirva contra dos requests simultáneos con `storage_path` diferentes. Esquema v1 sólo define `UNIQUE(storage_path)`, fase A no añade UNIQUE(`courier_id,kind`). El test `n` de acciones sigue mockeando una única invocación con datos fabricados, **no** dos transacciones con rutas diferentes. Una postlectura no garantiza nada sobre un INSERT que ocurra después. No se modificó SQL/RPC (agente respetó falta de autorización).
+
+## CI exacto de este SHA
+[Run 38800650427](https://github.com/cadeApp/cadeApp/actions/runs/38800650427) terminado SUCCESS sobre `11e2c7750ce037df022e74ed53bbd065a5dd2a66`: typecheck, lint, unit, build, audit, db-tests y bundle-budget. **Vitest: 133 archivos / 2388 tests PASS** (job 116648473876). **pgTAP: Files=24, Tests=2283, Result=PASS**, tipos generados (job 116648473819). Las mutaciones RED/GREEN registradas en db-tests corresponden a T-340, CC-024, CC-026 o expansión A; **ninguna** prueba DB multisesión para writer B. El body afirma 2388 unit, coincidente con el log; approval-policy no equivale a revisión independiente.
+
+No levanté Docker/Supabase local, ni modifiqué DB, ni desplegué pruebas nuevas. Los hallazgos H02/H03 son corregidos **por lectura del código y logs reales del CI**, pero sin mutación RED funcional hecha por este revisor. Por ello `verificado_en_sha=null` y estado `arreglado-sin-verificar`. No falsificar ejecuciones ni tomar mutaciones del autor como independientes.
+
+## Corrección menor de metadata — aplicada por la revisión
+El body de la PR declaraba que el nuevo código era compatible tanto con DB pre-A como expandida. La acción `select('..., is_current')` requiere la columna agregada por PR A; el mismo runner `cc025_expand_compatibility.mjs` probó en CI `42703` sobre base pre-A. Corregí **sólo el body**, sin commit de aplicación, para declarar que **A debe estar aplicada en cada ambiente antes de desplegar B** y que rollback a la app vieja sólo es seguro antes de contraer en C. La descripción contractual ya condicionaba B a A.
+
+## Decisión técnica humana pendiente para H01 (no ejecutar sin aprobación)
+
+**Opción A — B0: RPC transaccional ADITIVA para alta inicial (recomendada con límites explícitos).**
+Separar B0 con migración posterior a A, propia PR/CC gate; RPC de `courier_documents` usando cliente de sesión autenticado, actor `auth.uid`/rol validado, identidad y consentimientos comprobados, `couriers(profile_id) FOR UPDATE`, relectura de todos los documentos propios y comparación de kinds, paths, estados permitidos y ambiguos; insertar el lote dentro de una misma transacción. Definir grants mínimos, `search_path`, ejecutabilidad para roles propios y retorno seguro. **Beneficios:** garantía transaccional para TODAS las solicitudes que usen la RPC; permite pruebar dos sesiones reales e idempotencia sin adelantar índice ni backfill. **Costo:** RPC/migración aditiva y dependencia nueva entre A/B/C. **Riesgo importante:** el escritor viejo y las inserciones directas vía REST que la RLS antigua todavía acepta **NO adquieren necesariamente el mismo lock/guard**; una RPC sola NO garantiza unicidad global durante coexistencia. Por tanto exigir gate de versiones activas, drenaje de writers antiguos y/o barrera DB para todo INSERT antes de proclamar invariante global. La fase C deberá cerrar acceso directo y activar unicidad final. No confundir garantía de callers RPC con garantía ante cualquier actor.
+
+**Opción B — activar índice único parcial + backfill temprano.**
+**Beneficios:** DB impide duplicados de kinds a TODOS los writers. **Costos/riesgos:** migración de datos existentes y política para duplicados adelantadas a C; el UPSERT viejo con IDs nuevos puede fallar en retries que antes insertaban; requiere autorización de cambio del plan de rollout y pruebas de transición por ambiente. Tendría ventaja si se garantiza primero desactivar escritores legacy y se quiere seguridad de unicidad global desde B.
+
+**Alternativa C — barrera transitoria de INSERT compatible con legacy (trigger/guard DB o política condicionada).**
+**Beneficios:** podría serializar o rechazar dobles INSERT incluso fuera de la RPC, reduciendo la ventana de bypass. **Costos/riesgos:** lógica SQL transitoria adicional, invariantes de permisos complejos, posibles bloqueos de inserciones legítimas, costes de rollback; requiere prueba con writers viejo y nuevo, tráfico HTTP real y análisis de duplicados históricos. No preferible por defecto si B0 + gate de release demostrado es suficiente.
+
+**Opción D — mantener solo postSELECT hasta fase C.** Menos cambios, pero no elimina carrera, no asegura unicidad y puede marcar onboarding completo demasiado pronto: **descartada**.
+
+**Recomendación:** A, acompañada de gate operativo real para el último writer legacy y pruebas DB transaccionales. Si el requisito es garantía absoluta incluso con direct REST/legacy durante toda la ventana, evaluar C o B antes de autorizar el rollout. **No asumir** que una RPC por sí sola bloquea writers antiguos. Ninguna opción está automáticamente autorizada por “revisa”.
+
+**Cómo demostrar antes del merge:** dos transacciones reales en base efímera con sólo A + B0: A y B leen vacío; llegan con paths distintos y con paths iguales; locks serializan; resulta un único current por kind y sin marcador indebidamente completado. Además probar un legacy INSERT directo mientras otro utiliza RPC: documentar si puede producir duplicados y cerrar esa ventana mediante gate/guard. Mutación de definición real de RPC retirando `FOR UPDATE` → RED específico de la misma prueba; restaurar → GREEN. No adulterar mocks ni usar sleeps para fingir concurrencia. Repetir cuando C aplique su índice/RLS.
+
+## Seguridad, alcance y dependencias
+Diff de PR B contra develop: `actions.ts`, `actions.test.ts`, `docs/contracts/CC-025.md`, `docs/tasks/log/T-356.md` más entregables independientes. **No se agregaron migraciones, índices, RLS ni grants**. `develop` estaba sincronizado (behind=0). PR #364 fase C y #358 T-356 siguen bloqueadas, issue #363 permanece abierto. No aprobación ni merge.
+
+## Estado final
+**2 correcciones sólidas por inspección + CI; 1 bloqueo estructural con decisión humana.** Agy puede conservar cambios H02/H03; **NO** implementar RPC/migración por cuenta propia hasta autorización. Este informe y [prompt](../prompt-agy-ronda-2.md) son parte de la revisión independiente, no la implementación de B0.
