@@ -950,6 +950,10 @@ export type Database = {
         Returns: Json
       }
       set_availability: { Args: { p_available: boolean }; Returns: Json }
+      submit_courier_onboarding_documents: {
+        Args: { p_documents: Json }
+        Returns: Json
+      }
       submit_offer: {
         Args: {
           p_amount_ars: number
