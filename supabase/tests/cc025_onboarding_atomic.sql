@@ -65,6 +65,8 @@ values
   (pg_temp.other_courier(), 'pending', false, null, null)
 on conflict (profile_id) do nothing;
 
+delete from public.couriers where profile_id = pg_temp.orphan_courier();
+
 -- 1. Existence and signature
 select has_function('public', 'submit_courier_onboarding_documents', ARRAY['jsonb'], 'submit_courier_onboarding_documents function must exist');
 
@@ -109,7 +111,7 @@ select throws_matching(
   'Merchant role must throw UNAUTHORIZED_ACTOR'
 );
 
--- 6. Missing couriers table record fails with INTERNAL_ERROR
+-- 6. Missing couriers table record fails with NOT_FOUND
 select pg_temp.act_as(pg_temp.orphan_courier());
 select throws_matching(
   $$
@@ -122,8 +124,8 @@ select throws_matching(
       )
     );
   $$,
-  'INTERNAL_ERROR',
-  'Calling onboarding RPC when courier record is missing must throw INTERNAL_ERROR'
+  'NOT_FOUND',
+  'Calling onboarding RPC when courier record is missing must throw NOT_FOUND'
 );
 
 -- 7. Courier with pending consent fails with CONSENT_REQUIRED
