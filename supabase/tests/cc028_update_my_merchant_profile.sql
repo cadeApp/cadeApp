@@ -267,9 +267,22 @@ select is(
 );
 
 -- 15. Test: Barrera RLS de UPDATE directo contra columnas protegidas (subscription_status)
+create function pg_temp.test_direct_update_subscription() returns void language plpgsql as $$
+begin
+  perform set_config(
+    'request.jwt.claims',
+    jsonb_build_object('sub', pg_temp.merchant_id()::text, 'role', 'authenticated', 'aal', 'aal1')::text,
+    true
+  );
+  set local role authenticated;
+  update public.merchants set subscription_status = 'active' where profile_id = pg_temp.merchant_id();
+  set local role postgres;
+end;
+$$;
+
 select throws_matching(
-  'update public.merchants set subscription_status = ''active'' where profile_id = pg_temp.merchant_id()',
-  'new row violates row-level security policy',
+  'select pg_temp.test_direct_update_subscription()',
+  'row-level security policy',
   'CC-028 / H03: UPDATE directo a subscription_status es bloqueado por RLS merchants_update_self'
 );
 
