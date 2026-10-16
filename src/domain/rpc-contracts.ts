@@ -648,8 +648,13 @@ export const adminListIncidentsOutputSchema = z.object({
 export const updateMyMerchantProfileInputSchema = z
   .object({
     businessName: z.string().trim().min(1).max(100).optional(),
-    phone: z.string().trim().min(1).max(30).optional(),
-    defaultPickupAddress: z.string().trim().min(1).max(200).optional(),
+    phone: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{10}$/, 'phone debe contener exactamente 10 dígitos numéricos.')
+      .nullable()
+      .optional(),
+    defaultPickupAddress: z.string().trim().min(1).max(200).nullable().optional(),
     defaultPickupZoneId: uuidSchema.nullable().optional(),
     defaultPickupLat: aguilaresLatSchema.nullable().optional(),
     defaultPickupLng: aguilaresLngSchema.nullable().optional(),

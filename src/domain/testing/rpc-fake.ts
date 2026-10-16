@@ -297,6 +297,7 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedCourier: (courier: FakeSeedCourier) => void;
   readonly deleteCourier: (courierId: string) => void;
   readonly seedMerchant: (merchant: FakeSeedMerchant) => void;
+  readonly deleteMerchant: (merchantId: string) => void;
   readonly seedDocument: (doc: FakeSeedDocument) => void;
   readonly seedIncident: (incident: FakeSeedIncident) => void;
   readonly getIncident: (incidentId: string) => FakeIncidentRecord | undefined;
@@ -768,6 +769,9 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
       couriers.delete(courierId);
     },
     seedMerchant: putMerchant,
+    deleteMerchant: (merchantId) => {
+      merchants.delete(merchantId);
+    },
     seedDocument: (d) => documents.set(d.documentId, { ...d }),
     seedIncident: putIncident,
     getIncident: (incidentId) => incidents.get(incidentId),
