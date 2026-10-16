@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as serverSupabase from '@/server/supabase/server';
-import { getActiveZones, getMerchantAccountProfile } from './queries';
+import { getActiveZones, getMerchantAccountProfile, getMerchantProfileForEdit } from './queries';
 import { getSubscriptionDisplay, type MerchantSubscriptionStatus } from './copy';
 
 vi.mock('@/server/supabase/server', () => ({
@@ -146,5 +146,157 @@ describe('T-111 / T-118: queries de merchants y estado de suscripción (C08)', (
     expect(() =>
       getSubscriptionDisplay('trial' as unknown as MerchantSubscriptionStatus, null)
     ).toThrow(/Estado de suscripción no soportado/);
+  });
+
+  describe('T-358: getMerchantProfileForEdit (precarga autorizada)', () => {
+    it('retorna el perfil completo del comercio con coordenadas y estado de completitud', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  business_name: 'Panadería La Espiga',
+                  default_pickup_address: 'San Martín 450',
+                  default_pickup_lat: -27.435,
+                  default_pickup_lng: -65.615,
+                  default_pickup_zone_id: 'z1',
+                  notes: 'Al lado de la plaza',
+                },
+                error: null,
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { phone: '3865123456' },
+              error: null,
+            }),
+          };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantProfileForEdit();
+      expect(profile).toEqual({
+        businessName: 'Panadería La Espiga',
+        phone: '3865123456',
+        defaultPickupAddress: 'San Martín 450',
+        defaultPickupZoneId: 'z1',
+        defaultPickupLat: -27.435,
+        defaultPickupLng: -65.615,
+        notes: 'Al lado de la plaza',
+        isComplete: true,
+      });
+    });
+
+    it('identifica correctamente cuando el comercio tiene onboarding incompleto (business_name vacío)', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-new' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockImplementation((table: string) => {
+          if (table === 'merchants') {
+            return {
+              select: vi.fn().mockReturnThis(),
+              eq: vi.fn().mockReturnThis(),
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: {
+                  business_name: '',
+                  default_pickup_address: null,
+                  default_pickup_lat: null,
+                  default_pickup_lng: null,
+                  default_pickup_zone_id: null,
+                  notes: null,
+                },
+                error: null,
+              }),
+            };
+          }
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { phone: '3865000000' },
+              error: null,
+            }),
+          };
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantProfileForEdit();
+      expect(profile).toEqual({
+        businessName: '',
+        phone: '3865000000',
+        defaultPickupAddress: '',
+        defaultPickupZoneId: null,
+        defaultPickupLat: null,
+        defaultPickupLng: null,
+        notes: null,
+        isComplete: false,
+      });
+    });
+
+    it('retorna null si no hay usuario autenticado', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: null,
+          }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const profile = await getMerchantProfileForEdit();
+      expect(profile).toBeNull();
+    });
+
+    it('PR375-H05: lanza error ante fallo de autenticación para que active error.tsx en lugar de retornar null', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: { message: 'Auth service unreachable' },
+          }),
+        },
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantProfileForEdit()).rejects.toThrow(
+        /Error de autenticación al obtener perfil de comercio: Auth service unreachable/
+      );
+    });
+
+    it('propaga error de Supabase para que active error.tsx en lugar de mostrar formulario vacío', async () => {
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: 'usr-merchant-1' } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({
+            data: null,
+            error: { message: 'Database timeout' },
+          }),
+        }),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      await expect(getMerchantProfileForEdit()).rejects.toThrow(/Error al consultar comercio/);
+    });
   });
 });

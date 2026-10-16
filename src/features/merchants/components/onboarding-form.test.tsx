@@ -3,7 +3,7 @@ import * as React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MerchantOnboardingForm } from './onboarding-form';
-import { merchantOnboardingAction } from '../actions';
+import { merchantOnboardingAction, updateMerchantProfileAction } from '../actions';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -14,22 +14,25 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('../actions', () => ({
   merchantOnboardingAction: vi.fn(),
+  updateMerchantProfileAction: vi.fn(),
 }));
 
 interface MockMapPickerProps {
   readonly value?: { lat: number; lng: number } | null;
   readonly onChange?: (coords: { lat: number; lng: number }) => void;
   readonly defaultZoneCenter?: { lat: number; lng: number } | null;
+  readonly showMarkerWhenEmpty?: boolean;
 }
 
 let mockOnChange: ((coords: { lat: number; lng: number }) => void) | undefined;
 
 vi.mock('@/ui/map', () => ({
-  MapPicker: ({ value, onChange, defaultZoneCenter }: MockMapPickerProps) => {
+  MapPicker: ({ value, onChange, defaultZoneCenter, showMarkerWhenEmpty }: MockMapPickerProps) => {
     mockOnChange = onChange;
     return (
       <div data-testid="map-picker">
         <span data-testid="map-value">{JSON.stringify(value)}</span>
+        <span data-testid="map-show-marker-when-empty">{String(showMarkerWhenEmpty)}</span>
         <span data-testid="map-default-zone-center">{JSON.stringify(defaultZoneCenter)}</span>
         <button
           type="button"
@@ -583,6 +586,347 @@ describe('T-116 / T-111: MerchantOnboardingForm con componente de mapa', () => {
 
       const payload = await submitAndReadPayload();
       expect(payload['defaultPickupZoneId']).toBeUndefined();
+    });
+
+    it('T-353 / PR362-H06: muestra error de validación ante teléfono con letras, permite corregirlo y completar el alta', async () => {
+      vi.mocked(merchantOnboardingAction).mockResolvedValue({
+        ok: true,
+        data: { redirectTo: '/merchant/dashboard' },
+      });
+
+      render(<MerchantOnboardingForm zones={barrios} />);
+      await screen.findByTestId('map-picker');
+
+      fireEvent.change(screen.getByLabelText(/nombre del negocio/i), {
+        target: { value: 'Comercio Aguilares' },
+      });
+      // Teléfono inválido con letras
+      fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+        target: { value: '3865123456abc' },
+      });
+      fireEvent.change(screen.getByLabelText(/dirección de retiro habitual/i), {
+        target: { value: 'Av. Sarmiento 123' },
+      });
+      fireEvent.click(screen.getByRole('checkbox'));
+
+      fireEvent.click(screen.getByRole('button', { name: /^Empezar$/i }));
+
+      // Esperar error de validación en pantalla
+      await waitFor(() => {
+        expect(screen.getByText(/El teléfono debe ser un número argentino válido/i)).toBeDefined();
+      });
+      expect(merchantOnboardingAction).not.toHaveBeenCalled();
+
+      // Corrección del teléfono manteniendo el resto de campos
+      fireEvent.change(screen.getByLabelText(/teléfono de contacto/i), {
+        target: { value: '3865123456' },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: /^Empezar$/i }));
+
+      await waitFor(() => {
+        expect(merchantOnboardingAction).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
+
+  describe('T-358: Modo edición de datos del comercio preexistente', () => {
+    const existingInitialData = {
+      isComplete: true,
+      businessName: 'Panadería La Espiga',
+      phone: '3815550123',
+      defaultPickupAddress: 'San Martín 450',
+      defaultPickupZoneId: '11111111-1111-4111-8111-111111111111', // zoneA: Centro
+      defaultPickupLat: -27.435,
+      defaultPickupLng: -65.615,
+      notes: 'Portón verde al lado de la farmacia',
+    };
+
+    it('renderiza en modo edición con título "Datos de tu negocio" y botón "Guardar cambios", sin barra de pasos ni checkbox de términos', async () => {
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      expect(screen.getByRole('heading', { name: /datos de tu negocio/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /guardar cambios/i })).toBeDefined();
+      expect(screen.queryByRole('progressbar')).toBeNull();
+      expect(screen.queryByRole('checkbox')).toBeNull();
+      expect(screen.queryByText(/piloto gratis/i)).toBeNull();
+      expect(screen.queryByText(/paso 2 de 2/i)).toBeNull();
+    });
+
+    it('precarga todos los valores en los inputs y posiciona el pin en el mapa si existen coordenadas', async () => {
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      expect(screen.getByLabelText(/nombre del negocio/i)).toHaveProperty('value', 'Panadería La Espiga');
+      expect(screen.getByLabelText(/teléfono de contacto/i)).toHaveProperty('value', '3815550123');
+      expect(screen.getByLabelText(/dirección de retiro habitual/i)).toHaveProperty('value', 'San Martín 450');
+      expect(screen.getByLabelText(/referencia adicional/i)).toHaveProperty('value', 'Portón verde al lado de la farmacia');
+      expect(screen.getByText('Centro')).toBeDefined();
+      expect(screen.getByTestId('map-value').textContent).toBe(JSON.stringify({ lat: -27.435, lng: -65.615 }));
+    });
+
+    it('PR375-H01: si el comercio preexistente no tiene coordenadas guardadas, pasa showMarkerWhenEmpty={false} y no inventa un pin', async () => {
+      const dataWithoutCoords = {
+        ...existingInitialData,
+        defaultPickupLat: null,
+        defaultPickupLng: null,
+      };
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={dataWithoutCoords} />);
+      await screen.findByTestId('map-picker');
+
+      expect(screen.getByTestId('map-value').textContent).toBe('null');
+      expect(screen.getByTestId('map-show-marker-when-empty').textContent).toBe('false');
+      expect(screen.queryByRole('button', { name: /quitar ubicación/i })).toBeNull();
+    });
+
+    it('PR375-H06: cuando hay coordenadas guardadas muestra botón "Quitar ubicación" y al cliquearlo limpia ambas coordenadas a null', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const removeLocationBtn = screen.getByRole('button', { name: /quitar ubicación/i });
+      expect(removeLocationBtn).toBeDefined();
+
+      fireEvent.click(removeLocationBtn);
+
+      expect(screen.getByTestId('map-value').textContent).toBe('null');
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        defaultPickupLat: null,
+        defaultPickupLng: null,
+      });
+      expect(callArgs['businessName']).toBeUndefined();
+      expect(callArgs['phone']).toBeUndefined();
+    });
+
+    it('PR375-H02: al cambiar solo el teléfono en modo edición, llama a updateMerchantProfileAction con el nuevo teléfono sin enviar los restantes campos', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
+      fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        phone: '3865999888',
+      });
+      expect(callArgs['businessName']).toBeUndefined();
+      expect(callArgs['defaultPickupAddress']).toBeUndefined();
+      expect(callArgs['defaultPickupZoneId']).toBeUndefined();
+      expect(callArgs['defaultPickupLat']).toBeUndefined();
+      expect(callArgs['defaultPickupLng']).toBeUndefined();
+      expect(callArgs['notes']).toBeUndefined();
+    });
+
+    it('permite borrar notas enviando cadena vacía y llama a updateMerchantProfileAction únicamente con notes null', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const notesInput = screen.getByLabelText(/referencia adicional/i);
+      fireEvent.change(notesInput, { target: { value: '' } });
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        notes: null,
+      });
+      expect(callArgs['businessName']).toBeUndefined();
+      expect(callArgs['phone']).toBeUndefined();
+    });
+
+    it('PR375-R01: GPS fuera de Aguilares en modo edición conserva coordenadas previas en el mapa y no las borra al guardar sólo teléfono', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      Object.defineProperty(navigator, 'geolocation', {
+        value: {
+          getCurrentPosition: vi.fn((success) => {
+            success({
+              coords: { latitude: -34.6, longitude: -58.4 }, // Fuera de Aguilares (Buenos Aires)
+            });
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const gpsBtn = screen.getByRole('button', { name: /usar mi ubicación actual/i });
+      fireEvent.click(gpsBtn);
+
+      // Muestra alerta de fuera de Aguilares
+      await screen.findByText(/ubicación fuera de aguilares/i);
+
+      // Las coordenadas previas deben conservarse intactas en el mapa
+      expect(screen.getByTestId('map-value').textContent).toBe(
+        JSON.stringify({ lat: -27.435, lng: -65.615 })
+      );
+
+      // Modificar sólo el teléfono
+      const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
+      fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        phone: '3865999888',
+      });
+      expect(callArgs['defaultPickupLat']).toBeUndefined();
+      expect(callArgs['defaultPickupLng']).toBeUndefined();
+    });
+
+    it('PR375-R02: barrio inactivo precargado no revela UUID crudo, se presenta como opción histórica no disponible y se preserva si sólo cambia teléfono', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      const inactiveZoneId = '99999999-9999-4999-8999-999999999999';
+      const initialWithInactiveZone = {
+        ...existingInitialData,
+        defaultPickupZoneId: inactiveZoneId,
+      };
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={initialWithInactiveZone} />);
+      await screen.findByTestId('map-picker');
+
+      // 1. No debe mostrarse el UUID crudo
+      expect(screen.queryByText(inactiveZoneId)).toBeNull();
+
+      // 2. Debe mostrarse la etiqueta histórica legible
+      expect(screen.getByText(/Barrio anteriormente asignado \(no disponible\)/i)).toBeDefined();
+
+      // 3. Cambiar sólo teléfono y guardar: el PATCH no debe enviar defaultPickupZoneId
+      const phoneInput = screen.getByLabelText(/teléfono de contacto/i);
+      fireEvent.change(phoneInput, { target: { value: '3865999888' } });
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        phone: '3865999888',
+      });
+      expect(callArgs['defaultPickupZoneId']).toBeUndefined();
+    });
+
+    it('PR375-R02: al cambiar desde un barrio inactivo a un barrio activo, el PATCH envía el nuevo barrio activo', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      const inactiveZoneId = '99999999-9999-4999-8999-999999999999';
+      const initialWithInactiveZone = {
+        ...existingInitialData,
+        defaultPickupZoneId: inactiveZoneId,
+      };
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={initialWithInactiveZone} />);
+      await screen.findByTestId('map-picker');
+
+      // Abrir el select y elegir un barrio activo (zoneA: Centro)
+      const selectTrigger = screen.getByRole('combobox');
+      fireEvent.click(selectTrigger);
+
+      const activeOption = screen.getByRole('option', { name: 'Centro' });
+      fireEvent.click(activeOption);
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        defaultPickupZoneId: '11111111-1111-4111-8111-111111111111',
+      });
+    });
+
+    it('PR375-R03: al pulsar "Quitar ubicación", map-value es null, no aparece role=alert de error y se envía {lat: null, lng: null}', async () => {
+      vi.mocked(updateMerchantProfileAction).mockResolvedValueOnce({
+        ok: true,
+        data: { redirectTo: '/merchant/plan' },
+      });
+
+      render(<MerchantOnboardingForm zones={mockZones} initialData={existingInitialData} />);
+      await screen.findByTestId('map-picker');
+
+      const removeLocationBtn = screen.getByRole('button', { name: /quitar ubicación/i });
+      fireEvent.click(removeLocationBtn);
+
+      // Coordenadas deben ser null en el mapa
+      expect(screen.getByTestId('map-value').textContent).toBe('null');
+
+      // NO debe quedar error de validación visual (role="alert" de error de coordenadas)
+      expect(screen.queryByRole('alert')).toBeNull();
+      expect(screen.queryByText(/Ambas coordenadas deben ser numéricas o ambas null/i)).toBeNull();
+
+      const submitBtn = screen.getByRole('button', { name: /guardar cambios/i });
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(updateMerchantProfileAction).toHaveBeenCalledTimes(1);
+      });
+
+      const callArgs = vi.mocked(updateMerchantProfileAction).mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(callArgs).toEqual({
+        defaultPickupLat: null,
+        defaultPickupLng: null,
+      });
     });
   });
 });

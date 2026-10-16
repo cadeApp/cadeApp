@@ -15,6 +15,7 @@ import {
   createDocumentUploadManager,
   uploadCourierDocument,
 } from '../upload-manager';
+import { DNI_REGEX } from '../schemas';
 
 export interface IdentityFormProps {
   courierId: string;
@@ -90,8 +91,9 @@ export function IdentityForm({ courierId, initialDni = '', onNext }: IdentityFor
     }
   }, [initialDni]);
 
-  const normalizedDni = dni.replace(/\D/g, '');
-  const isDniValid = normalizedDni.length >= 7 && normalizedDni.length <= 8;
+  const trimmedDni = dni.trim();
+  const isDniValid = DNI_REGEX.test(trimmedDni);
+  const normalizedDni = trimmedDni.replace(/\D/g, '');
   const dniError = dniTouched && !isDniValid ? 'El DNI debe tener 7 u 8 dígitos numéricos' : null;
 
   const uploadedCount = REQUIRED_DOCS.filter((d) => statuses[d.kind] === 'success').length;

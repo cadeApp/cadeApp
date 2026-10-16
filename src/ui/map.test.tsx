@@ -126,6 +126,11 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     children?: React.ReactNode;
   }) => {
     capturedLegacyMarkerProps = props;
+    React.useEffect(() => {
+      return () => {
+        capturedLegacyMarkerProps = null;
+      };
+    }, []);
     return <div data-testid="mock-legacy-marker">{props.children}</div>;
   },
   AdvancedMarker: (props: {
@@ -141,6 +146,11 @@ vi.mock('@vis.gl/react-google-maps', () => ({
     children?: React.ReactNode;
   }) => {
     capturedAdvancedMarkerProps = props;
+    React.useEffect(() => {
+      return () => {
+        capturedAdvancedMarkerProps = null;
+      };
+    }, []);
     return <div data-testid="mock-advanced-marker">{props.children}</div>;
   },
 }));
@@ -1270,6 +1280,97 @@ describe('CC-014 · Contrato compartido de mapa src/ui/map.tsx', () => {
         expect(content).not.toMatch(/MapPicker/);
         expect(content).not.toMatch(/@vis\.gl\/react-google-maps/);
       }
+    });
+
+    it('CC-027 / H01: showMarkerWhenEmpty=false con value=null no renderiza pin; value={lat,lng} muestra pin; pasar a null lo oculta; click lo crea', () => {
+      mockPublicMapId = 'test-map-id';
+      const ZONE_CENTER: MapCoordinates = { lat: -27.432, lng: -65.616 };
+      const SELECTED_COORDS: MapCoordinates = { lat: -27.435, lng: -65.618 };
+
+      function ControlledHarness({ initialValue = null }: { initialValue?: MapCoordinates | null }) {
+        const [value, setValue] = React.useState<MapCoordinates | null>(initialValue);
+        return (
+          <div>
+            <MapPicker
+              value={value}
+              onChange={setValue}
+              defaultZoneCenter={ZONE_CENTER}
+              showMarkerWhenEmpty={false}
+            />
+            <button data-testid="clear-pin-btn" onClick={() => setValue(null)}>
+              Quitar
+            </button>
+            <button data-testid="set-pin-btn" onClick={() => setValue(SELECTED_COORDS)}>
+              Fijar
+            </button>
+          </div>
+        );
+      }
+
+      // 1. Con defaultZoneCenter y value=null => sin Marker
+      const { unmount } = render(<ControlledHarness initialValue={null} />);
+      expect(screen.getByTestId('mock-google-map')).toBeDefined();
+      expect(capturedMapProps?.defaultCenter).toEqual(ZONE_CENTER);
+      expect(getCapturedMarkerProps()).toBeNull();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      expect(screen.queryByTestId('map-marker-pin')).toBeNull();
+
+      // 2. Click en el mapa => crea pin vía onChange y controlled value
+      act(() => {
+        capturedMapProps?.onClick?.({
+          detail: {
+            latLng: { lat: -27.4381234, lng: -65.6145678 },
+          },
+        });
+      });
+      expect(getCapturedMarkerProps()).not.toBeNull();
+      expect(capturedAdvancedMarkerProps?.position).toEqual({
+        lat: -27.438123,
+        lng: -65.614568,
+      });
+      expect(screen.queryByTestId('mock-advanced-marker')).not.toBeNull();
+
+      // 3. Pasar a null (botón Quitar) => desaparece el pin
+      act(() => {
+        screen.getByTestId('clear-pin-btn').click();
+      });
+      expect(getCapturedMarkerProps()).toBeNull();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      expect(screen.queryByTestId('map-marker-pin')).toBeNull();
+
+      // 4. Pasar a {lat, lng} (botón Fijar) => vuelve a aparecer el pin
+      act(() => {
+        screen.getByTestId('set-pin-btn').click();
+      });
+      expect(getCapturedMarkerProps()).not.toBeNull();
+      expect(capturedAdvancedMarkerProps?.position).toEqual(SELECTED_COORDS);
+      expect(screen.queryByTestId('mock-advanced-marker')).not.toBeNull();
+      unmount();
+
+      // 5. Sin centroide de zona y value=null => sin Marker, centrado en AGUILARES_CENTER
+      render(
+        <MapPicker
+          value={null}
+          defaultZoneCenter={null}
+          showMarkerWhenEmpty={false}
+        />
+      );
+      expect(capturedMapProps?.defaultCenter).toEqual(AGUILARES_CENTER);
+      expect(getCapturedMarkerProps()).toBeNull();
+      expect(screen.queryByTestId('mock-advanced-marker')).toBeNull();
+      expect(screen.queryByTestId('map-marker-pin')).toBeNull();
+
+      // 6. Retrocompatibilidad: showMarkerWhenEmpty por defecto es true => renderiza Marker aun con value=null
+      cleanup();
+      render(
+        <MapPicker
+          value={null}
+          defaultZoneCenter={ZONE_CENTER}
+        />
+      );
+      expect(getCapturedMarkerProps()).not.toBeNull();
+      expect(capturedAdvancedMarkerProps?.position).toEqual(ZONE_CENTER);
+      expect(screen.queryByTestId('mock-advanced-marker')).not.toBeNull();
     });
   });
 });

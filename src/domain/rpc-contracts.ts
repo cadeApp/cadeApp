@@ -147,6 +147,40 @@ export const createAndPublishMultiDropOutputSchema = z
   })
   .strict();
 
+// CC-026: el comercio no elige ámbito, estado ni reloj; la RPC deriva todo de la sesión y PostgreSQL.
+export const reconcileExpiredRequestsInputSchema = z.object({}).strict();
+const MERCHANT_RECONCILIATION_BATCH_LIMIT = 50;
+export const reconcileExpiredRequestsOutputSchema = z
+  .object({
+    expiredRequestIds: z.array(uuidSchema),
+    expiredCount: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+  })
+  .strict()
+  .superRefine((output, ctx) => {
+    if (output.expiredCount !== output.expiredRequestIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiredCount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (new Set(output.expiredRequestIds).size !== output.expiredRequestIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiredRequestIds'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+    if (output.expiredCount > MERCHANT_RECONCILIATION_BATCH_LIMIT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['expiredCount'],
+        message: 'VALIDATION_ERROR',
+      });
+    }
+  });
+
 // 1. publish_request
 export const publishRequestInputSchema = z.object({
   requestId: uuidSchema,
@@ -610,7 +644,74 @@ export const adminListIncidentsOutputSchema = z.object({
   nextCursor: incidentsCursorSchema.nullable(),
 });
 
+// update_my_merchant_profile (CC-028)
+export const updateMyMerchantProfileInputSchema = z
+  .object({
+    businessName: z.string().trim().min(1).max(100).optional(),
+    phone: z
+      .string()
+      .trim()
+      .regex(/^[0-9]{10}$/, 'phone debe contener exactamente 10 dígitos numéricos.')
+      .nullable()
+      .optional(),
+    defaultPickupAddress: z.string().trim().min(1).max(200).nullable().optional(),
+    defaultPickupZoneId: uuidSchema.nullable().optional(),
+    defaultPickupLat: aguilaresLatSchema.nullable().optional(),
+    defaultPickupLng: aguilaresLngSchema.nullable().optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (data) => Object.keys(data).length > 0,
+    { message: 'El patch debe contener al menos un campo a modificar.' }
+  )
+  .refine(
+    (data) => (data.defaultPickupLat === undefined) === (data.defaultPickupLng === undefined),
+    { message: 'Las coordenadas de latitud y longitud deben enviarse juntas.', path: ['defaultPickupLat'] }
+  )
+  .refine(
+    (data) => (data.defaultPickupLat == null) === (data.defaultPickupLng == null),
+    { message: 'Las coordenadas de latitud y longitud deben ser ambas numéricas o ambas nulas.', path: ['defaultPickupLat'] }
+  );
+
+export type UpdateMyMerchantProfileInput = z.infer<typeof updateMyMerchantProfileInputSchema>;
+
+export const updateMyMerchantProfileOutputSchema = z.object({
+  profileId: uuidSchema,
+  businessName: z.string().min(1),
+  phone: z.string().nullable(),
+  defaultPickupAddress: z.string().nullable(),
+  defaultPickupZoneId: uuidSchema.nullable(),
+  defaultPickupLat: z.number().nullable(),
+  defaultPickupLng: z.number().nullable(),
+  notes: z.string().nullable(),
+});
+
+export type UpdateMyMerchantProfileOutput = z.infer<typeof updateMyMerchantProfileOutputSchema>;
+
 export const RPC_CONTRACTS = {
+  update_my_merchant_profile: {
+    inputSchema: updateMyMerchantProfileInputSchema,
+    outputSchema: updateMyMerchantProfileOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'OUT_OF_BOUNDS_AGUILARES',
+      'NOT_FOUND',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
+  reconcile_expired_requests: {
+    inputSchema: reconcileExpiredRequestsInputSchema,
+    outputSchema: reconcileExpiredRequestsOutputSchema,
+    errorCodes: [
+      'UNAUTHENTICATED',
+      'UNAUTHORIZED_ACTOR',
+      'VALIDATION_ERROR',
+      'INTERNAL_ERROR',
+    ] as const satisfies readonly DomainErrorCode[],
+  },
   create_and_publish_multi_drop: {
     inputSchema: createAndPublishMultiDropInputSchema,
     outputSchema: createAndPublishMultiDropOutputSchema,
@@ -1093,6 +1194,8 @@ export const RPC_CONTRACTS = {
 } as const;
 
 export const ALL_RPC_NAMES = [
+  'update_my_merchant_profile',
+  'reconcile_expired_requests',
   'create_and_publish_multi_drop',
   'publish_request',
   'cancel_request',

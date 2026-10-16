@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AGUILARES_BOUNDS } from '@/domain/schemas';
-import { merchantOnboardingSchema } from './schemas';
+import { merchantOnboardingSchema, merchantUpdateSchema } from './schemas';
 
 describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
   const validPayload = {
@@ -101,4 +101,269 @@ describe('T-111: Validaciones de schemas de onboarding de comercio', () => {
       }).success
     ).toBe(false);
   });
+
+  describe('T-353: Validación semántica integral de entradas del comercio', () => {
+    describe('businessName', () => {
+      it('acepta nombres de comercio legítimos con acentos, números, espacios y caracteres comerciales', () => {
+        const legitimateNames = [
+          'Panadería & Confitería Don Pepe',
+          'Librería 9 de Julio',
+          'M&M Calzados S.R.L.',
+          'Café & Bar "El Rincón"',
+          "O'Higgins 123",
+          'Ferretería (Casa Central)',
+          'Verdulería La Nueva - Sucursal 2',
+        ];
+        for (const name of legitimateNames) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, businessName: name });
+          expect(res.success, `Falló para nombre legítimo: ${name}`).toBe(true);
+        }
+      });
+
+      it('rechaza inyecciones HTML o scripts en el nombre del comercio', () => {
+        const malicious = [
+          '<script>alert(1)</script>',
+          'Comercio <img src=x onerror=alert(1)>',
+          '<style>body{display:none}</style>',
+        ];
+        for (const name of malicious) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, businessName: name });
+          expect(res.success, `Debería rechazar: ${name}`).toBe(false);
+        }
+      });
+
+      it('rechaza caracteres de control en el nombre del negocio', () => {
+        const withControl = 'Panadería\x00DonPepe';
+        const res = merchantOnboardingSchema.safeParse({ ...validPayload, businessName: withControl });
+        expect(res.success).toBe(false);
+      });
+
+      it('rechaza nombres que son únicamente símbolos o puntuación sin letras ni números', () => {
+        const onlySymbols = ['...', '---', '&&&', '***', '###'];
+        for (const sym of onlySymbols) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, businessName: sym });
+          expect(res.success, `Debería rechazar solo símbolos: ${sym}`).toBe(false);
+        }
+      });
+
+      it('rechaza nombres de comercio con longitud excesiva (> 100 caracteres)', () => {
+        const longName = 'A'.repeat(101);
+        const res = merchantOnboardingSchema.safeParse({ ...validPayload, businessName: longName });
+        expect(res.success).toBe(false);
+      });
+    });
+
+    describe('phone (teléfono argentino plausible y normalización canónica)', () => {
+      it('acepta teléfonos argentinos válidos en diferentes formatos y los normaliza a 10 dígitos', () => {
+        const validPhones = [
+          '3865123456',
+          '3865 123456',
+          '03865 15-123456',
+          '(03865) 15-123456',
+          '+54 9 3865 123456',
+          '+54 3865 123456',
+          '+5493865123456',
+          '11 2345-6789',
+          '(011) 15 2345-6789',
+          '381 4123456',
+        ];
+        for (const phone of validPhones) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, phone });
+          expect(res.success, `Falló para teléfono válido: ${phone}`).toBe(true);
+        }
+
+        // PR362-H02: Verificar que el output parseado sea canónico de 10 dígitos
+        const parsedIntl = merchantOnboardingSchema.safeParse({
+          ...validPayload,
+          phone: '+54 9 3865 123456',
+        });
+        expect(parsedIntl.success).toBe(true);
+        if (parsedIntl.success) {
+          expect(parsedIntl.data.phone).toBe('3865123456');
+        }
+
+        const parsedLocal = merchantOnboardingSchema.safeParse({
+          ...validPayload,
+          phone: '03865 15-123456',
+        });
+        expect(parsedLocal.success).toBe(true);
+        if (parsedLocal.success) {
+          expect(parsedLocal.data.phone).toBe('3865123456');
+        }
+      });
+
+      it('rechaza teléfonos que contienen letras', () => {
+        const withLetters = ['abcdefghij', '3865123456abc', 'tel-3865123456', 'N/A'];
+        for (const phone of withLetters) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, phone });
+          expect(res.success, `Debería rechazar letras: ${phone}`).toBe(false);
+        }
+      });
+
+      it('rechaza teléfonos con símbolos no telefónicos, inyecciones o prefijos mal ubicados', () => {
+        const withSymbols = [
+          '3865#123456',
+          '<script>',
+          '3865@555',
+          '3865$123456',
+          '++54 9 3865 123456',
+          '3865 +123456',
+          '3865123456+',
+          '(3865 123456',
+          '3865) 123456',
+          ')3865( 123456',
+        ];
+        for (const phone of withSymbols) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, phone });
+          expect(res.success, `Debería rechazar símbolos: ${phone}`).toBe(false);
+        }
+      });
+
+      it('rechaza teléfonos con longitud insuficiente o excesiva', () => {
+        const wrongLengths = ['12345', '12345678', '38651234567890123'];
+        for (const phone of wrongLengths) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, phone });
+          expect(res.success, `Debería rechazar longitud: ${phone}`).toBe(false);
+        }
+      });
+    });
+
+    describe('defaultPickupAddress', () => {
+      it('acepta direcciones reales con números, acentos y símbolos urbanos', () => {
+        const validAddresses = [
+          'San Martín 450',
+          'Av. 25 de Mayo 123, 1° B',
+          'Pje. Gutiérrez s/n',
+          'Ruta 38 km 728',
+          'Barrio San Alberto, Manzana 4 Lote 12',
+          'Calle 9 de Julio #1234',
+        ];
+        for (const addr of validAddresses) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, defaultPickupAddress: addr });
+          expect(res.success, `Falló para dirección legítima: ${addr}`).toBe(true);
+        }
+      });
+
+      it('rechaza inyecciones HTML en la dirección de retiro', () => {
+        const malicious = ['<script>alert(1)</script>', '<img src=x> San Martín 123'];
+        for (const addr of malicious) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, defaultPickupAddress: addr });
+          expect(res.success, `Debería rechazar: ${addr}`).toBe(false);
+        }
+      });
+
+      it('rechaza direcciones que son únicamente símbolos sin calle ni números', () => {
+        const onlySymbols = ['---', '...', '###'];
+        for (const sym of onlySymbols) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, defaultPickupAddress: sym });
+          expect(res.success, `Debería rechazar solo símbolos: ${sym}`).toBe(false);
+        }
+      });
+
+      it('rechaza caracteres de control en la dirección', () => {
+        const withControl = 'San Martín 450\x00Aguilares';
+        const res = merchantOnboardingSchema.safeParse({ ...validPayload, defaultPickupAddress: withControl });
+        expect(res.success).toBe(false);
+      });
+    });
+
+    describe('notes (multilínea legítima y rechazo de control)', () => {
+      it('acepta saltos de línea y tabulaciones legítimas en las notas (PR362-H04)', () => {
+        const multilineNotes = [
+          'Portón azul\nPiso 2',
+          'Línea 1\r\nLínea 2\tReferencia con tab',
+          'Timbre blanco.\nDejar en recepción.',
+        ];
+        for (const note of multilineNotes) {
+          const res = merchantOnboardingSchema.safeParse({ ...validPayload, notes: note });
+          expect(res.success, `Falló para nota multilínea: ${JSON.stringify(note)}`).toBe(true);
+        }
+      });
+
+      it('rechaza caracteres de control no imprimibles (NUL, etc.) en las notas (PR362-H04)', () => {
+        const withControl = 'Portón\x00azul';
+        const res = merchantOnboardingSchema.safeParse({ ...validPayload, notes: withControl });
+        expect(res.success).toBe(false);
+
+        const withOtherControl = 'Nota\x07con bip';
+        expect(merchantOnboardingSchema.safeParse({ ...validPayload, notes: withOtherControl }).success).toBe(false);
+      });
+    });
+  });
+
+  describe('T-358: Schema de actualización parcial del comercio (merchantUpdateSchema)', () => {
+    it('permite una actualización parcial de solo el teléfono y lo normaliza a 10 dígitos', () => {
+      const res = merchantUpdateSchema.safeParse({ phone: '+54 9 3865 123456' });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.phone).toBe('3865123456');
+        expect(res.data.businessName).toBeUndefined();
+        expect(res.data.defaultPickupAddress).toBeUndefined();
+      }
+    });
+
+    it('permite una actualización parcial de solo el nombre del negocio', () => {
+      const res = merchantUpdateSchema.safeParse({ businessName: 'Nuevo Nombre SRL' });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.businessName).toBe('Nuevo Nombre SRL');
+      }
+    });
+
+    it('permite borrar explícitamente notas opcionales enviando null', () => {
+      const res = merchantUpdateSchema.safeParse({ notes: null });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.notes).toBeNull();
+      }
+    });
+
+    it('rechaza campos obligatorios si se envían explícitamente como cadena vacía', () => {
+      expect(merchantUpdateSchema.safeParse({ businessName: '' }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ phone: '' }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupAddress: '' }).success).toBe(false);
+    });
+
+    it('PR375-H04: rechaza coordenadas si se envía solo latitud o solo longitud, incluso con null o undefined', () => {
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -27.43, defaultPickupLng: null }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: null, defaultPickupLng: -65.61 }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: null }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLng: null }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -27.435 }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLng: -65.615 }).success).toBe(false);
+    });
+
+    it('PR375-H04 / H06: acepta borrado explícito de ubicación enviando ambas coordenadas en null', () => {
+      const res = merchantUpdateSchema.safeParse({ defaultPickupLat: null, defaultPickupLng: null });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.defaultPickupLat).toBeNull();
+        expect(res.data.defaultPickupLng).toBeNull();
+      }
+    });
+
+    it('rechaza coordenadas fuera de los límites urbanos de Aguilares', () => {
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -26.82, defaultPickupLng: -65.61 }).success).toBe(false);
+      expect(merchantUpdateSchema.safeParse({ defaultPickupLat: -27.43, defaultPickupLng: -65.1 }).success).toBe(false);
+    });
+
+    it('acepta coordenadas válidas dentro de Aguilares', () => {
+      const res = merchantUpdateSchema.safeParse({ defaultPickupLat: -27.435, defaultPickupLng: -65.615 });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.defaultPickupLat).toBe(-27.435);
+        expect(res.data.defaultPickupLng).toBe(-65.615);
+      }
+    });
+
+    it('no exige acceptPilotTerms ni pilotTermsVersion durante la edición de datos', () => {
+      const res = merchantUpdateSchema.safeParse({
+        businessName: 'Panadería La Espiga',
+        phone: '3865123456',
+        defaultPickupAddress: 'San Martín 450',
+      });
+      expect(res.success).toBe(true);
+    });
+  });
 });
+
