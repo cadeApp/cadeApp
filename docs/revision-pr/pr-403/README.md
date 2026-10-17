@@ -1,33 +1,32 @@
 # PR #403 — T-367 · Avatar aprobado del repartidor
 
-| Campo | Valor |
-|---|---|
-| PR | https://github.com/cadeApp/cadeApp/pull/403 |
-| Autor implementación | @asako669 |
-| Rama | `feat/T-367-avatar-perfil` → `develop` |
-| SHA revisado R1 | `d1af180bbe7a0ac562dfe20fd5ed919aca3aa3c3` |
-| Estado | **CON BLOQUEANTES (4)**; no mergear |
+**PR:** https://github.com/cadeApp/cadeApp/pull/403  
+**Autor:** @asako669 · **Rama:** `feat/T-367-avatar-perfil` → `develop`  
+**Estado:** CON BLOQUEANTES — NO MERGEAR.
 
 ## Rondas
 
-| Ronda | SHA | Resultado | Informe |
+| Ronda | SHA del código | Resultado | Informe |
 |---|---|---|---|
-| 1 | `d1af180bbe7a0ac562dfe20fd5ed919aca3aa3c3` | 4 bloqueantes, 1 incidencia de proceso remediada por el revisor, 1 mejora | [ronda 1](revisiones/ronda-1.md) |
+| 1 | `d1af180b` | 4 bloqueantes, 1 incidencia de proceso y 1 mejora | [ronda-1.md](revisiones/ronda-1.md) |
+| 2 | `97fc11a62e545eee71581beec0c1825304ef80be` | 1 regresión E2E nueva + evidencia visual pendiente; H01/H03/H06 corregidos por inspección | [ronda-2.md](revisiones/ronda-2.md) |
 
-## Hallazgos
+La [autorrevisión del autor](revisiones/autorrevision-agy-r1.md) se conservó para contraste sin certificarla como independiente.
 
-| ID | Estado | Severidad | Motivo |
-|---|---|---|---|
-| PR403-H01 | Abierto | alto | Path de selfie/DNI puede firmarse como avatar |
-| PR403-H02 | Abierto | alto | E2E insuficiente y cancelada |
-| PR403-H03 | Abierto | medio | `any` nuevos |
-| PR403-H04 | Separado por revisor, pendiente de revalidación de commit | medio | Autorrevisión de agy |
-| PR403-H05 | Abierto | medio | DoD/RED no respaldados por evidencia |
-| PR403-H06 | Abierto (mejora) | bajo | Filtrar `is_current` en DB |
+## Estado de hallazgos
 
-Datos estructurados en [hallazgos.jsonl](hallazgos.jsonl). Método y comandos en [evidencia/comandos.md](evidencia/comandos.md).
-El informe creado por el autor se conserva exclusivamente como [autorrevision-agy-r1.md](revisiones/autorrevision-agy-r1.md).
+| ID | Estado R2 | Detalle |
+|---|---|---|
+| H01 | Arreglado sin verificación ejecutada | Path canónico `avatar_<decimal>.<imagen>` |
+| H02 | Parcial / pendiente E2E | Mejoró prueba real, pero H07 la bloquea |
+| H03 | Arreglado sin verificación ejecutada | Mocks tipados y aserciones de consulta |
+| H04 | Separado, sin nueva edición del autor | Autorrevisión preservada |
+| H05 | Parcial / bloqueante evidencia | Mutación visual sin traza y E2E pendiente |
+| H06 | Arreglado sin verificación ejecutada | `is_current=true` en SQL |
+| H07 | **Nuevo bloqueante** | El E2E intenta entrar en `/login` conservando una sesión activa |
+
+Ver [hallazgos.jsonl](hallazgos.jsonl), [evidencia/comandos.md](evidencia/comandos.md) y [lecciones.md](lecciones.md).
 
 ## Próximo paso
 
-El agy arregla código, tests y bitácora con el prompt del comentario de PR; no puede editar esta carpeta. Tras su push, la revisión ejecuta una ronda 2 independiente. No hay decisiones de alcance pendientes.
+Agy: arreglar H07 y documentar prueba visual RED→GREEN H05. Hacer push y pedir ronda 3. No editar `docs/revision-pr/**`. CI/E2E del HEAD final deben evaluarse antes de merge; validación humana después de promoción.

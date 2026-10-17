@@ -70,3 +70,35 @@ if (run('CONTROL RESTAURADO GREEN') !== 0) throw new Error('No recuperó GREEN')
 ## E2E por validar
 
 Ejecutar desde el flujo habitual de Preview en el HEAD de implementación. Aserciones: cadete dueño con imagen `complete && naturalWidth > 0`, rechazo/ausencia/error con placeholder, segunda cuenta sin URL ajena y Storage propio de la cuenta ajena denegado. Una URL previamente firmada es bearer token: no probar denegación de su uso hasta vencer como si fuera una URL privada sin firma.
+
+
+## Ronda 2 — 2026-10-17 — HEAD `97fc11a62e545eee71581beec0c1825304ef80be`
+
+**Consulta realizada:** leer `guards.ts:296-305`, `server.ts:101-114`, `src/middleware.ts:8-11`, `e2e/fixtures/roles.ts:105-118`, `e2e/pages/login.page.ts:46-57`, y `courier-onboarding.spec.ts:1537-1576`. La E2E hace tres llamadas de login sobre la misma `page` sin logout; middleware redirige `/login` si la sesión ya existe.
+
+**No se ejecutó un navegador en esta revisión ni una mutación RED.** Reproducir con Playwright contra el Preview autorizado en un SHA seguro: el escenario de cambio de usuario desde la misma `page` debe quedar RED en el helper del segundo login. El arreglo usa nuevo `BrowserContext`, sin tocar middleware ni página de login.
+
+### Pruebas de control y de mutación para el siguiente revisor
+
+```bash
+# Desde worktree del nuevo SHA, con variables E2E de entorno proporcionadas por CI (no crear .env con secretos):
+pnpm exec vitest run src/features/courier-onboarding/queries.test.ts \
+  src/features/courier-onboarding/components.test.tsx \
+  'src/app/(courier)/courier/profile/page.test.tsx'
+pnpm typecheck
+pnpm lint
+# No invocar E2E con credenciales de producción ni contra la BD remota desde la revisión.
+# Revisar el reporte de CI e2e-preview; no alterar workflows.
+```
+
+### Mutación independiente H07: control de login equivocado (por ejecutar)
+
+Tras la corrección E2E, hacer mutación estrictamente temporal del test para utilizar `loginAsCourier(1,page)` en lugar de `loginAsCourier(1, otherPage)`. En ejecución aislada y autorizada, el control debe pasar, el mutante debe fallar por redirect al home (no por recursos o datos ausentes) y la restauración debe pasar. **No ejecutado aquí**: no afirmar esos resultados hasta contar con su log real.
+
+### Mutación H05: UI
+
+La batería de `components.test.tsx` incluye `screen.getByRole('img', { name: 'Foto de perfil de Carlos Gómez' })`. Quitar temporalmente el render condicional del `<Image>` de `courier-profile-view.tsx`; comprobar fallo específico de esa aserción. Restaurar el contenido en memoria, controlar árbol limpio y GREEN. **No ejecutado aquí**.
+
+### CI
+
+CI 39079711559 en curso al consultar; E2E Preview 39079762114 pendiente. `approval-policy` 39079708461: `El PR requiere aprobación vigente de Lautaro073`.
