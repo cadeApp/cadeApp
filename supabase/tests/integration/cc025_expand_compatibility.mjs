@@ -127,8 +127,8 @@ async function runCompatibilityTests() {
   );
   console.log('[CC-025-A] Pre-migración RED confirmado: SELECT is_current falla con 42703 en base pre-CC-025.');
 
-  // 3. Aplicar hasta la migración expansiva de Fase A (20261015153311)
-  runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261015153311', '--no-seed'], 'Aplicar hasta migración expansiva 20261015153311');
+  // 3. Aplicar la migración expansiva de Fase A (20261015153311) sobre el esquema 20261014180000
+  runSql(fs.readFileSync(migrationPath, 'utf8'));
 
   // 4. Verificar que SELECT is_current, rejection_code, idempotency_key ahora es GREEN
   const postCheck = runSql('select count(*) from public.courier_documents where is_current is distinct from true;');

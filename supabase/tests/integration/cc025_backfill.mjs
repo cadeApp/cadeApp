@@ -157,6 +157,33 @@ function verifyBackfillAssertions(ids) {
   assert.equal(indexValid, 't', 'Índice courier_documents_unique_current debe estar activo y válido');
 }
 
+function resetToPrePhaseC() {
+  runSql(`
+    drop index if exists public.courier_documents_unique_current;
+    drop index if exists public.courier_documents_unique_idempotency;
+    alter table public.courier_documents drop constraint if exists courier_documents_rejection_code_check;
+    alter table public.courier_documents drop constraint if exists courier_documents_expansion_guard;
+    update public.courier_documents
+      set is_current = true, rejection_code = null, idempotency_key = null
+      where is_current is distinct from true or rejection_code is not null or idempotency_key is not null;
+    alter table public.courier_documents
+      add constraint courier_documents_expansion_guard
+      check (is_current = true and rejection_code is null and idempotency_key is null);
+    grant update, delete on table public.courier_documents to authenticated;
+    delete from supabase_migrations.schema_migrations where version = '20261016210000';
+  `);
+}
+
+function cleanupBackfillFixture(ids) {
+  const { courier1Id, courier2Id } = ids;
+  runSql(`
+    delete from public.courier_documents where courier_id in ('${courier1Id}', '${courier2Id}');
+    delete from public.couriers where profile_id in ('${courier1Id}', '${courier2Id}');
+    delete from public.profiles where id in ('${courier1Id}', '${courier2Id}');
+    delete from auth.users where id in ('${courier1Id}', '${courier2Id}');
+  `);
+}
+
 async function runBackfillTest() {
   console.log('[CC-025][H06] === INICIANDO PRUEBA REAL DE BACKFILL (MIGRACIÓN ORIGINAL) ===');
 
@@ -169,24 +196,26 @@ async function runBackfillTest() {
     docC2RecentId: crypto.randomUUID(),
   };
 
-  // 1. Resetear base de datos a la versión previa a la Fase C de CC-025 (20261016033941, con A y B0 aplicadas)
-  runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261016033941', '--no-seed'], 'Reseteando DB a 20261016033941 (--no-seed)');
+  try {
+    // 1. Posicionar el esquema en el estado exacto previo a la Fase C (20261016033941, con A y B0 aplicadas)
+    console.log('[CC-025][H06] Posicionando DB en estado pre-Fase C (20261016033941)...');
+    resetToPrePhaseC();
 
-  // 2. Sembrar duplicados previos a la migración de contracción
-  console.log('[CC-025][H06] Sembrando fixture pre-migración con documentos duplicados (uploaded_at hace 90 días)...');
-  setupPreMigrationFixture(ids);
+    // 2. Sembrar duplicados previos a la migración de contracción
+    console.log('[CC-025][H06] Sembrando fixture pre-migración con documentos duplicados (uploaded_at hace 90 días)...');
+    setupPreMigrationFixture(ids);
 
-  // 3. Aplicar la migración CC-025 Fase C
-  runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicando migración CC-025 Fase C con pnpm supabase migration up');
+    // 3. Aplicar la migración CC-025 Fase C real con Supabase CLI
+    runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicando migración CC-025 Fase C con pnpm supabase migration up');
 
-  // 4. Verificar aserciones
-  console.log('[CC-025][H06] Verificando aserciones del backfill...');
-  verifyBackfillAssertions(ids);
+    // 4. Verificar aserciones
+    console.log('[CC-025][H06] Verificando aserciones del backfill...');
+    verifyBackfillAssertions(ids);
 
-  // 5. Restaurar DB completa con seed para siguientes suites
-  runCommand(pnpmCmd, ['supabase', 'db', 'reset'], 'Restaurando DB completa con pnpm supabase db reset');
-
-  console.log('[CC-025][H06] === PRUEBA DE BACKFILL GREEN COMPLETADA EXITOSAMENTE ===');
+    console.log('[CC-025][H06] === PRUEBA DE BACKFILL GREEN COMPLETADA EXITOSAMENTE ===');
+  } finally {
+    cleanupBackfillFixture(ids);
+  }
 }
 
 async function runBackfillMutationCheck() {
@@ -215,13 +244,13 @@ async function runBackfillMutationCheck() {
     console.log('[CC-025][H06] Aplicando mutación a migración original: now() + 30 days -> cd.uploaded_at + 30 days...');
     fs.writeFileSync(migrationPath, mutatedMigrationContent, 'utf8');
 
-    // 1. Resetear base de datos a 20261016033941
-    runCommand(pnpmCmd, ['supabase', 'db', 'reset', '--version', '20261016033941', '--no-seed'], 'Reseteando DB para control mutante');
+    // 1. Posicionar DB en estado pre-Fase C (20261016033941)
+    resetToPrePhaseC();
 
     // 2. Sembrar fixture con doc hace 90 días
     setupPreMigrationFixture(ids);
 
-    // 3. Aplicar migración mutada
+    // 3. Aplicar migración mutada con Supabase CLI
     runCommand(pnpmCmd, ['supabase', 'migration', 'up'], 'Aplicando migración mutada');
 
     // 4. Verificar que la aserción de purge_after > now() + 29 days FALLA (RED)
@@ -240,17 +269,15 @@ async function runBackfillMutationCheck() {
 
     console.log('[CC-025][H06] -> RED OBTENIDO EXITOSAMENTE AL MUTAR now()+30 A uploaded_at+30');
   } finally {
+    cleanupBackfillFixture(ids);
     console.log('[CC-025][H06] Restaurando archivo de migración original...');
     fs.writeFileSync(migrationPath, origMigrationContent, 'utf8');
   }
 
-  // Verificar restauración a GREEN
+  // Verificar restauración completa a GREEN reaplicando la migración original
   console.log('[CC-025][H06] Verificando restauración completa a GREEN...');
   await runBackfillTest();
-
-  // Restaurar el estado completo de la base para no afectar siguientes tests
-  runCommand(pnpmCmd, ['supabase', 'db', 'reset'], 'Restaurando DB completa con pnpm supabase db reset');
-  console.log('[CC-025][H06] -> GREEN OBTENIDO TRAS RESTAURAR MIGRACIÓN ORIGINAL Y DB COMPLETA');
+  console.log('[CC-025][H06] -> GREEN OBTENIDO TRAS RESTAURAR MIGRACIÓN ORIGINAL');
 }
 
 async function main() {

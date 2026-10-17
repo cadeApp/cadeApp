@@ -640,11 +640,14 @@ async function main() {
   `);
 
   try {
-    await runScenario1(adminId, courierId, docId);
-    await runScenario2(adminId, courierId, docId);
-    await runScenario3B0AndReplaceLockOrder(adminId, courierId, docId);
-    await runDeadlockMutationCheck(adminId, courierId, docId);
-    console.log('[CC-025][H02] Todos los escenarios concurrentes y mutación RED/GREEN completados con éxito.');
+    if (process.argv.includes('--mutation-check')) {
+      await runDeadlockMutationCheck(adminId, courierId, docId);
+    } else {
+      await runScenario1(adminId, courierId, docId);
+      await runScenario2(adminId, courierId, docId);
+      await runScenario3B0AndReplaceLockOrder(adminId, courierId, docId);
+    }
+    console.log('[CC-025][H02] Todos los escenarios concurrentes solicitados completados con éxito.');
   } finally {
     runSql(`
       delete from public.audit_log where actor_id in ('${adminId}', '${courierId}') or target_id in ('${adminId}', '${courierId}');
