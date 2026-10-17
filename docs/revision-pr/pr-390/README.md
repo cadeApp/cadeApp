@@ -8,3 +8,4 @@
 - Inspección: `docs/tasks/T-365.md` leído de `develop`; `docs/revision-pr/COMO-ENTREGAR.md`, `README.md` y skill `revisar-pr` leídos.
 - Checks: **NO ejecutados independientemente**; el agente afirma typecheck/lint y 341 tests en baseline `develop`, no en el fix. No SQL ni E2E del arreglo; no Supabase/Docker local.
 - Ver `revisiones/ronda-1.md`, `hallazgos.jsonl`, `evidencia/comandos.md`, `lecciones.md`. Cada H corresponde a deuda preexistente/ausencia de implementación, no regresión introducida por el diff documental.
+- **Ronda 2 (2026-10-17):** revisado 6356f994. CI unit 135/2498, db 26/2341. Dos filtros corregidos; modalidad stale incompleta; 3 hallazgos nuevos H10-H12. Resultado **CON BLOQUEANTES**. Decisiones 1-A/2-A/3-A sin cambios; historia requiere CC externo. Informe en `revisiones/ronda-2.md`.

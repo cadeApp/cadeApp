@@ -79,3 +79,65 @@ node /tmp/pr390-audit.cjs
 - E2E Preview `match→courier_cancel→offers→historial→nueva oferta→rematch`, dos cuentas segregadas; observar rechazo real de oferta vieja (RPC).
 
 **No ejecutar mutaciones en producción ni desplegar código inseguro.** Ninguna prueba está presentada como ya ejecutada.
+
+## Ronda 2 — evidencia independiente y harness reproducible
+
+La inspección estática independiente sobre código remoto exacto del SHA `6356f994457954b5ff0a5c7c27bb01098697d6fb` dio:
+- Live: filtro en lugar correcto GREEN; mutación de eliminar el mismo filtro en cadena (sin persistir) RED.
+- SSR: filtro en lugar correcto GREEN; mutación equivalente RED.
+- Modal: `offers=[]`, `initialOffers=[{id:'offer-old',status:'pending'}]`, `request.status='published'` => condición actual `shouldClose=false`, confirmar habilitado. Este experimento evalúa la expresión extraída del archivo; **NO es prueba de interacción React**.
+- Test «refetchea»: contiene aserción de mensaje, ninguna aserción que capture llamada a fetch/refetch en ese caso.
+
+GitHub CI HEAD:
+- Job unit 117312028603: `Test Files 135 passed`, `Tests 2498 passed`, workflows 79, ADR 6.
+- Job db-tests 117312028537: `Files=26 Tests=2341 Result: PASS` final, diff tipos limpio. FAIL intermedio pertenece a prueba de mutación con restauración, no al cierre.
+- No se corrió Vitest/Playwright ni Git en local: `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió `Could not resolve host: github.com`. No hubo acceso a .env ni secretos.
+
+### Batería independiente de escritorio — copiá el script completo a /tmp
+```bash
+cat >/tmp/pr390-r2-audit.cjs <<'NODE'
+'use strict';
+const fs=require('node:fs');
+const assert=require('node:assert/strict');
+const specs=[
+ {path:'src/server/live/t204.ts', anchor:'export async function getRequestOffersLiveServer'},
+ {path:'src/features/requests/queries.ts', anchor:'export async function getMerchantRequestWithOffers'},
+];
+let ok=0;
+for(const {path,anchor} of specs){
+ const src=fs.readFileSync(path,'utf8'), start=src.indexOf(anchor);
+ assert(start>=0,'No existe función '+anchor);
+ const from=src.indexOf(".from('offers')",start),limit=src.indexOf('.limit(',from);
+ assert(from>start&&limit>from,'No existe el builder esperado: '+path);
+ const builder=src.slice(from,limit);
+ const req=builder.indexOf(".eq('request_id'"), status=builder.indexOf(".eq('status', 'pending')");
+ assert(req>=0,'No tiene request_id: '+path);
+ assert(status>req,'No filtró pending previo a pagination: '+path);
+ const mutant=builder.slice(0,status)+builder.slice(status).replace(".eq('status', 'pending')",'');
+ assert(!mutant.includes(".eq('status', 'pending')"),'mutación no fue RED: '+path);
+ console.log('GREEN→RED static-filter '+path);ok++;
+}
+const src=fs.readFileSync('src/features/requests/components/request-offers-list.tsx','utf8');
+const bad=src.includes('const current = currentInOffers ?? currentInInitial;');
+if(bad){
+ const currentInOffers=undefined, currentInInitial={id:'old',status:'pending'},canAccept=true;
+ const current=currentInOffers??currentInInitial;
+ const shouldClose=!current||current.status!=='pending'||(currentInInitial&&currentInInitial.status!=='pending')||!canAccept;
+ assert.equal(shouldClose,false);
+ console.log('RED modal: after refetch [] the initialOffers fallback keeps stale selectedOffer');
+ process.exitCode=1;
+}else console.log('GREEN static modal: legacy fallback absent (REQUIERE TEST REACT)');
+console.log('static filters checked: '+ok);
+NODE
+node /tmp/pr390-r2-audit.cjs
+```
+Este harness está concebido para fallar (RED) en el SHA actual por el modal, no para simular GREEN sin código nuevo. Al corregir, debe dar GREEN y **acompañarse** de un test de integración real; no usa la batería del autor. Ejecutarlo con checkout de ese SHA desde raíz del repo y copiarlo íntegro a /tmp para comprobar portabilidad.
+
+### Pruebas RED→GREEN en la futura ronda
+1. Test UI con initialOffers prop constante y refetch que retorna []: debe cerrar modal y dejar de admitir action. Mutación restaurando `?? initialOffers` debe hacerlo RED.
+2. Test UI de `OFFER_NOT_PENDING`: mutación retirando `void refetch()` debe mostrar RED porque spy de red/cambio observable falta. Tras arreglar GREEN.
+3. Test de cinco estados terminales más status ausente: cada status genera una ejecución real, no descripción aspiracional. Mutación de guardia para ese estado debe RED.
+4. Test query con fixture de 51+ filas mezcladas y builder que aplica filtros; mutación eliminando `eq(status,pending)` de Live y SSR por separado debe RED. Restauraciones GREEN.
+5. Offline/reconnect debe probar deshabilitación temporal y actualización final, sin alterar la política T-333; capturar salida Vitest original y mutante.
+
+**Nada de mutar archivos versionados directamente con checkout de reversión; usar harness que parchea en memoria o trabajo en /tmp no commiteado.** Sin ejecutar Docker/Supabase local. El E2E real se prueba sobre Preview+Supabase Develop, nunca producción.
