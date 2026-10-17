@@ -68,7 +68,7 @@ export interface AvailableRequestItem {
   readonly id: string;
   readonly pickupZoneName: string;
   readonly dropoffZoneName: string;
-  readonly approxDistanceKm: string;
+  readonly approxDistanceKm: string | null;
   readonly packageType: PackageType;
   readonly recipientPaymentMethod: RecipientPaymentMethod;
   readonly needsChange: boolean;
@@ -101,7 +101,7 @@ export interface CourierOfferItem {
   readonly createdAt: string;
   readonly decidedAt: string | null;
   readonly requestExpiresAt: string | null;
-  readonly approxDistanceKm: string;
+  readonly approxDistanceKm: string | null;
 }
 
 export interface ActiveTripSummary {

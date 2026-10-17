@@ -48,8 +48,8 @@ export const OFFERS_COPY = {
     transfer: 'Paga con transferencia',
     to_agree: 'A coordinar',
   } satisfies Record<RecipientPaymentMethod, string>,
-  approxDistancePrefix: '≈',
-  kmUnit: 'km',
+  // Sin distancia calculada se dice explícitamente; nunca se muestra un valor inventado (T-363).
+  approxDistance: (km: string | null) => (km ? `≈ ${km} km` : 'Distancia no calculada'),
 
   // Paquetes: una etiqueta por valor canónico (PACKAGE_TYPES)
   packageLabels: {

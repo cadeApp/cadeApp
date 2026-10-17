@@ -187,9 +187,7 @@ export function OfferSheet({
                 <span>·</span>
               </>
             ) : null}
-            <span>
-              {OFFERS_COPY.approxDistancePrefix} {request.approxDistanceKm} {OFFERS_COPY.kmUnit}
-            </span>
+            <span>{OFFERS_COPY.approxDistance(request.approxDistanceKm)}</span>
             <span>·</span>
             <span>{packageLabel}</span>
             <span>·</span>

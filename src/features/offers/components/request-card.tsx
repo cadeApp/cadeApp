@@ -54,9 +54,7 @@ export function RequestCard({ request, onOfferClick, isOffline = false }: Reques
 
         {/* Detalle de distancia y paquete (piso 14px -> text-sm) */}
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-          <span>
-            {OFFERS_COPY.approxDistancePrefix} {request.approxDistanceKm} {OFFERS_COPY.kmUnit}
-          </span>
+          <span>{OFFERS_COPY.approxDistance(request.approxDistanceKm)}</span>
           <span>·</span>
           <div className="flex items-center gap-1">
             <Package className="h-4 w-4 shrink-0" aria-hidden="true" />
