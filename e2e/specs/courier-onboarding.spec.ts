@@ -1007,12 +1007,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
       // Al seleccionar la pestaña histórica:
       await historicalTab.click();
-      const loadHistoricalBtn = page.getByRole('button', {
-        name: new RegExp(ADMIN_COPY.detail.loadDocument, 'i'),
-      });
-      if (await loadHistoricalBtn.isVisible()) {
-        await loadHistoricalBtn.click();
-      }
+      await page.getByRole('button', { name: /Cargar documento seguro/i }).click();
       await expect(page.getByText('Documento histórico (no admite revisión).')).toBeVisible();
 
       const rejectDocBtn = page.getByRole('button', {
@@ -1026,12 +1021,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
       // Al seleccionar la versión vigente:
       await currentTab.click();
-      const loadCurrentBtn = page.getByRole('button', {
-        name: new RegExp(ADMIN_COPY.detail.loadDocument, 'i'),
-      });
-      if (await loadCurrentBtn.isVisible()) {
-        await loadCurrentBtn.click();
-      }
+      await page.getByRole('button', { name: /Cargar documento seguro/i }).click();
       await expect(page.getByText('Documento histórico (no admite revisión).')).not.toBeVisible();
       await expect(page.getByText(ADMIN_COPY.detail.viewer.validityQuestion)).toBeVisible();
       await expect(rejectDocBtn).toBeEnabled();
