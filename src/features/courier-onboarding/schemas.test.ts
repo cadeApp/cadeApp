@@ -200,6 +200,18 @@ describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () =
       }
     });
 
+    it('acepta auto con patente tradicional argentina (ej: ela 666) y la formatea a mayúsculas', () => {
+      const res = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'car',
+        vehiclePlate: 'ela 666',
+      });
+      expect(res.success).toBe(true);
+      if (res.success) {
+        expect(res.data.vehicleType).toBe('car');
+        expect(res.data.vehiclePlate).toBe('ELA 666');
+      }
+    });
+
     it('rechaza moto o auto sin patente o con patente vacía', () => {
       const withoutPlate = courierUpdateVehicleSchema.safeParse({
         vehicleType: 'moto',

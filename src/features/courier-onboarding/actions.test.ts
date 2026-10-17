@@ -1585,6 +1585,21 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       });
     });
 
+    it('actualiza exitosamente auto con patente tradicional argentina (ela 666) a mayúsculas', async () => {
+      const { mockUpdate } = setupCourierMock();
+      const result = await updateCourierVehicleAction({
+        vehicleType: 'car',
+        vehiclePlate: 'ela 666',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+      expect(mockUpdate.mock.calls[0]?.[0]).toEqual({
+        vehicle_type: 'car',
+        vehicle_plate: 'ELA 666',
+      });
+    });
+
     it('actualiza exitosamente a pie o bici normalizando vehicle_plate a null', async () => {
       const { mockUpdate } = setupCourierMock();
       const result = await updateCourierVehicleAction({

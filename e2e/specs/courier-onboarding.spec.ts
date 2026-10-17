@@ -809,7 +809,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
   // ---------------------------------------------------------------------------
   // T-357: Actualización de vehículo desde el perfil del repartidor (Issue #344)
   // ---------------------------------------------------------------------------
-  test('T-357: Actualización de vehículo desde el perfil del repartidor sin reonboarding ni error genérico', async ({
+  test('T-357: Flujo completo de actualización de vehículo desde perfil (moto -> car con ELA 666 -> bike -> walk) sin reonboarding ni documentos extras', async ({
     page,
     stagingContext,
     loginAsCourier,
@@ -819,8 +819,16 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       throw new Error('[E2E Error] Se requiere un courier en stagingContext');
     }
 
-    // Precondición: courier con vehículo existente y habilitado
     const dbAdmin = createAdminClient();
+
+    // Snapshot inicial de courier_documents para verificar que no sufre inserciones/modificaciones
+    const { data: initialDocs, error: docsError } = await dbAdmin
+      .from('courier_documents')
+      .select('kind, storage_path, status')
+      .eq('courier_id', courier.id);
+    expect(docsError).toBeNull();
+
+    // Precondición: courier con vehículo moto existente y habilitado (DoD 1: seed comprueba error:null y 1 fila)
     const { data: seeded, error: seedError } = await dbAdmin
       .from('couriers')
       .update({
@@ -838,7 +846,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await page.goto('/courier/profile');
     await waitForNoSkeletons(page);
 
-    // 2. Verificar que se muestra el vehículo actual y el enlace «Actualizar»
+    // 2. Verificar que se muestra Motocicleta con su patente Mercosur inicial y el enlace «Actualizar»
     await expect(page.getByText('Motocicleta')).toBeVisible();
     await expect(page.getByText(/Patente: AB 123 CD/i)).toBeVisible();
 
@@ -846,45 +854,188 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await expect(updateLink).toBeVisible();
     await updateLink.click();
 
-    // 3. Verifica llegada a la pantalla de edición sin pasos de onboarding ni consentimientos
+    // 3. Verifica llegada a la pantalla de edición: sin stepper de onboarding, sin checkboxes ni subida documental
     await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
       timeout: 15000,
     });
     await waitForNoSkeletons(page);
 
     await expect(page.getByRole('heading', { name: /Actualizar vehículo/i })).toBeVisible();
-    await expect(page.getByText('Paso 3 de 4')).not.toBeVisible();
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.stepCounter2)).not.toBeVisible();
     await expect(page.getByRole('checkbox')).toHaveCount(0);
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.optionalDocsTitle)).not.toBeVisible();
 
-    // 4. Cambiar a Bicicleta (oculta patente)
-    const bikeOption = page.locator('label').filter({ hasText: /Bicicleta|Bici/i });
-    await bikeOption.click();
+    // 4. Validación de patente inválida: ingresar patente con formato incorrecto
+    const carOption = page.locator('label').filter({ hasText: /Auto/i });
+    await carOption.click();
 
     const plateInput = page.getByLabel(/Patente del vehículo/i);
-    await expect(plateInput).not.toBeVisible();
+    await expect(plateInput).toBeVisible();
+    await plateInput.fill('PATENTE_INVALIDA');
+    await plateInput.blur();
 
-    // 5. Guardar cambios
+    const plateError = page.locator('#plate-error');
+    await expect(plateError).toBeVisible();
+    await expect(plateError).toHaveText(/Formato de patente inválido/i);
+
     const saveButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+    await expect(saveButton).toBeDisabled();
+
+    // 5. Corregir con patente argentina tradicional (formato ELA 666)
+    await plateInput.fill('ELA 666');
+    await plateInput.blur();
+    await expect(plateError).not.toBeVisible();
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
 
-    // 6. Verifica redirección al perfil y persistencia del cambio a Bicicleta
+    // 6. Verifica redirección al perfil y persistencia de Automóvil + ELA 666 tras reload
     await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
       timeout: 15000,
     });
     await waitForNoSkeletons(page);
 
-    await expect(page.getByText('Bicicleta')).toBeVisible();
+    await expect(page.getByText('Automóvil')).toBeVisible();
+    await expect(page.getByText(/Patente: ELA 666/i)).toBeVisible();
     await page.reload();
     await waitForNoSkeletons(page);
-    await expect(page.getByText('Bicicleta')).toBeVisible();
-    const { data: persisted, error: persistError } = await dbAdmin
+    await expect(page.getByText('Automóvil')).toBeVisible();
+    await expect(page.getByText(/Patente: ELA 666/i)).toBeVisible();
+
+    const { data: carPersisted, error: carPersistError } = await dbAdmin
       .from('couriers')
       .select('vehicle_type, vehicle_plate, status')
       .eq('profile_id', courier.id)
       .single();
-    expect(persistError).toBeNull();
-    expect(persisted).toMatchObject({ vehicle_type: 'bike', vehicle_plate: null, status: 'approved' });
+    expect(carPersistError).toBeNull();
+    expect(carPersisted).toMatchObject({
+      vehicle_type: 'car',
+      vehicle_plate: 'ELA 666',
+      status: 'approved',
+    });
+
+    // 7. Modificar a Bicicleta: desaparece campo patente y se normaliza a null
+    await page.getByRole('link', { name: /Actualizar/i }).click();
+    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    const bikeOption = page.locator('label').filter({ hasText: /Bicicleta|Bici/i });
+    await bikeOption.click();
+    await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
+
+    const saveBikeButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+    await expect(saveBikeButton).toBeEnabled();
+    await saveBikeButton.click();
+
+    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('Bicicleta')).toBeVisible();
+    await page.reload();
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('Bicicleta')).toBeVisible();
+
+    const { data: bikePersisted, error: bikePersistError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier.id)
+      .single();
+    expect(bikePersistError).toBeNull();
+    expect(bikePersisted).toMatchObject({
+      vehicle_type: 'bike',
+      vehicle_plate: null,
+      status: 'approved',
+    });
+
+    // 8. Modificar a A pie: sin patente y persiste walk
+    await page.getByRole('link', { name: /Actualizar/i }).click();
+    await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+
+    const walkOption = page.locator('label').filter({ hasText: /A pie/i });
+    await walkOption.click();
+    await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
+
+    const saveWalkButton = page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i });
+    await expect(saveWalkButton).toBeEnabled();
+    await saveWalkButton.click();
+
+    await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+      timeout: 15000,
+    });
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('A pie')).toBeVisible();
+    await page.reload();
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('A pie')).toBeVisible();
+
+    const { data: walkPersisted, error: walkPersistError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier.id)
+      .single();
+    expect(walkPersistError).toBeNull();
+    expect(walkPersisted).toMatchObject({
+      vehicle_type: 'walk',
+      vehicle_plate: null,
+      status: 'approved',
+    });
+
+    // 9. Verificar que courier_documents no fue alterado durante las 3 actualizaciones
+    const { data: finalDocs, error: finalDocsError } = await dbAdmin
+      .from('courier_documents')
+      .select('kind, storage_path, status')
+      .eq('courier_id', courier.id);
+    expect(finalDocsError).toBeNull();
+    expect(finalDocs).toEqual(initialDocs);
+  });
+
+  test('T-357: E2E negativo: postulante con alta incompleta nunca ve edición con ?mode=edit y mantiene precondición', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+  }) => {
+    const courier2 = stagingContext.courierUsers?.[1];
+    if (!courier2) {
+      throw new Error('[E2E Error] Se requieren al menos 2 couriers en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    // Precondición: postulante con onboarding incompleto (vehicle_type nulo)
+    await resetCourierToPendingOnboarding(courier2.id);
+
+    // 1. Iniciar sesión como courier 2
+    await loginAsCourier(1, page);
+
+    // 2. Navegar directamente con query param malicioso ?mode=edit
+    await page.goto('/courier/onboarding/vehicle?mode=edit');
+    await waitForNoSkeletons(page);
+
+    // 3. Verificar que se presenta la pantalla de alta (onboarding), no la de edición
+    await expect(
+      page.getByRole('heading', { name: COURIER_ONBOARDING_COPY.vehicleHeadline })
+    ).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Actualizar vehículo/i })).not.toBeVisible();
+    await expect(page.getByText(COURIER_ONBOARDING_COPY.stepCounter2)).toBeVisible();
+
+    // Los consentimientos legales obligatorios deben estar presentes y desmarcados
+    const checkboxes = page.getByRole('checkbox');
+    await expect(checkboxes).toHaveCount(3);
+
+    // 4. Base de datos permanece con vehicle_type nulo
+    const { data: courierRow, error: fetchError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, status')
+      .eq('profile_id', courier2.id)
+      .single();
+    expect(fetchError).toBeNull();
+    expect(courierRow?.vehicle_type).toBeNull();
+    expect(courierRow?.status).toBe('pending');
   });
 });
 
