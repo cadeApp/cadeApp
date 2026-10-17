@@ -33,3 +33,9 @@ Sin numerar AG hasta contrastar máximo en ramas; pruebas independientes no ejec
 - **E2E vs clase no enumerada:** 83 E2E correctos sobre JPEG `.png`/`.jpg` no descartan variante `.jfif` normal de `image/jpeg`; recorrer clases MIME + sufijo, no un ejemplo único.
 - **Probidad:** un probe de paridad Node sin clon prueba la incompatibilidad de strings pero NO sustituye ejecutar el módulo TS ni una mutación real con tests del repositorio.
 - Al hacer merge de develop, medir HEAD + base y esperar E2E del nuevo HEAD, sin copiar el verde del previo.
+
+## Ronda 5 — cierre técnico, evidencia delimitada
+
+- **P06/P08:** test de ruta persistida debe seguir el MIME realmente producido por el compresor, no la extensión de nombre; cambiar .png→.jpg en la aserción E2E es una actualización fundada, no necesariamente adulteración. Se contrastó compresor, helper y SQL.
+- **Verificación independiente acotada:** ejecutar el cuerpo original extraído en V8 permite una mutación auténtica sobre la función pure JS/TS sin clone ni secretos: GREEN 10, RED 7, GREEN 10. No equivale a correr el módulo importado con Vitest, Storage ni E2E. Describir exactamente ese límite.
+- **Gate de release:** CI unit/pgTAP verde y approval-policy verde no sustituyen Playwright pendiente. Ronda terminada sin nuevos defectos detectados, con bloqueo de validación E2E explícito.

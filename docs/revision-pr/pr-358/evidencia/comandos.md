@@ -153,3 +153,90 @@ PASS: 8 path/SQL compatibility probes. Parity model only.
 **Falsadores a ejecutar por agy:** prueba real de `getDocumentExtension` y `buildCourierStoragePath` en `upload-resilience.test.ts`: JPEG .jfif/.jpe/.tiff → jpg, JPEG desde PNG comprimida → jpg, raw image/png → png, webp → webp, pdf → pdf; MIME desconocido aborta antes de `.upload` y antes de acción. Prueba `uploadCourierDocument` con fake Storage comprueba ruta, MIME y upsert:false. Prueba componente mock que respete path realmente producido; no mockear path fijo para ocultar error. Mutación de producción que prioriza `file.name` debe dar RED por aserción de extensión; restauración da GREEN sin modificar test.
 
 **No ejecutado:** `pnpm vitest`, mutaciones del módulo real, E2E propio, Docker/Supabase. Al corregir, agy debe adjuntar comandos y líneas `Tests` RED/GREEN reproducibles en `docs/tasks/log/T-356.md` y correr CI/E2E en el nuevo SHA.
+
+## Ronda 5 independiente — 2026-10-17
+
+**HEAD EXACTO:** `ed4a118f12a2ee384b67d60c875ec8d5bfb6e8ad`. GitHub PR #358 Draft, mergeable=true, compare develop 0 behind/24 ahead, base `711a2f7054d77fd664d3ec09b3bbdd24efb88476`. PR diff R4→R5: 4 archivos (upload-manager, upload-resilience.test, E2E spec, bitácora). No cambios en docs/revision-pr atribuibles al autor.
+
+### Resultado realmente ejecutado por esta revisión
+- Herramienta `mcp__GitHub__fetch_file` leyó fuente exacta de `upload-manager.ts` sobre `ed4a118f12a2ee384b67d60c875ec8d5bfb6e8ad`; se extrajo el **cuerpo literal** de `getDocumentExtension(file: File)` y `buildCourierStoragePath(...)` y se ejecutaron como JS en un isolate V8, sin reemplazar la lógica real.
+- Casos: foto.jfif/JPEG, foto.jpe/JPEG, foto.tiff/JPEG, foto.png/JPEG, foto.PNG/PNG, foto.webp/WebP, poliza.pdf/PDF, sin-extension/JPEG, doc.jpg/octest-stream y doc.jpg/MIME vacío: **10/10 GREEN**.
+- Verificación del path por función real extraída: `courier/71b6db92-2cfd-437f-b69f-93b8b84acd4e/license_1700000000000.jpg`.
+- Mutación aislada insertando prioridad por extensión de `file.name` sobre switch MIME: **7 resultados incorrectos RED**. Fallaron JFIF, JPE, TIFF, PNG renombrado, sin-extension, y los dos tipos MIME inválidos (se admitían incorrectamente). Restauración: **10/10 GREEN**.
+- **Alcance:** función real extraída y compilada como JS puro, no suite TS importada ni llamada remota Storage/DB. Tests ejecutados por CI del autor sirven de apoyo a integración, pero no se atribuyen al revisor.
+
+### Harness COMPLETO reproducible en el checkout exacto desde raíz
+
+```bash
+cat > /tmp/pr358_r5_independiente.cjs <<'NODE'
+'use strict';
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const src = fs.readFileSync('src/features/courier-onboarding/upload-manager.ts', 'utf8');
+function bodyOf(signature) {
+  const start = src.indexOf(signature);
+  assert.ok(start >= 0, 'SIN OBJETIVO: no existe símbolo ' + signature);
+  const open = src.indexOf('{', start + signature.length);
+  assert.ok(open >= 0, 'SIN OBJETIVO: símbolo sin cuerpo');
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(open+1, i);
+    }
+  }
+  throw new Error('SIN OBJETIVO: cuerpo incompleto');
+}
+const impl = bodyOf('export function getDocumentExtension(file: File): string');
+assert.ok(impl.includes('switch (file.type)'), 'SIN OBJETIVO: no existe switch MIME');
+const restored = new Function('file', impl);
+const buildBody = bodyOf('export function buildCourierStoragePath(');
+const build = new Function('getDocumentExtension',
+  `return (courierId, kind, file, timestamp) => {${buildBody}}`)(restored);
+const cases = [
+  ['foto.jfif','image/jpeg','jpg'],['foto.jpe','image/jpeg','jpg'],
+  ['foto.tiff','image/jpeg','jpg'],['foto.png','image/jpeg','jpg'],
+  ['foto.PNG','image/png','png'],['foto.webp','image/webp','webp'],
+  ['poliza.pdf','application/pdf','pdf'],['sin-extension','image/jpeg','jpg'],
+  ['doc.jpg','application/octet-stream','THROW'],['doc.jpg','','THROW']
+];
+function run(fn) {
+  return cases.map(([name,type,want]) => {
+    let got;
+    try { got = fn({name,type}); } catch { got = 'THROW'; }
+    return {name,type,want,got,pass:want===got};
+  });
+}
+const initial = run(restored);
+assert.equal(initial.filter(x=>x.pass).length,10,'GREEN previo falso');
+const expectedPath='courier/71b6db92-2cfd-437f-b69f-93b8b84acd4e/license_1700000000000.jpg';
+assert.equal(build('71b6db92-2cfd-437f-b69f-93b8b84acd4e','license',
+  {name:'foto.jfif',type:'image/jpeg'},1700000000000),expectedPath);
+console.log('GREEN original: 10/10; build path canónico: PASS');
+const marker='  switch (file.type) {';
+assert.equal(impl.split(marker).length,2,'SIN OBJETIVO: mutación ambigua');
+const mutated=impl.replace(marker,
+  "  const ext = file.name.split('.').pop().trim().toLowerCase(); if (ext) return ext;\n"+marker);
+const mutant = new Function('file', mutated);
+const red = run(mutant);
+const failed = red.filter(x=>!x.pass);
+assert.equal(failed.length,7,'Mutación RED no sensible: '+JSON.stringify(red));
+console.log('RED mutación in-memory: 7 fallos específicos',
+  failed.map(x=>x.name+'('+x.type+'): '+x.got+' != '+x.want).join(' | '));
+assert.equal(run(restored).filter(x=>x.pass).length,10,'No restauró');
+console.log('GREEN restaurado: 10/10');
+NODE
+node /tmp/pr358_r5_independiente.cjs
+```
+
+Este harness fue redactado para ejecutar desde un checkout; en la sesión se ejecutó su equivalente contra el cuerpo fuente devuelto por GitHub en V8 (misma tabla de entradas y mutación). **No afirmar que el script de /tmp fue ejecutado por esta sesión en un clone local**.
+
+### GitHub CI/E2E real
+- CI https://github.com/cadeApp/cadeApp/actions/runs/39052207646 SHA `ed4a118f12a2ee384b67d60c875ec8d5bfb6e8ad`: unit job `117452900462`, log `Test Files 139 passed (139)`, `Tests 2618 passed (2618)`; db-tests job `117452900441`, último log final `Files=27, Tests=2420, Result: PASS`, typecheck/lint/build/audit/bundle all pass.
+- approval-policy https://github.com/cadeApp/cadeApp/actions/runs/39052205218 success (formato, no autoría/independencia).
+- E2E **PREVIO** SHA 21732e6 https://github.com/cadeApp/cadeApp/actions/runs/39049776421: **85/86 PASS, 1 FAIL** al esperar `.png` tras cambio canónico. El autor corrigió única aserción a `.jpg`, sin quitar oráculo SQL.
+- E2E **HEAD** SHA `ed4a118f12a2ee384b67d60c875ec8d5bfb6e8ad`, https://github.com/cadeApp/cadeApp/actions/runs/39052264162, job `117453108213`: `Verify Supabase Develop target` SUCCESS; `Health check` SUCCESS; `Run preview E2E gate` **in_progress al consultar**. No autorizar merge ni anunciar tests E2E verdes hasta obtener log final y status real.
+
+### No ejecutado
+- `pnpm test` local del checkout, `node docs/revision-pr/analizar.mjs verificacion`, `git merge-tree` local, Docker/DB local/remota o Playwright por el revisor. La compatibilidad y checks de CI se leyeron directamente en GitHub.

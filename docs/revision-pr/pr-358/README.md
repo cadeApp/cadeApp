@@ -44,3 +44,7 @@ Crear, revisar y mergear primero el CC #363 en PR independiente, reconciliar fic
 ## Ronda 4 — 2026-10-17
 
 **Resultado: CON BLOQUEANTE H06 ALTO** (getDocumentExtension toma ext de nombre y crea `license_<ts>.jfif` para MIME JPEG, rechazado por CC-025 tras posible subida Storage). SHA funcional `157b492d`; R3 H03/H04/H05 `arreglado-sin-verificar` por inspección + CI del autor, merge con develop clean. CI 39047554976 PASS, E2E HEAD 39047622636 estaba `in_progress` al revisar; no confundir con 83/83 del SHA anterior. [Informe R4](revisiones/ronda-4.md) · [Evidencia](evidencia/comandos.md) · [Hallazgos](hallazgos.jsonl). Limpieza de huérfanos [T-370 #399](https://github.com/cadeApp/cadeApp/issues/399) es gate pre-staging/main, no de develop. No aprobar/mergear PR #358 aún.
+
+## Ronda 5 — 2026-10-17
+
+**Sin nuevos bloqueantes de código; gate E2E del HEAD pendiente.** HEAD revisado `ed4a118f12a2ee384b67d60c875ec8d5bfb6e8ad` (R5); `PR358-H06` **arreglado-verificado** con prueba independiente de cuerpo fuente MIME (10 GREEN → 7 RED propios → 10 GREEN), CI del HEAD 139 suites / 2618 unit y 27 archivos / 2420 pgTAP PASS. E2E [39052264162](https://github.com/cadeApp/cadeApp/actions/runs/39052264162) estaba en ejecución; no mergear mientras falte su resultado. Reporte [ronda-5](revisiones/ronda-5.md), [evidencia](evidencia/comandos.md). T-370 #399 permanece gate pre-staging/main, no impedimento propio para develop.
