@@ -166,6 +166,11 @@ export function StatusView({
     }
   }
 
+  const shownDocuments = localDocuments.filter(
+    (d) => initialRejectedKindsRef.current.has(d.kind) || d.status === 'rejected'
+  );
+  const hasRejected = shownDocuments.some((d) => d.status === 'rejected');
+
   const checklistItems: Array<{ title: string; status: ItemStatus }> = [
     { title: 'DNI frente y dorso', status: dniStatus },
     { title: COURIER_ONBOARDING_COPY.selfieTitle, status: selfieStatus },
@@ -231,30 +236,30 @@ export function StatusView({
           </CardContent>
         </Card>
 
-        {/* Documentos rechazados que requieren corrección (T-356) */}
-        {localDocuments.filter(
-          (d) => initialRejectedKindsRef.current.has(d.kind) || d.status === 'rejected'
-        ).length > 0 && (
+        {/* Documentos rechazados que requieren corrección o seguimiento de corrección (T-356) */}
+        {shownDocuments.length > 0 && (
           <div className="w-full space-y-3 pt-4" data-slot="rejected-documents-section">
-            <h2 className="text-sm font-bold text-destructive">
-              Documentos que requieren corrección
+            <h2
+              className={`text-sm font-bold ${
+                hasRejected ? 'text-destructive' : 'text-foreground'
+              }`}
+            >
+              {hasRejected
+                ? 'Documentos que requieren corrección'
+                : 'Seguimiento de documentos corregidos'}
             </h2>
-            {localDocuments
-              .filter(
-                (d) => initialRejectedKindsRef.current.has(d.kind) || d.status === 'rejected'
-              )
-              .map((doc) => (
-                <DocumentReplacementCard
-                  key={doc.kind}
-                  courierId={courierId}
-                  kind={doc.kind}
-                  title={getDocTitle(doc.kind)}
-                  initialStatus={doc.status}
-                  rejectionCode={doc.rejectionCode}
-                  rejectionMessage={doc.rejectionMessage}
-                  onReplaced={handleDocumentReplaced}
-                />
-              ))}
+            {shownDocuments.map((doc) => (
+              <DocumentReplacementCard
+                key={doc.kind}
+                courierId={courierId}
+                kind={doc.kind}
+                title={getDocTitle(doc.kind)}
+                initialStatus={doc.status}
+                rejectionCode={doc.rejectionCode}
+                rejectionMessage={doc.rejectionMessage}
+                onReplaced={handleDocumentReplaced}
+              />
+            ))}
           </div>
         )}
       </div>

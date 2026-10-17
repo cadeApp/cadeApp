@@ -60,8 +60,6 @@ export function DocumentReplacementCard({
     setErrorMessage(null);
     setSuccessMessage(null);
     setSelectedFileName(file.name);
-    setUploadStatus('uploading');
-
     // Identificador único del archivo seleccionado (nombre, tamaño, tipo y última modificación)
     const fingerprint = `${file.name}-${file.size}-${file.type}-${file.lastModified}`;
     const previousAttempt = pendingAttemptRef.current;
@@ -70,15 +68,30 @@ export function DocumentReplacementCard({
       previousAttempt.kind === kind &&
       previousAttempt.fingerprint === fingerprint;
 
+    let idempotencyKey: string;
+    if (isSameAttempt) {
+      idempotencyKey = previousAttempt.idempotencyKey;
+    } else {
+      try {
+        if (typeof globalThis.crypto?.randomUUID !== 'function') {
+          throw new Error('Entorno criptográfico no disponible');
+        }
+        idempotencyKey = globalThis.crypto.randomUUID();
+      } catch {
+        setUploadStatus('error');
+        setErrorMessage('No se pudo generar un identificador seguro para la operación');
+        return;
+      }
+    }
+
+    setUploadStatus('uploading');
+
     const attempt: PendingAttempt = isSameAttempt
       ? previousAttempt
       : {
           kind,
           fingerprint,
-          idempotencyKey:
-            typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID()
-              : `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+          idempotencyKey,
           timestamp: Date.now(),
           storagePath: '',
           uploadConfirmed: false,

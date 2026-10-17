@@ -21,7 +21,6 @@ import { vehiclePlateSchema } from './schemas';
 import { COURIER_ONBOARDING_COPY } from './copy';
 import * as uploadManager from './upload-manager';
 import { compressImage } from '@/lib/image-compression';
-import { COURIER_ONBOARDING_COPY } from './copy';
 
 const {
   mockUploadCourierDocument,
@@ -2041,6 +2040,193 @@ describe('T-356 · CC-025: Recarga de documentos del repartidor rechazados por a
 
     // Invariante PR358-R02: DNI continúa inalterado como "Validado por admin"
     expect(screen.getByText('Validado por admin')).toBeDefined();
+  });
+
+  it('(m) PR358-H03: si globalThis.crypto.randomUUID no está disponible o lanza error, muestra error seguro en UI y frena sin comprimir, subir ni invocar RPC', async () => {
+    const mockReplaceAction = vi.spyOn(actionsModule, 'replaceCourierDocumentAction');
+    const originalRandomUUID = globalThis.crypto.randomUUID;
+
+    try {
+      // Simular ausencia de crypto.randomUUID
+      // @ts-expect-error simular entorno sin randomUUID
+      globalThis.crypto.randomUUID = undefined;
+
+      render(
+        <DocumentReplacementCard
+          courierId="courier-123"
+          kind="license"
+          title="Licencia de conducir"
+          initialStatus="rejected"
+          rejectionCode="illegible"
+        />
+      );
+
+      const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+      const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('No se pudo generar un identificador seguro para la operación')
+        ).toBeDefined();
+      });
+
+      expect(compressImage).not.toHaveBeenCalled();
+      expect(mockUploadCourierDocument).not.toHaveBeenCalled();
+      expect(mockReplaceAction).not.toHaveBeenCalled();
+    } finally {
+      globalThis.crypto.randomUUID = originalRandomUUID;
+    }
+  });
+
+  it('(m2) PR358-H03: si globalThis.crypto.randomUUID lanza una excepción, muestra error seguro y frena sin side-effects', async () => {
+    const mockReplaceAction = vi.spyOn(actionsModule, 'replaceCourierDocumentAction');
+    const originalRandomUUID = globalThis.crypto.randomUUID;
+
+    try {
+      globalThis.crypto.randomUUID = vi.fn().mockImplementation(() => {
+        throw new Error('Entropy pool exhausted');
+      });
+
+      render(
+        <DocumentReplacementCard
+          courierId="courier-123"
+          kind="license"
+          title="Licencia de conducir"
+          initialStatus="rejected"
+          rejectionCode="illegible"
+        />
+      );
+
+      const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+      const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+      fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('No se pudo generar un identificador seguro para la operación')
+        ).toBeDefined();
+      });
+
+      expect(compressImage).not.toHaveBeenCalled();
+      expect(mockUploadCourierDocument).not.toHaveBeenCalled();
+      expect(mockReplaceAction).not.toHaveBeenCalled();
+    } finally {
+      globalThis.crypto.randomUUID = originalRandomUUID;
+    }
+  });
+
+  it('(n) PR358-H04: StatusView muestra «Seguimiento de documentos corregidos» cuando todos los rechazados fueron resueltos', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000050',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000049',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          {
+            kind: 'license',
+            status: 'rejected',
+            rejectionCode: 'illegible',
+          },
+        ]}
+      />
+    );
+
+    // Inicialmente con rechazado pendiente: muestra "Documentos que requieren corrección"
+    expect(screen.getByText('Documentos que requieren corrección')).toBeDefined();
+    expect(screen.queryByText('Seguimiento de documentos corregidos')).toBeNull();
+
+    // Reemplazamos la licencia
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      // Tras resolverse el único rechazado, el encabezado cambia a "Seguimiento de documentos corregidos"
+      expect(screen.getByText('Seguimiento de documentos corregidos')).toBeDefined();
+      expect(screen.queryByText('Documentos que requieren corrección')).toBeNull();
+    });
+  });
+
+  it('(o) PR358-H04: StatusView mantiene «Documentos que requieren corrección» cuando el estado es mixto (al menos un rechazado pendiente)', async () => {
+    mockUploadCourierDocument.mockResolvedValue({
+      storagePath: 'courier/courier-123/license_1700000000000.jpg',
+    });
+
+    vi.spyOn(actionsModule, 'replaceCourierDocumentAction').mockResolvedValueOnce({
+      ok: true,
+      data: {
+        kind: 'license',
+        idempotent: false,
+        documentId: 'd0000000-0000-0000-0000-000000000051',
+        replacedDocumentId: 'd0000000-0000-0000-0000-000000000050',
+        status: 'submitted',
+        isCurrent: true,
+      },
+    });
+
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          {
+            kind: 'license',
+            status: 'rejected',
+            rejectionCode: 'illegible',
+          },
+          {
+            kind: 'insurance',
+            status: 'rejected',
+            rejectionCode: 'expired',
+          },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('Documentos que requieren corrección')).toBeDefined();
+
+    // Reemplazamos solo la licencia (el seguro continúa rechazado)
+    const fileInput = screen.getByLabelText(/Reemplazar licencia de conducir/i);
+    const testFile = new File(['content'], 'licencia.jpg', { type: 'image/jpeg' });
+    fireEvent.change(fileInput, { target: { files: [testFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByText(COURIER_ONBOARDING_COPY.documentReplacedSuccess)).toBeDefined();
+    });
+
+    // Mantiene "Documentos que requieren corrección" porque aún queda seguro rechazado
+    expect(screen.getByText('Documentos que requieren corrección')).toBeDefined();
+    expect(screen.queryByText('Seguimiento de documentos corregidos')).toBeNull();
+  });
+
+  it('(p) PR358-H04: StatusView no renderiza la sección de documentos cuando no hay rechazados iniciales ni actuales', () => {
+    render(
+      <StatusView
+        courierId="courier-123"
+        documents={[
+          { kind: 'dni_front', status: 'verified' },
+          { kind: 'dni_back', status: 'verified' },
+          { kind: 'selfie', status: 'submitted' },
+        ]}
+      />
+    );
+
+    expect(screen.queryByText('Documentos que requieren corrección')).toBeNull();
+    expect(screen.queryByText('Seguimiento de documentos corregidos')).toBeNull();
   });
 });
 
