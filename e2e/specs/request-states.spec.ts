@@ -1142,6 +1142,102 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     const matchedInspection = await getRequestInspectionData(stagingContext, matchedRequestId);
     expect(matchedInspection.requestStatus).toBe('matched');
   });
+
+  // ---------------------------------------------------------------------------
+  // T-362: Motivos de cancelación específicos por rol en la vista de viaje
+  // ---------------------------------------------------------------------------
+  test('T-362 (§5.1): Motivos de cancelación específicos en vista de viaje (/trips/[id]) para cadete y comercio', async ({
+    page,
+    stagingContext,
+    loginAsCourier,
+    loginAsMerchant,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Precondition Error] Se requieren merchant y courier en stagingContext');
+    }
+
+    // 1. Precondición A: solicitud en matched
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const requestId = seedResult.requestId;
+
+    // 2. Courier inicia sesión y navega al viaje en matched
+    await loginAsCourier(0, page);
+    await page.goto(`/trips/${requestId}`);
+
+    const courierCancelBtn = page.getByRole('button', { name: /no puedo hacer este viaje/i });
+    await expect(courierCancelBtn).toBeVisible({ timeout: 10000 });
+    await courierCancelBtn.click();
+
+    // Modal de cancelación de cadete:
+    // - Título: ¿Por qué cancelás este viaje?
+    // - Opciones de cadete presentes: Tuve un imprevisto, Problema con el vehículo, No puedo llegar al punto de retiro, Emergencia, Otro
+    // - Opciones de comercio ausentes: Ya no hace falta, Lo resolví de otra forma, Me equivoqué en los datos
+    await expect(page.getByText('¿Por qué cancelás este viaje?')).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Tuve un imprevisto' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Problema con el vehículo' })).toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Ya no hace falta' })).not.toBeVisible();
+    await expect(page.getByRole('radio', { name: 'Lo resolví de otra forma' })).not.toBeVisible();
+
+    // Elegir "Problema con el vehículo" y avanzar a paso 2
+    await page.getByRole('radio', { name: 'Problema con el vehículo' }).click();
+    const continueBtn = page.getByRole('button', { name: /continuar/i });
+    await expect(continueBtn).toBeEnabled();
+    await continueBtn.click();
+
+    // Paso 2: copy de liberación/republicación (no definitiva)
+    await expect(page.getByText('¿Confirmás que no podés hacer este viaje?')).toBeVisible();
+    await expect(page.getByText(/La solicitud volverá a publicarse/i)).toBeVisible();
+    await expect(page.getByText(/cancelación definitiva/i)).not.toBeVisible();
+
+    const confirmBtn = page.getByRole('button', { name: /sí, cancelar/i });
+    await confirmBtn.click();
+
+    // Esperar redirección al feed o cierre
+    await expect(page).toHaveURL(/\/courier\/feed/, { timeout: 15000 });
+
+    // 3. Oráculo PostgreSQL: solicitud vuelve a published, acceptedOfferId es null
+    const inspection = await getRequestInspectionData(stagingContext, requestId);
+    expect(inspection.requestStatus).toBe('published');
+    expect(inspection.acceptedOfferId).toBeNull();
+    const courierReason = inspection.cancellationReasons?.find(
+      (r) => r.action === 'courier_cancel_match'
+    );
+    expect(courierReason?.reason).toBe('Problema con el vehículo');
+    expect(courierReason?.actorId).toBe(courier.id);
+
+    // 4. Precondición B: solicitud en in_transit no ofrece cancelación simple a ninguno de los dos roles
+    const inTransitSeed = await seedDeliveryRequestInState(stagingContext, {
+      status: 'in_transit',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const inTransitRequestId = inTransitSeed.requestId;
+
+    // Courier en in_transit: no ve botón de cancelación simple
+    await page.goto(`/trips/${inTransitRequestId}`);
+    await expect(page.getByRole('button', { name: /no puedo hacer este viaje/i })).not.toBeVisible({ timeout: 10000 });
+
+    // Comercio en in_transit: no ve botón de cancelación simple
+    const merchantBrowserContext = await page.context().browser()?.newContext();
+    if (merchantBrowserContext) {
+      try {
+        const merchantPage = await merchantBrowserContext.newPage();
+        await loginAsMerchant(merchantPage);
+        await merchantPage.goto(`/trips/${inTransitRequestId}`);
+        await expect(merchantPage.getByRole('button', { name: /cancelar envío/i })).not.toBeVisible({ timeout: 10000 });
+      } finally {
+        await merchantBrowserContext.close();
+      }
+    }
+  });
 });
 
 

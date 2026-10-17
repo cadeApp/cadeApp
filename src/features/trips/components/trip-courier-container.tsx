@@ -76,6 +76,7 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
   };
 
   const handleOpenCancelModal = () => {
+    if (trip.status !== 'matched') return;
     setCancelModalOpen(true);
   };
 
@@ -111,6 +112,7 @@ export function TripCourierContainer({ trip }: TripCourierContainerProps) {
         onOpenChange={setCancelModalOpen}
         onConfirm={handleConfirmCancel}
         isPending={isPending}
+        actor="courier"
       />
     </>
   );
