@@ -850,6 +850,19 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         .eq('profile_id', courier.id);
 
       // Subir documentos base con license en 'submitted' (PR358-R03: rechazo real mediante admin_verify_document)
+      const dummyPng = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      for (const kind of ['dni_front', 'dni_back', 'selfie', 'license'] as const) {
+        await dbAdmin.storage
+          .from(COURIER_DOCS_BUCKET)
+          .upload(`courier/${courier.id}/${kind}_base.png`, dummyPng, {
+            contentType: 'image/png',
+            upsert: true,
+          });
+      }
+
       const { data: insertedDocs, error: insertErr } = await dbAdmin
         .from('courier_documents')
         .insert([
