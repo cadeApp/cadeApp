@@ -5,6 +5,7 @@ import {
   elevateAdminToAal2,
   createAuthenticatedClient,
   generateTotp,
+  seedDeliveryRequestInState,
   type UserCredentials,
 } from '../fixtures';
 import { waitForNoSkeletons } from '../helpers/skeletons';
@@ -994,7 +995,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     expect(finalDocs).toEqual(initialDocs);
   });
 
-  test('T-357: E2E negativo: postulante con alta incompleta nunca ve edición con ?mode=edit y mantiene precondición', async ({
+  test('T-357: E2E negativo: postulante con alta incompleta nunca ve edición con ?mode=edit y mantiene precondición con aislamiento entre actores', async ({
     page,
     stagingContext,
     loginAsCourier,
@@ -1027,7 +1028,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     const checkboxes = page.getByRole('checkbox');
     await expect(checkboxes).toHaveCount(3);
 
-    // 4. Base de datos permanece con vehicle_type nulo
+    // 4. Base de datos permanece con vehicle_type nulo y status pending (0 escrituras)
     const { data: courierRow, error: fetchError } = await dbAdmin
       .from('couriers')
       .select('vehicle_type, status')
@@ -1036,6 +1037,178 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     expect(fetchError).toBeNull();
     expect(courierRow?.vehicle_type).toBeNull();
     expect(courierRow?.status).toBe('pending');
+
+    // 5. Control de actor ajeno: Courier 0 (actor A) intenta modificar directamente el registro de Courier 1 (actor B)
+    const courier1 = stagingContext.courierUsers?.[0];
+    if (!courier1) {
+      throw new Error('[E2E Error] Se requiere courier1 en stagingContext');
+    }
+    const courier1Client = await createAuthenticatedClient(courier1);
+
+    const { data: bBefore, error: bBeforeErr } = await dbAdmin
+      .from('couriers')
+      .select('profile_id, vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier2.id)
+      .single();
+    expect(bBeforeErr).toBeNull();
+
+    // Actor A autenticado intenta escribir sobre el perfil de B con su sesión de Supabase
+    const { data: attackRows } = await courier1Client
+      .from('couriers')
+      .update({ vehicle_type: 'car', vehicle_plate: 'ATAQUE123' })
+      .eq('profile_id', courier2.id)
+      .select();
+
+    // RLS (couriers_update_self) impide mutar filas ajenas; retorna 0 filas modificadas
+    expect(attackRows ?? []).toHaveLength(0);
+
+    const { data: bAfter, error: bAfterErr } = await dbAdmin
+      .from('couriers')
+      .select('profile_id, vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier2.id)
+      .single();
+    expect(bAfterErr).toBeNull();
+    expect(bAfter).toEqual(bBefore);
+  });
+
+  // ---------------------------------------------------------------------------
+  // T-357: Vista de viaje en vivo para el comercio dueño (Issue #344 / DoD H04)
+  // ---------------------------------------------------------------------------
+  test('T-357: Vista de viaje refleja en vivo actualización de vehículo y patente para el comercio dueño con recarga y cleanup', async ({
+    page,
+    browser,
+    stagingContext,
+    loginAsCourier,
+    loginAsMerchant,
+  }) => {
+    const merchant = stagingContext.merchantUser;
+    const courier = stagingContext.courierUsers?.[0];
+    if (!merchant || !courier) {
+      throw new Error('[E2E Error] Se requieren merchant y courier en stagingContext');
+    }
+
+    const dbAdmin = createAdminClient();
+
+    // Precondición: courier con vehículo moto inicial (DoD 1: seed comprueba error:null y 1 fila)
+    const { data: initialSeed, error: initialSeedError } = await dbAdmin
+      .from('couriers')
+      .update({
+        vehicle_type: 'moto',
+        vehicle_plate: 'AB 123 CD',
+        status: 'approved',
+      })
+      .eq('profile_id', courier.id)
+      .select('profile_id');
+    expect(initialSeedError).toBeNull();
+    expect(initialSeed).toHaveLength(1);
+
+    // Sembrar solicitud en estado matched vinculando al merchant y al courier de fixture
+    const seedResult = await seedDeliveryRequestInState(stagingContext, {
+      status: 'matched',
+      merchantId: merchant.id,
+      assignedCourierId: courier.id,
+      withContacts: true,
+    });
+    const requestId = seedResult.requestId;
+
+    const merchantClient = await createAuthenticatedClient(merchant);
+
+    // Snapshot previo de lectura RPC get_trip_details (proyecta moto y patente AB 123 CD)
+    const { data: initialTripRpc, error: initialRpcError } = await merchantClient.rpc('get_trip_details', {
+      p_request_id: requestId,
+    });
+    expect(initialRpcError).toBeNull();
+    const initialTrip = initialTripRpc as { vehicleType: string; vehiclePlate: string | null };
+    expect(initialTrip.vehicleType).toBe('moto');
+    expect(initialTrip.vehiclePlate).toBe('AB 123 CD');
+
+    // Sesión aislada de navegador para el comercio dueño
+    const merchantContext = await browser.newContext();
+    try {
+      const merchantBrowserPage = await merchantContext.newPage();
+      await loginAsMerchant(merchantBrowserPage);
+
+      // 1. Comercio abre /trips/{requestId} y comprueba bloque «Repartidor asignado» con Moto y patente inicial
+      await merchantBrowserPage.goto(`/trips/${requestId}`);
+      await waitForNoSkeletons(merchantBrowserPage);
+      await expect(merchantBrowserPage.getByText('Repartidor asignado')).toBeVisible();
+      await expect(merchantBrowserPage.getByText('Moto')).toBeVisible();
+      await expect(merchantBrowserPage.getByText(/Patente:.*AB 123 CD/i)).toBeVisible();
+
+      // 2. Repartidor autenticado cambia movilidad a Auto (car) con patente tradicional ELA 666 desde su perfil
+      await loginAsCourier(0, page);
+      await page.goto('/courier/profile');
+      await waitForNoSkeletons(page);
+      await page.getByRole('link', { name: /Actualizar/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      await page.locator('label:has(input[value="car"])').click();
+      const plateInput = page.getByLabel(/Patente del vehículo/i);
+      await plateInput.fill('ELA 666');
+      await plateInput.blur();
+      await page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      // 3. En la sesión del comercio dueño, recargar el viaje y comprobar que muestra Auto y ELA 666
+      await merchantBrowserPage.reload();
+      await waitForNoSkeletons(merchantBrowserPage);
+      await expect(merchantBrowserPage.getByText('Auto')).toBeVisible();
+      await expect(merchantBrowserPage.getByText(/Patente:.*ELA 666/i)).toBeVisible();
+
+      // Contrastar con la RPC get_trip_details autorizada
+      const { data: updatedCarRpc, error: carRpcError } = await merchantClient.rpc('get_trip_details', {
+        p_request_id: requestId,
+      });
+      expect(carRpcError).toBeNull();
+      const updatedCar = updatedCarRpc as { vehicleType: string; vehiclePlate: string | null };
+      expect(updatedCar.vehicleType).toBe('car');
+      expect(updatedCar.vehiclePlate).toBe('ELA 666');
+
+      // 4. Repartidor cambia a Bicicleta (bike): desaparece la patente
+      await page.getByRole('link', { name: /Actualizar/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/onboarding/vehicle'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      await page.locator('label:has(input[value="bike"])').click();
+      await page.getByRole('button', { name: /Guardar vehículo|Actualizar vehículo/i }).click();
+      await page.waitForURL((url) => url.pathname.includes('/courier/profile'), {
+        timeout: 15000,
+      });
+      await waitForNoSkeletons(page);
+
+      // 5. En la sesión del comercio dueño, recargar el viaje: se refleja Bicicleta y la patente desaparece
+      await merchantBrowserPage.reload();
+      await waitForNoSkeletons(merchantBrowserPage);
+      await expect(merchantBrowserPage.getByText('Bicicleta')).toBeVisible();
+      await expect(merchantBrowserPage.getByText(/Patente:/i)).not.toBeVisible();
+
+      // Contrastar con RPC get_trip_details
+      const { data: updatedBikeRpc, error: bikeRpcError } = await merchantClient.rpc('get_trip_details', {
+        p_request_id: requestId,
+      });
+      expect(bikeRpcError).toBeNull();
+      const updatedBike = updatedBikeRpc as { vehicleType: string; vehiclePlate: string | null };
+      expect(updatedBike.vehicleType).toBe('bike');
+      expect(updatedBike.vehiclePlate).toBeNull();
+    } finally {
+      await merchantContext.close();
+      // Cleanup: restaurar estado asumido por la fixture global del courier
+      await dbAdmin
+        .from('couriers')
+        .update({
+          vehicle_type: 'moto',
+          vehicle_plate: 'AB 123 CD',
+          status: 'approved',
+        })
+        .eq('profile_id', courier.id);
+    }
   });
 });
-

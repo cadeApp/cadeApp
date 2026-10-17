@@ -1465,7 +1465,7 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       readFails = false,
     } = {}) {
       const mockUpdateResult = vi.fn().mockResolvedValue({
-        data: updateMissing ? null : { profile_id: courierId },
+        data: updateMissing ? null : { profile_id: user?.id ?? courierId },
         error: updateFails ? { message: 'update failed' } : null,
       });
       const mockIn = vi.fn().mockReturnValue({
@@ -1637,6 +1637,26 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       expect(result.ok).toBe(true);
       expect(mockUpdate).toHaveBeenCalledTimes(1);
     });
+
+    it('asegura que la actualización está estrictamente restringida a auth.user.id (actor A no puede afectar a B)', async () => {
+      const courierAId = 'courier-a-uuid-1111';
+      const courierBId = 'courier-b-uuid-2222';
+      const { mockUpdate, mockEqUpdate } = setupCourierMock({
+        user: { id: courierAId, email: 'courier-a@cadeapp.test' },
+        courierRecord: { profile_id: courierAId, status: 'approved', vehicle_type: 'moto' },
+      });
+
+      const result = await updateCourierVehicleAction({
+        vehicleType: 'car',
+        vehiclePlate: 'ELA 666',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+      expect(mockEqUpdate).toHaveBeenCalledWith('profile_id', courierAId);
+      expect(mockEqUpdate).not.toHaveBeenCalledWith('profile_id', courierBId);
+    });
+
     it('bloquea la edición si no se completó el onboarding', async () => {
       const { mockUpdate } = setupCourierMock({
         courierRecord: { profile_id: courierId, status: 'pending', vehicle_type: null },
