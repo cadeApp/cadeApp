@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(78);
+select plan(77);
 
 create function pg_temp.admin_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025a1'::uuid $$;
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000025c1'::uuid $$;
