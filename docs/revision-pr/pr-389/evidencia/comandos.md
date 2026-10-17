@@ -1,0 +1,201 @@
+# Evidencia y comandos — PR #389 / ronda 1
+
+**Estado:** inspección remota. El runtime de la revisión no tiene clon y git ls-remote falla por resolución DNS de github.com. No se ejecutaron Vitest, Playwright ni las mutaciones aquí. **Los resultados de abajo son expectativas para probar**, no salidas observadas. El harness es independiente de las mutaciones del autor y restaura los contenidos originales en finally (sin git checkout, rebase ni commit).
+
+## A. Precondiciones de revisión en un clon limpio
+
+~~~bash
+git fetch origin
+git rev-parse HEAD
+git ls-remote origin refs/heads/feat/T-362-cancelacion-viaje-por-rol
+git status --short
+git diff origin/develop...HEAD --stat
+git diff origin/develop -- docs/tasks/T-362.md
+git merge-tree --write-tree origin/develop HEAD
+node docs/revision-pr/analizar.mjs verificacion
+~~~
+
+HEAD inspeccionado: d872ec9b49a7a7ee0d3a21f7485026545a2ccb49. Si el SHA cambió, hacer ronda nueva y no trasladar etiquetas de verificado.
+
+## B. Harness completo de mutaciones de UI (copiar de la caja /tmp)
+
+Ejecutar desde la raíz del repositorio, preferentemente en un worktree limpio fijado al SHA que se está revisando. El script guarda cada archivo como string y lo repone siempre. No utilizar el script si hay cambios sin commitear sobre los archivos objetivo.
+
+~~~bash
+cat >/tmp/pr389-mutations.mjs <<'SCRIPT'
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+const root = process.cwd();
+const suite = 'src/features/trips/components/trip-cancel-dialog.test.tsx';
+const target = {
+  dialog: 'src/features/trips/components/trip-cancel-dialog.tsx',
+  courier: 'src/features/trips/components/trip-courier-container.tsx',
+  merchantView: 'src/features/trips/components/trip-merchant-view.tsx',
+};
+function run() {
+  const p = spawnSync('pnpm', ['exec', 'vitest', 'run', suite], {
+    cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
+  });
+  const log = (p.stdout || '') + '\n' + (p.stderr || '');
+  const summary = log.split('\n').filter(line =>
+    /Test Files|Tests |FAIL |AssertionError|ReferenceError|Error:/.test(line)
+  ).slice(-12).join('\n');
+  return { ok: p.status === 0, summary, code: p.status };
+}
+const original = run();
+console.log('CONTROL SIN MUTAR, esperado GREEN:', original);
+if (!original.ok) throw new Error('El control ya estaba ROJO; detener la mutación');
+
+function mutate(label, relativePath, beforeText, afterText, expectGreen) {
+  const absolutePath = path.join(root, relativePath);
+  const before = fs.readFileSync(absolutePath, 'utf8');
+  const occurrences = before.split(beforeText).length - 1;
+  if (occurrences !== 1) throw new Error(label + ': objetivo no unívoco (' + occurrences + ')');
+  try {
+    fs.writeFileSync(absolutePath, before.replace(beforeText, afterText));
+    const outcome = run();
+    console.log('\n' + label + ' (esperado ' + (expectGreen ? 'GREEN/SURVIVE' : 'RED') + '):\n' + outcome.summary);
+    if (outcome.ok !== expectGreen) throw new Error(label + ': resultado inesperado, revisar la aserción funcional');
+  } finally {
+    fs.writeFileSync(absolutePath, before);
+  }
+}
+mutate('M1 lista de cadete equivocada', target.dialog,
+  'const reasons = actor === \'courier\' ? COURIER_CANCELLATION_REASONS : MERCHANT_CANCELLATION_REASONS;',
+  'const reasons = MERCHANT_CANCELLATION_REASONS;', false);
+mutate('M2 razón Emergencia borrada (debe sobrevivir ANTES de arreglar H03)', target.dialog,
+  "  'Emergencia',", "  'Otro problema',", true);
+mutate('M3 cancelación merchant visible in_transit', target.merchantView,
+  '{onCancelTrip && isMatched && (', '{onCancelTrip && !isDelivered && (', false);
+mutate('M4 Otro vacío permitido sin ReferenceError', target.dialog,
+  'otherReason.trim().length > 0 && otherReason.trim().length <= 500',
+  'otherReason.trim().length >= 0 && otherReason.trim().length <= 500', false);
+mutate('M5 actor courier perdido en container (debe sobrevivir ANTES de arreglar H04)', target.courier,
+  'actor="courier"', 'actor="merchant"', true);
+const end = run();
+console.log('\nCONTROL RESTAURADO, esperado GREEN:', end);
+if (!end.ok) throw new Error('Fallo al restaurar GREEN');
+SCRIPT
+node /tmp/pr389-mutations.mjs
+git status --short
+~~~
+
+**Importante:** los mutantes M2 y M5 deben sobrevivir antes de reparar los tests, y dar RED después de añadir los oráculos independientes. En las siguientes rondas la expectativa del harness para esos mutantes debe cambiarse de true a false. No alterar asserts para ocultar fallos. El script está documentado pero no ejecutado por esta revisión: no reemplaza el log real.
+
+## C. Tests y E2E sobre el SHA final (sin secrets)
+
+~~~bash
+pnpm exec vitest run src/features/trips/components/trip-cancel-dialog.test.tsx src/features/trips/components.test.tsx src/features/trips/actions.test.ts
+pnpm typecheck
+pnpm lint
+pnpm test
+# E2E Preview se observa desde el workflow e2e-preview de GitHub Actions
+# Comprobar run, SHA, estado y aserciones DB reales; no ejecutar comandos contra Supabase remoto.
+~~~
+
+El spec de E2E se probará mediante el gate del proyecto contra Vercel Preview + Supabase Develop, con fixtures segregados. Las mutaciones de seguridad E2E solo pueden ejecutarse mediante e2e-mutation contra develop **después** de mergear y mediante un cambio/PR autorizado; no desplegar mutantes en PR abierta. Si el run no existe o no terminó, registrar PENDIENTE, nunca GREEN.
+
+## D. Cruce estático
+
+- El spec añadido desde la línea 1151 solo ejecuta courier_cancel_match por UI en matched; merchant aparece solo en el chequeo negativo de in_transit.
+- La expectativa positiva unitaria itera constantes exportadas por producción: M2 altera la expectativa automáticamente.
+- La suite nueva no monta TripCourierContainer: M5 no ejerce el actor desde el consumidor.
+- La mutación C del autor declara ReferenceError, no RED por longitud vacía.
+- En /trips/[id] el botón de report_incident ya está disponible en estados autorizados; no modificar RPC de incidentes.
+
+
+---
+
+## Ronda 2 — harness corregido (error del revisor R1)
+
+**ATENCIÓN:** el harness R1 anterior tiene un error de mi revisión: M1 busca la subcadena const reasons = actor... sin anclaje, que aparece tres veces (líneas 58, 63 y 67 del componente). El conteo del propio script la rechaza por ambigüedad antes de mutar. Sus cinco mutaciones no son reproducibles tal cual quedó archivado. El siguiente harness corrige la selección de M1 con un salto de línea y dos espacios, que identifica solo la declaración exterior. Se inspeccionaron las cinco cardinalidades contra SHA 1da28cca: todas tienen una ocurrencia exacta. NO se ejecutó Vitest ni se reprodujo RED/GREEN en esta sesión por ausencia de clon (DNS github.com).
+
+### Harness completo v2: copiar tal cual a /tmp desde un worktree limpio
+
+~~~bash
+cat >/tmp/pr389-r2-mutations.mjs <<'SCRIPT'
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+const root = process.cwd();
+const suite = 'src/features/trips/components/trip-cancel-dialog.test.tsx';
+const files = {
+  dialog: 'src/features/trips/components/trip-cancel-dialog.tsx',
+  courier: 'src/features/trips/components/trip-courier-container.tsx',
+  merchant: 'src/features/trips/components/trip-merchant-view.tsx',
+};
+
+function run() {
+  const proc = spawnSync('pnpm', ['exec','vitest','run',suite], {
+    cwd:root, encoding:'utf8', maxBuffer:16*1024*1024
+  });
+  const output = (proc.stdout || '') + '\n' + (proc.stderr || '');
+  const summary = output.split('\n').filter(s =>
+    /Test Files|Tests |FAIL |AssertionError|TestingLibraryElementError|ReferenceError|Error:/.test(s)
+  ).slice(-14).join('\n');
+  return { ok:proc.status === 0, output, summary,
+    ranTests:/Test Files\s/.test(output) && /\bTests\s/.test(output) };
+}
+
+const base = run();
+console.log('CONTROL ORIGINAL GREEN:\n' + base.summary);
+if (!base.ok || !base.ranTests) throw Error('No hay control GREEN, abortar');
+
+function mutate(label, file, before, after, failureName) {
+  const abs = path.join(root,file);
+  const original = fs.readFileSync(abs,'utf8');
+  const count = original.split(before).length-1;
+  if (count !== 1) throw Error(label + ': objetivo no único: ' + count);
+  try {
+    fs.writeFileSync(abs,original.replace(before,after));
+    const result = run();
+    console.log('\n' + label + ' RED esperado:\n' + result.summary);
+    if (!result.ranTests || result.ok) throw Error(label + ': sin RED de tests');
+    if (!result.output.includes(failureName)) throw Error(label + ': falla fuera de prueba esperada');
+    if (/ReferenceError: isOther is not defined|Transform failed|Failed to resolve import/i.test(result.output))
+      throw Error(label + ': falló compilación/referencia, no el invariante');
+  } finally {
+    fs.writeFileSync(abs,original);
+  }
+}
+
+mutate('M1 razones cadete', files.dialog,
+  "\n  const reasons = actor === 'courier' ? COURIER_CANCELLATION_REASONS : MERCHANT_CANCELLATION_REASONS;",
+  '\n  const reasons = MERCHANT_CANCELLATION_REASONS;',
+  'muestra exactamente el conjunto contractual de razones del repartidor');
+mutate('M2 opción Emergencia', files.dialog,
+  "  'Emergencia',", "  'Otro problema',",
+  'muestra exactamente el conjunto contractual de razones del repartidor');
+mutate('M3 merchant in_transit', files.merchant,
+  '{onCancelTrip && isMatched && (',
+  '{onCancelTrip && !isDelivered && (',
+  'TripMerchantView: en in_transit NO muestra');
+mutate('M4 Otro espacios vacíos', files.dialog,
+  'otherReason.trim().length > 0 && otherReason.trim().length <= 500',
+  'otherReason.trim().length >= 0 && otherReason.trim().length <= 500',
+  'al seleccionar «Otro», exige texto de aclaración no vacío');
+mutate('M5 actor courier en contenedor', files.courier,
+  'actor="courier"', 'actor="merchant"',
+  'TripCourierContainer transmite actor="courier"');
+
+const end = run();
+console.log('\nCONTROL RESTAURADO GREEN:\n' + end.summary);
+if (!end.ok || !end.ranTests) throw Error('No quedó GREEN al restaurar');
+SCRIPT
+node --check /tmp/pr389-r2-mutations.mjs
+node /tmp/pr389-r2-mutations.mjs
+git status --short
+~~~
+
+**Nota:** script diseñado y patrones revisados por inspección. Es necesario ejecutarlo verdaderamente en clon limpio, registrar salida real de cada test y comprobar que el control final está GREEN. La mutación v1 equivocada queda aquí como historia, no se reescribe la ronda 1. El agente no puede tocar esta carpeta.
+
+### R01 / R02 y controles de cierre
+
+R01: la aserción de paso 2 para merchant apunta a dos textos inexistentes; comparar e2e/specs/request-states.spec.ts:1271-1274 contra trip-cancel-dialog.tsx:115 y 124. El E2E debe exigir exactamente los textos que renderiza la UI actual.
+
+R02: requestStatus se confirma cancelled en e2e:1288 antes de la visita ajena e2e:1304. En SQL CC008 get_trip_details, el filtro de estado de líneas 56-62 antecede al chequeo de actor de líneas 79-85. El negativo debe correr con merchantRequestId en matched y actor asignado capaz de ver el mismo viaje, antes de cancelarlo.
+
+Calidad faltante tras reparar: pnpm typecheck, pnpm lint, pnpm test completos, y E2E Preview (CI) con run + SHA + resultado en bitácora. No se disparan workflows ni se llama a Supabase remoto; no se consultan logs CI mientras haya bloqueantes.

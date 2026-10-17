@@ -40,6 +40,7 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
   };
 
   const handleOpenCancelModal = () => {
+    if (trip.status !== 'matched') return;
     setCancelModalOpen(true);
   };
 
@@ -73,6 +74,7 @@ export function TripMerchantContainer({ trip }: TripMerchantContainerProps) {
         onOpenChange={setCancelModalOpen}
         onConfirm={handleConfirmCancel}
         isPending={isPending}
+        actor="merchant"
       />
     </>
   );
