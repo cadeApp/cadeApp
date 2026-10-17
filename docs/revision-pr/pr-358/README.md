@@ -30,3 +30,5 @@
 
 ## Próximo paso
 Crear, revisar y mergear primero el CC #363 en PR independiente, reconciliar ficha desde `develop` y recién entonces retomar esta PR para código+pruebas+E2E. No mergear #358 todavía.
+## Ronda 2 — 2026-10-17
+**CON BLOQUEANTES**. SHA funcional affe835b, documental 78b2e79b. R01 ALTO replay de RPC/Storage; R02 MEDIO estado padre stale; R03 MEDIO E2E sin rechazo admin real. CI autor PASS, E2E cancelled/error. [Informe](revisiones/ronda-2.md) · [Evidencia](evidencia/ronda-2.md) · [Hallazgos](hallazgos.jsonl). Históricos H01/H02 arreglado-sin-verificar. PR Draft/no mergear. No exigir CI por revisión documental sola.

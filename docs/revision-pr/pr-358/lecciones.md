@@ -12,3 +12,9 @@ Una Server Action puede bloquear una operación en la UI, pero **no** protege un
 4. En la próxima ronda, exigir mutaciones independientes del revisor, no reutilizar exclusivamente las del autor.
 
 **Advertencia:** esta PR es inusual porque el diff es únicamente la bitácora; los hallazgos califican una propuesta y su dependencia de CC, no código defectuoso introducido.
+## Ronda 2 — Lecciones sin numeración AG
+- Idempotencia en DB exige que UI reutilice UUID/path frente a respuesta perdida, no UUID nuevo por clic.
+- Archivo subido sin fila DB no entra en cron sweep; rol courier sin DELETE no puede compensar mediante simple remove.
+- Un estado local de tarjeta no actualiza badges de padre; verificar interfaz agregada.
+- E2E con sembrado service-role de rejected no prueba rechazo administrativo ni re-revisión real.
+Sin numerar AG hasta contrastar máximo en ramas; pruebas independientes no ejecutadas.
