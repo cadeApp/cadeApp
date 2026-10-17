@@ -335,9 +335,20 @@ ${s.output}`);
 // Escenarios
 // ---------------------------------------------------------------------------
 
-/** 1. 3 créditos, 5 publicaciones simultáneas. Devuelve métricas para el control de mutación. */
-async function scenarioPublishRace({ expectInvariant = true } = {}) {
-  const label = 'E1 publicaciones paralelas';
+/** Invariantes contables de E1; el control de mutación H01 exige que falle alguna de estas mismas aserciones. */
+const E1_LABEL = 'E1 publicaciones paralelas';
+const E1_INVARIANTS = {
+  ok: `${E1_LABEL}: exactamente 3 publican`,
+  exhausted: `${E1_LABEL}: exactamente 2 reciben PUBLICATION_CREDITS_EXHAUSTED`,
+  published: `${E1_LABEL}: 3 solicitudes publicadas`,
+  reserved: `${E1_LABEL}: se reservan 3 créditos, nunca más que lo acreditado`,
+  available: `${E1_LABEL}: saldo final 0, nunca negativo`,
+  ledger: `${E1_LABEL}: libro y saldo derivado deben coincidir, sin saldo negativo`,
+};
+
+/** 1. 3 créditos, 5 publicaciones simultáneas. */
+async function scenarioPublishRace() {
+  const label = E1_LABEL;
   const merchantId = createProfile('merchant');
   grantLoose(merchantId, 3);
   const blocker = await holdLock('E1_BLOCKER', `select id from public.publication_credit_lots where merchant_id = '${merchantId}' for update;`);
@@ -360,17 +371,16 @@ async function scenarioPublishRace({ expectInvariant = true } = {}) {
         `)
       ),
       granted: 3,
+      available: available(merchantId),
     };
-    if (expectInvariant) {
-      assert.equal(metrics.ok, 3, `${label}: exactamente 3 publican`);
-      assert.equal(metrics.exhausted, 2, `${label}: exactamente 2 reciben PUBLICATION_CREDITS_EXHAUSTED`);
-      assert.equal(metrics.published, 3, `${label}: 3 solicitudes publicadas`);
-      assert.equal(metrics.reserved, 3, `${label}: se reservan 3 créditos, nunca más que lo acreditado`);
-      assert.equal(available(merchantId), 0, `${label}: saldo final 0, nunca negativo`);
-      assertLedger(merchantId, label);
-      console.log(`${TAG} ${label}: OK (3 publican, 2 EXHAUSTED, reservado 3/3)`);
-    }
-    return metrics;
+    console.log(`${TAG} ${label}: métricas ${JSON.stringify(metrics)}`);
+    assert.equal(metrics.ok, 3, E1_INVARIANTS.ok);
+    assert.equal(metrics.exhausted, 2, E1_INVARIANTS.exhausted);
+    assert.equal(metrics.published, 3, E1_INVARIANTS.published);
+    assert.equal(metrics.reserved, 3, E1_INVARIANTS.reserved);
+    assert.equal(metrics.available, 0, E1_INVARIANTS.available);
+    assertLedger(merchantId, label);
+    console.log(`${TAG} ${label}: OK (3 publican, 2 EXHAUSTED, reservado 3/3)`);
   } finally {
     closeAll([...sessions, blocker.session]);
   }
@@ -570,12 +580,15 @@ async function scenarioFirstPurchase() {
 
 const legacyEndSql = (merchantId) => `app_private.publication_legacy_end('${merchantId}'::uuid)`;
 
-/**
- * 7b. El cambio de gracia toma el parámetro primero; el alta del período espera y agenda con la gracia nueva.
- * Devuelve si el plan quedó superpuesto con el derecho legacy (para el control de mutación).
- */
-async function scenarioGraceThenRegister({ expectInvariant = true } = {}) {
-  const label = 'E7b gracia primero, alta después';
+const E7B_LABEL = 'E7b gracia primero, alta después';
+const E7B_INVARIANTS = {
+  overlap: `${E7B_LABEL}: el plan no se superpone con el derecho legacy`,
+  startsAtLegacyEnd: `${E7B_LABEL}: el plan empieza exactamente al fin legacy con la gracia nueva`,
+};
+
+/** 7b. El cambio de gracia toma el parámetro primero; el alta del período espera y agenda con la gracia nueva. */
+async function scenarioGraceThenRegister() {
+  const label = E7B_LABEL;
   const merchantId = createProfile('merchant', { status: 'active', paidUntilDays: 5 });
   const planId = createPlan();
   const [setter, register] = await openSessions(['E7B_SETTING', 'E7B_REGISTER']);
@@ -590,27 +603,28 @@ async function scenarioGraceThenRegister({ expectInvariant = true } = {}) {
     await setter.waitFor(/SETTING_HELD|ERROR:/);
     assert.ok(/SETTING_HELD/.test(setter.output), `${label}: el cambio de gracia se acepta sin períodos en conflicto`);
     register.start(adminId, 'aal2', `public.admin_register_plan_period('${merchantId}'::uuid, '${planId}'::uuid, true, '${crypto.randomUUID()}'::uuid, null)`);
-    await waitLockWaiting([register], { allowDone: !expectInvariant });
+    // Sano: el alta queda esperando el FOR SHARE del parámetro. Si una versión sin ese lock termina antes del commit,
+    // la espera no debe convertirse en timeout: el oráculo es el estado final, verificado abajo.
+    await waitLockWaiting([register], { allowDone: true });
+    const finishedBeforeCommit = /DONE|ERROR:/.test(register.output);
     setter.send('commit;\n\\echo COMMITTED');
     await setter.waitFor(/COMMITTED/);
     const registerResult = await register.result();
     assertNoDeadlock([setter, register], label);
     assert.ok(registerResult.ok, `${label}: el alta del período termina`);
+    console.log(`${TAG} ${label}: el alta ${finishedBeforeCommit ? 'terminó antes' : 'esperó el lock hasta'} el commit de la gracia`);
     const overlap =
       runSql(`
         select (${legacyEndSql(merchantId)} > starts_at)::text
         from public.merchant_plan_periods where merchant_id = '${merchantId}';
       `) === 'true';
-    if (expectInvariant) {
-      assert.equal(overlap, false, `${label}: el plan no se superpone con el derecho legacy`);
-      assert.equal(
-        runSql(`select (starts_at = ${legacyEndSql(merchantId)})::text from public.merchant_plan_periods where merchant_id = '${merchantId}';`),
-        'true',
-        `${label}: el plan empieza exactamente al fin legacy con la gracia nueva`
-      );
-      console.log(`${TAG} ${label}: OK (el alta esperó y agendó con gracia 10)`);
-    }
-    return { overlap };
+    assert.equal(overlap, false, E7B_INVARIANTS.overlap);
+    assert.equal(
+      runSql(`select (starts_at = ${legacyEndSql(merchantId)})::text from public.merchant_plan_periods where merchant_id = '${merchantId}';`),
+      'true',
+      E7B_INVARIANTS.startsAtLegacyEnd
+    );
+    console.log(`${TAG} ${label}: OK (el alta esperó y agendó con gracia 10)`);
   } finally {
     closeAll([setter, register]);
     // El comercio deja de tener derecho legacy para que la gracia vuelva a 3 en la limpieza del escenario.
@@ -728,6 +742,27 @@ async function pgTapMutation(id, signature, replacements, expectedFailure) {
   console.log(`${TAG} ${id} GREEN tras restaurar`);
 }
 
+/**
+ * Corre el escenario original, sin cambios, contra el SQL mutado. Solo cuenta como RED un AssertionError cuyo mensaje
+ * es una de las invariantes esperadas; si pasa, o falla por timeout, conexión, sintaxis u otra aserción, el control
+ * falla (CI rojo).
+ */
+async function expectInvariantFailure(id, scenario, expectedMessages) {
+  try {
+    await scenario();
+  } catch (err) {
+    if (!(err instanceof assert.AssertionError)) {
+      throw new Error(`${TAG} ${id}: la ejecución mutada falló por una causa ajena a las invariantes: ${err}`);
+    }
+    if (!expectedMessages.includes(err.message)) {
+      throw new Error(`${TAG} ${id}: falló una aserción no esperada: ${err.message}`);
+    }
+    console.log(`${TAG} ${id} RED: AssertionError «${err.message}» (actual ${JSON.stringify(err.actual)}, esperado ${JSON.stringify(err.expected)})`);
+    return;
+  }
+  throw new Error(`${TAG} ${id}: la ejecución mutada pasó; la prueba no detecta la falta del control`);
+}
+
 async function runMutationChecks() {
   console.log(`${TAG} Controles de mutación RED→GREEN contra ${dbContainer}`);
   setup();
@@ -740,18 +775,14 @@ async function runMutationChecks() {
       const restoreReserve = mutate('app_private.reserve_publication(uuid,uuid,integer,timestamp with time zone)', [
         ['perform 1 from public.publication_credit_lots where merchant_id = p_merchant_id for no key update;', ''],
       ]);
-      let metrics;
       try {
-        metrics = await scenarioPublishRace({ expectInvariant: false });
+        await expectInvariantFailure('H01', scenarioPublishRace, Object.values(E1_INVARIANTS));
       } finally {
         restoreReserve();
         restoreCycle();
       }
-      console.log(`${TAG} H01 mutado: ${JSON.stringify(metrics)}`);
-      assert.ok(metrics.reserved > metrics.granted, `${TAG} H01: sin locks la invariante contable debió romperse (reservado > acreditado)`);
-      console.log(`${TAG} H01 RED: reservado ${metrics.reserved} > acreditado ${metrics.granted}, publicadas ${metrics.published}`);
       await scenarioPublishRace();
-      console.log(`${TAG} H01 GREEN tras restaurar`);
+      console.log(`${TAG} H01 GREEN tras restaurar: la misma función afirma 3 publican / 2 EXHAUSTED`);
     }
 
     // H03 (carrera): sin el FOR SHARE del parámetro, el alta agenda con la gracia vieja y queda superpuesta.
@@ -759,16 +790,13 @@ async function runMutationChecks() {
       const restore = mutate('public.admin_register_plan_period(uuid,uuid,boolean,uuid,text)', [
         ["perform 1 from public.platform_settings where key = 'subscription_grace_days' for share;", ''],
       ]);
-      let result;
       try {
-        result = await scenarioGraceThenRegister({ expectInvariant: false });
+        await expectInvariantFailure('H03 (carrera)', scenarioGraceThenRegister, [E7B_INVARIANTS.overlap]);
       } finally {
         restore();
       }
-      assert.equal(result.overlap, true, `${TAG} H03: sin el lock del parámetro el plan debió quedar superpuesto con el legacy`);
-      console.log(`${TAG} H03 (carrera) RED: plan superpuesto con el derecho legacy`);
       await scenarioGraceThenRegister();
-      console.log(`${TAG} H03 (carrera) GREEN tras restaurar`);
+      console.log(`${TAG} H03 (carrera) GREEN tras restaurar: el plan empieza al fin legacy con la gracia nueva`);
     }
   } finally {
     cleanup();
