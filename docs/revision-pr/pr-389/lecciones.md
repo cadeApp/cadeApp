@@ -18,3 +18,11 @@ No modificar AGENTS.md por una sola ronda. Revalidar estos criterios después de
 - La evidencia pnpm test y E2E Preview debe pertenecer al SHA posterior a los arreglos, no al commit anterior.
 
 No asignar AG nuevo ni alterar AGENTS.md sin validar máximo de todas las ramas y reincidencia.
+
+
+## Ronda 3
+
+- La cancelación de e2e-preview no significa RED ni GREEN. Revisar jobs y estado del SHA; identificar que no corrió antes de acusar defectos de pruebas.
+- El CI verde sobre un commit funcional puede conservarse aunque un commit posterior modifique únicamente documentación: NO exigir un CI nuevo por la bitácora de revisión.
+- Separar rama atrasada (hecho confirmado) de conflicto de merge (no confirmado sin merge-tree).
+- Con mutantes reportados por autor pero no reproducidos independientemente, usar arreglado-sin-verificar, no arreglado-verificado. No sospechar falsificación sin evidencia.

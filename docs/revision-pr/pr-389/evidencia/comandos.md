@@ -199,3 +199,33 @@ R01: la aserción de paso 2 para merchant apunta a dos textos inexistentes; comp
 R02: requestStatus se confirma cancelled en e2e:1288 antes de la visita ajena e2e:1304. En SQL CC008 get_trip_details, el filtro de estado de líneas 56-62 antecede al chequeo de actor de líneas 79-85. El negativo debe correr con merchantRequestId en matched y actor asignado capaz de ver el mismo viaje, antes de cancelarlo.
 
 Calidad faltante tras reparar: pnpm typecheck, pnpm lint, pnpm test completos, y E2E Preview (CI) con run + SHA + resultado en bitácora. No se disparan workflows ni se llama a Supabase remoto; no se consultan logs CI mientras haya bloqueantes.
+
+
+---
+
+## Ronda 3 — evidencia remota 059270f
+
+CI GitHub run: https://github.com/cadeApp/cadeApp/actions/runs/39053655012
+- unit job 117457127966: Test Files 140 passed (140); Tests 2593 passed (2593); workflows 79 passed, ADR 6 passed.
+- db-tests job 117457127855: Files=27, Tests=2420; Result: PASS, comparación de tipos success. Los errores de mutantes intermedios son deliberados y se restauran.
+- typecheck, lint, audit, build y bundle-budget: success.
+- approval-policy job 117457124262: exit 1 porque requiere aprobación vigente de Lautaro073.
+
+E2E Preview run: https://github.com/cadeApp/cadeApp/actions/runs/39053732705
+- El status del commit dice: E2E no corrió (cancelled): re-ejecutar el run.
+- resolve-preview success; e2e-preview cancelled; report-preview-status success.
+- SHA objetivo publicado en el status: 059270f612fcfd00fdefab24e5aea3ebf57f81ef.
+- Log del job cancelado no disponible (BlobNotFound). No hubo salida de test del caso T-362.
+
+Inspección fuente:
+- R01: e2e/specs/request-states.spec.ts líneas 1293-1302 ahora coincide con trip-cancel-dialog.tsx líneas 115/124.
+- R02: mismo spec 1238-1271, matched confirmado, negocio dueño visible y actor ajeno rechazado antes de cancelar.
+- R03: bitácora documenta variante Windows shell:true, RED M1–M5, GREEN 17/17; NO ejecutado por el revisor debido a que no existe clon con red.
+
+Verificación siguiente:
+- git fetch origin && git merge origin/develop (no rebase, no force).
+- git status --short y git diff --check; comprobar git merge-tree --write-tree origin/develop HEAD.
+- pnpm exec vitest run src/features/trips/components/trip-cancel-dialog.test.tsx src/features/trips/components.test.tsx src/features/trips/actions.test.ts
+- pnpm typecheck && pnpm lint && pnpm test
+- Push normal y registrar CI + E2E Preview sobre SHA integrado. No saltear, fingir GREEN ni ejecutar comandos contra Supabase remoto.
+- No exigir CI nuevo por este commit exclusivo de revisión documental. La fusión de develop sí cambia código y requiere revalidación.
