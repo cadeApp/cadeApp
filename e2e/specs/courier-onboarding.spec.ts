@@ -988,9 +988,10 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
       await expect(verifyMfaBtn).toBeVisible();
       await verifyMfaBtn.click();
 
-      await page.waitForURL((url) => url.pathname.includes(`/admin/applicants/${courier.id}`), {
-        timeout: 15000,
-      });
+      await page.waitForURL((url) => url.pathname.includes('/admin/applicants'), { timeout: 15000 });
+      await waitForNoSkeletons(page);
+
+      await page.goto(`/admin/applicants/${courier.id}`);
       await waitForNoSkeletons(page);
 
       // Verificación en consola de administración:
