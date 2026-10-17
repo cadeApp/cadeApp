@@ -1225,7 +1225,7 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(courierReason?.actorId).toBe(courier.id);
 
     // -------------------------------------------------------------------------
-    // 2. Merchant en matched: cancelación desde /trips/[id] (H01)
+    // 2. Merchant en matched: cancelación desde /trips/[id] y control de acceso (H01, R01, R02)
     // -------------------------------------------------------------------------
     const merchantSeedResult = await seedDeliveryRequestInState(stagingContext, {
       status: 'matched',
@@ -1234,6 +1234,11 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       withContacts: true,
     });
     const merchantRequestId = merchantSeedResult.requestId;
+
+    // Verificar en DB que la solicitud está efectivamente en matched con acceptedOfferId no nulo (R02)
+    const initialMatchedInspection = await getRequestInspectionData(stagingContext, merchantRequestId);
+    expect(initialMatchedInspection.requestStatus).toBe('matched');
+    expect(initialMatchedInspection.acceptedOfferId).not.toBeNull();
 
     const merchantContext = await browser.newContext();
     try {
@@ -1245,6 +1250,24 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
 
       const merchantCancelBtn = merchantPage.getByRole('button', { name: /cancelar envío/i });
       await expect(merchantCancelBtn).toBeVisible({ timeout: 10000 });
+
+      // ANTES de cancelar, comprobar que un actor ajeno (courier no asignado) no tiene acceso al viaje en matched (R02)
+      const unauthorizedContext = await browser.newContext();
+      try {
+        const unauthorizedPage = await unauthorizedContext.newPage();
+        await loginAsCourier(1, unauthorizedPage);
+        await unauthorizedPage.goto(`/trips/${merchantRequestId}`);
+
+        // Debe mostrar estado vacío/404 sin datos ni botones del viaje en matched
+        await expect(unauthorizedPage.getByText('Viaje no encontrado')).toBeVisible({ timeout: 10000 });
+        await expect(unauthorizedPage.getByRole('heading', { name: /viaje en curso/i })).not.toBeVisible();
+        await expect(unauthorizedPage.getByRole('button', { name: /no puedo hacer este viaje/i })).not.toBeVisible();
+        await expect(unauthorizedPage.getByRole('button', { name: /cancelar envío/i })).not.toBeVisible();
+      } finally {
+        await unauthorizedContext.close();
+      }
+
+      // Continuar con el flujo de cancelación del comercio en matched
       await merchantCancelBtn.click();
 
       // Modal de comercio:
@@ -1267,11 +1290,15 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
       await expect(merchantContinueBtn).toBeEnabled();
       await merchantContinueBtn.click();
 
-      // Paso 2: confirmación definitiva
-      await expect(merchantPage.getByText('¿Confirmás la cancelación definitiva de este envío?')).toBeVisible();
+      // Paso 2: confirmación definitiva con copy real del componente (R01)
       await expect(
-        merchantPage.getByText(/Esta acción cancelará el envío de forma definitiva y no podrá reactivarse\./i)
+        merchantPage.getByRole('alertdialog').getByRole('heading', { name: '¿Confirmás la cancelación definitiva?' })
       ).toBeVisible();
+      await expect(
+        merchantPage.getByText('Las ofertas se van a cerrar. No se puede deshacer.')
+      ).toBeVisible();
+      await expect(merchantPage.getByText(/Motivo seleccionado:/i)).toBeVisible();
+      await expect(merchantPage.getByText('Me equivoqué en los datos')).toBeVisible();
       await expect(merchantPage.getByText(/La solicitud volverá a publicarse/i)).not.toBeVisible();
 
       const merchantConfirmBtn = merchantPage.getByRole('button', { name: /sí, cancelar/i });
@@ -1293,24 +1320,6 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     expect(merchantReason).toBeDefined();
     expect(merchantReason?.reason).toBe('Me equivoqué en los datos');
     expect(merchantReason?.actorId).toBe(merchant.id);
-
-    // -------------------------------------------------------------------------
-    // 3. Actor ajeno no puede acceder ni accionar cancelación en /trips/[id] (H01)
-    // -------------------------------------------------------------------------
-    const unauthorizedContext = await browser.newContext();
-    try {
-      const unauthorizedPage = await unauthorizedContext.newPage();
-      await loginAsCourier(1, unauthorizedPage);
-      await unauthorizedPage.goto(`/trips/${merchantRequestId}`);
-
-      // Debe mostrar estado vacío/404 sin datos ni botones del viaje
-      await expect(unauthorizedPage.getByText('Viaje no encontrado')).toBeVisible({ timeout: 10000 });
-      await expect(unauthorizedPage.getByRole('heading', { name: /viaje en curso/i })).not.toBeVisible();
-      await expect(unauthorizedPage.getByRole('button', { name: /no puedo hacer este viaje/i })).not.toBeVisible();
-      await expect(unauthorizedPage.getByRole('button', { name: /cancelar envío/i })).not.toBeVisible();
-    } finally {
-      await unauthorizedContext.close();
-    }
 
     // -------------------------------------------------------------------------
     // 4. Invariante in_transit: sin cancelación simple para ningún rol (H02)
