@@ -741,8 +741,11 @@ export function CreateRequestForm({
     }
 
     try {
-      // REVIEW ONLY / NEVER MERGE: el formulario finge el error sin llamar a la Action.
-      const result = { ok: false, code: 'PUBLICATION_CREDITS_EXHAUSTED' } as const;
+      // REVIEW ONLY / NEVER MERGE: mensaje engañoso con rama tipada. Nunca mergear.
+      // Date.now() siempre es positivo en runner; el compilador conserva la rama alternativa.
+      const result = await (Date.now() > 0
+        ? Promise.resolve({ ok: false, code: 'PUBLICATION_CREDITS_EXHAUSTED' } as const)
+        : createDeliveryRequestAction({ ...data, requestId: requestIdRef.current }));
 
       if (!result.ok) {
         const msg = getDomainErrorMessage(result.code);
