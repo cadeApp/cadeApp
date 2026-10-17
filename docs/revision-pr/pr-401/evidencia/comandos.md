@@ -100,3 +100,76 @@ Actualizar `plan(46)` a `plan(47)`; no cambiar ni retirar ninguna prueba anterio
 ## Datos NO verificados
 
 No se inspeccionaron ni modificaron `.env*`, secrets, bases remotas o infraestructura. No se ejecutaron pruebas locales del proyecto por falta de clon; la evidencia del autor se contrastó leyendo el log CI, no reproduciendo toda su batería. Evitar afirmar `verificado_en_sha` sin ejecución de un tercero.
+
+---
+## Ronda 2 — harness independiente REAL ejecutado sobre el blob exacto
+
+Esta sección no reemplaza las 47 pruebas pgTAP ni las 2599 de Vitest. Ejecuté realmente este script mediante Node con el parser TypeScript; el archivo TypeScript de entrada se verificó por blob SHA Git **`fbb2e60d5b6a75fe4aaa9298d529caa089061bdb`**, igual al del HEAD `a980ee9d`. Mutaciones sólo en cadenas en memoria. Es un control estático sobre el código real, no una simulación de ejecución Supabase.
+
+Preparación desde clon del HEAD antes de copiar el guion en `/tmp/pr401-independent/reviewer-mutations.cjs`:
+```sh
+mkdir -p /tmp/pr401-independent
+cp src/server/cron/orphan-courier-documents.ts /tmp/pr401-independent/orphan-courier-documents.ts
+git hash-object /tmp/pr401-independent/orphan-courier-documents.ts
+# esperado exactamente: fbb2e60d5b6a75fe4aaa9298d529caa089061bdb
+node /tmp/pr401-independent/reviewer-mutations.cjs
+```
+El `require` absoluto de TypeScript corresponde al runtime del revisor. En otra máquina sustituir por `require('typescript')` si existe como dependencia local. Esto no altera los oráculos ni el control.
+
+```js
+// Independiente: análisis AST de código real SHA a980ee9d (blob fbb2e60...)
+// NO sustituye a Vitest/pgTAP. Mutaciones sólo en memoria; sin editar repo.
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const ts = require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript');
+const source = fs.readFileSync('/tmp/pr401-independent/orphan-courier-documents.ts','utf8');
+const run=(input)=>{
+  const ast=ts.createSourceFile('orphan-courier-documents.ts',input,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
+  assert.equal(ast.parseDiagnostics.length,0,'AST no válido');
+  const props=[], errors={};
+  const visit=n=>{
+    if(ts.isPropertyAssignment(n)&&n.name.getText(ast)==='storagePath')props.push(n.initializer.getText(ast));
+    if(ts.isIfStatement(n)&&ts.isIdentifier(n.expression)&&['claimError','removeError','completeError'].includes(n.expression.text)){
+       let throws=[];
+       const inner=m=>{if(ts.isThrowStatement(m))throws.push(m);ts.forEachChild(m,inner)};inner(n.thenStatement);
+       errors[n.expression.text]=throws.map(t=>ts.isNewExpression(t.expression)?t.expression.arguments?.map(a=>ts.isStringLiteral(a)?a.text:'NOT_LITERAL')??[]:['NOT_NEW_ERROR']);
+    }
+    ts.forEachChild(n,visit);
+  };visit(ast);
+  assert.deepEqual(props,['z.string().min(1)'],'H01: elegibilidad Zod no debe restringir prefijo ni tamaño inesperado');
+  const expected={claimError:'Failed to claim orphan courier documents',removeError:'Failed to remove orphan courier documents',completeError:'Failed to complete orphan courier document purge'};
+  assert.deepEqual(Object.keys(errors).sort(),Object.keys(expected).sort(),'H02: tres ramas exactas de error');
+  for(const [key,txt] of Object.entries(expected))assert.deepEqual(errors[key],[[txt]],'H02: error de '+key+' debe ser literal constante');
+};
+const mutate=(label,from,to)=>{
+  assert.ok(source.includes(from),'Mutante sin objetivo: '+label);
+  const mutant=source.replace(from,to);
+  assert.notEqual(mutant,source);
+  let red=false;try{run(mutant)}catch(e){red=true;console.log('RED '+label+': '+e.message.split('\n')[0]);}
+  assert.ok(red,'Mutante no detectado: '+label);
+  run(source);
+  console.log('GREEN '+label+': fuente original íntegra');
+};
+run(source); console.log('CONTROL ORIGINAL GREEN — AST TypeScript, 1 ruta + 3 ramas error');
+mutate('H01: longitud mínima 128 (no autorizado)',"storagePath: z.string().min(1)","storagePath: z.string().min(128)");
+mutate('H01: filtro por prefijo legado',"storagePath: z.string().min(1)","storagePath: z.string().startsWith('courier/')");
+mutate('H02: leak error claim',"throw new Error('Failed to claim orphan courier documents');","throw new Error(`Failed to claim orphan courier documents: ${claimError.message}`);");
+mutate('H02: leak error remove',"throw new Error('Failed to remove orphan courier documents');","throw new Error(`Failed to remove orphan courier documents: ${removeError.message}`);");
+mutate('H02: leak error complete',"throw new Error('Failed to complete orphan courier document purge');","throw new Error(`Failed to complete orphan courier document purge: ${completeError.message}`);");
+console.log('5/5 MUTACIONES AST DETECTADAS; fuente sin modificaciones');
+```
+
+**Salida REAL:** `CONTROL ORIGINAL GREEN`; mutaciones H01 min128 y prefijo RED→GREEN; H02 claim, remove, complete RED→GREEN; `5/5 MUTACIONES AST DETECTADAS; fuente sin modificaciones`. El repositorio nunca fue mutado. El código reproduce el oráculo efectivamente ejecutado: tres condiciones concretas de error y los mensajes literales esperados.
+
+**Gate actual por develop:** `git compare origin/develop...HEAD` indica 45 commits en develop aún no integrados, entre ellos T-356. GitHub indica `mergeable:false` (`dirty`); el último CI hizo checkout de merge 941b73d contra base 711a2f, no el develop 708a9afb. Se requiere `git merge --no-ff origin/develop` y validar el resultado combinado.
+
+
+## Actualización: merge de develop integrado
+
+El gate de sincronización detectado en ronda 2 fue atendido por el agente mediante merge de origin/develop en `d88e01c1` (padres `a980ee9d`, `708a9afb`). No repetir el merge sin motivos; verificar CI de `39059019921` sobre el SHA integrado. La prueba AST de H01/H02 sigue siendo válida porque el archivo en el merge tiene el mismo blob `fbb2e60d`. La salida del CI de base antigua no se reutiliza para certificar el merge actual.
+
+## Cierre definitivo de ronda 2 — HEAD integrado d88e01c1cb17fabe0f593be26fde45c4fffdd756
+
+**RESULTADO: SIN BLOQUEANTES.** La integración con develop está resuelta y comprobada en el merge real. CI run **39059019921** finalizó **SUCCESS** con **141 archivos / 2668 tests unitarios**, **29 archivos / 2735 pgTAP**, CC-030 **47/47**, mutación de gracia 0 **7 RED y 47 GREEN**, concurrencia SQL/trigger RED→GREEN, integración T-369 GREEN, generación de `database.types.ts` idéntica, typecheck/lint/build/audit/bundle-budget y `approval-policy` verdes. La verificación fue del SHA **d88e01c1** (code merge), y los defectos H01/H02 conservaron el mismo blob de TS que se sometió a las mutaciones AST independientes. No hay otra ronda técnica exigible sólo por el commit de documentación de revisión.
+
+`e2e-preview` **NO se ejecutó**: permanece bloqueado por necesitar la migración de CC-030 en Develop, previsto en el rollout. No presentar ese chequeo como verde. La promoción a staging/main y activar `enforce` siguen siendo decisiones humanas **posteriores**. **Esta revisión NO aprueba ni mergea**.

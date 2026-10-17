@@ -1,23 +1,22 @@
+## Cierre definitivo de ronda 2 — HEAD integrado d88e01c1cb17fabe0f593be26fde45c4fffdd756
+
+**RESULTADO: SIN BLOQUEANTES.** La integración con develop está resuelta y comprobada en el merge real. CI run **39059019921** finalizó **SUCCESS** con **141 archivos / 2668 tests unitarios**, **29 archivos / 2735 pgTAP**, CC-030 **47/47**, mutación de gracia 0 **7 RED y 47 GREEN**, concurrencia SQL/trigger RED→GREEN, integración T-369 GREEN, generación de `database.types.ts` idéntica, typecheck/lint/build/audit/bundle-budget y `approval-policy` verdes. La verificación fue del SHA **d88e01c1** (code merge), y los defectos H01/H02 conservaron el mismo blob de TS que se sometió a las mutaciones AST independientes. No hay otra ronda técnica exigible sólo por el commit de documentación de revisión.
+
+`e2e-preview` **NO se ejecutó**: permanece bloqueado por necesitar la migración de CC-030 en Develop, previsto en el rollout. No presentar ese chequeo como verde. La promoción a staging/main y activar `enforce` siguen siendo decisiones humanas **posteriores**. **Esta revisión NO aprueba ni mergea**.
+
 # Revisión independiente — PR #401 · T-370 / CC-030
 
-- Fecha: 2026-10-17.
-- SHA revisado (código): `ef990947474cd404c0adda429f852589c5c55732`.
-- Base de comparación: `develop` en `711a2f7054d77fd664d3ec09b3bbdd24efb88476`.
-- Resultado ronda 1: **CON BLOQUEANTES (2)**; pendiente de corrección y segunda ronda.
-- Rol: revisión independiente. **No se aprueba ni mergea**.
-- Decisiones de Lautaro073: **1A** 7 días de gracia; **2A** `dry-run` por defecto; **3A** autorizado el bloque CC-030 en `.github/workflows/ci.yml`.
+## Estado actual — ronda 2 (2026-10-17)
 
-La autorrevisión del agente que abrió la PR estaba indebidamente en `README.md`. Se conservó íntegra en `autorrevision-agy-r0.md` para contraste; **no** se acepta como certificación independiente. La carpeta desde esta ronda es de la revisión.
+**Resultado final: SIN BLOQUEANTES — técnicamente lista para merge bajo los gates de rollout.** Defectos H01 y H02 corregidos y comprobados; H04 de integración también cerrado. Código integrado: `d88e01c1cb17fabe0f593be26fde45c4fffdd756` (padres: `a980ee9d` + `develop 708a9afb`), GitHub `mergeable:true` y `behind_by=0`.
 
-## Archivos de esta ronda
-- `revisiones/ronda-1.md`: análisis, causas y pruebas esperadas.
-- `hallazgos.jsonl`: hallazgos estructurados.
-- `evidencia/comandos.md`: verificación de CI y guion de mutaciones para la siguiente ronda.
-- `lecciones.md`: aprendizaje de proceso y controles.
+**Evidencia del CI integrado:** unit ✅ **2668/2668**, base ✅ **2735/2735**, CC-030 ✅ **47/47**, typecheck ✅, lint ✅, build ✅, audit ✅, bundle-budget ✅, approval-policy ✅. CI `39059019921` SUCCESS. `e2e-preview` continúa bloqueado hasta la migración en Develop (no marcar como verde).
 
-## Hallazgos
-- **PR401-H01 (bloqueante, medio):** la RPC reclama objetos de cualquier ruta del bucket, pero Zod rechaza las que no comienzan por `courier/`, bloqueando la reconciliación.
-- **PR401-H02 (bloqueante, alto):** mensajes de errores externos se incorporan sin sanitizar a alertas críticas; podrían contener rutas de legajos privados.
-- **PR401-H03 (proceso, bajo):** el autor ocupó la carpeta exclusiva de revisión; conservado para contraste.
+- [Ronda 1](revisiones/ronda-1.md): dos bloqueantes detectados en SHA `ef990947`.
+- [Ronda 2](revisiones/ronda-2.md): H01/H02 corregidos en `a980ee9d`; transición desde base vieja hasta merge con `develop` actual en `d88e01c1cb17fabe0f593be26fde45c4fffdd756`.
+- [Evidencia y comandos](evidencia/comandos.md) (incluye harness ejecutado) · [evidencia de ronda 2](evidencia/ronda-2.md) · [hallazgos estructurados](hallazgos.jsonl) · [lecciones](lecciones.md).
+- La autorrevisión original del agente queda íntegra en `autorrevision-agy-r0.md` y **no** cuenta como revisión independiente.
 
-No se han ejecutado mutaciones independientes en base de datos ni Vitest en esta sesión: los RED→GREEN mencionados en CI son los del autor, corroborados en su log. El estado de los hallazgos no se presenta como verificado mediante ejecución.
+**Decisiones de Lautaro073 ya confirmadas:** 1A = gracia de 7 días; 2A = `dry-run` por defecto; 3A = bloque CC-030 en CI autorizado.
+
+El nuevo merge conserva las pruebas de T-369 y CC-030, ambas RPC en tipos y el `--include-all` de ambas ejecuciones de backfill. No se aprobó ni mergeó esta PR.
