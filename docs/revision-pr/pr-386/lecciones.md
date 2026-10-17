@@ -27,3 +27,11 @@ No se adjudican IDs AG nuevos sin barrer **todas** las ramas remotas. Esta ronda
 - **No perseguir un fallo transitorio de fuente sin evidencia de causalidad.** `next/font` falló en un commit previo sin cambios de layout; compiló en el siguiente y nuevamente en `ddae874`. No hay evidencia para introducir cambios de dependencias o builds solo por ese incidente.
 - **No reciclar el `verificado_en_sha` como el último HEAD por conveniencia.** No hubo cambio de código: se conserva el SHA de la batería independiente de R2, mientras CI y E2E del HEAD documental quedan como evidencia nueva.
 - **No se crea una nueva regla AG**: no se detectó un nuevo defecto de código ni se estableció un patrón transversal nuevo.
+
+## Ronda 4 — merge integrado sin pérdida de invariantes
+
+- El revert #385 quitó desde `develop` una ampliación de ficha que correspondía a la rama T-363. El merge posterior preservó esa autorización previa y la bitácora, y la comparación con `develop` volvió a mostrar exactamente el alcance propio. Una resolución de conflictos debe verificar **la semántica y el origen autorizado**, no elegir ciegamente «ours» o «theirs».
+- Para constatar que mergear develop no reescribió la implementación de una feature, comparar **blobs SHA** de cada archivo invariante más los casos del E2E. No basta mirar una diff con docenas de archivos de otras PRs.
+- Un E2E que recupera un timeout en retry es **`flaky`**, no «verde sin incidente»; registrar nombre, archivo, intento, condición y checkout. Si se reproduce con frecuencia, abrir issue propio del subsistema correspondiente, pero no imputarlo a un cambio sin relación.
+- Una comprobación `pnpm test` local puede tener timeout ocasional cuando un test escanea el repo; el aislado y CI completo ayudan a clasificarlo. Prohibido aumentar timeout o mutar tests sin causa demostrada.
+- La última ronda documental mueve HEAD y relanza checks. Un SUCCESS anterior es evidencia de ese SHA, no certificación automática del nuevo commit. El gate de merge debe exigir los checks requeridos del HEAD final.

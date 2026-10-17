@@ -209,3 +209,35 @@ git diff --check origin/develop...ddae87422246df38ad7fa96142260993125a6f4f
 **Ausencia de verificación local:** `git ls-remote https://github.com/cadeApp/cadeApp.git HEAD` devolvió `fatal: ... Could not resolve host: github.com`. No se encendieron contenedores ni Supabase local/remoto. No se fabricó RED ni prueba mutada; se conserva la de R2 con su SHA de verificación.
 
 **Acciones posteriores:** esperar decisión/merge independiente de PR #385, fusionar `develop` sin rebase en la rama T-363 y probar el SHA combinado; no inferir que el E2E anterior certifica código posterior a ese merge.
+
+## Ronda 4 — revalidación post-merge #385 · SHA examinado `f91a414ea424f9262de89be458a5b21b10c1cba5`
+
+**Comprobaciones efectivamente efectuadas a través de GitHub:** PR #385 `merged:true`, PR #386 abierta, merge commit `278c11fb` con segundo padre `cc7fb54b` (HEAD de develop). `f91a414` parent `278c11fb`; solo modificó `docs/tasks/log/T-363.md`. `compare(develop,f91a414)` lista 26 archivos propios; contiene la ampliación autorizada de T-363 (17 líneas) ausente en develop por #385. No hay modificaciones de componentes de otras PRs en ese diff neto.
+
+**SHA de blobs idénticos entre `7e55ba0` y `f91a414`:**
+```
+src/features/trips/route-points.ts                   5d6c15175043ec6ec318ae7b0caad74708ffbe26
+src/features/trips/components/trip-route-map.tsx      e89489b7fc7ba9e9fd31c226901612a09f78aab9
+e2e/specs/map-privacy.spec.ts                        a2b55e8ad866ad719b17c74d88683d3eda1ae4d3
+src/features/offers/queries.ts                       891185027542a93548c3b6f68224815b0cbb94cb
+src/features/requests/components/request-offers-list.tsx fa9d484f3cd954fc1b316a3a47daddf224b770f5
+src/server/live/t204.ts                              433bd599017d0c2eddb2e6b6ad0e2dd933fb4318
+src/lib/live-contracts.ts                            a3eacd05244fc844051bf4679663ee75714d8f4e
+docs/revision-pr/pr-386/hallazgos.jsonl              86f13ce30655d125e78f78b4168b33fc9643169d
+```
+
+**CI de merge `278c11f`:** https://github.com/cadeApp/cadeApp/actions/runs/38982843048, logs jobs 117247444555 (unit 2492/2492), 117247444915 (db-tests 26 archivos / 2341 tests PASS), 117247444823 (build SUCCESS); approval-policy run 38982843149 SUCCESS.
+
+**E2E del merge:** https://github.com/cadeApp/cadeApp/actions/runs/38982914091, job 117247720073: logs muestran `git checkout --force 278c11fb`, `main-flow.spec.ts:585` T-360 timeout 60000 ms, `retry #1` PASS, `map-privacy.spec.ts:958` PR386-H01/H02 PASS (16.1 s), salida final `81 passed (24.1m)` + `1 flaky`, luego `3 passed (1.1m)` global-settings. La condición de flaky se mantiene visible.
+
+**CI sobre `f91a414`:** https://github.com/cadeApp/cadeApp/actions/runs/38985572731: `build`, `unit`, `typecheck`, `lint`, `audit`, `bundle-budget`, `approval-policy` PASS; `db-tests` IN_PROGRESS al registrar R4. No presumir conclusión futura.
+
+**Comandos del autor (no ejecutados por el revisor, pero evidencia contrastable):**
+```bash
+git fetch origin
+git merge-tree --write-tree origin/develop HEAD
+pnpm exec vitest run tools/verify-fichas.test.ts
+git diff --check origin/develop...HEAD
+pnpm typecheck && pnpm lint && pnpm test && pnpm build
+```
+Autor registró `merge-tree exit 0 tree 2805a660`, fichas 7/7, test general con timeout 1/2492 y test aislado 10/10; CI completo del mismo merge 2492/2492. Sin mutaciones nuevas del revisor: ninguna función relevante cambió desde la batería independiente R2. No se ejecutaron pruebas locales, Supabase ni Docker.
