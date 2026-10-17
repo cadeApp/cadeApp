@@ -912,6 +912,11 @@ export type Database = {
         Args: { p_reason?: string; p_request_id: string }
         Returns: Json
       }
+      claim_orphan_courier_documents: {
+        Args: { p_dry_run?: boolean; p_limit?: number }
+        Returns: Json
+      }
+      complete_orphan_courier_document_purge: { Args: never; Returns: Json }
       courier_cancel_match: {
         Args: { p_reason: string; p_request_id: string }
         Returns: Json
