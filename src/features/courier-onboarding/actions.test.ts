@@ -1458,19 +1458,23 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
     function setupCourierMock({
       user = { id: courierId, email: 'courier@cadeapp.test' } as { id: string; email: string } | null,
       role = 'courier',
-      courierRecord = { profile_id: courierId, status: 'approved' } as { profile_id: string; status: string } | null,
+      courierRecord = { profile_id: courierId, status: 'approved', vehicle_type: 'moto' } as
+        { profile_id: string; status: string; vehicle_type: string | null } | null,
       updateFails = false,
-      documentsFails = false,
+      updateMissing = false,
+      readFails = false,
     } = {}) {
-      const mockUpdate = vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({
-          error: updateFails ? { message: 'db error' } : null,
-        }),
+      const mockUpdateResult = vi.fn().mockResolvedValue({
+        data: updateMissing ? null : { profile_id: courierId },
+        error: updateFails ? { message: 'update failed' } : null,
       });
-      const mockUpsertDocuments = vi.fn().mockResolvedValue({
-        error: documentsFails ? { message: 'docs error' } : null,
+      const mockIn = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({ maybeSingle: mockUpdateResult }),
       });
-
+      const mockNot = vi.fn().mockReturnValue({ in: mockIn });
+      const mockEqUpdate = vi.fn().mockReturnValue({ not: mockNot });
+      const mockUpdate = vi.fn().mockReturnValue({ eq: mockEqUpdate });
+      const mockUpsertDocuments = vi.fn().mockResolvedValue({ error: null });
       vi.mocked(serverAuth.createClient).mockResolvedValue({
         auth: {
           getUser: vi.fn().mockResolvedValue({
@@ -1495,21 +1499,18 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
               eq: vi.fn().mockReturnThis(),
               maybeSingle: vi.fn().mockResolvedValue({
                 data: courierRecord,
-                error: null,
+                error: readFails ? { message: 'read failed' } : null,
               }),
               update: mockUpdate,
             };
           }
           if (table === 'courier_documents') {
-            return {
-              upsert: mockUpsertDocuments,
-            };
+            return { upsert: mockUpsertDocuments };
           }
           return { select: vi.fn().mockReturnThis() };
         }),
       } as unknown as Awaited<ReturnType<typeof serverAuth.createClient>>);
-
-      return { mockUpdate, mockUpsertDocuments };
+      return { mockUpdate, mockEqUpdate, mockNot, mockIn, mockUpsertDocuments };
     }
 
     it('rechaza la acción si el usuario no está autenticado', async () => {
@@ -1599,27 +1600,16 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
       });
     });
 
-    it('persiste documentos opcionales (licencia y seguro) si son provistos', async () => {
+    it('rechaza campos documentales de edición antes de cualquier mutación', async () => {
       const { mockUpdate, mockUpsertDocuments } = setupCourierMock();
       const result = await updateCourierVehicleAction({
         vehicleType: 'moto',
         vehiclePlate: 'AB 123 CD',
-        documents: {
-          license: 'courier/courier-test-uuid-357/license.jpg',
-          insurance: 'courier/courier-test-uuid-357/insurance.jpg',
-        },
+        documents: { license: 'courier/otro/archivo.jpg' },
       });
-
-      expect(result.ok).toBe(true);
-      expect(mockUpdate).toHaveBeenCalledTimes(1);
-      expect(mockUpsertDocuments).toHaveBeenCalledTimes(1);
-      const docsArg = mockUpsertDocuments.mock.calls[0]?.[0] as Array<{ kind: string; storage_path: string }>;
-      expect(docsArg).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ kind: 'license', storage_path: 'courier/courier-test-uuid-357/license.jpg', status: 'submitted' }),
-          expect.objectContaining({ kind: 'insurance', storage_path: 'courier/courier-test-uuid-357/insurance.jpg', status: 'submitted' }),
-        ])
-      );
+      expect(result).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockUpsertDocuments).not.toHaveBeenCalled();
     });
 
     it('no exige reconsentimientos legales ni DNI/selfie en la edición', async () => {
@@ -1630,6 +1620,47 @@ describe('T-334 / PR240-H02: vehicle_type se escribe solo al final de un onboard
         vehiclePlate: 'AA 000 BB',
       });
       expect(result.ok).toBe(true);
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+    });
+    it('bloquea la edición si no se completó el onboarding', async () => {
+      const { mockUpdate } = setupCourierMock({
+        courierRecord: { profile_id: courierId, status: 'pending', vehicle_type: null },
+      });
+      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
+        .toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it.each(['rejected', 'suspended'])('bloquea legajo %s en edición', async (status) => {
+      const { mockUpdate } = setupCourierMock({
+        courierRecord: { profile_id: courierId, status, vehicle_type: 'moto' },
+      });
+      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
+        .toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('distingue fallo de lectura de legajo inexistente', async () => {
+      const { mockUpdate } = setupCourierMock({ readFails: true });
+      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
+        .toEqual({ ok: false, code: 'INTERNAL_ERROR' });
+      expect(mockUpdate).not.toHaveBeenCalled();
+    });
+
+    it('no informa éxito cuando update devuelve cero filas; la guarda se repite en UPDATE', async () => {
+      const { mockUpdate, mockEqUpdate, mockNot, mockIn } = setupCourierMock({ updateMissing: true });
+      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
+        .toEqual({ ok: false, code: 'NOT_FOUND' });
+      expect(mockUpdate).toHaveBeenCalledTimes(1);
+      expect(mockEqUpdate).toHaveBeenCalledWith('profile_id', courierId);
+      expect(mockNot).toHaveBeenCalledWith('vehicle_type', 'is', null);
+      expect(mockIn).toHaveBeenCalledWith('status', ['pending', 'approved']);
+    });
+
+    it('reporta error de update en vez de OK', async () => {
+      const { mockUpdate } = setupCourierMock({ updateFails: true });
+      expect(await updateCourierVehicleAction({ vehicleType: 'bike' }))
+        .toEqual({ ok: false, code: 'INTERNAL_ERROR' });
       expect(mockUpdate).toHaveBeenCalledTimes(1);
     });
   });

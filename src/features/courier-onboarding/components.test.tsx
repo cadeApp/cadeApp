@@ -17,6 +17,7 @@ import {
 } from './components/courier-profile-view';
 import * as actionsModule from './actions';
 import { vehiclePlateSchema } from './schemas';
+import { COURIER_ONBOARDING_COPY } from './copy';
 import * as uploadManager from './upload-manager';
 import { compressImage } from '@/lib/image-compression';
 
@@ -268,6 +269,12 @@ describe('T-121 · PR77-H08: Pruebas de componentes de onboarding R01, R02, R03'
         expect(screen.queryByText('Datos')).toBeNull();
         expect(screen.queryByText('Identidad')).toBeNull();
         expect(screen.queryByText('Listo')).toBeNull();
+      });
+
+      it('no muestra tarjetas documentales en edición de moto', () => {
+        render(<VehicleForm courierId="test-courier" isEditing initialVehicleType="moto" initialVehiclePlate="AB 123 CD" />);
+        expect(screen.queryByText(COURIER_ONBOARDING_COPY.licenseTitle)).toBeNull();
+        expect(screen.queryByText(COURIER_ONBOARDING_COPY.insuranceTitle)).toBeNull();
       });
 
       it('no renderiza checkboxes de consentimientos legales obligatorios en edición', () => {

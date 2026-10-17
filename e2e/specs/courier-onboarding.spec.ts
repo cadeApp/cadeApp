@@ -821,14 +821,17 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
     // Precondición: courier con vehículo existente y habilitado
     const dbAdmin = createAdminClient();
-    await dbAdmin
+    const { data: seeded, error: seedError } = await dbAdmin
       .from('couriers')
       .update({
         vehicle_type: 'moto',
         vehicle_plate: 'AB 123 CD',
         status: 'approved',
       })
-      .eq('profile_id', courier.id);
+      .eq('profile_id', courier.id)
+      .select('profile_id');
+    expect(seedError).toBeNull();
+    expect(seeded).toHaveLength(1);
 
     // 1. Iniciar sesión como repartidor y navegar al perfil
     await loginAsCourier(0, page);
@@ -872,6 +875,16 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await waitForNoSkeletons(page);
 
     await expect(page.getByText('Bicicleta')).toBeVisible();
+    await page.reload();
+    await waitForNoSkeletons(page);
+    await expect(page.getByText('Bicicleta')).toBeVisible();
+    const { data: persisted, error: persistError } = await dbAdmin
+      .from('couriers')
+      .select('vehicle_type, vehicle_plate, status')
+      .eq('profile_id', courier.id)
+      .single();
+    expect(persistError).toBeNull();
+    expect(persisted).toMatchObject({ vehicle_type: 'bike', vehicle_plate: null, status: 'approved' });
   });
 });
 

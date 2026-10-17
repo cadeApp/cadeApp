@@ -240,20 +240,13 @@ describe('T-353: Matriz Zod de validación para DNI y patentes argentinas', () =
       }
     });
 
-    it('acepta documentos opcionales (licencia y seguro) y no requiere DNI ni consentimientos', () => {
-      const res = courierUpdateVehicleSchema.safeParse({
-        vehicleType: 'moto',
-        vehiclePlate: 'AB 123 CD',
-        documents: {
-          license: 'courier/docs/license.jpg',
-          insurance: 'courier/docs/insurance.jpg',
-        },
+    it('rechaza documentos extras y campos desconocidos en edición (2-A)', () => {
+      const docs = courierUpdateVehicleSchema.safeParse({
+        vehicleType: 'moto', vehiclePlate: 'AB 123 CD',
+        documents: { license: 'courier/docs/license.jpg' },
       });
-      expect(res.success).toBe(true);
-      if (res.success) {
-        expect(res.data.documents?.license).toBe('courier/docs/license.jpg');
-        expect(res.data.documents?.insurance).toBe('courier/docs/insurance.jpg');
-      }
+      expect(docs.success).toBe(false);
+      expect(courierUpdateVehicleSchema.safeParse({ vehicleType: 'bike', status: 'approved' }).success).toBe(false);
     });
   });
 });

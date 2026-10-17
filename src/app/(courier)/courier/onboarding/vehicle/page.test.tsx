@@ -116,4 +116,32 @@ describe('T-357: CanonicalCourierOnboardingVehiclePage', () => {
       isEditing: false,
     });
   });
+  it('mode=edit no convierte un alta incompleta en edición', async () => {
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: courierUserId } } }) },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: { vehicle_type: null, vehicle_plate: null, status: 'pending' }, error: null,
+        }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    render(await CanonicalCourierOnboardingVehiclePage({ searchParams: Promise.resolve({ mode: 'edit' }) }));
+    expect(mocks.VehicleForm.mock.calls[0]?.[0]).toMatchObject({ isEditing: false });
+  });
+
+  it('error al consultar no debe dibujar un onboarding falso', async () => {
+    vi.mocked(serverSupabase.createClient).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: courierUserId } } }) },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: 'SQL error' } }),
+      }),
+    } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+    await expect(CanonicalCourierOnboardingVehiclePage({})).rejects.toThrow('No se pudo consultar');
+    expect(mocks.VehicleForm).not.toHaveBeenCalled();
+  });
+
 });
