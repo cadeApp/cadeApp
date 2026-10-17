@@ -28,7 +28,7 @@ const claimResultSchema = z.object({
     .array(
       z.object({
         claimId: z.string().uuid(),
-        storagePath: z.string().startsWith('courier/'),
+        storagePath: z.string().min(1),
       })
     )
     .max(ORPHAN_CLAIM_LIMIT),
@@ -69,7 +69,7 @@ export async function reconcileOrphanCourierDocuments(
       { p_limit: ORPHAN_CLAIM_LIMIT, p_dry_run: dryRun }
     );
     if (claimError) {
-      throw new Error(`Failed to claim orphan courier documents: ${claimError.message}`);
+      throw new Error('Failed to claim orphan courier documents');
     }
     const parsedClaim = claimResultSchema.safeParse(claimData);
     if (!parsedClaim.success || parsedClaim.data.dryRun !== dryRun) {
@@ -90,7 +90,7 @@ export async function reconcileOrphanCourierDocuments(
         .remove(claim.claimed.map((item) => item.storagePath));
       if (removeError) {
         // Los reclamos quedan pendientes y la próxima ejecución los reintenta.
-        throw new Error(`Failed to remove orphan courier documents: ${removeError.message}`);
+        throw new Error('Failed to remove orphan courier documents');
       }
       removedCount += removed?.length ?? 0;
     }
@@ -104,7 +104,7 @@ export async function reconcileOrphanCourierDocuments(
       'complete_orphan_courier_document_purge'
     );
     if (completeError) {
-      throw new Error(`Failed to complete orphan courier document purge: ${completeError.message}`);
+      throw new Error('Failed to complete orphan courier document purge');
     }
     const parsedComplete = completeResultSchema.safeParse(completeData);
     if (!parsedComplete.success) {

@@ -151,7 +151,7 @@ describe('reconcileOrphanCourierDocuments (CC-030)', () => {
     );
 
     await expect(reconcileOrphanCourierDocuments(client, 'enforce')).rejects.toThrow(
-      'Failed to remove orphan courier documents: storage unavailable'
+      /^Failed to remove orphan courier documents$/
     );
     expect(rpc).toHaveBeenCalledTimes(1);
   });
@@ -161,7 +161,9 @@ describe('reconcileOrphanCourierDocuments (CC-030)', () => {
       [claimResponse({ candidateCount: 1, claimed: [CLAIM_A] })],
       { data: null, error: { message: 'timeout' } }
     );
-    await expect(reconcileOrphanCourierDocuments(failing.client, 'enforce')).rejects.toThrow('timeout');
+    await expect(reconcileOrphanCourierDocuments(failing.client, 'enforce')).rejects.toThrow(
+      /^Failed to remove orphan courier documents$/
+    );
 
     const retry = createClient(
       [claimResponse({ candidateCount: 1, claimed: [CLAIM_A] }), completeResponse(1, 0)],
@@ -177,13 +179,13 @@ describe('reconcileOrphanCourierDocuments (CC-030)', () => {
     const { client, storageFrom } = createClient([{ data: null, error: { message: 'UNAUTHORIZED_ACTOR' } }]);
 
     await expect(reconcileOrphanCourierDocuments(client, 'enforce')).rejects.toThrow(
-      'Failed to claim orphan courier documents: UNAUTHORIZED_ACTOR'
+      /^Failed to claim orphan courier documents$/
     );
     expect(storageFrom).not.toHaveBeenCalled();
   });
 
   it.each([
-    ['ruta fuera del prefijo courier/', { claimed: [{ ...CLAIM_A, storagePath: 'merchant/x.jpg' }] }],
+    ['ruta vacía', { claimed: [{ ...CLAIM_A, storagePath: '' }] }],
     ['claimId inválido', { claimed: [{ ...CLAIM_A, claimId: 'not-a-uuid' }] }],
     ['dryRun distinto del pedido', { dryRun: true }],
     ['candidateCount negativo', { candidateCount: -1 }],
@@ -199,13 +201,97 @@ describe('reconcileOrphanCourierDocuments (CC-030)', () => {
   it('error o respuesta inválida al confirmar hace fallar el paso', async () => {
     const withError = createClient([claimResponse(), { data: null, error: { message: 'db down' } }]);
     await expect(reconcileOrphanCourierDocuments(withError.client, 'enforce')).rejects.toThrow(
-      'Failed to complete orphan courier document purge: db down'
+      /^Failed to complete orphan courier document purge$/
     );
 
     const invalid = createClient([claimResponse(), { data: { completedCount: 'x' }, error: null }]);
     await expect(reconcileOrphanCourierDocuments(invalid.client, 'enforce')).rejects.toThrow(
       'Failed to complete orphan courier document purge: invalid RPC response'
     );
+  });
+
+  it('CC-030 H01: ruta huérfana no canónica dentro de courier-docs', async () => {
+    const legacyPath = 'legacy/cc030_orphan_old.jpg';
+    const { client, rpc, remove, storageFrom } = createClient(
+      [
+        claimResponse({
+          candidateCount: 1,
+          claimed: [{ claimId: '30000000-0000-4000-8000-000000000003', storagePath: legacyPath }],
+        }),
+        completeResponse(1, 0),
+      ],
+      { data: [{ name: legacyPath }], error: null }
+    );
+
+    const result = await reconcileOrphanCourierDocuments(client, 'enforce');
+
+    expect(storageFrom).toHaveBeenCalledExactlyOnceWith('courier-docs');
+    expect(remove).toHaveBeenCalledExactlyOnceWith([legacyPath]);
+    expect(rpc).toHaveBeenLastCalledWith('complete_orphan_courier_document_purge');
+    expect(result).toMatchObject({ claimedCount: 1, removedCount: 1, completedCount: 1, pendingCount: 0 });
+  });
+
+  async function captureError(promise: Promise<unknown>): Promise<Error> {
+    try {
+      await promise;
+    } catch (error) {
+      if (error instanceof Error) return error;
+      throw new Error('Se esperaba una instancia de Error');
+    }
+    throw new Error('Se esperaba que la reconciliación fallara');
+  }
+
+  function expectNoPrivatePath(error: Error, fileName: string) {
+    expect(error.message).not.toContain('courier/');
+    expect(error.message).not.toContain(fileName);
+    expect(error.stack ?? '').not.toContain('courier/');
+    expect(error.stack ?? '').not.toContain(fileName);
+  }
+
+  it('CC-030 H02: error Storage no filtra rutas privadas', async () => {
+    const { client, rpc } = createClient(
+      [claimResponse({ candidateCount: 1, claimed: [CLAIM_A] })],
+      {
+        data: null,
+        error: { message: 'storage failure courier/00000000-0000-4000-8000-0000000030c1/dni_front_123.jpg' },
+      }
+    );
+
+    const error = await captureError(reconcileOrphanCourierDocuments(client, 'enforce'));
+
+    expect(error.message).toBe('Failed to remove orphan courier documents');
+    expectNoPrivatePath(error, 'dni_front_123.jpg');
+    expect(rpc).not.toHaveBeenCalledWith('complete_orphan_courier_document_purge');
+  });
+
+  it('CC-030 H02: error de la RPC de reclamo no filtra rutas privadas', async () => {
+    const { client, storageFrom } = createClient([
+      {
+        data: null,
+        error: { message: 'claim failure courier/00000000-0000-4000-8000-0000000030c1/selfie_456.jpg' },
+      },
+    ]);
+
+    const error = await captureError(reconcileOrphanCourierDocuments(client, 'enforce'));
+
+    expect(error.message).toBe('Failed to claim orphan courier documents');
+    expectNoPrivatePath(error, 'selfie_456.jpg');
+    expect(storageFrom).not.toHaveBeenCalled();
+  });
+
+  it('CC-030 H02: error al confirmar la purga no filtra rutas privadas', async () => {
+    const { client } = createClient([
+      claimResponse(),
+      {
+        data: null,
+        error: { message: 'complete failure courier/00000000-0000-4000-8000-0000000030c1/license_789.jpg' },
+      },
+    ]);
+
+    const error = await captureError(reconcileOrphanCourierDocuments(client, 'enforce'));
+
+    expect(error.message).toBe('Failed to complete orphan courier document purge');
+    expectNoPrivatePath(error, 'license_789.jpg');
   });
 
   it('las métricas no incluyen rutas ni identificadores', async () => {

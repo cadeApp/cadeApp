@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(46);
+select plan(47);
 
 create function pg_temp.courier_a() returns uuid language sql as $$ select '00000000-0000-4000-8000-0000000030c1'::uuid $$;
 create function pg_temp.p(p_name text) returns text language sql as $$
@@ -320,6 +320,18 @@ select is(
   0,
   'ningún reclamo apunta a una ruta con fila en courier_documents'
 );
+
+-- 11. PR401-H01: la elegibilidad abarca todo el bucket, no sólo el prefijo de las subidas nuevas de la UI
+select pg_temp.reset_actor();
+select pg_temp.put_object('legacy/cc030_orphan_old.jpg', now() - interval '9 days');
+select pg_temp.act_as_service_role();
+create table pg_temp.legacy_claim as
+  select public.claim_orphan_courier_documents(100, false) as res;
+select ok(
+  'legacy/cc030_orphan_old.jpg' = any((select pg_temp.claimed_paths(res) from pg_temp.legacy_claim)),
+  'reclama huérfano antiguo no canónico dentro de courier-docs'
+);
+select pg_temp.reset_actor();
 
 select * from finish();
 rollback;
