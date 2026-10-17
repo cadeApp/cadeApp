@@ -1,15 +1,58 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
-import {
-  TripCancelDialog,
-  MERCHANT_CANCELLATION_REASONS,
-  COURIER_CANCELLATION_REASONS,
-} from './trip-cancel-dialog';
+import { TripCancelDialog } from './trip-cancel-dialog';
 import { TripCourierView } from './trip-courier-view';
 import { TripMerchantView } from './trip-merchant-view';
+import { TripCourierContainer } from './trip-courier-container';
+import { TripMerchantContainer } from './trip-merchant-container';
 import type { TripDetails } from '../types';
+
+// Expectations contractuales fijas e independientes de las constantes de producción (H03)
+const EXPECTED_MERCHANT_REASONS = [
+  'Ya no hace falta',
+  'Lo resolví de otra forma',
+  'Me equivoqué en los datos',
+  'Otro',
+] as const;
+
+const EXPECTED_COURIER_REASONS = [
+  'Tuve un imprevisto',
+  'Problema con el vehículo',
+  'No puedo llegar al punto de retiro',
+  'Emergencia',
+  'Otro',
+] as const;
+
+const mockRouterRefresh = vi.fn();
+const mockRouterPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    refresh: mockRouterRefresh,
+    push: mockRouterPush,
+  }),
+}));
+
+const mockCourierCancelTripAction = vi.fn();
+const mockMerchantCancelTripAction = vi.fn();
+vi.mock('../actions', () => ({
+  courierCancelTripAction: (...args: unknown[]) => mockCourierCancelTripAction(...args),
+  merchantCancelTripAction: (...args: unknown[]) => mockMerchantCancelTripAction(...args),
+  markTripPickedUpAction: vi.fn(),
+  markTripDeliveredAction: vi.fn(),
+  markDropDeliveredAction: vi.fn(),
+  markDropFailedAction: vi.fn(),
+  merchantReportNoShowAction: vi.fn(),
+}));
+
+vi.mock('@/ui/notify', () => ({
+  notify: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
+}));
 
 vi.mock('@vis.gl/react-google-maps', () => ({
   APILoadingStatus: {
@@ -25,16 +68,43 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   Polyline: () => null,
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({
-    refresh: vi.fn(),
-    push: vi.fn(),
-  }),
-}));
-
 describe('T-362: TripCancelDialog por rol', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const baseTrip: TripDetails = {
+    id: 'req-uuid-1',
+    code: 'REQ-1234',
+    status: 'matched',
+    merchantId: 'merchant-1',
+    merchantName: 'Kiosco Centro',
+    merchantPhone: '3865222222',
+    courierId: 'courier-1',
+    courierName: 'Carlos Benítez',
+    courierPhone: '3865111111',
+    vehicleType: 'moto',
+    licensePlate: 'AB 123 CD',
+    avatarUrl: 'https://signed.test/avatar.webp',
+    amountArs: 1800,
+    pickupAddress: 'San Martín 450, Centro',
+    pickupZoneName: 'Centro',
+    dropoffAddress: 'Belgrano 1220, Aguilares',
+    dropoffZoneName: 'Barrio Sur',
+    deliveryNotes: 'Frente a la plaza',
+    recipientName: 'Laura Gómez',
+    recipientPhone: '3865123456',
+    recipientPaymentMethod: 'cash',
+    needsChange: true,
+    cashChangeAmount: 5000,
+    createdAt: '2026-09-24T10:00:00Z',
+    matchedAt: '2026-09-24T10:05:00Z',
+    pickedUpAt: null,
+    deliveredAt: null,
+  };
+
   describe('Rol Comercio (actor="merchant")', () => {
-    it('muestra exclusivamente las razones del comercio y ninguna de repartidor', () => {
+    it('muestra exactamente el conjunto contractual de razones del comercio y ninguna de repartidor (H03)', () => {
       render(
         <TripCancelDialog
           open={true}
@@ -44,12 +114,16 @@ describe('T-362: TripCancelDialog por rol', () => {
         />
       );
 
-      // Razones del comercio presentes
-      for (const reason of MERCHANT_CANCELLATION_REASONS) {
-        expect(screen.getByRole('radio', { name: reason })).toBeDefined();
-      }
+      const radios = screen.getAllByRole('radio');
+      expect(radios).toHaveLength(EXPECTED_MERCHANT_REASONS.length);
 
-      // Razones del repartidor ausentes
+      // Razones del comercio presentes en orden contractual exacto
+      EXPECTED_MERCHANT_REASONS.forEach((reason, index) => {
+        expect(radios[index]?.getAttribute('value')).toBe(reason);
+        expect(screen.getByRole('radio', { name: reason })).toBeDefined();
+      });
+
+      // Razones del repartidor contractualmente ausentes
       expect(screen.queryByRole('radio', { name: 'Tuve un imprevisto' })).toBeNull();
       expect(screen.queryByRole('radio', { name: 'Problema con el vehículo' })).toBeNull();
       expect(screen.queryByRole('radio', { name: 'No puedo llegar al punto de retiro' })).toBeNull();
@@ -93,7 +167,7 @@ describe('T-362: TripCancelDialog por rol', () => {
   });
 
   describe('Rol Repartidor (actor="courier")', () => {
-    it('muestra exclusivamente las razones del repartidor y ninguna de comercio', () => {
+    it('muestra exactamente el conjunto contractual de razones del repartidor y ninguna de comercio (H03)', () => {
       render(
         <TripCancelDialog
           open={true}
@@ -103,10 +177,14 @@ describe('T-362: TripCancelDialog por rol', () => {
         />
       );
 
-      // Razones del repartidor presentes
-      for (const reason of COURIER_CANCELLATION_REASONS) {
+      const radios = screen.getAllByRole('radio');
+      expect(radios).toHaveLength(EXPECTED_COURIER_REASONS.length);
+
+      // Razones del repartidor presentes en orden contractual exacto (incluye 'Emergencia')
+      EXPECTED_COURIER_REASONS.forEach((reason, index) => {
+        expect(radios[index]?.getAttribute('value')).toBe(reason);
         expect(screen.getByRole('radio', { name: reason })).toBeDefined();
-      }
+      });
 
       // Razones de comercio ausentes
       expect(screen.queryByRole('radio', { name: 'Ya no hace falta' })).toBeNull();
@@ -262,36 +340,6 @@ describe('T-362: TripCancelDialog por rol', () => {
   });
 
   describe('Acotamiento de cancelación pre-retiro en vistas (matched vs in_transit)', () => {
-    const baseTrip: TripDetails = {
-      id: 'req-uuid-1',
-      code: 'REQ-1234',
-      status: 'matched',
-      merchantId: 'merchant-1',
-      merchantName: 'Kiosco Centro',
-      merchantPhone: '3865222222',
-      courierId: 'courier-1',
-      courierName: 'Carlos Benítez',
-      courierPhone: '3865111111',
-      vehicleType: 'moto',
-      licensePlate: 'AB 123 CD',
-      avatarUrl: 'https://signed.test/avatar.webp',
-      amountArs: 1800,
-      pickupAddress: 'San Martín 450, Centro',
-      pickupZoneName: 'Centro',
-      dropoffAddress: 'Belgrano 1220, Aguilares',
-      dropoffZoneName: 'Barrio Sur',
-      deliveryNotes: 'Frente a la plaza',
-      recipientName: 'Laura Gómez',
-      recipientPhone: '3865123456',
-      recipientPaymentMethod: 'cash',
-      needsChange: true,
-      cashChangeAmount: 5000,
-      createdAt: '2026-09-24T10:00:00Z',
-      matchedAt: '2026-09-24T10:05:00Z',
-      pickedUpAt: null,
-      deliveredAt: null,
-    };
-
     it('TripCourierView: en matched muestra «No puedo hacer este viaje»', () => {
       const onCancel = vi.fn();
       render(<TripCourierView trip={baseTrip} onCancelTrip={onCancel} />);
@@ -353,6 +401,68 @@ describe('T-362: TripCancelDialog por rol', () => {
       expect(screen.queryByRole('button', { name: /Cancelar envío/i })).toBeNull();
     });
   });
+
+  describe('Integración de contenedores y wiring de actor (H04)', () => {
+    it('TripCourierContainer transmite actor="courier" al diálogo y llama a courierCancelTripAction', async () => {
+      mockCourierCancelTripAction.mockResolvedValue({ ok: true });
+      render(<TripCourierContainer trip={baseTrip} />);
+
+      // Abre modal desde la acción en vista
+      const cancelTrigger = screen.getByRole('button', { name: /No puedo hacer este viaje/i });
+      fireEvent.click(cancelTrigger);
+
+      // Espera y verifica que el diálogo cargó con razones de courier (falla si el container pasa actor="merchant")
+      await waitFor(() => {
+        expect(screen.getByRole('radio', { name: 'Problema con el vehículo' })).toBeDefined();
+        expect(screen.getByRole('radio', { name: 'Emergencia' })).toBeDefined();
+        expect(screen.queryByRole('radio', { name: 'Ya no hace falta' })).toBeNull();
+      });
+
+      // Selecciona motivo de cadete
+      fireEvent.click(screen.getByRole('radio', { name: 'Emergencia' }));
+      fireEvent.click(screen.getByRole('button', { name: /Continuar/i }));
+
+      // Confirmar paso 2
+      const confirmBtn = screen.getByRole('button', { name: /Sí, cancelar/i });
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(mockCourierCancelTripAction).toHaveBeenCalledWith({
+          requestId: baseTrip.id,
+          reason: 'Emergencia',
+        });
+      });
+    });
+
+    it('TripMerchantContainer transmite actor="merchant" al diálogo y llama a merchantCancelTripAction', async () => {
+      mockMerchantCancelTripAction.mockResolvedValue({ ok: true });
+      render(<TripMerchantContainer trip={baseTrip} />);
+
+      // Abre modal desde la acción en vista
+      const cancelTrigger = screen.getByRole('button', { name: /Cancelar envío/i });
+      fireEvent.click(cancelTrigger);
+
+      // Espera y verifica que el diálogo cargó con razones de merchant (falla si el container pasa actor="courier")
+      await waitFor(() => {
+        expect(screen.getByRole('radio', { name: 'Ya no hace falta' })).toBeDefined();
+        expect(screen.getByRole('radio', { name: 'Me equivoqué en los datos' })).toBeDefined();
+        expect(screen.queryByRole('radio', { name: 'Emergencia' })).toBeNull();
+      });
+
+      // Selecciona motivo de comercio
+      fireEvent.click(screen.getByRole('radio', { name: 'Me equivoqué en los datos' }));
+      fireEvent.click(screen.getByRole('button', { name: /Continuar/i }));
+
+      // Confirmar paso 2
+      const confirmBtn = screen.getByRole('button', { name: /Sí, cancelar/i });
+      fireEvent.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(mockMerchantCancelTripAction).toHaveBeenCalledWith({
+          requestId: baseTrip.id,
+          reason: 'Me equivoqué en los datos',
+        });
+      });
+    });
+  });
 });
-
-
