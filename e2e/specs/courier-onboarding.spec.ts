@@ -866,7 +866,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     await expect(page.getByText(COURIER_ONBOARDING_COPY.optionalDocsTitle)).not.toBeVisible();
 
     // 4. Validación de patente inválida: ingresar patente con formato incorrecto
-    const carOption = page.locator('label').filter({ hasText: /Auto/i });
+    const carOption = page.locator('label:has(input[value="car"])');
     await carOption.click();
 
     const plateInput = page.getByLabel(/Patente del vehículo/i);
@@ -920,7 +920,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     });
     await waitForNoSkeletons(page);
 
-    const bikeOption = page.locator('label').filter({ hasText: /Bicicleta|Bici/i });
+    const bikeOption = page.locator('label:has(input[value="bike"])');
     await bikeOption.click();
     await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
 
@@ -956,7 +956,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
     });
     await waitForNoSkeletons(page);
 
-    const walkOption = page.locator('label').filter({ hasText: /A pie/i });
+    const walkOption = page.locator('label:has(input[value="walk"])');
     await walkOption.click();
     await expect(page.getByLabel(/Patente del vehículo/i)).not.toBeVisible();
 
