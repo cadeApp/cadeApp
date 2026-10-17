@@ -925,6 +925,108 @@ describe('src/server/live/t204.ts: Server-side Live Data Helpers', () => {
         ['status', 'pending'],
       ]);
     });
+
+    it('T-365: filtra funcionalmente 51+ ofertas mixtas y calcula nextCursor conforme solo pending', async () => {
+      const reqBuilder = {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { id: validUuid, merchant_id: mockUser.id },
+              error: null,
+            }),
+          }),
+        }),
+      };
+
+      // 52 ofertas pending y 8 ofertas no pending (cancelled/rejected) con timestamps más recientes
+      const cancelledOffers = Array.from({ length: 8 }, (_, i) => ({
+        id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
+        request_id: validUuid,
+        courier_id: `10000000-0000-0000-0000-${String(100 + i + 1).padStart(12, '0')}`,
+        amount_ars: 1500 + i * 10,
+        eta_minutes: 10,
+        message: null,
+        status: i % 2 === 0 ? 'cancelled' : 'rejected',
+        created_at: `2026-09-26T13:00:${String(i).padStart(2, '0')}.000Z`,
+      }));
+
+      const pendingOffers = Array.from({ length: 52 }, (_, i) => ({
+        id: `11111111-1111-1111-1111-${String(i + 1).padStart(12, '0')}`,
+        request_id: validUuid,
+        courier_id: `10000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
+        amount_ars: 2000 + i * 10,
+        eta_minutes: 15,
+        message: null,
+        status: 'pending',
+        created_at: `2026-09-26T12:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`,
+      }));
+
+      const mixedOffers = [...cancelledOffers, ...pendingOffers];
+
+      let filteredRows = [...mixedOffers];
+      let limitCount = 51;
+      const calls = {
+        eq: [] as unknown[][],
+      };
+
+      const filteringOffersBuilder = {
+        _calls: calls,
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn(function (this: unknown, col: string, val: unknown) {
+          calls.eq.push([col, val]);
+          filteredRows = filteredRows.filter(
+            (r) =>
+              (r as Record<string, unknown>)[col === 'request_id' ? 'request_id' : col] ===
+              (col === 'request_id' ? validUuid : val)
+          );
+          return filteringOffersBuilder;
+        }),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn(function (this: unknown, count: number) {
+          limitCount = count;
+          return filteringOffersBuilder;
+        }),
+        or: vi.fn().mockReturnThis(),
+        then: function (
+          resolve: (value: { data: unknown[]; error: null }) => unknown
+        ) {
+          return Promise.resolve({
+            data: filteredRows.slice(0, limitCount),
+            error: null,
+          }).then(resolve);
+        },
+      };
+
+      const mockFrom = vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_requests') return reqBuilder;
+        if (table === 'offers') return filteringOffersBuilder;
+        return {};
+      });
+
+      vi.mocked(serverSupabase.createClient).mockResolvedValue({
+        auth: {
+          getUser: vi.fn().mockResolvedValue({ data: { user: mockUser }, error: null }),
+        },
+        from: mockFrom,
+        rpc: makeCouriersRpc(
+          validUuid,
+          pendingOffers.map((_, i) => i + 1)
+        ),
+      } as unknown as Awaited<ReturnType<typeof serverSupabase.createClient>>);
+
+      const result = await getRequestOffersLiveServer(validUuid);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('Query live de ofertas falló');
+
+      expect(result.data.data).toHaveLength(50);
+      expect(result.data.data.every((o) => o.status === 'pending')).toBe(true);
+
+      const expected50thPending = pendingOffers[49]!;
+      expect(result.data.nextCursor).toEqual({
+        createdAt: expected50thPending.created_at,
+        id: expected50thPending.id,
+      });
+    });
   });
 
   describe('3.2 getRequestOffersLiveServer — proyección de repartidores (CC-016)', () => {

@@ -84,6 +84,7 @@ export function RequestOffersList({
     isFetchingNextPage,
     isError,
     refetch,
+    isOnline = true,
   } = useRequestOffers(request.id, initialOffers, initialNextCursor ?? null);
   const [sortOrder, setSortOrder] = useState<OfferSortOrder>('doc_level');
   const [selectedOffer, setSelectedOffer] = useState<MerchantOfferItem | null>(null);
@@ -120,25 +121,19 @@ export function RequestOffersList({
     return sortOffersForMerchant(offers, sortOrder);
   }, [offers, sortOrder]);
 
-  const canAccept = request.status === 'published';
+  const canAccept = request.status === 'published' && isOnline;
   const isOfferEligible = (o: MerchantOfferItem) => o.status === 'pending' && canAccept;
 
-  // Si la oferta seleccionada desaparece de la lista actual, cambia a terminal o el pedido deja de estar published, cerrar selección
+  // PR390-H05: Una vez que el hook entrega lista actual, la fuente de verdad de elegibilidad es offers (la query del cliente).
+  // Si la oferta seleccionada desaparece de la lista actual, pasa a terminal o el pedido deja de ser aceptable, cerrar modal.
+  // No borrar acceptError aquí para comunicar error accesible aun si el modal desaparece tras refetch.
   useEffect(() => {
     if (!selectedOffer) return;
-    const currentInOffers = offers.find((o) => o.id === selectedOffer.id);
-    const currentInInitial = initialOffers.find((o) => o.id === selectedOffer.id);
-    const current = currentInOffers ?? currentInInitial;
-    if (
-      !current ||
-      current.status !== 'pending' ||
-      (currentInInitial && currentInInitial.status !== 'pending') ||
-      !canAccept
-    ) {
+    const currentOffer = offers.find((o) => o.id === selectedOffer.id);
+    if (!currentOffer || currentOffer.status !== 'pending' || !canAccept) {
       setSelectedOffer(null);
-      setAcceptError(null);
     }
-  }, [offers, initialOffers, canAccept, selectedOffer]);
+  }, [offers, canAccept, selectedOffer]);
 
   const handleOpenAcceptModal = (offer: MerchantOfferItem) => {
     if (!isOfferEligible(offer)) return;
@@ -153,17 +148,23 @@ export function RequestOffersList({
   };
 
   const handleConfirmAccept = async () => {
-    if (!selectedOffer || !isOfferEligible(selectedOffer)) return;
+    if (!selectedOffer || !canAccept) return;
+    const currentOffer = offers.find((o) => o.id === selectedOffer.id);
+    if (!currentOffer || currentOffer.status !== 'pending') {
+      setSelectedOffer(null);
+      setAcceptError('Esta oferta ya no está disponible.');
+      return;
+    }
 
     setIsSubmitting(true);
     setAcceptError(null);
 
     try {
-      const res = await acceptOfferAction({ offerId: selectedOffer.id });
+      const res = await acceptOfferAction({ offerId: currentOffer.id });
       if (res.ok) {
         notify.success('¡Oferta aceptada! El repartidor ya va en camino.');
         setSelectedOffer(null);
-        onAcceptSuccess?.(selectedOffer.id);
+        onAcceptSuccess?.(currentOffer.id);
       } else {
         if (res.code === 'OFFER_NOT_PENDING') {
           setAcceptError('Esta oferta ya no está disponible.');
@@ -301,6 +302,17 @@ export function RequestOffersList({
           </button>
         </div>
       </div>
+
+      {/* Error accesible si falla la aceptación, visible aun si el modal se cierra */}
+      {acceptError && !selectedOffer && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm font-medium text-destructive"
+        >
+          <AlertTriangle className="h-5 w-5 shrink-0" />
+          <span>{acceptError}</span>
+        </div>
+      )}
 
       {/* Estado de error si la sincronización en vivo falla */}
       {isError && (

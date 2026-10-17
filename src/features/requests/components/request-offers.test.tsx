@@ -2,8 +2,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import React from 'react';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { RequestOffersList } from './request-offers-list';
 import { requestsCopy } from '../copy';
+import { requestKeys } from '../query-keys';
 import type { MerchantOfferItem, MerchantRequestDetail } from '../types';
 import type { RpcOutput } from '@/domain';
 
@@ -48,10 +50,12 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     realtimeCallback = null;
+    onlineManager.setOnline(true);
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    onlineManager.setOnline(true);
   });
 
   async function flushRealtimeSetup() {
@@ -532,55 +536,40 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
   });
 
   describe('T-365: defensa de ofertas elegibles y estados terminales en RequestOffersList', () => {
-    it('impide botón Aceptar si offer.status es cancelled, rejected, expired, withdrawn o ausente', () => {
-      const mixedOffers: MerchantOfferItem[] = [
-        {
-          id: '11111111-1111-1111-1111-111111111111',
-          courierId: '22222222-2222-2222-2222-222222222222',
-          courierName: 'Joaquín Cancelado',
-          vehicleType: 'motorcycle',
-          amountArs: 1800,
-          etaMinutes: 10,
-          message: null,
-          licenseStatus: 'verified',
-          insuranceStatus: 'verified',
-          docLevel: 2,
-          createdAt: '2026-09-24T01:00:00.000Z',
-          status: 'cancelled' as unknown as MerchantOfferItem['status'],
-        },
-        {
-          id: '22222222-2222-2222-2222-222222222222',
-          courierId: '33333333-3333-3333-3333-333333333333',
-          courierName: 'Micaela Rechazada',
-          vehicleType: 'bicycle',
-          amountArs: 1400,
-          etaMinutes: 20,
-          message: null,
-          licenseStatus: 'verified',
-          insuranceStatus: 'none',
-          docLevel: 1,
-          createdAt: '2026-09-24T01:05:00.000Z',
-          status: 'rejected',
-        },
-        {
-          id: '33333333-3333-3333-3333-333333333333',
-          courierId: '44444444-4444-4444-4444-444444444444',
-          courierName: 'Carlos Sin Status',
-          vehicleType: 'auto',
-          amountArs: 2000,
-          etaMinutes: 15,
-          message: null,
-          licenseStatus: 'none',
-          insuranceStatus: 'none',
-          docLevel: 0,
-          createdAt: '2026-09-24T01:02:00.000Z',
-        },
-      ];
+    const nonPendingStatuses = [
+      'accepted',
+      'rejected',
+      'withdrawn',
+      'expired',
+      'cancelled',
+      undefined,
+    ] as const;
 
-      render(<RequestOffersList request={mockRequest} initialOffers={mixedOffers} />);
+    it.each(nonPendingStatuses)(
+      'impide botón Aceptar, no abre modal y no invoca action para oferta con status %s',
+      (status) => {
+        const offerWithStatus: MerchantOfferItem = {
+          ...initialOffers[0]!,
+          status: status as MerchantOfferItem['status'],
+        };
 
-      const acceptButtons = screen.queryAllByRole('button', { name: /aceptar/i });
-      expect(acceptButtons).toHaveLength(0);
+        render(<RequestOffersList request={mockRequest} initialOffers={[offerWithStatus]} />);
+
+        expect(screen.queryByRole('button', { name: /aceptar/i })).toBeNull();
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+      }
+    );
+
+    it('permite botón Aceptar y abre modal para oferta con status pending válido', () => {
+      render(<RequestOffersList request={mockRequest} initialOffers={[initialOffers[0]!]} />);
+
+      const acceptButton = screen.getByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButton);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
     });
 
     it('impide botón Aceptar si request.status no es published (ej: matched)', () => {
@@ -595,7 +584,100 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
       expect(acceptButtons).toHaveLength(0);
     });
 
-    it('cierra el modal si la oferta seleccionada pasa a terminal o desaparece', async () => {
+    it('PR390-H05: cierra modal y no invoca action si query actualiza a lista vacía manteniendo initialOffers inmutable', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      let fetchOffersData: MerchantOfferItem[] = [...initialOffers];
+      vi.spyOn(global, 'fetch').mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: fetchOffersData,
+          nextCursor: null,
+        }),
+      } as Response));
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Entregar por fetch/QueryClient la respuesta posterior { data: [], nextCursor: null }
+      fetchOffersData = [];
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(mockRequest.id) });
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    it('PR390-H05: cierra modal y no invoca action si query actualiza la oferta a estado terminal manteniendo initialOffers inmutable', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      let fetchOffersData: MerchantOfferItem[] = [...initialOffers];
+      vi.spyOn(global, 'fetch').mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: fetchOffersData,
+          nextCursor: null,
+        }),
+      } as Response));
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Actualizar a estado terminal permitido por el contrato de live (withdrawn)
+      fetchOffersData = [
+        {
+          ...initialOffers[0]!,
+          status: 'withdrawn',
+        },
+      ];
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(mockRequest.id) });
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    it('cierra modal y bloquea confirmación si request deja de ser published', async () => {
       const { rerender } = render(
         <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
       );
@@ -607,42 +689,208 @@ describe('T-113 DoD: UI de ofertas en tiempo real y aceptación', () => {
         screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
       ).toBeDefined();
 
-      // Cambia la oferta seleccionada a cancelled
-      const updatedOffers: MerchantOfferItem[] = [
-        {
-          ...initialOffers[0]!,
-          status: 'cancelled' as unknown as MerchantOfferItem['status'],
-        },
-        initialOffers[1]!,
-        initialOffers[2]!,
-      ];
-
-      rerender(<RequestOffersList request={mockRequest} initialOffers={updatedOffers} />);
+      rerender(
+        <RequestOffersList
+          request={{ ...mockRequest, status: 'matched' }}
+          initialOffers={initialOffers}
+        />
+      );
 
       await waitFor(() => {
         expect(
           screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
         ).toBeNull();
       });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
     });
 
-    it('tras OFFER_NOT_PENDING presenta error apropiado en el modal y refetchea', async () => {
+    it('online -> offline -> reconnect con respuesta tardía: no permite aceptar instantáneas offline y cierra modal', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      vi.spyOn(global, 'fetch').mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: [...initialOffers],
+          nextCursor: null,
+        }),
+      } as Response));
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      // Abrir modal online
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Transición a offline: UI debe cerrar modal e impedir aceptación de instantáneas offline
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+      expect(screen.queryAllByRole('button', { name: /aceptar/i })).toHaveLength(0);
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+
+      // Configurar respuesta tardía para reconnect
+      let resolveLateFetch: ((value: Response) => void) | null = null;
+      const lateFetchPromise = new Promise<Response>((resolve) => {
+        resolveLateFetch = resolve;
+      });
+      vi.spyOn(global, 'fetch').mockImplementation(() => lateFetchPromise);
+
+      // Transición a reconnect: onlineManager -> true
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+
+      // La respuesta tardía finalmente llega con la oferta retirada
+      await act(async () => {
+        if (resolveLateFetch) {
+          resolveLateFetch({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [],
+              nextCursor: null,
+            }),
+          } as Response);
+        }
+        await lateFetchPromise;
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    it('handleConfirmAccept valida membresía en offers y no llama a acceptOfferAction si la oferta desapareció', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      let fetchOffersData: MerchantOfferItem[] = [...initialOffers];
+      vi.spyOn(global, 'fetch').mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          data: fetchOffersData,
+          nextCursor: null,
+        }),
+      } as Response));
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
+
+      const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
+      fireEvent.click(acceptButtons[0]!);
+
+      expect(
+        screen.getByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+      ).toBeDefined();
+
+      // Desaparece la oferta de la query
+      fetchOffersData = [];
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: requestKeys.offers(mockRequest.id) });
+      });
+
+      // El modal se cierra inmediatamente porque la oferta ya no existe en offers
+      await waitFor(() => {
+        expect(
+          screen.queryByRole('heading', { name: /¿Aceptás la oferta de Joaquín R.\?/i })
+        ).toBeNull();
+      });
+
+      expect(mockAcceptOfferAction).not.toHaveBeenCalled();
+    });
+
+    it('tras OFFER_NOT_PENDING invoca refetch/fetch, la respuesta actualizada elimina la oferta y el error se anuncia al usuario', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+
       mockAcceptOfferAction.mockResolvedValueOnce({
         ok: false,
         code: 'OFFER_NOT_PENDING',
       });
 
-      render(<RequestOffersList request={mockRequest} initialOffers={initialOffers} />);
+      // Inicialmente devuelve initialOffers; tras refetch traerá la lista sin la oferta obsoleta (Joaquín R.)
+      let fetchCount = 0;
+      const remainingOffers = [initialOffers[1]!, initialOffers[2]!];
+      const fetchSpy = vi.spyOn(global, 'fetch').mockImplementation(async () => {
+        fetchCount += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: fetchCount === 1 ? initialOffers : remainingOffers,
+            nextCursor: null,
+          }),
+        } as Response;
+      });
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RequestOffersList request={mockRequest} initialOffers={initialOffers} />
+        </QueryClientProvider>
+      );
+
+      await flushRealtimeSetup();
 
       const acceptButtons = screen.getAllByRole('button', { name: /aceptar/i });
       fireEvent.click(acceptButtons[0]!);
 
       const confirmButton = screen.getByRole('button', { name: /sí, aceptar/i });
-      fireEvent.click(confirmButton);
-
-      await waitFor(() => {
-        expect(screen.getByText('Esta oferta ya no está disponible.')).toBeDefined();
+      await act(async () => {
+        fireEvent.click(confirmButton);
       });
+
+      // 1. mockAcceptOfferAction fue invocado
+      expect(mockAcceptOfferAction).toHaveBeenCalledWith({
+        offerId: initialOffers[0]!.id,
+      });
+
+      // 2. refetch() invoca fetch
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalled();
+      });
+
+      // 3. La respuesta actualizada elimina la oferta obsoleta del DOM
+      await waitFor(() => {
+        expect(screen.queryByText('Joaquín R.')).toBeNull();
+      });
+
+      // 4. El modal se cierra
+      expect(screen.queryByRole('dialog')).toBeNull();
+
+      // 5. El error se anuncia al usuario de forma accesible (role="alert")
+      const alerts = screen.getAllByRole('alert');
+      const errorAlert = alerts.find((a) =>
+        a.textContent?.includes('Esta oferta ya no está disponible.')
+      );
+      expect(errorAlert).toBeDefined();
     });
   });
 });

@@ -68,6 +68,17 @@ export function useRequestOffers(
   // T-333: generación de cada fetch, incrementada al entrar realmente al queryFn (ver latch de reconexión).
   const fetchGenerationRef = useRef(0);
 
+  const [isOnline, setIsOnline] = useState(() => onlineManager.isOnline());
+
+  useEffect(() => {
+    const unsubscribe = onlineManager.subscribe((online) => {
+      setIsOnline(online);
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   const query = useInfiniteQuery(
     {
       queryKey,
@@ -224,6 +235,7 @@ export function useRequestOffers(
     isError: query.isError,
     error: query.error,
     refetch: query.refetch,
+    isOnline,
   };
 }
 
