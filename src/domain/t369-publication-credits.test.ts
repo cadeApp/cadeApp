@@ -321,3 +321,164 @@ describe('T-369 / CC-029 — fake de créditos', () => {
     ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
   });
 });
+
+describe('T-369 / CC-029 — fake: administración y bordes', () => {
+  const quota = (code: string, monthlyCredits = 5, active = true) => ({
+    planId: null,
+    code,
+    name: code,
+    kind: 'quota' as const,
+    monthlyCredits,
+    referencePriceArs: null,
+    active,
+    sort: 1,
+  });
+
+  it('parámetros nuevos: se guardan y base/tope se validan entre sí', async () => {
+    const t = setup();
+    t.asAdmin();
+    for (const [settingKey, value] of [
+      ['publication_drops_per_credit', 3],
+      ['carryover_base_pct', 10],
+      ['carryover_step_pct', 2],
+      ['carryover_cap_pct', 20],
+      ['launch_discount_pct', 15],
+      ['loose_credit_reference_price_ars', 900],
+    ] as const) {
+      expect((await t.fake.admin_update_setting({ key: settingKey, value })).ok).toBe(true);
+    }
+    expect(await t.fake.admin_update_setting({ key: 'carryover_base_pct', value: 21 })).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
+    expect(await t.fake.admin_update_setting({ key: 'carryover_cap_pct', value: 9 })).toEqual({ ok: false, code: 'INVALID_SETTING_VALUE' });
+
+    await t.grant(5, 1);
+    await t.publish(requestId(1), 4);
+    expect(t.current(requestId(1))?.cost).toBe(2);
+    t.asAdmin();
+    const first = await t.fake.admin_grant_publication_credits({ merchantId: MERCHANT, credits: 1, source: 'purchase', operationKey: key(2) });
+    expect(first.ok && first.data.launchDiscountPct).toBe(15);
+  });
+
+  it('catálogo: código duplicado, inexistente, cambio de cupo en uso y desactivación', async () => {
+    const t = setup();
+    t.asAdmin();
+    const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a'));
+    if (!plan.ok) throw new Error(plan.code);
+    expect(await t.fake.admin_upsert_publication_plan(quota('plan-a'))).toEqual({ ok: false, code: 'VALIDATION_ERROR' });
+    expect(await t.fake.admin_upsert_publication_plan({ ...quota('plan-b'), planId: key(99) })).toEqual({ ok: false, code: 'NOT_FOUND' });
+    expect((await t.fake.admin_upsert_publication_plan({ ...quota('plan-a', 8), planId: plan.data.planId })).ok).toBe(true);
+
+    await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(1) });
+    expect(await t.fake.admin_upsert_publication_plan({ ...quota('plan-a', 10), planId: plan.data.planId })).toEqual({ ok: false, code: 'PLAN_IN_USE' });
+    const renamed = await t.fake.admin_upsert_publication_plan({ ...quota('plan-a', 8, false), name: 'Plan A', planId: plan.data.planId });
+    expect(renamed.ok && renamed.data).toMatchObject({ name: 'Plan A', active: false });
+    expect(
+      await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(2) })
+    ).toEqual({ ok: false, code: 'PLAN_INACTIVE' });
+  });
+
+  it('registro de período: inexistentes, reintento idempotente y conflicto', async () => {
+    const t = setup();
+    t.asAdmin();
+    const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a'));
+    if (!plan.ok) throw new Error(plan.code);
+    expect(
+      await t.fake.admin_grant_publication_credits({ merchantId: COURIER, credits: 1, source: 'adjustment', operationKey: key(1) })
+    ).toEqual({ ok: false, code: 'NOT_FOUND' });
+    expect(
+      await t.fake.admin_register_plan_period({ merchantId: COURIER, planId: plan.data.planId, isPurchase: false, operationKey: key(1) })
+    ).toEqual({ ok: false, code: 'NOT_FOUND' });
+    expect(
+      await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: key(98), isPurchase: false, operationKey: key(1) })
+    ).toEqual({ ok: false, code: 'NOT_FOUND' });
+    const input = { merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(2) };
+    const created = await t.fake.admin_register_plan_period(input);
+    const retry = await t.fake.admin_register_plan_period(input);
+    expect(created.ok && retry.ok && retry.data.periodId === created.data.periodId && retry.data.idempotent).toBe(true);
+    expect(await t.fake.admin_register_plan_period({ ...input, isPurchase: true })).toEqual({ ok: false, code: 'IDEMPOTENCY_CONFLICT' });
+  });
+
+  it('fuera de la gracia la racha vuelve a 1 y 2-A arranca al terminar el derecho legacy', async () => {
+    const t = setup();
+    t.asAdmin();
+    const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a'));
+    if (!plan.ok) throw new Error(plan.code);
+    const first = await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(1) });
+    if (!first.ok) throw new Error(first.code);
+    t.advance(Date.parse(first.data.endsAt) - Date.parse(first.data.startsAt) + 4 * 86_400_000);
+    t.asAdmin();
+    const late = await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(2) });
+    expect(late.ok && late.data).toMatchObject({ streak: 1, carryoverPct: 0 });
+
+    const legacy = setup();
+    legacy.setMerchant('active', '2026-11-30');
+    legacy.asMerchant();
+    legacy.asAdmin();
+    const legacyPlan = await legacy.fake.admin_upsert_publication_plan(quota('plan-a'));
+    if (!legacyPlan.ok) throw new Error(legacyPlan.code);
+    const scheduled = await legacy.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: legacyPlan.data.planId, isPurchase: false, operationKey: key(3) });
+    expect(scheduled.ok && scheduled.data.startsAt).toBe('2026-12-04T03:00:00.000Z');
+    expect((await legacy.balance()).scheduled).toBe(5);
+    legacy.asAdmin();
+    expect(
+      await legacy.fake.admin_set_subscription({ merchantId: MERCHANT, subscriptionStatus: 'active', paidUntil: '2026-12-15' })
+    ).toEqual({ ok: false, code: 'INVALID_STATE_TRANSITION' });
+    expect((await legacy.fake.admin_set_subscription({ merchantId: MERCHANT, subscriptionStatus: 'expired', paidUntil: null })).ok).toBe(true);
+  });
+
+  it('lecturas: paginado del ledger, comercio inexistente y saldo solo para comercios', async () => {
+    const t = setup();
+    for (let n = 1; n <= 3; n += 1) await t.grant(1, n);
+    t.asAdmin();
+    const firstPage = await t.fake.admin_get_merchant_publication_credits({ merchantId: MERCHANT, limit: 2 });
+    if (!firstPage.ok) throw new Error(firstPage.code);
+    expect(firstPage.data.movements).toHaveLength(2);
+    expect(firstPage.data.nextCursor).not.toBeNull();
+    const secondPage = await t.fake.admin_get_merchant_publication_credits({ merchantId: MERCHANT, limit: 2, beforeId: firstPage.data.nextCursor });
+    expect(secondPage.ok && secondPage.data.movements.length === 1 && secondPage.data.nextCursor === null).toBe(true);
+    expect(await t.fake.admin_get_merchant_publication_credits({ merchantId: COURIER })).toEqual({ ok: false, code: 'NOT_FOUND' });
+    t.asCourier();
+    expect(await t.fake.get_my_publication_balance({})).toEqual({ ok: false, code: 'UNAUTHORIZED_ACTOR' });
+  });
+
+  it('saldo con piloto encendido refleja piloto, legacy y vencido', async () => {
+    const t = setup({ pilotActive: true });
+    expect(await t.balance()).toMatchObject({ mode: 'pilot', canPublish: true });
+    t.setMerchant('active', '2026-11-30');
+    expect(await t.balance()).toMatchObject({ mode: 'legacy_paid', canPublish: true });
+    t.setMerchant('expired');
+    expect(await t.balance()).toMatchObject({ mode: 'credits', canPublish: false });
+  });
+
+  it('cancelar antes del match libera y la cancelación del repartidor devuelve el consumo a reserva', async () => {
+    const t = setup();
+    await t.grant(2, 1);
+    await t.publish(requestId(1));
+    t.asMerchant();
+    expect((await t.fake.cancel_request({ requestId: requestId(1), reason: null })).ok).toBe(true);
+    expect(t.fake.getPublicationCharges(requestId(1))[0]?.state).toBe('released');
+    expect((await t.balance()).available).toBe(2);
+
+    await t.publish(requestId(2));
+    await t.match(requestId(2));
+    t.asCourier();
+    expect((await t.fake.courier_cancel_match({ requestId: requestId(2), reason: 'Se me pinchó la rueda' })).ok).toBe(true);
+    expect(t.current(requestId(2))?.state).toBe('reserved');
+    expect((await t.balance()).reserved).toBe(1);
+  });
+
+  it('D-C7: liberar una reserva de un lote ya vencido la convierte en un crédito suelto, una vez', async () => {
+    const t = setup();
+    t.asAdmin();
+    const plan = await t.fake.admin_upsert_publication_plan(quota('plan-a', 1));
+    if (!plan.ok) throw new Error(plan.code);
+    const period = await t.fake.admin_register_plan_period({ merchantId: MERCHANT, planId: plan.data.planId, isPurchase: false, operationKey: key(1) });
+    if (!period.ok) throw new Error(period.code);
+    t.advance(Date.parse(period.data.endsAt) - Date.parse(period.data.startsAt) - 10 * 60_000);
+    expect((await t.publish(requestId(1))).ok).toBe(true);
+    t.advance(31 * 60_000);
+    const balance = await t.balance();
+    expect(balance.available).toBe(1);
+    expect(balance.lots).toEqual([expect.objectContaining({ kind: 'loose', available: 1 })]);
+    expect((await t.balance()).lots).toHaveLength(1);
+  });
+});
