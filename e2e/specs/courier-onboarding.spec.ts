@@ -1499,12 +1499,17 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
   // ---------------------------------------------------------------------------
   test('T-367: Cadete habilitado con avatar verificado ve su foto real en /courier/profile, con fallback si no está verificado', async ({
     page,
+    browser,
     stagingContext,
     loginAsCourier,
   }) => {
     const courier = stagingContext.courierUsers?.[0];
     if (!courier) {
       throw new Error('[E2E Error] Se requiere courier en stagingContext');
+    }
+    const courier1 = stagingContext.courierUsers?.[1];
+    if (!courier1) {
+      throw new Error('[E2E Error] Se requiere segundo courier para aislamiento');
     }
     const dbAdmin = createAdminClient();
 
@@ -1552,28 +1557,30 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
         .toBeGreaterThan(0);
 
       // 5. Aislamiento estricto entre usuarios: segundo courier de stagingContext
-      const courier1 = stagingContext.courierUsers?.[1];
-      if (courier1) {
-        await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier1.id);
+      await dbAdmin.from('couriers').update({ status: 'approved' }).eq('profile_id', courier1.id);
 
-        // Cliente autenticado de courier 1 NO puede generar URL firmada para el objeto de courier 0 por RLS
-        const courier1Client = await createAuthenticatedClient(courier1);
-        const { data: crossSigned, error: crossSignedError } = await courier1Client.storage
-          .from(COURIER_DOCS_BUCKET)
-          .createSignedUrl(storagePath, 300);
+      // Cliente autenticado de courier 1 NO puede generar URL firmada para el objeto de courier 0 por RLS
+      const courier1Client = await createAuthenticatedClient(courier1);
+      const { data: crossSigned, error: crossSignedError } = await courier1Client.storage
+        .from(COURIER_DOCS_BUCKET)
+        .createSignedUrl(storagePath, 300);
 
-        expect(crossSigned?.signedUrl == null || crossSignedError != null).toBe(true);
+      expect(crossSigned?.signedUrl == null || crossSignedError != null).toBe(true);
 
-        // En la sesión de courier 1 (ausencia de avatar verificado propio), se muestra fallback y nunca la foto ajena
-        await loginAsCourier(1, page);
-        await page.goto('/courier/profile');
-        await waitForNoSkeletons(page);
-        await expect(page.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
-        await expect(page.locator('svg.lucide-user').first()).toBeVisible();
+      // En la sesión de courier 1 (en contexto aislado), se muestra fallback y nunca la foto ajena
+      const otherContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+      try {
+        const otherPage = await otherContext.newPage();
+        await loginAsCourier(1, otherPage);
+        await otherPage.goto('/courier/profile');
+        await waitForNoSkeletons(otherPage);
+        await expect(otherPage.locator('img[alt^="Foto de perfil de"]')).not.toBeVisible();
+        await expect(otherPage.locator('svg.lucide-user').first()).toBeVisible();
+      } finally {
+        await otherContext.close();
       }
 
-      // 6. Volver a courier 0 y verificar fallback cuando el avatar es rechazado
-      await loginAsCourier(0, page);
+      // 6. Volver a courier 0 (conserva su sesión en page) y verificar fallback cuando el avatar es rechazado
       await dbAdmin
         .from('courier_documents')
         .update({ status: 'rejected' })
