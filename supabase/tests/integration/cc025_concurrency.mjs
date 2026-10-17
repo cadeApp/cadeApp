@@ -657,10 +657,10 @@ async function runR06MutationCheck(courierId, docId) {
 
     // Revertir estado del documento para que vuelva a estar rejected
     runSql(`
+      delete from public.courier_documents where id <> '${docId}' and courier_id = '${courierId}';
       update public.courier_documents
       set status = 'rejected', rejection_code = 'illegible', is_current = true
       where id = '${docId}';
-      delete from public.courier_documents where id <> '${docId}' and courier_id = '${courierId}';
     `);
 
     // Probar badPath bajo la migración original: debe fallar con VALIDATION_ERROR
