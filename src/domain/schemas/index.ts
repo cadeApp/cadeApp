@@ -25,6 +25,17 @@ export const DOCUMENT_REVIEW_STATUSES = ['none', 'submitted', 'verified', 'rejec
 export type DocumentReviewStatus = (typeof DOCUMENT_REVIEW_STATUSES)[number];
 export const documentReviewStatusSchema = z.enum(DOCUMENT_REVIEW_STATUSES);
 
+export const DOCUMENT_REJECTION_CODES = [
+  'illegible',
+  'expired',
+  'data_mismatch',
+  'wrong_type',
+  'incomplete',
+  'other_safe',
+] as const;
+export type DocumentRejectionCode = (typeof DOCUMENT_REJECTION_CODES)[number];
+export const documentRejectionCodeSchema = z.enum(DOCUMENT_REJECTION_CODES);
+
 export const COURIER_DOCUMENT_KINDS = [
   'dni_front',
   'dni_back',

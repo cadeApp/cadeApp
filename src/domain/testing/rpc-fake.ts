@@ -14,6 +14,7 @@ import {
   type CourierDocumentKind,
   type CourierStatus,
   type DeliveryRequestStatus,
+  type DocumentRejectionCode,
   type DocumentReviewStatus,
   type IncidentKind,
   type IncidentStatus,
@@ -239,6 +240,11 @@ export interface FakeSeedDocument {
   readonly courierId: string;
   readonly kind: CourierDocumentKind;
   readonly status: DocumentReviewStatus;
+  readonly isCurrent?: boolean;
+  readonly rejectionCode?: DocumentRejectionCode | null;
+  readonly storagePath?: string;
+  readonly purgeAfter?: string | null;
+  readonly idempotencyKey?: string | null;
 }
 
 export interface FakeDocumentRecord {
@@ -246,6 +252,11 @@ export interface FakeDocumentRecord {
   readonly courierId: string;
   readonly kind: CourierDocumentKind;
   status: DocumentReviewStatus;
+  isCurrent: boolean;
+  rejectionCode: DocumentRejectionCode | null;
+  storagePath: string;
+  purgeAfter: string | null;
+  idempotencyKey: string | null;
 }
 
 export interface FakeSeedIncident {
@@ -299,6 +310,7 @@ export interface FakeRpcClient extends RpcClientContract {
   readonly seedMerchant: (merchant: FakeSeedMerchant) => void;
   readonly deleteMerchant: (merchantId: string) => void;
   readonly seedDocument: (doc: FakeSeedDocument) => void;
+  readonly getDocument: (documentId: string) => FakeDocumentRecord | undefined;
   readonly seedIncident: (incident: FakeSeedIncident) => void;
   readonly getIncident: (incidentId: string) => FakeIncidentRecord | undefined;
   readonly getRequest: (requestId: string) => FakeRequestRecord | undefined;
@@ -345,6 +357,7 @@ const ALLOWED_ROLES_BY_RPC: { readonly [K in RpcName]: readonly ProfileRole[] } 
   get_trip_details: ['merchant', 'courier'],
   get_request_offer_couriers: ['merchant'],
   get_merchant_request_private_fields: ['merchant'],
+  replace_courier_document: ['courier'],
   admin_decide_courier: ['admin'],
   admin_suspend_courier: ['admin'],
   admin_verify_document: ['admin'],
@@ -599,6 +612,28 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     });
   }
 
+  function putDocument(d: FakeSeedDocument) {
+    const isCurrent = d.isCurrent !== false;
+    if (isCurrent) {
+      for (const existing of documents.values()) {
+        if (existing.courierId === d.courierId && existing.kind === d.kind) {
+          existing.isCurrent = false;
+        }
+      }
+    }
+    documents.set(d.documentId, {
+      documentId: d.documentId,
+      courierId: d.courierId,
+      kind: d.kind,
+      status: d.status,
+      isCurrent,
+      rejectionCode: d.rejectionCode ?? null,
+      storagePath: d.storagePath ?? `courier/${d.courierId}/${d.kind}_default.jpg`,
+      purgeAfter: d.purgeAfter ?? null,
+      idempotencyKey: d.idempotencyKey ?? null,
+    });
+  }
+
   function putIncident(i: FakeSeedIncident) {
     incidents.set(i.incidentId, {
       incidentId: i.incidentId,
@@ -635,7 +670,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
   (options.initialOffers ?? []).forEach((o) => offers.set(o.offerId, { ...o }));
   (options.initialCouriers ?? []).forEach(putCourier);
   (options.initialMerchants ?? []).forEach(putMerchant);
-  (options.initialDocuments ?? []).forEach((d) => documents.set(d.documentId, { ...d }));
+  (options.initialDocuments ?? []).forEach(putDocument);
   (options.initialIncidents ?? []).forEach(putIncident);
 
   function checkCourierEligibility(): ActionResult<
@@ -683,7 +718,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         rpcName === 'reconcile_expired_requests' ||
         rpcName === 'report_incident' ||
         rpcName === 'submit_offer' ||
-        rpcName === 'take_request') &&
+        rpcName === 'take_request' ||
+        rpcName === 'replace_courier_document') &&
       (actor.consentStatus ?? 'active') !== 'active'
     ) {
       return err('UNAUTHORIZED_ACTOR' as RpcErrorCode<K>);
@@ -772,7 +808,8 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
     deleteMerchant: (merchantId) => {
       merchants.delete(merchantId);
     },
-    seedDocument: (d) => documents.set(d.documentId, { ...d }),
+    seedDocument: putDocument,
+    getDocument: (documentId) => documents.get(documentId),
     seedIncident: putIncident,
     getIncident: (incidentId) => incidents.get(incidentId),
     getRequest: (requestId) => requests.get(requestId),
@@ -2201,6 +2238,102 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         });
       }),
 
+    replace_courier_document: (rawInput) =>
+      executeRpc('replace_courier_document', rawInput, false, (input) => {
+        const courier = couriers.get(actor.userId);
+        if (!courier) return err('NOT_FOUND');
+        if (courier.status === 'rejected' || courier.status === 'suspended') {
+          return err('UNAUTHORIZED_ACTOR');
+        }
+
+        const prefix = `courier/${actor.userId}/${input.kind}_`;
+        if (!input.storagePath.startsWith(prefix) || input.storagePath.includes('..')) {
+          return err('VALIDATION_ERROR');
+        }
+
+        if (input.idempotencyKey) {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          if (!uuidRegex.test(input.idempotencyKey)) {
+            return err('VALIDATION_ERROR');
+          }
+
+          for (const d of documents.values()) {
+            if (d.courierId === actor.userId && d.kind === input.kind && d.idempotencyKey === input.idempotencyKey) {
+              if (d.storagePath !== input.storagePath) {
+                return err('VALIDATION_ERROR');
+              }
+              return ok({
+                documentId: d.documentId,
+                kind: d.kind,
+                status: d.status,
+                replacedDocumentId: null,
+                isCurrent: d.isCurrent,
+                idempotent: true,
+              });
+            }
+          }
+        }
+
+        let currentDoc: FakeDocumentRecord | undefined;
+        for (const d of documents.values()) {
+          if (d.courierId === actor.userId && d.kind === input.kind && d.isCurrent) {
+            currentDoc = d;
+            break;
+          }
+        }
+
+        if (!currentDoc) {
+          return err('NOT_FOUND');
+        }
+
+        if (currentDoc.status === 'submitted' && currentDoc.storagePath === input.storagePath) {
+          return ok({
+            documentId: currentDoc.documentId,
+            kind: currentDoc.kind,
+            status: currentDoc.status,
+            replacedDocumentId: null,
+            isCurrent: true,
+            idempotent: true,
+          });
+        }
+
+        if (currentDoc.status !== 'rejected') {
+          return err('INVALID_STATE_TRANSITION');
+        }
+
+        currentDoc.isCurrent = false;
+        currentDoc.purgeAfter = new Date(nowFn().getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+        const newDocId = crypto.randomUUID();
+        const newDoc: FakeDocumentRecord = {
+          documentId: newDocId,
+          courierId: actor.userId,
+          kind: input.kind,
+          status: 'submitted',
+          isCurrent: true,
+          rejectionCode: null,
+          storagePath: input.storagePath,
+          purgeAfter: null,
+          idempotencyKey: input.idempotencyKey ?? null,
+        };
+        documents.set(newDocId, newDoc);
+
+        if (input.kind === 'license') {
+          courier.licenseStatus = 'submitted';
+        } else if (input.kind === 'insurance') {
+          courier.insuranceStatus = 'submitted';
+        }
+
+        return ok({
+          documentId: newDocId,
+          kind: input.kind,
+          status: 'submitted',
+          replacedDocumentId: currentDoc.documentId,
+          isCurrent: true,
+          idempotent: false,
+        });
+      }),
+
     calculate_route_distance: (rawInput) =>
       executeRpc('calculate_route_distance', rawInput, false, (input) => {
         if (
@@ -2282,13 +2415,18 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
         }
         const doc = documents.get(input.documentId);
         if (!doc) return err('NOT_FOUND');
+        if (!doc.isCurrent) {
+          return err('INVALID_STATE_TRANSITION');
+        }
         if (doc.status !== 'submitted') {
           return err('INVALID_STATE_TRANSITION');
         }
         const courier = couriers.get(doc.courierId);
         if (!courier) return err('NOT_FOUND');
 
+        const rejectionCode = input.decision === 'rejected' ? (input.rejectionCode ?? 'other_safe') : null;
         doc.status = input.decision;
+        doc.rejectionCode = rejectionCode;
         if (doc.kind === 'license') courier.licenseStatus = input.decision;
         if (doc.kind === 'insurance') courier.insuranceStatus = input.decision;
         const docLevel = computeDocLevel(courier.licenseStatus, courier.insuranceStatus);
@@ -2298,6 +2436,7 @@ export function createFakeRpcClient(options: FakeRpcOptions): FakeRpcClient {
           courierId: doc.courierId,
           kind: doc.kind,
           status: doc.status,
+          rejectionCode,
           docLevel,
         });
       }),
