@@ -67,7 +67,9 @@ async function resetCourierToPendingOnboarding(courierId: string): Promise<void>
 /**
  * Enrola y verifica un factor TOTP para el admin conservando el secret para uso en el navegador (H04).
  */
-async function enrollAdminTotpFactor(admin: UserCredentials): Promise<{ secret: string }> {
+async function enrollAdminTotpFactor(
+  admin: UserCredentials
+): Promise<{ secret: string; client: Awaited<ReturnType<typeof createAuthenticatedClient>> }> {
   const adminClient = await createAuthenticatedClient(admin);
   const { data: factors, error: listErr } = await adminClient.auth.mfa.listFactors();
   if (listErr) {
@@ -97,7 +99,7 @@ async function enrollAdminTotpFactor(admin: UserCredentials): Promise<{ secret: 
     throw new Error(`[E2E MFA Error] Falló verificación inicial de factor: ${verifyErr.message}`);
   }
 
-  return { secret };
+  return { secret, client: adminClient };
 }
 
 /**
@@ -894,8 +896,7 @@ test.describe('T-302 — E2E de onboarding del repartidor, aprobación con MFA y
 
       // 2. PR358-R03: Rechazar la licencia mediante la RPC real admin_verify_document con AAL2 y nota centinela privada
       const admin = await seedAdminUser(stagingContext);
-      const adminClient = await createAuthenticatedClient(admin);
-      const { secret: totpSecret } = await enrollAdminTotpFactor(admin);
+      const { secret: totpSecret, client: adminClient } = await enrollAdminTotpFactor(admin);
 
       const sentinelPrivateNote = `PRIVATE_SENTINEL_NOTE_${stagingContext.testRunId}`;
       const { data: rejectData, error: rejectError } = await adminClient.rpc(
