@@ -120,7 +120,28 @@ export function RequestOffersList({
     return sortOffersForMerchant(offers, sortOrder);
   }, [offers, sortOrder]);
 
+  const canAccept = request.status === 'published';
+  const isOfferEligible = (o: MerchantOfferItem) => o.status === 'pending' && canAccept;
+
+  // Si la oferta seleccionada desaparece de la lista actual, cambia a terminal o el pedido deja de estar published, cerrar selección
+  useEffect(() => {
+    if (!selectedOffer) return;
+    const currentInOffers = offers.find((o) => o.id === selectedOffer.id);
+    const currentInInitial = initialOffers.find((o) => o.id === selectedOffer.id);
+    const current = currentInOffers ?? currentInInitial;
+    if (
+      !current ||
+      current.status !== 'pending' ||
+      (currentInInitial && currentInInitial.status !== 'pending') ||
+      !canAccept
+    ) {
+      setSelectedOffer(null);
+      setAcceptError(null);
+    }
+  }, [offers, initialOffers, canAccept, selectedOffer]);
+
   const handleOpenAcceptModal = (offer: MerchantOfferItem) => {
+    if (!isOfferEligible(offer)) return;
     setAcceptError(null);
     setSelectedOffer(offer);
   };
@@ -132,7 +153,7 @@ export function RequestOffersList({
   };
 
   const handleConfirmAccept = async () => {
-    if (!selectedOffer) return;
+    if (!selectedOffer || !isOfferEligible(selectedOffer)) return;
 
     setIsSubmitting(true);
     setAcceptError(null);
@@ -144,12 +165,17 @@ export function RequestOffersList({
         setSelectedOffer(null);
         onAcceptSuccess?.(selectedOffer.id);
       } else {
-        if (res.code === 'ALREADY_MATCHED') {
+        if (res.code === 'OFFER_NOT_PENDING') {
+          setAcceptError('Esta oferta ya no está disponible.');
+          void refetch();
+        } else if (res.code === 'ALREADY_MATCHED') {
           setAcceptError(
             'Esta solicitud ya fue asignada a otro repartidor o la oferta no está disponible.'
           );
+          void refetch();
         } else if (res.code === 'REQUEST_EXPIRED') {
           setAcceptError('La solicitud ha expirado.');
+          void refetch();
         } else {
           setAcceptError('No se pudo aceptar la oferta. Por favor, intentá nuevamente.');
         }
@@ -372,13 +398,15 @@ export function RequestOffersList({
                   </div>
                 </div>
 
-                <Button
-                  type="button"
-                  variant="default"
-                  onClick={() => handleOpenAcceptModal(offer)}
-                >
-                  Aceptar
-                </Button>
+                {isOfferEligible(offer) && (
+                  <Button
+                    type="button"
+                    variant="default"
+                    onClick={() => handleOpenAcceptModal(offer)}
+                  >
+                    Aceptar
+                  </Button>
+                )}
               </div>
             </Card>
           ))}
@@ -468,6 +496,7 @@ export function RequestOffersList({
               type="button"
               variant="default"
               isPending={isSubmitting}
+              disabled={!selectedOffer || !isOfferEligible(selectedOffer) || isSubmitting}
               onClick={handleConfirmAccept}
             >
               Sí, aceptar
