@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import React from 'react';
 import { TripMerchantView } from './components/trip-merchant-view';
 import { TripCourierView } from './components/trip-courier-view';
@@ -58,6 +58,13 @@ vi.mock('@vis.gl/react-google-maps', () => ({
   AdvancedMarker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   Polyline: () => null,
 }));
+
+function asHtmlElement(el: Element | null | undefined): HTMLElement {
+  if (!el || !(el instanceof HTMLElement)) {
+    throw new Error('Element is not an HTMLElement');
+  }
+  return el;
+}
 
 describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
   const baseTrip: TripDetails = {
@@ -311,6 +318,244 @@ describe('T-115 DoD: Componentes visuales C06, R07 y T05 (H10)', () => {
       expect(waBtn.className).toContain('text-whatsapp-foreground');
       expect(waBtn.getAttribute('href')).toContain('5493865111111');
       expect(waBtn.getAttribute('href')).not.toContain('5493865123456');
+    });
+
+    const getCardContainer = (heading: HTMLElement): HTMLElement => {
+      const container = heading.closest('.shadow-card') ?? heading.parentElement?.parentElement;
+      if (!container || !(container instanceof HTMLElement)) {
+        throw new Error('Card container not found');
+      }
+      return container;
+    };
+
+    it('T-359 C: legacy single sin drops muestra Medio de pago en Card Repartidor asignado para cash, transfer y to_agree', () => {
+      const cases: Array<{ method: 'cash' | 'transfer' | 'to_agree'; label: string }> = [
+        { method: 'cash', label: 'Efectivo' },
+        { method: 'transfer', label: 'Transferencia' },
+        { method: 'to_agree', label: 'A coordinar' },
+      ];
+
+      for (const { method, label } of cases) {
+        const { unmount } = render(
+          <TripMerchantView
+            trip={{
+              ...baseTrip,
+              recipientPaymentMethod: method,
+              drops: undefined,
+            }}
+          />
+        );
+
+        const heading = screen.getByRole('heading', { level: 2, name: /repartidor asignado/i });
+        const card = getCardContainer(heading);
+        const paymentP = within(card).getByText(
+          (_, el) => el?.tagName === 'P' && new RegExp(`Medio de pago:\\s*${label}`, 'i').test(el.textContent ?? '')
+        );
+        expect(paymentP).toBeDefined();
+
+        // Verificar que no hay texto de pago dentro del bloque "Avisale a tu cliente"
+        const customerHeading = screen.getByRole('heading', { level: 2, name: /avisale a tu cliente/i });
+        const customerCard = getCardContainer(customerHeading);
+        const leakedPayment = within(customerCard).queryByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:/i.test(el.textContent ?? '')
+        );
+        expect(leakedPayment).toBeNull();
+
+        unmount();
+      }
+    });
+
+    it('T-359 C: single con drops=[...] de 1 entrega usa drop.recipientPaymentMethod incluso si difiere del global', () => {
+      const singleDropDifferentMethodTrip: TripDetails = {
+        ...baseTrip,
+        recipientPaymentMethod: 'cash', // global
+        drops: [
+          {
+            id: 'drop-single-1',
+            position: 1,
+            dropoffZoneName: 'Barrio Sur',
+            dropoffAddress: 'Belgrano 1220',
+            recipientName: 'Laura Gómez',
+            recipientPhone: '3865123456',
+            deliveryNotes: null,
+            cashChangeAmount: null,
+            packageType: 'chico',
+            recipientPaymentMethod: 'transfer', // debe prevalecer el del drop
+            needsChange: false,
+            approxDistanceM: 1000,
+            status: 'pending',
+            deliveredAt: null,
+            failedReason: null,
+            dropoffLat: null,
+            dropoffLng: null,
+          },
+        ],
+      };
+
+      const { container, unmount } = render(<TripMerchantView trip={singleDropDifferentMethodTrip} />);
+
+      const heading = within(container).getByRole('heading', { level: 2, name: /repartidor asignado/i });
+      const card = getCardContainer(heading);
+      const paymentP = within(card).getByText(
+        (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Transferencia/i.test(el.textContent ?? '')
+      );
+      expect(paymentP).toBeDefined();
+
+      const unexpectedCash = within(card).queryByText(
+        (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Efectivo/i.test(el.textContent ?? '')
+      );
+      expect(unexpectedCash).toBeNull();
+
+      unmount();
+    });
+
+    it('T-359 C: multi-drop con 3 entregas heterogéneas muestra el método por entrega y no un global engañoso', () => {
+      const heterogeneousTrip: TripDetails = {
+        ...multiDropTrip,
+        recipientPaymentMethod: 'cash', // global engañoso
+        drops: [
+          {
+            id: 'drop-c-1',
+            position: 1,
+            dropoffZoneName: 'Centro',
+            dropoffAddress: 'Calle Uno 100',
+            recipientName: 'Ana',
+            recipientPhone: '3865111111',
+            deliveryNotes: null,
+            cashChangeAmount: null,
+            packageType: 'chico',
+            recipientPaymentMethod: 'cash',
+            needsChange: false,
+            approxDistanceM: 1000,
+            status: 'delivered',
+            deliveredAt: '2026-09-24T10:15:00Z',
+            failedReason: null,
+            dropoffLat: null,
+            dropoffLng: null,
+          },
+          {
+            id: 'drop-c-2',
+            position: 2,
+            dropoffZoneName: 'San Martín',
+            dropoffAddress: 'Calle Dos 200',
+            recipientName: 'Beto',
+            recipientPhone: '3865222222',
+            deliveryNotes: 'Dejar en puerta',
+            cashChangeAmount: 1000,
+            packageType: 'chico',
+            recipientPaymentMethod: 'transfer',
+            needsChange: true,
+            approxDistanceM: 1500,
+            status: 'pending',
+            deliveredAt: null,
+            failedReason: null,
+            dropoffLat: null,
+            dropoffLng: null,
+          },
+          {
+            id: 'drop-c-3',
+            position: 3,
+            dropoffZoneName: 'Barrio Sur',
+            dropoffAddress: 'Calle Tres 300',
+            recipientName: 'Carla',
+            recipientPhone: '3865333333',
+            deliveryNotes: null,
+            cashChangeAmount: null,
+            packageType: 'mediano',
+            recipientPaymentMethod: 'to_agree',
+            needsChange: false,
+            approxDistanceM: 2000,
+            status: 'failed',
+            deliveredAt: null,
+            failedReason: 'No respondió al timbre',
+            dropoffLat: null,
+            dropoffLng: null,
+          },
+        ],
+      };
+
+      const { container, unmount } = render(<TripMerchantView trip={heterogeneousTrip} />);
+
+      // En multi-drop, la Card del repartidor NO debe mostrar un único medio de pago global
+      const courierHeading = within(container).getByRole('heading', { level: 2, name: /repartidor asignado/i });
+      const courierCard = getCardContainer(courierHeading);
+      const globalPaymentP = within(courierCard).queryByText(
+        (_, el) => el?.tagName === 'P' && /Medio de pago:/i.test(el.textContent ?? '')
+      );
+      expect(globalPaymentP).toBeNull();
+
+      // Card 1: Ana -> Efectivo
+      const cardAnaHeading = within(container).getByRole('heading', { level: 2, name: /avisale a tu cliente \(entrega 1\)/i });
+      const cardAna = getCardContainer(cardAnaHeading);
+      expect(
+        within(cardAna).getByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Efectivo/i.test(el.textContent ?? '')
+        )
+      ).toBeDefined();
+      expect(
+        within(cardAna).queryByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Transferencia/i.test(el.textContent ?? '')
+        )
+      ).toBeNull();
+      expect(
+        within(cardAna).queryByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*A coordinar/i.test(el.textContent ?? '')
+        )
+      ).toBeNull();
+
+      // Card 2: Beto -> Transferencia
+      const cardBetoHeading = within(container).getByRole('heading', { level: 2, name: /avisale a tu cliente \(entrega 2\)/i });
+      const cardBeto = getCardContainer(cardBetoHeading);
+      expect(
+        within(cardBeto).getByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Transferencia/i.test(el.textContent ?? '')
+        )
+      ).toBeDefined();
+      expect(
+        within(cardBeto).queryByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Efectivo/i.test(el.textContent ?? '')
+        )
+      ).toBeNull();
+      expect(
+        within(cardBeto).queryByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*A coordinar/i.test(el.textContent ?? '')
+        )
+      ).toBeNull();
+
+      // Card 3: Carla -> A coordinar
+      const cardCarlaHeading = within(container).getByRole('heading', { level: 2, name: /avisale a tu cliente \(entrega 3\)/i });
+      const cardCarla = getCardContainer(cardCarlaHeading);
+      expect(
+        within(cardCarla).getByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*A coordinar/i.test(el.textContent ?? '')
+        )
+      ).toBeDefined();
+      expect(
+        within(cardCarla).queryByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Efectivo/i.test(el.textContent ?? '')
+        )
+      ).toBeNull();
+      expect(
+        within(cardCarla).queryByText(
+          (_, el) => el?.tagName === 'P' && /Medio de pago:\s*Transferencia/i.test(el.textContent ?? '')
+        )
+      ).toBeNull();
+
+      unmount();
+    });
+
+    it('T-359 C / T-361: los mensajes de WhatsApp al cliente preservan privacidad (sin dinero ni método de pago)', () => {
+      const { container, unmount } = render(<TripMerchantView trip={multiDropTrip} />);
+
+      const waAna = within(container).getByRole('link', { name: /Avisar a Ana por WhatsApp/i });
+      const textAna = decodeURIComponent(waAna.getAttribute('href') ?? '');
+      expect(textAna).not.toMatch(/efectivo|transferencia|coordinar|\$\s*\d/i);
+
+      const waBeto = within(container).getByRole('link', { name: /Avisar a Beto por WhatsApp/i });
+      const textBeto = decodeURIComponent(waBeto.getAttribute('href') ?? '');
+      expect(textBeto).not.toMatch(/efectivo|transferencia|coordinar|\$\s*\d/i);
+
+      unmount();
     });
   });
 

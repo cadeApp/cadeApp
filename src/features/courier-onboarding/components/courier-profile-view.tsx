@@ -347,7 +347,7 @@ export function CourierProfileView({ profile }: { profile: CourierProfileData | 
             Mi vehículo
           </h2>
           <Link
-            href="/courier/onboarding/vehicle"
+            href="/courier/onboarding/vehicle?mode=edit"
             className="inline-flex min-h-12 items-center px-2 text-sm font-semibold text-primary-dark underline hover:text-foreground"
           >
             Actualizar

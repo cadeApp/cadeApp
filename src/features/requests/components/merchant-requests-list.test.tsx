@@ -167,6 +167,33 @@ describe('T-113 / C02: MerchantRequestsList ("Mis solicitudes")', () => {
     expect(screen.queryByText(/Zona Terminal Intrusa/i)).toBeNull();
     expect(screen.getByText(/No tenés solicitudes activas/i)).toBeDefined();
   });
+  describe('T-359: Navegación post-match del comercio', () => {
+    it('solicitud en estado matched vincula botón "Ver detalle" a /trips/[id] en lugar de /merchant/requests/[id]', () => {
+      render(<MerchantRequestsList requests={mockRequests} metrics={mockMetrics} />);
+
+      const detailLinks = screen.getAllByRole('link', { name: /ver detalle/i });
+      expect(detailLinks.length).toBe(1);
+      expect(detailLinks[0]?.getAttribute('href')).toBe('/trips/req-3');
+    });
+
+    it('solicitud en estado in_transit vincula botón "Ver detalle" a /trips/[id]', () => {
+      const inTransitRequest: MerchantRequestSummary = {
+        ...mockRequests[0]!,
+        id: 'req-in-transit',
+        status: 'in_transit',
+      };
+
+      render(
+        <MerchantRequestsList
+          requests={[inTransitRequest]}
+          metrics={mockMetrics}
+        />
+      );
+
+      const detailLink = screen.getByRole('link', { name: /ver detalle/i });
+      expect(detailLink.getAttribute('href')).toBe('/trips/req-in-transit');
+    });
+  });
 });
 
 describe('C07: MerchantHistoryView (PR87-H17 / PR87-H18)', () => {

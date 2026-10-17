@@ -1010,7 +1010,7 @@ test.describe('T-304 — Matriz de estados y transiciones (§5.1)', () => {
     await page.goto(`/merchant/requests/${requestId}`);
     await expect(page.getByText('Expirada')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Ofertas recibidas')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('button', { name: /aceptar/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /^aceptar$/i })).toHaveCount(0);
 
     // Intento de aceptación sobre oferta de solicitud vencida (aún en estado published en DB) falla con REQUEST_EXPIRED en RPC
     await expectRpcFailure(
