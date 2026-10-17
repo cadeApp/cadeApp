@@ -20,6 +20,8 @@ export const serverEnvSchema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional().default(''),
   VAPID_SUBJECT: z.string().optional().default(''),
   RPC_ADAPTER: z.enum(['real', 'fake']).optional().default('real'),
+  // CC-030: purga de huérfanos de courier-docs. Arranca en dry-run; 'enforce' lo habilita una persona por ambiente.
+  COURIER_DOCS_ORPHAN_PURGE_MODE: z.enum(['off', 'dry-run', 'enforce']).optional().default('dry-run'),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

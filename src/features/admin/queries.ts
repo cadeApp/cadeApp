@@ -213,7 +213,7 @@ export async function getApplicantDetail(
       .maybeSingle(),
     supabase
       .from('courier_documents')
-      .select('id, kind, storage_path, status, uploaded_at')
+      .select('id, kind, storage_path, status, uploaded_at, is_current, rejection_code')
       .eq('courier_id', courierId)
       .order('uploaded_at', { ascending: true }),
   ]);
@@ -239,15 +239,27 @@ export async function getApplicantDetail(
     storage_path: string;
     status: 'none' | 'submitted' | 'verified' | 'rejected';
     uploaded_at: string;
+    is_current?: boolean | null;
+    rejection_code?: string | null;
   }
 
   const rawDocs = (docsResult.data ?? []) as unknown as CourierDocDetailRow[];
-  const documents: ApplicantDocumentDetail[] = rawDocs.map((d) => ({
+  // Los documentos vigentes (is_current !== false) van primero; los históricos van al final
+  const sortedDocs = [...rawDocs].sort((a, b) => {
+    const aCurrent = a.is_current !== false ? 1 : 0;
+    const bCurrent = b.is_current !== false ? 1 : 0;
+    if (aCurrent !== bCurrent) return bCurrent - aCurrent;
+    return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
+  });
+
+  const documents: ApplicantDocumentDetail[] = sortedDocs.map((d) => ({
     id: d.id,
     documentType: d.kind,
     storagePath: d.storage_path,
     status: d.status,
     uploadedAt: d.uploaded_at,
+    isCurrent: d.is_current !== false,
+    rejectionCode: d.rejection_code ?? null,
   }));
 
   return {

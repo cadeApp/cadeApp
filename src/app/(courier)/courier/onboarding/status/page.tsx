@@ -23,7 +23,7 @@ export default async function CanonicalCourierOnboardingStatusPage() {
 
   return (
     <div className="flex flex-col items-center justify-start px-4 py-6">
-      <StatusView documents={documents} />
+      <StatusView documents={documents} courierId={user.id} />
     </div>
   );
 }

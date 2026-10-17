@@ -69,10 +69,25 @@ export function useRequestOffers(
   const fetchGenerationRef = useRef(0);
 
   const [isOnline, setIsOnline] = useState(() => onlineManager.isOnline());
+  const [offersSyncedAfterReconnect, setSyncedAfterReconnect] = useState(() =>
+    onlineManager.isOnline()
+  );
+  // PR390-H13: Generación mínima requerida para autorizar la sincronización post-reconexión.
+  const syncRequiredGenerationRef = useRef(0);
 
   useEffect(() => {
+    let wasOnline = onlineManager.isOnline();
     const unsubscribe = onlineManager.subscribe((online) => {
       setIsOnline(online);
+      if (!online) {
+        setSyncedAfterReconnect(false);
+        wasOnline = false;
+      } else if (!wasOnline) {
+        wasOnline = true;
+        setSyncedAfterReconnect(false);
+        // Exigir que la consulta que autorice la caché haya iniciado DESPUÉS de este momento
+        syncRequiredGenerationRef.current = fetchGenerationRef.current + 1;
+      }
     });
     return () => {
       unsubscribe();
@@ -83,34 +98,47 @@ export function useRequestOffers(
     {
       queryKey,
       queryFn: async ({ pageParam }): Promise<LiveOffersResponse> => {
-        fetchGenerationRef.current += 1;
+        const generation = ++fetchGenerationRef.current;
+        let response: LiveOffersResponse;
         if (options?.fetcher) {
           const res = await options.fetcher(pageParam);
           if ('data' in res && 'nextCursor' in res) {
-            return res as LiveOffersResponse;
+            response = res as LiveOffersResponse;
+          } else {
+            response = { data: [...res], nextCursor: null };
           }
-          return { data: [...res], nextCursor: null };
-        }
+        } else {
+          let endpoint = `/api/live/requests/${encodeURIComponent(requestId)}/offers`;
+          if (pageParam) {
+            const queryParams = new URLSearchParams({
+              cursorCreatedAt: pageParam.createdAt,
+              cursorId: pageParam.id,
+            });
+            endpoint += `?${queryParams.toString()}`;
+          }
 
-        let endpoint = `/api/live/requests/${encodeURIComponent(requestId)}/offers`;
-        if (pageParam) {
-          const queryParams = new URLSearchParams({
-            cursorCreatedAt: pageParam.createdAt,
-            cursorId: pageParam.id,
+          const res = await fetch(endpoint, {
+            cache: 'no-store',
           });
-          endpoint += `?${queryParams.toString()}`;
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+
+          const json: unknown = await res.json();
+          const { liveOffersResponseSchema } = await import('@/lib/live-contracts');
+          response = liveOffersResponseSchema.parse(json);
         }
 
-        const res = await fetch(endpoint, {
-          cache: 'no-store',
-        });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+        if (
+          onlineManager.isOnline() &&
+          syncRequiredGenerationRef.current > 0 &&
+          generation >= syncRequiredGenerationRef.current
+        ) {
+          syncRequiredGenerationRef.current = 0;
+          setSyncedAfterReconnect(true);
         }
 
-        const json: unknown = await res.json();
-        const { liveOffersResponseSchema } = await import('@/lib/live-contracts');
-        return liveOffersResponseSchema.parse(json);
+        return response;
       },
       initialPageParam: null as LivePageCursor | null,
       initialData: {
@@ -236,6 +264,7 @@ export function useRequestOffers(
     error: query.error,
     refetch: query.refetch,
     isOnline,
+    offersSyncedAfterReconnect,
   };
 }
 

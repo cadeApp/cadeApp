@@ -1203,19 +1203,20 @@ describe('T-112 / T-118: queries de requests e historial', () => {
     });
 
     it('T-365: getMerchantRequestWithOffers filtra funcionalmente 51+ ofertas mixtas y calcula nextOffersCursor conforme solo pending', async () => {
-      // 52 ofertas pending y 8 ofertas no pending (cancelled, rejected) intercaladas al inicio
-      const cancelledOffers = Array.from({ length: 8 }, (_, i) => ({
+      // 10 ofertas no pending (cancelled, rejected, expired, withdrawn) con timestamps más recientes
+      const nonPendingOffers = Array.from({ length: 10 }, (_, i) => ({
         id: `00000000-0000-0000-0000-${String(i + 1).padStart(12, '0')}`,
         request_id: validUuid,
         courier_id: courierUuid(100 + i),
         amount_ars: 1500 + i * 10,
         eta_minutes: 10,
         message: null,
-        status: i % 2 === 0 ? 'cancelled' : 'rejected',
-        created_at: `2026-09-26T13:00:${String(i).padStart(2, '0')}.000Z`,
+        status: (['cancelled', 'rejected', 'expired', 'withdrawn'] as const)[i % 4] ?? 'cancelled',
+        created_at: `2026-09-26T14:00:${String(i).padStart(2, '0')}.000Z`,
       }));
 
-      const pendingOffers = Array.from({ length: 52 }, (_, i) => ({
+      // 55 ofertas pending con timestamps no monótonos respecto al id; índices 2 y 40 empatan en fecha para tie-breaker de id DESC
+      const pendingOffers = Array.from({ length: 55 }, (_, i) => ({
         id: `11111111-1111-1111-1111-${String(i + 1).padStart(12, '0')}`,
         request_id: validUuid,
         courier_id: courierUuid(i + 1),
@@ -1223,18 +1224,39 @@ describe('T-112 / T-118: queries de requests e historial', () => {
         eta_minutes: 15,
         message: null,
         status: 'pending',
-        created_at: `2026-09-26T12:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`,
+        created_at:
+          i === 40
+            ? '2026-09-26T12:15:00.000Z'
+            : i === 2
+              ? '2026-09-26T12:15:00.000Z'
+              : `2026-09-26T12:${String((i * 17) % 60).padStart(2, '0')}:${String((i * 31) % 60).padStart(2, '0')}.000Z`,
       }));
 
-      // Las ofertas canceladas tienen timestamps más recientes, de modo que sin filtro entrarían primero
-      const mixedOffers = [...cancelledOffers, ...pendingOffers];
+      const mixedOffers = [...nonPendingOffers, ...pendingOffers];
 
       let filteredRows = [...mixedOffers];
+      interface SortOrderSpec {
+        col: string;
+        ascending: boolean;
+      }
+      const orderSpecs: SortOrderSpec[] = [];
+
+      interface MockFilteringOffersRow {
+        id: string;
+        request_id: string;
+        courier_id: string;
+        amount_ars: number;
+        eta_minutes: number;
+        message: string | null;
+        status: string;
+        created_at: string;
+      }
+
       interface MockFilteringOffersBuilder {
         select: () => MockFilteringOffersBuilder;
         eq: (col: string, val: unknown) => MockFilteringOffersBuilder;
         order: (col?: string, opts?: { ascending?: boolean }) => MockFilteringOffersBuilder;
-        limit: (count: number) => Promise<{ data: unknown[]; error: null }>;
+        limit: (count: number) => Promise<{ data: MockFilteringOffersRow[]; error: null }>;
       }
 
       const filteringBuilder: MockFilteringOffersBuilder = {
@@ -1249,12 +1271,35 @@ describe('T-112 / T-118: queries de requests e historial', () => {
           );
           return this;
         }),
-        order: vi.fn(function (this: MockFilteringOffersBuilder) {
+        order: vi.fn(function (
+          this: MockFilteringOffersBuilder,
+          col?: string,
+          opts?: { ascending?: boolean }
+        ) {
+          orderSpecs.push({
+            col: col ?? 'id',
+            ascending: opts?.ascending ?? true,
+          });
           return this;
         }),
-        limit: vi.fn(function (count: number) {
+        limit: vi.fn(function (this: MockFilteringOffersBuilder, count: number) {
+          const sorted = [...filteredRows].sort((a, b) => {
+            for (const { col, ascending } of orderSpecs) {
+              const valA = (a as Record<string, unknown>)[col];
+              const valB = (b as Record<string, unknown>)[col];
+              if (valA !== valB) {
+                if (typeof valA === 'string' && typeof valB === 'string') {
+                  return ascending ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                }
+                if (typeof valA === 'number' && typeof valB === 'number') {
+                  return ascending ? valA - valB : valB - valA;
+                }
+              }
+            }
+            return 0;
+          });
           return Promise.resolve({
-            data: filteredRows.slice(0, count),
+            data: sorted.slice(0, count) as MockFilteringOffersRow[],
             error: null,
           });
         }),
@@ -1296,7 +1341,27 @@ describe('T-112 / T-118: queries de requests e historial', () => {
       expect(result?.offers).toHaveLength(50);
       expect(result?.offers.every((o) => o.status === 'pending')).toBe(true);
 
-      const expected50thPending = pendingOffers[49]!;
+      const sortedExpectedPending = [...pendingOffers].sort((a, b) => {
+        if (a.created_at !== b.created_at) {
+          return b.created_at.localeCompare(a.created_at);
+        }
+        return b.id.localeCompare(a.id);
+      });
+
+      expect(result?.offers.map((o) => o.id)).toEqual(
+        sortedExpectedPending.slice(0, 50).map((o) => o.id)
+      );
+
+      // Tie-breaker de id DESC sobre ofertas con misma fecha (índices 40 y 2 comparten timestamp)
+      const tieBreakerOfferHigh = result?.offers.find((o) => o.id === pendingOffers[40]!.id);
+      const tieBreakerOfferLow = result?.offers.find((o) => o.id === pendingOffers[2]!.id);
+      expect(tieBreakerOfferHigh).toBeDefined();
+      expect(tieBreakerOfferLow).toBeDefined();
+      const idxHigh = result?.offers.indexOf(tieBreakerOfferHigh!);
+      const idxLow = result?.offers.indexOf(tieBreakerOfferLow!);
+      expect(idxHigh).toBeLessThan(idxLow!);
+
+      const expected50thPending = sortedExpectedPending[49]!;
       expect(result?.nextOffersCursor).toEqual({
         createdAt: expected50thPending.created_at,
         id: expected50thPending.id,

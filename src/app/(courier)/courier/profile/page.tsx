@@ -44,7 +44,10 @@ export default async function CourierProfilePage() {
         insurance_status: DocumentReviewStatus;
         status: CourierReviewStatus;
       }>(),
-    supabase.from('courier_documents').select('kind, status').eq('courier_id', user.id),
+    supabase
+      .from('courier_documents')
+      .select('kind, status, rejection_code, is_current')
+      .eq('courier_id', user.id),
   ]);
 
   if (profileResult.error) {
@@ -64,25 +67,86 @@ export default async function CourierProfilePage() {
     return <CourierProfileView profile={null} />;
   }
 
-  const docs = (docsResult.data ?? []) as Array<{ kind: string; status: DocumentReviewStatus }>;
-  const dniFront: DocumentReviewStatus = docs.find((d) => d.kind === 'dni_front')?.status ?? 'none';
-  const dniBack: DocumentReviewStatus = docs.find((d) => d.kind === 'dni_back')?.status ?? 'none';
-  const selfie: DocumentReviewStatus = docs.find((d) => d.kind === 'selfie')?.status ?? 'none';
+  const rawDocs = (docsResult.data ?? []) as Array<{
+    kind: string;
+    status: DocumentReviewStatus;
+    rejection_code?: string | null;
+    is_current?: boolean;
+  }>;
+  // Solo consideramos vigentes (is_current !== false)
+  const currentDocs = rawDocs.filter((d) => d.is_current !== false);
 
-  const dniStatus = combineDniDocumentStatus(dniFront, dniBack);
+  const docsMap = new Map<string, (typeof rawDocs)[number]>();
+  for (const doc of currentDocs) {
+    if (!docsMap.has(doc.kind)) {
+      docsMap.set(doc.kind, doc);
+    }
+  }
+
+  const dniFrontDoc = docsMap.get('dni_front');
+  const dniBackDoc = docsMap.get('dni_back');
+  const selfieDoc = docsMap.get('selfie');
+  const licenseDoc = docsMap.get('license');
+  const insuranceDoc = docsMap.get('insurance');
+
+  const dniFrontStatus: DocumentReviewStatus = dniFrontDoc?.status ?? 'none';
+  const dniBackStatus: DocumentReviewStatus = dniBackDoc?.status ?? 'none';
+  const selfieStatus: DocumentReviewStatus = selfieDoc?.status ?? 'none';
+  const licenseStatus: DocumentReviewStatus = licenseDoc?.status ?? 'none';
+  const insuranceStatus: DocumentReviewStatus = insuranceDoc?.status ?? 'none';
+
+  const dniStatus = combineDniDocumentStatus(dniFrontStatus, dniBackStatus);
 
   const profileData: CourierProfileData = {
+    courierId: user.id,
     displayName: profileResult.data?.display_name ?? 'Sin nombre registrado',
     email: user.email ?? '',
     vehicleType: courier.vehicle_type,
     plate: courier.vehicle_plate,
     dniStatus,
-    selfieStatus: selfie,
-    licenseStatus: docs.find((d) => d.kind === 'license')?.status ?? 'none',
-    insuranceStatus: docs.find((d) => d.kind === 'insurance')?.status ?? 'none',
+    dniFrontStatus,
+    dniFrontRejectionMessage:
+      dniFrontDoc?.status === 'rejected'
+        ? (await import('@/features/courier-onboarding/copy')).getSafeRejectionMessage(
+            dniFrontDoc.rejection_code
+          )
+        : null,
+    dniBackStatus,
+    dniBackRejectionMessage:
+      dniBackDoc?.status === 'rejected'
+        ? (await import('@/features/courier-onboarding/copy')).getSafeRejectionMessage(
+            dniBackDoc.rejection_code
+          )
+        : null,
+    selfieStatus,
+    selfieRejectionMessage:
+      selfieDoc?.status === 'rejected'
+        ? (await import('@/features/courier-onboarding/copy')).getSafeRejectionMessage(
+            selfieDoc.rejection_code
+          )
+        : null,
+    licenseStatus,
+    licenseRejectionMessage:
+      licenseDoc?.status === 'rejected'
+        ? (await import('@/features/courier-onboarding/copy')).getSafeRejectionMessage(
+            licenseDoc.rejection_code
+          )
+        : null,
+    insuranceStatus,
+    insuranceRejectionMessage:
+      insuranceDoc?.status === 'rejected'
+        ? (await import('@/features/courier-onboarding/copy')).getSafeRejectionMessage(
+            insuranceDoc.rejection_code
+          )
+        : null,
     courierStatus: courier.status,
     // T-334: misma definición que el guard (`parseOnboardingComplete`): sin vehículo declarado no hay registro enviado.
     onboardingComplete: courier.vehicle_type !== null,
+    documents: currentDocs.map((d) => ({
+      kind: d.kind as import('@/domain/schemas').CourierDocumentKind,
+      status: d.status,
+      rejectionCode: d.status === 'rejected' ? d.rejection_code ?? null : null,
+    })),
   };
 
   return (

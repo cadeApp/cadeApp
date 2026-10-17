@@ -703,5 +703,183 @@ describe('T-204 DoD: useRequestOffers con TanStack Query y Realtime vía /api/li
       expect(sourceCode).not.toMatch(nonNullAssertionPattern);
     });
   });
+
+  describe('PR390-H13: señal de ofertas sincronizadas post-reconexión (offersSyncedAfterReconnect)', () => {
+    it('primer montaje online: offersSyncedAfterReconnect es true inicialmente', () => {
+      onlineManager.setOnline(true);
+      const { result } = renderHook(
+        () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+        { wrapper }
+      );
+      expect(result.current.isOnline).toBe(true);
+      expect(result.current.offersSyncedAfterReconnect).toBe(true);
+    });
+
+    it('al pasar a offline: offersSyncedAfterReconnect pasa a false', () => {
+      onlineManager.setOnline(true);
+      const { result } = renderHook(
+        () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+        { wrapper }
+      );
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+
+      expect(result.current.isOnline).toBe(false);
+      expect(result.current.offersSyncedAfterReconnect).toBe(false);
+    });
+
+    it('al reconectar con fetch diferido: permanece false hasta que la consulta post-reconexión resuelve con éxito', async () => {
+      onlineManager.setOnline(true);
+      let resolveFetch: ((value: Response) => void) | null = null;
+      const deferredFetch = new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      const { result } = renderHook(
+        () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+        { wrapper }
+      );
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      expect(result.current.offersSyncedAfterReconnect).toBe(false);
+
+      vi.spyOn(global, 'fetch').mockImplementation(() => deferredFetch);
+
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+
+      expect(result.current.isOnline).toBe(true);
+      expect(result.current.offersSyncedAfterReconnect).toBe(false);
+
+      await act(async () => {
+        if (resolveFetch) {
+          resolveFetch({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [...initialOffers],
+              nextCursor: null,
+            }),
+          } as Response);
+        }
+        await deferredFetch;
+      });
+
+      await waitFor(() => {
+        expect(result.current.offersSyncedAfterReconnect).toBe(true);
+      });
+    });
+
+    it('si el fetch post-reconexión falla (HTTP 500 / Zod inválido), offersSyncedAfterReconnect permanece false', async () => {
+      onlineManager.setOnline(true);
+      const { result } = renderHook(
+        () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+        { wrapper }
+      );
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      expect(result.current.offersSyncedAfterReconnect).toBe(false);
+
+      vi.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+      } as Response);
+
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+
+      await waitFor(() => {
+        expect(result.current.isError).toBe(true);
+      });
+
+      expect(result.current.isOnline).toBe(true);
+      expect(result.current.offersSyncedAfterReconnect).toBe(false);
+    });
+
+    it('dos ciclos de corte: fetch iniciado antes del corte que termina tarde NO autoriza la sincronización', async () => {
+      onlineManager.setOnline(true);
+      let resolveOldFetch: ((value: Response) => void) | null = null;
+      const oldFetchPromise = new Promise<Response>((resolve) => {
+        resolveOldFetch = resolve;
+      });
+
+      vi.spyOn(global, 'fetch').mockImplementationOnce(() => oldFetchPromise);
+
+      const { result } = renderHook(
+        () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+        { wrapper }
+      );
+
+      void result.current.refetch();
+
+      act(() => {
+        onlineManager.setOnline(false);
+      });
+      expect(result.current.offersSyncedAfterReconnect).toBe(false);
+
+      let resolveNewFetch: ((value: Response) => void) | null = null;
+      const newFetchPromise = new Promise<Response>((resolve) => {
+        resolveNewFetch = resolve;
+      });
+      vi.spyOn(global, 'fetch').mockImplementation(() => newFetchPromise);
+
+      act(() => {
+        onlineManager.setOnline(true);
+      });
+
+      await act(async () => {
+        if (resolveOldFetch) {
+          resolveOldFetch({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [...initialOffers],
+              nextCursor: null,
+            }),
+          } as Response);
+        }
+        await oldFetchPromise;
+      });
+
+      expect(result.current.offersSyncedAfterReconnect).toBe(false);
+
+      await act(async () => {
+        if (resolveNewFetch) {
+          resolveNewFetch({
+            ok: true,
+            status: 200,
+            json: async () => ({
+              data: [...initialOffers],
+              nextCursor: null,
+            }),
+          } as Response);
+        }
+        await newFetchPromise;
+      });
+
+      await waitFor(() => {
+        expect(result.current.offersSyncedAfterReconnect).toBe(true);
+      });
+    });
+
+    it('limpieza de listener de onlineManager al desmontar', () => {
+      const subscribeSpy = vi.spyOn(onlineManager, 'subscribe');
+      const { unmount } = renderHook(
+        () => useRequestOffers('11111111-1111-1111-1111-111111111111', initialOffers),
+        { wrapper }
+      );
+
+      expect(subscribeSpy).toHaveBeenCalled();
+      unmount();
+    });
+  });
 });
 
