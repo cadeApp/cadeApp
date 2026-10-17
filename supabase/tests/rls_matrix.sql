@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path to public, extensions;
 
-select plan(65);
+select plan(66);
 
 -- IDs para los actores de la matriz
 create function pg_temp.admin_id() returns uuid language sql as $$ select '00000000-0000-0000-0000-0000000000a1'::uuid $$;
@@ -541,10 +541,18 @@ select lives_ok(
   'merchant can create a draft request with server timestamps'
 );
 select pg_temp.act_as('authenticated', pg_temp.courier_approved_2_id());
-select lives_ok(
+-- CC-025 / PR364-R07 (Decisión A): courier tampoco inserta directo (revocado con 42501; debe usar RPC submit_courier_onboarding_documents o replace_courier_document).
+select throws_ok(
   'insert into public.courier_documents (courier_id, kind, storage_path) values (pg_temp.courier_approved_2_id(), ''license'', ''courier/c3/license/normal-upload.jpg'')',
-  'courier can submit a document for review'
+  '42501'::char(5), null::text,
+  'CC-025 / PR364-R07: courier cannot insert a document directly via authenticated role (REVOKE INSERT 42501)'
 );
+select is(
+  (select count(*)::int from public.courier_documents where courier_id = pg_temp.courier_approved_2_id() and storage_path = 'courier/c3/license/normal-upload.jpg'),
+  0,
+  'CC-025 / PR364-R07: cero filas insertadas tras intento directo denegado con 42501'
+);
+
 -- CC-012 / D07-A: el comercio dueño tampoco inserta directo (antes esta prueba exigía que pudiera).
 select pg_temp.act_as('authenticated', pg_temp.merchant_1_id());
 select throws_ok(

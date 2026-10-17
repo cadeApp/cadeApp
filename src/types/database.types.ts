@@ -887,7 +887,12 @@ export type Database = {
         Returns: Json
       }
       admin_verify_document: {
-        Args: { p_decision: string; p_document_id: string; p_reason?: string }
+        Args: {
+          p_decision: string
+          p_document_id: string
+          p_reason?: string
+          p_rejection_code?: string
+        }
         Returns: Json
       }
       calculate_route_distance: {
@@ -937,6 +942,7 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: Json
       }
+      replace_courier_document: { Args: { p_payload: Json }; Returns: Json }
       report_incident: {
         Args: { p_description: string; p_kind: string; p_request_id: string }
         Returns: Json
