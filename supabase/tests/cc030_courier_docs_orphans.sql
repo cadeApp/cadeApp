@@ -328,7 +328,7 @@ select pg_temp.act_as_service_role();
 create table pg_temp.legacy_claim as
   select public.claim_orphan_courier_documents(100, false) as res;
 select ok(
-  'legacy/cc030_orphan_old.jpg' = any((select pg_temp.claimed_paths(res) from pg_temp.legacy_claim)),
+  'legacy/cc030_orphan_old.jpg'::text = any((select pg_temp.claimed_paths(res) from pg_temp.legacy_claim)::text[]),
   'reclama huérfano antiguo no canónico dentro de courier-docs'
 );
 select pg_temp.reset_actor();
