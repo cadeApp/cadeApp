@@ -9,6 +9,8 @@ vi.mock('@/server/env', () => ({
   serverEnv: {
     CRON_SECRET: 'test-cron-secret-12345',
     SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+    // CC-030: estas pruebas cubren autenticación y pasos previos; huérfanos tiene su propia suite.
+    COURIER_DOCS_ORPHAN_PURGE_MODE: 'off',
   },
 }));
 

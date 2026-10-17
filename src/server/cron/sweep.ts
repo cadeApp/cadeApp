@@ -2,11 +2,17 @@ import 'server-only';
 import { createAdminClient } from '@/server/supabase/admin';
 import { canMerchantPublishRequest } from '@/domain/states';
 import { safeNotifyPostTransition } from '@/server/push';
+import { serverEnv } from '@/server/env';
+import {
+  reconcileOrphanCourierDocuments,
+  type OrphanCourierDocumentsResult,
+} from './orphan-courier-documents';
 
 export interface SweepResult {
   expiredRequestsCount: number;
   purgedDocsCount: number;
   expiredSubscriptionsCount: number;
+  orphanCourierDocuments: OrphanCourierDocumentsResult;
 }
 
 const RECONCILE_EXPIRED_REQUESTS_CRON_LIMIT = 200;
@@ -290,9 +296,17 @@ export async function runSweep(): Promise<SweepResult> {
     }
   }
 
+  // 4. CC-030: objetos de courier-docs sin fila en courier_documents, fuera de la ventana de gracia.
+  // Va último para que una falla de Storage no frene los pasos anteriores; igual termina en error (H01).
+  const orphanCourierDocuments = await reconcileOrphanCourierDocuments(
+    supabase,
+    serverEnv.COURIER_DOCS_ORPHAN_PURGE_MODE
+  );
+
   return {
     expiredRequestsCount,
     purgedDocsCount,
     expiredSubscriptionsCount,
+    orphanCourierDocuments,
   };
 }
