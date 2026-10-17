@@ -51,6 +51,8 @@ export async function createDeliveryRequestAction(
   }
 
   const data = parsed.data;
+  // REVIEW ONLY / NEVER MERGE: simular un error antes de ejecutar la RPC.
+  return err('PUBLICATION_CREDITS_EXHAUSTED');
 
   // 4. Alta y publicación atómica mediante RPC (CC-024 / Gate 4)
   // PR330-H09: el UUID proviene exclusivamente de la UI; la Server Action nunca genera ID por invocación.

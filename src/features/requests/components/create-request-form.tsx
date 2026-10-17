@@ -741,10 +741,8 @@ export function CreateRequestForm({
     }
 
     try {
-      const result = await createDeliveryRequestAction({
-        ...data,
-        requestId: requestIdRef.current,
-      });
+      // REVIEW ONLY / NEVER MERGE: el formulario finge el error sin llamar a la Action.
+      const result = { ok: false, code: 'PUBLICATION_CREDITS_EXHAUSTED' } as const;
 
       if (!result.ok) {
         const msg = getDomainErrorMessage(result.code);
