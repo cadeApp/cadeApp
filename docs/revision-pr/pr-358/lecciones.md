@@ -26,3 +26,10 @@ Sin numerar AG hasta contrastar máximo en ramas; pruebas independientes no ejec
 - **Estado agregado y cabeceras:** conservar componentes de éxito tras la transición requiere un título compatible con ausencia de pendientes, no usar el nombre fijo de rechazados.
 - **E2E verde sobre rama divergida:** verificar HEAD exacto, pero una PR dirty necesita merge con develop y revalidación del árbol combinado.
 - No atribuirse los RED→GREEN del autor; sin pruebas propias, los fixes son arreglado-sin-verificar.
+
+## Ronda 4 — Lecciones sin AG global inventado
+
+- **P11 + P08:** Storage acepta MIME y SQL valida extensión del path: la capa que compone el nombre debe normalizar desde los bytes/MIME efectivamente subidos; los tests no pueden cubrir sólo nombres `.jpg` felices.
+- **E2E vs clase no enumerada:** 83 E2E correctos sobre JPEG `.png`/`.jpg` no descartan variante `.jfif` normal de `image/jpeg`; recorrer clases MIME + sufijo, no un ejemplo único.
+- **Probidad:** un probe de paridad Node sin clon prueba la incompatibilidad de strings pero NO sustituye ejecutar el módulo TS ni una mutación real con tests del repositorio.
+- Al hacer merge de develop, medir HEAD + base y esperar E2E del nuevo HEAD, sin copiar el verde del previo.

@@ -6,10 +6,10 @@
 | **Tarea** | T-356 · fase 3 · issue #343 |
 | **Autor** | @Lautaro073 |
 | **Rama** | `feat/T-356-recarga-documentos-rechazados` → `develop` |
-| **Base al revisar** | `14c28ed3c41cb2bde92705fc018c7dd0df73245b` |
-| **Head revisado** | `d0cf083dbb42beacc1f0bba4e4d5a4b1fce78408` |
+| **Base al revisar** | `711a2f7054d77fd664d3ec09b3bbdd24efb88476` |
+| **Head revisado** | `157b492dc708a70795cca4cee0c87ba87b57c356` |
 | **Cambio previo a esta revisión** | 1 archivo: `docs/tasks/log/T-356.md`, +13/-0 |
-| **Estado** | Draft bloqueada por contrato — issue #363 |
+| **Estado** | Draft; Ronda 4 con bloqueante H06; E2E del HEAD en ejecución |
 
 ## Rondas
 
@@ -40,3 +40,7 @@ Crear, revisar y mergear primero el CC #363 en PR independiente, reconciliar fic
 | 3 | `af4838a6cda959288651f54c2b93e3c75aa33441` | **CON BLOQUEANTES H03/H04/H05**; R01 parcial (riesgo #399 separado), R02/R03 arreglado-sin-verificar | [Informe](revisiones/ronda-3.md) / [Evidencia](evidencia/comandos.md) |
 
 **Decisión A:** [issue #399](https://github.com/cadeApp/cadeApp/issues/399), reconciliación de Storage huérfano, bloquea promoción CC-025 a staging/main pero no merge a develop de la UI si H03/H04/H05 pasan. E2E 83/83 Chromium + 3/3 visual en [run 39040606398](https://github.com/cadeApp/cadeApp/actions/runs/39040606398) SHA exacto; no mutaciones del revisor. PR aún Draft, mergeable dirty (58 commits behind). No exigir CI por commit documental solo; sí por merge funcional/correcciones.
+
+## Ronda 4 — 2026-10-17
+
+**Resultado: CON BLOQUEANTE H06 ALTO** (getDocumentExtension toma ext de nombre y crea `license_<ts>.jfif` para MIME JPEG, rechazado por CC-025 tras posible subida Storage). SHA funcional `157b492d`; R3 H03/H04/H05 `arreglado-sin-verificar` por inspección + CI del autor, merge con develop clean. CI 39047554976 PASS, E2E HEAD 39047622636 estaba `in_progress` al revisar; no confundir con 83/83 del SHA anterior. [Informe R4](revisiones/ronda-4.md) · [Evidencia](evidencia/comandos.md) · [Hallazgos](hallazgos.jsonl). Limpieza de huérfanos [T-370 #399](https://github.com/cadeApp/cadeApp/issues/399) es gate pre-staging/main, no de develop. No aprobar/mergear PR #358 aún.

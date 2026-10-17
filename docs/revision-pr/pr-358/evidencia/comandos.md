@@ -84,3 +84,72 @@ Nunca ejecutar comandos SQL contra Supabase remoto ni crear archivos .env con cl
 4. GitHub Actions CI posterior al nuevo SHA y **E2E Preview Vercel contra Supabase Develop** para nuevo SHA; capturar logs exactos. No usar resultado `approval-policy` o job skipped como sustituto de pruebas.
 
 **No ejecutado por revisor:** no clon Git local, no Vitest/SQL/Playwright propios y no mutaciones RED→GREEN propias. Los comandos enumerados arriba son pasos recomendados para la siguiente iteración, NO resultados observados.
+
+## Ronda 4 — PR #358 / HEAD 157b492dc708a70795cca4cee0c87ba87b57c356
+
+**Inspección de GitHub:** `pulls/358`, `pulls/358/commits`, `pulls/358/files`, `compare_commits(develop, HEAD)` = ahead 21/behind 0, `mergeable=true` al consultar; latest code commit 157b492d y merge ca23a92e. `fetch_file` de `document-replacement-card.tsx`, `status-view.tsx`, `upload-manager.ts`, `image-compression.ts`, `document-upload-card.tsx`, `upload-resilience.test.ts`, contrato SQL, tests y bitácora. No hubo cambios funcionales por revisor.
+
+**CI remota realmente leída:** job `117439236185` run `39047554976`: 139 files / 2614 tests PASS; job `117439236316` run `39047554976`: Files=27, Tests=2420, Result=PASS; typecheck, lint, build, audit, bundle successful. `approval-policy` run `39047551950` success.
+**E2E:** run `39047622636`, job `117439466932`, `in_progress` y commit status `pending` al comprobar; todavía sin resultado. No sustituir por 83/83 de run `39040606398` en SHA anterior.
+
+### Contraprueba de compatibilidad (modelo de paridad, ejecutada con Node v22.16.0)
+Este script usa copia literal del algoritmo observado en `upload-manager.ts` y la regex observada en SQL. Como no hay clone conectado y `git ls-remote https://github.com/...` falló con «Could not resolve host», **NO** se presenta como test ejecutado sobre código fuente real ni como mutación propia del repo.
+
+```bash
+cat > /tmp/pr358_r4_extension_probe.cjs <<'NODE'
+'use strict';
+const assert = require('node:assert/strict');
+// Reproducción de paridad del algoritmo en upload-manager.ts:71-88, NO importa el módulo TS real.
+// La regla SQL procede de 20261016210000_cc025_courier_document_replacement.sql.
+function getDocumentExtension(file) {
+  const parts = file.name.split('.');
+  if (parts.length > 1) {
+    const ext = parts.pop()?.trim().toLowerCase();
+    if (ext) return ext;
+  }
+  switch (file.type) {
+    case 'image/png': return 'png';
+    case 'image/webp': return 'webp';
+    case 'application/pdf': return 'pdf';
+    case 'image/jpeg':
+    default: return 'jpg';
+  }
+}
+const storageSuffixAccepted = /^[0-9]+[.](png|jpe?g|webp|pdf)$/i;
+const cases = [
+ ['foto.jpg', 'image/jpeg', true],
+ ['foto.jpeg', 'image/jpeg', true],
+ ['foto.jfif', 'image/jpeg', false],
+ ['foto.jpe', 'image/jpeg', false],
+ ['foto.tiff', 'image/jpeg', false],
+ ['foto.png', 'image/jpeg', true],
+ ['sin-extension', 'image/jpeg', true],
+ ['poliza.pdf', 'application/pdf', true]
+];
+for (const [name,type,expected] of cases) {
+  const ext = getDocumentExtension({name,type});
+  const accepted = storageSuffixAccepted.test('1792250000000.'+ext);
+  assert.equal(accepted,expected,`${name}: mismatch`);
+  console.log(`${name} [${type}] -> ${ext} -> ${accepted?'RPC ACCEPTS SUFFIX':'RPC REJECTS SUFFIX'}`);
+}
+console.log(`PASS: ${cases.length} path/SQL compatibility probes. Parity model only.`);
+NODE
+node /tmp/pr358_r4_extension_probe.cjs
+```
+
+**Salida observada:**
+```text
+foto.jpg [image/jpeg] -> jpg -> RPC ACCEPTS SUFFIX
+foto.jpeg [image/jpeg] -> jpeg -> RPC ACCEPTS SUFFIX
+foto.jfif [image/jpeg] -> jfif -> RPC REJECTS SUFFIX
+foto.jpe [image/jpeg] -> jpe -> RPC REJECTS SUFFIX
+foto.tiff [image/jpeg] -> tiff -> RPC REJECTS SUFFIX
+foto.png [image/jpeg] -> png -> RPC ACCEPTS SUFFIX
+sin-extension [image/jpeg] -> jpg -> RPC ACCEPTS SUFFIX
+poliza.pdf [application/pdf] -> pdf -> RPC ACCEPTS SUFFIX
+PASS: 8 path/SQL compatibility probes. Parity model only.
+```
+
+**Falsadores a ejecutar por agy:** prueba real de `getDocumentExtension` y `buildCourierStoragePath` en `upload-resilience.test.ts`: JPEG .jfif/.jpe/.tiff → jpg, JPEG desde PNG comprimida → jpg, raw image/png → png, webp → webp, pdf → pdf; MIME desconocido aborta antes de `.upload` y antes de acción. Prueba `uploadCourierDocument` con fake Storage comprueba ruta, MIME y upsert:false. Prueba componente mock que respete path realmente producido; no mockear path fijo para ocultar error. Mutación de producción que prioriza `file.name` debe dar RED por aserción de extensión; restauración da GREEN sin modificar test.
+
+**No ejecutado:** `pnpm vitest`, mutaciones del módulo real, E2E propio, Docker/Supabase. Al corregir, agy debe adjuntar comandos y líneas `Tests` RED/GREEN reproducibles en `docs/tasks/log/T-356.md` y correr CI/E2E en el nuevo SHA.
