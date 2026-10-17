@@ -41,3 +41,16 @@ Los datos estructurados están en [hallazgos.jsonl](hallazgos.jsonl). El plan de
 ## Próximo paso
 
 KiraK72 debe hacer git pull antes de modificar, corregir los 5 hallazgos siguiendo el prompt del comentario de la PR y actualizar bitácora, pruebas y push. Luego corresponde otra ronda sobre el nuevo SHA y CI/E2E.
+
+## Ronda 2 — 2026-10-17
+
+| Ronda | SHA | Resultado | Informe |
+|---|---|---|---|
+| 2 | 1da28ccaa2d9143f74ec0e75f89426b20ec50878 | CON BLOQUEANTES: R01, R02, R03 | [ronda-2.md](revisiones/ronda-2.md) |
+
+- H01 parcial (E2E agregado pero R01 y R02 impiden validarlo).
+- H02, H03 y H04 arreglados por inspección, sin verificación de runtime.
+- H05 parcial: casilla E2E desmarcada, falta pnpm test completo del HEAD y ejecución Preview.
+- R01: copy inexistente en el E2E. R02: negativo de actor ajeno sobre solicitud cancelada. R03: harness R1 del propio revisor no ejecutable tal cual.
+
+El nuevo commit de revisión no equivale a aprobación. No se ejecutó CI ni E2E porque hay bloqueantes.
